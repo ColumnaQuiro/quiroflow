@@ -1,75 +1,46 @@
-# Nuxt Minimal Starter
+# QuiroFlow
 
-Look at the [Nuxt documentation](https://nuxt.com/docs/getting-started/introduction) to learn more.
+A practice management app for multi-location chiropractic/allied-health
+clinics — scheduling, patient records with clinical notes, invoicing, and
+a basic client portal.
 
-## Setup
+Built with Nuxt 3 + TypeScript + Tailwind, Supabase (Postgres + Auth +
+Storage), and Resend for email.
 
-Make sure to install dependencies:
+**Node**: this project needs Node ≥20.19 / ≥22.12 (the installed system
+Node was 20.14, which is too old for some deps). A `.nvmrc` pins Node 22;
+run `nvm use` before installing/running if you have nvm.
+
+## 1. Install
 
 ```bash
-# npm
+nvm use   # if you use nvm
 npm install
-
-# pnpm
-pnpm install
-
-# yarn
-yarn install
-
-# bun
-bun install
 ```
 
-## Development Server
+## 2. Set up Supabase
 
-Start the development server on `http://localhost:3000`:
+1. Create a free project at [supabase.com](https://supabase.com/dashboard).
+2. Copy the Project URL and `anon` public key from Project Settings → API.
+3. `cp .env.example .env` and fill in `SUPABASE_URL` / `SUPABASE_KEY`.
+4. Run the SQL migrations in `supabase/migrations/` (via the Supabase SQL
+   editor or the CLI) to create the schema.
+
+## 3. Set up Resend (email)
+
+Get an API key at [resend.com](https://resend.com) and set
+`RESEND_API_KEY` in `.env`.
+
+## 4. Run it
 
 ```bash
-# npm
 npm run dev
-
-# pnpm
-pnpm dev
-
-# yarn
-yarn dev
-
-# bun
-bun run dev
 ```
 
-## Production
+Visit http://localhost:3000.
 
-Build the application for production:
+## Status
 
-```bash
-# npm
-npm run build
-
-# pnpm
-pnpm build
-
-# yarn
-yarn build
-
-# bun
-bun run build
-```
-
-Locally preview production build:
-
-```bash
-# npm
-npm run preview
-
-# pnpm
-pnpm preview
-
-# yarn
-yarn preview
-
-# bun
-bun run preview
-```
-
-Check out the [deployment documentation](https://nuxt.com/docs/getting-started/deployment) for more information.
+Early scaffold — see the project plan for the full Phase 1 (MVP) scope:
+auth & multi-tenant accounts, dashboard, calendar, patients + clinical
+notes, billing/invoicing, core settings, and a basic client portal.

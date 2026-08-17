@@ -20,6 +20,8 @@ export const useAccountStore = defineStore('account', {
     teamMember: null as TeamMember | null,
     accountName: '' as string,
     accountSlug: '' as string,
+    recallWhatsappTemplate: '' as string,
+    confirmationWhatsappTemplate: '' as string,
     clinics: [] as Clinic[],
     currentClinicId: null as string | null,
     loaded: false,
@@ -50,12 +52,18 @@ export const useAccountStore = defineStore('account', {
       this.teamMember = teamMember as TeamMember
 
       const [{ data: account }, { data: clinics }] = await Promise.all([
-        supabase.from('accounts').select('name, slug').eq('id', teamMember.account_id).maybeSingle(),
+        supabase
+          .from('accounts')
+          .select('name, slug, recall_whatsapp_template, confirmation_whatsapp_template')
+          .eq('id', teamMember.account_id)
+          .maybeSingle(),
         supabase.from('clinics').select('id, account_id, name, address').eq('account_id', teamMember.account_id),
       ])
 
       this.accountName = account?.name ?? ''
       this.accountSlug = account?.slug ?? ''
+      this.recallWhatsappTemplate = account?.recall_whatsapp_template ?? ''
+      this.confirmationWhatsappTemplate = account?.confirmation_whatsapp_template ?? ''
       this.clinics = (clinics as Clinic[]) ?? []
       if (!this.currentClinicId && this.clinics.length > 0) {
         this.currentClinicId = this.clinics[0].id
@@ -68,6 +76,8 @@ export const useAccountStore = defineStore('account', {
       this.teamMember = null
       this.accountName = ''
       this.accountSlug = ''
+      this.recallWhatsappTemplate = ''
+      this.confirmationWhatsappTemplate = ''
       this.clinics = []
       this.currentClinicId = null
       this.loaded = false

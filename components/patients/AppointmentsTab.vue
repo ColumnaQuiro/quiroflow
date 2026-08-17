@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const props = defineProps<{ patientId: string }>()
+const props = defineProps<{ patientId: string; firstName?: string; lastName?: string | null }>()
 
 interface AppointmentRow {
   id: string
@@ -11,6 +11,7 @@ interface AppointmentRow {
 }
 
 const supabase = useSupabaseClient()
+const store = useAccountStore()
 const appointments = ref<AppointmentRow[]>([])
 const loading = ref(true)
 
@@ -27,6 +28,23 @@ onMounted(async () => {
 function practitionerLabel(appt: AppointmentRow) {
   return appt.team_members?.full_name ?? appt.practitioner_name ?? 'N/A'
 }
+
+function isUpcoming(appt: AppointmentRow) {
+  return appt.status === 'booked' && new Date(appt.starts_at) > new Date()
+}
+
+const confirmingAppointment = ref<AppointmentRow | null>(null)
+const confirmationMessage = computed(() => {
+  if (!confirmingAppointment.value) return ''
+  const starts = new Date(confirmingAppointment.value.starts_at)
+  return renderWhatsAppTemplate(store.confirmationWhatsappTemplate, {
+    first_name: props.firstName ?? '',
+    last_name: props.lastName ?? '',
+    clinic_name: store.accountName,
+    appointment_date: starts.toLocaleDateString(),
+    appointment_time: starts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+  })
+})
 </script>
 
 <template>
@@ -42,6 +60,7 @@ function practitionerLabel(appt: AppointmentRow) {
           <th class="px-4 py-2">Type</th>
           <th class="px-4 py-2">Practitioner</th>
           <th class="px-4 py-2">Status</th>
+          <th class="px-4 py-2"></th>
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-100">
@@ -50,8 +69,26 @@ function practitionerLabel(appt: AppointmentRow) {
           <td class="px-4 py-2.5 text-gray-500">{{ appt.appointment_types?.name ?? 'N/A' }}</td>
           <td class="px-4 py-2.5 text-gray-500">{{ practitionerLabel(appt) }}</td>
           <td class="px-4 py-2.5 text-gray-500">{{ appt.status }}</td>
+          <td class="px-4 py-2.5 text-right">
+            <button
+              v-if="isUpcoming(appt)"
+              type="button"
+              class="rounded-md bg-green-600 px-3 py-1 text-xs font-medium text-white hover:bg-green-700"
+              @click="confirmingAppointment = appt"
+            >
+              Send Confirmation
+            </button>
+          </td>
         </tr>
       </tbody>
     </table>
+
+    <SendWhatsAppModal
+      v-if="confirmingAppointment"
+      :patient-id="patientId"
+      :appointment-id="confirmingAppointment.id"
+      :initial-message="confirmationMessage"
+      @close="confirmingAppointment = null"
+    />
   </div>
 </template>

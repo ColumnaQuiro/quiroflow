@@ -16,22 +16,31 @@ export type Database = {
     Tables: {
       accounts: {
         Row: {
+          confirmation_whatsapp_template: string
           created_at: string
           id: string
           name: string
+          recall_whatsapp_template: string
           slug: string
+          whatsapp_webhook_url: string | null
         }
         Insert: {
+          confirmation_whatsapp_template?: string
           created_at?: string
           id?: string
           name: string
+          recall_whatsapp_template?: string
           slug: string
+          whatsapp_webhook_url?: string | null
         }
         Update: {
+          confirmation_whatsapp_template?: string
           created_at?: string
           id?: string
           name?: string
+          recall_whatsapp_template?: string
           slug?: string
+          whatsapp_webhook_url?: string | null
         }
         Relationships: []
       }
@@ -285,6 +294,68 @@ export type Database = {
           },
         ]
       }
+      contact_log: {
+        Row: {
+          account_id: string
+          action: string
+          appointment_id: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          note: string | null
+          patient_id: string
+        }
+        Insert: {
+          account_id: string
+          action: string
+          appointment_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          note?: string | null
+          patient_id: string
+        }
+        Update: {
+          account_id?: string
+          action?: string
+          appointment_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          note?: string | null
+          patient_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contact_log_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contact_log_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contact_log_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contact_log_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       invoice_line_items: {
         Row: {
           account_id: string
@@ -437,6 +508,64 @@ export type Database = {
           },
         ]
       }
+      patient_files: {
+        Row: {
+          account_id: string
+          created_at: string
+          file_name: string
+          file_type: string | null
+          id: string
+          patient_id: string
+          size_bytes: number | null
+          storage_path: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          file_name: string
+          file_type?: string | null
+          id?: string
+          patient_id: string
+          size_bytes?: number | null
+          storage_path: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          file_name?: string
+          file_type?: string | null
+          id?: string
+          patient_id?: string
+          size_bytes?: number | null
+          storage_path?: string
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_files_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_files_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_files_uploaded_by_fkey"
+            columns: ["uploaded_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       patients: {
         Row: {
           account_id: string
@@ -457,6 +586,8 @@ export type Database = {
           notes: string | null
           occupation: string | null
           preferred_language: string
+          recall_priority: boolean
+          recall_status: string
           referral_source: string | null
           reminder_channel: string
           tags: string[]
@@ -481,6 +612,8 @@ export type Database = {
           notes?: string | null
           occupation?: string | null
           preferred_language?: string
+          recall_priority?: boolean
+          recall_status?: string
           referral_source?: string | null
           reminder_channel?: string
           tags?: string[]
@@ -505,6 +638,8 @@ export type Database = {
           notes?: string | null
           occupation?: string | null
           preferred_language?: string
+          recall_priority?: boolean
+          recall_status?: string
           referral_source?: string | null
           reminder_channel?: string
           tags?: string[]
@@ -733,7 +868,37 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      recall_candidates: {
+        Row: {
+          account_id: string | null
+          balance_cents: number | null
+          days_since_last_appointment: number | null
+          default_practitioner_id: string | null
+          email: string | null
+          first_name: string | null
+          last_appointment_at: string | null
+          last_name: string | null
+          patient_id: string | null
+          recall_priority: boolean | null
+          tags: string[] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patients_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patients_default_practitioner_id_fkey"
+            columns: ["default_practitioner_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       accept_invite: {

@@ -23,6 +23,7 @@ const tabs = [
   { key: 'appointments', label: 'Appointments' },
   { key: 'visit-notes', label: 'Visit Notes' },
   { key: 'billing', label: 'Billing' },
+  { key: 'files', label: 'Files' },
 ]
 
 const activeTab = computed({
@@ -73,9 +74,15 @@ function formatBalance(cents: number) {
 
     <div class="mt-6">
       <PatientsOverviewTab v-if="activeTab === 'overview'" :patient="patient" @updated="loadPatient" />
-      <PatientsAppointmentsTab v-else-if="activeTab === 'appointments'" :patient-id="patientId" />
+      <PatientsAppointmentsTab
+        v-else-if="activeTab === 'appointments'"
+        :patient-id="patientId"
+        :first-name="patient.first_name"
+        :last-name="patient.last_name"
+      />
       <PatientsVisitNotesTab v-else-if="activeTab === 'visit-notes'" :patient-id="patientId" />
       <PatientsBillingTab v-else-if="activeTab === 'billing'" :patient-id="patientId" />
+      <PatientsFilesTab v-else-if="activeTab === 'files'" :patient-id="patientId" />
     </div>
   </div>
 </template>

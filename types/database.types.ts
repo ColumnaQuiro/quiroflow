@@ -713,6 +713,10 @@ export type Database = {
         Args: { p_token: string }
         Returns: { account_id: string }[]
       }
+      claim_patient_profile: {
+        Args: Record<PropertyKey, never>
+        Returns: { patient_id: string }[]
+      }
       create_account_with_owner: {
         Args: { p_account_name: string; p_clinic_name: string }
         Returns: {

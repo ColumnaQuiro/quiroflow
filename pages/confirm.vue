@@ -6,7 +6,10 @@ const user = useSupabaseUser()
 watch(
   user,
   (value) => {
-    if (value) navigateTo('/dashboard')
+    if (!value) return
+    const intent = localStorage.getItem('signup_intent')
+    localStorage.removeItem('signup_intent')
+    navigateTo(intent === 'portal' ? '/portal' : '/dashboard')
   },
   { immediate: true },
 )

@@ -11,7 +11,7 @@ const checkEmail = ref(false)
 async function onSubmit() {
   error.value = ''
   loading.value = true
-  localStorage.setItem('signup_intent', 'staff')
+  localStorage.setItem('signup_intent', 'portal')
   const { data, error: signUpError } = await supabase.auth.signUp({
     email: email.value,
     password: password.value,
@@ -22,8 +22,7 @@ async function onSubmit() {
     return
   }
   if (data.session) {
-    // Email confirmation is disabled on this project — session is live already.
-    await navigateTo('/onboarding')
+    await navigateTo('/portal')
     return
   }
   checkEmail.value = true
@@ -34,7 +33,8 @@ async function onSubmit() {
   <div class="flex min-h-screen items-center justify-center bg-gray-50 px-4">
     <div class="w-full max-w-sm rounded-lg border border-gray-200 bg-white p-8 shadow-sm">
       <template v-if="!checkEmail">
-        <h1 class="text-xl font-semibold text-gray-900">Create your practice's QuiroFlow account</h1>
+        <h1 class="text-xl font-semibold text-gray-900">Create your patient account</h1>
+        <p class="mt-1 text-sm text-gray-500">Use the same email your clinic has on file for you.</p>
         <form class="mt-6 space-y-4" @submit.prevent="onSubmit">
           <div>
             <label class="block text-sm font-medium text-gray-700" for="email">Email</label>
@@ -68,7 +68,7 @@ async function onSubmit() {
         </form>
         <p class="mt-4 text-center text-sm text-gray-500">
           Already have an account?
-          <NuxtLink to="/login" class="font-medium text-indigo-600 hover:text-indigo-500">Sign in</NuxtLink>
+          <NuxtLink to="/portal/login" class="font-medium text-indigo-600 hover:text-indigo-500">Sign in</NuxtLink>
         </p>
       </template>
       <template v-else>

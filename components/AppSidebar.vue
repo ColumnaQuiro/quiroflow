@@ -15,7 +15,7 @@ function isActive(to: string) {
 </script>
 
 <template>
-  <aside class="flex w-56 shrink-0 flex-col border-r border-gray-200 bg-white">
+  <aside class="flex w-56 shrink-0 flex-col border-r border-gray-200 bg-white print:hidden">
     <div class="flex h-14 items-center px-4">
       <NuxtLink to="/dashboard" class="text-lg font-semibold text-gray-900">QuiroFlow</NuxtLink>
     </div>

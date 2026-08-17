@@ -21,7 +21,7 @@ async function signOut() {
 </script>
 
 <template>
-  <header class="flex h-14 items-center justify-between border-b border-gray-200 bg-white px-4">
+  <header class="flex h-14 items-center justify-between border-b border-gray-200 bg-white px-4 print:hidden">
     <div class="flex flex-1 items-center gap-3">
       <div class="relative w-72 max-w-full">
         <svg class="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">

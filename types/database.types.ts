@@ -35,6 +35,44 @@ export type Database = {
         }
         Relationships: []
       }
+      account_invites: {
+        Row: {
+          accepted_at: string | null
+          account_id: string
+          created_at: string
+          email: string | null
+          id: string
+          role: string
+          token: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          account_id: string
+          created_at?: string
+          email?: string | null
+          id?: string
+          role?: string
+          token?: string
+        }
+        Update: {
+          accepted_at?: string | null
+          account_id?: string
+          created_at?: string
+          email?: string | null
+          id?: string
+          role?: string
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "account_invites_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       appointment_types: {
         Row: {
           account_id: string
@@ -671,6 +709,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      accept_invite: {
+        Args: { p_token: string }
+        Returns: { account_id: string }[]
+      }
       create_account_with_owner: {
         Args: { p_account_name: string; p_clinic_name: string }
         Returns: {

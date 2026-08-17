@@ -118,9 +118,11 @@ export type Database = {
           clinic_id: string
           created_at: string
           ends_at: string
+          external_reference: string | null
           id: string
           patient_id: string
           practitioner_id: string | null
+          practitioner_name: string | null
           room_id: string | null
           starts_at: string
           status: string
@@ -131,9 +133,11 @@ export type Database = {
           clinic_id: string
           created_at?: string
           ends_at: string
+          external_reference?: string | null
           id?: string
           patient_id: string
           practitioner_id?: string | null
+          practitioner_name?: string | null
           room_id?: string | null
           starts_at: string
           status?: string
@@ -144,9 +148,11 @@ export type Database = {
           clinic_id?: string
           created_at?: string
           ends_at?: string
+          external_reference?: string | null
           id?: string
           patient_id?: string
           practitioner_id?: string | null
+          practitioner_name?: string | null
           room_id?: string | null
           starts_at?: string
           status?: string

@@ -5,7 +5,9 @@ interface AppointmentRow {
   id: string
   starts_at: string
   status: string
+  practitioner_name: string | null
   appointment_types: { name: string } | null
+  team_members: { full_name: string } | null
 }
 
 const supabase = useSupabaseClient()
@@ -15,12 +17,16 @@ const loading = ref(true)
 onMounted(async () => {
   const { data } = await supabase
     .from('appointments')
-    .select('id, starts_at, status, appointment_types(name)')
+    .select('id, starts_at, status, practitioner_name, appointment_types(name), team_members(full_name)')
     .eq('patient_id', props.patientId)
     .order('starts_at', { ascending: false })
   appointments.value = (data as unknown as AppointmentRow[]) ?? []
   loading.value = false
 })
+
+function practitionerLabel(appt: AppointmentRow) {
+  return appt.team_members?.full_name ?? appt.practitioner_name ?? 'N/A'
+}
 </script>
 
 <template>
@@ -34,6 +40,7 @@ onMounted(async () => {
         <tr>
           <th class="px-4 py-2">Date</th>
           <th class="px-4 py-2">Type</th>
+          <th class="px-4 py-2">Practitioner</th>
           <th class="px-4 py-2">Status</th>
         </tr>
       </thead>
@@ -41,6 +48,7 @@ onMounted(async () => {
         <tr v-for="appt in appointments" :key="appt.id">
           <td class="px-4 py-2.5 text-gray-900">{{ new Date(appt.starts_at).toLocaleString() }}</td>
           <td class="px-4 py-2.5 text-gray-500">{{ appt.appointment_types?.name ?? 'N/A' }}</td>
+          <td class="px-4 py-2.5 text-gray-500">{{ practitionerLabel(appt) }}</td>
           <td class="px-4 py-2.5 text-gray-500">{{ appt.status }}</td>
         </tr>
       </tbody>

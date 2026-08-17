@@ -49,13 +49,16 @@ async function onSubmit() {
           />
         </div>
         <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
-        <button
-          type="submit"
-          :disabled="loading"
-          class="w-full rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
-        >
-          {{ loading ? 'Signing in…' : 'Sign in' }}
-        </button>
+        <div class="flex items-center justify-between">
+          <button
+            type="submit"
+            :disabled="loading"
+            class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+          >
+            {{ loading ? 'Signing in…' : 'Sign in' }}
+          </button>
+          <NuxtLink to="/forgot-password" class="text-sm text-gray-500 hover:text-gray-700">Forgot password?</NuxtLink>
+        </div>
       </form>
       <p class="mt-4 text-center text-sm text-gray-500">
         No account yet?

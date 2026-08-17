@@ -46,7 +46,13 @@ function matchPractitioner(name: string): string | null {
 
 function parseBalanceCents(value: string): number {
   const n = parseFloat(value)
-  return Number.isFinite(n) ? Math.round(n * 100) : 0
+  if (!Number.isFinite(n)) return 0
+  // PracticeHub's export has this inverted relative to our convention:
+  // a positive "Account Balance" there means the patient owes money (DR),
+  // negative means they're in credit (CR). We store positive = credit,
+  // negative = owed (verified against live PracticeHub data for several
+  // real patients), so flip the sign on the way in.
+  return -Math.round(n * 100)
 }
 
 function parseLanguage(value: string): string {

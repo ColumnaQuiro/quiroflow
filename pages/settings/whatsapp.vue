@@ -1,51 +1,91 @@
 <script setup lang="ts">
+import type { TablesUpdate } from '~/types/database.types'
+
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 
-const webhookUrl = ref('')
-const recallTemplate = ref('')
-const confirmationTemplate = ref('')
+const phoneNumberId = ref('')
+const businessAccountId = ref('')
+const accessToken = ref('')
+const hasStoredToken = ref(false)
+const confirmationTemplateName = ref('')
+const confirmationTemplateLanguage = ref('es')
+
 const loading = ref(true)
 const saving = ref(false)
 const saved = ref(false)
 const error = ref('')
 
+interface Template {
+  name: string
+  language: string
+  category: string
+  bodyText: string
+}
+const templates = ref<Template[]>([])
+const loadingTemplates = ref(false)
+const templatesError = ref('')
+
 async function load() {
   loading.value = true
   const { data } = await supabase
     .from('accounts')
-    .select('whatsapp_webhook_url, recall_whatsapp_template, confirmation_whatsapp_template')
+    .select(
+      'whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_access_token, whatsapp_confirmation_template_name, whatsapp_confirmation_template_language',
+    )
     .eq('id', store.accountId!)
     .maybeSingle()
-  webhookUrl.value = data?.whatsapp_webhook_url ?? ''
-  recallTemplate.value = data?.recall_whatsapp_template ?? ''
-  confirmationTemplate.value = data?.confirmation_whatsapp_template ?? ''
+  phoneNumberId.value = data?.whatsapp_phone_number_id ?? ''
+  businessAccountId.value = data?.whatsapp_business_account_id ?? ''
+  hasStoredToken.value = !!data?.whatsapp_access_token
+  confirmationTemplateName.value = data?.whatsapp_confirmation_template_name ?? ''
+  confirmationTemplateLanguage.value = data?.whatsapp_confirmation_template_language ?? 'es'
   loading.value = false
+
+  if (hasStoredToken.value && businessAccountId.value) loadTemplates()
 }
 onMounted(load)
 
-function field(name: string) {
-  return `{{${name}}}`
+async function loadTemplates() {
+  loadingTemplates.value = true
+  templatesError.value = ''
+  try {
+    const { templates: list } = await $fetch<{ templates: Template[] }>('/api/whatsapp/templates')
+    templates.value = list
+  } catch (err: any) {
+    templatesError.value = err?.data?.statusMessage ?? 'Failed to load templates'
+  } finally {
+    loadingTemplates.value = false
+  }
+}
+
+function pickTemplate(t: Template) {
+  confirmationTemplateName.value = t.name
+  confirmationTemplateLanguage.value = t.language
 }
 
 async function save() {
   error.value = ''
   saved.value = false
   saving.value = true
-  const { error: updateError } = await supabase
-    .from('accounts')
-    .update({
-      whatsapp_webhook_url: webhookUrl.value.trim() || null,
-      recall_whatsapp_template: recallTemplate.value,
-      confirmation_whatsapp_template: confirmationTemplate.value,
-    })
-    .eq('id', store.accountId!)
+  const update: TablesUpdate<'accounts'> = {
+    whatsapp_phone_number_id: phoneNumberId.value.trim() || null,
+    whatsapp_business_account_id: businessAccountId.value.trim() || null,
+    whatsapp_confirmation_template_name: confirmationTemplateName.value.trim() || null,
+    whatsapp_confirmation_template_language: confirmationTemplateLanguage.value.trim() || 'es',
+  }
+  if (accessToken.value.trim()) update.whatsapp_access_token = accessToken.value.trim()
+
+  const { error: updateError } = await supabase.from('accounts').update(update).eq('id', store.accountId!)
   saving.value = false
   if (updateError) {
     error.value = updateError.message
     return
   }
   saved.value = true
+  if (accessToken.value.trim()) hasStoredToken.value = true
+  accessToken.value = ''
+  if (hasStoredToken.value && businessAccountId.value) loadTemplates()
 }
 </script>
 
@@ -56,47 +96,78 @@ async function save() {
       <NuxtLink to="/settings" class="text-sm text-gray-500 hover:text-gray-700">&larr; Back to Settings</NuxtLink>
     </div>
     <p class="mt-1 text-sm text-gray-500">
-      QuiroFlow doesn't send WhatsApp messages itself &mdash; it posts to a webhook you control (n8n, Make, or your
-      own automation) which does the actual sending through your WhatsApp Business setup.
+      Connects directly to Meta's WhatsApp Business Cloud API. You'll need a Phone Number ID, a WhatsApp Business
+      Account ID, and a permanent access token from your Meta Business account, plus at least one approved message
+      template.
     </p>
 
     <div v-if="loading" class="mt-6 text-sm text-gray-400">Loading…</div>
     <form v-else class="mt-6 space-y-6" @submit.prevent="save">
       <div>
-        <label class="block text-sm font-medium text-gray-700">Webhook URL</label>
+        <label class="block text-sm font-medium text-gray-700">Phone Number ID</label>
         <input
-          v-model="webhookUrl"
-          type="url"
-          placeholder="https://your-n8n-instance.com/webhook/whatsapp"
+          v-model="phoneNumberId"
+          type="text"
           class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
         />
-        <p class="mt-1 text-xs text-gray-500">
-          QuiroFlow POSTs <code>{ patient, phone_number, phone_country_code, message, attachment_url }</code> here
-          whenever staff send a WhatsApp message. Leave blank to disable WhatsApp sending.
-        </p>
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-gray-700">Recall message template</label>
-        <textarea
-          v-model="recallTemplate"
-          rows="3"
+        <label class="block text-sm font-medium text-gray-700">WhatsApp Business Account ID</label>
+        <input
+          v-model="businessAccountId"
+          type="text"
           class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-        ></textarea>
-        <p class="mt-1 text-xs text-gray-500">Available: <code>{{ field('first_name') }}</code>, <code>{{ field('last_name') }}</code>, <code>{{ field('clinic_name') }}</code></p>
+        />
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-gray-700">Appointment confirmation template</label>
-        <textarea
-          v-model="confirmationTemplate"
-          rows="3"
+        <label class="block text-sm font-medium text-gray-700">Access token</label>
+        <input
+          v-model="accessToken"
+          type="password"
+          autocomplete="off"
+          :placeholder="hasStoredToken ? 'Token is set — leave blank to keep it' : ''"
           class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-        ></textarea>
+        />
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700">Default confirmation template</label>
+        <div class="mt-1 flex gap-2">
+          <input
+            v-model="confirmationTemplateName"
+            type="text"
+            placeholder="template_name"
+            class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          />
+          <input
+            v-model="confirmationTemplateLanguage"
+            type="text"
+            placeholder="es"
+            class="w-20 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          />
+        </div>
         <p class="mt-1 text-xs text-gray-500">
-          Available: <code>{{ field('first_name') }}</code>, <code>{{ field('last_name') }}</code>,
-          <code>{{ field('clinic_name') }}</code>, <code>{{ field('appointment_date') }}</code>, <code>{{ field('appointment_time') }}</code>
+          Pre-selected when sending an appointment confirmation. Recalls let you pick any approved template at send
+          time.
         </p>
+
+        <div class="mt-2">
+          <button type="button" class="text-xs font-medium text-indigo-600 hover:text-indigo-700" @click="loadTemplates">
+            {{ loadingTemplates ? 'Loading…' : 'Load approved templates from Meta' }}
+          </button>
+          <p v-if="templatesError" class="mt-1 text-xs text-red-600">{{ templatesError }}</p>
+          <ul v-if="templates.length > 0" class="mt-2 divide-y divide-gray-100 rounded-md border border-gray-200">
+            <li v-for="t in templates" :key="t.name + t.language" class="flex items-center justify-between px-3 py-2 text-sm">
+              <div>
+                <span class="font-medium text-gray-900">{{ t.name }}</span>
+                <span class="ml-1 text-xs text-gray-400">{{ t.language }} &middot; {{ t.category }}</span>
+              </div>
+              <button type="button" class="text-xs font-medium text-indigo-600 hover:text-indigo-700" @click="pickTemplate(t)">Use</button>
+            </li>
+          </ul>
+        </div>
       </div>
 
       <div class="flex items-center gap-3">

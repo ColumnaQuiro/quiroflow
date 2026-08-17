@@ -16,31 +16,37 @@ export type Database = {
     Tables: {
       accounts: {
         Row: {
-          confirmation_whatsapp_template: string
           created_at: string
           id: string
           name: string
-          recall_whatsapp_template: string
           slug: string
-          whatsapp_webhook_url: string | null
+          whatsapp_access_token: string | null
+          whatsapp_business_account_id: string | null
+          whatsapp_confirmation_template_language: string
+          whatsapp_confirmation_template_name: string | null
+          whatsapp_phone_number_id: string | null
         }
         Insert: {
-          confirmation_whatsapp_template?: string
           created_at?: string
           id?: string
           name: string
-          recall_whatsapp_template?: string
           slug: string
-          whatsapp_webhook_url?: string | null
+          whatsapp_access_token?: string | null
+          whatsapp_business_account_id?: string | null
+          whatsapp_confirmation_template_language?: string
+          whatsapp_confirmation_template_name?: string | null
+          whatsapp_phone_number_id?: string | null
         }
         Update: {
-          confirmation_whatsapp_template?: string
           created_at?: string
           id?: string
           name?: string
-          recall_whatsapp_template?: string
           slug?: string
-          whatsapp_webhook_url?: string | null
+          whatsapp_access_token?: string | null
+          whatsapp_business_account_id?: string | null
+          whatsapp_confirmation_template_language?: string
+          whatsapp_confirmation_template_name?: string | null
+          whatsapp_phone_number_id?: string | null
         }
         Relationships: []
       }

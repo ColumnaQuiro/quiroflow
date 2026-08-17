@@ -93,12 +93,7 @@ const actionLabels: Record<string, string> = {
   other: 'Other',
 }
 
-async function logAction(patientId: string, action: string) {
-  await supabase.from('contact_log').insert({
-    account_id: store.accountId!,
-    patient_id: patientId,
-    action,
-  })
+async function refreshLastAction(patientId: string) {
   const { data } = await supabase
     .from('contact_log')
     .select('patient_id, action, created_at')
@@ -107,6 +102,15 @@ async function logAction(patientId: string, action: string) {
     .limit(1)
     .maybeSingle()
   if (data) lastActionByPatient.value = { ...lastActionByPatient.value, [patientId]: data }
+}
+
+async function logAction(patientId: string, action: string) {
+  await supabase.from('contact_log').insert({
+    account_id: store.accountId!,
+    patient_id: patientId,
+    action,
+  })
+  await refreshLastAction(patientId)
 }
 
 async function togglePriority(recall: Recall) {
@@ -123,20 +127,12 @@ async function dismiss(recall: Recall) {
 
 // --- Send WhatsApp modal ---
 const sendingTo = ref<Recall | null>(null)
-const whatsappMessage = computed(() => {
-  if (!sendingTo.value) return ''
-  return renderWhatsAppTemplate(store.recallWhatsappTemplate, {
-    first_name: sendingTo.value.first_name ?? '',
-    last_name: sendingTo.value.last_name ?? '',
-    clinic_name: store.accountName,
-  })
-})
 
 function openWhatsApp(recall: Recall) {
   sendingTo.value = recall
 }
 function onSent() {
-  if (sendingTo.value) logAction(sendingTo.value.patient_id!, 'sent_whatsapp')
+  if (sendingTo.value) refreshLastAction(sendingTo.value.patient_id!)
   sendingTo.value = null
 }
 </script>
@@ -264,7 +260,7 @@ function onSent() {
     <SendWhatsAppModal
       v-if="sendingTo"
       :patient-id="sendingTo.patient_id!"
-      :initial-message="whatsappMessage"
+      :patient-first-name="sendingTo.first_name ?? ''"
       @close="sendingTo = null"
       @sent="onSent"
     />

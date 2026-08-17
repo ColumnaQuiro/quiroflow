@@ -34,16 +34,13 @@ function isUpcoming(appt: AppointmentRow) {
 }
 
 const confirmingAppointment = ref<AppointmentRow | null>(null)
-const confirmationMessage = computed(() => {
-  if (!confirmingAppointment.value) return ''
+const confirmationAutofill = computed<Record<string, string>>(() => {
+  if (!confirmingAppointment.value) return {} as Record<string, string>
   const starts = new Date(confirmingAppointment.value.starts_at)
-  return renderWhatsAppTemplate(store.confirmationWhatsappTemplate, {
-    first_name: props.firstName ?? '',
-    last_name: props.lastName ?? '',
-    clinic_name: store.accountName,
+  return {
     appointment_date: starts.toLocaleDateString(),
     appointment_time: starts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-  })
+  }
 })
 </script>
 
@@ -86,8 +83,10 @@ const confirmationMessage = computed(() => {
     <SendWhatsAppModal
       v-if="confirmingAppointment"
       :patient-id="patientId"
+      :patient-first-name="firstName ?? ''"
       :appointment-id="confirmingAppointment.id"
-      :initial-message="confirmationMessage"
+      :default-template-name="store.whatsappConfirmationTemplateName"
+      :autofill="confirmationAutofill"
       @close="confirmingAppointment = null"
     />
   </div>

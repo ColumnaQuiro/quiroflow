@@ -1,25 +1,27 @@
 import { serverSupabaseClient } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 
-// Sends via whatever automation the account has wired up to its webhook
-// (n8n today for the account this was built against; a direct WhatsApp
-// Cloud API integration could be a second provider later) rather than
-// QuiroFlow talking to WhatsApp itself -- lets each clinic keep whatever
-// WhatsApp Business setup they already have.
+// Sends via Meta's WhatsApp Business Cloud API directly. Business-initiated
+// messages like recalls and confirmations require a pre-approved template
+// (Meta blocks free-form text outside a 24h customer-service window), so
+// this fills in a template's {{n}} variable slots rather than sending
+// arbitrary text.
 export default defineEventHandler(async (event) => {
   const supabase = await serverSupabaseClient<Database>(event)
   const body = await readBody<{
     patientId: string
-    message: string
+    templateName: string
+    templateLanguage: string
+    variables: string[]
+    headerFormat?: 'IMAGE' | 'DOCUMENT' | 'VIDEO'
     attachmentFileId?: string
     appointmentId?: string
   }>(event)
 
-  if (!body?.patientId || !body?.message?.trim()) {
-    throw createError({ statusCode: 400, statusMessage: 'patientId and message are required' })
+  if (!body?.patientId || !body?.templateName || !body?.templateLanguage) {
+    throw createError({ statusCode: 400, statusMessage: 'patientId, templateName and templateLanguage are required' })
   }
 
-  // RLS-scoped: only ever returns the caller's own team_members row.
   const { data: teamMember } = await supabase.from('team_members').select('id, account_id').maybeSingle()
   if (!teamMember) {
     throw createError({ statusCode: 403, statusMessage: 'Not signed in as a team member' })
@@ -27,18 +29,14 @@ export default defineEventHandler(async (event) => {
 
   const { data: account } = await supabase
     .from('accounts')
-    .select('name, whatsapp_webhook_url')
+    .select('whatsapp_phone_number_id, whatsapp_access_token')
     .eq('id', teamMember.account_id)
     .maybeSingle()
-  if (!account?.whatsapp_webhook_url) {
-    throw createError({ statusCode: 400, statusMessage: 'WhatsApp is not configured. Set a webhook URL in Settings > WhatsApp.' })
+  if (!account?.whatsapp_phone_number_id || !account?.whatsapp_access_token) {
+    throw createError({ statusCode: 400, statusMessage: 'WhatsApp is not configured. Set it up in Settings > WhatsApp.' })
   }
 
-  const { data: patient } = await supabase
-    .from('patients')
-    .select('id, first_name, last_name')
-    .eq('id', body.patientId)
-    .maybeSingle()
+  const { data: patient } = await supabase.from('patients').select('id').eq('id', body.patientId).maybeSingle()
   if (!patient) {
     throw createError({ statusCode: 404, statusMessage: 'Patient not found' })
   }
@@ -51,9 +49,14 @@ export default defineEventHandler(async (event) => {
   if (!target) {
     throw createError({ statusCode: 400, statusMessage: 'This patient has no phone number on file' })
   }
+  const to = toE164(target.number, target.country_code)
+  if (!to) {
+    throw createError({ statusCode: 400, statusMessage: 'This patient\'s phone number could not be formatted for WhatsApp' })
+  }
 
-  let attachmentUrl: string | null = null
-  if (body.attachmentFileId) {
+  const components: Record<string, unknown>[] = []
+
+  if (body.headerFormat && body.attachmentFileId) {
     const { data: file } = await supabase
       .from('patient_files')
       .select('storage_path')
@@ -63,24 +66,32 @@ export default defineEventHandler(async (event) => {
       const { data: signed } = await supabase.storage
         .from('patient-files')
         .createSignedUrl(file.storage_path, 60 * 60 * 24)
-      attachmentUrl = signed?.signedUrl ?? null
+      if (signed?.signedUrl) {
+        const key = body.headerFormat.toLowerCase()
+        components.push({ type: 'header', parameters: [{ type: key, [key]: { link: signed.signedUrl } }] })
+      }
     }
   }
 
+  if (body.variables?.length) {
+    components.push({ type: 'body', parameters: body.variables.map((v) => ({ type: 'text', text: v })) })
+  }
+
+  const url: string = `https://graph.facebook.com/v21.0/${account.whatsapp_phone_number_id}/messages`
   try {
-    await $fetch(account.whatsapp_webhook_url, {
+    await $fetch(url, {
       method: 'POST',
+      headers: { Authorization: `Bearer ${account.whatsapp_access_token}` },
       body: {
-        patient: { id: patient.id, first_name: patient.first_name, last_name: patient.last_name },
-        phone_number: target.number,
-        phone_country_code: target.country_code,
-        message: body.message,
-        attachment_url: attachmentUrl,
+        messaging_product: 'whatsapp',
+        to,
+        type: 'template',
+        template: { name: body.templateName, language: { code: body.templateLanguage }, components },
       },
-      timeout: 10000,
     })
-  } catch {
-    throw createError({ statusCode: 502, statusMessage: 'Could not reach the WhatsApp webhook' })
+  } catch (err: any) {
+    const metaMessage = err?.data?.error?.message
+    throw createError({ statusCode: 502, statusMessage: metaMessage ?? 'WhatsApp send failed' })
   }
 
   await supabase.from('contact_log').insert({
@@ -88,7 +99,7 @@ export default defineEventHandler(async (event) => {
     patient_id: body.patientId,
     appointment_id: body.appointmentId ?? null,
     action: 'sent_whatsapp',
-    note: body.message,
+    note: `Template: ${body.templateName}${body.variables?.length ? ` (${body.variables.join(', ')})` : ''}`,
     created_by: teamMember.id,
   })
 

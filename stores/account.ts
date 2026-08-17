@@ -20,8 +20,7 @@ export const useAccountStore = defineStore('account', {
     teamMember: null as TeamMember | null,
     accountName: '' as string,
     accountSlug: '' as string,
-    recallWhatsappTemplate: '' as string,
-    confirmationWhatsappTemplate: '' as string,
+    whatsappConfirmationTemplateName: '' as string,
     clinics: [] as Clinic[],
     currentClinicId: null as string | null,
     loaded: false,
@@ -54,7 +53,7 @@ export const useAccountStore = defineStore('account', {
       const [{ data: account }, { data: clinics }] = await Promise.all([
         supabase
           .from('accounts')
-          .select('name, slug, recall_whatsapp_template, confirmation_whatsapp_template')
+          .select('name, slug, whatsapp_confirmation_template_name')
           .eq('id', teamMember.account_id)
           .maybeSingle(),
         supabase.from('clinics').select('id, account_id, name, address').eq('account_id', teamMember.account_id),
@@ -62,8 +61,7 @@ export const useAccountStore = defineStore('account', {
 
       this.accountName = account?.name ?? ''
       this.accountSlug = account?.slug ?? ''
-      this.recallWhatsappTemplate = account?.recall_whatsapp_template ?? ''
-      this.confirmationWhatsappTemplate = account?.confirmation_whatsapp_template ?? ''
+      this.whatsappConfirmationTemplateName = account?.whatsapp_confirmation_template_name ?? ''
       this.clinics = (clinics as Clinic[]) ?? []
       if (!this.currentClinicId && this.clinics.length > 0) {
         this.currentClinicId = this.clinics[0].id
@@ -76,8 +74,7 @@ export const useAccountStore = defineStore('account', {
       this.teamMember = null
       this.accountName = ''
       this.accountSlug = ''
-      this.recallWhatsappTemplate = ''
-      this.confirmationWhatsappTemplate = ''
+      this.whatsappConfirmationTemplateName = ''
       this.clinics = []
       this.currentClinicId = null
       this.loaded = false

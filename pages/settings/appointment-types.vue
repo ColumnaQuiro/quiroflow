@@ -49,6 +49,12 @@ async function removeType(id: string) {
   await supabase.from('appointment_types').delete().eq('id', id)
   await load()
 }
+
+async function toggleBookable(type: Tables<'appointment_types'>) {
+  const next = !type.online_booking_enabled
+  type.online_booking_enabled = next
+  await supabase.from('appointment_types').update({ online_booking_enabled: next }).eq('id', type.id)
+}
 </script>
 
 <template>
@@ -65,15 +71,16 @@ async function removeType(id: string) {
             <th class="px-4 py-2">Name</th>
             <th class="px-4 py-2">Duration</th>
             <th class="px-4 py-2">Default price</th>
+            <th class="px-4 py-2">Online booking</th>
             <th class="px-4 py-2"></th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
           <tr v-if="loading">
-            <td colspan="4" class="px-4 py-6 text-center text-gray-400">Loading…</td>
+            <td colspan="5" class="px-4 py-6 text-center text-gray-400">Loading…</td>
           </tr>
           <tr v-else-if="types.length === 0">
-            <td colspan="4" class="px-4 py-6 text-center text-gray-400">No appointment types yet.</td>
+            <td colspan="5" class="px-4 py-6 text-center text-gray-400">No appointment types yet.</td>
           </tr>
           <tr v-for="t in types" :key="t.id">
             <td class="px-4 py-2.5 text-gray-900">
@@ -82,6 +89,12 @@ async function removeType(id: string) {
             </td>
             <td class="px-4 py-2.5 text-gray-500">{{ t.duration_minutes }} min</td>
             <td class="px-4 py-2.5 text-gray-500">€{{ (t.default_price_cents / 100).toFixed(2) }}</td>
+            <td class="px-4 py-2.5">
+              <label class="flex items-center gap-2 text-gray-600">
+                <input type="checkbox" :checked="t.online_booking_enabled" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" @change="toggleBookable(t)" />
+                Bookable
+              </label>
+            </td>
             <td class="px-4 py-2.5 text-right">
               <button type="button" class="text-gray-400 hover:text-red-600" @click="removeType(t.id)">✕</button>
             </td>

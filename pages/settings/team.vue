@@ -55,6 +55,12 @@ async function revokeInvite(id: string) {
   await load()
 }
 
+async function toggleBookable(member: Tables<'team_members'>) {
+  const next = !member.online_booking_enabled
+  member.online_booking_enabled = next
+  await supabase.from('team_members').update({ online_booking_enabled: next }).eq('id', member.id)
+}
+
 function inviteLink(token: string) {
   return `${window.location.origin}/join?token=${token}`
 }
@@ -83,11 +89,12 @@ const roleClass: Record<string, string> = {
           <tr>
             <th class="px-4 py-2">Name</th>
             <th class="px-4 py-2">Role</th>
+            <th class="px-4 py-2">Online booking</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
           <tr v-if="loading">
-            <td colspan="2" class="px-4 py-6 text-center text-gray-400">Loading…</td>
+            <td colspan="3" class="px-4 py-6 text-center text-gray-400">Loading…</td>
           </tr>
           <tr v-for="m in members" v-else :key="m.id">
             <td class="px-4 py-2.5 text-gray-900">
@@ -96,6 +103,12 @@ const roleClass: Record<string, string> = {
             </td>
             <td class="px-4 py-2.5">
               <span class="rounded px-1.5 py-0.5 text-xs font-medium" :class="roleClass[m.role]">{{ m.role }}</span>
+            </td>
+            <td class="px-4 py-2.5">
+              <label class="flex items-center gap-2 text-gray-600">
+                <input type="checkbox" :checked="m.online_booking_enabled" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" @change="toggleBookable(m)" />
+                Bookable
+              </label>
             </td>
           </tr>
         </tbody>

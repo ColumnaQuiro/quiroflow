@@ -19,6 +19,7 @@ export const useAccountStore = defineStore('account', {
   state: () => ({
     teamMember: null as TeamMember | null,
     accountName: '' as string,
+    accountSlug: '' as string,
     clinics: [] as Clinic[],
     currentClinicId: null as string | null,
     loaded: false,
@@ -49,11 +50,12 @@ export const useAccountStore = defineStore('account', {
       this.teamMember = teamMember as TeamMember
 
       const [{ data: account }, { data: clinics }] = await Promise.all([
-        supabase.from('accounts').select('name').eq('id', teamMember.account_id).maybeSingle(),
+        supabase.from('accounts').select('name, slug').eq('id', teamMember.account_id).maybeSingle(),
         supabase.from('clinics').select('id, account_id, name, address').eq('account_id', teamMember.account_id),
       ])
 
       this.accountName = account?.name ?? ''
+      this.accountSlug = account?.slug ?? ''
       this.clinics = (clinics as Clinic[]) ?? []
       if (!this.currentClinicId && this.clinics.length > 0) {
         this.currentClinicId = this.clinics[0].id
@@ -65,6 +67,7 @@ export const useAccountStore = defineStore('account', {
     reset() {
       this.teamMember = null
       this.accountName = ''
+      this.accountSlug = ''
       this.clinics = []
       this.currentClinicId = null
       this.loaded = false

@@ -7,7 +7,7 @@ export default defineNuxtConfig({
     redirectOptions: {
       login: '/login',
       callback: '/confirm',
-      exclude: ['/', '/login', '/signup', '/confirm', '/join', '/portal/**'],
+      exclude: ['/', '/login', '/signup', '/confirm', '/join', '/portal/**', '/book/**'],
     },
   },
   runtimeConfig: {

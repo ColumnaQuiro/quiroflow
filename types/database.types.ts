@@ -82,6 +82,7 @@ export type Database = {
           duration_minutes: number
           id: string
           name: string
+          online_booking_enabled: boolean
         }
         Insert: {
           account_id: string
@@ -91,6 +92,7 @@ export type Database = {
           duration_minutes?: number
           id?: string
           name: string
+          online_booking_enabled?: boolean
         }
         Update: {
           account_id?: string
@@ -100,6 +102,7 @@ export type Database = {
           duration_minutes?: number
           id?: string
           name?: string
+          online_booking_enabled?: boolean
         }
         Relationships: [
           {
@@ -124,6 +127,7 @@ export type Database = {
           practitioner_id: string | null
           practitioner_name: string | null
           room_id: string | null
+          source: string
           starts_at: string
           status: string
         }
@@ -139,6 +143,7 @@ export type Database = {
           practitioner_id?: string | null
           practitioner_name?: string | null
           room_id?: string | null
+          source?: string
           starts_at: string
           status?: string
         }
@@ -154,6 +159,7 @@ export type Database = {
           practitioner_id?: string | null
           practitioner_name?: string | null
           room_id?: string | null
+          source?: string
           starts_at?: string
           status?: string
         }
@@ -245,23 +251,29 @@ export type Database = {
         Row: {
           account_id: string
           address: string | null
+          business_hours: Json
           created_at: string
           id: string
           name: string
+          online_booking_enabled: boolean
         }
         Insert: {
           account_id: string
           address?: string | null
+          business_hours?: Json
           created_at?: string
           id?: string
           name: string
+          online_booking_enabled?: boolean
         }
         Update: {
           account_id?: string
           address?: string | null
+          business_hours?: Json
           created_at?: string
           id?: string
           name?: string
+          online_booking_enabled?: boolean
         }
         Relationships: [
           {
@@ -636,6 +648,7 @@ export type Database = {
           created_at: string
           full_name: string
           id: string
+          online_booking_enabled: boolean
           role: string
           user_id: string
         }
@@ -645,6 +658,7 @@ export type Database = {
           created_at?: string
           full_name: string
           id?: string
+          online_booking_enabled?: boolean
           role?: string
           user_id: string
         }
@@ -654,6 +668,7 @@ export type Database = {
           created_at?: string
           full_name?: string
           id?: string
+          online_booking_enabled?: boolean
           role?: string
           user_id?: string
         }
@@ -736,10 +751,38 @@ export type Database = {
           clinic_id: string
         }[]
       }
+      create_public_booking: {
+        Args: {
+          p_account_slug: string
+          p_appointment_type_id: string
+          p_clinic_id: string
+          p_email: string
+          p_first_name: string
+          p_last_name: string
+          p_note: string
+          p_phone: string
+          p_starts_at: string
+          p_team_member_id: string
+        }
+        Returns: Json
+      }
       generate_unique_account_slug: {
         Args: { base_name: string }
         Returns: string
       }
+      get_booking_busy_times: {
+        Args: {
+          p_clinic_id: string
+          p_from: string
+          p_team_member_id: string
+          p_to: string
+        }
+        Returns: {
+          ends_at: string
+          starts_at: string
+        }[]
+      }
+      get_public_booking_info: { Args: { p_slug: string }; Returns: Json }
       is_account_member: {
         Args: { target_account_id: string }
         Returns: boolean

@@ -5,6 +5,7 @@ const sections = [
   { to: '/settings/appointment-types', label: 'Appointment Types', description: 'Visit types, durations, colors, default price.' },
   { to: '/billing/services', label: 'Services & Products', description: 'What you bill for.' },
   { to: '/settings/rooms', label: 'Calendar Resources', description: 'Rooms used for scheduling per clinic.' },
+  { to: '/settings/import', label: 'Import Patients (CSV)', description: 'Migrate patient records from another system.' },
 ]
 </script>
 

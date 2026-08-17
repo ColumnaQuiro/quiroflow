@@ -430,11 +430,13 @@ export type Database = {
           default_practitioner_id: string | null
           email: string | null
           emergency_contact: string | null
+          external_reference: string | null
           first_name: string
           id: string
           invoice_email_enabled: boolean
           last_name: string | null
           marketing_channels: string[]
+          notes: string | null
           occupation: string | null
           preferred_language: string
           referral_source: string | null
@@ -452,11 +454,13 @@ export type Database = {
           default_practitioner_id?: string | null
           email?: string | null
           emergency_contact?: string | null
+          external_reference?: string | null
           first_name: string
           id?: string
           invoice_email_enabled?: boolean
           last_name?: string | null
           marketing_channels?: string[]
+          notes?: string | null
           occupation?: string | null
           preferred_language?: string
           referral_source?: string | null
@@ -474,11 +478,13 @@ export type Database = {
           default_practitioner_id?: string | null
           email?: string | null
           emergency_contact?: string | null
+          external_reference?: string | null
           first_name?: string
           id?: string
           invoice_email_enabled?: boolean
           last_name?: string | null
           marketing_channels?: string[]
+          notes?: string | null
           occupation?: string | null
           preferred_language?: string
           referral_source?: string | null

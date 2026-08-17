@@ -13,6 +13,7 @@ interface Template {
 const props = defineProps<{
   patientId: string
   patientFirstName?: string
+  patientPreferredLanguage?: string
   appointmentId?: string
   defaultTemplateName?: string
   autofill?: Record<string, string>
@@ -24,21 +25,34 @@ const supabase = useSupabaseClient()
 const templates = ref<Template[]>([])
 const templatesError = ref('')
 const loadingTemplates = ref(true)
-const selectedTemplateName = ref('')
+const selectedTemplateKey = ref('')
 const variables = ref<string[]>([])
 const files = ref<Tables<'patient_files'>[]>([])
 const attachmentFileId = ref('')
 const sending = ref(false)
 const error = ref('')
 
-const selectedTemplate = computed(() => templates.value.find((t) => t.name === selectedTemplateName.value) ?? null)
+// Template name alone isn't unique -- the same name can have multiple
+// approved language variants (e.g. "appointment_reminder" in es/en/fr) --
+// so options are keyed by name+language, not name alone.
+function templateKey(t: Pick<Template, 'name' | 'language'>) {
+  return `${t.name}::${t.language}`
+}
+
+const selectedTemplate = computed(() => templates.value.find((t) => templateKey(t) === selectedTemplateKey.value) ?? null)
 
 onMounted(async () => {
   try {
     const { templates: list } = await $fetch<{ templates: Template[] }>('/api/whatsapp/templates')
     templates.value = list
-    const initial = props.defaultTemplateName && list.some((t) => t.name === props.defaultTemplateName) ? props.defaultTemplateName : ''
-    if (initial) selectTemplate(initial)
+    const candidates = list.filter((t) => t.name === props.defaultTemplateName)
+    // Prefer the variant matching the patient's own communication language,
+    // falling back to whatever approved variant exists otherwise.
+    const defaultMatch =
+      candidates.find((t) => t.language === props.patientPreferredLanguage) ??
+      candidates.find((t) => t.language.split('_')[0] === props.patientPreferredLanguage) ??
+      candidates[0]
+    if (defaultMatch) selectTemplate(templateKey(defaultMatch))
   } catch (err: any) {
     templatesError.value = err?.data?.statusMessage ?? 'Failed to load WhatsApp templates'
   } finally {
@@ -53,9 +67,9 @@ function slot(n: number) {
   return `{{${n}}}`
 }
 
-function selectTemplate(name: string) {
-  selectedTemplateName.value = name
-  const t = templates.value.find((tpl) => tpl.name === name)
+function selectTemplate(key: string) {
+  selectedTemplateKey.value = key
+  const t = templates.value.find((tpl) => templateKey(tpl) === key)
   const count = t?.variableCount ?? 0
   const guesses = [props.patientFirstName ?? '', ...(props.autofill ? Object.values(props.autofill) : [])]
   variables.value = Array.from({ length: count }, (_, i) => guesses[i] ?? '')
@@ -100,12 +114,12 @@ async function send() {
         <div class="mt-3">
           <label class="block text-xs font-medium text-gray-500">Template</label>
           <select
-            :value="selectedTemplateName"
+            :value="selectedTemplateKey"
             class="mt-1 w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm"
             @change="selectTemplate(($event.target as HTMLSelectElement).value)"
           >
             <option value="" disabled>Choose a template…</option>
-            <option v-for="t in templates" :key="t.name" :value="t.name">{{ t.name }} ({{ t.language }})</option>
+            <option v-for="t in templates" :key="templateKey(t)" :value="templateKey(t)">{{ t.name }} ({{ t.language }})</option>
           </select>
         </div>
 

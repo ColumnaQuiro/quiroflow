@@ -79,6 +79,7 @@ function formatBalance(cents: number) {
         :patient-id="patientId"
         :first-name="patient.first_name"
         :last-name="patient.last_name"
+        :preferred-language="patient.preferred_language"
       />
       <PatientsVisitNotesTab v-else-if="activeTab === 'visit-notes'" :patient-id="patientId" />
       <PatientsBillingTab v-else-if="activeTab === 'billing'" :patient-id="patientId" />

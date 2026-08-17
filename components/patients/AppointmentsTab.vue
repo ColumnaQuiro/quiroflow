@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const props = defineProps<{ patientId: string; firstName?: string; lastName?: string | null }>()
+const props = defineProps<{ patientId: string; firstName?: string; lastName?: string | null; preferredLanguage?: string }>()
 
 interface AppointmentRow {
   id: string
@@ -84,6 +84,7 @@ const confirmationAutofill = computed<Record<string, string>>(() => {
       v-if="confirmingAppointment"
       :patient-id="patientId"
       :patient-first-name="firstName ?? ''"
+      :patient-preferred-language="preferredLanguage"
       :appointment-id="confirmingAppointment.id"
       :default-template-name="store.whatsappConfirmationTemplateName"
       :autofill="confirmationAutofill"

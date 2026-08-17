@@ -1,0 +1,293 @@
+<script setup lang="ts">
+interface RoomOption { id: string; name: string }
+interface AppointmentTypeOption { id: string; name: string; duration_minutes: number; color: string }
+interface TeamMemberOption { id: string; full_name: string; color: string }
+interface PatientOption { id: string; first_name: string; last_name: string | null }
+
+interface EditingAppointment {
+  id: string
+  patient_id: string
+  room_id: string | null
+  practitioner_id: string | null
+  appointment_type_id: string | null
+  starts_at: string
+  ends_at: string
+  status: string
+}
+
+interface VisitNote {
+  id: string
+  body: string
+  created_at: string
+}
+
+const props = defineProps<{
+  mode: 'create' | 'edit'
+  rooms: RoomOption[]
+  appointmentTypes: AppointmentTypeOption[]
+  teamMembers: TeamMemberOption[]
+  patients: PatientOption[]
+  appointment?: EditingAppointment
+  prefillDate?: string
+  prefillTime?: string
+  prefillRoomId?: string
+}>()
+
+const emit = defineEmits<{ close: []; saved: [] }>()
+
+const supabase = useSupabaseClient()
+const store = useAccountStore()
+
+function toDateInput(iso: string) {
+  const d = new Date(iso)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+function toTimeInput(iso: string) {
+  const d = new Date(iso)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+function minutesBetween(startIso: string, endIso: string) {
+  return Math.round((new Date(endIso).getTime() - new Date(startIso).getTime()) / 60000)
+}
+
+const patientId = ref(props.appointment?.patient_id ?? '')
+const patientQuery = ref('')
+const roomId = ref(props.appointment?.room_id ?? props.prefillRoomId ?? props.rooms[0]?.id ?? '')
+const practitionerId = ref(props.appointment?.practitioner_id ?? '')
+const appointmentTypeId = ref(props.appointment?.appointment_type_id ?? '')
+const date = ref(props.appointment ? toDateInput(props.appointment.starts_at) : (props.prefillDate ?? toDateInput(new Date().toISOString())))
+const time = ref(props.appointment ? toTimeInput(props.appointment.starts_at) : (props.prefillTime ?? '09:00'))
+const duration = ref(props.appointment ? minutesBetween(props.appointment.starts_at, props.appointment.ends_at) : 30)
+const status = ref(props.appointment?.status ?? 'booked')
+const error = ref('')
+const saving = ref(false)
+
+watch(appointmentTypeId, (id) => {
+  const type = props.appointmentTypes.find((t) => t.id === id)
+  if (type) duration.value = type.duration_minutes
+})
+
+const filteredPatients = computed(() => {
+  if (!patientQuery.value) return props.patients.slice(0, 20)
+  const q = patientQuery.value.toLowerCase()
+  return props.patients
+    .filter((p) => `${p.first_name} ${p.last_name ?? ''}`.toLowerCase().includes(q))
+    .slice(0, 20)
+})
+
+const selectedPatientLabel = computed(() => {
+  const p = props.patients.find((p) => p.id === patientId.value)
+  return p ? `${p.first_name} ${p.last_name ?? ''}` : ''
+})
+
+async function save() {
+  error.value = ''
+  if (!patientId.value) {
+    error.value = 'Select a patient.'
+    return
+  }
+  saving.value = true
+
+  const startsAt = new Date(`${date.value}T${time.value}`)
+  const endsAt = new Date(startsAt.getTime() + duration.value * 60000)
+
+  const payload = {
+    account_id: store.accountId!,
+    clinic_id: store.currentClinicId!,
+    patient_id: patientId.value,
+    room_id: roomId.value || null,
+    practitioner_id: practitionerId.value || null,
+    appointment_type_id: appointmentTypeId.value || null,
+    starts_at: startsAt.toISOString(),
+    ends_at: endsAt.toISOString(),
+    status: status.value,
+  }
+
+  const result = props.mode === 'create'
+    ? await supabase.from('appointments').insert(payload)
+    : await supabase.from('appointments').update(payload).eq('id', props.appointment!.id)
+
+  saving.value = false
+  if (result.error) {
+    error.value = result.error.message
+    return
+  }
+  emit('saved')
+}
+
+async function remove() {
+  if (!props.appointment) return
+  if (!confirm('Delete this appointment?')) return
+  saving.value = true
+  const { error: deleteError } = await supabase.from('appointments').delete().eq('id', props.appointment.id)
+  saving.value = false
+  if (deleteError) {
+    error.value = deleteError.message
+    return
+  }
+  emit('saved')
+}
+
+const notes = ref<VisitNote[]>([])
+const newNote = ref('')
+const savingNote = ref(false)
+
+async function loadNotes() {
+  if (!props.appointment) return
+  const { data } = await supabase
+    .from('visit_notes')
+    .select('id, body, created_at')
+    .eq('appointment_id', props.appointment.id)
+    .order('created_at', { ascending: false })
+  notes.value = data ?? []
+}
+if (props.mode === 'edit') loadNotes()
+
+async function addNote() {
+  if (!newNote.value.trim() || !props.appointment) return
+  savingNote.value = true
+  await supabase.from('visit_notes').insert({
+    account_id: store.accountId!,
+    appointment_id: props.appointment.id,
+    body: newNote.value.trim(),
+    created_by: store.teamMember?.id ?? null,
+  })
+  newNote.value = ''
+  savingNote.value = false
+  await loadNotes()
+}
+</script>
+
+<template>
+  <div class="fixed inset-0 z-20 flex items-center justify-center bg-black/30 p-4" @click.self="emit('close')">
+    <div class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-semibold text-gray-900">
+          {{ mode === 'create' ? 'New Appointment' : 'Edit Appointment' }}
+        </h2>
+        <button type="button" class="text-gray-400 hover:text-gray-600" @click="emit('close')">✕</button>
+      </div>
+
+      <form class="mt-4 space-y-4" @submit.prevent="save">
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Patient</label>
+          <input
+            v-model="patientQuery"
+            type="text"
+            :placeholder="selectedPatientLabel || 'Search patients…'"
+            class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          />
+          <ul v-if="patientQuery" class="mt-1 max-h-40 overflow-y-auto rounded-md border border-gray-200">
+            <li
+              v-for="p in filteredPatients"
+              :key="p.id"
+              class="cursor-pointer px-3 py-1.5 text-sm hover:bg-gray-50"
+              @click="patientId = p.id; patientQuery = ''"
+            >
+              {{ p.first_name }} {{ p.last_name }}
+            </li>
+            <li v-if="filteredPatients.length === 0" class="px-3 py-1.5 text-sm text-gray-400">No matches</li>
+          </ul>
+          <p v-if="selectedPatientLabel && !patientQuery" class="mt-1 text-sm text-gray-500">
+            Selected: <span class="font-medium text-gray-900">{{ selectedPatientLabel }}</span>
+          </p>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Date</label>
+            <input v-model="date" type="date" required class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Time</label>
+            <input v-model="time" type="time" required class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Duration (min)</label>
+            <input v-model.number="duration" type="number" min="5" step="5" required class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Type</label>
+            <select v-model="appointmentTypeId" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+              <option value="">No type</option>
+              <option v-for="t in appointmentTypes" :key="t.id" :value="t.id">{{ t.name }}</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Room</label>
+            <select v-model="roomId" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+              <option value="">No room</option>
+              <option v-for="r in rooms" :key="r.id" :value="r.id">{{ r.name }}</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Practitioner</label>
+            <select v-model="practitionerId" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+              <option value="">Unassigned</option>
+              <option v-for="m in teamMembers" :key="m.id" :value="m.id">{{ m.full_name }}</option>
+            </select>
+          </div>
+        </div>
+
+        <div v-if="mode === 'edit'">
+          <label class="block text-sm font-medium text-gray-700">Status</label>
+          <select v-model="status" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+            <option value="booked">Booked</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+            <option value="no_show">No show</option>
+          </select>
+        </div>
+
+        <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
+
+        <div class="flex items-center justify-between">
+          <div class="flex gap-3">
+            <button type="submit" :disabled="saving" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
+              {{ saving ? 'Saving…' : 'Save' }}
+            </button>
+            <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50" @click="emit('close')">
+              Cancel
+            </button>
+          </div>
+          <button v-if="mode === 'edit'" type="button" class="text-sm font-medium text-red-600 hover:text-red-500" @click="remove">
+            Delete
+          </button>
+        </div>
+      </form>
+
+      <div v-if="mode === 'edit'" class="mt-6 border-t border-gray-100 pt-4">
+        <h3 class="text-sm font-semibold text-gray-900">Visit notes</h3>
+        <ul v-if="notes.length > 0" class="mt-2 space-y-2">
+          <li v-for="note in notes" :key="note.id" class="rounded-md bg-amber-50 p-2 text-sm text-gray-800">
+            <p class="whitespace-pre-wrap">{{ note.body }}</p>
+            <p class="mt-1 text-xs text-gray-400">{{ new Date(note.created_at).toLocaleString() }}</p>
+          </li>
+        </ul>
+        <div class="mt-3 flex gap-2">
+          <input
+            v-model="newNote"
+            type="text"
+            placeholder="Add a sticky note…"
+            class="flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            @keydown.enter.prevent="addNote"
+          />
+          <button
+            type="button"
+            :disabled="savingNote || !newNote.trim()"
+            class="rounded-md bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+            @click="addNote"
+          >
+            Add
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>

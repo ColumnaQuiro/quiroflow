@@ -336,18 +336,71 @@ export type Database = {
           },
         ]
       }
+      patient_contact_numbers: {
+        Row: {
+          account_id: string
+          country_code: string
+          created_at: string
+          id: string
+          is_whatsapp: boolean
+          number: string
+          patient_id: string
+        }
+        Insert: {
+          account_id: string
+          country_code?: string
+          created_at?: string
+          id?: string
+          is_whatsapp?: boolean
+          number: string
+          patient_id: string
+        }
+        Update: {
+          account_id?: string
+          country_code?: string
+          created_at?: string
+          id?: string
+          is_whatsapp?: boolean
+          number?: string
+          patient_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_contact_numbers_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_contact_numbers_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       patients: {
         Row: {
           account_id: string
           balance_cents: number
           clinic_id: string | null
+          confirmation_channel: string
           created_at: string
           date_of_birth: string | null
+          default_practitioner_id: string | null
           email: string | null
+          emergency_contact: string | null
           first_name: string
           id: string
+          invoice_email_enabled: boolean
           last_name: string | null
-          phone: string | null
+          marketing_channels: string[]
+          occupation: string | null
+          preferred_language: string
+          referral_source: string | null
+          reminder_channel: string
           tags: string[]
           user_id: string | null
         }
@@ -355,13 +408,21 @@ export type Database = {
           account_id: string
           balance_cents?: number
           clinic_id?: string | null
+          confirmation_channel?: string
           created_at?: string
           date_of_birth?: string | null
+          default_practitioner_id?: string | null
           email?: string | null
+          emergency_contact?: string | null
           first_name: string
           id?: string
+          invoice_email_enabled?: boolean
           last_name?: string | null
-          phone?: string | null
+          marketing_channels?: string[]
+          occupation?: string | null
+          preferred_language?: string
+          referral_source?: string | null
+          reminder_channel?: string
           tags?: string[]
           user_id?: string | null
         }
@@ -369,13 +430,21 @@ export type Database = {
           account_id?: string
           balance_cents?: number
           clinic_id?: string | null
+          confirmation_channel?: string
           created_at?: string
           date_of_birth?: string | null
+          default_practitioner_id?: string | null
           email?: string | null
+          emergency_contact?: string | null
           first_name?: string
           id?: string
+          invoice_email_enabled?: boolean
           last_name?: string | null
-          phone?: string | null
+          marketing_channels?: string[]
+          occupation?: string | null
+          preferred_language?: string
+          referral_source?: string | null
+          reminder_channel?: string
           tags?: string[]
           user_id?: string | null
         }
@@ -392,6 +461,13 @@ export type Database = {
             columns: ["clinic_id"]
             isOneToOne: false
             referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patients_default_practitioner_id_fkey"
+            columns: ["default_practitioner_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
             referencedColumns: ["id"]
           },
         ]

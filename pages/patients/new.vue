@@ -6,7 +6,9 @@ const firstName = ref('')
 const lastName = ref('')
 const dateOfBirth = ref('')
 const email = ref('')
-const phone = ref('')
+const phoneCountry = ref('ES')
+const phoneNumber = ref('')
+const phoneIsWhatsapp = ref(false)
 const clinicId = ref(store.currentClinicId ?? '')
 const tagsInput = ref('')
 const error = ref('')
@@ -30,17 +32,28 @@ async function onSubmit() {
       last_name: lastName.value || null,
       date_of_birth: dateOfBirth.value || null,
       email: email.value || null,
-      phone: phone.value || null,
       tags,
     })
     .select('id')
     .single()
 
-  saving.value = false
   if (insertError) {
+    saving.value = false
     error.value = insertError.message
     return
   }
+
+  if (phoneNumber.value.trim()) {
+    await supabase.from('patient_contact_numbers').insert({
+      account_id: store.accountId!,
+      patient_id: data.id,
+      country_code: phoneCountry.value,
+      number: phoneNumber.value.trim(),
+      is_whatsapp: phoneIsWhatsapp.value,
+    })
+  }
+
+  saving.value = false
   await navigateTo(`/patients/${data.id}`)
 }
 </script>
@@ -93,13 +106,25 @@ async function onSubmit() {
           />
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700" for="phone">Phone</label>
-          <input
-            id="phone"
-            v-model="phone"
-            type="tel"
-            class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          />
+          <label class="block text-sm font-medium text-gray-700">Phone</label>
+          <div class="mt-1 flex gap-2">
+            <select
+              v-model="phoneCountry"
+              class="rounded-md border border-gray-300 px-2 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            >
+              <option v-for="c in COUNTRIES" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }}</option>
+            </select>
+            <input
+              v-model="phoneNumber"
+              type="tel"
+              placeholder="612 34 56 78"
+              class="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+          </div>
+          <label class="mt-1.5 flex items-center gap-1.5 text-sm text-gray-600">
+            <input v-model="phoneIsWhatsapp" type="checkbox" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+            This number has WhatsApp
+          </label>
         </div>
       </div>
 

@@ -95,8 +95,13 @@ async function saveBooking(clinicId: string) {
   }
 }
 
+const config = useRuntimeConfig()
+
 function bookingUrl(slug: string) {
-  return `${window.location.origin}/book/${slug}`
+  const domain = config.public.appDomain
+  if (!domain) return `${window.location.origin}/book/${slug}`
+  const port = window.location.port ? `:${window.location.port}` : ''
+  return `${window.location.protocol}//${slug}.${domain}${port}/`
 }
 function embedSnippet(slug: string) {
   const url = bookingUrl(slug)

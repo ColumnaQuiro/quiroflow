@@ -12,6 +12,20 @@ export default defineNuxtConfig({
   },
   runtimeConfig: {
     resendApiKey: '',
-    public: {},
+    public: {
+      // Booking subdomains: <account-slug>.<appDomain> gets rewritten to
+      // /book/<account-slug> by server/middleware/subdomain-booking.ts.
+      // Defaults to localtest.me (public DNS -> 127.0.0.1) so this works
+      // in local dev with no /etc/hosts changes -- set this to your real
+      // domain once QuiroFlow is deployed somewhere with wildcard DNS.
+      appDomain: 'localtest.me',
+    },
+  },
+  // Vite's dev server rejects unrecognized Host headers by default; allow
+  // booking subdomains through so *.localtest.me works without extra setup.
+  vite: {
+    server: {
+      allowedHosts: ['.localtest.me'],
+    },
   },
 })

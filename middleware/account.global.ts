@@ -1,4 +1,18 @@
 export default defineNuxtRouteMiddleware(async (to) => {
+  // A clinic's booking subdomain (<slug>.<appDomain>) should only ever show
+  // its booking page, regardless of what path was requested -- checked
+  // first so it wins even for a staff user who happens to land here.
+  const appDomain = useRuntimeConfig().public.appDomain
+  if (appDomain && !to.path.startsWith('/book/')) {
+    const host = useRequestURL().hostname.toLowerCase()
+    if (host !== appDomain && host !== `www.${appDomain}` && host.endsWith(`.${appDomain}`)) {
+      const slug = host.slice(0, host.length - appDomain.length - 1)
+      if (slug && !slug.includes('.')) {
+        return navigateTo(`/book/${slug}`, { replace: true })
+      }
+    }
+  }
+
   if (to.path.startsWith('/portal')) return
   if (to.path.startsWith('/join')) return
   if (to.path.startsWith('/book')) return

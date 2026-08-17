@@ -19,7 +19,7 @@ async function onSubmit() {
     error.value = signInError.message
     return
   }
-  await navigateTo('/')
+  await navigateTo('/dashboard')
 }
 </script>
 

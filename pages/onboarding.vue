@@ -23,7 +23,7 @@ async function onSubmit() {
   }
   store.reset()
   await store.load()
-  await navigateTo('/')
+  await navigateTo('/dashboard')
 }
 </script>
 

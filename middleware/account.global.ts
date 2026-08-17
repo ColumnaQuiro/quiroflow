@@ -13,7 +13,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
   if (!hasAccount && to.path !== '/onboarding') {
     return navigateTo('/onboarding')
   }
-  if (hasAccount && ['/onboarding', '/login', '/signup'].includes(to.path)) {
-    return navigateTo('/')
+  if (hasAccount && ['/onboarding', '/login', '/signup', '/'].includes(to.path)) {
+    return navigateTo('/dashboard')
   }
 })

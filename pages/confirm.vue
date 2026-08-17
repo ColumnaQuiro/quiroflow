@@ -6,7 +6,7 @@ const user = useSupabaseUser()
 watch(
   user,
   (value) => {
-    if (value) navigateTo('/')
+    if (value) navigateTo('/dashboard')
   },
   { immediate: true },
 )

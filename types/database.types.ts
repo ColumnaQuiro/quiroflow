@@ -19,16 +19,19 @@ export type Database = {
           created_at: string
           id: string
           name: string
+          slug: string
         }
         Insert: {
           created_at?: string
           id?: string
           name: string
+          slug: string
         }
         Update: {
           created_at?: string
           id?: string
           name?: string
+          slug?: string
         }
         Relationships: []
       }
@@ -599,6 +602,10 @@ export type Database = {
           clinic_id: string
         }[]
       }
+      generate_unique_account_slug: {
+        Args: { base_name: string }
+        Returns: string
+      }
       is_account_member: {
         Args: { target_account_id: string }
         Returns: boolean
@@ -607,6 +614,7 @@ export type Database = {
         Args: { target_account_id: string }
         Returns: boolean
       }
+      slugify: { Args: { input: string }; Returns: string }
     }
     Enums: {
       [_ in never]: never

@@ -10,14 +10,18 @@ interface Template {
   mediaHeaderFormat: 'IMAGE' | 'DOCUMENT' | 'VIDEO' | null
 }
 
-const props = defineProps<{
-  patientId: string
-  patientFirstName?: string
-  patientPreferredLanguage?: string
-  appointmentId?: string
-  defaultTemplateName?: string
-  autofill?: Record<string, string>
-}>()
+const props = withDefaults(
+  defineProps<{
+    patientId: string
+    patientFirstName?: string
+    patientPreferredLanguage?: string
+    appointmentId?: string
+    defaultTemplateName?: string
+    autofill?: Record<string, string>
+    allowTemplateOverride?: boolean
+  }>(),
+  { allowTemplateOverride: true },
+)
 
 const emit = defineEmits<{ close: []; sent: [] }>()
 
@@ -110,8 +114,11 @@ async function send() {
 
       <div v-if="loadingTemplates" class="mt-3 text-sm text-gray-400">Loading templates…</div>
       <p v-else-if="templatesError" class="mt-3 text-sm text-red-600">{{ templatesError }}</p>
+      <p v-else-if="!allowTemplateOverride && !selectedTemplate" class="mt-3 text-sm text-red-600">
+        No default template is configured. Set one in Settings &gt; WhatsApp.
+      </p>
       <template v-else>
-        <div class="mt-3">
+        <div v-if="allowTemplateOverride" class="mt-3">
           <label class="block text-xs font-medium text-gray-500">Template</label>
           <select
             :value="selectedTemplateKey"

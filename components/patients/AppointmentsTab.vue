@@ -88,6 +88,7 @@ const confirmationAutofill = computed<Record<string, string>>(() => {
       :appointment-id="confirmingAppointment.id"
       :default-template-name="store.whatsappConfirmationTemplateName"
       :autofill="confirmationAutofill"
+      :allow-template-override="false"
       @close="confirmingAppointment = null"
     />
   </div>

@@ -10,6 +10,8 @@ const accessToken = ref('')
 const hasStoredToken = ref(false)
 const confirmationTemplateName = ref('')
 const confirmationTemplateLanguage = ref('es')
+const recallTemplateName = ref('')
+const recallTemplateLanguage = ref('es')
 
 const loading = ref(true)
 const saving = ref(false)
@@ -31,7 +33,7 @@ async function load() {
   const { data } = await supabase
     .from('accounts')
     .select(
-      'whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_access_token, whatsapp_confirmation_template_name, whatsapp_confirmation_template_language',
+      'whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_access_token, whatsapp_confirmation_template_name, whatsapp_confirmation_template_language, whatsapp_recall_template_name, whatsapp_recall_template_language',
     )
     .eq('id', store.accountId!)
     .maybeSingle()
@@ -40,6 +42,8 @@ async function load() {
   hasStoredToken.value = !!data?.whatsapp_access_token
   confirmationTemplateName.value = data?.whatsapp_confirmation_template_name ?? ''
   confirmationTemplateLanguage.value = data?.whatsapp_confirmation_template_language ?? 'es'
+  recallTemplateName.value = data?.whatsapp_recall_template_name ?? ''
+  recallTemplateLanguage.value = data?.whatsapp_recall_template_language ?? 'es'
   loading.value = false
 
   if (hasStoredToken.value && businessAccountId.value) loadTemplates()
@@ -59,9 +63,13 @@ async function loadTemplates() {
   }
 }
 
-function pickTemplate(t: Template) {
+function useForConfirmation(t: Template) {
   confirmationTemplateName.value = t.name
   confirmationTemplateLanguage.value = t.language
+}
+function useForRecall(t: Template) {
+  recallTemplateName.value = t.name
+  recallTemplateLanguage.value = t.language
 }
 
 async function save() {
@@ -73,6 +81,8 @@ async function save() {
     whatsapp_business_account_id: businessAccountId.value.trim() || null,
     whatsapp_confirmation_template_name: confirmationTemplateName.value.trim() || null,
     whatsapp_confirmation_template_language: confirmationTemplateLanguage.value.trim() || 'es',
+    whatsapp_recall_template_name: recallTemplateName.value.trim() || null,
+    whatsapp_recall_template_language: recallTemplateLanguage.value.trim() || 'es',
   }
   if (accessToken.value.trim()) update.whatsapp_access_token = accessToken.value.trim()
 
@@ -149,25 +159,51 @@ async function save() {
           />
         </div>
         <p class="mt-1 text-xs text-gray-500">
-          Pre-selected when sending an appointment confirmation. Recalls let you pick any approved template at send
-          time.
+          Used automatically when sending an appointment confirmation — no template picker shown, just the variables
+          to fill in. If the patient's preferred language has its own approved variant of this template, that one is
+          used instead of the language set here.
         </p>
+      </div>
 
-        <div class="mt-2">
-          <button type="button" class="text-xs font-medium text-indigo-600 hover:text-indigo-700" @click="loadTemplates">
-            {{ loadingTemplates ? 'Loading…' : 'Load approved templates from Meta' }}
-          </button>
-          <p v-if="templatesError" class="mt-1 text-xs text-red-600">{{ templatesError }}</p>
-          <ul v-if="templates.length > 0" class="mt-2 divide-y divide-gray-100 rounded-md border border-gray-200">
-            <li v-for="t in templates" :key="t.name + t.language" class="flex items-center justify-between px-3 py-2 text-sm">
-              <div>
-                <span class="font-medium text-gray-900">{{ t.name }}</span>
-                <span class="ml-1 text-xs text-gray-400">{{ t.language }} &middot; {{ t.category }}</span>
-              </div>
-              <button type="button" class="text-xs font-medium text-indigo-600 hover:text-indigo-700" @click="pickTemplate(t)">Use</button>
-            </li>
-          </ul>
+      <div>
+        <label class="block text-sm font-medium text-gray-700">Default recall template</label>
+        <div class="mt-1 flex gap-2">
+          <input
+            v-model="recallTemplateName"
+            type="text"
+            placeholder="template_name"
+            class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          />
+          <input
+            v-model="recallTemplateLanguage"
+            type="text"
+            placeholder="es"
+            class="w-20 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          />
         </div>
+        <p class="mt-1 text-xs text-gray-500">
+          Pre-selected when sending a recall, but the template picker stays visible so staff can switch to a
+          different one (different recalls often need different wording).
+        </p>
+      </div>
+
+      <div>
+        <button type="button" class="text-xs font-medium text-indigo-600 hover:text-indigo-700" @click="loadTemplates">
+          {{ loadingTemplates ? 'Loading…' : 'Load approved templates from Meta' }}
+        </button>
+        <p v-if="templatesError" class="mt-1 text-xs text-red-600">{{ templatesError }}</p>
+        <ul v-if="templates.length > 0" class="mt-2 divide-y divide-gray-100 rounded-md border border-gray-200">
+          <li v-for="t in templates" :key="t.name + t.language" class="flex items-center justify-between px-3 py-2 text-sm">
+            <div>
+              <span class="font-medium text-gray-900">{{ t.name }}</span>
+              <span class="ml-1 text-xs text-gray-400">{{ t.language }} &middot; {{ t.category }}</span>
+            </div>
+            <div class="flex gap-3 text-xs font-medium">
+              <button type="button" class="text-indigo-600 hover:text-indigo-700" @click="useForConfirmation(t)">Use for confirmation</button>
+              <button type="button" class="text-indigo-600 hover:text-indigo-700" @click="useForRecall(t)">Use for recall</button>
+            </div>
+          </li>
+        </ul>
       </div>
 
       <div class="flex items-center gap-3">

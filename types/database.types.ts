@@ -25,6 +25,8 @@ export type Database = {
           whatsapp_confirmation_template_language: string
           whatsapp_confirmation_template_name: string | null
           whatsapp_phone_number_id: string | null
+          whatsapp_recall_template_language: string
+          whatsapp_recall_template_name: string | null
         }
         Insert: {
           created_at?: string
@@ -36,6 +38,8 @@ export type Database = {
           whatsapp_confirmation_template_language?: string
           whatsapp_confirmation_template_name?: string | null
           whatsapp_phone_number_id?: string | null
+          whatsapp_recall_template_language?: string
+          whatsapp_recall_template_name?: string | null
         }
         Update: {
           created_at?: string
@@ -47,6 +51,8 @@ export type Database = {
           whatsapp_confirmation_template_language?: string
           whatsapp_confirmation_template_name?: string | null
           whatsapp_phone_number_id?: string | null
+          whatsapp_recall_template_language?: string
+          whatsapp_recall_template_name?: string | null
         }
         Relationships: []
       }
@@ -885,6 +891,7 @@ export type Database = {
           last_appointment_at: string | null
           last_name: string | null
           patient_id: string | null
+          preferred_language: string | null
           recall_priority: boolean | null
           tags: string[] | null
         }

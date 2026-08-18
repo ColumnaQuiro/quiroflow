@@ -261,6 +261,8 @@ function onSent() {
       v-if="sendingTo"
       :patient-id="sendingTo.patient_id!"
       :patient-first-name="sendingTo.first_name ?? ''"
+      :patient-preferred-language="sendingTo.preferred_language ?? undefined"
+      :default-template-name="store.whatsappRecallTemplateName"
       @close="sendingTo = null"
       @sent="onSent"
     />

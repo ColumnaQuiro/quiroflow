@@ -24,6 +24,7 @@ const tabs = [
   { key: 'visit-notes', label: 'Visit Notes' },
   { key: 'billing', label: 'Billing' },
   { key: 'files', label: 'Files' },
+  { key: 'docs', label: 'Docs' },
 ]
 
 const activeTab = computed({
@@ -84,6 +85,7 @@ function formatBalance(cents: number) {
       <PatientsVisitNotesTab v-else-if="activeTab === 'visit-notes'" :patient-id="patientId" />
       <PatientsBillingTab v-else-if="activeTab === 'billing'" :patient-id="patientId" />
       <PatientsFilesTab v-else-if="activeTab === 'files'" :patient-id="patientId" />
+      <PatientsDocsTab v-else-if="activeTab === 'docs'" :patient-id="patientId" />
     </div>
   </div>
 </template>

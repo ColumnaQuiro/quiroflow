@@ -6,6 +6,7 @@ const sections = [
   { to: '/billing/services', label: 'Services & Products', description: 'What you bill for.' },
   { to: '/settings/rooms', label: 'Calendar Resources', description: 'Rooms used for scheduling per clinic.' },
   { to: '/settings/whatsapp', label: 'WhatsApp', description: 'Webhook and message templates for recalls and confirmations.' },
+  { to: '/settings/docs', label: 'Docs', description: 'Reusable document templates with patient field placeholders.' },
   { to: '/settings/import', label: 'Import Patients (CSV)', description: 'Migrate patient records from another system.' },
 ]
 </script>

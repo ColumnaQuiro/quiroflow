@@ -1,10 +1,8 @@
 <script setup lang="ts">
 import type { Tables } from '~/types/database.types'
+import type { DocField } from '~/utils/docFields'
 
-// content narrowed away from Supabase's recursive Json type -- combined
-// with Vue's ref/UnwrapRef machinery it blows up the type checker (same
-// issue hit with patient_docs and clinics.business_hours).
-type Template = Omit<Tables<'doc_templates'>, 'content'> & { content: unknown }
+type Template = Omit<Tables<'doc_templates'>, 'fields'> & { fields: DocField[] }
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
@@ -13,9 +11,9 @@ const templates = ref<Template[]>([])
 const loading = ref(true)
 const activeTemplate = ref<Template | null>(null)
 const title = ref('')
+const fields = ref<DocField[]>([])
 const saving = ref(false)
 const savedAt = ref<Date | null>(null)
-const editorRef = ref<{ setContent: (json: unknown) => void; getJSON: () => unknown; insertText: (text: string) => void }>()
 
 async function load() {
   loading.value = true
@@ -28,8 +26,8 @@ onMounted(load)
 function openTemplate(t: Template) {
   activeTemplate.value = t
   title.value = t.title
+  fields.value = Array.isArray(t.fields) ? [...t.fields] : []
   savedAt.value = null
-  nextTick(() => editorRef.value?.setContent(t.content))
 }
 
 async function newTemplate() {
@@ -38,7 +36,7 @@ async function newTemplate() {
     .insert({
       account_id: store.accountId!,
       title: 'Untitled template',
-      content: {},
+      fields: [],
       created_by: store.teamMember?.id ?? null,
       updated_by: store.teamMember?.id ?? null,
     })
@@ -56,12 +54,11 @@ function backToList() {
 }
 
 async function save() {
-  if (!activeTemplate.value || !editorRef.value) return
+  if (!activeTemplate.value) return
   saving.value = true
-  const content = editorRef.value.getJSON() as any
   const { error } = await supabase
     .from('doc_templates')
-    .update({ title: title.value.trim() || 'Untitled template', content, updated_by: store.teamMember?.id ?? null })
+    .update({ title: title.value.trim() || 'Untitled template', fields: fields.value as any, updated_by: store.teamMember?.id ?? null })
     .eq('id', activeTemplate.value.id)
   saving.value = false
   if (!error) savedAt.value = new Date()
@@ -82,8 +79,8 @@ async function removeTemplate(t: Template) {
       <NuxtLink to="/settings" class="text-sm text-gray-500 hover:text-gray-700">&larr; Back to Settings</NuxtLink>
     </div>
     <p class="mt-1 text-sm text-gray-500">
-      Reusable document templates — write something once (e.g. a data protection consent form) and generate a
-      filled-in copy for each patient from their Docs tab.
+      Reusable form templates — build one once (e.g. a data protection consent form) with headings, questions, and
+      patient-field placeholders, then generate a filled-in copy for each patient from their Docs tab.
     </p>
 
     <div class="mt-6 rounded-lg border border-gray-200 bg-white">
@@ -125,27 +122,9 @@ async function removeTemplate(t: Template) {
             v-model="title"
             type="text"
             placeholder="Untitled template"
-            class="w-full border-none text-xl font-semibold text-gray-900 placeholder-gray-300 focus:outline-none focus:ring-0"
+            class="mb-4 w-full border-none text-xl font-semibold text-gray-900 placeholder-gray-300 focus:outline-none focus:ring-0"
           />
-
-          <RichTextEditor ref="editorRef" placeholder="Write the template… use Insert field to add patient placeholders">
-            <template #extra-toolbar="{ insertText }">
-              <span class="mx-1 h-4 w-px bg-gray-200"></span>
-              <select
-                class="rounded border-none bg-transparent px-2 py-1 text-sm text-indigo-600 hover:bg-gray-100 focus:outline-none"
-                @change="
-                  (e) => {
-                    const v = (e.target as HTMLSelectElement).value
-                    if (v) insertText(`{{${v}}}`)
-                    ;(e.target as HTMLSelectElement).value = ''
-                  }
-                "
-              >
-                <option value="">+ Insert field</option>
-                <option v-for="f in DOC_TEMPLATE_FIELDS" :key="f.key" :value="f.key">{{ f.label }}</option>
-              </select>
-            </template>
-          </RichTextEditor>
+          <DocBlocks :fields="fields" mode="build" @update:fields="fields = $event" />
         </div>
       </template>
     </div>

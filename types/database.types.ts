@@ -371,9 +371,9 @@ export type Database = {
       doc_templates: {
         Row: {
           account_id: string
-          content: Json
           created_at: string
           created_by: string | null
+          fields: Json
           id: string
           title: string
           updated_at: string
@@ -381,9 +381,9 @@ export type Database = {
         }
         Insert: {
           account_id: string
-          content?: Json
           created_at?: string
           created_by?: string | null
+          fields?: Json
           id?: string
           title?: string
           updated_at?: string
@@ -391,9 +391,9 @@ export type Database = {
         }
         Update: {
           account_id?: string
-          content?: Json
           created_at?: string
           created_by?: string | null
+          fields?: Json
           id?: string
           title?: string
           updated_at?: string
@@ -578,9 +578,10 @@ export type Database = {
       patient_docs: {
         Row: {
           account_id: string
-          content: Json
+          completed_at: string | null
           created_at: string
           created_by: string | null
+          fields: Json
           id: string
           patient_id: string
           title: string
@@ -589,9 +590,10 @@ export type Database = {
         }
         Insert: {
           account_id: string
-          content?: Json
+          completed_at?: string | null
           created_at?: string
           created_by?: string | null
+          fields?: Json
           id?: string
           patient_id: string
           title?: string
@@ -600,9 +602,10 @@ export type Database = {
         }
         Update: {
           account_id?: string
-          content?: Json
+          completed_at?: string | null
           created_at?: string
           created_by?: string | null
+          fields?: Json
           id?: string
           patient_id?: string
           title?: string

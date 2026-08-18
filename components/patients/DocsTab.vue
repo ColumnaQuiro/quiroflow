@@ -1,26 +1,24 @@
 <script setup lang="ts">
 import type { Tables } from '~/types/database.types'
+import type { DocField } from '~/utils/docFields'
 
 const props = defineProps<{ patientId: string }>()
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 
-// content narrowed away from Supabase's recursive Json type -- combined
-// with Vue's ref/UnwrapRef machinery it blows up the type checker (same
-// issue hit with clinics.business_hours).
-type Doc = Omit<Tables<'patient_docs'>, 'content'> & { content: unknown }
-type Template = Omit<Tables<'doc_templates'>, 'content'> & { content: unknown }
+type Doc = Omit<Tables<'patient_docs'>, 'fields'> & { fields: DocField[] }
+type Template = Omit<Tables<'doc_templates'>, 'fields'> & { fields: DocField[] }
 
 const docs = ref<Doc[]>([])
 const templates = ref<Template[]>([])
 const loading = ref(true)
 const activeDoc = ref<Doc | null>(null)
 const title = ref('')
+const fields = ref<DocField[]>([])
 const saving = ref(false)
 const savedAt = ref<Date | null>(null)
 const showNewMenu = ref(false)
-const editorRef = ref<{ setContent: (json: unknown) => void; getJSON: () => unknown; insertText: (text: string) => void }>()
 
 async function load() {
   loading.value = true
@@ -37,18 +35,18 @@ onMounted(load)
 function openDoc(doc: Doc) {
   activeDoc.value = doc
   title.value = doc.title
+  fields.value = Array.isArray(doc.fields) ? [...doc.fields] : []
   savedAt.value = null
-  nextTick(() => editorRef.value?.setContent(doc.content))
 }
 
-async function createDoc(initialTitle: string, initialContent: unknown) {
+async function createDoc(initialTitle: string, initialFields: DocField[]) {
   const { data, error } = await supabase
     .from('patient_docs')
     .insert({
       account_id: store.accountId!,
       patient_id: props.patientId,
       title: initialTitle,
-      content: initialContent as any,
+      fields: initialFields as any,
       created_by: store.teamMember?.id ?? null,
       updated_by: store.teamMember?.id ?? null,
     })
@@ -62,7 +60,7 @@ async function createDoc(initialTitle: string, initialContent: unknown) {
 
 async function newBlankDoc() {
   showNewMenu.value = false
-  await createDoc('Untitled', {})
+  await createDoc('Untitled', [])
 }
 
 async function newFromTemplate(template: Template) {
@@ -72,7 +70,7 @@ async function newFromTemplate(template: Template) {
     .select('first_name, last_name, date_of_birth, email')
     .eq('id', props.patientId)
     .maybeSingle()
-  const rendered = renderDocTemplate(template.content, {
+  const rendered = renderTemplateFields(template.fields, {
     first_name: patient?.first_name ?? '',
     last_name: patient?.last_name ?? '',
     date_of_birth: patient?.date_of_birth ?? '',
@@ -89,12 +87,11 @@ function backToList() {
 }
 
 async function save() {
-  if (!activeDoc.value || !editorRef.value) return
+  if (!activeDoc.value) return
   saving.value = true
-  const content = editorRef.value.getJSON() as any
   const { error } = await supabase
     .from('patient_docs')
-    .update({ title: title.value.trim() || 'Untitled', content, updated_by: store.teamMember?.id ?? null })
+    .update({ title: title.value.trim() || 'Untitled', fields: fields.value as any, updated_by: store.teamMember?.id ?? null })
     .eq('id', activeDoc.value.id)
   saving.value = false
   if (!error) savedAt.value = new Date()
@@ -144,6 +141,7 @@ async function removeDoc(doc: Doc) {
         <li v-for="doc in docs" :key="doc.id" class="flex items-center justify-between px-4 py-3">
           <button type="button" class="text-left text-sm font-medium text-gray-900 hover:text-indigo-600" @click="openDoc(doc)">
             {{ doc.title }}
+            <span v-if="doc.completed_at" class="ml-1.5 rounded bg-green-50 px-1.5 py-0.5 text-xs font-medium text-green-700">Completed</span>
           </button>
           <div class="flex items-center gap-3">
             <span class="text-xs text-gray-400">{{ new Date(doc.updated_at).toLocaleString() }}</span>
@@ -169,9 +167,9 @@ async function removeDoc(doc: Doc) {
           v-model="title"
           type="text"
           placeholder="Untitled"
-          class="w-full border-none text-xl font-semibold text-gray-900 placeholder-gray-300 focus:outline-none focus:ring-0"
+          class="mb-4 w-full border-none text-xl font-semibold text-gray-900 placeholder-gray-300 focus:outline-none focus:ring-0"
         />
-        <RichTextEditor ref="editorRef" />
+        <DocBlocks :fields="fields" mode="fill" @update:fields="fields = $event" />
       </div>
     </template>
   </div>

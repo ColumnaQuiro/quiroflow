@@ -67,7 +67,7 @@ onUnmounted(() => document.removeEventListener('click', onClickOutside))
       </svg>
     </button>
 
-    <div v-if="open" class="absolute left-0 z-30 mt-1 w-64 rounded-md border border-gray-200 bg-white p-2 shadow-lg">
+    <div v-if="open" class="absolute left-0 z-30 mt-1 w-80 rounded-md border border-gray-200 bg-white p-2 shadow-lg">
       <button
         v-for="p in presets"
         :key="p.label"
@@ -81,9 +81,9 @@ onUnmounted(() => document.removeEventListener('click', onClickOutside))
       <div class="mt-1 border-t border-gray-100 pt-2">
         <p class="px-2 text-xs font-medium uppercase tracking-wide text-gray-400">Custom range</p>
         <div class="mt-1 flex items-center gap-1.5 px-2">
-          <input v-model="customFrom" type="date" :max="customTo" class="w-full rounded border border-gray-300 px-1.5 py-1 text-xs" />
-          <span class="text-gray-400">–</span>
-          <input v-model="customTo" type="date" :min="customFrom" class="w-full rounded border border-gray-300 px-1.5 py-1 text-xs" />
+          <input v-model="customFrom" type="date" :max="customTo" class="min-w-0 flex-1 rounded border border-gray-300 px-1.5 py-1 text-xs" />
+          <span class="shrink-0 text-gray-400">–</span>
+          <input v-model="customTo" type="date" :min="customFrom" class="min-w-0 flex-1 rounded border border-gray-300 px-1.5 py-1 text-xs" />
         </div>
         <button
           type="button"

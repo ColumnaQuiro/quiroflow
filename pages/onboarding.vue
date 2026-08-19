@@ -4,6 +4,7 @@ definePageMeta({ layout: false })
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 
+const ownerName = ref('')
 const accountName = ref('')
 const clinicName = ref('')
 const error = ref('')
@@ -15,6 +16,7 @@ async function onSubmit() {
   const { error: rpcError } = await supabase.rpc('create_account_with_owner', {
     p_account_name: accountName.value,
     p_clinic_name: clinicName.value,
+    p_owner_name: ownerName.value,
   })
   loading.value = false
   if (rpcError) {
@@ -40,6 +42,17 @@ async function onSubmit() {
       <h1 class="text-xl font-semibold text-gray-900">Set up your practice</h1>
       <p class="mt-1 text-sm text-gray-500">This creates your account and first clinic location.</p>
       <form class="mt-6 space-y-4" @submit.prevent="onSubmit">
+        <div>
+          <label class="block text-sm font-medium text-gray-700" for="owner-name">Your name</label>
+          <input
+            id="owner-name"
+            v-model="ownerName"
+            type="text"
+            required
+            placeholder="Lea Guido"
+            class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          />
+        </div>
         <div>
           <label class="block text-sm font-medium text-gray-700" for="account-name">Practice name</label>
           <input

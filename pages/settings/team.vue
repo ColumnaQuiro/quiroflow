@@ -61,6 +61,20 @@ async function toggleBookable(member: Tables<'team_members'>) {
   await supabase.from('team_members').update({ online_booking_enabled: next }).eq('id', member.id)
 }
 
+const editingId = ref<string | null>(null)
+const editingName = ref('')
+function startEdit(member: Tables<'team_members'>) {
+  editingId.value = member.id
+  editingName.value = member.full_name
+}
+async function saveEdit(member: Tables<'team_members'>) {
+  const name = editingName.value.trim()
+  editingId.value = null
+  if (!name || name === member.full_name) return
+  member.full_name = name
+  await supabase.from('team_members').update({ full_name: name }).eq('id', member.id)
+}
+
 function inviteLink(token: string) {
   return `${window.location.origin}/join?token=${token}`
 }
@@ -99,7 +113,19 @@ const roleClass: Record<string, string> = {
           <tr v-for="m in members" v-else :key="m.id">
             <td class="px-4 py-2.5 text-gray-900">
               <span class="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" :style="{ backgroundColor: m.color }"></span>
-              {{ m.full_name }}
+              <input
+                v-if="editingId === m.id"
+                v-model="editingName"
+                type="text"
+                autofocus
+                class="w-48 rounded border border-indigo-300 px-1.5 py-0.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                @keydown.enter="saveEdit(m)"
+                @keydown.esc="editingId = null"
+                @blur="saveEdit(m)"
+              />
+              <button v-else type="button" class="hover:text-indigo-600" @click="startEdit(m)">
+                {{ m.full_name }}
+              </button>
             </td>
             <td class="px-4 py-2.5">
               <span class="rounded px-1.5 py-0.5 text-xs font-medium" :class="roleClass[m.role]">{{ m.role }}</span>

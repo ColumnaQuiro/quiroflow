@@ -1716,7 +1716,7 @@ export type Database = {
         Returns: { patient_id: string }[]
       }
       create_account_with_owner: {
-        Args: { p_account_name: string; p_clinic_name: string }
+        Args: { p_account_name: string; p_clinic_name: string; p_owner_name?: string }
         Returns: {
           account_id: string
           clinic_id: string

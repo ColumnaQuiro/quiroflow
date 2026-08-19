@@ -87,11 +87,10 @@ async function removeTemplate(t: Template) {
 </script>
 
 <template>
-  <div class="max-w-3xl">
-    <div class="flex items-center justify-between">
+  <div class="flex gap-8">
+    <SettingsNav />
+    <div class="min-w-0 max-w-3xl flex-1">
       <h1 class="text-xl font-semibold text-gray-900">Docs</h1>
-      <NuxtLink to="/settings" class="text-sm text-gray-500 hover:text-gray-700">&larr; Back to Settings</NuxtLink>
-    </div>
     <p class="mt-1 text-sm text-gray-500">
       Reusable form templates — build one once (e.g. a data protection consent form) with headings, questions, and
       patient-field placeholders, then generate a filled-in copy for each patient from their Docs tab.
@@ -153,6 +152,7 @@ async function removeTemplate(t: Template) {
           <DocBlocks :fields="fields" mode="build" @update:fields="fields = $event" />
         </div>
       </template>
+    </div>
     </div>
   </div>
 </template>

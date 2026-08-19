@@ -51,11 +51,10 @@ async function removeMembership(id: string) {
 </script>
 
 <template>
-  <div>
-    <div class="flex items-center justify-between">
+  <div class="flex gap-8">
+    <SettingsNav />
+    <div class="min-w-0 flex-1">
       <h1 class="text-xl font-semibold text-gray-900">Memberships</h1>
-      <NuxtLink to="/settings" class="text-sm text-gray-500 hover:text-gray-700">&larr; Back to Settings</NuxtLink>
-    </div>
     <p class="mt-1 text-sm text-gray-500">Recurring plan templates (e.g. monthly maintenance membership).</p>
 
     <div class="mt-4 overflow-hidden rounded-lg border border-gray-200 bg-white">
@@ -99,5 +98,6 @@ async function removeMembership(id: string) {
       </button>
     </form>
     <p v-if="error" class="mt-2 text-sm text-red-600">{{ error }}</p>
+    </div>
   </div>
 </template>

@@ -100,11 +100,10 @@ async function toggleDeliveries(w: Webhook) {
 </script>
 
 <template>
-  <div class="max-w-3xl">
-    <div class="flex items-center justify-between">
+  <div class="flex gap-8">
+    <SettingsNav />
+    <div class="min-w-0 max-w-3xl flex-1">
       <h1 class="text-xl font-semibold text-gray-900">Webhooks</h1>
-      <NuxtLink to="/settings" class="text-sm text-gray-500 hover:text-gray-700">&larr; Back to Settings</NuxtLink>
-    </div>
     <p class="mt-1 text-sm text-gray-500">
       Register an endpoint to receive an HTTP POST whenever a subscribed event happens. Each request carries an
       <code class="rounded bg-gray-100 px-1 py-0.5 text-xs">X-QuiroFlow-Event</code> header and a body of
@@ -197,5 +196,6 @@ async function toggleDeliveries(w: Webhook) {
       </button>
       <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
     </form>
+    </div>
   </div>
 </template>

@@ -91,11 +91,10 @@ const roleClass: Record<string, string> = {
 </script>
 
 <template>
-  <div>
-    <div class="flex items-center justify-between">
+  <div class="flex gap-8">
+    <SettingsNav />
+    <div class="min-w-0 flex-1">
       <h1 class="text-xl font-semibold text-gray-900">Team Members</h1>
-      <NuxtLink to="/settings" class="text-sm text-gray-500 hover:text-gray-700">&larr; Back to Settings</NuxtLink>
-    </div>
 
     <div class="mt-4 overflow-hidden rounded-lg border border-gray-200 bg-white">
       <table class="w-full text-sm">
@@ -175,6 +174,7 @@ const roleClass: Record<string, string> = {
     <div v-if="lastInviteLink" class="mt-2 rounded-md bg-green-50 p-3 text-sm text-green-800">
       Share this link (e.g. via WhatsApp): <span class="break-all font-medium">{{ lastInviteLink }}</span>
       <button type="button" class="ml-2 font-medium underline" @click="copy(lastInviteLink)">Copy</button>
+    </div>
     </div>
   </div>
 </template>

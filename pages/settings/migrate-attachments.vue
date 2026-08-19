@@ -38,11 +38,10 @@ async function copyCommand() {
 </script>
 
 <template>
-  <div class="max-w-2xl">
-    <div class="flex items-center justify-between">
+  <div class="flex gap-8">
+    <SettingsNav />
+    <div class="min-w-0 max-w-2xl flex-1">
       <h1 class="text-xl font-semibold text-gray-900">Migrate Attachments from PracticeHub</h1>
-      <NuxtLink to="/settings" class="text-sm text-gray-500 hover:text-gray-700">&larr; Back to Settings</NuxtLink>
-    </div>
     <p class="mt-1 text-sm text-gray-500">
       PracticeHub doesn't offer a bulk file-download API — only a metadata export and a one-file-at-a-time "View"
       link in its own UI. This page gets you the rest of the way: a helper script that drives a real browser through
@@ -128,6 +127,7 @@ npx playwright install chromium</pre>
         never lost. Your QuiroFlow and PracticeHub passwords are typed by you, directly into their own prompts; the
         script never stores or transmits either.
       </p>
+    </div>
     </div>
   </div>
 </template>

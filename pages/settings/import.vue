@@ -45,11 +45,10 @@ function selectSource(key: string) {
 </script>
 
 <template>
-  <div class="max-w-2xl">
-    <div class="flex items-center justify-between">
+  <div class="flex gap-8">
+    <SettingsNav />
+    <div class="min-w-0 max-w-2xl flex-1">
       <h1 class="text-xl font-semibold text-gray-900">Import Data</h1>
-      <NuxtLink to="/settings" class="text-sm text-gray-500 hover:text-gray-700">&larr; Back to Settings</NuxtLink>
-    </div>
     <p class="mt-1 text-sm text-gray-500">Migrate records from another practice management system.</p>
 
     <div class="mt-4 border-b border-gray-200">
@@ -95,6 +94,7 @@ function selectSource(key: string) {
       <ImportPracticeHubCustomFormResponsesImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'custom_form_responses'" />
       <ImportPracticeHubFileAttachmentsImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'file_attachments'" />
       <ImportComingSoon v-else-if="sourceKey === 'practicehub'" :label="activeSource.dataTypes.find((d) => d.key === dataTypeKey)?.label ?? ''" />
+    </div>
     </div>
   </div>
 </template>

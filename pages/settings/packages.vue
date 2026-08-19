@@ -55,11 +55,10 @@ async function removePackage(id: string) {
 </script>
 
 <template>
-  <div>
-    <div class="flex items-center justify-between">
+  <div class="flex gap-8">
+    <SettingsNav />
+    <div class="min-w-0 flex-1">
       <h1 class="text-xl font-semibold text-gray-900">Packages / Bonos</h1>
-      <NuxtLink to="/settings" class="text-sm text-gray-500 hover:text-gray-700">&larr; Back to Settings</NuxtLink>
-    </div>
     <p class="mt-1 text-sm text-gray-500">Session bundle templates you can sell to patients (e.g. "Bono 10 sesiones").</p>
 
     <div class="mt-4 overflow-hidden rounded-lg border border-gray-200 bg-white">
@@ -109,5 +108,6 @@ async function removePackage(id: string) {
       </button>
     </form>
     <p v-if="error" class="mt-2 text-sm text-red-600">{{ error }}</p>
+    </div>
   </div>
 </template>

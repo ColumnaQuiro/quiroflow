@@ -96,11 +96,10 @@ async function disconnect() {
 </script>
 
 <template>
-  <div class="max-w-2xl">
-    <div class="flex items-center justify-between">
+  <div class="flex gap-8">
+    <SettingsNav />
+    <div class="min-w-0 max-w-2xl flex-1">
       <h1 class="text-xl font-semibold text-gray-900">Payments (Stripe)</h1>
-      <NuxtLink to="/settings" class="text-sm text-gray-500 hover:text-gray-700">&larr; Back to Settings</NuxtLink>
-    </div>
     <p class="mt-1 text-sm text-gray-500">
       Connect your own Stripe account to charge patients automatically — a saved card per patient, then package
       installments or membership renewals billed on schedule without staff having to do anything.
@@ -212,5 +211,6 @@ async function disconnect() {
         </button>
       </p>
     </template>
+    </div>
   </div>
 </template>

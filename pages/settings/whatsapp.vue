@@ -108,11 +108,10 @@ async function save() {
 </script>
 
 <template>
-  <div class="max-w-2xl">
-    <div class="flex items-center justify-between">
+  <div class="flex gap-8">
+    <SettingsNav />
+    <div class="min-w-0 max-w-2xl flex-1">
       <h1 class="text-xl font-semibold text-gray-900">WhatsApp</h1>
-      <NuxtLink to="/settings" class="text-sm text-gray-500 hover:text-gray-700">&larr; Back to Settings</NuxtLink>
-    </div>
     <p class="mt-1 text-sm text-gray-500">
       Connects directly to Meta's WhatsApp Business Cloud API. You'll need a Phone Number ID, a WhatsApp Business
       Account ID, and a permanent access token from your Meta Business account, plus at least one approved message
@@ -256,6 +255,7 @@ async function save() {
         Skip this entirely and confirmations still send fine — you'll just see "pending" stay pending in the report
         instead of moving to confirmed/reschedule automatically.
       </p>
+    </div>
     </div>
   </div>
 </template>

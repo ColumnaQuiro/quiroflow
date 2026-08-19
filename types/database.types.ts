@@ -71,7 +71,9 @@ export type Database = {
           account_id: string
           created_at: string
           email: string | null
+          full_name: string | null
           id: string
+          link_practitioner_name: string | null
           role: string
           token: string
         }
@@ -80,7 +82,9 @@ export type Database = {
           account_id: string
           created_at?: string
           email?: string | null
+          full_name?: string | null
           id?: string
+          link_practitioner_name?: string | null
           role?: string
           token?: string
         }
@@ -89,7 +93,9 @@ export type Database = {
           account_id?: string
           created_at?: string
           email?: string | null
+          full_name?: string | null
           id?: string
+          link_practitioner_name?: string | null
           role?: string
           token?: string
         }

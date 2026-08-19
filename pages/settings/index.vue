@@ -2,6 +2,7 @@
 const sections = [
   { to: '/settings/clinics', label: 'Clinics', description: 'Locations your practice operates from.' },
   { to: '/settings/team', label: 'Team Members', description: 'Staff accounts, roles, and invites.' },
+  { to: '/settings/practitioners', label: 'Practitioners', description: 'Link migrated practitioner names to real accounts, or invite them.' },
   { to: '/settings/appointment-types', label: 'Appointment Types', description: 'Visit types, durations, colors, default price.' },
   { to: '/billing/services', label: 'Services & Products', description: 'What you bill for.' },
   { to: '/settings/rooms', label: 'Calendar Resources', description: 'Rooms used for scheduling per clinic.' },

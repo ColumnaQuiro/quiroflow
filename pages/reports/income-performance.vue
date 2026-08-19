@@ -4,7 +4,7 @@ import { computePresetRange, monthKeysInRange, rangeBounds, type DateRangePreset
 
 interface PaymentRow { amount_cents: number; paid_at: string; invoice_id: string }
 interface InvoiceRow { id: string; appointment_id: string | null }
-interface AppointmentRow { id: string; practitioner_id: string | null }
+interface AppointmentRow { id: string; practitioner_id: string | null; clinic_id: string | null }
 interface TeamMemberRow { id: string; full_name: string; color: string }
 
 const PRESETS: DateRangePreset[] = [
@@ -14,8 +14,11 @@ const PRESETS: DateRangePreset[] = [
 ]
 
 const supabase = useSupabaseClient()
+const { practitioners, clinics, load: loadFilterOptions } = useReportFilterOptions()
 
 const range = ref(computePresetRange({ months: 12 }))
+const practitionerFilter = ref('')
+const clinicFilter = ref('')
 const loading = ref(true)
 const payments = ref<PaymentRow[]>([])
 const invoices = ref<InvoiceRow[]>([])
@@ -29,7 +32,7 @@ async function load() {
   const [{ data: p }, { data: inv }, { data: appt }, { data: tm }] = await Promise.all([
     supabase.from('payments').select('amount_cents, paid_at, invoice_id').gte('paid_at', from.toISOString()).lte('paid_at', to.toISOString()),
     supabase.from('invoices').select('id, appointment_id'),
-    supabase.from('appointments').select('id, practitioner_id'),
+    supabase.from('appointments').select('id, practitioner_id, clinic_id'),
     supabase.from('team_members').select('id, full_name, color'),
   ])
   payments.value = p ?? []
@@ -38,11 +41,24 @@ async function load() {
   teamMembers.value = tm ?? []
   loading.value = false
 }
-onMounted(load)
+onMounted(() => {
+  load()
+  loadFilterOptions()
+})
 watch(range, load)
 
 const invoiceById = computed(() => new Map(invoices.value.map((i) => [i.id, i])))
 const appointmentById = computed(() => new Map(appointments.value.map((a) => [a.id, a])))
+
+function apptMatchesFilter(appointmentId: string | null): boolean {
+  if (!practitionerFilter.value && !clinicFilter.value) return true
+  const appt = appointmentId ? appointmentById.value.get(appointmentId) : undefined
+  if (!appt) return false
+  if (practitionerFilter.value && appt.practitioner_id !== practitionerFilter.value) return false
+  if (clinicFilter.value && appt.clinic_id !== clinicFilter.value) return false
+  return true
+}
+const filteredPayments = computed(() => payments.value.filter((p) => apptMatchesFilter(invoiceById.value.get(p.invoice_id)?.appointment_id ?? null)))
 
 function monthKey(iso: string) {
   const d = new Date(iso)
@@ -62,7 +78,7 @@ function practitionerFor(payment: PaymentRow): string {
 
 const series = computed(() => {
   const byPractitioner = new Map<string, Map<string, number>>()
-  for (const p of payments.value) {
+  for (const p of filteredPayments.value) {
     const key = practitionerFor(p)
     const monthTotals = byPractitioner.get(key) ?? new Map<string, number>()
     const mk = monthKey(p.paid_at)
@@ -102,12 +118,13 @@ const totalsByPractitioner = computed(() => series.value.map((s) => ({ label: s.
     </div>
     <p class="mt-1 text-sm text-gray-500">Compare practitioners month over month and track growth.</p>
 
-    <div class="mt-4">
+    <div class="mt-4 flex flex-wrap items-center gap-2">
       <ReportsDateRangeSelect v-model="range" :presets="PRESETS" />
+      <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
     </div>
 
     <div v-if="loading" class="mt-6 text-sm text-gray-400">Loading…</div>
-    <div v-else-if="payments.length === 0" class="mt-6 rounded-lg border border-dashed border-gray-300 bg-white p-6 text-center text-sm text-gray-400">
+    <div v-else-if="filteredPayments.length === 0" class="mt-6 rounded-lg border border-dashed border-gray-300 bg-white p-6 text-center text-sm text-gray-400">
       No payments recorded yet — this fills in once invoices are being paid.
     </div>
     <template v-else>

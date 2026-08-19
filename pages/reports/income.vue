@@ -6,12 +6,15 @@ interface PaymentRow { amount_cents: number; method: string; paid_at: string; in
 interface InvoiceRow { id: string; total_cents: number; status: string; appointment_id: string | null }
 interface LineItemRow { invoice_id: string; price_cents: number; quantity: number; service_id: string | null }
 interface ServiceRow { id: string; name: string }
-interface AppointmentRow { id: string; practitioner_id: string | null }
+interface AppointmentRow { id: string; practitioner_id: string | null; clinic_id: string | null }
 interface TeamMemberRow { id: string; full_name: string }
 
 const supabase = useSupabaseClient()
+const { practitioners, clinics, load: loadFilterOptions } = useReportFilterOptions()
 
 const range = ref(computePresetRange({ months: 6 }))
+const practitionerFilter = ref('')
+const clinicFilter = ref('')
 const loading = ref(true)
 const payments = ref<PaymentRow[]>([])
 const invoices = ref<InvoiceRow[]>([])
@@ -33,7 +36,7 @@ async function load() {
     supabase.from('invoices').select('id, total_cents, status, appointment_id'),
     supabase.from('invoice_line_items').select('invoice_id, price_cents, quantity, service_id'),
     supabase.from('services_products').select('id, name'),
-    supabase.from('appointments').select('id, practitioner_id'),
+    supabase.from('appointments').select('id, practitioner_id, clinic_id'),
     supabase.from('team_members').select('id, full_name'),
   ])
   payments.value = p ?? []
@@ -44,11 +47,30 @@ async function load() {
   teamMembers.value = tm ?? []
   loading.value = false
 }
-onMounted(load)
+onMounted(() => {
+  load()
+  loadFilterOptions()
+})
 watch(range, load)
 
-const totalPaid = computed(() => payments.value.reduce((sum, p) => sum + p.amount_cents, 0))
-const totalCharged = computed(() => invoices.value.reduce((sum, i) => sum + i.total_cents, 0))
+const appointmentById = computed(() => new Map(appointments.value.map((a) => [a.id, a])))
+const invoiceById = computed(() => new Map(invoices.value.map((i) => [i.id, i])))
+
+// practitioner/clinic filters key off the linked appointment, since neither
+// payments nor invoices carry those columns directly.
+function apptMatchesFilter(appointmentId: string | null): boolean {
+  if (!practitionerFilter.value && !clinicFilter.value) return true
+  const appt = appointmentId ? appointmentById.value.get(appointmentId) : undefined
+  if (!appt) return false
+  if (practitionerFilter.value && appt.practitioner_id !== practitionerFilter.value) return false
+  if (clinicFilter.value && appt.clinic_id !== clinicFilter.value) return false
+  return true
+}
+const filteredPayments = computed(() => payments.value.filter((p) => apptMatchesFilter(invoiceById.value.get(p.invoice_id)?.appointment_id ?? null)))
+const filteredInvoices = computed(() => invoices.value.filter((i) => apptMatchesFilter(i.appointment_id)))
+
+const totalPaid = computed(() => filteredPayments.value.reduce((sum, p) => sum + p.amount_cents, 0))
+const totalCharged = computed(() => filteredInvoices.value.reduce((sum, i) => sum + i.total_cents, 0))
 const outstanding = computed(() => totalCharged.value - totalPaid.value)
 
 function monthKey(iso: string) {
@@ -64,7 +86,7 @@ const monthKeys = computed(() => monthKeysInRange(range.value))
 
 const revenueByMonth = computed(() => {
   const totals = new Map<string, number>(monthKeys.value.map((k) => [k, 0]))
-  for (const p of payments.value) {
+  for (const p of filteredPayments.value) {
     const k = monthKey(p.paid_at)
     if (totals.has(k)) totals.set(k, (totals.get(k) ?? 0) + p.amount_cents)
   }
@@ -78,7 +100,7 @@ const lineChartOptions = { responsive: true, maintainAspectRatio: false, scales:
 
 const byMethod = computed(() => {
   const totals = new Map<string, number>()
-  for (const p of payments.value) totals.set(p.method, (totals.get(p.method) ?? 0) + p.amount_cents)
+  for (const p of filteredPayments.value) totals.set(p.method, (totals.get(p.method) ?? 0) + p.amount_cents)
   return [...totals.entries()].map(([method, cents]) => ({ method, cents })).sort((a, b) => b.cents - a.cents)
 })
 const methodChartData = computed(() => ({
@@ -87,13 +109,11 @@ const methodChartData = computed(() => ({
 }))
 const barChartOptions = { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } }, plugins: { legend: { display: false } } }
 
-const invoiceById = computed(() => new Map(invoices.value.map((i) => [i.id, i])))
-const appointmentById = computed(() => new Map(appointments.value.map((a) => [a.id, a])))
 const memberById = computed(() => new Map(teamMembers.value.map((m) => [m.id, m.full_name])))
 
 const byPractitioner = computed(() => {
   const totals = new Map<string, number>()
-  for (const p of payments.value) {
+  for (const p of filteredPayments.value) {
     const invoice = invoiceById.value.get(p.invoice_id)
     const appt = invoice?.appointment_id ? appointmentById.value.get(invoice.appointment_id) : undefined
     const practitionerId = appt?.practitioner_id ?? null
@@ -105,7 +125,7 @@ const byPractitioner = computed(() => {
 
 const serviceById = computed(() => new Map(services.value.map((s) => [s.id, s.name])))
 const byService = computed(() => {
-  const paidInvoiceIds = new Set(payments.value.map((p) => p.invoice_id))
+  const paidInvoiceIds = new Set(filteredPayments.value.map((p) => p.invoice_id))
   const totals = new Map<string, number>()
   for (const li of lineItems.value) {
     if (!paidInvoiceIds.has(li.invoice_id)) continue
@@ -124,8 +144,9 @@ const byService = computed(() => {
     </div>
     <p class="mt-1 text-sm text-gray-500">Revenue over time, by payment method, by practitioner, and by service.</p>
 
-    <div class="mt-4">
+    <div class="mt-4 flex flex-wrap items-center gap-2">
       <ReportsDateRangeSelect v-model="range" />
+      <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
     </div>
 
     <div v-if="loading" class="mt-6 text-sm text-gray-400">Loading…</div>
@@ -146,7 +167,7 @@ const byService = computed(() => {
         </div>
       </div>
 
-      <div v-if="payments.length === 0" class="mt-4 rounded-lg border border-dashed border-gray-300 bg-white p-6 text-center text-sm text-gray-400">
+      <div v-if="filteredPayments.length === 0" class="mt-4 rounded-lg border border-dashed border-gray-300 bg-white p-6 text-center text-sm text-gray-400">
         No payments recorded yet in this range — charts will fill in as invoices get paid.
       </div>
 

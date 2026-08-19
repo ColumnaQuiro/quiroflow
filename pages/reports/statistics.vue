@@ -41,12 +41,12 @@ async function load() {
   types.value = typeRows
 
   const { from, to } = rangeBounds(range.value)
-  const [{ data: p }, { data: inv }] = await Promise.all([
-    supabase.from('payments').select('amount_cents, paid_at, invoice_id').gte('paid_at', from.toISOString()).lte('paid_at', to.toISOString()),
-    supabase.from('invoices').select('id, appointment_id'),
+  const [p, inv] = await Promise.all([
+    fetchAll<PaymentRow>('payments', 'amount_cents, paid_at, invoice_id', (q) => q.gte('paid_at', from.toISOString()).lte('paid_at', to.toISOString())),
+    fetchAll<InvoiceRow>('invoices', 'id, appointment_id', (q) => q.gte('created_at', from.toISOString()).lte('created_at', to.toISOString())),
   ])
-  payments.value = p ?? []
-  invoices.value = inv ?? []
+  payments.value = p
+  invoices.value = inv
 
   loading.value = false
 }

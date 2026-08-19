@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Line, Bar } from 'vue-chartjs'
 import { computePresetRange, monthKeysInRange, rangeBounds } from '~/composables/useDateRangePresets'
+import { fetchAllRows } from '~/composables/useFetchAllRows'
 
 interface PaymentRow { amount_cents: number; method: string; paid_at: string; invoice_id: string }
 interface InvoiceRow { id: string; total_cents: number; status: string; appointment_id: string | null }
@@ -31,20 +32,24 @@ async function load() {
   loading.value = true
   const { from, to } = rangeBounds(range.value)
 
-  const [{ data: p }, { data: inv }, { data: li }, { data: sv }, { data: appt }, { data: tm }] = await Promise.all([
-    supabase.from('payments').select('amount_cents, method, paid_at, invoice_id').gte('paid_at', from.toISOString()).lte('paid_at', to.toISOString()),
-    supabase.from('invoices').select('id, total_cents, status, appointment_id'),
-    supabase.from('invoice_line_items').select('invoice_id, price_cents, quantity, service_id'),
-    supabase.from('services_products').select('id, name'),
-    supabase.from('appointments').select('id, practitioner_id, clinic_id'),
-    supabase.from('team_members').select('id, full_name'),
+  const [p, inv, li, sv, appt, tm] = await Promise.all([
+    fetchAllRows<PaymentRow>((f, t) =>
+      supabase.from('payments').select('amount_cents, method, paid_at, invoice_id').gte('paid_at', from.toISOString()).lte('paid_at', to.toISOString()).range(f, t),
+    ),
+    fetchAllRows<InvoiceRow>((f, t) =>
+      supabase.from('invoices').select('id, total_cents, status, appointment_id').gte('created_at', from.toISOString()).lte('created_at', to.toISOString()).range(f, t),
+    ),
+    fetchAllRows<LineItemRow>((f, t) => supabase.from('invoice_line_items').select('invoice_id, price_cents, quantity, service_id').range(f, t)),
+    supabase.from('services_products').select('id, name').then((r) => r.data ?? []),
+    fetchAllRows<AppointmentRow>((f, t) => supabase.from('appointments').select('id, practitioner_id, clinic_id').range(f, t)),
+    supabase.from('team_members').select('id, full_name').then((r) => r.data ?? []),
   ])
-  payments.value = p ?? []
-  invoices.value = inv ?? []
-  lineItems.value = li ?? []
-  services.value = sv ?? []
-  appointments.value = appt ?? []
-  teamMembers.value = tm ?? []
+  payments.value = p
+  invoices.value = inv
+  lineItems.value = li
+  services.value = sv
+  appointments.value = appt
+  teamMembers.value = tm
   loading.value = false
 }
 onMounted(() => {

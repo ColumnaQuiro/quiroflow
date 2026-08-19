@@ -2,6 +2,7 @@
 import { Bar, Line } from 'vue-chartjs'
 import type { Tables } from '~/types/database.types'
 import { computePresetRange, monthKeysInRange, rangeBounds, type DateRange } from '~/composables/useDateRangePresets'
+import { fetchAllRows } from '~/composables/useFetchAllRows'
 
 type SavedReport = Tables<'custom_reports'>
 
@@ -78,12 +79,14 @@ async function run() {
   const { from, to } = rangeBounds(range.value)
 
   if (sourceKey.value === 'appointments') {
-    const { data } = await supabase
-      .from('appointments')
-      .select('starts_at, status, practitioner_id, appointment_type_id')
-      .gte('starts_at', from.toISOString())
-      .lte('starts_at', to.toISOString())
-    const list = data ?? []
+    const list = await fetchAllRows((f, t) =>
+      supabase
+        .from('appointments')
+        .select('starts_at, status, practitioner_id, appointment_type_id')
+        .gte('starts_at', from.toISOString())
+        .lte('starts_at', to.toISOString())
+        .range(f, t),
+    )
     const [{ data: members }, { data: types }] = await Promise.all([
       supabase.from('team_members').select('id, full_name'),
       supabase.from('appointment_types').select('id, name'),
@@ -117,16 +120,18 @@ async function run() {
     }
     rows.value = [...totals.entries()].map(([label, value]) => ({ label, value }))
   } else if (sourceKey.value === 'payments') {
-    const [{ data: payments }, { data: invoices }, { data: appointments }, { data: members }] = await Promise.all([
-      supabase.from('payments').select('amount_cents, method, paid_at, invoice_id').gte('paid_at', from.toISOString()).lte('paid_at', to.toISOString()),
-      supabase.from('invoices').select('id, appointment_id'),
-      supabase.from('appointments').select('id, practitioner_id'),
+    const [payments, invoices, appointments, { data: members }] = await Promise.all([
+      fetchAllRows((f, t) =>
+        supabase.from('payments').select('amount_cents, method, paid_at, invoice_id').gte('paid_at', from.toISOString()).lte('paid_at', to.toISOString()).range(f, t),
+      ),
+      fetchAllRows((f, t) => supabase.from('invoices').select('id, appointment_id').gte('created_at', from.toISOString()).lte('created_at', to.toISOString()).range(f, t)),
+      fetchAllRows((f, t) => supabase.from('appointments').select('id, practitioner_id').range(f, t)),
       supabase.from('team_members').select('id, full_name'),
     ])
-    const invoiceById = new Map((invoices ?? []).map((i) => [i.id, i]))
-    const apptById = new Map((appointments ?? []).map((a) => [a.id, a]))
+    const invoiceById = new Map(invoices.map((i) => [i.id, i]))
+    const apptById = new Map(appointments.map((a) => [a.id, a]))
     const memberById = new Map((members ?? []).map((m) => [m.id, m.full_name]))
-    const list = payments ?? []
+    const list = payments
 
     const totals = new Map<string, number>()
     const bump = (key: string, amountCents: number) => {

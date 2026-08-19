@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Bar } from 'vue-chartjs'
 import { computePresetRange, rangeBounds } from '~/composables/useDateRangePresets'
+import { fetchAllRows } from '~/composables/useFetchAllRows'
 
 const supabase = useSupabaseClient()
 const { practitioners, clinics, load: loadFilterOptions } = useReportFilterOptions()
@@ -16,11 +17,12 @@ const rows = ref<AppointmentRow[]>([])
 async function load() {
   loading.value = true
   const { from, to } = rangeBounds(range.value)
-  let query = supabase.from('appointments').select('starts_at, status').gte('starts_at', from.toISOString()).lte('starts_at', to.toISOString())
-  if (practitionerFilter.value) query = query.eq('practitioner_id', practitionerFilter.value)
-  if (clinicFilter.value) query = query.eq('clinic_id', clinicFilter.value)
-  const { data } = await query
-  rows.value = data ?? []
+  rows.value = await fetchAllRows<AppointmentRow>((f, t) => {
+    let query = supabase.from('appointments').select('starts_at, status').gte('starts_at', from.toISOString()).lte('starts_at', to.toISOString())
+    if (practitionerFilter.value) query = query.eq('practitioner_id', practitionerFilter.value)
+    if (clinicFilter.value) query = query.eq('clinic_id', clinicFilter.value)
+    return query.range(f, t)
+  })
   loading.value = false
 }
 onMounted(() => {

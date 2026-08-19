@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computePresetRange, rangeBounds } from '~/composables/useDateRangePresets'
+import { fetchAllRows } from '~/composables/useFetchAllRows'
 
 interface WhatsappMessageRow {
   id: string
@@ -31,24 +32,30 @@ async function load() {
   loading.value = true
   const { from, to } = rangeBounds(range.value)
 
-  const [{ data: msgs }, { data: appts }, { data: pts }] = await Promise.all([
-    supabase
-      .from('whatsapp_messages')
-      .select('id, patient_id, status, purpose, error_code, error_message, created_at')
-      .eq('direction', 'outbound')
-      .gte('created_at', from.toISOString())
-      .lte('created_at', to.toISOString()),
-    supabase
-      .from('appointments')
-      .select('id, patient_id, starts_at, confirmation_status, status')
-      .eq('status', 'booked')
-      .gte('starts_at', new Date().toISOString())
-      .not('confirmation_status', 'is', null),
-    supabase.from('patients').select('id, first_name, last_name'),
+  const [msgs, appts, pts] = await Promise.all([
+    fetchAllRows<WhatsappMessageRow>((f, t) =>
+      supabase
+        .from('whatsapp_messages')
+        .select('id, patient_id, status, purpose, error_code, error_message, created_at')
+        .eq('direction', 'outbound')
+        .gte('created_at', from.toISOString())
+        .lte('created_at', to.toISOString())
+        .range(f, t),
+    ),
+    fetchAllRows<AppointmentRow>((f, t) =>
+      supabase
+        .from('appointments')
+        .select('id, patient_id, starts_at, confirmation_status, status')
+        .eq('status', 'booked')
+        .gte('starts_at', new Date().toISOString())
+        .not('confirmation_status', 'is', null)
+        .range(f, t),
+    ),
+    fetchAllRows<PatientRow>((f, t) => supabase.from('patients').select('id, first_name, last_name').range(f, t)),
   ])
-  messages.value = msgs ?? []
-  appointments.value = appts ?? []
-  patients.value = pts ?? []
+  messages.value = msgs
+  appointments.value = appts
+  patients.value = pts
   loading.value = false
 }
 onMounted(load)

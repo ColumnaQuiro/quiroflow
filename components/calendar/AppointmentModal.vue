@@ -15,12 +15,6 @@ interface EditingAppointment {
   status: string
 }
 
-interface VisitNote {
-  id: string
-  body: string
-  created_at: string
-}
-
 const props = defineProps<{
   mode: 'create' | 'edit'
   rooms: RoomOption[]
@@ -128,34 +122,6 @@ async function remove() {
   emit('saved')
 }
 
-const notes = ref<VisitNote[]>([])
-const newNote = ref('')
-const savingNote = ref(false)
-
-async function loadNotes() {
-  if (!props.appointment) return
-  const { data } = await supabase
-    .from('visit_notes')
-    .select('id, body, created_at')
-    .eq('appointment_id', props.appointment.id)
-    .order('created_at', { ascending: false })
-  notes.value = data ?? []
-}
-if (props.mode === 'edit') loadNotes()
-
-async function addNote() {
-  if (!newNote.value.trim() || !props.appointment) return
-  savingNote.value = true
-  await supabase.from('visit_notes').insert({
-    account_id: store.accountId!,
-    appointment_id: props.appointment.id,
-    body: newNote.value.trim(),
-    created_by: store.teamMember?.id ?? null,
-  })
-  newNote.value = ''
-  savingNote.value = false
-  await loadNotes()
-}
 </script>
 
 <template>
@@ -264,28 +230,8 @@ async function addNote() {
 
       <div v-if="mode === 'edit'" class="mt-6 border-t border-gray-100 pt-4">
         <h3 class="text-sm font-semibold text-gray-900">Visit notes</h3>
-        <ul v-if="notes.length > 0" class="mt-2 space-y-2">
-          <li v-for="note in notes" :key="note.id" class="rounded-md bg-amber-50 p-2 text-sm text-gray-800">
-            <p class="whitespace-pre-wrap">{{ note.body }}</p>
-            <p class="mt-1 text-xs text-gray-400">{{ new Date(note.created_at).toLocaleString() }}</p>
-          </li>
-        </ul>
-        <div class="mt-3 flex gap-2">
-          <input
-            v-model="newNote"
-            type="text"
-            placeholder="Add a sticky note…"
-            class="flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            @keydown.enter.prevent="addNote"
-          />
-          <button
-            type="button"
-            :disabled="savingNote || !newNote.trim()"
-            class="rounded-md bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-200 disabled:opacity-50"
-            @click="addNote"
-          >
-            Add
-          </button>
+        <div class="mt-2">
+          <AppointmentsNotesPanel :appointment-id="appointment!.id" />
         </div>
       </div>
     </div>

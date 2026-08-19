@@ -34,6 +34,7 @@ function isUpcoming(appt: AppointmentRow) {
   return appt.status === 'booked' && new Date(appt.starts_at) > new Date()
 }
 
+const notesAppointmentId = ref<string | null>(null)
 const confirmingAppointment = ref<AppointmentRow | null>(null)
 const confirmationAutofill = computed<Record<string, string>>(() => {
   if (!confirmingAppointment.value) return {} as Record<string, string>
@@ -70,18 +71,35 @@ const confirmationAutofill = computed<Record<string, string>>(() => {
           <td class="px-4 py-2.5 text-gray-500">{{ appt.calendar_resources?.name ?? '—' }}</td>
           <td class="px-4 py-2.5 text-gray-500">{{ appt.status }}</td>
           <td class="px-4 py-2.5 text-right">
-            <button
-              v-if="isUpcoming(appt)"
-              type="button"
-              class="rounded-md bg-green-600 px-3 py-1 text-xs font-medium text-white hover:bg-green-700"
-              @click="confirmingAppointment = appt"
-            >
-              Send Confirmation
-            </button>
+            <div class="flex items-center justify-end gap-2">
+              <button type="button" class="text-xs font-medium text-indigo-600 hover:text-indigo-500" @click="notesAppointmentId = appt.id">
+                Notes
+              </button>
+              <button
+                v-if="isUpcoming(appt)"
+                type="button"
+                class="rounded-md bg-green-600 px-3 py-1 text-xs font-medium text-white hover:bg-green-700"
+                @click="confirmingAppointment = appt"
+              >
+                Send Confirmation
+              </button>
+            </div>
           </td>
         </tr>
       </tbody>
     </table>
+
+    <div v-if="notesAppointmentId" class="fixed inset-0 z-20 flex items-center justify-center bg-black/30 p-4" @click.self="notesAppointmentId = null">
+      <div class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
+        <div class="flex items-center justify-between">
+          <h2 class="text-lg font-semibold text-gray-900">Visit notes</h2>
+          <button type="button" class="text-gray-400 hover:text-gray-600" @click="notesAppointmentId = null">✕</button>
+        </div>
+        <div class="mt-4">
+          <AppointmentsNotesPanel :appointment-id="notesAppointmentId" />
+        </div>
+      </div>
+    </div>
 
     <SendWhatsAppModal
       v-if="confirmingAppointment"

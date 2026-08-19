@@ -1,22 +1,15 @@
 <script setup lang="ts">
-import { computePresetRange, rangeBounds, type DateRangePreset } from '~/composables/useDateRangePresets'
+import { computePresetRange, rangeBounds } from '~/composables/useDateRangePresets'
 
 interface ApptRow { id: string; patient_id: string; starts_at: string; appointment_type_id: string | null; practitioner_id: string | null; clinic_id: string | null }
 interface TypeRow { id: string; stage: string | null }
 interface PaymentRow { amount_cents: number; paid_at: string; invoice_id: string }
 interface InvoiceRow { id: string; appointment_id: string | null }
 
-const PRESETS: DateRangePreset[] = [
-  { label: 'This month', months: 1 },
-  { label: 'Last 3 months', months: 3 },
-  { label: 'Last 6 months', months: 6 },
-  { label: 'Last 12 months', months: 12 },
-]
-
 const supabase = useSupabaseClient()
 const { practitioners, clinics, load: loadFilterOptions } = useReportFilterOptions()
 
-const range = ref(computePresetRange({ months: 3 }))
+const range = ref(computePresetRange({ months: 1 }))
 const practitionerFilter = ref('')
 const clinicFilter = ref('')
 const loading = ref(true)
@@ -189,7 +182,7 @@ const unclassifiedTypes = computed(() => types.value.filter((t) => !t.stage).len
     </p>
 
     <div class="mt-4 flex flex-wrap items-center gap-2">
-      <ReportsDateRangeSelect v-model="range" :presets="PRESETS" />
+      <ReportsDateRangeSelect v-model="range" />
       <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
     </div>
 

@@ -1,11 +1,5 @@
 <script setup lang="ts">
-import { computePresetRange, rangeBounds, type DateRangePreset } from '~/composables/useDateRangePresets'
-
-const PRESETS: DateRangePreset[] = [
-  { label: 'Last 7 days', days: 7 },
-  { label: 'Last 30 days', days: 30 },
-  { label: 'Last 90 days', days: 90 },
-]
+import { computePresetRange, rangeBounds } from '~/composables/useDateRangePresets'
 
 interface WhatsappMessageRow {
   id: string
@@ -27,7 +21,7 @@ interface PatientRow { id: string; first_name: string; last_name: string | null 
 
 const supabase = useSupabaseClient()
 
-const range = ref(computePresetRange({ days: 30 }))
+const range = ref(computePresetRange({ months: 1 }))
 const loading = ref(true)
 const messages = ref<WhatsappMessageRow[]>([])
 const appointments = ref<AppointmentRow[]>([])
@@ -97,7 +91,7 @@ function fmt(iso: string) {
     <p class="mt-1 text-sm text-gray-500">Did every WhatsApp actually send, and who has confirmed, is pending, or asked to reschedule.</p>
 
     <div class="mt-4">
-      <ReportsDateRangeSelect v-model="range" :presets="PRESETS" />
+      <ReportsDateRangeSelect v-model="range" />
     </div>
 
     <div v-if="loading" class="mt-6 text-sm text-gray-400">Loading…</div>

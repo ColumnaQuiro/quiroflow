@@ -12,7 +12,7 @@ interface TeamMemberRow { id: string; full_name: string }
 const supabase = useSupabaseClient()
 const { practitioners, clinics, load: loadFilterOptions } = useReportFilterOptions()
 
-const range = ref(computePresetRange({ months: 6 }))
+const range = ref(computePresetRange({ months: 1 }))
 const practitionerFilter = ref('')
 const clinicFilter = ref('')
 const loading = ref(true)

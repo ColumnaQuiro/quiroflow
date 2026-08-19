@@ -1,22 +1,16 @@
 <script setup lang="ts">
 import { Line } from 'vue-chartjs'
-import { computePresetRange, monthKeysInRange, rangeBounds, type DateRangePreset } from '~/composables/useDateRangePresets'
+import { computePresetRange, monthKeysInRange, rangeBounds } from '~/composables/useDateRangePresets'
 
 interface PaymentRow { amount_cents: number; paid_at: string; invoice_id: string }
 interface InvoiceRow { id: string; appointment_id: string | null }
 interface AppointmentRow { id: string; practitioner_id: string | null; clinic_id: string | null }
 interface TeamMemberRow { id: string; full_name: string; color: string }
 
-const PRESETS: DateRangePreset[] = [
-  { label: 'Last 6 months', months: 6 },
-  { label: 'Last 12 months', months: 12 },
-  { label: 'Last 24 months', months: 24 },
-]
-
 const supabase = useSupabaseClient()
 const { practitioners, clinics, load: loadFilterOptions } = useReportFilterOptions()
 
-const range = ref(computePresetRange({ months: 12 }))
+const range = ref(computePresetRange({ months: 1 }))
 const practitionerFilter = ref('')
 const clinicFilter = ref('')
 const loading = ref(true)
@@ -119,7 +113,7 @@ const totalsByPractitioner = computed(() => series.value.map((s) => ({ label: s.
     <p class="mt-1 text-sm text-gray-500">Compare practitioners month over month and track growth.</p>
 
     <div class="mt-4 flex flex-wrap items-center gap-2">
-      <ReportsDateRangeSelect v-model="range" :presets="PRESETS" />
+      <ReportsDateRangeSelect v-model="range" />
       <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
     </div>
 

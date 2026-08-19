@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computePresetRange, DEFAULT_MONTH_PRESETS, type DateRange, type DateRangePreset } from '~/composables/useDateRangePresets'
+import { computePresetRange, STANDARD_PRESETS, type DateRange, type DateRangePreset } from '~/composables/useDateRangePresets'
 
 const props = withDefaults(defineProps<{ modelValue: DateRange; presets?: DateRangePreset[] }>(), {
-  presets: () => DEFAULT_MONTH_PRESETS,
+  presets: () => STANDARD_PRESETS,
 })
 const emit = defineEmits<{ 'update:modelValue': [value: DateRange] }>()
 

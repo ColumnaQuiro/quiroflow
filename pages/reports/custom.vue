@@ -51,7 +51,7 @@ const source = computed(() => SOURCES.find((s) => s.key === sourceKey.value)!)
 const metricKey = ref('count')
 const groupByKey = ref('month')
 const chartType = ref<'bar' | 'line' | 'table'>('bar')
-const range = ref(computePresetRange({ months: 6 }))
+const range = ref(computePresetRange({ months: 1 }))
 
 watch(sourceKey, (key) => {
   const s = SOURCES.find((x) => x.key === key)!

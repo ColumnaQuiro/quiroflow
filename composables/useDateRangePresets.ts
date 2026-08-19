@@ -2,6 +2,7 @@ export interface DateRangePreset {
   label: string
   months?: number
   days?: number
+  lastMonth?: boolean
 }
 
 export interface DateRange {
@@ -9,8 +10,14 @@ export interface DateRange {
   to: string
 }
 
+// Local date components, not toISOString() -- that converts to UTC first,
+// which silently rolls midnight-local dates back a day in any UTC+
+// timezone (e.g. "Last month" landing on the 30th instead of the 1st).
 function toISODate(d: Date): string {
-  return d.toISOString().slice(0, 10)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 // months presets align to the 1st of the month so "Last 3 months" reads as
@@ -19,6 +26,12 @@ function toISODate(d: Date): string {
 // compute what a preset click produces) and each report page (to seed its
 // initial range without duplicating this math).
 export function computePresetRange(preset: DateRangePreset): DateRange {
+  if (preset.lastMonth) {
+    const to = new Date()
+    to.setDate(0) // day 0 of this month = last day of the previous month
+    const from = new Date(to.getFullYear(), to.getMonth(), 1)
+    return { from: toISODate(from), to: toISODate(to) }
+  }
   const to = new Date()
   const from = new Date()
   if (preset.months) {
@@ -30,10 +43,13 @@ export function computePresetRange(preset: DateRangePreset): DateRange {
   return { from: toISODate(from), to: toISODate(to) }
 }
 
-export const DEFAULT_MONTH_PRESETS: DateRangePreset[] = [
-  { label: 'Last 3 months', months: 3 },
-  { label: 'Last 6 months', months: 6 },
-  { label: 'Last 12 months', months: 12 },
+// The same four options on every report's date picker, so switching reports
+// doesn't mean re-learning a different preset list each time.
+export const STANDARD_PRESETS: DateRangePreset[] = [
+  { label: 'Last 7 days', days: 7 },
+  { label: 'Last 30 days', days: 30 },
+  { label: 'This month', months: 1 },
+  { label: 'Last month', lastMonth: true },
 ]
 
 // Query-ready bounds for a DateRange: start of the "from" day through the

@@ -1,19 +1,13 @@
 <script setup lang="ts">
 import { Bar } from 'vue-chartjs'
-import { computePresetRange, rangeBounds, type DateRangePreset } from '~/composables/useDateRangePresets'
+import { computePresetRange, rangeBounds } from '~/composables/useDateRangePresets'
 
 const supabase = useSupabaseClient()
 const { practitioners, clinics, load: loadFilterOptions } = useReportFilterOptions()
 
 interface AppointmentRow { starts_at: string; status: string }
 
-const PRESETS: DateRangePreset[] = [
-  { label: 'Last 30 days', days: 30 },
-  { label: 'Last 90 days', days: 90 },
-  { label: 'Last 365 days', days: 365 },
-]
-
-const range = ref(computePresetRange({ days: 90 }))
+const range = ref(computePresetRange({ months: 1 }))
 const practitionerFilter = ref('')
 const clinicFilter = ref('')
 const loading = ref(true)
@@ -108,7 +102,7 @@ const hourChartOptions = {
     <p class="mt-1 text-sm text-gray-500">Which shift and time of day performs best, by volume and show-up rate.</p>
 
     <div class="mt-4 flex flex-wrap items-center gap-2">
-      <ReportsDateRangeSelect v-model="range" :presets="PRESETS" />
+      <ReportsDateRangeSelect v-model="range" />
       <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
     </div>
 

@@ -69,6 +69,10 @@ export default defineEventHandler(async (event) => {
   const { stripe, options } = stripeClientFor(account)
   let schedule: Stripe.SubscriptionSchedule
   try {
+    // Subscription Schedule phases need a real Product id in price_data --
+    // unlike one-off Prices/PaymentIntents, `product_data` (inline creation)
+    // isn't accepted here, so the product has to be created as its own step.
+    const product = await stripe.products.create({ name: body.description }, options)
     schedule = await stripe.subscriptionSchedules.create(
       {
         customer: customerRow.stripe_customer_id,
@@ -80,7 +84,7 @@ export default defineEventHandler(async (event) => {
               {
                 price_data: {
                   currency: 'eur',
-                  product_data: { name: body.description },
+                  product: product.id,
                   unit_amount: unitAmount,
                   recurring: { interval: body.interval, interval_count: body.intervalCount },
                 },

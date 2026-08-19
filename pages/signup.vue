@@ -34,7 +34,8 @@ async function onSubmit() {
   <div class="flex min-h-screen items-center justify-center bg-gray-50 px-4">
     <div class="w-full max-w-sm rounded-lg border border-gray-200 bg-white p-8 shadow-sm">
       <template v-if="!checkEmail">
-        <h1 class="text-xl font-semibold text-gray-900">Create your practice's QuiroFlow account</h1>
+        <img src="/logo/quiroflow-mark.svg" alt="" class="h-8 w-8" />
+        <h1 class="mt-4 text-xl font-semibold text-gray-900">Create your practice's QuiroFlow account</h1>
         <form class="mt-6 space-y-4" @submit.prevent="onSubmit">
           <div>
             <label class="block text-sm font-medium text-gray-700" for="email">Email</label>

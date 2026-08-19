@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 100" width="320" height="100" fill="none">
+  <g transform="translate(0 18) scale(0.64)">
+    <rect x="29" y="8" width="42" height="18" rx="9" fill="#000000"></rect>
+    <rect x="44.6" y="32" width="42" height="18" rx="9" fill="#000000"></rect>
+    <rect x="13.4" y="56" width="42" height="18" rx="9" fill="#000000"></rect>
+    <rect x="29" y="80" width="42" height="18" rx="9" fill="#000000"></rect>
+  </g>
+  <text x="88" y="51" dominant-baseline="middle" font-family="Manrope, 'General Sans', Inter, sans-serif" font-size="44" font-weight="600" letter-spacing="-1.5" fill="#000000">QuiroFlow</text>
+</svg>

@@ -18,8 +18,11 @@ function isActive(to: string) {
 
 <template>
   <aside class="flex w-56 shrink-0 flex-col border-r border-gray-200 bg-white print:hidden">
-    <div class="flex h-14 items-center px-4">
-      <NuxtLink to="/dashboard" class="text-lg font-semibold text-gray-900">QuiroFlow</NuxtLink>
+    <div class="flex h-14 items-center gap-2 px-4">
+      <NuxtLink to="/dashboard" class="flex items-center gap-2 text-lg font-semibold text-gray-900">
+        <img src="/logo/quiroflow-mark.svg" alt="" class="h-5 w-5" />
+        QuiroFlow
+      </NuxtLink>
     </div>
     <nav class="flex-1 space-y-1 px-2 py-2">
       <NuxtLink

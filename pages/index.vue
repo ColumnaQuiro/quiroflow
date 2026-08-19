@@ -1,13 +1,11 @@
 <script setup lang="ts">
-definePageMeta({ layout: false })
+// app.quiroflow.com's root has no marketing role (quiroflow.com's bare apex
+// covers that) -- it's purely the staff entry point, so skip straight to
+// sign-in. Logged-in users never reach this: middleware/account.global.ts
+// redirects them to /dashboard before this page's setup runs.
+await navigateTo('/login', { replace: true })
 </script>
 
 <template>
-  <div class="flex min-h-screen flex-col items-center justify-center gap-4 bg-gray-50 px-4 text-center">
-    <h1 class="text-2xl font-semibold text-gray-900">QuiroFlow</h1>
-    <p class="max-w-md text-gray-600">Practice management for multi-location clinics.</p>
-    <NuxtLink to="/login" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-      Sign in
-    </NuxtLink>
-  </div>
+  <div />
 </template>

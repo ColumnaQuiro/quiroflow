@@ -28,6 +28,11 @@ const justConnected = ref(route.query.stripe_connected === '1')
 const webhookUrl = ref('')
 onMounted(() => {
   webhookUrl.value = `${window.location.origin}/api/stripe/webhook/${store.accountId}`
+  // These come from the OAuth redirect's query string -- strip them so a
+  // plain page refresh doesn't keep re-showing a stale result forever.
+  if (route.query.stripe_error || route.query.stripe_connected) {
+    navigateTo({ path: route.path }, { replace: true })
+  }
 })
 
 async function load() {

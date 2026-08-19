@@ -8,6 +8,7 @@ interface AppointmentRow {
   practitioner_name: string | null
   appointment_types: { name: string } | null
   team_members: { full_name: string } | null
+  calendar_resources: { name: string } | null
 }
 
 const supabase = useSupabaseClient()
@@ -18,7 +19,7 @@ const loading = ref(true)
 onMounted(async () => {
   const { data } = await supabase
     .from('appointments')
-    .select('id, starts_at, status, practitioner_name, appointment_types(name), team_members(full_name)')
+    .select('id, starts_at, status, practitioner_name, appointment_types(name), team_members(full_name), calendar_resources(name)')
     .eq('patient_id', props.patientId)
     .order('starts_at', { ascending: false })
   appointments.value = (data as unknown as AppointmentRow[]) ?? []
@@ -56,6 +57,7 @@ const confirmationAutofill = computed<Record<string, string>>(() => {
           <th class="px-4 py-2">Date</th>
           <th class="px-4 py-2">Type</th>
           <th class="px-4 py-2">Practitioner</th>
+          <th class="px-4 py-2">Room</th>
           <th class="px-4 py-2">Status</th>
           <th class="px-4 py-2"></th>
         </tr>
@@ -65,6 +67,7 @@ const confirmationAutofill = computed<Record<string, string>>(() => {
           <td class="px-4 py-2.5 text-gray-900">{{ new Date(appt.starts_at).toLocaleString() }}</td>
           <td class="px-4 py-2.5 text-gray-500">{{ appt.appointment_types?.name ?? 'N/A' }}</td>
           <td class="px-4 py-2.5 text-gray-500">{{ practitionerLabel(appt) }}</td>
+          <td class="px-4 py-2.5 text-gray-500">{{ appt.calendar_resources?.name ?? '—' }}</td>
           <td class="px-4 py-2.5 text-gray-500">{{ appt.status }}</td>
           <td class="px-4 py-2.5 text-right">
             <button

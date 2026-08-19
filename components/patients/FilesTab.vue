@@ -56,13 +56,14 @@ async function uploadFiles(fileList: FileList) {
 }
 
 async function view(file: Tables<'patient_files'>) {
+  if (!file.storage_path) return
   const { data } = await supabase.storage.from('patient-files').createSignedUrl(file.storage_path, 60 * 5)
   if (data?.signedUrl) window.open(data.signedUrl, '_blank')
 }
 
 async function remove(file: Tables<'patient_files'>) {
   if (!confirm(`Delete ${file.file_name}?`)) return
-  await supabase.storage.from('patient-files').remove([file.storage_path])
+  if (file.storage_path) await supabase.storage.from('patient-files').remove([file.storage_path])
   await supabase.from('patient_files').delete().eq('id', file.id)
   files.value = files.value.filter((f) => f.id !== file.id)
 }
@@ -84,11 +85,16 @@ async function remove(file: Tables<'patient_files'>) {
     <ul v-else class="divide-y divide-gray-100">
       <li v-for="file in files" :key="file.id" class="flex items-center justify-between px-4 py-3">
         <div>
-          <p class="text-sm font-medium text-gray-900">{{ file.file_name }}</p>
+          <p class="text-sm font-medium text-gray-900">
+            {{ file.file_name }}
+            <span v-if="!file.storage_path" class="ml-1.5 rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700">
+              Not migrated yet
+            </span>
+          </p>
           <p class="text-xs text-gray-400">{{ formatSize(file.size_bytes) }} &middot; {{ new Date(file.created_at).toLocaleDateString() }}</p>
         </div>
         <div class="flex gap-3 text-sm">
-          <button type="button" class="text-indigo-600 hover:text-indigo-700" @click="view(file)">View</button>
+          <button v-if="file.storage_path" type="button" class="text-indigo-600 hover:text-indigo-700" @click="view(file)">View</button>
           <button type="button" class="text-red-600 hover:text-red-700" @click="remove(file)">Delete</button>
         </div>
       </li>

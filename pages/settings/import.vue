@@ -19,6 +19,7 @@ const sources: Source[] = [
     dataTypes: [
       { key: 'patients', label: 'Patients' },
       { key: 'appointments', label: 'Appointments' },
+      { key: 'appointment_types', label: 'Appointment Types (fix)' },
       { key: 'payments', label: 'Payments' },
       { key: 'patient_logs', label: 'Patient Logs' },
       { key: 'treatment_notes', label: 'Treatment Notes' },
@@ -86,6 +87,7 @@ function selectSource(key: string) {
     <div class="mt-6">
       <ImportPracticeHubPatientsImporter v-if="sourceKey === 'practicehub' && dataTypeKey === 'patients'" />
       <ImportPracticeHubAppointmentsImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'appointments'" />
+      <ImportPracticeHubAppointmentTypesImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'appointment_types'" />
       <ImportPracticeHubPaymentsImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'payments'" />
       <ImportPracticeHubPatientLogsImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'patient_logs'" />
       <ImportPracticeHubClinicalNotesImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'treatment_notes'" />

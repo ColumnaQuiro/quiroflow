@@ -1,6 +1,7 @@
 import { serverSupabaseClient } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { stripeClientFor } from '~/server/utils/stripe'
+import type Stripe from 'stripe'
 
 interface Body {
   patientId: string
@@ -66,32 +67,37 @@ export default defineEventHandler(async (event) => {
   const startDate = skip > 0 ? Math.floor(addInterval(new Date(), body.interval, skip * body.intervalCount).getTime() / 1000) : 'now'
 
   const { stripe, options } = stripeClientFor(account)
-  const schedule = await stripe.subscriptionSchedules.create(
-    {
-      customer: customerRow.stripe_customer_id,
-      start_date: startDate,
-      end_behavior: body.installments ? 'cancel' : 'release',
-      phases: [
-        {
-          items: [
-            {
-              price_data: {
-                currency: 'eur',
-                product_data: { name: body.description },
-                unit_amount: unitAmount,
-                recurring: { interval: body.interval, interval_count: body.intervalCount },
+  let schedule: Stripe.SubscriptionSchedule
+  try {
+    schedule = await stripe.subscriptionSchedules.create(
+      {
+        customer: customerRow.stripe_customer_id,
+        start_date: startDate,
+        end_behavior: body.installments ? 'cancel' : 'release',
+        phases: [
+          {
+            items: [
+              {
+                price_data: {
+                  currency: 'eur',
+                  product_data: { name: body.description },
+                  unit_amount: unitAmount,
+                  recurring: { interval: body.interval, interval_count: body.intervalCount },
+                },
+                quantity: 1,
               },
-              quantity: 1,
-            },
-          ],
-          iterations: remainingInstallments,
-          default_payment_method: customerRow.default_payment_method_id,
-          collection_method: 'charge_automatically',
-        },
-      ],
-    },
-    options,
-  )
+            ],
+            iterations: remainingInstallments,
+            default_payment_method: customerRow.default_payment_method_id,
+            collection_method: 'charge_automatically',
+          },
+        ],
+      },
+      options,
+    )
+  } catch (err: any) {
+    throw createError({ statusCode: 502, statusMessage: err?.message ?? 'Stripe schedule creation failed' })
+  }
 
   const { data: inserted, error } = await supabase
     .from('payment_schedules')

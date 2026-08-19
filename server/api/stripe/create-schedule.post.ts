@@ -1,6 +1,6 @@
 import { serverSupabaseClient } from '#supabase/server'
 import type { Database } from '~/types/database.types'
-import { stripeForAccount } from '~/server/utils/stripe'
+import { stripeClientFor } from '~/server/utils/stripe'
 
 interface Body {
   patientId: string
@@ -38,8 +38,12 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, statusMessage: 'Not signed in as a team member' })
   }
 
-  const { data: account } = await supabase.from('accounts').select('stripe_secret_key').eq('id', teamMember.account_id).maybeSingle()
-  if (!account?.stripe_secret_key) {
+  const { data: account } = await supabase
+    .from('accounts')
+    .select('stripe_connect_account_id, stripe_secret_key')
+    .eq('id', teamMember.account_id)
+    .maybeSingle()
+  if (!account) {
     throw createError({ statusCode: 400, statusMessage: 'Stripe is not configured' })
   }
 
@@ -61,30 +65,33 @@ export default defineEventHandler(async (event) => {
   const unitAmount = body.installments ? Math.round(body.totalAmountCents / body.installments) : body.totalAmountCents
   const startDate = skip > 0 ? Math.floor(addInterval(new Date(), body.interval, skip * body.intervalCount).getTime() / 1000) : 'now'
 
-  const stripe = stripeForAccount(account.stripe_secret_key)
-  const schedule = await stripe.subscriptionSchedules.create({
-    customer: customerRow.stripe_customer_id,
-    start_date: startDate,
-    end_behavior: body.installments ? 'cancel' : 'release',
-    phases: [
-      {
-        items: [
-          {
-            price_data: {
-              currency: 'eur',
-              product_data: { name: body.description },
-              unit_amount: unitAmount,
-              recurring: { interval: body.interval, interval_count: body.intervalCount },
+  const { stripe, options } = stripeClientFor(account)
+  const schedule = await stripe.subscriptionSchedules.create(
+    {
+      customer: customerRow.stripe_customer_id,
+      start_date: startDate,
+      end_behavior: body.installments ? 'cancel' : 'release',
+      phases: [
+        {
+          items: [
+            {
+              price_data: {
+                currency: 'eur',
+                product_data: { name: body.description },
+                unit_amount: unitAmount,
+                recurring: { interval: body.interval, interval_count: body.intervalCount },
+              },
+              quantity: 1,
             },
-            quantity: 1,
-          },
-        ],
-        iterations: remainingInstallments,
-        default_payment_method: customerRow.default_payment_method_id,
-        collection_method: 'charge_automatically',
-      },
-    ],
-  })
+          ],
+          iterations: remainingInstallments,
+          default_payment_method: customerRow.default_payment_method_id,
+          collection_method: 'charge_automatically',
+        },
+      ],
+    },
+    options,
+  )
 
   const { data: inserted, error } = await supabase
     .from('payment_schedules')

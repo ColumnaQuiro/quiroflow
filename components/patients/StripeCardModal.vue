@@ -15,11 +15,12 @@ let paymentElement: StripePaymentElement | null = null
 
 onMounted(async () => {
   try {
-    const { clientSecret, publishableKey } = await $fetch<{ clientSecret: string; publishableKey: string }>('/api/stripe/setup-intent', {
-      method: 'POST',
-      body: { patientId: props.patientId },
-    })
-    stripe = await loadStripe(publishableKey)
+    const { clientSecret, publishableKey, connectAccountId } = await $fetch<{
+      clientSecret: string
+      publishableKey: string
+      connectAccountId: string | null
+    }>('/api/stripe/setup-intent', { method: 'POST', body: { patientId: props.patientId } })
+    stripe = await loadStripe(publishableKey, connectAccountId ? { stripeAccount: connectAccountId } : undefined)
     if (!stripe || !mountEl.value) throw new Error('Stripe failed to load')
     elements = stripe.elements({ clientSecret })
     paymentElement = elements.create('payment')

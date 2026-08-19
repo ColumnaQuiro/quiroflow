@@ -1,6 +1,6 @@
 import { serverSupabaseClient } from '#supabase/server'
 import type { Database } from '~/types/database.types'
-import { stripeForAccount } from '~/server/utils/stripe'
+import { stripeClientFor } from '~/server/utils/stripe'
 
 // Creates (or reuses) a Stripe Customer for a patient, then a SetupIntent so
 // the browser can collect a card via Stripe Elements without card data ever
@@ -19,10 +19,10 @@ export default defineEventHandler(async (event) => {
 
   const { data: account } = await supabase
     .from('accounts')
-    .select('stripe_secret_key, stripe_publishable_key')
+    .select('stripe_connect_account_id, stripe_secret_key, stripe_publishable_key')
     .eq('id', teamMember.account_id)
     .maybeSingle()
-  if (!account?.stripe_secret_key || !account?.stripe_publishable_key) {
+  if (!account?.stripe_publishable_key) {
     throw createError({ statusCode: 400, statusMessage: 'Stripe is not configured. Set it up in Settings > Payments.' })
   }
 
@@ -31,7 +31,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'Patient not found' })
   }
 
-  const stripe = stripeForAccount(account.stripe_secret_key)
+  const { stripe, options } = stripeClientFor(account)
 
   const { data: existing } = await supabase
     .from('patient_stripe_customers')
@@ -41,11 +41,14 @@ export default defineEventHandler(async (event) => {
 
   let customerId = existing?.stripe_customer_id
   if (!customerId) {
-    const customer = await stripe.customers.create({
-      name: `${patient.first_name} ${patient.last_name}`,
-      email: patient.email ?? undefined,
-      metadata: { patient_id: patient.id, account_id: teamMember.account_id },
-    })
+    const customer = await stripe.customers.create(
+      {
+        name: `${patient.first_name} ${patient.last_name}`,
+        email: patient.email ?? undefined,
+        metadata: { patient_id: patient.id, account_id: teamMember.account_id },
+      },
+      options,
+    )
     customerId = customer.id
     await supabase.from('patient_stripe_customers').insert({
       account_id: teamMember.account_id,
@@ -54,14 +57,12 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const setupIntent = await stripe.setupIntents.create({
-    customer: customerId,
-    payment_method_types: ['card'],
-  })
+  const setupIntent = await stripe.setupIntents.create({ customer: customerId, payment_method_types: ['card'] }, options)
 
   return {
     clientSecret: setupIntent.client_secret,
     publishableKey: account.stripe_publishable_key,
+    connectAccountId: account.stripe_connect_account_id,
     customerId,
   }
 })

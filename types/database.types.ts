@@ -20,6 +20,7 @@ export type Database = {
           id: string
           name: string
           slug: string
+          stripe_connect_account_id: string | null
           stripe_publishable_key: string | null
           stripe_secret_key: string | null
           stripe_webhook_secret: string | null
@@ -36,6 +37,7 @@ export type Database = {
           id?: string
           name: string
           slug: string
+          stripe_connect_account_id?: string | null
           stripe_publishable_key?: string | null
           stripe_secret_key?: string | null
           stripe_webhook_secret?: string | null
@@ -52,6 +54,7 @@ export type Database = {
           id?: string
           name?: string
           slug?: string
+          stripe_connect_account_id?: string | null
           stripe_publishable_key?: string | null
           stripe_secret_key?: string | null
           stripe_webhook_secret?: string | null

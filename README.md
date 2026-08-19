@@ -104,8 +104,14 @@ below is configured from the app itself — no redeploy needed:
   account's webhook in Meta's App dashboard (only one webhook URL is
   allowed per WhatsApp number — the Settings page explains how to share
   that slot with an existing tool like n8n if it's already taken).
-- **Payments/Stripe** (optional) — Settings → Payments: publishable +
-  secret key from the clinic's own Stripe account, then register
+- **Payments/Stripe** (optional) — Settings → Payments: click "Connect with
+  Stripe" and authorize via OAuth (Standard Connect) — no keys to copy.
+  Requires the platform-level env vars documented in `.env.example`
+  (`NUXT_STRIPE_SECRET_KEY`, `NUXT_PUBLIC_STRIPE_CONNECT_CLIENT_ID`,
+  `NUXT_STRIPE_CONNECT_WEBHOOK_SECRET`), which need Connect enabled once on
+  ColumnaQuiro's own Stripe account (Dashboard → Connect). Without those set,
+  the page falls back to the legacy manual flow: paste a publishable + secret
+  key from the clinic's own Stripe account, then register
   `https://app.quiroflow.com/api/stripe/webhook/<accountId>` as a webhook
   endpoint in the Stripe Dashboard (Developers → Webhooks) listening for
   `invoice.paid`, `invoice.payment_failed`, `subscription_schedule.updated`,

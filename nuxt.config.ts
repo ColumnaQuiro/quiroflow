@@ -21,6 +21,12 @@ export default defineNuxtConfig({
     // manually later, same as before this existed.
     netlifyAuthToken: '',
     netlifySiteId: '',
+    // Platform-level Stripe account used for Connect: clinics authorize via
+    // OAuth instead of pasting their own API keys, and every connected
+    // account's webhook events land on one shared endpoint. Optional -- if
+    // unset, Settings > Payments falls back to the legacy manual-key flow.
+    stripeSecretKey: '',
+    stripeConnectWebhookSecret: '',
     public: {
       // Booking subdomains: <account-slug>.<appDomain> gets rewritten to
       // /book/<account-slug> by server/middleware/subdomain-booking.ts.
@@ -28,6 +34,9 @@ export default defineNuxtConfig({
       // in local dev with no /etc/hosts changes -- set this to your real
       // domain once QuiroFlow is deployed somewhere with wildcard DNS.
       appDomain: 'localtest.me',
+      // Connect "client ID" (ca_...) from Stripe Dashboard > Connect >
+      // Settings -- not a secret, it's meant to sit in a redirect URL.
+      stripeConnectClientId: '',
     },
   },
   // Vite's dev server rejects unrecognized Host headers by default; allow

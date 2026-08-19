@@ -21,19 +21,23 @@ export default defineEventHandler(async (event) => {
   const subscriptionId = String(query.subscriptionId ?? '')
   const { stripe, options } = stripeClientFor(account)
 
-  const subscription = await stripe.subscriptions.retrieve(subscriptionId, options)
-  const invoices = await stripe.invoices.list({ subscription: subscriptionId, limit: 5 }, options)
+  try {
+    const subscription = await stripe.subscriptions.retrieve(subscriptionId, options)
+    const invoices = await stripe.invoices.list({ subscription: subscriptionId, limit: 5 }, options)
 
-  return {
-    subscriptionStatus: subscription.status,
-    latestInvoiceId: subscription.latest_invoice,
-    invoices: invoices.data.map((inv) => ({
-      id: inv.id,
-      status: inv.status,
-      amount_paid: inv.amount_paid,
-      amount_due: inv.amount_due,
-      payment_intent: typeof inv.payment_intent === 'string' ? inv.payment_intent : inv.payment_intent?.id,
-      created: inv.created,
-    })),
+    return {
+      subscriptionStatus: subscription.status,
+      latestInvoiceId: subscription.latest_invoice,
+      invoices: invoices.data.map((inv) => ({
+        id: inv.id,
+        status: inv.status,
+        amount_paid: inv.amount_paid,
+        amount_due: inv.amount_due,
+        payment_intent: typeof inv.payment_intent === 'string' ? inv.payment_intent : inv.payment_intent?.id,
+        created: inv.created,
+      })),
+    }
+  } catch (err: any) {
+    throw createError({ statusCode: 502, statusMessage: err?.message ?? 'Stripe lookup failed' })
   }
 })

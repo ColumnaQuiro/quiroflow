@@ -1,10 +1,8 @@
 <script setup lang="ts">
 const START_HOUR = 8
 const END_HOUR = 20
-const SLOT_MIN = 30
 const SLOT_PX = 40
 const TOTAL_MIN = (END_HOUR - START_HOUR) * 60
-const GRID_HEIGHT = (TOTAL_MIN / SLOT_MIN) * SLOT_PX
 
 interface Room { id: string; name: string }
 interface AppointmentType { id: string; name: string; duration_minutes: number; color: string }
@@ -27,6 +25,9 @@ interface AppointmentRow {
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+
+const SLOT_MIN = computed(() => store.currentClinic?.slot_duration_minutes ?? 30)
+const GRID_HEIGHT = computed(() => (TOTAL_MIN / SLOT_MIN.value) * SLOT_PX)
 
 const viewMode = ref<'day' | 'week'>('day')
 const anchorDate = ref(new Date())
@@ -150,19 +151,24 @@ function appointmentsForDay(day: Date) {
 function timeToPx(iso: string) {
   const d = new Date(iso)
   const mins = d.getHours() * 60 + d.getMinutes() - START_HOUR * 60
-  return Math.max(0, (mins / SLOT_MIN) * SLOT_PX)
+  return Math.max(0, (mins / SLOT_MIN.value) * SLOT_PX)
 }
 function durationToPx(startIso: string, endIso: string) {
   const mins = (new Date(endIso).getTime() - new Date(startIso).getTime()) / 60000
-  return Math.max(20, (mins / SLOT_MIN) * SLOT_PX)
+  return Math.max(20, (mins / SLOT_MIN.value) * SLOT_PX)
 }
 
-const hourLabels = computed(() =>
-  Array.from({ length: END_HOUR - START_HOUR }, (_, i) => {
-    const h = START_HOUR + i
-    return `${h % 12 === 0 ? 12 : h % 12}${h < 12 ? 'am' : 'pm'}`
-  }),
-)
+// One label per slot boundary (e.g. 09:00, 09:15, 09:30…), not just per
+// hour -- matches the clinic's configured "Calendar slot" granularity.
+const slotLabels = computed(() => {
+  const totalSlots = TOTAL_MIN / SLOT_MIN.value
+  return Array.from({ length: totalSlots }, (_, i) => {
+    const fromStart = i * SLOT_MIN.value
+    const h = START_HOUR + Math.floor(fromStart / 60)
+    const m = fromStart % 60
+    return `${pad(h)}:${pad(m)}`
+  })
+})
 
 function statusColor(status: string) {
   if (status === 'completed') return 'bg-green-100 border-green-400 text-green-900'
@@ -174,8 +180,8 @@ function statusColor(status: string) {
 function openCreateModal(roomId?: string, clickY?: number) {
   let time = '09:00'
   if (clickY !== undefined) {
-    const totalMin = Math.round((clickY / SLOT_PX) * SLOT_MIN)
-    const snapped = Math.round(totalMin / 15) * 15
+    const totalMin = Math.round((clickY / SLOT_PX) * SLOT_MIN.value)
+    const snapped = Math.round(totalMin / SLOT_MIN.value) * SLOT_MIN.value
     const h = START_HOUR + Math.floor(snapped / 60)
     const m = snapped % 60
     time = `${pad(h)}:${pad(m)}`
@@ -239,7 +245,13 @@ async function onSaved() {
       <div class="flex" :style="{ minWidth: `${80 + dayColumns.length * 220}px` }">
         <div class="w-20 shrink-0 border-r border-gray-200">
           <div class="h-10 border-b border-gray-200"></div>
-          <div v-for="label in hourLabels" :key="label" :style="{ height: `${SLOT_PX * 2}px` }" class="border-b border-gray-100 px-2 pt-1 text-xs text-gray-400">
+          <div
+            v-for="label in slotLabels"
+            :key="label"
+            :style="{ height: `${SLOT_PX}px` }"
+            class="border-b border-gray-100 px-2 pt-1 text-xs"
+            :class="label.endsWith(':00') ? 'text-gray-500' : 'text-gray-300'"
+          >
             {{ label }}
           </div>
         </div>
@@ -253,10 +265,10 @@ async function onSaved() {
             @click="openCreateModal(col.id === '__none' ? undefined : col.id, $event.offsetY)"
           >
             <div
-              v-for="(label, i) in hourLabels"
+              v-for="(label, i) in slotLabels"
               :key="i"
               class="pointer-events-none absolute left-0 right-0 border-b border-gray-100"
-              :style="{ top: `${i * SLOT_PX * 2}px`, height: `${SLOT_PX * 2}px` }"
+              :style="{ top: `${i * SLOT_PX}px`, height: `${SLOT_PX}px` }"
             ></div>
             <div
               v-for="appt in appointmentsForRoom(col.id)"

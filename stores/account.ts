@@ -13,6 +13,7 @@ export interface Clinic {
   account_id: string
   name: string
   address: string | null
+  slot_duration_minutes: number
 }
 
 export const useAccountStore = defineStore('account', {
@@ -57,7 +58,7 @@ export const useAccountStore = defineStore('account', {
           .select('name, slug, whatsapp_confirmation_template_name, whatsapp_recall_template_name')
           .eq('id', teamMember.account_id)
           .maybeSingle(),
-        supabase.from('clinics').select('id, account_id, name, address').eq('account_id', teamMember.account_id),
+        supabase.from('clinics').select('id, account_id, name, address, slot_duration_minutes').eq('account_id', teamMember.account_id),
       ])
 
       this.accountName = account?.name ?? ''

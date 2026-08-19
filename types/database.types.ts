@@ -301,6 +301,7 @@ export type Database = {
           id: string
           name: string
           online_booking_enabled: boolean
+          slot_duration_minutes: number
         }
         Insert: {
           account_id: string
@@ -310,6 +311,7 @@ export type Database = {
           id?: string
           name: string
           online_booking_enabled?: boolean
+          slot_duration_minutes?: number
         }
         Update: {
           account_id?: string
@@ -319,6 +321,7 @@ export type Database = {
           id?: string
           name?: string
           online_booking_enabled?: boolean
+          slot_duration_minutes?: number
         }
         Relationships: [
           {

@@ -30,6 +30,14 @@ async function addClinic() {
   await loadBookingClinics()
 }
 
+const SLOT_DURATION_OPTIONS = [10, 15, 20, 30, 60]
+
+async function updateSlotDuration(clinicId: string, minutes: number) {
+  await supabase.from('clinics').update({ slot_duration_minutes: minutes }).eq('id', clinicId)
+  const clinic = store.clinics.find((c) => c.id === clinicId)
+  if (clinic) clinic.slot_duration_minutes = minutes
+}
+
 async function removeClinic(id: string) {
   if (!confirm('Delete this clinic?')) return
   await supabase.from('clinics').delete().eq('id', id)
@@ -131,16 +139,26 @@ function copy(text: string) {
           <tr>
             <th class="px-4 py-2">Name</th>
             <th class="px-4 py-2">Address</th>
+            <th class="px-4 py-2">Calendar slot</th>
             <th class="px-4 py-2"></th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
           <tr v-if="store.clinics.length === 0">
-            <td colspan="3" class="px-4 py-6 text-center text-gray-400">No clinics yet.</td>
+            <td colspan="4" class="px-4 py-6 text-center text-gray-400">No clinics yet.</td>
           </tr>
           <tr v-for="c in store.clinics" :key="c.id">
             <td class="px-4 py-2.5 text-gray-900">{{ c.name }}</td>
             <td class="px-4 py-2.5 text-gray-500">{{ c.address ?? 'N/A' }}</td>
+            <td class="px-4 py-2.5">
+              <select
+                :value="c.slot_duration_minutes"
+                class="rounded-md border border-gray-300 py-1 pl-2 pr-6 text-xs text-gray-600 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                @change="updateSlotDuration(c.id, Number(($event.target as HTMLSelectElement).value))"
+              >
+                <option v-for="m in SLOT_DURATION_OPTIONS" :key="m" :value="m">{{ m }} min</option>
+              </select>
+            </td>
             <td class="px-4 py-2.5 text-right">
               <button type="button" class="text-gray-400 hover:text-red-600" @click="removeClinic(c.id)">✕</button>
             </td>
@@ -148,6 +166,9 @@ function copy(text: string) {
         </tbody>
       </table>
     </div>
+    <p class="mt-2 text-xs text-gray-400">
+      "Calendar slot" sets how finely the Calendar's time grid is divided (e.g. 15 min shows 9:00, 9:15, 9:30…).
+    </p>
 
     <form class="mt-4 flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-white p-4" @submit.prevent="addClinic">
       <div>

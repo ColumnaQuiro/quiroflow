@@ -4,6 +4,17 @@ import type { Tables } from '~/types/database.types'
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 
+const STAGE_OPTIONS = [
+  { value: '', label: 'Not classified' },
+  { value: 'first_visit', label: 'First visit' },
+  { value: 'first_visit_offer', label: 'First visit (offer)' },
+  { value: 'report', label: 'Report / exam findings' },
+  { value: 'revision', label: 'Revision / check-up' },
+  { value: 'maintenance', label: 'Maintenance package' },
+  { value: 'adjustment', label: 'Adjustment' },
+  { value: 'other', label: 'Other' },
+]
+
 const types = ref<Tables<'appointment_types'>[]>([])
 const loading = ref(true)
 
@@ -55,6 +66,11 @@ async function toggleBookable(type: Tables<'appointment_types'>) {
   type.online_booking_enabled = next
   await supabase.from('appointment_types').update({ online_booking_enabled: next }).eq('id', type.id)
 }
+
+async function updateStage(type: Tables<'appointment_types'>, stage: string) {
+  type.stage = stage || null
+  await supabase.from('appointment_types').update({ stage: stage || null }).eq('id', type.id)
+}
 </script>
 
 <template>
@@ -71,16 +87,17 @@ async function toggleBookable(type: Tables<'appointment_types'>) {
             <th class="px-4 py-2">Name</th>
             <th class="px-4 py-2">Duration</th>
             <th class="px-4 py-2">Default price</th>
+            <th class="px-4 py-2">Stage</th>
             <th class="px-4 py-2">Online booking</th>
             <th class="px-4 py-2"></th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
           <tr v-if="loading">
-            <td colspan="5" class="px-4 py-6 text-center text-gray-400">Loading…</td>
+            <td colspan="6" class="px-4 py-6 text-center text-gray-400">Loading…</td>
           </tr>
           <tr v-else-if="types.length === 0">
-            <td colspan="5" class="px-4 py-6 text-center text-gray-400">No appointment types yet.</td>
+            <td colspan="6" class="px-4 py-6 text-center text-gray-400">No appointment types yet.</td>
           </tr>
           <tr v-for="t in types" :key="t.id">
             <td class="px-4 py-2.5 text-gray-900">
@@ -89,6 +106,15 @@ async function toggleBookable(type: Tables<'appointment_types'>) {
             </td>
             <td class="px-4 py-2.5 text-gray-500">{{ t.duration_minutes }} min</td>
             <td class="px-4 py-2.5 text-gray-500">€{{ (t.default_price_cents / 100).toFixed(2) }}</td>
+            <td class="px-4 py-2.5">
+              <select
+                :value="t.stage ?? ''"
+                class="rounded-md border border-gray-300 py-1 pl-2 pr-6 text-xs text-gray-600 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                @change="updateStage(t, ($event.target as HTMLSelectElement).value)"
+              >
+                <option v-for="s in STAGE_OPTIONS" :key="s.value" :value="s.value">{{ s.label }}</option>
+              </select>
+            </td>
             <td class="px-4 py-2.5">
               <label class="flex items-center gap-2 text-gray-600">
                 <input type="checkbox" :checked="t.online_booking_enabled" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" @change="toggleBookable(t)" />
@@ -102,6 +128,10 @@ async function toggleBookable(type: Tables<'appointment_types'>) {
         </tbody>
       </table>
     </div>
+    <p class="mt-2 text-xs text-gray-400">
+      "Stage" lets the Statistics report count first visits, reports, revisions, etc. — pick whichever bucket each
+      type maps to for you.
+    </p>
 
     <form class="mt-4 flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-white p-4" @submit.prevent="addType">
       <div>

@@ -23,11 +23,20 @@ async function load() {
 }
 onMounted(load)
 
+const category = ref<string>('')
+
 function openTemplate(t: Template) {
   activeTemplate.value = t
   title.value = t.title
   fields.value = Array.isArray(t.fields) ? [...t.fields] : []
+  category.value = t.category ?? ''
   savedAt.value = null
+}
+
+function categoryLabel(c: string | null) {
+  if (c === 'data_protection') return 'Data protection'
+  if (c === 'consent') return 'Consent'
+  return null
 }
 
 async function newTemplate() {
@@ -58,7 +67,12 @@ async function save() {
   saving.value = true
   const { error } = await supabase
     .from('doc_templates')
-    .update({ title: title.value.trim() || 'Untitled template', fields: fields.value as any, updated_by: store.teamMember?.id ?? null })
+    .update({
+      title: title.value.trim() || 'Untitled template',
+      fields: fields.value as any,
+      category: category.value || null,
+      updated_by: store.teamMember?.id ?? null,
+    })
     .eq('id', activeTemplate.value.id)
   saving.value = false
   if (!error) savedAt.value = new Date()
@@ -97,6 +111,9 @@ async function removeTemplate(t: Template) {
           <li v-for="t in templates" :key="t.id" class="flex items-center justify-between px-4 py-3">
             <button type="button" class="text-left text-sm font-medium text-gray-900 hover:text-indigo-600" @click="openTemplate(t)">
               {{ t.title }}
+              <span v-if="categoryLabel(t.category)" class="ml-1.5 rounded bg-indigo-50 px-1.5 py-0.5 text-xs font-medium text-indigo-700">
+                {{ categoryLabel(t.category) }}
+              </span>
             </button>
             <div class="flex items-center gap-3">
               <span class="text-xs text-gray-400">{{ new Date(t.updated_at).toLocaleString() }}</span>
@@ -122,8 +139,17 @@ async function removeTemplate(t: Template) {
             v-model="title"
             type="text"
             placeholder="Untitled template"
-            class="mb-4 w-full border-none text-xl font-semibold text-gray-900 placeholder-gray-300 focus:outline-none focus:ring-0"
+            class="mb-2 w-full border-none text-xl font-semibold text-gray-900 placeholder-gray-300 focus:outline-none focus:ring-0"
           />
+          <label class="mb-4 flex items-center gap-2 text-sm text-gray-600">
+            Category
+            <select v-model="category" class="rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+              <option value="">None</option>
+              <option value="data_protection">Data protection</option>
+              <option value="consent">Consent</option>
+            </select>
+            <span class="text-xs text-gray-400">Lets Reports track who's missing this form</span>
+          </label>
           <DocBlocks :fields="fields" mode="build" @update:fields="fields = $event" />
         </div>
       </template>

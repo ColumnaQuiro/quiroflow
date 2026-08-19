@@ -30,7 +30,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: account } = await supabase
     .from('accounts')
-    .select('whatsapp_phone_number_id, whatsapp_access_token')
+    .select('whatsapp_phone_number_id, whatsapp_access_token, whatsapp_confirmation_template_name, whatsapp_recall_template_name')
     .eq('id', teamMember.account_id)
     .maybeSingle()
   if (!account?.whatsapp_phone_number_id || !account?.whatsapp_access_token) {
@@ -79,8 +79,9 @@ export default defineEventHandler(async (event) => {
   }
 
   const url: string = `https://graph.facebook.com/v21.0/${account.whatsapp_phone_number_id}/messages`
+  let wamid: string | null = null
   try {
-    await $fetch(url, {
+    const response = await $fetch<{ messages?: { id: string }[] }>(url, {
       method: 'POST',
       headers: { Authorization: `Bearer ${account.whatsapp_access_token}` },
       body: {
@@ -90,19 +91,44 @@ export default defineEventHandler(async (event) => {
         template: { name: body.templateName, language: { code: body.templateLanguage }, components },
       },
     })
+    // Meta's own message ID -- the only way to later correlate a delivery
+    // status or a reply (via the webhook) back to this specific send.
+    wamid = response?.messages?.[0]?.id ?? null
   } catch (err: any) {
     const metaMessage = err?.data?.error?.message
     throw createError({ statusCode: 502, statusMessage: metaMessage ?? 'WhatsApp send failed' })
   }
 
-  await supabase.from('contact_log').insert({
-    account_id: teamMember.account_id,
-    patient_id: body.patientId,
-    appointment_id: body.appointmentId ?? null,
-    action: 'sent_whatsapp',
-    note: `Template: ${body.templateName}${body.variables?.length ? ` (${body.variables.join(', ')})` : ''}`,
-    created_by: teamMember.id,
-  })
+  const purpose =
+    body.templateName === account.whatsapp_confirmation_template_name
+      ? 'confirmation'
+      : body.templateName === account.whatsapp_recall_template_name
+        ? 'recall'
+        : 'other'
+
+  await Promise.all([
+    supabase.from('contact_log').insert({
+      account_id: teamMember.account_id,
+      patient_id: body.patientId,
+      appointment_id: body.appointmentId ?? null,
+      action: 'sent_whatsapp',
+      note: `Template: ${body.templateName}${body.variables?.length ? ` (${body.variables.join(', ')})` : ''}`,
+      created_by: teamMember.id,
+    }),
+    supabase.from('whatsapp_messages').insert({
+      account_id: teamMember.account_id,
+      patient_id: body.patientId,
+      appointment_id: body.appointmentId ?? null,
+      wamid,
+      purpose,
+      template_name: body.templateName,
+      status: 'sent',
+    }),
+  ])
+
+  if (purpose === 'confirmation' && body.appointmentId) {
+    await supabase.from('appointments').update({ confirmation_status: 'pending' }).eq('id', body.appointmentId)
+  }
 
   return { success: true }
 })

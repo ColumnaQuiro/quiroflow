@@ -1,24 +1,30 @@
 <script setup lang="ts">
 import { Bar } from 'vue-chartjs'
+import { computePresetRange, rangeBounds, type DateRangePreset } from '~/composables/useDateRangePresets'
 
 const supabase = useSupabaseClient()
 
 interface AppointmentRow { starts_at: string; status: string }
 
-const rangeDays = ref(90)
+const PRESETS: DateRangePreset[] = [
+  { label: 'Last 30 days', days: 30 },
+  { label: 'Last 90 days', days: 90 },
+  { label: 'Last 365 days', days: 365 },
+]
+
+const range = ref(computePresetRange({ days: 90 }))
 const loading = ref(true)
 const rows = ref<AppointmentRow[]>([])
 
 async function load() {
   loading.value = true
-  const from = new Date()
-  from.setDate(from.getDate() - rangeDays.value)
-  const { data } = await supabase.from('appointments').select('starts_at, status').gte('starts_at', from.toISOString())
+  const { from, to } = rangeBounds(range.value)
+  const { data } = await supabase.from('appointments').select('starts_at, status').gte('starts_at', from.toISOString()).lte('starts_at', to.toISOString())
   rows.value = data ?? []
   loading.value = false
 }
 onMounted(load)
-watch(rangeDays, load)
+watch(range, load)
 
 const SHIFTS = [
   { key: 'morning', label: 'Morning (before 12pm)', test: (h: number) => h < 12 },
@@ -92,17 +98,8 @@ const hourChartOptions = {
     </div>
     <p class="mt-1 text-sm text-gray-500">Which shift and time of day performs best, by volume and show-up rate.</p>
 
-    <div class="mt-4 flex items-center gap-2">
-      <button
-        v-for="d in [30, 90, 365]"
-        :key="d"
-        type="button"
-        class="rounded-md border px-3 py-1 text-sm"
-        :class="rangeDays === d ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-gray-300 text-gray-600 hover:bg-gray-50'"
-        @click="rangeDays = d"
-      >
-        Last {{ d }} days
-      </button>
+    <div class="mt-4">
+      <ReportsDateRangeSelect v-model="range" :presets="PRESETS" />
     </div>
 
     <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">

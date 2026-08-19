@@ -1,11 +1,20 @@
 <script setup lang="ts">
+import { computePresetRange, rangeBounds, type DateRangePreset } from '~/composables/useDateRangePresets'
+
 interface ApptRow { id: string; patient_id: string; starts_at: string; appointment_type_id: string | null }
 interface TypeRow { id: string; stage: string | null }
 interface PaymentRow { amount_cents: number; paid_at: string }
 
+const PRESETS: DateRangePreset[] = [
+  { label: 'This month', months: 1 },
+  { label: 'Last 3 months', months: 3 },
+  { label: 'Last 6 months', months: 6 },
+  { label: 'Last 12 months', months: 12 },
+]
+
 const supabase = useSupabaseClient()
 
-const rangeMonths = ref(3)
+const range = ref(computePresetRange({ months: 3 }))
 const loading = ref(true)
 const allCompleted = ref<ApptRow[]>([]) // every completed appointment, all-time — several metrics need full patient history
 const types = ref<TypeRow[]>([])
@@ -33,28 +42,20 @@ async function load() {
   allCompleted.value = completed.sort((a, b) => a.starts_at.localeCompare(b.starts_at))
   types.value = typeRows
 
-  const from = new Date()
-  from.setMonth(from.getMonth() - (rangeMonths.value - 1))
-  from.setDate(1)
-  from.setHours(0, 0, 0, 0)
-  const { data: p } = await supabase.from('payments').select('amount_cents, paid_at').gte('paid_at', from.toISOString())
+  const { from, to } = rangeBounds(range.value)
+  const { data: p } = await supabase.from('payments').select('amount_cents, paid_at').gte('paid_at', from.toISOString()).lte('paid_at', to.toISOString())
   payments.value = p ?? []
 
   loading.value = false
 }
 onMounted(load)
-watch(rangeMonths, load)
+watch(range, load)
 
 const stageById = computed(() => new Map(types.value.map((t) => [t.id, t.stage])))
 
-const rangeStart = computed(() => {
-  const d = new Date()
-  d.setMonth(d.getMonth() - (rangeMonths.value - 1))
-  d.setDate(1)
-  d.setHours(0, 0, 0, 0)
-  return d
-})
-const inRange = computed(() => allCompleted.value.filter((a) => new Date(a.starts_at) >= rangeStart.value))
+const rangeStart = computed(() => rangeBounds(range.value).from)
+const rangeEnd = computed(() => rangeBounds(range.value).to)
+const inRange = computed(() => allCompleted.value.filter((a) => new Date(a.starts_at) >= rangeStart.value && new Date(a.starts_at) <= rangeEnd.value))
 
 function countByStage(stage: string) {
   return inRange.value.filter((a) => stageById.value.get(a.appointment_type_id ?? '') === stage).length
@@ -76,11 +77,12 @@ const revisionOrdinals = computed(() => {
     list.push(a)
     byPatient.set(a.patient_id, list)
   }
+  const inWindow = (a: ApptRow) => new Date(a.starts_at) >= rangeStart.value && new Date(a.starts_at) <= rangeEnd.value
   let revision1 = 0
   let revision2 = 0
   for (const list of byPatient.values()) {
-    if (list[0] && new Date(list[0].starts_at) >= rangeStart.value) revision1++
-    if (list[1] && new Date(list[1].starts_at) >= rangeStart.value) revision2++
+    if (list[0] && inWindow(list[0])) revision1++
+    if (list[1] && inWindow(list[1])) revision2++
   }
   return { revision1, revision2 }
 })
@@ -93,7 +95,7 @@ const postRevisionRetention = computed(() => {
     if (stageById.value.get(a.appointment_type_id ?? '') !== 'revision') continue
     lastRevisionByPatient.set(a.patient_id, a) // sorted ascending, so last write wins = most recent
   }
-  const inRangeRevisions = [...lastRevisionByPatient.entries()].filter(([, a]) => new Date(a.starts_at) >= rangeStart.value)
+  const inRangeRevisions = [...lastRevisionByPatient.entries()].filter(([, a]) => new Date(a.starts_at) >= rangeStart.value && new Date(a.starts_at) <= rangeEnd.value)
   if (inRangeRevisions.length === 0) return null
   const retained = inRangeRevisions.filter(([patientId, revisionAppt]) =>
     allCompleted.value.some((a) => a.patient_id === patientId && a.id !== revisionAppt.id && new Date(a.starts_at) > new Date(revisionAppt.starts_at)),
@@ -110,7 +112,7 @@ const conversion = computed(() => {
     countByPatient.set(a.patient_id, (countByPatient.get(a.patient_id) ?? 0) + 1)
     if (!firstByPatient.has(a.patient_id)) firstByPatient.set(a.patient_id, a)
   }
-  const newInRange = [...firstByPatient.entries()].filter(([, a]) => new Date(a.starts_at) >= rangeStart.value)
+  const newInRange = [...firstByPatient.entries()].filter(([, a]) => new Date(a.starts_at) >= rangeStart.value && new Date(a.starts_at) <= rangeEnd.value)
   if (newInRange.length === 0) return null
   const converted = newInRange.filter(([patientId]) => (countByPatient.get(patientId) ?? 0) >= 3).length
   return { pct: Math.round((converted / newInRange.length) * 100), newPatients: newInRange.length, converted }
@@ -149,17 +151,8 @@ const unclassifiedTypes = computed(() => types.value.filter((t) => !t.stage).len
       <NuxtLink to="/settings/appointment-types" class="font-medium underline">Settings &rarr; Appointment Types</NuxtLink>.
     </p>
 
-    <div class="mt-4 flex items-center gap-2">
-      <button
-        v-for="m in [1, 3, 6, 12]"
-        :key="m"
-        type="button"
-        class="rounded-md border px-3 py-1 text-sm"
-        :class="rangeMonths === m ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-gray-300 text-gray-600 hover:bg-gray-50'"
-        @click="rangeMonths = m"
-      >
-        {{ m === 1 ? 'This month' : `Last ${m} months` }}
-      </button>
+    <div class="mt-4">
+      <ReportsDateRangeSelect v-model="range" :presets="PRESETS" />
     </div>
 
     <div v-if="loading" class="mt-6 text-sm text-gray-400">Loading…</div>

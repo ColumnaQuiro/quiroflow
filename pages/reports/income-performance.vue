@@ -1,14 +1,21 @@
 <script setup lang="ts">
 import { Line } from 'vue-chartjs'
+import { computePresetRange, monthKeysInRange, rangeBounds, type DateRangePreset } from '~/composables/useDateRangePresets'
 
 interface PaymentRow { amount_cents: number; paid_at: string; invoice_id: string }
 interface InvoiceRow { id: string; appointment_id: string | null }
 interface AppointmentRow { id: string; practitioner_id: string | null }
 interface TeamMemberRow { id: string; full_name: string; color: string }
 
+const PRESETS: DateRangePreset[] = [
+  { label: 'Last 6 months', months: 6 },
+  { label: 'Last 12 months', months: 12 },
+  { label: 'Last 24 months', months: 24 },
+]
+
 const supabase = useSupabaseClient()
 
-const rangeMonths = ref(12)
+const range = ref(computePresetRange({ months: 12 }))
 const loading = ref(true)
 const payments = ref<PaymentRow[]>([])
 const invoices = ref<InvoiceRow[]>([])
@@ -17,16 +24,10 @@ const teamMembers = ref<TeamMemberRow[]>([])
 
 async function load() {
   loading.value = true
-  // rangeMonths=6 means "the current month plus 5 more back" (6 labels
-  // total, ending at the current month) -- the cutoff must align to the
-  // start of that first labelled month, not 6 full months before today.
-  const from = new Date()
-  from.setMonth(from.getMonth() - (rangeMonths.value - 1))
-  from.setDate(1)
-  from.setHours(0, 0, 0, 0)
+  const { from, to } = rangeBounds(range.value)
 
   const [{ data: p }, { data: inv }, { data: appt }, { data: tm }] = await Promise.all([
-    supabase.from('payments').select('amount_cents, paid_at, invoice_id').gte('paid_at', from.toISOString()),
+    supabase.from('payments').select('amount_cents, paid_at, invoice_id').gte('paid_at', from.toISOString()).lte('paid_at', to.toISOString()),
     supabase.from('invoices').select('id, appointment_id'),
     supabase.from('appointments').select('id, practitioner_id'),
     supabase.from('team_members').select('id, full_name, color'),
@@ -38,7 +39,7 @@ async function load() {
   loading.value = false
 }
 onMounted(load)
-watch(rangeMonths, load)
+watch(range, load)
 
 const invoiceById = computed(() => new Map(invoices.value.map((i) => [i.id, i])))
 const appointmentById = computed(() => new Map(appointments.value.map((a) => [a.id, a])))
@@ -51,17 +52,7 @@ function monthLabel(key: string) {
   const [y, m] = key.split('-').map(Number)
   return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: 'short', year: '2-digit' })
 }
-const monthKeys = computed(() => {
-  const keys: string[] = []
-  const d = new Date()
-  d.setDate(1)
-  for (let i = rangeMonths.value - 1; i >= 0; i--) {
-    const c = new Date(d)
-    c.setMonth(c.getMonth() - i)
-    keys.push(`${c.getFullYear()}-${String(c.getMonth() + 1).padStart(2, '0')}`)
-  }
-  return keys
-})
+const monthKeys = computed(() => monthKeysInRange(range.value))
 
 function practitionerFor(payment: PaymentRow): string {
   const invoice = invoiceById.value.get(payment.invoice_id)
@@ -111,17 +102,8 @@ const totalsByPractitioner = computed(() => series.value.map((s) => ({ label: s.
     </div>
     <p class="mt-1 text-sm text-gray-500">Compare practitioners month over month and track growth.</p>
 
-    <div class="mt-4 flex items-center gap-2">
-      <button
-        v-for="m in [6, 12, 24]"
-        :key="m"
-        type="button"
-        class="rounded-md border px-3 py-1 text-sm"
-        :class="rangeMonths === m ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-gray-300 text-gray-600 hover:bg-gray-50'"
-        @click="rangeMonths = m"
-      >
-        Last {{ m }} months
-      </button>
+    <div class="mt-4">
+      <ReportsDateRangeSelect v-model="range" :presets="PRESETS" />
     </div>
 
     <div v-if="loading" class="mt-6 text-sm text-gray-400">Loading…</div>

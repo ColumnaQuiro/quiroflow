@@ -1,4 +1,12 @@
 <script setup lang="ts">
+import { computePresetRange, rangeBounds, type DateRangePreset } from '~/composables/useDateRangePresets'
+
+const PRESETS: DateRangePreset[] = [
+  { label: 'Last 7 days', days: 7 },
+  { label: 'Last 30 days', days: 30 },
+  { label: 'Last 90 days', days: 90 },
+]
+
 interface WhatsappMessageRow {
   id: string
   patient_id: string | null
@@ -19,7 +27,7 @@ interface PatientRow { id: string; first_name: string; last_name: string | null 
 
 const supabase = useSupabaseClient()
 
-const rangeDays = ref(30)
+const range = ref(computePresetRange({ days: 30 }))
 const loading = ref(true)
 const messages = ref<WhatsappMessageRow[]>([])
 const appointments = ref<AppointmentRow[]>([])
@@ -27,15 +35,15 @@ const patients = ref<PatientRow[]>([])
 
 async function load() {
   loading.value = true
-  const from = new Date()
-  from.setDate(from.getDate() - rangeDays.value)
+  const { from, to } = rangeBounds(range.value)
 
   const [{ data: msgs }, { data: appts }, { data: pts }] = await Promise.all([
     supabase
       .from('whatsapp_messages')
       .select('id, patient_id, status, purpose, error_code, error_message, created_at')
       .eq('direction', 'outbound')
-      .gte('created_at', from.toISOString()),
+      .gte('created_at', from.toISOString())
+      .lte('created_at', to.toISOString()),
     supabase
       .from('appointments')
       .select('id, patient_id, starts_at, confirmation_status, status')
@@ -50,7 +58,7 @@ async function load() {
   loading.value = false
 }
 onMounted(load)
-watch(rangeDays, load)
+watch(range, load)
 
 const patientById = computed(() => new Map(patients.value.map((p) => [p.id, `${p.first_name} ${p.last_name ?? ''}`.trim()])))
 
@@ -88,17 +96,8 @@ function fmt(iso: string) {
     </div>
     <p class="mt-1 text-sm text-gray-500">Did every WhatsApp actually send, and who has confirmed, is pending, or asked to reschedule.</p>
 
-    <div class="mt-4 flex items-center gap-2">
-      <button
-        v-for="d in [7, 30, 90]"
-        :key="d"
-        type="button"
-        class="rounded-md border px-3 py-1 text-sm"
-        :class="rangeDays === d ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-gray-300 text-gray-600 hover:bg-gray-50'"
-        @click="rangeDays = d"
-      >
-        Last {{ d }} days
-      </button>
+    <div class="mt-4">
+      <ReportsDateRangeSelect v-model="range" :presets="PRESETS" />
     </div>
 
     <div v-if="loading" class="mt-6 text-sm text-gray-400">Loading…</div>

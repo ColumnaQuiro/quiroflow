@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Bar, Line } from 'vue-chartjs'
 import type { Tables } from '~/types/database.types'
+import { computePresetRange, monthKeysInRange, rangeBounds, type DateRange } from '~/composables/useDateRangePresets'
 
 type SavedReport = Tables<'custom_reports'>
 
@@ -50,7 +51,7 @@ const source = computed(() => SOURCES.find((s) => s.key === sourceKey.value)!)
 const metricKey = ref('count')
 const groupByKey = ref('month')
 const chartType = ref<'bar' | 'line' | 'table'>('bar')
-const rangeMonths = ref(6)
+const range = ref(computePresetRange({ months: 6 }))
 
 watch(sourceKey, (key) => {
   const s = SOURCES.find((x) => x.key === key)!
@@ -61,16 +62,11 @@ watch(sourceKey, (key) => {
 const loading = ref(false)
 const rows = ref<{ label: string; value: number }[]>([])
 
-function monthKeys(n: number) {
-  const keys: string[] = []
-  const d = new Date()
-  d.setDate(1)
-  for (let i = n - 1; i >= 0; i--) {
-    const c = new Date(d)
-    c.setMonth(c.getMonth() - i)
-    keys.push(c.toLocaleDateString(undefined, { month: 'short', year: '2-digit' }))
-  }
-  return keys
+function monthKeys() {
+  return monthKeysInRange(range.value).map((k) => {
+    const [y, m] = k.split('-').map(Number)
+    return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: 'short', year: '2-digit' })
+  })
 }
 function monthKeyFor(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', year: '2-digit' })
@@ -79,19 +75,14 @@ const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 async function run() {
   loading.value = true
-  // rangeMonths=6 means "the current month plus 5 more back" (6 labels
-  // total, ending at the current month) -- the cutoff must align to the
-  // start of that first labelled month, not 6 full months before today.
-  const from = new Date()
-  from.setMonth(from.getMonth() - (rangeMonths.value - 1))
-  from.setDate(1)
-  from.setHours(0, 0, 0, 0)
+  const { from, to } = rangeBounds(range.value)
 
   if (sourceKey.value === 'appointments') {
     const { data } = await supabase
       .from('appointments')
       .select('starts_at, status, practitioner_id, appointment_type_id')
       .gte('starts_at', from.toISOString())
+      .lte('starts_at', to.toISOString())
     const list = data ?? []
     const [{ data: members }, { data: types }] = await Promise.all([
       supabase.from('team_members').select('id, full_name'),
@@ -102,7 +93,7 @@ async function run() {
 
     const totals = new Map<string, number>()
     if (groupByKey.value === 'month') {
-      for (const k of monthKeys(rangeMonths.value)) totals.set(k, 0)
+      for (const k of monthKeys()) totals.set(k, 0)
       for (const a of list) totals.set(monthKeyFor(a.starts_at), (totals.get(monthKeyFor(a.starts_at)) ?? 0) + 1)
     } else if (groupByKey.value === 'weekday') {
       for (const k of WEEKDAY_LABELS) totals.set(k, 0)
@@ -127,7 +118,7 @@ async function run() {
     rows.value = [...totals.entries()].map(([label, value]) => ({ label, value }))
   } else if (sourceKey.value === 'payments') {
     const [{ data: payments }, { data: invoices }, { data: appointments }, { data: members }] = await Promise.all([
-      supabase.from('payments').select('amount_cents, method, paid_at, invoice_id').gte('paid_at', from.toISOString()),
+      supabase.from('payments').select('amount_cents, method, paid_at, invoice_id').gte('paid_at', from.toISOString()).lte('paid_at', to.toISOString()),
       supabase.from('invoices').select('id, appointment_id'),
       supabase.from('appointments').select('id, practitioner_id'),
       supabase.from('team_members').select('id, full_name'),
@@ -143,7 +134,7 @@ async function run() {
       totals.set(key, (totals.get(key) ?? 0) + inc)
     }
     if (groupByKey.value === 'month') {
-      for (const k of monthKeys(rangeMonths.value)) totals.set(k, 0)
+      for (const k of monthKeys()) totals.set(k, 0)
       for (const p of list) bump(monthKeyFor(p.paid_at), p.amount_cents)
     } else if (groupByKey.value === 'method') {
       for (const p of list) bump(p.method, p.amount_cents)
@@ -179,7 +170,7 @@ async function run() {
   loading.value = false
 }
 onMounted(run)
-watch([sourceKey, metricKey, groupByKey, rangeMonths], run)
+watch([sourceKey, metricKey, groupByKey, range], run)
 
 const chartData = computed(() => ({
   labels: rows.value.map((r) => r.label),
@@ -202,7 +193,7 @@ async function saveReport() {
   await supabase.from('custom_reports').insert({
     account_id: store.accountId!,
     name: reportName.value.trim(),
-    config: { source: sourceKey.value, metric: metricKey.value, groupBy: groupByKey.value, chartType: chartType.value, rangeMonths: rangeMonths.value },
+    config: { source: sourceKey.value, metric: metricKey.value, groupBy: groupByKey.value, chartType: chartType.value, range: range.value },
     created_by: store.teamMember?.id ?? null,
   })
   reportName.value = ''
@@ -215,7 +206,8 @@ function loadSavedReport(r: SavedReport) {
   metricKey.value = c.metric
   groupByKey.value = c.groupBy
   chartType.value = c.chartType
-  rangeMonths.value = c.rangeMonths
+  // Older saved reports stored a rangeMonths number instead of a {from,to} range.
+  range.value = (c.range as DateRange | undefined) ?? computePresetRange({ months: c.rangeMonths ?? 6 })
 }
 async function removeSaved(r: SavedReport) {
   if (!confirm(`Delete saved report "${r.name}"?`)) return
@@ -268,11 +260,9 @@ async function removeSaved(r: SavedReport) {
       </div>
       <div>
         <label class="block text-xs font-medium text-gray-500">Range</label>
-        <select v-model.number="rangeMonths" class="mt-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-          <option :value="3">3 months</option>
-          <option :value="6">6 months</option>
-          <option :value="12">12 months</option>
-        </select>
+        <div class="mt-1">
+          <ReportsDateRangeSelect v-model="range" />
+        </div>
       </div>
       <button type="button" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700" @click="showSaveDialog = true">
         Save report

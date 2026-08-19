@@ -91,7 +91,13 @@ export default defineEventHandler(async (event) => {
                 quantity: 1,
               },
             ],
-            iterations: remainingInstallments,
+            // This API version expects the phase's total calendar length, not
+            // a raw cycle count, so a fixed number of installments becomes
+            // `interval * intervalCount` repeated that many times.
+            duration:
+              remainingInstallments !== undefined
+                ? { interval: body.interval, interval_count: body.intervalCount * remainingInstallments }
+                : undefined,
             default_payment_method: customerRow.default_payment_method_id,
             collection_method: 'charge_automatically',
           },

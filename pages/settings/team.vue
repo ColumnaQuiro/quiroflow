@@ -13,6 +13,7 @@ const inviteRole = ref<'owner' | 'practitioner' | 'front_desk'>('practitioner')
 const inviting = ref(false)
 const error = ref('')
 const lastInviteLink = ref('')
+const emailStatus = ref<'sent' | 'failed' | ''>('')
 
 async function load() {
   loading.value = true
@@ -29,24 +30,37 @@ onMounted(load)
 async function createInvite() {
   error.value = ''
   lastInviteLink.value = ''
+  emailStatus.value = ''
   inviting.value = true
+  const email = inviteEmail.value.trim() || null
   const { data, error: insertError } = await supabase
     .from('account_invites')
     .insert({
       account_id: store.accountId!,
-      email: inviteEmail.value.trim() || null,
+      email,
       role: inviteRole.value,
     })
-    .select('token')
+    .select('id, token')
     .single()
 
-  inviting.value = false
   if (insertError) {
+    inviting.value = false
     error.value = insertError.message
     return
   }
   lastInviteLink.value = `${window.location.origin}/join?token=${data.token}`
   inviteEmail.value = ''
+
+  if (email) {
+    try {
+      await $fetch('/api/invites/send', { method: 'POST', body: { inviteId: data.id } })
+      emailStatus.value = 'sent'
+    } catch {
+      emailStatus.value = 'failed'
+    }
+  }
+
+  inviting.value = false
   await load()
 }
 
@@ -171,6 +185,8 @@ const roleClass: Record<string, string> = {
       </button>
     </form>
     <p v-if="error" class="mt-2 text-sm text-red-600">{{ error }}</p>
+    <p v-if="emailStatus === 'sent'" class="mt-2 text-sm text-green-700">Invite email sent ✓</p>
+    <p v-if="emailStatus === 'failed'" class="mt-2 text-sm text-amber-700">Couldn't send the invite email — share the link below instead.</p>
     <div v-if="lastInviteLink" class="mt-2 rounded-md bg-green-50 p-3 text-sm text-green-800">
       Share this link (e.g. via WhatsApp): <span class="break-all font-medium">{{ lastInviteLink }}</span>
       <button type="button" class="ml-2 font-medium underline" @click="copy(lastInviteLink)">Copy</button>

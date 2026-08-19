@@ -140,14 +140,6 @@ async function disconnect() {
         </a>
       </div>
 
-      <button
-        type="button"
-        class="mt-4 text-xs font-medium text-gray-500 underline hover:text-gray-700"
-        @click="showLegacyForm = !showLegacyForm"
-      >
-        {{ showLegacyForm ? 'Hide' : 'Show' }} manual setup (API keys, for accounts connected before Stripe Connect)
-      </button>
-
       <form v-if="showLegacyForm" class="mt-4 space-y-6 rounded-lg border border-gray-200 bg-white p-4" @submit.prevent="save">
         <p class="text-xs text-gray-500">
           Legacy path: paste your own Stripe API keys directly. Prefer "Connect with Stripe" above when possible.
@@ -208,6 +200,12 @@ async function disconnect() {
           </div>
         </div>
       </form>
+
+      <p class="mt-10 text-center text-[11px] text-gray-300">
+        <button type="button" class="hover:text-gray-500" @click="showLegacyForm = !showLegacyForm">
+          {{ showLegacyForm ? 'hide advanced setup' : 'advanced setup' }}
+        </button>
+      </p>
     </template>
   </div>
 </template>

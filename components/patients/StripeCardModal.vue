@@ -56,7 +56,7 @@ async function submit() {
 
 <template>
   <div class="fixed inset-0 z-20 flex items-center justify-center bg-black/30 p-4" @click.self="emit('close')">
-    <div class="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+    <div class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
       <div class="flex items-center justify-between">
         <h2 class="text-lg font-semibold text-gray-900">Add card</h2>
         <button type="button" class="text-gray-400 hover:text-gray-600" @click="emit('close')">✕</button>

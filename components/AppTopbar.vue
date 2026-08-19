@@ -1,7 +1,42 @@
 <script setup lang="ts">
+interface PatientResult { id: string; first_name: string; last_name: string | null }
+
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const menuOpen = ref(false)
+
+const query = ref('')
+const results = ref<PatientResult[]>([])
+const searching = ref(false)
+const showResults = ref(false)
+let searchTimer: ReturnType<typeof setTimeout>
+
+watch(query, (q) => {
+  clearTimeout(searchTimer)
+  if (!q.trim()) {
+    results.value = []
+    showResults.value = false
+    return
+  }
+  searchTimer = setTimeout(async () => {
+    searching.value = true
+    const { data } = await supabase
+      .from('patients')
+      .select('id, first_name, last_name')
+      .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%`)
+      .order('first_name')
+      .limit(8)
+    results.value = data ?? []
+    showResults.value = true
+    searching.value = false
+  }, 250)
+})
+
+async function selectPatient(id: string) {
+  showResults.value = false
+  query.value = ''
+  await navigateTo(`/patients/${id}`)
+}
 
 const initials = computed(() => {
   const name = store.teamMember?.full_name ?? ''
@@ -28,10 +63,31 @@ async function signOut() {
           <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 10a7 7 0 11-14 0 7 7 0 0114 0z" />
         </svg>
         <input
+          v-model="query"
           type="search"
           placeholder="Search for patients"
           class="w-full rounded-md border border-gray-300 py-1.5 pl-8 pr-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          @focus="showResults = query.trim().length > 0"
+          @blur="showResults = false"
         />
+        <ul
+          v-if="showResults"
+          class="absolute left-0 z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg"
+        >
+          <li v-if="searching" class="px-3 py-2 text-sm text-gray-400">Searching…</li>
+          <template v-else>
+            <li v-if="results.length === 0" class="px-3 py-2 text-sm text-gray-400">No patients found</li>
+            <button
+              v-for="p in results"
+              :key="p.id"
+              type="button"
+              class="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+              @mousedown.prevent="selectPatient(p.id)"
+            >
+              {{ p.first_name }} {{ p.last_name }}
+            </button>
+          </template>
+        </ul>
       </div>
 
       <select

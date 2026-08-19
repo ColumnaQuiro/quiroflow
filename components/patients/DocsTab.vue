@@ -39,7 +39,7 @@ function openDoc(doc: Doc) {
   savedAt.value = null
 }
 
-async function createDoc(initialTitle: string, initialFields: DocField[]) {
+async function createDoc(initialTitle: string, initialFields: DocField[], templateId: string | null = null) {
   const { data, error } = await supabase
     .from('patient_docs')
     .insert({
@@ -47,6 +47,7 @@ async function createDoc(initialTitle: string, initialFields: DocField[]) {
       patient_id: props.patientId,
       title: initialTitle,
       fields: initialFields as any,
+      template_id: templateId,
       created_by: store.teamMember?.id ?? null,
       updated_by: store.teamMember?.id ?? null,
     })
@@ -78,7 +79,7 @@ async function newFromTemplate(template: Template) {
     clinic_name: store.accountName,
     today: new Date().toLocaleDateString(),
   })
-  await createDoc(template.title, rendered)
+  await createDoc(template.title, rendered, template.id)
 }
 
 function backToList() {
@@ -95,6 +96,16 @@ async function save() {
     .eq('id', activeDoc.value.id)
   saving.value = false
   if (!error) savedAt.value = new Date()
+}
+
+async function toggleComplete() {
+  if (!activeDoc.value) return
+  const newCompletedAt = activeDoc.value.completed_at ? null : new Date().toISOString()
+  const { error } = await supabase.from('patient_docs').update({ completed_at: newCompletedAt }).eq('id', activeDoc.value.id)
+  if (!error) {
+    activeDoc.value = { ...activeDoc.value, completed_at: newCompletedAt }
+    docs.value = docs.value.map((d) => (d.id === activeDoc.value!.id ? { ...d, completed_at: newCompletedAt } : d))
+  }
 }
 
 async function removeDoc(doc: Doc) {
@@ -156,6 +167,14 @@ async function removeDoc(doc: Doc) {
         <button type="button" class="text-sm text-gray-500 hover:text-gray-700" @click="backToList">&larr; Docs</button>
         <div class="flex items-center gap-3">
           <span v-if="savedAt" class="text-xs text-green-600">Saved</span>
+          <button
+            type="button"
+            class="rounded-md px-3 py-1.5 text-sm font-medium"
+            :class="activeDoc?.completed_at ? 'bg-green-50 text-green-700 hover:bg-green-100' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+            @click="toggleComplete"
+          >
+            {{ activeDoc?.completed_at ? '✓ Completed' : 'Mark as completed' }}
+          </button>
           <button type="button" :disabled="saving" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50" @click="save">
             {{ saving ? 'Saving…' : 'Save' }}
           </button>

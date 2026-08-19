@@ -17,6 +17,25 @@ function move(index: number, dir: -1 | 1) {
   emit('update:fields', next)
 }
 
+const draggedIndex = ref<number | null>(null)
+
+function onDragStart(index: number) {
+  draggedIndex.value = index
+}
+
+function onDragOver(index: number) {
+  if (draggedIndex.value === null || draggedIndex.value === index) return
+  const next = [...props.fields]
+  const [moved] = next.splice(draggedIndex.value, 1)
+  next.splice(index, 0, moved)
+  draggedIndex.value = index
+  emit('update:fields', next)
+}
+
+function onDragEnd() {
+  draggedIndex.value = null
+}
+
 function remove(index: number) {
   emit(
     'update:fields',
@@ -32,6 +51,35 @@ function insertMergeField(index: number, key: string) {
   update(index, { label: `${props.fields[index].label}{{${key}}}` })
 }
 
+function addOption(index: number) {
+  const options = [...(props.fields[index].options ?? [])]
+  options.push(`Option ${options.length + 1}`)
+  update(index, { options })
+}
+
+function updateOption(index: number, optIndex: number, value: string) {
+  const options = [...(props.fields[index].options ?? [])]
+  options[optIndex] = value
+  update(index, { options })
+}
+
+function removeOption(index: number, optIndex: number) {
+  const options = (props.fields[index].options ?? []).filter((_, i) => i !== optIndex)
+  update(index, { options })
+}
+
+function selectChoice(index: number, option: string) {
+  update(index, { value: option })
+}
+
+function toggleChoiceOption(index: number, option: string) {
+  const current = Array.isArray(props.fields[index].value) ? [...(props.fields[index].value as string[])] : []
+  const i = current.indexOf(option)
+  if (i === -1) current.push(option)
+  else current.splice(i, 1)
+  update(index, { value: current })
+}
+
 const showAddMenu = ref(false)
 </script>
 
@@ -39,11 +87,27 @@ const showAddMenu = ref(false)
   <div class="space-y-4">
     <div v-for="(field, i) in fields" :key="field.id">
       <!-- Build mode: configure the block -->
-      <div v-if="mode === 'build'" class="rounded-md border border-gray-200 p-3">
+      <div
+        v-if="mode === 'build'"
+        class="rounded-md border border-gray-200 p-3"
+        :class="{ 'opacity-40': draggedIndex === i }"
+        @dragover.prevent="onDragOver(i)"
+        @drop.prevent
+      >
         <div class="flex items-center justify-between">
-          <span class="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-500">
-            {{ FIELD_TYPES.find((t) => t.type === field.type)?.label }}
-          </span>
+          <div class="flex items-center gap-2">
+            <span
+              draggable="true"
+              class="cursor-grab select-none text-gray-300 hover:text-gray-500 active:cursor-grabbing"
+              title="Drag to reorder"
+              @dragstart="onDragStart(i)"
+              @dragend="onDragEnd"
+              >⠿</span
+            >
+            <span class="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-500">
+              {{ FIELD_TYPES.find((t) => t.type === field.type)?.label }}
+            </span>
+          </div>
           <div class="flex items-center gap-2 text-xs text-gray-400">
             <button type="button" class="hover:text-gray-700" :disabled="i === 0" @click="move(i, -1)">&uarr;</button>
             <button type="button" class="hover:text-gray-700" :disabled="i === fields.length - 1" @click="move(i, 1)">&darr;</button>
@@ -67,6 +131,28 @@ const showAddMenu = ref(false)
           class="mt-2 w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
           @input="update(i, { label: ($event.target as HTMLInputElement).value })"
         />
+
+        <div v-if="field.type === 'choice'" class="mt-2 space-y-1.5">
+          <div v-for="(opt, oi) in field.options ?? []" :key="oi" class="flex items-center gap-1.5">
+            <input
+              :value="opt"
+              type="text"
+              class="w-full rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              @input="updateOption(i, oi, ($event.target as HTMLInputElement).value)"
+            />
+            <button type="button" class="text-xs text-gray-400 hover:text-red-600" @click="removeOption(i, oi)">✕</button>
+          </div>
+          <button type="button" class="text-xs font-medium text-indigo-600 hover:text-indigo-700" @click="addOption(i)">+ Add option</button>
+          <label class="flex items-center gap-1.5 text-xs text-gray-500">
+            <input
+              type="checkbox"
+              :checked="field.multiple"
+              class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              @change="update(i, { multiple: ($event.target as HTMLInputElement).checked, value: ($event.target as HTMLInputElement).checked ? [] : null })"
+            />
+            Allow multiple selections
+          </label>
+        </div>
 
         <div class="mt-2 flex items-center gap-3">
           <select
@@ -105,6 +191,68 @@ const showAddMenu = ref(false)
             />
             {{ field.label }}<span v-if="field.required" class="text-red-500">*</span>
           </label>
+        </div>
+
+        <div v-else-if="field.type === 'choice'">
+          <label class="block text-sm font-medium text-gray-700">
+            {{ field.label }}<span v-if="field.required" class="text-red-500">*</span>
+          </label>
+          <div class="mt-1.5 space-y-1.5">
+            <label v-for="(opt, oi) in field.options ?? []" :key="oi" class="flex items-center gap-2 text-sm text-gray-800">
+              <input
+                v-if="field.multiple"
+                type="checkbox"
+                :checked="Array.isArray(field.value) && (field.value as string[]).includes(opt)"
+                class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                @change="toggleChoiceOption(i, opt)"
+              />
+              <input
+                v-else
+                type="radio"
+                :name="field.id"
+                :checked="field.value === opt"
+                class="border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                @change="selectChoice(i, opt)"
+              />
+              {{ opt }}
+            </label>
+          </div>
+        </div>
+
+        <div v-else-if="field.type === 'scale'">
+          <label class="block text-sm font-medium text-gray-700">
+            {{ field.label }}<span v-if="field.required" class="text-red-500">*</span>
+          </label>
+          <div class="mt-1.5 flex flex-wrap gap-1.5">
+            <button
+              v-for="n in 11"
+              :key="n"
+              type="button"
+              class="h-8 w-8 rounded-md border text-sm font-medium"
+              :class="field.value === n - 1 ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-gray-300 text-gray-700 hover:border-indigo-400'"
+              @click="update(i, { value: n - 1 })"
+            >
+              {{ n - 1 }}
+            </button>
+          </div>
+        </div>
+
+        <div v-else-if="field.type === 'rating'">
+          <label class="block text-sm font-medium text-gray-700">
+            {{ field.label }}<span v-if="field.required" class="text-red-500">*</span>
+          </label>
+          <div class="mt-1.5 flex gap-1">
+            <button
+              v-for="n in 5"
+              :key="n"
+              type="button"
+              class="text-2xl leading-none"
+              :class="typeof field.value === 'number' && field.value >= n ? 'text-amber-400' : 'text-gray-300 hover:text-amber-300'"
+              @click="update(i, { value: n })"
+            >
+              ★
+            </button>
+          </div>
         </div>
 
         <div v-else>

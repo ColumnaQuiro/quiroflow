@@ -12,13 +12,18 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, statusMessage: 'Not signed in as a team member' })
   }
 
+  setHeader(event, 'Cache-Control', 'no-store')
+
   const config = useRuntimeConfig()
   if (!config.public.stripeConnectClientId) {
     throw createError({ statusCode: 500, statusMessage: 'Stripe Connect is not configured on this deployment' })
   }
 
   const state = randomBytes(24).toString('hex')
-  setCookie(event, 'stripe_connect_state', state, { httpOnly: true, secure: true, sameSite: 'lax', maxAge: 600, path: '/' })
+  // A first-time Standard onboarding (business details, etc.) can easily run
+  // past 10 minutes, so this needs real headroom -- it's still single-use
+  // and deleted on the callback regardless of outcome.
+  setCookie(event, 'stripe_connect_state', state, { httpOnly: true, secure: true, sameSite: 'lax', maxAge: 3600, path: '/' })
 
   const redirectUri = `${getRequestURL(event).origin}/api/stripe/oauth/callback`
   const authorizeUrl = new URL('https://connect.stripe.com/oauth/authorize')

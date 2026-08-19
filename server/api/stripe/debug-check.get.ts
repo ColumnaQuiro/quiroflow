@@ -22,7 +22,7 @@ export default defineEventHandler(async (event) => {
   const { stripe, options } = stripeClientFor(account)
 
   try {
-    const subscription = await stripe.subscriptions.retrieve(subscriptionId, options)
+    const subscription = await stripe.subscriptions.retrieve(subscriptionId, {}, options)
     const invoices = await stripe.invoices.list({ subscription: subscriptionId, limit: 5 }, options)
 
     return {

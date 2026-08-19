@@ -20,6 +20,9 @@ export type Database = {
           id: string
           name: string
           slug: string
+          stripe_publishable_key: string | null
+          stripe_secret_key: string | null
+          stripe_webhook_secret: string | null
           whatsapp_access_token: string | null
           whatsapp_business_account_id: string | null
           whatsapp_confirmation_template_language: string
@@ -33,6 +36,9 @@ export type Database = {
           id?: string
           name: string
           slug: string
+          stripe_publishable_key?: string | null
+          stripe_secret_key?: string | null
+          stripe_webhook_secret?: string | null
           whatsapp_access_token?: string | null
           whatsapp_business_account_id?: string | null
           whatsapp_confirmation_template_language?: string
@@ -46,6 +52,9 @@ export type Database = {
           id?: string
           name?: string
           slug?: string
+          stripe_publishable_key?: string | null
+          stripe_secret_key?: string | null
+          stripe_webhook_secret?: string | null
           whatsapp_access_token?: string | null
           whatsapp_business_account_id?: string | null
           whatsapp_confirmation_template_language?: string
@@ -104,6 +113,7 @@ export type Database = {
           id: string
           name: string
           online_booking_enabled: boolean
+          stage: string | null
         }
         Insert: {
           account_id: string
@@ -114,6 +124,7 @@ export type Database = {
           id?: string
           name: string
           online_booking_enabled?: boolean
+          stage?: string | null
         }
         Update: {
           account_id?: string
@@ -124,6 +135,7 @@ export type Database = {
           id?: string
           name?: string
           online_booking_enabled?: boolean
+          stage?: string | null
         }
         Relationships: [
           {
@@ -140,6 +152,7 @@ export type Database = {
           account_id: string
           appointment_type_id: string | null
           clinic_id: string
+          confirmation_status: string | null
           created_at: string
           ends_at: string
           external_reference: string | null
@@ -156,6 +169,7 @@ export type Database = {
           account_id: string
           appointment_type_id?: string | null
           clinic_id: string
+          confirmation_status?: string | null
           created_at?: string
           ends_at: string
           external_reference?: string | null
@@ -172,6 +186,7 @@ export type Database = {
           account_id?: string
           appointment_type_id?: string | null
           clinic_id?: string
+          confirmation_status?: string | null
           created_at?: string
           ends_at?: string
           external_reference?: string | null
@@ -313,6 +328,7 @@ export type Database = {
           appointment_id: string | null
           created_at: string
           created_by: string | null
+          external_reference: string | null
           id: string
           note: string | null
           patient_id: string
@@ -323,6 +339,7 @@ export type Database = {
           appointment_id?: string | null
           created_at?: string
           created_by?: string | null
+          external_reference?: string | null
           id?: string
           note?: string | null
           patient_id: string
@@ -333,6 +350,7 @@ export type Database = {
           appointment_id?: string | null
           created_at?: string
           created_by?: string | null
+          external_reference?: string | null
           id?: string
           note?: string | null
           patient_id?: string
@@ -368,9 +386,52 @@ export type Database = {
           },
         ]
       }
+      custom_reports: {
+        Row: {
+          account_id: string
+          config: Json
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+        }
+        Insert: {
+          account_id: string
+          config: Json
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+        }
+        Update: {
+          account_id?: string
+          config?: Json
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "custom_reports_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "custom_reports_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       doc_templates: {
         Row: {
           account_id: string
+          category: string | null
           created_at: string
           created_by: string | null
           fields: Json
@@ -381,6 +442,7 @@ export type Database = {
         }
         Insert: {
           account_id: string
+          category?: string | null
           created_at?: string
           created_by?: string | null
           fields?: Json
@@ -391,6 +453,7 @@ export type Database = {
         }
         Update: {
           account_id?: string
+          category?: string | null
           created_at?: string
           created_by?: string | null
           fields?: Json
@@ -530,6 +593,196 @@ export type Database = {
           },
         ]
       }
+      membership_payments: {
+        Row: {
+          account_id: string
+          amount_cents: number
+          created_at: string
+          id: string
+          patient_membership_id: string
+          period_start: string
+          status: string
+        }
+        Insert: {
+          account_id: string
+          amount_cents?: number
+          created_at?: string
+          id?: string
+          patient_membership_id: string
+          period_start: string
+          status?: string
+        }
+        Update: {
+          account_id?: string
+          amount_cents?: number
+          created_at?: string
+          id?: string
+          patient_membership_id?: string
+          period_start?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "membership_payments_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "membership_payments_patient_membership_id_fkey"
+            columns: ["patient_membership_id"]
+            isOneToOne: false
+            referencedRelation: "patient_memberships"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      memberships: {
+        Row: {
+          account_id: string
+          created_at: string
+          id: string
+          name: string
+          price_cents: number
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          id?: string
+          name: string
+          price_cents?: number
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          id?: string
+          name?: string
+          price_cents?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "memberships_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      package_purchases: {
+        Row: {
+          account_id: string
+          created_by: string | null
+          id: string
+          invoice_id: string | null
+          package_id: string | null
+          package_name: string
+          patient_id: string
+          price_cents: number
+          purchased_at: string
+          sessions_total: number
+          sessions_used: number
+        }
+        Insert: {
+          account_id: string
+          created_by?: string | null
+          id?: string
+          invoice_id?: string | null
+          package_id?: string | null
+          package_name: string
+          patient_id: string
+          price_cents?: number
+          purchased_at?: string
+          sessions_total: number
+          sessions_used?: number
+        }
+        Update: {
+          account_id?: string
+          created_by?: string | null
+          id?: string
+          invoice_id?: string | null
+          package_id?: string | null
+          package_name?: string
+          patient_id?: string
+          price_cents?: number
+          purchased_at?: string
+          sessions_total?: number
+          sessions_used?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "package_purchases_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "package_purchases_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "package_purchases_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "package_purchases_package_id_fkey"
+            columns: ["package_id"]
+            isOneToOne: false
+            referencedRelation: "packages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "package_purchases_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      packages: {
+        Row: {
+          account_id: string
+          created_at: string
+          id: string
+          name: string
+          price_cents: number
+          session_count: number
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          id?: string
+          name: string
+          price_cents?: number
+          session_count: number
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          id?: string
+          name?: string
+          price_cents?: number
+          session_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "packages_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       patient_contact_numbers: {
         Row: {
           account_id: string
@@ -581,9 +834,11 @@ export type Database = {
           completed_at: string | null
           created_at: string
           created_by: string | null
+          external_reference: string | null
           fields: Json
           id: string
           patient_id: string
+          template_id: string | null
           title: string
           updated_at: string
           updated_by: string | null
@@ -593,9 +848,11 @@ export type Database = {
           completed_at?: string | null
           created_at?: string
           created_by?: string | null
+          external_reference?: string | null
           fields?: Json
           id?: string
           patient_id: string
+          template_id?: string | null
           title?: string
           updated_at?: string
           updated_by?: string | null
@@ -605,9 +862,11 @@ export type Database = {
           completed_at?: string | null
           created_at?: string
           created_by?: string | null
+          external_reference?: string | null
           fields?: Json
           id?: string
           patient_id?: string
+          template_id?: string | null
           title?: string
           updated_at?: string
           updated_by?: string | null
@@ -635,6 +894,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "patient_docs_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "doc_templates"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "patient_docs_updated_by_fkey"
             columns: ["updated_by"]
             isOneToOne: false
@@ -647,34 +913,37 @@ export type Database = {
         Row: {
           account_id: string
           created_at: string
+          external_reference: string | null
           file_name: string
           file_type: string | null
           id: string
           patient_id: string
           size_bytes: number | null
-          storage_path: string
+          storage_path: string | null
           uploaded_by: string | null
         }
         Insert: {
           account_id: string
           created_at?: string
+          external_reference?: string | null
           file_name: string
           file_type?: string | null
           id?: string
           patient_id: string
           size_bytes?: number | null
-          storage_path: string
+          storage_path?: string | null
           uploaded_by?: string | null
         }
         Update: {
           account_id?: string
           created_at?: string
+          external_reference?: string | null
           file_name?: string
           file_type?: string | null
           id?: string
           patient_id?: string
           size_bytes?: number | null
-          storage_path?: string
+          storage_path?: string | null
           uploaded_by?: string | null
         }
         Relationships: [
@@ -697,6 +966,113 @@ export type Database = {
             columns: ["uploaded_by"]
             isOneToOne: false
             referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      patient_memberships: {
+        Row: {
+          account_id: string
+          created_by: string | null
+          id: string
+          membership_id: string | null
+          membership_name: string
+          patient_id: string
+          price_cents: number
+          started_at: string
+          status: string
+        }
+        Insert: {
+          account_id: string
+          created_by?: string | null
+          id?: string
+          membership_id?: string | null
+          membership_name: string
+          patient_id: string
+          price_cents?: number
+          started_at?: string
+          status?: string
+        }
+        Update: {
+          account_id?: string
+          created_by?: string | null
+          id?: string
+          membership_id?: string | null
+          membership_name?: string
+          patient_id?: string
+          price_cents?: number
+          started_at?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_memberships_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_memberships_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_memberships_membership_id_fkey"
+            columns: ["membership_id"]
+            isOneToOne: false
+            referencedRelation: "memberships"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_memberships_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      patient_stripe_customers: {
+        Row: {
+          account_id: string
+          created_at: string
+          default_payment_method_id: string | null
+          id: string
+          patient_id: string
+          stripe_customer_id: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          default_payment_method_id?: string | null
+          id?: string
+          patient_id: string
+          stripe_customer_id: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          default_payment_method_id?: string | null
+          id?: string
+          patient_id?: string
+          stripe_customer_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_stripe_customers_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_stripe_customers_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
             referencedColumns: ["id"]
           },
         ]
@@ -804,6 +1180,83 @@ export type Database = {
           },
         ]
       }
+      payment_schedules: {
+        Row: {
+          account_id: string
+          created_at: string
+          id: string
+          installments_paid: number
+          installments_total: number | null
+          interval: string
+          interval_count: number
+          package_purchase_id: string | null
+          patient_id: string
+          patient_membership_id: string | null
+          status: string
+          stripe_subscription_id: string | null
+          stripe_subscription_schedule_id: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          id?: string
+          installments_paid?: number
+          installments_total?: number | null
+          interval?: string
+          interval_count?: number
+          package_purchase_id?: string | null
+          patient_id: string
+          patient_membership_id?: string | null
+          status?: string
+          stripe_subscription_id?: string | null
+          stripe_subscription_schedule_id: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          id?: string
+          installments_paid?: number
+          installments_total?: number | null
+          interval?: string
+          interval_count?: number
+          package_purchase_id?: string | null
+          patient_id?: string
+          patient_membership_id?: string | null
+          status?: string
+          stripe_subscription_id?: string | null
+          stripe_subscription_schedule_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_schedules_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_schedules_package_purchase_id_fkey"
+            columns: ["package_purchase_id"]
+            isOneToOne: false
+            referencedRelation: "package_purchases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_schedules_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_schedules_patient_membership_id_fkey"
+            columns: ["patient_membership_id"]
+            isOneToOne: false
+            referencedRelation: "patient_memberships"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       payments: {
         Row: {
           account_id: string
@@ -877,6 +1330,57 @@ export type Database = {
             columns: ["account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stripe_payment_events: {
+        Row: {
+          account_id: string
+          amount_cents: number
+          created_at: string
+          id: string
+          payment_schedule_id: string
+          period_start: string
+          status: string
+          stripe_invoice_id: string | null
+          stripe_payment_intent_id: string | null
+        }
+        Insert: {
+          account_id: string
+          amount_cents: number
+          created_at?: string
+          id?: string
+          payment_schedule_id: string
+          period_start: string
+          status: string
+          stripe_invoice_id?: string | null
+          stripe_payment_intent_id?: string | null
+        }
+        Update: {
+          account_id?: string
+          amount_cents?: number
+          created_at?: string
+          id?: string
+          payment_schedule_id?: string
+          period_start?: string
+          status?: string
+          stripe_invoice_id?: string | null
+          stripe_payment_intent_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stripe_payment_events_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stripe_payment_events_payment_schedule_id_fkey"
+            columns: ["payment_schedule_id"]
+            isOneToOne: false
+            referencedRelation: "payment_schedules"
             referencedColumns: ["id"]
           },
         ]
@@ -997,6 +1501,172 @@ export type Database = {
             columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      webhook_deliveries: {
+        Row: {
+          account_id: string
+          created_at: string
+          event_type: string
+          id: string
+          payload: Json
+          request_id: number | null
+          webhook_id: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          event_type: string
+          id?: string
+          payload: Json
+          request_id?: number | null
+          webhook_id: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          event_type?: string
+          id?: string
+          payload?: Json
+          request_id?: number | null
+          webhook_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "webhook_deliveries_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "webhook_deliveries_webhook_id_fkey"
+            columns: ["webhook_id"]
+            isOneToOne: false
+            referencedRelation: "webhooks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      webhooks: {
+        Row: {
+          account_id: string
+          created_at: string
+          created_by: string | null
+          enabled: boolean
+          events: string[]
+          id: string
+          secret: string
+          url: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          created_by?: string | null
+          enabled?: boolean
+          events?: string[]
+          id?: string
+          secret?: string
+          url: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          created_by?: string | null
+          enabled?: boolean
+          events?: string[]
+          id?: string
+          secret?: string
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "webhooks_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "webhooks_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_messages: {
+        Row: {
+          account_id: string
+          appointment_id: string | null
+          body_preview: string | null
+          created_at: string
+          direction: string
+          error_code: string | null
+          error_message: string | null
+          id: string
+          patient_id: string | null
+          purpose: string | null
+          status: string
+          template_name: string | null
+          updated_at: string
+          wamid: string | null
+        }
+        Insert: {
+          account_id: string
+          appointment_id?: string | null
+          body_preview?: string | null
+          created_at?: string
+          direction?: string
+          error_code?: string | null
+          error_message?: string | null
+          id?: string
+          patient_id?: string | null
+          purpose?: string | null
+          status?: string
+          template_name?: string | null
+          updated_at?: string
+          wamid?: string | null
+        }
+        Update: {
+          account_id?: string
+          appointment_id?: string | null
+          body_preview?: string | null
+          created_at?: string
+          direction?: string
+          error_code?: string | null
+          error_message?: string | null
+          id?: string
+          patient_id?: string | null
+          purpose?: string | null
+          status?: string
+          template_name?: string | null
+          updated_at?: string
+          wamid?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_messages_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_messages_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_messages_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
             referencedColumns: ["id"]
           },
         ]

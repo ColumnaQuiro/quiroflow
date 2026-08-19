@@ -1,11 +1,24 @@
-export type DocFieldType = 'heading' | 'text' | 'short_text' | 'long_text' | 'checkbox' | 'date' | 'signature'
+export type DocFieldType =
+  | 'heading'
+  | 'text'
+  | 'short_text'
+  | 'long_text'
+  | 'checkbox'
+  | 'date'
+  | 'signature'
+  | 'choice'
+  | 'scale'
+  | 'rating'
 
 export interface DocField {
   id: string
   type: DocFieldType
   label: string
   required?: boolean
-  value?: string | boolean | null
+  value?: string | boolean | number | string[] | null
+  // 'choice' only
+  options?: string[]
+  multiple?: boolean
 }
 
 export const FIELD_TYPES: { type: DocFieldType; label: string }[] = [
@@ -14,6 +27,9 @@ export const FIELD_TYPES: { type: DocFieldType; label: string }[] = [
   { type: 'short_text', label: 'Short answer' },
   { type: 'long_text', label: 'Long answer' },
   { type: 'checkbox', label: 'Checkbox' },
+  { type: 'choice', label: 'Options' },
+  { type: 'scale', label: 'Number scale' },
+  { type: 'rating', label: 'Rating' },
   { type: 'date', label: 'Date' },
   { type: 'signature', label: 'Signature' },
 ]
@@ -32,14 +48,25 @@ export const DOC_MERGE_FIELDS = [
   { key: 'today', label: "Today's date" },
 ]
 
+function emptyValue(type: DocFieldType, multiple?: boolean): DocField['value'] {
+  if (type === 'checkbox') return false
+  if (type === 'choice') return multiple ? [] : null
+  return null
+}
+
 export function newField(type: DocFieldType): DocField {
-  return {
+  const field: DocField = {
     id: crypto.randomUUID(),
     type,
     label: '',
     required: false,
-    value: type === 'checkbox' ? false : null,
+    value: emptyValue(type),
   }
+  if (type === 'choice') {
+    field.options = ['Option 1', 'Option 2']
+    field.multiple = false
+  }
+  return field
 }
 
 // Renders a template's fields for a specific patient: substitutes
@@ -50,6 +77,6 @@ export function renderTemplateFields(fields: unknown, vars: Record<string, strin
   return list.map((f) => ({
     ...f,
     label: STATIC_BLOCK_TYPES.includes(f.type) ? f.label.replace(/\{\{(\w+)\}\}/g, (_, k: string) => vars[k] ?? '') : f.label,
-    value: f.type === 'checkbox' ? false : null,
+    value: emptyValue(f.type, f.multiple),
   }))
 }

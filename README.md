@@ -84,8 +84,10 @@ Wildcard clinic subdomains need two things once, and one more per clinic:
 3. **Per clinic**: `<slug>.app.quiroflow.com` added as a Netlify domain
    alias (Netlify's `domain_aliases` field rejects wildcard syntax, so each
    clinic's subdomain needs registering individually — up to 100 per site).
-   Not yet automated into clinic sign-up; do it via the Netlify API/dashboard
-   when a new clinic joins.
+   Automated now — `/onboarding` calls `/api/internal/register-clinic-subdomain`
+   right after account creation, using `NETLIFY_AUTH_TOKEN` +
+   `NETLIFY_SITE_ID` (see `.env.example`). Without those set, it silently
+   no-ops and the alias needs adding manually instead.
 
 ## Clinic onboarding checklist
 
@@ -122,7 +124,6 @@ below is configured from the app itself — no redeploy needed:
 ## Status
 
 Built out well past the original MVP scope — see the section above for
-what's live. Not yet done: automated per-clinic domain-alias registration
-on sign-up (currently manual), and Care Plans/Treatment Notes import from
+what's live. Not yet done: Care Plans/Treatment Notes import from
 PracticeHub for clinics with a heavier history in those (only tested
 against a small data set so far).

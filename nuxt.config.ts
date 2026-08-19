@@ -15,6 +15,12 @@ export default defineNuxtConfig({
   },
   runtimeConfig: {
     resendApiKey: '',
+    // Used to auto-register a new clinic's booking subdomain as a Netlify
+    // domain alias on sign-up. Optional -- if unset (e.g. local dev), the
+    // registration call just no-ops and the subdomain can be added
+    // manually later, same as before this existed.
+    netlifyAuthToken: '',
+    netlifySiteId: '',
     public: {
       // Booking subdomains: <account-slug>.<appDomain> gets rewritten to
       // /book/<account-slug> by server/middleware/subdomain-booking.ts.

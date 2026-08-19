@@ -71,6 +71,30 @@ async function updateStage(type: Tables<'appointment_types'>, stage: string) {
   type.stage = stage || null
   await supabase.from('appointment_types').update({ stage: stage || null }).eq('id', type.id)
 }
+
+async function updateName(type: Tables<'appointment_types'>, value: string) {
+  const next = value.trim()
+  if (!next || next === type.name) return
+  type.name = next
+  await supabase.from('appointment_types').update({ name: next }).eq('id', type.id)
+}
+
+async function updateDuration(type: Tables<'appointment_types'>, value: string) {
+  const next = parseInt(value, 10) || type.duration_minutes
+  type.duration_minutes = next
+  await supabase.from('appointment_types').update({ duration_minutes: next }).eq('id', type.id)
+}
+
+async function updatePrice(type: Tables<'appointment_types'>, value: string) {
+  const next = Math.round((parseFloat(value) || 0) * 100)
+  type.default_price_cents = next
+  await supabase.from('appointment_types').update({ default_price_cents: next }).eq('id', type.id)
+}
+
+async function updateColor(type: Tables<'appointment_types'>, value: string) {
+  type.color = value
+  await supabase.from('appointment_types').update({ color: value }).eq('id', type.id)
+}
 </script>
 
 <template>
@@ -100,11 +124,47 @@ async function updateStage(type: Tables<'appointment_types'>, stage: string) {
           </tr>
           <tr v-for="t in types" :key="t.id">
             <td class="px-4 py-2.5 text-gray-900">
-              <span class="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" :style="{ backgroundColor: t.color }"></span>
-              {{ t.name }}
+              <div class="flex items-center gap-2">
+                <input
+                  type="color"
+                  :value="t.color"
+                  class="h-6 w-6 shrink-0 rounded border border-gray-300 p-0"
+                  @change="updateColor(t, ($event.target as HTMLInputElement).value)"
+                />
+                <input
+                  :value="t.name"
+                  type="text"
+                  class="w-full min-w-0 rounded-md border border-transparent px-1.5 py-1 hover:border-gray-300 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  @change="updateName(t, ($event.target as HTMLInputElement).value)"
+                />
+              </div>
             </td>
-            <td class="px-4 py-2.5 text-gray-500">{{ t.duration_minutes }} min</td>
-            <td class="px-4 py-2.5 text-gray-500">€{{ (t.default_price_cents / 100).toFixed(2) }}</td>
+            <td class="px-4 py-2.5 text-gray-500">
+              <div class="flex items-center gap-1">
+                <input
+                  :value="t.duration_minutes"
+                  type="number"
+                  min="5"
+                  step="5"
+                  class="w-16 rounded-md border border-transparent px-1.5 py-1 hover:border-gray-300 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  @change="updateDuration(t, ($event.target as HTMLInputElement).value)"
+                />
+                min
+              </div>
+            </td>
+            <td class="px-4 py-2.5 text-gray-500">
+              <div class="flex items-center gap-1">
+                €
+                <input
+                  :value="(t.default_price_cents / 100).toFixed(2)"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  class="w-20 rounded-md border border-transparent px-1.5 py-1 hover:border-gray-300 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  @change="updatePrice(t, ($event.target as HTMLInputElement).value)"
+                />
+              </div>
+            </td>
             <td class="px-4 py-2.5">
               <select
                 :value="t.stage ?? ''"

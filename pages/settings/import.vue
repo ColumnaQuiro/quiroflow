@@ -19,6 +19,8 @@ const sources: Source[] = [
     dataTypes: [
       { key: 'patients', label: 'Patients' },
       { key: 'appointments', label: 'Appointments' },
+      { key: 'payments', label: 'Payments' },
+      { key: 'patient_logs', label: 'Patient Logs' },
       { key: 'treatment_notes', label: 'Treatment Notes' },
       { key: 'care_plans', label: 'Care Plans' },
       { key: 'custom_form_responses', label: 'Custom Form Responses' },
@@ -84,6 +86,12 @@ function selectSource(key: string) {
     <div class="mt-6">
       <ImportPracticeHubPatientsImporter v-if="sourceKey === 'practicehub' && dataTypeKey === 'patients'" />
       <ImportPracticeHubAppointmentsImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'appointments'" />
+      <ImportPracticeHubPaymentsImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'payments'" />
+      <ImportPracticeHubPatientLogsImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'patient_logs'" />
+      <ImportPracticeHubClinicalNotesImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'treatment_notes'" />
+      <ImportPracticeHubCarePlansImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'care_plans'" />
+      <ImportPracticeHubCustomFormResponsesImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'custom_form_responses'" />
+      <ImportPracticeHubFileAttachmentsImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'file_attachments'" />
       <ImportComingSoon v-else-if="sourceKey === 'practicehub'" :label="activeSource.dataTypes.find((d) => d.key === dataTypeKey)?.label ?? ''" />
     </div>
   </div>

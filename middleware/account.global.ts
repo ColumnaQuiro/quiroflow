@@ -1,18 +1,16 @@
-// Subdomains that are the app itself, not a clinic's booking page --
-// quiroflow.com's bare apex is reserved for a separate marketing site, so
-// "app" is the real entry point here alongside the conventional "www".
-const RESERVED_SUBDOMAINS = ['app', 'www']
-
 export default defineNuxtRouteMiddleware(async (to) => {
   // A clinic's booking subdomain (<slug>.<appDomain>) should only ever show
   // its booking page, regardless of what path was requested -- checked
   // first so it wins even for a staff user who happens to land here.
+  // appDomain is the app's own host (app.quiroflow.com) -- quiroflow.com's
+  // bare apex is a separate marketing site, not this app, so it's not
+  // handled here at all.
   const appDomain = useRuntimeConfig().public.appDomain
   if (appDomain && !to.path.startsWith('/book/')) {
     const host = useRequestURL().hostname.toLowerCase()
     if (host !== appDomain && host.endsWith(`.${appDomain}`)) {
       const slug = host.slice(0, host.length - appDomain.length - 1)
-      if (slug && !slug.includes('.') && !RESERVED_SUBDOMAINS.includes(slug)) {
+      if (slug && !slug.includes('.')) {
         return navigateTo(`/book/${slug}`, { replace: true })
       }
     }

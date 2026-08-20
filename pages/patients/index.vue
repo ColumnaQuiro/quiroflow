@@ -3,13 +3,15 @@ import type { Tables } from '~/types/database.types'
 
 type Patient = Pick<
   Tables<'patients'>,
-  'id' | 'first_name' | 'last_name' | 'date_of_birth' | 'balance_cents' | 'tags'
+  'id' | 'first_name' | 'last_name' | 'date_of_birth' | 'balance_cents' | 'tags' | 'clinic_id'
 >
 
 const supabase = useSupabaseClient()
+const store = useAccountStore()
 
 const search = ref('')
 const balanceFilter = ref<'any' | 'credit' | 'debit' | 'zero'>('any')
+const allClinics = ref(false)
 const patients = ref<Patient[]>([])
 const loading = ref(true)
 
@@ -17,7 +19,7 @@ async function loadPatients() {
   loading.value = true
   const { data } = await supabase
     .from('patients')
-    .select('id, first_name, last_name, date_of_birth, balance_cents, tags')
+    .select('id, first_name, last_name, date_of_birth, balance_cents, tags, clinic_id')
     .order('first_name')
   patients.value = data ?? []
   loading.value = false
@@ -26,6 +28,7 @@ onMounted(loadPatients)
 
 const filtered = computed(() => {
   return patients.value.filter((p) => {
+    if (!allClinics.value && store.currentClinicId && p.clinic_id !== store.currentClinicId) return false
     if (search.value) {
       const name = `${p.first_name} ${p.last_name ?? ''}`.toLowerCase()
       if (!name.includes(search.value.toLowerCase())) return false
@@ -73,6 +76,10 @@ function formatBalance(cents: number) {
         <option value="debit">In debt</option>
         <option value="zero">Zero balance</option>
       </select>
+      <label v-if="store.currentClinicId" class="flex items-center gap-1.5 text-sm text-gray-600">
+        <input v-model="allClinics" type="checkbox" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+        Show all clinics
+      </label>
     </div>
 
     <div class="mt-4 overflow-hidden rounded-lg border border-gray-200 bg-white">

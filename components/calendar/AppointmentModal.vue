@@ -1,6 +1,6 @@
 <script setup lang="ts">
 interface RoomOption { id: string; name: string }
-interface AppointmentTypeOption { id: string; name: string; duration_minutes: number; color: string }
+interface AppointmentTypeOption { id: string; name: string; duration_minutes: number; color: string; default_price_cents: number }
 interface TeamMemberOption { id: string; full_name: string; color: string }
 interface PatientOption { id: string; first_name: string; last_name: string | null }
 
@@ -44,6 +44,8 @@ function minutesBetween(startIso: string, endIso: string) {
   return Math.round((new Date(endIso).getTime() - new Date(startIso).getTime()) / 60000)
 }
 
+const activeTab = ref<'details' | 'billing' | 'history' | 'notes'>('details')
+
 const patientId = ref(props.appointment?.patient_id ?? '')
 const patientQuery = ref('')
 const roomId = ref(props.appointment?.room_id ?? props.prefillRoomId ?? props.rooms[0]?.id ?? '')
@@ -73,6 +75,8 @@ const selectedPatientLabel = computed(() => {
   const p = props.patients.find((p) => p.id === patientId.value)
   return p ? `${p.first_name} ${p.last_name ?? ''}` : ''
 })
+
+const selectedAppointmentType = computed(() => props.appointmentTypes.find((t) => t.id === appointmentTypeId.value))
 
 async function save() {
   error.value = ''
@@ -126,7 +130,7 @@ async function remove() {
 
 <template>
   <div class="fixed inset-0 z-20 flex items-center justify-center bg-black/30 p-4" @click.self="emit('close')">
-    <div class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
+    <div class="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
       <div class="flex items-center justify-between">
         <h2 class="text-lg font-semibold text-gray-900">
           {{ mode === 'create' ? 'New Appointment' : 'Edit Appointment' }}
@@ -134,7 +138,20 @@ async function remove() {
         <button type="button" class="text-gray-400 hover:text-gray-600" @click="emit('close')">✕</button>
       </div>
 
-      <form class="mt-4 space-y-4" @submit.prevent="save">
+      <div v-if="mode === 'edit'" class="mt-4 flex gap-1 border-b border-gray-200">
+        <button
+          v-for="tab in (['details', 'billing', 'history', 'notes'] as const)"
+          :key="tab"
+          type="button"
+          class="-mb-px border-b-2 px-3 py-2 text-sm font-medium capitalize"
+          :class="activeTab === tab ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
+          @click="activeTab = tab"
+        >
+          {{ tab }}
+        </button>
+      </div>
+
+      <form v-if="mode === 'create' || activeTab === 'details'" class="mt-4 space-y-4" @submit.prevent="save">
         <div>
           <label class="block text-sm font-medium text-gray-700">Patient</label>
           <input
@@ -228,11 +245,21 @@ async function remove() {
         </div>
       </form>
 
-      <div v-if="mode === 'edit'" class="mt-6 border-t border-gray-100 pt-4">
-        <h3 class="text-sm font-semibold text-gray-900">Visit notes</h3>
-        <div class="mt-2">
-          <AppointmentsNotesPanel :appointment-id="appointment!.id" />
-        </div>
+      <div v-if="mode === 'edit' && activeTab === 'billing'" class="mt-4">
+        <CalendarAppointmentBillingTab
+          :appointment-id="appointment!.id"
+          :patient-id="appointment!.patient_id"
+          :appointment-type-name="selectedAppointmentType?.name"
+          :appointment-type-price-cents="selectedAppointmentType?.default_price_cents"
+        />
+      </div>
+
+      <div v-if="mode === 'edit' && activeTab === 'history'" class="mt-4">
+        <CalendarAppointmentHistoryTab :patient-id="appointment!.patient_id" :exclude-appointment-id="appointment!.id" />
+      </div>
+
+      <div v-if="mode === 'edit' && activeTab === 'notes'" class="mt-4">
+        <AppointmentsNotesPanel :appointment-id="appointment!.id" />
       </div>
     </div>
   </div>

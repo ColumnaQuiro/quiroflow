@@ -5,7 +5,7 @@ const SLOT_PX = 40
 const TOTAL_MIN = (END_HOUR - START_HOUR) * 60
 
 interface Room { id: string; name: string }
-interface AppointmentType { id: string; name: string; duration_minutes: number; color: string }
+interface AppointmentType { id: string; name: string; duration_minutes: number; color: string; default_price_cents: number }
 interface TeamMember { id: string; full_name: string; color: string }
 interface PatientOption { id: string; first_name: string; last_name: string | null }
 
@@ -80,7 +80,7 @@ const rangeLabel = computed(() => {
 
 async function loadReferenceData() {
   const [{ data: types }, { data: members }, { data: pts }] = await Promise.all([
-    supabase.from('appointment_types').select('id, name, duration_minutes, color').order('name'),
+    supabase.from('appointment_types').select('id, name, duration_minutes, color, default_price_cents').order('name'),
     supabase.from('team_members').select('id, full_name, color').order('full_name'),
     supabase.from('patients').select('id, first_name, last_name').order('first_name'),
   ])

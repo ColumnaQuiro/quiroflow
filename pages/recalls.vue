@@ -135,6 +135,56 @@ function onSent() {
   if (sendingTo.value) refreshLastAction(sendingTo.value.patient_id!)
   sendingTo.value = null
 }
+
+// --- Bulk selection (Gmail-style: select-all applies to the current
+// filtered view, individual rows can be de-selected) ---
+const selectedIds = ref<Set<string>>(new Set())
+const allVisibleSelected = computed(() => filtered.value.length > 0 && filtered.value.every((r) => selectedIds.value.has(r.patient_id!)))
+const selectedRecalls = computed(() => filtered.value.filter((r) => selectedIds.value.has(r.patient_id!)))
+
+function toggleSelectAll() {
+  const next = new Set(selectedIds.value)
+  if (allVisibleSelected.value) {
+    for (const r of filtered.value) next.delete(r.patient_id!)
+  } else {
+    for (const r of filtered.value) next.add(r.patient_id!)
+  }
+  selectedIds.value = next
+}
+function toggleSelect(id: string) {
+  const next = new Set(selectedIds.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  selectedIds.value = next
+}
+
+async function bulkDismiss() {
+  const ids = selectedRecalls.value.map((r) => r.patient_id!)
+  if (ids.length === 0) return
+  if (!confirm(`Remove ${ids.length} patient${ids.length === 1 ? '' : 's'} from recalls?`)) return
+  await supabase.from('patients').update({ recall_status: 'dismissed' }).in('id', ids)
+  recalls.value = recalls.value.filter((r) => !ids.includes(r.patient_id!))
+  selectedIds.value = new Set()
+}
+
+async function bulkMarkPriority() {
+  const ids = selectedRecalls.value.map((r) => r.patient_id!)
+  if (ids.length === 0) return
+  await supabase.from('patients').update({ recall_priority: true }).in('id', ids)
+  for (const r of recalls.value) {
+    if (ids.includes(r.patient_id!)) r.recall_priority = true
+  }
+  selectedIds.value = new Set()
+}
+
+const bulkWhatsAppOpen = ref(false)
+function onBulkSent() {
+  for (const r of selectedRecalls.value) refreshLastAction(r.patient_id!)
+}
+function closeBulkWhatsApp() {
+  bulkWhatsAppOpen.value = false
+  selectedIds.value = new Set()
+}
 </script>
 
 <template>
@@ -181,10 +231,32 @@ function onSent() {
       </label>
     </div>
 
+    <div v-if="selectedIds.size > 0" class="mt-4 flex items-center gap-3 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2">
+      <span class="text-sm font-medium text-indigo-900">{{ selectedIds.size }} selected</span>
+      <button type="button" class="rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700" @click="bulkWhatsAppOpen = true">
+        Send WhatsApp
+      </button>
+      <button type="button" class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50" @click="bulkMarkPriority">
+        Mark as high priority
+      </button>
+      <button type="button" class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50" @click="bulkDismiss">
+        Dismiss
+      </button>
+      <button type="button" class="ml-auto text-xs text-indigo-600 hover:text-indigo-500" @click="selectedIds = new Set()">Clear selection</button>
+    </div>
+
     <div class="mt-4 overflow-hidden rounded-lg border border-gray-200 bg-white">
       <table class="w-full text-sm">
         <thead class="border-b border-gray-200 bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
           <tr>
+            <th class="w-8 px-4 py-2">
+              <input
+                type="checkbox"
+                :checked="allVisibleSelected"
+                class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                @change="toggleSelectAll"
+              />
+            </th>
             <th class="px-4 py-2">Patient</th>
             <th class="px-4 py-2">Last Appointment</th>
             <th class="px-4 py-2">Practitioner</th>
@@ -196,12 +268,20 @@ function onSent() {
         </thead>
         <tbody class="divide-y divide-gray-100">
           <tr v-if="loading">
-            <td colspan="7" class="px-4 py-6 text-center text-gray-400">Loading…</td>
+            <td colspan="8" class="px-4 py-6 text-center text-gray-400">Loading…</td>
           </tr>
           <tr v-else-if="filtered.length === 0">
-            <td colspan="7" class="px-4 py-6 text-center text-gray-400">No recalls match these filters.</td>
+            <td colspan="8" class="px-4 py-6 text-center text-gray-400">No recalls match these filters.</td>
           </tr>
           <tr v-for="r in filtered" :key="r.patient_id!" class="align-top">
+            <td class="px-4 py-2.5">
+              <input
+                type="checkbox"
+                :checked="selectedIds.has(r.patient_id!)"
+                class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                @change="toggleSelect(r.patient_id!)"
+              />
+            </td>
             <td class="px-4 py-2.5">
               <NuxtLink :to="`/patients/${r.patient_id}`" class="font-medium text-gray-900 hover:text-indigo-600">
                 {{ r.first_name }} {{ r.last_name }}
@@ -265,6 +345,14 @@ function onSent() {
       :default-template-name="store.whatsappRecallTemplateName"
       @close="sendingTo = null"
       @sent="onSent"
+    />
+
+    <BulkSendWhatsAppModal
+      v-if="bulkWhatsAppOpen"
+      :targets="selectedRecalls.map((r) => ({ patientId: r.patient_id!, firstName: r.first_name ?? '' }))"
+      :default-template-name="store.whatsappRecallTemplateName"
+      @close="closeBulkWhatsApp"
+      @sent="onBulkSent"
     />
   </div>
 </template>

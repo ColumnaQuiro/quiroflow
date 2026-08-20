@@ -1,6 +1,33 @@
 <script setup lang="ts">
 import { computePresetRange } from '~/composables/useDateRangePresets'
 import { widgetDef, NEXT_SIZE } from '~/utils/dashboardWidgets'
+import DashboardWeeklyVisitsWidget from '~/components/dashboard/WeeklyVisitsWidget.vue'
+import DashboardTotalPatientsWidget from '~/components/dashboard/TotalPatientsWidget.vue'
+import DashboardActivePatientsWidget from '~/components/dashboard/ActivePatientsWidget.vue'
+import DashboardVisitSummaryWidget from '~/components/dashboard/VisitSummaryWidget.vue'
+import DashboardIncomeMiniWidget from '~/components/dashboard/IncomeMiniWidget.vue'
+import DashboardAppointmentDistributionMiniWidget from '~/components/dashboard/AppointmentDistributionMiniWidget.vue'
+import DashboardStatisticsMiniWidget from '~/components/dashboard/StatisticsMiniWidget.vue'
+import DashboardMembershipsMiniWidget from '~/components/dashboard/MembershipsMiniWidget.vue'
+import DashboardDebtorsMiniWidget from '~/components/dashboard/DebtorsMiniWidget.vue'
+import DashboardUpcomingVisitsMiniWidget from '~/components/dashboard/UpcomingVisitsMiniWidget.vue'
+
+// <component :is="'StringName'"> doesn't resolve Nuxt's auto-imported
+// components at runtime -- auto-import only rewrites literal tags found in
+// templates at build time. Explicit imports + a local map are needed for
+// dynamic-by-string resolution.
+const WIDGET_COMPONENTS: Record<string, unknown> = {
+  DashboardWeeklyVisitsWidget,
+  DashboardTotalPatientsWidget,
+  DashboardActivePatientsWidget,
+  DashboardVisitSummaryWidget,
+  DashboardIncomeMiniWidget,
+  DashboardAppointmentDistributionMiniWidget,
+  DashboardStatisticsMiniWidget,
+  DashboardMembershipsMiniWidget,
+  DashboardDebtorsMiniWidget,
+  DashboardUpcomingVisitsMiniWidget,
+}
 
 const store = useAccountStore()
 const { practitioners, clinics, load: loadFilterOptions } = useReportFilterOptions()
@@ -91,7 +118,7 @@ const widgetProps = computed(() => ({
         @drag-start="onDragStart"
         @drag-over="onDragOver"
       >
-        <component :is="widgetDef(w.type)?.component" v-bind="widgetProps" />
+        <component :is="WIDGET_COMPONENTS[widgetDef(w.type)?.component ?? '']" v-bind="widgetProps" />
       </DashboardWidgetFrame>
 
       <button

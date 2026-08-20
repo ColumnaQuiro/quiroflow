@@ -115,21 +115,23 @@ async function save() {
 
 <template>
   <div class="space-y-6">
+    <div class="flex items-center justify-between">
+      <h2 class="text-base font-semibold text-gray-900">Patient Details</h2>
+      <button
+        v-if="!editing"
+        type="button"
+        class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+        @click="startEditing"
+      >
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+        </svg>
+        Edit
+      </button>
+    </div>
+
     <div class="rounded-lg border border-gray-200 bg-white p-6">
-      <div class="flex items-center justify-between">
-        <h2 class="text-sm font-semibold text-gray-900">Contact details</h2>
-        <button
-          v-if="!editing"
-          type="button"
-          class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-          @click="startEditing"
-        >
-          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-          </svg>
-          Edit
-        </button>
-      </div>
+      <h3 class="text-sm font-semibold text-gray-900">Contact details</h3>
 
       <dl v-if="!editing" class="mt-4 grid grid-cols-1 gap-x-8 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
         <div>

@@ -1550,6 +1550,7 @@ export type Database = {
           account_id: string
           color: string
           created_at: string
+          dashboard_layout: Json
           full_name: string
           id: string
           is_owner: boolean
@@ -1562,6 +1563,7 @@ export type Database = {
           account_id: string
           color?: string
           created_at?: string
+          dashboard_layout?: Json
           full_name: string
           id?: string
           is_owner?: boolean
@@ -1574,6 +1576,7 @@ export type Database = {
           account_id?: string
           color?: string
           created_at?: string
+          dashboard_layout?: Json
           full_name?: string
           id?: string
           is_owner?: boolean

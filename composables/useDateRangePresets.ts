@@ -60,6 +60,18 @@ export function rangeBounds(range: DateRange): { from: Date; to: Date } {
   return { from, to }
 }
 
+// Monday-Sunday bounds for the week containing `date` -- for widgets scoped
+// to "this working week" rather than a rolling window or calendar month.
+export function getWeekRange(date: Date = new Date()): DateRange {
+  const day = date.getDay()
+  const diffToMonday = day === 0 ? -6 : 1 - day
+  const from = new Date(date)
+  from.setDate(from.getDate() + diffToMonday)
+  const to = new Date(from)
+  to.setDate(to.getDate() + 6)
+  return { from: toISODate(from), to: toISODate(to) }
+}
+
 // Every "YYYY-MM" month key from range.from's month through range.to's
 // month, inclusive -- for bucketing a chart over an arbitrary custom range
 // rather than a fixed "last N months ending today".

@@ -42,10 +42,12 @@ export const useAccountStore = defineStore('account', {
       if (this.loading) return
       this.loading = true
       const supabase = useSupabaseClient()
+      const user = useSupabaseUser()
 
       const { data: teamMember } = await supabase
         .from('team_members')
         .select('id, account_id, full_name, role, color, is_owner')
+        .eq('user_id', user.value!.sub)
         .maybeSingle()
 
       if (!teamMember) {

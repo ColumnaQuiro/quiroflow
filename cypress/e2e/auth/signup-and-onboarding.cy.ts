@@ -1,0 +1,32 @@
+import { faker } from '@faker-js/faker'
+
+describe('Signup and onboarding', () => {
+  it('signs up, completes onboarding, and lands on the dashboard with a working account', () => {
+    const email = `signup-${Date.now()}-${Math.floor(Math.random() * 100000)}@example.test`
+    const password = 'Test1234!'
+    const ownerName = faker.person.fullName()
+    const accountName = `${faker.company.name()} Clinic`
+    const clinicName = faker.location.city()
+
+    cy.visit('/signup')
+    cy.get('#email').type(email)
+    cy.get('#password').type(password)
+    cy.contains('button', 'Create account').click()
+
+    cy.location('pathname', { timeout: 15000 }).should('eq', '/onboarding')
+
+    cy.get('#owner-name').type(ownerName)
+    cy.get('#account-name').type(accountName)
+    cy.get('#clinic-name').type(clinicName)
+    cy.contains('button', 'Create practice').click()
+
+    cy.location('pathname', { timeout: 15000 }).should('eq', '/dashboard')
+    cy.contains(`Good to see you, ${ownerName}`).should('be.visible')
+
+    // A fresh account isn't stuck re-onboarding on the next visit.
+    cy.visit('/dashboard')
+    cy.location('pathname').should('eq', '/dashboard')
+    cy.get('button.rounded-full').click()
+    cy.contains(accountName).should('be.visible')
+  })
+})

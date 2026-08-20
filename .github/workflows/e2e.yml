@@ -1,0 +1,50 @@
+name: E2E tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  cypress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start local Supabase
+        run: supabase start
+
+      - name: Export Supabase env vars
+        run: |
+          supabase status -o env \
+            | sed -n 's/^API_URL="\(.*\)"/NUXT_PUBLIC_SUPABASE_URL=\1/p;s/^ANON_KEY="\(.*\)"/NUXT_PUBLIC_SUPABASE_KEY=\1/p;s/^SERVICE_ROLE_KEY="\(.*\)"/NUXT_SUPABASE_SECRET_KEY=\1/p' \
+            >> "$GITHUB_ENV"
+
+      - name: Run Cypress
+        run: npm run test:e2e
+        env:
+          CYPRESS_baseUrl: http://localhost:3000
+
+      - name: Upload screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypress-screenshots
+          path: cypress/screenshots
+          if-no-files-found: ignore
+
+      - name: Stop Supabase
+        if: always()
+        run: supabase stop

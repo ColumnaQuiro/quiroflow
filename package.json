@@ -7,7 +7,12 @@
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare"
+    "postinstall": "nuxt prepare",
+    "test:e2e": "start-server-and-test dev http://localhost:3000 'cypress run'",
+    "test:e2e:open": "start-server-and-test dev http://localhost:3000 'cypress open'",
+    "cypress:run": "cypress run",
+    "cypress:open": "cypress open",
+    "supabase:test:reset": "supabase db reset"
   },
   "dependencies": {
     "@nuxtjs/supabase": "^2.0.10",
@@ -29,8 +34,13 @@
     }
   },
   "devDependencies": {
+    "@faker-js/faker": "^10.6.0",
+    "@supabase/supabase-js": "^2.112.3",
     "@types/papaparse": "^5.5.2",
+    "cypress": "^15.21.0",
+    "dotenv": "^17.4.2",
     "playwright": "^1.62.1",
+    "start-server-and-test": "^3.0.12",
     "typescript": "5.7",
     "vue-tsc": "^3.3.10",
     "ws": "^8.21.3"

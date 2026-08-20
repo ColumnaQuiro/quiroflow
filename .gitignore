@@ -26,3 +26,8 @@ supabase/.temp
 
 # Local Netlify folder
 .netlify
+
+# Cypress artifacts
+cypress/videos
+cypress/screenshots
+cypress/downloads

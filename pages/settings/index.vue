@@ -36,6 +36,7 @@ const groups = [
       { to: '/settings/roles', label: 'Roles & Permissions', description: 'Control what each role can see and do.', icon: ICONS.lockClosed },
       { to: '/settings/appointment-types', label: 'Appointment Types', description: 'Visit types, durations, colors, default price.', icon: ICONS.tag },
       { to: '/settings/rooms', label: 'Calendar Resources', description: 'Rooms used for scheduling per clinic.', icon: ICONS.calendar },
+      { to: '/settings/referral-sources', label: 'Referral Sources', description: 'The options on a patient\'s referral source field.', icon: ICONS.tag },
     ],
   },
   {

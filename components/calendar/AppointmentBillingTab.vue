@@ -177,6 +177,13 @@ async function recordPayment() {
     // in one action rather than requiring a separate status change.
     await supabase.from('appointments').update({ status: 'completed' }).eq('id', props.appointmentId)
     emit('completed')
+
+    const { data: patient } = await supabase.from('patients').select('invoice_email_enabled, email').eq('id', props.patientId).maybeSingle()
+    if (patient?.invoice_email_enabled && patient.email) {
+      // Best-effort -- a failed auto-send shouldn't block having just
+      // completed the visit and taken payment.
+      $fetch(`/api/invoices/${invoice.value.id}/send`, { method: 'POST' }).catch(() => {})
+    }
   }
 
   savingPayment.value = false

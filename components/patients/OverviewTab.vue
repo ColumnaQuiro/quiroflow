@@ -9,9 +9,14 @@ const store = useAccountStore()
 
 interface TeamMemberOption { id: string; full_name: string }
 const teamMembers = ref<TeamMemberOption[]>([])
+const referralSources = ref<Tables<'referral_sources'>[]>([])
 onMounted(async () => {
-  const { data } = await supabase.from('team_members').select('id, full_name').order('full_name')
-  teamMembers.value = data ?? []
+  const [{ data: members }, { data: sources }] = await Promise.all([
+    supabase.from('team_members').select('id, full_name').order('full_name'),
+    supabase.from('referral_sources').select('*').order('name'),
+  ])
+  teamMembers.value = members ?? []
+  referralSources.value = sources ?? []
 })
 
 function teamMemberName(id: string | null) {
@@ -32,6 +37,8 @@ const firstName = ref(props.patient.first_name)
 const lastName = ref(props.patient.last_name ?? '')
 const dateOfBirth = ref(props.patient.date_of_birth ?? '')
 const email = ref(props.patient.email ?? '')
+const address = ref(props.patient.address ?? '')
+const nationalId = ref(props.patient.national_id ?? '')
 const clinicId = ref(props.patient.clinic_id ?? '')
 const tagsInput = ref(props.patient.tags.join(', '))
 const occupation = ref(props.patient.occupation ?? '')
@@ -49,6 +56,8 @@ function startEditing() {
   lastName.value = props.patient.last_name ?? ''
   dateOfBirth.value = props.patient.date_of_birth ?? ''
   email.value = props.patient.email ?? ''
+  address.value = props.patient.address ?? ''
+  nationalId.value = props.patient.national_id ?? ''
   clinicId.value = props.patient.clinic_id ?? ''
   tagsInput.value = props.patient.tags.join(', ')
   occupation.value = props.patient.occupation ?? ''
@@ -78,6 +87,8 @@ async function save() {
       last_name: lastName.value || null,
       date_of_birth: dateOfBirth.value || null,
       email: email.value || null,
+      address: address.value || null,
+      national_id: nationalId.value || null,
       clinic_id: clinicId.value || null,
       tags,
       occupation: occupation.value || null,
@@ -125,6 +136,14 @@ async function save() {
         <div class="flex justify-between">
           <dt class="text-gray-500">Email</dt>
           <dd class="text-gray-900">{{ patient.email ?? 'N/A' }}</dd>
+        </div>
+        <div class="flex justify-between">
+          <dt class="text-gray-500">Address</dt>
+          <dd class="text-gray-900">{{ patient.address ?? 'N/A' }}</dd>
+        </div>
+        <div class="flex justify-between">
+          <dt class="text-gray-500">National ID</dt>
+          <dd class="text-gray-900">{{ patient.national_id ?? 'N/A' }}</dd>
         </div>
         <div class="flex justify-between">
           <dt class="text-gray-500">Occupation</dt>
@@ -180,6 +199,14 @@ async function save() {
           <label class="block text-sm font-medium text-gray-700">Email</label>
           <input v-model="email" type="email" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
         </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Address</label>
+          <input v-model="address" type="text" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700">National ID</label>
+          <input v-model="nationalId" type="text" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+        </div>
         <div class="grid grid-cols-2 gap-4">
           <div>
             <label class="block text-sm font-medium text-gray-700">Occupation</label>
@@ -192,7 +219,12 @@ async function save() {
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700">Referral source</label>
-          <input v-model="referralSource" type="text" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          <select v-model="referralSource" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+            <option value="">Not set</option>
+            <option v-for="s in referralSources" :key="s.id" :value="s.name">{{ s.name }}</option>
+            <!-- Preserves legacy freeform data that doesn't match a configured source. -->
+            <option v-if="referralSource && !referralSources.some((s) => s.name === referralSource)" :value="referralSource">{{ referralSource }}</option>
+          </select>
         </div>
         <div class="grid grid-cols-2 gap-4">
           <div>

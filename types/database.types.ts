@@ -1323,6 +1323,7 @@ export type Database = {
       patients: {
         Row: {
           account_id: string
+          address: string | null
           balance_cents: number
           clinic_id: string | null
           confirmation_channel: string
@@ -1337,6 +1338,7 @@ export type Database = {
           invoice_email_enabled: boolean
           last_name: string | null
           marketing_channels: string[]
+          national_id: string | null
           notes: string | null
           occupation: string | null
           preferred_language: string
@@ -1349,6 +1351,7 @@ export type Database = {
         }
         Insert: {
           account_id: string
+          address?: string | null
           balance_cents?: number
           clinic_id?: string | null
           confirmation_channel?: string
@@ -1363,6 +1366,7 @@ export type Database = {
           invoice_email_enabled?: boolean
           last_name?: string | null
           marketing_channels?: string[]
+          national_id?: string | null
           notes?: string | null
           occupation?: string | null
           preferred_language?: string
@@ -1375,6 +1379,7 @@ export type Database = {
         }
         Update: {
           account_id?: string
+          address?: string | null
           balance_cents?: number
           clinic_id?: string | null
           confirmation_channel?: string
@@ -1389,6 +1394,7 @@ export type Database = {
           invoice_email_enabled?: boolean
           last_name?: string | null
           marketing_channels?: string[]
+          national_id?: string | null
           notes?: string | null
           occupation?: string | null
           preferred_language?: string
@@ -1545,6 +1551,35 @@ export type Database = {
             columns: ["invoice_id"]
             isOneToOne: false
             referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      referral_sources: {
+        Row: {
+          account_id: string
+          created_at: string
+          id: string
+          name: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          id?: string
+          name: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          id?: string
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "referral_sources_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
             referencedColumns: ["id"]
           },
         ]

@@ -43,7 +43,7 @@ const activeTab = computed({
       <PatientsDetailSidebar :patient="patient" />
 
       <div class="min-w-0 flex-1">
-        <div class="border-b border-gray-200">
+        <div class="sticky top-0 z-10 border-b border-gray-200 bg-gray-50">
           <nav class="-mb-px flex gap-6 overflow-x-auto">
             <button
               v-for="tab in tabs"

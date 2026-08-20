@@ -114,65 +114,68 @@ async function save() {
 </script>
 
 <template>
-  <div class="max-w-lg space-y-6">
+  <div class="space-y-6">
     <div class="rounded-lg border border-gray-200 bg-white p-6">
       <div class="flex items-center justify-between">
         <h2 class="text-sm font-semibold text-gray-900">Contact details</h2>
         <button
           v-if="!editing"
           type="button"
-          class="text-sm font-medium text-indigo-600 hover:text-indigo-500"
+          class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
           @click="startEditing"
         >
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
           Edit
         </button>
       </div>
 
-      <dl v-if="!editing" class="mt-4 space-y-3 text-sm">
-        <div class="flex justify-between">
+      <dl v-if="!editing" class="mt-4 grid grid-cols-1 gap-x-8 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+        <div>
           <dt class="text-gray-500">Date of birth</dt>
           <dd class="text-gray-900">{{ patient.date_of_birth ?? 'N/A' }}</dd>
         </div>
-        <div class="flex justify-between">
+        <div>
           <dt class="text-gray-500">Email</dt>
           <dd class="text-gray-900">{{ patient.email ?? 'N/A' }}</dd>
         </div>
-        <div class="flex justify-between">
+        <div>
           <dt class="text-gray-500">Address</dt>
           <dd class="text-gray-900">{{ patient.address ?? 'N/A' }}</dd>
         </div>
-        <div class="flex justify-between">
+        <div>
           <dt class="text-gray-500">National ID</dt>
           <dd class="text-gray-900">{{ patient.national_id ?? 'N/A' }}</dd>
         </div>
-        <div class="flex justify-between">
+        <div>
           <dt class="text-gray-500">Occupation</dt>
           <dd class="text-gray-900">{{ patient.occupation ?? 'N/A' }}</dd>
         </div>
-        <div class="flex justify-between">
+        <div>
           <dt class="text-gray-500">Emergency contact</dt>
           <dd class="text-gray-900">{{ patient.emergency_contact ?? 'N/A' }}</dd>
         </div>
-        <div class="flex justify-between">
+        <div>
           <dt class="text-gray-500">Referral source</dt>
           <dd class="text-gray-900">{{ patient.referral_source ?? 'N/A' }}</dd>
         </div>
-        <div class="flex justify-between">
+        <div>
           <dt class="text-gray-500">Preferred language</dt>
           <dd class="text-gray-900">{{ languageLabel(patient.preferred_language) }}</dd>
         </div>
-        <div class="flex justify-between">
+        <div>
           <dt class="text-gray-500">Default practitioner</dt>
           <dd class="text-gray-900">{{ teamMemberName(patient.default_practitioner_id) }}</dd>
         </div>
-        <div class="flex justify-between">
+        <div class="sm:col-span-2 lg:col-span-3">
           <dt class="text-gray-500">Tags</dt>
           <dd class="text-gray-900">
             <span v-if="patient.tags.length === 0">None</span>
             <span
               v-for="tag in patient.tags"
               :key="tag"
-              class="ml-1 inline-block rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600 first:ml-0"
+              class="mr-1 inline-block rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600"
             >
               {{ tag }}
             </span>
@@ -181,7 +184,7 @@ async function save() {
       </dl>
 
       <form v-else class="mt-4 space-y-4" @submit.prevent="save">
-        <div class="grid grid-cols-2 gap-4">
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div>
             <label class="block text-sm font-medium text-gray-700">First name</label>
             <input v-model="firstName" type="text" required class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
@@ -190,24 +193,22 @@ async function save() {
             <label class="block text-sm font-medium text-gray-700">Last name</label>
             <input v-model="lastName" type="text" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
           </div>
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700">Date of birth</label>
-          <input v-model="dateOfBirth" type="date" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700">Email</label>
-          <input v-model="email" type="email" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700">Address</label>
-          <input v-model="address" type="text" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700">National ID</label>
-          <input v-model="nationalId" type="text" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
-        </div>
-        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Date of birth</label>
+            <input v-model="dateOfBirth" type="date" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Email</label>
+            <input v-model="email" type="email" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Address</label>
+            <input v-model="address" type="text" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">National ID</label>
+            <input v-model="nationalId" type="text" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          </div>
           <div>
             <label class="block text-sm font-medium text-gray-700">Occupation</label>
             <input v-model="occupation" type="text" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
@@ -216,17 +217,15 @@ async function save() {
             <label class="block text-sm font-medium text-gray-700">Emergency contact</label>
             <input v-model="emergencyContact" type="text" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
           </div>
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700">Referral source</label>
-          <select v-model="referralSource" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-            <option value="">Not set</option>
-            <option v-for="s in referralSources" :key="s.id" :value="s.name">{{ s.name }}</option>
-            <!-- Preserves legacy freeform data that doesn't match a configured source. -->
-            <option v-if="referralSource && !referralSources.some((s) => s.name === referralSource)" :value="referralSource">{{ referralSource }}</option>
-          </select>
-        </div>
-        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Referral source</label>
+            <select v-model="referralSource" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+              <option value="">Not set</option>
+              <option v-for="s in referralSources" :key="s.id" :value="s.name">{{ s.name }}</option>
+              <!-- Preserves legacy freeform data that doesn't match a configured source. -->
+              <option v-if="referralSource && !referralSources.some((s) => s.name === referralSource)" :value="referralSource">{{ referralSource }}</option>
+            </select>
+          </div>
           <div>
             <label class="block text-sm font-medium text-gray-700">Preferred language</label>
             <select v-model="preferredLanguage" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
@@ -240,17 +239,17 @@ async function save() {
               <option v-for="m in teamMembers" :key="m.id" :value="m.id">{{ m.full_name }}</option>
             </select>
           </div>
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700">Clinic</label>
-          <select v-model="clinicId" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-            <option value="">No primary clinic</option>
-            <option v-for="clinic in store.clinics" :key="clinic.id" :value="clinic.id">{{ clinic.name }}</option>
-          </select>
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700">Tags</label>
-          <input v-model="tagsInput" type="text" placeholder="comma, separated, tags" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Clinic</label>
+            <select v-model="clinicId" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+              <option value="">No primary clinic</option>
+              <option v-for="clinic in store.clinics" :key="clinic.id" :value="clinic.id">{{ clinic.name }}</option>
+            </select>
+          </div>
+          <div class="sm:col-span-2 lg:col-span-3">
+            <label class="block text-sm font-medium text-gray-700">Tags</label>
+            <input v-model="tagsInput" type="text" placeholder="comma, separated, tags" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          </div>
         </div>
 
         <div class="border-t border-gray-100 pt-4">
@@ -299,39 +298,41 @@ async function save() {
       </form>
     </div>
 
-    <div v-if="!editing" class="rounded-lg border border-gray-200 bg-white p-6">
-      <h2 class="text-sm font-semibold text-gray-900">Communication preferences</h2>
-      <dl class="mt-4 space-y-3 text-sm">
-        <div class="flex justify-between">
-          <dt class="text-gray-500">Marketing channels</dt>
-          <dd class="text-gray-900">
-            <span v-if="patient.marketing_channels.length === 0">None</span>
-            <span
-              v-for="ch in patient.marketing_channels"
-              :key="ch"
-              class="ml-1 inline-block rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600 first:ml-0"
-            >
-              {{ channelLabel(ch) }}
-            </span>
-          </dd>
-        </div>
-        <div class="flex justify-between">
-          <dt class="text-gray-500">Reminder type</dt>
-          <dd class="text-gray-900">{{ channelLabel(patient.reminder_channel) }}</dd>
-        </div>
-        <div class="flex justify-between">
-          <dt class="text-gray-500">Confirmation type</dt>
-          <dd class="text-gray-900">{{ channelLabel(patient.confirmation_channel) }}</dd>
-        </div>
-        <div class="flex justify-between">
-          <dt class="text-gray-500">Invoice email</dt>
-          <dd class="text-gray-900">{{ patient.invoice_email_enabled ? 'Enabled' : 'Disabled' }}</dd>
-        </div>
-      </dl>
-    </div>
+    <div v-if="!editing" class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div class="rounded-lg border border-gray-200 bg-white p-6">
+        <h2 class="text-sm font-semibold text-gray-900">Communication preferences</h2>
+        <dl class="mt-4 grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+          <div class="sm:col-span-2">
+            <dt class="text-gray-500">Marketing channels</dt>
+            <dd class="text-gray-900">
+              <span v-if="patient.marketing_channels.length === 0">None</span>
+              <span
+                v-for="ch in patient.marketing_channels"
+                :key="ch"
+                class="mr-1 inline-block rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600"
+              >
+                {{ channelLabel(ch) }}
+              </span>
+            </dd>
+          </div>
+          <div>
+            <dt class="text-gray-500">Reminder type</dt>
+            <dd class="text-gray-900">{{ channelLabel(patient.reminder_channel) }}</dd>
+          </div>
+          <div>
+            <dt class="text-gray-500">Confirmation type</dt>
+            <dd class="text-gray-900">{{ channelLabel(patient.confirmation_channel) }}</dd>
+          </div>
+          <div>
+            <dt class="text-gray-500">Invoice email</dt>
+            <dd class="text-gray-900">{{ patient.invoice_email_enabled ? 'Enabled' : 'Disabled' }}</dd>
+          </div>
+        </dl>
+      </div>
 
-    <div class="rounded-lg border border-gray-200 bg-white p-6">
-      <PatientsContactNumbersEditor :patient-id="patient.id" />
+      <div class="rounded-lg border border-gray-200 bg-white p-6">
+        <PatientsContactNumbersEditor :patient-id="patient.id" />
+      </div>
     </div>
   </div>
 </template>

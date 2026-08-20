@@ -57,7 +57,7 @@ const whatsAppOpen = ref(false)
 </script>
 
 <template>
-  <aside class="w-full shrink-0 space-y-4 lg:w-72">
+  <aside class="w-full shrink-0 space-y-4 lg:sticky lg:top-0 lg:max-h-screen lg:w-72 lg:overflow-y-auto lg:pb-6">
     <div class="rounded-lg border border-gray-200 bg-white p-5">
       <div class="flex items-center gap-3">
         <span class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-base font-semibold text-indigo-700">

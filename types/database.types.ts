@@ -308,6 +308,71 @@ export type Database = {
           },
         ]
       }
+      availability_blocks: {
+        Row: {
+          account_id: string
+          clinic_id: string
+          created_at: string
+          created_by: string | null
+          ends_at: string
+          id: string
+          note: string | null
+          room_id: string | null
+          starts_at: string
+        }
+        Insert: {
+          account_id: string
+          clinic_id: string
+          created_at?: string
+          created_by?: string | null
+          ends_at: string
+          id?: string
+          note?: string | null
+          room_id?: string | null
+          starts_at: string
+        }
+        Update: {
+          account_id?: string
+          clinic_id?: string
+          created_at?: string
+          created_by?: string | null
+          ends_at?: string
+          id?: string
+          note?: string | null
+          room_id?: string | null
+          starts_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "availability_blocks_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "availability_blocks_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "availability_blocks_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "availability_blocks_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "calendar_resources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       calendar_resources: {
         Row: {
           account_id: string

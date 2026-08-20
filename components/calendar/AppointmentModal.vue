@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { hasBusinessHoursConfigured, isWithinBusinessHours } from '~/utils/businessHours'
+
 interface RoomOption { id: string; name: string }
 interface AppointmentTypeOption { id: string; name: string; duration_minutes: number; color: string; default_price_cents: number }
 interface TeamMemberOption { id: string; full_name: string; color: string }
@@ -88,6 +90,14 @@ async function save() {
 
   const startsAt = new Date(`${date.value}T${time.value}`)
   const endsAt = new Date(startsAt.getTime() + duration.value * 60000)
+
+  const hours = store.currentClinic?.business_hours
+  if (hasBusinessHoursConfigured(hours) && (!isWithinBusinessHours(startsAt, hours) || !isWithinBusinessHours(new Date(endsAt.getTime() - 1), hours))) {
+    if (!confirm('This appointment falls outside the clinic\'s working hours. Book it anyway?')) {
+      saving.value = false
+      return
+    }
+  }
 
   const payload = {
     account_id: store.accountId!,

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { hasBusinessHoursConfigured, isWithinBusinessHours } from '~/utils/businessHours'
+
 const START_HOUR = 8
 const END_HOUR = 20
 const SLOT_PX = 40
@@ -8,6 +10,8 @@ interface Room { id: string; name: string }
 interface AppointmentType { id: string; name: string; duration_minutes: number; color: string; default_price_cents: number }
 interface TeamMember { id: string; full_name: string; color: string }
 interface PatientOption { id: string; first_name: string; last_name: string | null }
+
+interface AvailabilityBlock { id: string; room_id: string | null; starts_at: string; ends_at: string; note: string | null }
 
 interface AppointmentRow {
   id: string
@@ -36,12 +40,17 @@ const appointmentTypes = ref<AppointmentType[]>([])
 const teamMembers = ref<TeamMember[]>([])
 const patients = ref<PatientOption[]>([])
 const appointments = ref<AppointmentRow[]>([])
+const availabilityBlocks = ref<AvailabilityBlock[]>([])
 const loading = ref(true)
 
 const modalOpen = ref(false)
 const modalMode = ref<'create' | 'edit'>('create')
 const editingAppointment = ref<AppointmentRow | null>(null)
 const prefill = ref<{ date: string; time: string; roomId: string } | null>(null)
+
+const blockModalOpen = ref(false)
+const editingBlock = ref<AvailabilityBlock | null>(null)
+const blockPrefill = ref<{ date: string; time: string; roomId: string } | null>(null)
 
 function pad(n: number) {
   return String(n).padStart(2, '0')
@@ -125,18 +134,60 @@ async function loadAppointments() {
   loading.value = false
 }
 
+async function loadAvailabilityBlocks() {
+  if (!store.currentClinicId) {
+    availabilityBlocks.value = []
+    return
+  }
+  const rangeStart = viewMode.value === 'day' ? startOfDay(anchorDate.value) : weekStart.value
+  const rangeEnd = viewMode.value === 'day' ? addDays(rangeStart, 1) : addDays(rangeStart, 7)
+
+  const { data } = await supabase
+    .from('availability_blocks')
+    .select('id, room_id, starts_at, ends_at, note')
+    .eq('clinic_id', store.currentClinicId)
+    .lt('starts_at', rangeEnd.toISOString())
+    .gt('ends_at', rangeStart.toISOString())
+    .order('starts_at')
+
+  availabilityBlocks.value = data ?? []
+}
+
 onMounted(async () => {
   await loadReferenceData()
   await loadRooms()
   await loadAppointments()
+  await loadAvailabilityBlocks()
 })
 watch(() => store.currentClinicId, async () => {
   await loadRooms()
   await loadAppointments()
+  await loadAvailabilityBlocks()
 })
-watch([viewMode, anchorDate], loadAppointments)
+watch([viewMode, anchorDate], async () => {
+  await loadAppointments()
+  await loadAvailabilityBlocks()
+})
 
 const dayColumns = computed(() => [...rooms.value, { id: '__none', name: 'Unassigned' }])
+
+function blocksForRoom(roomId: string) {
+  return availabilityBlocks.value.filter((b) => b.room_id === roomId || b.room_id === null)
+}
+
+function openBlockCreateModal(roomId?: string) {
+  blockPrefill.value = { date: toDateKey(anchorDate.value), time: '09:00', roomId: roomId ?? '' }
+  editingBlock.value = null
+  blockModalOpen.value = true
+}
+function openBlockEditModal(block: AvailabilityBlock) {
+  editingBlock.value = block
+  blockModalOpen.value = true
+}
+async function onBlockSaved() {
+  blockModalOpen.value = false
+  await loadAvailabilityBlocks()
+}
 
 function appointmentsForRoom(roomId: string) {
   return appointments.value.filter((a) => (a.room_id ?? '__none') === roomId)
@@ -156,6 +207,19 @@ function timeToPx(iso: string) {
 function durationToPx(startIso: string, endIso: string) {
   const mins = (new Date(endIso).getTime() - new Date(startIso).getTime()) / 60000
   return Math.max(20, (mins / SLOT_MIN.value) * SLOT_PX)
+}
+
+const businessHoursConfigured = computed(() => hasBusinessHoursConfigured(store.currentClinic?.business_hours))
+
+// Slots outside the clinic's configured working hours are shaded in the
+// grid background; if the clinic never set hours (business_hours all
+// empty), nothing is shaded -- opt-in, not "closed every day" by default.
+function slotIsOpen(index: number, forDate: Date) {
+  if (!businessHoursConfigured.value) return true
+  const totalMin = index * SLOT_MIN.value
+  const slotDate = new Date(forDate)
+  slotDate.setHours(START_HOUR + Math.floor(totalMin / 60), totalMin % 60, 0, 0)
+  return isWithinBusinessHours(slotDate, store.currentClinic?.business_hours)
 }
 
 // One label per slot boundary (e.g. 09:00, 09:15, 09:30…), not just per
@@ -246,9 +310,14 @@ async function onSaved() {
         <button type="button" class="rounded-md border border-gray-300 px-2 py-1 text-sm hover:bg-gray-50" @click="anchorDate = addDays(anchorDate, viewMode === 'day' ? 1 : 7)">›</button>
         <span class="ml-2 text-sm font-medium text-gray-700">{{ rangeLabel }}</span>
       </div>
-      <div class="flex rounded-md border border-gray-300 text-sm">
-        <button type="button" class="px-3 py-1" :class="viewMode === 'day' ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-50'" @click="viewMode = 'day'">Day</button>
-        <button type="button" class="border-l border-gray-300 px-3 py-1" :class="viewMode === 'week' ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-50'" @click="viewMode = 'week'">Week</button>
+      <div class="flex items-center gap-3">
+        <button type="button" class="rounded-md border border-gray-300 px-3 py-1 text-sm text-gray-600 hover:bg-gray-50" @click="openBlockCreateModal()">
+          + Block time
+        </button>
+        <div class="flex rounded-md border border-gray-300 text-sm">
+          <button type="button" class="px-3 py-1" :class="viewMode === 'day' ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-50'" @click="viewMode = 'day'">Day</button>
+          <button type="button" class="border-l border-gray-300 px-3 py-1" :class="viewMode === 'week' ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-50'" @click="viewMode = 'week'">Week</button>
+        </div>
       </div>
     </div>
 
@@ -264,11 +333,11 @@ async function onSaved() {
         <div class="w-20 shrink-0 border-r border-gray-200">
           <div class="h-10 border-b border-gray-200"></div>
           <div
-            v-for="label in slotLabels"
+            v-for="(label, i) in slotLabels"
             :key="label"
             :style="{ height: `${SLOT_PX}px` }"
             class="border-b border-gray-100 px-2 pt-1 text-xs"
-            :class="label.endsWith(':00') ? 'text-gray-500' : 'text-gray-300'"
+            :class="[label.endsWith(':00') ? 'text-gray-500' : 'text-gray-300', { 'bg-gray-50': !slotIsOpen(i, anchorDate) }]"
           >
             {{ label }}
           </div>
@@ -286,8 +355,19 @@ async function onSaved() {
               v-for="(label, i) in slotLabels"
               :key="i"
               class="pointer-events-none absolute left-0 right-0 border-b border-gray-100"
+              :class="{ 'bg-gray-50': !slotIsOpen(i, anchorDate) }"
               :style="{ top: `${i * SLOT_PX}px`, height: `${SLOT_PX}px` }"
             ></div>
+            <div
+              v-for="block in blocksForRoom(col.id)"
+              :key="block.id"
+              class="absolute left-1 right-1 overflow-hidden rounded border-l-4 border-gray-400 bg-[repeating-linear-gradient(135deg,#f3f4f6,#f3f4f6_6px,#e5e7eb_6px,#e5e7eb_12px)] px-2 py-1 text-xs text-gray-600 shadow-sm"
+              :style="{ top: `${timeToPx(block.starts_at)}px`, height: `${durationToPx(block.starts_at, block.ends_at)}px` }"
+              @click.stop="openBlockEditModal(block)"
+            >
+              <p class="truncate font-medium">Blocked{{ block.room_id === null ? ' (whole clinic)' : '' }}</p>
+              <p v-if="block.note" class="truncate">{{ block.note }}</p>
+            </div>
             <div
               v-for="appt in appointmentsForRoom(col.id)"
               :key="appt.id"
@@ -341,6 +421,17 @@ async function onSaved() {
       :prefill-room-id="prefill?.roomId"
       @close="modalOpen = false"
       @saved="onSaved"
+    />
+
+    <CalendarAvailabilityBlockModal
+      v-if="blockModalOpen"
+      :rooms="rooms"
+      :block="editingBlock ?? undefined"
+      :prefill-date="blockPrefill?.date"
+      :prefill-time="blockPrefill?.time"
+      :prefill-room-id="blockPrefill?.roomId"
+      @close="blockModalOpen = false"
+      @saved="onBlockSaved"
     />
   </div>
 </template>

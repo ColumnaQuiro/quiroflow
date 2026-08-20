@@ -56,7 +56,7 @@ export default defineEventHandler(async (event) => {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: 'QuiroFlow <onboarding@resend.dev>',
+      from: 'QuiroFlow <notifications@quiroflow.com>',
       to: patient.email,
       subject: `Invoice ${invoice.invoice_number}`,
       html,

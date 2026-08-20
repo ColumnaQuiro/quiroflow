@@ -84,7 +84,7 @@ export default defineEventHandler(async (event) => {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: 'QuiroFlow <onboarding@resend.dev>',
+      from: 'QuiroFlow <notifications@quiroflow.com>',
       to: invite.email,
       subject: `You're invited to join ${accountName} on QuiroFlow`,
       html,

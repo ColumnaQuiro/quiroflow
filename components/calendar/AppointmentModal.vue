@@ -251,6 +251,7 @@ async function remove() {
           :patient-id="appointment!.patient_id"
           :appointment-type-name="selectedAppointmentType?.name"
           :appointment-type-price-cents="selectedAppointmentType?.default_price_cents"
+          @completed="status = 'completed'"
         />
       </div>
 

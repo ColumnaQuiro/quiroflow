@@ -48,7 +48,12 @@ async function createInvite() {
   lastInviteLink.value = ''
   emailStatus.value = ''
   inviting.value = true
-  const email = inviteEmail.value.trim() || null
+  const email = inviteEmail.value.trim()
+  if (!email) {
+    inviting.value = false
+    error.value = 'Email is required.'
+    return
+  }
   const { data, error: insertError } = await supabase
     .from('account_invites')
     .insert({
@@ -184,7 +189,7 @@ function copy(text: string) {
     <form class="mt-4 flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-white p-4" @submit.prevent="createInvite">
       <div>
         <label class="block text-sm font-medium text-gray-700">Email (optional)</label>
-        <input v-model="inviteEmail" type="email" placeholder="colleague@example.com" class="mt-1 w-56 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+        <input v-model="inviteEmail" type="email" required placeholder="colleague@example.com" class="mt-1 w-56 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
       </div>
       <div>
         <label class="block text-sm font-medium text-gray-700">Role</label>

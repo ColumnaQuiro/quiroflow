@@ -44,10 +44,17 @@ export const useAccountStore = defineStore('account', {
       const supabase = useSupabaseClient()
       const user = useSupabaseUser()
 
+      if (!user.value) {
+        this.teamMember = null
+        this.loaded = true
+        this.loading = false
+        return
+      }
+
       const { data: teamMember } = await supabase
         .from('team_members')
         .select('id, account_id, full_name, role, color, is_owner')
-        .eq('user_id', user.value!.sub)
+        .eq('user_id', user.value.sub)
         .maybeSingle()
 
       if (!teamMember) {

@@ -170,11 +170,29 @@ const slotLabels = computed(() => {
   })
 })
 
-function statusColor(status: string) {
-  if (status === 'completed') return 'bg-green-100 border-green-400 text-green-900'
-  if (status === 'cancelled') return 'bg-gray-100 border-gray-300 text-gray-500 line-through'
-  if (status === 'no_show') return 'bg-red-100 border-red-400 text-red-900'
-  return 'bg-indigo-50 border-indigo-400 text-indigo-900'
+function statusTextClass(status: string) {
+  if (status === 'cancelled') return 'text-gray-500 line-through opacity-70'
+  if (status === 'no_show') return 'text-red-900'
+  return 'text-gray-900'
+}
+
+function hexToRgba(hex: string, alpha: number) {
+  const h = hex.replace('#', '')
+  const r = parseInt(h.substring(0, 2), 16)
+  const g = parseInt(h.substring(2, 4), 16)
+  const b = parseInt(h.substring(4, 6), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
+// Appointment type color drives the block's look; status is conveyed via
+// statusTextClass (strikethrough/red text) rather than a separate palette,
+// so a type-color change is always visible on the calendar.
+function appointmentColorStyle(appt: AppointmentRow) {
+  const color = appt.appointment_types?.color || '#6366F1'
+  return {
+    borderLeftColor: color,
+    backgroundColor: hexToRgba(color, appt.status === 'cancelled' ? 0.06 : 0.16),
+  }
 }
 
 function openCreateModal(roomId?: string, clickY?: number) {
@@ -274,8 +292,8 @@ async function onSaved() {
               v-for="appt in appointmentsForRoom(col.id)"
               :key="appt.id"
               class="absolute left-1 right-1 overflow-hidden rounded border-l-4 px-2 py-1 text-xs shadow-sm"
-              :class="statusColor(appt.status)"
-              :style="{ top: `${timeToPx(appt.starts_at)}px`, height: `${durationToPx(appt.starts_at, appt.ends_at)}px` }"
+              :class="statusTextClass(appt.status)"
+              :style="{ top: `${timeToPx(appt.starts_at)}px`, height: `${durationToPx(appt.starts_at, appt.ends_at)}px`, ...appointmentColorStyle(appt) }"
               @click.stop="openEditModal(appt)"
             >
               <p class="truncate font-medium">{{ appt.patients?.first_name }} {{ appt.patients?.last_name }}</p>
@@ -299,7 +317,8 @@ async function onSaved() {
             :key="appt.id"
             type="button"
             class="block w-full rounded border-l-4 px-1.5 py-1 text-left text-xs"
-            :class="statusColor(appt.status)"
+            :class="statusTextClass(appt.status)"
+            :style="appointmentColorStyle(appt)"
             @click="openEditModal(appt)"
           >
             <p class="truncate font-medium">{{ new Date(appt.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }} {{ appt.patients?.first_name }}</p>

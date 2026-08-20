@@ -208,6 +208,7 @@ export type Database = {
         Row: {
           account_id: string
           appointment_type_id: string | null
+          checked_in_at: string | null
           clinic_id: string
           confirmation_status: string | null
           created_at: string
@@ -225,6 +226,7 @@ export type Database = {
         Insert: {
           account_id: string
           appointment_type_id?: string | null
+          checked_in_at?: string | null
           clinic_id: string
           confirmation_status?: string | null
           created_at?: string
@@ -242,6 +244,7 @@ export type Database = {
         Update: {
           account_id?: string
           appointment_type_id?: string | null
+          checked_in_at?: string | null
           clinic_id?: string
           confirmation_status?: string | null
           created_at?: string

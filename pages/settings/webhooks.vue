@@ -11,6 +11,7 @@ const EVENT_OPTIONS = [
   { value: 'appointment.created', label: 'Appointment created' },
   { value: 'appointment.updated', label: 'Appointment updated' },
   { value: 'appointment.deleted', label: 'Appointment deleted' },
+  { value: 'appointment.checked_in', label: 'Appointment checked in' },
   { value: 'invoice.paid', label: 'Invoice paid' },
 ]
 

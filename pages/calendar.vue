@@ -22,6 +22,7 @@ interface AppointmentRow {
   starts_at: string
   ends_at: string
   status: string
+  checked_in_at: string | null
   patients: { first_name: string; last_name: string | null } | null
   appointment_types: { name: string; color: string } | null
   team_members: { full_name: string; color: string } | null
@@ -123,7 +124,7 @@ async function loadAppointments() {
   const { data } = await supabase
     .from('appointments')
     .select(
-      'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, patients(first_name, last_name), appointment_types(name, color), team_members(full_name, color)',
+      'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, patients(first_name, last_name), appointment_types(name, color), team_members(full_name, color)',
     )
     .eq('clinic_id', store.currentClinicId)
     .gte('starts_at', rangeStart.toISOString())
@@ -288,6 +289,12 @@ async function onSaved() {
   modalOpen.value = false
   await loadAppointments()
 }
+
+async function toggleCheckedIn(appt: AppointmentRow) {
+  const next = appt.checked_in_at ? null : new Date().toISOString()
+  appt.checked_in_at = next
+  await supabase.from('appointments').update({ checked_in_at: next }).eq('id', appt.id)
+}
 </script>
 
 <template>
@@ -376,7 +383,16 @@ async function onSaved() {
               :style="{ top: `${timeToPx(appt.starts_at)}px`, height: `${durationToPx(appt.starts_at, appt.ends_at)}px`, ...appointmentColorStyle(appt) }"
               @click.stop="openEditModal(appt)"
             >
-              <p class="truncate font-medium">{{ appt.patients?.first_name }} {{ appt.patients?.last_name }}</p>
+              <button
+                type="button"
+                class="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full text-[10px] leading-none"
+                :class="appt.checked_in_at ? 'bg-green-600 text-white' : 'bg-white/70 text-gray-400 hover:text-gray-600'"
+                :title="appt.checked_in_at ? `Arrived ${new Date(appt.checked_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Mark as arrived'"
+                @click.stop="toggleCheckedIn(appt)"
+              >
+                ✓
+              </button>
+              <p class="truncate pr-4 font-medium">{{ appt.patients?.first_name }} {{ appt.patients?.last_name }}</p>
               <p class="truncate">{{ appt.appointment_types?.name ?? new Date(appt.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</p>
             </div>
           </div>

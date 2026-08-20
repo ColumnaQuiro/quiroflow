@@ -5,6 +5,7 @@ const { can, scope } = usePermission()
 const allNavItems = [
   { label: 'Dashboard', to: '/dashboard', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6', perm: () => scope('dashboard_scope') !== 'none' },
   { label: 'Calendar', to: '/calendar', icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z', perm: () => scope('calendar_scope') !== 'none' },
+  { label: 'My Day', to: '/practitioner', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4', perm: () => scope('calendar_scope') !== 'none' },
   { label: 'Patients', to: '/patients', icon: 'M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6 0a4 4 0 10-4-4', perm: () => scope('patients_scope') !== 'none' },
   { label: 'Recalls', to: '/recalls', icon: 'M4 4v5h5M20 20v-5h-5M4 9a8 8 0 0114.6-4.6M20 15a8 8 0 01-14.6 4.6', perm: () => can('recalls_access') },
   { label: 'Billing', to: '/billing', icon: 'M3 10h18M7 15h1m4 0h1m-7 4h12a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z', perm: () => can('billing_access') },

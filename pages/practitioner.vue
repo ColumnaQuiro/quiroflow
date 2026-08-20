@@ -1,0 +1,197 @@
+<script setup lang="ts">
+// PracticeHub's "Practitioner Dashboard" is a chronological worklist of a
+// practitioner's own day, click a patient to jump straight into charting.
+// This is a scoped v1: the day list + one-click-to-notes. Not built: PH's
+// check-in/arrival tracking (no equivalent data in this schema yet),
+// privacy mode, and grid/week view modes -- each its own follow-up.
+interface Room { id: string; name: string }
+interface AppointmentType { id: string; name: string; duration_minutes: number; color: string; default_price_cents: number }
+interface TeamMember { id: string; full_name: string; color: string }
+interface PatientOption { id: string; first_name: string; last_name: string | null }
+
+interface AppointmentRow {
+  id: string
+  patient_id: string
+  room_id: string | null
+  practitioner_id: string | null
+  appointment_type_id: string | null
+  starts_at: string
+  ends_at: string
+  status: string
+  patients: { first_name: string; last_name: string | null } | null
+  appointment_types: { name: string; color: string } | null
+}
+
+const supabase = useSupabaseClient()
+const store = useAccountStore()
+const { scope } = usePermission()
+
+const canSeeAll = computed(() => scope('calendar_scope') === 'all')
+
+const anchorDate = ref(new Date())
+const practitionerId = ref(store.teamMember?.id ?? '')
+const rooms = ref<Room[]>([])
+const appointmentTypes = ref<AppointmentType[]>([])
+const teamMembers = ref<TeamMember[]>([])
+const patients = ref<PatientOption[]>([])
+const appointments = ref<AppointmentRow[]>([])
+const chartedAppointmentIds = ref<Set<string>>(new Set())
+const loading = ref(true)
+
+const modalOpen = ref(false)
+const editingAppointment = ref<AppointmentRow | null>(null)
+
+function toDateKey(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+function startOfDay(d: Date) {
+  const c = new Date(d)
+  c.setHours(0, 0, 0, 0)
+  return c
+}
+function addDays(d: Date, n: number) {
+  const c = new Date(d)
+  c.setDate(c.getDate() + n)
+  return c
+}
+
+async function loadReferenceData() {
+  const [{ data: types }, { data: members }, { data: pts }] = await Promise.all([
+    supabase.from('appointment_types').select('id, name, duration_minutes, color, default_price_cents').order('name'),
+    supabase.from('team_members').select('id, full_name, color').order('full_name'),
+    supabase.from('patients').select('id, first_name, last_name').order('first_name'),
+  ])
+  appointmentTypes.value = types ?? []
+  teamMembers.value = members ?? []
+  patients.value = pts ?? []
+}
+
+async function loadRooms() {
+  if (!store.currentClinicId) {
+    rooms.value = []
+    return
+  }
+  const { data } = await supabase.from('calendar_resources').select('id, name').eq('clinic_id', store.currentClinicId).order('name')
+  rooms.value = data ?? []
+}
+
+async function loadDay() {
+  if (!store.currentClinicId || !practitionerId.value) {
+    appointments.value = []
+    chartedAppointmentIds.value = new Set()
+    return
+  }
+  loading.value = true
+  const rangeStart = startOfDay(anchorDate.value)
+  const rangeEnd = addDays(rangeStart, 1)
+
+  const { data } = await supabase
+    .from('appointments')
+    .select(
+      'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, patients(first_name, last_name), appointment_types(name, color)',
+    )
+    .eq('clinic_id', store.currentClinicId)
+    .eq('practitioner_id', practitionerId.value)
+    .neq('status', 'cancelled')
+    .gte('starts_at', rangeStart.toISOString())
+    .lt('starts_at', rangeEnd.toISOString())
+    .order('starts_at')
+
+  appointments.value = (data as unknown as AppointmentRow[]) ?? []
+
+  const ids = appointments.value.map((a) => a.id)
+  if (ids.length > 0) {
+    const { data: notes } = await supabase.from('visit_notes').select('appointment_id').in('appointment_id', ids)
+    chartedAppointmentIds.value = new Set((notes ?? []).map((n) => n.appointment_id))
+  } else {
+    chartedAppointmentIds.value = new Set()
+  }
+  loading.value = false
+}
+
+onMounted(async () => {
+  await loadReferenceData()
+  await loadRooms()
+  await loadDay()
+})
+watch(() => store.currentClinicId, async () => {
+  await loadRooms()
+  await loadDay()
+})
+watch([anchorDate, practitionerId], loadDay)
+
+function openNotes(appointment: AppointmentRow) {
+  editingAppointment.value = appointment
+  modalOpen.value = true
+}
+async function onSaved() {
+  modalOpen.value = false
+  await loadDay()
+}
+
+const statusClass: Record<string, string> = {
+  booked: 'bg-indigo-50 text-indigo-700',
+  completed: 'bg-green-50 text-green-700',
+  no_show: 'bg-red-50 text-red-700',
+}
+</script>
+
+<template>
+  <div>
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-xl font-semibold text-gray-900">My Day</h1>
+        <p class="mt-1 text-sm text-gray-500">Your appointments, chronologically -- click a patient to chart.</p>
+      </div>
+    </div>
+
+    <div class="mt-4 flex flex-wrap items-center gap-3">
+      <button type="button" class="rounded-md border border-gray-300 px-2 py-1 text-sm hover:bg-gray-50" @click="anchorDate = addDays(anchorDate, -1)">‹</button>
+      <button type="button" class="rounded-md border border-gray-300 px-3 py-1 text-sm hover:bg-gray-50" @click="anchorDate = new Date()">Today</button>
+      <button type="button" class="rounded-md border border-gray-300 px-2 py-1 text-sm hover:bg-gray-50" @click="anchorDate = addDays(anchorDate, 1)">›</button>
+      <span class="text-sm font-medium text-gray-700">{{ anchorDate.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }) }}</span>
+
+      <select v-if="canSeeAll" v-model="practitionerId" class="ml-auto rounded-md border border-gray-300 px-2 py-1.5 text-sm">
+        <option v-for="m in teamMembers" :key="m.id" :value="m.id">{{ m.full_name }}</option>
+      </select>
+    </div>
+
+    <div class="mt-4 overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <div v-if="loading" class="p-6 text-center text-sm text-gray-400">Loading…</div>
+      <div v-else-if="appointments.length === 0" class="p-8 text-center text-sm text-gray-400">No appointments for this day.</div>
+      <ul v-else class="divide-y divide-gray-100">
+        <li v-for="a in appointments" :key="a.id">
+          <button type="button" class="flex w-full items-center gap-4 px-4 py-3 text-left hover:bg-gray-50" @click="openNotes(a)">
+            <span class="w-16 shrink-0 text-sm text-gray-500">
+              {{ new Date(a.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
+            </span>
+            <span class="h-2.5 w-2.5 shrink-0 rounded-full" :style="{ backgroundColor: a.appointment_types?.color ?? '#9CA3AF' }"></span>
+            <span class="min-w-0 flex-1">
+              <span class="block truncate text-sm font-medium text-gray-900">{{ a.patients?.first_name }} {{ a.patients?.last_name }}</span>
+              <span class="block truncate text-xs text-gray-500">{{ a.appointment_types?.name ?? 'No type' }}</span>
+            </span>
+            <span class="shrink-0 rounded-full px-2 py-0.5 text-xs font-medium" :class="statusClass[a.status] ?? 'bg-gray-100 text-gray-600'">
+              {{ a.status }}
+            </span>
+            <span class="w-20 shrink-0 text-right text-xs font-medium" :class="chartedAppointmentIds.has(a.id) ? 'text-green-600' : 'text-amber-600'">
+              {{ chartedAppointmentIds.has(a.id) ? 'Charted' : 'Add note' }}
+            </span>
+          </button>
+        </li>
+      </ul>
+    </div>
+
+    <CalendarAppointmentModal
+      v-if="modalOpen"
+      mode="edit"
+      :rooms="rooms"
+      :appointment-types="appointmentTypes"
+      :team-members="teamMembers"
+      :patients="patients"
+      :appointment="editingAppointment ?? undefined"
+      initial-tab="notes"
+      @close="modalOpen = false"
+      @saved="onSaved"
+    />
+  </div>
+</template>

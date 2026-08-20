@@ -37,6 +37,7 @@ const rules: Rule[] = [
   { test: (p) => p.startsWith('/settings'), check: (s) => can(s, 'settings_access') },
   { test: (p) => p.startsWith('/dashboard'), check: (s) => scopeNotNone(s, 'dashboard_scope') },
   { test: (p) => p.startsWith('/calendar'), check: (s) => scopeNotNone(s, 'calendar_scope') },
+  { test: (p) => p.startsWith('/practitioner'), check: (s) => scopeNotNone(s, 'calendar_scope') },
   { test: (p) => p.startsWith('/patients'), check: (s) => scopeNotNone(s, 'patients_scope') },
   { test: (p) => p.startsWith('/recalls'), check: (s) => can(s, 'recalls_access') },
   { test: (p) => p.startsWith('/billing'), check: (s) => can(s, 'billing_access') },

@@ -27,6 +27,7 @@ const props = defineProps<{
   prefillDate?: string
   prefillTime?: string
   prefillRoomId?: string
+  initialTab?: 'details' | 'billing' | 'history' | 'notes'
 }>()
 
 const emit = defineEmits<{ close: []; saved: [] }>()
@@ -46,7 +47,7 @@ function minutesBetween(startIso: string, endIso: string) {
   return Math.round((new Date(endIso).getTime() - new Date(startIso).getTime()) / 60000)
 }
 
-const activeTab = ref<'details' | 'billing' | 'history' | 'notes'>('details')
+const activeTab = ref<'details' | 'billing' | 'history' | 'notes'>(props.initialTab ?? 'details')
 
 const patientId = ref(props.appointment?.patient_id ?? '')
 const patientQuery = ref('')

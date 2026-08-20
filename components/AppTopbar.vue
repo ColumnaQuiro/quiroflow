@@ -4,6 +4,15 @@ interface PatientResult { id: string; first_name: string; last_name: string | nu
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const menuOpen = ref(false)
+const menuRef = ref<HTMLElement | null>(null)
+
+function onDocumentClick(e: MouseEvent) {
+  if (menuOpen.value && menuRef.value && !menuRef.value.contains(e.target as Node)) {
+    menuOpen.value = false
+  }
+}
+onMounted(() => document.addEventListener('click', onDocumentClick))
+onUnmounted(() => document.removeEventListener('click', onDocumentClick))
 
 const query = ref('')
 const results = ref<PatientResult[]>([])
@@ -101,7 +110,7 @@ async function signOut() {
       </select>
     </div>
 
-    <div class="relative">
+    <div ref="menuRef" class="relative">
       <button
         type="button"
         class="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-600 text-sm font-medium text-white"
@@ -118,6 +127,9 @@ async function signOut() {
           <p class="truncate text-sm font-medium text-gray-900">{{ store.teamMember?.full_name }}</p>
           <p class="text-xs text-gray-500">{{ store.accountName }}</p>
         </div>
+        <NuxtLink to="/account" class="block w-full px-3 py-2 text-left text-sm text-gray-600 hover:bg-gray-50">
+          Account Settings
+        </NuxtLink>
         <button type="button" class="block w-full px-3 py-2 text-left text-sm text-gray-600 hover:bg-gray-50" @click="signOut">
           Sign out
         </button>

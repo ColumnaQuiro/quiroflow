@@ -347,6 +347,61 @@ export type Database = {
           },
         ]
       }
+      cash_movements: {
+        Row: {
+          account_id: string
+          amount_cents: number
+          clinic_id: string | null
+          created_at: string
+          id: string
+          note: string | null
+          team_member_id: string
+          type: string
+        }
+        Insert: {
+          account_id: string
+          amount_cents: number
+          clinic_id?: string | null
+          created_at?: string
+          id?: string
+          note?: string | null
+          team_member_id: string
+          type: string
+        }
+        Update: {
+          account_id?: string
+          amount_cents?: number
+          clinic_id?: string | null
+          created_at?: string
+          id?: string
+          note?: string | null
+          team_member_id?: string
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cash_movements_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cash_movements_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cash_movements_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       clinics: {
         Row: {
           account_id: string

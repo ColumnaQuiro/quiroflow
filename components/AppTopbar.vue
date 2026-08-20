@@ -3,8 +3,10 @@ interface PatientResult { id: string; first_name: string; last_name: string | nu
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const { can } = usePermission()
 const menuOpen = ref(false)
 const menuRef = ref<HTMLElement | null>(null)
+const cashShiftOpen = ref(false)
 
 function onDocumentClick(e: MouseEvent) {
   if (menuOpen.value && menuRef.value && !menuRef.value.contains(e.target as Node)) {
@@ -130,10 +132,20 @@ async function signOut() {
         <NuxtLink to="/account" class="block w-full px-3 py-2 text-left text-sm text-gray-600 hover:bg-gray-50">
           Account Settings
         </NuxtLink>
+        <button
+          v-if="can('payments_allocate')"
+          type="button"
+          class="block w-full px-3 py-2 text-left text-sm text-gray-600 hover:bg-gray-50"
+          @click="cashShiftOpen = true"
+        >
+          Cash Shift
+        </button>
         <button type="button" class="block w-full px-3 py-2 text-left text-sm text-gray-600 hover:bg-gray-50" @click="signOut">
           Sign out
         </button>
       </div>
     </div>
+
+    <CashShiftModal v-if="cashShiftOpen" @close="cashShiftOpen = false" />
   </header>
 </template>

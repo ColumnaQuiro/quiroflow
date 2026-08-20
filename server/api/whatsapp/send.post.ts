@@ -1,5 +1,3 @@
-import { serverSupabaseClient } from '#supabase/server'
-import type { Database } from '~/types/database.types'
 import { toE164 } from '~/utils/phone'
 
 // Sends via Meta's WhatsApp Business Cloud API directly. Business-initiated
@@ -8,7 +6,6 @@ import { toE164 } from '~/utils/phone'
 // this fills in a template's {{n}} variable slots rather than sending
 // arbitrary text.
 export default defineEventHandler(async (event) => {
-  const supabase = await serverSupabaseClient<Database>(event)
   const body = await readBody<{
     patientId: string
     templateName: string
@@ -23,10 +20,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'patientId, templateName and templateLanguage are required' })
   }
 
-  const { data: teamMember } = await supabase.from('team_members').select('id, account_id').maybeSingle()
-  if (!teamMember) {
-    throw createError({ statusCode: 403, statusMessage: 'Not signed in as a team member' })
-  }
+  const { supabase, teamMember } = await requirePermission(event, 'recalls_access')
 
   const { data: account } = await supabase
     .from('accounts')

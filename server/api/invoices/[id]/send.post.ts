@@ -1,9 +1,7 @@
-import { serverSupabaseClient } from '#supabase/server'
-
 export default defineEventHandler(async (event) => {
   const invoiceId = getRouterParam(event, 'id')
-  const supabase = await serverSupabaseClient(event)
   const config = useRuntimeConfig()
+  const { supabase } = await requirePermission(event, 'billing_access')
 
   const { data: invoice } = await supabase
     .from('invoices')

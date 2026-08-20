@@ -1,16 +1,9 @@
-import { serverSupabaseClient } from '#supabase/server'
-import type { Database } from '~/types/database.types'
-
 // PracticeHub's API sends no CORS headers, so the browser can't call it
 // directly -- this just forwards one paginated request server-side. Auth
 // still requires a signed-in team member so this can't be used as an open
 // proxy to arbitrary URLs by anyone who finds the endpoint.
 export default defineEventHandler(async (event) => {
-  const supabase = await serverSupabaseClient<Database>(event)
-  const { data: teamMember } = await supabase.from('team_members').select('id').maybeSingle()
-  if (!teamMember) {
-    throw createError({ statusCode: 403, statusMessage: 'Not signed in as a team member' })
-  }
+  await requirePermission(event, 'data_admin')
 
   const body = await readBody<{
     baseUrl: string

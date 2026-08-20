@@ -1,21 +1,15 @@
-import { serverSupabaseClient } from '#supabase/server'
-import type { Database } from '~/types/database.types'
 import { stripeClientFor } from '~/server/utils/stripe'
 
 // Creates (or reuses) a Stripe Customer for a patient, then a SetupIntent so
 // the browser can collect a card via Stripe Elements without card data ever
 // touching our server.
 export default defineEventHandler(async (event) => {
-  const supabase = await serverSupabaseClient<Database>(event)
   const body = await readBody<{ patientId: string }>(event)
   if (!body?.patientId) {
     throw createError({ statusCode: 400, statusMessage: 'patientId is required' })
   }
 
-  const { data: teamMember } = await supabase.from('team_members').select('id, account_id').maybeSingle()
-  if (!teamMember) {
-    throw createError({ statusCode: 403, statusMessage: 'Not signed in as a team member' })
-  }
+  const { supabase, teamMember } = await requirePermission(event, 'billing_config')
 
   const { data: account } = await supabase
     .from('accounts')

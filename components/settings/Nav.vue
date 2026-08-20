@@ -1,51 +1,58 @@
 <script setup lang="ts">
 const route = useRoute()
+const { can } = usePermission()
 
 interface NavItem {
   label: string
   to: string
+  perm: string
 }
 interface NavGroup {
   label: string
   items: NavItem[]
 }
 
-const groups: NavGroup[] = [
+const allGroups: NavGroup[] = [
   {
     label: 'Clinic',
     items: [
-      { label: 'Clinics', to: '/settings/clinics' },
-      { label: 'Team Members', to: '/settings/team' },
-      { label: 'Practitioners', to: '/settings/practitioners' },
-      { label: 'Appointment Types', to: '/settings/appointment-types' },
-      { label: 'Calendar Resources', to: '/settings/rooms' },
+      { label: 'Clinics', to: '/settings/clinics', perm: 'clinic_config' },
+      { label: 'Team Members', to: '/settings/team', perm: 'team_admin' },
+      { label: 'Practitioners', to: '/settings/practitioners', perm: 'team_admin' },
+      { label: 'Roles & Permissions', to: '/settings/roles', perm: 'roles_admin' },
+      { label: 'Appointment Types', to: '/settings/appointment-types', perm: 'clinic_config' },
+      { label: 'Calendar Resources', to: '/settings/rooms', perm: 'clinic_config' },
     ],
   },
   {
     label: 'Billing',
     items: [
-      { label: 'Services & Products', to: '/billing/services' },
-      { label: 'Packages / Bonos', to: '/settings/packages' },
-      { label: 'Memberships', to: '/settings/memberships' },
-      { label: 'Payments (Stripe)', to: '/settings/payments' },
+      { label: 'Services & Products', to: '/billing/services', perm: 'billing_config' },
+      { label: 'Packages / Bonos', to: '/settings/packages', perm: 'billing_config' },
+      { label: 'Memberships', to: '/settings/memberships', perm: 'billing_config' },
+      { label: 'Payments (Stripe)', to: '/settings/payments', perm: 'billing_config' },
     ],
   },
   {
     label: 'Communication',
     items: [
-      { label: 'WhatsApp', to: '/settings/whatsapp' },
-      { label: 'Docs', to: '/settings/docs' },
+      { label: 'WhatsApp', to: '/settings/whatsapp', perm: 'communication_config' },
+      { label: 'Docs', to: '/settings/docs', perm: 'communication_config' },
     ],
   },
   {
     label: 'Data',
     items: [
-      { label: 'Import Patients (CSV)', to: '/settings/import' },
-      { label: 'Migrate Attachments', to: '/settings/migrate-attachments' },
-      { label: 'Webhooks', to: '/settings/webhooks' },
+      { label: 'Import Patients (CSV)', to: '/settings/import', perm: 'data_admin' },
+      { label: 'Migrate Attachments', to: '/settings/migrate-attachments', perm: 'data_admin' },
+      { label: 'Webhooks', to: '/settings/webhooks', perm: 'data_admin' },
     ],
   },
 ]
+
+const groups = computed(() =>
+  allGroups.map((group) => ({ ...group, items: group.items.filter((item) => can(item.perm)) })).filter((group) => group.items.length > 0),
+)
 
 function isActive(to: string) {
   return route.path === to

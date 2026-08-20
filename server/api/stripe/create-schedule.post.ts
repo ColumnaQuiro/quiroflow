@@ -1,5 +1,3 @@
-import { serverSupabaseClient } from '#supabase/server'
-import type { Database } from '~/types/database.types'
 import { stripeClientFor } from '~/server/utils/stripe'
 import type Stripe from 'stripe'
 
@@ -25,7 +23,6 @@ function addInterval(date: Date, interval: Body['interval'], count: number): Dat
 }
 
 export default defineEventHandler(async (event) => {
-  const supabase = await serverSupabaseClient<Database>(event)
   const body = await readBody<Body>(event)
   if (!body?.patientId || !body?.description || !body?.totalAmountCents || !body?.interval || !body?.intervalCount) {
     throw createError({ statusCode: 400, statusMessage: 'Missing required fields' })
@@ -34,10 +31,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Either packagePurchaseId or patientMembershipId is required' })
   }
 
-  const { data: teamMember } = await supabase.from('team_members').select('id, account_id').maybeSingle()
-  if (!teamMember) {
-    throw createError({ statusCode: 403, statusMessage: 'Not signed in as a team member' })
-  }
+  const { supabase, teamMember } = await requirePermission(event, 'billing_config')
 
   const { data: account } = await supabase
     .from('accounts')

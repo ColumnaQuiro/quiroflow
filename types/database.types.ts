@@ -14,6 +14,98 @@ export type Database = {
   }
   public: {
     Tables: {
+      account_invites: {
+        Row: {
+          accepted_at: string | null
+          account_id: string
+          created_at: string
+          email: string | null
+          full_name: string | null
+          id: string
+          link_practitioner_name: string | null
+          role: string
+          role_id: string | null
+          token: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          account_id: string
+          created_at?: string
+          email?: string | null
+          full_name?: string | null
+          id?: string
+          link_practitioner_name?: string | null
+          role?: string
+          role_id?: string | null
+          token?: string
+        }
+        Update: {
+          accepted_at?: string | null
+          account_id?: string
+          created_at?: string
+          email?: string | null
+          full_name?: string | null
+          id?: string
+          link_practitioner_name?: string | null
+          role?: string
+          role_id?: string | null
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "account_invites_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_invites_role_id_fkey"
+            columns: ["role_id"]
+            isOneToOne: false
+            referencedRelation: "account_roles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      account_roles: {
+        Row: {
+          account_id: string
+          created_at: string
+          id: string
+          is_system: boolean
+          name: string
+          permissions: Json
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          id?: string
+          is_system?: boolean
+          name: string
+          permissions?: Json
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          id?: string
+          is_system?: boolean
+          name?: string
+          permissions?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "account_roles_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       accounts: {
         Row: {
           created_at: string
@@ -67,50 +159,6 @@ export type Database = {
           whatsapp_recall_template_name?: string | null
         }
         Relationships: []
-      }
-      account_invites: {
-        Row: {
-          accepted_at: string | null
-          account_id: string
-          created_at: string
-          email: string | null
-          full_name: string | null
-          id: string
-          link_practitioner_name: string | null
-          role: string
-          token: string
-        }
-        Insert: {
-          accepted_at?: string | null
-          account_id: string
-          created_at?: string
-          email?: string | null
-          full_name?: string | null
-          id?: string
-          link_practitioner_name?: string | null
-          role?: string
-          token?: string
-        }
-        Update: {
-          accepted_at?: string | null
-          account_id?: string
-          created_at?: string
-          email?: string | null
-          full_name?: string | null
-          id?: string
-          link_practitioner_name?: string | null
-          role?: string
-          token?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "account_invites_account_id_fkey"
-            columns: ["account_id"]
-            isOneToOne: false
-            referencedRelation: "accounts"
-            referencedColumns: ["id"]
-          },
-        ]
       }
       appointment_types: {
         Row: {
@@ -236,6 +284,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "patients"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointments_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "recall_candidates"
+            referencedColumns: ["patient_id"]
           },
           {
             foreignKeyName: "appointments_practitioner_id_fkey"
@@ -395,6 +450,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "patients"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contact_log_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "recall_candidates"
+            referencedColumns: ["patient_id"]
           },
         ]
       }
@@ -603,6 +665,13 @@ export type Database = {
             referencedRelation: "patients"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "invoices_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "recall_candidates"
+            referencedColumns: ["patient_id"]
+          },
         ]
       }
       membership_payments: {
@@ -758,6 +827,13 @@ export type Database = {
             referencedRelation: "patients"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "package_purchases_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "recall_candidates"
+            referencedColumns: ["patient_id"]
+          },
         ]
       }
       packages: {
@@ -838,6 +914,13 @@ export type Database = {
             referencedRelation: "patients"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "patient_contact_numbers_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "recall_candidates"
+            referencedColumns: ["patient_id"]
+          },
         ]
       }
       patient_docs: {
@@ -906,6 +989,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "patient_docs_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "recall_candidates"
+            referencedColumns: ["patient_id"]
+          },
+          {
             foreignKeyName: "patient_docs_template_id_fkey"
             columns: ["template_id"]
             isOneToOne: false
@@ -972,6 +1062,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "patients"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_files_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "recall_candidates"
+            referencedColumns: ["patient_id"]
           },
           {
             foreignKeyName: "patient_files_uploaded_by_fkey"
@@ -1045,6 +1142,13 @@ export type Database = {
             referencedRelation: "patients"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "patient_memberships_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "recall_candidates"
+            referencedColumns: ["patient_id"]
+          },
         ]
       }
       patient_stripe_customers: {
@@ -1086,6 +1190,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "patients"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_stripe_customers_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "recall_candidates"
+            referencedColumns: ["patient_id"]
           },
         ]
       }
@@ -1261,6 +1372,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "payment_schedules_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "recall_candidates"
+            referencedColumns: ["patient_id"]
+          },
+          {
             foreignKeyName: "payment_schedules_patient_membership_id_fkey"
             columns: ["patient_membership_id"]
             isOneToOne: false
@@ -1434,8 +1552,10 @@ export type Database = {
           created_at: string
           full_name: string
           id: string
+          is_owner: boolean
           online_booking_enabled: boolean
           role: string
+          role_id: string | null
           user_id: string
         }
         Insert: {
@@ -1444,8 +1564,10 @@ export type Database = {
           created_at?: string
           full_name: string
           id?: string
+          is_owner?: boolean
           online_booking_enabled?: boolean
           role?: string
+          role_id?: string | null
           user_id: string
         }
         Update: {
@@ -1454,8 +1576,10 @@ export type Database = {
           created_at?: string
           full_name?: string
           id?: string
+          is_owner?: boolean
           online_booking_enabled?: boolean
           role?: string
+          role_id?: string | null
           user_id?: string
         }
         Relationships: [
@@ -1464,6 +1588,13 @@ export type Database = {
             columns: ["account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "team_members_role_id_fkey"
+            columns: ["role_id"]
+            isOneToOne: false
+            referencedRelation: "account_roles"
             referencedColumns: ["id"]
           },
         ]
@@ -1681,6 +1812,13 @@ export type Database = {
             referencedRelation: "patients"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "whatsapp_messages_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "recall_candidates"
+            referencedColumns: ["patient_id"]
+          },
         ]
       }
     }
@@ -1721,19 +1859,39 @@ export type Database = {
     Functions: {
       accept_invite: {
         Args: { p_token: string }
-        Returns: { account_id: string }[]
-      }
-      claim_patient_profile: {
-        Args: Record<PropertyKey, never>
-        Returns: { patient_id: string }[]
-      }
-      create_account_with_owner: {
-        Args: { p_account_name: string; p_clinic_name: string; p_owner_name?: string }
         Returns: {
           account_id: string
-          clinic_id: string
         }[]
       }
+      can_access_patient: {
+        Args: { target_account_id: string; target_patient_id: string }
+        Returns: boolean
+      }
+      claim_patient_profile: {
+        Args: never
+        Returns: {
+          patient_id: string
+        }[]
+      }
+      create_account_with_owner:
+        | {
+            Args: { p_account_name: string; p_clinic_name: string }
+            Returns: {
+              account_id: string
+              clinic_id: string
+            }[]
+          }
+        | {
+            Args: {
+              p_account_name: string
+              p_clinic_name: string
+              p_owner_name?: string
+            }
+            Returns: {
+              account_id: string
+              clinic_id: string
+            }[]
+          }
       create_public_booking: {
         Args: {
           p_account_slug: string
@@ -1748,6 +1906,10 @@ export type Database = {
           p_team_member_id: string
         }
         Returns: Json
+      }
+      current_team_member_id: {
+        Args: { target_account_id: string }
+        Returns: string
       }
       generate_unique_account_slug: {
         Args: { base_name: string }
@@ -1765,7 +1927,12 @@ export type Database = {
           starts_at: string
         }[]
       }
+      get_my_permissions: { Args: { target_account_id: string }; Returns: Json }
       get_public_booking_info: { Args: { p_slug: string }; Returns: Json }
+      has_permission: {
+        Args: { perm_key: string; target_account_id: string }
+        Returns: boolean
+      }
       is_account_member: {
         Args: { target_account_id: string }
         Returns: boolean
@@ -1773,6 +1940,14 @@ export type Database = {
       is_own_patient_account: {
         Args: { target_account_id: string }
         Returns: boolean
+      }
+      permission_scope: {
+        Args: { perm_key: string; target_account_id: string }
+        Returns: string
+      }
+      seed_account_roles: {
+        Args: { target_account_id: string }
+        Returns: string
       }
       slugify: { Args: { input: string }; Returns: string }
     }

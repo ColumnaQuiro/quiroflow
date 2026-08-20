@@ -52,4 +52,9 @@ export default defineNuxtRouteMiddleware(async (to) => {
   if (hasAccount && ['/onboarding', '/login', '/signup', '/'].includes(to.path)) {
     return navigateTo('/dashboard')
   }
+
+  // Guard against a redirect loop if a role also can't see the Dashboard itself.
+  if (hasAccount && to.path !== '/dashboard' && !isRouteAllowed(store, to.path)) {
+    return navigateTo('/dashboard?denied=1')
+  }
 })

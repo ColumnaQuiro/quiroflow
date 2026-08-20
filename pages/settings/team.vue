@@ -4,25 +4,41 @@ import type { Tables } from '~/types/database.types'
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 
+interface RoleOption {
+  id: string
+  name: string
+}
+
 const members = ref<Tables<'team_members'>[]>([])
 const invites = ref<Tables<'account_invites'>[]>([])
+const roles = ref<RoleOption[]>([])
 const loading = ref(true)
 
 const inviteEmail = ref('')
-const inviteRole = ref<'owner' | 'practitioner' | 'front_desk'>('practitioner')
+const inviteRoleId = ref('')
 const inviting = ref(false)
 const error = ref('')
 const lastInviteLink = ref('')
 const emailStatus = ref<'sent' | 'failed' | ''>('')
 
+const roleName = computed(() => {
+  const byId = new Map(roles.value.map((r) => [r.id, r.name]))
+  return (roleId: string | null) => (roleId ? (byId.get(roleId) ?? 'Unknown role') : 'No role')
+})
+
 async function load() {
   loading.value = true
-  const [{ data: m }, { data: i }] = await Promise.all([
+  const [{ data: m }, { data: i }, { data: r }] = await Promise.all([
     supabase.from('team_members').select('*').order('full_name'),
     supabase.from('account_invites').select('*').is('accepted_at', null).order('created_at', { ascending: false }),
+    supabase.from('account_roles').select('id, name').order('is_system', { ascending: false }).order('name'),
   ])
   members.value = m ?? []
   invites.value = i ?? []
+  roles.value = r ?? []
+  if (!inviteRoleId.value && roles.value.length > 0) {
+    inviteRoleId.value = roles.value.find((role) => role.name === 'Practitioner')?.id ?? roles.value[0].id
+  }
   loading.value = false
 }
 onMounted(load)
@@ -38,7 +54,11 @@ async function createInvite() {
     .insert({
       account_id: store.accountId!,
       email,
-      role: inviteRole.value,
+      role_id: inviteRoleId.value,
+      // Legacy column still has a check constraint (owner/practitioner/front_desk) and is
+      // no longer the source of truth for permissions — role_id above is. This is just a
+      // safe placeholder so the insert satisfies the constraint.
+      role: 'practitioner',
     })
     .select('id, token')
     .single()
@@ -96,12 +116,6 @@ function inviteLink(token: string) {
 function copy(text: string) {
   navigator.clipboard?.writeText(text)
 }
-
-const roleClass: Record<string, string> = {
-  owner: 'bg-indigo-50 text-indigo-700',
-  practitioner: 'bg-green-50 text-green-700',
-  front_desk: 'bg-gray-100 text-gray-600',
-}
 </script>
 
 <template>
@@ -141,7 +155,7 @@ const roleClass: Record<string, string> = {
               </button>
             </td>
             <td class="px-4 py-2.5">
-              <span class="rounded px-1.5 py-0.5 text-xs font-medium" :class="roleClass[m.role]">{{ m.role }}</span>
+              <span class="rounded bg-indigo-50 px-1.5 py-0.5 text-xs font-medium text-indigo-700">{{ roleName(m.role_id) }}</span>
             </td>
             <td class="px-4 py-2.5">
               <label class="flex items-center gap-2 text-gray-600">
@@ -158,7 +172,7 @@ const roleClass: Record<string, string> = {
       <h2 class="text-sm font-semibold text-gray-900">Pending invites</h2>
       <ul class="mt-2 space-y-2">
         <li v-for="inv in invites" :key="inv.id" class="flex items-center justify-between rounded-md border border-gray-200 bg-white px-3 py-2 text-sm">
-          <span class="text-gray-700">{{ inv.email || 'Any email' }} &middot; {{ inv.role }}</span>
+          <span class="text-gray-700">{{ inv.email || 'Any email' }} &middot; {{ roleName(inv.role_id) }}</span>
           <div class="flex gap-3">
             <button type="button" class="text-indigo-600 hover:text-indigo-500" @click="copy(inviteLink(inv.token))">Copy link</button>
             <button type="button" class="text-red-600 hover:text-red-500" @click="revokeInvite(inv.id)">Revoke</button>
@@ -174,10 +188,8 @@ const roleClass: Record<string, string> = {
       </div>
       <div>
         <label class="block text-sm font-medium text-gray-700">Role</label>
-        <select v-model="inviteRole" class="mt-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-          <option value="practitioner">Practitioner</option>
-          <option value="front_desk">Front desk</option>
-          <option value="owner">Owner</option>
+        <select v-model="inviteRoleId" class="mt-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+          <option v-for="r in roles" :key="r.id" :value="r.id">{{ r.name }}</option>
         </select>
       </div>
       <button type="submit" :disabled="inviting" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">

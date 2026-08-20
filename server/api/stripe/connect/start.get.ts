@@ -1,16 +1,10 @@
 import { randomBytes } from 'node:crypto'
-import { serverSupabaseClient } from '#supabase/server'
-import type { Database } from '~/types/database.types'
 
 // Kicks off Standard Connect OAuth: a signed, single-use state cookie guards
 // against CSRF (someone else's authorization code being linked to this
 // clinic), then redirects to Stripe's own authorize screen.
 export default defineEventHandler(async (event) => {
-  const supabase = await serverSupabaseClient<Database>(event)
-  const { data: teamMember } = await supabase.from('team_members').select('id').maybeSingle()
-  if (!teamMember) {
-    throw createError({ statusCode: 403, statusMessage: 'Not signed in as a team member' })
-  }
+  await requirePermission(event, 'billing_config')
 
   setHeader(event, 'Cache-Control', 'no-store')
 

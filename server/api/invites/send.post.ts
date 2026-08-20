@@ -1,20 +1,6 @@
-import { serverSupabaseClient } from '#supabase/server'
-import type { Database } from '~/types/database.types'
-
-const ROLE_LABELS: Record<string, string> = {
-  owner: 'Owner',
-  practitioner: 'Practitioner',
-  front_desk: 'Front desk',
-}
-
 export default defineEventHandler(async (event) => {
-  const supabase = await serverSupabaseClient<Database>(event)
   const config = useRuntimeConfig()
-
-  const { data: teamMember } = await supabase.from('team_members').select('id, account_id').maybeSingle()
-  if (!teamMember) {
-    throw createError({ statusCode: 403, statusMessage: 'Not signed in as a team member' })
-  }
+  const { supabase, teamMember } = await requirePermission(event, 'team_admin')
 
   const body = await readBody<{ inviteId: string }>(event)
   if (!body?.inviteId) {
@@ -23,7 +9,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: invite } = await supabase
     .from('account_invites')
-    .select('id, email, role, token, account_id')
+    .select('id, email, role, token, account_id, account_roles(name)')
     .eq('id', body.inviteId)
     .maybeSingle()
   if (!invite || invite.account_id !== teamMember.account_id) {
@@ -43,7 +29,7 @@ export default defineEventHandler(async (event) => {
   const origin = getRequestURL(event).origin
   const joinUrl = `${origin}/join?token=${invite.token}`
   const logoUrl = `${origin}/logo/quiroflow-mark.svg`
-  const roleLabel = ROLE_LABELS[invite.role] ?? invite.role
+  const roleLabel = (invite.account_roles as unknown as { name: string } | null)?.name ?? invite.role
 
   const html = `
     <div style="background:#F4F4F6;padding:40px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">

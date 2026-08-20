@@ -8,12 +8,17 @@ const store = useAccountStore()
 const teamMembers = ref<TeamMemberRow[]>([])
 const unlinked = ref<UnlinkedName[]>([])
 const loading = ref(true)
+const practitionerRoleId = ref('')
 
 const PAGE_SIZE = 1000
 async function load() {
   loading.value = true
-  const [{ data: tm }] = await Promise.all([supabase.from('team_members').select('id, full_name').order('full_name')])
+  const [{ data: tm }, { data: role }] = await Promise.all([
+    supabase.from('team_members').select('id, full_name').order('full_name'),
+    supabase.from('account_roles').select('id').eq('account_id', store.accountId!).eq('name', 'Practitioner').maybeSingle(),
+  ])
   teamMembers.value = tm ?? []
+  practitionerRoleId.value = role?.id ?? ''
 
   const counts = new Map<string, number>()
   for (let page = 0; ; page++) {
@@ -53,6 +58,7 @@ async function inviteAsPractitioner(row: UnlinkedName) {
     .insert({
       account_id: store.accountId!,
       role: 'practitioner',
+      role_id: practitionerRoleId.value || null,
       full_name: row.name,
       link_practitioner_name: row.name,
     })

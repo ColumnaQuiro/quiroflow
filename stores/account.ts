@@ -6,7 +6,10 @@ export interface TeamMember {
   full_name: string
   role: 'owner' | 'practitioner' | 'front_desk'
   color: string
+  is_owner: boolean
 }
+
+export type PermissionValue = boolean | 'all' | 'own' | 'none'
 
 export interface Clinic {
   id: string
@@ -25,12 +28,14 @@ export const useAccountStore = defineStore('account', {
     whatsappRecallTemplateName: '' as string,
     clinics: [] as Clinic[],
     currentClinicId: null as string | null,
+    permissions: {} as Record<string, PermissionValue>,
     loaded: false,
     loading: false,
   }),
   getters: {
     accountId: (state) => state.teamMember?.account_id ?? null,
     currentClinic: (state) => state.clinics.find((c) => c.id === state.currentClinicId) ?? null,
+    isOwner: (state) => state.teamMember?.is_owner ?? false,
   },
   actions: {
     async load() {
@@ -40,7 +45,7 @@ export const useAccountStore = defineStore('account', {
 
       const { data: teamMember } = await supabase
         .from('team_members')
-        .select('id, account_id, full_name, role, color')
+        .select('id, account_id, full_name, role, color, is_owner')
         .maybeSingle()
 
       if (!teamMember) {
@@ -52,13 +57,14 @@ export const useAccountStore = defineStore('account', {
 
       this.teamMember = teamMember as TeamMember
 
-      const [{ data: account }, { data: clinics }] = await Promise.all([
+      const [{ data: account }, { data: clinics }, { data: permissions }] = await Promise.all([
         supabase
           .from('accounts')
           .select('name, slug, whatsapp_confirmation_template_name, whatsapp_recall_template_name')
           .eq('id', teamMember.account_id)
           .maybeSingle(),
         supabase.from('clinics').select('id, account_id, name, address, slot_duration_minutes').eq('account_id', teamMember.account_id),
+        supabase.rpc('get_my_permissions', { target_account_id: teamMember.account_id }),
       ])
 
       this.accountName = account?.name ?? ''
@@ -66,6 +72,7 @@ export const useAccountStore = defineStore('account', {
       this.whatsappConfirmationTemplateName = account?.whatsapp_confirmation_template_name ?? ''
       this.whatsappRecallTemplateName = account?.whatsapp_recall_template_name ?? ''
       this.clinics = (clinics as Clinic[]) ?? []
+      this.permissions = (permissions as Record<string, PermissionValue>) ?? {}
       if (!this.currentClinicId && this.clinics.length > 0) {
         this.currentClinicId = this.clinics[0].id
       }
@@ -81,6 +88,7 @@ export const useAccountStore = defineStore('account', {
       this.whatsappRecallTemplateName = ''
       this.clinics = []
       this.currentClinicId = null
+      this.permissions = {}
       this.loaded = false
       this.loading = false
     },

@@ -1,6 +1,3 @@
-import { serverSupabaseClient } from '#supabase/server'
-import type { Database } from '~/types/database.types'
-
 interface MetaTemplateComponent {
   type: 'HEADER' | 'BODY' | 'FOOTER' | 'BUTTONS'
   format?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT'
@@ -15,11 +12,7 @@ interface MetaTemplate {
 }
 
 export default defineEventHandler(async (event) => {
-  const supabase = await serverSupabaseClient<Database>(event)
-  const { data: teamMember } = await supabase.from('team_members').select('account_id').maybeSingle()
-  if (!teamMember) {
-    throw createError({ statusCode: 403, statusMessage: 'Not signed in as a team member' })
-  }
+  const { supabase, teamMember } = await requirePermission(event, 'communication_config')
 
   const { data: account } = await supabase
     .from('accounts')

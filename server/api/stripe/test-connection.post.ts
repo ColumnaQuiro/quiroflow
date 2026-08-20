@@ -1,13 +1,7 @@
-import { serverSupabaseClient } from '#supabase/server'
-import type { Database } from '~/types/database.types'
 import { stripeClientFor } from '~/server/utils/stripe'
 
 export default defineEventHandler(async (event) => {
-  const supabase = await serverSupabaseClient<Database>(event)
-  const { data: teamMember } = await supabase.from('team_members').select('id, account_id').maybeSingle()
-  if (!teamMember) {
-    throw createError({ statusCode: 403, statusMessage: 'Not signed in as a team member' })
-  }
+  const { supabase, teamMember } = await requirePermission(event, 'billing_config')
 
   const { data: account } = await supabase
     .from('accounts')

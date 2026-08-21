@@ -24,6 +24,16 @@ const BLOCK_DROP_ROW3_BELOW = 46
 const DAY_MIN_AVAILABILITY_PX = 20
 const WEEK_MIN_AVAILABILITY_PX = 16
 
+// Without a cap, N-way overlapping appointments split into N equal-width
+// lanes with no floor -- readable at 2-3 way, illegible (truncated to a
+// couple characters) beyond that. Past the cap, the extra appointments
+// collapse into a single "+N more" chip in the last lane instead of
+// squeezing every lane thinner. Day view's room columns are wider than
+// week view's day columns, so it can afford one more visible lane.
+const DAY_MAX_LANES = 4
+const WEEK_MAX_LANES = 3
+const OVERFLOW_CHIP_PX = 20
+
 interface Room { id: string; name: string }
 interface AppointmentType { id: string; name: string; duration_minutes: number; color: string; default_price_cents: number }
 interface TeamMember { id: string; full_name: string; color: string }
@@ -435,15 +445,28 @@ interface LaidOutAppointment extends AppointmentRow {
   _col: number
   _totalCols: number
 }
+interface OverflowBlock {
+  _overflow: true
+  _col: number
+  _totalCols: number
+  starts_at: string
+  count: number
+}
+type LayoutBlock = LaidOutAppointment | OverflowBlock
 
-// Week view doesn't split columns by room, so appointments in different
-// rooms at the same time can overlap within a single day column -- assign
-// each a lane via a greedy sweep (grouped into clusters of transitively
-// overlapping appointments) so overlapping ones sit side by side instead of
-// stacking on top of each other.
-function layoutForDay(day: Date): LaidOutAppointment[] {
-  const sorted = appointmentsForDay(day) as LaidOutAppointment[]
-  const result: LaidOutAppointment[] = []
+function isOverflowBlock(b: LayoutBlock): b is OverflowBlock {
+  return (b as OverflowBlock)._overflow === true
+}
+
+// Assigns each appointment in a pre-sorted (by start time) list a lane via
+// a greedy sweep (grouped into clusters of transitively overlapping
+// appointments), so overlapping ones sit side by side within their shared
+// column instead of stacking on top of each other. Past maxLanes, the
+// remaining appointments in that cluster collapse into a single "+N more"
+// marker in the last lane rather than squeezing every lane thinner and
+// thinner until nothing is readable.
+function assignOverlapLayout(sorted: AppointmentRow[], maxLanes: number): LayoutBlock[] {
+  const result: LayoutBlock[] = []
   let cluster: LaidOutAppointment[] = []
   let clusterEnd = -Infinity
 
@@ -460,13 +483,28 @@ function layoutForDay(day: Date): LaidOutAppointment[] {
       colEnds[col] = new Date(appt.ends_at).getTime()
       appt._col = col
     }
-    for (const appt of cluster) appt._totalCols = colEnds.length
-    result.push(...cluster)
+    const totalCols = colEnds.length
+    if (totalCols <= maxLanes) {
+      for (const appt of cluster) appt._totalCols = totalCols
+      result.push(...cluster)
+    } else {
+      const visible = cluster.filter((a) => a._col < maxLanes - 1)
+      const hidden = cluster.filter((a) => a._col >= maxLanes - 1)
+      for (const a of visible) a._totalCols = maxLanes
+      result.push(...visible)
+      result.push({
+        _overflow: true,
+        _col: maxLanes - 1,
+        _totalCols: maxLanes,
+        starts_at: hidden.reduce((min, a) => (a.starts_at < min ? a.starts_at : min), hidden[0].starts_at),
+        count: hidden.length,
+      })
+    }
     cluster = []
     clusterEnd = -Infinity
   }
 
-  for (const appt of sorted) {
+  for (const appt of sorted as LaidOutAppointment[]) {
     const start = new Date(appt.starts_at).getTime()
     const end = new Date(appt.ends_at).getTime()
     if (cluster.length > 0 && start >= clusterEnd) flush()
@@ -475,6 +513,24 @@ function layoutForDay(day: Date): LaidOutAppointment[] {
   }
   flush()
   return result
+}
+
+// Week view doesn't split columns by room, so appointments in different
+// rooms at the same time can overlap within a single day column.
+function layoutForDay(day: Date): LayoutBlock[] {
+  return assignOverlapLayout(appointmentsForDay(day), WEEK_MAX_LANES)
+}
+
+// Day view splits columns by room, but two appointments can still be
+// double-booked (or just overlap) in the same room -- without this, they'd
+// all render at full column width and visually stack on top of each other.
+function layoutForRoom(roomId: string): LayoutBlock[] {
+  const sorted = [...appointmentsForRoom(roomId)].sort((a, b) => a.starts_at.localeCompare(b.starts_at))
+  return assignOverlapLayout(sorted, DAY_MAX_LANES)
+}
+function showOverflowDay(day: Date) {
+  anchorDate.value = day
+  viewMode.value = 'day'
 }
 function openEditModal(appointment: AppointmentRow) {
   editingAppointment.value = appointment
@@ -728,32 +784,51 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX))
                   {{ block.note || (block.room_id === null ? 'Blocked (whole clinic)' : 'Blocked') }}
                 </div>
 
-                <div
-                  v-for="appt in appointmentsForRoom(col.id)"
-                  :key="appt.id"
-                  class="absolute left-1 right-1 z-[1] overflow-hidden rounded-[7px] border border-l-[3px]"
-                  :class="blockClass(appt)"
-                  :style="{ top: `${timeToPx(appt.starts_at, DAY_HOUR_PX)}px`, height: `${durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX)}px` }"
-                  @click.stop="openEditModal(appt)"
-                  @mouseenter="scheduleHoverCard(appt, $event)"
-                  @mouseleave="cancelHoverShow"
-                >
+                <template v-for="(appt, i) in layoutForRoom(col.id)" :key="isOverflowBlock(appt) ? `overflow-${col.id}-${i}` : appt.id">
                   <div
-                    class="flex h-full flex-col justify-center gap-0.5 px-2"
-                    :class="durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) < BLOCK_DROP_ROW3_BELOW || settings.compactRows ? 'py-[3px]' : 'py-1.5'"
+                    v-if="isOverflowBlock(appt)"
+                    class="absolute z-[1] flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[10.5px] font-medium text-ink-muted2 shadow-card"
+                    :title="`${appt.count} more appointment${appt.count === 1 ? '' : 's'} at this time`"
+                    :style="{
+                      top: `${timeToPx(appt.starts_at, DAY_HOUR_PX)}px`,
+                      height: `${OVERFLOW_CHIP_PX}px`,
+                      left: `calc(${(appt._col / appt._totalCols) * 100}% + 2px)`,
+                      width: `calc(${100 / appt._totalCols}% - 4px)`,
+                    }"
                   >
-                    <div class="flex items-center justify-between gap-1">
-                      <span class="font-mono text-[10.5px] text-ink-muted2">{{ timeRangeLabel(appt) }}</span>
-                      <span class="h-[6px] w-[6px] shrink-0 rounded-full" :class="dotClass(appt)" />
-                    </div>
-                    <p class="truncate text-[12.5px] font-semibold text-ink-900" :class="{ 'blur-sm select-none': settings.privacyMode, 'line-through opacity-70': appt.status === 'cancelled' }">
-                      {{ appt.patients?.first_name }} {{ appt.patients?.last_name }}
-                    </p>
-                    <p v-if="!(durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) < BLOCK_DROP_ROW3_BELOW || settings.compactRows)" class="truncate text-[11.5px] text-ink-muted2">
-                      {{ appt.appointment_types?.name ?? '—' }}
-                    </p>
+                    +{{ appt.count }} more
                   </div>
-                </div>
+                  <div
+                    v-else
+                    class="absolute z-[1] overflow-hidden rounded-[7px] border border-l-[3px]"
+                    :class="blockClass(appt)"
+                    :style="{
+                      top: `${timeToPx(appt.starts_at, DAY_HOUR_PX)}px`,
+                      height: `${durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX)}px`,
+                      left: `calc(${(appt._col / appt._totalCols) * 100}% + 2px)`,
+                      width: `calc(${100 / appt._totalCols}% - 4px)`,
+                    }"
+                    @click.stop="openEditModal(appt)"
+                    @mouseenter="scheduleHoverCard(appt, $event)"
+                    @mouseleave="cancelHoverShow"
+                  >
+                    <div
+                      class="flex h-full flex-col justify-center gap-0.5 px-2"
+                      :class="durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) < BLOCK_DROP_ROW3_BELOW || settings.compactRows ? 'py-[3px]' : 'py-1.5'"
+                    >
+                      <div class="flex items-center justify-between gap-1">
+                        <span class="font-mono text-[10.5px] text-ink-muted2">{{ timeRangeLabel(appt) }}</span>
+                        <span class="h-[6px] w-[6px] shrink-0 rounded-full" :class="dotClass(appt)" />
+                      </div>
+                      <p class="truncate text-[12.5px] font-semibold text-ink-900" :class="{ 'blur-sm select-none': settings.privacyMode, 'line-through opacity-70': appt.status === 'cancelled' }">
+                        {{ appt.patients?.first_name }} {{ appt.patients?.last_name }}
+                      </p>
+                      <p v-if="!(durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) < BLOCK_DROP_ROW3_BELOW || settings.compactRows)" class="truncate text-[11.5px] text-ink-muted2">
+                        {{ appt.appointment_types?.name ?? '—' }}
+                      </p>
+                    </div>
+                  </div>
+                </template>
               </div>
 
               <div v-if="showNowLine" class="pointer-events-none absolute left-0 right-0 z-20" :style="{ top: `${nowLinePx}px` }">
@@ -811,26 +886,42 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX))
                   Blocked
                 </div>
 
-                <div
-                  v-for="appt in layoutForDay(day)"
-                  :key="appt.id"
-                  class="absolute z-[1] overflow-hidden rounded-[7px] border border-l-[3px] px-1.5 py-1"
-                  :class="blockClass(appt)"
-                  :style="{
-                    top: `${timeToPx(appt.starts_at, WEEK_HOUR_PX)}px`,
-                    height: `${durationToPx(appt.starts_at, appt.ends_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX)}px`,
-                    left: `calc(${(appt._col / appt._totalCols) * 100}% + 2px)`,
-                    width: `calc(${100 / appt._totalCols}% - 4px)`,
-                  }"
-                  @click.stop="openEditModal(appt)"
-                  @mouseenter="scheduleHoverCard(appt, $event)"
-                  @mouseleave="cancelHoverShow"
-                >
-                  <p class="truncate text-[11px] font-semibold text-ink-900" :class="{ 'blur-sm select-none': settings.privacyMode, 'line-through opacity-70': appt.status === 'cancelled' }">
-                    {{ appt.patients?.first_name }}
-                  </p>
-                  <p class="truncate font-mono text-[10px] text-ink-muted2">{{ hm(appt.starts_at) }}</p>
-                </div>
+                <template v-for="(appt, i) in layoutForDay(day)" :key="isOverflowBlock(appt) ? `overflow-${toDateKey(day)}-${i}` : appt.id">
+                  <button
+                    v-if="isOverflowBlock(appt)"
+                    type="button"
+                    class="absolute z-[1] flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[10px] font-medium text-ink-muted2 shadow-card hover:border-line-controlHover"
+                    :title="`${appt.count} more appointment${appt.count === 1 ? '' : 's'} at this time -- click to see them all in Day view`"
+                    :style="{
+                      top: `${timeToPx(appt.starts_at, WEEK_HOUR_PX)}px`,
+                      height: `${OVERFLOW_CHIP_PX}px`,
+                      left: `calc(${(appt._col / appt._totalCols) * 100}% + 2px)`,
+                      width: `calc(${100 / appt._totalCols}% - 4px)`,
+                    }"
+                    @click.stop="showOverflowDay(day)"
+                  >
+                    +{{ appt.count }}
+                  </button>
+                  <div
+                    v-else
+                    class="absolute z-[1] overflow-hidden rounded-[7px] border border-l-[3px] px-1.5 py-1"
+                    :class="blockClass(appt)"
+                    :style="{
+                      top: `${timeToPx(appt.starts_at, WEEK_HOUR_PX)}px`,
+                      height: `${durationToPx(appt.starts_at, appt.ends_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX)}px`,
+                      left: `calc(${(appt._col / appt._totalCols) * 100}% + 2px)`,
+                      width: `calc(${100 / appt._totalCols}% - 4px)`,
+                    }"
+                    @click.stop="openEditModal(appt)"
+                    @mouseenter="scheduleHoverCard(appt, $event)"
+                    @mouseleave="cancelHoverShow"
+                  >
+                    <p class="truncate text-[11px] font-semibold text-ink-900" :class="{ 'blur-sm select-none': settings.privacyMode, 'line-through opacity-70': appt.status === 'cancelled' }">
+                      {{ appt.patients?.first_name }}
+                    </p>
+                    <p class="truncate font-mono text-[10px] text-ink-muted2">{{ hm(appt.starts_at) }}</p>
+                  </div>
+                </template>
               </div>
             </div>
           </div>

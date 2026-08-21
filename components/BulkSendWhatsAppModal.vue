@@ -83,19 +83,19 @@ const failedCount = computed(() => results.value.filter((r) => !r.ok).length)
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="emit('close')">
-    <div class="w-full max-w-md rounded-lg bg-white p-5 shadow-xl">
-      <h3 class="text-sm font-semibold text-gray-900">Send WhatsApp to {{ targets.length }} patient{{ targets.length === 1 ? '' : 's' }}</h3>
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 p-4" @click.self="emit('close')">
+    <div class="w-full max-w-md rounded-card border border-line bg-surface p-5 shadow-popover">
+      <h3 class="text-[14px] font-semibold text-ink-900">Send WhatsApp to {{ targets.length }} patient{{ targets.length === 1 ? '' : 's' }}</h3>
 
       <template v-if="results.length === 0">
-        <div v-if="loadingTemplates" class="mt-3 text-sm text-gray-400">Loading templates…</div>
-        <p v-else-if="templatesError" class="mt-3 text-sm text-red-600">{{ templatesError }}</p>
+        <div v-if="loadingTemplates" class="mt-3 text-[13px] text-ink-faint">Loading templates…</div>
+        <p v-else-if="templatesError" class="mt-3 text-[13px] text-danger-text">{{ templatesError }}</p>
         <template v-else>
           <div class="mt-3">
-            <label class="block text-xs font-medium text-gray-500">Template</label>
+            <label class="block text-xs font-medium text-ink-muted">Template</label>
             <select
               :value="selectedTemplateKey"
-              class="mt-1 w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm"
+              class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-1.5 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand-tintBorder"
               @change="selectTemplate(($event.target as HTMLSelectElement).value)"
             >
               <option value="" disabled>Choose a template…</option>
@@ -104,16 +104,16 @@ const failedCount = computed(() => results.value.filter((r) => !r.ok).length)
           </div>
 
           <template v-if="selectedTemplate">
-            <p class="mt-3 whitespace-pre-wrap rounded-md bg-gray-50 p-2.5 text-xs text-gray-500">{{ selectedTemplate.bodyText }}</p>
-            <p class="mt-2 text-xs text-gray-400">{{ slot(1) }} is filled with each patient's own first name.</p>
+            <p class="mt-3 whitespace-pre-wrap rounded-ctl bg-surface-subtle p-2.5 text-xs text-ink-muted">{{ selectedTemplate.bodyText }}</p>
+            <p class="mt-2 text-xs text-ink-faint">{{ slot(1) }} is filled with each patient's own first name.</p>
 
             <div v-if="sharedVariables.length > 0" class="mt-3 space-y-2">
               <div v-for="(v, i) in sharedVariables" :key="i">
-                <label class="block text-xs font-medium text-gray-500">{{ slot(i + 2) }} (same for everyone)</label>
+                <label class="block text-xs font-medium text-ink-muted">{{ slot(i + 2) }} (same for everyone)</label>
                 <input
                   v-model="sharedVariables[i]"
                   type="text"
-                  class="mt-1 w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  class="mt-1 w-full rounded-ctl border border-line-control px-3 py-1.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand-tintBorder"
                 />
               </div>
             </div>
@@ -121,31 +121,22 @@ const failedCount = computed(() => results.value.filter((r) => !r.ok).length)
         </template>
 
         <div class="mt-4 flex justify-end gap-2">
-          <button type="button" class="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50" @click="emit('close')">
-            Cancel
-          </button>
-          <button
-            type="button"
-            :disabled="sending || !selectedTemplate"
-            class="rounded-md bg-green-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
-            @click="send"
-          >
+          <UiBtn variant="secondary" @click="emit('close')">Cancel</UiBtn>
+          <UiBtn variant="primary" :disabled="sending || !selectedTemplate" @click="send">
             {{ sending ? `Sending… (${results.length}/${targets.length})` : `Send to ${targets.length}` }}
-          </button>
+          </UiBtn>
         </div>
       </template>
 
       <template v-else>
-        <p class="mt-3 text-sm text-gray-700">
+        <p class="mt-3 text-[13px] text-ink-600">
           Sent to {{ sentCount }} patient{{ sentCount === 1 ? '' : 's' }}<span v-if="failedCount > 0">, {{ failedCount }} failed</span>.
         </p>
-        <ul v-if="failedCount > 0" class="mt-2 max-h-40 space-y-1 overflow-y-auto text-xs text-red-600">
+        <ul v-if="failedCount > 0" class="mt-2 max-h-40 space-y-1 overflow-y-auto text-xs text-danger-text">
           <li v-for="(r, i) in results.filter((r) => !r.ok)" :key="i">{{ r.name }}: {{ r.error }}</li>
         </ul>
         <div class="mt-4 flex justify-end">
-          <button type="button" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700" @click="emit('close')">
-            Done
-          </button>
+          <UiBtn variant="primary" @click="emit('close')">Done</UiBtn>
         </div>
       </template>
     </div>

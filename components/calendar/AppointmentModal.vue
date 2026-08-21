@@ -100,6 +100,8 @@ async function save() {
     }
   }
 
+  const timeChanged = props.mode === 'edit' && (startsAt.toISOString() !== props.appointment!.starts_at || endsAt.toISOString() !== props.appointment!.ends_at)
+
   const payload = {
     account_id: store.accountId!,
     clinic_id: store.currentClinicId!,
@@ -110,6 +112,7 @@ async function save() {
     starts_at: startsAt.toISOString(),
     ends_at: endsAt.toISOString(),
     status: status.value,
+    ...(timeChanged ? { rescheduled: true } : {}),
   }
 
   const result = props.mode === 'create'

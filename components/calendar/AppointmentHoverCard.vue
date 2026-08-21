@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { computeBonoStatus } from '~/utils/bonoStatus'
+
 interface HoverAppointment {
   id: string
   patient_id: string
@@ -11,7 +13,7 @@ interface HoverAppointment {
   checked_in_at: string | null
   note: string | null
   patients: { first_name: string; last_name: string | null } | null
-  appointment_types: { name: string } | null
+  appointment_types: { name: string; default_price_cents?: number } | null
   team_members: { full_name: string } | null
 }
 
@@ -20,6 +22,16 @@ const emit = defineEmits<{ noteSaved: []; checkIn: [] }>()
 
 const supabase = useSupabaseClient()
 const { loading: billingLoading, balanceCents, activePackages } = usePatientFinancialSummary(() => props.appointment.patient_id)
+
+const bonoStatus = computed(() =>
+  computeBonoStatus({
+    balanceCents: balanceCents.value,
+    activePackage: activePackages.value[0]
+      ? { sessionsTotal: activePackages.value[0].sessions_total, sessionsUsed: activePackages.value[0].sessions_used, priceCents: activePackages.value[0].price_cents }
+      : null,
+    appointmentPriceCents: props.appointment.appointment_types?.default_price_cents ?? 0,
+  }),
+)
 
 const visitNumber = ref<number | null>(null)
 const nextVisit = ref<string | null>(null)
@@ -160,6 +172,8 @@ function visitOrdinal(n: number) {
     <p v-if="!billingLoading && activePackages.length > 0" class="mt-1 truncate text-[11px] text-ink-faint">
       {{ activePackages[0].package_name }} ({{ activePackages[0].sessions_used }}/{{ activePackages[0].sessions_total }})
     </p>
+
+    <BonoStatusBadge v-if="!billingLoading" class="mt-2.5" :tone="bonoStatus.tone" :label="bonoStatus.label" />
 
     <div class="mt-3 border-t border-line-divider pt-3">
       <label class="block text-[11px] font-medium text-ink-muted2">Note</label>

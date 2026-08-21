@@ -8,6 +8,7 @@ interface ActivePackage {
   package_name: string
   sessions_total: number
   sessions_used: number
+  price_cents: number
 }
 
 export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) {
@@ -31,7 +32,7 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     const [{ data: invoices }, { data: memberships }, { data: packages }, { data: credits }] = await Promise.all([
       supabase.from('invoices').select('id, total_cents').eq('patient_id', id.value).neq('status', 'void'),
       supabase.from('patient_memberships').select('id, membership_name, status').eq('patient_id', id.value).eq('status', 'active'),
-      supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used').eq('patient_id', id.value),
+      supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used, price_cents').eq('patient_id', id.value).order('purchased_at', { ascending: false }),
       supabase.from('account_credits').select('amount_cents').eq('patient_id', id.value),
     ])
 

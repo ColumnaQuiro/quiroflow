@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { hasBusinessHoursConfigured, isWithinBusinessHours } from '~/utils/businessHours'
+import { computeBonoStatus } from '~/utils/bonoStatus'
 
 const START_HOUR = 8
 const END_HOUR = 20
@@ -495,33 +496,19 @@ function appointmentColorStyle(appt: AppointmentRow) {
   }
 }
 
-// A small card icon on the block: green when the patient has credit to
-// spend, red when they owe money, hidden when their balance is exactly
-// zero -- lets staff spot who to collect from (or who's prepaid) without
-// opening the appointment.
-// Green: patient has an active package (bono) with enough sessions/value
-// left to cover this visit and still have some left over for next time.
-// Yellow: this visit uses their last covered session -- next time they'll
-// need to pay, so the receptionist can already offer/charge a renewal now.
-// Red: the package is exhausted, or this appointment type costs more than
-// the package's per-session value, so they'll owe money on top of it.
-// Falls back to the patient's plain account balance when they have no
-// active package at all.
+// A small card icon on the block, colored via the shared bono/balance
+// logic in utils/bonoStatus.ts (also used by the hover card and the
+// appointment edit modal, so the green/yellow/red call is consistent
+// wherever it shows up) -- lets staff spot who to collect from, who's
+// prepaid, or whose package is about to run out, without opening the
+// appointment.
 function balanceIconTone(appt: AppointmentRow): 'success' | 'danger' | 'warning' | null {
-  const pkg = activePackageByPatient.value[appt.patient_id]
-  if (pkg) {
-    const sessionsRemainingBefore = pkg.sessionsTotal - pkg.sessionsUsed
-    if (sessionsRemainingBefore <= 0) return 'danger'
-    const perSessionCents = pkg.priceCents / pkg.sessionsTotal
-    const appointmentPriceCents = appt.appointment_types?.default_price_cents ?? 0
-    if (appointmentPriceCents > perSessionCents) return 'danger'
-    if (sessionsRemainingBefore === 1) return 'warning'
-    return 'success'
-  }
-  const cents = appt.patients?.balance_cents ?? 0
-  if (cents > 0) return 'success'
-  if (cents < 0) return 'danger'
-  return null
+  const pkg = activePackageByPatient.value[appt.patient_id] ?? null
+  return computeBonoStatus({
+    balanceCents: appt.patients?.balance_cents ?? 0,
+    activePackage: pkg,
+    appointmentPriceCents: appt.appointment_types?.default_price_cents ?? 0,
+  }).tone
 }
 
 // Cascade positioning for an overlapping block: each lane insets from the
@@ -965,7 +952,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                       ...appointmentColorStyle(appt),
                       ...cascadeStyle(appt, DAY_CASCADE_PX),
                       top: `${timeToPx(appt.starts_at, DAY_HOUR_PX)}px`,
-                      height: `${durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX)}px`,
+                      height: `${Math.max(0, durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) - 3)}px`,
                     }"
                     @click.stop="openEditModal(appt)"
                     @mouseenter="scheduleHoverCard(appt, $event)"
@@ -1094,7 +1081,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                         ...appointmentColorStyle(appt),
                         ...cascadeStyle(appt, WEEK_CASCADE_PX),
                         top: `${timeToPx(appt.starts_at, WEEK_HOUR_PX)}px`,
-                        height: `${durationToPx(appt.starts_at, appt.ends_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX)}px`,
+                        height: `${Math.max(0, durationToPx(appt.starts_at, appt.ends_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX) - 2)}px`,
                       }"
                       @click.stop="openEditModal(appt)"
                       @mouseenter="scheduleHoverCard(appt, $event)"

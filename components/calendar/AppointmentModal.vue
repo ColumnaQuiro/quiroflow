@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { hasBusinessHoursConfigured, isWithinBusinessHours } from '~/utils/businessHours'
+import { computeBonoStatus } from '~/utils/bonoStatus'
 
 interface RoomOption { id: string; name: string }
 interface AppointmentTypeOption { id: string; name: string; duration_minutes: number; color: string; default_price_cents: number }
@@ -81,6 +82,19 @@ const selectedPatientLabel = computed(() => {
 })
 
 const selectedAppointmentType = computed(() => props.appointmentTypes.find((t) => t.id === appointmentTypeId.value))
+
+// Only loads once a patient is actually selected -- usePatientFinancialSummary
+// no-ops on an empty id, and re-fetches automatically as patientId changes.
+const { loading: bonoLoading, balanceCents, activePackages } = usePatientFinancialSummary(patientId)
+const bonoStatus = computed(() =>
+  computeBonoStatus({
+    balanceCents: balanceCents.value,
+    activePackage: activePackages.value[0]
+      ? { sessionsTotal: activePackages.value[0].sessions_total, sessionsUsed: activePackages.value[0].sessions_used, priceCents: activePackages.value[0].price_cents }
+      : null,
+    appointmentPriceCents: selectedAppointmentType.value?.default_price_cents ?? 0,
+  }),
+)
 
 async function save() {
   error.value = ''
@@ -198,6 +212,7 @@ async function remove() {
             Selected: <span class="font-medium text-ink-900">{{ selectedPatientLabel }}</span>
             <NuxtLink :to="`/patients/${patientId}`" target="_blank" class="ml-2 text-brand-text hover:text-brand-hover">View patient &rarr;</NuxtLink>
           </p>
+          <BonoStatusBadge v-if="patientId && !bonoLoading" class="mt-2" :tone="bonoStatus.tone" :label="bonoStatus.label" />
         </div>
 
         <div class="grid grid-cols-2 gap-4">

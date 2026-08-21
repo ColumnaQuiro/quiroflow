@@ -116,85 +116,85 @@ async function save() {
 </script>
 
 <template>
-  <div class="max-w-2xl">
-    <h1 class="text-xl font-semibold text-gray-900">Quick Invoice</h1>
+  <div class="flex h-full flex-col">
+    <PageHeader title="Quick invoice">
+      <UiBtn variant="secondary" @click="navigateTo('/billing')">Cancel</UiBtn>
+      <UiBtn variant="primary" :disabled="saving" @click="save">{{ saving ? 'Saving…' : 'Create invoice' }}</UiBtn>
+    </PageHeader>
 
-    <div class="mt-6 space-y-4 rounded-lg border border-gray-200 bg-white p-6">
-      <div>
-        <label class="block text-sm font-medium text-gray-700">Patient</label>
-        <input
-          v-model="patientQuery"
-          type="text"
-          :placeholder="selectedPatientLabel || 'Search patients…'"
-          class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-        />
-        <ul v-if="patientQuery" class="mt-1 max-h-40 overflow-y-auto rounded-md border border-gray-200">
-          <li
-            v-for="p in filteredPatients"
-            :key="p.id"
-            class="cursor-pointer px-3 py-1.5 text-sm hover:bg-gray-50"
-            @click="patientId = p.id; patientQuery = ''"
-          >
-            {{ p.first_name }} {{ p.last_name }}
-          </li>
-          <li v-if="filteredPatients.length === 0" class="px-3 py-1.5 text-sm text-gray-400">No matches</li>
-        </ul>
-        <p v-if="selectedPatientLabel && !patientQuery" class="mt-1 text-sm text-gray-500">
-          Selected: <span class="font-medium text-gray-900">{{ selectedPatientLabel }}</span>
-        </p>
-      </div>
-
-      <div>
-        <label class="block text-sm font-medium text-gray-700">Services &amp; Products</label>
-        <div class="mt-1 space-y-2">
-          <div v-for="(line, i) in lines" :key="i" class="flex items-center gap-2">
-            <select
-              v-model="line.serviceId"
-              class="w-40 shrink-0 rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              @change="onServiceChange(line)"
+    <div class="flex-1 overflow-y-auto bg-surface-page p-6">
+      <div class="mx-auto max-w-2xl space-y-4">
+        <div class="rounded-card border border-line bg-surface p-6 shadow-card">
+          <label class="block text-[12.5px] font-medium text-ink-500">Patient</label>
+          <input
+            v-model="patientQuery"
+            type="text"
+            :placeholder="selectedPatientLabel || 'Search patients…'"
+            class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+          />
+          <ul v-if="patientQuery" class="mt-1 max-h-40 overflow-y-auto rounded-ctl border border-line">
+            <li
+              v-for="p in filteredPatients"
+              :key="p.id"
+              class="cursor-pointer px-3 py-1.5 text-[13px] hover:bg-surface-subtle"
+              @click="patientId = p.id; patientQuery = ''"
             >
-              <option value="">Custom</option>
-              <option v-for="s in services" :key="s.id" :value="s.id">{{ s.name }}</option>
-            </select>
-            <input
-              v-model="line.description"
-              type="text"
-              placeholder="Description"
-              class="flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            />
-            <input
-              v-model.number="line.quantity"
-              type="number"
-              min="1"
-              class="w-16 rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            />
-            <input
-              v-model="line.priceEuros"
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder="0.00"
-              class="w-24 rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            />
-            <button type="button" class="text-gray-400 hover:text-red-600" @click="removeLine(i)">✕</button>
+              {{ p.first_name }} {{ p.last_name }}
+            </li>
+            <li v-if="filteredPatients.length === 0" class="px-3 py-1.5 text-[13px] text-ink-muted2">No matches</li>
+          </ul>
+          <p v-if="selectedPatientLabel && !patientQuery" class="mt-1 text-[13px] text-ink-muted">
+            Selected: <span class="font-medium text-ink-900">{{ selectedPatientLabel }}</span>
+          </p>
+        </div>
+
+        <div class="rounded-card border border-line bg-surface p-6 shadow-card">
+          <label class="block text-[12.5px] font-medium text-ink-500">Services &amp; products</label>
+          <div class="mt-2 space-y-2">
+            <div v-for="(line, i) in lines" :key="i" class="flex items-center gap-2">
+              <select
+                v-model="line.serviceId"
+                class="w-40 shrink-0 rounded-ctl border border-line-control px-2 py-1.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                @change="onServiceChange(line)"
+              >
+                <option value="">Custom</option>
+                <option v-for="s in services" :key="s.id" :value="s.id">{{ s.name }}</option>
+              </select>
+              <input
+                v-model="line.description"
+                type="text"
+                placeholder="Description"
+                class="flex-1 rounded-ctl border border-line-control px-3 py-1.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              />
+              <input
+                v-model.number="line.quantity"
+                type="number"
+                min="1"
+                class="w-16 rounded-ctl border border-line-control px-2 py-1.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              />
+              <input
+                v-model="line.priceEuros"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0.00"
+                class="w-24 rounded-ctl border border-line-control px-2 py-1.5 text-right font-mono text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              />
+              <button type="button" class="text-ink-faint2 hover:text-danger-text" @click="removeLine(i)">✕</button>
+            </div>
+          </div>
+          <button type="button" class="mt-2 text-[13px] font-medium text-brand-text hover:text-brand-hover" @click="addLine">
+            + Add line
+          </button>
+
+          <div class="mt-4 flex justify-end border-t border-line-row2 pt-4 text-[13px]">
+            <span class="font-semibold text-ink-900">
+              Total: <span class="font-mono">€{{ (totalCents / 100).toFixed(2) }}</span>
+            </span>
           </div>
         </div>
-        <button type="button" class="mt-2 text-sm font-medium text-indigo-600 hover:text-indigo-500" @click="addLine">
-          + Add line
-        </button>
-      </div>
 
-      <div class="flex justify-end border-t border-gray-100 pt-4 text-sm">
-        <span class="font-semibold text-gray-900">Total: €{{ (totalCents / 100).toFixed(2) }}</span>
-      </div>
-
-      <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
-
-      <div class="flex gap-3">
-        <button type="button" :disabled="saving" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50" @click="save">
-          {{ saving ? 'Saving…' : 'Create Invoice' }}
-        </button>
-        <NuxtLink to="/billing" class="rounded-md px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">Cancel</NuxtLink>
+        <p v-if="error" class="text-[13px] text-danger-text">{{ error }}</p>
       </div>
     </div>
   </div>

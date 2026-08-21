@@ -52,10 +52,10 @@ onMounted(load)
 const paidCents = computed(() => payments.value.reduce((sum, p) => sum + p.amount_cents, 0))
 const balanceDueCents = computed(() => (invoice.value?.total_cents ?? 0) - paidCents.value)
 
-const statusClass: Record<string, string> = {
-  paid: 'bg-green-50 text-green-700',
-  unpaid: 'bg-red-50 text-red-700',
-  void: 'bg-gray-100 text-gray-500',
+const STATUS_TONE: Record<string, 'success' | 'danger' | 'neutral'> = {
+  paid: 'success',
+  unpaid: 'danger',
+  void: 'neutral',
 }
 
 async function recordPayment() {
@@ -80,6 +80,14 @@ async function recordPayment() {
   await load()
 }
 
+// Footer quick action from the design spec -- settles the remaining balance
+// in one click by driving the same recordPayment() path a manual full
+// payment would take, so status flips to "paid" through the normal logic.
+async function markAsPaid() {
+  paymentAmount.value = (balanceDueCents.value / 100).toFixed(2)
+  await recordPayment()
+}
+
 async function voidInvoice() {
   if (!confirm('Void this invoice?')) return
   await supabase.from('invoices').update({ status: 'void' }).eq('id', invoiceId)
@@ -98,116 +106,151 @@ async function sendEmail() {
   sending.value = false
 }
 
-function printInvoice() {
+function downloadPdf() {
   window.print()
+}
+
+function backToBilling() {
+  navigateTo(`/billing?highlight=${invoiceId}`)
+}
+
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 </script>
 
 <template>
-  <div v-if="loading" class="text-sm text-gray-400">Loading…</div>
-  <div v-else-if="notFound" class="text-sm text-gray-400">Invoice not found.</div>
-  <div v-else-if="invoice" class="max-w-2xl">
-    <div class="flex items-start justify-between print:hidden">
-      <h1 class="text-xl font-semibold text-gray-900">Invoice {{ invoice.invoice_number }}</h1>
-      <NuxtLink to="/billing" class="text-sm text-gray-500 hover:text-gray-700">&larr; Back to Billing</NuxtLink>
+  <div class="flex h-full flex-col">
+    <div class="print:hidden">
+      <PageHeader :title="invoice ? invoice.invoice_number : 'Invoice'" :meta="invoice ? `${invoice.patients?.first_name ?? ''} ${invoice.patients?.last_name ?? ''}`.trim() : undefined">
+        <template v-if="invoice">
+          <UiBtn v-if="invoice.status !== 'void'" variant="ghost" size="sm" @click="voidInvoice">Void invoice</UiBtn>
+          <UiBtn variant="secondary" @click="backToBilling">&larr; Back to billing</UiBtn>
+        </template>
+      </PageHeader>
     </div>
 
-    <div class="mt-4 flex flex-wrap gap-2 print:hidden">
-      <button type="button" class="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50" @click="printInvoice">
-        Print
-      </button>
-      <button
-        type="button"
-        :disabled="sending || !invoice.patients?.email"
-        class="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-        @click="sendEmail"
-      >
-        {{ sending ? 'Sending…' : 'Send via Email' }}
-      </button>
-      <button
-        v-if="invoice.status !== 'void'"
-        type="button"
-        class="rounded-md border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"
-        @click="voidInvoice"
-      >
-        Void
-      </button>
-      <span v-if="sendMessage" class="self-center text-sm text-gray-500">{{ sendMessage }}</span>
-    </div>
-    <p v-if="!invoice.patients?.email" class="mt-1 text-xs text-gray-400 print:hidden">
-      Add an email address to this patient to enable sending.
-    </p>
+    <div class="flex-1 overflow-y-auto bg-surface-page p-6">
+      <div v-if="loading" class="text-center text-[13px] text-ink-muted2">Loading…</div>
+      <div v-else-if="notFound" class="text-center text-[13px] text-ink-muted2">Invoice not found.</div>
 
-    <div class="mt-4 rounded-lg border border-gray-200 bg-white p-6">
-      <div class="flex items-start justify-between">
-        <div>
-          <p class="font-semibold text-gray-900">{{ store.accountName }}</p>
-          <p class="mt-4 text-sm text-gray-500">Invoice to</p>
-          <p class="font-medium text-gray-900">{{ invoice.patients?.first_name }} {{ invoice.patients?.last_name }}</p>
+      <div v-else-if="invoice" class="mx-auto max-w-[720px] space-y-4">
+        <div class="overflow-hidden rounded-card border border-line bg-surface shadow-card">
+          <div class="flex items-start justify-between p-6">
+            <div>
+              <p class="font-mono text-[13px] text-ink-muted2">{{ invoice.invoice_number }}</p>
+              <p class="mt-1 text-[17px] font-[620] text-ink-900">
+                {{ invoice.patients?.first_name }} {{ invoice.patients?.last_name }}
+              </p>
+              <p class="mt-1 text-[12.5px] text-ink-muted2">Issued {{ formatDate(invoice.created_at) }}</p>
+            </div>
+            <div class="text-right">
+              <p class="font-mono text-[24px] font-semibold text-ink-900">€{{ (invoice.total_cents / 100).toFixed(2) }}</p>
+              <div class="mt-1.5 flex justify-end">
+                <UiPill :tone="STATUS_TONE[invoice.status] ?? 'neutral'">{{ invoice.status }}</UiPill>
+              </div>
+            </div>
+          </div>
+
+          <div class="px-6">
+            <table class="w-full text-[13px]">
+              <thead>
+                <tr class="text-left text-[10px] font-semibold uppercase tracking-wide text-ink-faint2">
+                  <th class="py-[11px]">Item</th>
+                  <th class="py-[11px] text-right">Qty</th>
+                  <th class="py-[11px] text-right">Price</th>
+                  <th class="py-[11px] text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-line-row2 border-t border-line-row2">
+                <tr v-for="line in lineItems" :key="line.id">
+                  <td class="py-[11px] text-ink-800">{{ line.description }}</td>
+                  <td class="py-[11px] text-right text-ink-muted">{{ line.quantity }}</td>
+                  <td class="py-[11px] text-right font-mono text-ink-muted">€{{ (line.price_cents / 100).toFixed(2) }}</td>
+                  <td class="py-[11px] text-right font-mono text-ink-900">€{{ ((line.price_cents * line.quantity) / 100).toFixed(2) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="flex justify-end px-6 pb-6 pt-2">
+            <div class="w-48 space-y-1.5 text-[12.5px]">
+              <div class="flex justify-between text-ink-muted">
+                <span>Subtotal</span>
+                <span class="font-mono">€{{ (invoice.total_cents / 100).toFixed(2) }}</span>
+              </div>
+              <div class="flex justify-between text-ink-muted">
+                <span>VAT</span>
+                <span class="font-mono">€0.00</span>
+              </div>
+              <div class="flex justify-between border-t border-line-row2 pt-1.5 text-[14px] font-semibold text-ink-900">
+                <span>Total due</span>
+                <span class="font-mono">€{{ (balanceDueCents / 100).toFixed(2) }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between gap-3 border-t border-line bg-surface-subtle2 px-6 py-4 print:hidden">
+            <div class="flex flex-wrap items-center gap-2">
+              <UiBtn variant="secondary" :disabled="sending || !invoice.patients?.email" @click="sendEmail">
+                {{ sending ? 'Sending…' : 'Send by email' }}
+              </UiBtn>
+              <UiBtn variant="secondary" @click="downloadPdf">Download PDF</UiBtn>
+              <span v-if="sendMessage" class="text-[12.5px] text-ink-muted2">{{ sendMessage }}</span>
+            </div>
+            <UiBtn
+              variant="primary"
+              :disabled="savingPayment || invoice.status === 'paid' || invoice.status === 'void' || balanceDueCents <= 0"
+              @click="markAsPaid"
+            >
+              {{ savingPayment ? 'Processing…' : 'Mark as paid' }}
+            </UiBtn>
+          </div>
         </div>
-        <div class="text-right text-sm">
-          <p class="text-gray-500">Invoice #{{ invoice.invoice_number }}</p>
-          <p class="text-gray-500">{{ new Date(invoice.created_at).toLocaleDateString() }}</p>
-          <span class="mt-2 inline-block rounded px-1.5 py-0.5 text-xs font-medium" :class="statusClass[invoice.status]">
-            {{ invoice.status }}
-          </span>
+        <p v-if="!invoice.patients?.email" class="text-[12px] text-ink-faint2 print:hidden">
+          Add an email address to this patient to enable sending.
+        </p>
+
+        <div class="rounded-card border border-line bg-surface p-6 shadow-card print:hidden">
+          <h2 class="text-[13px] font-semibold text-ink-900">Payments</h2>
+          <ul v-if="payments.length > 0" class="mt-3 space-y-1.5 text-[13px]">
+            <li v-for="p in payments" :key="p.id" class="flex justify-between">
+              <span class="text-ink-muted">{{ new Date(p.paid_at).toLocaleString() }} &middot; {{ p.method }}</span>
+              <span class="font-mono text-ink-900">€{{ (p.amount_cents / 100).toFixed(2) }}</span>
+            </li>
+          </ul>
+          <p v-else class="mt-2 text-[13px] text-ink-muted2">No payments recorded.</p>
+
+          <form v-if="invoice.status !== 'void' && balanceDueCents > 0" class="mt-4 flex items-end gap-2" @submit.prevent="recordPayment">
+            <div>
+              <label class="block text-[12.5px] font-medium text-ink-500">Amount (€)</label>
+              <input
+                v-model="paymentAmount"
+                type="number"
+                step="0.01"
+                min="0"
+                class="mt-1 w-28 rounded-ctl border border-line-control px-3 py-1.5 font-mono text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              />
+            </div>
+            <div>
+              <label class="block text-[12.5px] font-medium text-ink-500">Method</label>
+              <select v-model="paymentMethod" class="mt-1 rounded-ctl border border-line-control px-3 py-1.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
+                <option value="card">Card</option>
+                <option value="cash">Cash</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <button
+              type="submit"
+              :disabled="savingPayment"
+              class="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-white hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {{ savingPayment ? 'Recording…' : 'Record payment' }}
+            </button>
+          </form>
+          <p v-if="error" class="mt-2 text-[12.5px] text-danger-text">{{ error }}</p>
         </div>
       </div>
-
-      <table class="mt-6 w-full text-sm">
-        <thead class="border-b border-gray-200 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-          <tr>
-            <th class="py-2">Description</th>
-            <th class="py-2 text-right">Qty</th>
-            <th class="py-2 text-right">Price</th>
-            <th class="py-2 text-right">Total</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-100">
-          <tr v-for="line in lineItems" :key="line.id">
-            <td class="py-2 text-gray-900">{{ line.description }}</td>
-            <td class="py-2 text-right text-gray-500">{{ line.quantity }}</td>
-            <td class="py-2 text-right text-gray-500">€{{ (line.price_cents / 100).toFixed(2) }}</td>
-            <td class="py-2 text-right text-gray-900">€{{ ((line.price_cents * line.quantity) / 100).toFixed(2) }}</td>
-          </tr>
-        </tbody>
-      </table>
-
-      <div class="mt-4 space-y-1 border-t border-gray-100 pt-4 text-right text-sm">
-        <p class="text-gray-500">Subtotal: €{{ (invoice.total_cents / 100).toFixed(2) }}</p>
-        <p class="text-gray-500">Paid to date: €{{ (paidCents / 100).toFixed(2) }}</p>
-        <p class="font-semibold text-gray-900">Balance due: €{{ (balanceDueCents / 100).toFixed(2) }}</p>
-      </div>
-    </div>
-
-    <div class="mt-4 rounded-lg border border-gray-200 bg-white p-6 print:hidden">
-      <h2 class="text-sm font-semibold text-gray-900">Payments</h2>
-      <ul v-if="payments.length > 0" class="mt-2 space-y-1 text-sm">
-        <li v-for="p in payments" :key="p.id" class="flex justify-between">
-          <span class="text-gray-500">{{ new Date(p.paid_at).toLocaleString() }} &middot; {{ p.method }}</span>
-          <span class="text-gray-900">€{{ (p.amount_cents / 100).toFixed(2) }}</span>
-        </li>
-      </ul>
-      <p v-else class="mt-2 text-sm text-gray-400">No payments recorded.</p>
-
-      <form v-if="invoice.status !== 'void' && balanceDueCents > 0" class="mt-4 flex items-end gap-2" @submit.prevent="recordPayment">
-        <div>
-          <label class="block text-sm font-medium text-gray-700">Amount (€)</label>
-          <input v-model="paymentAmount" type="number" step="0.01" min="0" class="mt-1 w-28 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700">Method</label>
-          <select v-model="paymentMethod" class="mt-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-            <option value="card">Card</option>
-            <option value="cash">Cash</option>
-            <option value="other">Other</option>
-          </select>
-        </div>
-        <button type="submit" :disabled="savingPayment" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
-          {{ savingPayment ? 'Recording…' : 'Record Payment' }}
-        </button>
-      </form>
-      <p v-if="error" class="mt-2 text-sm text-red-600">{{ error }}</p>
     </div>
   </div>
 </template>

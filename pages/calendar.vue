@@ -27,6 +27,7 @@ interface AppointmentRow {
   flow_checkout_at: string | null
   rescheduled: boolean
   confirmation_status: string | null
+  note: string | null
   patients: { first_name: string; last_name: string | null } | null
   appointment_types: { name: string; color: string } | null
   team_members: { full_name: string; color: string } | null
@@ -203,7 +204,7 @@ async function loadAppointments() {
   const { data } = await supabase
     .from('appointments')
     .select(
-      'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, rescheduled, confirmation_status, patients(first_name, last_name), appointment_types(name, color), team_members(full_name, color)',
+      'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, rescheduled, confirmation_status, note, patients(first_name, last_name), appointment_types(name, color), team_members(full_name, color)',
     )
     .eq('clinic_id', store.currentClinicId)
     .gte('starts_at', rangeStart.toISOString())
@@ -368,6 +369,48 @@ const CONFIRMATION_BADGES: Record<string, { label: string; class: string }> = {
 }
 function confirmationBadge(status: string | null) {
   return status ? CONFIRMATION_BADGES[status] : null
+}
+
+// Hovering an appointment block shows patient/billing/changelog context
+// without opening the full edit modal, matching the reference popover
+// shared for this feature. A short show delay avoids flicker when the mouse
+// just passes over a block; a short hide delay lets the mouse travel from
+// the block onto the popover itself (to edit the note fields) without it
+// disappearing first.
+const hoveredAppt = ref<AppointmentRow | null>(null)
+const hoverPos = ref({ x: 0, y: 0 })
+let hoverShowTimer: ReturnType<typeof setTimeout> | null = null
+let hoverHideTimer: ReturnType<typeof setTimeout> | null = null
+
+function scheduleHoverCard(appt: AppointmentRow, event: MouseEvent) {
+  if (hoverHideTimer) {
+    clearTimeout(hoverHideTimer)
+    hoverHideTimer = null
+  }
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  hoverShowTimer = setTimeout(() => {
+    hoveredAppt.value = appt
+    hoverPos.value = {
+      x: Math.min(rect.right + 8, window.innerWidth - 340),
+      y: Math.max(8, Math.min(rect.top, window.innerHeight - 420)),
+    }
+  }, 350)
+}
+function cancelHoverShow() {
+  if (hoverShowTimer) {
+    clearTimeout(hoverShowTimer)
+    hoverShowTimer = null
+  }
+  hoverHideTimer = setTimeout(() => (hoveredAppt.value = null), 200)
+}
+function keepHoverCard() {
+  if (hoverHideTimer) {
+    clearTimeout(hoverHideTimer)
+    hoverHideTimer = null
+  }
+}
+function hideHoverCard() {
+  hoverHideTimer = setTimeout(() => (hoveredAppt.value = null), 200)
 }
 
 function hexToRgba(hex: string, alpha: number) {
@@ -750,6 +793,8 @@ async function completeFlow(appt: AppointmentRow) {
                   :class="statusTextClass(appt.status)"
                   :style="{ top: `${timeToPx(appt.starts_at)}px`, height: `${durationToPx(appt.starts_at, appt.ends_at)}px`, ...appointmentColorStyle(appt) }"
                   @click.stop="openEditModal(appt)"
+                  @mouseenter="scheduleHoverCard(appt, $event)"
+                  @mouseleave="cancelHoverShow"
                 >
                   <button
                     type="button"
@@ -824,6 +869,8 @@ async function completeFlow(appt: AppointmentRow) {
                     ...appointmentColorStyle(appt),
                   }"
                   @click.stop="openEditModal(appt)"
+                  @mouseenter="scheduleHoverCard(appt, $event)"
+                  @mouseleave="cancelHoverShow"
                 >
                   <p class="truncate font-medium" :class="{ 'blur-sm select-none': settings.privacyMode }">{{ appt.patients?.first_name }}</p>
                   <p class="truncate">{{ new Date(appt.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</p>
@@ -865,6 +912,16 @@ async function completeFlow(appt: AppointmentRow) {
       :prefill-room-id="blockPrefill?.roomId"
       @close="blockModalOpen = false"
       @saved="onBlockSaved"
+    />
+
+    <CalendarAppointmentHoverCard
+      v-if="hoveredAppt"
+      :appointment="hoveredAppt"
+      class="fixed z-30"
+      :style="{ left: `${hoverPos.x}px`, top: `${hoverPos.y}px` }"
+      @mouseenter="keepHoverCard"
+      @mouseleave="hideHoverCard"
+      @note-saved="loadAppointments"
     />
   </div>
 </template>

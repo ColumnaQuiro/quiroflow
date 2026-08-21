@@ -119,7 +119,7 @@ async function signOut() {
   <aside class="flex w-[236px] shrink-0 flex-col bg-surface-sidebar border-r border-line print:hidden">
     <div class="flex items-center gap-[9px] px-4 pb-3 pt-4">
       <div class="flex h-6 w-6 items-center justify-center rounded-ctlSm bg-brand">
-        <img src="/logo/quiroflow-mark.svg" alt="" class="h-3.5 w-3.5" />
+        <img src="/logo/quiroflow-mark-white.svg" alt="" class="h-3.5 w-3.5" />
       </div>
       <NuxtLink to="/dashboard" class="text-[14.5px] font-[640] tracking-tightTitle text-ink-900">QuiroFlow</NuxtLink>
     </div>

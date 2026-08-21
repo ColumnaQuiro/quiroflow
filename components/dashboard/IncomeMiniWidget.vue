@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { Line } from 'vue-chartjs'
 import type { DateRange } from '~/composables/useDateRangePresets'
 
 const props = defineProps<{ dateRange: DateRange; practitionerId?: string; clinicId?: string }>()
@@ -13,11 +12,23 @@ const loading = ref(true)
 const payments = ref<PaymentRow[]>([])
 const invoices = ref<InvoiceRow[]>([])
 const appointments = ref<AppointmentRow[]>([])
+const prevPaidCents = ref<number | null>(null)
+
+// Same-length window immediately preceding the selected period, for the KPI
+// delta (e.g. selecting "this month" compares against last month).
+function previousRange(range: DateRange): { from: Date; to: Date } {
+  const { from, to } = rangeBounds(range)
+  const spanMs = to.getTime() - from.getTime()
+  const prevTo = new Date(from.getTime() - 1)
+  const prevFrom = new Date(prevTo.getTime() - spanMs)
+  return { from: prevFrom, to: prevTo }
+}
 
 async function load() {
   loading.value = true
   const { from, to } = rangeBounds(props.dateRange)
-  const [p, inv, appt] = await Promise.all([
+  const { from: prevFrom, to: prevTo } = previousRange(props.dateRange)
+  const [p, inv, appt, prevPayments] = await Promise.all([
     fetchAllRows<PaymentRow>((f, t) =>
       supabase.from('payments').select('amount_cents, paid_at, invoice_id').gte('paid_at', from.toISOString()).lte('paid_at', to.toISOString()).range(f, t),
     ),
@@ -25,10 +36,19 @@ async function load() {
       supabase.from('invoices').select('id, total_cents, appointment_id').gte('created_at', from.toISOString()).lte('created_at', to.toISOString()).range(f, t),
     ),
     fetchAllRows<AppointmentRow>((f, t) => supabase.from('appointments').select('id, practitioner_id, clinic_id').range(f, t)),
+    fetchAllRows<PaymentRow>((f, t) =>
+      supabase
+        .from('payments')
+        .select('amount_cents, paid_at, invoice_id')
+        .gte('paid_at', prevFrom.toISOString())
+        .lte('paid_at', prevTo.toISOString())
+        .range(f, t),
+    ),
   ])
   payments.value = p
   invoices.value = inv
   appointments.value = appt
+  prevPaidCents.value = prevPayments.reduce((sum, row) => sum + row.amount_cents, 0)
   loading.value = false
 }
 onMounted(load)
@@ -52,23 +72,12 @@ const totalPaid = computed(() => filteredPayments.value.reduce((sum, p) => sum +
 const totalCharged = computed(() => filteredInvoices.value.reduce((sum, i) => sum + i.total_cents, 0))
 const outstanding = computed(() => totalCharged.value - totalPaid.value)
 
-function monthKey(iso: string) {
-  const d = new Date(iso)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-}
-const monthKeys = computed(() => monthKeysInRange(props.dateRange))
-const revenueChartData = computed(() => {
-  const totals = new Map<string, number>(monthKeys.value.map((k) => [k, 0]))
-  for (const p of filteredPayments.value) {
-    const k = monthKey(p.paid_at)
-    if (totals.has(k)) totals.set(k, (totals.get(k) ?? 0) + p.amount_cents)
-  }
-  return {
-    labels: monthKeys.value.map((k) => k.slice(5)),
-    datasets: [{ data: monthKeys.value.map((k) => (totals.get(k) ?? 0) / 100), borderColor: '#4f46e5', backgroundColor: '#4f46e5', tension: 0.3 }],
-  }
+// The prior-period comparison is account-wide (not practitioner/clinic
+// filtered) -- it's a lightweight trend indicator, not a filtered total.
+const deltaPct = computed(() => {
+  if (prevPaidCents.value === null || prevPaidCents.value === 0) return null
+  return Math.round(((totalPaid.value - prevPaidCents.value) / prevPaidCents.value) * 100)
 })
-const chartOptions = { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } }, plugins: { legend: { display: false } } }
 
 function euros(cents: number) {
   return `€${(cents / 100).toFixed(2)}`
@@ -76,24 +85,15 @@ function euros(cents: number) {
 </script>
 
 <template>
-  <div v-if="loading" class="text-sm text-gray-400">Loading…</div>
-  <div v-else class="text-sm">
-    <div class="grid grid-cols-3 gap-2 text-center">
-      <div>
-        <p class="text-xs text-gray-500">Charged</p>
-        <p class="font-semibold text-gray-900">{{ euros(totalCharged) }}</p>
-      </div>
-      <div>
-        <p class="text-xs text-gray-500">Paid</p>
-        <p class="font-semibold text-gray-900">{{ euros(totalPaid) }}</p>
-      </div>
-      <div>
-        <p class="text-xs text-gray-500">Outstanding</p>
-        <p class="font-semibold" :class="outstanding > 0 ? 'text-amber-600' : 'text-gray-900'">{{ euros(outstanding) }}</p>
-      </div>
-    </div>
-    <div class="mt-3 h-32">
-      <Line :data="revenueChartData" :options="chartOptions" />
+  <div v-if="loading" class="text-[13px] text-ink-faint">Loading…</div>
+  <div v-else>
+    <p class="font-mono text-[27px] leading-none text-ink-900">{{ euros(totalPaid) }}</p>
+    <p v-if="deltaPct !== null" class="mt-1.5 text-[12px] font-medium" :class="deltaPct < 0 ? 'text-danger-text' : 'text-success-text'">
+      {{ deltaPct > 0 ? '+' : '' }}{{ deltaPct }}% vs previous period
+    </p>
+    <div class="mt-2.5 flex items-center gap-4 border-t border-line-row2 pt-2 text-[12px] text-ink-muted2">
+      <span>Charged <span class="font-mono text-ink-700">{{ euros(totalCharged) }}</span></span>
+      <span>Outstanding <span class="font-mono" :class="outstanding > 0 ? 'text-danger-text' : 'text-ink-700'">{{ euros(outstanding) }}</span></span>
     </div>
   </div>
 </template>

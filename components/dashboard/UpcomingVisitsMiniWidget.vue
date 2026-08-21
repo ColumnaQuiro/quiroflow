@@ -42,21 +42,21 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div v-if="loading" class="text-sm text-gray-400">Loading…</div>
-  <div v-else class="grid grid-cols-3 gap-2 text-center text-sm">
-    <div>
-      <p class="text-lg font-semibold text-gray-900">{{ totalCount }}</p>
-      <p class="text-xs text-gray-500">This month</p>
-    </div>
-    <div>
-      <p class="text-lg font-semibold" :class="changePct !== null && changePct < 0 ? 'text-red-600' : 'text-green-600'">
+  <div v-if="loading" class="text-[13px] text-ink-faint">Loading…</div>
+  <ul v-else class="divide-y divide-line-row2 text-[13px]">
+    <li class="flex items-center justify-between py-1.5">
+      <span class="text-ink-700">This month</span>
+      <span class="font-mono text-[12.5px] text-ink-900">{{ totalCount }}</span>
+    </li>
+    <li class="flex items-center justify-between py-1.5">
+      <span class="text-ink-700">vs. last month</span>
+      <span class="font-mono text-[12.5px]" :class="changePct !== null && changePct < 0 ? 'text-danger-text' : 'text-success-text'">
         {{ changePct === null ? '—' : `${changePct > 0 ? '+' : ''}${changePct}%` }}
-      </p>
-      <p class="text-xs text-gray-500">vs. last month</p>
-    </div>
-    <div>
-      <p class="text-lg font-semibold text-gray-900">{{ dailyAvg.toFixed(1) }}</p>
-      <p class="text-xs text-gray-500">Daily avg</p>
-    </div>
-  </div>
+      </span>
+    </li>
+    <li class="flex items-center justify-between py-1.5">
+      <span class="text-ink-700">Daily average</span>
+      <span class="font-mono text-[12.5px] text-ink-900">{{ dailyAvg.toFixed(1) }}</span>
+    </li>
+  </ul>
 </template>

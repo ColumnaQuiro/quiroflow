@@ -75,19 +75,19 @@ const retentionRate = computed(() => {
 </script>
 
 <template>
-  <div v-if="loading" class="text-sm text-gray-400">Loading…</div>
-  <div v-else class="grid grid-cols-3 gap-2 text-center text-sm">
-    <div>
-      <p class="text-lg font-semibold text-gray-900">{{ inRange.length }}</p>
-      <p class="text-xs text-gray-500">Visits</p>
-    </div>
-    <div>
-      <p class="text-lg font-semibold text-gray-900">{{ pva !== null ? `€${pva.toFixed(2)}` : '—' }}</p>
-      <p class="text-xs text-gray-500">PVA</p>
-    </div>
-    <div>
-      <p class="text-lg font-semibold text-gray-900">{{ retentionRate !== null ? `${retentionRate}%` : '—' }}</p>
-      <p class="text-xs text-gray-500">Retention</p>
-    </div>
-  </div>
+  <div v-if="loading" class="text-[13px] text-ink-faint">Loading…</div>
+  <ul v-else class="divide-y divide-line-row2 text-[13px]">
+    <li class="flex items-center justify-between py-1.5">
+      <span class="text-ink-700">Visits</span>
+      <span class="font-mono text-[12.5px] text-ink-900">{{ inRange.length }}</span>
+    </li>
+    <li class="flex items-center justify-between py-1.5">
+      <span class="text-ink-700">Per-visit average</span>
+      <span class="font-mono text-[12.5px] text-ink-900">{{ pva !== null ? `€${pva.toFixed(2)}` : '—' }}</span>
+    </li>
+    <li class="flex items-center justify-between py-1.5">
+      <span class="text-ink-700">Retention</span>
+      <span class="font-mono text-[12.5px] text-ink-900">{{ retentionRate !== null ? `${retentionRate}%` : '—' }}</span>
+    </li>
+  </ul>
 </template>

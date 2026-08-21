@@ -37,9 +37,11 @@ const pct = computed(() => (total.value === 0 ? 0 : Math.round((active.value / t
 </script>
 
 <template>
-  <div v-if="loading" class="text-sm text-gray-400">Loading…</div>
+  <div v-if="loading" class="text-[13px] text-ink-faint">Loading…</div>
   <div v-else>
-    <p class="text-3xl font-semibold text-gray-900">{{ active }} <span class="text-base font-medium text-gray-400">({{ pct }}%)</span></p>
-    <p class="mt-0.5 text-xs text-gray-500">Seen in the last {{ ACTIVE_WINDOW_DAYS }} days</p>
+    <p class="font-mono text-[27px] leading-none text-ink-900">
+      {{ active }} <span class="font-sans text-[14px] font-medium text-ink-muted2">({{ pct }}%)</span>
+    </p>
+    <p class="mt-1.5 text-[12px] text-ink-muted2">Seen in the last {{ ACTIVE_WINDOW_DAYS }} days</p>
   </div>
 </template>

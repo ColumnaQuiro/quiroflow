@@ -18,6 +18,6 @@ watch(() => props.practitionerId, load)
 </script>
 
 <template>
-  <div v-if="loading" class="text-sm text-gray-400">Loading…</div>
-  <p v-else class="text-3xl font-semibold text-gray-900">{{ total }}</p>
+  <div v-if="loading" class="text-[13px] text-ink-faint">Loading…</div>
+  <p v-else class="font-mono text-[27px] leading-none text-ink-900">{{ total }}</p>
 </template>

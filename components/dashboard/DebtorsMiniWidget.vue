@@ -1,7 +1,12 @@
 <script setup lang="ts">
 defineProps<{ dateRange?: unknown; practitionerId?: string; clinicId?: string }>()
 
-interface PurchaseRow { id: string; price_cents: number; invoice_id: string | null }
+interface PurchaseRow {
+  id: string
+  price_cents: number
+  invoice_id: string | null
+  patients: { first_name: string; last_name: string | null } | null
+}
 interface InvoiceRow { id: string; status: string }
 interface ScheduleRow { package_purchase_id: string | null; status: string }
 
@@ -12,8 +17,8 @@ const invoicesById = ref<Map<string, InvoiceRow>>(new Map())
 const schedulesByPurchase = ref<Map<string, ScheduleRow>>(new Map())
 
 onMounted(async () => {
-  const { data: p } = await supabase.from('package_purchases').select('id, price_cents, invoice_id')
-  purchases.value = p ?? []
+  const { data: p } = await supabase.from('package_purchases').select('id, price_cents, invoice_id, patients(first_name, last_name)')
+  purchases.value = (p as unknown as PurchaseRow[]) ?? []
   const invoiceIds = purchases.value.map((x) => x.invoice_id).filter((x): x is string => !!x)
 
   const [{ data: invoices }, { data: schedules }] = await Promise.all([
@@ -26,20 +31,37 @@ onMounted(async () => {
 })
 
 const debtors = computed(() =>
-  purchases.value.filter((p) => {
-    const schedule = schedulesByPurchase.value.get(p.id)
-    if (schedule) return schedule.status === 'past_due'
-    const inv = p.invoice_id ? invoicesById.value.get(p.invoice_id) : null
-    return !inv || inv.status !== 'paid'
-  }),
+  purchases.value
+    .filter((p) => {
+      const schedule = schedulesByPurchase.value.get(p.id)
+      if (schedule) return schedule.status === 'past_due'
+      const inv = p.invoice_id ? invoicesById.value.get(p.invoice_id) : null
+      return !inv || inv.status !== 'paid'
+    })
+    .sort((a, b) => b.price_cents - a.price_cents),
 )
 const totalOwed = computed(() => debtors.value.reduce((sum, p) => sum + p.price_cents, 0))
+
+function patientName(p: PurchaseRow) {
+  return p.patients ? `${p.patients.first_name} ${p.patients.last_name ?? ''}`.trim() : 'Unknown patient'
+}
+function euros(cents: number) {
+  return `€${(cents / 100).toFixed(2)}`
+}
 </script>
 
 <template>
-  <div v-if="loading" class="text-sm text-gray-400">Loading…</div>
+  <div v-if="loading" class="text-[13px] text-ink-faint">Loading…</div>
   <div v-else>
-    <p class="text-2xl font-semibold text-gray-900">€{{ (totalOwed / 100).toFixed(2) }}</p>
-    <p class="text-xs text-gray-500">Outstanding across {{ debtors.length }} purchase(s)</p>
+    <p v-if="debtors.length === 0" class="text-[13px] text-ink-faint">No outstanding balances.</p>
+    <template v-else>
+      <ul class="divide-y divide-line-row2">
+        <li v-for="p in debtors.slice(0, 5)" :key="p.id" class="flex items-center gap-2 py-1.5 text-[13px] first:pt-0">
+          <span class="min-w-0 flex-1 truncate text-ink-700">{{ patientName(p) }}</span>
+          <span class="shrink-0 font-mono text-[12.5px] text-danger-text">{{ euros(p.price_cents) }}</span>
+        </li>
+      </ul>
+      <p class="mt-1.5 border-t border-line-row2 pt-1.5 text-[11.5px] text-ink-muted2">{{ debtors.length }} outstanding · {{ euros(totalOwed) }} total</p>
+    </template>
   </div>
 </template>

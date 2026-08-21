@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { Bar } from 'vue-chartjs'
-
 const props = defineProps<{ practitionerId?: string; clinicId?: string }>()
 
 const supabase = useSupabaseClient()
@@ -40,24 +38,35 @@ async function load() {
 onMounted(load)
 watch(() => [props.practitionerId, props.clinicId], load)
 
-const chartData = computed(() => ({
-  labels: DAY_LABELS,
-  datasets: [
-    { label: 'Visits', data: kept.value, backgroundColor: '#4f46e5' },
-    { label: 'Cancelled / no-show', data: lost.value, backgroundColor: '#fca5a5' },
-  ],
-}))
-const chartOptions = {
-  responsive: true,
-  maintainAspectRatio: false,
-  scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } } },
-  plugins: { legend: { position: 'bottom' as const } },
+// Bar heights scale to the 132px chart area based on the tallest stacked
+// column across the week; a floor of 1 keeps an all-zero week from dividing
+// by zero rather than implying real data.
+const CHART_HEIGHT_PX = 132
+const maxTotal = computed(() => Math.max(1, ...DAY_LABELS.map((_, i) => kept.value[i] + lost.value[i])))
+function keptHeightPx(i: number) {
+  return Math.round((kept.value[i] / maxTotal.value) * CHART_HEIGHT_PX)
+}
+function lostHeightPx(i: number) {
+  return Math.round((lost.value[i] / maxTotal.value) * CHART_HEIGHT_PX)
 }
 </script>
 
 <template>
-  <div v-if="loading" class="flex h-64 items-center justify-center text-sm text-gray-400">Loading…</div>
-  <div v-else class="h-64">
-    <Bar :data="chartData" :options="chartOptions" />
+  <div v-if="loading" class="text-[13px] text-ink-faint">Loading…</div>
+  <div v-else>
+    <div class="flex items-center gap-4 text-[11.5px] text-ink-muted2">
+      <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-[2px] bg-brand" />Visits</span>
+      <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-[2px] bg-chart-cancelled" />Cancelled / no-show</span>
+    </div>
+    <div class="mt-2 border-t border-line-row2" />
+    <div class="mt-3 flex items-end" :style="{ height: `${CHART_HEIGHT_PX}px`, gap: '10px' }">
+      <div v-for="(day, i) in DAY_LABELS" :key="day" class="flex h-full flex-1 flex-col-reverse items-stretch">
+        <div class="w-full rounded-t-[2px] bg-brand" :style="{ height: `${keptHeightPx(i)}px` }" />
+        <div v-if="lost[i] > 0" class="w-full bg-chart-cancelled" :style="{ height: `${lostHeightPx(i)}px` }" />
+      </div>
+    </div>
+    <div class="mt-1.5 flex" style="gap: 10px">
+      <span v-for="day in DAY_LABELS" :key="day" class="flex-1 text-center text-[11px] text-ink-muted2">{{ day }}</span>
+    </div>
   </div>
 </template>

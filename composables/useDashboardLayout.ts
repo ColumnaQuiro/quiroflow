@@ -11,7 +11,7 @@ function defaultLayout(): WidgetInstance[] {
   return CORE_WIDGET_TYPES.map((type) => ({
     id: crypto.randomUUID(),
     type,
-    size: type === 'weekly_visits' ? 'lg' : type === 'visit_summary' ? 'md' : 'sm',
+    size: widgetDef(type)?.defaultSize ?? 'sm',
   }))
 }
 

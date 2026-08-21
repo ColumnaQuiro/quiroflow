@@ -77,38 +77,35 @@ function euros(cents: number) {
 </script>
 
 <template>
-  <div v-if="loading" class="text-sm text-gray-400">Loading…</div>
-  <div v-else class="space-y-3 text-sm">
-    <div>
-      <p class="text-xs font-medium uppercase tracking-wide text-gray-400">Patients seen by type</p>
-      <p v-if="byType.length === 0" class="mt-1 text-gray-400">None yet</p>
-      <ul v-else class="mt-1 space-y-0.5">
-        <li v-for="t in byType" :key="t.name" class="flex justify-between text-gray-700">
-          <span>{{ t.name }}</span>
-          <span class="font-medium text-gray-900">{{ t.count }}</span>
-        </li>
-      </ul>
-    </div>
-    <div class="grid grid-cols-2 gap-x-4 gap-y-2 border-t border-gray-100 pt-3">
-      <div>
-        <p class="text-xs text-gray-500">Remaining visits</p>
-        <p class="font-semibold text-gray-900">{{ remaining }}</p>
-      </div>
-      <div>
-        <p class="text-xs text-gray-500">Estimated visits</p>
-        <p class="font-semibold text-gray-900">{{ estimated }}</p>
-      </div>
-      <div>
-        <p class="text-xs text-gray-500">Payments this week</p>
-        <p class="font-semibold text-gray-900">{{ euros(paymentsCents) }}</p>
-      </div>
-      <div>
-        <p class="text-xs text-gray-500">Service generated</p>
-        <p class="font-semibold text-gray-900">{{ euros(serviceCents) }}</p>
-      </div>
-      <div>
-        <p class="text-xs text-gray-500">Cancellations</p>
-        <p class="font-semibold text-red-600">{{ cancellations }}</p>
+  <div v-if="loading" class="text-[13px] text-ink-faint">Loading…</div>
+  <div v-else>
+    <ul class="divide-y divide-line-row2 text-[13px]">
+      <li class="flex items-center justify-between py-1.5">
+        <span class="text-ink-700">Remaining visits</span>
+        <span class="font-mono text-[12.5px] text-ink-900">{{ remaining }}</span>
+      </li>
+      <li class="flex items-center justify-between py-1.5">
+        <span class="text-ink-700">Estimated visits</span>
+        <span class="font-mono text-[12.5px] text-ink-900">{{ estimated }}</span>
+      </li>
+      <li class="flex items-center justify-between py-1.5">
+        <span class="text-ink-700">Payments this week</span>
+        <span class="font-mono text-[12.5px] text-ink-900">{{ euros(paymentsCents) }}</span>
+      </li>
+      <li class="flex items-center justify-between py-1.5">
+        <span class="text-ink-700">Service generated</span>
+        <span class="font-mono text-[12.5px] text-ink-900">{{ euros(serviceCents) }}</span>
+      </li>
+      <li class="flex items-center justify-between py-1.5">
+        <span class="text-ink-700">Cancellations</span>
+        <span class="font-mono text-[12.5px]" :class="cancellations > 0 ? 'text-danger-text' : 'text-ink-900'">{{ cancellations }}</span>
+      </li>
+    </ul>
+    <div v-if="byType.length > 0" class="mt-2 border-t border-line-row2 pt-2">
+      <p class="mb-1 text-[11px] font-semibold uppercase tracking-[.05em] text-ink-faint">By type</p>
+      <div v-for="t in byType" :key="t.name" class="flex items-center justify-between py-0.5 text-[12.5px]">
+        <span class="text-ink-muted2">{{ t.name }}</span>
+        <span class="font-mono text-ink-600">{{ t.count }}</span>
       </div>
     </div>
   </div>

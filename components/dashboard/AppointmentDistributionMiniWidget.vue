@@ -41,12 +41,12 @@ const shiftStats = computed(() =>
 </script>
 
 <template>
-  <div v-if="loading" class="text-sm text-gray-400">Loading…</div>
-  <div v-else class="grid grid-cols-3 gap-2 text-center text-sm">
-    <div v-for="s in shiftStats" :key="s.key">
-      <p class="text-xs text-gray-500">{{ s.label }}</p>
-      <p class="text-lg font-semibold text-gray-900">{{ s.total }}</p>
-      <p class="text-xs text-gray-400">{{ s.showRate === null ? '—' : `${s.showRate}%` }}</p>
-    </div>
-  </div>
+  <div v-if="loading" class="text-[13px] text-ink-faint">Loading…</div>
+  <ul v-else class="divide-y divide-line-row2 text-[13px]">
+    <li v-for="s in shiftStats" :key="s.key" class="flex items-center justify-between py-1.5">
+      <span class="text-ink-700">{{ s.label }}</span>
+      <span class="text-ink-muted2">{{ s.total }} visits</span>
+      <span class="font-mono text-[12.5px] text-ink-900">{{ s.showRate === null ? '—' : `${s.showRate}%` }}</span>
+    </li>
+  </ul>
 </template>

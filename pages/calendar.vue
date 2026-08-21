@@ -457,9 +457,9 @@ function hexToRgba(hex: string, alpha: number) {
 function appointmentColorStyle(appt: AppointmentRow) {
   const color = appt.appointment_types?.color || '#4C6FEB'
   return {
-    borderColor: hexToRgba(color, 0.55),
+    borderColor: hexToRgba(color, 0.8),
     borderLeftColor: color,
-    backgroundColor: hexToRgba(color, appt.status === 'cancelled' ? 0.1 : 0.28),
+    backgroundColor: hexToRgba(color, appt.status === 'cancelled' ? 0.16 : 0.45),
   }
 }
 
@@ -921,7 +921,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                     @mouseleave="cancelHoverShow"
                   >
                     <div
-                      class="flex h-full flex-col justify-center gap-0.5 px-2"
+                      class="flex h-full flex-col justify-start gap-0.5 px-2"
                       :class="durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) < BLOCK_DROP_ROW3_BELOW || settings.compactRows ? 'py-[2px]' : 'py-1'"
                     >
                       <div class="flex items-center gap-1.5">
@@ -1037,7 +1037,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                     </button>
                     <div
                       v-else
-                      class="absolute flex flex-col justify-center overflow-hidden rounded-[7px] border border-l-[3px] px-1.5 py-0.5 shadow-card"
+                      class="absolute flex flex-col justify-start overflow-hidden rounded-[7px] border border-l-[3px] px-1.5 py-0.5 shadow-card"
                       :style="{
                         ...appointmentColorStyle(appt),
                         ...cascadeStyle(appt, WEEK_CASCADE_PX),

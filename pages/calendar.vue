@@ -465,7 +465,23 @@ function isOverflowBlock(b: LayoutBlock): b is OverflowBlock {
 // remaining appointments in that cluster collapse into a single "+N more"
 // marker in the last lane rather than squeezing every lane thinner and
 // thinner until nothing is readable.
-function assignOverlapLayout(sorted: AppointmentRow[], maxLanes: number): LayoutBlock[] {
+//
+// "Overlapping" is judged by each block's RENDERED end, not its real
+// ends_at: durationToPx enforces a minimum block height so short
+// appointments stay readable, which means a block can visually extend past
+// its real end time. Two back-to-back 15min appointments booked tighter
+// than that minimum would otherwise both get "no conflict, full width" from
+// this function while visually overlapping on screen the moment they
+// render -- effMs converts that same minFloorPx into minutes so the
+// clustering sees exactly the collision the render will actually produce.
+function assignOverlapLayout(sorted: AppointmentRow[], maxLanes: number, hourPx: number, minFloorPx: number): LayoutBlock[] {
+  const minDurationMs = (minFloorPx / hourPx) * 3600000
+  const effEndMs = (appt: AppointmentRow) => {
+    const start = new Date(appt.starts_at).getTime()
+    const end = new Date(appt.ends_at).getTime()
+    return Math.max(end, start + minDurationMs)
+  }
+
   const result: LayoutBlock[] = []
   let cluster: LaidOutAppointment[] = []
   let clusterEnd = -Infinity
@@ -480,7 +496,7 @@ function assignOverlapLayout(sorted: AppointmentRow[], maxLanes: number): Layout
         col = colEnds.length
         colEnds.push(0)
       }
-      colEnds[col] = new Date(appt.ends_at).getTime()
+      colEnds[col] = effEndMs(appt)
       appt._col = col
     }
     const totalCols = colEnds.length
@@ -506,10 +522,9 @@ function assignOverlapLayout(sorted: AppointmentRow[], maxLanes: number): Layout
 
   for (const appt of sorted as LaidOutAppointment[]) {
     const start = new Date(appt.starts_at).getTime()
-    const end = new Date(appt.ends_at).getTime()
     if (cluster.length > 0 && start >= clusterEnd) flush()
     cluster.push(appt)
-    clusterEnd = Math.max(clusterEnd, end)
+    clusterEnd = Math.max(clusterEnd, effEndMs(appt))
   }
   flush()
   return result
@@ -518,7 +533,7 @@ function assignOverlapLayout(sorted: AppointmentRow[], maxLanes: number): Layout
 // Week view doesn't split columns by room, so appointments in different
 // rooms at the same time can overlap within a single day column.
 function layoutForDay(day: Date): LayoutBlock[] {
-  return assignOverlapLayout(appointmentsForDay(day), WEEK_MAX_LANES)
+  return assignOverlapLayout(appointmentsForDay(day), WEEK_MAX_LANES, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX)
 }
 
 // Day view splits columns by room, but two appointments can still be
@@ -526,7 +541,7 @@ function layoutForDay(day: Date): LayoutBlock[] {
 // all render at full column width and visually stack on top of each other.
 function layoutForRoom(roomId: string): LayoutBlock[] {
   const sorted = [...appointmentsForRoom(roomId)].sort((a, b) => a.starts_at.localeCompare(b.starts_at))
-  return assignOverlapLayout(sorted, DAY_MAX_LANES)
+  return assignOverlapLayout(sorted, DAY_MAX_LANES, DAY_HOUR_PX, DAY_MIN_BLOCK_PX)
 }
 function showOverflowDay(day: Date) {
   anchorDate.value = day

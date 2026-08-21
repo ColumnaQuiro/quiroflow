@@ -38,8 +38,8 @@ const WEEK_HOUR_PX = computed(() => Math.max(WEEK_HOUR_PX_MIN, Math.floor((scrol
 // rows), so a short appointment's floor only needs to fit that one line --
 // close to a real 15min slot's natural height at the clinic's own slot
 // size, instead of forcing every short appointment to visually occupy ~2
-// grid rows just to fit a taller multi-row card. The appointment-type row
-// only shows once there's room past BLOCK_DROP_ROW3_BELOW.
+// grid rows just to fit a taller multi-row card. Blocks below this height
+// use tighter padding so the single line still fits comfortably.
 const DAY_MIN_BLOCK_PX = 22
 const WEEK_MIN_BLOCK_PX = 18
 const BLOCK_DROP_ROW3_BELOW = 34
@@ -933,9 +933,6 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                           <path d="M3 10h18M7 15h1m4 0h1m-7 4h12a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
                         </svg>
                       </div>
-                      <p v-if="!(durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) < BLOCK_DROP_ROW3_BELOW || settings.compactRows)" class="truncate pl-[13.5px] text-[11.5px] text-ink-muted2">
-                        {{ appt.appointment_types?.name ?? '—' }}
-                      </p>
                     </div>
                   </div>
                 </template>

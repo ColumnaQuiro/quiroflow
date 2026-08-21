@@ -865,7 +865,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                   v-for="h in hourMarks"
                   :key="h"
                   class="pointer-events-none absolute left-0 right-0 px-2 font-mono text-[11px] text-ink-faint"
-                  :style="{ top: `${(h - START_HOUR) * DAY_HOUR_PX - 7}px` }"
+                  :style="{ top: `${Math.max(0, (h - START_HOUR) * DAY_HOUR_PX - 7)}px` }"
                 >
                   {{ hourLabel(h) }}
                 </span>
@@ -873,7 +873,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                   v-for="m in slotMarks"
                   :key="`slot-label-${m}`"
                   class="pointer-events-none absolute left-0 right-0 px-2 font-mono text-[9.5px] text-ink-faint2"
-                  :style="{ top: `${(m / 60) * DAY_HOUR_PX - 6}px` }"
+                  :style="{ top: `${Math.max(0, (m / 60) * DAY_HOUR_PX - 6)}px` }"
                 >
                   {{ slotLabel(m) }}
                 </span>
@@ -962,7 +962,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                   v-for="h in hourMarks"
                   :key="h"
                   class="pointer-events-none absolute left-0 right-0 px-2 font-mono text-[11px] text-ink-faint"
-                  :style="{ top: `${(h - START_HOUR) * WEEK_HOUR_PX - 7}px` }"
+                  :style="{ top: `${Math.max(0, (h - START_HOUR) * WEEK_HOUR_PX - 7)}px` }"
                 >
                   {{ hourLabel(h) }}
                 </span>
@@ -970,7 +970,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                   v-for="m in slotMarks"
                   :key="`slot-label-${m}`"
                   class="pointer-events-none absolute left-0 right-0 px-2 font-mono text-[9px] text-ink-faint2"
-                  :style="{ top: `${(m / 60) * WEEK_HOUR_PX - 5}px` }"
+                  :style="{ top: `${Math.max(0, (m / 60) * WEEK_HOUR_PX - 5)}px` }"
                 >
                   {{ slotLabel(m) }}
                 </span>

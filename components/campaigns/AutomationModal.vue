@@ -19,6 +19,11 @@ const VARIABLE_SOURCES = [
   { value: 'email', label: 'Email' },
   { value: 'text', label: 'Fixed text' },
 ]
+const ACTION_TONE: Record<string, string> = {
+  whatsapp_template: 'bg-success-bg text-success-text',
+  email: 'bg-brand-tint text-brand-text',
+  webhook: 'bg-chip-bg text-chip-text',
+}
 
 type ActionType = 'whatsapp_template' | 'email' | 'webhook'
 interface WhatsAppVariable { source: string; text: string }
@@ -37,6 +42,7 @@ function blankAction(): ActionForm {
   return { action_type: 'whatsapp_template', template_name: '', template_language: 'es', doc_template_id: '', variables: [{ source: 'first_name', text: '' }], subject: '', body: '', url: '', secret: '' }
 }
 
+const savedRuleId = ref<string | null>(props.ruleId ?? null)
 const name = ref('Campaign')
 const triggerEvent = ref(TRIGGER_OPTIONS[0].value)
 const enabled = ref(true)
@@ -44,6 +50,8 @@ const actions = ref<ActionForm[]>([blankAction()])
 const docTemplates = ref<{ id: string; title: string }[]>([])
 const loading = ref(!!props.ruleId)
 const saving = ref(false)
+const testing = ref(false)
+const testMessage = ref('')
 const error = ref('')
 
 onMounted(async () => {
@@ -108,26 +116,25 @@ function configFor(a: ActionForm): Record<string, unknown> {
   return { url: a.url.trim(), secret: a.secret.trim() || null }
 }
 
-async function save() {
+async function persist(): Promise<string | null> {
   error.value = ''
   if (actions.value.length === 0) {
     error.value = 'Add at least one action.'
-    return
+    return null
   }
-  saving.value = true
 
   const rulePayload = { account_id: store.accountId!, name: name.value.trim() || 'Campaign', trigger_event: triggerEvent.value, enabled: enabled.value }
 
-  const ruleResult = props.ruleId
-    ? await supabase.from('automation_rules').update(rulePayload).eq('id', props.ruleId).select('id').single()
+  const ruleResult = savedRuleId.value
+    ? await supabase.from('automation_rules').update(rulePayload).eq('id', savedRuleId.value).select('id').single()
     : await supabase.from('automation_rules').insert({ ...rulePayload, created_by: store.teamMember?.id ?? null }).select('id').single()
 
   if (ruleResult.error || !ruleResult.data) {
-    saving.value = false
     error.value = ruleResult.error?.message ?? 'Failed to save.'
-    return
+    return null
   }
   const ruleId = ruleResult.data.id
+  savedRuleId.value = ruleId
 
   // Replace the action rows wholesale rather than diffing inserts/updates/
   // deletes -- simplest correct way to keep them in sync with the form.
@@ -142,103 +149,195 @@ async function save() {
     })),
   )
 
+  return ruleId
+}
+
+async function save() {
+  saving.value = true
+  const ruleId = await persist()
   saving.value = false
-  emit('saved')
+  if (ruleId) emit('saved')
+}
+
+async function sendTestToMe() {
+  if (actions.value.length === 0) {
+    error.value = 'Add at least one action.'
+    return
+  }
+  testing.value = true
+  testMessage.value = ''
+  try {
+    // Sends the draft as it stands right now -- deliberately not persisted
+    // first, so previewing a campaign never has the side effect of writing a
+    // real (enabled) automation_rules row before the user has chosen to save.
+    const result = await $fetch<{ sent: boolean; email: string }>('/api/automations/send-test', {
+      method: 'POST',
+      body: { actions: actions.value.map((a) => ({ action_type: a.action_type, config: configFor(a) })) },
+    })
+    testMessage.value = `Sent to ${result.email}`
+  } catch {
+    testMessage.value = 'Failed to send test.'
+  } finally {
+    testing.value = false
+  }
 }
 </script>
 
 <template>
-  <div class="fixed inset-0 z-20 flex items-center justify-center bg-black/30 p-4" @click.self="emit('close')">
-    <div class="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
-      <div class="flex items-center justify-between">
-        <h2 class="text-lg font-semibold text-gray-900">{{ ruleId ? 'Edit Campaign' : 'New Campaign' }}</h2>
-        <button type="button" class="text-gray-400 hover:text-gray-600" @click="emit('close')">✕</button>
+  <div class="fixed inset-0 z-30 flex justify-end bg-[rgba(20,22,30,.32)]" @click.self="emit('close')">
+    <div class="flex h-full w-[560px] flex-col bg-surface shadow-drawer">
+      <div class="flex h-14 shrink-0 items-center justify-between border-b border-line px-6">
+        <h2 class="text-[15px] font-semibold text-ink-900">{{ savedRuleId ? 'Edit campaign' : 'New campaign' }}</h2>
+        <button type="button" class="flex h-7 w-7 items-center justify-center rounded-ctlSm text-ink-faint2 hover:bg-surface-subtle hover:text-ink-muted" @click="emit('close')">✕</button>
       </div>
 
-      <div v-if="loading" class="mt-6 text-sm text-gray-400">Loading…</div>
-      <form v-else class="mt-4 space-y-4" @submit.prevent="save">
-        <div>
-          <label class="block text-sm font-medium text-gray-700">Name</label>
-          <input v-model="name" type="text" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
-        </div>
-
-        <div>
-          <label class="block text-sm font-medium text-gray-700">When this happens</label>
-          <select v-model="triggerEvent" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-            <option v-for="t in TRIGGER_OPTIONS" :key="t.value" :value="t.value">{{ t.label }}</option>
-          </select>
-          <p class="mt-1 text-xs text-gray-500">Or skip this and use "Send Now" from the campaign list for a one-off send instead.</p>
-        </div>
-
-        <label class="flex items-center gap-2 text-sm text-gray-700">
-          <input v-model="enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-          Enabled
-        </label>
-
-        <div class="border-t border-gray-100 pt-4">
-          <div class="flex items-center justify-between">
-            <label class="block text-sm font-medium text-gray-700">Do this</label>
-            <button type="button" class="text-xs font-medium text-indigo-600 hover:text-indigo-500" @click="addAction">+ Add action</button>
+      <div v-if="loading" class="flex-1 p-6 text-[13px] text-ink-faint">Loading…</div>
+      <form v-else class="flex flex-1 flex-col overflow-hidden" @submit.prevent="save">
+        <div class="flex-1 space-y-5 overflow-y-auto px-6 py-5">
+          <div>
+            <label class="block text-[12.5px] font-medium text-ink-700">Name</label>
+            <input
+              v-model="name"
+              type="text"
+              class="mt-1.5 h-9 w-full rounded-ctl border border-line-control px-3 text-[13.5px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            />
           </div>
 
-          <div class="mt-2 space-y-3">
-            <div v-for="(a, i) in actions" :key="i" class="rounded-md border border-gray-200 p-3">
-              <div class="flex items-center justify-between gap-2">
-                <select v-model="a.action_type" class="rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                  <option value="whatsapp_template">Send WhatsApp template</option>
-                  <option value="email">Send email</option>
-                  <option value="webhook">Call a webhook</option>
-                </select>
-                <button v-if="actions.length > 1" type="button" class="text-xs text-red-600 hover:text-red-700" @click="removeAction(i)">Remove</button>
-              </div>
+          <label class="flex items-center justify-between rounded-card border border-line px-3.5 py-2.5">
+            <span class="text-[12.5px] font-medium text-ink-700">Enabled</span>
+            <button
+              type="button"
+              role="switch"
+              :aria-checked="enabled"
+              class="relative inline-flex h-5 w-[34px] shrink-0 items-center rounded-full transition-colors"
+              :class="enabled ? 'bg-brand' : 'bg-toggle-off'"
+              @click="enabled = !enabled"
+            >
+              <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform" :class="enabled ? 'translate-x-[16px]' : 'translate-x-[2px]'" />
+            </button>
+          </label>
 
-              <div v-if="a.action_type === 'whatsapp_template'" class="mt-3 space-y-2">
-                <div class="flex gap-2">
-                  <input v-model="a.template_name" type="text" placeholder="template_name" class="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
-                  <input v-model="a.template_language" type="text" placeholder="es" class="w-16 rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
-                </div>
-                <div>
-                  <select v-model="a.doc_template_id" class="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                    <option value="">No document</option>
-                    <option v-for="t in docTemplates" :key="t.id" :value="t.id">{{ t.title }}</option>
+          <div class="rounded-card border border-[#EDEEF2] bg-surface-subtle p-3.5">
+            <label class="block text-[12.5px] font-medium text-ink-700">When this happens</label>
+            <select
+              v-model="triggerEvent"
+              class="mt-1.5 h-9 w-full rounded-ctl border border-line-control bg-surface px-3 text-[13.5px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            >
+              <option v-for="t in TRIGGER_OPTIONS" :key="t.value" :value="t.value">{{ t.label }}</option>
+            </select>
+            <p class="mt-1.5 text-[11.5px] leading-relaxed text-ink-muted2">Or leave this and use "Send now" from the campaign list to make this a one-off send only.</p>
+          </div>
+
+          <div class="border-t border-line-divider pt-4">
+            <div class="flex items-center justify-between">
+              <h3 class="text-[12.5px] font-medium text-ink-700">Then do this</h3>
+              <UiBtn variant="ghost" size="sm" type="button" @click="addAction">+ Add action</UiBtn>
+            </div>
+
+            <div class="mt-2.5 space-y-3">
+              <div v-for="(a, i) in actions" :key="i" class="rounded-card border border-line p-3.5">
+                <div class="flex items-center justify-between gap-2">
+                  <select
+                    v-model="a.action_type"
+                    class="appearance-none rounded-pill border-0 px-3 py-1 text-[12px] font-semibold focus:outline-none focus:ring-1 focus:ring-brand"
+                    :class="ACTION_TONE[a.action_type]"
+                  >
+                    <option value="whatsapp_template">WhatsApp template</option>
+                    <option value="email">Email</option>
+                    <option value="webhook">Webhook</option>
                   </select>
-                  <p class="mt-1 text-xs text-gray-500">Only one document can be attached per template send, matching WhatsApp's own template format.</p>
+                  <button v-if="actions.length > 1" type="button" class="text-[12px] font-medium text-danger-text hover:underline" @click="removeAction(i)">Remove</button>
                 </div>
-                <div>
-                  <p class="text-xs font-medium text-gray-600">Template variables, in order (match however many numbered placeholders your template has)</p>
-                  <div v-for="(v, vi) in a.variables" :key="vi" class="mt-1 flex items-center gap-2">
-                    <span class="w-4 shrink-0 text-xs text-gray-400">{{ vi + 1 }}.</span>
-                    <select v-model="v.source" class="rounded-md border border-gray-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                      <option v-for="s in VARIABLE_SOURCES" :key="s.value" :value="s.value">{{ s.label }}</option>
-                    </select>
-                    <input v-if="v.source === 'text'" v-model="v.text" type="text" placeholder="Fixed value" class="flex-1 rounded-md border border-gray-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
-                    <button v-if="a.variables.length > 1" type="button" class="shrink-0 text-xs text-red-600 hover:text-red-700" @click="removeVariable(a, vi)">✕</button>
+
+                <div v-if="a.action_type === 'whatsapp_template'" class="mt-3 space-y-2.5">
+                  <div class="flex gap-2">
+                    <input
+                      v-model="a.template_name"
+                      type="text"
+                      placeholder="template_name"
+                      class="h-8 w-full rounded-ctl border border-line-control px-2.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                    />
+                    <input
+                      v-model="a.template_language"
+                      type="text"
+                      placeholder="es"
+                      class="h-8 w-16 rounded-ctl border border-line-control px-2.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                    />
                   </div>
-                  <button type="button" class="mt-1 text-xs font-medium text-indigo-600 hover:text-indigo-500" @click="addVariable(a)">+ Add variable</button>
-                  <p v-if="a.doc_template_id" class="mt-1 text-xs text-gray-500">The document link is sent as the last variable, after these.</p>
+                  <div>
+                    <select
+                      v-model="a.doc_template_id"
+                      class="h-8 w-full rounded-ctl border border-line-control px-2.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                    >
+                      <option value="">No document</option>
+                      <option v-for="t in docTemplates" :key="t.id" :value="t.id">{{ t.title }}</option>
+                    </select>
+                    <p class="mt-1 text-[11px] text-ink-muted2">Only one document can be attached per template send, matching WhatsApp's own template format.</p>
+                  </div>
+                  <div>
+                    <p class="text-[11.5px] font-medium text-ink-muted2">Template variables, in order (match however many numbered placeholders your template has)</p>
+                    <div v-for="(v, vi) in a.variables" :key="vi" class="mt-1.5 flex items-center gap-2">
+                      <span class="w-4 shrink-0 text-[11.5px] text-ink-faint">{{ vi + 1 }}.</span>
+                      <select
+                        v-model="v.source"
+                        class="h-7 rounded-ctlSm border border-line-control px-2 text-[12px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                      >
+                        <option v-for="s in VARIABLE_SOURCES" :key="s.value" :value="s.value">{{ s.label }}</option>
+                      </select>
+                      <input
+                        v-if="v.source === 'text'"
+                        v-model="v.text"
+                        type="text"
+                        placeholder="Fixed value"
+                        class="h-7 flex-1 rounded-ctlSm border border-line-control px-2 text-[12px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                      />
+                      <button v-if="a.variables.length > 1" type="button" class="shrink-0 text-[12px] text-danger-text hover:underline" @click="removeVariable(a, vi)">✕</button>
+                    </div>
+                    <button type="button" class="mt-1.5 text-[12px] font-medium text-brand-text hover:text-brand-hover" @click="addVariable(a)">+ Add variable</button>
+                    <p v-if="a.doc_template_id" class="mt-1 text-[11px] text-ink-muted2">The document link is sent as the last variable, after these.</p>
+                  </div>
                 </div>
-              </div>
 
-              <div v-else-if="a.action_type === 'email'" class="mt-3 space-y-2">
-                <input v-model="a.subject" type="text" placeholder="Subject — {{first_name}} works here too" class="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
-                <CampaignsRichTextEditor v-model="a.body" />
-              </div>
+                <div v-else-if="a.action_type === 'email'" class="mt-3 space-y-2.5">
+                  <input
+                    v-model="a.subject"
+                    type="text"
+                    placeholder="Subject — {{first_name}} works here too"
+                    class="h-8 w-full rounded-ctl border border-line-control px-2.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                  />
+                  <CampaignsRichTextEditor v-model="a.body" />
+                </div>
 
-              <div v-else class="mt-3 space-y-2">
-                <input v-model="a.url" type="url" placeholder="https://example.com/hook" class="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
-                <input v-model="a.secret" type="text" placeholder="Signing secret (optional)" class="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+                <div v-else class="mt-3 space-y-2.5">
+                  <input
+                    v-model="a.url"
+                    type="url"
+                    placeholder="https://example.com/hook"
+                    class="h-8 w-full rounded-ctl border border-line-control px-2.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                  />
+                  <input
+                    v-model="a.secret"
+                    type="text"
+                    placeholder="Signing secret (optional)"
+                    class="h-8 w-full rounded-ctl border border-line-control px-2.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                  />
+                </div>
               </div>
             </div>
           </div>
+
+          <p v-if="error" class="text-[12.5px] text-danger-text">{{ error }}</p>
         </div>
 
-        <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
-
-        <div class="flex justify-end gap-2 border-t border-gray-100 pt-4">
-          <button type="button" class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" @click="emit('close')">Cancel</button>
-          <button type="submit" :disabled="saving" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
-            {{ saving ? 'Saving…' : 'Save' }}
-          </button>
+        <div class="flex shrink-0 items-center justify-between border-t border-line-divider bg-surface-subtle2 px-6 py-3.5">
+          <div class="flex items-center gap-2.5">
+            <UiBtn variant="ghost" size="sm" type="button" :disabled="testing" @click="sendTestToMe">{{ testing ? 'Sending…' : 'Send test to me' }}</UiBtn>
+            <p v-if="testMessage" class="text-[12px]" :class="testMessage.startsWith('Failed') ? 'text-danger-text' : 'text-success-text'">{{ testMessage }}</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <UiBtn variant="secondary" type="button" @click="emit('close')">Cancel</UiBtn>
+            <UiBtn variant="primary" type="submit" :disabled="saving">{{ saving ? 'Saving…' : 'Save campaign' }}</UiBtn>
+          </div>
         </div>
       </form>
     </div>

@@ -23,6 +23,12 @@ function exec(command: string) {
   document.execCommand(command)
   onInput()
 }
+function insertLink() {
+  const url = prompt('Link URL')
+  if (!url) return
+  document.execCommand('createLink', false, url)
+  onInput()
+}
 function insertImage() {
   const url = prompt('Image URL')
   if (!url) return
@@ -39,21 +45,24 @@ function onInput() {
 </script>
 
 <template>
-  <div class="rounded-md border border-gray-300">
-    <div class="flex flex-wrap items-center gap-1 border-b border-gray-200 bg-gray-50 p-1.5">
-      <button type="button" class="rounded px-2 py-1 text-sm font-bold text-gray-700 hover:bg-gray-200" @click="exec('bold')">B</button>
-      <button type="button" class="rounded px-2 py-1 text-sm italic text-gray-700 hover:bg-gray-200" @click="exec('italic')">I</button>
-      <button type="button" class="rounded px-2 py-1 text-sm underline text-gray-700 hover:bg-gray-200" @click="exec('underline')">U</button>
-      <button type="button" class="rounded px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-200" @click="insertImage">+ Image</button>
-      <span class="mx-1 h-4 w-px bg-gray-300"></span>
-      <button type="button" class="rounded bg-white px-2 py-1 text-xs text-gray-600 hover:bg-gray-200" @click="insertVariable('first_name')">First name</button>
-      <button type="button" class="rounded bg-white px-2 py-1 text-xs text-gray-600 hover:bg-gray-200" @click="insertVariable('last_name')">Last name</button>
-      <button type="button" class="rounded bg-white px-2 py-1 text-xs text-gray-600 hover:bg-gray-200" @click="insertVariable('email')">Email</button>
+  <div class="overflow-hidden rounded-ctl border border-line-control">
+    <div class="flex flex-wrap items-center gap-1 border-b border-line-control bg-surface-subtle px-2 py-1.5">
+      <button type="button" class="flex h-6 w-6 items-center justify-center rounded-ctlSm text-[13px] font-bold text-ink-600 hover:bg-line-faint" @click="exec('bold')">B</button>
+      <button type="button" class="flex h-6 w-6 items-center justify-center rounded-ctlSm text-[13px] italic text-ink-600 hover:bg-line-faint" @click="exec('italic')">I</button>
+      <button type="button" class="flex h-6 w-6 items-center justify-center rounded-ctlSm text-[13px] underline text-ink-600 hover:bg-line-faint" @click="exec('underline')">U</button>
+      <span class="mx-1 h-4 w-px bg-line-control"></span>
+      <button type="button" class="rounded-ctlSm px-2 py-1 text-[12px] font-medium text-ink-600 hover:bg-line-faint" @click="insertLink">Link</button>
+      <button type="button" class="rounded-ctlSm px-2 py-1 text-[12px] font-medium text-ink-600 hover:bg-line-faint" @click="insertImage">Image</button>
+      <div class="ml-auto flex items-center gap-1">
+        <button type="button" class="rounded-pill border border-line-control bg-surface px-2 py-0.5 text-[11px] text-ink-muted2 hover:border-brand-tintBorder hover:bg-brand-tint hover:text-brand-text" @click="insertVariable('first_name')">First name</button>
+        <button type="button" class="rounded-pill border border-line-control bg-surface px-2 py-0.5 text-[11px] text-ink-muted2 hover:border-brand-tintBorder hover:bg-brand-tint hover:text-brand-text" @click="insertVariable('last_name')">Last name</button>
+        <button type="button" class="rounded-pill border border-line-control bg-surface px-2 py-0.5 text-[11px] text-ink-muted2 hover:border-brand-tintBorder hover:bg-brand-tint hover:text-brand-text" @click="insertVariable('email')">Email</button>
+      </div>
     </div>
     <div
       ref="editorRef"
       contenteditable="true"
-      class="min-h-[140px] px-3 py-2 text-sm text-gray-900 focus:outline-none [&_img]:max-w-full"
+      class="min-h-[120px] px-3 py-2 text-[13.5px] text-ink-900 focus:outline-none [&_img]:max-w-full"
       @input="onInput"
     ></div>
   </div>

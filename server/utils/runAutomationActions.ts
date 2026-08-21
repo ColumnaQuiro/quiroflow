@@ -40,7 +40,25 @@ export async function runRuleActions(
     .eq('rule_id', ruleId)
     .order('position')
 
-  for (const action of (actions ?? []) as ActionRow[]) {
+  await runActionsList(supabase, accountId, (actions ?? []) as ActionRow[], patient, origin, appointmentId, triggerBody)
+}
+
+// Split out from runRuleActions so a caller that already has an in-memory
+// list of actions (the editor drawer's "Send test to me", which tests the
+// unsaved draft on screen) can run them without needing a persisted
+// automation_actions/automation_rules row to read back -- test sends
+// shouldn't have the side effect of writing a real, enabled rule to the
+// database just so it can be read back out again.
+export async function runActionsList(
+  supabase: any,
+  accountId: string,
+  actions: ActionRow[],
+  patient: PatientForAction,
+  origin: string,
+  appointmentId?: string,
+  triggerBody?: TriggerBody,
+) {
+  for (const action of actions) {
     try {
       if (action.action_type === 'whatsapp_template') {
         await runWhatsAppAction(supabase, accountId, patient, action.config, origin, appointmentId)

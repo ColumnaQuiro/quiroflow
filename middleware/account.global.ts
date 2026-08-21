@@ -19,6 +19,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
   if (to.path.startsWith('/portal')) return
   if (to.path.startsWith('/join')) return
   if (to.path.startsWith('/book')) return
+  if (to.path.startsWith('/doc/')) return
 
   const user = useSupabaseUser()
   if (!user.value) return

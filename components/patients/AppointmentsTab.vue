@@ -47,7 +47,10 @@ const confirmationAutofill = computed<Record<string, string>>(() => {
 </script>
 
 <template>
-  <div class="rounded-lg border border-gray-200 bg-white">
+  <div>
+    <PatientsPhaseStats :patient-id="patientId" />
+
+    <div class="rounded-lg border border-gray-200 bg-white">
     <div v-if="loading" class="p-6 text-center text-sm text-gray-400">Loading…</div>
     <div v-else-if="appointments.length === 0" class="p-8 text-center text-sm text-gray-400">
       No appointments yet.
@@ -88,6 +91,7 @@ const confirmationAutofill = computed<Record<string, string>>(() => {
         </tr>
       </tbody>
     </table>
+    </div>
 
     <div v-if="notesAppointmentId" class="fixed inset-0 z-20 flex items-center justify-center bg-black/30 p-4" @click.self="notesAppointmentId = null">
       <div class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg bg-white p-6 shadow-xl">

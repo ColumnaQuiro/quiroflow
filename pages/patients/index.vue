@@ -9,55 +9,85 @@ type Patient = Pick<
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 
+const PAGE_SIZE = 50
+
 const search = ref('')
 const balanceFilter = ref<'any' | 'credit' | 'debit' | 'zero'>('any')
 const allClinics = ref(false)
 const patients = ref<Patient[]>([])
 const nextAppointmentByPatient = ref<Record<string, string>>({})
 const loading = ref(true)
+const page = ref(1)
+const totalCount = ref(0)
+const totalPages = computed(() => Math.max(1, Math.ceil(totalCount.value / PAGE_SIZE)))
+
+// Filter-syntax characters in PostgREST's .or() string -- strip them from
+// search input rather than trying to escape them, so a stray "%" or ","
+// can't wildcard-match or break the filter shape.
+function sanitizeToken(s: string) {
+  return s.replace(/[%_,()]/g, '')
+}
 
 async function loadPatients() {
   loading.value = true
-  // fetchAllRows -- a plain .select() silently caps at 1000 rows, and this
-  // account has 1509 patients, so the un-paged version was quietly hiding
-  // roughly a third of them.
-  const [rows, upcoming] = await Promise.all([
-    fetchAllRows<Patient>((from, to) =>
-      supabase.from('patients').select('id, first_name, last_name, date_of_birth, balance_cents, tags, clinic_id').order('first_name').range(from, to),
-    ),
-    fetchAllRows<{ patient_id: string; starts_at: string }>((from, to) =>
-      supabase
-        .from('appointments')
-        .select('patient_id, starts_at')
-        .eq('status', 'booked')
-        .gt('starts_at', new Date().toISOString())
-        .order('starts_at')
-        .range(from, to),
-    ),
-  ])
-  patients.value = rows
-  const nextByPatient: Record<string, string> = {}
-  for (const a of upcoming) {
-    if (!nextByPatient[a.patient_id]) nextByPatient[a.patient_id] = a.starts_at
+
+  let query = supabase
+    .from('patients')
+    .select('id, first_name, last_name, date_of_birth, balance_cents, tags, clinic_id', { count: 'exact' })
+
+  if (!allClinics.value && store.currentClinicId) query = query.eq('clinic_id', store.currentClinicId)
+  if (balanceFilter.value === 'credit') query = query.gt('balance_cents', 0)
+  if (balanceFilter.value === 'debit') query = query.lt('balance_cents', 0)
+  if (balanceFilter.value === 'zero') query = query.eq('balance_cents', 0)
+
+  // Each word must match somewhere in first/last name -- chaining .or()
+  // calls ANDs the groups together, so "john sm" matches "John Smith"
+  // regardless of which word landed in which name field.
+  const tokens = search.value.trim().split(/\s+/).map(sanitizeToken).filter(Boolean)
+  for (const token of tokens) {
+    query = query.or(`first_name.ilike.%${token}%,last_name.ilike.%${token}%`)
   }
-  nextAppointmentByPatient.value = nextByPatient
+
+  const from = (page.value - 1) * PAGE_SIZE
+  const to = from + PAGE_SIZE - 1
+  const { data, count } = await query.order('first_name').range(from, to)
+
+  patients.value = data ?? []
+  totalCount.value = count ?? 0
+
+  const ids = patients.value.map((p) => p.id)
+  if (ids.length > 0) {
+    const { data: upcoming } = await supabase
+      .from('appointments')
+      .select('patient_id, starts_at')
+      .eq('status', 'booked')
+      .gt('starts_at', new Date().toISOString())
+      .in('patient_id', ids)
+      .order('starts_at')
+    const nextByPatient: Record<string, string> = {}
+    for (const a of upcoming ?? []) {
+      if (!nextByPatient[a.patient_id]) nextByPatient[a.patient_id] = a.starts_at
+    }
+    nextAppointmentByPatient.value = nextByPatient
+  } else {
+    nextAppointmentByPatient.value = {}
+  }
+
   loading.value = false
 }
 onMounted(loadPatients)
 
-const filtered = computed(() => {
-  return patients.value.filter((p) => {
-    if (!allClinics.value && store.currentClinicId && p.clinic_id !== store.currentClinicId) return false
-    if (search.value) {
-      const name = `${p.first_name} ${p.last_name ?? ''}`.toLowerCase()
-      if (!name.includes(search.value.toLowerCase())) return false
-    }
-    if (balanceFilter.value === 'credit' && p.balance_cents <= 0) return false
-    if (balanceFilter.value === 'debit' && p.balance_cents >= 0) return false
-    if (balanceFilter.value === 'zero' && p.balance_cents !== 0) return false
-    return true
-  })
+function goToPage(p: number) {
+  page.value = Math.min(Math.max(1, p), totalPages.value)
+  loadPatients()
+}
+
+let searchDebounce: ReturnType<typeof setTimeout> | undefined
+watch(search, () => {
+  clearTimeout(searchDebounce)
+  searchDebounce = setTimeout(() => goToPage(1), 300)
 })
+watch([balanceFilter, allClinics], () => goToPage(1))
 
 function initials(p: Patient) {
   const a = p.first_name?.[0] ?? ''
@@ -84,7 +114,7 @@ function formatNextAppointment(patientId: string) {
     <div class="flex items-center justify-between">
       <div>
         <h1 class="text-2xl font-semibold text-gray-900">Patients</h1>
-        <p v-if="!loading" class="mt-1 text-sm text-gray-500">{{ filtered.length }} of {{ patients.length }} patients</p>
+        <p v-if="!loading" class="mt-1 text-sm text-gray-500">{{ totalCount }} patients</p>
       </div>
       <NuxtLink
         to="/patients/new"
@@ -136,11 +166,11 @@ function formatNextAppointment(patientId: string) {
           <tr v-if="loading">
             <td colspan="5" class="px-5 py-10 text-center text-gray-400">Loading…</td>
           </tr>
-          <tr v-else-if="filtered.length === 0">
+          <tr v-else-if="patients.length === 0">
             <td colspan="5" class="px-5 py-10 text-center text-gray-400">No patients found.</td>
           </tr>
           <tr
-            v-for="patient in filtered"
+            v-for="patient in patients"
             :key="patient.id"
             class="cursor-pointer hover:bg-gray-50"
             @click="navigateTo(`/patients/${patient.id}`)"
@@ -172,6 +202,28 @@ function formatNextAppointment(patientId: string) {
           </tr>
         </tbody>
       </table>
+
+      <div v-if="!loading && totalCount > 0" class="flex items-center justify-between border-t border-gray-200 px-5 py-3 text-sm text-gray-500">
+        <span>Page {{ page }} of {{ totalPages }} &middot; {{ totalCount }} patients</span>
+        <div class="flex gap-2">
+          <button
+            type="button"
+            :disabled="page <= 1"
+            class="rounded-md border border-gray-300 px-3 py-1 text-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+            @click="goToPage(page - 1)"
+          >
+            Previous
+          </button>
+          <button
+            type="button"
+            :disabled="page >= totalPages"
+            class="rounded-md border border-gray-300 px-3 py-1 text-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+            @click="goToPage(page + 1)"
+          >
+            Next
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>

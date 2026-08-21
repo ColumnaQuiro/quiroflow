@@ -7,7 +7,9 @@ const props = defineProps<{ patientId: string }>()
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 
-type Doc = Omit<Tables<'patient_docs'>, 'fields'> & { fields: DocField[] }
+// `public_token` isn't in the generated Supabase types yet -- merge it in
+// locally rather than editing the generated file by hand.
+type Doc = Omit<Tables<'patient_docs'>, 'fields'> & { fields: DocField[]; public_token: string }
 type Template = Omit<Tables<'doc_templates'>, 'fields'> & { fields: DocField[] }
 
 const docs = ref<Doc[]>([])
@@ -19,6 +21,8 @@ const fields = ref<DocField[]>([])
 const saving = ref(false)
 const savedAt = ref<Date | null>(null)
 const showNewMenu = ref(false)
+const patientPhoneDigits = ref<string | null>(null)
+const copiedId = ref<string | null>(null)
 
 async function load() {
   loading.value = true
@@ -31,6 +35,36 @@ async function load() {
   loading.value = false
 }
 onMounted(load)
+
+onMounted(async () => {
+  const { data } = await supabase
+    .from('patient_contact_numbers')
+    .select('country_code, number')
+    .eq('patient_id', props.patientId)
+    .order('created_at')
+    .limit(1)
+    .maybeSingle()
+  if (data) patientPhoneDigits.value = `${countryByCode(data.country_code).dial}${data.number}`.replace(/\D/g, '')
+})
+
+function docLink(doc: Doc) {
+  return `${window.location.origin}/doc/${doc.public_token}`
+}
+function openLink(doc: Doc) {
+  window.open(docLink(doc), '_blank')
+}
+async function copyLink(doc: Doc) {
+  await navigator.clipboard.writeText(docLink(doc))
+  copiedId.value = doc.id
+  setTimeout(() => {
+    if (copiedId.value === doc.id) copiedId.value = null
+  }, 2000)
+}
+function sendViaWhatsApp(doc: Doc) {
+  if (!patientPhoneDigits.value) return
+  const message = `Hi! Please complete this document: ${docLink(doc)}`
+  window.open(`https://wa.me/${patientPhoneDigits.value}?text=${encodeURIComponent(message)}`, '_blank')
+}
 
 function openDoc(doc: Doc) {
   activeDoc.value = doc
@@ -156,6 +190,21 @@ async function removeDoc(doc: Doc) {
           </button>
           <div class="flex items-center gap-3">
             <span class="text-xs text-gray-400">{{ new Date(doc.updated_at).toLocaleString() }}</span>
+            <button type="button" class="text-xs font-medium text-indigo-600 hover:text-indigo-500" title="Open patient link in a new tab" @click="openLink(doc)">
+              Open link
+            </button>
+            <button type="button" class="text-xs font-medium text-indigo-600 hover:text-indigo-500" title="Copy patient link" @click="copyLink(doc)">
+              {{ copiedId === doc.id ? 'Copied!' : 'Copy link' }}
+            </button>
+            <button
+              v-if="patientPhoneDigits"
+              type="button"
+              class="text-xs font-medium text-green-600 hover:text-green-500"
+              title="Send patient link via WhatsApp"
+              @click="sendViaWhatsApp(doc)"
+            >
+              WhatsApp
+            </button>
             <button type="button" class="text-xs text-red-600 hover:text-red-700" @click="removeDoc(doc)">Delete</button>
           </div>
         </li>

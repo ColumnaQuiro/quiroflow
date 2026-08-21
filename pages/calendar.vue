@@ -827,8 +827,8 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
               </div>
 
               <div v-for="col in dayColumns" :key="col.id" class="relative flex-1 cursor-pointer border-r border-line last:border-r-0" @click="openCreateModal(col.id === '__none' ? undefined : col.id, $event.offsetY)">
-                <div v-for="m in slotMarks" :key="`slot-${m}`" class="pointer-events-none absolute left-0 right-0 border-t border-line-faint" :style="{ top: `${(m / 60) * DAY_HOUR_PX}px` }" />
-                <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-line-divider" :style="{ top: `${(h - START_HOUR) * DAY_HOUR_PX}px` }" />
+                <div v-for="m in slotMarks" :key="`slot-${m}`" class="pointer-events-none absolute left-0 right-0 border-t border-line-divider" :style="{ top: `${(m / 60) * DAY_HOUR_PX}px` }" />
+                <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-line" :style="{ top: `${(h - START_HOUR) * DAY_HOUR_PX}px` }" />
                 <div v-for="rect in closedSlotRects(anchorDate, DAY_HOUR_PX)" :key="rect.top" class="pointer-events-none absolute left-0 right-0 bg-line-row2" :style="{ top: `${rect.top}px`, height: `${rect.height}px` }" />
 
                 <div
@@ -946,8 +946,8 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                   :style="{ minWidth: `${WEEK_ROOM_COL_PX}px` }"
                   @click="openCreateModalForRoomOnDayAtY(day, col.id, $event.offsetY)"
                 >
-                  <div v-for="m in slotMarks" :key="`slot-${m}`" class="pointer-events-none absolute left-0 right-0 border-t border-line-faint" :style="{ top: `${(m / 60) * WEEK_HOUR_PX}px` }" />
-                  <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-line-divider" :style="{ top: `${(h - START_HOUR) * WEEK_HOUR_PX}px` }" />
+                  <div v-for="m in slotMarks" :key="`slot-${m}`" class="pointer-events-none absolute left-0 right-0 border-t border-line-divider" :style="{ top: `${(m / 60) * WEEK_HOUR_PX}px` }" />
+                  <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-line" :style="{ top: `${(h - START_HOUR) * WEEK_HOUR_PX}px` }" />
                   <div v-for="rect in closedSlotRects(day, WEEK_HOUR_PX)" :key="rect.top" class="pointer-events-none absolute left-0 right-0 bg-line-row2" :style="{ top: `${rect.top}px`, height: `${rect.height}px` }" />
 
                   <div

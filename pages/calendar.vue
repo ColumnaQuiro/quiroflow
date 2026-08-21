@@ -13,8 +13,8 @@ const TOTAL_MIN = (END_HOUR - START_HOUR) * 60
 // runs taller than the viewport on most screens and the scroll container
 // (scrollAreaRef, overflow-y-auto below) takes over instead of shrinking
 // rows to force everything to fit above the fold.
-const DAY_HOUR_PX_MIN = 110
-const WEEK_HOUR_PX_MIN = 64
+const DAY_HOUR_PX_MIN = 115
+const WEEK_HOUR_PX_MIN = 69
 const DAY_HEADER_PX = 40 // h-10 room-header row, excluded from available grid height
 const WEEK_HEADER_PX = 52 // h-6 day-label row + h-7 room-label row (week view now has room sub-columns per day, like Day view)
 const WEEK_ROOM_COL_PX = 128 // min width per room sub-column
@@ -84,7 +84,7 @@ interface AppointmentRow {
   confirmation_status: string | null
   note: string | null
   patients: { first_name: string; last_name: string | null; balance_cents: number } | null
-  appointment_types: { name: string; color: string } | null
+  appointment_types: { name: string; color: string; default_price_cents: number } | null
   team_members: { full_name: string; color: string } | null
 }
 
@@ -93,7 +93,7 @@ const store = useAccountStore()
 
 const SLOT_MIN = computed(() => store.currentClinic?.slot_duration_minutes ?? 30)
 
-const viewMode = ref<'day' | 'week'>('day')
+const viewMode = ref<'day' | 'workweek' | 'week'>('workweek')
 const anchorDate = ref(new Date())
 const rooms = ref<Room[]>([])
 const appointmentTypes = ref<AppointmentType[]>([])
@@ -165,12 +165,17 @@ function isSameDate(a: Date, b: Date) {
 
 const weekStart = computed(() => startOfWeek(anchorDate.value))
 const weekDays = computed(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart.value, i)))
+// Work week shows the same Mon-Sun grid as Week, just fewer day columns
+// (Mon-Fri) -- data fetching and week navigation stay identical, this only
+// slices which day columns render.
+const visibleWeekDays = computed(() => (viewMode.value === 'workweek' ? weekDays.value.slice(0, 5) : weekDays.value))
 
 const rangeLabel = computed(() => {
   if (viewMode.value === 'day') {
     return anchorDate.value.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' })
   }
-  const end = addDays(weekStart.value, 6)
+  const days = visibleWeekDays.value
+  const end = days[days.length - 1]
   return `${weekStart.value.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${end.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`
 })
 function stepDate(dir: -1 | 1) {
@@ -234,7 +239,7 @@ async function loadAppointments() {
   const { data } = await supabase
     .from('appointments')
     .select(
-      'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, rescheduled, confirmation_status, note, patients(first_name, last_name, balance_cents), appointment_types(name, color), team_members(full_name, color)',
+      'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, rescheduled, confirmation_status, note, patients(first_name, last_name, balance_cents), appointment_types(name, color, default_price_cents), team_members(full_name, color)',
     )
     .eq('clinic_id', store.currentClinicId)
     .gte('starts_at', rangeStart.toISOString())
@@ -242,7 +247,28 @@ async function loadAppointments() {
     .order('starts_at')
 
   appointments.value = (data as unknown as AppointmentRow[]) ?? []
+  await loadActivePackages([...new Set(appointments.value.map((a) => a.patient_id))])
   loading.value = false
+}
+
+interface ActivePackageInfo { sessionsTotal: number; sessionsUsed: number; priceCents: number }
+const activePackageByPatient = ref<Record<string, ActivePackageInfo>>({})
+async function loadActivePackages(patientIds: string[]) {
+  if (patientIds.length === 0) {
+    activePackageByPatient.value = {}
+    return
+  }
+  const { data } = await supabase
+    .from('package_purchases')
+    .select('patient_id, sessions_total, sessions_used, price_cents, purchased_at')
+    .in('patient_id', patientIds)
+    .order('purchased_at', { ascending: false })
+  const map: Record<string, ActivePackageInfo> = {}
+  for (const p of data ?? []) {
+    if (p.sessions_used >= p.sessions_total) continue // exhausted -- not the "active" one
+    if (!map[p.patient_id]) map[p.patient_id] = { sessionsTotal: p.sessions_total, sessionsUsed: p.sessions_used, priceCents: p.price_cents }
+  }
+  activePackageByPatient.value = map
 }
 
 async function loadAvailabilityBlocks() {
@@ -441,6 +467,12 @@ function dotClass(appt: AppointmentRow) {
 function nameClass(appt: AppointmentRow) {
   return appointmentVisualStatus(appt) === 'no_show' ? 'text-danger-text' : 'text-ink-900'
 }
+function balanceIconColorClass(tone: 'success' | 'danger' | 'warning' | null) {
+  if (tone === 'success') return 'text-success-accent'
+  if (tone === 'danger') return 'text-danger-text'
+  if (tone === 'warning') return 'text-warning-accent'
+  return ''
+}
 
 function hexToRgba(hex: string, alpha: number) {
   const h = hex.replace('#', '')
@@ -467,7 +499,25 @@ function appointmentColorStyle(appt: AppointmentRow) {
 // spend, red when they owe money, hidden when their balance is exactly
 // zero -- lets staff spot who to collect from (or who's prepaid) without
 // opening the appointment.
-function balanceIconTone(appt: AppointmentRow): 'success' | 'danger' | null {
+// Green: patient has an active package (bono) with enough sessions/value
+// left to cover this visit and still have some left over for next time.
+// Yellow: this visit uses their last covered session -- next time they'll
+// need to pay, so the receptionist can already offer/charge a renewal now.
+// Red: the package is exhausted, or this appointment type costs more than
+// the package's per-session value, so they'll owe money on top of it.
+// Falls back to the patient's plain account balance when they have no
+// active package at all.
+function balanceIconTone(appt: AppointmentRow): 'success' | 'danger' | 'warning' | null {
+  const pkg = activePackageByPatient.value[appt.patient_id]
+  if (pkg) {
+    const sessionsRemainingBefore = pkg.sessionsTotal - pkg.sessionsUsed
+    if (sessionsRemainingBefore <= 0) return 'danger'
+    const perSessionCents = pkg.priceCents / pkg.sessionsTotal
+    const appointmentPriceCents = appt.appointment_types?.default_price_cents ?? 0
+    if (appointmentPriceCents > perSessionCents) return 'danger'
+    if (sessionsRemainingBefore === 1) return 'warning'
+    return 'success'
+  }
   const cents = appt.patients?.balance_cents ?? 0
   if (cents > 0) return 'success'
   if (cents < 0) return 'danger'
@@ -744,6 +794,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
       <div class="flex items-center gap-2">
         <div class="flex items-center rounded-ctlSm border border-line-control p-0.5 text-[12.5px]">
           <button type="button" class="rounded-[5px] px-2.5 py-1 font-medium" :class="viewMode === 'day' ? 'bg-brand text-white' : 'text-ink-500 hover:bg-surface-subtle'" @click="viewMode = 'day'">Day</button>
+          <button type="button" class="rounded-[5px] px-2.5 py-1 font-medium" :class="viewMode === 'workweek' ? 'bg-brand text-white' : 'text-ink-500 hover:bg-surface-subtle'" @click="viewMode = 'workweek'">Work week</button>
           <button type="button" class="rounded-[5px] px-2.5 py-1 font-medium" :class="viewMode === 'week' ? 'bg-brand text-white' : 'text-ink-500 hover:bg-surface-subtle'" @click="viewMode = 'week'">Week</button>
         </div>
         <UiBtn variant="secondary" size="sm" @click="openBlockCreateModal()">Block time</UiBtn>
@@ -925,13 +976,17 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                       :class="durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) < BLOCK_DROP_ROW3_BELOW || settings.compactRows ? 'py-[2px]' : 'py-1'"
                     >
                       <div class="flex items-center gap-1.5">
-                        <span class="h-[6px] w-[6px] shrink-0 rounded-full" :class="dotClass(appt)" />
+                        <span class="flex h-[10px] w-[10px] shrink-0 items-center justify-center rounded-full bg-white">
+                          <span class="h-[6px] w-[6px] shrink-0 rounded-full" :class="dotClass(appt)" />
+                        </span>
                         <p class="min-w-0 flex-1 truncate text-[12.5px] font-semibold" :class="[nameClass(appt), { 'blur-sm select-none': settings.privacyMode, 'line-through opacity-70': appt.status === 'cancelled' }]">
                           {{ appt.patients?.first_name }} {{ appt.patients?.last_name }}
                         </p>
-                        <svg v-if="balanceIconTone(appt)" width="11" height="11" viewBox="0 0 24 24" fill="none" class="shrink-0" :class="balanceIconTone(appt) === 'success' ? 'text-success-accent' : 'text-danger-text'">
-                          <path d="M3 10h18M7 15h1m4 0h1m-7 4h12a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                        </svg>
+                        <span v-if="balanceIconTone(appt)" class="flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-full bg-white">
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" :class="balanceIconColorClass(balanceIconTone(appt))">
+                            <path d="M3 10h18M7 15h1m4 0h1m-7 4h12a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                          </svg>
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -951,7 +1006,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
              appointments into the same lane-splitting and truncated names down
              to a few characters even when nothing was genuinely double-booked). -->
         <div v-else class="min-w-0 flex-1 overflow-x-auto">
-          <div class="flex" :style="{ minWidth: `${58 + weekDays.length * dayColumns.length * WEEK_ROOM_COL_PX}px` }">
+          <div class="flex" :style="{ minWidth: `${58 + visibleWeekDays.length * dayColumns.length * WEEK_ROOM_COL_PX}px` }">
             <div class="sticky left-0 z-20 w-[58px] shrink-0 bg-surface">
               <div class="sticky top-0 z-10 h-[52px] border-b border-r border-line bg-surface"></div>
               <div class="relative border-r border-line" :style="{ height: `${weekGridHeight}px` }">
@@ -974,7 +1029,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
               </div>
             </div>
 
-            <div v-for="day in weekDays" :key="toDateKey(day)" class="flex flex-1 flex-col border-r border-line last:border-r-0">
+            <div v-for="day in visibleWeekDays" :key="toDateKey(day)" class="flex flex-1 flex-col border-r border-line last:border-r-0">
               <div class="sticky top-0 z-10 bg-surface">
                 <div
                   class="relative flex h-6 items-center justify-center gap-1 border-b border-line"
@@ -1046,13 +1101,17 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                       @mouseleave="cancelHoverShow"
                     >
                       <div class="flex items-center gap-1">
-                        <span class="h-[5px] w-[5px] shrink-0 rounded-full" :class="dotClass(appt)" />
+                        <span class="flex h-[9px] w-[9px] shrink-0 items-center justify-center rounded-full bg-white">
+                          <span class="h-[5px] w-[5px] shrink-0 rounded-full" :class="dotClass(appt)" />
+                        </span>
                         <p class="min-w-0 flex-1 truncate text-[11px] font-semibold" :class="[nameClass(appt), { 'blur-sm select-none': settings.privacyMode, 'line-through opacity-70': appt.status === 'cancelled' }]">
                           {{ appt.patients?.first_name }} {{ appt.patients?.last_name }}
                         </p>
-                        <svg v-if="balanceIconTone(appt)" width="10" height="10" viewBox="0 0 24 24" fill="none" class="shrink-0" :class="balanceIconTone(appt) === 'success' ? 'text-success-accent' : 'text-danger-text'">
-                          <path d="M3 10h18M7 15h1m4 0h1m-7 4h12a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                        </svg>
+                        <span v-if="balanceIconTone(appt)" class="flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded-full bg-white">
+                          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" :class="balanceIconColorClass(balanceIconTone(appt))">
+                            <path d="M3 10h18M7 15h1m4 0h1m-7 4h12a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                          </svg>
+                        </span>
                       </div>
                     </div>
                   </template>

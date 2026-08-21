@@ -280,6 +280,70 @@ function openCreateModalForDay(day: Date) {
   editingAppointment.value = null
   modalOpen.value = true
 }
+function openCreateModalForDayAtY(day: Date, clickY: number) {
+  const totalMin = Math.round((clickY / SLOT_PX) * SLOT_MIN.value)
+  const snapped = Math.round(totalMin / SLOT_MIN.value) * SLOT_MIN.value
+  const h = START_HOUR + Math.floor(snapped / 60)
+  const m = snapped % 60
+  prefill.value = { date: toDateKey(day), time: `${pad(h)}:${pad(m)}`, roomId: '' }
+  modalMode.value = 'create'
+  editingAppointment.value = null
+  modalOpen.value = true
+}
+
+function blocksForDay(day: Date) {
+  const dayStart = startOfDay(day).getTime()
+  const dayEnd = addDays(startOfDay(day), 1).getTime()
+  return availabilityBlocks.value.filter(
+    (b) => new Date(b.starts_at).getTime() < dayEnd && new Date(b.ends_at).getTime() > dayStart,
+  )
+}
+
+interface LaidOutAppointment extends AppointmentRow {
+  _col: number
+  _totalCols: number
+}
+
+// Week view doesn't split columns by room, so appointments in different
+// rooms at the same time can overlap within a single day column -- assign
+// each a lane via a greedy sweep (grouped into clusters of transitively
+// overlapping appointments) so overlapping ones sit side by side instead of
+// stacking on top of each other.
+function layoutForDay(day: Date): LaidOutAppointment[] {
+  const sorted = appointmentsForDay(day) as LaidOutAppointment[]
+  const result: LaidOutAppointment[] = []
+  let cluster: LaidOutAppointment[] = []
+  let clusterEnd = -Infinity
+
+  function flush() {
+    if (cluster.length === 0) return
+    const colEnds: number[] = []
+    for (const appt of cluster) {
+      const start = new Date(appt.starts_at).getTime()
+      let col = colEnds.findIndex((end) => end <= start)
+      if (col === -1) {
+        col = colEnds.length
+        colEnds.push(0)
+      }
+      colEnds[col] = new Date(appt.ends_at).getTime()
+      appt._col = col
+    }
+    for (const appt of cluster) appt._totalCols = colEnds.length
+    result.push(...cluster)
+    cluster = []
+    clusterEnd = -Infinity
+  }
+
+  for (const appt of sorted) {
+    const start = new Date(appt.starts_at).getTime()
+    const end = new Date(appt.ends_at).getTime()
+    if (cluster.length > 0 && start >= clusterEnd) flush()
+    cluster.push(appt)
+    clusterEnd = Math.max(clusterEnd, end)
+  }
+  flush()
+  return result
+}
 function openEditModal(appointment: AppointmentRow) {
   editingAppointment.value = appointment
   modalMode.value = 'edit'
@@ -400,26 +464,64 @@ async function toggleCheckedIn(appt: AppointmentRow) {
       </div>
     </div>
 
-    <!-- Week view: agenda per day -->
-    <div v-else class="mt-4 grid grid-cols-7 gap-3">
-      <div v-for="day in weekDays" :key="toDateKey(day)" class="rounded-lg border border-gray-200 bg-white">
-        <div class="flex items-center justify-between border-b border-gray-200 px-2 py-1.5">
-          <span class="text-xs font-medium text-gray-700">{{ day.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' }) }}</span>
-          <button type="button" class="text-xs text-indigo-600 hover:text-indigo-500" @click="openCreateModalForDay(day)">+</button>
-        </div>
-        <div class="min-h-[120px] space-y-1 p-1.5">
-          <button
-            v-for="appt in appointmentsForDay(day)"
-            :key="appt.id"
-            type="button"
-            class="block w-full rounded border-l-4 px-1.5 py-1 text-left text-xs"
-            :class="statusTextClass(appt.status)"
-            :style="appointmentColorStyle(appt)"
-            @click="openEditModal(appt)"
+    <!-- Week view: time grid, one column per day -->
+    <div v-else class="mt-4 overflow-x-auto rounded-lg border border-gray-200 bg-white">
+      <div class="flex" :style="{ minWidth: `${80 + weekDays.length * 170}px` }">
+        <div class="w-20 shrink-0 border-r border-gray-200">
+          <div class="h-10 border-b border-gray-200"></div>
+          <div
+            v-for="label in slotLabels"
+            :key="label"
+            :style="{ height: `${SLOT_PX}px` }"
+            class="border-b border-gray-100 px-2 pt-1 text-xs"
+            :class="label.endsWith(':00') ? 'text-gray-500' : 'text-gray-300'"
           >
-            <p class="truncate font-medium">{{ new Date(appt.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }} {{ appt.patients?.first_name }}</p>
-          </button>
-          <p v-if="appointmentsForDay(day).length === 0" class="px-1 py-2 text-center text-xs text-gray-300">—</p>
+            {{ label }}
+          </div>
+        </div>
+        <div v-for="day in weekDays" :key="toDateKey(day)" class="flex-1 border-r border-gray-100 last:border-r-0">
+          <div class="flex h-10 items-center justify-between gap-1 border-b border-gray-200 px-2 text-sm font-medium text-gray-700">
+            <span>{{ day.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' }) }}</span>
+            <button type="button" class="text-xs text-indigo-600 hover:text-indigo-500" @click.stop="openCreateModalForDay(day)">+</button>
+          </div>
+          <div
+            class="relative cursor-pointer"
+            :style="{ height: `${GRID_HEIGHT}px` }"
+            @click="openCreateModalForDayAtY(day, $event.offsetY)"
+          >
+            <div
+              v-for="(label, i) in slotLabels"
+              :key="i"
+              class="pointer-events-none absolute left-0 right-0 border-b border-gray-100"
+              :class="{ 'bg-gray-50': !slotIsOpen(i, day) }"
+              :style="{ top: `${i * SLOT_PX}px`, height: `${SLOT_PX}px` }"
+            ></div>
+            <div
+              v-for="block in blocksForDay(day)"
+              :key="block.id"
+              class="pointer-events-none absolute left-1 right-1 overflow-hidden rounded border-l-4 border-gray-400 bg-[repeating-linear-gradient(135deg,#f3f4f6,#f3f4f6_6px,#e5e7eb_6px,#e5e7eb_12px)] px-2 py-1 text-xs text-gray-600 shadow-sm"
+              :style="{ top: `${timeToPx(block.starts_at)}px`, height: `${durationToPx(block.starts_at, block.ends_at)}px` }"
+            >
+              <p class="truncate font-medium">Blocked</p>
+            </div>
+            <div
+              v-for="appt in layoutForDay(day)"
+              :key="appt.id"
+              class="absolute overflow-hidden rounded border-l-4 px-1.5 py-1 text-xs shadow-sm"
+              :class="statusTextClass(appt.status)"
+              :style="{
+                top: `${timeToPx(appt.starts_at)}px`,
+                height: `${durationToPx(appt.starts_at, appt.ends_at)}px`,
+                left: `calc(${(appt._col / appt._totalCols) * 100}% + 2px)`,
+                width: `calc(${100 / appt._totalCols}% - 4px)`,
+                ...appointmentColorStyle(appt),
+              }"
+              @click.stop="openEditModal(appt)"
+            >
+              <p class="truncate font-medium">{{ appt.patients?.first_name }}</p>
+              <p class="truncate">{{ new Date(appt.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>

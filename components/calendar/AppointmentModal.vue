@@ -152,22 +152,22 @@ async function remove() {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-20 flex items-center justify-center bg-black/30 p-4" @click.self="emit('close')">
-    <div class="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
+  <div class="fixed inset-0 z-20 flex items-center justify-center bg-ink-900/30 p-4" @click.self="emit('close')">
+    <div class="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-card border border-line bg-surface p-6 shadow-popover">
       <div class="flex items-center justify-between">
-        <h2 class="text-lg font-semibold text-gray-900">
+        <h2 class="text-[16px] font-[640] text-ink-900">
           {{ mode === 'create' ? 'New Appointment' : 'Edit Appointment' }}
         </h2>
-        <button type="button" class="text-gray-400 hover:text-gray-600" @click="emit('close')">✕</button>
+        <button type="button" class="text-ink-faint hover:text-ink-600" @click="emit('close')">✕</button>
       </div>
 
-      <div v-if="mode === 'edit'" class="mt-4 flex gap-1 border-b border-gray-200">
+      <div v-if="mode === 'edit'" class="mt-4 flex gap-1 border-b border-line">
         <button
           v-for="tab in (['details', 'billing', 'history', 'notes'] as const)"
           :key="tab"
           type="button"
-          class="-mb-px border-b-2 px-3 py-2 text-sm font-medium capitalize"
-          :class="activeTab === tab ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
+          class="-mb-px border-b-2 px-3 py-2 text-[13px] font-medium capitalize"
+          :class="activeTab === tab ? 'border-brand text-brand-text' : 'border-transparent text-ink-muted2 hover:text-ink-600'"
           @click="activeTab = tab"
         >
           {{ tab }}
@@ -176,49 +176,49 @@ async function remove() {
 
       <form v-if="mode === 'create' || activeTab === 'details'" class="mt-4 space-y-4" @submit.prevent="save">
         <div>
-          <label class="block text-sm font-medium text-gray-700">Patient</label>
+          <label class="block text-[12.5px] font-medium text-ink-600">Patient</label>
           <input
             v-model="patientQuery"
             type="text"
             :placeholder="selectedPatientLabel || 'Search patients…'"
-            class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none"
           />
-          <ul v-if="patientQuery" class="mt-1 max-h-40 overflow-y-auto rounded-md border border-gray-200">
+          <ul v-if="patientQuery" class="mt-1 max-h-40 overflow-y-auto rounded-ctl border border-line">
             <li
               v-for="p in filteredPatients"
               :key="p.id"
-              class="cursor-pointer px-3 py-1.5 text-sm hover:bg-gray-50"
+              class="cursor-pointer px-3 py-1.5 text-[13px] text-ink-700 hover:bg-surface-subtle"
               @click="patientId = p.id; patientQuery = ''"
             >
               {{ p.first_name }} {{ p.last_name }}
             </li>
-            <li v-if="filteredPatients.length === 0" class="px-3 py-1.5 text-sm text-gray-400">No matches</li>
+            <li v-if="filteredPatients.length === 0" class="px-3 py-1.5 text-[13px] text-ink-faint">No matches</li>
           </ul>
-          <p v-if="selectedPatientLabel && !patientQuery" class="mt-1 text-sm text-gray-500">
-            Selected: <span class="font-medium text-gray-900">{{ selectedPatientLabel }}</span>
-            <NuxtLink :to="`/patients/${patientId}`" target="_blank" class="ml-2 text-indigo-600 hover:text-indigo-700">View patient &rarr;</NuxtLink>
+          <p v-if="selectedPatientLabel && !patientQuery" class="mt-1 text-[12.5px] text-ink-muted2">
+            Selected: <span class="font-medium text-ink-900">{{ selectedPatientLabel }}</span>
+            <NuxtLink :to="`/patients/${patientId}`" target="_blank" class="ml-2 text-brand-text hover:text-brand-hover">View patient &rarr;</NuxtLink>
           </p>
         </div>
 
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <label class="block text-sm font-medium text-gray-700">Date</label>
-            <input v-model="date" type="date" required class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+            <label class="block text-[12.5px] font-medium text-ink-600">Date</label>
+            <input v-model="date" type="date" required class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Time</label>
-            <input v-model="time" type="time" required class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+            <label class="block text-[12.5px] font-medium text-ink-600">Time</label>
+            <input v-model="time" type="time" required class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
           </div>
         </div>
 
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <label class="block text-sm font-medium text-gray-700">Duration (min)</label>
-            <input v-model.number="duration" type="number" min="5" step="5" required class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+            <label class="block text-[12.5px] font-medium text-ink-600">Duration (min)</label>
+            <input v-model.number="duration" type="number" min="5" step="5" required class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Type</label>
-            <select v-model="appointmentTypeId" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+            <label class="block text-[12.5px] font-medium text-ink-600">Type</label>
+            <select v-model="appointmentTypeId" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
               <option value="">No type</option>
               <option v-for="t in appointmentTypes" :key="t.id" :value="t.id">{{ t.name }}</option>
             </select>
@@ -227,15 +227,15 @@ async function remove() {
 
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <label class="block text-sm font-medium text-gray-700">Room</label>
-            <select v-model="roomId" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+            <label class="block text-[12.5px] font-medium text-ink-600">Room</label>
+            <select v-model="roomId" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
               <option value="">No room</option>
               <option v-for="r in rooms" :key="r.id" :value="r.id">{{ r.name }}</option>
             </select>
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Practitioner</label>
-            <select v-model="practitionerId" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+            <label class="block text-[12.5px] font-medium text-ink-600">Practitioner</label>
+            <select v-model="practitionerId" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
               <option value="">Unassigned</option>
               <option v-for="m in teamMembers" :key="m.id" :value="m.id">{{ m.full_name }}</option>
             </select>
@@ -243,8 +243,8 @@ async function remove() {
         </div>
 
         <div v-if="mode === 'edit'">
-          <label class="block text-sm font-medium text-gray-700">Status</label>
-          <select v-model="status" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+          <label class="block text-[12.5px] font-medium text-ink-600">Status</label>
+          <select v-model="status" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
             <option value="booked">Booked</option>
             <option value="completed">Completed</option>
             <option value="cancelled">Cancelled</option>
@@ -252,18 +252,18 @@ async function remove() {
           </select>
         </div>
 
-        <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
+        <p v-if="error" class="text-[13px] text-danger-text">{{ error }}</p>
 
         <div class="flex items-center justify-between">
           <div class="flex gap-3">
-            <button type="submit" :disabled="saving" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
+            <UiBtn variant="primary" :disabled="saving" @click="save">
               {{ saving ? 'Saving…' : 'Save' }}
-            </button>
-            <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50" @click="emit('close')">
+            </UiBtn>
+            <UiBtn variant="secondary" @click="emit('close')">
               Cancel
-            </button>
+            </UiBtn>
           </div>
-          <button v-if="mode === 'edit'" type="button" class="text-sm font-medium text-red-600 hover:text-red-500" @click="remove">
+          <button v-if="mode === 'edit'" type="button" class="text-[13px] font-medium text-danger-text hover:opacity-80" @click="remove">
             Delete
           </button>
         </div>

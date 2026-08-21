@@ -106,59 +106,57 @@ async function remove() {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-20 flex items-center justify-center bg-black/30 p-4" @click.self="emit('close')">
-    <div class="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl">
+  <div class="fixed inset-0 z-20 flex items-center justify-center bg-ink-900/30 p-4" @click.self="emit('close')">
+    <div class="w-full max-w-sm rounded-card border border-line bg-surface p-6 shadow-popover">
       <div class="flex items-center justify-between">
-        <h2 class="text-lg font-semibold text-gray-900">{{ block ? 'Edit Block' : 'Block Time' }}</h2>
-        <button type="button" class="text-gray-400 hover:text-gray-600" @click="emit('close')">✕</button>
+        <h2 class="text-[16px] font-[640] text-ink-900">{{ block ? 'Edit Block' : 'Block Time' }}</h2>
+        <button type="button" class="text-ink-faint hover:text-ink-600" @click="emit('close')">✕</button>
       </div>
 
       <form class="mt-4 space-y-4" @submit.prevent="save">
         <div>
-          <label class="block text-sm font-medium text-gray-700">Room</label>
-          <select v-model="roomId" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+          <label class="block text-[12.5px] font-medium text-ink-600">Room</label>
+          <select v-model="roomId" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
             <option value="">Whole clinic</option>
             <option v-for="room in rooms" :key="room.id" :value="room.id">{{ room.name }}</option>
           </select>
         </div>
         <div class="flex gap-3">
           <div class="flex-1">
-            <label class="block text-sm font-medium text-gray-700">Start date</label>
-            <input v-model="startDate" type="date" required class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+            <label class="block text-[12.5px] font-medium text-ink-600">Start date</label>
+            <input v-model="startDate" type="date" required class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
           </div>
           <div class="flex-1">
-            <label class="block text-sm font-medium text-gray-700">End date</label>
-            <input v-model="endDate" type="date" required :min="startDate" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+            <label class="block text-[12.5px] font-medium text-ink-600">End date</label>
+            <input v-model="endDate" type="date" required :min="startDate" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
           </div>
         </div>
-        <label class="flex items-center gap-2 text-sm text-gray-700">
-          <input v-model="wholeDay" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+        <label class="flex items-center gap-2 text-[13px] text-ink-600">
+          <input v-model="wholeDay" type="checkbox" class="h-4 w-4 rounded border-line-control text-brand focus:ring-brand" />
           Whole day
         </label>
         <div v-if="!wholeDay" class="flex gap-3">
           <div class="flex-1">
-            <label class="block text-sm font-medium text-gray-700">Start time</label>
-            <input v-model="startTime" type="time" required class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+            <label class="block text-[12.5px] font-medium text-ink-600">Start time</label>
+            <input v-model="startTime" type="time" required class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
           </div>
           <div class="flex-1">
-            <label class="block text-sm font-medium text-gray-700">End time</label>
-            <input v-model="endTime" type="time" required class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+            <label class="block text-[12.5px] font-medium text-ink-600">End time</label>
+            <input v-model="endTime" type="time" required class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
           </div>
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700">Note</label>
-          <input v-model="note" type="text" placeholder="e.g. maintenance, holiday" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          <label class="block text-[12.5px] font-medium text-ink-600">Note</label>
+          <input v-model="note" type="text" placeholder="e.g. maintenance, holiday" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
         </div>
 
-        <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
+        <p v-if="error" class="text-[13px] text-danger-text">{{ error }}</p>
 
         <div class="flex items-center justify-between pt-2">
-          <button v-if="block" type="button" class="text-sm text-red-600 hover:text-red-700" @click="remove">Remove block</button>
+          <button v-if="block" type="button" class="text-[13px] text-danger-text hover:opacity-80" @click="remove">Remove block</button>
           <div class="ml-auto flex gap-2">
-            <button type="button" class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" @click="emit('close')">Cancel</button>
-            <button type="submit" :disabled="saving" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
-              {{ saving ? 'Saving…' : 'Save' }}
-            </button>
+            <UiBtn variant="secondary" @click="emit('close')">Cancel</UiBtn>
+            <UiBtn variant="primary" :disabled="saving" @click="save">{{ saving ? 'Saving…' : 'Save' }}</UiBtn>
           </div>
         </div>
       </form>

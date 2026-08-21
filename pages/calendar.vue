@@ -3,8 +3,26 @@ import { hasBusinessHoursConfigured, isWithinBusinessHours } from '~/utils/busin
 
 const START_HOUR = 8
 const END_HOUR = 20
-const SLOT_PX = 40
 const TOTAL_MIN = (END_HOUR - START_HOUR) * 60
+
+// Row scale per the redesign spec: day view gets a taller 76px/hour so a
+// two-line block (time + name) always has room; week view stays compact at
+// 44px/hour. These replace the old single SLOT_PX-per-clinic-slot constant.
+const DAY_HOUR_PX = 76
+const WEEK_HOUR_PX = 44
+
+// Historical bug: appointment blocks used to clip the patient name on short
+// (e.g. 30min) appointments because the block's minimum pixel height was too
+// small. These floors are sized for the new row scale so a 2-line block
+// (time range + name) always fits, even for a 15min appointment at the
+// smallest clinic slot size -- content that doesn't fit drops the 3rd
+// (appointment type) row instead of clipping the name (see BLOCK_DROP_ROW3_BELOW).
+const DAY_MIN_BLOCK_PX = 36
+const WEEK_MIN_BLOCK_PX = 32
+const BLOCK_DROP_ROW3_BELOW = 46
+// Availability/unavailable bands only need to fit a centered one-line label.
+const DAY_MIN_AVAILABILITY_PX = 20
+const WEEK_MIN_AVAILABILITY_PX = 16
 
 interface Room { id: string; name: string }
 interface AppointmentType { id: string; name: string; duration_minutes: number; color: string; default_price_cents: number }
@@ -37,7 +55,6 @@ const supabase = useSupabaseClient()
 const store = useAccountStore()
 
 const SLOT_MIN = computed(() => store.currentClinic?.slot_duration_minutes ?? 30)
-const GRID_HEIGHT = computed(() => (TOTAL_MIN / SLOT_MIN.value) * SLOT_PX)
 
 const viewMode = ref<'day' | 'week'>('day')
 const anchorDate = ref(new Date())
@@ -58,54 +75,28 @@ const blockModalOpen = ref(false)
 const editingBlock = ref<AvailabilityBlock | null>(null)
 const blockPrefill = ref<{ date: string; time: string; roomId: string } | null>(null)
 
-// Mirrors PracticeHub's Calendar Settings sidebar: Privacy Mode blurs
-// patient names, Flow Tracker surfaces the Arrived/With Practitioner/
-// Awaiting Checkout board, Availability Auto Display hides empty room
-// columns in day view, No Future Appts filters to patients with nothing
-// booked ahead.
-const settingsOpen = ref(true)
+// "Display" toggles in the left panel, per the redesign spec.
 const settings = reactive({
   privacyMode: false,
   flowTracker: false,
-  availabilityAutoDisplay: true,
-  noFutureAppts: false,
+  showAvailability: true,
+  hideCancelled: true,
+  compactRows: false,
 })
-const settingsToggles: { key: keyof typeof settings; label: string; tooltip?: string }[] = [
-  { key: 'privacyMode', label: 'Privacy Mode' },
-  { key: 'flowTracker', label: 'Flow Tracker' },
-  { key: 'availabilityAutoDisplay', label: 'Availability Auto Display', tooltip: "Automatically show/hide rooms based on today's activity. Only available for day view." },
-  { key: 'noFutureAppts', label: 'No Future Appts', tooltip: 'Only display patients that have no future appointment (as of today).' },
+const displayToggles: { key: keyof typeof settings; label: string }[] = [
+  { key: 'privacyMode', label: 'Privacy mode' },
+  { key: 'flowTracker', label: 'Flow tracker' },
+  { key: 'showAvailability', label: 'Show availability' },
+  { key: 'hideCancelled', label: 'Hide cancelled' },
+  { key: 'compactRows', label: 'Compact rows' },
 ]
-
-// Filter by Appointment Status, matching PracticeHub's checkbox list.
-// "Rescheduled" reads the lightweight `rescheduled` flag set when an
-// appointment's date/time is edited in place (not full reschedule history).
-const statusFilters = reactive({
-  completed: true,
-  booked: true,
-  rescheduled: false,
-  cancelled: false,
-  no_show: true,
-})
-const statusFilterLabels: { key: keyof typeof statusFilters; label: string }[] = [
-  { key: 'completed', label: 'Completed' },
-  { key: 'booked', label: 'Unprocessed' },
-  { key: 'rescheduled', label: 'Rescheduled' },
-  { key: 'cancelled', label: 'Cancelled' },
-  { key: 'no_show', label: 'Missed' },
-]
-const showNonAppts = ref(true)
-
-const showAllStatuses = computed({
-  get: () => Object.values(statusFilters).every(Boolean) && showNonAppts.value,
-  set: (value: boolean) => {
-    for (const key of Object.keys(statusFilters) as (keyof typeof statusFilters)[]) statusFilters[key] = value
-    showNonAppts.value = value
-  },
-})
 
 function pad(n: number) {
   return String(n).padStart(2, '0')
+}
+function hm(iso: string) {
+  const d = new Date(iso)
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 function toDateKey(d: Date) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
@@ -149,12 +140,17 @@ const rangeLabel = computed(() => {
   const end = addDays(weekStart.value, 6)
   return `${weekStart.value.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${end.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`
 })
+function stepDate(dir: -1 | 1) {
+  anchorDate.value = addDays(anchorDate.value, viewMode.value === 'day' ? dir : dir * 7)
+}
+function goToday() {
+  anchorDate.value = new Date()
+}
 
-// Mini two-month date picker in the sidebar, matching PracticeHub's
-// navigator: prev/next steps the first month, the second always trails it
-// by one, and clicking a day jumps the main calendar there.
+// Single mini month in the sidebar, per the redesign spec (the old two-month
+// picker is dropped). Clicking a day jumps the main calendar there.
 const miniBase = ref(startOfMonth(anchorDate.value))
-const miniMonths = computed(() => [miniBase.value, addMonths(miniBase.value, 1)])
+const miniMonthLabel = computed(() => miniBase.value.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }))
 function miniCalendarGrid(monthStart: Date): (Date | null)[] {
   const year = monthStart.getFullYear()
   const month = monthStart.getMonth()
@@ -164,6 +160,7 @@ function miniCalendarGrid(monthStart: Date): (Date | null)[] {
   for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d))
   return cells
 }
+const miniGrid = computed(() => miniCalendarGrid(miniBase.value))
 function selectMiniDate(d: Date) {
   anchorDate.value = d
 }
@@ -234,37 +231,45 @@ async function loadAvailabilityBlocks() {
   availabilityBlocks.value = data ?? []
 }
 
-// "No Future Appts": which of the currently-loaded patients have no other
-// booked appointment after now, anywhere (not just in the visible range).
-const noFutureApptPatientIds = ref<Set<string>>(new Set())
-async function refreshNoFutureAppts() {
-  if (!settings.noFutureAppts) return
-  const patientIds = Array.from(new Set(appointments.value.map((a) => a.patient_id)))
-  if (patientIds.length === 0) {
-    noFutureApptPatientIds.value = new Set()
+// "Today at a glance" always reflects the real calendar day (not whatever
+// day/week the grid below happens to be navigated to), so it's loaded
+// independently of the main grid's date range.
+const todayGlance = ref({ booked: 0, completed: 0, unconfirmed: 0, freeSlots: 0 })
+async function loadTodayGlance() {
+  if (!store.currentClinicId) {
+    todayGlance.value = { booked: 0, completed: 0, unconfirmed: 0, freeSlots: 0 }
     return
   }
+  const start = startOfDay(new Date())
+  const end = addDays(start, 1)
   const { data } = await supabase
     .from('appointments')
-    .select('patient_id')
-    .eq('status', 'booked')
-    .gt('starts_at', new Date().toISOString())
-    .in('patient_id', patientIds)
-  const withFuture = new Set((data ?? []).map((r) => r.patient_id))
-  noFutureApptPatientIds.value = new Set(patientIds.filter((id) => !withFuture.has(id)))
+    .select('status, confirmation_status')
+    .eq('clinic_id', store.currentClinicId)
+    .gte('starts_at', start.toISOString())
+    .lt('starts_at', end.toISOString())
+    .neq('status', 'cancelled')
+  const rows = data ?? []
+  const booked = rows.filter((r) => r.status === 'booked').length
+  const completed = rows.filter((r) => r.status === 'completed').length
+  const unconfirmed = rows.filter((r) => r.status === 'booked' && (r.confirmation_status === 'pending' || r.confirmation_status === 'reschedule_requested')).length
+  const capacity = Math.max(rooms.value.length, 1) * (TOTAL_MIN / SLOT_MIN.value)
+  const freeSlots = Math.max(0, capacity - rows.length)
+  todayGlance.value = { booked, completed, unconfirmed, freeSlots }
 }
-watch([appointments, () => settings.noFutureAppts], refreshNoFutureAppts)
 
 onMounted(async () => {
   await loadReferenceData()
   await loadRooms()
   await loadAppointments()
   await loadAvailabilityBlocks()
+  await loadTodayGlance()
 })
 watch(() => store.currentClinicId, async () => {
   await loadRooms()
   await loadAppointments()
   await loadAvailabilityBlocks()
+  await loadTodayGlance()
 })
 watch([viewMode, anchorDate], async () => {
   await loadAppointments()
@@ -273,17 +278,17 @@ watch([viewMode, anchorDate], async () => {
 
 const dayColumns = computed(() => [...rooms.value, { id: '__none', name: 'Unassigned' }])
 
-// Day view only: auto-hide room columns with nothing happening today, so a
-// half-empty room list doesn't clutter a quiet day.
-const visibleDayColumns = computed(() => {
-  if (!settings.availabilityAutoDisplay || viewMode.value !== 'day') return dayColumns.value
-  const active = dayColumns.value.filter((col) => appointmentsForRoom(col.id).length > 0 || blocksForRoom(col.id).length > 0)
-  return active.length > 0 ? active : dayColumns.value
-})
-
 function blocksForRoom(roomId: string) {
-  if (!showNonAppts.value) return []
+  if (!settings.showAvailability) return []
   return availabilityBlocks.value.filter((b) => b.room_id === roomId || b.room_id === null)
+}
+function blocksForDay(day: Date) {
+  if (!settings.showAvailability) return []
+  const dayStart = startOfDay(day).getTime()
+  const dayEnd = addDays(startOfDay(day), 1).getTime()
+  return availabilityBlocks.value.filter(
+    (b) => new Date(b.starts_at).getTime() < dayEnd && new Date(b.ends_at).getTime() > dayStart,
+  )
 }
 
 function openBlockCreateModal(roomId?: string) {
@@ -301,9 +306,7 @@ async function onBlockSaved() {
 }
 
 function isApptVisible(appt: AppointmentRow) {
-  if (!statusFilters[appt.status as 'booked' | 'completed' | 'cancelled' | 'no_show']) return false
-  if (appt.rescheduled && !statusFilters.rescheduled) return false
-  if (settings.noFutureAppts && !noFutureApptPatientIds.value.has(appt.patient_id)) return false
+  if (appt.status === 'cancelled' && settings.hideCancelled) return false
   return true
 }
 
@@ -317,14 +320,36 @@ function appointmentsForDay(day: Date) {
     .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
 }
 
-function timeToPx(iso: string) {
+// Best-effort practitioner line under a room's column header (the app has
+// no fixed room->practitioner assignment, so this reflects whoever's
+// actually booked in that room today).
+function roomPractitionerLabel(roomId: string) {
+  const match = appointments.value.find((a) => (a.room_id ?? '__none') === roomId && a.team_members?.full_name)
+  return match?.team_members?.full_name ?? ''
+}
+
+function timeToPx(iso: string, hourPx: number) {
   const d = new Date(iso)
   const mins = d.getHours() * 60 + d.getMinutes() - START_HOUR * 60
-  return Math.max(0, (mins / SLOT_MIN.value) * SLOT_PX)
+  return Math.max(0, (mins / 60) * hourPx)
 }
-function durationToPx(startIso: string, endIso: string) {
+function durationToPx(startIso: string, endIso: string, hourPx: number, minFloor: number) {
   const mins = (new Date(endIso).getTime() - new Date(startIso).getTime()) / 60000
-  return Math.max(20, (mins / SLOT_MIN.value) * SLOT_PX)
+  return Math.max(minFloor, (mins / 60) * hourPx)
+}
+function pxToTime(px: number, hourPx: number) {
+  const totalMin = (px / hourPx) * 60
+  const snapped = Math.round(totalMin / SLOT_MIN.value) * SLOT_MIN.value
+  const h = START_HOUR + Math.floor(snapped / 60)
+  const m = snapped % 60
+  return `${pad(h)}:${pad(m)}`
+}
+
+const dayGridHeight = computed(() => (END_HOUR - START_HOUR) * DAY_HOUR_PX)
+const weekGridHeight = computed(() => (END_HOUR - START_HOUR) * WEEK_HOUR_PX)
+const hourMarks = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => START_HOUR + i)
+function hourLabel(h: number) {
+  return `${pad(h)}:00`
 }
 
 const businessHoursConfigured = computed(() => hasBusinessHoursConfigured(store.currentClinic?.business_hours))
@@ -339,108 +364,55 @@ function slotIsOpen(index: number, forDate: Date) {
   slotDate.setHours(START_HOUR + Math.floor(totalMin / 60), totalMin % 60, 0, 0)
   return isWithinBusinessHours(slotDate, store.currentClinic?.business_hours)
 }
-
-// One label per slot boundary (e.g. 09:00, 09:15, 09:30…), not just per
-// hour -- matches the clinic's configured "Calendar slot" granularity.
-const slotLabels = computed(() => {
+// Closed-hours shading is still computed at the clinic's slot granularity
+// (so a lunch break that ends at :30 shades correctly) even though the
+// visible grid lines are hourly now.
+function closedSlotRects(forDate: Date, hourPx: number) {
   const totalSlots = TOTAL_MIN / SLOT_MIN.value
-  return Array.from({ length: totalSlots }, (_, i) => {
-    const fromStart = i * SLOT_MIN.value
-    const h = START_HOUR + Math.floor(fromStart / 60)
-    const m = fromStart % 60
-    return `${pad(h)}:${pad(m)}`
-  })
-})
-
-function statusTextClass(status: string) {
-  if (status === 'cancelled') return 'text-gray-500 line-through opacity-70'
-  if (status === 'no_show') return 'text-red-900'
-  return 'text-gray-900'
-}
-
-// Reflects the patient's WhatsApp reply to a confirmation request (tracked
-// server-side already via server/api/whatsapp/webhook.post.ts) directly on
-// the calendar block, so staff don't need to open Scheduled Reminders to
-// see who confirmed or wants to reschedule.
-const CONFIRMATION_BADGES: Record<string, { label: string; class: string }> = {
-  pending: { label: 'Awaiting reply', class: 'bg-gray-100 text-gray-600' },
-  confirmed: { label: '✓ Confirmed', class: 'bg-green-100 text-green-700' },
-  reschedule_requested: { label: '↻ Wants to reschedule', class: 'bg-amber-100 text-amber-700' },
-}
-function confirmationBadge(status: string | null) {
-  return status ? CONFIRMATION_BADGES[status] : null
-}
-
-// Hovering an appointment block shows patient/billing/changelog context
-// without opening the full edit modal, matching the reference popover
-// shared for this feature. A short show delay avoids flicker when the mouse
-// just passes over a block; a short hide delay lets the mouse travel from
-// the block onto the popover itself (to edit the note fields) without it
-// disappearing first.
-const hoveredAppt = ref<AppointmentRow | null>(null)
-const hoverPos = ref({ x: 0, y: 0 })
-let hoverShowTimer: ReturnType<typeof setTimeout> | null = null
-let hoverHideTimer: ReturnType<typeof setTimeout> | null = null
-
-function scheduleHoverCard(appt: AppointmentRow, event: MouseEvent) {
-  if (hoverHideTimer) {
-    clearTimeout(hoverHideTimer)
-    hoverHideTimer = null
+  const slotPx = (SLOT_MIN.value / 60) * hourPx
+  const rects: { top: number; height: number }[] = []
+  for (let i = 0; i < totalSlots; i++) {
+    if (!slotIsOpen(i, forDate)) rects.push({ top: i * slotPx, height: slotPx })
   }
-  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-  hoverShowTimer = setTimeout(() => {
-    hoveredAppt.value = appt
-    hoverPos.value = {
-      x: Math.min(rect.right + 8, window.innerWidth - 340),
-      y: Math.max(8, Math.min(rect.top, window.innerHeight - 420)),
-    }
-  }, 350)
-}
-function cancelHoverShow() {
-  if (hoverShowTimer) {
-    clearTimeout(hoverShowTimer)
-    hoverShowTimer = null
-  }
-  hoverHideTimer = setTimeout(() => (hoveredAppt.value = null), 200)
-}
-function keepHoverCard() {
-  if (hoverHideTimer) {
-    clearTimeout(hoverHideTimer)
-    hoverHideTimer = null
-  }
-}
-function hideHoverCard() {
-  hoverHideTimer = setTimeout(() => (hoveredAppt.value = null), 200)
+  return rects
 }
 
-function hexToRgba(hex: string, alpha: number) {
-  const h = hex.replace('#', '')
-  const r = parseInt(h.substring(0, 2), 16)
-  const g = parseInt(h.substring(2, 4), 16)
-  const b = parseInt(h.substring(4, 6), 16)
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+// The block palette collapses onto four visual states from the spec; a
+// pending or reschedule-requested confirmation on an otherwise-booked
+// appointment both read as "Unconfirmed" since the app has no separate 4th
+// status column to key off of.
+type VisualStatus = 'booked' | 'completed' | 'unconfirmed' | 'no_show' | 'cancelled'
+function appointmentVisualStatus(appt: AppointmentRow): VisualStatus {
+  if (appt.status === 'completed') return 'completed'
+  if (appt.status === 'no_show') return 'no_show'
+  if (appt.status === 'cancelled') return 'cancelled'
+  if (appt.status === 'booked' && (appt.confirmation_status === 'pending' || appt.confirmation_status === 'reschedule_requested')) return 'unconfirmed'
+  return 'booked'
 }
+// Tailwind classes rather than inline hex -- these map 1:1 onto the
+// existing brand/success/warning/danger tokens in tailwind.config.ts, which
+// already carry the exact hex values from the redesign spec.
+const STATUS_STYLES: Record<VisualStatus, { blockClass: string; dotClass: string; label: string; pillTone: 'brand' | 'success' | 'warning' | 'danger' | 'neutral' }> = {
+  booked: { blockClass: 'border-brand-tintDeepBorder border-l-brand bg-brand-tintDeep', dotClass: 'bg-brand', label: 'Booked', pillTone: 'brand' },
+  completed: { blockClass: 'border-success-border2 border-l-success-accent bg-success-bg2', dotClass: 'bg-success-accent', label: 'Completed', pillTone: 'success' },
+  unconfirmed: { blockClass: 'border-warning-border border-l-warning-accent bg-warning-bg2', dotClass: 'bg-warning-accent', label: 'Unconfirmed', pillTone: 'warning' },
+  no_show: { blockClass: 'border-danger-border border-l-danger-text bg-danger-bg2', dotClass: 'bg-danger-text', label: 'No-show', pillTone: 'danger' },
+  cancelled: { blockClass: 'border-chip-border border-l-ink-faint3 bg-chip-bg2', dotClass: 'bg-ink-faint3', label: 'Cancelled', pillTone: 'neutral' },
+}
+const statusLegend = (Object.keys(STATUS_STYLES) as VisualStatus[]).map((key) => ({ key, ...STATUS_STYLES[key] }))
 
-// Appointment type color drives the block's look; status is conveyed via
-// statusTextClass (strikethrough/red text) rather than a separate palette,
-// so a type-color change is always visible on the calendar.
-function appointmentColorStyle(appt: AppointmentRow) {
-  const color = appt.appointment_types?.color || '#6366F1'
-  return {
-    borderLeftColor: color,
-    backgroundColor: hexToRgba(color, appt.status === 'cancelled' ? 0.06 : 0.16),
-  }
+function blockClass(appt: AppointmentRow) {
+  return STATUS_STYLES[appointmentVisualStatus(appt)].blockClass
+}
+function dotClass(appt: AppointmentRow) {
+  return STATUS_STYLES[appointmentVisualStatus(appt)].dotClass
+}
+function timeRangeLabel(appt: AppointmentRow) {
+  return `${hm(appt.starts_at)}–${hm(appt.ends_at)}`
 }
 
 function openCreateModal(roomId?: string, clickY?: number) {
-  let time = '09:00'
-  if (clickY !== undefined) {
-    const totalMin = Math.round((clickY / SLOT_PX) * SLOT_MIN.value)
-    const snapped = Math.round(totalMin / SLOT_MIN.value) * SLOT_MIN.value
-    const h = START_HOUR + Math.floor(snapped / 60)
-    const m = snapped % 60
-    time = `${pad(h)}:${pad(m)}`
-  }
+  const time = clickY !== undefined ? pxToTime(clickY, DAY_HOUR_PX) : '09:00'
   prefill.value = { date: toDateKey(anchorDate.value), time, roomId: roomId ?? '' }
   modalMode.value = 'create'
   editingAppointment.value = null
@@ -453,23 +425,10 @@ function openCreateModalForDay(day: Date) {
   modalOpen.value = true
 }
 function openCreateModalForDayAtY(day: Date, clickY: number) {
-  const totalMin = Math.round((clickY / SLOT_PX) * SLOT_MIN.value)
-  const snapped = Math.round(totalMin / SLOT_MIN.value) * SLOT_MIN.value
-  const h = START_HOUR + Math.floor(snapped / 60)
-  const m = snapped % 60
-  prefill.value = { date: toDateKey(day), time: `${pad(h)}:${pad(m)}`, roomId: '' }
+  prefill.value = { date: toDateKey(day), time: pxToTime(clickY, WEEK_HOUR_PX), roomId: '' }
   modalMode.value = 'create'
   editingAppointment.value = null
   modalOpen.value = true
-}
-
-function blocksForDay(day: Date) {
-  if (!showNonAppts.value) return []
-  const dayStart = startOfDay(day).getTime()
-  const dayEnd = addDays(startOfDay(day), 1).getTime()
-  return availabilityBlocks.value.filter(
-    (b) => new Date(b.starts_at).getTime() < dayEnd && new Date(b.ends_at).getTime() > dayStart,
-  )
 }
 
 interface LaidOutAppointment extends AppointmentRow {
@@ -525,11 +484,13 @@ function openEditModal(appointment: AppointmentRow) {
 async function onSaved() {
   modalOpen.value = false
   await loadAppointments()
+  await loadTodayGlance()
 }
 
 const { fire } = useAutomations()
 
-async function toggleCheckedIn(appt: AppointmentRow) {
+async function toggleCheckedIn(appt: AppointmentRow | null) {
+  if (!appt) return
   const next = appt.checked_in_at ? null : new Date().toISOString()
   appt.checked_in_at = next
   await supabase.from('appointments').update({ checked_in_at: next }).eq('id', appt.id)
@@ -539,8 +500,7 @@ async function toggleCheckedIn(appt: AppointmentRow) {
 // Flow Tracker: Arrived (checked_in_at, already tracked elsewhere) -> With
 // Practitioner -> Awaiting Checkout -> Complete (marks the appointment
 // completed). Scoped to whatever's currently loaded (today, for the
-// default Day view), same as the rest of the calendar. Bucketing itself
-// lives in CalendarFlowTracker.vue, shared with pages/practitioner.vue.
+// default Day view), same as the rest of the calendar.
 async function advanceFlow(appt: AppointmentRow, field: 'flow_with_practitioner_at' | 'flow_checkout_at') {
   const now = new Date().toISOString()
   appt[field] = now
@@ -549,304 +509,327 @@ async function advanceFlow(appt: AppointmentRow, field: 'flow_with_practitioner_
 async function completeFlow(appt: AppointmentRow) {
   appt.status = 'completed'
   await supabase.from('appointments').update({ status: 'completed' }).eq('id', appt.id)
+  await loadTodayGlance()
 }
+
+// Hovering an appointment block shows patient/billing/changelog context
+// without opening the full edit modal. A short show delay avoids flicker
+// when the mouse just passes over a block; a short hide delay lets the
+// mouse travel from the block onto the popover itself without it
+// disappearing first.
+const hoveredAppt = ref<AppointmentRow | null>(null)
+const hoverPos = ref({ x: 0, y: 0 })
+let hoverShowTimer: ReturnType<typeof setTimeout> | null = null
+let hoverHideTimer: ReturnType<typeof setTimeout> | null = null
+
+function scheduleHoverCard(appt: AppointmentRow, event: MouseEvent) {
+  if (hoverHideTimer) {
+    clearTimeout(hoverHideTimer)
+    hoverHideTimer = null
+  }
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  hoverShowTimer = setTimeout(() => {
+    hoveredAppt.value = appt
+    hoverPos.value = {
+      x: Math.min(rect.right + 10, window.innerWidth - 316),
+      y: Math.max(8, Math.min(rect.top, window.innerHeight - 380)),
+    }
+  }, 350)
+}
+function cancelHoverShow() {
+  if (hoverShowTimer) {
+    clearTimeout(hoverShowTimer)
+    hoverShowTimer = null
+  }
+  hoverHideTimer = setTimeout(() => (hoveredAppt.value = null), 200)
+}
+function keepHoverCard() {
+  if (hoverHideTimer) {
+    clearTimeout(hoverHideTimer)
+    hoverHideTimer = null
+  }
+}
+function hideHoverCard() {
+  hoverHideTimer = setTimeout(() => (hoveredAppt.value = null), 200)
+}
+const hoveredRoomName = computed(() => rooms.value.find((r) => r.id === hoveredAppt.value?.room_id)?.name ?? null)
+
+// Current-time indicator (day view only, per spec).
+const now = ref(new Date())
+let nowTimer: ReturnType<typeof setInterval> | null = null
+onMounted(() => {
+  nowTimer = setInterval(() => (now.value = new Date()), 30000)
+})
+onUnmounted(() => {
+  if (nowTimer) clearInterval(nowTimer)
+})
+const nowWithinHours = computed(() => now.value.getHours() >= START_HOUR && now.value.getHours() < END_HOUR)
+const showNowLine = computed(() => viewMode.value === 'day' && isSameDate(now.value, anchorDate.value) && nowWithinHours.value)
+const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX))
 </script>
 
 <template>
-  <div>
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <h1 class="text-xl font-semibold text-gray-900">Calendar</h1>
-      <button
-        type="button"
-        class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
-        @click="openCreateModal()"
-      >
-        + New Appointment
-      </button>
-    </div>
-
-    <div class="mt-4 flex flex-col gap-4 lg:flex-row lg:items-start">
-      <!-- Sidebar: mini date picker + Calendar Settings -->
-      <aside class="w-full shrink-0 space-y-3 lg:w-64">
-        <div class="rounded-lg border border-gray-200 bg-white p-3">
-          <div class="flex items-center justify-between">
-            <button type="button" class="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600" @click="miniBase = addMonths(miniBase, -1)">‹</button>
-            <span class="text-sm font-semibold text-gray-900">{{ miniMonths[0].toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) }}</span>
-            <button type="button" class="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600" @click="miniBase = addMonths(miniBase, 1)">›</button>
-          </div>
-          <div class="mt-2 grid grid-cols-7 gap-y-1 text-center">
-            <span v-for="d in ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']" :key="d" class="text-[11px] font-medium text-gray-400">{{ d }}</span>
-            <template v-for="(cell, i) in miniCalendarGrid(miniMonths[0])" :key="i">
-              <button
-                v-if="cell"
-                type="button"
-                class="mx-auto flex h-6 w-6 items-center justify-center rounded-full text-xs hover:bg-gray-100"
-                :class="isSameDate(cell, anchorDate) ? 'bg-indigo-600 text-white hover:bg-indigo-600' : 'text-gray-700'"
-                @click="selectMiniDate(cell)"
-              >
-                {{ cell.getDate() }}
-              </button>
-              <span v-else></span>
-            </template>
-          </div>
-        </div>
-
-        <div class="rounded-lg border border-gray-200 bg-white p-3">
-          <div class="text-center text-sm font-semibold text-gray-900">{{ miniMonths[1].toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) }}</div>
-          <div class="mt-2 grid grid-cols-7 gap-y-1 text-center">
-            <span v-for="d in ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']" :key="d" class="text-[11px] font-medium text-gray-400">{{ d }}</span>
-            <template v-for="(cell, i) in miniCalendarGrid(miniMonths[1])" :key="i">
-              <button
-                v-if="cell"
-                type="button"
-                class="mx-auto flex h-6 w-6 items-center justify-center rounded-full text-xs hover:bg-gray-100"
-                :class="isSameDate(cell, anchorDate) ? 'bg-indigo-600 text-white hover:bg-indigo-600' : 'text-gray-700'"
-                @click="selectMiniDate(cell)"
-              >
-                {{ cell.getDate() }}
-              </button>
-              <span v-else></span>
-            </template>
-          </div>
-        </div>
-
-        <div class="rounded-lg border border-gray-200 bg-white p-3">
-          <button type="button" class="flex w-full items-center justify-between text-sm font-semibold text-gray-900" @click="settingsOpen = !settingsOpen">
-            Calendar Settings
-            <span class="text-gray-400">{{ settingsOpen ? '▲' : '▼' }}</span>
+  <div class="flex h-full flex-col">
+    <header class="flex h-14 shrink-0 items-center justify-between border-b border-line bg-surface px-6">
+      <div class="flex items-center gap-4">
+        <h1 class="text-[18px] font-[640] tracking-tightTitle text-ink-900">Calendar</h1>
+        <div class="flex items-center gap-1">
+          <button type="button" class="flex h-[26px] w-[26px] items-center justify-center rounded-ctlSm border border-line-control text-ink-500 hover:border-line-controlHover hover:bg-surface-subtle" @click="stepDate(-1)">
+            <svg width="7" height="11" viewBox="0 0 7 11" fill="none"><path d="M6 1L1 5.5L6 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
           </button>
+          <button type="button" class="flex h-[26px] items-center rounded-ctlSm border border-line-control px-2.5 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover hover:bg-surface-subtle" @click="goToday">Today</button>
+          <button type="button" class="flex h-[26px] w-[26px] items-center justify-center rounded-ctlSm border border-line-control text-ink-500 hover:border-line-controlHover hover:bg-surface-subtle" @click="stepDate(1)">
+            <svg width="7" height="11" viewBox="0 0 7 11" fill="none"><path d="M1 1L6 5.5L1 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          </button>
+        </div>
+        <span class="text-[13.5px] font-[560] text-ink-700">{{ rangeLabel }}</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <div class="flex items-center rounded-ctlSm border border-line-control p-0.5 text-[12.5px]">
+          <button type="button" class="rounded-[5px] px-2.5 py-1 font-medium" :class="viewMode === 'day' ? 'bg-brand text-white' : 'text-ink-500 hover:bg-surface-subtle'" @click="viewMode = 'day'">Day</button>
+          <button type="button" class="rounded-[5px] px-2.5 py-1 font-medium" :class="viewMode === 'week' ? 'bg-brand text-white' : 'text-ink-500 hover:bg-surface-subtle'" @click="viewMode = 'week'">Week</button>
+        </div>
+        <UiBtn variant="secondary" size="sm" @click="openBlockCreateModal()">Block time</UiBtn>
+        <UiBtn variant="primary" size="sm" @click="openCreateModal()">+ New Appointment</UiBtn>
+      </div>
+    </header>
 
-          <div v-if="settingsOpen" class="mt-3 space-y-3">
-            <div v-for="toggle in settingsToggles" :key="toggle.key" class="flex items-center justify-between gap-2">
-              <span class="flex items-center gap-1 text-sm text-gray-700">
-                {{ toggle.label }}
-                <span v-if="toggle.tooltip" class="cursor-help text-gray-300" :title="toggle.tooltip">ⓘ</span>
-              </span>
+    <div class="flex flex-1 overflow-hidden">
+      <!-- Left panel: mini month, glance stats, display toggles, status key -->
+      <aside class="w-[238px] shrink-0 overflow-y-auto border-r border-line bg-surface-sidebar">
+        <div class="m-3 rounded-card border border-line bg-surface p-3">
+          <div class="flex items-center justify-between">
+            <button type="button" class="rounded-ctlSm p-1 text-ink-faint hover:bg-surface-subtle hover:text-ink-600" @click="miniBase = addMonths(miniBase, -1)">‹</button>
+            <span class="text-[12.5px] font-[640] text-ink-900">{{ miniMonthLabel }}</span>
+            <button type="button" class="rounded-ctlSm p-1 text-ink-faint hover:bg-surface-subtle hover:text-ink-600" @click="miniBase = addMonths(miniBase, 1)">›</button>
+          </div>
+          <div class="mt-2 grid grid-cols-7 gap-y-1 text-center">
+            <span v-for="d in ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']" :key="d" class="text-[10px] font-medium uppercase text-ink-faint">{{ d }}</span>
+            <template v-for="(cell, i) in miniGrid" :key="i">
+              <button
+                v-if="cell"
+                type="button"
+                class="mx-auto flex h-6 w-6 items-center justify-center rounded-full text-[11px]"
+                :class="[
+                  isSameDate(cell, new Date()) ? 'bg-brand font-semibold text-white' : isSameDate(cell, anchorDate) ? 'font-semibold text-brand-text ring-1 ring-inset ring-brand' : 'text-ink-600 hover:bg-surface-subtle',
+                ]"
+                @click="selectMiniDate(cell)"
+              >
+                {{ cell.getDate() }}
+              </button>
+              <span v-else></span>
+            </template>
+          </div>
+        </div>
+
+        <div class="mx-3 rounded-card border border-line bg-surface p-3">
+          <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">Today at a glance</p>
+          <div class="mt-2 space-y-1.5">
+            <div class="flex items-center justify-between text-[12.5px]">
+              <span class="text-ink-600">Booked</span>
+              <span class="font-mono text-[12.5px] font-medium text-ink-900">{{ todayGlance.booked }}</span>
+            </div>
+            <div class="flex items-center justify-between text-[12.5px]">
+              <span class="text-success-text">Completed</span>
+              <span class="font-mono text-[12.5px] font-medium text-success-text">{{ todayGlance.completed }}</span>
+            </div>
+            <div class="flex items-center justify-between text-[12.5px]">
+              <span class="text-warning-text">Unconfirmed</span>
+              <span class="font-mono text-[12.5px] font-medium text-warning-text">{{ todayGlance.unconfirmed }}</span>
+            </div>
+            <div class="flex items-center justify-between text-[12.5px]">
+              <span class="text-ink-muted2">Free slots</span>
+              <span class="font-mono text-[12.5px] font-medium text-ink-muted2">{{ todayGlance.freeSlots }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="mx-3 mt-3 rounded-card border border-line bg-surface p-3">
+          <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">Display</p>
+          <div class="mt-2 space-y-2.5">
+            <div v-for="toggle in displayToggles" :key="toggle.key" class="flex items-center justify-between gap-2">
+              <span class="text-[12.5px] text-ink-600">{{ toggle.label }}</span>
               <button
                 type="button"
                 role="switch"
                 :aria-checked="settings[toggle.key]"
-                class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors"
-                :class="settings[toggle.key] ? 'bg-indigo-600' : 'bg-gray-200'"
+                class="relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors"
+                :class="settings[toggle.key] ? 'bg-brand' : 'bg-toggle-off'"
                 @click="settings[toggle.key] = !settings[toggle.key]"
               >
-                <span class="inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform" :class="settings[toggle.key] ? 'translate-x-4' : 'translate-x-1'" />
+                <span class="inline-block h-3 w-3 transform rounded-full bg-white transition-transform" :class="settings[toggle.key] ? 'translate-x-[14px]' : 'translate-x-0.5'" />
               </button>
             </div>
+          </div>
+        </div>
 
-            <div class="border-t border-gray-100 pt-3">
-              <p class="text-sm font-semibold text-gray-900">Filter by Appointment Status</p>
-
-              <div class="mt-2 space-y-2">
-                <div class="flex items-center justify-between gap-2">
-                  <span class="text-sm text-gray-700">Show All</span>
-                  <button
-                    type="button"
-                    role="switch"
-                    :aria-checked="showAllStatuses"
-                    class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors"
-                    :class="showAllStatuses ? 'bg-indigo-600' : 'bg-gray-200'"
-                    @click="showAllStatuses = !showAllStatuses"
-                  >
-                    <span class="inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform" :class="showAllStatuses ? 'translate-x-4' : 'translate-x-1'" />
-                  </button>
-                </div>
-                <div class="flex items-center justify-between gap-2">
-                  <span class="text-sm text-gray-700">Non Appts</span>
-                  <button
-                    type="button"
-                    role="switch"
-                    :aria-checked="showNonAppts"
-                    class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors"
-                    :class="showNonAppts ? 'bg-indigo-600' : 'bg-gray-200'"
-                    @click="showNonAppts = !showNonAppts"
-                  >
-                    <span class="inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform" :class="showNonAppts ? 'translate-x-4' : 'translate-x-1'" />
-                  </button>
-                </div>
-              </div>
-
-              <div class="mt-2 space-y-1.5 border-t border-gray-100 pt-2">
-                <label v-for="filter in statusFilterLabels" :key="filter.key" class="flex items-center gap-2 text-sm text-gray-700">
-                  <input v-model="statusFilters[filter.key]" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-                  {{ filter.label }}
-                </label>
-              </div>
+        <div class="m-3 rounded-card border border-line bg-surface p-3">
+          <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">Status key</p>
+          <div class="mt-2 space-y-1.5">
+            <div v-for="item in statusLegend" :key="item.key" class="flex items-center gap-2 text-[12.5px] text-ink-600">
+              <span class="h-[7px] w-[7px] shrink-0 rounded-full" :class="item.dotClass" />
+              {{ item.label }}
             </div>
           </div>
         </div>
       </aside>
 
-      <div class="min-w-0 flex-1">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <div class="flex items-center gap-2">
-            <button type="button" class="rounded-md border border-gray-300 px-2 py-1 text-sm hover:bg-gray-50" @click="anchorDate = addDays(anchorDate, viewMode === 'day' ? -1 : -7)">‹</button>
-            <button type="button" class="rounded-md border border-gray-300 px-3 py-1 text-sm hover:bg-gray-50" @click="anchorDate = new Date()">Today</button>
-            <button type="button" class="rounded-md border border-gray-300 px-2 py-1 text-sm hover:bg-gray-50" @click="anchorDate = addDays(anchorDate, viewMode === 'day' ? 1 : 7)">›</button>
-            <span class="ml-2 text-sm font-medium text-gray-700">{{ rangeLabel }}</span>
-          </div>
-          <div class="flex items-center gap-3">
-            <button type="button" class="rounded-md border border-gray-300 px-3 py-1 text-sm text-gray-600 hover:bg-gray-50" @click="openBlockCreateModal()">
-              + Block time
-            </button>
-            <div class="flex rounded-md border border-gray-300 text-sm">
-              <button type="button" class="px-3 py-1" :class="viewMode === 'day' ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-50'" @click="viewMode = 'day'">Day</button>
-              <button type="button" class="border-l border-gray-300 px-3 py-1" :class="viewMode === 'week' ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-50'" @click="viewMode = 'week'">Week</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Flow Tracker: Arrived / With Practitioner / Awaiting Checkout -->
+      <!-- Main content -->
+      <div class="flex min-w-0 flex-1 flex-col overflow-y-auto">
         <CalendarFlowTracker
           v-if="settings.flowTracker"
-          class="mt-4"
+          class="m-4"
           :appointments="appointments"
           :privacy-mode="settings.privacyMode"
           @advance="advanceFlow"
           @complete="completeFlow"
         />
 
-        <div v-if="loading" class="mt-6 text-sm text-gray-400">Loading…</div>
+        <div v-if="loading" class="p-6 text-[13px] text-ink-faint">Loading…</div>
 
-        <div v-else-if="!store.currentClinicId" class="mt-6 text-sm text-gray-400">
+        <div v-else-if="!store.currentClinicId" class="p-6 text-[13px] text-ink-faint">
           No clinic selected.
         </div>
 
         <!-- Day view: room columns -->
-        <div v-else-if="viewMode === 'day'" class="mt-4 overflow-x-auto rounded-lg border border-gray-200 bg-white">
-          <div class="flex" :style="{ minWidth: `${80 + visibleDayColumns.length * 220}px` }">
-            <div class="w-20 shrink-0 border-r border-gray-200">
-              <div class="h-10 border-b border-gray-200"></div>
-              <div
-                v-for="(label, i) in slotLabels"
-                :key="label"
-                :style="{ height: `${SLOT_PX}px` }"
-                class="border-b border-gray-100 px-2 pt-1 text-xs"
-                :class="[label.endsWith(':00') ? 'text-gray-500' : 'text-gray-300', { 'bg-gray-50': !slotIsOpen(i, anchorDate) }]"
-              >
-                {{ label }}
+        <div v-else-if="viewMode === 'day'" class="min-w-0 flex-1 overflow-x-auto">
+          <div :style="{ minWidth: `${58 + dayColumns.length * 220}px` }">
+            <div class="sticky top-0 z-10 flex bg-surface">
+              <div class="h-10 w-[58px] shrink-0 border-b border-r border-line"></div>
+              <div v-for="col in dayColumns" :key="col.id" class="flex h-10 flex-1 flex-col items-center justify-center border-b border-r border-line last:border-r-0">
+                <span class="text-[13px] font-semibold text-ink-900">{{ col.name }}</span>
+                <span v-if="roomPractitionerLabel(col.id)" class="text-[11.5px] leading-none text-ink-muted2">{{ roomPractitionerLabel(col.id) }}</span>
               </div>
             </div>
-            <div v-for="col in visibleDayColumns" :key="col.id" class="flex-1 border-r border-gray-100 last:border-r-0">
-              <div class="flex h-10 items-center justify-center border-b border-gray-200 text-sm font-medium text-gray-700">
-                {{ col.name }}
+
+            <div class="relative flex" :style="{ height: `${dayGridHeight}px` }">
+              <div class="relative w-[58px] shrink-0 border-r border-line">
+                <span
+                  v-for="h in hourMarks"
+                  :key="h"
+                  class="pointer-events-none absolute left-0 right-0 px-2 font-mono text-[11px] text-ink-faint"
+                  :style="{ top: `${(h - START_HOUR) * DAY_HOUR_PX - 7}px` }"
+                >
+                  {{ hourLabel(h) }}
+                </span>
               </div>
-              <div
-                class="relative cursor-pointer"
-                :style="{ height: `${GRID_HEIGHT}px` }"
-                @click="openCreateModal(col.id === '__none' ? undefined : col.id, $event.offsetY)"
-              >
-                <div
-                  v-for="(label, i) in slotLabels"
-                  :key="i"
-                  class="pointer-events-none absolute left-0 right-0 border-b border-gray-100"
-                  :class="{ 'bg-gray-50': !slotIsOpen(i, anchorDate) }"
-                  :style="{ top: `${i * SLOT_PX}px`, height: `${SLOT_PX}px` }"
-                ></div>
+
+              <div v-for="col in dayColumns" :key="col.id" class="relative flex-1 cursor-pointer border-r border-line last:border-r-0" @click="openCreateModal(col.id === '__none' ? undefined : col.id, $event.offsetY)">
+                <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-line-faint" :style="{ top: `${(h - START_HOUR) * DAY_HOUR_PX}px` }" />
+                <div v-for="rect in closedSlotRects(anchorDate, DAY_HOUR_PX)" :key="rect.top" class="pointer-events-none absolute left-0 right-0 bg-line-row2" :style="{ top: `${rect.top}px`, height: `${rect.height}px` }" />
+
                 <div
                   v-for="block in blocksForRoom(col.id)"
                   :key="block.id"
-                  class="absolute left-1 right-1 overflow-hidden rounded border-l-4 border-gray-400 bg-[repeating-linear-gradient(135deg,#f3f4f6,#f3f4f6_6px,#e5e7eb_6px,#e5e7eb_12px)] px-2 py-1 text-xs text-gray-600 shadow-sm"
-                  :style="{ top: `${timeToPx(block.starts_at)}px`, height: `${durationToPx(block.starts_at, block.ends_at)}px` }"
+                  class="absolute left-0 right-0 z-0 flex items-center justify-center overflow-hidden bg-[repeating-linear-gradient(135deg,#F4F5F8,#F4F5F8_6px,#EBECF1_6px,#EBECF1_12px)] font-mono text-[10.5px] text-ink-muted2"
+                  :style="{ top: `${timeToPx(block.starts_at, DAY_HOUR_PX)}px`, height: `${durationToPx(block.starts_at, block.ends_at, DAY_HOUR_PX, DAY_MIN_AVAILABILITY_PX)}px` }"
                   @click.stop="openBlockEditModal(block)"
                 >
-                  <p class="truncate font-medium">Blocked{{ block.room_id === null ? ' (whole clinic)' : '' }}</p>
-                  <p v-if="block.note" class="truncate">{{ block.note }}</p>
+                  {{ block.note || (block.room_id === null ? 'Blocked (whole clinic)' : 'Blocked') }}
                 </div>
+
                 <div
                   v-for="appt in appointmentsForRoom(col.id)"
                   :key="appt.id"
-                  class="absolute left-1 right-1 overflow-hidden rounded border-l-4 px-2 py-1 text-xs shadow-sm"
-                  :class="statusTextClass(appt.status)"
-                  :style="{ top: `${timeToPx(appt.starts_at)}px`, height: `${durationToPx(appt.starts_at, appt.ends_at)}px`, ...appointmentColorStyle(appt) }"
+                  class="absolute left-1 right-1 z-[1] overflow-hidden rounded-[7px] border border-l-[3px]"
+                  :class="blockClass(appt)"
+                  :style="{ top: `${timeToPx(appt.starts_at, DAY_HOUR_PX)}px`, height: `${durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX)}px` }"
                   @click.stop="openEditModal(appt)"
                   @mouseenter="scheduleHoverCard(appt, $event)"
                   @mouseleave="cancelHoverShow"
                 >
-                  <button
-                    type="button"
-                    class="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full text-[10px] leading-none"
-                    :class="appt.checked_in_at ? 'bg-green-600 text-white' : 'bg-white/70 text-gray-400 hover:text-gray-600'"
-                    :title="appt.checked_in_at ? `Arrived ${new Date(appt.checked_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Mark as arrived'"
-                    @click.stop="toggleCheckedIn(appt)"
+                  <div
+                    class="flex h-full flex-col justify-center gap-0.5 px-2"
+                    :class="durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) < BLOCK_DROP_ROW3_BELOW || settings.compactRows ? 'py-[3px]' : 'py-1.5'"
                   >
-                    ✓
-                  </button>
-                  <p class="truncate pr-4 font-medium" :class="{ 'blur-sm select-none': settings.privacyMode }">{{ appt.patients?.first_name }} {{ appt.patients?.last_name }}</p>
-                  <p class="truncate">{{ appt.appointment_types?.name ?? new Date(appt.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</p>
-                  <p v-if="confirmationBadge(appt.confirmation_status)" class="mt-0.5 inline-block truncate rounded px-1 text-[10px] font-medium" :class="confirmationBadge(appt.confirmation_status)!.class">
-                    {{ confirmationBadge(appt.confirmation_status)!.label }}
-                  </p>
+                    <div class="flex items-center justify-between gap-1">
+                      <span class="font-mono text-[10.5px] text-ink-muted2">{{ timeRangeLabel(appt) }}</span>
+                      <span class="h-[6px] w-[6px] shrink-0 rounded-full" :class="dotClass(appt)" />
+                    </div>
+                    <p class="truncate text-[12.5px] font-semibold text-ink-900" :class="{ 'blur-sm select-none': settings.privacyMode, 'line-through opacity-70': appt.status === 'cancelled' }">
+                      {{ appt.patients?.first_name }} {{ appt.patients?.last_name }}
+                    </p>
+                    <p v-if="!(durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) < BLOCK_DROP_ROW3_BELOW || settings.compactRows)" class="truncate text-[11.5px] text-ink-muted2">
+                      {{ appt.appointment_types?.name ?? '—' }}
+                    </p>
+                  </div>
                 </div>
+              </div>
+
+              <div v-if="showNowLine" class="pointer-events-none absolute left-0 right-0 z-20" :style="{ top: `${nowLinePx}px` }">
+                <div class="absolute left-0 top-0 h-[7px] w-[7px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-danger-text"></div>
+                <div class="h-px w-full bg-danger-text"></div>
               </div>
             </div>
           </div>
         </div>
 
         <!-- Week view: time grid, one column per day -->
-        <div v-else class="mt-4 overflow-x-auto rounded-lg border border-gray-200 bg-white">
-          <div class="flex" :style="{ minWidth: `${80 + weekDays.length * 170}px` }">
-            <div class="w-20 shrink-0 border-r border-gray-200">
-              <div class="h-10 border-b border-gray-200"></div>
+        <div v-else class="min-w-0 flex-1 overflow-x-auto">
+          <div :style="{ minWidth: `${58 + weekDays.length * 170}px` }">
+            <div class="sticky top-0 z-10 flex bg-surface">
+              <div class="h-11 w-[58px] shrink-0 border-b border-r border-line"></div>
               <div
-                v-for="label in slotLabels"
-                :key="label"
-                :style="{ height: `${SLOT_PX}px` }"
-                class="border-b border-gray-100 px-2 pt-1 text-xs"
-                :class="label.endsWith(':00') ? 'text-gray-500' : 'text-gray-300'"
+                v-for="day in weekDays"
+                :key="toDateKey(day)"
+                class="relative flex h-11 flex-1 flex-col items-center justify-center gap-0.5 border-b border-r border-line last:border-r-0"
+                :class="isSameDate(day, new Date()) ? 'bg-[#F7F7FE]' : ''"
               >
-                {{ label }}
+                <span class="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-muted2">{{ day.toLocaleDateString(undefined, { weekday: 'short' }) }}</span>
+                <span class="text-[13px] font-medium" :class="isSameDate(day, new Date()) ? 'text-brand-text' : 'text-ink-900'">{{ day.getDate() }}</span>
+                <button type="button" class="absolute right-1.5 top-1.5 text-[12px] text-ink-faint hover:text-brand-text" @click.stop="openCreateModalForDay(day)">+</button>
               </div>
             </div>
-            <div v-for="day in weekDays" :key="toDateKey(day)" class="flex-1 border-r border-gray-100 last:border-r-0">
-              <div class="flex h-10 items-center justify-between gap-1 border-b border-gray-200 px-2 text-sm font-medium text-gray-700">
-                <span>{{ day.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' }) }}</span>
-                <button type="button" class="text-xs text-indigo-600 hover:text-indigo-500" @click.stop="openCreateModalForDay(day)">+</button>
+
+            <div class="relative flex" :style="{ height: `${weekGridHeight}px` }">
+              <div class="relative w-[58px] shrink-0 border-r border-line">
+                <span
+                  v-for="h in hourMarks"
+                  :key="h"
+                  class="pointer-events-none absolute left-0 right-0 px-2 font-mono text-[11px] text-ink-faint"
+                  :style="{ top: `${(h - START_HOUR) * WEEK_HOUR_PX - 7}px` }"
+                >
+                  {{ hourLabel(h) }}
+                </span>
               </div>
+
               <div
-                class="relative cursor-pointer"
-                :style="{ height: `${GRID_HEIGHT}px` }"
+                v-for="day in weekDays"
+                :key="toDateKey(day)"
+                class="relative flex-1 cursor-pointer border-r border-line last:border-r-0"
                 @click="openCreateModalForDayAtY(day, $event.offsetY)"
               >
-                <div
-                  v-for="(label, i) in slotLabels"
-                  :key="i"
-                  class="pointer-events-none absolute left-0 right-0 border-b border-gray-100"
-                  :class="{ 'bg-gray-50': !slotIsOpen(i, day) }"
-                  :style="{ top: `${i * SLOT_PX}px`, height: `${SLOT_PX}px` }"
-                ></div>
+                <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-line-faint" :style="{ top: `${(h - START_HOUR) * WEEK_HOUR_PX}px` }" />
+                <div v-for="rect in closedSlotRects(day, WEEK_HOUR_PX)" :key="rect.top" class="pointer-events-none absolute left-0 right-0 bg-line-row2" :style="{ top: `${rect.top}px`, height: `${rect.height}px` }" />
+
                 <div
                   v-for="block in blocksForDay(day)"
                   :key="block.id"
-                  class="pointer-events-none absolute left-1 right-1 overflow-hidden rounded border-l-4 border-gray-400 bg-[repeating-linear-gradient(135deg,#f3f4f6,#f3f4f6_6px,#e5e7eb_6px,#e5e7eb_12px)] px-2 py-1 text-xs text-gray-600 shadow-sm"
-                  :style="{ top: `${timeToPx(block.starts_at)}px`, height: `${durationToPx(block.starts_at, block.ends_at)}px` }"
+                  class="pointer-events-none absolute left-0 right-0 z-0 flex items-center justify-center overflow-hidden bg-[repeating-linear-gradient(135deg,#F4F5F8,#F4F5F8_6px,#EBECF1_6px,#EBECF1_12px)] font-mono text-[10.5px] text-ink-muted2"
+                  :style="{ top: `${timeToPx(block.starts_at, WEEK_HOUR_PX)}px`, height: `${durationToPx(block.starts_at, block.ends_at, WEEK_HOUR_PX, WEEK_MIN_AVAILABILITY_PX)}px` }"
                 >
-                  <p class="truncate font-medium">Blocked</p>
+                  Blocked
                 </div>
+
                 <div
                   v-for="appt in layoutForDay(day)"
                   :key="appt.id"
-                  class="absolute overflow-hidden rounded border-l-4 px-1.5 py-1 text-xs shadow-sm"
-                  :class="statusTextClass(appt.status)"
+                  class="absolute z-[1] overflow-hidden rounded-[7px] border border-l-[3px] px-1.5 py-1"
+                  :class="blockClass(appt)"
                   :style="{
-                    top: `${timeToPx(appt.starts_at)}px`,
-                    height: `${durationToPx(appt.starts_at, appt.ends_at)}px`,
+                    top: `${timeToPx(appt.starts_at, WEEK_HOUR_PX)}px`,
+                    height: `${durationToPx(appt.starts_at, appt.ends_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX)}px`,
                     left: `calc(${(appt._col / appt._totalCols) * 100}% + 2px)`,
                     width: `calc(${100 / appt._totalCols}% - 4px)`,
-                    ...appointmentColorStyle(appt),
                   }"
                   @click.stop="openEditModal(appt)"
                   @mouseenter="scheduleHoverCard(appt, $event)"
                   @mouseleave="cancelHoverShow"
                 >
-                  <p class="truncate font-medium" :class="{ 'blur-sm select-none': settings.privacyMode }">{{ appt.patients?.first_name }}</p>
-                  <p class="truncate">{{ new Date(appt.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</p>
-                  <span
-                    v-if="confirmationBadge(appt.confirmation_status)"
-                    class="absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full"
-                    :class="appt.confirmation_status === 'confirmed' ? 'bg-green-500' : appt.confirmation_status === 'reschedule_requested' ? 'bg-amber-500' : 'bg-gray-400'"
-                    :title="confirmationBadge(appt.confirmation_status)!.label"
-                  ></span>
+                  <p class="truncate text-[11px] font-semibold text-ink-900" :class="{ 'blur-sm select-none': settings.privacyMode, 'line-through opacity-70': appt.status === 'cancelled' }">
+                    {{ appt.patients?.first_name }}
+                  </p>
+                  <p class="truncate font-mono text-[10px] text-ink-muted2">{{ hm(appt.starts_at) }}</p>
                 </div>
               </div>
             </div>
@@ -884,11 +867,13 @@ async function completeFlow(appt: AppointmentRow) {
     <CalendarAppointmentHoverCard
       v-if="hoveredAppt"
       :appointment="hoveredAppt"
+      :room-name="hoveredRoomName"
       class="fixed z-30"
       :style="{ left: `${hoverPos.x}px`, top: `${hoverPos.y}px` }"
       @mouseenter="keepHoverCard"
       @mouseleave="hideHoverCard"
       @note-saved="loadAppointments"
+      @check-in="toggleCheckedIn(hoveredAppt)"
     />
   </div>
 </template>

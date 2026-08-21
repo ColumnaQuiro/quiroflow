@@ -47,14 +47,18 @@ const BLOCK_DROP_ROW3_BELOW = 46
 const DAY_MIN_AVAILABILITY_PX = 20
 const WEEK_MIN_AVAILABILITY_PX = 16
 
-// Without a cap, N-way overlapping appointments split into N equal-width
-// lanes with no floor -- readable at 2-3 way, illegible (truncated to a
-// couple characters) beyond that. Past the cap, the extra appointments
-// collapse into a single "+N more" chip in the last lane instead of
-// squeezing every lane thinner. Day view's room columns are wider than
-// week view's day columns, so it can afford one more visible lane.
-const DAY_MAX_LANES = 4
-const WEEK_MAX_LANES = 3
+// Overlapping appointments cascade (PracticeHub-style) instead of splitting
+// into N equal-width lanes: each later lane is inset from the left by a
+// fixed pixel offset and stacks on top (higher z-index), so every block
+// stays near full width and its name stays fully readable instead of being
+// squeezed down to initials. Past maxLanes, the remaining appointments in
+// that cluster collapse into a single "+N more" chip in the last lane. Day
+// view's room columns are wider than week view's, so it tolerates a couple
+// more cascade layers before the last one gets too narrow to read.
+const DAY_MAX_LANES = 6
+const WEEK_MAX_LANES = 4
+const DAY_CASCADE_PX = 26
+const WEEK_CASCADE_PX = 16
 const OVERFLOW_CHIP_PX = 20
 
 interface Room { id: string; name: string }
@@ -465,6 +469,17 @@ function balanceIconTone(appt: AppointmentRow): 'success' | 'danger' | null {
   return null
 }
 
+// Cascade positioning for an overlapping block: each lane insets from the
+// left by a fixed pixel amount and sits above the previous lane, rather
+// than every lane getting an equal fraction of the column's width.
+function cascadeStyle(block: LayoutBlock, cascadePx: number) {
+  return {
+    left: `calc(${block._col * cascadePx}px + 2px)`,
+    width: `calc(100% - ${block._col * cascadePx}px - 4px)`,
+    zIndex: String(10 + block._col),
+  }
+}
+
 function openCreateModal(roomId?: string, clickY?: number) {
   const time = clickY !== undefined ? pxToTime(clickY, DAY_HOUR_PX.value) : '09:00'
   prefill.value = { date: toDateKey(anchorDate.value), time, roomId: roomId ?? '' }
@@ -510,11 +525,11 @@ function isOverflowBlock(b: LayoutBlock): b is OverflowBlock {
 
 // Assigns each appointment in a pre-sorted (by start time) list a lane via
 // a greedy sweep (grouped into clusters of transitively overlapping
-// appointments), so overlapping ones sit side by side within their shared
-// column instead of stacking on top of each other. Past maxLanes, the
-// remaining appointments in that cluster collapse into a single "+N more"
-// marker in the last lane rather than squeezing every lane thinner and
-// thinner until nothing is readable.
+// appointments). The lane index (_col) drives a cascading offset in the
+// template rather than an equal-width split, so overlapping appointments
+// stay near full width and readable instead of shrinking to initials. Past
+// maxLanes, the remaining appointments in that cluster collapse into a
+// single "+N more" marker in the last lane.
 //
 // "Overlapping" is judged by each block's RENDERED end, not its real
 // ends_at: durationToPx enforces a minimum block height so short
@@ -869,26 +884,24 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                 <template v-for="(appt, i) in layoutForRoom(col.id)" :key="isOverflowBlock(appt) ? `overflow-${col.id}-${i}` : appt.id">
                   <div
                     v-if="isOverflowBlock(appt)"
-                    class="absolute z-[1] flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[10.5px] font-medium text-ink-muted2 shadow-card"
+                    class="absolute flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[10.5px] font-medium text-ink-muted2 shadow-card"
                     :title="`${appt.count} more appointment${appt.count === 1 ? '' : 's'} at this time`"
                     :style="{
+                      ...cascadeStyle(appt, DAY_CASCADE_PX),
                       top: `${timeToPx(appt.starts_at, DAY_HOUR_PX)}px`,
                       height: `${OVERFLOW_CHIP_PX}px`,
-                      left: `calc(${(appt._col / appt._totalCols) * 100}% + 2px)`,
-                      width: `calc(${100 / appt._totalCols}% - 4px)`,
                     }"
                   >
                     +{{ appt.count }} more
                   </div>
                   <div
                     v-else
-                    class="absolute z-[1] overflow-hidden rounded-[7px] border border-l-[3px]"
+                    class="absolute overflow-hidden rounded-[7px] border border-l-[3px] shadow-card"
                     :style="{
                       ...appointmentColorStyle(appt),
+                      ...cascadeStyle(appt, DAY_CASCADE_PX),
                       top: `${timeToPx(appt.starts_at, DAY_HOUR_PX)}px`,
                       height: `${durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX)}px`,
-                      left: `calc(${(appt._col / appt._totalCols) * 100}% + 2px)`,
-                      width: `calc(${100 / appt._totalCols}% - 4px)`,
                     }"
                     @click.stop="openEditModal(appt)"
                     @mouseenter="scheduleHoverCard(appt, $event)"
@@ -990,13 +1003,12 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                     <button
                       v-if="isOverflowBlock(appt)"
                       type="button"
-                      class="absolute z-[1] flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[10px] font-medium text-ink-muted2 shadow-card hover:border-line-controlHover"
+                      class="absolute flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[10px] font-medium text-ink-muted2 shadow-card hover:border-line-controlHover"
                       :title="`${appt.count} more appointment${appt.count === 1 ? '' : 's'} at this time -- click to see them all in Day view`"
                       :style="{
+                        ...cascadeStyle(appt, WEEK_CASCADE_PX),
                         top: `${timeToPx(appt.starts_at, WEEK_HOUR_PX)}px`,
                         height: `${OVERFLOW_CHIP_PX}px`,
-                        left: `calc(${(appt._col / appt._totalCols) * 100}% + 2px)`,
-                        width: `calc(${100 / appt._totalCols}% - 4px)`,
                       }"
                       @click.stop="showOverflowDay(day)"
                     >
@@ -1004,13 +1016,12 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                     </button>
                     <div
                       v-else
-                      class="absolute z-[1] overflow-hidden rounded-[7px] border border-l-[3px] px-1.5 py-1"
+                      class="absolute overflow-hidden rounded-[7px] border border-l-[3px] px-1.5 py-1 shadow-card"
                       :style="{
                         ...appointmentColorStyle(appt),
+                        ...cascadeStyle(appt, WEEK_CASCADE_PX),
                         top: `${timeToPx(appt.starts_at, WEEK_HOUR_PX)}px`,
                         height: `${durationToPx(appt.starts_at, appt.ends_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX)}px`,
-                        left: `calc(${(appt._col / appt._totalCols) * 100}% + 2px)`,
-                        width: `calc(${100 / appt._totalCols}% - 4px)`,
                       }"
                       @click.stop="openEditModal(appt)"
                       @mouseenter="scheduleHoverCard(appt, $event)"

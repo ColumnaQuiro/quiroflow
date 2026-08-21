@@ -79,7 +79,7 @@ interface AppointmentRow {
   rescheduled: boolean
   confirmation_status: string | null
   note: string | null
-  patients: { first_name: string; last_name: string | null } | null
+  patients: { first_name: string; last_name: string | null; balance_cents: number } | null
   appointment_types: { name: string; color: string } | null
   team_members: { full_name: string; color: string } | null
 }
@@ -126,10 +126,6 @@ const displayToggles: { key: keyof typeof settings; label: string }[] = [
 
 function pad(n: number) {
   return String(n).padStart(2, '0')
-}
-function hm(iso: string) {
-  const d = new Date(iso)
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 function toDateKey(d: Date) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
@@ -234,7 +230,7 @@ async function loadAppointments() {
   const { data } = await supabase
     .from('appointments')
     .select(
-      'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, rescheduled, confirmation_status, note, patients(first_name, last_name), appointment_types(name, color), team_members(full_name, color)',
+      'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, rescheduled, confirmation_status, note, patients(first_name, last_name, balance_cents), appointment_types(name, color), team_members(full_name, color)',
     )
     .eq('clinic_id', store.currentClinicId)
     .gte('starts_at', rangeStart.toISOString())
@@ -421,23 +417,52 @@ function appointmentVisualStatus(appt: AppointmentRow): VisualStatus {
 // Tailwind classes rather than inline hex -- these map 1:1 onto the
 // existing brand/success/warning/danger tokens in tailwind.config.ts, which
 // already carry the exact hex values from the redesign spec.
-const STATUS_STYLES: Record<VisualStatus, { blockClass: string; dotClass: string; label: string; pillTone: 'brand' | 'success' | 'warning' | 'danger' | 'neutral' }> = {
-  booked: { blockClass: 'border-brand-tintDeepBorder border-l-brand bg-brand-tintDeep', dotClass: 'bg-brand', label: 'Booked', pillTone: 'brand' },
-  completed: { blockClass: 'border-success-border2 border-l-success-accent bg-success-bg2', dotClass: 'bg-success-accent', label: 'Completed', pillTone: 'success' },
-  unconfirmed: { blockClass: 'border-warning-border border-l-warning-accent bg-warning-bg2', dotClass: 'bg-warning-accent', label: 'Unconfirmed', pillTone: 'warning' },
-  no_show: { blockClass: 'border-danger-border border-l-danger-text bg-danger-bg2', dotClass: 'bg-danger-text', label: 'No-show', pillTone: 'danger' },
-  cancelled: { blockClass: 'border-chip-border border-l-ink-faint3 bg-chip-bg2', dotClass: 'bg-ink-faint3', label: 'Cancelled', pillTone: 'neutral' },
+const STATUS_STYLES: Record<VisualStatus, { dotClass: string; label: string; pillTone: 'brand' | 'success' | 'warning' | 'danger' | 'neutral' }> = {
+  booked: { dotClass: 'bg-brand', label: 'Booked', pillTone: 'brand' },
+  completed: { dotClass: 'bg-success-accent', label: 'Completed', pillTone: 'success' },
+  unconfirmed: { dotClass: 'bg-warning-accent', label: 'Unconfirmed', pillTone: 'warning' },
+  no_show: { dotClass: 'bg-danger-text', label: 'No-show', pillTone: 'danger' },
+  cancelled: { dotClass: 'bg-ink-faint3', label: 'Cancelled', pillTone: 'neutral' },
 }
 const statusLegend = (Object.keys(STATUS_STYLES) as VisualStatus[]).map((key) => ({ key, ...STATUS_STYLES[key] }))
 
-function blockClass(appt: AppointmentRow) {
-  return STATUS_STYLES[appointmentVisualStatus(appt)].blockClass
-}
 function dotClass(appt: AppointmentRow) {
   return STATUS_STYLES[appointmentVisualStatus(appt)].dotClass
 }
-function timeRangeLabel(appt: AppointmentRow) {
-  return `${hm(appt.starts_at)}–${hm(appt.ends_at)}`
+function nameClass(appt: AppointmentRow) {
+  return appointmentVisualStatus(appt) === 'no_show' ? 'text-danger-text' : 'text-ink-900'
+}
+
+function hexToRgba(hex: string, alpha: number) {
+  const h = hex.replace('#', '')
+  const r = parseInt(h.substring(0, 2), 16)
+  const g = parseInt(h.substring(2, 4), 16)
+  const b = parseInt(h.substring(4, 6), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
+// Block color comes from the appointment type's own color (so editing a
+// type's color actually shows up on the calendar, and a Massage and an
+// Adjustment don't look identical just because both are "booked") -- status
+// is conveyed through the small dot + text style instead of the block color.
+function appointmentColorStyle(appt: AppointmentRow) {
+  const color = appt.appointment_types?.color || '#4C6FEB'
+  return {
+    borderColor: hexToRgba(color, 0.35),
+    borderLeftColor: color,
+    backgroundColor: hexToRgba(color, appt.status === 'cancelled' ? 0.05 : 0.12),
+  }
+}
+
+// A small card icon on the block: green when the patient has credit to
+// spend, red when they owe money, hidden when their balance is exactly
+// zero -- lets staff spot who to collect from (or who's prepaid) without
+// opening the appointment.
+function balanceIconTone(appt: AppointmentRow): 'success' | 'danger' | null {
+  const cents = appt.patients?.balance_cents ?? 0
+  if (cents > 0) return 'success'
+  if (cents < 0) return 'danger'
+  return null
 }
 
 function openCreateModal(roomId?: string, clickY?: number) {
@@ -858,8 +883,8 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                   <div
                     v-else
                     class="absolute z-[1] overflow-hidden rounded-[7px] border border-l-[3px]"
-                    :class="blockClass(appt)"
                     :style="{
+                      ...appointmentColorStyle(appt),
                       top: `${timeToPx(appt.starts_at, DAY_HOUR_PX)}px`,
                       height: `${durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX)}px`,
                       left: `calc(${(appt._col / appt._totalCols) * 100}% + 2px)`,
@@ -874,10 +899,12 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                       :class="durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) < BLOCK_DROP_ROW3_BELOW || settings.compactRows ? 'py-[3px]' : 'py-1.5'"
                     >
                       <div class="flex items-center justify-between gap-1">
-                        <span class="font-mono text-[10.5px] text-ink-muted2">{{ timeRangeLabel(appt) }}</span>
                         <span class="h-[6px] w-[6px] shrink-0 rounded-full" :class="dotClass(appt)" />
+                        <svg v-if="balanceIconTone(appt)" width="11" height="11" viewBox="0 0 24 24" fill="none" :class="balanceIconTone(appt) === 'success' ? 'text-success-accent' : 'text-danger-text'">
+                          <path d="M3 10h18M7 15h1m4 0h1m-7 4h12a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
                       </div>
-                      <p class="truncate text-[12.5px] font-semibold text-ink-900" :class="{ 'blur-sm select-none': settings.privacyMode, 'line-through opacity-70': appt.status === 'cancelled' }">
+                      <p class="truncate text-[12.5px] font-semibold" :class="[nameClass(appt), { 'blur-sm select-none': settings.privacyMode, 'line-through opacity-70': appt.status === 'cancelled' }]">
                         {{ appt.patients?.first_name }} {{ appt.patients?.last_name }}
                       </p>
                       <p v-if="!(durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) < BLOCK_DROP_ROW3_BELOW || settings.compactRows)" class="truncate text-[11.5px] text-ink-muted2">
@@ -978,8 +1005,8 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                     <div
                       v-else
                       class="absolute z-[1] overflow-hidden rounded-[7px] border border-l-[3px] px-1.5 py-1"
-                      :class="blockClass(appt)"
                       :style="{
+                        ...appointmentColorStyle(appt),
                         top: `${timeToPx(appt.starts_at, WEEK_HOUR_PX)}px`,
                         height: `${durationToPx(appt.starts_at, appt.ends_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX)}px`,
                         left: `calc(${(appt._col / appt._totalCols) * 100}% + 2px)`,
@@ -989,10 +1016,15 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                       @mouseenter="scheduleHoverCard(appt, $event)"
                       @mouseleave="cancelHoverShow"
                     >
-                      <p class="truncate text-[11px] font-semibold text-ink-900" :class="{ 'blur-sm select-none': settings.privacyMode, 'line-through opacity-70': appt.status === 'cancelled' }">
+                      <div class="flex items-center justify-between gap-1">
+                        <span class="h-[5px] w-[5px] shrink-0 rounded-full" :class="dotClass(appt)" />
+                        <svg v-if="balanceIconTone(appt)" width="10" height="10" viewBox="0 0 24 24" fill="none" :class="balanceIconTone(appt) === 'success' ? 'text-success-accent' : 'text-danger-text'">
+                          <path d="M3 10h18M7 15h1m4 0h1m-7 4h12a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                      </div>
+                      <p class="truncate text-[11px] font-semibold" :class="[nameClass(appt), { 'blur-sm select-none': settings.privacyMode, 'line-through opacity-70': appt.status === 'cancelled' }]">
                         {{ appt.patients?.first_name }} {{ appt.patients?.last_name }}
                       </p>
-                      <p class="truncate font-mono text-[10px] text-ink-muted2">{{ hm(appt.starts_at) }}</p>
                     </div>
                   </template>
                 </div>

@@ -54,11 +54,7 @@ async function loadPatients() {
   if (balanceFilter.value === 'zero') query = query.eq('balance_cents', 0)
   if (missingEmail.value) query = query.or('email.is.null,email.eq.')
   if (practitionerFilter.value) query = query.eq('default_practitioner_id', practitionerFilter.value)
-  if (missingPhone.value) {
-    const { data: withPhone } = await supabase.from('patient_contact_numbers').select('patient_id')
-    const idsWithPhone = [...new Set((withPhone ?? []).map((r) => r.patient_id))]
-    if (idsWithPhone.length > 0) query = query.not('id', 'in', `(${idsWithPhone.join(',')})`)
-  }
+  if (missingPhone.value) query = query.eq('has_phone', false)
 
   // Each word must match somewhere in first/last name -- chaining .or()
   // calls ANDs the groups together, so "john sm" matches "John Smith"

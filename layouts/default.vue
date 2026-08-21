@@ -17,15 +17,14 @@ function dismissDenied() {
 </script>
 
 <template>
-  <div class="flex h-screen bg-gray-50">
+  <div class="flex h-screen bg-surface-page">
     <AppSidebar />
     <div class="flex flex-1 flex-col overflow-hidden">
-      <AppTopbar />
       <div v-if="showDenied" class="flex items-center justify-between bg-amber-50 px-6 py-2 text-sm text-amber-800">
         <span>You don't have access to that section.</span>
         <button type="button" class="font-medium underline" @click="dismissDenied">Dismiss</button>
       </div>
-      <main class="flex-1 overflow-y-auto p-6">
+      <main class="flex flex-1 flex-col overflow-hidden">
         <slot />
       </main>
     </div>

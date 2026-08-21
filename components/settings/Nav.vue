@@ -60,17 +60,17 @@ function isActive(to: string) {
 </script>
 
 <template>
-  <nav class="w-56 shrink-0 space-y-6 print:hidden">
-    <NuxtLink to="/settings" class="block text-sm font-semibold text-gray-900 hover:text-indigo-600"> Settings </NuxtLink>
+  <nav class="w-[220px] shrink-0 space-y-5 bg-surface-sidebar p-3 print:hidden">
+    <NuxtLink to="/settings" class="block px-2 text-[13px] font-semibold text-ink-900 hover:text-brand"> Settings </NuxtLink>
     <div v-for="group in groups" :key="group.label">
-      <p class="px-3 text-xs font-semibold uppercase tracking-wide text-gray-400">{{ group.label }}</p>
+      <p class="px-2 text-[10.5px] font-[640] uppercase tracking-[.06em] text-ink-faint">{{ group.label }}</p>
       <div class="mt-1 space-y-0.5">
         <NuxtLink
           v-for="item in group.items"
           :key="item.to"
           :to="item.to"
-          class="block rounded-md px-3 py-1.5 text-sm"
-          :class="isActive(item.to) ? 'bg-indigo-50 font-medium text-indigo-700' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'"
+          class="block h-8 rounded-ctlSm px-2 text-[13px] leading-8"
+          :class="isActive(item.to) ? 'bg-brand-tint font-semibold text-brand-text' : 'text-ink-muted2 hover:bg-[#EFF0F4]'"
         >
           {{ item.label }}
         </NuxtLink>

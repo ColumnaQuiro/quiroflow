@@ -15,7 +15,6 @@ describe('Login', () => {
       cy.get('#password').type(account.password)
       cy.contains('button', 'Sign in').click()
       cy.location('pathname', { timeout: 15000 }).should('eq', '/dashboard')
-      cy.get('button.rounded-full').click()
       cy.contains(account.accountName).should('be.visible')
     })
   })

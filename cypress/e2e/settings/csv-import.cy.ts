@@ -21,8 +21,8 @@ describe('CSV patient import (PracticeHub)', () => {
       cy.contains(/Imported \d+ patients\./, { timeout: 15000 }).should('be.visible')
 
       cy.visit('/patients')
-      cy.contains('td', 'Import TestOne').should('be.visible')
-      cy.contains('td', 'Import TestTwo').should('be.visible')
+      cy.contains('Import TestOne').should('be.visible')
+      cy.contains('Import TestTwo').should('be.visible')
     })
   })
 })

@@ -26,7 +26,7 @@ describe('Patients', () => {
       }).then((patient: any) => {
         cy.login(account.email, account.password)
         cy.visit('/patients')
-        cy.contains('td', 'Bob Smith').closest('tr').click()
+        cy.contains('Bob Smith').click()
         cy.location('pathname', { timeout: 15000 }).should('eq', `/patients/${patient.id}`)
       })
     })
@@ -41,7 +41,7 @@ describe('Patients', () => {
         lastName: 'White',
       }).then((patient: any) => {
         cy.login(account.email, account.password)
-        for (const tab of ['overview', 'appointments', 'visit-notes', 'billing', 'files', 'docs']) {
+        for (const tab of ['overview', 'appointments', 'visit-notes', 'billing', 'communications', 'files', 'docs']) {
           cy.visit(`/patients/${patient.id}?tab=${tab}`)
           cy.contains('Carol White').should('be.visible')
         }

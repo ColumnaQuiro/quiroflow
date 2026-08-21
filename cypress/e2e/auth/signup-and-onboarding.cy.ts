@@ -21,12 +21,13 @@ describe('Signup and onboarding', () => {
     cy.contains('button', 'Create practice').click()
 
     cy.location('pathname', { timeout: 15000 }).should('eq', '/dashboard')
-    cy.contains(`Good to see you, ${ownerName}`).should('be.visible')
+    // Greeting is time-of-day dependent ("Good morning/afternoon/evening, {firstName}") -- match loosely.
+    cy.contains(new RegExp(`Good (morning|afternoon|evening), ${ownerName.split(' ')[0]}`)).should('be.visible')
+    cy.contains(accountName).should('be.visible')
 
     // A fresh account isn't stuck re-onboarding on the next visit.
     cy.visit('/dashboard')
     cy.location('pathname').should('eq', '/dashboard')
-    cy.get('button.rounded-full').click()
     cy.contains(accountName).should('be.visible')
   })
 })

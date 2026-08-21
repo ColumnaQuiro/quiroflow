@@ -64,7 +64,7 @@ Cypress.Commands.add('clickUntil', (clickSelector: string, untilSelector: string
 })
 
 Cypress.Commands.add('logout', () => {
-  cy.clickUntil('button.rounded-full', 'button:contains("Sign out")')
+  cy.clickUntil('aside button:last', 'button:contains("Sign out")')
   cy.contains('button', /sign out/i).click()
 })
 

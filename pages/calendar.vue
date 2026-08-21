@@ -5,16 +5,16 @@ const START_HOUR = 8
 const END_HOUR = 20
 const TOTAL_MIN = (END_HOUR - START_HOUR) * 60
 
-// Row scale per the redesign spec: day view gets a taller 76px/hour so a
-// two-line block (time + name) always has room; week view stays compact at
-// 44px/hour. These are floors, not fixed values -- on a viewport taller
-// than 12 hours' worth of rows, a fixed height left a dead gap between the
-// grid and the bottom of the page instead of filling it, so the actual
-// per-hour height grows to fill whatever vertical space is available
-// (tracked via ResizeObserver below) and only falls back to these minimums
-// on short viewports, where scrolling kicks back in.
-const DAY_HOUR_PX_MIN = 76
-const WEEK_HOUR_PX_MIN = 44
+// Row scale: these are floors, not fixed values -- on a viewport taller
+// than 12 hours' worth of rows, the actual per-hour height grows to fill
+// whatever vertical space is available (tracked via ResizeObserver below).
+// Raised well past what most viewports compute on their own so rows read
+// as comfortably tall on a normal screen; the grid (12h worth of rows) then
+// runs taller than the viewport on most screens and the scroll container
+// (scrollAreaRef, overflow-y-auto below) takes over instead of shrinking
+// rows to force everything to fit above the fold.
+const DAY_HOUR_PX_MIN = 110
+const WEEK_HOUR_PX_MIN = 64
 const DAY_HEADER_PX = 40 // h-10 room-header row, excluded from available grid height
 const WEEK_HEADER_PX = 52 // h-6 day-label row + h-7 room-label row (week view now has room sub-columns per day, like Day view)
 const WEEK_ROOM_COL_PX = 128 // min width per room sub-column
@@ -457,9 +457,9 @@ function hexToRgba(hex: string, alpha: number) {
 function appointmentColorStyle(appt: AppointmentRow) {
   const color = appt.appointment_types?.color || '#4C6FEB'
   return {
-    borderColor: hexToRgba(color, 0.35),
+    borderColor: hexToRgba(color, 0.55),
     borderLeftColor: color,
-    backgroundColor: hexToRgba(color, appt.status === 'cancelled' ? 0.05 : 0.12),
+    backgroundColor: hexToRgba(color, appt.status === 'cancelled' ? 0.1 : 0.28),
   }
 }
 

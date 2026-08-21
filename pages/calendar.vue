@@ -457,9 +457,9 @@ function hexToRgba(hex: string, alpha: number) {
 function appointmentColorStyle(appt: AppointmentRow) {
   const color = appt.appointment_types?.color || '#4C6FEB'
   return {
-    borderColor: hexToRgba(color, 0.8),
+    borderColor: color,
     borderLeftColor: color,
-    backgroundColor: hexToRgba(color, appt.status === 'cancelled' ? 0.16 : 0.45),
+    backgroundColor: color,
   }
 }
 

@@ -19,6 +19,15 @@ export default defineNuxtConfig({
   nitro: {
     preset: 'netlify',
   },
+  routeRules: {
+    // The calendar's initial render depends on "today"/"now" (mini-calendar
+    // highlight, current-time line, default date range), which differ
+    // between the server's timezone and the visitor's -- causing a
+    // hydration mismatch once or twice a day whenever the two disagree on
+    // the calendar date. No SEO benefit to SSR here (authenticated app),
+    // so it's simplest to render this route client-side only.
+    '/calendar': { ssr: false },
+  },
   modules: ['@nuxtjs/tailwindcss', '@nuxtjs/supabase', '@pinia/nuxt'],
   supabase: {
     redirectOptions: {

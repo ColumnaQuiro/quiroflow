@@ -13,8 +13,8 @@ const TOTAL_MIN = (END_HOUR - START_HOUR) * 60
 // runs taller than the viewport on most screens and the scroll container
 // (scrollAreaRef, overflow-y-auto below) takes over instead of shrinking
 // rows to force everything to fit above the fold.
-const DAY_HOUR_PX_MIN = 115
-const WEEK_HOUR_PX_MIN = 69
+const DAY_HOUR_PX_MIN = 127
+const WEEK_HOUR_PX_MIN = 81
 const DAY_HEADER_PX = 40 // h-10 room-header row, excluded from available grid height
 const WEEK_HEADER_PX = 52 // h-6 day-label row + h-7 room-label row (week view now has room sub-columns per day, like Day view)
 const WEEK_ROOM_COL_PX = 128 // min width per room sub-column

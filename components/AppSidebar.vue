@@ -153,7 +153,7 @@ async function signOut() {
           :key="item.to"
           :to="item.to"
           class="flex h-8 items-center gap-[9px] rounded-ctlSm px-[9px] text-[13.5px]"
-          :class="isActive(item.to) ? 'bg-brand-tint text-brand-text font-semibold' : 'text-ink-muted2 hover:bg-[#EFF0F4]'"
+          :class="isActive(item.to) ? 'bg-brand-tint text-brand-text font-semibold' : 'text-ink-600 hover:bg-[#EFF0F4]'"
         >
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path :d="item.icon" /></svg>
           <span class="flex-1">{{ item.label }}</span>
@@ -169,7 +169,7 @@ async function signOut() {
         v-if="can('settings_access')"
         to="/settings"
         class="flex h-8 items-center gap-[9px] rounded-ctlSm px-[9px] text-[13.5px]"
-        :class="isActive('/settings') ? 'bg-brand-tint text-brand-text font-semibold' : 'text-ink-muted2 hover:bg-[#EFF0F4]'"
+        :class="isActive('/settings') ? 'bg-brand-tint text-brand-text font-semibold' : 'text-ink-600 hover:bg-[#EFF0F4]'"
       >
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="5.3" /><circle cx="8" cy="8" r="1.9" /></svg>
         <span class="flex-1">Settings</span>

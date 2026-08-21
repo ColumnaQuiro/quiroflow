@@ -7,9 +7,31 @@ const TOTAL_MIN = (END_HOUR - START_HOUR) * 60
 
 // Row scale per the redesign spec: day view gets a taller 76px/hour so a
 // two-line block (time + name) always has room; week view stays compact at
-// 44px/hour. These replace the old single SLOT_PX-per-clinic-slot constant.
-const DAY_HOUR_PX = 76
-const WEEK_HOUR_PX = 44
+// 44px/hour. These are floors, not fixed values -- on a viewport taller
+// than 12 hours' worth of rows, a fixed height left a dead gap between the
+// grid and the bottom of the page instead of filling it, so the actual
+// per-hour height grows to fill whatever vertical space is available
+// (tracked via ResizeObserver below) and only falls back to these minimums
+// on short viewports, where scrolling kicks back in.
+const DAY_HOUR_PX_MIN = 76
+const WEEK_HOUR_PX_MIN = 44
+const DAY_HEADER_PX = 40 // h-10 room-header row, excluded from available grid height
+const WEEK_HEADER_PX = 44 // h-11 day-header row
+
+const scrollAreaRef = ref<HTMLElement | null>(null)
+const scrollAreaHeight = ref(0)
+let scrollAreaObserver: ResizeObserver | null = null
+onMounted(() => {
+  if (!scrollAreaRef.value) return
+  scrollAreaObserver = new ResizeObserver(([entry]) => {
+    scrollAreaHeight.value = entry.contentRect.height
+  })
+  scrollAreaObserver.observe(scrollAreaRef.value)
+})
+onUnmounted(() => scrollAreaObserver?.disconnect())
+
+const DAY_HOUR_PX = computed(() => Math.max(DAY_HOUR_PX_MIN, Math.floor((scrollAreaHeight.value - DAY_HEADER_PX) / (END_HOUR - START_HOUR))))
+const WEEK_HOUR_PX = computed(() => Math.max(WEEK_HOUR_PX_MIN, Math.floor((scrollAreaHeight.value - WEEK_HEADER_PX) / (END_HOUR - START_HOUR))))
 
 // Historical bug: appointment blocks used to clip the patient name on short
 // (e.g. 30min) appointments because the block's minimum pixel height was too
@@ -355,8 +377,8 @@ function pxToTime(px: number, hourPx: number) {
   return `${pad(h)}:${pad(m)}`
 }
 
-const dayGridHeight = computed(() => (END_HOUR - START_HOUR) * DAY_HOUR_PX)
-const weekGridHeight = computed(() => (END_HOUR - START_HOUR) * WEEK_HOUR_PX)
+const dayGridHeight = computed(() => (END_HOUR - START_HOUR) * DAY_HOUR_PX.value)
+const weekGridHeight = computed(() => (END_HOUR - START_HOUR) * WEEK_HOUR_PX.value)
 const hourMarks = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => START_HOUR + i)
 function hourLabel(h: number) {
   return `${pad(h)}:00`
@@ -422,7 +444,7 @@ function timeRangeLabel(appt: AppointmentRow) {
 }
 
 function openCreateModal(roomId?: string, clickY?: number) {
-  const time = clickY !== undefined ? pxToTime(clickY, DAY_HOUR_PX) : '09:00'
+  const time = clickY !== undefined ? pxToTime(clickY, DAY_HOUR_PX.value) : '09:00'
   prefill.value = { date: toDateKey(anchorDate.value), time, roomId: roomId ?? '' }
   modalMode.value = 'create'
   editingAppointment.value = null
@@ -435,7 +457,7 @@ function openCreateModalForDay(day: Date) {
   modalOpen.value = true
 }
 function openCreateModalForDayAtY(day: Date, clickY: number) {
-  prefill.value = { date: toDateKey(day), time: pxToTime(clickY, WEEK_HOUR_PX), roomId: '' }
+  prefill.value = { date: toDateKey(day), time: pxToTime(clickY, WEEK_HOUR_PX.value), roomId: '' }
   modalMode.value = 'create'
   editingAppointment.value = null
   modalOpen.value = true
@@ -533,7 +555,7 @@ function assignOverlapLayout(sorted: AppointmentRow[], maxLanes: number, hourPx:
 // Week view doesn't split columns by room, so appointments in different
 // rooms at the same time can overlap within a single day column.
 function layoutForDay(day: Date): LayoutBlock[] {
-  return assignOverlapLayout(appointmentsForDay(day), WEEK_MAX_LANES, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX)
+  return assignOverlapLayout(appointmentsForDay(day), WEEK_MAX_LANES, WEEK_HOUR_PX.value, WEEK_MIN_BLOCK_PX)
 }
 
 // Day view splits columns by room, but two appointments can still be
@@ -541,7 +563,7 @@ function layoutForDay(day: Date): LayoutBlock[] {
 // all render at full column width and visually stack on top of each other.
 function layoutForRoom(roomId: string): LayoutBlock[] {
   const sorted = [...appointmentsForRoom(roomId)].sort((a, b) => a.starts_at.localeCompare(b.starts_at))
-  return assignOverlapLayout(sorted, DAY_MAX_LANES, DAY_HOUR_PX, DAY_MIN_BLOCK_PX)
+  return assignOverlapLayout(sorted, DAY_MAX_LANES, DAY_HOUR_PX.value, DAY_MIN_BLOCK_PX)
 }
 function showOverflowDay(day: Date) {
   anchorDate.value = day
@@ -636,7 +658,7 @@ onUnmounted(() => {
 })
 const nowWithinHours = computed(() => now.value.getHours() >= START_HOUR && now.value.getHours() < END_HOUR)
 const showNowLine = computed(() => viewMode.value === 'day' && isSameDate(now.value, anchorDate.value) && nowWithinHours.value)
-const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX))
+const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.value))
 </script>
 
 <template>
@@ -746,7 +768,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX))
       </aside>
 
       <!-- Main content -->
-      <div class="flex min-w-0 flex-1 flex-col overflow-y-auto">
+      <div ref="scrollAreaRef" class="flex min-w-0 flex-1 flex-col overflow-y-auto">
         <CalendarFlowTracker
           v-if="settings.flowTracker"
           class="m-4"

@@ -56,34 +56,34 @@ watch(user, async (value) => {
 </script>
 
 <template>
-  <div class="flex min-h-screen items-center justify-center bg-gray-50 px-4">
-    <div class="w-full max-w-sm rounded-lg border border-gray-200 bg-white p-8 text-center">
+  <div class="flex min-h-screen items-center justify-center bg-surface-page px-4">
+    <div class="w-full max-w-sm rounded-card border border-line bg-surface p-8 text-center">
       <template v-if="state === 'checking' || state === 'accepting'">
-        <p class="text-sm text-gray-600">{{ state === 'accepting' ? 'Joining the practice…' : 'Checking your invite…' }}</p>
+        <p class="text-sm text-ink-500">{{ state === 'accepting' ? 'Joining the practice…' : 'Checking your invite…' }}</p>
       </template>
 
       <template v-else-if="state === 'need-auth'">
-        <h1 class="text-lg font-semibold text-gray-900">You've been invited to QuiroFlow</h1>
-        <p class="mt-2 text-sm text-gray-600">Sign in or create an account to join.</p>
+        <h1 class="text-lg font-semibold text-ink-900">You've been invited to QuiroFlow</h1>
+        <p class="mt-2 text-sm text-ink-500">Sign in or create an account to join.</p>
         <div class="mt-4 flex flex-col gap-2">
-          <NuxtLink to="/login" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+          <NuxtLink to="/login" class="rounded-ctl bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover">
             Sign in
           </NuxtLink>
-          <NuxtLink to="/signup" class="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+          <NuxtLink to="/signup" class="rounded-ctl border border-line-control px-4 py-2 text-sm font-medium text-ink-700 hover:bg-surface-subtle">
             Create an account
           </NuxtLink>
         </div>
       </template>
 
       <template v-else-if="state === 'already-member'">
-        <p class="text-sm text-gray-600">You're already part of a practice.</p>
-        <NuxtLink to="/dashboard" class="mt-4 inline-block text-sm font-medium text-indigo-600 hover:text-indigo-500">
+        <p class="text-sm text-ink-500">You're already part of a practice.</p>
+        <NuxtLink to="/dashboard" class="mt-4 inline-block text-sm font-medium text-brand hover:text-brand-hover">
           Go to dashboard
         </NuxtLink>
       </template>
 
       <template v-else>
-        <p class="text-sm text-red-600">{{ errorMessage }}</p>
+        <p class="text-sm text-danger-text">{{ errorMessage }}</p>
       </template>
     </div>
   </div>

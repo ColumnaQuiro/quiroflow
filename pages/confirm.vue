@@ -16,7 +16,7 @@ watch(
 </script>
 
 <template>
-  <div class="flex min-h-screen items-center justify-center bg-gray-50 px-4">
-    <p class="text-sm text-gray-600">Confirming your email…</p>
+  <div class="flex min-h-screen items-center justify-center bg-surface-page px-4">
+    <p class="text-sm text-ink-500">Confirming your email…</p>
   </div>
 </template>

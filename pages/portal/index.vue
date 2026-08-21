@@ -52,37 +52,37 @@ watch(
 )
 
 const statusClass: Record<string, string> = {
-  paid: 'bg-green-50 text-green-700',
-  unpaid: 'bg-red-50 text-red-700',
-  void: 'bg-gray-100 text-gray-500',
+  paid: 'bg-success-bg text-success-text',
+  unpaid: 'bg-danger-bg text-danger-text',
+  void: 'bg-chip-bg text-chip-text',
 }
 </script>
 
 <template>
-  <div v-if="loading" class="text-sm text-gray-400">Loading…</div>
-  <div v-else-if="loadError" class="text-sm text-red-600">{{ loadError }}</div>
-  <div v-else-if="!patient" class="text-sm text-gray-400">No patient record found.</div>
+  <div v-if="loading" class="text-sm text-ink-faint">Loading…</div>
+  <div v-else-if="loadError" class="text-sm text-danger-text">{{ loadError }}</div>
+  <div v-else-if="!patient" class="text-sm text-ink-faint">No patient record found.</div>
   <div v-else>
-    <h1 class="text-xl font-semibold text-gray-900">Hi {{ patient.first_name }}</h1>
+    <h1 class="text-xl font-semibold text-ink-900">Hi {{ patient.first_name }}</h1>
 
     <section class="mt-6">
-      <h2 class="text-sm font-semibold text-gray-900">Upcoming appointments</h2>
-      <div class="mt-2 overflow-hidden rounded-lg border border-gray-200 bg-white">
-        <ul v-if="appointments.length > 0" class="divide-y divide-gray-100">
+      <h2 class="text-sm font-semibold text-ink-900">Upcoming appointments</h2>
+      <div class="mt-2 overflow-hidden rounded-card border border-line bg-surface">
+        <ul v-if="appointments.length > 0" class="divide-y divide-line">
           <li v-for="appt in appointments" :key="appt.id" class="px-4 py-3 text-sm">
-            <p class="font-medium text-gray-900">{{ new Date(appt.starts_at).toLocaleString() }}</p>
-            <p class="text-gray-500">{{ appt.appointment_types?.name ?? 'Appointment' }} &middot; {{ appt.status }}</p>
+            <p class="font-medium text-ink-900">{{ new Date(appt.starts_at).toLocaleString() }}</p>
+            <p class="text-ink-muted">{{ appt.appointment_types?.name ?? 'Appointment' }} &middot; {{ appt.status }}</p>
           </li>
         </ul>
-        <p v-else class="p-6 text-center text-sm text-gray-400">No upcoming appointments.</p>
+        <p v-else class="p-6 text-center text-sm text-ink-faint">No upcoming appointments.</p>
       </div>
     </section>
 
     <section class="mt-6">
-      <h2 class="text-sm font-semibold text-gray-900">Invoices</h2>
-      <div class="mt-2 overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <h2 class="text-sm font-semibold text-ink-900">Invoices</h2>
+      <div class="mt-2 overflow-hidden rounded-card border border-line bg-surface">
         <table v-if="invoices.length > 0" class="w-full text-sm">
-          <thead class="border-b border-gray-200 bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
+          <thead class="border-b border-line bg-surface-subtle text-left text-xs font-medium uppercase tracking-wide text-ink-muted">
             <tr>
               <th class="px-4 py-2">Date</th>
               <th class="px-4 py-2">Invoice #</th>
@@ -90,18 +90,18 @@ const statusClass: Record<string, string> = {
               <th class="px-4 py-2">Status</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-gray-100">
+          <tbody class="divide-y divide-line">
             <tr v-for="inv in invoices" :key="inv.id">
-              <td class="px-4 py-2.5 text-gray-900">{{ new Date(inv.created_at).toLocaleDateString() }}</td>
-              <td class="px-4 py-2.5 text-gray-500">{{ inv.invoice_number }}</td>
-              <td class="px-4 py-2.5 text-gray-900">€{{ (inv.total_cents / 100).toFixed(2) }}</td>
+              <td class="px-4 py-2.5 text-ink-900">{{ new Date(inv.created_at).toLocaleDateString() }}</td>
+              <td class="px-4 py-2.5 text-ink-muted">{{ inv.invoice_number }}</td>
+              <td class="px-4 py-2.5 text-ink-900">€{{ (inv.total_cents / 100).toFixed(2) }}</td>
               <td class="px-4 py-2.5">
                 <span class="rounded px-1.5 py-0.5 text-xs font-medium" :class="statusClass[inv.status]">{{ inv.status }}</span>
               </td>
             </tr>
           </tbody>
         </table>
-        <p v-else class="p-6 text-center text-sm text-gray-400">No invoices yet.</p>
+        <p v-else class="p-6 text-center text-sm text-ink-faint">No invoices yet.</p>
       </div>
     </section>
   </div>

@@ -32,48 +32,44 @@ async function onSubmit() {
 </script>
 
 <template>
-  <div class="flex min-h-screen items-center justify-center bg-gray-50 px-4">
-    <div class="w-full max-w-sm rounded-lg border border-gray-200 bg-white p-8 shadow-sm">
-      <h1 class="text-xl font-semibold text-gray-900">Set a new password</h1>
+  <div class="flex min-h-screen items-center justify-center bg-surface-page px-4">
+    <div class="w-full max-w-sm rounded-card border border-line bg-surface p-8 shadow-card">
+      <h1 class="text-xl font-semibold text-ink-900">Set a new password</h1>
 
-      <div v-if="done" class="mt-6 text-sm text-green-600">Password updated. Taking you to your dashboard…</div>
+      <div v-if="done" class="mt-6 text-sm text-success-text">Password updated. Taking you to your dashboard…</div>
 
-      <div v-else-if="!user" class="mt-6 text-sm text-gray-500">
+      <div v-else-if="!user" class="mt-6 text-sm text-ink-muted">
         This link is invalid or has expired.
-        <NuxtLink to="/forgot-password" class="font-medium text-indigo-600 hover:text-indigo-500">Request a new one</NuxtLink>.
+        <NuxtLink to="/forgot-password" class="font-medium text-brand hover:text-brand-hover">Request a new one</NuxtLink>.
       </div>
 
       <form v-else class="mt-6 space-y-4" @submit.prevent="onSubmit">
         <div>
-          <label class="block text-sm font-medium text-gray-700" for="password">New password</label>
+          <label class="block text-sm font-medium text-ink-700" for="password">New password</label>
           <input
             id="password"
             v-model="password"
             type="password"
             required
             minlength="8"
-            class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           />
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700" for="confirm">Confirm new password</label>
+          <label class="block text-sm font-medium text-ink-700" for="confirm">Confirm new password</label>
           <input
             id="confirm"
             v-model="confirmPassword"
             type="password"
             required
             minlength="8"
-            class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           />
         </div>
-        <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
-        <button
-          type="submit"
-          :disabled="loading"
-          class="w-full rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
-        >
+        <p v-if="error" class="text-sm text-danger-text">{{ error }}</p>
+        <UiBtn type="submit" variant="primary" class="w-full" :disabled="loading">
           {{ loading ? 'Saving…' : 'Update password' }}
-        </button>
+        </UiBtn>
       </form>
     </div>
   </div>

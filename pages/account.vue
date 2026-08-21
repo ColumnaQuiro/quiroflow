@@ -71,48 +71,48 @@ async function changePassword() {
 
 <template>
   <div class="max-w-lg">
-    <h1 class="text-xl font-semibold text-gray-900">Account Settings</h1>
-    <p class="mt-1 text-sm text-gray-500">Your personal details and login.</p>
+    <h1 class="text-xl font-semibold text-ink-900">Account Settings</h1>
+    <p class="mt-1 text-sm text-ink-muted">Your personal details and login.</p>
 
-    <form class="mt-6 space-y-4 rounded-lg border border-gray-200 bg-white p-4" @submit.prevent="saveProfile">
-      <h2 class="text-sm font-semibold text-gray-900">Personal Details</h2>
+    <form class="mt-6 space-y-4 rounded-card border border-line bg-surface p-4 shadow-card" @submit.prevent="saveProfile">
+      <h2 class="text-sm font-semibold text-ink-900">Personal Details</h2>
       <div>
-        <label class="block text-sm font-medium text-gray-700">Full Name</label>
-        <input v-model="fullName" type="text" required class="mt-1 w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+        <label class="block text-sm font-medium text-ink-700">Full Name</label>
+        <input v-model="fullName" type="text" required class="mt-1 w-full rounded-ctl border border-line-control px-3 py-1.5 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
       </div>
       <div>
-        <label class="block text-sm font-medium text-gray-700">Email</label>
-        <input :value="user?.email" type="email" disabled class="mt-1 w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm text-gray-500" />
+        <label class="block text-sm font-medium text-ink-700">Email</label>
+        <input :value="user?.email" type="email" disabled class="mt-1 w-full rounded-ctl border border-line bg-surface-subtle px-3 py-1.5 text-sm text-ink-muted" />
       </div>
       <div>
-        <label class="block text-sm font-medium text-gray-700">Calendar Color</label>
-        <input v-model="color" type="color" class="mt-1 h-9 w-14 rounded-md border border-gray-300" />
+        <label class="block text-sm font-medium text-ink-700">Calendar Color</label>
+        <input v-model="color" type="color" class="mt-1 h-9 w-14 rounded-ctl border border-line-control" />
       </div>
       <div class="flex items-center gap-3">
-        <button type="submit" :disabled="savingProfile" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
+        <UiBtn type="submit" variant="primary" :disabled="savingProfile">
           {{ savingProfile ? 'Saving…' : 'Save' }}
-        </button>
-        <p v-if="profileSaved" class="text-sm text-green-600">Saved.</p>
-        <p v-if="profileError" class="text-sm text-red-600">{{ profileError }}</p>
+        </UiBtn>
+        <p v-if="profileSaved" class="text-sm text-success-text">Saved.</p>
+        <p v-if="profileError" class="text-sm text-danger-text">{{ profileError }}</p>
       </div>
     </form>
 
-    <form class="mt-6 space-y-4 rounded-lg border border-gray-200 bg-white p-4" @submit.prevent="changePassword">
-      <h2 class="text-sm font-semibold text-gray-900">Change Password</h2>
+    <form class="mt-6 space-y-4 rounded-card border border-line bg-surface p-4 shadow-card" @submit.prevent="changePassword">
+      <h2 class="text-sm font-semibold text-ink-900">Change Password</h2>
       <div>
-        <label class="block text-sm font-medium text-gray-700">New Password</label>
-        <input v-model="newPassword" type="password" required minlength="8" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+        <label class="block text-sm font-medium text-ink-700">New Password</label>
+        <input v-model="newPassword" type="password" required minlength="8" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-1.5 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
       </div>
       <div>
-        <label class="block text-sm font-medium text-gray-700">Confirm New Password</label>
-        <input v-model="confirmPassword" type="password" required minlength="8" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+        <label class="block text-sm font-medium text-ink-700">Confirm New Password</label>
+        <input v-model="confirmPassword" type="password" required minlength="8" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-1.5 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
       </div>
       <div class="flex items-center gap-3">
-        <button type="submit" :disabled="savingPassword" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
+        <UiBtn type="submit" variant="primary" :disabled="savingPassword">
           {{ savingPassword ? 'Saving…' : 'Update Password' }}
-        </button>
-        <p v-if="passwordSaved" class="text-sm text-green-600">Password updated.</p>
-        <p v-if="passwordError" class="text-sm text-red-600">{{ passwordError }}</p>
+        </UiBtn>
+        <p v-if="passwordSaved" class="text-sm text-success-text">Password updated.</p>
+        <p v-if="passwordError" class="text-sm text-danger-text">{{ passwordError }}</p>
       </div>
     </form>
   </div>

@@ -242,66 +242,61 @@ if (import.meta.client) {
 </script>
 
 <template>
-  <div class="min-h-screen bg-stone-50 px-4 py-10">
+  <div class="min-h-screen bg-surface-page px-4 py-10">
     <div class="mx-auto max-w-5xl">
-      <div v-if="phase === 'loading'" class="py-24 text-center text-sm text-gray-400">Cargando…</div>
+      <div v-if="phase === 'loading'" class="py-24 text-center text-sm text-ink-faint">Cargando…</div>
 
-      <div v-else-if="phase === 'not_found'" class="rounded-lg border border-gray-200 bg-white p-10 text-center">
-        <p class="text-gray-500">La reserva online no está disponible para esta clínica.</p>
+      <div v-else-if="phase === 'not_found'" class="rounded-card border border-line bg-surface p-10 text-center">
+        <p class="text-ink-muted">La reserva online no está disponible para esta clínica.</p>
       </div>
 
       <template v-else-if="info">
-        <h1 class="text-center text-2xl font-semibold text-gray-900">Reservar una cita</h1>
-        <p class="mt-1 text-center text-sm text-gray-500">{{ info.account.name }}</p>
+        <h1 class="text-center text-2xl font-semibold text-ink-900">Reservar una cita</h1>
+        <p class="mt-1 text-center text-sm text-ink-muted">{{ info.account.name }}</p>
 
         <!-- Step 0: service / practitioner selection -->
-        <div v-if="phase === 'select'" class="mx-auto mt-8 max-w-md rounded-lg border border-gray-200 bg-white p-6">
+        <div v-if="phase === 'select'" class="mx-auto mt-8 max-w-md rounded-card border border-line bg-surface p-6 shadow-card">
           <div v-if="info.clinics.length > 1">
-            <label class="block text-sm font-medium text-gray-700">Clínica</label>
-            <select v-model="clinicId" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm" @change="onClinicChange">
+            <label class="block text-sm font-medium text-ink-700">Clínica</label>
+            <select v-model="clinicId" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm" @change="onClinicChange">
               <option v-for="c in info.clinics" :key="c.id" :value="c.id">{{ c.name }}</option>
             </select>
           </div>
           <div v-if="info.appointment_types.length > 1" class="mt-4">
-            <label class="block text-sm font-medium text-gray-700">Servicio</label>
-            <select v-model="appointmentTypeId" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
+            <label class="block text-sm font-medium text-ink-700">Servicio</label>
+            <select v-model="appointmentTypeId" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm">
               <option v-for="t in info.appointment_types" :key="t.id" :value="t.id">
                 {{ t.name }} — {{ t.duration_minutes }} min
               </option>
             </select>
           </div>
           <div v-if="availablePractitioners.length > 1" class="mt-4">
-            <label class="block text-sm font-medium text-gray-700">Profesional</label>
-            <select v-model="teamMemberId" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
+            <label class="block text-sm font-medium text-ink-700">Profesional</label>
+            <select v-model="teamMemberId" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm">
               <option v-for="m in availablePractitioners" :key="m.id" :value="m.id">{{ m.full_name }}</option>
             </select>
           </div>
-          <p v-if="availablePractitioners.length === 0" class="mt-4 text-sm text-red-600">
+          <p v-if="availablePractitioners.length === 0" class="mt-4 text-sm text-danger-text">
             No hay profesionales disponibles para reserva online en esta clínica.
           </p>
-          <button
-            type="button"
-            :disabled="!canContinueFromSelect"
-            class="mt-6 w-full rounded-md bg-green-800 px-4 py-2.5 text-sm font-medium text-white hover:bg-green-900 disabled:opacity-50"
-            @click="proceedToDatetime"
-          >
+          <UiBtn type="button" variant="primary" class="mt-6 w-full" :disabled="!canContinueFromSelect" @click="proceedToDatetime">
             Continuar
-          </button>
+          </UiBtn>
         </div>
 
         <!-- Step 1: date & time -->
         <div v-else-if="phase === 'datetime'">
-          <p class="mt-6 text-center text-xs font-semibold uppercase tracking-wide text-amber-700">Paso 1 de 2</p>
-          <h2 class="text-center text-xl font-semibold text-gray-900">Elija su fecha y hora</h2>
+          <p class="mt-6 text-center text-xs font-semibold uppercase tracking-wide text-warning-text">Paso 1 de 2</p>
+          <h2 class="text-center text-xl font-semibold text-ink-900">Elija su fecha y hora</h2>
 
           <div class="mt-6 grid gap-6 md:grid-cols-3">
-            <div class="rounded-lg border border-gray-200 bg-white p-4">
+            <div class="rounded-card border border-line bg-surface p-4 shadow-card">
               <div class="flex items-center justify-between">
-                <button type="button" class="rounded p-1 text-gray-400 hover:bg-gray-100" @click="prevMonth">&lsaquo;</button>
-                <span class="text-sm font-semibold text-gray-900">{{ monthLabel }}</span>
-                <button type="button" class="rounded p-1 text-gray-400 hover:bg-gray-100" @click="nextMonth">&rsaquo;</button>
+                <button type="button" class="rounded p-1 text-ink-faint hover:bg-surface-subtle" @click="prevMonth">&lsaquo;</button>
+                <span class="text-sm font-semibold text-ink-900">{{ monthLabel }}</span>
+                <button type="button" class="rounded p-1 text-ink-faint hover:bg-surface-subtle" @click="nextMonth">&rsaquo;</button>
               </div>
-              <div class="mt-3 grid grid-cols-7 gap-1 text-center text-xs font-medium text-gray-400">
+              <div class="mt-3 grid grid-cols-7 gap-1 text-center text-xs font-medium text-ink-faint">
                 <span v-for="l in WEEKDAY_LABELS" :key="l">{{ l }}</span>
               </div>
               <div class="mt-1 grid grid-cols-7 gap-1">
@@ -312,8 +307,8 @@ if (import.meta.client) {
                   :disabled="!day.bookable"
                   class="aspect-square rounded-full text-sm"
                   :class="[
-                    !day.inMonth ? 'text-gray-300' : day.bookable ? 'text-gray-700 hover:bg-green-50' : 'text-gray-300',
-                    selectedDate && isSameDay(day.date, selectedDate) ? 'bg-green-800 text-white hover:bg-green-800' : '',
+                    !day.inMonth ? 'text-ink-faint' : day.bookable ? 'text-ink-700 hover:bg-brand-tint' : 'text-ink-faint',
+                    selectedDate && isSameDay(day.date, selectedDate) ? 'bg-brand text-white hover:bg-brand' : '',
                   ]"
                   @click="selectDate(day)"
                 >
@@ -322,23 +317,23 @@ if (import.meta.client) {
               </div>
             </div>
 
-            <div class="rounded-lg border border-gray-200 bg-white p-4">
-              <p v-if="!selectedDate" class="text-sm text-gray-400">Elija un día del calendario.</p>
+            <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+              <p v-if="!selectedDate" class="text-sm text-ink-faint">Elija un día del calendario.</p>
               <template v-else>
-                <p class="text-sm font-semibold text-gray-900">
+                <p class="text-sm font-semibold text-ink-900">
                   {{ selectedDate.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) }}
                 </p>
-                <div v-if="slotsLoading" class="mt-3 text-sm text-gray-400">Cargando horarios…</div>
+                <div v-if="slotsLoading" class="mt-3 text-sm text-ink-faint">Cargando horarios…</div>
                 <template v-else>
-                  <div v-if="daySlots.length === 0" class="mt-3 text-sm text-gray-400">No hay horas disponibles ese día.</div>
+                  <div v-if="daySlots.length === 0" class="mt-3 text-sm text-ink-faint">No hay horas disponibles ese día.</div>
                   <div v-if="morningSlots.length" class="mt-3">
-                    <p class="text-xs font-medium uppercase text-gray-400">Mañana</p>
+                    <p class="text-xs font-medium uppercase text-ink-faint">Mañana</p>
                     <div class="mt-1.5 flex flex-wrap gap-2">
                       <button
                         v-for="s in morningSlots"
                         :key="s.toISOString()"
                         type="button"
-                        class="rounded-md bg-green-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-900"
+                        class="rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-hover"
                         @click="pickSlot(s)"
                       >
                         {{ s.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) }}
@@ -346,13 +341,13 @@ if (import.meta.client) {
                     </div>
                   </div>
                   <div v-if="afternoonSlots.length" class="mt-3">
-                    <p class="text-xs font-medium uppercase text-gray-400">Tarde</p>
+                    <p class="text-xs font-medium uppercase text-ink-faint">Tarde</p>
                     <div class="mt-1.5 flex flex-wrap gap-2">
                       <button
                         v-for="s in afternoonSlots"
                         :key="s.toISOString()"
                         type="button"
-                        class="rounded-md bg-green-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-900"
+                        class="rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-hover"
                         @click="pickSlot(s)"
                       >
                         {{ s.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) }}
@@ -371,47 +366,47 @@ if (import.meta.client) {
         <div v-else-if="phase === 'details'">
           <div class="mt-6 flex items-center justify-between">
             <div>
-              <p class="text-xs font-semibold uppercase tracking-wide text-amber-700">Paso 2 de 2</p>
-              <h2 class="text-xl font-semibold text-gray-900">Introduzca sus datos</h2>
+              <p class="text-xs font-semibold uppercase tracking-wide text-warning-text">Paso 2 de 2</p>
+              <h2 class="text-xl font-semibold text-ink-900">Introduzca sus datos</h2>
             </div>
-            <button type="button" class="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50" @click="backToDatetime">
+            <UiBtn type="button" variant="secondary" @click="backToDatetime">
               &larr; Atrás
-            </button>
+            </UiBtn>
           </div>
 
           <div class="mt-6 grid gap-6 md:grid-cols-3">
-            <form class="rounded-lg border border-gray-200 bg-white p-6 md:col-span-2" @submit.prevent="submitBooking">
+            <form class="rounded-card border border-line bg-surface p-6 shadow-card md:col-span-2" @submit.prevent="submitBooking">
               <div class="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label class="block text-sm font-medium text-gray-700">Nombre *</label>
-                  <input v-model="firstName" type="text" required placeholder="Su nombre" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-green-700 focus:outline-none focus:ring-1 focus:ring-green-700" />
+                  <label class="block text-sm font-medium text-ink-700">Nombre *</label>
+                  <input v-model="firstName" type="text" required placeholder="Su nombre" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
                 </div>
                 <div>
-                  <label class="block text-sm font-medium text-gray-700">Apellidos</label>
-                  <input v-model="lastName" type="text" placeholder="Sus apellidos" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-green-700 focus:outline-none focus:ring-1 focus:ring-green-700" />
+                  <label class="block text-sm font-medium text-ink-700">Apellidos</label>
+                  <input v-model="lastName" type="text" placeholder="Sus apellidos" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
                 </div>
                 <div>
-                  <label class="block text-sm font-medium text-gray-700">Correo electrónico *</label>
-                  <input v-model="email" type="email" required placeholder="Su dirección de correo" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-green-700 focus:outline-none focus:ring-1 focus:ring-green-700" />
+                  <label class="block text-sm font-medium text-ink-700">Correo electrónico *</label>
+                  <input v-model="email" type="email" required placeholder="Su dirección de correo" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
                 </div>
                 <div>
-                  <label class="block text-sm font-medium text-gray-700">Número de móvil</label>
+                  <label class="block text-sm font-medium text-ink-700">Número de móvil</label>
                   <div class="mt-1 flex gap-2">
-                    <select v-model="dialCode" class="rounded-md border border-gray-300 px-2 py-2 text-sm">
+                    <select v-model="dialCode" class="rounded-ctl border border-line-control px-2 py-2 text-sm">
                       <option v-for="c in COUNTRIES" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }}</option>
                     </select>
-                    <input v-model="phoneNumber" type="tel" class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-green-700 focus:outline-none focus:ring-1 focus:ring-green-700" />
+                    <input v-model="phoneNumber" type="tel" class="w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
                   </div>
                 </div>
               </div>
               <div class="mt-4">
-                <label class="block text-sm font-medium text-gray-700">Notas</label>
-                <textarea v-model="note" rows="3" placeholder="¿Algo que quiera que sepamos?" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-green-700 focus:outline-none focus:ring-1 focus:ring-green-700"></textarea>
+                <label class="block text-sm font-medium text-ink-700">Notas</label>
+                <textarea v-model="note" rows="3" placeholder="¿Algo que quiera que sepamos?" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"></textarea>
               </div>
-              <p v-if="submitError" class="mt-3 text-sm text-red-600">{{ submitError }}</p>
-              <button type="submit" :disabled="submitting" class="mt-5 rounded-md bg-green-800 px-5 py-2.5 text-sm font-medium text-white hover:bg-green-900 disabled:opacity-50">
+              <p v-if="submitError" class="mt-3 text-sm text-danger-text">{{ submitError }}</p>
+              <UiBtn type="submit" variant="primary" class="mt-5" :disabled="submitting">
                 {{ submitting ? 'Reservando…' : 'Reservar cita' }}
-              </button>
+              </UiBtn>
             </form>
 
             <BookingSummary :clinic="clinic" :appointment-type="appointmentType" :team-member="teamMember" :slot="selectedSlot" :format-price="formatPrice" />
@@ -419,14 +414,14 @@ if (import.meta.client) {
         </div>
 
         <!-- Success -->
-        <div v-else-if="phase === 'success'" class="mx-auto mt-10 max-w-md rounded-lg border border-gray-200 bg-white p-8 text-center">
-          <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-green-100 text-2xl text-green-800">✓</div>
-          <h2 class="mt-4 text-lg font-semibold text-gray-900">¡Cita reservada!</h2>
-          <p class="mt-2 text-sm text-gray-500">
+        <div v-else-if="phase === 'success'" class="mx-auto mt-10 max-w-md rounded-card border border-line bg-surface p-8 text-center shadow-card">
+          <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-success-bg text-2xl text-success-text">✓</div>
+          <h2 class="mt-4 text-lg font-semibold text-ink-900">¡Cita reservada!</h2>
+          <p class="mt-2 text-sm text-ink-muted">
             {{ confirmation ? new Date(confirmation.starts_at).toLocaleString('es-ES', { dateStyle: 'full', timeStyle: 'short' }) : '' }}
           </p>
-          <p class="mt-1 text-sm text-gray-500">{{ teamMember?.full_name }} · {{ clinic?.name }}</p>
-          <p class="mt-4 text-xs text-gray-400">Le hemos enviado los detalles a {{ email }}.</p>
+          <p class="mt-1 text-sm text-ink-muted">{{ teamMember?.full_name }} · {{ clinic?.name }}</p>
+          <p class="mt-4 text-xs text-ink-faint">Le hemos enviado los detalles a {{ email }}.</p>
         </div>
       </template>
     </div>

@@ -24,42 +24,38 @@ async function onSubmit() {
 </script>
 
 <template>
-  <div class="flex min-h-screen items-center justify-center bg-gray-50 px-4">
-    <div class="w-full max-w-sm rounded-lg border border-gray-200 bg-white p-8 shadow-sm">
-      <h1 class="text-xl font-semibold text-gray-900">Patient sign in</h1>
+  <div class="flex min-h-screen items-center justify-center bg-surface-page px-4">
+    <div class="w-full max-w-sm rounded-card border border-line bg-surface p-8 shadow-card">
+      <h1 class="text-xl font-semibold text-ink-900">Patient sign in</h1>
       <form class="mt-6 space-y-4" @submit.prevent="onSubmit">
         <div>
-          <label class="block text-sm font-medium text-gray-700" for="email">Email</label>
+          <label class="block text-sm font-medium text-ink-700" for="email">Email</label>
           <input
             id="email"
             v-model="email"
             type="email"
             required
-            class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           />
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700" for="password">Password</label>
+          <label class="block text-sm font-medium text-ink-700" for="password">Password</label>
           <input
             id="password"
             v-model="password"
             type="password"
             required
-            class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           />
         </div>
-        <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
-        <button
-          type="submit"
-          :disabled="loading"
-          class="w-full rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
-        >
+        <p v-if="error" class="text-sm text-danger-text">{{ error }}</p>
+        <UiBtn type="submit" variant="primary" class="w-full" :disabled="loading">
           {{ loading ? 'Signing in…' : 'Sign in' }}
-        </button>
+        </UiBtn>
       </form>
-      <p class="mt-4 text-center text-sm text-gray-500">
+      <p class="mt-4 text-center text-sm text-ink-muted">
         First time here?
-        <NuxtLink to="/portal/signup" class="font-medium text-indigo-600 hover:text-indigo-500">Create an account</NuxtLink>
+        <NuxtLink to="/portal/signup" class="font-medium text-brand hover:text-brand-hover">Create an account</NuxtLink>
       </p>
     </div>
   </div>

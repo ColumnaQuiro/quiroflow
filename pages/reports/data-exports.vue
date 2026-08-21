@@ -99,92 +99,92 @@ function exportCsv(filename: string, rows: PatientRow[]) {
 </script>
 
 <template>
-  <div>
-    <div class="flex items-center justify-between">
-      <h1 class="text-xl font-semibold text-gray-900">Data Exports</h1>
-      <NuxtLink to="/reports" class="text-sm text-gray-500 hover:text-gray-700">&larr; Reports</NuxtLink>
-    </div>
-    <p class="mt-1 text-sm text-gray-500">Gaps in patient records worth chasing down, and patient load per practitioner.</p>
+  <div class="flex h-full flex-col">
+    <PageHeader title="Data Exports" meta="Gaps in patient records worth chasing down">
+      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; Reports</NuxtLink>
+    </PageHeader>
 
-    <div v-if="loading" class="mt-6 text-sm text-gray-400">Loading…</div>
+    <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
+      <div v-if="loading" class="text-[13px] text-ink-faint2">Loading…</div>
 
-    <div v-else class="mt-6 space-y-4">
-      <div class="rounded-lg border border-gray-200 bg-white">
-        <button type="button" class="flex w-full items-center justify-between p-4 text-left" @click="toggle('email')">
-          <span class="text-sm font-medium text-gray-900">Missing email</span>
-          <span class="text-sm text-gray-500">{{ withoutEmail.length }} patients</span>
-        </button>
-        <div v-if="expanded === 'email'" class="border-t border-gray-100 p-4">
-          <button type="button" class="mb-2 text-xs font-medium text-indigo-600 hover:text-indigo-500" @click="exportCsv('missing-email.csv', withoutEmail)">Export CSV</button>
-          <ul class="max-h-64 overflow-y-auto divide-y divide-gray-100 text-sm">
-            <li v-for="p in withoutEmail" :key="p.id" class="py-1.5">
-              <NuxtLink :to="`/patients/${p.id}`" class="text-gray-700 hover:text-indigo-600">{{ label(p) }}</NuxtLink>
+      <div v-else class="space-y-4">
+        <div class="rounded-card border border-line bg-surface shadow-card">
+          <button type="button" class="flex w-full items-center justify-between p-4 text-left" @click="toggle('email')">
+            <span class="text-[13px] font-medium text-ink-900">Missing email</span>
+            <span class="font-mono text-[13px] text-ink-muted2">{{ withoutEmail.length }} patients</span>
+          </button>
+          <div v-if="expanded === 'email'" class="border-t border-line-divider p-4">
+            <UiBtn variant="ghost" size="sm" class="mb-2" @click="exportCsv('missing-email.csv', withoutEmail)">Export CSV</UiBtn>
+            <ul class="max-h-64 overflow-y-auto divide-y divide-line-row text-[13px]">
+              <li v-for="p in withoutEmail" :key="p.id" class="py-1.5">
+                <NuxtLink :to="`/patients/${p.id}`" class="text-ink-600 hover:text-brand-text">{{ label(p) }}</NuxtLink>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="rounded-card border border-line bg-surface shadow-card">
+          <button type="button" class="flex w-full items-center justify-between p-4 text-left" @click="toggle('phone')">
+            <span class="text-[13px] font-medium text-ink-900">Missing phone number</span>
+            <span class="font-mono text-[13px] text-ink-muted2">{{ withoutPhone.length }} patients</span>
+          </button>
+          <div v-if="expanded === 'phone'" class="border-t border-line-divider p-4">
+            <UiBtn variant="ghost" size="sm" class="mb-2" @click="exportCsv('missing-phone.csv', withoutPhone)">Export CSV</UiBtn>
+            <ul class="max-h-64 overflow-y-auto divide-y divide-line-row text-[13px]">
+              <li v-for="p in withoutPhone" :key="p.id" class="py-1.5">
+                <NuxtLink :to="`/patients/${p.id}`" class="text-ink-600 hover:text-brand-text">{{ label(p) }}</NuxtLink>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="rounded-card border border-line bg-surface shadow-card">
+          <button type="button" class="flex w-full items-center justify-between p-4 text-left" @click="toggle('dp')">
+            <span class="text-[13px] font-medium text-ink-900">Missing data protection form</span>
+            <span class="font-mono text-[13px] text-ink-muted2">{{ withoutDataProtection.length }} patients</span>
+          </button>
+          <div v-if="expanded === 'dp'" class="border-t border-line-divider p-4">
+            <p class="mb-2 text-[12px] text-ink-faint2">
+              Based on the template marked <strong>Data protection</strong> in
+              <NuxtLink to="/settings/docs" class="text-brand-text hover:text-brand-hover">Settings &rarr; Docs</NuxtLink>.
+            </p>
+            <UiBtn variant="ghost" size="sm" class="mb-2" @click="exportCsv('missing-data-protection.csv', withoutDataProtection)">Export CSV</UiBtn>
+            <ul class="max-h-64 overflow-y-auto divide-y divide-line-row text-[13px]">
+              <li v-for="p in withoutDataProtection" :key="p.id" class="py-1.5">
+                <NuxtLink :to="`/patients/${p.id}`" class="text-ink-600 hover:text-brand-text">{{ label(p) }}</NuxtLink>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="rounded-card border border-line bg-surface shadow-card">
+          <button type="button" class="flex w-full items-center justify-between p-4 text-left" @click="toggle('consent')">
+            <span class="text-[13px] font-medium text-ink-900">Missing consent form</span>
+            <span class="font-mono text-[13px] text-ink-muted2">{{ withoutConsent.length }} patients</span>
+          </button>
+          <div v-if="expanded === 'consent'" class="border-t border-line-divider p-4">
+            <p class="mb-2 text-[12px] text-ink-faint2">
+              Based on the template marked <strong>Consent</strong> in
+              <NuxtLink to="/settings/docs" class="text-brand-text hover:text-brand-hover">Settings &rarr; Docs</NuxtLink>.
+            </p>
+            <UiBtn variant="ghost" size="sm" class="mb-2" @click="exportCsv('missing-consent.csv', withoutConsent)">Export CSV</UiBtn>
+            <ul class="max-h-64 overflow-y-auto divide-y divide-line-row text-[13px]">
+              <li v-for="p in withoutConsent" :key="p.id" class="py-1.5">
+                <NuxtLink :to="`/patients/${p.id}`" class="text-ink-600 hover:text-brand-text">{{ label(p) }}</NuxtLink>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+          <h3 class="text-[13.5px] font-semibold text-ink-800">Patients per practitioner</h3>
+          <ul class="mt-2 space-y-1.5">
+            <li v-for="row in perPractitioner" :key="row.id" class="flex items-center justify-between text-[13px]">
+              <span class="text-ink-600">{{ row.label }}</span>
+              <span class="font-mono font-medium text-ink-900">{{ row.count }}</span>
             </li>
           </ul>
         </div>
-      </div>
-
-      <div class="rounded-lg border border-gray-200 bg-white">
-        <button type="button" class="flex w-full items-center justify-between p-4 text-left" @click="toggle('phone')">
-          <span class="text-sm font-medium text-gray-900">Missing phone number</span>
-          <span class="text-sm text-gray-500">{{ withoutPhone.length }} patients</span>
-        </button>
-        <div v-if="expanded === 'phone'" class="border-t border-gray-100 p-4">
-          <button type="button" class="mb-2 text-xs font-medium text-indigo-600 hover:text-indigo-500" @click="exportCsv('missing-phone.csv', withoutPhone)">Export CSV</button>
-          <ul class="max-h-64 overflow-y-auto divide-y divide-gray-100 text-sm">
-            <li v-for="p in withoutPhone" :key="p.id" class="py-1.5">
-              <NuxtLink :to="`/patients/${p.id}`" class="text-gray-700 hover:text-indigo-600">{{ label(p) }}</NuxtLink>
-            </li>
-          </ul>
-        </div>
-      </div>
-
-      <div class="rounded-lg border border-gray-200 bg-white">
-        <button type="button" class="flex w-full items-center justify-between p-4 text-left" @click="toggle('dp')">
-          <span class="text-sm font-medium text-gray-900">Missing data protection form</span>
-          <span class="text-sm text-gray-500">{{ withoutDataProtection.length }} patients</span>
-        </button>
-        <div v-if="expanded === 'dp'" class="border-t border-gray-100 p-4">
-          <p class="mb-2 text-xs text-gray-400">
-            Based on the template marked <strong>Data protection</strong> in
-            <NuxtLink to="/settings/docs" class="text-indigo-600 hover:text-indigo-500">Settings &rarr; Docs</NuxtLink>.
-          </p>
-          <button type="button" class="mb-2 text-xs font-medium text-indigo-600 hover:text-indigo-500" @click="exportCsv('missing-data-protection.csv', withoutDataProtection)">Export CSV</button>
-          <ul class="max-h-64 overflow-y-auto divide-y divide-gray-100 text-sm">
-            <li v-for="p in withoutDataProtection" :key="p.id" class="py-1.5">
-              <NuxtLink :to="`/patients/${p.id}`" class="text-gray-700 hover:text-indigo-600">{{ label(p) }}</NuxtLink>
-            </li>
-          </ul>
-        </div>
-      </div>
-
-      <div class="rounded-lg border border-gray-200 bg-white">
-        <button type="button" class="flex w-full items-center justify-between p-4 text-left" @click="toggle('consent')">
-          <span class="text-sm font-medium text-gray-900">Missing consent form</span>
-          <span class="text-sm text-gray-500">{{ withoutConsent.length }} patients</span>
-        </button>
-        <div v-if="expanded === 'consent'" class="border-t border-gray-100 p-4">
-          <p class="mb-2 text-xs text-gray-400">
-            Based on the template marked <strong>Consent</strong> in
-            <NuxtLink to="/settings/docs" class="text-indigo-600 hover:text-indigo-500">Settings &rarr; Docs</NuxtLink>.
-          </p>
-          <button type="button" class="mb-2 text-xs font-medium text-indigo-600 hover:text-indigo-500" @click="exportCsv('missing-consent.csv', withoutConsent)">Export CSV</button>
-          <ul class="max-h-64 overflow-y-auto divide-y divide-gray-100 text-sm">
-            <li v-for="p in withoutConsent" :key="p.id" class="py-1.5">
-              <NuxtLink :to="`/patients/${p.id}`" class="text-gray-700 hover:text-indigo-600">{{ label(p) }}</NuxtLink>
-            </li>
-          </ul>
-        </div>
-      </div>
-
-      <div class="rounded-lg border border-gray-200 bg-white p-4">
-        <h3 class="text-sm font-semibold text-gray-900">Patients per practitioner</h3>
-        <ul class="mt-2 space-y-1.5">
-          <li v-for="row in perPractitioner" :key="row.id" class="flex items-center justify-between text-sm">
-            <span class="text-gray-700">{{ row.label }}</span>
-            <span class="font-medium text-gray-900">{{ row.count }}</span>
-          </li>
-        </ul>
       </div>
     </div>
   </div>

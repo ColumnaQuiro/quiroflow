@@ -88,69 +88,71 @@ function lastPayment(membershipId: string) {
 </script>
 
 <template>
-  <div>
-    <div class="flex items-center justify-between">
-      <h1 class="text-xl font-semibold text-gray-900">Memberships</h1>
-      <NuxtLink to="/reports" class="text-sm text-gray-500 hover:text-gray-700">&larr; Reports</NuxtLink>
+  <div class="flex h-full flex-col">
+    <PageHeader title="Memberships" meta="Active count, monthly revenue, and failed payments">
+      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; Reports</NuxtLink>
+    </PageHeader>
+
+    <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
+      <p class="text-[13px] text-ink-muted2">Manual and Stripe autopay combined.</p>
+
+      <div v-if="loading" class="mt-6 text-[13px] text-ink-faint2">Loading…</div>
+      <template v-else>
+        <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+            <p class="font-mono text-[23px] font-semibold text-ink-900">{{ active.length }}</p>
+            <p class="text-[12px] text-ink-muted2">Active memberships</p>
+          </div>
+          <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+            <p class="font-mono text-[23px] font-semibold text-ink-900">€{{ (monthlyRevenue / 100).toFixed(2) }}</p>
+            <p class="text-[12px] text-ink-muted2">Revenue this month (paid)</p>
+          </div>
+          <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+            <p class="font-mono text-[23px] font-semibold" :class="failedPayments.length > 0 ? 'text-danger-text' : 'text-ink-900'">{{ failedPayments.length }}</p>
+            <p class="text-[12px] text-ink-muted2">Failed payments (all time)</p>
+          </div>
+        </div>
+
+        <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
+          <table class="w-full text-[13px]">
+            <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">
+              <tr>
+                <th class="px-4 py-2">Patient</th>
+                <th class="px-4 py-2">Plan</th>
+                <th class="px-4 py-2">Status</th>
+                <th class="px-4 py-2">Started</th>
+                <th class="px-4 py-2">Last payment</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-line-row">
+              <tr v-if="memberships.length === 0">
+                <td colspan="5" class="px-4 py-6 text-center text-ink-faint2">No memberships yet.</td>
+              </tr>
+              <tr v-for="m in memberships" :key="m.id">
+                <td class="px-4 py-2.5 text-ink-900">
+                  <NuxtLink :to="`/patients/${m.patient_id}`" class="hover:text-brand-text">{{ patientName(m.patient_id) }}</NuxtLink>
+                </td>
+                <td class="px-4 py-2.5 text-ink-muted2">{{ m.membership_name }}</td>
+                <td class="px-4 py-2.5">
+                  <span
+                    class="rounded-pill px-1.5 py-0.5 text-[11px] font-medium"
+                    :class="{ active: 'bg-success-bg text-success-text', paused: 'bg-warning-bg text-warning-text', cancelled: 'bg-chip-bg text-chip-text' }[m.status]"
+                  >
+                    {{ m.status }}
+                  </span>
+                </td>
+                <td class="px-4 py-2.5 text-ink-muted2">{{ new Date(m.started_at).toLocaleDateString() }}</td>
+                <td class="px-4 py-2.5">
+                  <span v-if="lastPayment(m.id)" class="rounded-pill px-1.5 py-0.5 text-[11px] font-medium" :class="lastPayment(m.id)!.status === 'paid' ? 'bg-success-bg text-success-text' : 'bg-danger-bg text-danger-text'">
+                    {{ lastPayment(m.id)!.period_start }}: {{ lastPayment(m.id)!.status }}
+                  </span>
+                  <span v-else class="text-[12px] text-ink-faint2">—</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </template>
     </div>
-    <p class="mt-1 text-sm text-gray-500">Active memberships, monthly revenue, and failed payments — manual and Stripe autopay combined.</p>
-
-    <div v-if="loading" class="mt-6 text-sm text-gray-400">Loading…</div>
-    <template v-else>
-      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div class="rounded-lg border border-gray-200 bg-white p-4">
-          <p class="text-2xl font-semibold text-gray-900">{{ active.length }}</p>
-          <p class="text-xs text-gray-500">Active memberships</p>
-        </div>
-        <div class="rounded-lg border border-gray-200 bg-white p-4">
-          <p class="text-2xl font-semibold text-gray-900">€{{ (monthlyRevenue / 100).toFixed(2) }}</p>
-          <p class="text-xs text-gray-500">Revenue this month (paid)</p>
-        </div>
-        <div class="rounded-lg border border-gray-200 bg-white p-4">
-          <p class="text-2xl font-semibold" :class="failedPayments.length > 0 ? 'text-red-600' : 'text-gray-900'">{{ failedPayments.length }}</p>
-          <p class="text-xs text-gray-500">Failed payments (all time)</p>
-        </div>
-      </div>
-
-      <div class="mt-4 overflow-hidden rounded-lg border border-gray-200 bg-white">
-        <table class="w-full text-sm">
-          <thead class="border-b border-gray-200 bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-            <tr>
-              <th class="px-4 py-2">Patient</th>
-              <th class="px-4 py-2">Plan</th>
-              <th class="px-4 py-2">Status</th>
-              <th class="px-4 py-2">Started</th>
-              <th class="px-4 py-2">Last payment</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-gray-100">
-            <tr v-if="memberships.length === 0">
-              <td colspan="5" class="px-4 py-6 text-center text-gray-400">No memberships yet.</td>
-            </tr>
-            <tr v-for="m in memberships" :key="m.id">
-              <td class="px-4 py-2.5 text-gray-900">
-                <NuxtLink :to="`/patients/${m.patient_id}`" class="hover:text-indigo-600">{{ patientName(m.patient_id) }}</NuxtLink>
-              </td>
-              <td class="px-4 py-2.5 text-gray-500">{{ m.membership_name }}</td>
-              <td class="px-4 py-2.5">
-                <span
-                  class="rounded px-1.5 py-0.5 text-xs font-medium"
-                  :class="{ active: 'bg-green-50 text-green-700', paused: 'bg-amber-50 text-amber-700', cancelled: 'bg-gray-100 text-gray-500' }[m.status]"
-                >
-                  {{ m.status }}
-                </span>
-              </td>
-              <td class="px-4 py-2.5 text-gray-500">{{ new Date(m.started_at).toLocaleDateString() }}</td>
-              <td class="px-4 py-2.5">
-                <span v-if="lastPayment(m.id)" class="rounded px-1.5 py-0.5 text-xs font-medium" :class="lastPayment(m.id)!.status === 'paid' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'">
-                  {{ lastPayment(m.id)!.period_start }}: {{ lastPayment(m.id)!.status }}
-                </span>
-                <span v-else class="text-xs text-gray-400">—</span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </template>
   </div>
 </template>

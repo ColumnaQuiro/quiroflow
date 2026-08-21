@@ -168,86 +168,86 @@ const unclassifiedTypes = computed(() => types.value.filter((t) => !t.stage).len
 </script>
 
 <template>
-  <div>
-    <div class="flex items-center justify-between">
-      <h1 class="text-xl font-semibold text-gray-900">Statistics</h1>
-      <NuxtLink to="/reports" class="text-sm text-gray-500 hover:text-gray-700">&larr; Reports</NuxtLink>
-    </div>
-    <p class="mt-1 text-sm text-gray-500">Visit-type counts, conversion, and retention.</p>
+  <div class="flex h-full flex-col">
+    <PageHeader title="Statistics" meta="Visit-type counts, conversion, and retention">
+      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; Reports</NuxtLink>
+    </PageHeader>
 
-    <p v-if="!loading && unclassifiedTypes > 0" class="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-      {{ unclassifiedTypes }} appointment type(s) aren't tagged with a stage yet, so visits of that type won't show up
-      below. Assign one in
-      <NuxtLink to="/settings/appointment-types" class="font-medium underline">Settings &rarr; Appointment Types</NuxtLink>.
-    </p>
-
-    <div class="mt-4 flex flex-wrap items-center gap-2">
-      <ReportsDateRangeSelect v-model="range" />
-      <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
-    </div>
-
-    <div v-if="loading" class="mt-6 text-sm text-gray-400">Loading…</div>
-
-    <template v-else>
-      <div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div class="rounded-lg border border-gray-200 bg-white p-4">
-          <p class="text-2xl font-semibold text-gray-900">{{ firstVisits }}</p>
-          <p class="text-xs text-gray-500">First visits</p>
-        </div>
-        <div class="rounded-lg border border-gray-200 bg-white p-4">
-          <p class="text-2xl font-semibold text-gray-900">{{ firstVisitOffers }}</p>
-          <p class="text-xs text-gray-500">First visit offers</p>
-        </div>
-        <div class="rounded-lg border border-gray-200 bg-white p-4">
-          <p class="text-2xl font-semibold text-gray-900">{{ reports }}</p>
-          <p class="text-xs text-gray-500">Reports</p>
-        </div>
-        <div class="rounded-lg border border-gray-200 bg-white p-4">
-          <p class="text-2xl font-semibold text-gray-900">{{ maintenance }}</p>
-          <p class="text-xs text-gray-500">Maintenance visits</p>
-        </div>
-        <div class="rounded-lg border border-gray-200 bg-white p-4">
-          <p class="text-2xl font-semibold text-gray-900">{{ revisionOrdinals.revision1 }}</p>
-          <p class="text-xs text-gray-500">Revision 1</p>
-        </div>
-        <div class="rounded-lg border border-gray-200 bg-white p-4">
-          <p class="text-2xl font-semibold text-gray-900">{{ revisionOrdinals.revision2 }}</p>
-          <p class="text-xs text-gray-500">Revision 2</p>
-        </div>
-        <div class="rounded-lg border border-gray-200 bg-white p-4">
-          <p class="text-2xl font-semibold text-gray-900">{{ pva !== null ? `€${pva.toFixed(2)}` : '—' }}</p>
-          <p class="text-xs text-gray-500">PVA (avg. revenue / visit)</p>
-        </div>
-        <div class="rounded-lg border border-gray-200 bg-white p-4">
-          <p class="text-2xl font-semibold text-gray-900">{{ inRange.length }}</p>
-          <p class="text-xs text-gray-500">Total completed visits</p>
-        </div>
-      </div>
-
-      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div class="rounded-lg border border-gray-200 bg-white p-4">
-          <p class="text-xs font-medium uppercase tracking-wide text-gray-500">Conversion to 3rd visit</p>
-          <p class="mt-1 text-2xl font-semibold text-gray-900">{{ conversion ? `${conversion.pct}%` : '—' }}</p>
-          <p v-if="conversion" class="text-xs text-gray-400">{{ conversion.converted }} of {{ conversion.newPatients }} new patients this period</p>
-          <p v-else class="text-xs text-gray-400">No new patients seen this period yet.</p>
-        </div>
-        <div class="rounded-lg border border-gray-200 bg-white p-4">
-          <p class="text-xs font-medium uppercase tracking-wide text-gray-500">Retention post-revision</p>
-          <p class="mt-1 text-2xl font-semibold text-gray-900">{{ postRevisionRetention !== null ? `${postRevisionRetention}%` : '—' }}</p>
-          <p class="text-xs text-gray-400">Booked something after their revision visit</p>
-        </div>
-        <div class="rounded-lg border border-gray-200 bg-white p-4">
-          <p class="text-xs font-medium uppercase tracking-wide text-gray-500">Overall retention</p>
-          <p class="mt-1 text-2xl font-semibold text-gray-900">{{ retentionRate !== null ? `${retentionRate}%` : '—' }}</p>
-          <p class="text-xs text-gray-400">Of patients seen this period, % also seen before it</p>
-        </div>
-      </div>
-
-      <p class="mt-4 text-xs text-gray-400">
-        Package/bono sales are tracked separately — see
-        <NuxtLink to="/reports/debtors" class="underline">Debtors</NuxtLink> and
-        <NuxtLink to="/reports/memberships" class="underline">Memberships</NuxtLink>.
+    <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
+      <p v-if="!loading && unclassifiedTypes > 0" class="rounded-ctl border border-warning-border bg-warning-bg p-3 text-[13px] text-warning-text">
+        {{ unclassifiedTypes }} appointment type(s) aren't tagged with a stage yet, so visits of that type won't show up
+        below. Assign one in
+        <NuxtLink to="/settings/appointment-types" class="font-medium underline">Settings &rarr; Appointment Types</NuxtLink>.
       </p>
-    </template>
+
+      <div class="mt-4 flex flex-wrap items-center gap-2">
+        <ReportsDateRangeSelect v-model="range" />
+        <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
+      </div>
+
+      <div v-if="loading" class="mt-6 text-[13px] text-ink-faint2">Loading…</div>
+
+      <template v-else>
+        <div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+            <p class="font-mono text-[23px] font-semibold text-ink-900">{{ firstVisits }}</p>
+            <p class="text-[12px] text-ink-muted2">First visits</p>
+          </div>
+          <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+            <p class="font-mono text-[23px] font-semibold text-ink-900">{{ firstVisitOffers }}</p>
+            <p class="text-[12px] text-ink-muted2">First visit offers</p>
+          </div>
+          <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+            <p class="font-mono text-[23px] font-semibold text-ink-900">{{ reports }}</p>
+            <p class="text-[12px] text-ink-muted2">Reports</p>
+          </div>
+          <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+            <p class="font-mono text-[23px] font-semibold text-ink-900">{{ maintenance }}</p>
+            <p class="text-[12px] text-ink-muted2">Maintenance visits</p>
+          </div>
+          <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+            <p class="font-mono text-[23px] font-semibold text-ink-900">{{ revisionOrdinals.revision1 }}</p>
+            <p class="text-[12px] text-ink-muted2">Revision 1</p>
+          </div>
+          <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+            <p class="font-mono text-[23px] font-semibold text-ink-900">{{ revisionOrdinals.revision2 }}</p>
+            <p class="text-[12px] text-ink-muted2">Revision 2</p>
+          </div>
+          <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+            <p class="font-mono text-[23px] font-semibold text-ink-900">{{ pva !== null ? `€${pva.toFixed(2)}` : '—' }}</p>
+            <p class="text-[12px] text-ink-muted2">PVA (avg. revenue / visit)</p>
+          </div>
+          <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+            <p class="font-mono text-[23px] font-semibold text-ink-900">{{ inRange.length }}</p>
+            <p class="text-[12px] text-ink-muted2">Total completed visits</p>
+          </div>
+        </div>
+
+        <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+            <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">Conversion to 3rd visit</p>
+            <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ conversion ? `${conversion.pct}%` : '—' }}</p>
+            <p v-if="conversion" class="text-[12px] text-ink-faint2">{{ conversion.converted }} of {{ conversion.newPatients }} new patients this period</p>
+            <p v-else class="text-[12px] text-ink-faint2">No new patients seen this period yet.</p>
+          </div>
+          <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+            <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">Retention post-revision</p>
+            <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ postRevisionRetention !== null ? `${postRevisionRetention}%` : '—' }}</p>
+            <p class="text-[12px] text-ink-faint2">Booked something after their revision visit</p>
+          </div>
+          <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+            <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">Overall retention</p>
+            <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ retentionRate !== null ? `${retentionRate}%` : '—' }}</p>
+            <p class="text-[12px] text-ink-faint2">Of patients seen this period, % also seen before it</p>
+          </div>
+        </div>
+
+        <p class="mt-4 text-[12px] text-ink-faint2">
+          Package/bono sales are tracked separately — see
+          <NuxtLink to="/reports/debtors" class="underline hover:text-ink-600">Debtors</NuxtLink> and
+          <NuxtLink to="/reports/memberships" class="underline hover:text-ink-600">Memberships</NuxtLink>.
+        </p>
+      </template>
+    </div>
   </div>
 </template>

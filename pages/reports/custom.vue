@@ -222,79 +222,77 @@ async function removeSaved(r: SavedReport) {
 </script>
 
 <template>
-  <div>
-    <div class="flex items-center justify-between">
-      <h1 class="text-xl font-semibold text-gray-900">Custom Reports</h1>
-      <NuxtLink to="/reports" class="text-sm text-gray-500 hover:text-gray-700">&larr; Reports</NuxtLink>
-    </div>
-    <p class="mt-1 text-sm text-gray-500">Pick a data source, a metric, and how to group it, and get a live chart.</p>
+  <div class="flex h-full flex-col">
+    <PageHeader title="Custom Reports" meta="Pick a source, a metric, and how to group it">
+      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; Reports</NuxtLink>
+    </PageHeader>
 
-    <div v-if="saved.length > 0" class="mt-4 flex flex-wrap gap-2">
-      <div v-for="r in saved" :key="r.id" class="flex items-center gap-1 rounded-full bg-gray-100 pl-3 pr-1 py-1 text-sm">
-        <button type="button" class="text-gray-700 hover:text-indigo-600" @click="loadSavedReport(r)">{{ r.name }}</button>
-        <button type="button" class="ml-1 rounded-full px-1.5 text-gray-400 hover:bg-gray-200 hover:text-red-600" @click="removeSaved(r)">✕</button>
-      </div>
-    </div>
-
-    <div class="mt-4 flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-white p-4">
-      <div>
-        <label class="block text-xs font-medium text-gray-500">Data source</label>
-        <select v-model="sourceKey" class="mt-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-          <option v-for="s in SOURCES" :key="s.key" :value="s.key">{{ s.label }}</option>
-        </select>
-      </div>
-      <div>
-        <label class="block text-xs font-medium text-gray-500">Metric</label>
-        <select v-model="metricKey" class="mt-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-          <option v-for="m in source.metrics" :key="m.key" :value="m.key">{{ m.label }}</option>
-        </select>
-      </div>
-      <div>
-        <label class="block text-xs font-medium text-gray-500">Group by</label>
-        <select v-model="groupByKey" class="mt-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-          <option v-for="g in source.groupings" :key="g.key" :value="g.key">{{ g.label }}</option>
-        </select>
-      </div>
-      <div>
-        <label class="block text-xs font-medium text-gray-500">Chart</label>
-        <select v-model="chartType" class="mt-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-          <option value="bar">Bar</option>
-          <option value="line">Line</option>
-          <option value="table">Table</option>
-        </select>
-      </div>
-      <div>
-        <label class="block text-xs font-medium text-gray-500">Range</label>
-        <div class="mt-1">
-          <ReportsDateRangeSelect v-model="range" />
+    <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
+      <div v-if="saved.length > 0" class="flex flex-wrap gap-2">
+        <div v-for="r in saved" :key="r.id" class="flex items-center gap-1 rounded-pill bg-chip-bg pl-3 pr-1 py-1 text-[13px]">
+          <button type="button" class="text-ink-600 hover:text-brand-text" @click="loadSavedReport(r)">{{ r.name }}</button>
+          <button type="button" class="ml-1 rounded-full px-1.5 text-ink-faint2 hover:bg-line-row hover:text-danger-text" @click="removeSaved(r)">✕</button>
         </div>
       </div>
-      <button type="button" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700" @click="showSaveDialog = true">
-        Save report
-      </button>
-    </div>
 
-    <div v-if="showSaveDialog" class="mt-3 flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 p-3">
-      <input v-model="reportName" type="text" placeholder="Report name" class="flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" @keydown.enter="saveReport" />
-      <button type="button" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700" @click="saveReport">Save</button>
-      <button type="button" class="text-sm text-gray-500 hover:text-gray-700" @click="showSaveDialog = false">Cancel</button>
-    </div>
+      <div class="mt-4 flex flex-wrap items-end gap-3 rounded-card border border-line bg-surface p-4 shadow-card">
+        <div>
+          <label class="block text-[11px] font-medium text-ink-muted2">Data source</label>
+          <select v-model="sourceKey" class="mt-1 h-8 rounded-ctl border border-line-control px-2 text-[13px] text-ink-600 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
+            <option v-for="s in SOURCES" :key="s.key" :value="s.key">{{ s.label }}</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-[11px] font-medium text-ink-muted2">Metric</label>
+          <select v-model="metricKey" class="mt-1 h-8 rounded-ctl border border-line-control px-2 text-[13px] text-ink-600 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
+            <option v-for="m in source.metrics" :key="m.key" :value="m.key">{{ m.label }}</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-[11px] font-medium text-ink-muted2">Group by</label>
+          <select v-model="groupByKey" class="mt-1 h-8 rounded-ctl border border-line-control px-2 text-[13px] text-ink-600 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
+            <option v-for="g in source.groupings" :key="g.key" :value="g.key">{{ g.label }}</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-[11px] font-medium text-ink-muted2">Chart</label>
+          <select v-model="chartType" class="mt-1 h-8 rounded-ctl border border-line-control px-2 text-[13px] text-ink-600 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
+            <option value="bar">Bar</option>
+            <option value="line">Line</option>
+            <option value="table">Table</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-[11px] font-medium text-ink-muted2">Range</label>
+          <div class="mt-1">
+            <ReportsDateRangeSelect v-model="range" />
+          </div>
+        </div>
+        <UiBtn variant="primary" size="md" @click="showSaveDialog = true">Save report</UiBtn>
+      </div>
 
-    <div class="mt-4 rounded-lg border border-gray-200 bg-white p-4">
-      <div v-if="loading" class="py-12 text-center text-sm text-gray-400">Loading…</div>
-      <div v-else-if="rows.length === 0" class="py-12 text-center text-sm text-gray-400">No data for this combination yet.</div>
-      <template v-else>
-        <div v-if="chartType === 'bar'" class="h-80"><Bar :data="chartData" :options="chartOptions" /></div>
-        <div v-else-if="chartType === 'line'" class="h-80"><Line :data="chartData" :options="chartOptions" /></div>
-        <table v-else class="w-full text-sm">
-          <tbody class="divide-y divide-gray-100">
-            <tr v-for="r in rows" :key="r.label">
-              <td class="py-1.5 text-gray-700">{{ r.label }}</td>
-              <td class="py-1.5 text-right font-medium text-gray-900">{{ r.value }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </template>
+      <div v-if="showSaveDialog" class="mt-3 flex items-center gap-2 rounded-card border border-brand-tintBorder bg-brand-tint p-3">
+        <input v-model="reportName" type="text" placeholder="Report name" class="h-8 flex-1 rounded-ctl border border-line-control px-3 text-[13px] text-ink-600 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" @keydown.enter="saveReport" />
+        <UiBtn variant="primary" size="md" @click="saveReport">Save</UiBtn>
+        <button type="button" class="text-[13px] text-ink-muted2 hover:text-ink-600" @click="showSaveDialog = false">Cancel</button>
+      </div>
+
+      <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
+        <div v-if="loading" class="py-12 text-center text-[13px] text-ink-faint2">Loading…</div>
+        <div v-else-if="rows.length === 0" class="py-12 text-center text-[13px] text-ink-faint2">No data for this combination yet.</div>
+        <template v-else>
+          <div v-if="chartType === 'bar'" class="h-80"><Bar :data="chartData" :options="chartOptions" /></div>
+          <div v-else-if="chartType === 'line'" class="h-80"><Line :data="chartData" :options="chartOptions" /></div>
+          <table v-else class="w-full text-[13px]">
+            <tbody class="divide-y divide-line-row">
+              <tr v-for="r in rows" :key="r.label">
+                <td class="py-1.5 text-ink-600">{{ r.label }}</td>
+                <td class="py-1.5 text-right font-mono font-medium text-ink-900">{{ r.value }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </template>
+      </div>
     </div>
   </div>
 </template>

@@ -108,36 +108,36 @@ const totalsByPractitioner = computed(() => series.value.map((s) => ({ label: s.
 </script>
 
 <template>
-  <div>
-    <div class="flex items-center justify-between">
-      <h1 class="text-xl font-semibold text-gray-900">Income Performance</h1>
-      <NuxtLink to="/reports" class="text-sm text-gray-500 hover:text-gray-700">&larr; Reports</NuxtLink>
-    </div>
-    <p class="mt-1 text-sm text-gray-500">Compare practitioners month over month and track growth.</p>
+  <div class="flex h-full flex-col">
+    <PageHeader title="Income Performance" meta="Compare practitioners month over month">
+      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; Reports</NuxtLink>
+    </PageHeader>
 
-    <div class="mt-4 flex flex-wrap items-center gap-2">
-      <ReportsDateRangeSelect v-model="range" />
-      <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
-    </div>
+    <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
+      <div class="flex flex-wrap items-center gap-2">
+        <ReportsDateRangeSelect v-model="range" />
+        <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
+      </div>
 
-    <div v-if="loading" class="mt-6 text-sm text-gray-400">Loading…</div>
-    <div v-else-if="filteredPayments.length === 0" class="mt-6 rounded-lg border border-dashed border-gray-300 bg-white p-6 text-center text-sm text-gray-400">
-      No payments recorded yet — this fills in once invoices are being paid.
+      <div v-if="loading" class="mt-6 text-[13px] text-ink-faint2">Loading…</div>
+      <div v-else-if="filteredPayments.length === 0" class="mt-6 rounded-card border border-dashed border-line-control bg-surface p-6 text-center text-[13px] text-ink-faint2">
+        No payments recorded yet — this fills in once invoices are being paid.
+      </div>
+      <template v-else>
+        <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
+          <h3 class="text-[13.5px] font-semibold text-ink-800">Revenue by practitioner, by month</h3>
+          <div class="mt-3 h-80"><Line :data="chartData" :options="chartOptions" /></div>
+        </div>
+        <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
+          <h3 class="text-[13.5px] font-semibold text-ink-800">Total over range</h3>
+          <ul class="mt-2 space-y-1.5 text-[13px]">
+            <li v-for="row in totalsByPractitioner" :key="row.label" class="flex items-center justify-between">
+              <span class="text-ink-600">{{ row.label }}</span>
+              <span class="font-mono font-medium text-ink-900">€{{ row.total.toFixed(2) }}</span>
+            </li>
+          </ul>
+        </div>
+      </template>
     </div>
-    <template v-else>
-      <div class="mt-4 rounded-lg border border-gray-200 bg-white p-4">
-        <h3 class="text-sm font-semibold text-gray-900">Revenue by practitioner, by month</h3>
-        <div class="mt-3 h-80"><Line :data="chartData" :options="chartOptions" /></div>
-      </div>
-      <div class="mt-4 rounded-lg border border-gray-200 bg-white p-4">
-        <h3 class="text-sm font-semibold text-gray-900">Total over range</h3>
-        <ul class="mt-2 space-y-1.5 text-sm">
-          <li v-for="row in totalsByPractitioner" :key="row.label" class="flex items-center justify-between">
-            <span class="text-gray-700">{{ row.label }}</span>
-            <span class="font-medium text-gray-900">€{{ row.total.toFixed(2) }}</span>
-          </li>
-        </ul>
-      </div>
-    </template>
   </div>
 </template>

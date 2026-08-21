@@ -142,73 +142,73 @@ const byService = computed(() => {
 </script>
 
 <template>
-  <div>
-    <div class="flex items-center justify-between">
-      <h1 class="text-xl font-semibold text-gray-900">Income &amp; Payments</h1>
-      <NuxtLink to="/reports" class="text-sm text-gray-500 hover:text-gray-700">&larr; Reports</NuxtLink>
-    </div>
-    <p class="mt-1 text-sm text-gray-500">Revenue over time, by payment method, by practitioner, and by service.</p>
+  <div class="flex h-full flex-col">
+    <PageHeader title="Income & Payments" meta="Revenue over time, by method, practitioner, and service">
+      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; Reports</NuxtLink>
+    </PageHeader>
 
-    <div class="mt-4 flex flex-wrap items-center gap-2">
-      <ReportsDateRangeSelect v-model="range" />
-      <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
-    </div>
-
-    <div v-if="loading" class="mt-6 text-sm text-gray-400">Loading…</div>
-
-    <template v-else>
-      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div class="rounded-lg border border-gray-200 bg-white p-4">
-          <p class="text-xs font-medium uppercase tracking-wide text-gray-500">Total charged</p>
-          <p class="mt-1 text-2xl font-semibold text-gray-900">{{ eur(totalCharged) }}</p>
-        </div>
-        <div class="rounded-lg border border-gray-200 bg-white p-4">
-          <p class="text-xs font-medium uppercase tracking-wide text-gray-500">Total paid</p>
-          <p class="mt-1 text-2xl font-semibold text-gray-900">{{ eur(totalPaid) }}</p>
-        </div>
-        <div class="rounded-lg border border-gray-200 bg-white p-4">
-          <p class="text-xs font-medium uppercase tracking-wide text-gray-500">Outstanding</p>
-          <p class="mt-1 text-2xl font-semibold" :class="outstanding > 0 ? 'text-amber-600' : 'text-gray-900'">{{ eur(outstanding) }}</p>
-        </div>
+    <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
+      <div class="flex flex-wrap items-center gap-2">
+        <ReportsDateRangeSelect v-model="range" />
+        <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
       </div>
 
-      <div v-if="filteredPayments.length === 0" class="mt-4 rounded-lg border border-dashed border-gray-300 bg-white p-6 text-center text-sm text-gray-400">
-        No payments recorded yet in this range — charts will fill in as invoices get paid.
-      </div>
+      <div v-if="loading" class="mt-6 text-[13px] text-ink-faint2">Loading…</div>
 
       <template v-else>
-        <div class="mt-4 rounded-lg border border-gray-200 bg-white p-4">
-          <h3 class="text-sm font-semibold text-gray-900">Revenue by month</h3>
-          <div class="mt-3 h-64"><Line :data="revenueChartData" :options="lineChartOptions" /></div>
+        <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+            <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">Total charged</p>
+            <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ eur(totalCharged) }}</p>
+          </div>
+          <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+            <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">Total paid</p>
+            <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ eur(totalPaid) }}</p>
+          </div>
+          <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+            <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">Outstanding</p>
+            <p class="mt-1.5 font-mono text-[23px] font-semibold" :class="outstanding > 0 ? 'text-warning-text' : 'text-ink-900'">{{ eur(outstanding) }}</p>
+          </div>
         </div>
 
-        <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div class="rounded-lg border border-gray-200 bg-white p-4">
-            <h3 class="text-sm font-semibold text-gray-900">By payment method</h3>
-            <div class="mt-3 h-56"><Bar :data="methodChartData" :options="barChartOptions" /></div>
+        <div v-if="filteredPayments.length === 0" class="mt-4 rounded-card border border-dashed border-line-control bg-surface p-6 text-center text-[13px] text-ink-faint2">
+          No payments recorded yet in this range — charts will fill in as invoices get paid.
+        </div>
+
+        <template v-else>
+          <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
+            <h3 class="text-[13.5px] font-semibold text-ink-800">Revenue by month</h3>
+            <div class="mt-3 h-64"><Line :data="revenueChartData" :options="lineChartOptions" /></div>
           </div>
-          <div class="rounded-lg border border-gray-200 bg-white p-4">
-            <h3 class="text-sm font-semibold text-gray-900">By practitioner</h3>
-            <ul class="mt-2 space-y-1.5 text-sm">
-              <li v-for="row in byPractitioner" :key="row.label" class="flex items-center justify-between">
-                <span class="text-gray-700">{{ row.label }}</span>
-                <span class="font-medium text-gray-900">{{ eur(row.cents) }}</span>
+
+          <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+              <h3 class="text-[13.5px] font-semibold text-ink-800">By payment method</h3>
+              <div class="mt-3 h-56"><Bar :data="methodChartData" :options="barChartOptions" /></div>
+            </div>
+            <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+              <h3 class="text-[13.5px] font-semibold text-ink-800">By practitioner</h3>
+              <ul class="mt-2 space-y-1.5 text-[13px]">
+                <li v-for="row in byPractitioner" :key="row.label" class="flex items-center justify-between">
+                  <span class="text-ink-600">{{ row.label }}</span>
+                  <span class="font-mono font-medium text-ink-900">{{ eur(row.cents) }}</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
+            <h3 class="text-[13.5px] font-semibold text-ink-800">By service</h3>
+            <p class="text-[12px] text-ink-faint2">e.g. "Primera Visita €600, Informe €6,000" — set up under Billing &rarr; Services.</p>
+            <ul class="mt-2 space-y-1.5 text-[13px]">
+              <li v-for="row in byService" :key="row.label" class="flex items-center justify-between">
+                <span class="text-ink-600">{{ row.label }}</span>
+                <span class="font-mono font-medium text-ink-900">{{ eur(row.cents) }}</span>
               </li>
             </ul>
           </div>
-        </div>
-
-        <div class="mt-4 rounded-lg border border-gray-200 bg-white p-4">
-          <h3 class="text-sm font-semibold text-gray-900">By service</h3>
-          <p class="text-xs text-gray-400">e.g. "Primera Visita €600, Informe €6,000" — set up under Billing &rarr; Services.</p>
-          <ul class="mt-2 space-y-1.5 text-sm">
-            <li v-for="row in byService" :key="row.label" class="flex items-center justify-between">
-              <span class="text-gray-700">{{ row.label }}</span>
-              <span class="font-medium text-gray-900">{{ eur(row.cents) }}</span>
-            </li>
-          </ul>
-        </div>
+        </template>
       </template>
-    </template>
+    </div>
   </div>
 </template>

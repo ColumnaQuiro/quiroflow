@@ -7,14 +7,14 @@ const clinicId = defineModel<string>('clinicId', { default: '' })
 </script>
 
 <template>
-  <select v-model="practitionerId" class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+  <select v-model="practitionerId" class="h-8 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-500 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
     <option value="">All practitioners</option>
     <option v-for="p in practitioners" :key="p.id" :value="p.id">{{ p.name }}</option>
   </select>
   <select
     v-if="showClinic !== false && clinics.length > 1"
     v-model="clinicId"
-    class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+    class="h-8 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-500 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
   >
     <option value="">All clinics</option>
     <option v-for="c in clinics" :key="c.id" :value="c.id">{{ c.name }}</option>

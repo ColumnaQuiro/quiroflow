@@ -76,8 +76,8 @@ const byDay = computed(() => {
 const dayChartData = computed(() => ({
   labels: byDay.value.labels,
   datasets: [
-    { label: 'Kept', data: byDay.value.scheduled, backgroundColor: '#4f46e5' },
-    { label: 'Cancelled / No-show', data: byDay.value.cancelledNoShow, backgroundColor: '#fca5a5' },
+    { label: 'Kept', data: byDay.value.scheduled, backgroundColor: '#4F46E5' },
+    { label: 'Cancelled / No-show', data: byDay.value.cancelledNoShow, backgroundColor: '#F6C7CE' },
   ],
 }))
 const dayChartOptions = {
@@ -99,7 +99,7 @@ const byWeekday = computed(() => {
 })
 const weekdayChartData = computed(() => ({
   labels: WEEKDAY_LABELS,
-  datasets: [{ label: 'Appointments', data: byWeekday.value, backgroundColor: '#4f46e5' }],
+  datasets: [{ label: 'Appointments', data: byWeekday.value, backgroundColor: '#4F46E5' }],
 }))
 const weekdayChartOptions = {
   responsive: true,
@@ -110,54 +110,55 @@ const weekdayChartOptions = {
 </script>
 
 <template>
-  <div>
-    <div class="flex items-center justify-between">
-      <h1 class="text-xl font-semibold text-gray-900">Upcoming Visits</h1>
-      <NuxtLink to="/reports" class="text-sm text-gray-500 hover:text-gray-700">&larr; Reports</NuxtLink>
-    </div>
-    <p class="mt-1 text-sm text-gray-500">
-      Appointment distribution across the month — use it to gauge ad spend, spot maintenance-retention gaps, and
-      predict how the month will close.
-    </p>
+  <div class="flex h-full flex-col">
+    <PageHeader title="Upcoming Visits" meta="Appointment distribution across the month">
+      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; Reports</NuxtLink>
+    </PageHeader>
 
-    <div class="mt-4 flex items-center gap-3">
-      <button type="button" class="rounded-md border border-gray-300 px-2 py-1 text-sm hover:bg-gray-50" @click="monthOffset--">&lsaquo;</button>
-      <span class="text-sm font-medium text-gray-700">{{ monthLabel }}</span>
-      <button type="button" class="rounded-md border border-gray-300 px-2 py-1 text-sm hover:bg-gray-50" @click="monthOffset++">&rsaquo;</button>
-      <button v-if="monthOffset !== 0" type="button" class="text-sm text-indigo-600 hover:text-indigo-500" @click="monthOffset = 0">Today</button>
-    </div>
+    <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
+      <p class="text-[13px] text-ink-muted2">
+        Use it to gauge ad spend, spot maintenance-retention gaps, and predict how the month will close.
+      </p>
 
-    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-      <div class="rounded-lg border border-gray-200 bg-white p-4">
-        <p class="text-xs font-medium uppercase tracking-wide text-gray-500">Total this month</p>
-        <p class="mt-1 text-2xl font-semibold text-gray-900">{{ loading ? '—' : totalCount }}</p>
+      <div class="mt-4 flex items-center gap-3">
+        <button type="button" class="flex h-8 items-center rounded-ctl border border-line-control px-2.5 text-[13px] text-ink-600 hover:border-line-controlHover" @click="monthOffset--">&lsaquo;</button>
+        <span class="text-[13px] font-medium text-ink-700">{{ monthLabel }}</span>
+        <button type="button" class="flex h-8 items-center rounded-ctl border border-line-control px-2.5 text-[13px] text-ink-600 hover:border-line-controlHover" @click="monthOffset++">&rsaquo;</button>
+        <button v-if="monthOffset !== 0" type="button" class="text-[13px] text-brand-text hover:text-brand-hover" @click="monthOffset = 0">Today</button>
       </div>
-      <div class="rounded-lg border border-gray-200 bg-white p-4">
-        <p class="text-xs font-medium uppercase tracking-wide text-gray-500">vs. previous month</p>
-        <p class="mt-1 text-2xl font-semibold" :class="changePct !== null && changePct < 0 ? 'text-red-600' : 'text-green-600'">
-          {{ loading || changePct === null ? '—' : `${changePct > 0 ? '+' : ''}${changePct}%` }}
-        </p>
-      </div>
-      <div class="rounded-lg border border-gray-200 bg-white p-4">
-        <p class="text-xs font-medium uppercase tracking-wide text-gray-500">Daily average</p>
-        <p class="mt-1 text-2xl font-semibold text-gray-900">
-          {{ loading ? '—' : (totalCount / daysInMonth(rangeStart)).toFixed(1) }}
-        </p>
-      </div>
-    </div>
 
-    <div class="mt-4 rounded-lg border border-gray-200 bg-white p-4">
-      <h3 class="text-sm font-semibold text-gray-900">By day of month</h3>
-      <div class="mt-3 h-72">
-        <Bar v-if="!loading" :data="dayChartData" :options="dayChartOptions" />
+      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+          <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">Total this month</p>
+          <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ loading ? '—' : totalCount }}</p>
+        </div>
+        <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+          <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">vs. previous month</p>
+          <p class="mt-1.5 font-mono text-[23px] font-semibold" :class="changePct !== null && changePct < 0 ? 'text-danger-text' : 'text-success-text'">
+            {{ loading || changePct === null ? '—' : `${changePct > 0 ? '+' : ''}${changePct}%` }}
+          </p>
+        </div>
+        <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+          <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">Daily average</p>
+          <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">
+            {{ loading ? '—' : (totalCount / daysInMonth(rangeStart)).toFixed(1) }}
+          </p>
+        </div>
       </div>
-    </div>
 
-    <div class="mt-4 rounded-lg border border-gray-200 bg-white p-4">
-      <h3 class="text-sm font-semibold text-gray-900">By day of week</h3>
-      <p class="text-xs text-gray-400">Which weekdays fill up fastest — useful for staffing and ad scheduling.</p>
-      <div class="mt-3 h-64">
-        <Bar v-if="!loading" :data="weekdayChartData" :options="weekdayChartOptions" />
+      <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
+        <h3 class="text-[13.5px] font-semibold text-ink-800">By day of month</h3>
+        <div class="mt-3 h-72">
+          <Bar v-if="!loading" :data="dayChartData" :options="dayChartOptions" />
+        </div>
+      </div>
+
+      <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
+        <h3 class="text-[13.5px] font-semibold text-ink-800">By day of week</h3>
+        <p class="text-[12px] text-ink-faint2">Which weekdays fill up fastest — useful for staffing and ad scheduling.</p>
+        <div class="mt-3 h-64">
+          <Bar v-if="!loading" :data="weekdayChartData" :options="weekdayChartOptions" />
+        </div>
       </div>
     </div>
   </div>

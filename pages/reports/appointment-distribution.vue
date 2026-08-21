@@ -96,39 +96,39 @@ const hourChartOptions = {
 </script>
 
 <template>
-  <div>
-    <div class="flex items-center justify-between">
-      <h1 class="text-xl font-semibold text-gray-900">Appointment Distribution</h1>
-      <NuxtLink to="/reports" class="text-sm text-gray-500 hover:text-gray-700">&larr; Reports</NuxtLink>
-    </div>
-    <p class="mt-1 text-sm text-gray-500">Which shift and time of day performs best, by volume and show-up rate.</p>
+  <div class="flex h-full flex-col">
+    <PageHeader title="Appointment Distribution" meta="Volume and show-up rate by shift and time of day">
+      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; Reports</NuxtLink>
+    </PageHeader>
 
-    <div class="mt-4 flex flex-wrap items-center gap-2">
-      <ReportsDateRangeSelect v-model="range" />
-      <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
-    </div>
-
-    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-      <div v-for="s in shiftStats" :key="s.key" class="rounded-lg border border-gray-200 bg-white p-4">
-        <p class="text-xs font-medium uppercase tracking-wide text-gray-500">{{ s.label }}</p>
-        <p class="mt-1 text-2xl font-semibold text-gray-900">{{ loading ? '—' : s.total }}</p>
-        <p class="text-xs text-gray-400">
-          {{ loading ? '' : s.showRate === null ? 'No completed history yet' : `${s.showRate}% show-up rate` }}
-        </p>
+    <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
+      <div class="flex flex-wrap items-center gap-2">
+        <ReportsDateRangeSelect v-model="range" />
+        <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
       </div>
-    </div>
 
-    <div class="mt-4 rounded-lg border border-gray-200 bg-white p-4">
-      <h3 class="text-sm font-semibold text-gray-900">By shift, by outcome</h3>
-      <div class="mt-3 h-72">
-        <Bar v-if="!loading" :data="shiftChartData" :options="shiftChartOptions" />
+      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div v-for="s in shiftStats" :key="s.key" class="rounded-card border border-line bg-surface p-4 shadow-card">
+          <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ s.label }}</p>
+          <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ loading ? '—' : s.total }}</p>
+          <p class="text-[12px] text-ink-faint2">
+            {{ loading ? '' : s.showRate === null ? 'No completed history yet' : `${s.showRate}% show-up rate` }}
+          </p>
+        </div>
       </div>
-    </div>
 
-    <div class="mt-4 rounded-lg border border-gray-200 bg-white p-4">
-      <h3 class="text-sm font-semibold text-gray-900">By hour of day</h3>
-      <div class="mt-3 h-64">
-        <Bar v-if="!loading" :data="hourChartData" :options="hourChartOptions" />
+      <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
+        <h3 class="text-[13.5px] font-semibold text-ink-800">By shift, by outcome</h3>
+        <div class="mt-3 h-72">
+          <Bar v-if="!loading" :data="shiftChartData" :options="shiftChartOptions" />
+        </div>
+      </div>
+
+      <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
+        <h3 class="text-[13.5px] font-semibold text-ink-800">By hour of day</h3>
+        <div class="mt-3 h-64">
+          <Bar v-if="!loading" :data="hourChartData" :options="hourChartOptions" />
+        </div>
       </div>
     </div>
   </div>

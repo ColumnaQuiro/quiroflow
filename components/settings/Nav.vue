@@ -38,6 +38,7 @@ const allGroups: NavGroup[] = [
     items: [
       { label: 'WhatsApp', to: '/settings/whatsapp', perm: 'communication_config' },
       { label: 'Docs', to: '/settings/docs', perm: 'communication_config' },
+      { label: 'Automations', to: '/settings/automations', perm: 'communication_config' },
     ],
   },
   {

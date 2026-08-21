@@ -11,6 +11,7 @@ const emit = defineEmits<{ completed: [] }>()
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const { can } = usePermission()
+const { fire } = useAutomations()
 
 const { loading: summaryLoading, balanceCents, activeMembership, activePackages, refresh: refreshSummary } = usePatientFinancialSummary(
   () => props.patientId,
@@ -165,6 +166,8 @@ async function usePackageSession(pkg: { id: string; sessions_used: number; sessi
   // covers the visit, so completing it works the same as taking cash/card.
   await supabase.from('appointments').update({ status: 'completed' }).eq('id', props.appointmentId)
   emit('completed')
+  fire('invoice.paid', { patientId: props.patientId, appointmentId: props.appointmentId, invoiceId: invoice.value.id })
+  fire('appointment.completed', { patientId: props.patientId, appointmentId: props.appointmentId })
 
   savingPayment.value = false
   await loadInvoice()
@@ -194,6 +197,8 @@ async function recordPayment() {
     // in one action rather than requiring a separate status change.
     await supabase.from('appointments').update({ status: 'completed' }).eq('id', props.appointmentId)
     emit('completed')
+    fire('invoice.paid', { patientId: props.patientId, appointmentId: props.appointmentId, invoiceId: invoice.value.id })
+    fire('appointment.completed', { patientId: props.patientId, appointmentId: props.appointmentId })
 
     const { data: patient } = await supabase.from('patients').select('invoice_email_enabled, email').eq('id', props.patientId).maybeSingle()
     if (patient?.invoice_email_enabled && patient.email) {

@@ -145,10 +145,13 @@ async function onSaved() {
   await loadDay()
 }
 
+const { fire } = useAutomations()
+
 async function toggleCheckedIn(appt: AppointmentRow) {
   const next = appt.checked_in_at ? null : new Date().toISOString()
   appt.checked_in_at = next
   await supabase.from('appointments').update({ checked_in_at: next }).eq('id', appt.id)
+  if (next) fire('appointment.checked_in', { patientId: appt.patient_id, appointmentId: appt.id })
 }
 
 const statusClass: Record<string, string> = {

@@ -34,6 +34,7 @@ const emit = defineEmits<{ close: []; saved: [] }>()
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const { fire } = useAutomations()
 
 function toDateInput(iso: string) {
   const d = new Date(iso)
@@ -116,13 +117,21 @@ async function save() {
   }
 
   const result = props.mode === 'create'
-    ? await supabase.from('appointments').insert(payload)
+    ? await supabase.from('appointments').insert(payload).select('id').single()
     : await supabase.from('appointments').update(payload).eq('id', props.appointment!.id)
 
   saving.value = false
   if (result.error) {
     error.value = result.error.message
     return
+  }
+
+  if (props.mode === 'create') {
+    const newId = (result.data as { id: string } | null)?.id
+    if (newId) fire('appointment.booked', { patientId: patientId.value, appointmentId: newId })
+  } else if (status.value !== props.appointment!.status) {
+    const trigger = { completed: 'appointment.completed', cancelled: 'appointment.cancelled', no_show: 'appointment.no_show' }[status.value]
+    if (trigger) fire(trigger, { patientId: patientId.value, appointmentId: props.appointment!.id })
   }
   emit('saved')
 }

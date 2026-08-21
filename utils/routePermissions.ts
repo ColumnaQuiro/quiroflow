@@ -29,7 +29,10 @@ const rules: Rule[] = [
     test: (p) => ['/settings/packages', '/settings/memberships', '/settings/payments'].includes(p),
     check: (s) => can(s, 'settings_access') && can(s, 'billing_config'),
   },
-  { test: (p) => ['/settings/whatsapp', '/settings/docs'].includes(p), check: (s) => can(s, 'settings_access') && can(s, 'communication_config') },
+  {
+    test: (p) => ['/settings/whatsapp', '/settings/docs', '/settings/automations'].includes(p),
+    check: (s) => can(s, 'settings_access') && can(s, 'communication_config'),
+  },
   {
     test: (p) => ['/settings/import', '/settings/migrate-attachments', '/settings/webhooks'].includes(p),
     check: (s) => can(s, 'settings_access') && can(s, 'data_admin'),

@@ -308,17 +308,21 @@ const headerMeta = computed(() => {
 
       <div v-if="loading" class="p-10 text-center text-[13px] text-ink-faint">Loading…</div>
 
-      <div v-else class="flex items-start gap-4 p-6">
-        <!-- Day view worklist -->
-        <div v-if="viewMode === 'day'" class="w-[404px] shrink-0 overflow-hidden rounded-card border border-line bg-surface-sidebar shadow-card">
-          <div class="grid grid-cols-5 border-b border-line px-3 py-3">
+      <div v-else class="flex flex-col gap-4 p-6">
+        <!-- Flow tracker: shared summary strip for both Day and Week views -->
+        <div class="w-full overflow-hidden rounded-card border border-line bg-surface-sidebar shadow-card">
+          <div class="grid grid-cols-5 px-3 py-3">
             <div v-for="stage in flowStages" :key="stage.key" class="flex flex-col items-start gap-1.5 px-1">
               <div class="h-1 w-full rounded-full" :class="stage.barClass" />
               <span class="truncate text-[10.5px] text-ink-muted2">{{ stage.label }}</span>
               <span class="font-mono text-[13px] font-medium text-ink-700">{{ stage.count }}</span>
             </div>
           </div>
+        </div>
 
+        <div class="flex items-start gap-4">
+        <!-- Day view worklist -->
+        <div v-if="viewMode === 'day'" class="w-[404px] shrink-0 overflow-hidden rounded-card border border-line bg-surface-sidebar shadow-card">
           <div v-if="appointments.length === 0" class="p-8 text-center text-[13px] text-ink-faint">No appointments for this day.</div>
           <ul v-else class="flex flex-col gap-1 p-2">
             <li v-for="a in appointments" :key="a.id" class="group relative">
@@ -375,7 +379,7 @@ const headerMeta = computed(() => {
         </div>
 
         <!-- Week view -->
-        <div v-else class="grid w-full grid-cols-7 gap-3">
+        <div v-else class="grid min-w-0 flex-1 grid-cols-7 gap-3">
           <div v-for="day in weekDays" :key="toDateKey(day)" class="overflow-hidden rounded-card border border-line bg-surface shadow-card">
             <div class="border-b border-line-row bg-surface-subtle2 px-2 py-1.5">
               <span class="text-[12px] font-medium text-ink-700">{{ day.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' }) }}</span>
@@ -405,6 +409,7 @@ const headerMeta = computed(() => {
         </div>
         <div v-else class="flex min-w-0 flex-1 items-center justify-center rounded-card border border-dashed border-line-control p-10 text-[13px] text-ink-faint">
           Select a patient to chart their visit.
+        </div>
         </div>
       </div>
     </div>

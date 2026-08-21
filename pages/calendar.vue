@@ -539,17 +539,8 @@ async function toggleCheckedIn(appt: AppointmentRow) {
 // Flow Tracker: Arrived (checked_in_at, already tracked elsewhere) -> With
 // Practitioner -> Awaiting Checkout -> Complete (marks the appointment
 // completed). Scoped to whatever's currently loaded (today, for the
-// default Day view), same as the rest of the calendar.
-const flowArrived = computed(() =>
-  appointments.value.filter((a) => a.checked_in_at && !a.flow_with_practitioner_at && !a.flow_checkout_at && a.status === 'booked'),
-)
-const flowWithPractitioner = computed(() =>
-  appointments.value.filter((a) => a.flow_with_practitioner_at && !a.flow_checkout_at && a.status === 'booked'),
-)
-const flowAwaitingCheckout = computed(() =>
-  appointments.value.filter((a) => a.flow_checkout_at && a.status === 'booked'),
-)
-
+// default Day view), same as the rest of the calendar. Bucketing itself
+// lives in CalendarFlowTracker.vue, shared with pages/practitioner.vue.
 async function advanceFlow(appt: AppointmentRow, field: 'flow_with_practitioner_at' | 'flow_checkout_at') {
   const now = new Date().toISOString()
   appt[field] = now
@@ -706,38 +697,14 @@ async function completeFlow(appt: AppointmentRow) {
         </div>
 
         <!-- Flow Tracker: Arrived / With Practitioner / Awaiting Checkout -->
-        <div v-if="settings.flowTracker" class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div class="rounded-lg border border-gray-200 bg-white p-3">
-            <h3 class="text-sm font-semibold text-gray-700">Arrived</h3>
-            <div class="mt-2 space-y-2">
-              <div v-for="a in flowArrived" :key="a.id" class="flex items-center justify-between gap-2 rounded border border-gray-200 px-2 py-1.5 text-sm">
-                <span class="truncate" :class="{ 'blur-sm select-none': settings.privacyMode }">{{ a.patients?.first_name }} {{ a.patients?.last_name }}</span>
-                <button type="button" class="shrink-0 text-xs text-indigo-600 hover:text-indigo-500" title="Move to With Practitioner" @click="advanceFlow(a, 'flow_with_practitioner_at')">→</button>
-              </div>
-              <p v-if="flowArrived.length === 0" class="text-xs text-gray-300">—</p>
-            </div>
-          </div>
-          <div class="rounded-lg border border-gray-200 bg-white p-3">
-            <h3 class="text-sm font-semibold text-gray-700">With Practitioner</h3>
-            <div class="mt-2 space-y-2">
-              <div v-for="a in flowWithPractitioner" :key="a.id" class="flex items-center justify-between gap-2 rounded border border-gray-200 px-2 py-1.5 text-sm">
-                <span class="truncate" :class="{ 'blur-sm select-none': settings.privacyMode }">{{ a.patients?.first_name }} {{ a.patients?.last_name }}</span>
-                <button type="button" class="shrink-0 text-xs text-indigo-600 hover:text-indigo-500" title="Move to Awaiting Checkout" @click="advanceFlow(a, 'flow_checkout_at')">→</button>
-              </div>
-              <p v-if="flowWithPractitioner.length === 0" class="text-xs text-gray-300">—</p>
-            </div>
-          </div>
-          <div class="rounded-lg border border-gray-200 bg-white p-3">
-            <h3 class="text-sm font-semibold text-gray-700">Awaiting Checkout</h3>
-            <div class="mt-2 space-y-2">
-              <div v-for="a in flowAwaitingCheckout" :key="a.id" class="flex items-center justify-between gap-2 rounded border border-gray-200 px-2 py-1.5 text-sm">
-                <span class="truncate" :class="{ 'blur-sm select-none': settings.privacyMode }">{{ a.patients?.first_name }} {{ a.patients?.last_name }}</span>
-                <button type="button" class="shrink-0 text-xs font-medium text-green-600 hover:text-green-500" title="Complete visit" @click="completeFlow(a)">Complete</button>
-              </div>
-              <p v-if="flowAwaitingCheckout.length === 0" class="text-xs text-gray-300">—</p>
-            </div>
-          </div>
-        </div>
+        <CalendarFlowTracker
+          v-if="settings.flowTracker"
+          class="mt-4"
+          :appointments="appointments"
+          :privacy-mode="settings.privacyMode"
+          @advance="advanceFlow"
+          @complete="completeFlow"
+        />
 
         <div v-if="loading" class="mt-6 text-sm text-gray-400">Loading…</div>
 

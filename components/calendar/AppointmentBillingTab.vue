@@ -155,6 +155,23 @@ async function removeLineItem(item: LineItemRow) {
   await recalcInvoiceTotal()
 }
 
+async function usePackageSession(pkg: { id: string; sessions_used: number; sessions_total: number }) {
+  if (pkg.sessions_used >= pkg.sessions_total || !invoice.value) return
+  savingPayment.value = true
+
+  await supabase.from('package_purchases').update({ sessions_used: pkg.sessions_used + 1 }).eq('id', pkg.id)
+  await supabase.from('invoices').update({ status: 'paid' }).eq('id', invoice.value.id)
+  // Mirrors recordPayment()'s full-payment side effect: a package session
+  // covers the visit, so completing it works the same as taking cash/card.
+  await supabase.from('appointments').update({ status: 'completed' }).eq('id', props.appointmentId)
+  emit('completed')
+
+  savingPayment.value = false
+  await loadInvoice()
+  await refreshSummary()
+  await loadFutureAppointmentCheck()
+}
+
 async function recordPayment() {
   if (!invoice.value) return
   error.value = ''
@@ -216,14 +233,22 @@ async function recordPayment() {
           <span class="ml-1 rounded bg-green-50 px-1.5 py-0.5 text-xs font-medium text-green-700">active</span>
         </p>
         <p v-else class="text-gray-400">No active membership</p>
-        <div v-if="activePackages.length > 0">
+        <div v-if="activePackages.length > 0" class="flex flex-wrap items-center gap-1">
           <span class="text-gray-500">Packages:</span>
           <span
             v-for="p in activePackages"
             :key="p.id"
-            class="ml-1 rounded bg-indigo-50 px-1.5 py-0.5 text-xs font-medium text-indigo-700"
+            class="inline-flex items-center gap-1.5 rounded bg-indigo-50 px-1.5 py-0.5 text-xs font-medium text-indigo-700"
           >
             {{ p.package_name }}: {{ p.sessions_total - p.sessions_used }} left
+            <button
+              v-if="can('billing_access') && invoice && invoice.status !== 'paid'"
+              type="button"
+              class="underline decoration-dotted hover:text-indigo-900"
+              @click="usePackageSession(p)"
+            >
+              Use session
+            </button>
           </span>
         </div>
       </div>

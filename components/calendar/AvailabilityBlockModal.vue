@@ -23,9 +23,34 @@ function toTimeInput(iso: string) {
   const d = new Date(iso)
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
+function addDays(d: Date, n: number) {
+  const c = new Date(d)
+  c.setDate(c.getDate() + n)
+  return c
+}
+
+// A whole-day block was saved as [day 00:00, next day 00:00) -- detect that
+// shape on edit so re-opening it shows "Whole day" checked instead of a
+// start/end time of "00:00"/"00:00" on two different days.
+const startsAtDate = props.block ? new Date(props.block.starts_at) : null
+const endsAtDate = props.block ? new Date(props.block.ends_at) : null
+const inferredWholeDay = !!(
+  startsAtDate &&
+  endsAtDate &&
+  startsAtDate.getHours() === 0 &&
+  startsAtDate.getMinutes() === 0 &&
+  endsAtDate.getHours() === 0 &&
+  endsAtDate.getMinutes() === 0
+)
 
 const roomId = ref(props.block?.room_id ?? props.prefillRoomId ?? '')
-const date = ref(props.block ? toDateInput(props.block.starts_at) : (props.prefillDate ?? toDateInput(new Date().toISOString())))
+const wholeDay = ref(inferredWholeDay)
+const startDate = ref(props.block ? toDateInput(props.block.starts_at) : (props.prefillDate ?? toDateInput(new Date().toISOString())))
+const endDate = ref(
+  props.block
+    ? toDateInput(inferredWholeDay ? addDays(endsAtDate!, -1).toISOString() : props.block.ends_at)
+    : (props.prefillDate ?? toDateInput(new Date().toISOString())),
+)
 const startTime = ref(props.block ? toTimeInput(props.block.starts_at) : (props.prefillTime ?? '09:00'))
 const endTime = ref(props.block ? toTimeInput(props.block.ends_at) : '10:00')
 const note = ref(props.block?.note ?? '')
@@ -34,10 +59,12 @@ const saving = ref(false)
 
 async function save() {
   error.value = ''
-  const startsAt = new Date(`${date.value}T${startTime.value}`)
-  const endsAt = new Date(`${date.value}T${endTime.value}`)
+
+  const startsAt = wholeDay.value ? new Date(`${startDate.value}T00:00`) : new Date(`${startDate.value}T${startTime.value}`)
+  const endsAt = wholeDay.value ? addDays(new Date(`${endDate.value}T00:00`), 1) : new Date(`${endDate.value}T${endTime.value}`)
+
   if (endsAt <= startsAt) {
-    error.value = 'End time must be after start time.'
+    error.value = 'End must be after start.'
     return
   }
   saving.value = true
@@ -94,17 +121,27 @@ async function remove() {
             <option v-for="room in rooms" :key="room.id" :value="room.id">{{ room.name }}</option>
           </select>
         </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700">Date</label>
-          <input v-model="date" type="date" required class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
-        </div>
         <div class="flex gap-3">
           <div class="flex-1">
-            <label class="block text-sm font-medium text-gray-700">Start</label>
+            <label class="block text-sm font-medium text-gray-700">Start date</label>
+            <input v-model="startDate" type="date" required class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          </div>
+          <div class="flex-1">
+            <label class="block text-sm font-medium text-gray-700">End date</label>
+            <input v-model="endDate" type="date" required :min="startDate" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          </div>
+        </div>
+        <label class="flex items-center gap-2 text-sm text-gray-700">
+          <input v-model="wholeDay" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+          Whole day
+        </label>
+        <div v-if="!wholeDay" class="flex gap-3">
+          <div class="flex-1">
+            <label class="block text-sm font-medium text-gray-700">Start time</label>
             <input v-model="startTime" type="time" required class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
           </div>
           <div class="flex-1">
-            <label class="block text-sm font-medium text-gray-700">End</label>
+            <label class="block text-sm font-medium text-gray-700">End time</label>
             <input v-model="endTime" type="time" required class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
           </div>
         </div>

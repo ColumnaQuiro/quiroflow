@@ -6,7 +6,11 @@ const props = defineProps<{ patientId: string }>()
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 
-const files = ref<Tables<'patient_files'>[]>([])
+// `visibility` isn't in the generated Supabase types yet -- merge it in
+// locally rather than editing the generated file by hand.
+type PatientFile = Tables<'patient_files'> & { visibility: 'generic' | 'custom' }
+
+const files = ref<PatientFile[]>([])
 const loading = ref(true)
 const uploading = ref(false)
 const error = ref('')
@@ -19,10 +23,14 @@ async function load() {
     .select('*')
     .eq('patient_id', props.patientId)
     .order('created_at', { ascending: false })
-  files.value = data ?? []
+  files.value = (data as unknown as PatientFile[]) ?? []
   loading.value = false
 }
 onMounted(load)
+
+async function updateVisibility(file: PatientFile) {
+  await supabase.from('patient_files').update({ visibility: file.visibility }).eq('id', file.id)
+}
 
 function formatSize(bytes: number | null) {
   if (!bytes) return ''
@@ -93,7 +101,16 @@ async function remove(file: Tables<'patient_files'>) {
           </p>
           <p class="text-xs text-gray-400">{{ formatSize(file.size_bytes) }} &middot; {{ new Date(file.created_at).toLocaleDateString() }}</p>
         </div>
-        <div class="flex gap-3 text-sm">
+        <div class="flex items-center gap-3 text-sm">
+          <select
+            v-model="file.visibility"
+            class="rounded border border-gray-300 px-1.5 py-1 text-xs text-gray-600 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            title="Whether this file will show to the patient in the mobile app"
+            @change="updateVisibility(file)"
+          >
+            <option value="generic">Generic</option>
+            <option value="custom">Custom</option>
+          </select>
           <button v-if="file.storage_path" type="button" class="text-indigo-600 hover:text-indigo-700" @click="view(file)">View</button>
           <button type="button" class="text-red-600 hover:text-red-700" @click="remove(file)">Delete</button>
         </div>

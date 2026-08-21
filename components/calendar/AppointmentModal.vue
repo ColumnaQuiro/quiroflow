@@ -187,6 +187,7 @@ async function remove() {
           </ul>
           <p v-if="selectedPatientLabel && !patientQuery" class="mt-1 text-sm text-gray-500">
             Selected: <span class="font-medium text-gray-900">{{ selectedPatientLabel }}</span>
+            <NuxtLink :to="`/patients/${patientId}`" target="_blank" class="ml-2 text-indigo-600 hover:text-indigo-700">View patient &rarr;</NuxtLink>
           </p>
         </div>
 

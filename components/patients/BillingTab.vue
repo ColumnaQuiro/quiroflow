@@ -48,6 +48,82 @@ interface StripeEventRow { id: string; payment_schedule_id: string; period_start
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 
+const { creditLedgerCents, refresh: refreshCreditSummary } = usePatientFinancialSummary(() => props.patientId)
+const creditHistory = ref<{ id: string; amount_cents: number; reason: string | null; created_at: string }[]>([])
+const addCreditAmount = ref('')
+const addCreditReason = ref('')
+const addingCredit = ref(false)
+const applyCreditInvoiceId = ref('')
+const applyCreditAmount = ref('')
+const applyingCredit = ref(false)
+const creditError = ref('')
+
+async function loadCreditHistory() {
+  const { data } = await supabase
+    .from('account_credits')
+    .select('id, amount_cents, reason, created_at')
+    .eq('patient_id', props.patientId)
+    .order('created_at', { ascending: false })
+    .limit(10)
+  creditHistory.value = data ?? []
+}
+
+async function addCredit() {
+  const amountCents = Math.round((parseFloat(addCreditAmount.value) || 0) * 100)
+  if (amountCents <= 0) return
+  creditError.value = ''
+  addingCredit.value = true
+  await supabase.from('account_credits').insert({
+    account_id: store.accountId!,
+    patient_id: props.patientId,
+    amount_cents: amountCents,
+    reason: addCreditReason.value || null,
+    created_by: store.teamMember?.id ?? null,
+  })
+  addCreditAmount.value = ''
+  addCreditReason.value = ''
+  addingCredit.value = false
+  await Promise.all([refreshCreditSummary(), loadCreditHistory()])
+}
+
+async function applyCreditToInvoice() {
+  const invoice = invoices.value.find((i) => i.id === applyCreditInvoiceId.value)
+  if (!invoice) return
+  const amountCents = Math.round((parseFloat(applyCreditAmount.value) || 0) * 100)
+  if (amountCents <= 0 || amountCents > creditLedgerCents.value) {
+    creditError.value = 'Amount must be positive and not exceed available credit.'
+    return
+  }
+  creditError.value = ''
+  applyingCredit.value = true
+
+  await supabase.from('payments').insert({
+    account_id: store.accountId!,
+    invoice_id: invoice.id,
+    amount_cents: amountCents,
+    method: 'other',
+  })
+  await supabase.from('account_credits').insert({
+    account_id: store.accountId!,
+    patient_id: props.patientId,
+    amount_cents: -amountCents,
+    reason: `Applied to invoice ${invoice.invoice_number}`,
+    invoice_id: invoice.id,
+    created_by: store.teamMember?.id ?? null,
+  })
+
+  const { data: paid } = await supabase.from('payments').select('amount_cents').eq('invoice_id', invoice.id)
+  const paidCents = (paid ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
+  if (paidCents >= invoice.total_cents) {
+    await supabase.from('invoices').update({ status: 'paid' }).eq('id', invoice.id)
+  }
+
+  applyCreditInvoiceId.value = ''
+  applyCreditAmount.value = ''
+  applyingCredit.value = false
+  await Promise.all([refreshCreditSummary(), loadCreditHistory(), loadAll()])
+}
+
 const showCardModal = ref(false)
 const stripeCustomer = ref<StripeCustomerRow | null>(null)
 const schedules = ref<PaymentScheduleRow[]>([])
@@ -118,9 +194,13 @@ async function loadAll() {
 
   loading.value = false
 }
-onMounted(loadAll)
+onMounted(() => {
+  loadAll()
+  loadCreditHistory()
+})
 
 const hasCard = computed(() => !!stripeCustomer.value?.default_payment_method_id)
+const unpaidInvoices = computed(() => invoices.value.filter((i) => i.status === 'unpaid'))
 
 function scheduleForPackage(purchaseId: string) {
   return schedules.value.find((s) => s.package_purchase_id === purchaseId)
@@ -307,6 +387,56 @@ async function logPayment(m: PatientMembershipRow, status: 'paid' | 'failed') {
           </tr>
         </tbody>
       </table>
+    </div>
+
+    <div v-if="!loading" class="rounded-lg border border-gray-200 bg-white p-4">
+      <div class="flex items-center justify-between">
+        <h3 class="text-sm font-semibold text-gray-900">Account Credit</h3>
+        <span class="text-sm font-medium" :class="creditLedgerCents > 0 ? 'text-green-600' : 'text-gray-500'">
+          €{{ (creditLedgerCents / 100).toFixed(2) }} available
+        </span>
+      </div>
+
+      <form class="mt-3 flex flex-wrap items-end gap-2" @submit.prevent="addCredit">
+        <div>
+          <label class="block text-xs text-gray-600">Add credit (€)</label>
+          <input v-model="addCreditAmount" type="number" min="0" step="0.01" class="mt-0.5 w-24 rounded border border-gray-300 px-2 py-1 text-sm" />
+        </div>
+        <div class="flex-1">
+          <label class="block text-xs text-gray-600">Reason</label>
+          <input v-model="addCreditReason" type="text" placeholder="e.g. Birthday gift" class="mt-0.5 w-full rounded border border-gray-300 px-2 py-1 text-sm" />
+        </div>
+        <button type="submit" :disabled="!addCreditAmount || addingCredit" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
+          {{ addingCredit ? 'Adding…' : 'Add Credit' }}
+        </button>
+      </form>
+
+      <form v-if="creditLedgerCents > 0 && unpaidInvoices.length > 0" class="mt-3 flex flex-wrap items-end gap-2 border-t border-gray-100 pt-3" @submit.prevent="applyCreditToInvoice">
+        <div>
+          <label class="block text-xs text-gray-600">Apply to invoice</label>
+          <select v-model="applyCreditInvoiceId" class="mt-0.5 rounded border border-gray-300 px-2 py-1 text-sm">
+            <option value="" disabled>Select invoice…</option>
+            <option v-for="inv in unpaidInvoices" :key="inv.id" :value="inv.id">{{ inv.invoice_number }} (€{{ (inv.total_cents / 100).toFixed(2) }})</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-600">Amount (€)</label>
+          <input v-model="applyCreditAmount" type="number" min="0" step="0.01" class="mt-0.5 w-24 rounded border border-gray-300 px-2 py-1 text-sm" />
+        </div>
+        <button type="submit" :disabled="!applyCreditInvoiceId || !applyCreditAmount || applyingCredit" class="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+          {{ applyingCredit ? 'Applying…' : 'Apply Credit' }}
+        </button>
+      </form>
+
+      <p v-if="creditError" class="mt-2 text-xs text-red-600">{{ creditError }}</p>
+
+      <ul v-if="creditHistory.length > 0" class="mt-3 space-y-1 border-t border-gray-100 pt-2 text-xs text-gray-500">
+        <li v-for="c in creditHistory" :key="c.id">
+          {{ new Date(c.created_at).toLocaleDateString() }} &middot;
+          <span :class="c.amount_cents > 0 ? 'text-green-600' : 'text-red-600'">{{ c.amount_cents > 0 ? '+' : '' }}€{{ (c.amount_cents / 100).toFixed(2) }}</span>
+          <span v-if="c.reason"> &middot; {{ c.reason }}</span>
+        </li>
+      </ul>
     </div>
 
     <div v-if="!loading" class="flex items-center justify-between rounded-lg border border-gray-200 bg-white p-3">

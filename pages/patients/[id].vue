@@ -23,6 +23,7 @@ const tabs = [
   { key: 'appointments', label: 'Appointments' },
   { key: 'visit-notes', label: 'Visit Notes' },
   { key: 'billing', label: 'Billing' },
+  { key: 'communications', label: 'Communications' },
   { key: 'files', label: 'Files' },
   { key: 'docs', label: 'Docs' },
 ]
@@ -73,6 +74,7 @@ const activeTab = computed({
           />
           <PatientsVisitNotesTab v-else-if="activeTab === 'visit-notes'" :patient-id="patientId" />
           <PatientsBillingTab v-else-if="activeTab === 'billing'" :patient-id="patientId" />
+          <PatientsCommunicationsTab v-else-if="activeTab === 'communications'" :patient-id="patientId" />
           <PatientsFilesTab v-else-if="activeTab === 'files'" :patient-id="patientId" />
           <PatientsDocsTab v-else-if="activeTab === 'docs'" :patient-id="patientId" />
         </div>

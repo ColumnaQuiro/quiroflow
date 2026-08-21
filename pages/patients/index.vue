@@ -3,7 +3,7 @@ import type { Tables } from '~/types/database.types'
 
 type Patient = Pick<
   Tables<'patients'>,
-  'id' | 'first_name' | 'last_name' | 'date_of_birth' | 'balance_cents' | 'tags' | 'clinic_id'
+  'id' | 'first_name' | 'last_name' | 'date_of_birth' | 'balance_cents' | 'tags' | 'clinic_id' | 'email' | 'default_practitioner_id'
 >
 
 const supabase = useSupabaseClient()
@@ -11,12 +11,25 @@ const store = useAccountStore()
 
 const PAGE_SIZE = 50
 
+interface TeamMemberOption { id: string; full_name: string }
+interface CarePlanInfo { name: string; totalVisits: number; completed: number }
+
 const search = ref('')
 const balanceFilter = ref<'any' | 'credit' | 'debit' | 'zero'>('any')
+const missingEmail = ref(false)
+const missingPhone = ref(false)
+const practitionerFilter = ref('')
 const allClinics = ref(false)
 const patients = ref<Patient[]>([])
 const nextAppointmentByPatient = ref<Record<string, string>>({})
+const carePlanByPatient = ref<Record<string, CarePlanInfo>>({})
+const teamMembers = ref<TeamMemberOption[]>([])
 const loading = ref(true)
+
+onMounted(async () => {
+  const { data } = await supabase.from('team_members').select('id, full_name').order('full_name')
+  teamMembers.value = data ?? []
+})
 const page = ref(1)
 const totalCount = ref(0)
 const totalPages = computed(() => Math.max(1, Math.ceil(totalCount.value / PAGE_SIZE)))
@@ -33,12 +46,19 @@ async function loadPatients() {
 
   let query = supabase
     .from('patients')
-    .select('id, first_name, last_name, date_of_birth, balance_cents, tags, clinic_id', { count: 'exact' })
+    .select('id, first_name, last_name, date_of_birth, balance_cents, tags, clinic_id, email, default_practitioner_id', { count: 'exact' })
 
   if (!allClinics.value && store.currentClinicId) query = query.eq('clinic_id', store.currentClinicId)
   if (balanceFilter.value === 'credit') query = query.gt('balance_cents', 0)
   if (balanceFilter.value === 'debit') query = query.lt('balance_cents', 0)
   if (balanceFilter.value === 'zero') query = query.eq('balance_cents', 0)
+  if (missingEmail.value) query = query.or('email.is.null,email.eq.')
+  if (practitionerFilter.value) query = query.eq('default_practitioner_id', practitionerFilter.value)
+  if (missingPhone.value) {
+    const { data: withPhone } = await supabase.from('patient_contact_numbers').select('patient_id')
+    const idsWithPhone = [...new Set((withPhone ?? []).map((r) => r.patient_id))]
+    if (idsWithPhone.length > 0) query = query.not('id', 'in', `(${idsWithPhone.join(',')})`)
+  }
 
   // Each word must match somewhere in first/last name -- chaining .or()
   // calls ANDs the groups together, so "john sm" matches "John Smith"
@@ -69,8 +89,29 @@ async function loadPatients() {
       if (!nextByPatient[a.patient_id]) nextByPatient[a.patient_id] = a.starts_at
     }
     nextAppointmentByPatient.value = nextByPatient
+
+    const [{ data: plans }, { data: completedAppts }] = await Promise.all([
+      supabase
+        .from('care_plans')
+        .select('patient_id, name, total_visits, created_at')
+        .in('patient_id', ids)
+        .order('created_at', { ascending: false }),
+      supabase.from('appointments').select('patient_id').eq('status', 'completed').in('patient_id', ids),
+    ])
+    const completedByPatient: Record<string, number> = {}
+    for (const a of completedAppts ?? []) {
+      completedByPatient[a.patient_id] = (completedByPatient[a.patient_id] ?? 0) + 1
+    }
+    const planByPatient: Record<string, CarePlanInfo> = {}
+    for (const p of plans ?? []) {
+      if (!planByPatient[p.patient_id]) {
+        planByPatient[p.patient_id] = { name: p.name, totalVisits: p.total_visits, completed: completedByPatient[p.patient_id] ?? 0 }
+      }
+    }
+    carePlanByPatient.value = planByPatient
   } else {
     nextAppointmentByPatient.value = {}
+    carePlanByPatient.value = {}
   }
 
   loading.value = false
@@ -87,7 +128,7 @@ watch(search, () => {
   clearTimeout(searchDebounce)
   searchDebounce = setTimeout(() => goToPage(1), 300)
 })
-watch([balanceFilter, allClinics], () => goToPage(1))
+watch([balanceFilter, allClinics, missingEmail, missingPhone, practitionerFilter], () => goToPage(1))
 
 function initials(p: Patient) {
   const a = p.first_name?.[0] ?? ''
@@ -145,6 +186,21 @@ function formatNextAppointment(patientId: string) {
         <option value="debit">In debt</option>
         <option value="zero">Zero balance</option>
       </select>
+      <select
+        v-model="practitionerFilter"
+        class="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+      >
+        <option value="">Any practitioner</option>
+        <option v-for="m in teamMembers" :key="m.id" :value="m.id">{{ m.full_name }}</option>
+      </select>
+      <label class="flex items-center gap-1.5 text-sm text-gray-600">
+        <input v-model="missingEmail" type="checkbox" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+        Missing email
+      </label>
+      <label class="flex items-center gap-1.5 text-sm text-gray-600">
+        <input v-model="missingPhone" type="checkbox" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+        Missing phone
+      </label>
       <label v-if="store.currentClinicId" class="flex items-center gap-1.5 text-sm text-gray-600">
         <input v-model="allClinics" type="checkbox" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
         Show all clinics
@@ -159,15 +215,16 @@ function formatNextAppointment(patientId: string) {
             <th class="px-5 py-3">Balance</th>
             <th class="px-5 py-3">Date of Birth</th>
             <th class="px-5 py-3">Next Appointment</th>
+            <th class="px-5 py-3">Care Plan</th>
             <th class="px-5 py-3">Tags</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
           <tr v-if="loading">
-            <td colspan="5" class="px-5 py-10 text-center text-gray-400">Loading…</td>
+            <td colspan="6" class="px-5 py-10 text-center text-gray-400">Loading…</td>
           </tr>
           <tr v-else-if="patients.length === 0">
-            <td colspan="5" class="px-5 py-10 text-center text-gray-400">No patients found.</td>
+            <td colspan="6" class="px-5 py-10 text-center text-gray-400">No patients found.</td>
           </tr>
           <tr
             v-for="patient in patients"
@@ -190,6 +247,10 @@ function formatNextAppointment(patientId: string) {
             </td>
             <td class="px-5 py-3 text-gray-500">{{ patient.date_of_birth ?? '—' }}</td>
             <td class="px-5 py-3 text-gray-500">{{ formatNextAppointment(patient.id) ?? '—' }}</td>
+            <td class="px-5 py-3 text-gray-500">
+              <span v-if="carePlanByPatient[patient.id]">{{ carePlanByPatient[patient.id].name }} ({{ carePlanByPatient[patient.id].completed }}/{{ carePlanByPatient[patient.id].totalVisits }})</span>
+              <span v-else>—</span>
+            </td>
             <td class="px-5 py-3">
               <span
                 v-for="tag in patient.tags"

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { Tables } from '~/types/database.types'
+
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 
@@ -11,8 +13,17 @@ const phoneNumber = ref('')
 const phoneIsWhatsapp = ref(false)
 const clinicId = ref(store.currentClinicId ?? '')
 const tagsInput = ref('')
+const gender = ref('')
+const address = ref('')
+const referralSource = ref('')
 const error = ref('')
 const saving = ref(false)
+
+const referralSources = ref<Tables<'referral_sources'>[]>([])
+onMounted(async () => {
+  const { data } = await supabase.from('referral_sources').select('*').order('name')
+  referralSources.value = data ?? []
+})
 
 async function onSubmit() {
   error.value = ''
@@ -32,6 +43,9 @@ async function onSubmit() {
       last_name: lastName.value || null,
       date_of_birth: dateOfBirth.value || null,
       email: email.value || null,
+      gender: gender.value || null,
+      address: address.value || null,
+      referral_source: referralSource.value || null,
       tags,
     })
     .select('id')
@@ -105,12 +119,12 @@ async function onSubmit() {
             class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
           />
         </div>
-        <div>
+        <div class="min-w-0">
           <label class="block text-sm font-medium text-gray-700">Phone</label>
           <div class="mt-1 flex gap-2">
             <select
               v-model="phoneCountry"
-              class="rounded-md border border-gray-300 px-2 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              class="shrink-0 rounded-md border border-gray-300 px-2 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             >
               <option v-for="c in COUNTRIES" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }}</option>
             </select>
@@ -118,7 +132,7 @@ async function onSubmit() {
               v-model="phoneNumber"
               type="tel"
               placeholder="612 34 56 78"
-              class="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              class="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
           </div>
           <label class="mt-1.5 flex items-center gap-1.5 text-sm text-gray-600">
@@ -126,6 +140,44 @@ async function onSubmit() {
             This number has WhatsApp
           </label>
         </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700" for="gender">Gender</label>
+          <select
+            id="gender"
+            v-model="gender"
+            class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          >
+            <option value="">Not set</option>
+            <option value="female">Female</option>
+            <option value="male">Male</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700" for="referral-source">Referral source</label>
+          <select
+            id="referral-source"
+            v-model="referralSource"
+            class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          >
+            <option value="">Not set</option>
+            <option v-for="s in referralSources" :key="s.id" :value="s.name">{{ s.name }}</option>
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700" for="address">Address</label>
+        <input
+          id="address"
+          v-model="address"
+          type="text"
+          placeholder="For invoices"
+          class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+        />
       </div>
 
       <div>

@@ -17,7 +17,8 @@ const loading = ref(true)
 const search = ref('')
 const practitionerFilter = ref('')
 const overdueOnly = ref(true) // "3+ weeks overdue" chip -- on by default per design spec
-const hasBalanceOnly = ref(false)
+const balanceFilter = ref<'any' | 'credit' | 'debit'>('any')
+const tagFilter = ref('')
 const notContactedOnly = ref(false)
 
 // Contact history and phone-on-file are fetched for every recall candidate
@@ -70,7 +71,9 @@ const filtered = computed(() => {
       }
       if (practitionerFilter.value && r.default_practitioner_id !== practitionerFilter.value) return false
       if (overdueOnly.value && (r.days_since_last_appointment ?? 0) < 21) return false
-      if (hasBalanceOnly.value && (r.balance_cents ?? 0) >= 0) return false
+      if (balanceFilter.value === 'credit' && (r.balance_cents ?? 0) <= 0) return false
+      if (balanceFilter.value === 'debit' && (r.balance_cents ?? 0) >= 0) return false
+      if (tagFilter.value && !(r.tags ?? []).some((t) => t.toLowerCase().includes(tagFilter.value.toLowerCase()))) return false
       if (notContactedOnly.value && lastActionByPatient.value[r.patient_id!]) return false
       return true
     })
@@ -306,14 +309,27 @@ function exportCsv() {
           </svg>
         </div>
 
-        <button
-          type="button"
-          class="inline-flex h-7 items-center gap-1.5 rounded-pill border px-3 text-[12.5px] font-medium"
-          :class="hasBalanceOnly ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control bg-surface text-ink-500 hover:border-line-controlHover'"
-          @click="hasBalanceOnly = !hasBalanceOnly"
-        >
-          Has balance
-        </button>
+        <div class="relative">
+          <select
+            v-model="balanceFilter"
+            class="h-7 appearance-none rounded-pill border bg-surface pl-3 pr-7 text-[12.5px] font-medium focus:outline-none"
+            :class="balanceFilter !== 'any' ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control text-ink-500 hover:border-line-controlHover'"
+          >
+            <option value="any">Any balance</option>
+            <option value="debit">Owing</option>
+            <option value="credit">In credit</option>
+          </select>
+          <svg class="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-ink-faint2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+
+        <input
+          v-model="tagFilter"
+          type="search"
+          placeholder="Filter by tag"
+          class="h-7 w-32 rounded-pill border border-line-control bg-surface px-3 text-[12.5px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand-tintBorder"
+        />
 
         <button
           type="button"

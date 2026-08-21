@@ -70,9 +70,11 @@ async function changePassword() {
 </script>
 
 <template>
-  <div class="max-w-lg">
-    <h1 class="text-xl font-semibold text-ink-900">Account Settings</h1>
-    <p class="mt-1 text-sm text-ink-muted">Your personal details and login.</p>
+  <div class="flex h-full flex-col">
+    <PageHeader title="Account Settings" />
+    <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
+    <div class="max-w-lg">
+    <p class="text-sm text-ink-muted">Your personal details and login.</p>
 
     <form class="mt-6 space-y-4 rounded-card border border-line bg-surface p-4 shadow-card" @submit.prevent="saveProfile">
       <h2 class="text-sm font-semibold text-ink-900">Personal Details</h2>
@@ -115,5 +117,7 @@ async function changePassword() {
         <p v-if="passwordError" class="text-sm text-danger-text">{{ passwordError }}</p>
       </div>
     </form>
+    </div>
+    </div>
   </div>
 </template>

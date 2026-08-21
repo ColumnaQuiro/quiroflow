@@ -73,152 +73,151 @@ async function onSubmit() {
 </script>
 
 <template>
-  <div class="max-w-lg">
-    <h1 class="text-xl font-semibold text-gray-900">Add Patient</h1>
+  <div class="flex h-full flex-col">
+    <PageHeader title="Add Patient" />
+    <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
+      <div class="max-w-lg">
+        <form class="space-y-4 rounded-card border border-line bg-surface p-4 shadow-card" @submit.prevent="onSubmit">
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-medium text-ink-700" for="first-name">First name</label>
+              <input
+                id="first-name"
+                v-model="firstName"
+                type="text"
+                required
+                class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-ink-700" for="last-name">Last name</label>
+              <input
+                id="last-name"
+                v-model="lastName"
+                type="text"
+                class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              />
+            </div>
+          </div>
 
-    <form class="mt-6 space-y-4 rounded-lg border border-gray-200 bg-white p-6" @submit.prevent="onSubmit">
-      <div class="grid grid-cols-2 gap-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700" for="first-name">First name</label>
-          <input
-            id="first-name"
-            v-model="firstName"
-            type="text"
-            required
-            class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700" for="last-name">Last name</label>
-          <input
-            id="last-name"
-            v-model="lastName"
-            type="text"
-            class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          />
-        </div>
-      </div>
-
-      <div>
-        <label class="block text-sm font-medium text-gray-700" for="dob">Date of birth</label>
-        <input
-          id="dob"
-          v-model="dateOfBirth"
-          type="date"
-          class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-        />
-      </div>
-
-      <div class="grid grid-cols-2 gap-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700" for="email">Email</label>
-          <input
-            id="email"
-            v-model="email"
-            type="email"
-            class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          />
-        </div>
-        <div class="min-w-0">
-          <label class="block text-sm font-medium text-gray-700">Phone</label>
-          <div class="mt-1 flex gap-2">
-            <select
-              v-model="phoneCountry"
-              class="shrink-0 rounded-md border border-gray-300 px-2 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            >
-              <option v-for="c in COUNTRIES" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }}</option>
-            </select>
+          <div>
+            <label class="block text-sm font-medium text-ink-700" for="dob">Date of birth</label>
             <input
-              v-model="phoneNumber"
-              type="tel"
-              placeholder="612 34 56 78"
-              class="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              id="dob"
+              v-model="dateOfBirth"
+              type="date"
+              class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
             />
           </div>
-          <label class="mt-1.5 flex items-center gap-1.5 text-sm text-gray-600">
-            <input v-model="phoneIsWhatsapp" type="checkbox" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-            This number has WhatsApp
-          </label>
-        </div>
-      </div>
 
-      <div class="grid grid-cols-2 gap-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700" for="gender">Gender</label>
-          <select
-            id="gender"
-            v-model="gender"
-            class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          >
-            <option value="">Not set</option>
-            <option value="female">Female</option>
-            <option value="male">Male</option>
-            <option value="other">Other</option>
-          </select>
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700" for="referral-source">Referral source</label>
-          <select
-            id="referral-source"
-            v-model="referralSource"
-            class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          >
-            <option value="">Not set</option>
-            <option v-for="s in referralSources" :key="s.id" :value="s.name">{{ s.name }}</option>
-          </select>
-        </div>
-      </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-medium text-ink-700" for="email">Email</label>
+              <input
+                id="email"
+                v-model="email"
+                type="email"
+                class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              />
+            </div>
+            <div class="min-w-0">
+              <label class="block text-sm font-medium text-ink-700">Phone</label>
+              <div class="mt-1 flex gap-2">
+                <select
+                  v-model="phoneCountry"
+                  class="shrink-0 rounded-ctl border border-line-control px-2 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                >
+                  <option v-for="c in COUNTRIES" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }}</option>
+                </select>
+                <input
+                  v-model="phoneNumber"
+                  type="tel"
+                  placeholder="612 34 56 78"
+                  class="min-w-0 flex-1 rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                />
+              </div>
+              <label class="mt-1.5 flex items-center gap-1.5 text-sm text-ink-muted">
+                <input v-model="phoneIsWhatsapp" type="checkbox" class="rounded border-line-control accent-brand focus:ring-brand" />
+                This number has WhatsApp
+              </label>
+            </div>
+          </div>
 
-      <div>
-        <label class="block text-sm font-medium text-gray-700" for="address">Address</label>
-        <input
-          id="address"
-          v-model="address"
-          type="text"
-          placeholder="For invoices"
-          class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-        />
-      </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-medium text-ink-700" for="gender">Gender</label>
+              <select
+                id="gender"
+                v-model="gender"
+                class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              >
+                <option value="">Not set</option>
+                <option value="female">Female</option>
+                <option value="male">Male</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-ink-700" for="referral-source">Referral source</label>
+              <select
+                id="referral-source"
+                v-model="referralSource"
+                class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              >
+                <option value="">Not set</option>
+                <option v-for="s in referralSources" :key="s.id" :value="s.name">{{ s.name }}</option>
+              </select>
+            </div>
+          </div>
 
-      <div>
-        <label class="block text-sm font-medium text-gray-700" for="clinic">Clinic</label>
-        <select
-          id="clinic"
-          v-model="clinicId"
-          class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-        >
-          <option value="">No primary clinic</option>
-          <option v-for="clinic in store.clinics" :key="clinic.id" :value="clinic.id">
-            {{ clinic.name }}
-          </option>
-        </select>
-      </div>
+          <div>
+            <label class="block text-sm font-medium text-ink-700" for="address">Address</label>
+            <input
+              id="address"
+              v-model="address"
+              type="text"
+              placeholder="For invoices"
+              class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            />
+          </div>
 
-      <div>
-        <label class="block text-sm font-medium text-gray-700" for="tags">Tags</label>
-        <input
-          id="tags"
-          v-model="tagsInput"
-          type="text"
-          placeholder="comma, separated, tags"
-          class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-        />
-      </div>
+          <div>
+            <label class="block text-sm font-medium text-ink-700" for="clinic">Clinic</label>
+            <select
+              id="clinic"
+              v-model="clinicId"
+              class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            >
+              <option value="">No primary clinic</option>
+              <option v-for="clinic in store.clinics" :key="clinic.id" :value="clinic.id">
+                {{ clinic.name }}
+              </option>
+            </select>
+          </div>
 
-      <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
+          <div>
+            <label class="block text-sm font-medium text-ink-700" for="tags">Tags</label>
+            <input
+              id="tags"
+              v-model="tagsInput"
+              type="text"
+              placeholder="comma, separated, tags"
+              class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            />
+          </div>
 
-      <div class="flex gap-3">
-        <button
-          type="submit"
-          :disabled="saving"
-          class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
-        >
-          {{ saving ? 'Saving…' : 'Add Patient' }}
-        </button>
-        <NuxtLink to="/patients" class="rounded-md px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
-          Cancel
-        </NuxtLink>
+          <p v-if="error" class="text-sm text-danger-text">{{ error }}</p>
+
+          <div class="flex gap-3">
+            <UiBtn type="submit" variant="primary" :disabled="saving">
+              {{ saving ? 'Saving…' : 'Add Patient' }}
+            </UiBtn>
+            <NuxtLink to="/patients" class="rounded-ctl px-4 py-2 text-sm font-medium text-ink-muted hover:bg-surface-subtle">
+              Cancel
+            </NuxtLink>
+          </div>
+        </form>
       </div>
-    </form>
+    </div>
   </div>
 </template>

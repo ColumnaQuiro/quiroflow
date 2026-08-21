@@ -1333,12 +1333,14 @@ export type Database = {
           created_at: string
           date_of_birth: string | null
           default_practitioner_id: string | null
+          do_not_contact: boolean
           email: string | null
           emergency_contact: string | null
           external_reference: string | null
           first_name: string
           id: string
           invoice_email_enabled: boolean
+          is_minor: boolean
           last_name: string | null
           marketing_channels: string[]
           national_id: string | null
@@ -1349,7 +1351,9 @@ export type Database = {
           recall_status: string
           referral_source: string | null
           reminder_channel: string
+          status: string
           tags: string[]
+          tutor_patient_id: string | null
           user_id: string | null
         }
         Insert: {
@@ -1361,12 +1365,14 @@ export type Database = {
           created_at?: string
           date_of_birth?: string | null
           default_practitioner_id?: string | null
+          do_not_contact?: boolean
           email?: string | null
           emergency_contact?: string | null
           external_reference?: string | null
           first_name: string
           id?: string
           invoice_email_enabled?: boolean
+          is_minor?: boolean
           last_name?: string | null
           marketing_channels?: string[]
           national_id?: string | null
@@ -1377,7 +1383,9 @@ export type Database = {
           recall_status?: string
           referral_source?: string | null
           reminder_channel?: string
+          status?: string
           tags?: string[]
+          tutor_patient_id?: string | null
           user_id?: string | null
         }
         Update: {
@@ -1389,12 +1397,14 @@ export type Database = {
           created_at?: string
           date_of_birth?: string | null
           default_practitioner_id?: string | null
+          do_not_contact?: boolean
           email?: string | null
           emergency_contact?: string | null
           external_reference?: string | null
           first_name?: string
           id?: string
           invoice_email_enabled?: boolean
+          is_minor?: boolean
           last_name?: string | null
           marketing_channels?: string[]
           national_id?: string | null
@@ -1405,7 +1415,9 @@ export type Database = {
           recall_status?: string
           referral_source?: string | null
           reminder_channel?: string
+          status?: string
           tags?: string[]
+          tutor_patient_id?: string | null
           user_id?: string | null
         }
         Relationships: [

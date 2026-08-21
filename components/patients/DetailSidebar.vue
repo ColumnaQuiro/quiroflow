@@ -9,6 +9,8 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ message: []; charge: [] }>()
 
+const canContact = computed(() => !props.patient.is_minor && !props.patient.do_not_contact)
+
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 
@@ -83,8 +85,8 @@ function money(cents: number) {
         </div>
       </div>
 
-      <div class="mt-3.5 grid grid-cols-2 gap-2">
-        <UiBtn size="sm" variant="secondary" class="w-full justify-center" @click="emit('message')">WhatsApp</UiBtn>
+      <div class="mt-3.5 grid gap-2" :class="canContact ? 'grid-cols-2' : 'grid-cols-1'">
+        <UiBtn v-if="canContact" size="sm" variant="secondary" class="w-full justify-center" @click="emit('message')">WhatsApp</UiBtn>
         <UiBtn size="sm" variant="secondary" class="w-full justify-center" @click="emit('charge')">Charge</UiBtn>
       </div>
     </div>

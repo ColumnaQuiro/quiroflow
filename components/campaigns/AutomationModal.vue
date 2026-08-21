@@ -42,6 +42,13 @@ function blankAction(): ActionForm {
   return { action_type: 'whatsapp_template', template_name: '', template_language: 'es', doc_template_id: '', variables: [{ source: 'first_name', text: '' }], subject: '', body: '', url: '', secret: '' }
 }
 
+interface WhatsAppTemplate { name: string; language: string; variableCount: number }
+const whatsappTemplates = ref<WhatsAppTemplate[]>([])
+const templatesError = ref('')
+function templateKey(t: Pick<WhatsAppTemplate, 'name' | 'language'>) {
+  return `${t.name}::${t.language}`
+}
+
 const savedRuleId = ref<string | null>(props.ruleId ?? null)
 const name = ref('Campaign')
 const triggerEvent = ref(TRIGGER_OPTIONS[0].value)
@@ -57,6 +64,13 @@ const error = ref('')
 onMounted(async () => {
   const { data: templates } = await supabase.from('doc_templates').select('id, title').order('title')
   docTemplates.value = templates ?? []
+
+  try {
+    const { templates: waList } = await $fetch<{ templates: WhatsAppTemplate[] }>('/api/whatsapp/templates')
+    whatsappTemplates.value = waList
+  } catch (err: any) {
+    templatesError.value = err?.data?.statusMessage ?? 'Failed to load WhatsApp templates'
+  }
 
   if (props.ruleId) {
     const [{ data: rule }, { data: existingActions }] = await Promise.all([
@@ -93,6 +107,18 @@ function addAction() {
 }
 function removeAction(index: number) {
   actions.value.splice(index, 1)
+}
+function templateKeyFor(a: ActionForm) {
+  return whatsappTemplates.value.some((t) => templateKey(t) === `${a.template_name}::${a.template_language}`)
+    ? `${a.template_name}::${a.template_language}`
+    : ''
+}
+function selectTemplate(a: ActionForm, key: string) {
+  const t = whatsappTemplates.value.find((tpl) => templateKey(tpl) === key)
+  if (!t) return
+  a.template_name = t.name
+  a.template_language = t.language
+  a.variables = Array.from({ length: t.variableCount }, () => ({ source: 'first_name', text: '' }))
 }
 function addVariable(a: ActionForm) {
   a.variables.push({ source: 'first_name', text: '' })
@@ -250,20 +276,19 @@ async function sendTestToMe() {
                 </div>
 
                 <div v-if="a.action_type === 'whatsapp_template'" class="mt-3 space-y-2.5">
-                  <div class="flex gap-2">
-                    <input
-                      v-model="a.template_name"
-                      type="text"
-                      placeholder="template_name"
-                      class="h-8 w-full rounded-ctl border border-line-control px-2.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-                    />
-                    <input
-                      v-model="a.template_language"
-                      type="text"
-                      placeholder="es"
-                      class="h-8 w-16 rounded-ctl border border-line-control px-2.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-                    />
-                  </div>
+                  <p v-if="templatesError" class="text-[12px] text-danger-text">{{ templatesError }}</p>
+                  <select
+                    v-else
+                    :value="templateKeyFor(a)"
+                    class="h-8 w-full rounded-ctl border border-line-control px-2.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                    @change="selectTemplate(a, ($event.target as HTMLSelectElement).value)"
+                  >
+                    <option value="" disabled>{{ whatsappTemplates.length === 0 ? 'No approved templates found' : 'Choose a template…' }}</option>
+                    <option v-for="t in whatsappTemplates" :key="templateKey(t)" :value="templateKey(t)">{{ t.name }} ({{ t.language }})</option>
+                  </select>
+                  <p v-if="a.template_name && !templateKeyFor(a) && !templatesError" class="text-[11.5px] text-warning-text">
+                    Currently set to "{{ a.template_name }}" ({{ a.template_language }}), which isn't in the approved template list anymore.
+                  </p>
                   <div>
                     <select
                       v-model="a.doc_template_id"

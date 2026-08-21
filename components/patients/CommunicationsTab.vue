@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const props = defineProps<{ patientId: string; firstName?: string; preferredLanguage?: string }>()
+const props = withDefaults(defineProps<{ patientId: string; firstName?: string; preferredLanguage?: string; canContact?: boolean }>(), { canContact: true })
 
 interface MessageRow {
   id: string
@@ -75,8 +75,11 @@ function titleFor(m: MessageRow) {
           WhatsApp
         </button>
       </div>
-      <UiBtn variant="primary" size="sm" @click="newMessageOpen = true">New message</UiBtn>
+      <UiBtn v-if="canContact" variant="primary" size="sm" @click="newMessageOpen = true">New message</UiBtn>
     </div>
+    <p v-if="!canContact" class="border-b border-line-divider bg-danger-bg px-4 py-2 text-[12px] text-danger-text">
+      This patient is marked "do not contact" — new messages are disabled.
+    </p>
 
     <div v-if="loading" class="p-8 text-center text-[13px] text-ink-faint">Loading…</div>
     <p v-else-if="filteredMessages.length === 0" class="p-8 text-center text-[13px] text-ink-faint">No WhatsApp messages sent to this patient yet.</p>

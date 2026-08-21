@@ -12,6 +12,8 @@ interface PatientForAction {
   first_name: string
   last_name: string | null
   email: string | null
+  is_minor?: boolean
+  do_not_contact?: boolean
 }
 interface ActionRow {
   id: string
@@ -58,12 +60,17 @@ export async function runActionsList(
   appointmentId?: string,
   triggerBody?: TriggerBody,
 ) {
+  // Minors and do-not-contact patients get no communications -- webhook
+  // actions still run since those are internal side effects, not messages
+  // sent to the patient.
+  const canContact = !patient.is_minor && !patient.do_not_contact
+
   for (const action of actions) {
     try {
       if (action.action_type === 'whatsapp_template') {
-        await runWhatsAppAction(supabase, accountId, patient, action.config, origin, appointmentId)
+        if (canContact) await runWhatsAppAction(supabase, accountId, patient, action.config, origin, appointmentId)
       } else if (action.action_type === 'email') {
-        await runEmailAction(patient, action.config)
+        if (canContact) await runEmailAction(patient, action.config)
       } else if (action.action_type === 'webhook') {
         await runWebhookAction(action.config, triggerBody ?? { triggerEvent: 'manual', patientId: patient.id, appointmentId })
       }

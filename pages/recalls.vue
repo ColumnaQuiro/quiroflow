@@ -11,12 +11,13 @@ const store = useAccountStore()
 const recalls = ref<Recall[]>([])
 const teamMembers = ref<TeamMember[]>([])
 const lastActionByPatient = ref<Record<string, ContactLogRow>>({})
+const actionCountByPatient = ref<Record<string, number>>({})
 const hasPhoneByPatient = ref<Record<string, boolean>>({})
 const loading = ref(true)
 
 const search = ref('')
 const practitionerFilter = ref('')
-const overdueOnly = ref(true) // "3+ weeks overdue" chip -- on by default per design spec
+const minWeeksOverdue = ref(3) // "N+ weeks overdue" filter -- 3+ on by default per design spec
 const balanceFilter = ref<'any' | 'credit' | 'debit'>('any')
 const tagFilter = ref('')
 const notContactedOnly = ref(false)
@@ -40,10 +41,13 @@ async function loadContactContext() {
     supabase.from('patients').select('id, has_phone').in('id', ids),
   ])
   const map: Record<string, ContactLogRow> = {}
+  const counts: Record<string, number> = {}
   for (const row of logs ?? []) {
     if (!map[row.patient_id]) map[row.patient_id] = row
+    counts[row.patient_id] = (counts[row.patient_id] ?? 0) + 1
   }
   lastActionByPatient.value = map
+  actionCountByPatient.value = counts
   const phoneMap: Record<string, boolean> = {}
   for (const p of phones ?? []) phoneMap[p.id] = p.has_phone
   hasPhoneByPatient.value = phoneMap
@@ -70,7 +74,7 @@ const filtered = computed(() => {
         if (!name.includes(search.value.toLowerCase())) return false
       }
       if (practitionerFilter.value && r.default_practitioner_id !== practitionerFilter.value) return false
-      if (overdueOnly.value && (r.days_since_last_appointment ?? 0) < 21) return false
+      if ((r.days_since_last_appointment ?? 0) < minWeeksOverdue.value * 7) return false
       if (balanceFilter.value === 'credit' && (r.balance_cents ?? 0) <= 0) return false
       if (balanceFilter.value === 'debit' && (r.balance_cents ?? 0) >= 0) return false
       if (tagFilter.value && !(r.tags ?? []).some((t) => t.toLowerCase().includes(tagFilter.value.toLowerCase()))) return false
@@ -140,7 +144,10 @@ async function refreshLastAction(patientId: string) {
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
-  if (data) lastActionByPatient.value = { ...lastActionByPatient.value, [patientId]: data }
+  if (data) {
+    lastActionByPatient.value = { ...lastActionByPatient.value, [patientId]: data }
+    actionCountByPatient.value = { ...actionCountByPatient.value, [patientId]: (actionCountByPatient.value[patientId] ?? 0) + 1 }
+  }
 }
 
 async function logAction(patientId: string, action: string) {
@@ -173,6 +180,9 @@ function onRowAction(recall: Recall, e: Event) {
   else if (value === 'dismiss') dismiss(recall)
   else if (value) logAction(recall.patient_id!, value)
 }
+
+// --- Contact history modal ---
+const historyFor = ref<Recall | null>(null)
 
 // --- Send WhatsApp modal (single patient) ---
 const sendingTo = ref<Recall | null>(null)
@@ -286,14 +296,23 @@ function exportCsv() {
           class="h-8 w-52 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand-tintBorder"
         />
 
-        <button
-          type="button"
-          class="inline-flex h-7 items-center gap-1.5 rounded-pill border px-3 text-[12.5px] font-medium"
-          :class="overdueOnly ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control bg-surface text-ink-500 hover:border-line-controlHover'"
-          @click="overdueOnly = !overdueOnly"
-        >
-          3+ weeks overdue
-        </button>
+        <div class="relative">
+          <select
+            v-model.number="minWeeksOverdue"
+            class="h-7 appearance-none rounded-pill border border-brand-tintBorder bg-brand-tint pl-3 pr-7 text-[12.5px] font-medium text-brand-text focus:outline-none"
+          >
+            <option :value="1">1+ weeks overdue</option>
+            <option :value="2">2+ weeks overdue</option>
+            <option :value="3">3+ weeks overdue</option>
+            <option :value="4">4+ weeks overdue</option>
+            <option :value="6">6+ weeks overdue</option>
+            <option :value="8">8+ weeks overdue</option>
+            <option :value="12">12+ weeks overdue</option>
+          </select>
+          <svg class="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-brand-text" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
 
         <div class="relative">
           <select
@@ -441,7 +460,18 @@ function exportCsv() {
               </td>
               <td class="px-4 py-2.5 text-ink-muted">{{ practitionerName(r.default_practitioner_id) }}</td>
               <td class="px-4 py-2.5 text-right font-mono" :class="balanceInfo(r.balance_cents).class">{{ balanceInfo(r.balance_cents).text }}</td>
-              <td class="px-4 py-2.5 text-[12.5px] text-ink-muted2">{{ lastActionText(r) }}</td>
+              <td class="px-4 py-2.5 text-[12.5px]">
+                <button
+                  v-if="actionCountByPatient[r.patient_id!]"
+                  type="button"
+                  class="text-left text-brand-text hover:underline"
+                  @click="historyFor = r"
+                >
+                  {{ lastActionText(r) }}
+                  <span class="text-ink-faint2">· {{ actionCountByPatient[r.patient_id!] }} action{{ actionCountByPatient[r.patient_id!] === 1 ? '' : 's' }}</span>
+                </button>
+                <span v-else class="text-ink-muted2">{{ lastActionText(r) }}</span>
+              </td>
               <td class="px-4 py-2.5 text-right">
                 <select
                   class="h-7 rounded-ctlSm border border-line-control bg-surface px-1.5 text-[12px] text-ink-500 focus:outline-none"
@@ -461,6 +491,13 @@ function exportCsv() {
         </table>
       </div>
     </div>
+
+    <ContactHistoryModal
+      v-if="historyFor"
+      :patient-id="historyFor.patient_id!"
+      :patient-name="`${historyFor.first_name ?? ''} ${historyFor.last_name ?? ''}`.trim()"
+      @close="historyFor = null"
+    />
 
     <SendWhatsAppModal
       v-if="sendingTo"

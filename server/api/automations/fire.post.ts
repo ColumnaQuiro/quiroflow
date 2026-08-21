@@ -33,7 +33,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: patient } = await supabase
     .from('patients')
-    .select('id, first_name, last_name, email')
+    .select('id, first_name, last_name, email, is_minor, do_not_contact')
     .eq('id', body.patientId)
     .maybeSingle()
   if (!patient) return { fired: 0 }

@@ -23,15 +23,20 @@ const { balanceCents, creditLedgerCents, loading: financialLoading } = usePatien
 const isVip = computed(() => !!patient.value?.tags.some((t) => t.toUpperCase() === 'VIP'))
 const amountDue = computed(() => (balanceCents.value < 0 ? -balanceCents.value : 0))
 
-const tabs = [
+// Minors get no communications at all -- the tab and every send entry point
+// are hidden rather than merely disabled, matching how do-not-contact
+// already blocks sends server-side.
+const canContact = computed(() => !patient.value?.is_minor && !patient.value?.do_not_contact)
+
+const tabs = computed(() => [
   { key: 'overview', label: 'Overview' },
   { key: 'appointments', label: 'Appointments' },
   { key: 'visit-notes', label: 'Visit notes' },
   { key: 'billing', label: 'Billing' },
-  { key: 'communications', label: 'Communications' },
+  ...(patient.value?.is_minor ? [] : [{ key: 'communications', label: 'Communications' }]),
   { key: 'docs', label: 'Docs' },
   { key: 'files', label: 'Files' },
-]
+])
 
 const activeTab = computed({
   get: () => (route.query.tab as string) ?? 'overview',
@@ -65,6 +70,8 @@ const whatsAppOpen = ref(false)
         <div class="flex shrink-0 items-center gap-1.5">
           <UiPill v-if="isVip" tone="brand" :dot="true">VIP</UiPill>
           <UiPill v-if="amountDue > 0" tone="danger">€{{ (amountDue / 100).toFixed(2) }} due</UiPill>
+          <UiPill v-if="patient.is_minor" tone="brand">Minor</UiPill>
+          <UiPill v-if="patient.do_not_contact" tone="danger">Do not contact</UiPill>
         </div>
       </div>
 
@@ -87,7 +94,7 @@ const whatsAppOpen = ref(false)
             <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1" y="1" width="12" height="3.5" rx="0.8" /><rect x="1" y="6" width="12" height="7" rx="0.8" /></svg>
           </button>
         </div>
-        <UiBtn variant="secondary" @click="whatsAppOpen = true">Message</UiBtn>
+        <UiBtn v-if="canContact" variant="secondary" @click="whatsAppOpen = true">Message</UiBtn>
         <UiBtn variant="primary" @click="navigateTo('/calendar')">Book visit</UiBtn>
       </div>
     </header>
@@ -138,6 +145,7 @@ const whatsAppOpen = ref(false)
               :patient-id="patientId"
               :first-name="patient.first_name"
               :preferred-language="patient.preferred_language"
+              :can-contact="canContact"
             />
             <PatientsDocsTab v-else-if="activeTab === 'docs'" :patient-id="patientId" />
             <PatientsFilesTab v-else-if="activeTab === 'files'" :patient-id="patientId" />

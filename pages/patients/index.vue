@@ -1,9 +1,21 @@
 <script setup lang="ts">
 import type { Tables } from '~/types/database.types'
+import { fetchAllRows } from '~/composables/useFetchAllRows'
 
 type Patient = Pick<
   Tables<'patients'>,
-  'id' | 'first_name' | 'last_name' | 'balance_cents' | 'tags' | 'clinic_id' | 'email' | 'default_practitioner_id' | 'invoice_email_enabled'
+  | 'id'
+  | 'first_name'
+  | 'last_name'
+  | 'balance_cents'
+  | 'tags'
+  | 'clinic_id'
+  | 'email'
+  | 'default_practitioner_id'
+  | 'invoice_email_enabled'
+  | 'status'
+  | 'is_minor'
+  | 'do_not_contact'
 >
 
 const supabase = useSupabaseClient()
@@ -21,6 +33,8 @@ const outstandingBalanceFilter = ref(false)
 const carePlanFilter = ref(false)
 const missingContact = ref<'any' | 'email' | 'phone'>('any')
 const practitionerFilter = ref('')
+const statusFilter = ref<'active' | 'inactive' | 'any'>('active')
+const exporting = ref(false)
 const patients = ref<Patient[]>([])
 const nextAppointmentByPatient = ref<Record<string, string>>({})
 const carePlanByPatient = ref<Record<string, CarePlanInfo>>({})
@@ -52,7 +66,7 @@ async function loadPatients() {
   // patients with at least one care_plans row without duplicating the
   // patient row per plan (PostgREST nests the match, it doesn't join-fan-out).
   const selectCols =
-    'id, first_name, last_name, balance_cents, tags, clinic_id, email, default_practitioner_id, invoice_email_enabled' +
+    'id, first_name, last_name, balance_cents, tags, clinic_id, email, default_practitioner_id, invoice_email_enabled, status, is_minor, do_not_contact' +
     (carePlanFilter.value ? ', care_plans!inner(id)' : '')
 
   let query = supabase.from('patients').select(selectCols, { count: 'exact' })
@@ -62,6 +76,7 @@ async function loadPatients() {
   if (missingContact.value === 'email') query = query.or('email.is.null,email.eq.')
   if (missingContact.value === 'phone') query = query.eq('has_phone', false)
   if (practitionerFilter.value) query = query.eq('default_practitioner_id', practitionerFilter.value)
+  if (statusFilter.value !== 'any') query = query.eq('status', statusFilter.value)
 
   // Each word must match somewhere in first/last name/email -- chaining
   // .or() calls ANDs the groups together, so "john sm" matches "John Smith"
@@ -166,7 +181,58 @@ watch(search, () => {
   clearTimeout(searchDebounce)
   searchDebounce = setTimeout(() => goToPage(1), 300)
 })
-watch([outstandingBalanceFilter, carePlanFilter, missingContact, practitionerFilter], () => goToPage(1))
+watch([outstandingBalanceFilter, carePlanFilter, missingContact, practitionerFilter, statusFilter], () => goToPage(1))
+
+// Export every patient matching the current filters (not just the loaded
+// page) -- fetchAllRows pages past Supabase's 1000-row select() cap.
+function csvEscape(v: string) {
+  return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
+}
+async function exportCsv() {
+  exporting.value = true
+  try {
+    const selectCols =
+      'id, first_name, last_name, balance_cents, tags, email, status, is_minor, do_not_contact' +
+      (carePlanFilter.value ? ', care_plans!inner(id)' : '')
+
+    const rows = await fetchAllRows<Patient & { tags: string[] }>((from, to) => {
+      let q = supabase.from('patients').select(selectCols) as any
+      if (store.currentClinicId) q = q.eq('clinic_id', store.currentClinicId)
+      if (outstandingBalanceFilter.value) q = q.lt('balance_cents', 0)
+      if (missingContact.value === 'email') q = q.or('email.is.null,email.eq.')
+      if (missingContact.value === 'phone') q = q.eq('has_phone', false)
+      if (practitionerFilter.value) q = q.eq('default_practitioner_id', practitionerFilter.value)
+      if (statusFilter.value !== 'any') q = q.eq('status', statusFilter.value)
+      const tokens = search.value.trim().split(/\s+/).map(sanitizeToken).filter(Boolean)
+      for (const token of tokens) {
+        q = q.or(`first_name.ilike.%${token}%,last_name.ilike.%${token}%,email.ilike.%${token}%`)
+      }
+      return q.order('first_name').range(from, to)
+    })
+
+    const header = ['First name', 'Last name', 'Email', 'Balance', 'Status', 'Under age', 'Do not contact', 'Tags']
+    const csvRows = rows.map((p) => [
+      p.first_name ?? '',
+      p.last_name ?? '',
+      p.email ?? '',
+      (p.balance_cents / 100).toFixed(2),
+      p.status ?? 'active',
+      p.is_minor ? 'yes' : 'no',
+      p.do_not_contact ? 'yes' : 'no',
+      (p.tags ?? []).join('; '),
+    ])
+    const csv = [header, ...csvRows].map((cols) => cols.map(csvEscape).join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `patients-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  } finally {
+    exporting.value = false
+  }
+}
 
 function initials(p: Patient) {
   const a = p.first_name?.[0] ?? ''
@@ -221,8 +287,9 @@ function tagClass(tag: string) {
   <div class="flex h-full flex-col">
     <PageHeader
       title="Patients"
-      :meta="!loading ? `${totalCount} active · ${patients.length} shown` : undefined"
+      :meta="!loading ? `${totalCount} patients · ${patients.length} shown` : undefined"
     >
+      <UiBtn variant="secondary" :disabled="exporting" @click="exportCsv">{{ exporting ? 'Exporting…' : 'Export' }}</UiBtn>
       <UiBtn variant="secondary" @click="navigateTo('/settings/import')">Import</UiBtn>
       <UiBtn variant="primary" @click="navigateTo('/patients/new')">New patient</UiBtn>
     </PageHeader>
@@ -288,6 +355,20 @@ function tagClass(tag: string) {
 
         <div class="relative">
           <select
+            v-model="statusFilter"
+            class="h-8 appearance-none rounded-pill border border-line-control bg-surface px-2.5 pr-6 text-[12.5px] font-medium text-ink-500 hover:border-line-controlHover focus:border-brand focus:outline-none"
+          >
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+            <option value="any">Any status</option>
+          </select>
+          <svg width="8" height="8" viewBox="0 0 10 10" class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-faint">
+            <path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" />
+          </svg>
+        </div>
+
+        <div class="relative">
+          <select
             v-model="missingContact"
             class="h-8 appearance-none rounded-pill border border-line-control bg-surface px-2.5 pr-6 text-[12.5px] font-medium text-ink-500 hover:border-line-controlHover focus:border-brand focus:outline-none"
           >
@@ -331,7 +412,12 @@ function tagClass(tag: string) {
                 {{ initials(patient) }}
               </span>
               <div class="min-w-0">
-                <p class="truncate text-[13.5px] font-[560] text-ink-900">{{ patient.first_name }} {{ patient.last_name }}</p>
+                <p class="flex items-center gap-1.5 truncate text-[13.5px] font-[560] text-ink-900">
+                  <span class="truncate">{{ patient.first_name }} {{ patient.last_name }}</span>
+                  <span v-if="patient.status === 'inactive'" class="shrink-0 rounded-pill bg-chip-bg2 px-1.5 py-0.5 text-[10px] font-[600] text-ink-faint3">Inactive</span>
+                  <span v-if="patient.is_minor" class="shrink-0 rounded-pill bg-brand-tint px-1.5 py-0.5 text-[10px] font-[600] text-brand-text2">Minor</span>
+                  <span v-if="patient.do_not_contact" class="shrink-0 rounded-pill bg-danger-bg px-1.5 py-0.5 text-[10px] font-[600] text-danger-text">DNC</span>
+                </p>
                 <p class="truncate font-mono text-[11.5px] text-ink-muted2">{{ primaryPhoneByPatient[patient.id] ?? '—' }}</p>
               </div>
             </div>

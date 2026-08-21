@@ -31,9 +31,12 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'WhatsApp is not configured. Set it up in Settings > WhatsApp.' })
   }
 
-  const { data: patient } = await supabase.from('patients').select('id').eq('id', body.patientId).maybeSingle()
+  const { data: patient } = await supabase.from('patients').select('id, is_minor, do_not_contact').eq('id', body.patientId).maybeSingle()
   if (!patient) {
     throw createError({ statusCode: 404, statusMessage: 'Patient not found' })
+  }
+  if (patient.is_minor || patient.do_not_contact) {
+    throw createError({ statusCode: 400, statusMessage: 'This patient cannot be contacted (under age or marked do not contact).' })
   }
 
   const { data: numbers } = await supabase

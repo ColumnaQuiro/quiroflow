@@ -26,6 +26,7 @@ interface AppointmentRow {
   flow_with_practitioner_at: string | null
   flow_checkout_at: string | null
   rescheduled: boolean
+  confirmation_status: string | null
   patients: { first_name: string; last_name: string | null } | null
   appointment_types: { name: string; color: string } | null
   team_members: { full_name: string; color: string } | null
@@ -202,7 +203,7 @@ async function loadAppointments() {
   const { data } = await supabase
     .from('appointments')
     .select(
-      'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, rescheduled, patients(first_name, last_name), appointment_types(name, color), team_members(full_name, color)',
+      'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, rescheduled, confirmation_status, patients(first_name, last_name), appointment_types(name, color), team_members(full_name, color)',
     )
     .eq('clinic_id', store.currentClinicId)
     .gte('starts_at', rangeStart.toISOString())
@@ -354,6 +355,19 @@ function statusTextClass(status: string) {
   if (status === 'cancelled') return 'text-gray-500 line-through opacity-70'
   if (status === 'no_show') return 'text-red-900'
   return 'text-gray-900'
+}
+
+// Reflects the patient's WhatsApp reply to a confirmation request (tracked
+// server-side already via server/api/whatsapp/webhook.post.ts) directly on
+// the calendar block, so staff don't need to open Scheduled Reminders to
+// see who confirmed or wants to reschedule.
+const CONFIRMATION_BADGES: Record<string, { label: string; class: string }> = {
+  pending: { label: 'Awaiting reply', class: 'bg-gray-100 text-gray-600' },
+  confirmed: { label: '✓ Confirmed', class: 'bg-green-100 text-green-700' },
+  reschedule_requested: { label: '↻ Wants to reschedule', class: 'bg-amber-100 text-amber-700' },
+}
+function confirmationBadge(status: string | null) {
+  return status ? CONFIRMATION_BADGES[status] : null
 }
 
 function hexToRgba(hex: string, alpha: number) {
@@ -748,6 +762,9 @@ async function completeFlow(appt: AppointmentRow) {
                   </button>
                   <p class="truncate pr-4 font-medium" :class="{ 'blur-sm select-none': settings.privacyMode }">{{ appt.patients?.first_name }} {{ appt.patients?.last_name }}</p>
                   <p class="truncate">{{ appt.appointment_types?.name ?? new Date(appt.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</p>
+                  <p v-if="confirmationBadge(appt.confirmation_status)" class="mt-0.5 inline-block truncate rounded px-1 text-[10px] font-medium" :class="confirmationBadge(appt.confirmation_status)!.class">
+                    {{ confirmationBadge(appt.confirmation_status)!.label }}
+                  </p>
                 </div>
               </div>
             </div>
@@ -810,6 +827,12 @@ async function completeFlow(appt: AppointmentRow) {
                 >
                   <p class="truncate font-medium" :class="{ 'blur-sm select-none': settings.privacyMode }">{{ appt.patients?.first_name }}</p>
                   <p class="truncate">{{ new Date(appt.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</p>
+                  <span
+                    v-if="confirmationBadge(appt.confirmation_status)"
+                    class="absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full"
+                    :class="appt.confirmation_status === 'confirmed' ? 'bg-green-500' : appt.confirmation_status === 'reschedule_requested' ? 'bg-amber-500' : 'bg-gray-400'"
+                    :title="confirmationBadge(appt.confirmation_status)!.label"
+                  ></span>
                 </div>
               </div>
             </div>

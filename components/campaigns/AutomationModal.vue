@@ -13,23 +13,31 @@ const TRIGGER_OPTIONS = [
   { value: 'appointment.no_show', label: 'Appointment marked as missed' },
   { value: 'invoice.paid', label: 'Invoice paid' },
 ]
+const VARIABLE_SOURCES = [
+  { value: 'first_name', label: 'First name' },
+  { value: 'last_name', label: 'Last name' },
+  { value: 'email', label: 'Email' },
+  { value: 'text', label: 'Fixed text' },
+]
 
 type ActionType = 'whatsapp_template' | 'email' | 'webhook'
+interface WhatsAppVariable { source: string; text: string }
 interface ActionForm {
   action_type: ActionType
   template_name: string
   template_language: string
   doc_template_id: string
+  variables: WhatsAppVariable[]
   subject: string
   body: string
   url: string
   secret: string
 }
 function blankAction(): ActionForm {
-  return { action_type: 'whatsapp_template', template_name: '', template_language: 'es', doc_template_id: '', subject: '', body: '', url: '', secret: '' }
+  return { action_type: 'whatsapp_template', template_name: '', template_language: 'es', doc_template_id: '', variables: [{ source: 'first_name', text: '' }], subject: '', body: '', url: '', secret: '' }
 }
 
-const name = ref('Automation')
+const name = ref('Campaign')
 const triggerEvent = ref(TRIGGER_OPTIONS[0].value)
 const enabled = ref(true)
 const actions = ref<ActionForm[]>([blankAction()])
@@ -54,12 +62,13 @@ onMounted(async () => {
     }
     if (existingActions && existingActions.length > 0) {
       actions.value = existingActions.map((a) => {
-        const config = (a.config ?? {}) as Record<string, string>
+        const config = (a.config ?? {}) as Record<string, any>
         return {
           action_type: a.action_type as ActionType,
           template_name: config.template_name ?? '',
           template_language: config.template_language ?? 'es',
           doc_template_id: config.doc_template_id ?? '',
+          variables: Array.isArray(config.variables) && config.variables.length > 0 ? config.variables : [{ source: 'first_name', text: '' }],
           subject: config.subject ?? '',
           body: config.body ?? '',
           url: config.url ?? '',
@@ -77,13 +86,24 @@ function addAction() {
 function removeAction(index: number) {
   actions.value.splice(index, 1)
 }
+function addVariable(a: ActionForm) {
+  a.variables.push({ source: 'first_name', text: '' })
+}
+function removeVariable(a: ActionForm, index: number) {
+  a.variables.splice(index, 1)
+}
 
 function configFor(a: ActionForm): Record<string, unknown> {
   if (a.action_type === 'whatsapp_template') {
-    return { template_name: a.template_name.trim(), template_language: a.template_language.trim() || 'es', doc_template_id: a.doc_template_id || null }
+    return {
+      template_name: a.template_name.trim(),
+      template_language: a.template_language.trim() || 'es',
+      doc_template_id: a.doc_template_id || null,
+      variables: a.variables.map((v) => ({ source: v.source, text: v.source === 'text' ? v.text.trim() : undefined })),
+    }
   }
   if (a.action_type === 'email') {
-    return { subject: a.subject.trim(), body: a.body.trim() }
+    return { subject: a.subject.trim(), body: a.body }
   }
   return { url: a.url.trim(), secret: a.secret.trim() || null }
 }
@@ -96,7 +116,7 @@ async function save() {
   }
   saving.value = true
 
-  const rulePayload = { account_id: store.accountId!, name: name.value.trim() || 'Automation', trigger_event: triggerEvent.value, enabled: enabled.value }
+  const rulePayload = { account_id: store.accountId!, name: name.value.trim() || 'Campaign', trigger_event: triggerEvent.value, enabled: enabled.value }
 
   const ruleResult = props.ruleId
     ? await supabase.from('automation_rules').update(rulePayload).eq('id', props.ruleId).select('id').single()
@@ -129,9 +149,9 @@ async function save() {
 
 <template>
   <div class="fixed inset-0 z-20 flex items-center justify-center bg-black/30 p-4" @click.self="emit('close')">
-    <div class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
+    <div class="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
       <div class="flex items-center justify-between">
-        <h2 class="text-lg font-semibold text-gray-900">{{ ruleId ? 'Edit Automation' : 'New Automation' }}</h2>
+        <h2 class="text-lg font-semibold text-gray-900">{{ ruleId ? 'Edit Campaign' : 'New Campaign' }}</h2>
         <button type="button" class="text-gray-400 hover:text-gray-600" @click="emit('close')">✕</button>
       </div>
 
@@ -147,6 +167,7 @@ async function save() {
           <select v-model="triggerEvent" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
             <option v-for="t in TRIGGER_OPTIONS" :key="t.value" :value="t.value">{{ t.label }}</option>
           </select>
+          <p class="mt-1 text-xs text-gray-500">Or skip this and use "Send Now" from the campaign list for a one-off send instead.</p>
         </div>
 
         <label class="flex items-center gap-2 text-sm text-gray-700">
@@ -181,16 +202,26 @@ async function save() {
                     <option value="">No document</option>
                     <option v-for="t in docTemplates" :key="t.id" :value="t.id">{{ t.title }}</option>
                   </select>
-                  <p class="mt-1 text-xs text-gray-500">
-                    Template variable 1 is always the patient's first name.
-                    <span v-if="a.doc_template_id">Variable 2 is the link to complete the selected document.</span>
-                  </p>
+                  <p class="mt-1 text-xs text-gray-500">Only one document can be attached per template send, matching WhatsApp's own template format.</p>
+                </div>
+                <div>
+                  <p class="text-xs font-medium text-gray-600">Template variables, in order (match however many numbered placeholders your template has)</p>
+                  <div v-for="(v, vi) in a.variables" :key="vi" class="mt-1 flex items-center gap-2">
+                    <span class="w-4 shrink-0 text-xs text-gray-400">{{ vi + 1 }}.</span>
+                    <select v-model="v.source" class="rounded-md border border-gray-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                      <option v-for="s in VARIABLE_SOURCES" :key="s.value" :value="s.value">{{ s.label }}</option>
+                    </select>
+                    <input v-if="v.source === 'text'" v-model="v.text" type="text" placeholder="Fixed value" class="flex-1 rounded-md border border-gray-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+                    <button v-if="a.variables.length > 1" type="button" class="shrink-0 text-xs text-red-600 hover:text-red-700" @click="removeVariable(a, vi)">✕</button>
+                  </div>
+                  <button type="button" class="mt-1 text-xs font-medium text-indigo-600 hover:text-indigo-500" @click="addVariable(a)">+ Add variable</button>
+                  <p v-if="a.doc_template_id" class="mt-1 text-xs text-gray-500">The document link is sent as the last variable, after these.</p>
                 </div>
               </div>
 
               <div v-else-if="a.action_type === 'email'" class="mt-3 space-y-2">
-                <input v-model="a.subject" type="text" placeholder="Subject" class="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
-                <textarea v-model="a.body" rows="3" placeholder="Body — {{first_name}} and {{last_name}} are filled in" class="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"></textarea>
+                <input v-model="a.subject" type="text" placeholder="Subject — {{first_name}} works here too" class="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+                <CampaignsRichTextEditor v-model="a.body" />
               </div>
 
               <div v-else class="mt-3 space-y-2">

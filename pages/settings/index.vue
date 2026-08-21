@@ -53,7 +53,6 @@ const groups = [
     items: [
       { to: '/settings/whatsapp', label: 'WhatsApp', description: 'Webhook and message templates for recalls and confirmations.', icon: ICONS.chatBubble },
       { to: '/settings/docs', label: 'Docs', description: 'Reusable document templates with patient field placeholders.', icon: ICONS.documentText },
-      { to: '/settings/automations', label: 'Automations', description: 'When something happens, automatically send a WhatsApp, email, or webhook.', icon: ICONS.bolt },
     ],
   },
   {

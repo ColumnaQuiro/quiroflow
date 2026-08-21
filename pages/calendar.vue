@@ -16,7 +16,8 @@ const TOTAL_MIN = (END_HOUR - START_HOUR) * 60
 const DAY_HOUR_PX_MIN = 76
 const WEEK_HOUR_PX_MIN = 44
 const DAY_HEADER_PX = 40 // h-10 room-header row, excluded from available grid height
-const WEEK_HEADER_PX = 44 // h-11 day-header row
+const WEEK_HEADER_PX = 52 // h-6 day-label row + h-7 room-label row (week view now has room sub-columns per day, like Day view)
+const WEEK_ROOM_COL_PX = 128 // min width per room sub-column
 
 const scrollAreaRef = ref<HTMLElement | null>(null)
 const scrollAreaHeight = ref(0)
@@ -314,15 +315,6 @@ function blocksForRoom(roomId: string) {
   if (!settings.showAvailability) return []
   return availabilityBlocks.value.filter((b) => b.room_id === roomId || b.room_id === null)
 }
-function blocksForDay(day: Date) {
-  if (!settings.showAvailability) return []
-  const dayStart = startOfDay(day).getTime()
-  const dayEnd = addDays(startOfDay(day), 1).getTime()
-  return availabilityBlocks.value.filter(
-    (b) => new Date(b.starts_at).getTime() < dayEnd && new Date(b.ends_at).getTime() > dayStart,
-  )
-}
-
 function openBlockCreateModal(roomId?: string) {
   blockPrefill.value = { date: toDateKey(anchorDate.value), time: '09:00', roomId: roomId ?? '' }
   editingBlock.value = null
@@ -344,12 +336,6 @@ function isApptVisible(appt: AppointmentRow) {
 
 function appointmentsForRoom(roomId: string) {
   return appointments.value.filter((a) => (a.room_id ?? '__none') === roomId && isApptVisible(a))
-}
-function appointmentsForDay(day: Date) {
-  const key = toDateKey(day)
-  return appointments.value
-    .filter((a) => toDateKey(new Date(a.starts_at)) === key && isApptVisible(a))
-    .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
 }
 
 // Best-effort practitioner line under a room's column header (the app has
@@ -383,6 +369,17 @@ const hourMarks = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => START_
 function hourLabel(h: number) {
   return `${pad(h)}:00`
 }
+
+// Sub-hour gridlines at the clinic's own slot size (commonly 15 or 30min),
+// drawn lighter than the hour lines so the grid reads as one visual scale
+// like PracticeHub's, rather than only marking full hours.
+const slotMarks = computed(() => {
+  const marks: number[] = []
+  for (let m = SLOT_MIN.value; m < TOTAL_MIN; m += SLOT_MIN.value) {
+    if (m % 60 !== 0) marks.push(m)
+  }
+  return marks
+})
 
 const businessHoursConfigured = computed(() => hasBusinessHoursConfigured(store.currentClinic?.business_hours))
 
@@ -458,6 +455,12 @@ function openCreateModalForDay(day: Date) {
 }
 function openCreateModalForDayAtY(day: Date, clickY: number) {
   prefill.value = { date: toDateKey(day), time: pxToTime(clickY, WEEK_HOUR_PX.value), roomId: '' }
+  modalMode.value = 'create'
+  editingAppointment.value = null
+  modalOpen.value = true
+}
+function openCreateModalForRoomOnDayAtY(day: Date, roomId: string, clickY: number) {
+  prefill.value = { date: toDateKey(day), time: pxToTime(clickY, WEEK_HOUR_PX.value), roomId: roomId === '__none' ? '' : roomId }
   modalMode.value = 'create'
   editingAppointment.value = null
   modalOpen.value = true
@@ -552,18 +555,34 @@ function assignOverlapLayout(sorted: AppointmentRow[], maxLanes: number, hourPx:
   return result
 }
 
-// Week view doesn't split columns by room, so appointments in different
-// rooms at the same time can overlap within a single day column.
-function layoutForDay(day: Date): LayoutBlock[] {
-  return assignOverlapLayout(appointmentsForDay(day), WEEK_MAX_LANES, WEEK_HOUR_PX.value, WEEK_MIN_BLOCK_PX)
-}
-
 // Day view splits columns by room, but two appointments can still be
 // double-booked (or just overlap) in the same room -- without this, they'd
 // all render at full column width and visually stack on top of each other.
 function layoutForRoom(roomId: string): LayoutBlock[] {
   const sorted = [...appointmentsForRoom(roomId)].sort((a, b) => a.starts_at.localeCompare(b.starts_at))
   return assignOverlapLayout(sorted, DAY_MAX_LANES, DAY_HOUR_PX.value, DAY_MIN_BLOCK_PX)
+}
+
+// Week view mirrors Day view's room columns (one sub-column per room, per
+// day) instead of cramming every room's appointments into a single day
+// column -- that's what was forcing 3-4 way lane splits and truncating
+// patient names down to a few characters even when nothing was genuinely
+// double-booked.
+function appointmentsForRoomOnDay(day: Date, roomId: string) {
+  const key = toDateKey(day)
+  return appointments.value.filter((a) => toDateKey(new Date(a.starts_at)) === key && (a.room_id ?? '__none') === roomId && isApptVisible(a))
+}
+function blocksForRoomOnDay(day: Date, roomId: string) {
+  if (!settings.showAvailability) return []
+  const dayStart = startOfDay(day).getTime()
+  const dayEnd = addDays(startOfDay(day), 1).getTime()
+  return availabilityBlocks.value.filter(
+    (b) => (b.room_id === roomId || b.room_id === null) && new Date(b.starts_at).getTime() < dayEnd && new Date(b.ends_at).getTime() > dayStart,
+  )
+}
+function layoutForRoomOnDay(day: Date, roomId: string): LayoutBlock[] {
+  const sorted = [...appointmentsForRoomOnDay(day, roomId)].sort((a, b) => a.starts_at.localeCompare(b.starts_at))
+  return assignOverlapLayout(sorted, WEEK_MAX_LANES, WEEK_HOUR_PX.value, WEEK_MIN_BLOCK_PX)
 }
 function showOverflowDay(day: Date) {
   anchorDate.value = day
@@ -808,7 +827,8 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
               </div>
 
               <div v-for="col in dayColumns" :key="col.id" class="relative flex-1 cursor-pointer border-r border-line last:border-r-0" @click="openCreateModal(col.id === '__none' ? undefined : col.id, $event.offsetY)">
-                <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-line-faint" :style="{ top: `${(h - START_HOUR) * DAY_HOUR_PX}px` }" />
+                <div v-for="m in slotMarks" :key="`slot-${m}`" class="pointer-events-none absolute left-0 right-0 border-t border-line-faint" :style="{ top: `${(m / 60) * DAY_HOUR_PX}px` }" />
+                <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-line-divider" :style="{ top: `${(h - START_HOUR) * DAY_HOUR_PX}px` }" />
                 <div v-for="rect in closedSlotRects(anchorDate, DAY_HOUR_PX)" :key="rect.top" class="pointer-events-none absolute left-0 right-0 bg-line-row2" :style="{ top: `${rect.top}px`, height: `${rect.height}px` }" />
 
                 <div
@@ -876,25 +896,15 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
           </div>
         </div>
 
-        <!-- Week view: time grid, one column per day -->
+        <!-- Week view: day columns, each split into room sub-columns like Day view,
+             rather than one shared column per day (which forced every room's
+             appointments into the same lane-splitting and truncated names down
+             to a few characters even when nothing was genuinely double-booked). -->
         <div v-else class="min-w-0 flex-1 overflow-x-auto">
-          <div :style="{ minWidth: `${58 + weekDays.length * 170}px` }">
-            <div class="sticky top-0 z-10 flex bg-surface">
-              <div class="h-11 w-[58px] shrink-0 border-b border-r border-line"></div>
-              <div
-                v-for="day in weekDays"
-                :key="toDateKey(day)"
-                class="relative flex h-11 flex-1 flex-col items-center justify-center gap-0.5 border-b border-r border-line last:border-r-0"
-                :class="isSameDate(day, new Date()) ? 'bg-[#F7F7FE]' : ''"
-              >
-                <span class="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-muted2">{{ day.toLocaleDateString(undefined, { weekday: 'short' }) }}</span>
-                <span class="text-[13px] font-medium" :class="isSameDate(day, new Date()) ? 'text-brand-text' : 'text-ink-900'">{{ day.getDate() }}</span>
-                <button type="button" class="absolute right-1.5 top-1.5 text-[12px] text-ink-faint hover:text-brand-text" @click.stop="openCreateModalForDay(day)">+</button>
-              </div>
-            </div>
-
-            <div class="relative flex" :style="{ height: `${weekGridHeight}px` }">
-              <div class="relative w-[58px] shrink-0 border-r border-line">
+          <div class="flex" :style="{ minWidth: `${58 + weekDays.length * dayColumns.length * WEEK_ROOM_COL_PX}px` }">
+            <div class="sticky left-0 z-20 w-[58px] shrink-0 bg-surface">
+              <div class="sticky top-0 z-10 h-[52px] border-b border-r border-line bg-surface"></div>
+              <div class="relative border-r border-line" :style="{ height: `${weekGridHeight}px` }">
                 <span
                   v-for="h in hourMarks"
                   :key="h"
@@ -904,61 +914,88 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                   {{ hourLabel(h) }}
                 </span>
               </div>
+            </div>
 
-              <div
-                v-for="day in weekDays"
-                :key="toDateKey(day)"
-                class="relative flex-1 cursor-pointer border-r border-line last:border-r-0"
-                @click="openCreateModalForDayAtY(day, $event.offsetY)"
-              >
-                <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-line-faint" :style="{ top: `${(h - START_HOUR) * WEEK_HOUR_PX}px` }" />
-                <div v-for="rect in closedSlotRects(day, WEEK_HOUR_PX)" :key="rect.top" class="pointer-events-none absolute left-0 right-0 bg-line-row2" :style="{ top: `${rect.top}px`, height: `${rect.height}px` }" />
-
+            <div v-for="day in weekDays" :key="toDateKey(day)" class="flex flex-1 flex-col border-r border-line last:border-r-0">
+              <div class="sticky top-0 z-10 bg-surface">
                 <div
-                  v-for="block in blocksForDay(day)"
-                  :key="block.id"
-                  class="pointer-events-none absolute left-0 right-0 z-0 flex items-center justify-center overflow-hidden bg-[repeating-linear-gradient(135deg,#F4F5F8,#F4F5F8_6px,#EBECF1_6px,#EBECF1_12px)] font-mono text-[10.5px] text-ink-muted2"
-                  :style="{ top: `${timeToPx(block.starts_at, WEEK_HOUR_PX)}px`, height: `${durationToPx(block.starts_at, block.ends_at, WEEK_HOUR_PX, WEEK_MIN_AVAILABILITY_PX)}px` }"
+                  class="relative flex h-6 items-center justify-center gap-1 border-b border-line"
+                  :class="isSameDate(day, new Date()) ? 'bg-[#F7F7FE]' : ''"
                 >
-                  Blocked
+                  <span class="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-muted2">{{ day.toLocaleDateString(undefined, { weekday: 'short' }) }}</span>
+                  <span class="text-[12.5px] font-medium" :class="isSameDate(day, new Date()) ? 'text-brand-text' : 'text-ink-900'">{{ day.getDate() }}</span>
+                  <button type="button" class="absolute right-1 top-0.5 text-[11px] text-ink-faint hover:text-brand-text" @click.stop="openCreateModalForDay(day)">+</button>
                 </div>
-
-                <template v-for="(appt, i) in layoutForDay(day)" :key="isOverflowBlock(appt) ? `overflow-${toDateKey(day)}-${i}` : appt.id">
-                  <button
-                    v-if="isOverflowBlock(appt)"
-                    type="button"
-                    class="absolute z-[1] flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[10px] font-medium text-ink-muted2 shadow-card hover:border-line-controlHover"
-                    :title="`${appt.count} more appointment${appt.count === 1 ? '' : 's'} at this time -- click to see them all in Day view`"
-                    :style="{
-                      top: `${timeToPx(appt.starts_at, WEEK_HOUR_PX)}px`,
-                      height: `${OVERFLOW_CHIP_PX}px`,
-                      left: `calc(${(appt._col / appt._totalCols) * 100}% + 2px)`,
-                      width: `calc(${100 / appt._totalCols}% - 4px)`,
-                    }"
-                    @click.stop="showOverflowDay(day)"
-                  >
-                    +{{ appt.count }}
-                  </button>
+                <div class="flex h-[26px] border-b border-line">
                   <div
-                    v-else
-                    class="absolute z-[1] overflow-hidden rounded-[7px] border border-l-[3px] px-1.5 py-1"
-                    :class="blockClass(appt)"
-                    :style="{
-                      top: `${timeToPx(appt.starts_at, WEEK_HOUR_PX)}px`,
-                      height: `${durationToPx(appt.starts_at, appt.ends_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX)}px`,
-                      left: `calc(${(appt._col / appt._totalCols) * 100}% + 2px)`,
-                      width: `calc(${100 / appt._totalCols}% - 4px)`,
-                    }"
-                    @click.stop="openEditModal(appt)"
-                    @mouseenter="scheduleHoverCard(appt, $event)"
-                    @mouseleave="cancelHoverShow"
+                    v-for="col in dayColumns"
+                    :key="col.id"
+                    class="flex flex-1 items-center justify-center truncate border-r border-line-divider px-1 text-[10.5px] font-medium text-ink-muted2 last:border-r-0"
+                    :style="{ minWidth: `${WEEK_ROOM_COL_PX}px` }"
                   >
-                    <p class="truncate text-[11px] font-semibold text-ink-900" :class="{ 'blur-sm select-none': settings.privacyMode, 'line-through opacity-70': appt.status === 'cancelled' }">
-                      {{ appt.patients?.first_name }}
-                    </p>
-                    <p class="truncate font-mono text-[10px] text-ink-muted2">{{ hm(appt.starts_at) }}</p>
+                    {{ col.name }}
                   </div>
-                </template>
+                </div>
+              </div>
+
+              <div class="relative flex" :style="{ height: `${weekGridHeight}px` }">
+                <div
+                  v-for="col in dayColumns"
+                  :key="col.id"
+                  class="relative flex-1 cursor-pointer border-r border-line-divider last:border-r-0"
+                  :style="{ minWidth: `${WEEK_ROOM_COL_PX}px` }"
+                  @click="openCreateModalForRoomOnDayAtY(day, col.id, $event.offsetY)"
+                >
+                  <div v-for="m in slotMarks" :key="`slot-${m}`" class="pointer-events-none absolute left-0 right-0 border-t border-line-faint" :style="{ top: `${(m / 60) * WEEK_HOUR_PX}px` }" />
+                  <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-line-divider" :style="{ top: `${(h - START_HOUR) * WEEK_HOUR_PX}px` }" />
+                  <div v-for="rect in closedSlotRects(day, WEEK_HOUR_PX)" :key="rect.top" class="pointer-events-none absolute left-0 right-0 bg-line-row2" :style="{ top: `${rect.top}px`, height: `${rect.height}px` }" />
+
+                  <div
+                    v-for="block in blocksForRoomOnDay(day, col.id)"
+                    :key="block.id"
+                    class="pointer-events-none absolute left-0 right-0 z-0 flex items-center justify-center overflow-hidden bg-[repeating-linear-gradient(135deg,#F4F5F8,#F4F5F8_6px,#EBECF1_6px,#EBECF1_12px)] font-mono text-[10px] text-ink-muted2"
+                    :style="{ top: `${timeToPx(block.starts_at, WEEK_HOUR_PX)}px`, height: `${durationToPx(block.starts_at, block.ends_at, WEEK_HOUR_PX, WEEK_MIN_AVAILABILITY_PX)}px` }"
+                  >
+                    Blocked
+                  </div>
+
+                  <template v-for="(appt, i) in layoutForRoomOnDay(day, col.id)" :key="isOverflowBlock(appt) ? `overflow-${toDateKey(day)}-${col.id}-${i}` : appt.id">
+                    <button
+                      v-if="isOverflowBlock(appt)"
+                      type="button"
+                      class="absolute z-[1] flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[10px] font-medium text-ink-muted2 shadow-card hover:border-line-controlHover"
+                      :title="`${appt.count} more appointment${appt.count === 1 ? '' : 's'} at this time -- click to see them all in Day view`"
+                      :style="{
+                        top: `${timeToPx(appt.starts_at, WEEK_HOUR_PX)}px`,
+                        height: `${OVERFLOW_CHIP_PX}px`,
+                        left: `calc(${(appt._col / appt._totalCols) * 100}% + 2px)`,
+                        width: `calc(${100 / appt._totalCols}% - 4px)`,
+                      }"
+                      @click.stop="showOverflowDay(day)"
+                    >
+                      +{{ appt.count }}
+                    </button>
+                    <div
+                      v-else
+                      class="absolute z-[1] overflow-hidden rounded-[7px] border border-l-[3px] px-1.5 py-1"
+                      :class="blockClass(appt)"
+                      :style="{
+                        top: `${timeToPx(appt.starts_at, WEEK_HOUR_PX)}px`,
+                        height: `${durationToPx(appt.starts_at, appt.ends_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX)}px`,
+                        left: `calc(${(appt._col / appt._totalCols) * 100}% + 2px)`,
+                        width: `calc(${100 / appt._totalCols}% - 4px)`,
+                      }"
+                      @click.stop="openEditModal(appt)"
+                      @mouseenter="scheduleHoverCard(appt, $event)"
+                      @mouseleave="cancelHoverShow"
+                    >
+                      <p class="truncate text-[11px] font-semibold text-ink-900" :class="{ 'blur-sm select-none': settings.privacyMode, 'line-through opacity-70': appt.status === 'cancelled' }">
+                        {{ appt.patients?.first_name }} {{ appt.patients?.last_name }}
+                      </p>
+                      <p class="truncate font-mono text-[10px] text-ink-muted2">{{ hm(appt.starts_at) }}</p>
+                    </div>
+                  </template>
+                </div>
               </div>
             </div>
           </div>

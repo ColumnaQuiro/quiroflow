@@ -101,102 +101,102 @@ async function toggleDeliveries(w: Webhook) {
 </script>
 
 <template>
-  <div class="flex gap-8">
-    <SettingsNav />
-    <div class="min-w-0 max-w-3xl flex-1">
-      <h1 class="text-xl font-semibold text-gray-900">Webhooks</h1>
-    <p class="mt-1 text-sm text-gray-500">
-      Register an endpoint to receive an HTTP POST whenever a subscribed event happens. Each request carries an
-      <code class="rounded bg-gray-100 px-1 py-0.5 text-xs">X-QuiroFlow-Event</code> header and a body of
-      <code class="rounded bg-gray-100 px-1 py-0.5 text-xs">{{ '{ event, created_at, data }' }}</code>. Verify it came
-      from us by recomputing an HMAC-SHA256 of the raw body with your webhook's secret and comparing it to the
-      <code class="rounded bg-gray-100 px-1 py-0.5 text-xs">X-QuiroFlow-Signature</code> header (hex-encoded).
-    </p>
+  <div class="flex h-full flex-col">
+    <PageHeader title="Webhooks" />
+    <div class="flex-1 overflow-y-auto">
+      <div class="flex gap-8 p-6">
+        <SettingsNav />
+        <div class="min-w-0 max-w-[660px] flex-1">
+          <p class="text-[13px] leading-relaxed text-ink-muted2">
+            Subscribe an endpoint to receive an HTTP POST whenever a subscribed event happens. Each request carries
+            an <code class="rounded-ctlSm bg-surface-subtle px-1 py-0.5 text-[12px]">X-QuiroFlow-Event</code> header
+            and a body of <code class="rounded-ctlSm bg-surface-subtle px-1 py-0.5 text-[12px]">{{ '{ event, created_at, data }' }}</code>.
+            Verify it came from us by recomputing an HMAC-SHA256 of the raw body with your webhook's secret and
+            comparing it to the <code class="rounded-ctlSm bg-surface-subtle px-1 py-0.5 text-[12px]">X-QuiroFlow-Signature</code> header (hex-encoded).
+          </p>
 
-    <div class="mt-6 rounded-lg border border-gray-200 bg-white">
-      <div class="border-b border-gray-100 p-4">
-        <h3 class="text-sm font-semibold text-gray-900">Endpoints</h3>
-      </div>
-      <div v-if="loading" class="p-6 text-center text-sm text-gray-400">Loading…</div>
-      <div v-else-if="webhooks.length === 0" class="p-8 text-center text-sm text-gray-400">No webhooks yet.</div>
-      <ul v-else class="divide-y divide-gray-100">
-        <li v-for="w in webhooks" :key="w.id" class="p-4">
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <p class="truncate text-sm font-medium text-gray-900">{{ w.url }}</p>
-              <div class="mt-1 flex flex-wrap gap-1">
-                <span v-for="e in w.events" :key="e" class="rounded bg-indigo-50 px-1.5 py-0.5 text-xs font-medium text-indigo-700">
-                  {{ eventLabel(e) }}
-                </span>
-              </div>
-              <p class="mt-2 text-xs text-gray-500">
-                Secret:
-                <code v-if="revealedSecret === w.id" class="rounded bg-gray-100 px-1 py-0.5">{{ w.secret }}</code>
-                <code v-else class="rounded bg-gray-100 px-1 py-0.5">{{ '•'.repeat(24) }}</code>
-                <button type="button" class="ml-1 text-indigo-600 hover:text-indigo-700" @click="revealedSecret = revealedSecret === w.id ? null : w.id">
-                  {{ revealedSecret === w.id ? 'Hide' : 'Reveal' }}
-                </button>
-              </p>
+          <div class="mt-6 rounded-card border border-line bg-surface shadow-card">
+            <div class="border-b border-line-divider p-4">
+              <h3 class="text-[13.5px] font-[560] text-ink-700">Endpoints</h3>
             </div>
-            <div class="flex shrink-0 items-center gap-3 text-xs">
-              <label class="flex items-center gap-1.5 text-gray-500">
-                <input type="checkbox" :checked="w.enabled" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" @change="toggleEnabled(w)" />
-                Enabled
-              </label>
-              <button type="button" class="font-medium text-gray-500 hover:text-gray-700" @click="toggleDeliveries(w)">
-                {{ expandedWebhook === w.id ? 'Hide log' : 'View log' }}
-              </button>
-              <button type="button" class="font-medium text-red-600 hover:text-red-700" @click="removeWebhook(w)">Delete</button>
-            </div>
-          </div>
+            <div v-if="loading" class="p-6 text-center text-[13px] text-ink-faint">Loading…</div>
+            <div v-else-if="webhooks.length === 0" class="p-8 text-center text-[13px] text-ink-faint">No webhooks yet.</div>
+            <ul v-else class="divide-y divide-line-row">
+              <li v-for="w in webhooks" :key="w.id" class="p-4">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <p class="truncate text-[13.5px] font-[560] text-ink-700">{{ w.url }}</p>
+                    <div class="mt-1 flex flex-wrap gap-1">
+                      <UiPill v-for="e in w.events" :key="e" tone="brand">{{ eventLabel(e) }}</UiPill>
+                    </div>
+                    <p class="mt-2 text-[12px] text-ink-muted2">
+                      Secret:
+                      <code v-if="revealedSecret === w.id" class="rounded-ctlSm bg-surface-subtle px-1 py-0.5">{{ w.secret }}</code>
+                      <code v-else class="rounded-ctlSm bg-surface-subtle px-1 py-0.5">{{ '•'.repeat(24) }}</code>
+                      <button type="button" class="ml-1 text-brand-text hover:text-brand-hover" @click="revealedSecret = revealedSecret === w.id ? null : w.id">
+                        {{ revealedSecret === w.id ? 'Hide' : 'Reveal' }}
+                      </button>
+                    </p>
+                  </div>
+                  <div class="flex shrink-0 items-center gap-3 text-[12px]">
+                    <label class="flex items-center gap-2 text-ink-muted2">
+                      <SettingsToggle :model-value="w.enabled" @update:model-value="toggleEnabled(w)" />
+                      Enabled
+                    </label>
+                    <button type="button" class="font-medium text-ink-muted2 hover:text-ink-600" @click="toggleDeliveries(w)">
+                      {{ expandedWebhook === w.id ? 'Hide log' : 'View log' }}
+                    </button>
+                    <button type="button" class="font-medium text-danger-text hover:text-danger-text/80" @click="removeWebhook(w)">Delete</button>
+                  </div>
+                </div>
 
-          <div v-if="expandedWebhook === w.id" class="mt-3 rounded-md border border-gray-100 bg-gray-50 p-3">
-            <div v-if="loadingDeliveries" class="text-xs text-gray-400">Loading…</div>
-            <div v-else-if="(deliveriesByWebhook[w.id]?.length ?? 0) === 0" class="text-xs text-gray-400">
-              No deliveries yet.
-            </div>
-            <ul v-else class="space-y-1.5">
-              <li v-for="d in deliveriesByWebhook[w.id]" :key="d.id" class="text-xs text-gray-600">
-                <span class="font-medium text-gray-900">{{ d.event_type }}</span>
-                &middot; {{ new Date(d.created_at).toLocaleString() }}
-                <span v-if="d.request_id" class="text-gray-400">&middot; request #{{ d.request_id }}</span>
+                <div v-if="expandedWebhook === w.id" class="mt-3 rounded-ctl border border-line-divider bg-surface-subtle p-3">
+                  <div v-if="loadingDeliveries" class="text-[12px] text-ink-faint">Loading…</div>
+                  <div v-else-if="(deliveriesByWebhook[w.id]?.length ?? 0) === 0" class="text-[12px] text-ink-faint">
+                    No deliveries yet.
+                  </div>
+                  <ul v-else class="space-y-1.5">
+                    <li v-for="d in deliveriesByWebhook[w.id]" :key="d.id" class="text-[12px] text-ink-muted2">
+                      <span class="font-medium text-ink-700">{{ d.event_type }}</span>
+                      &middot; {{ new Date(d.created_at).toLocaleString() }}
+                      <span v-if="d.request_id" class="text-ink-faint">&middot; request #{{ d.request_id }}</span>
+                    </li>
+                  </ul>
+                </div>
               </li>
             </ul>
           </div>
-        </li>
-      </ul>
-    </div>
 
-    <form class="mt-4 space-y-3 rounded-lg border border-gray-200 bg-white p-4" @submit.prevent="addWebhook">
-      <div>
-        <label class="block text-sm font-medium text-gray-700">Endpoint URL</label>
-        <input
-          v-model="url"
-          type="url"
-          required
-          placeholder="https://example.com/webhooks/quiroflow"
-          class="mt-1 w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-        />
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-gray-700">Events</label>
-        <div class="mt-1 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-          <label v-for="e in EVENT_OPTIONS" :key="e.value" class="flex items-center gap-1.5 text-sm text-gray-700">
-            <input
-              v-model="selectedEvents"
-              type="checkbox"
-              :value="e.value"
-              class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-            />
-            {{ e.label }}
-          </label>
+          <form class="mt-4 space-y-3 rounded-card border border-line bg-surface p-4 shadow-card" @submit.prevent="addWebhook">
+            <div>
+              <label class="block text-[12.5px] font-medium text-ink-600">Endpoint URL</label>
+              <input
+                v-model="url"
+                type="url"
+                required
+                placeholder="https://example.com/webhooks/quiroflow"
+                class="mt-1 h-8 w-full rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+              />
+            </div>
+            <div>
+              <label class="block text-[12.5px] font-medium text-ink-600">Events</label>
+              <div class="mt-1.5 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                <label v-for="e in EVENT_OPTIONS" :key="e.value" class="flex items-center gap-1.5 text-[12.5px] text-ink-600">
+                  <input
+                    v-model="selectedEvents"
+                    type="checkbox"
+                    :value="e.value"
+                    class="rounded border-line-control text-brand focus:ring-brand/30"
+                  />
+                  {{ e.label }}
+                </label>
+              </div>
+            </div>
+            <UiBtn variant="primary" type="submit" :disabled="saving">{{ saving ? 'Adding…' : 'Add Webhook' }}</UiBtn>
+            <p v-if="error" class="text-[12.5px] text-danger-text">{{ error }}</p>
+          </form>
         </div>
       </div>
-      <button type="submit" :disabled="saving" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
-        {{ saving ? 'Adding…' : 'Add Webhook' }}
-      </button>
-      <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
-    </form>
     </div>
   </div>
 </template>

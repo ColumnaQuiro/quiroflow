@@ -38,96 +38,101 @@ async function copyCommand() {
 </script>
 
 <template>
-  <div class="flex gap-8">
-    <SettingsNav />
-    <div class="min-w-0 max-w-2xl flex-1">
-      <h1 class="text-xl font-semibold text-gray-900">Migrate Attachments from PracticeHub</h1>
-    <p class="mt-1 text-sm text-gray-500">
-      PracticeHub doesn't offer a bulk file-download API — only a metadata export and a one-file-at-a-time "View"
-      link in its own UI. This page gets you the rest of the way: a helper script that drives a real browser through
-      your PracticeHub login to fetch every file and attach it to the matching patient.
-    </p>
+  <div class="flex h-full flex-col">
+    <PageHeader title="Migrate Attachments" />
+    <div class="flex-1 overflow-y-auto">
+      <div class="flex gap-8 p-6">
+        <SettingsNav />
+        <div class="min-w-0 max-w-[660px] flex-1">
+          <p class="text-[13px] leading-relaxed text-ink-muted2">
+            PracticeHub doesn't offer a bulk file-download API — only a metadata export and a one-file-at-a-time
+            "View" link in its own UI. This page gets you the rest of the way: a helper script that drives a real
+            browser through your PracticeHub login to fetch every file and attach it to the matching patient.
+          </p>
 
-    <div class="mt-6 rounded-lg border border-gray-200 bg-white p-4">
-      <div class="flex items-center justify-between">
-        <h3 class="text-sm font-semibold text-gray-900">Progress</h3>
-        <span class="text-sm text-gray-500">{{ loading ? 'Loading…' : `${migratedFiles} / ${totalFiles} files` }}</span>
-      </div>
-      <div class="mt-2 h-2 overflow-hidden rounded-full bg-gray-100">
-        <div class="h-full rounded-full bg-indigo-600 transition-all" :style="{ width: `${progressPct}%` }"></div>
-      </div>
-      <p v-if="!loading && totalFiles === 0" class="mt-2 text-sm text-gray-400">
-        No file records yet — import the PracticeHub "File Attachments - List" CSV first from
-        <NuxtLink to="/settings/import" class="text-indigo-600 hover:text-indigo-500">Import Data</NuxtLink>.
-      </p>
-      <button type="button" class="mt-2 text-xs font-medium text-indigo-600 hover:text-indigo-500" @click="load">Refresh</button>
-    </div>
+          <div class="mt-6 rounded-card border border-line bg-surface p-4 shadow-card">
+            <div class="flex items-center justify-between">
+              <h3 class="text-[13.5px] font-[560] text-ink-700">Progress</h3>
+              <span class="text-[12.5px] text-ink-muted2">{{ loading ? 'Loading…' : `${migratedFiles} / ${totalFiles} files` }}</span>
+            </div>
+            <div class="mt-2 h-2 overflow-hidden rounded-pill bg-surface-subtle">
+              <div class="h-full rounded-pill bg-brand transition-all" :style="{ width: `${progressPct}%` }"></div>
+            </div>
+            <p v-if="!loading && totalFiles === 0" class="mt-2 text-[12.5px] text-ink-faint">
+              No file records yet — import the PracticeHub "File Attachments - List" CSV first from
+              <NuxtLink to="/settings/import" class="text-brand-text hover:text-brand-hover">Import Patients (CSV)</NuxtLink>.
+            </p>
+            <button type="button" class="mt-2 text-[12.5px] font-medium text-brand-text hover:text-brand-hover" @click="load">Refresh</button>
+          </div>
 
-    <div class="mt-4 space-y-4 rounded-lg border border-gray-200 bg-white p-4">
-      <h3 class="text-sm font-semibold text-gray-900">Steps</h3>
+          <div class="mt-4 space-y-4 rounded-card border border-line bg-surface p-4 shadow-card">
+            <h3 class="text-[13.5px] font-[560] text-ink-700">Steps</h3>
 
-      <div>
-        <p class="text-sm font-medium text-gray-700">1. Import the attachment list</p>
-        <p class="mt-0.5 text-sm text-gray-500">
-          If you haven't already: export "File Attachments - List" from PracticeHub (Reports &rarr; Data Exports),
-          then import it via <NuxtLink to="/settings/import" class="text-indigo-600 hover:text-indigo-500">Settings &rarr; Import Data</NuxtLink>.
-          This creates the file records above — with names, sizes, and dates, but no content yet.
-        </p>
-      </div>
+            <div>
+              <p class="text-[13px] font-medium text-ink-600">1. Import the attachment list</p>
+              <p class="mt-0.5 text-[12.5px] text-ink-muted2">
+                If you haven't already: export "File Attachments - List" from PracticeHub (Reports &rarr; Data
+                Exports), then import it via
+                <NuxtLink to="/settings/import" class="text-brand-text hover:text-brand-hover">Settings &rarr; Import Patients (CSV)</NuxtLink>.
+                This creates the file records above — with names, sizes, and dates, but no content yet.
+              </p>
+            </div>
 
-      <div>
-        <p class="text-sm font-medium text-gray-700">2. Download the migration script</p>
-        <p class="mt-0.5 text-sm text-gray-500">Runs on your own computer — it needs a real browser window for you to log into PracticeHub yourself.</p>
-        <a
-          href="/api/download/migrate-attachments-script"
-          download="migrate-practicehub-attachments.mjs"
-          class="mt-2 inline-block rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
-        >
-          Download script
-        </a>
-      </div>
+            <div>
+              <p class="text-[13px] font-medium text-ink-600">2. Download the migration script</p>
+              <p class="mt-0.5 text-[12.5px] text-ink-muted2">Runs on your own computer — it needs a real browser window for you to log into PracticeHub yourself.</p>
+              <a
+                href="/api/download/migrate-attachments-script"
+                download="migrate-practicehub-attachments.mjs"
+                class="mt-2 inline-flex h-8 items-center rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-white hover:bg-brand-hover"
+              >
+                Download script
+              </a>
+            </div>
 
-      <div>
-        <p class="text-sm font-medium text-gray-700">3. Install dependencies (once)</p>
-        <pre class="mt-1 overflow-x-auto rounded-md bg-gray-900 px-3 py-2 text-xs text-gray-100">npm install playwright @supabase/supabase-js papaparse ws
+            <div>
+              <p class="text-[13px] font-medium text-ink-600">3. Install dependencies (once)</p>
+              <pre class="mt-1 overflow-x-auto rounded-ctl bg-ink-900 px-3 py-2 text-[12px] text-white">npm install playwright @supabase/supabase-js papaparse ws
 npx playwright install chromium</pre>
-      </div>
+            </div>
 
-      <div>
-        <p class="text-sm font-medium text-gray-700">4. Run it</p>
-        <p class="mt-0.5 text-sm text-gray-500">
-          Fill in your PracticeHub URL and the CSV filename you downloaded, then copy the command below. It'll ask
-          for your QuiroFlow login in the terminal, then open a browser window for you to log into PracticeHub — from
-          there it runs on its own.
-        </p>
-        <div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <input
-            v-model="practicehubUrl"
-            type="text"
-            placeholder="https://your-clinic.practicehub.io"
-            class="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          />
-          <input
-            v-model="csvFilename"
-            type="text"
-            placeholder="file-attachments.csv"
-            class="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          />
-        </div>
-        <div class="mt-2 flex items-center gap-2">
-          <pre class="flex-1 overflow-x-auto rounded-md bg-gray-900 px-3 py-2 text-xs text-gray-100">{{ command }}</pre>
-          <button type="button" class="shrink-0 rounded-md border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50" @click="copyCommand">
-            {{ copied ? 'Copied!' : 'Copy' }}
-          </button>
+            <div>
+              <p class="text-[13px] font-medium text-ink-600">4. Run it</p>
+              <p class="mt-0.5 text-[12.5px] text-ink-muted2">
+                Fill in your PracticeHub URL and the CSV filename you downloaded, then copy the command below. It'll
+                ask for your QuiroFlow login in the terminal, then open a browser window for you to log into
+                PracticeHub — from there it runs on its own.
+              </p>
+              <div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <input
+                  v-model="practicehubUrl"
+                  type="text"
+                  placeholder="https://your-clinic.practicehub.io"
+                  class="h-8 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+                />
+                <input
+                  v-model="csvFilename"
+                  type="text"
+                  placeholder="file-attachments.csv"
+                  class="h-8 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+                />
+              </div>
+              <div class="mt-2 flex items-center gap-2">
+                <pre class="flex-1 overflow-x-auto rounded-ctl bg-ink-900 px-3 py-2 text-[12px] text-white">{{ command }}</pre>
+                <button type="button" class="h-8 shrink-0 rounded-ctl border border-line-control px-3 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover" @click="copyCommand">
+                  {{ copied ? 'Copied!' : 'Copy' }}
+                </button>
+              </div>
+            </div>
+
+            <p class="text-[12px] text-ink-faint">
+              Safe to re-run and safe to interrupt — it only ever processes files still missing content, so progress
+              is never lost. Your QuiroFlow and PracticeHub passwords are typed by you, directly into their own
+              prompts; the script never stores or transmits either.
+            </p>
+          </div>
         </div>
       </div>
-
-      <p class="text-xs text-gray-400">
-        Safe to re-run and safe to interrupt — it only ever processes files still missing content, so progress is
-        never lost. Your QuiroFlow and PracticeHub passwords are typed by you, directly into their own prompts; the
-        script never stores or transmits either.
-      </p>
-    </div>
     </div>
   </div>
 </template>

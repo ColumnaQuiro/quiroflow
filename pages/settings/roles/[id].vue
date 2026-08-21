@@ -130,126 +130,123 @@ async function save() {
 </script>
 
 <template>
-  <div class="flex gap-8">
-    <SettingsNav />
-    <div class="min-w-0 max-w-3xl flex-1">
-      <NuxtLink to="/settings/roles" class="text-sm text-gray-500 hover:text-gray-700">&larr; Roles</NuxtLink>
+  <div class="flex h-full flex-col">
+    <PageHeader :title="name || 'Role'">
+      <UiBtn v-if="!isSystem && !loading && !notFound" variant="primary" :disabled="saving" @click="save">{{ saving ? 'Saving…' : 'Save changes' }}</UiBtn>
+    </PageHeader>
+    <div class="flex-1 overflow-y-auto">
+      <div class="flex gap-8 p-6">
+        <SettingsNav />
+        <div class="min-w-0 max-w-[660px] flex-1">
+          <NuxtLink to="/settings/roles" class="text-[12.5px] text-ink-muted2 hover:text-ink-600">&larr; Roles</NuxtLink>
 
-      <div v-if="loading" class="mt-4 text-sm text-gray-400">Loading…</div>
-      <div v-else-if="notFound" class="mt-4 text-sm text-gray-400">Role not found.</div>
-      <form v-else class="mt-2 space-y-8" @submit.prevent="save">
-        <div>
-          <label class="block text-sm font-medium text-gray-700">Role name</label>
-          <input
-            v-model="name"
-            type="text"
-            :disabled="isSystem"
-            required
-            class="mt-1 w-full max-w-sm rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:bg-gray-50 disabled:text-gray-400"
-          />
-          <p v-if="isSystem" class="mt-1 text-xs text-gray-400">
-            🔒 This is the account owner's role — its permissions are always full and can't be changed, to prevent
-            anyone (including the owner) from being locked out by mistake.
-          </p>
+          <div v-if="loading" class="mt-4 text-[13px] text-ink-faint">Loading…</div>
+          <div v-else-if="notFound" class="mt-4 text-[13px] text-ink-faint">Role not found.</div>
+          <form v-else class="mt-3 space-y-8" @submit.prevent="save">
+            <SettingsFieldRow label="Role name">
+              <input
+                v-model="name"
+                type="text"
+                :disabled="isSystem"
+                required
+                class="h-8 w-[230px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20 disabled:bg-surface-subtle disabled:text-ink-faint"
+              />
+              <template v-if="isSystem" #helper>
+                🔒 This is the account owner's role — its permissions are always full and can't be changed, to
+                prevent anyone (including the owner) from being locked out by mistake.
+              </template>
+            </SettingsFieldRow>
+
+            <fieldset :disabled="isSystem" class="space-y-8 disabled:opacity-50">
+              <div>
+                <h2 class="text-[15px] font-[620] text-ink-900">Ringfencing</h2>
+                <p class="mt-0.5 text-[13px] text-ink-muted2">Control what data this role can see.</p>
+                <div class="mt-3 space-y-2">
+                  <SettingsFieldRow label="Dashboard access">
+                    <select v-model="permissions.dashboard_scope" class="h-8 w-[230px] rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20">
+                      <option value="all">Full access</option>
+                      <option value="own">Own only</option>
+                      <option value="none">No access</option>
+                    </select>
+                  </SettingsFieldRow>
+                  <SettingsFieldRow label="Calendar access">
+                    <select v-model="permissions.calendar_scope" class="h-8 w-[230px] rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20">
+                      <option value="all">All appointments</option>
+                      <option value="own">Own appointments only</option>
+                      <option value="none">No access</option>
+                    </select>
+                  </SettingsFieldRow>
+                  <SettingsFieldRow label="Patient access">
+                    <select v-model="permissions.patients_scope" class="h-8 w-[230px] rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20">
+                      <option value="all">All patient files</option>
+                      <option value="own">Own patients only</option>
+                      <option value="none">No access</option>
+                    </select>
+                  </SettingsFieldRow>
+                  <SettingsFieldRow label="Read-only calendar" helper="View appointments, but can't create, edit, or delete them.">
+                    <SettingsToggle v-model="permissions.calendar_read_only" />
+                  </SettingsFieldRow>
+                </div>
+              </div>
+
+              <div>
+                <h2 class="text-[15px] font-[620] text-ink-900">General</h2>
+                <p class="mt-0.5 text-[13px] text-ink-muted2">Access to core system features.</p>
+                <div class="mt-3 space-y-2">
+                  <SettingsFieldRow v-for="t in generalToggles" :key="t.key" :label="t.label" :helper="t.hint">
+                    <SettingsToggle v-model="permissions[t.key]" />
+                  </SettingsFieldRow>
+                </div>
+              </div>
+
+              <div>
+                <h2 class="text-[15px] font-[620] text-ink-900">Reports</h2>
+                <div class="mt-3 space-y-2">
+                  <SettingsFieldRow v-for="t in reportsToggles" :key="t.key" :label="t.label" :helper="t.hint">
+                    <SettingsToggle v-model="permissions[t.key]" />
+                  </SettingsFieldRow>
+                </div>
+              </div>
+
+              <div>
+                <h2 class="text-[15px] font-[620] text-ink-900">Patients & Appointments</h2>
+                <p class="mt-0.5 text-[13px] text-ink-muted2">Control access to patient data and financials.</p>
+                <div class="mt-3 space-y-2">
+                  <SettingsFieldRow label="Editing patient financials">
+                    <select v-model="financialsEditMode" class="h-8 w-[230px] rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20">
+                      <option value="none">Not allowed</option>
+                      <option value="same_day">Only on the day created</option>
+                      <option value="all">Always allowed</option>
+                    </select>
+                  </SettingsFieldRow>
+                  <SettingsFieldRow v-for="t in patientToggles" :key="t.key" :label="t.label" :helper="t.hint">
+                    <SettingsToggle v-model="permissions[t.key]" />
+                  </SettingsFieldRow>
+                </div>
+              </div>
+
+              <div>
+                <h2 class="text-[15px] font-[620] text-ink-900">Clinical Information</h2>
+                <p class="mt-0.5 text-[13px] text-ink-muted2">Appointment notes.</p>
+                <div class="mt-3 space-y-2">
+                  <SettingsFieldRow label="Editing/deleting notes">
+                    <select v-model="permissions.visit_notes_scope" class="h-8 w-[230px] rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20">
+                      <option value="all">Any team member's notes</option>
+                      <option value="own">Only their own notes</option>
+                    </select>
+                  </SettingsFieldRow>
+                  <SettingsFieldRow v-for="t in clinicalToggles" :key="t.key" :label="t.label" :helper="t.hint">
+                    <SettingsToggle v-model="permissions[t.key]" />
+                  </SettingsFieldRow>
+                </div>
+              </div>
+            </fieldset>
+
+            <p v-if="saved" class="text-[12.5px] text-success-text">Saved.</p>
+            <p v-if="error" class="text-[12.5px] text-danger-text">{{ error }}</p>
+          </form>
         </div>
-
-        <fieldset :disabled="isSystem" class="space-y-6 disabled:opacity-50">
-          <div>
-            <h2 class="text-sm font-semibold text-gray-900">Ringfencing</h2>
-            <p class="mt-0.5 text-xs text-gray-500">Control what data this role can see.</p>
-            <div class="mt-3 grid max-w-lg grid-cols-2 gap-x-4 gap-y-3">
-              <label class="text-sm text-gray-700">Dashboard access</label>
-              <select v-model="permissions.dashboard_scope" class="rounded-md border border-gray-300 px-2 py-1 text-sm">
-                <option value="all">Full access</option>
-                <option value="own">Own only</option>
-                <option value="none">No access</option>
-              </select>
-              <label class="text-sm text-gray-700">Calendar access</label>
-              <select v-model="permissions.calendar_scope" class="rounded-md border border-gray-300 px-2 py-1 text-sm">
-                <option value="all">All appointments</option>
-                <option value="own">Own appointments only</option>
-                <option value="none">No access</option>
-              </select>
-              <label class="text-sm text-gray-700">Patient access</label>
-              <select v-model="permissions.patients_scope" class="rounded-md border border-gray-300 px-2 py-1 text-sm">
-                <option value="all">All patient files</option>
-                <option value="own">Own patients only</option>
-                <option value="none">No access</option>
-              </select>
-            </div>
-            <label class="mt-3 flex items-center gap-2 text-sm text-gray-700">
-              <input v-model="permissions.calendar_read_only" type="checkbox" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-              Read-only calendar (view but can't create/edit/delete appointments)
-            </label>
-          </div>
-
-          <div>
-            <h2 class="text-sm font-semibold text-gray-900">General</h2>
-            <p class="mt-0.5 text-xs text-gray-500">Access to core system features.</p>
-            <div class="mt-3 space-y-2">
-              <label v-for="t in generalToggles" :key="t.key" class="flex items-start gap-2 text-sm text-gray-700">
-                <input v-model="permissions[t.key]" type="checkbox" class="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-                <span>{{ t.label }}<span v-if="t.hint" class="block text-xs text-gray-400">{{ t.hint }}</span></span>
-              </label>
-            </div>
-          </div>
-
-          <div>
-            <h2 class="text-sm font-semibold text-gray-900">Reports</h2>
-            <div class="mt-3 space-y-2">
-              <label v-for="t in reportsToggles" :key="t.key" class="flex items-start gap-2 text-sm text-gray-700">
-                <input v-model="permissions[t.key]" type="checkbox" class="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-                <span>{{ t.label }}<span v-if="t.hint" class="block text-xs text-gray-400">{{ t.hint }}</span></span>
-              </label>
-            </div>
-          </div>
-
-          <div>
-            <h2 class="text-sm font-semibold text-gray-900">Patients & Appointments</h2>
-            <p class="mt-0.5 text-xs text-gray-500">Control access to patient data and financials.</p>
-            <div class="mt-3 max-w-sm">
-              <label class="block text-sm text-gray-700">Editing patient financials</label>
-              <select v-model="financialsEditMode" class="mt-1 w-full rounded-md border border-gray-300 px-2 py-1 text-sm">
-                <option value="none">Not allowed</option>
-                <option value="same_day">Only on the day created</option>
-                <option value="all">Always allowed</option>
-              </select>
-            </div>
-            <div class="mt-3 space-y-2">
-              <label v-for="t in patientToggles" :key="t.key" class="flex items-start gap-2 text-sm text-gray-700">
-                <input v-model="permissions[t.key]" type="checkbox" class="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-                <span>{{ t.label }}<span v-if="t.hint" class="block text-xs text-gray-400">{{ t.hint }}</span></span>
-              </label>
-            </div>
-          </div>
-
-          <div>
-            <h2 class="text-sm font-semibold text-gray-900">Clinical Information</h2>
-            <p class="mt-0.5 text-xs text-gray-500">Appointment notes.</p>
-            <div class="mt-3 max-w-sm">
-              <label class="block text-sm text-gray-700">Editing/deleting notes</label>
-              <select v-model="permissions.visit_notes_scope" class="mt-1 w-full rounded-md border border-gray-300 px-2 py-1 text-sm">
-                <option value="all">Any team member's notes</option>
-                <option value="own">Only their own notes</option>
-              </select>
-            </div>
-            <div class="mt-3 space-y-2">
-              <label v-for="t in clinicalToggles" :key="t.key" class="flex items-start gap-2 text-sm text-gray-700">
-                <input v-model="permissions[t.key]" type="checkbox" class="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-                <span>{{ t.label }}<span v-if="t.hint" class="block text-xs text-gray-400">{{ t.hint }}</span></span>
-              </label>
-            </div>
-          </div>
-        </fieldset>
-
-        <div v-if="!isSystem" class="flex items-center gap-3">
-          <button type="submit" :disabled="saving" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
-            {{ saving ? 'Saving…' : 'Save' }}
-          </button>
-          <span v-if="saved" class="text-sm text-green-600">Saved.</span>
-        </div>
-        <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
-      </form>
+      </div>
     </div>
   </div>
 </template>

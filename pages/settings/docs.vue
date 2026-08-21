@@ -87,72 +87,71 @@ async function removeTemplate(t: Template) {
 </script>
 
 <template>
-  <div class="flex gap-8">
-    <SettingsNav />
-    <div class="min-w-0 max-w-3xl flex-1">
-      <h1 class="text-xl font-semibold text-gray-900">Docs</h1>
-    <p class="mt-1 text-sm text-gray-500">
-      Reusable form templates — build one once (e.g. a data protection consent form) with headings, questions, and
-      patient-field placeholders, then generate a filled-in copy for each patient from their Docs tab.
-    </p>
+  <div class="flex h-full flex-col">
+    <PageHeader title="Docs" />
+    <div class="flex-1 overflow-y-auto">
+      <div class="flex gap-8 p-6">
+        <SettingsNav />
+        <div class="min-w-0 max-w-[660px] flex-1">
+          <p class="text-[13px] leading-relaxed text-ink-muted2">
+            Reusable document templates — build one once (e.g. a data protection consent form) with headings,
+            questions, and patient-field placeholders, then generate a filled-in copy for each patient from their
+            Docs tab.
+          </p>
 
-    <div class="mt-6 rounded-lg border border-gray-200 bg-white">
-      <template v-if="!activeTemplate">
-        <div class="flex items-center justify-between border-b border-gray-100 p-4">
-          <h3 class="text-sm font-semibold text-gray-900">Templates</h3>
-          <button type="button" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700" @click="newTemplate">
-            + New Template
-          </button>
-        </div>
-        <div v-if="loading" class="p-6 text-center text-sm text-gray-400">Loading…</div>
-        <div v-else-if="templates.length === 0" class="p-8 text-center text-sm text-gray-400">No templates yet.</div>
-        <ul v-else class="divide-y divide-gray-100">
-          <li v-for="t in templates" :key="t.id" class="flex items-center justify-between px-4 py-3">
-            <button type="button" class="text-left text-sm font-medium text-gray-900 hover:text-indigo-600" @click="openTemplate(t)">
-              {{ t.title }}
-              <span v-if="categoryLabel(t.category)" class="ml-1.5 rounded bg-indigo-50 px-1.5 py-0.5 text-xs font-medium text-indigo-700">
-                {{ categoryLabel(t.category) }}
-              </span>
-            </button>
-            <div class="flex items-center gap-3">
-              <span class="text-xs text-gray-400">{{ new Date(t.updated_at).toLocaleString() }}</span>
-              <button type="button" class="text-xs text-red-600 hover:text-red-700" @click="removeTemplate(t)">Delete</button>
-            </div>
-          </li>
-        </ul>
-      </template>
+          <div class="mt-6 rounded-card border border-line bg-surface shadow-card">
+            <template v-if="!activeTemplate">
+              <div class="flex items-center justify-between border-b border-line-divider p-4">
+                <h3 class="text-[13.5px] font-[560] text-ink-700">Templates</h3>
+                <UiBtn variant="primary" size="sm" @click="newTemplate">+ New Template</UiBtn>
+              </div>
+              <div v-if="loading" class="p-6 text-center text-[13px] text-ink-faint">Loading…</div>
+              <div v-else-if="templates.length === 0" class="p-8 text-center text-[13px] text-ink-faint">No templates yet.</div>
+              <ul v-else class="divide-y divide-line-row">
+                <li v-for="t in templates" :key="t.id" class="flex items-center justify-between px-4 py-3">
+                  <button type="button" class="text-left text-[13.5px] font-[560] text-ink-700 hover:text-brand-text" @click="openTemplate(t)">
+                    {{ t.title }}
+                    <UiPill v-if="categoryLabel(t.category)" tone="brand" class="ml-1.5">{{ categoryLabel(t.category) }}</UiPill>
+                  </button>
+                  <div class="flex items-center gap-3">
+                    <span class="text-[12px] text-ink-faint">{{ new Date(t.updated_at).toLocaleString() }}</span>
+                    <button type="button" class="text-[12.5px] text-danger-text hover:text-danger-text/80" @click="removeTemplate(t)">Delete</button>
+                  </div>
+                </li>
+              </ul>
+            </template>
 
-      <template v-else>
-        <div class="flex items-center justify-between border-b border-gray-100 p-4">
-          <button type="button" class="text-sm text-gray-500 hover:text-gray-700" @click="backToList">&larr; Templates</button>
-          <div class="flex items-center gap-3">
-            <span v-if="savedAt" class="text-xs text-green-600">Saved</span>
-            <button type="button" :disabled="saving" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50" @click="save">
-              {{ saving ? 'Saving…' : 'Save' }}
-            </button>
+            <template v-else>
+              <div class="flex items-center justify-between border-b border-line-divider p-4">
+                <button type="button" class="text-[13px] text-ink-muted2 hover:text-ink-600" @click="backToList">&larr; Templates</button>
+                <div class="flex items-center gap-3">
+                  <span v-if="savedAt" class="text-[12.5px] text-success-text">Saved</span>
+                  <UiBtn variant="primary" size="sm" :disabled="saving" @click="save">{{ saving ? 'Saving…' : 'Save' }}</UiBtn>
+                </div>
+              </div>
+
+              <div class="p-4">
+                <input
+                  v-model="title"
+                  type="text"
+                  placeholder="Untitled template"
+                  class="mb-2 w-full border-none text-[18px] font-semibold text-ink-900 placeholder-ink-faint3 focus:outline-none focus:ring-0"
+                />
+                <label class="mb-4 flex items-center gap-2 text-[13px] text-ink-600">
+                  Category
+                  <select v-model="category" class="h-8 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20">
+                    <option value="">None</option>
+                    <option value="data_protection">Data protection</option>
+                    <option value="consent">Consent</option>
+                  </select>
+                  <span class="text-[12px] text-ink-faint">Lets Reports track who's missing this form</span>
+                </label>
+                <DocBlocks :fields="fields" mode="build" @update:fields="fields = $event" />
+              </div>
+            </template>
           </div>
         </div>
-
-        <div class="p-4">
-          <input
-            v-model="title"
-            type="text"
-            placeholder="Untitled template"
-            class="mb-2 w-full border-none text-xl font-semibold text-gray-900 placeholder-gray-300 focus:outline-none focus:ring-0"
-          />
-          <label class="mb-4 flex items-center gap-2 text-sm text-gray-600">
-            Category
-            <select v-model="category" class="rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-              <option value="">None</option>
-              <option value="data_protection">Data protection</option>
-              <option value="consent">Consent</option>
-            </select>
-            <span class="text-xs text-gray-400">Lets Reports track who's missing this form</span>
-          </label>
-          <DocBlocks :fields="fields" mode="build" @update:fields="fields = $event" />
-        </div>
-      </template>
-    </div>
+      </div>
     </div>
   </div>
 </template>

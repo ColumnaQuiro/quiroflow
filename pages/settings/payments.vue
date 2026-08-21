@@ -96,121 +96,122 @@ async function disconnect() {
 </script>
 
 <template>
-  <div class="flex gap-8">
-    <SettingsNav />
-    <div class="min-w-0 max-w-2xl flex-1">
-      <h1 class="text-xl font-semibold text-gray-900">Payments (Stripe)</h1>
-    <p class="mt-1 text-sm text-gray-500">
-      Connect your own Stripe account to charge patients automatically — a saved card per patient, then package
-      installments or membership renewals billed on schedule without staff having to do anything.
-    </p>
-
-    <div v-if="justConnected" class="mt-4 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">
-      Stripe account connected.
-    </div>
-    <div v-if="connectError" class="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-      {{ connectError }}
-    </div>
-
-    <div v-if="loading" class="mt-6 text-sm text-gray-400">Loading…</div>
-    <template v-else>
-      <div v-if="connectAccountId" class="mt-6 rounded-lg border border-gray-200 bg-white p-4">
-        <div class="flex items-center justify-between">
-          <div>
-            <p class="text-sm font-medium text-gray-900">Connected via Stripe Connect</p>
-            <p class="mt-0.5 text-xs text-gray-500">Account <code class="rounded bg-gray-100 px-1 py-0.5">{{ connectAccountId }}</code></p>
-          </div>
-          <div class="flex items-center gap-3">
-            <button type="button" :disabled="testing" class="text-xs font-medium text-indigo-600 hover:text-indigo-700 disabled:opacity-50" @click="testConnection">
-              {{ testing ? 'Testing…' : 'Test connection' }}
-            </button>
-            <button type="button" class="text-xs font-medium text-red-600 hover:text-red-700" @click="disconnect">Disconnect</button>
-          </div>
-        </div>
-        <p class="mt-2 text-xs text-gray-400">
-          No webhook setup needed — events are routed to QuiroFlow automatically for every connected clinic.
-        </p>
-        <p v-if="testResult" class="mt-2 text-xs text-green-600">{{ testResult }}</p>
-        <p v-if="testError" class="mt-2 text-xs text-red-600">{{ testError }}</p>
-      </div>
-
-      <div v-else class="mt-6 rounded-lg border border-gray-200 bg-white p-6 text-center">
-        <p class="text-sm text-gray-600">Connect your Stripe account in one click — no API keys to copy.</p>
-        <a
-          href="/api/stripe/connect/start"
-          class="mt-3 inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
-        >
-          Connect with Stripe
-        </a>
-      </div>
-
-      <form v-if="showLegacyForm" class="mt-4 space-y-6 rounded-lg border border-gray-200 bg-white p-4" @submit.prevent="save">
-        <p class="text-xs text-gray-500">
-          Legacy path: paste your own Stripe API keys directly. Prefer "Connect with Stripe" above when possible.
-        </p>
-        <div>
-          <label class="block text-sm font-medium text-gray-700">Publishable key</label>
-          <input
-            v-model="publishableKey"
-            type="text"
-            placeholder="pk_test_…"
-            class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          />
-        </div>
-
-        <div>
-          <label class="block text-sm font-medium text-gray-700">Secret key</label>
-          <input
-            v-model="secretKey"
-            type="password"
-            autocomplete="off"
-            :placeholder="hasStoredSecretKey ? 'Key is set — leave blank to keep it' : 'sk_test_…'"
-            class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          />
-        </div>
-
-        <div>
-          <label class="block text-sm font-medium text-gray-700">Webhook signing secret</label>
-          <input
-            v-model="webhookSecret"
-            type="password"
-            autocomplete="off"
-            :placeholder="hasStoredWebhookSecret ? 'Secret is set — leave blank to keep it' : 'whsec_…'"
-            class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          />
-          <p class="mt-1 text-xs text-gray-500">From the Stripe dashboard once you register the webhook URL below.</p>
-        </div>
-
-        <div class="flex items-center gap-3">
-          <button type="submit" :disabled="saving" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
-            {{ saving ? 'Saving…' : 'Save' }}
-          </button>
-          <span v-if="saved" class="text-sm text-green-600">Saved.</span>
-        </div>
-        <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
-
-        <div class="rounded-lg border border-gray-200 bg-gray-50 p-4">
-          <h3 class="text-sm font-semibold text-gray-900">Webhook</h3>
-          <p class="mt-1 text-sm text-gray-500">
-            Register this URL in your Stripe dashboard under <strong>Developers &rarr; Webhooks</strong>, listening for
-            <code class="rounded bg-gray-100 px-1 py-0.5 text-xs">invoice.paid</code>,
-            <code class="rounded bg-gray-100 px-1 py-0.5 text-xs">invoice.payment_failed</code>,
-            <code class="rounded bg-gray-100 px-1 py-0.5 text-xs">subscription_schedule.updated</code>,
-            <code class="rounded bg-gray-100 px-1 py-0.5 text-xs">subscription_schedule.released</code>, and
-            <code class="rounded bg-gray-100 px-1 py-0.5 text-xs">subscription_schedule.canceled</code>.
+  <div class="flex h-full flex-col">
+    <PageHeader title="Payments (Stripe)">
+      <UiBtn v-if="showLegacyForm" variant="primary" :disabled="saving || loading" @click="save">{{ saving ? 'Saving…' : 'Save changes' }}</UiBtn>
+    </PageHeader>
+    <div class="flex-1 overflow-y-auto">
+      <div class="flex gap-8 p-6">
+        <SettingsNav />
+        <div class="min-w-0 max-w-[660px] flex-1">
+          <p class="text-[13px] leading-relaxed text-ink-muted2">
+            Automate installments and renewals with a saved card. Connect your own Stripe account to charge patients
+            automatically — package installments or membership renewals billed on schedule without staff having to
+            do anything.
           </p>
-          <div class="mt-1.5 flex items-center gap-2">
-            <code class="flex-1 overflow-x-auto rounded bg-gray-100 px-2 py-1 text-xs">{{ webhookUrl }}</code>
-          </div>
-        </div>
-      </form>
 
-      <p class="mt-10 text-center text-[11px] text-gray-300">
-        <button type="button" class="hover:text-gray-500" @click="showLegacyForm = !showLegacyForm">
-          {{ showLegacyForm ? 'hide advanced setup' : 'advanced setup' }}
-        </button>
-      </p>
-    </template>
+          <div v-if="justConnected" class="mt-4 rounded-ctl border border-success-border bg-success-bg p-3 text-[12.5px] text-success-deep">
+            Stripe account connected.
+          </div>
+          <div v-if="connectError" class="mt-4 rounded-ctl border border-danger-border bg-danger-bg p-3 text-[12.5px] text-danger-text">
+            {{ connectError }}
+          </div>
+
+          <div v-if="loading" class="mt-6 text-[13px] text-ink-faint">Loading…</div>
+          <template v-else>
+            <div v-if="connectAccountId" class="mt-6 rounded-card border border-line bg-surface p-4 shadow-card">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-[13.5px] font-[560] text-ink-700">Connected via Stripe Connect</p>
+                  <p class="mt-0.5 text-[12.5px] text-ink-muted2">Account <code class="rounded-ctlSm bg-surface-subtle px-1 py-0.5">{{ connectAccountId }}</code></p>
+                </div>
+                <div class="flex items-center gap-3">
+                  <button type="button" :disabled="testing" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover disabled:opacity-50" @click="testConnection">
+                    {{ testing ? 'Testing…' : 'Test connection' }}
+                  </button>
+                  <button type="button" class="text-[12.5px] font-medium text-danger-text hover:text-danger-text/80" @click="disconnect">Disconnect</button>
+                </div>
+              </div>
+              <p class="mt-2 text-[12px] text-ink-faint">
+                No webhook setup needed — events are routed to QuiroFlow automatically for every connected clinic.
+              </p>
+              <p v-if="testResult" class="mt-2 text-[12.5px] text-success-text">{{ testResult }}</p>
+              <p v-if="testError" class="mt-2 text-[12.5px] text-danger-text">{{ testError }}</p>
+            </div>
+
+            <div v-else class="mt-6 rounded-card border border-line bg-surface p-6 text-center shadow-card">
+              <p class="text-[13px] text-ink-600">Connect your Stripe account in one click — no API keys to copy.</p>
+              <a
+                href="/api/stripe/connect/start"
+                class="mt-3 inline-flex h-8 items-center gap-2 rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-white hover:bg-brand-hover"
+              >
+                Connect with Stripe
+              </a>
+            </div>
+
+            <form v-if="showLegacyForm" class="mt-4 space-y-3" @submit.prevent="save">
+              <p class="text-[12.5px] text-ink-muted2">
+                Legacy path: paste your own Stripe API keys directly. Prefer "Connect with Stripe" above when possible.
+              </p>
+              <SettingsFieldRow label="Publishable key">
+                <input
+                  v-model="publishableKey"
+                  type="text"
+                  placeholder="pk_test_…"
+                  class="h-8 w-[230px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+                />
+              </SettingsFieldRow>
+
+              <SettingsFieldRow label="Secret key" :helper="hasStoredSecretKey ? 'A key is already stored — leave blank to keep it.' : undefined">
+                <input
+                  v-model="secretKey"
+                  type="password"
+                  autocomplete="off"
+                  :placeholder="hasStoredSecretKey ? 'Leave blank to keep it' : 'sk_test_…'"
+                  class="h-8 w-[230px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+                />
+              </SettingsFieldRow>
+
+              <SettingsFieldRow
+                label="Webhook signing secret"
+                :helper="hasStoredWebhookSecret ? 'A secret is already stored — leave blank to keep it.' : 'From the Stripe dashboard once you register the webhook URL below.'"
+              >
+                <input
+                  v-model="webhookSecret"
+                  type="password"
+                  autocomplete="off"
+                  :placeholder="hasStoredWebhookSecret ? 'Leave blank to keep it' : 'whsec_…'"
+                  class="h-8 w-[230px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+                />
+              </SettingsFieldRow>
+
+              <p v-if="saved" class="text-[12.5px] text-success-text">Saved.</p>
+              <p v-if="error" class="text-[12.5px] text-danger-text">{{ error }}</p>
+
+              <div class="rounded-card border border-line bg-surface-subtle p-4">
+                <h3 class="text-[13.5px] font-[560] text-ink-700">Webhook</h3>
+                <p class="mt-1 text-[12.5px] leading-relaxed text-ink-muted2">
+                  Register this URL in your Stripe dashboard under <strong>Developers &rarr; Webhooks</strong>, listening for
+                  <code class="rounded-ctlSm bg-surface px-1 py-0.5 text-[12px]">invoice.paid</code>,
+                  <code class="rounded-ctlSm bg-surface px-1 py-0.5 text-[12px]">invoice.payment_failed</code>,
+                  <code class="rounded-ctlSm bg-surface px-1 py-0.5 text-[12px]">subscription_schedule.updated</code>,
+                  <code class="rounded-ctlSm bg-surface px-1 py-0.5 text-[12px]">subscription_schedule.released</code>, and
+                  <code class="rounded-ctlSm bg-surface px-1 py-0.5 text-[12px]">subscription_schedule.canceled</code>.
+                </p>
+                <div class="mt-1.5 flex items-center gap-2">
+                  <code class="flex-1 overflow-x-auto rounded-ctlSm bg-surface px-2 py-1 text-[12px] text-ink-600">{{ webhookUrl }}</code>
+                </div>
+              </div>
+            </form>
+
+            <p class="mt-10 text-center text-[11px] text-ink-faint2">
+              <button type="button" class="hover:text-ink-muted2" @click="showLegacyForm = !showLegacyForm">
+                {{ showLegacyForm ? 'hide advanced setup' : 'advanced setup' }}
+              </button>
+            </p>
+          </template>
+        </div>
+      </div>
     </div>
   </div>
 </template>

@@ -98,122 +98,125 @@ async function updateColor(type: Tables<'appointment_types'>, value: string) {
 </script>
 
 <template>
-  <div class="flex gap-8">
-    <SettingsNav />
-    <div class="min-w-0 flex-1">
-      <h1 class="text-xl font-semibold text-gray-900">Appointment Types</h1>
+  <div class="flex h-full flex-col">
+    <PageHeader title="Appointment Types" />
+    <div class="flex-1 overflow-y-auto">
+      <div class="flex gap-8 p-6">
+        <SettingsNav />
+        <div class="min-w-0 max-w-[660px] flex-1">
+          <p class="text-[13px] text-ink-muted2">Visit types, durations, colors, and default price.</p>
 
-    <div class="mt-4 overflow-hidden rounded-lg border border-gray-200 bg-white">
-      <table class="w-full text-sm">
-        <thead class="border-b border-gray-200 bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-          <tr>
-            <th class="px-4 py-2">Name</th>
-            <th class="px-4 py-2">Duration</th>
-            <th class="px-4 py-2">Default price</th>
-            <th class="px-4 py-2">Stage</th>
-            <th class="px-4 py-2">Online booking</th>
-            <th class="px-4 py-2"></th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-100">
-          <tr v-if="loading">
-            <td colspan="6" class="px-4 py-6 text-center text-gray-400">Loading…</td>
-          </tr>
-          <tr v-else-if="types.length === 0">
-            <td colspan="6" class="px-4 py-6 text-center text-gray-400">No appointment types yet.</td>
-          </tr>
-          <tr v-for="t in types" :key="t.id">
-            <td class="px-4 py-2.5 text-gray-900">
-              <div class="flex items-center gap-2">
-                <input
-                  type="color"
-                  :value="t.color"
-                  class="h-6 w-6 shrink-0 rounded border border-gray-300 p-0"
-                  @change="updateColor(t, ($event.target as HTMLInputElement).value)"
-                />
-                <input
-                  :value="t.name"
-                  type="text"
-                  class="w-full min-w-0 rounded-md border border-transparent px-1.5 py-1 hover:border-gray-300 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                  @change="updateName(t, ($event.target as HTMLInputElement).value)"
-                />
-              </div>
-            </td>
-            <td class="px-4 py-2.5 text-gray-500">
-              <div class="flex items-center gap-1">
-                <input
-                  :value="t.duration_minutes"
-                  type="number"
-                  min="5"
-                  step="5"
-                  class="w-16 rounded-md border border-transparent px-1.5 py-1 hover:border-gray-300 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                  @change="updateDuration(t, ($event.target as HTMLInputElement).value)"
-                />
-                min
-              </div>
-            </td>
-            <td class="px-4 py-2.5 text-gray-500">
-              <div class="flex items-center gap-1">
-                €
-                <input
-                  :value="(t.default_price_cents / 100).toFixed(2)"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  class="w-20 rounded-md border border-transparent px-1.5 py-1 hover:border-gray-300 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                  @change="updatePrice(t, ($event.target as HTMLInputElement).value)"
-                />
-              </div>
-            </td>
-            <td class="px-4 py-2.5">
-              <select
-                :value="t.stage ?? ''"
-                class="rounded-md border border-gray-300 py-1 pl-2 pr-6 text-xs text-gray-600 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                @change="updateStage(t, ($event.target as HTMLSelectElement).value)"
-              >
-                <option v-for="s in STAGE_OPTIONS" :key="s.value" :value="s.value">{{ s.label }}</option>
-              </select>
-            </td>
-            <td class="px-4 py-2.5">
-              <label class="flex items-center gap-2 text-gray-600">
-                <input type="checkbox" :checked="t.online_booking_enabled" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" @change="toggleBookable(t)" />
-                Bookable
-              </label>
-            </td>
-            <td class="px-4 py-2.5 text-right">
-              <button type="button" class="text-gray-400 hover:text-red-600" @click="removeType(t.id)">✕</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    <p class="mt-2 text-xs text-gray-400">
-      "Stage" lets the Statistics report count first visits, reports, revisions, etc. — pick whichever bucket each
-      type maps to for you.
-    </p>
+          <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
+            <table class="w-full text-[13px]">
+              <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted2">
+                <tr>
+                  <th class="px-4 py-2">Name</th>
+                  <th class="px-4 py-2">Duration</th>
+                  <th class="px-4 py-2">Default price</th>
+                  <th class="px-4 py-2">Stage</th>
+                  <th class="px-4 py-2">Online booking</th>
+                  <th class="px-4 py-2"></th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-line-row">
+                <tr v-if="loading">
+                  <td colspan="6" class="px-4 py-6 text-center text-ink-faint">Loading…</td>
+                </tr>
+                <tr v-else-if="types.length === 0">
+                  <td colspan="6" class="px-4 py-6 text-center text-ink-faint">No appointment types yet.</td>
+                </tr>
+                <tr v-for="t in types" :key="t.id">
+                  <td class="px-4 py-2.5 text-ink-700">
+                    <div class="flex items-center gap-2">
+                      <input
+                        type="color"
+                        :value="t.color"
+                        class="h-6 w-6 shrink-0 rounded border border-line-control p-0"
+                        @change="updateColor(t, ($event.target as HTMLInputElement).value)"
+                      />
+                      <input
+                        :value="t.name"
+                        type="text"
+                        class="w-full min-w-0 rounded-ctlSm border border-transparent px-1.5 py-1 hover:border-line-control focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+                        @change="updateName(t, ($event.target as HTMLInputElement).value)"
+                      />
+                    </div>
+                  </td>
+                  <td class="px-4 py-2.5 text-ink-muted2">
+                    <div class="flex items-center gap-1">
+                      <input
+                        :value="t.duration_minutes"
+                        type="number"
+                        min="5"
+                        step="5"
+                        class="w-16 rounded-ctlSm border border-transparent px-1.5 py-1 hover:border-line-control focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+                        @change="updateDuration(t, ($event.target as HTMLInputElement).value)"
+                      />
+                      min
+                    </div>
+                  </td>
+                  <td class="px-4 py-2.5 text-ink-muted2">
+                    <div class="flex items-center gap-1">
+                      €
+                      <input
+                        :value="(t.default_price_cents / 100).toFixed(2)"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        class="w-20 rounded-ctlSm border border-transparent px-1.5 py-1 hover:border-line-control focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+                        @change="updatePrice(t, ($event.target as HTMLInputElement).value)"
+                      />
+                    </div>
+                  </td>
+                  <td class="px-4 py-2.5">
+                    <select
+                      :value="t.stage ?? ''"
+                      class="rounded-ctlSm border border-line-control bg-surface py-1 pl-2 pr-6 text-[12.5px] text-ink-600 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+                      @change="updateStage(t, ($event.target as HTMLSelectElement).value)"
+                    >
+                      <option v-for="s in STAGE_OPTIONS" :key="s.value" :value="s.value">{{ s.label }}</option>
+                    </select>
+                  </td>
+                  <td class="px-4 py-2.5">
+                    <label class="flex items-center gap-2 text-ink-600">
+                      <SettingsToggle :model-value="t.online_booking_enabled" @update:model-value="toggleBookable(t)" />
+                      Bookable
+                    </label>
+                  </td>
+                  <td class="px-4 py-2.5 text-right">
+                    <button type="button" class="text-ink-faint hover:text-danger-text" @click="removeType(t.id)">✕</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="mt-2 text-[12px] text-ink-faint">
+            "Stage" lets the Statistics report count first visits, reports, revisions, etc. — pick whichever bucket
+            each type maps to for you.
+          </p>
 
-    <form class="mt-4 flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-white p-4" @submit.prevent="addType">
-      <div>
-        <label class="block text-sm font-medium text-gray-700">Name</label>
-        <input v-model="name" type="text" required placeholder="Ajuste Quiropractico" class="mt-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          <form class="mt-4 flex flex-wrap items-end gap-3 rounded-card border border-line bg-surface p-4 shadow-card" @submit.prevent="addType">
+            <div>
+              <label class="block text-[12.5px] font-medium text-ink-600">Name</label>
+              <input v-model="name" type="text" required placeholder="Ajuste Quiropractico" class="mt-1 h-8 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20" />
+            </div>
+            <div>
+              <label class="block text-[12.5px] font-medium text-ink-600">Duration (min)</label>
+              <input v-model="duration" type="number" min="5" step="5" class="mt-1 h-8 w-24 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20" />
+            </div>
+            <div>
+              <label class="block text-[12.5px] font-medium text-ink-600">Default price (€)</label>
+              <input v-model="price" type="number" step="0.01" min="0" class="mt-1 h-8 w-28 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20" />
+            </div>
+            <div>
+              <label class="block text-[12.5px] font-medium text-ink-600">Color</label>
+              <input v-model="color" type="color" class="mt-1 h-8 w-14 rounded-ctl border border-line-control" />
+            </div>
+            <UiBtn variant="primary" type="submit" :disabled="saving">{{ saving ? 'Adding…' : 'Add Type' }}</UiBtn>
+          </form>
+          <p v-if="error" class="mt-2 text-[12.5px] text-danger-text">{{ error }}</p>
+        </div>
       </div>
-      <div>
-        <label class="block text-sm font-medium text-gray-700">Duration (min)</label>
-        <input v-model="duration" type="number" min="5" step="5" class="mt-1 w-24 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-gray-700">Default price (€)</label>
-        <input v-model="price" type="number" step="0.01" min="0" class="mt-1 w-28 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-gray-700">Color</label>
-        <input v-model="color" type="color" class="mt-1 h-9 w-14 rounded-md border border-gray-300" />
-      </div>
-      <button type="submit" :disabled="saving" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
-        {{ saving ? 'Adding…' : 'Add Type' }}
-      </button>
-    </form>
-    <p v-if="error" class="mt-2 text-sm text-red-600">{{ error }}</p>
     </div>
   </div>
 </template>

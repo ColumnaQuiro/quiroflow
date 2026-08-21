@@ -128,130 +128,123 @@ function copy(text: string) {
 </script>
 
 <template>
-  <div class="flex gap-8">
-    <SettingsNav />
-    <div class="min-w-0 flex-1">
-      <h1 class="text-xl font-semibold text-gray-900">Clinics</h1>
+  <div class="flex h-full flex-col">
+    <PageHeader title="Clinics" />
+    <div class="flex-1 overflow-y-auto">
+      <div class="flex gap-8 p-6">
+        <SettingsNav />
+        <div class="min-w-0 max-w-[660px] flex-1">
+          <p class="text-[13px] text-ink-muted2">Locations your practice operates from.</p>
 
-    <div class="mt-4 overflow-hidden rounded-lg border border-gray-200 bg-white">
-      <table class="w-full text-sm">
-        <thead class="border-b border-gray-200 bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-          <tr>
-            <th class="px-4 py-2">Name</th>
-            <th class="px-4 py-2">Address</th>
-            <th class="px-4 py-2">Calendar slot</th>
-            <th class="px-4 py-2"></th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-100">
-          <tr v-if="store.clinics.length === 0">
-            <td colspan="4" class="px-4 py-6 text-center text-gray-400">No clinics yet.</td>
-          </tr>
-          <tr v-for="c in store.clinics" :key="c.id">
-            <td class="px-4 py-2.5 text-gray-900">{{ c.name }}</td>
-            <td class="px-4 py-2.5 text-gray-500">{{ c.address ?? 'N/A' }}</td>
-            <td class="px-4 py-2.5">
-              <select
-                :value="c.slot_duration_minutes"
-                class="rounded-md border border-gray-300 py-1 pl-2 pr-6 text-xs text-gray-600 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                @change="updateSlotDuration(c.id, Number(($event.target as HTMLSelectElement).value))"
-              >
-                <option v-for="m in SLOT_DURATION_OPTIONS" :key="m" :value="m">{{ m }} min</option>
-              </select>
-            </td>
-            <td class="px-4 py-2.5 text-right">
-              <button type="button" class="text-gray-400 hover:text-red-600" @click="removeClinic(c.id)">✕</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    <p class="mt-2 text-xs text-gray-400">
-      "Calendar slot" sets how finely the Calendar's time grid is divided (e.g. 15 min shows 9:00, 9:15, 9:30…).
-    </p>
-
-    <form class="mt-4 flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-white p-4" @submit.prevent="addClinic">
-      <div>
-        <label class="block text-sm font-medium text-gray-700">Name</label>
-        <input v-model="name" type="text" required placeholder="Valencia" class="mt-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-gray-700">Address</label>
-        <input v-model="address" type="text" class="mt-1 w-64 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
-      </div>
-      <button type="submit" :disabled="saving" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
-        {{ saving ? 'Adding…' : 'Add Clinic' }}
-      </button>
-    </form>
-    <p v-if="error" class="mt-2 text-sm text-red-600">{{ error }}</p>
-
-    <h2 class="mt-8 text-lg font-semibold text-gray-900">Online Booking</h2>
-    <p class="mt-1 text-sm text-gray-500">Let patients book their own appointments from a public page or an iframe embedded on your website.</p>
-
-    <div class="mt-3 space-y-2">
-      <div v-for="c in bookingClinics" :key="c.id" class="rounded-lg border border-gray-200 bg-white">
-        <button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left" @click="openBookingEditor(c)">
-          <span class="text-sm font-medium text-gray-900">{{ c.name }}</span>
-          <span
-            class="rounded-full px-2 py-0.5 text-xs font-medium"
-            :class="c.online_booking_enabled ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'"
-          >
-            {{ c.online_booking_enabled ? 'Enabled' : 'Disabled' }}
-          </span>
-        </button>
-
-        <div v-if="openClinicId === c.id" class="border-t border-gray-100 p-4">
-          <label class="flex items-center gap-2 text-sm text-gray-700">
-            <input v-model="editEnabled" type="checkbox" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-            Enable online booking for this clinic
-          </label>
-
-          <div class="mt-4 space-y-2">
-            <p class="text-xs font-medium uppercase tracking-wide text-gray-400">Business hours</p>
-            <div v-for="d in WEEKDAYS" :key="d.key" class="flex items-start gap-3 text-sm">
-              <span class="w-10 pt-1.5 text-gray-500">{{ d.label }}</span>
-              <div class="flex-1 space-y-1.5">
-                <p v-if="editHours[d.key].length === 0" class="pt-1.5 text-gray-400">Closed</p>
-                <div v-for="(w, i) in editHours[d.key]" :key="i" class="flex items-center gap-2">
-                  <input v-model="w[0]" type="time" class="rounded-md border border-gray-300 px-2 py-1 text-sm" />
-                  <span class="text-gray-400">–</span>
-                  <input v-model="w[1]" type="time" class="rounded-md border border-gray-300 px-2 py-1 text-sm" />
-                  <button type="button" class="text-gray-400 hover:text-red-600" @click="removeWindow(d.key, i)">✕</button>
-                </div>
-                <button type="button" class="text-xs font-medium text-indigo-600 hover:text-indigo-700" @click="addWindow(d.key)">+ Add hours</button>
-              </div>
-            </div>
+          <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
+            <table class="w-full text-[13px]">
+              <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted2">
+                <tr>
+                  <th class="px-4 py-2">Name</th>
+                  <th class="px-4 py-2">Address</th>
+                  <th class="px-4 py-2">Calendar slot</th>
+                  <th class="px-4 py-2"></th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-line-row">
+                <tr v-if="store.clinics.length === 0">
+                  <td colspan="4" class="px-4 py-6 text-center text-ink-faint">No clinics yet.</td>
+                </tr>
+                <tr v-for="c in store.clinics" :key="c.id">
+                  <td class="px-4 py-2.5 text-ink-700">{{ c.name }}</td>
+                  <td class="px-4 py-2.5 text-ink-muted2">{{ c.address ?? 'N/A' }}</td>
+                  <td class="px-4 py-2.5">
+                    <select
+                      :value="c.slot_duration_minutes"
+                      class="rounded-ctlSm border border-line-control bg-surface py-1 pl-2 pr-6 text-[12.5px] text-ink-600 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+                      @change="updateSlotDuration(c.id, Number(($event.target as HTMLSelectElement).value))"
+                    >
+                      <option v-for="m in SLOT_DURATION_OPTIONS" :key="m" :value="m">{{ m }} min</option>
+                    </select>
+                  </td>
+                  <td class="px-4 py-2.5 text-right">
+                    <button type="button" class="text-ink-faint hover:text-danger-text" @click="removeClinic(c.id)">✕</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
+          <p class="mt-2 text-[12px] text-ink-faint">
+            "Calendar slot" sets how finely the Calendar's time grid is divided (e.g. 15 min shows 9:00, 9:15, 9:30…).
+          </p>
 
-          <button
-            type="button"
-            :disabled="savingHours"
-            class="mt-4 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
-            @click="saveBooking(c.id)"
-          >
-            {{ savingHours ? 'Saving…' : 'Save' }}
-          </button>
-
-          <div v-if="c.online_booking_enabled && store.accountSlug" class="mt-6 border-t border-gray-100 pt-4">
-            <p class="text-xs font-medium uppercase tracking-wide text-gray-400">Public booking link</p>
-            <div class="mt-1 flex items-center gap-2">
-              <input :value="bookingUrl(store.accountSlug)" readonly class="w-full rounded-md border border-gray-300 bg-gray-50 px-2 py-1.5 text-sm text-gray-600" />
-              <button type="button" class="shrink-0 rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50" @click="copy(bookingUrl(store.accountSlug))">
-                Copy
-              </button>
+          <form class="mt-4 flex flex-wrap items-end gap-3 rounded-card border border-line bg-surface p-4 shadow-card" @submit.prevent="addClinic">
+            <div>
+              <label class="block text-[12.5px] font-medium text-ink-600">Name</label>
+              <input v-model="name" type="text" required placeholder="Valencia" class="mt-1 h-8 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20" />
             </div>
+            <div>
+              <label class="block text-[12.5px] font-medium text-ink-600">Address</label>
+              <input v-model="address" type="text" class="mt-1 h-8 w-64 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20" />
+            </div>
+            <UiBtn variant="primary" type="submit" :disabled="saving">{{ saving ? 'Adding…' : 'Add Clinic' }}</UiBtn>
+          </form>
+          <p v-if="error" class="mt-2 text-[12.5px] text-danger-text">{{ error }}</p>
 
-            <p class="mt-3 text-xs font-medium uppercase tracking-wide text-gray-400">Embed on your website</p>
-            <div class="mt-1 flex items-start gap-2">
-              <textarea readonly rows="5" class="w-full rounded-md border border-gray-300 bg-gray-50 px-2 py-1.5 font-mono text-xs text-gray-600">{{ embedSnippet(store.accountSlug) }}</textarea>
-              <button type="button" class="shrink-0 rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50" @click="copy(embedSnippet(store.accountSlug))">
-                Copy
+          <h2 class="mt-8 text-[15px] font-[620] text-ink-900">Online Booking</h2>
+          <p class="mt-1 text-[13px] text-ink-muted2">Let patients book their own appointments from a public page or an iframe embedded on your website.</p>
+
+          <div class="mt-3 space-y-2">
+            <div v-for="c in bookingClinics" :key="c.id" class="rounded-card border border-line bg-surface shadow-card">
+              <button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left" @click="openBookingEditor(c)">
+                <span class="text-[13.5px] font-[560] text-ink-700">{{ c.name }}</span>
+                <UiPill :tone="c.online_booking_enabled ? 'success' : 'neutral'">{{ c.online_booking_enabled ? 'Enabled' : 'Disabled' }}</UiPill>
               </button>
+
+              <div v-if="openClinicId === c.id" class="border-t border-line-divider p-4">
+                <label class="flex items-center gap-2.5 text-[13px] text-ink-600">
+                  <SettingsToggle v-model="editEnabled" />
+                  Enable online booking for this clinic
+                </label>
+
+                <div class="mt-4 space-y-2">
+                  <p class="text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">Business hours</p>
+                  <div v-for="d in WEEKDAYS" :key="d.key" class="flex items-start gap-3 text-[13px]">
+                    <span class="w-10 pt-1.5 text-ink-muted2">{{ d.label }}</span>
+                    <div class="flex-1 space-y-1.5">
+                      <p v-if="editHours[d.key].length === 0" class="pt-1.5 text-ink-faint">Closed</p>
+                      <div v-for="(w, i) in editHours[d.key]" :key="i" class="flex items-center gap-2">
+                        <input v-model="w[0]" type="time" class="h-8 rounded-ctl border border-line-control bg-surface px-2 text-[13px]" />
+                        <span class="text-ink-faint">–</span>
+                        <input v-model="w[1]" type="time" class="h-8 rounded-ctl border border-line-control bg-surface px-2 text-[13px]" />
+                        <button type="button" class="text-ink-faint hover:text-danger-text" @click="removeWindow(d.key, i)">✕</button>
+                      </div>
+                      <button type="button" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover" @click="addWindow(d.key)">+ Add hours</button>
+                    </div>
+                  </div>
+                </div>
+
+                <UiBtn variant="primary" class="mt-4" :disabled="savingHours" @click="saveBooking(c.id)">
+                  {{ savingHours ? 'Saving…' : 'Save' }}
+                </UiBtn>
+
+                <div v-if="c.online_booking_enabled && store.accountSlug" class="mt-6 border-t border-line-divider pt-4">
+                  <p class="text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">Public booking link</p>
+                  <div class="mt-1 flex items-center gap-2">
+                    <input :value="bookingUrl(store.accountSlug)" readonly class="h-8 w-full rounded-ctl border border-line-control bg-surface-subtle px-2 text-[13px] text-ink-600" />
+                    <button type="button" class="h-8 shrink-0 rounded-ctl border border-line-control px-3 text-[12.5px] text-ink-600 hover:border-line-controlHover" @click="copy(bookingUrl(store.accountSlug))">
+                      Copy
+                    </button>
+                  </div>
+
+                  <p class="mt-3 text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">Embed on your website</p>
+                  <div class="mt-1 flex items-start gap-2">
+                    <textarea readonly rows="5" class="w-full rounded-ctl border border-line-control bg-surface-subtle px-2 py-1.5 font-mono text-[12px] text-ink-600">{{ embedSnippet(store.accountSlug) }}</textarea>
+                    <button type="button" class="shrink-0 rounded-ctl border border-line-control px-3 py-2 text-[12.5px] text-ink-600 hover:border-line-controlHover" @click="copy(embedSnippet(store.accountSlug))">
+                      Copy
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
     </div>
   </div>
 </template>

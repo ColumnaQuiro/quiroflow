@@ -54,54 +54,57 @@ async function removeRoom(id: string) {
 </script>
 
 <template>
-  <div class="flex gap-8">
-    <SettingsNav />
-    <div class="min-w-0 flex-1">
-      <h1 class="text-xl font-semibold text-gray-900">Calendar Resources</h1>
+  <div class="flex h-full flex-col">
+    <PageHeader title="Calendar Resources" />
+    <div class="flex-1 overflow-y-auto">
+      <div class="flex gap-8 p-6">
+        <SettingsNav />
+        <div class="min-w-0 max-w-[660px] flex-1">
+          <p class="text-[13px] text-ink-muted2">Rooms used for scheduling per clinic.</p>
 
-    <div class="mt-4 overflow-hidden rounded-lg border border-gray-200 bg-white">
-      <table class="w-full text-sm">
-        <thead class="border-b border-gray-200 bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-          <tr>
-            <th class="px-4 py-2">Room</th>
-            <th class="px-4 py-2">Clinic</th>
-            <th class="px-4 py-2"></th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-100">
-          <tr v-if="loading">
-            <td colspan="3" class="px-4 py-6 text-center text-gray-400">Loading…</td>
-          </tr>
-          <tr v-else-if="rooms.length === 0">
-            <td colspan="3" class="px-4 py-6 text-center text-gray-400">No rooms yet.</td>
-          </tr>
-          <tr v-for="r in rooms" :key="r.id">
-            <td class="px-4 py-2.5 text-gray-900">{{ r.name }}</td>
-            <td class="px-4 py-2.5 text-gray-500">{{ r.clinics?.name }}</td>
-            <td class="px-4 py-2.5 text-right">
-              <button type="button" class="text-gray-400 hover:text-red-600" @click="removeRoom(r.id)">✕</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+          <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
+            <table class="w-full text-[13px]">
+              <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted2">
+                <tr>
+                  <th class="px-4 py-2">Room</th>
+                  <th class="px-4 py-2">Clinic</th>
+                  <th class="px-4 py-2"></th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-line-row">
+                <tr v-if="loading">
+                  <td colspan="3" class="px-4 py-6 text-center text-ink-faint">Loading…</td>
+                </tr>
+                <tr v-else-if="rooms.length === 0">
+                  <td colspan="3" class="px-4 py-6 text-center text-ink-faint">No rooms yet.</td>
+                </tr>
+                <tr v-for="r in rooms" :key="r.id">
+                  <td class="px-4 py-2.5 text-ink-700">{{ r.name }}</td>
+                  <td class="px-4 py-2.5 text-ink-muted2">{{ r.clinics?.name }}</td>
+                  <td class="px-4 py-2.5 text-right">
+                    <button type="button" class="text-ink-faint hover:text-danger-text" @click="removeRoom(r.id)">✕</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
 
-    <form class="mt-4 flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-white p-4" @submit.prevent="addRoom">
-      <div>
-        <label class="block text-sm font-medium text-gray-700">Room name</label>
-        <input v-model="name" type="text" required placeholder="Sala 2" class="mt-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          <form class="mt-4 flex flex-wrap items-end gap-3 rounded-card border border-line bg-surface p-4 shadow-card" @submit.prevent="addRoom">
+            <div>
+              <label class="block text-[12.5px] font-medium text-ink-600">Room name</label>
+              <input v-model="name" type="text" required placeholder="Sala 2" class="mt-1 h-8 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20" />
+            </div>
+            <div>
+              <label class="block text-[12.5px] font-medium text-ink-600">Clinic</label>
+              <select v-model="clinicId" class="mt-1 h-8 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20">
+                <option v-for="c in store.clinics" :key="c.id" :value="c.id">{{ c.name }}</option>
+              </select>
+            </div>
+            <UiBtn variant="primary" type="submit" :disabled="saving">{{ saving ? 'Adding…' : 'Add Room' }}</UiBtn>
+          </form>
+          <p v-if="error" class="mt-2 text-[12.5px] text-danger-text">{{ error }}</p>
+        </div>
       </div>
-      <div>
-        <label class="block text-sm font-medium text-gray-700">Clinic</label>
-        <select v-model="clinicId" class="mt-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-          <option v-for="c in store.clinics" :key="c.id" :value="c.id">{{ c.name }}</option>
-        </select>
-      </div>
-      <button type="submit" :disabled="saving" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
-        {{ saving ? 'Adding…' : 'Add Room' }}
-      </button>
-    </form>
-    <p v-if="error" class="mt-2 text-sm text-red-600">{{ error }}</p>
     </div>
   </div>
 </template>

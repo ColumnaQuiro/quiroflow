@@ -47,52 +47,49 @@ async function deleteRole(role: RoleRow) {
 </script>
 
 <template>
-  <div class="flex gap-8">
-    <SettingsNav />
-    <div class="min-w-0 flex-1">
-      <h1 class="text-xl font-semibold text-gray-900">Roles & Permissions</h1>
-      <p class="mt-1 text-sm text-gray-500">
-        Control what each role can see and do. Assign a role to a team member from
-        <NuxtLink to="/settings/team" class="text-indigo-600 hover:text-indigo-700">Team Members</NuxtLink>.
-      </p>
+  <div class="flex h-full flex-col">
+    <PageHeader title="Roles & Permissions">
+      <UiBtn variant="primary" :disabled="creating" @click="createRole">{{ creating ? 'Creating…' : '+ New Role' }}</UiBtn>
+    </PageHeader>
+    <div class="flex-1 overflow-y-auto">
+      <div class="flex gap-8 p-6">
+        <SettingsNav />
+        <div class="min-w-0 max-w-[660px] flex-1">
+          <p class="text-[13px] text-ink-muted2">
+            Control what each role can see and do. Assign a role to a team member from
+            <NuxtLink to="/settings/team" class="text-brand-text hover:text-brand-hover">Team Members</NuxtLink>.
+          </p>
 
-      <div class="mt-4 overflow-hidden rounded-lg border border-gray-200 bg-white">
-        <table class="w-full text-sm">
-          <thead class="border-b border-gray-200 bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-            <tr>
-              <th class="px-4 py-2">Role</th>
-              <th class="px-4 py-2"></th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-gray-100">
-            <tr v-if="loading">
-              <td colspan="2" class="px-4 py-6 text-center text-gray-400">Loading…</td>
-            </tr>
-            <tr v-else-if="roles.length === 0">
-              <td colspan="2" class="px-4 py-6 text-center text-gray-400">No roles yet.</td>
-            </tr>
-            <tr v-for="r in roles" :key="r.id">
-              <td class="px-4 py-2.5">
-                <NuxtLink :to="`/settings/roles/${r.id}`" class="font-medium text-gray-900 hover:text-indigo-600">{{ r.name }}</NuxtLink>
-                <span v-if="r.is_system" class="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-500">🔒 Owner (fixed)</span>
-              </td>
-              <td class="px-4 py-2.5 text-right">
-                <button v-if="!r.is_system" type="button" class="text-gray-400 hover:text-red-600" @click="deleteRole(r)">✕</button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+          <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
+            <table class="w-full text-[13px]">
+              <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted2">
+                <tr>
+                  <th class="px-4 py-2">Role</th>
+                  <th class="px-4 py-2"></th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-line-row">
+                <tr v-if="loading">
+                  <td colspan="2" class="px-4 py-6 text-center text-ink-faint">Loading…</td>
+                </tr>
+                <tr v-else-if="roles.length === 0">
+                  <td colspan="2" class="px-4 py-6 text-center text-ink-faint">No roles yet.</td>
+                </tr>
+                <tr v-for="r in roles" :key="r.id">
+                  <td class="px-4 py-2.5">
+                    <NuxtLink :to="`/settings/roles/${r.id}`" class="font-[560] text-ink-700 hover:text-brand-text">{{ r.name }}</NuxtLink>
+                    <UiPill v-if="r.is_system" tone="neutral" class="ml-2">🔒 Owner (fixed)</UiPill>
+                  </td>
+                  <td class="px-4 py-2.5 text-right">
+                    <button v-if="!r.is_system" type="button" class="text-ink-faint hover:text-danger-text" @click="deleteRole(r)">✕</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p v-if="error" class="mt-2 text-[12.5px] text-danger-text">{{ error }}</p>
+        </div>
       </div>
-
-      <button
-        type="button"
-        :disabled="creating"
-        class="mt-4 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
-        @click="createRole"
-      >
-        {{ creating ? 'Creating…' : '+ New Role' }}
-      </button>
-      <p v-if="error" class="mt-2 text-sm text-red-600">{{ error }}</p>
     </div>
   </div>
 </template>

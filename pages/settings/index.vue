@@ -67,11 +67,15 @@ const groups = [
 </script>
 
 <template>
-  <div>
-    <h1 class="text-xl font-semibold text-gray-900">Settings</h1>
-    <p class="mt-1 text-sm text-gray-500">Manage how your clinic runs in QuiroFlow.</p>
-    <div class="mt-8">
-      <IconLinkGrid :groups="groups" />
+  <div class="flex h-full flex-col">
+    <PageHeader title="Settings" />
+    <div class="flex-1 overflow-y-auto">
+      <div class="p-6">
+        <p class="text-[13px] text-ink-muted2">Manage how your clinic runs in QuiroFlow.</p>
+        <div class="mt-8 max-w-[960px]">
+          <IconLinkGrid :groups="groups" />
+        </div>
+      </div>
     </div>
   </div>
 </template>

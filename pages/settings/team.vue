@@ -124,90 +124,93 @@ function copy(text: string) {
 </script>
 
 <template>
-  <div class="flex gap-8">
-    <SettingsNav />
-    <div class="min-w-0 flex-1">
-      <h1 class="text-xl font-semibold text-gray-900">Team Members</h1>
+  <div class="flex h-full flex-col">
+    <PageHeader title="Team Members" />
+    <div class="flex-1 overflow-y-auto">
+      <div class="flex gap-8 p-6">
+        <SettingsNav />
+        <div class="min-w-0 max-w-[660px] flex-1">
+          <p class="text-[13px] text-ink-muted2">Staff accounts, roles, and invites.</p>
 
-    <div class="mt-4 overflow-hidden rounded-lg border border-gray-200 bg-white">
-      <table class="w-full text-sm">
-        <thead class="border-b border-gray-200 bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-          <tr>
-            <th class="px-4 py-2">Name</th>
-            <th class="px-4 py-2">Role</th>
-            <th class="px-4 py-2">Online booking</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-100">
-          <tr v-if="loading">
-            <td colspan="3" class="px-4 py-6 text-center text-gray-400">Loading…</td>
-          </tr>
-          <tr v-for="m in members" v-else :key="m.id">
-            <td class="px-4 py-2.5 text-gray-900">
-              <span class="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" :style="{ backgroundColor: m.color }"></span>
-              <input
-                v-if="editingId === m.id"
-                v-model="editingName"
-                type="text"
-                autofocus
-                class="w-48 rounded border border-indigo-300 px-1.5 py-0.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                @keydown.enter="saveEdit(m)"
-                @keydown.esc="editingId = null"
-                @blur="saveEdit(m)"
-              />
-              <button v-else type="button" class="hover:text-indigo-600" @click="startEdit(m)">
-                {{ m.full_name }}
-              </button>
-            </td>
-            <td class="px-4 py-2.5">
-              <span class="rounded bg-indigo-50 px-1.5 py-0.5 text-xs font-medium text-indigo-700">{{ roleName(m.role_id) }}</span>
-            </td>
-            <td class="px-4 py-2.5">
-              <label class="flex items-center gap-2 text-gray-600">
-                <input type="checkbox" :checked="m.online_booking_enabled" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" @change="toggleBookable(m)" />
-                Bookable
-              </label>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div v-if="invites.length > 0" class="mt-4">
-      <h2 class="text-sm font-semibold text-gray-900">Pending invites</h2>
-      <ul class="mt-2 space-y-2">
-        <li v-for="inv in invites" :key="inv.id" class="flex items-center justify-between rounded-md border border-gray-200 bg-white px-3 py-2 text-sm">
-          <span class="text-gray-700">{{ inv.email || 'Any email' }} &middot; {{ roleName(inv.role_id) }}</span>
-          <div class="flex gap-3">
-            <button type="button" class="text-indigo-600 hover:text-indigo-500" @click="copy(inviteLink(inv.token))">Copy link</button>
-            <button type="button" class="text-red-600 hover:text-red-500" @click="revokeInvite(inv.id)">Revoke</button>
+          <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
+            <table class="w-full text-[13px]">
+              <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted2">
+                <tr>
+                  <th class="px-4 py-2">Name</th>
+                  <th class="px-4 py-2">Role</th>
+                  <th class="px-4 py-2">Online booking</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-line-row">
+                <tr v-if="loading">
+                  <td colspan="3" class="px-4 py-6 text-center text-ink-faint">Loading…</td>
+                </tr>
+                <tr v-for="m in members" v-else :key="m.id">
+                  <td class="px-4 py-2.5 text-ink-700">
+                    <span class="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" :style="{ backgroundColor: m.color }"></span>
+                    <input
+                      v-if="editingId === m.id"
+                      v-model="editingName"
+                      type="text"
+                      autofocus
+                      class="w-48 rounded-ctlSm border border-brand-tintBorder px-1.5 py-0.5 text-[13px] focus:outline-none focus:ring-1 focus:ring-brand/20"
+                      @keydown.enter="saveEdit(m)"
+                      @keydown.esc="editingId = null"
+                      @blur="saveEdit(m)"
+                    />
+                    <button v-else type="button" class="hover:text-brand-text" @click="startEdit(m)">
+                      {{ m.full_name }}
+                    </button>
+                  </td>
+                  <td class="px-4 py-2.5">
+                    <UiPill tone="brand">{{ roleName(m.role_id) }}</UiPill>
+                  </td>
+                  <td class="px-4 py-2.5">
+                    <label class="flex items-center gap-2.5 text-ink-600">
+                      <SettingsToggle :model-value="m.online_booking_enabled" @update:model-value="toggleBookable(m)" />
+                      Bookable
+                    </label>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
-        </li>
-      </ul>
-    </div>
 
-    <form class="mt-4 flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-white p-4" @submit.prevent="createInvite">
-      <div>
-        <label class="block text-sm font-medium text-gray-700">Email</label>
-        <input v-model="inviteEmail" type="email" required placeholder="colleague@example.com" class="mt-1 w-56 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          <div v-if="invites.length > 0" class="mt-4">
+            <h2 class="text-[13.5px] font-[560] text-ink-700">Pending invites</h2>
+            <ul class="mt-2 space-y-2">
+              <li v-for="inv in invites" :key="inv.id" class="flex items-center justify-between rounded-card border border-line bg-surface px-3 py-2 text-[13px] shadow-card">
+                <span class="text-ink-600">{{ inv.email || 'Any email' }} &middot; {{ roleName(inv.role_id) }}</span>
+                <div class="flex gap-3 text-[12.5px] font-medium">
+                  <button type="button" class="text-brand-text hover:text-brand-hover" @click="copy(inviteLink(inv.token))">Copy link</button>
+                  <button type="button" class="text-danger-text hover:text-danger-text/80" @click="revokeInvite(inv.id)">Revoke</button>
+                </div>
+              </li>
+            </ul>
+          </div>
+
+          <form class="mt-4 flex flex-wrap items-end gap-3 rounded-card border border-line bg-surface p-4 shadow-card" @submit.prevent="createInvite">
+            <div>
+              <label class="block text-[12.5px] font-medium text-ink-600">Email</label>
+              <input v-model="inviteEmail" type="email" required placeholder="colleague@example.com" class="mt-1 h-8 w-56 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20" />
+            </div>
+            <div>
+              <label class="block text-[12.5px] font-medium text-ink-600">Role</label>
+              <select v-model="inviteRoleId" class="mt-1 h-8 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20">
+                <option v-for="r in roles" :key="r.id" :value="r.id">{{ r.name }}</option>
+              </select>
+            </div>
+            <UiBtn variant="primary" type="submit" :disabled="inviting">{{ inviting ? 'Creating…' : 'Create Invite Link' }}</UiBtn>
+          </form>
+          <p v-if="error" class="mt-2 text-[12.5px] text-danger-text">{{ error }}</p>
+          <p v-if="emailStatus === 'sent'" class="mt-2 text-[12.5px] text-success-text">Invite email sent ✓</p>
+          <p v-if="emailStatus === 'failed'" class="mt-2 text-[12.5px] text-warning-text">Couldn't send the invite email — share the link below instead.</p>
+          <div v-if="lastInviteLink" class="mt-2 rounded-ctl border border-success-border bg-success-bg p-3 text-[12.5px] text-success-deep">
+            Share this link (e.g. via WhatsApp): <span class="break-all font-medium">{{ lastInviteLink }}</span>
+            <button type="button" class="ml-2 font-medium underline" @click="copy(lastInviteLink)">Copy</button>
+          </div>
+        </div>
       </div>
-      <div>
-        <label class="block text-sm font-medium text-gray-700">Role</label>
-        <select v-model="inviteRoleId" class="mt-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-          <option v-for="r in roles" :key="r.id" :value="r.id">{{ r.name }}</option>
-        </select>
-      </div>
-      <button type="submit" :disabled="inviting" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
-        {{ inviting ? 'Creating…' : 'Create Invite Link' }}
-      </button>
-    </form>
-    <p v-if="error" class="mt-2 text-sm text-red-600">{{ error }}</p>
-    <p v-if="emailStatus === 'sent'" class="mt-2 text-sm text-green-700">Invite email sent ✓</p>
-    <p v-if="emailStatus === 'failed'" class="mt-2 text-sm text-amber-700">Couldn't send the invite email — share the link below instead.</p>
-    <div v-if="lastInviteLink" class="mt-2 rounded-md bg-green-50 p-3 text-sm text-green-800">
-      Share this link (e.g. via WhatsApp): <span class="break-all font-medium">{{ lastInviteLink }}</span>
-      <button type="button" class="ml-2 font-medium underline" @click="copy(lastInviteLink)">Copy</button>
-    </div>
     </div>
   </div>
 </template>

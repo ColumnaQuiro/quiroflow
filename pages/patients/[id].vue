@@ -18,67 +18,141 @@ async function loadPatient() {
 }
 onMounted(loadPatient)
 
+const { balanceCents, creditLedgerCents, loading: financialLoading } = usePatientFinancialSummary(patientId)
+
+const isVip = computed(() => !!patient.value?.tags.some((t) => t.toUpperCase() === 'VIP'))
+const amountDue = computed(() => (balanceCents.value < 0 ? -balanceCents.value : 0))
+
 const tabs = [
   { key: 'overview', label: 'Overview' },
   { key: 'appointments', label: 'Appointments' },
-  { key: 'visit-notes', label: 'Visit Notes' },
+  { key: 'visit-notes', label: 'Visit notes' },
   { key: 'billing', label: 'Billing' },
   { key: 'communications', label: 'Communications' },
-  { key: 'files', label: 'Files' },
   { key: 'docs', label: 'Docs' },
+  { key: 'files', label: 'Files' },
 ]
 
 const activeTab = computed({
   get: () => (route.query.tab as string) ?? 'overview',
   set: (value) => navigateTo({ path: route.path, query: { ...route.query, tab: value } }),
 })
+
+// Purely presentational -- variant B (summary-bar layout) isn't built, so
+// the right-hand option is shown but inert.
+const layoutVariant = ref<'rail' | 'summary'>('rail')
+
+const whatsAppOpen = ref(false)
 </script>
 
 <template>
-  <div v-if="loading" class="text-sm text-gray-400">Loading…</div>
-  <div v-else-if="notFound" class="text-sm text-gray-400">Patient not found.</div>
-  <div v-else-if="patient">
-    <NuxtLink to="/patients" class="text-sm text-gray-500 hover:text-gray-700">&larr; Back to Patients</NuxtLink>
+  <div v-if="loading" class="flex h-full items-center justify-center text-[13px] text-ink-faint">Loading…</div>
+  <div v-else-if="notFound" class="flex h-full items-center justify-center text-[13px] text-ink-faint">Patient not found.</div>
+  <div v-else-if="patient" class="flex h-full flex-col">
+    <header class="flex h-14 shrink-0 items-center justify-between border-b border-line bg-surface px-6">
+      <div class="flex min-w-0 items-center gap-2.5">
+        <NuxtLink
+          to="/patients"
+          class="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-ctlSm text-ink-muted hover:bg-surface-subtle hover:text-ink-700"
+          title="Back to patients"
+        >
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+            <path d="M10 3.5L5 8l5 4.5" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </NuxtLink>
+        <NuxtLink to="/patients" class="shrink-0 text-[13px] text-ink-muted2 hover:text-ink-700">Patients /</NuxtLink>
+        <h1 class="truncate text-[14.5px] font-[620] text-ink-900">{{ patient.first_name }} {{ patient.last_name }}</h1>
+        <div class="flex shrink-0 items-center gap-1.5">
+          <UiPill v-if="isVip" tone="brand" :dot="true">VIP</UiPill>
+          <UiPill v-if="amountDue > 0" tone="danger">€{{ (amountDue / 100).toFixed(2) }} due</UiPill>
+        </div>
+      </div>
 
-    <div class="mt-3 flex flex-col gap-6 lg:flex-row lg:items-start">
-      <PatientsDetailSidebar :patient="patient" />
+      <div class="flex shrink-0 items-center gap-2">
+        <div class="flex items-center rounded-ctl border border-line-control p-0.5" title="Layout: rail (only variant available)">
+          <button
+            type="button"
+            class="flex h-6 w-7 items-center justify-center rounded-[6px]"
+            :class="layoutVariant === 'rail' ? 'bg-brand-tint text-brand-text' : 'text-ink-faint'"
+            @click="layoutVariant = 'rail'"
+          >
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1" y="1" width="4" height="12" rx="0.8" /><rect x="6.5" y="1" width="6.5" height="12" rx="0.8" /></svg>
+          </button>
+          <button
+            type="button"
+            class="flex h-6 w-7 items-center justify-center rounded-[6px] text-ink-faint2 opacity-50"
+            title="Summary layout isn't available yet"
+            @click="layoutVariant = 'rail'"
+          >
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1" y="1" width="12" height="3.5" rx="0.8" /><rect x="1" y="6" width="12" height="7" rx="0.8" /></svg>
+          </button>
+        </div>
+        <UiBtn variant="secondary" @click="whatsAppOpen = true">Message</UiBtn>
+        <UiBtn variant="primary" @click="navigateTo('/calendar')">Book visit</UiBtn>
+      </div>
+    </header>
 
-      <div class="min-w-0 flex-1">
-        <div class="sticky top-0 z-10 border-b border-gray-200 bg-gray-50">
-          <nav class="-mb-px flex gap-6 overflow-x-auto">
+    <div class="flex-1 overflow-y-auto bg-surface-page">
+      <div class="flex items-start gap-6 px-6 py-6">
+        <PatientsDetailSidebar
+          :patient="patient"
+          :balance-cents="balanceCents"
+          :credit-cents="creditLedgerCents"
+          :financial-loading="financialLoading"
+          class="sticky top-6"
+          @message="whatsAppOpen = true"
+          @charge="activeTab = 'billing'"
+        />
+
+        <div class="min-w-0 flex-1">
+          <nav class="sticky top-6 z-10 flex gap-1 border-b border-chip-border bg-surface-page">
             <button
               v-for="tab in tabs"
               :key="tab.key"
               type="button"
-              class="shrink-0 border-b-2 px-1 py-2 text-sm font-medium"
+              class="h-9 shrink-0 px-[11px] text-[13.5px]"
               :class="
                 activeTab === tab.key
-                  ? 'border-indigo-600 text-indigo-600'
-                  : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                  ? 'font-semibold text-ink-700 shadow-[inset_0_-2px_0_#4F46E5]'
+                  : 'text-ink-muted hover:text-ink-600'
               "
               @click="activeTab = tab.key"
             >
               {{ tab.label }}
             </button>
           </nav>
-        </div>
 
-        <div class="mt-6">
-          <PatientsOverviewTab v-if="activeTab === 'overview'" :patient="patient" @updated="loadPatient" />
-          <PatientsAppointmentsTab
-            v-else-if="activeTab === 'appointments'"
-            :patient-id="patientId"
-            :first-name="patient.first_name"
-            :last-name="patient.last_name"
-            :preferred-language="patient.preferred_language"
-          />
-          <PatientsVisitNotesTab v-else-if="activeTab === 'visit-notes'" :patient-id="patientId" />
-          <PatientsBillingTab v-else-if="activeTab === 'billing'" :patient-id="patientId" />
-          <PatientsCommunicationsTab v-else-if="activeTab === 'communications'" :patient-id="patientId" />
-          <PatientsFilesTab v-else-if="activeTab === 'files'" :patient-id="patientId" />
-          <PatientsDocsTab v-else-if="activeTab === 'docs'" :patient-id="patientId" />
+          <div class="mt-4">
+            <PatientsOverviewTab v-if="activeTab === 'overview'" :patient="patient" @updated="loadPatient" />
+            <PatientsAppointmentsTab
+              v-else-if="activeTab === 'appointments'"
+              :patient-id="patientId"
+              :first-name="patient.first_name"
+              :last-name="patient.last_name"
+              :preferred-language="patient.preferred_language"
+            />
+            <PatientsVisitNotesTab v-else-if="activeTab === 'visit-notes'" :patient-id="patientId" />
+            <PatientsBillingTab v-else-if="activeTab === 'billing'" :patient-id="patientId" />
+            <PatientsCommunicationsTab
+              v-else-if="activeTab === 'communications'"
+              :patient-id="patientId"
+              :first-name="patient.first_name"
+              :preferred-language="patient.preferred_language"
+            />
+            <PatientsDocsTab v-else-if="activeTab === 'docs'" :patient-id="patientId" />
+            <PatientsFilesTab v-else-if="activeTab === 'files'" :patient-id="patientId" />
+          </div>
         </div>
       </div>
     </div>
+
+    <SendWhatsAppModal
+      v-if="whatsAppOpen"
+      :patient-id="patient.id"
+      :patient-first-name="patient.first_name"
+      :patient-preferred-language="patient.preferred_language"
+      @close="whatsAppOpen = false"
+      @sent="whatsAppOpen = false"
+    />
   </div>
 </template>

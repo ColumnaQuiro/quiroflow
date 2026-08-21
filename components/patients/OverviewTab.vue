@@ -22,6 +22,9 @@ onMounted(async () => {
 function teamMemberName(id: string | null) {
   return teamMembers.value.find((m) => m.id === id)?.full_name ?? 'None'
 }
+function clinicName(id: string | null) {
+  return store.clinics.find((c) => c.id === id)?.name ?? 'None'
+}
 function languageLabel(code: string) {
   return LANGUAGES.find((l) => l.code === code)?.label ?? code
 }
@@ -29,6 +32,99 @@ function channelLabel(value: string) {
   return CHANNEL_OPTIONS.find((c) => c.value === value)?.label ?? value
 }
 
+// -- KPI strip ------------------------------------------------------------
+const kpiLoading = ref(true)
+const visits12mo = ref(0)
+const attendancePct = ref<number | null>(null)
+const lastVisit = ref<string | null>(null)
+const lifetimeCents = ref(0)
+
+async function loadKpis() {
+  kpiLoading.value = true
+  const oneYearAgo = new Date()
+  oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
+
+  const [{ data: appts }, { data: invoices }] = await Promise.all([
+    supabase.from('appointments').select('status, starts_at').eq('patient_id', props.patient.id),
+    supabase.from('invoices').select('id').eq('patient_id', props.patient.id).neq('status', 'void'),
+  ])
+
+  visits12mo.value = (appts ?? []).filter((a) => a.status === 'completed' && a.starts_at >= oneYearAgo.toISOString()).length
+
+  const completed = (appts ?? []).filter((a) => a.status === 'completed')
+  const noShow = (appts ?? []).filter((a) => a.status === 'no_show')
+  const denom = completed.length + noShow.length
+  attendancePct.value = denom === 0 ? null : Math.round((completed.length / denom) * 100)
+
+  const pastCompleted = completed.slice().sort((a, b) => b.starts_at.localeCompare(a.starts_at))
+  lastVisit.value = pastCompleted[0]?.starts_at ?? null
+
+  const invoiceIds = (invoices ?? []).map((i) => i.id)
+  if (invoiceIds.length > 0) {
+    const { data: payments } = await supabase.from('payments').select('amount_cents').in('invoice_id', invoiceIds)
+    lifetimeCents.value = (payments ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
+  } else {
+    lifetimeCents.value = 0
+  }
+  kpiLoading.value = false
+}
+onMounted(loadKpis)
+watch(() => props.patient.id, loadKpis)
+
+function money(cents: number) {
+  return `€${(cents / 100).toFixed(2)}`
+}
+
+// -- Recent activity -------------------------------------------------------
+interface ActivityItem { at: string; text: string; dot: string }
+const activity = ref<ActivityItem[]>([])
+const activityLoading = ref(true)
+
+async function loadActivity() {
+  activityLoading.value = true
+  const [{ data: appts }, { data: invoices }, { data: messages }] = await Promise.all([
+    supabase
+      .from('appointments')
+      .select('starts_at, status, appointment_types(name)')
+      .eq('patient_id', props.patient.id)
+      .order('starts_at', { ascending: false })
+      .limit(3),
+    supabase.from('invoices').select('created_at, invoice_number, status').eq('patient_id', props.patient.id).order('created_at', { ascending: false }).limit(2),
+    supabase.from('whatsapp_messages').select('created_at, direction, status').eq('patient_id', props.patient.id).order('created_at', { ascending: false }).limit(2),
+  ])
+
+  const items: ActivityItem[] = []
+  for (const a of (appts as any[]) ?? []) {
+    const typeName = a.appointment_types?.name ?? 'Visit'
+    const verb = a.status === 'completed' ? 'Completed' : a.status === 'cancelled' ? 'Cancelled' : a.status === 'no_show' ? 'Missed' : 'Booked'
+    items.push({ at: a.starts_at, text: `${verb} ${typeName.toLowerCase()} appointment`, dot: a.status === 'completed' ? 'bg-success-accent' : a.status === 'no_show' || a.status === 'cancelled' ? 'bg-warning-accent' : 'bg-brand' })
+  }
+  for (const inv of invoices ?? []) {
+    items.push({ at: inv.created_at, text: `Invoice ${inv.invoice_number} ${inv.status === 'paid' ? 'paid' : 'issued'}`, dot: inv.status === 'paid' ? 'bg-success-accent' : 'bg-ink-faint3' })
+  }
+  for (const m of messages ?? []) {
+    items.push({ at: m.created_at, text: m.direction === 'inbound' ? 'Replied via WhatsApp' : 'WhatsApp message sent', dot: 'bg-brand' })
+  }
+  items.sort((a, b) => b.at.localeCompare(a.at))
+  activity.value = items.slice(0, 6)
+  activityLoading.value = false
+}
+onMounted(loadActivity)
+watch(() => props.patient.id, loadActivity)
+
+function relativeTime(iso: string) {
+  const diffMs = Date.now() - new Date(iso).getTime()
+  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24))
+  if (diffDays === 0) return 'Today'
+  if (diffDays === 1) return 'Yesterday'
+  if (diffDays === -1) return 'Tomorrow'
+  if (diffDays > 0 && diffDays < 7) return `${diffDays}d ago`
+  if (diffDays < 0 && diffDays > -7) return `in ${-diffDays}d`
+  if (diffDays >= 7 && diffDays < 60) return `${Math.round(diffDays / 7)}w ago`
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
+// -- Details edit form -------------------------------------------------
 const editing = ref(false)
 const saving = ref(false)
 const error = ref('')
@@ -111,74 +207,88 @@ async function save() {
   editing.value = false
   emit('updated')
 }
+
+const inputClass = 'mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none'
+const labelClass = 'block text-[12px] font-medium text-ink-muted'
 </script>
 
 <template>
-  <div class="space-y-6">
-    <div class="flex items-center justify-between">
-      <h2 class="text-base font-semibold text-gray-900">Patient Details</h2>
-      <button
-        v-if="!editing"
-        type="button"
-        class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-        @click="startEditing"
-      >
-        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-        </svg>
-        Edit
-      </button>
+  <div class="space-y-4">
+    <!-- KPI strip -->
+    <div class="grid grid-cols-4 gap-3">
+      <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+        <p class="text-[11.5px] text-ink-muted2">Visits, 12 mo</p>
+        <p class="mt-1 font-mono text-[20px] font-semibold text-ink-900">{{ kpiLoading ? '—' : visits12mo }}</p>
+      </div>
+      <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+        <p class="text-[11.5px] text-ink-muted2">Attendance</p>
+        <p class="mt-1 font-mono text-[20px] font-semibold text-ink-900">{{ kpiLoading || attendancePct === null ? '—' : `${attendancePct}%` }}</p>
+      </div>
+      <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+        <p class="text-[11.5px] text-ink-muted2">Last visit</p>
+        <p class="mt-1 text-[20px] font-semibold text-ink-900">
+          {{ kpiLoading ? '—' : lastVisit ? new Date(lastVisit).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '—' }}
+        </p>
+      </div>
+      <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+        <p class="text-[11.5px] text-ink-muted2">Lifetime value</p>
+        <p class="mt-1 font-mono text-[20px] font-semibold text-ink-900">{{ kpiLoading ? '—' : money(lifetimeCents) }}</p>
+      </div>
     </div>
 
-    <div class="rounded-lg border border-gray-200 bg-white p-6">
-      <h3 class="text-sm font-semibold text-gray-900">Contact details</h3>
+    <!-- Patient details -->
+    <div class="rounded-card border border-line bg-surface p-5 shadow-card">
+      <div class="flex items-center justify-between">
+        <p class="text-[13.5px] font-semibold text-ink-700">Patient details</p>
+        <UiBtn v-if="!editing" variant="secondary" size="sm" @click="startEditing">Edit</UiBtn>
+      </div>
 
-      <dl v-if="!editing" class="mt-4 grid grid-cols-1 gap-x-8 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+      <dl v-if="!editing" class="mt-4 grid grid-cols-3 gap-x-6 gap-y-4">
         <div>
-          <dt class="text-gray-500">Date of birth</dt>
-          <dd class="text-gray-900">{{ patient.date_of_birth ?? 'N/A' }}</dd>
+          <dt class="text-[11.5px] text-ink-muted2">Date of birth</dt>
+          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.date_of_birth ?? 'N/A' }}</dd>
         </div>
         <div>
-          <dt class="text-gray-500">Email</dt>
-          <dd class="text-gray-900">{{ patient.email ?? 'N/A' }}</dd>
+          <dt class="text-[11.5px] text-ink-muted2">Email</dt>
+          <dd class="mt-0.5 truncate text-[13.5px] text-ink-700">{{ patient.email ?? 'N/A' }}</dd>
         </div>
         <div>
-          <dt class="text-gray-500">Address</dt>
-          <dd class="text-gray-900">{{ patient.address ?? 'N/A' }}</dd>
+          <dt class="text-[11.5px] text-ink-muted2">Address</dt>
+          <dd class="mt-0.5 truncate text-[13.5px] text-ink-700">{{ patient.address ?? 'N/A' }}</dd>
         </div>
         <div>
-          <dt class="text-gray-500">National ID</dt>
-          <dd class="text-gray-900">{{ patient.national_id ?? 'N/A' }}</dd>
+          <dt class="text-[11.5px] text-ink-muted2">National ID</dt>
+          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.national_id ?? 'N/A' }}</dd>
         </div>
         <div>
-          <dt class="text-gray-500">Occupation</dt>
-          <dd class="text-gray-900">{{ patient.occupation ?? 'N/A' }}</dd>
+          <dt class="text-[11.5px] text-ink-muted2">Occupation</dt>
+          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.occupation ?? 'N/A' }}</dd>
         </div>
         <div>
-          <dt class="text-gray-500">Emergency contact</dt>
-          <dd class="text-gray-900">{{ patient.emergency_contact ?? 'N/A' }}</dd>
+          <dt class="text-[11.5px] text-ink-muted2">Emergency contact</dt>
+          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.emergency_contact ?? 'N/A' }}</dd>
         </div>
         <div>
-          <dt class="text-gray-500">Referral source</dt>
-          <dd class="text-gray-900">{{ patient.referral_source ?? 'N/A' }}</dd>
+          <dt class="text-[11.5px] text-ink-muted2">Referral source</dt>
+          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.referral_source ?? 'N/A' }}</dd>
         </div>
         <div>
-          <dt class="text-gray-500">Preferred language</dt>
-          <dd class="text-gray-900">{{ languageLabel(patient.preferred_language) }}</dd>
+          <dt class="text-[11.5px] text-ink-muted2">Preferred language</dt>
+          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ languageLabel(patient.preferred_language) }}</dd>
         </div>
         <div>
-          <dt class="text-gray-500">Default practitioner</dt>
-          <dd class="text-gray-900">{{ teamMemberName(patient.default_practitioner_id) }}</dd>
+          <dt class="text-[11.5px] text-ink-muted2">Default practitioner</dt>
+          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ teamMemberName(patient.default_practitioner_id) }}</dd>
         </div>
-        <div class="sm:col-span-2 lg:col-span-3">
-          <dt class="text-gray-500">Tags</dt>
-          <dd class="text-gray-900">
+        <div>
+          <dt class="text-[11.5px] text-ink-muted2">Clinic</dt>
+          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ clinicName(patient.clinic_id) }}</dd>
+        </div>
+        <div class="col-span-2">
+          <dt class="text-[11.5px] text-ink-muted2">Tags</dt>
+          <dd class="mt-0.5 text-[13.5px] text-ink-700">
             <span v-if="patient.tags.length === 0">None</span>
-            <span
-              v-for="tag in patient.tags"
-              :key="tag"
-              class="mr-1 inline-block rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600"
-            >
+            <span v-for="tag in patient.tags" :key="tag" class="mr-1 inline-block rounded-pill bg-chip-bg px-2 py-0.5 text-[11px] font-medium text-chip-text">
               {{ tag }}
             </span>
           </dd>
@@ -186,42 +296,42 @@ async function save() {
       </dl>
 
       <form v-else class="mt-4 space-y-4" @submit.prevent="save">
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div class="grid grid-cols-3 gap-4">
           <div>
-            <label class="block text-sm font-medium text-gray-700">First name</label>
-            <input v-model="firstName" type="text" required class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+            <label :class="labelClass">First name</label>
+            <input v-model="firstName" type="text" required :class="inputClass" />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Last name</label>
-            <input v-model="lastName" type="text" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+            <label :class="labelClass">Last name</label>
+            <input v-model="lastName" type="text" :class="inputClass" />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Date of birth</label>
-            <input v-model="dateOfBirth" type="date" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+            <label :class="labelClass">Date of birth</label>
+            <input v-model="dateOfBirth" type="date" :class="inputClass" />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Email</label>
-            <input v-model="email" type="email" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+            <label :class="labelClass">Email</label>
+            <input v-model="email" type="email" :class="inputClass" />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Address</label>
-            <input v-model="address" type="text" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+            <label :class="labelClass">Address</label>
+            <input v-model="address" type="text" :class="inputClass" />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">National ID</label>
-            <input v-model="nationalId" type="text" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+            <label :class="labelClass">National ID</label>
+            <input v-model="nationalId" type="text" :class="inputClass" />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Occupation</label>
-            <input v-model="occupation" type="text" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+            <label :class="labelClass">Occupation</label>
+            <input v-model="occupation" type="text" :class="inputClass" />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Emergency contact</label>
-            <input v-model="emergencyContact" type="text" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+            <label :class="labelClass">Emergency contact</label>
+            <input v-model="emergencyContact" type="text" :class="inputClass" />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Referral source</label>
-            <select v-model="referralSource" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+            <label :class="labelClass">Referral source</label>
+            <select v-model="referralSource" :class="inputClass">
               <option value="">Not set</option>
               <option v-for="s in referralSources" :key="s.id" :value="s.name">{{ s.name }}</option>
               <!-- Preserves legacy freeform data that doesn't match a configured source. -->
@@ -229,39 +339,39 @@ async function save() {
             </select>
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Preferred language</label>
-            <select v-model="preferredLanguage" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+            <label :class="labelClass">Preferred language</label>
+            <select v-model="preferredLanguage" :class="inputClass">
               <option v-for="l in LANGUAGES" :key="l.code" :value="l.code">{{ l.label }}</option>
             </select>
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Default practitioner</label>
-            <select v-model="defaultPractitionerId" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+            <label :class="labelClass">Default practitioner</label>
+            <select v-model="defaultPractitionerId" :class="inputClass">
               <option value="">None</option>
               <option v-for="m in teamMembers" :key="m.id" :value="m.id">{{ m.full_name }}</option>
             </select>
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Clinic</label>
-            <select v-model="clinicId" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+            <label :class="labelClass">Clinic</label>
+            <select v-model="clinicId" :class="inputClass">
               <option value="">No primary clinic</option>
               <option v-for="clinic in store.clinics" :key="clinic.id" :value="clinic.id">{{ clinic.name }}</option>
             </select>
           </div>
-          <div class="sm:col-span-2 lg:col-span-3">
-            <label class="block text-sm font-medium text-gray-700">Tags</label>
-            <input v-model="tagsInput" type="text" placeholder="comma, separated, tags" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          <div class="col-span-3">
+            <label :class="labelClass">Tags</label>
+            <input v-model="tagsInput" type="text" placeholder="comma, separated, tags" :class="inputClass" />
           </div>
         </div>
 
-        <div class="border-t border-gray-100 pt-4">
-          <h3 class="text-sm font-semibold text-gray-900">Communication preferences</h3>
+        <div class="border-t border-line-divider pt-4">
+          <p class="text-[13px] font-semibold text-ink-700">Communication preferences</p>
 
           <div class="mt-3">
-            <label class="block text-sm font-medium text-gray-700">Marketing channels</label>
-            <div class="mt-1 flex flex-wrap gap-4">
-              <label v-for="opt in MARKETING_CHANNEL_OPTIONS" :key="opt.value" class="flex items-center gap-1.5 text-sm text-gray-600">
-                <input v-model="marketingChannels" type="checkbox" :value="opt.value" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+            <label :class="labelClass">Marketing channels</label>
+            <div class="mt-1.5 flex flex-wrap gap-4">
+              <label v-for="opt in MARKETING_CHANNEL_OPTIONS" :key="opt.value" class="flex items-center gap-1.5 text-[13px] text-ink-600">
+                <input v-model="marketingChannels" type="checkbox" :value="opt.value" class="rounded border-line-control text-brand focus:ring-brand" />
                 {{ opt.label }}
               </label>
             </div>
@@ -269,71 +379,70 @@ async function save() {
 
           <div class="mt-3 grid grid-cols-2 gap-4">
             <div>
-              <label class="block text-sm font-medium text-gray-700">Reminder type</label>
-              <select v-model="reminderChannel" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+              <label :class="labelClass">Reminder type</label>
+              <select v-model="reminderChannel" :class="inputClass">
                 <option v-for="opt in CHANNEL_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
               </select>
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-700">Confirmation type</label>
-              <select v-model="confirmationChannel" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+              <label :class="labelClass">Confirmation type</label>
+              <select v-model="confirmationChannel" :class="inputClass">
                 <option v-for="opt in CHANNEL_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
               </select>
             </div>
           </div>
 
-          <label class="mt-3 flex items-center gap-1.5 text-sm text-gray-600">
-            <input v-model="invoiceEmailEnabled" type="checkbox" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+          <label class="mt-3 flex items-center gap-1.5 text-[13px] text-ink-600">
+            <input v-model="invoiceEmailEnabled" type="checkbox" class="rounded border-line-control text-brand focus:ring-brand" />
             Email invoice when an appointment is processed
           </label>
         </div>
 
-        <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
-        <div class="flex gap-3">
-          <button type="submit" :disabled="saving" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
-            {{ saving ? 'Saving…' : 'Save' }}
-          </button>
-          <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50" @click="editing = false">
-            Cancel
-          </button>
+        <p v-if="error" class="text-[13px] text-danger-text">{{ error }}</p>
+        <div class="flex gap-2">
+          <UiBtn variant="primary" :disabled="saving" @click="save">{{ saving ? 'Saving…' : 'Save' }}</UiBtn>
+          <UiBtn type="button" variant="ghost" @click="editing = false">Cancel</UiBtn>
         </div>
       </form>
     </div>
 
-    <div v-if="!editing" class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-      <div class="rounded-lg border border-gray-200 bg-white p-6">
-        <h2 class="text-sm font-semibold text-gray-900">Communication preferences</h2>
-        <dl class="mt-4 grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
-          <div class="sm:col-span-2">
-            <dt class="text-gray-500">Marketing channels</dt>
-            <dd class="text-gray-900">
-              <span v-if="patient.marketing_channels.length === 0">None</span>
-              <span
-                v-for="ch in patient.marketing_channels"
-                :key="ch"
-                class="mr-1 inline-block rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600"
-              >
-                {{ channelLabel(ch) }}
-              </span>
-            </dd>
+    <div v-if="!editing" class="grid grid-cols-2 gap-4">
+      <div class="rounded-card border border-line bg-surface p-5 shadow-card">
+        <p class="text-[13.5px] font-semibold text-ink-700">Communication preferences</p>
+        <div class="mt-3 space-y-2.5">
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-[12.5px] text-ink-muted">Reminders</span>
+            <UiPill tone="neutral">{{ channelLabel(patient.reminder_channel) }}</UiPill>
           </div>
-          <div>
-            <dt class="text-gray-500">Reminder type</dt>
-            <dd class="text-gray-900">{{ channelLabel(patient.reminder_channel) }}</dd>
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-[12.5px] text-ink-muted">Confirmations</span>
+            <UiPill tone="neutral">{{ channelLabel(patient.confirmation_channel) }}</UiPill>
           </div>
-          <div>
-            <dt class="text-gray-500">Confirmation type</dt>
-            <dd class="text-gray-900">{{ channelLabel(patient.confirmation_channel) }}</dd>
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-[12.5px] text-ink-muted">Invoice email</span>
+            <UiPill :tone="patient.invoice_email_enabled ? 'success' : 'neutral'">{{ patient.invoice_email_enabled ? 'Enabled' : 'Disabled' }}</UiPill>
           </div>
-          <div>
-            <dt class="text-gray-500">Invoice email</dt>
-            <dd class="text-gray-900">{{ patient.invoice_email_enabled ? 'Enabled' : 'Disabled' }}</dd>
+          <div class="flex items-start justify-between gap-3">
+            <span class="text-[12.5px] text-ink-muted">Marketing</span>
+            <div class="flex flex-wrap justify-end gap-1">
+              <UiPill v-if="patient.marketing_channels.length === 0" tone="neutral">None</UiPill>
+              <UiPill v-for="ch in patient.marketing_channels" :key="ch" tone="brand">{{ channelLabel(ch) }}</UiPill>
+            </div>
           </div>
-        </dl>
+        </div>
       </div>
 
-      <div class="rounded-lg border border-gray-200 bg-white p-6">
-        <PatientsContactNumbersEditor :patient-id="patient.id" />
+      <div class="rounded-card border border-line bg-surface p-5 shadow-card">
+        <p class="text-[13.5px] font-semibold text-ink-700">Recent activity</p>
+        <div v-if="activityLoading" class="mt-3 text-[12.5px] text-ink-faint">Loading…</div>
+        <p v-else-if="activity.length === 0" class="mt-3 text-[12.5px] text-ink-faint">No recent activity.</p>
+        <ul v-else class="mt-3 space-y-2.5">
+          <li v-for="(item, i) in activity" :key="i" class="flex items-center gap-2.5">
+            <span class="h-[6px] w-[6px] shrink-0 rounded-full" :class="item.dot" />
+            <span class="min-w-0 flex-1 truncate text-[12.5px] text-ink-600">{{ item.text }}</span>
+            <span class="shrink-0 text-[11.5px] text-ink-faint">{{ relativeTime(item.at) }}</span>
+          </li>
+        </ul>
       </div>
     </div>
   </div>

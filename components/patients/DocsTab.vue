@@ -148,28 +148,34 @@ async function removeDoc(doc: Doc) {
   docs.value = docs.value.filter((d) => d.id !== doc.id)
   if (activeDoc.value?.id === doc.id) activeDoc.value = null
 }
+
+function statusFor(doc: Doc): { label: string; tone: 'success' | 'brand' } {
+  return doc.completed_at ? { label: 'Complete', tone: 'success' } : { label: 'Sent', tone: 'brand' }
+}
+function metaFor(doc: Doc) {
+  if (doc.completed_at) return `Signed ${new Date(doc.completed_at).toLocaleDateString()}`
+  return `Sent ${new Date(doc.updated_at).toLocaleDateString()}`
+}
 </script>
 
 <template>
-  <div class="rounded-lg border border-gray-200 bg-white">
+  <div class="rounded-card border border-line bg-surface shadow-card">
     <template v-if="!activeDoc">
-      <div class="flex items-center justify-between border-b border-gray-100 p-4">
-        <h3 class="text-sm font-semibold text-gray-900">Docs</h3>
+      <div class="flex items-center justify-between border-b border-line-divider px-4 py-3">
+        <p class="text-[13.5px] font-semibold text-ink-700">Docs</p>
         <div class="relative">
-          <button type="button" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700" @click="showNewMenu = !showNewMenu">
-            + New Doc
-          </button>
-          <div v-if="showNewMenu" class="absolute right-0 z-10 mt-1 w-56 rounded-md border border-gray-200 bg-white py-1 shadow-lg">
-            <button type="button" class="block w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50" @click="newBlankDoc">
+          <UiBtn variant="primary" size="sm" @click="showNewMenu = !showNewMenu">+ New doc</UiBtn>
+          <div v-if="showNewMenu" class="absolute right-0 z-10 mt-1 w-56 rounded-ctl border border-line bg-surface py-1 shadow-popover">
+            <button type="button" class="block w-full px-3 py-1.5 text-left text-[13px] text-ink-600 hover:bg-surface-subtle" @click="newBlankDoc">
               Blank document
             </button>
             <template v-if="templates.length > 0">
-              <p class="mt-1 border-t border-gray-100 px-3 pt-1.5 text-xs font-medium uppercase text-gray-400">From template</p>
+              <p class="mt-1 border-t border-line-divider px-3 pt-1.5 text-[11px] font-medium uppercase text-ink-faint">From template</p>
               <button
                 v-for="t in templates"
                 :key="t.id"
                 type="button"
-                class="block w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                class="block w-full px-3 py-1.5 text-left text-[13px] text-ink-600 hover:bg-surface-subtle"
                 @click="newFromTemplate(t)"
               >
                 {{ t.title }}
@@ -178,55 +184,52 @@ async function removeDoc(doc: Doc) {
           </div>
         </div>
       </div>
-      <div v-if="loading" class="p-6 text-center text-sm text-gray-400">Loading…</div>
-      <div v-else-if="docs.length === 0" class="p-8 text-center text-sm text-gray-400">
+      <div v-if="loading" class="p-8 text-center text-[13px] text-ink-faint">Loading…</div>
+      <div v-else-if="docs.length === 0" class="p-8 text-center text-[13px] text-ink-faint">
         No docs yet — e.g. a data protection consent record for this patient.
       </div>
-      <ul v-else class="divide-y divide-gray-100">
-        <li v-for="doc in docs" :key="doc.id" class="flex items-center justify-between px-4 py-3">
-          <button type="button" class="text-left text-sm font-medium text-gray-900 hover:text-indigo-600" @click="openDoc(doc)">
-            {{ doc.title }}
-            <span v-if="doc.completed_at" class="ml-1.5 rounded bg-green-50 px-1.5 py-0.5 text-xs font-medium text-green-700">Completed</span>
+      <ul v-else class="divide-y divide-line-row">
+        <li v-for="doc in docs" :key="doc.id" class="flex items-center gap-3 px-4 py-3">
+          <svg width="26" height="26" viewBox="0 0 26 26" fill="none" class="shrink-0 text-ink-faint2">
+            <path d="M7 3h8l4 4v15a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1z" stroke="currentColor" stroke-width="1.3" />
+            <path d="M15 3v4h4" stroke="currentColor" stroke-width="1.3" />
+          </svg>
+          <button type="button" class="min-w-0 flex-1 text-left" @click="openDoc(doc)">
+            <p class="truncate text-[13px] font-medium text-ink-700 hover:text-brand-text">{{ doc.title }}</p>
+            <p class="text-[11.5px] text-ink-faint">{{ metaFor(doc) }}</p>
           </button>
-          <div class="flex items-center gap-3">
-            <span class="text-xs text-gray-400">{{ new Date(doc.updated_at).toLocaleString() }}</span>
-            <button type="button" class="text-xs font-medium text-indigo-600 hover:text-indigo-500" title="Open patient link in a new tab" @click="openLink(doc)">
-              Open link
+          <UiPill :tone="statusFor(doc).tone">{{ statusFor(doc).label }}</UiPill>
+          <div class="flex items-center gap-2.5">
+            <button type="button" class="text-[11.5px] font-medium text-brand-text hover:text-brand-hover" title="Open patient link in a new tab" @click="openLink(doc)">
+              Open
             </button>
-            <button type="button" class="text-xs font-medium text-indigo-600 hover:text-indigo-500" title="Copy patient link" @click="copyLink(doc)">
+            <button type="button" class="text-[11.5px] font-medium text-brand-text hover:text-brand-hover" title="Copy patient link" @click="copyLink(doc)">
               {{ copiedId === doc.id ? 'Copied!' : 'Copy link' }}
             </button>
             <button
               v-if="patientPhoneDigits"
               type="button"
-              class="text-xs font-medium text-green-600 hover:text-green-500"
+              class="text-[11.5px] font-medium text-success-text hover:text-success-deep"
               title="Send patient link via WhatsApp"
               @click="sendViaWhatsApp(doc)"
             >
               WhatsApp
             </button>
-            <button type="button" class="text-xs text-red-600 hover:text-red-700" @click="removeDoc(doc)">Delete</button>
+            <button type="button" class="text-[11.5px] text-danger-text hover:text-danger-text/80" @click="removeDoc(doc)">Delete</button>
           </div>
         </li>
       </ul>
     </template>
 
     <template v-else>
-      <div class="flex items-center justify-between border-b border-gray-100 p-4">
-        <button type="button" class="text-sm text-gray-500 hover:text-gray-700" @click="backToList">&larr; Docs</button>
+      <div class="flex items-center justify-between border-b border-line-divider px-4 py-3">
+        <button type="button" class="text-[13px] text-ink-muted hover:text-ink-700" @click="backToList">&larr; Docs</button>
         <div class="flex items-center gap-3">
-          <span v-if="savedAt" class="text-xs text-green-600">Saved</span>
-          <button
-            type="button"
-            class="rounded-md px-3 py-1.5 text-sm font-medium"
-            :class="activeDoc?.completed_at ? 'bg-green-50 text-green-700 hover:bg-green-100' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
-            @click="toggleComplete"
-          >
+          <span v-if="savedAt" class="text-[12px] text-success-text">Saved</span>
+          <UiBtn :variant="activeDoc?.completed_at ? 'primary' : 'secondary'" size="sm" @click="toggleComplete">
             {{ activeDoc?.completed_at ? '✓ Completed' : 'Mark as completed' }}
-          </button>
-          <button type="button" :disabled="saving" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50" @click="save">
-            {{ saving ? 'Saving…' : 'Save' }}
-          </button>
+          </UiBtn>
+          <UiBtn variant="primary" size="sm" :disabled="saving" @click="save">{{ saving ? 'Saving…' : 'Save' }}</UiBtn>
         </div>
       </div>
 
@@ -235,7 +238,7 @@ async function removeDoc(doc: Doc) {
           v-model="title"
           type="text"
           placeholder="Untitled"
-          class="mb-4 w-full border-none text-xl font-semibold text-gray-900 placeholder-gray-300 focus:outline-none focus:ring-0"
+          class="mb-4 w-full border-none text-[20px] font-semibold text-ink-900 placeholder-ink-faint2 focus:outline-none focus:ring-0"
         />
         <DocBlocks :fields="fields" mode="fill" @update:fields="fields = $event" />
       </div>

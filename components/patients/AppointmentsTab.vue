@@ -16,15 +16,30 @@ const store = useAccountStore()
 const appointments = ref<AppointmentRow[]>([])
 const loading = ref(true)
 
-onMounted(async () => {
+const counts = ref({ completed: 0, cancelled: 0, no_show: 0 })
+const showPercentage = computed(() => {
+  const denom = counts.value.completed + counts.value.no_show
+  if (denom === 0) return null
+  return Math.round((counts.value.completed / denom) * 100)
+})
+
+async function load() {
   const { data } = await supabase
     .from('appointments')
     .select('id, starts_at, status, practitioner_name, appointment_types(name), team_members(full_name), calendar_resources(name)')
     .eq('patient_id', props.patientId)
     .order('starts_at', { ascending: false })
   appointments.value = (data as unknown as AppointmentRow[]) ?? []
+
+  const nextCounts = { completed: 0, cancelled: 0, no_show: 0 }
+  for (const a of appointments.value) {
+    if (a.status in nextCounts) (nextCounts as Record<string, number>)[a.status]++
+  }
+  counts.value = nextCounts
+
   loading.value = false
-})
+}
+onMounted(load)
 
 function practitionerLabel(appt: AppointmentRow) {
   return appt.team_members?.full_name ?? appt.practitioner_name ?? 'N/A'
@@ -32,6 +47,19 @@ function practitionerLabel(appt: AppointmentRow) {
 
 function isUpcoming(appt: AppointmentRow) {
   return appt.status === 'booked' && new Date(appt.starts_at) > new Date()
+}
+
+const statusTone: Record<string, 'success' | 'warning' | 'danger' | 'brand' | 'neutral'> = {
+  completed: 'success',
+  cancelled: 'warning',
+  no_show: 'danger',
+  booked: 'brand',
+}
+const statusLabel: Record<string, string> = {
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+  no_show: 'Missed',
+  booked: 'Booked',
 }
 
 const notesAppointmentId = ref<string | null>(null)
@@ -47,57 +75,73 @@ const confirmationAutofill = computed<Record<string, string>>(() => {
 </script>
 
 <template>
-  <div>
-    <PatientsPhaseStats :patient-id="patientId" />
-
-    <div class="rounded-lg border border-gray-200 bg-white">
-    <div v-if="loading" class="p-6 text-center text-sm text-gray-400">Loading…</div>
-    <div v-else-if="appointments.length === 0" class="p-8 text-center text-sm text-gray-400">
-      No appointments yet.
+  <div class="space-y-4">
+    <div class="grid grid-cols-4 gap-3">
+      <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+        <p class="text-[11.5px] text-ink-muted2">Completed</p>
+        <p class="mt-1 font-mono text-[20px] font-semibold text-success-text">{{ loading ? '—' : counts.completed }}</p>
+      </div>
+      <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+        <p class="text-[11.5px] text-ink-muted2">Cancelled</p>
+        <p class="mt-1 font-mono text-[20px] font-semibold text-warning-accent">{{ loading ? '—' : counts.cancelled }}</p>
+      </div>
+      <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+        <p class="text-[11.5px] text-ink-muted2">Missed</p>
+        <p class="mt-1 font-mono text-[20px] font-semibold text-danger-text">{{ loading ? '—' : counts.no_show }}</p>
+      </div>
+      <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+        <p class="text-[11.5px] text-ink-muted2">Show rate</p>
+        <p class="mt-1 font-mono text-[20px] font-semibold text-ink-900">{{ loading || showPercentage === null ? '—' : `${showPercentage}%` }}</p>
+      </div>
     </div>
-    <table v-else class="w-full text-sm">
-      <thead class="border-b border-gray-200 bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-        <tr>
-          <th class="px-4 py-2">Date</th>
-          <th class="px-4 py-2">Type</th>
-          <th class="px-4 py-2">Practitioner</th>
-          <th class="px-4 py-2">Room</th>
-          <th class="px-4 py-2">Status</th>
-          <th class="px-4 py-2"></th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-gray-100">
-        <tr v-for="appt in appointments" :key="appt.id">
-          <td class="px-4 py-2.5 text-gray-900">{{ new Date(appt.starts_at).toLocaleString() }}</td>
-          <td class="px-4 py-2.5 text-gray-500">{{ appt.appointment_types?.name ?? 'N/A' }}</td>
-          <td class="px-4 py-2.5 text-gray-500">{{ practitionerLabel(appt) }}</td>
-          <td class="px-4 py-2.5 text-gray-500">{{ appt.calendar_resources?.name ?? '—' }}</td>
-          <td class="px-4 py-2.5 text-gray-500">{{ appt.status }}</td>
-          <td class="px-4 py-2.5 text-right">
-            <div class="flex items-center justify-end gap-2">
-              <button type="button" class="text-xs font-medium text-indigo-600 hover:text-indigo-500" @click="notesAppointmentId = appt.id">
-                Notes
-              </button>
-              <button
-                v-if="isUpcoming(appt)"
-                type="button"
-                class="rounded-md bg-green-600 px-3 py-1 text-xs font-medium text-white hover:bg-green-700"
-                @click="confirmingAppointment = appt"
-              >
-                Send Confirmation
-              </button>
-            </div>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+
+    <div class="rounded-card border border-line bg-surface shadow-card">
+      <div class="flex items-center justify-between border-b border-line-divider px-4 py-3">
+        <p class="text-[13.5px] font-semibold text-ink-700">Visit history</p>
+        <UiBtn variant="primary" size="sm" @click="navigateTo('/calendar')">Book visit</UiBtn>
+      </div>
+
+      <div v-if="loading" class="p-8 text-center text-[13px] text-ink-faint">Loading…</div>
+      <div v-else-if="appointments.length === 0" class="p-8 text-center text-[13px] text-ink-faint">No appointments yet.</div>
+      <table v-else class="w-full text-[13px]">
+        <thead class="border-b border-line-divider text-left text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+          <tr>
+            <th class="px-4 py-2">When</th>
+            <th class="px-4 py-2">Type</th>
+            <th class="px-4 py-2">Practitioner</th>
+            <th class="px-4 py-2">Status</th>
+            <th class="px-4 py-2"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-line-row">
+          <tr v-for="appt in appointments" :key="appt.id" class="h-[46px]">
+            <td class="px-4 text-ink-700">
+              {{ new Date(appt.starts_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }}
+              <span v-if="appt.calendar_resources?.name" class="ml-1 text-ink-faint">&middot; {{ appt.calendar_resources.name }}</span>
+            </td>
+            <td class="px-4 text-ink-muted">{{ appt.appointment_types?.name ?? 'N/A' }}</td>
+            <td class="px-4 text-ink-muted">{{ practitionerLabel(appt) }}</td>
+            <td class="px-4">
+              <UiPill :tone="statusTone[appt.status] ?? 'neutral'">{{ statusLabel[appt.status] ?? appt.status }}</UiPill>
+            </td>
+            <td class="px-4 text-right">
+              <div class="flex items-center justify-end gap-3">
+                <button type="button" class="text-[12px] font-medium text-brand-text hover:text-brand-hover" @click="notesAppointmentId = appt.id">
+                  Notes
+                </button>
+                <UiBtn v-if="isUpcoming(appt)" size="sm" variant="secondary" @click="confirmingAppointment = appt">Send confirmation</UiBtn>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
 
     <div v-if="notesAppointmentId" class="fixed inset-0 z-20 flex items-center justify-center bg-black/30 p-4" @click.self="notesAppointmentId = null">
-      <div class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
+      <div class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-card bg-surface p-6 shadow-drawer">
         <div class="flex items-center justify-between">
-          <h2 class="text-lg font-semibold text-gray-900">Visit notes</h2>
-          <button type="button" class="text-gray-400 hover:text-gray-600" @click="notesAppointmentId = null">✕</button>
+          <h2 class="text-[15px] font-semibold text-ink-900">Visit notes</h2>
+          <button type="button" class="text-ink-faint hover:text-ink-600" @click="notesAppointmentId = null">✕</button>
         </div>
         <div class="mt-4">
           <AppointmentsNotesPanel :appointment-id="notesAppointmentId" />

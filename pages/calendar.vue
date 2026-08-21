@@ -491,7 +491,7 @@ function appointmentColorStyle(appt: AppointmentRow) {
   return {
     borderColor: color,
     borderLeftColor: color,
-    backgroundColor: color,
+    backgroundColor: hexToRgba(color, appt.status === 'cancelled' ? 0.12 : 0.32),
   }
 }
 

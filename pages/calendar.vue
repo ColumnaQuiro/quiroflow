@@ -34,15 +34,15 @@ onUnmounted(() => scrollAreaObserver?.disconnect())
 const DAY_HOUR_PX = computed(() => Math.max(DAY_HOUR_PX_MIN, Math.floor((scrollAreaHeight.value - DAY_HEADER_PX) / (END_HOUR - START_HOUR))))
 const WEEK_HOUR_PX = computed(() => Math.max(WEEK_HOUR_PX_MIN, Math.floor((scrollAreaHeight.value - WEEK_HEADER_PX) / (END_HOUR - START_HOUR))))
 
-// Historical bug: appointment blocks used to clip the patient name on short
-// (e.g. 30min) appointments because the block's minimum pixel height was too
-// small. These floors are sized for the new row scale so a 2-line block
-// (time range + name) always fits, even for a 15min appointment at the
-// smallest clinic slot size -- content that doesn't fit drops the 3rd
-// (appointment type) row instead of clipping the name (see BLOCK_DROP_ROW3_BELOW).
-const DAY_MIN_BLOCK_PX = 36
-const WEEK_MIN_BLOCK_PX = 32
-const BLOCK_DROP_ROW3_BELOW = 46
+// The status dot, name, and balance icon are one single line (not stacked
+// rows), so a short appointment's floor only needs to fit that one line --
+// close to a real 15min slot's natural height at the clinic's own slot
+// size, instead of forcing every short appointment to visually occupy ~2
+// grid rows just to fit a taller multi-row card. The appointment-type row
+// only shows once there's room past BLOCK_DROP_ROW3_BELOW.
+const DAY_MIN_BLOCK_PX = 22
+const WEEK_MIN_BLOCK_PX = 18
+const BLOCK_DROP_ROW3_BELOW = 34
 // Availability/unavailable bands only need to fit a centered one-line label.
 const DAY_MIN_AVAILABILITY_PX = 20
 const WEEK_MIN_AVAILABILITY_PX = 16
@@ -368,6 +368,11 @@ const weekGridHeight = computed(() => (END_HOUR - START_HOUR) * WEEK_HOUR_PX.val
 const hourMarks = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => START_HOUR + i)
 function hourLabel(h: number) {
   return `${pad(h)}:00`
+}
+// m is minutes elapsed since START_HOUR (matches slotMarks below).
+function slotLabel(m: number) {
+  const total = START_HOUR * 60 + m
+  return `${pad(Math.floor(total / 60))}:${pad(total % 60)}`
 }
 
 // Sub-hour gridlines at the clinic's own slot size (commonly 15 or 30min),
@@ -864,6 +869,14 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                 >
                   {{ hourLabel(h) }}
                 </span>
+                <span
+                  v-for="m in slotMarks"
+                  :key="`slot-label-${m}`"
+                  class="pointer-events-none absolute left-0 right-0 px-2 font-mono text-[9.5px] text-ink-faint2"
+                  :style="{ top: `${(m / 60) * DAY_HOUR_PX - 6}px` }"
+                >
+                  {{ slotLabel(m) }}
+                </span>
               </div>
 
               <div v-for="col in dayColumns" :key="col.id" class="relative flex-1 cursor-pointer border-r border-line last:border-r-0" @click="openCreateModal(col.id === '__none' ? undefined : col.id, $event.offsetY)">
@@ -909,18 +922,18 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                   >
                     <div
                       class="flex h-full flex-col justify-center gap-0.5 px-2"
-                      :class="durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) < BLOCK_DROP_ROW3_BELOW || settings.compactRows ? 'py-[3px]' : 'py-1.5'"
+                      :class="durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) < BLOCK_DROP_ROW3_BELOW || settings.compactRows ? 'py-[2px]' : 'py-1'"
                     >
-                      <div class="flex items-center justify-between gap-1">
+                      <div class="flex items-center gap-1.5">
                         <span class="h-[6px] w-[6px] shrink-0 rounded-full" :class="dotClass(appt)" />
-                        <svg v-if="balanceIconTone(appt)" width="11" height="11" viewBox="0 0 24 24" fill="none" :class="balanceIconTone(appt) === 'success' ? 'text-success-accent' : 'text-danger-text'">
+                        <p class="min-w-0 flex-1 truncate text-[12.5px] font-semibold" :class="[nameClass(appt), { 'blur-sm select-none': settings.privacyMode, 'line-through opacity-70': appt.status === 'cancelled' }]">
+                          {{ appt.patients?.first_name }} {{ appt.patients?.last_name }}
+                        </p>
+                        <svg v-if="balanceIconTone(appt)" width="11" height="11" viewBox="0 0 24 24" fill="none" class="shrink-0" :class="balanceIconTone(appt) === 'success' ? 'text-success-accent' : 'text-danger-text'">
                           <path d="M3 10h18M7 15h1m4 0h1m-7 4h12a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
                         </svg>
                       </div>
-                      <p class="truncate text-[12.5px] font-semibold" :class="[nameClass(appt), { 'blur-sm select-none': settings.privacyMode, 'line-through opacity-70': appt.status === 'cancelled' }]">
-                        {{ appt.patients?.first_name }} {{ appt.patients?.last_name }}
-                      </p>
-                      <p v-if="!(durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) < BLOCK_DROP_ROW3_BELOW || settings.compactRows)" class="truncate text-[11.5px] text-ink-muted2">
+                      <p v-if="!(durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) < BLOCK_DROP_ROW3_BELOW || settings.compactRows)" class="truncate pl-[13.5px] text-[11.5px] text-ink-muted2">
                         {{ appt.appointment_types?.name ?? '—' }}
                       </p>
                     </div>
@@ -952,6 +965,14 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                   :style="{ top: `${(h - START_HOUR) * WEEK_HOUR_PX - 7}px` }"
                 >
                   {{ hourLabel(h) }}
+                </span>
+                <span
+                  v-for="m in slotMarks"
+                  :key="`slot-label-${m}`"
+                  class="pointer-events-none absolute left-0 right-0 px-2 font-mono text-[9px] text-ink-faint2"
+                  :style="{ top: `${(m / 60) * WEEK_HOUR_PX - 5}px` }"
+                >
+                  {{ slotLabel(m) }}
                 </span>
               </div>
             </div>
@@ -1016,7 +1037,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                     </button>
                     <div
                       v-else
-                      class="absolute overflow-hidden rounded-[7px] border border-l-[3px] px-1.5 py-1 shadow-card"
+                      class="absolute flex flex-col justify-center overflow-hidden rounded-[7px] border border-l-[3px] px-1.5 py-0.5 shadow-card"
                       :style="{
                         ...appointmentColorStyle(appt),
                         ...cascadeStyle(appt, WEEK_CASCADE_PX),
@@ -1027,15 +1048,15 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                       @mouseenter="scheduleHoverCard(appt, $event)"
                       @mouseleave="cancelHoverShow"
                     >
-                      <div class="flex items-center justify-between gap-1">
+                      <div class="flex items-center gap-1">
                         <span class="h-[5px] w-[5px] shrink-0 rounded-full" :class="dotClass(appt)" />
-                        <svg v-if="balanceIconTone(appt)" width="10" height="10" viewBox="0 0 24 24" fill="none" :class="balanceIconTone(appt) === 'success' ? 'text-success-accent' : 'text-danger-text'">
+                        <p class="min-w-0 flex-1 truncate text-[11px] font-semibold" :class="[nameClass(appt), { 'blur-sm select-none': settings.privacyMode, 'line-through opacity-70': appt.status === 'cancelled' }]">
+                          {{ appt.patients?.first_name }} {{ appt.patients?.last_name }}
+                        </p>
+                        <svg v-if="balanceIconTone(appt)" width="10" height="10" viewBox="0 0 24 24" fill="none" class="shrink-0" :class="balanceIconTone(appt) === 'success' ? 'text-success-accent' : 'text-danger-text'">
                           <path d="M3 10h18M7 15h1m4 0h1m-7 4h12a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
                         </svg>
                       </div>
-                      <p class="truncate text-[11px] font-semibold" :class="[nameClass(appt), { 'blur-sm select-none': settings.privacyMode, 'line-through opacity-70': appt.status === 'cancelled' }]">
-                        {{ appt.patients?.first_name }} {{ appt.patients?.last_name }}
-                      </p>
                     </div>
                   </template>
                 </div>

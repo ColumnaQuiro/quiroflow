@@ -889,7 +889,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
         <!-- Day view: room columns -->
         <div v-else-if="viewMode === 'day'" class="min-w-0 flex-1 overflow-x-auto">
           <div :style="{ minWidth: `${58 + dayColumns.length * 220}px` }">
-            <div class="sticky top-0 z-10 flex bg-surface">
+            <div class="sticky top-0 z-30 flex bg-surface">
               <div class="h-10 w-[58px] shrink-0 border-b border-r border-line"></div>
               <div v-for="col in dayColumns" :key="col.id" class="flex h-10 flex-1 flex-col items-center justify-center border-b border-r border-line last:border-r-0">
                 <span class="text-[13px] font-semibold text-ink-900">{{ col.name }}</span>
@@ -995,7 +995,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
         <div v-else class="min-w-0 flex-1 overflow-x-auto">
           <div class="flex" :style="{ minWidth: `${58 + visibleWeekDays.length * dayColumns.length * WEEK_ROOM_COL_PX}px` }">
             <div class="sticky left-0 z-20 w-[58px] shrink-0 bg-surface">
-              <div class="sticky top-0 z-10 h-[52px] border-b border-r border-line bg-surface"></div>
+              <div class="sticky top-0 z-30 h-[52px] border-b border-r border-line bg-surface"></div>
               <div class="relative border-r border-line" :style="{ height: `${weekGridHeight}px` }">
                 <span
                   v-for="h in hourMarks"
@@ -1017,7 +1017,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
             </div>
 
             <div v-for="day in visibleWeekDays" :key="toDateKey(day)" class="flex flex-1 flex-col border-r border-line last:border-r-0">
-              <div class="sticky top-0 z-10 bg-surface">
+              <div class="sticky top-0 z-30 bg-surface">
                 <div
                   class="relative flex h-6 items-center justify-center gap-1 border-b border-line"
                   :class="isSameDate(day, new Date()) ? 'bg-[#F7F7FE]' : ''"

@@ -105,11 +105,17 @@ const thread = computed(() =>
 
 const composeOpen = ref(false)
 const composeQuery = ref('')
+const composeEl = ref<HTMLElement | null>(null)
 const filteredComposePatients = computed(() => {
   if (!composeQuery.value.trim()) return patients.value.slice(0, 20)
   const q = composeQuery.value.trim().toLowerCase()
   return patients.value.filter((p) => `${p.first_name} ${p.last_name ?? ''}`.toLowerCase().includes(q)).slice(0, 20)
 })
+function onClickOutsideCompose(e: MouseEvent) {
+  if (composeEl.value && !composeEl.value.contains(e.target as Node)) composeOpen.value = false
+}
+onMounted(() => document.addEventListener('click', onClickOutsideCompose))
+onUnmounted(() => document.removeEventListener('click', onClickOutsideCompose))
 function startConversationWith(p: PatientOption) {
   composeOpen.value = false
   composeQuery.value = ''
@@ -274,7 +280,7 @@ onUnmounted(() => {
             placeholder="Search conversations…"
             class="h-8 w-full flex-1 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none"
           />
-          <div class="relative shrink-0">
+          <div ref="composeEl" class="relative shrink-0">
             <UiBtn variant="primary" size="sm" @click="composeOpen = !composeOpen">+ New</UiBtn>
             <div v-if="composeOpen" class="absolute right-0 top-[calc(100%+4px)] z-20 w-64 rounded-card border border-line bg-surface p-2 shadow-popover">
               <input

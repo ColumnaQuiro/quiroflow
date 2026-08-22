@@ -7,7 +7,7 @@ describe('WhatsApp Inbox', () => {
 
         cy.contains('No conversations yet.').should('be.visible')
 
-        cy.contains('button', '+ New').click()
+        cy.clickUntil('button:contains("+ New")', 'input[placeholder="Search patients…"]')
         cy.get('input[placeholder="Search patients…"]').type('Nadia')
         cy.contains('li', 'Nadia Novak').click()
 
@@ -19,6 +19,18 @@ describe('WhatsApp Inbox', () => {
         // WhatsApp only allows template sends until the patient has messaged in.
         cy.get('textarea[placeholder="Type a message…"]').should('not.exist')
       })
+    })
+  })
+
+  it('closes the "+ New" compose dropdown when clicking outside it', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.login(account.email, account.password)
+      cy.visit('/inbox')
+
+      cy.clickUntil('button:contains("+ New")', 'input[placeholder="Search patients…"]')
+
+      cy.get('body').click(10, 10)
+      cy.get('input[placeholder="Search patients…"]').should('not.exist')
     })
   })
 

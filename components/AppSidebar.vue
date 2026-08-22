@@ -12,9 +12,10 @@ const cashShiftOpen = ref(false)
 const recallsCount = ref(0)
 const myDayCount = ref(0)
 const campaignsActive = ref(false)
+const inboxUnreadCount = ref(0)
 
 async function loadBadges() {
-  const [{ count: recalls }, { count: myDay }, { data: campaigns }] = await Promise.all([
+  const [{ count: recalls }, { count: myDay }, { data: campaigns }, { data: recentMessages }] = await Promise.all([
     supabase.from('recall_candidates').select('patient_id', { count: 'exact', head: true }),
     supabase
       .from('appointments')
@@ -24,10 +25,24 @@ async function loadBadges() {
       .gte('starts_at', new Date(new Date().setHours(0, 0, 0, 0)).toISOString())
       .lt('starts_at', new Date(new Date().setHours(24, 0, 0, 0)).toISOString()),
     supabase.from('automation_rules').select('id').eq('enabled', true).limit(1),
+    supabase.from('whatsapp_messages').select('patient_id, phone_number, direction, created_at').order('created_at', { ascending: false }).limit(500),
   ])
   recallsCount.value = recalls ?? 0
   myDayCount.value = myDay ?? 0
   campaignsActive.value = (campaigns ?? []).length > 0
+
+  // A conversation counts as unread when the most recent message in it is
+  // inbound (the patient sent last, staff hasn't replied since) -- no
+  // separate read/unread tracking exists yet, so this is derived.
+  const seen = new Set<string>()
+  let unread = 0
+  for (const m of recentMessages ?? []) {
+    const key = m.patient_id ?? m.phone_number ?? ''
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    if (m.direction === 'inbound') unread++
+  }
+  inboxUnreadCount.value = unread
 }
 onMounted(loadBadges)
 
@@ -36,7 +51,7 @@ interface NavItem {
   to: string
   perm: () => boolean
   icon: string
-  badge?: 'myday' | 'recalls' | 'campaigns'
+  badge?: 'myday' | 'recalls' | 'campaigns' | 'inbox'
 }
 
 const navGroups: { label: string; items: NavItem[] }[] = [
@@ -53,6 +68,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     items: [
       { label: 'Patients', to: '/patients', perm: () => scope('patients_scope') !== 'none', icon: 'M6.2 5.6a2.6 2.6 0 11-5.2 0 2.6 2.6 0 015.2 0zM2 13.4c0-2.3 1.9-3.6 4.2-3.6s4.2 1.3 4.2 3.6' },
       { label: 'Recalls', to: '/recalls', perm: () => can('recalls_access'), icon: 'M8 8m5.3 0a5.3 5.3 0 11-10.6 0 5.3 5.3 0 0110.6 0z', badge: 'recalls' },
+      { label: 'Inbox', to: '/inbox', perm: () => can('inbox_access'), icon: 'M2 3.5h12v9h-8l-3 2.5v-2.5h-1z', badge: 'inbox' },
     ],
   },
   {
@@ -160,6 +176,7 @@ async function signOut() {
           <span v-if="item.badge === 'myday' && myDayCount > 0" class="font-mono text-[11px] text-ink-muted2">{{ myDayCount }}</span>
           <span v-if="item.badge === 'recalls' && recallsCount > 0" class="rounded-pill bg-danger-bg px-1.5 py-px text-[10.5px] font-semibold text-danger-text">{{ recallsCount }}</span>
           <span v-if="item.badge === 'campaigns' && campaignsActive" class="h-[5px] w-[5px] rounded-full bg-success-accent" />
+          <span v-if="item.badge === 'inbox' && inboxUnreadCount > 0" class="rounded-pill bg-brand px-1.5 py-px text-[10.5px] font-semibold text-white">{{ inboxUnreadCount }}</span>
         </NuxtLink>
       </div>
     </nav>

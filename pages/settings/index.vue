@@ -24,6 +24,7 @@ const ICONS = {
   bolt: 'M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z',
   lockClosed:
     'M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z',
+  codeBracket: 'M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5',
 }
 
 const groups = [
@@ -61,6 +62,12 @@ const groups = [
       { to: '/settings/import', label: 'Import Patients (CSV)', description: 'Migrate patient records from another system.', icon: ICONS.arrowDownTray },
       { to: '/settings/migrate-attachments', label: 'Migrate Attachments', description: 'Pull the real file content over from PracticeHub.', icon: ICONS.paperClip },
       { to: '/settings/webhooks', label: 'Webhooks', description: 'Subscribe an endpoint to patient, appointment, and invoice events.', icon: ICONS.bolt },
+    ],
+  },
+  {
+    label: 'Developers',
+    items: [
+      { to: '/settings/developers', label: 'API & Tokens', description: 'Create access tokens and see API docs for sending WhatsApp from outside QuiroFlow (e.g. n8n).', icon: ICONS.codeBracket },
     ],
   },
 ]

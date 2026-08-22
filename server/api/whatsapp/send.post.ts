@@ -116,6 +116,7 @@ export default defineEventHandler(async (event) => {
       account_id: teamMember.account_id,
       patient_id: body.patientId,
       appointment_id: body.appointmentId ?? null,
+      phone_number: to,
       wamid,
       purpose,
       template_name: body.templateName,

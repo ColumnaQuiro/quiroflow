@@ -106,6 +106,60 @@ export type Database = {
           },
         ]
       }
+      api_tokens: {
+        Row: {
+          account_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          last_used_at: string | null
+          name: string
+          revoked_at: string | null
+          scopes: string[]
+          token_hash: string
+          token_prefix: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          last_used_at?: string | null
+          name: string
+          revoked_at?: string | null
+          scopes?: string[]
+          token_hash: string
+          token_prefix: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          last_used_at?: string | null
+          name?: string
+          revoked_at?: string | null
+          scopes?: string[]
+          token_hash?: string
+          token_prefix?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "api_tokens_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "api_tokens_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       accounts: {
         Row: {
           created_at: string
@@ -1924,7 +1978,12 @@ export type Database = {
           error_code: string | null
           error_message: string | null
           id: string
+          media_filename: string | null
+          media_mime_type: string | null
+          media_storage_path: string | null
+          media_type: string | null
           patient_id: string | null
+          phone_number: string | null
           purpose: string | null
           status: string
           template_name: string | null
@@ -1940,7 +1999,12 @@ export type Database = {
           error_code?: string | null
           error_message?: string | null
           id?: string
+          media_filename?: string | null
+          media_mime_type?: string | null
+          media_storage_path?: string | null
+          media_type?: string | null
           patient_id?: string | null
+          phone_number?: string | null
           purpose?: string | null
           status?: string
           template_name?: string | null
@@ -1956,7 +2020,12 @@ export type Database = {
           error_code?: string | null
           error_message?: string | null
           id?: string
+          media_filename?: string | null
+          media_mime_type?: string | null
+          media_storage_path?: string | null
+          media_type?: string | null
           patient_id?: string | null
+          phone_number?: string | null
           purpose?: string | null
           status?: string
           template_name?: string | null

@@ -1,6 +1,7 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { toE164 } from '~/utils/phone'
+import { downloadMetaMedia, extensionForMimeType, type MediaKind } from '~/server/utils/whatsappSend'
 
 // Meta's ongoing webhook: delivers both outbound message status updates
 // (sent/delivered/read/failed) and inbound replies from patients, in the
@@ -14,6 +15,12 @@ interface MetaStatus {
   status: 'sent' | 'delivered' | 'read' | 'failed'
   errors?: { code: number; title: string }[]
 }
+interface MetaMedia {
+  id: string
+  mime_type: string
+  caption?: string
+  filename?: string
+}
 interface MetaMessage {
   id: string
   from: string
@@ -21,12 +28,19 @@ interface MetaMessage {
   text?: { body: string }
   button?: { text: string }
   interactive?: { button_reply?: { title: string }; list_reply?: { title: string } }
+  image?: MetaMedia
+  video?: MetaMedia
+  audio?: MetaMedia
+  document?: MetaMedia
+  sticker?: MetaMedia
 }
 interface MetaChangeValue {
   metadata?: { phone_number_id: string }
   statuses?: MetaStatus[]
   messages?: MetaMessage[]
 }
+
+const MEDIA_KINDS: MediaKind[] = ['image', 'video', 'audio', 'document', 'sticker']
 
 const CONFIRM_WORDS = ['confirmo', 'confirmar', 'confirmado', 'sí', 'si', 'yes', 'confirm', 'vale', 'ok', 'okay']
 const RESCHEDULE_WORDS = ['cambiar', 'cambio', 'reprogramar', 'reschedule', 'aplazar', 'posponer', 'mover']
@@ -67,7 +81,11 @@ export default defineEventHandler(async (event) => {
       const phoneNumberId = value?.metadata?.phone_number_id
       if (!phoneNumberId) continue
 
-      const { data: account } = await supabase.from('accounts').select('id').eq('whatsapp_phone_number_id', phoneNumberId).maybeSingle()
+      const { data: account } = await supabase
+        .from('accounts')
+        .select('id, whatsapp_phone_number_id, whatsapp_access_token')
+        .eq('whatsapp_phone_number_id', phoneNumberId)
+        .maybeSingle()
       if (!account) continue
 
       for (const status of value?.statuses ?? []) {
@@ -84,18 +102,47 @@ export default defineEventHandler(async (event) => {
 
       for (const msg of value?.messages ?? []) {
         const patientId = await findPatientByPhone(supabase, account.id, msg.from)
-        const text = replyText(msg)
+        const mediaKind = MEDIA_KINDS.includes(msg.type as MediaKind) ? (msg.type as MediaKind) : null
+        const media = mediaKind ? msg[mediaKind] : undefined
 
-        await supabase.from('whatsapp_messages').insert({
+        const insert: Database['public']['Tables']['whatsapp_messages']['Insert'] = {
           account_id: account.id,
           patient_id: patientId,
+          phone_number: msg.from,
           wamid: msg.id,
           direction: 'inbound',
           status: 'received',
-          body_preview: text.slice(0, 200) || null,
-        })
+          body_preview: null,
+        }
 
-        const intent = classifyReply(text)
+        if (mediaKind && media && account.whatsapp_access_token) {
+          try {
+            const { buffer, mimeType } = await downloadMetaMedia(
+              { whatsapp_phone_number_id: account.whatsapp_phone_number_id!, whatsapp_access_token: account.whatsapp_access_token },
+              media.id,
+            )
+            const ext = extensionForMimeType(mimeType)
+            const path = `${account.id}/${msg.id}.${ext}`
+            await supabase.storage.from('whatsapp-media').upload(path, buffer, { contentType: mimeType, upsert: true })
+            insert.media_type = mediaKind
+            insert.media_storage_path = path
+            insert.media_mime_type = mimeType
+            insert.media_filename = media.filename ?? null
+            insert.body_preview = media.caption?.slice(0, 200) ?? null
+          } catch {
+            // Best-effort -- still record that a media message arrived even
+            // if the download failed, rather than dropping it silently.
+            insert.media_type = mediaKind
+            insert.body_preview = media.caption?.slice(0, 200) ?? '(media download failed)'
+          }
+        } else {
+          const text = replyText(msg)
+          insert.body_preview = text.slice(0, 2000) || null
+        }
+
+        await supabase.from('whatsapp_messages').insert(insert)
+
+        const intent = classifyReply(replyText(msg))
         if (intent && patientId) {
           const { data: appt } = await supabase
             .from('appointments')

@@ -85,8 +85,10 @@ const generalToggles: { key: string; label: string; hint?: string }[] = [
   { key: 'billing_config', label: 'Billing configuration', hint: 'Services, packages, memberships, Stripe — requires Settings' },
   { key: 'communication_config', label: 'Communication configuration', hint: 'WhatsApp, document templates — requires Settings' },
   { key: 'data_admin', label: 'Data administration', hint: 'Import, migrations, webhooks — requires Settings' },
+  { key: 'developers_access', label: 'Developer API & tokens', hint: 'Create/revoke API tokens that can send WhatsApp as this clinic — requires Settings' },
   { key: 'billing_access', label: 'Billing', hint: 'View/create invoices' },
   { key: 'recalls_access', label: 'Recalls & patient messaging' },
+  { key: 'inbox_access', label: 'WhatsApp Inbox', hint: 'Read and reply to patient WhatsApp conversations' },
 ]
 
 const reportsToggles: { key: string; label: string; hint?: string }[] = [

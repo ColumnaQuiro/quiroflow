@@ -94,7 +94,11 @@ const store = useAccountStore()
 
 const SLOT_MIN = computed(() => store.currentClinic?.slot_duration_minutes ?? 30)
 
-const viewMode = ref<'day' | 'workweek' | 'week'>('workweek')
+// 'day' so today's own appointments are always visible on load -- 'workweek'
+// hides Sat/Sun entirely, which silently hides everything booked for today
+// on a weekend (clinics that work weekends would see an apparently-empty
+// calendar). Work week stays one click away via the toggle.
+const viewMode = ref<'day' | 'workweek' | 'week'>('day')
 const anchorDate = ref(new Date())
 const rooms = ref<Room[]>([])
 const appointmentTypes = ref<AppointmentType[]>([])

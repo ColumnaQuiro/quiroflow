@@ -226,6 +226,31 @@ async function createInvoice(opts: { accountId: string; patientId: string; invoi
   return row as { id: string; invoice_number: string }
 }
 
+async function createWhatsappMessage(opts: {
+  accountId: string
+  patientId?: string
+  phoneNumber?: string
+  direction: 'inbound' | 'outbound'
+  bodyPreview?: string
+}) {
+  const { accountId, patientId, phoneNumber, direction, bodyPreview } = opts
+  const row = unwrap(
+    await admin
+      .from('whatsapp_messages')
+      .insert({
+        account_id: accountId,
+        patient_id: patientId ?? null,
+        phone_number: phoneNumber ?? null,
+        direction,
+        status: direction === 'inbound' ? 'received' : 'sent',
+        body_preview: bodyPreview ?? 'Test message',
+      })
+      .select('id, channel')
+      .single(),
+  )
+  return row as { id: string; channel: string }
+}
+
 export const dbTasks = {
   'db:createStaffAccount': createStaffAccount,
   'db:createTeamMemberWithRole': createTeamMemberWithRole,
@@ -235,4 +260,5 @@ export const dbTasks = {
   'db:createServiceProduct': createServiceProduct,
   'db:enableOnlineBooking': enableOnlineBooking,
   'db:createInvoice': createInvoice,
+  'db:createWhatsappMessage': createWhatsappMessage,
 }

@@ -11,6 +11,7 @@ interface Message {
   media_storage_path: string | null
   media_mime_type: string | null
   media_filename: string | null
+  channel: string
   created_at: string
 }
 interface Conversation {
@@ -18,8 +19,14 @@ interface Conversation {
   patientId: string | null
   phoneNumber: string | null
   name: string
-  lastMessage: Message
+  channel: string
+  lastMessage: Message | null
   unread: boolean
+}
+interface PatientOption {
+  id: string
+  first_name: string
+  last_name: string | null
 }
 
 const supabase = useSupabaseClient()
@@ -27,6 +34,7 @@ const store = useAccountStore()
 
 const messages = ref<Message[]>([])
 const patientNames = ref<Record<string, string>>({})
+const patients = ref<PatientOption[]>([])
 const loading = ref(true)
 const search = ref('')
 
@@ -34,21 +42,25 @@ async function load() {
   loading.value = true
   const { data } = await supabase
     .from('whatsapp_messages')
-    .select('id, patient_id, phone_number, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, created_at')
+    .select('id, patient_id, phone_number, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, channel, created_at')
     .order('created_at', { ascending: false })
     .limit(1000)
   messages.value = data ?? []
 
   const patientIds = [...new Set(messages.value.map((m) => m.patient_id).filter((id): id is string => !!id))]
   if (patientIds.length > 0) {
-    const { data: patients } = await supabase.from('patients').select('id, first_name, last_name').in('id', patientIds)
+    const { data: matchedPatients } = await supabase.from('patients').select('id, first_name, last_name').in('id', patientIds)
     const names: Record<string, string> = {}
-    for (const p of patients ?? []) names[p.id] = `${p.first_name} ${p.last_name ?? ''}`.trim()
+    for (const p of matchedPatients ?? []) names[p.id] = `${p.first_name} ${p.last_name ?? ''}`.trim()
     patientNames.value = names
   }
   loading.value = false
 }
 onMounted(load)
+onMounted(async () => {
+  const { data } = await supabase.from('patients').select('id, first_name, last_name').order('first_name')
+  patients.value = data ?? []
+})
 
 const conversations = computed<Conversation[]>(() => {
   const byKey = new Map<string, Message[]>()
@@ -65,11 +77,12 @@ const conversations = computed<Conversation[]>(() => {
       patientId: last.patient_id,
       phoneNumber: last.phone_number,
       name: (last.patient_id && patientNames.value[last.patient_id]) || last.phone_number || 'Unknown',
+      channel: last.channel,
       lastMessage: last,
       unread: last.direction === 'inbound',
     })
   }
-  return list.sort((a, b) => b.lastMessage.created_at.localeCompare(a.lastMessage.created_at))
+  return list.sort((a, b) => b.lastMessage!.created_at.localeCompare(a.lastMessage!.created_at))
 })
 
 const filteredConversations = computed(() => {
@@ -79,12 +92,39 @@ const filteredConversations = computed(() => {
 })
 
 const selectedKey = ref<string | null>(null)
-const selected = computed(() => conversations.value.find((c) => c.key === selectedKey.value) ?? null)
+// A brand-new conversation started via "New message" has no rows in
+// `whatsapp_messages` yet, so it can't come from the `conversations` list --
+// it lives here until the first template send lands it in the real table.
+const draftConversation = ref<Conversation | null>(null)
+const selected = computed(
+  () => conversations.value.find((c) => c.key === selectedKey.value) ?? (draftConversation.value?.key === selectedKey.value ? draftConversation.value : null),
+)
 const thread = computed(() =>
   selectedKey.value ? messages.value.filter((m) => (m.patient_id ?? m.phone_number ?? 'unknown') === selectedKey.value).slice().reverse() : [],
 )
 
+const composeOpen = ref(false)
+const composeQuery = ref('')
+const filteredComposePatients = computed(() => {
+  if (!composeQuery.value.trim()) return patients.value.slice(0, 20)
+  const q = composeQuery.value.trim().toLowerCase()
+  return patients.value.filter((p) => `${p.first_name} ${p.last_name ?? ''}`.toLowerCase().includes(q)).slice(0, 20)
+})
+function startConversationWith(p: PatientOption) {
+  composeOpen.value = false
+  composeQuery.value = ''
+  const existing = conversations.value.find((c) => c.patientId === p.id)
+  if (existing) {
+    selectedKey.value = existing.key
+    return
+  }
+  const name = `${p.first_name} ${p.last_name ?? ''}`.trim()
+  draftConversation.value = { key: p.id, patientId: p.id, phoneNumber: null, name, channel: 'whatsapp', lastMessage: null, unread: false }
+  selectedKey.value = p.id
+}
+
 function selectConversation(c: Conversation) {
+  draftConversation.value = null
   selectedKey.value = c.key
 }
 
@@ -108,6 +148,7 @@ const within24h = computed(() => {
   if (!lastInbound) return false
   return Date.now() - new Date(lastInbound.created_at).getTime() < 24 * 60 * 60 * 1000
 })
+const isNewConversation = computed(() => thread.value.length === 0)
 
 const composerText = ref('')
 const sending = ref(false)
@@ -185,6 +226,7 @@ async function onFileChosen(e: Event) {
 
 function onTemplateSent() {
   templateModalOpen.value = false
+  draftConversation.value = null
   load()
 }
 
@@ -225,13 +267,36 @@ onUnmounted(() => {
     <div class="flex flex-1 overflow-hidden">
       <!-- Conversation list -->
       <div class="flex w-[320px] shrink-0 flex-col border-r border-line bg-surface">
-        <div class="border-b border-line-divider p-3">
+        <div class="flex items-center gap-2 border-b border-line-divider p-3">
           <input
             v-model="search"
             type="search"
             placeholder="Search conversations…"
-            class="h-8 w-full rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none"
+            class="h-8 w-full flex-1 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none"
           />
+          <div class="relative shrink-0">
+            <UiBtn variant="primary" size="sm" @click="composeOpen = !composeOpen">+ New</UiBtn>
+            <div v-if="composeOpen" class="absolute right-0 top-[calc(100%+4px)] z-20 w-64 rounded-card border border-line bg-surface p-2 shadow-popover">
+              <input
+                v-model="composeQuery"
+                type="text"
+                autofocus
+                placeholder="Search patients…"
+                class="h-8 w-full rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none"
+              />
+              <ul class="mt-1.5 max-h-56 overflow-y-auto">
+                <li
+                  v-for="p in filteredComposePatients"
+                  :key="p.id"
+                  class="cursor-pointer rounded-ctlSm px-2 py-1.5 text-[13px] text-ink-700 hover:bg-surface-subtle"
+                  @click="startConversationWith(p)"
+                >
+                  {{ p.first_name }} {{ p.last_name }}
+                </li>
+                <li v-if="filteredComposePatients.length === 0" class="px-2 py-1.5 text-[13px] text-ink-faint">No matches</li>
+              </ul>
+            </div>
+          </div>
         </div>
         <div class="flex-1 overflow-y-auto">
           <div v-if="loading" class="p-6 text-center text-[13px] text-ink-faint">Loading…</div>
@@ -244,16 +309,19 @@ onUnmounted(() => {
             :class="selectedKey === c.key ? 'bg-brand-tint' : ''"
             @click="selectConversation(c)"
           >
-            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[11px] font-semibold text-brand-text">
+            <span class="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[11px] font-semibold text-brand-text">
               {{ c.name.slice(0, 2).toUpperCase() }}
+              <span class="absolute -bottom-0.5 -right-0.5 flex h-[13px] w-[13px] items-center justify-center rounded-full border border-surface bg-[#25D366]" title="WhatsApp">
+                <svg viewBox="0 0 24 24" class="h-[8px] w-[8px] fill-white"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm5.6 14.2c-.2.6-1.2 1.1-1.7 1.2-.4.1-1 .1-1.6-.1-.4-.1-.9-.3-1.5-.6-2.6-1.1-4.3-3.8-4.4-4-.1-.2-1-1.4-1-2.6 0-1.2.6-1.8.9-2.1.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .5.4.2.5.7 1.7.7 1.8.1.1.1.3 0 .4-.1.2-.1.3-.3.4-.1.2-.3.4-.4.5-.1.1-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.4 2.5 1.5.3.1.5.1.6-.1.2-.2.7-.8.9-1.1.2-.3.4-.2.6-.1.2.1 1.5.7 1.8.8.3.1.4.2.5.3.1.2.1.7-.1 1.3z" /></svg>
+              </span>
             </span>
             <div class="min-w-0 flex-1">
               <div class="flex items-center justify-between gap-2">
                 <p class="truncate text-[13px] font-[560]" :class="c.unread ? 'text-ink-900' : 'text-ink-700'">{{ c.name }}</p>
-                <span class="shrink-0 text-[11px] text-ink-faint">{{ shortTime(c.lastMessage.created_at) }}</span>
+                <span class="shrink-0 text-[11px] text-ink-faint">{{ shortTime(c.lastMessage!.created_at) }}</span>
               </div>
               <p class="truncate text-[12px]" :class="c.unread ? 'font-medium text-ink-800' : 'text-ink-muted2'">
-                {{ c.lastMessage.direction === 'outbound' ? 'You: ' : '' }}{{ previewText(c.lastMessage) }}
+                {{ c.lastMessage!.direction === 'outbound' ? 'You: ' : '' }}{{ previewText(c.lastMessage!) }}
               </p>
             </div>
             <span v-if="c.unread" class="mt-1 h-[8px] w-[8px] shrink-0 rounded-full bg-brand" />
@@ -272,7 +340,10 @@ onUnmounted(() => {
           </span>
           <div class="min-w-0 flex-1">
             <p class="truncate text-[13.5px] font-[600] text-ink-900">{{ selected.name }}</p>
-            <p class="truncate text-[11.5px] text-ink-muted2">{{ selected.phoneNumber }}</p>
+            <p class="truncate text-[11.5px] text-ink-muted2">
+              <span class="rounded-pill bg-[#25D366]/10 px-1.5 py-px font-medium text-[#128C4B]">WhatsApp</span>
+              <span v-if="selected.phoneNumber" class="ml-1.5">{{ selected.phoneNumber }}</span>
+            </p>
           </div>
           <NuxtLink v-if="selected.patientId" :to="`/patients/${selected.patientId}`" class="shrink-0 text-[12.5px] text-brand-text hover:text-brand-hover">
             View patient →
@@ -325,7 +396,8 @@ onUnmounted(() => {
           <p v-if="sendError" class="mb-2 text-[12.5px] text-danger-text">{{ sendError }}</p>
           <div v-if="!within24h" class="flex items-center justify-between gap-3 rounded-ctl border border-warning-border bg-warning-bg px-3 py-2">
             <p class="text-[12.5px] text-warning-text">
-              More than 24h since {{ selected.name }} last messaged — free-form replies are blocked by WhatsApp. Send a template instead.
+              <template v-if="isNewConversation">{{ selected.name }} hasn't messaged you before — start with an approved template.</template>
+              <template v-else>More than 24h since {{ selected.name }} last messaged — free-form replies are blocked by WhatsApp. Send a template instead.</template>
             </p>
             <UiBtn v-if="selected.patientId" variant="primary" size="sm" @click="templateModalOpen = true">Send template</UiBtn>
           </div>

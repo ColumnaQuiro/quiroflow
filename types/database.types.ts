@@ -1973,6 +1973,7 @@ export type Database = {
           account_id: string
           appointment_id: string | null
           body_preview: string | null
+          channel: string
           created_at: string
           direction: string
           error_code: string | null
@@ -1994,6 +1995,7 @@ export type Database = {
           account_id: string
           appointment_id?: string | null
           body_preview?: string | null
+          channel?: string
           created_at?: string
           direction?: string
           error_code?: string | null
@@ -2015,6 +2017,7 @@ export type Database = {
           account_id?: string
           appointment_id?: string | null
           body_preview?: string | null
+          channel?: string
           created_at?: string
           direction?: string
           error_code?: string | null

@@ -29,9 +29,9 @@ async function signOut() {
 
 <template>
   <div class="flex h-full min-h-0 flex-col">
-    <div v-if="loading" class="flex flex-1 items-center justify-center text-sm text-ink-faint">Loading…</div>
+    <div v-if="loading" class="flex min-h-0 flex-1 items-center justify-center text-sm text-ink-faint">Loading…</div>
 
-    <div v-else-if="!patient && !teamMember" class="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+    <div v-else-if="!patient && !teamMember" class="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
       <p class="max-w-xs text-sm text-ink-muted">This account isn't linked to a patient or team record yet.</p>
       <UiBtn variant="secondary" @click="signOut">Sign out</UiBtn>
     </div>

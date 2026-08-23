@@ -24,6 +24,14 @@ export function useIdentity() {
   const teamMember = ref<IdentityTeamMember | null>(null)
   const loading = ref(true)
 
+  async function queryIdentity(userId: string) {
+    const [{ data: p }, { data: tm }] = await Promise.all([
+      supabase.from('patients').select('id, first_name, last_name').eq('user_id', userId).maybeSingle(),
+      supabase.from('team_members').select('id, account_id').eq('user_id', userId).maybeSingle(),
+    ])
+    return { p, tm }
+  }
+
   async function load() {
     if (!user.value) {
       patient.value = null
@@ -36,12 +44,18 @@ export function useIdentity() {
     // before the client's internal session (and thus the auth header on
     // subsequent requests) has fully settled -- querying immediately can
     // race and come back empty even though the account is genuinely linked.
-    // Awaiting the session first ensures the queries below carry a fresh token.
+    // Awaiting the session first closes most of that window, but it isn't
+    // airtight (observed live: still raced occasionally on some transitions).
+    // Rather than chase the exact internal timing further, retry once after
+    // a short beat if the first pass comes back completely empty -- a
+    // genuinely unlinked account still resolves correctly, just one round
+    // trip slower.
     await supabase.auth.getSession()
-    const [{ data: p }, { data: tm }] = await Promise.all([
-      supabase.from('patients').select('id, first_name, last_name').eq('user_id', user.value.sub).maybeSingle(),
-      supabase.from('team_members').select('id, account_id').eq('user_id', user.value.sub).maybeSingle(),
-    ])
+    let { p, tm } = await queryIdentity(user.value.sub)
+    if (!p && !tm) {
+      await new Promise((resolve) => setTimeout(resolve, 400))
+      ;({ p, tm } = await queryIdentity(user.value.sub))
+    }
     patient.value = p
     teamMember.value = tm
     loading.value = false

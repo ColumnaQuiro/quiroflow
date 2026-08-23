@@ -1,0 +1,14 @@
+/*
+ * app.vue's own overflow-x-hidden only clips within its own box -- it can't
+ * fix a width overflow that originates on <html>/<body> themselves. That
+ * happens in practice after a sign-out/sign-in transition triggered while
+ * the keyboard was still dismissing (the @capacitor/keyboard resize:'body'
+ * mode adjusts body's box during that animation), leaving right-aligned
+ * content clipped past the physical viewport edge. Locking both ancestors
+ * here closes the gap regardless of what nudges them.
+ */
+html,
+body {
+  overflow-x: hidden;
+  max-width: 100vw;
+}

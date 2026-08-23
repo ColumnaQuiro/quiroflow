@@ -20,6 +20,7 @@ export default defineNuxtConfig({
     },
   },
   modules: ['@nuxtjs/tailwindcss', '@nuxtjs/supabase'],
+  css: ['~/assets/css/main.css'],
   components: [`${root}/components`, '~/components'],
   imports: {
     dirs: [`${root}/composables`, `${root}/utils`],

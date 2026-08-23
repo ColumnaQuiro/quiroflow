@@ -32,6 +32,12 @@ export function useIdentity() {
       return
     }
     loading.value = true
+    // Right after a sign-in transition, the reactive `user` can update a tick
+    // before the client's internal session (and thus the auth header on
+    // subsequent requests) has fully settled -- querying immediately can
+    // race and come back empty even though the account is genuinely linked.
+    // Awaiting the session first ensures the queries below carry a fresh token.
+    await supabase.auth.getSession()
     const [{ data: p }, { data: tm }] = await Promise.all([
       supabase.from('patients').select('id, first_name, last_name').eq('user_id', user.value.sub).maybeSingle(),
       supabase.from('team_members').select('id, account_id').eq('user_id', user.value.sub).maybeSingle(),

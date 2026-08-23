@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const props = defineProps<{ patientId: string }>()
+const props = withDefaults(defineProps<{ patientId: string; editable?: boolean }>(), { editable: true })
 
 interface CarePlan {
   id: string
@@ -72,7 +72,7 @@ async function onPlanSaved() {
     <template v-else>
       <div class="flex items-center justify-between gap-2">
         <p class="truncate text-[13.5px] font-semibold text-ink-700">{{ plan ? plan.name : 'No care plan' }}</p>
-        <button type="button" class="shrink-0 text-[12px] font-medium text-brand-text hover:text-brand-hover" @click="editOpen = true">
+        <button v-if="editable" type="button" class="shrink-0 text-[12px] font-medium text-brand-text hover:text-brand-hover" @click="editOpen = true">
           {{ plan ? 'Edit' : '+ Add plan' }}
         </button>
       </div>

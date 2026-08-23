@@ -31,3 +31,15 @@ supabase/.temp
 cypress/videos
 cypress/screenshots
 cypress/downloads
+
+# Capacitor mobile app build artifacts
+mobile/.output
+mobile/ios/App/Pods
+mobile/ios/App/Podfile.lock
+mobile/android/.gradle
+mobile/android/build
+mobile/android/app/build
+mobile/android/local.properties
+mobile/android/capacitor-cordova-android-plugins
+mobile/ios/App/App/public
+mobile/android/app/src/main/assets/public

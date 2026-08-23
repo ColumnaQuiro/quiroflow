@@ -19,7 +19,9 @@ watch(
 )
 
 const supabase = useSupabaseClient()
+const { unregister: unregisterPush } = usePushNotifications()
 async function signOut() {
+  await unregisterPush()
   await supabase.auth.signOut()
   await navigateTo('/login')
 }
@@ -35,29 +37,36 @@ async function signOut() {
     </div>
 
     <template v-else>
-      <div v-if="patient && teamMember" class="flex items-center justify-center gap-2 border-b border-line bg-surface p-2">
-        <button
-          type="button"
-          class="rounded-ctl px-3 py-1.5 text-[13px] font-medium"
-          :class="view === 'patient' ? 'bg-brand-tint text-brand-text' : 'text-ink-muted'"
-          @click="view = 'patient'"
-        >
-          Patient view
-        </button>
-        <button
-          type="button"
-          class="rounded-ctl px-3 py-1.5 text-[13px] font-medium"
-          :class="view === 'practitioner' ? 'bg-brand-tint text-brand-text' : 'text-ink-muted'"
-          @click="view = 'practitioner'"
-        >
-          Practitioner view
-        </button>
+      <!--
+        Sign out lives in a slim top bar, not below the content -- the
+        practitioner Inbox is a chat UI with its composer pinned to the
+        bottom, and a full-width button below it would either crowd the
+        composer or (worse) get pushed out of view entirely.
+      -->
+      <div class="flex shrink-0 items-center border-b border-line bg-surface px-3 py-1.5">
+        <div v-if="patient && teamMember" class="flex gap-2">
+          <button
+            type="button"
+            class="rounded-ctl px-3 py-1.5 text-[13px] font-medium"
+            :class="view === 'patient' ? 'bg-brand-tint text-brand-text' : 'text-ink-muted'"
+            @click="view = 'patient'"
+          >
+            Patient view
+          </button>
+          <button
+            type="button"
+            class="rounded-ctl px-3 py-1.5 text-[13px] font-medium"
+            :class="view === 'practitioner' ? 'bg-brand-tint text-brand-text' : 'text-ink-muted'"
+            @click="view = 'practitioner'"
+          >
+            Practitioner view
+          </button>
+        </div>
+        <button type="button" class="ml-auto px-2 py-1.5 text-[12.5px] text-ink-faint" @click="signOut">Sign out</button>
       </div>
 
       <PatientHome v-if="view === 'patient' && patient" :patient-id="patient.id" :patient-first-name="patient.first_name" />
       <PractitionerInbox v-else-if="view === 'practitioner' && teamMember" :account-id="teamMember.account_id" />
-
-      <button type="button" class="p-4 text-center text-[12.5px] text-ink-faint" @click="signOut">Sign out</button>
     </template>
   </div>
 </template>

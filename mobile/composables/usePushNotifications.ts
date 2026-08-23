@@ -6,6 +6,11 @@ import { Capacitor } from '@capacitor/core'
 // messages. No-ops on web (native-only API) and swallows errors so a device
 // that can't register (permission denied, no Firebase config yet on
 // Android, etc.) doesn't break the rest of the app.
+// Module-level, not per-call-site: only ever one real device token per app
+// instance, and sign-out (from wherever it's triggered) needs it to
+// unregister.
+let lastToken: string | null = null
+
 export function usePushNotifications() {
   const authedFetch = useAuthedFetch()
 
@@ -18,6 +23,7 @@ export function usePushNotifications() {
       await PushNotifications.register()
 
       PushNotifications.addListener('registration', async (token) => {
+        lastToken = token.value
         try {
           await authedFetch('/api/mobile/register-push-token', {
             method: 'POST',
@@ -32,5 +38,14 @@ export function usePushNotifications() {
     }
   }
 
-  return { register }
+  async function unregister() {
+    if (!lastToken) return
+    try {
+      await authedFetch('/api/mobile/unregister-push-token', { method: 'POST', body: { token: lastToken } })
+    } catch {
+      // Best-effort -- signing out should never get stuck on this.
+    }
+  }
+
+  return { register, unregister }
 }

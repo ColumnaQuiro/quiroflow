@@ -17,6 +17,12 @@ async function onSubmit() {
     error.value = signInError.message
     return
   }
+  // Blur explicitly and give the keyboard-dismiss animation a beat to finish
+  // before the route change -- navigating while it's still mid-resize can
+  // leave the new page measuring itself against a WebView frame that hasn't
+  // caught up yet, clipping content at the edge.
+  ;(document.activeElement as HTMLElement | null)?.blur()
+  await new Promise((resolve) => setTimeout(resolve, 350))
   await navigateTo('/')
 }
 </script>

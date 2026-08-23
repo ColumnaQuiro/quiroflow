@@ -23,6 +23,10 @@ const { unregister: unregisterPush } = usePushNotifications()
 async function signOut() {
   await unregisterPush()
   await supabase.auth.signOut()
+  // See login.vue's onSubmit for why: give any in-flight keyboard-dismiss
+  // animation a beat to finish before the route change.
+  ;(document.activeElement as HTMLElement | null)?.blur()
+  await new Promise((resolve) => setTimeout(resolve, 350))
   await navigateTo('/login')
 }
 </script>

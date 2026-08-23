@@ -16,7 +16,16 @@ export default defineNuxtConfig({
       // viewport-fit=cover lets content go edge-to-edge under the notch/home
       // indicator -- paired with safe-area padding in app.vue so it doesn't
       // collide with the status bar instead.
-      viewport: 'width=device-width, initial-scale=1, viewport-fit=cover',
+      //
+      // maximum-scale=1, user-scalable=no: without this, WKWebView can
+      // auto-zoom the page in response to certain focus/layout changes
+      // (confirmed live via Safari Web Inspector -- visualViewport.scale
+      // was stuck at ~1.14 after a sign-in transition, which is what made
+      // right-aligned content clip past the visible edge) and doesn't
+      // reliably reset the scale back to 1 afterwards. Locking the max
+      // scale makes that whole bug class impossible rather than working
+      // around one trigger for it.
+      viewport: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover',
     },
   },
   modules: ['@nuxtjs/tailwindcss', '@nuxtjs/supabase'],

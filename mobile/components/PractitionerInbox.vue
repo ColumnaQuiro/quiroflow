@@ -24,6 +24,8 @@ interface Conversation {
 
 const supabase = useSupabaseClient()
 const authedFetch = useAuthedFetch()
+const { register: registerForPush } = usePushNotifications()
+onMounted(registerForPush)
 
 const messages = ref<Message[]>([])
 const patientNames = ref<Record<string, string>>({})
@@ -132,7 +134,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="flex flex-1 flex-col overflow-hidden">
+  <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
     <!-- Conversation list -->
     <div v-if="!selectedKey" class="flex-1 overflow-y-auto">
       <div v-if="loading" class="p-6 text-center text-[13px] text-ink-faint">Loading…</div>

@@ -26,7 +26,7 @@ async function signOut() {
 </script>
 
 <template>
-  <div class="flex min-h-screen flex-col">
+  <div class="flex h-full min-h-0 flex-col">
     <div v-if="loading" class="flex flex-1 items-center justify-center text-sm text-ink-faint">Loading…</div>
 
     <div v-else-if="!patient && !teamMember" class="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">

@@ -258,6 +258,30 @@ export type Database = {
           },
         ]
       }
+      device_push_tokens: {
+        Row: {
+          id: string
+          user_id: string
+          platform: string
+          fcm_token: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          platform: string
+          fcm_token: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          platform?: string
+          fcm_token?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
       appointments: {
         Row: {
           account_id: string

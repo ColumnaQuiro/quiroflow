@@ -21,6 +21,19 @@ async function resolveSupabaseClient(event: H3Event) {
   })
 }
 
+// For endpoints any signed-in user (patient or team_member) can call --
+// e.g. registering a push-notification token -- not just staff.
+export async function requireAuthedUser(event: H3Event) {
+  const supabase = await resolveSupabaseClient(event)
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) {
+    throw createError({ statusCode: 401, statusMessage: 'Not signed in' })
+  }
+  return { supabase, user }
+}
+
 export async function requireTeamMember(event: H3Event) {
   const supabase = await resolveSupabaseClient(event)
   const { data: teamMember } = await supabase

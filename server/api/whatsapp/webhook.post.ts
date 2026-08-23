@@ -1,7 +1,33 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
+import type { H3Event } from 'h3'
 import type { Database } from '~/types/database.types'
 import { toE164 } from '~/utils/phone'
 import { downloadMetaMedia, extensionForMimeType, type MediaKind } from '~/server/utils/whatsappSend'
+import { sendPushToUsers } from '~/server/utils/pushNotifications'
+
+// Push notification for a new inbound WhatsApp message, to every team
+// member who can see the Inbox -- the owner (bypasses all permission
+// checks, see has_permission()) plus anyone whose role has inbox_access.
+async function notifyInboxTeamMembers(
+  event: H3Event,
+  supabase: ReturnType<typeof serverSupabaseServiceRole<Database>>,
+  accountId: string,
+  senderName: string,
+  preview: string,
+) {
+  const { data: members } = await supabase
+    .from('team_members')
+    .select('user_id, is_owner, account_roles(permissions)')
+    .eq('account_id', accountId)
+    .not('user_id', 'is', null)
+  if (!members) return
+
+  const userIds = members
+    .filter((m) => m.is_owner || (m.account_roles as { permissions: Record<string, unknown> } | null)?.permissions?.inbox_access === true)
+    .map((m) => m.user_id as string)
+
+  await sendPushToUsers(event, userIds, { title: senderName, body: preview, data: { type: 'whatsapp_message' } })
+}
 
 // Meta's ongoing webhook: delivers both outbound message status updates
 // (sent/delivered/read/failed) and inbound replies from patients, in the
@@ -141,6 +167,13 @@ export default defineEventHandler(async (event) => {
         }
 
         await supabase.from('whatsapp_messages').insert(insert)
+
+        let senderName = msg.from
+        if (patientId) {
+          const { data: patient } = await supabase.from('patients').select('first_name, last_name').eq('id', patientId).maybeSingle()
+          if (patient) senderName = `${patient.first_name} ${patient.last_name ?? ''}`.trim()
+        }
+        await notifyInboxTeamMembers(event, supabase, account.id, senderName, insert.body_preview ?? 'New message')
 
         const intent = classifyReply(replyText(msg))
         if (intent && patientId) {

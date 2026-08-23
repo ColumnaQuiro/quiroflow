@@ -50,6 +50,11 @@ export default defineNuxtConfig({
     // unset, Settings > Payments falls back to the legacy manual-key flow.
     stripeSecretKey: '',
     stripeConnectWebhookSecret: '',
+    // Firebase service-account key (JSON, as a single-line string) for
+    // sending mobile push notifications via FCM v1. Optional -- if unset,
+    // server/utils/pushNotifications.ts just no-ops, same as WhatsApp
+    // delivery tracking being optional when unconfigured.
+    fcmServiceAccountJson: '',
     public: {
       // Booking subdomains: <account-slug>.<appDomain> gets rewritten to
       // /book/<account-slug> by server/middleware/subdomain-booking.ts.

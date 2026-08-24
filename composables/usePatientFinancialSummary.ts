@@ -9,6 +9,7 @@ interface ActivePackage {
   sessions_total: number
   sessions_used: number
   price_cents: number
+  shared?: boolean
 }
 
 interface FinancialState {
@@ -52,11 +53,12 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     const state = stateFor(currentId)
     state.loading.value = true
 
-    const [{ data: invoices }, { data: memberships }, { data: packages }, { data: credits }] = await Promise.all([
+    const [{ data: invoices }, { data: memberships }, { data: packages }, { data: credits }, { data: shares }] = await Promise.all([
       supabase.from('invoices').select('id, total_cents').eq('patient_id', currentId).neq('status', 'void'),
       supabase.from('patient_memberships').select('id, membership_name, status').eq('patient_id', currentId).eq('status', 'active'),
       supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used, price_cents').eq('patient_id', currentId).order('purchased_at', { ascending: false }),
       supabase.from('account_credits').select('amount_cents').eq('patient_id', currentId),
+      supabase.from('package_purchase_shares').select('package_purchases(id, package_name, sessions_total, sessions_used, price_cents)').eq('patient_id', currentId),
     ])
 
     const invoiceIds = (invoices ?? []).map((i) => i.id)
@@ -74,7 +76,11 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     state.balanceCents.value = paidCents - invoicedCents + state.creditLedgerCents.value
 
     state.activeMembership.value = memberships?.[0] ?? null
-    state.activePackages.value = (packages ?? []).filter((p) => p.sessions_used < p.sessions_total)
+    const sharedPackages = (shares ?? [])
+      .map((s) => s.package_purchases)
+      .filter((p): p is NonNullable<typeof p> => p !== null)
+      .map((p) => ({ ...p, shared: true }))
+    state.activePackages.value = [...(packages ?? []), ...sharedPackages].filter((p) => p.sessions_used < p.sessions_total)
 
     state.loading.value = false
   }

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { normalizeSearchTerm } from '~/utils/searchText'
+
 const props = defineProps<{ patientId: string; openPaymentTrigger?: boolean }>()
 const emit = defineEmits<{ paymentTriggerConsumed: [] }>()
 
@@ -164,6 +166,13 @@ async function takePayment() {
   const paidCents = (paid ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
   if (paidCents >= invoice.total_cents) {
     await supabase.from('invoices').update({ status: 'paid' }).eq('id', invoice.id)
+    // Matches the appointment dialog's recordPayment() -- paying off an
+    // invoice auto-sends it the same way regardless of which screen it
+    // happened from, when the patient has opted in.
+    const { data: patient } = await supabase.from('patients').select('invoice_email_enabled, email').eq('id', props.patientId).maybeSingle()
+    if (patient?.invoice_email_enabled && patient.email) {
+      $fetch(`/api/invoices/${invoice.id}/send`, { method: 'POST' }).catch(() => {})
+    }
   }
 
   takingPayment.value = false
@@ -269,6 +278,25 @@ function maybeOpenPaymentFromTrigger() {
   emit('paymentTriggerConsumed')
 }
 watch(() => props.openPaymentTrigger, maybeOpenPaymentFromTrigger)
+
+const sendingInvoiceId = ref('')
+const sendResultInvoiceId = ref('')
+const sendResultMessage = ref('')
+async function sendInvoiceEmail(invoiceId: string) {
+  sendingInvoiceId.value = invoiceId
+  sendResultInvoiceId.value = ''
+  try {
+    await $fetch(`/api/invoices/${invoiceId}/send`, { method: 'POST' })
+    sendResultMessage.value = 'Sent'
+  } catch (e: any) {
+    sendResultMessage.value = e?.data?.message ?? 'Failed to send'
+  }
+  sendingInvoiceId.value = ''
+  sendResultInvoiceId.value = invoiceId
+  setTimeout(() => {
+    if (sendResultInvoiceId.value === invoiceId) sendResultInvoiceId.value = ''
+  }, 3000)
+}
 
 const hasCard = computed(() => !!stripeCustomer.value?.default_payment_method_id)
 const unpaidInvoices = computed(() => invoices.value.filter((i) => i.status === 'unpaid'))
@@ -399,6 +427,61 @@ async function useSession(purchase: PackagePurchaseRow) {
   if (purchase.sessions_used >= purchase.sessions_total) return
   await supabase.from('package_purchases').update({ sessions_used: purchase.sessions_used + 1 }).eq('id', purchase.id)
   await loadAll()
+}
+
+// --- Package sharing: explicit, staff-managed beneficiaries (not inferred
+// from any family/tutor relationship) -- shared patients can then draw down
+// sessions from this same purchase via usePackageSession/useSession
+// elsewhere, since those already just take a purchase id.
+interface SharedPatient { id: string; first_name: string; last_name: string | null }
+const openSharesPackageId = ref<string | null>(null)
+const shares = ref<Record<string, SharedPatient[]>>({})
+const shareSearch = ref('')
+const shareResults = ref<SharedPatient[]>([])
+let shareDebounce: ReturnType<typeof setTimeout> | undefined
+
+async function loadShares(packageId: string) {
+  const { data } = await supabase
+    .from('package_purchase_shares')
+    .select('patients(id, first_name, last_name)')
+    .eq('package_purchase_id', packageId)
+  shares.value[packageId] = (data ?? []).map((r) => r.patients).filter((p): p is SharedPatient => p !== null)
+}
+
+function toggleShares(packageId: string) {
+  openSharesPackageId.value = openSharesPackageId.value === packageId ? null : packageId
+  shareSearch.value = ''
+  shareResults.value = []
+  if (openSharesPackageId.value) loadShares(packageId)
+}
+
+watch(shareSearch, (value) => {
+  clearTimeout(shareDebounce)
+  if (!value.trim()) {
+    shareResults.value = []
+    return
+  }
+  shareDebounce = setTimeout(async () => {
+    const { data } = await supabase
+      .from('patients')
+      .select('id, first_name, last_name')
+      .neq('id', props.patientId)
+      .ilike('search_name', `%${normalizeSearchTerm(value.trim())}%`)
+      .limit(8)
+    shareResults.value = data ?? []
+  }, 250)
+})
+
+async function addShare(packageId: string, patient: SharedPatient) {
+  await supabase.from('package_purchase_shares').insert({ account_id: store.accountId!, package_purchase_id: packageId, patient_id: patient.id })
+  shareSearch.value = ''
+  shareResults.value = []
+  await loadShares(packageId)
+}
+
+async function removeShare(packageId: string, patientId: string) {
+  await supabase.from('package_purchase_shares').delete().eq('package_purchase_id', packageId).eq('patient_id', patientId)
+  await loadShares(packageId)
 }
 
 async function activateMembership() {
@@ -550,6 +633,7 @@ function money(cents: number) {
             <th class="px-4 py-2">Items</th>
             <th class="px-4 py-2 text-right">Total</th>
             <th class="px-4 py-2">Status</th>
+            <th class="px-4 py-2"></th>
           </tr>
         </thead>
         <tbody class="divide-y divide-line-row">
@@ -562,6 +646,21 @@ function money(cents: number) {
             <td class="px-4 text-right font-mono text-ink-700">{{ money(invoice.total_cents) }}</td>
             <td class="px-4">
               <UiPill :tone="invoiceTone[invoice.status] ?? 'neutral'">{{ invoice.status }}</UiPill>
+            </td>
+            <td class="px-4 text-right">
+              <span v-if="sendResultInvoiceId === invoice.id" class="text-[11.5px] text-ink-faint">{{ sendResultMessage }}</span>
+              <button
+                v-else
+                type="button"
+                title="Email this invoice to the patient"
+                class="text-ink-faint hover:text-brand-text disabled:opacity-50"
+                :disabled="sendingInvoiceId === invoice.id"
+                @click="sendInvoiceEmail(invoice.id)"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <path d="M3 7l9 6 9-6M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1z" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </button>
             </td>
           </tr>
         </tbody>
@@ -583,14 +682,46 @@ function money(cents: number) {
             </div>
             <div class="mt-1.5 flex items-center justify-between gap-2">
               <p class="text-[11.5px] text-ink-faint">{{ p.sessions_used }}/{{ p.sessions_total }} used &middot; {{ money(p.price_cents) }}</p>
-              <button
-                type="button"
-                :disabled="p.sessions_used >= p.sessions_total"
-                class="text-[11.5px] font-medium text-brand-text hover:text-brand-hover disabled:opacity-40"
-                @click="useSession(p)"
-              >
-                Log session
-              </button>
+              <div class="flex items-center gap-2">
+                <button type="button" class="text-[11.5px] font-medium text-ink-muted hover:text-brand-text" @click="toggleShares(p.id)">
+                  Share{{ shares[p.id]?.length ? ` (${shares[p.id].length})` : '' }}…
+                </button>
+                <button
+                  type="button"
+                  :disabled="p.sessions_used >= p.sessions_total"
+                  class="text-[11.5px] font-medium text-brand-text hover:text-brand-hover disabled:opacity-40"
+                  @click="useSession(p)"
+                >
+                  Log session
+                </button>
+              </div>
+            </div>
+
+            <div v-if="openSharesPackageId === p.id" class="mt-2 rounded-ctlSm bg-surface-subtle p-2">
+              <ul v-if="shares[p.id]?.length" class="space-y-1">
+                <li v-for="sp in shares[p.id]" :key="sp.id" class="flex items-center justify-between text-[11.5px] text-ink-600">
+                  <span>{{ sp.first_name }} {{ sp.last_name }}</span>
+                  <button type="button" class="text-ink-faint hover:text-danger-text" @click="removeShare(p.id, sp.id)">✕</button>
+                </li>
+              </ul>
+              <div class="relative mt-1.5">
+                <input
+                  v-model="shareSearch"
+                  type="text"
+                  placeholder="Search a patient to share with…"
+                  class="w-full rounded border border-line-control bg-surface px-2 py-1 text-[11.5px]"
+                />
+                <ul v-if="shareResults.length" class="absolute z-10 mt-1 w-full rounded-ctlSm border border-line bg-surface shadow-popover">
+                  <li
+                    v-for="sp in shareResults"
+                    :key="sp.id"
+                    class="cursor-pointer px-2 py-1 text-[11.5px] text-ink-700 hover:bg-surface-subtle"
+                    @click="addShare(p.id, sp)"
+                  >
+                    {{ sp.first_name }} {{ sp.last_name }}
+                  </li>
+                </ul>
+              </div>
             </div>
 
             <div v-if="scheduleForPackage(p.id)" class="mt-2 flex items-center justify-between rounded-ctlSm bg-surface-subtle px-2 py-1.5">

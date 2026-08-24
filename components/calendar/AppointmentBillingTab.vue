@@ -31,7 +31,12 @@ const loadingInvoice = ref(true)
 const hasFutureAppointment = ref(true)
 
 const paymentAmount = ref('')
-const paymentMethod = ref<'card' | 'cash' | 'other'>('cash')
+// 'credit' isn't a real payments.method value (that CHECK constraint only
+// allows card/cash/other) -- it's a UI-only choice that recordPayment()
+// expands into a payments row (method: 'other') plus a negative
+// account_credits row, the same compound operation the patient's main
+// Billing tab already uses for "Apply credit" (BillingTab.vue).
+const paymentMethod = ref<'card' | 'cash' | 'other' | 'credit'>('cash')
 const savingPayment = ref(false)
 const error = ref('')
 
@@ -180,14 +185,28 @@ async function recordPayment() {
   error.value = ''
   const amountCents = Math.round((parseFloat(paymentAmount.value) || 0) * 100)
   if (amountCents <= 0) return
+  if (paymentMethod.value === 'credit' && amountCents > balanceCents.value) {
+    error.value = 'Amount exceeds available credit.'
+    return
+  }
   savingPayment.value = true
 
   await supabase.from('payments').insert({
     account_id: store.accountId!,
     invoice_id: invoice.value.id,
     amount_cents: amountCents,
-    method: paymentMethod.value,
+    method: paymentMethod.value === 'credit' ? 'other' : paymentMethod.value,
   })
+  if (paymentMethod.value === 'credit') {
+    await supabase.from('account_credits').insert({
+      account_id: store.accountId!,
+      patient_id: props.patientId,
+      amount_cents: -amountCents,
+      reason: `Applied to invoice ${invoice.value.invoice_number}`,
+      invoice_id: invoice.value.id,
+      created_by: store.teamMember?.id ?? null,
+    })
+  }
 
   const newPaid = paidCents.value + amountCents
   if (newPaid >= invoice.value.total_cents) {
@@ -246,14 +265,6 @@ async function recordPayment() {
             class="inline-flex items-center gap-1.5 rounded bg-indigo-50 px-1.5 py-0.5 text-xs font-medium text-indigo-700"
           >
             {{ p.package_name }}: {{ p.sessions_total - p.sessions_used }} left
-            <button
-              v-if="can('billing_access') && invoice && invoice.status !== 'paid'"
-              type="button"
-              class="underline decoration-dotted hover:text-indigo-900"
-              @click="usePackageSession(p)"
-            >
-              Use session
-            </button>
           </span>
         </div>
       </div>
@@ -319,12 +330,28 @@ async function recordPayment() {
             <option value="cash">Cash</option>
             <option value="card">Card</option>
             <option value="other">Other</option>
+            <option v-if="balanceCents > 0" value="credit">Credit on account (€{{ (balanceCents / 100).toFixed(2) }} available)</option>
           </select>
         </div>
         <button type="submit" :disabled="savingPayment" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
           {{ savingPayment ? 'Processing…' : 'Process' }}
         </button>
       </form>
+      <div
+        v-if="can('billing_access') && invoice.status !== 'paid' && activePackages.length > 0"
+        class="mt-2 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-2"
+      >
+        <span class="text-xs text-gray-500">Or use a package session:</span>
+        <button
+          v-for="p in activePackages"
+          :key="p.id"
+          type="button"
+          class="rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
+          @click="usePackageSession(p)"
+        >
+          {{ p.package_name }} ({{ p.sessions_total - p.sessions_used }} left)
+        </button>
+      </div>
       <ul v-if="payments.length > 0" class="mt-2 space-y-0.5 text-xs text-gray-500">
         <li v-for="p in payments" :key="p.id">{{ new Date(p.paid_at).toLocaleDateString() }} &middot; {{ p.method }} &middot; €{{ (p.amount_cents / 100).toFixed(2) }}</li>
       </ul>

@@ -48,6 +48,14 @@ const activeTab = computed({
 const layoutVariant = ref<'rail' | 'summary'>('rail')
 
 const whatsAppOpen = ref(false)
+
+// Charge (sidebar) should always land on Billing's "Take payment" panel --
+// switching tabs alone is a no-op when Billing is already the active tab.
+const chargeRequested = ref(false)
+function handleCharge() {
+  chargeRequested.value = true
+  activeTab.value = 'billing'
+}
 </script>
 
 <template>
@@ -108,7 +116,7 @@ const whatsAppOpen = ref(false)
           :financial-loading="financialLoading"
           class="sticky top-6"
           @message="whatsAppOpen = true"
-          @charge="activeTab = 'billing'"
+          @charge="handleCharge"
         />
 
         <div class="min-w-0 flex-1">
@@ -139,7 +147,12 @@ const whatsAppOpen = ref(false)
               :preferred-language="patient.preferred_language"
             />
             <PatientsVisitNotesTab v-else-if="activeTab === 'visit-notes'" :patient-id="patientId" />
-            <PatientsBillingTab v-else-if="activeTab === 'billing'" :patient-id="patientId" />
+            <PatientsBillingTab
+              v-else-if="activeTab === 'billing'"
+              :patient-id="patientId"
+              :open-payment-trigger="chargeRequested"
+              @payment-trigger-consumed="chargeRequested = false"
+            />
             <PatientsCommunicationsTab
               v-else-if="activeTab === 'communications'"
               :patient-id="patientId"

@@ -11,29 +11,52 @@ interface ActivePackage {
   price_cents: number
 }
 
+interface FinancialState {
+  loading: Ref<boolean>
+  balanceCents: Ref<number>
+  creditLedgerCents: Ref<number>
+  activeMembership: Ref<ActiveMembership | null>
+  activePackages: Ref<ActivePackage[]>
+}
+
+// Keyed by patient id and shared across every call site (patient detail page,
+// its sidebar, the Billing tab, the calendar's appointment modal/hover card,
+// mobile) -- without this each call created its own private refs, so e.g.
+// recording a payment in the Billing tab refreshed only that tab's own copy
+// and the sidebar's balance stayed stale until a full page reload.
+const cache = new Map<string, FinancialState>()
+
+function stateFor(id: string | null | undefined): FinancialState {
+  const key = id || '__none__'
+  let state = cache.get(key)
+  if (!state) {
+    state = {
+      loading: ref(true),
+      balanceCents: ref(0),
+      creditLedgerCents: ref(0),
+      activeMembership: ref(null),
+      activePackages: ref([]),
+    }
+    cache.set(key, state)
+  }
+  return state
+}
+
 export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) {
   const supabase = useSupabaseClient()
   const id = computed(() => toValue(patientId))
 
-  const loading = ref(true)
-  // Positive = clinic owes the patient (credit), negative = patient owes the clinic —
-  // matches the sign convention already used for patients.balance_cents elsewhere,
-  // but computed live from invoices/payments rather than trusting that column, which
-  // is only ever written at import time and never kept in sync afterward.
-  const balanceCents = ref(0)
-  const creditLedgerCents = ref(0)
-  const activeMembership = ref<ActiveMembership | null>(null)
-  const activePackages = ref<ActivePackage[]>([])
-
   async function load() {
-    if (!id.value) return
-    loading.value = true
+    const currentId = id.value
+    if (!currentId) return
+    const state = stateFor(currentId)
+    state.loading.value = true
 
     const [{ data: invoices }, { data: memberships }, { data: packages }, { data: credits }] = await Promise.all([
-      supabase.from('invoices').select('id, total_cents').eq('patient_id', id.value).neq('status', 'void'),
-      supabase.from('patient_memberships').select('id, membership_name, status').eq('patient_id', id.value).eq('status', 'active'),
-      supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used, price_cents').eq('patient_id', id.value).order('purchased_at', { ascending: false }),
-      supabase.from('account_credits').select('amount_cents').eq('patient_id', id.value),
+      supabase.from('invoices').select('id, total_cents').eq('patient_id', currentId).neq('status', 'void'),
+      supabase.from('patient_memberships').select('id, membership_name, status').eq('patient_id', currentId).eq('status', 'active'),
+      supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used, price_cents').eq('patient_id', currentId).order('purchased_at', { ascending: false }),
+      supabase.from('account_credits').select('amount_cents').eq('patient_id', currentId),
     ])
 
     const invoiceIds = (invoices ?? []).map((i) => i.id)
@@ -43,17 +66,28 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
       paidCents = (payments ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
     }
     const invoicedCents = (invoices ?? []).reduce((sum, i) => sum + i.total_cents, 0)
-    creditLedgerCents.value = (credits ?? []).reduce((sum, c) => sum + c.amount_cents, 0)
-    balanceCents.value = paidCents - invoicedCents + creditLedgerCents.value
+    state.creditLedgerCents.value = (credits ?? []).reduce((sum, c) => sum + c.amount_cents, 0)
+    // Positive = clinic owes the patient (credit), negative = patient owes the clinic --
+    // matches the sign convention already used for patients.balance_cents elsewhere,
+    // but computed live from invoices/payments rather than trusting that column, which
+    // is only ever written at import time and never kept in sync afterward.
+    state.balanceCents.value = paidCents - invoicedCents + state.creditLedgerCents.value
 
-    activeMembership.value = memberships?.[0] ?? null
-    activePackages.value = (packages ?? []).filter((p) => p.sessions_used < p.sessions_total)
+    state.activeMembership.value = memberships?.[0] ?? null
+    state.activePackages.value = (packages ?? []).filter((p) => p.sessions_used < p.sessions_total)
 
-    loading.value = false
+    state.loading.value = false
   }
 
   onMounted(load)
   watch(id, load)
 
-  return { loading, balanceCents, creditLedgerCents, activeMembership, activePackages, refresh: load }
+  return {
+    loading: computed(() => stateFor(id.value).loading.value),
+    balanceCents: computed(() => stateFor(id.value).balanceCents.value),
+    creditLedgerCents: computed(() => stateFor(id.value).creditLedgerCents.value),
+    activeMembership: computed(() => stateFor(id.value).activeMembership.value),
+    activePackages: computed(() => stateFor(id.value).activePackages.value),
+    refresh: load,
+  }
 }

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-const props = defineProps<{ patientId: string }>()
+const props = defineProps<{ patientId: string; openPaymentTrigger?: boolean }>()
+const emit = defineEmits<{ paymentTriggerConsumed: [] }>()
 
 interface InvoiceRow {
   id: string
@@ -256,7 +257,18 @@ async function loadAll() {
 onMounted(() => {
   loadAll()
   loadCreditHistory()
+  maybeOpenPaymentFromTrigger()
 })
+// The sidebar's "Charge" button sets this to jump straight to the "Take
+// payment" panel -- both when it just switched the parent onto this tab
+// (this component mounts fresh, handled above) and when this tab was
+// already active (no remount, so the prop's own change is what fires this).
+function maybeOpenPaymentFromTrigger() {
+  if (!props.openPaymentTrigger) return
+  activePanel.value = 'payment'
+  emit('paymentTriggerConsumed')
+}
+watch(() => props.openPaymentTrigger, maybeOpenPaymentFromTrigger)
 
 const hasCard = computed(() => !!stripeCustomer.value?.default_payment_method_id)
 const unpaidInvoices = computed(() => invoices.value.filter((i) => i.status === 'unpaid'))

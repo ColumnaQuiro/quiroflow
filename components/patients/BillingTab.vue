@@ -50,6 +50,7 @@ interface StripeEventRow { id: string; payment_schedule_id: string; period_start
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const { can } = usePermission()
 
 const { balanceCents, creditLedgerCents, refresh: refreshCreditSummary } = usePatientFinancialSummary(() => props.patientId)
 const creditHistory = ref<{ id: string; amount_cents: number; reason: string | null; method: string | null; created_at: string }[]>([])
@@ -335,7 +336,7 @@ async function sendInvoiceEmail(invoiceId: string) {
   sendingInvoiceId.value = invoiceId
   sendResultInvoiceId.value = ''
   try {
-    await $fetch(`/api/invoices/${invoiceId}/send`, { method: 'POST' })
+    await useStaffFetch(`/api/invoices/${invoiceId}/send`, { method: 'POST' })
     sendResultMessage.value = 'Sent'
   } catch (e: any) {
     sendResultMessage.value = e?.data?.message ?? 'Failed to send'
@@ -345,6 +346,16 @@ async function sendInvoiceEmail(invoiceId: string) {
   setTimeout(() => {
     if (sendResultInvoiceId.value === invoiceId) sendResultInvoiceId.value = ''
   }, 3000)
+}
+
+// Deleting cascades to this invoice's own line items and payments (both
+// on delete cascade) -- the intended use is fixing a mis-entered sale or
+// payment by deleting the wrong invoice outright and redoing it correctly,
+// rather than trying to edit amounts in place after the fact.
+async function deleteInvoice(invoice: InvoiceRow) {
+  if (!confirm(`Delete invoice ${invoice.invoice_number} (${money(invoice.total_cents)})? This also removes any payments recorded against it. This can't be undone.`)) return
+  await supabase.from('invoices').delete().eq('id', invoice.id)
+  await Promise.all([loadAll(), refreshCreditSummary()])
 }
 
 const hasCard = computed(() => !!stripeCustomer.value?.default_payment_method_id)
@@ -381,7 +392,7 @@ async function setUpPackageAutopay(purchase: PackagePurchaseRow) {
   autopayError.value = ''
   settingUpAutopay.value = true
   try {
-    await $fetch('/api/stripe/create-schedule', {
+    await useStaffFetch('/api/stripe/create-schedule', {
       method: 'POST',
       body: {
         patientId: props.patientId,
@@ -407,7 +418,7 @@ async function setUpMembershipAutopay(m: PatientMembershipRow) {
   autopayError.value = ''
   settingUpAutopay.value = true
   try {
-    await $fetch('/api/stripe/create-schedule', {
+    await useStaffFetch('/api/stripe/create-schedule', {
       method: 'POST',
       body: {
         patientId: props.patientId,
@@ -429,7 +440,7 @@ async function setUpMembershipAutopay(m: PatientMembershipRow) {
 
 async function cancelAutopay(scheduleId: string) {
   if (!confirm('Cancel automatic Stripe billing for this?')) return
-  await $fetch('/api/stripe/cancel-schedule', { method: 'POST', body: { paymentScheduleId: scheduleId } })
+  await useStaffFetch('/api/stripe/cancel-schedule', { method: 'POST', body: { paymentScheduleId: scheduleId } })
   await loadAll()
 }
 
@@ -485,6 +496,13 @@ async function sellPackage() {
 async function useSession(purchase: PackagePurchaseRow) {
   if (purchase.sessions_used >= purchase.sessions_total) return
   await supabase.from('package_purchases').update({ sessions_used: purchase.sessions_used + 1 }).eq('id', purchase.id)
+  await loadAll()
+}
+
+async function deletePackagePurchase(purchase: PackagePurchaseRow) {
+  const usedWarning = purchase.sessions_used > 0 ? ` ${purchase.sessions_used} of ${purchase.sessions_total} sessions have already been used.` : ''
+  if (!confirm(`Delete "${purchase.package_name}"? This can't be undone.${usedWarning}`)) return
+  await supabase.from('package_purchases').delete().eq('id', purchase.id)
   await loadAll()
 }
 
@@ -737,6 +755,17 @@ function money(cents: number) {
                   <path d="M3 7l9 6 9-6M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1z" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
               </button>
+              <button
+                v-if="can('financials_edit_all')"
+                type="button"
+                title="Delete this invoice"
+                class="ml-2 text-ink-faint hover:text-danger-text"
+                @click="deleteInvoice(invoice)"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2m3 0-1 14a1 1 0 01-1 1H7a1 1 0 01-1-1L5 6h14z" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </button>
             </td>
           </tr>
         </tbody>
@@ -769,6 +798,9 @@ function money(cents: number) {
                   @click="useSession(p)"
                 >
                   Log session
+                </button>
+                <button v-if="can('billing_config')" type="button" class="text-[11.5px] font-medium text-danger-text hover:text-danger-text/80" @click="deletePackagePurchase(p)">
+                  Delete
                 </button>
               </div>
             </div>

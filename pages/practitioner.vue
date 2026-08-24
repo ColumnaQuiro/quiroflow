@@ -19,7 +19,6 @@
 interface Room { id: string; name: string }
 interface AppointmentType { id: string; name: string; duration_minutes: number; color: string; default_price_cents: number }
 interface TeamMember { id: string; full_name: string; color: string }
-interface PatientOption { id: string; first_name: string; last_name: string | null }
 
 interface AppointmentRow {
   id: string
@@ -51,7 +50,6 @@ const selectedAppointment = ref<AppointmentRow | null>(null)
 const rooms = ref<Room[]>([])
 const appointmentTypes = ref<AppointmentType[]>([])
 const teamMembers = ref<TeamMember[]>([])
-const patients = ref<PatientOption[]>([])
 const appointments = ref<AppointmentRow[]>([])
 const chartedAppointmentIds = ref<Set<string>>(new Set())
 const loading = ref(true)
@@ -86,14 +84,12 @@ function formatTime(iso: string) {
 const weekDays = computed(() => Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(anchorDate.value), i)))
 
 async function loadReferenceData() {
-  const [{ data: types }, { data: members }, { data: pts }] = await Promise.all([
+  const [{ data: types }, { data: members }] = await Promise.all([
     supabase.from('appointment_types').select('id, name, duration_minutes, color, default_price_cents').order('name'),
     supabase.from('team_members').select('id, full_name, color').order('full_name'),
-    supabase.from('patients').select('id, first_name, last_name').order('first_name'),
   ])
   appointmentTypes.value = types ?? []
   teamMembers.value = members ?? []
-  patients.value = pts ?? []
 }
 
 async function loadRooms() {
@@ -420,7 +416,6 @@ const headerMeta = computed(() => {
       :rooms="rooms"
       :appointment-types="appointmentTypes"
       :team-members="teamMembers"
-      :patients="patients"
       :appointment="editingAppointment ?? undefined"
       initial-tab="notes"
       @close="modalOpen = false"

@@ -57,8 +57,13 @@ async function load() {
   loading.value = false
 }
 onMounted(load)
+// Bounded on purpose -- this only backs the "+ New" picker's empty-query
+// browse list. It used to fetch every patient unbounded, which PostgREST
+// silently caps well under most accounts' real patient counts, making
+// patients past the cap unsearchable here (searchComposePatients below
+// queries the DB directly instead, so it isn't affected).
 onMounted(async () => {
-  const { data } = await supabase.from('patients').select('id, first_name, last_name').order('first_name')
+  const { data } = await supabase.from('patients').select('id, first_name, last_name').order('first_name').limit(20)
   patients.value = data ?? []
 })
 
@@ -106,11 +111,25 @@ const thread = computed(() =>
 const composeOpen = ref(false)
 const composeQuery = ref('')
 const composeEl = ref<HTMLElement | null>(null)
-const filteredComposePatients = computed(() => {
-  if (!composeQuery.value.trim()) return patients.value.slice(0, 20)
-  const q = composeQuery.value.trim().toLowerCase()
-  return patients.value.filter((p) => `${p.first_name} ${p.last_name ?? ''}`.toLowerCase().includes(q)).slice(0, 20)
+const composeSearchResults = ref<PatientOption[]>([])
+let composeSearchTimer: ReturnType<typeof setTimeout>
+watch(composeQuery, (q) => {
+  clearTimeout(composeSearchTimer)
+  if (!q.trim()) {
+    composeSearchResults.value = []
+    return
+  }
+  composeSearchTimer = setTimeout(async () => {
+    const { data } = await supabase
+      .from('patients')
+      .select('id, first_name, last_name')
+      .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%`)
+      .order('first_name')
+      .limit(20)
+    composeSearchResults.value = data ?? []
+  }, 250)
 })
+const filteredComposePatients = computed(() => (composeQuery.value.trim() ? composeSearchResults.value : patients.value))
 function onClickOutsideCompose(e: MouseEvent) {
   if (composeEl.value && !composeEl.value.contains(e.target as Node)) composeOpen.value = false
 }

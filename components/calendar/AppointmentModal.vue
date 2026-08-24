@@ -23,7 +23,6 @@ const props = defineProps<{
   rooms: RoomOption[]
   appointmentTypes: AppointmentTypeOption[]
   teamMembers: TeamMemberOption[]
-  patients: PatientOption[]
   appointment?: EditingAppointment
   prefillDate?: string
   prefillTime?: string
@@ -68,18 +67,51 @@ watch(appointmentTypeId, (id) => {
   if (type) duration.value = type.duration_minutes
 })
 
-const filteredPatients = computed(() => {
-  if (!patientQuery.value) return props.patients.slice(0, 20)
-  const q = patientQuery.value.toLowerCase()
-  return props.patients
-    .filter((p) => `${p.first_name} ${p.last_name ?? ''}`.toLowerCase().includes(q))
-    .slice(0, 20)
+// Patients aren't preloaded -- an account can have thousands, and PostgREST
+// silently caps an unfiltered/unlimited select well under that, which used
+// to make patients past the cap unfindable here even though they showed up
+// fine in the (already server-side-searched) command palette. Searches the
+// DB directly instead, same approach as AppCommandPalette.vue.
+const searchResults = ref<PatientOption[]>([])
+let searchTimer: ReturnType<typeof setTimeout>
+watch(patientQuery, (q) => {
+  clearTimeout(searchTimer)
+  if (!q.trim()) {
+    searchResults.value = []
+    return
+  }
+  searchTimer = setTimeout(async () => {
+    const { data } = await supabase
+      .from('patients')
+      .select('id, first_name, last_name')
+      .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%`)
+      .order('first_name')
+      .limit(20)
+    searchResults.value = data ?? []
+  }, 250)
 })
 
-const selectedPatientLabel = computed(() => {
-  const p = props.patients.find((p) => p.id === patientId.value)
-  return p ? `${p.first_name} ${p.last_name ?? ''}` : ''
-})
+const selectedPatient = ref<PatientOption | null>(null)
+const selectedPatientLabel = computed(() => (selectedPatient.value ? `${selectedPatient.value.first_name} ${selectedPatient.value.last_name ?? ''}` : ''))
+
+function selectPatient(p: PatientOption) {
+  patientId.value = p.id
+  selectedPatient.value = p
+  patientQuery.value = ''
+}
+
+// Editing an existing appointment starts with a patient already selected,
+// so fetch just that one record for the label instead of searching.
+if (props.appointment?.patient_id) {
+  supabase
+    .from('patients')
+    .select('id, first_name, last_name')
+    .eq('id', props.appointment.patient_id)
+    .single()
+    .then(({ data }) => {
+      if (data) selectedPatient.value = data
+    })
+}
 
 const selectedAppointmentType = computed(() => props.appointmentTypes.find((t) => t.id === appointmentTypeId.value))
 
@@ -199,14 +231,14 @@ async function remove() {
           />
           <ul v-if="patientQuery" class="mt-1 max-h-40 overflow-y-auto rounded-ctl border border-line">
             <li
-              v-for="p in filteredPatients"
+              v-for="p in searchResults"
               :key="p.id"
               class="cursor-pointer px-3 py-1.5 text-[13px] text-ink-700 hover:bg-surface-subtle"
-              @click="patientId = p.id; patientQuery = ''"
+              @click="selectPatient(p)"
             >
               {{ p.first_name }} {{ p.last_name }}
             </li>
-            <li v-if="filteredPatients.length === 0" class="px-3 py-1.5 text-[13px] text-ink-faint">No matches</li>
+            <li v-if="searchResults.length === 0" class="px-3 py-1.5 text-[13px] text-ink-faint">No matches</li>
           </ul>
           <p v-if="selectedPatientLabel && !patientQuery" class="mt-1 text-[12.5px] text-ink-muted2">
             Selected: <span class="font-medium text-ink-900">{{ selectedPatientLabel }}</span>

@@ -65,7 +65,6 @@ const OVERFLOW_CHIP_PX = 20
 interface Room { id: string; name: string }
 interface AppointmentType { id: string; name: string; duration_minutes: number; color: string; default_price_cents: number }
 interface TeamMember { id: string; full_name: string; color: string }
-interface PatientOption { id: string; first_name: string; last_name: string | null }
 
 interface AvailabilityBlock { id: string; room_id: string | null; starts_at: string; ends_at: string; note: string | null }
 
@@ -103,7 +102,6 @@ const anchorDate = ref(new Date())
 const rooms = ref<Room[]>([])
 const appointmentTypes = ref<AppointmentType[]>([])
 const teamMembers = ref<TeamMember[]>([])
-const patients = ref<PatientOption[]>([])
 const appointments = ref<AppointmentRow[]>([])
 const availabilityBlocks = ref<AvailabilityBlock[]>([])
 const loading = ref(true)
@@ -209,14 +207,12 @@ function selectMiniDate(d: Date) {
 }
 
 async function loadReferenceData() {
-  const [{ data: types }, { data: members }, { data: pts }] = await Promise.all([
+  const [{ data: types }, { data: members }] = await Promise.all([
     supabase.from('appointment_types').select('id, name, duration_minutes, color, default_price_cents').order('name'),
     supabase.from('team_members').select('id, full_name, color').order('full_name'),
-    supabase.from('patients').select('id, first_name, last_name').order('first_name'),
   ])
   appointmentTypes.value = types ?? []
   teamMembers.value = members ?? []
-  patients.value = pts ?? []
 }
 
 async function loadRooms() {
@@ -1120,7 +1116,6 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
       :rooms="rooms"
       :appointment-types="appointmentTypes"
       :team-members="teamMembers"
-      :patients="patients"
       :appointment="editingAppointment ?? undefined"
       :prefill-date="prefill?.date"
       :prefill-time="prefill?.time"

@@ -1297,6 +1297,59 @@ export type Database = {
           },
         ]
       }
+      package_purchase_shares: {
+        Row: {
+          account_id: string
+          created_at: string
+          id: string
+          package_purchase_id: string
+          patient_id: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          id?: string
+          package_purchase_id: string
+          patient_id: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          id?: string
+          package_purchase_id?: string
+          patient_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "package_purchase_shares_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "package_purchase_shares_package_purchase_id_fkey"
+            columns: ["package_purchase_id"]
+            isOneToOne: false
+            referencedRelation: "package_purchases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "package_purchase_shares_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "package_purchase_shares_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "recall_candidates"
+            referencedColumns: ["patient_id"]
+          },
+        ]
+      }
       package_purchases: {
         Row: {
           account_id: string
@@ -1778,12 +1831,14 @@ export type Database = {
           national_id: string | null
           notes: string | null
           occupation: string | null
+          photo_storage_path: string | null
           preferred_language: string
           recall_priority: boolean
           recall_status: string
           red_flags: string | null
           referral_source: string | null
           reminder_channel: string
+          search_name: string | null
           status: string
           sticky_note: string | null
           tags: string[]
@@ -1816,12 +1871,14 @@ export type Database = {
           national_id?: string | null
           notes?: string | null
           occupation?: string | null
+          photo_storage_path?: string | null
           preferred_language?: string
           recall_priority?: boolean
           recall_status?: string
           red_flags?: string | null
           referral_source?: string | null
           reminder_channel?: string
+          search_name?: string | null
           status?: string
           sticky_note?: string | null
           tags?: string[]
@@ -1854,12 +1911,14 @@ export type Database = {
           national_id?: string | null
           notes?: string | null
           occupation?: string | null
+          photo_storage_path?: string | null
           preferred_language?: string
           recall_priority?: boolean
           recall_status?: string
           red_flags?: string | null
           referral_source?: string | null
           reminder_channel?: string
+          search_name?: string | null
           status?: string
           sticky_note?: string | null
           tags?: string[]
@@ -2031,6 +2090,52 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "invoices"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      photo_upload_tokens: {
+        Row: {
+          account_id: string
+          created_at: string
+          patient_id: string
+          token: string
+          used_at: string | null
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          patient_id: string
+          token?: string
+          used_at?: string | null
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          patient_id?: string
+          token?: string
+          used_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "photo_upload_tokens_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "photo_upload_tokens_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "photo_upload_tokens_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "recall_candidates"
+            referencedColumns: ["patient_id"]
           },
         ]
       }
@@ -2683,6 +2788,7 @@ export type Database = {
         Returns: string
       }
       slugify: { Args: { input: string }; Returns: string }
+      unaccent_lower: { Args: { input: string }; Returns: string }
     }
     Enums: {
       [_ in never]: never

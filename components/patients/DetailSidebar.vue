@@ -7,7 +7,7 @@ const props = defineProps<{
   creditCents: number
   financialLoading: boolean
 }>()
-const emit = defineEmits<{ message: []; charge: [] }>()
+const emit = defineEmits<{ message: []; charge: []; photoUpdated: [] }>()
 
 const canContact = computed(() => !props.patient.is_minor && !props.patient.do_not_contact)
 
@@ -76,9 +76,7 @@ function money(cents: number) {
   <aside class="w-[296px] shrink-0 space-y-4">
     <div class="rounded-card border border-line bg-surface p-4 shadow-card">
       <div class="flex items-center gap-3">
-        <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[14px] font-semibold text-brand-text">
-          {{ initials() }}
-        </span>
+        <PatientsPhotoUpload :patient-id="patient.id" :photo-storage-path="patient.photo_storage_path" :initials="initials()" @uploaded="emit('photoUpdated')" />
         <div class="min-w-0">
           <p class="truncate text-[15px] font-[620] text-ink-900">{{ patient.first_name }} {{ patient.last_name }}</p>
           <p class="text-[12px] text-ink-muted2">{{ identityMeta }}</p>

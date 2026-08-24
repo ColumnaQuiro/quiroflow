@@ -117,6 +117,7 @@ function handleCharge() {
           class="sticky top-6"
           @message="whatsAppOpen = true"
           @charge="handleCharge"
+          @photo-updated="loadPatient"
         />
 
         <div class="min-w-0 flex-1">

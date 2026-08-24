@@ -186,7 +186,7 @@ function copy(text: string) {
           </form>
           <p v-if="error" class="mt-2 text-[12.5px] text-danger-text">{{ error }}</p>
 
-          <h2 class="mt-8 text-[15px] font-[620] text-ink-900">Online Booking</h2>
+          <h2 id="online-booking" class="mt-8 text-[15px] font-[620] text-ink-900">Online Booking</h2>
           <p class="mt-1 text-[13px] text-ink-muted2">Let patients book their own appointments from a public page or an iframe embedded on your website.</p>
 
           <div class="mt-3 space-y-2">

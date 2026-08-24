@@ -2,6 +2,12 @@
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
   devtools: { enabled: true },
+  // mobile/ is its own separate Nuxt project (own pages/node_modules) plus
+  // native iOS/Android build output -- tens of thousands of files this app
+  // has no reason to scan or watch, and watching them blows past macOS's
+  // per-process open-file limit (EMFILE) once CocoaPods/Gradle populate
+  // mobile/ios and mobile/android.
+  ignore: ['mobile/**'],
   app: {
     head: {
       link: [
@@ -72,6 +78,9 @@ export default defineNuxtConfig({
   vite: {
     server: {
       allowedHosts: ['.localtest.me'],
+      watch: {
+        ignored: ['**/mobile/**'],
+      },
     },
   },
 })

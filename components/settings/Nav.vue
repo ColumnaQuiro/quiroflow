@@ -17,6 +17,7 @@ const allGroups: NavGroup[] = [
     label: 'Clinic',
     items: [
       { label: 'Clinics', to: '/settings/clinics', perm: 'clinic_config' },
+      { label: 'Online Booking', to: '/settings/clinics#online-booking', perm: 'clinic_config' },
       { label: 'Team Members', to: '/settings/team', perm: 'team_admin' },
       { label: 'Practitioners', to: '/settings/practitioners', perm: 'team_admin' },
       { label: 'Roles & Permissions', to: '/settings/roles', perm: 'roles_admin' },

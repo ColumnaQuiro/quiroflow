@@ -95,6 +95,71 @@ async function updateColor(type: Tables<'appointment_types'>, value: string) {
   type.color = value
   await supabase.from('appointment_types').update({ color: value }).eq('id', type.id)
 }
+
+// --- Per-practitioner overrides ---
+// Different practitioners can need different amounts of time (or charge
+// differently) for the same appointment type. Most (type, practitioner)
+// pairs have no row here at all -- absence means "use this type's own
+// duration/price", so the table stays sparse instead of needing one row
+// per practitioner per type up front.
+interface TeamMemberOption { id: string; full_name: string }
+const teamMembers = ref<TeamMemberOption[]>([])
+const overrides = ref<Tables<'appointment_type_overrides'>[]>([])
+const openOverridesTypeId = ref<string | null>(null)
+
+async function loadOverridesData() {
+  const [{ data: members }, { data: ovr }] = await Promise.all([
+    supabase.from('team_members').select('id, full_name').order('full_name'),
+    supabase.from('appointment_type_overrides').select('*'),
+  ])
+  teamMembers.value = members ?? []
+  overrides.value = ovr ?? []
+}
+onMounted(loadOverridesData)
+
+function toggleOverrides(typeId: string) {
+  openOverridesTypeId.value = openOverridesTypeId.value === typeId ? null : typeId
+}
+
+function overrideFor(typeId: string, teamMemberId: string) {
+  return overrides.value.find((o) => o.appointment_type_id === typeId && o.team_member_id === teamMemberId) ?? null
+}
+
+async function saveOverride(typeId: string, teamMemberId: string, patch: { duration_minutes?: number | null; price_cents?: number | null }) {
+  const existing = overrideFor(typeId, teamMemberId)
+  const duration_minutes = 'duration_minutes' in patch ? (patch.duration_minutes ?? null) : (existing?.duration_minutes ?? null)
+  const price_cents = 'price_cents' in patch ? (patch.price_cents ?? null) : (existing?.price_cents ?? null)
+
+  if (duration_minutes === null && price_cents === null) {
+    if (existing) {
+      await supabase.from('appointment_type_overrides').delete().eq('id', existing.id)
+      overrides.value = overrides.value.filter((o) => o.id !== existing.id)
+    }
+    return
+  }
+
+  if (existing) {
+    await supabase.from('appointment_type_overrides').update({ duration_minutes, price_cents }).eq('id', existing.id)
+    existing.duration_minutes = duration_minutes
+    existing.price_cents = price_cents
+  } else {
+    const { data } = await supabase
+      .from('appointment_type_overrides')
+      .insert({ account_id: store.accountId!, appointment_type_id: typeId, team_member_id: teamMemberId, duration_minutes, price_cents })
+      .select('*')
+      .single()
+    if (data) overrides.value.push(data)
+  }
+}
+
+function updateOverrideDuration(typeId: string, teamMemberId: string, value: string) {
+  const next = value.trim() === '' ? null : parseInt(value, 10)
+  saveOverride(typeId, teamMemberId, { duration_minutes: Number.isFinite(next) ? next : null })
+}
+function updateOverridePrice(typeId: string, teamMemberId: string, value: string) {
+  const next = value.trim() === '' ? null : Math.round((parseFloat(value) || 0) * 100)
+  saveOverride(typeId, teamMemberId, { price_cents: next })
+}
 </script>
 
 <template>
@@ -116,16 +181,18 @@ async function updateColor(type: Tables<'appointment_types'>, value: string) {
                   <th class="px-4 py-2">Stage</th>
                   <th class="px-4 py-2">Online booking</th>
                   <th class="px-4 py-2"></th>
+                  <th class="px-4 py-2"></th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-line-row">
                 <tr v-if="loading">
-                  <td colspan="6" class="px-4 py-6 text-center text-ink-faint">Loading…</td>
+                  <td colspan="7" class="px-4 py-6 text-center text-ink-faint">Loading…</td>
                 </tr>
                 <tr v-else-if="types.length === 0">
-                  <td colspan="6" class="px-4 py-6 text-center text-ink-faint">No appointment types yet.</td>
+                  <td colspan="7" class="px-4 py-6 text-center text-ink-faint">No appointment types yet.</td>
                 </tr>
-                <tr v-for="t in types" :key="t.id">
+                <template v-for="t in types" :key="t.id">
+                <tr>
                   <td class="px-4 py-2.5 text-ink-700">
                     <div class="flex items-center gap-2">
                       <input
@@ -183,10 +250,53 @@ async function updateColor(type: Tables<'appointment_types'>, value: string) {
                       Bookable
                     </label>
                   </td>
+                  <td class="px-4 py-2.5">
+                    <button type="button" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover" @click="toggleOverrides(t.id)">
+                      Overrides
+                    </button>
+                  </td>
                   <td class="px-4 py-2.5 text-right">
                     <button type="button" class="text-ink-faint hover:text-danger-text" @click="removeType(t.id)">✕</button>
                   </td>
                 </tr>
+                <tr v-if="openOverridesTypeId === t.id">
+                  <td colspan="7" class="bg-surface-subtle px-4 py-3">
+                    <p class="text-[12px] text-ink-muted2">
+                      Per-practitioner duration/price for <span class="font-medium text-ink-700">{{ t.name }}</span> — leave blank to use the defaults above.
+                    </p>
+                    <div class="mt-2 space-y-1.5">
+                      <div v-for="m in teamMembers" :key="m.id" class="flex items-center gap-3 text-[13px]">
+                        <span class="w-40 shrink-0 truncate text-ink-700">{{ m.full_name }}</span>
+                        <div class="flex items-center gap-1">
+                          <input
+                            :value="overrideFor(t.id, m.id)?.duration_minutes ?? ''"
+                            type="number"
+                            min="5"
+                            step="5"
+                            :placeholder="String(t.duration_minutes)"
+                            class="w-16 rounded-ctlSm border border-line-control bg-surface px-1.5 py-1 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+                            @change="updateOverrideDuration(t.id, m.id, ($event.target as HTMLInputElement).value)"
+                          />
+                          <span class="text-ink-faint">min</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                          <span class="text-ink-faint">€</span>
+                          <input
+                            :value="overrideFor(t.id, m.id)?.price_cents != null ? (overrideFor(t.id, m.id)!.price_cents! / 100).toFixed(2) : ''"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            :placeholder="(t.default_price_cents / 100).toFixed(2)"
+                            class="w-20 rounded-ctlSm border border-line-control bg-surface px-1.5 py-1 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+                            @change="updateOverridePrice(t.id, m.id, ($event.target as HTMLInputElement).value)"
+                          />
+                        </div>
+                      </div>
+                      <p v-if="teamMembers.length === 0" class="text-[12.5px] text-ink-faint">No team members yet.</p>
+                    </div>
+                  </td>
+                </tr>
+                </template>
               </tbody>
             </table>
           </div>

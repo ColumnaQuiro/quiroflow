@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { hasBusinessHoursConfigured, isWithinBusinessHours } from '~/utils/businessHours'
 import { computeBonoStatus } from '~/utils/bonoStatus'
+import { effectiveDuration, effectivePriceCents, type AppointmentTypeOverride } from '~/utils/appointmentOverrides'
 
 interface RoomOption { id: string; name: string }
 interface AppointmentTypeOption { id: string; name: string; duration_minutes: number; color: string; default_price_cents: number }
@@ -62,9 +63,17 @@ const status = ref(props.appointment?.status ?? 'booked')
 const error = ref('')
 const saving = ref(false)
 
-watch(appointmentTypeId, (id) => {
-  const type = props.appointmentTypes.find((t) => t.id === id)
-  if (type) duration.value = type.duration_minutes
+// Small, account-wide, bounded by types x practitioners -- unlike the
+// patient search below, safe to just bulk-fetch once.
+const overrides = ref<AppointmentTypeOverride[]>([])
+onMounted(async () => {
+  const { data } = await supabase.from('appointment_type_overrides').select('appointment_type_id, team_member_id, duration_minutes, price_cents')
+  overrides.value = data ?? []
+})
+
+watch([appointmentTypeId, practitionerId], ([typeId, practId]) => {
+  const type = props.appointmentTypes.find((t) => t.id === typeId)
+  if (type) duration.value = effectiveDuration(type.duration_minutes, typeId, practId, overrides.value)
 })
 
 // Patients aren't preloaded -- an account can have thousands, and PostgREST
@@ -114,6 +123,11 @@ if (props.appointment?.patient_id) {
 }
 
 const selectedAppointmentType = computed(() => props.appointmentTypes.find((t) => t.id === appointmentTypeId.value))
+const effectivePrice = computed(() =>
+  selectedAppointmentType.value
+    ? effectivePriceCents(selectedAppointmentType.value.default_price_cents, appointmentTypeId.value, practitionerId.value, overrides.value)
+    : 0,
+)
 
 // Only loads once a patient is actually selected -- usePatientFinancialSummary
 // no-ops on an empty id, and re-fetches automatically as patientId changes.
@@ -124,7 +138,7 @@ const bonoStatus = computed(() =>
     activePackage: activePackages.value[0]
       ? { sessionsTotal: activePackages.value[0].sessions_total, sessionsUsed: activePackages.value[0].sessions_used, priceCents: activePackages.value[0].price_cents }
       : null,
-    appointmentPriceCents: selectedAppointmentType.value?.default_price_cents ?? 0,
+    appointmentPriceCents: effectivePrice.value,
   }),
 )
 
@@ -321,7 +335,7 @@ async function remove() {
           :appointment-id="appointment!.id"
           :patient-id="appointment!.patient_id"
           :appointment-type-name="selectedAppointmentType?.name"
-          :appointment-type-price-cents="selectedAppointmentType?.default_price_cents"
+          :appointment-type-price-cents="effectivePrice"
           @completed="status = 'completed'"
         />
       </div>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { COUNTRIES } from '~/utils/countries'
+import { effectiveDuration, effectivePriceCents, type AppointmentTypeOverride } from '~/utils/appointmentOverrides'
 
 definePageMeta({ layout: false })
 
@@ -27,6 +28,7 @@ interface BookingInfo {
   clinics: BookingClinic[]
   appointment_types: BookingAppointmentType[]
   team_members: BookingTeamMember[]
+  overrides: AppointmentTypeOverride[]
 }
 
 const route = useRoute()
@@ -44,6 +46,17 @@ const clinic = computed(() => info.value?.clinics.find((c) => c.id === clinicId.
 const appointmentType = computed(() => info.value?.appointment_types.find((t) => t.id === appointmentTypeId.value) ?? null)
 const teamMember = computed(() => info.value?.team_members.find((m) => m.id === teamMemberId.value) ?? null)
 const availablePractitioners = computed(() => (info.value?.team_members ?? []).filter((m) => m.clinic_ids.includes(clinicId.value)))
+
+const effectiveDurationMinutes = computed(() =>
+  appointmentType.value
+    ? effectiveDuration(appointmentType.value.duration_minutes, appointmentTypeId.value, teamMemberId.value, info.value?.overrides ?? [])
+    : 0,
+)
+const effectivePrice = computed(() =>
+  appointmentType.value
+    ? effectivePriceCents(appointmentType.value.default_price_cents, appointmentTypeId.value, teamMemberId.value, info.value?.overrides ?? [])
+    : 0,
+)
 
 function formatPrice(cents: number) {
   return (cents / 100).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })
@@ -151,7 +164,7 @@ async function selectDate(day: { date: Date; bookable: boolean }) {
 const daySlots = computed(() => {
   if (!selectedDate.value || !appointmentType.value) return []
   const windows = clinic.value?.business_hours?.[WEEKDAY_KEYS[selectedDate.value.getDay()]] ?? []
-  const duration = appointmentType.value.duration_minutes
+  const duration = effectiveDurationMinutes.value
   const now = new Date()
   const slots: Date[] = []
   for (const [startStr, endStr] of windows) {
@@ -358,7 +371,7 @@ if (import.meta.client) {
               </template>
             </div>
 
-            <BookingSummary :clinic="clinic" :appointment-type="appointmentType" :team-member="teamMember" :slot="selectedSlot" :format-price="formatPrice" />
+            <BookingSummary :clinic="clinic" :appointment-type="appointmentType" :price-cents="effectivePrice" :team-member="teamMember" :slot="selectedSlot" :format-price="formatPrice" />
           </div>
         </div>
 
@@ -409,7 +422,7 @@ if (import.meta.client) {
               </UiBtn>
             </form>
 
-            <BookingSummary :clinic="clinic" :appointment-type="appointmentType" :team-member="teamMember" :slot="selectedSlot" :format-price="formatPrice" />
+            <BookingSummary :clinic="clinic" :appointment-type="appointmentType" :price-cents="effectivePrice" :team-member="teamMember" :slot="selectedSlot" :format-price="formatPrice" />
           </div>
         </div>
 

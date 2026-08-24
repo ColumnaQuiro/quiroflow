@@ -1,7 +1,8 @@
 <script setup lang="ts">
 defineProps<{
   clinic: { name: string; address: string | null } | null
-  appointmentType: { name: string; default_price_cents: number } | null
+  appointmentType: { name: string } | null
+  priceCents: number
   teamMember: { full_name: string } | null
   slot: Date | null
   formatPrice: (cents: number) => string
@@ -18,7 +19,7 @@ defineProps<{
       </div>
       <div v-if="appointmentType" class="flex items-center justify-between border-t border-line-divider pt-3">
         <span class="text-ink-700">{{ appointmentType.name }}</span>
-        <span class="font-medium text-ink-900">{{ formatPrice(appointmentType.default_price_cents) }}</span>
+        <span class="font-medium text-ink-900">{{ formatPrice(priceCents) }}</span>
       </div>
       <div v-if="teamMember" class="border-t border-line-divider pt-3 text-ink-700">
         {{ teamMember.full_name }}

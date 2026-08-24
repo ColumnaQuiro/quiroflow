@@ -27,6 +27,7 @@ interface BookingInfo {
   clinics: BookingClinic[]
   appointment_types: BookingAppointmentType[]
   team_members: BookingTeamMember[]
+  overrides: AppointmentTypeOverride[]
 }
 
 const supabase = useSupabaseClient()
@@ -42,6 +43,17 @@ const clinic = computed(() => info.value?.clinics.find((c) => c.id === clinicId.
 const appointmentType = computed(() => info.value?.appointment_types.find((t) => t.id === appointmentTypeId.value) ?? null)
 const teamMember = computed(() => info.value?.team_members.find((m) => m.id === teamMemberId.value) ?? null)
 const availablePractitioners = computed(() => (info.value?.team_members ?? []).filter((m) => m.clinic_ids.includes(clinicId.value)))
+
+const effectiveDurationMinutes = computed(() =>
+  appointmentType.value
+    ? effectiveDuration(appointmentType.value.duration_minutes, appointmentTypeId.value, teamMemberId.value, info.value?.overrides ?? [])
+    : 0,
+)
+const effectivePrice = computed(() =>
+  appointmentType.value
+    ? effectivePriceCents(appointmentType.value.default_price_cents, appointmentTypeId.value, teamMemberId.value, info.value?.overrides ?? [])
+    : 0,
+)
 
 function formatPrice(cents: number) {
   return (cents / 100).toLocaleString(undefined, { style: 'currency', currency: 'EUR' })
@@ -145,7 +157,7 @@ async function selectDate(day: { date: Date; bookable: boolean }) {
 const daySlots = computed(() => {
   if (!selectedDate.value || !appointmentType.value) return []
   const windows = clinic.value?.business_hours?.[WEEKDAY_KEYS[selectedDate.value.getDay()]] ?? []
-  const duration = appointmentType.value.duration_minutes
+  const duration = effectiveDurationMinutes.value
   const now = new Date()
   const slots: Date[] = []
   for (const [startStr, endStr] of windows) {
@@ -282,7 +294,7 @@ async function submitBooking() {
         <p class="text-[13.5px] font-medium text-ink-900">{{ appointmentType?.name }}</p>
         <p class="mt-1 text-[12.5px] text-ink-muted">with {{ teamMember?.full_name }}</p>
         <p class="mt-1 text-[12.5px] text-ink-muted">{{ selectedSlot?.toLocaleString([], { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) }}</p>
-        <p v-if="appointmentType" class="mt-1 text-[12.5px] text-ink-muted">{{ formatPrice(appointmentType.default_price_cents) }}</p>
+        <p v-if="appointmentType" class="mt-1 text-[12.5px] text-ink-muted">{{ formatPrice(effectivePrice) }}</p>
       </div>
       <div>
         <label class="block text-[12.5px] font-medium text-ink-700">Note (optional)</label>

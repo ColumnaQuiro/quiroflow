@@ -283,6 +283,61 @@ export type Database = {
           },
         ]
       }
+      appointment_type_overrides: {
+        Row: {
+          account_id: string
+          appointment_type_id: string
+          created_at: string
+          duration_minutes: number | null
+          id: string
+          price_cents: number | null
+          team_member_id: string
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          appointment_type_id: string
+          created_at?: string
+          duration_minutes?: number | null
+          id?: string
+          price_cents?: number | null
+          team_member_id: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          appointment_type_id?: string
+          created_at?: string
+          duration_minutes?: number | null
+          id?: string
+          price_cents?: number | null
+          team_member_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "appointment_type_overrides_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointment_type_overrides_appointment_type_id_fkey"
+            columns: ["appointment_type_id"]
+            isOneToOne: false
+            referencedRelation: "appointment_types"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointment_type_overrides_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       appointment_types: {
         Row: {
           account_id: string

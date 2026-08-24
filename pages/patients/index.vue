@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Tables } from '~/types/database.types'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
+import { normalizeSearchTerm } from '~/utils/searchText'
 
 type Patient = Pick<
   Tables<'patients'>,
@@ -92,10 +93,10 @@ async function loadPatients() {
       .ilike('number', `%${token}%`)
     const phoneIds = [...new Set((phoneMatches ?? []).map((m) => m.patient_id))]
     const idClause = phoneIds.length > 0 ? `,id.in.(${phoneIds.join(',')})` : ''
-    query = query.or(`first_name.ilike.%${token}%,last_name.ilike.%${token}%,email.ilike.%${token}%${idClause}`)
+    query = query.or(`search_name.ilike.%${normalizeSearchTerm(token)}%,email.ilike.%${token}%${idClause}`)
   } else {
     for (const token of tokens) {
-      query = query.or(`first_name.ilike.%${token}%,last_name.ilike.%${token}%,email.ilike.%${token}%`)
+      query = query.or(`search_name.ilike.%${normalizeSearchTerm(token)}%,email.ilike.%${token}%`)
     }
   }
 
@@ -205,7 +206,7 @@ async function exportCsv() {
       if (statusFilter.value !== 'any') q = q.eq('status', statusFilter.value)
       const tokens = search.value.trim().split(/\s+/).map(sanitizeToken).filter(Boolean)
       for (const token of tokens) {
-        q = q.or(`first_name.ilike.%${token}%,last_name.ilike.%${token}%,email.ilike.%${token}%`)
+        q = q.or(`search_name.ilike.%${normalizeSearchTerm(token)}%,email.ilike.%${token}%`)
       }
       return q.order('first_name').range(from, to)
     })

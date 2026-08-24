@@ -2,6 +2,7 @@
 import { hasBusinessHoursConfigured, isWithinBusinessHours } from '~/utils/businessHours'
 import { computeBonoStatus } from '~/utils/bonoStatus'
 import { effectiveDuration, effectivePriceCents, type AppointmentTypeOverride } from '~/utils/appointmentOverrides'
+import { normalizeSearchTerm } from '~/utils/searchText'
 
 interface RoomOption { id: string; name: string }
 interface AppointmentTypeOption { id: string; name: string; duration_minutes: number; color: string; default_price_cents: number }
@@ -93,7 +94,7 @@ watch(patientQuery, (q) => {
     const { data } = await supabase
       .from('patients')
       .select('id, first_name, last_name')
-      .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%`)
+      .ilike('search_name', `%${normalizeSearchTerm(q.trim())}%`)
       .order('first_name')
       .limit(20)
     searchResults.value = data ?? []
@@ -189,9 +190,14 @@ async function save() {
   if (props.mode === 'create') {
     const newId = (result.data as { id: string } | null)?.id
     if (newId) fire('appointment.booked', { patientId: patientId.value, appointmentId: newId })
-  } else if (status.value !== props.appointment!.status) {
-    const trigger = { completed: 'appointment.completed', cancelled: 'appointment.cancelled', no_show: 'appointment.no_show' }[status.value]
-    if (trigger) fire(trigger, { patientId: patientId.value, appointmentId: props.appointment!.id })
+  } else {
+    if (status.value !== props.appointment!.status) {
+      const trigger = { completed: 'appointment.completed', cancelled: 'appointment.cancelled', no_show: 'appointment.no_show' }[status.value]
+      if (trigger) fire(trigger, { patientId: patientId.value, appointmentId: props.appointment!.id })
+    }
+    // Independent of the status check above -- a save can change both the
+    // time and the status at once, and each should fire its own automation.
+    if (timeChanged) fire('appointment.rescheduled', { patientId: patientId.value, appointmentId: props.appointment!.id })
   }
   emit('saved')
 }

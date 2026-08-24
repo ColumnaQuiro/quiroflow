@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Tables } from '~/types/database.types'
+import { normalizeSearchTerm } from '~/utils/searchText'
 
 const props = defineProps<{ patient: Tables<'patients'> }>()
 const emit = defineEmits<{ updated: [] }>()
@@ -39,7 +40,7 @@ watch(tutorSearch, (value) => {
       .from('patients')
       .select('id, first_name, last_name')
       .neq('id', props.patient.id)
-      .or(`first_name.ilike.%${value.trim()}%,last_name.ilike.%${value.trim()}%`)
+      .ilike('search_name', `%${normalizeSearchTerm(value.trim())}%`)
       .limit(8)
     tutorResults.value = data ?? []
   }, 250)

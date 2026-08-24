@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { normalizeSearchTerm } from '~/utils/searchText'
+
 interface Message {
   id: string
   patient_id: string | null
@@ -123,7 +125,7 @@ watch(composeQuery, (q) => {
     const { data } = await supabase
       .from('patients')
       .select('id, first_name, last_name')
-      .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%`)
+      .ilike('search_name', `%${normalizeSearchTerm(q.trim())}%`)
       .order('first_name')
       .limit(20)
     composeSearchResults.value = data ?? []

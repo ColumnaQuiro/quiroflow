@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { normalizeSearchTerm } from '~/utils/searchText'
+
 interface Rule {
   id: string
   name: string
@@ -247,7 +249,7 @@ watch(patientQuery, () => {
     const { data } = await supabase
       .from('patients')
       .select('id, first_name, last_name')
-      .or(`first_name.ilike.%${patientQuery.value}%,last_name.ilike.%${patientQuery.value}%`)
+      .ilike('search_name', `%${normalizeSearchTerm(patientQuery.value.trim())}%`)
       .limit(8)
     patients.value = data ?? []
   }, 250)

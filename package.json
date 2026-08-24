@@ -9,6 +9,7 @@
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
     "test:e2e": "start-server-and-test dev http://localhost:3000 'cypress run'",
+    "test:e2e:local": "./scripts/e2e-local.sh",
     "test:e2e:open": "start-server-and-test dev http://localhost:3000 'cypress open'",
     "cypress:run": "cypress run",
     "cypress:open": "cypress open",

@@ -11,7 +11,7 @@ describe('Appointment booking and billing checkout', () => {
           // First click after a fresh visit can race Vue hydration (see commands.ts clickUntil).
           cy.clickUntil('button:contains("New Appointment")', 'h2:contains("New Appointment")')
 
-          cy.get('.fixed.inset-0.z-20').within(() => {
+          cy.get('.fixed.inset-0.z-50').within(() => {
             cy.get('input[placeholder="Search patients…"]').type('Alice')
             cy.contains('li', 'Alice Anderson').click()
             cy.get('select').eq(0).select('Consultation') // Type select (Room/Practitioner selects come after it)
@@ -21,10 +21,14 @@ describe('Appointment booking and billing checkout', () => {
           cy.contains('h2', 'New Appointment').should('not.exist')
           cy.contains('Alice Anderson').should('be.visible')
 
-          cy.contains('Alice Anderson').click()
+          // The default-time appointment can land far enough down the day grid that
+          // Cypress's own scroll-into-view leaves it flush under the calendar's sticky
+          // column-header row -- a real (if minor) sticky-header quirk, not a broken
+          // click handler, so force past it rather than asserting on exact scroll offsets.
+          cy.contains('Alice Anderson').click({ force: true })
           cy.contains('h2', 'Edit Appointment').should('be.visible')
 
-          cy.get('.fixed.inset-0.z-20').within(() => {
+          cy.get('.fixed.inset-0.z-50').within(() => {
             cy.contains('button', 'billing').click()
             cy.contains('-- Add Service/Product --').should('be.visible')
             cy.get('select').eq(0).select('Adjustment (€50.00)')

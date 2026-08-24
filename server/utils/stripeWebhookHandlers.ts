@@ -66,4 +66,39 @@ export async function handleStripeEvent(supabase: SupabaseClient<Database>, acco
     const schedule = stripeEvent.data.object as Stripe.SubscriptionSchedule
     await supabase.from('payment_schedules').update({ status: 'canceled' }).eq('stripe_subscription_schedule_id', schedule.id)
   }
+
+  // Online booking deposit/full-payment (create-payment-intent.post.ts sets
+  // metadata.invoice_id on creation). This is the source of truth for
+  // reconciliation -- the booking itself already exists regardless of
+  // payment outcome, so a delayed or missed webhook only leaves the invoice
+  // temporarily unpaid, never an orphaned charge or a lost appointment.
+  if (stripeEvent.type === 'payment_intent.succeeded') {
+    const intent = stripeEvent.data.object as Stripe.PaymentIntent
+    const invoiceId = intent.metadata?.invoice_id
+    if (invoiceId) {
+      const { data: existingPayment } = await supabase
+        .from('payments')
+        .select('id')
+        .eq('stripe_payment_intent_id', intent.id)
+        .maybeSingle()
+      if (!existingPayment) {
+        await supabase.from('payments').insert({
+          account_id: accountId,
+          invoice_id: invoiceId,
+          amount_cents: intent.amount_received,
+          method: 'card',
+          stripe_payment_intent_id: intent.id,
+        })
+
+        const { data: invoice } = await supabase.from('invoices').select('total_cents').eq('id', invoiceId).maybeSingle()
+        if (invoice) {
+          const { data: payments } = await supabase.from('payments').select('amount_cents').eq('invoice_id', invoiceId)
+          const paidCents = (payments ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
+          if (paidCents >= invoice.total_cents) {
+            await supabase.from('invoices').update({ status: 'paid' }).eq('id', invoiceId)
+          }
+        }
+      }
+    }
+  }
 }

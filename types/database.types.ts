@@ -348,6 +348,7 @@ export type Database = {
           id: string
           name: string
           online_booking_enabled: boolean
+          online_payment_required: boolean
           stage: string | null
         }
         Insert: {
@@ -359,6 +360,7 @@ export type Database = {
           id?: string
           name: string
           online_booking_enabled?: boolean
+          online_payment_required?: boolean
           stage?: string | null
         }
         Update: {
@@ -370,6 +372,7 @@ export type Database = {
           id?: string
           name?: string
           online_booking_enabled?: boolean
+          online_payment_required?: boolean
           stage?: string | null
         }
         Relationships: [
@@ -1994,6 +1997,7 @@ export type Database = {
           invoice_id: string
           method: string
           paid_at: string
+          stripe_payment_intent_id: string | null
         }
         Insert: {
           account_id: string
@@ -2002,6 +2006,7 @@ export type Database = {
           invoice_id: string
           method?: string
           paid_at?: string
+          stripe_payment_intent_id?: string | null
         }
         Update: {
           account_id?: string
@@ -2010,6 +2015,7 @@ export type Database = {
           invoice_id?: string
           method?: string
           paid_at?: string
+          stripe_payment_intent_id?: string | null
         }
         Relationships: [
           {
@@ -2231,6 +2237,7 @@ export type Database = {
       team_members: {
         Row: {
           account_id: string
+          business_hours: Json | null
           color: string
           created_at: string
           dashboard_layout: Json
@@ -2244,6 +2251,7 @@ export type Database = {
         }
         Insert: {
           account_id: string
+          business_hours?: Json | null
           color?: string
           created_at?: string
           dashboard_layout?: Json
@@ -2257,6 +2265,7 @@ export type Database = {
         }
         Update: {
           account_id?: string
+          business_hours?: Json | null
           color?: string
           created_at?: string
           dashboard_layout?: Json

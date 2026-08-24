@@ -1,12 +1,16 @@
 <script setup lang="ts">
-defineProps<{
+const props = defineProps<{
   clinic: { name: string; address: string | null } | null
   appointmentType: { name: string } | null
   priceCents: number
   teamMember: { full_name: string } | null
   slot: Date | null
   formatPrice: (cents: number) => string
+  onlinePaymentRequired?: boolean
 }>()
+
+const dueNowCents = computed(() => (props.onlinePaymentRequired ? props.priceCents : 0))
+const dueAtVisitCents = computed(() => (props.onlinePaymentRequired ? 0 : props.priceCents))
 </script>
 
 <template>
@@ -20,6 +24,16 @@ defineProps<{
       <div v-if="appointmentType" class="flex items-center justify-between border-t border-line-divider pt-3">
         <span class="text-ink-700">{{ appointmentType.name }}</span>
         <span class="font-medium text-ink-900">{{ formatPrice(priceCents) }}</span>
+      </div>
+      <div v-if="appointmentType && onlinePaymentRequired !== undefined" class="space-y-1 border-t border-line-divider pt-3 text-xs">
+        <div class="flex items-center justify-between">
+          <span class="text-ink-muted">Pagar ahora</span>
+          <span class="font-medium text-ink-900">{{ formatPrice(dueNowCents) }}</span>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="text-ink-muted">Pagar en la consulta</span>
+          <span class="font-medium text-ink-900">{{ formatPrice(dueAtVisitCents) }}</span>
+        </div>
       </div>
       <div v-if="teamMember" class="border-t border-line-divider pt-3 text-ink-700">
         {{ teamMember.full_name }}

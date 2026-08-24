@@ -100,6 +100,52 @@ async function toggleBookable(member: Tables<'team_members'>) {
   await supabase.from('team_members').update({ online_booking_enabled: next }).eq('id', member.id)
 }
 
+// --- Per-practitioner schedule (mirrors pages/settings/clinics.vue's
+// business-hours editor) -- an empty day means "no override", not "closed":
+// the practitioner stays bookable across the clinic's own hours until they
+// configure something narrower here.
+type Windows = [string, string][]
+const WEEKDAYS: { key: string; label: string }[] = [
+  { key: 'mon', label: 'Mon' },
+  { key: 'tue', label: 'Tue' },
+  { key: 'wed', label: 'Wed' },
+  { key: 'thu', label: 'Thu' },
+  { key: 'fri', label: 'Fri' },
+  { key: 'sat', label: 'Sat' },
+  { key: 'sun', label: 'Sun' },
+]
+const openScheduleId = ref<string | null>(null)
+const editHours = ref<Record<string, Windows>>({})
+const savingHours = ref(false)
+
+function openScheduleEditor(m: Tables<'team_members'>) {
+  openScheduleId.value = openScheduleId.value === m.id ? null : m.id
+  if (openScheduleId.value === m.id) {
+    const hours = (m.business_hours as Record<string, Windows>) ?? {}
+    editHours.value = Object.fromEntries(WEEKDAYS.map((d) => [d.key, hours[d.key] ? hours[d.key].map((w) => [...w] as [string, string]) : []]))
+  }
+}
+function addWindow(day: string) {
+  editHours.value[day].push(['09:00', '17:00'])
+}
+function removeWindow(day: string, i: number) {
+  editHours.value[day].splice(i, 1)
+}
+async function saveSchedule(member: Tables<'team_members'>) {
+  savingHours.value = true
+  const { error: updateError } = await supabase.from('team_members').update({ business_hours: editHours.value }).eq('id', member.id)
+  savingHours.value = false
+  if (updateError) {
+    error.value = updateError.message
+    return
+  }
+  member.business_hours = editHours.value
+}
+function hasScheduleOverride(m: Tables<'team_members'>) {
+  const hours = m.business_hours as Record<string, Windows> | null
+  return !!hours && Object.values(hours).some((w) => w.length > 0)
+}
+
 const editingId = ref<string | null>(null)
 const editingName = ref('')
 function startEdit(member: Tables<'team_members'>) {
@@ -139,39 +185,72 @@ function copy(text: string) {
                   <th class="px-4 py-2">Name</th>
                   <th class="px-4 py-2">Role</th>
                   <th class="px-4 py-2">Online booking</th>
+                  <th class="px-4 py-2"></th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-line-row">
                 <tr v-if="loading">
-                  <td colspan="3" class="px-4 py-6 text-center text-ink-faint">Loading…</td>
+                  <td colspan="4" class="px-4 py-6 text-center text-ink-faint">Loading…</td>
                 </tr>
-                <tr v-for="m in members" v-else :key="m.id">
-                  <td class="px-4 py-2.5 text-ink-700">
-                    <span class="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" :style="{ backgroundColor: m.color }"></span>
-                    <input
-                      v-if="editingId === m.id"
-                      v-model="editingName"
-                      type="text"
-                      autofocus
-                      class="w-48 rounded-ctlSm border border-brand-tintBorder px-1.5 py-0.5 text-[13px] focus:outline-none focus:ring-1 focus:ring-brand/20"
-                      @keydown.enter="saveEdit(m)"
-                      @keydown.esc="editingId = null"
-                      @blur="saveEdit(m)"
-                    />
-                    <button v-else type="button" class="hover:text-brand-text" @click="startEdit(m)">
-                      {{ m.full_name }}
-                    </button>
-                  </td>
-                  <td class="px-4 py-2.5">
-                    <UiPill tone="brand">{{ roleName(m.role_id) }}</UiPill>
-                  </td>
-                  <td class="px-4 py-2.5">
-                    <label class="flex items-center gap-2.5 text-ink-600">
-                      <SettingsToggle :model-value="m.online_booking_enabled" @update:model-value="toggleBookable(m)" />
-                      Bookable
-                    </label>
-                  </td>
-                </tr>
+                <template v-for="m in members" v-else :key="m.id">
+                  <tr>
+                    <td class="px-4 py-2.5 text-ink-700">
+                      <span class="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" :style="{ backgroundColor: m.color }"></span>
+                      <input
+                        v-if="editingId === m.id"
+                        v-model="editingName"
+                        type="text"
+                        autofocus
+                        class="w-48 rounded-ctlSm border border-brand-tintBorder px-1.5 py-0.5 text-[13px] focus:outline-none focus:ring-1 focus:ring-brand/20"
+                        @keydown.enter="saveEdit(m)"
+                        @keydown.esc="editingId = null"
+                        @blur="saveEdit(m)"
+                      />
+                      <button v-else type="button" class="hover:text-brand-text" @click="startEdit(m)">
+                        {{ m.full_name }}
+                      </button>
+                    </td>
+                    <td class="px-4 py-2.5">
+                      <UiPill tone="brand">{{ roleName(m.role_id) }}</UiPill>
+                    </td>
+                    <td class="px-4 py-2.5">
+                      <label class="flex items-center gap-2.5 text-ink-600">
+                        <SettingsToggle :model-value="m.online_booking_enabled" @update:model-value="toggleBookable(m)" />
+                        Bookable
+                      </label>
+                    </td>
+                    <td class="px-4 py-2.5 text-right">
+                      <button type="button" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover" @click="openScheduleEditor(m)">
+                        {{ hasScheduleOverride(m) ? 'Schedule (custom)' : 'Schedule' }}
+                      </button>
+                    </td>
+                  </tr>
+                  <tr v-if="openScheduleId === m.id">
+                    <td colspan="4" class="border-t border-line-divider bg-surface-subtle px-4 py-4">
+                      <p class="text-[12px] text-ink-muted2">
+                        Leave every day empty to keep {{ m.full_name }} bookable across the clinic's own hours. Set hours here to restrict online booking to a narrower schedule.
+                      </p>
+                      <div class="mt-3 space-y-2">
+                        <div v-for="d in WEEKDAYS" :key="d.key" class="flex items-start gap-3 text-[13px]">
+                          <span class="w-10 pt-1.5 text-ink-muted2">{{ d.label }}</span>
+                          <div class="flex-1 space-y-1.5">
+                            <p v-if="editHours[d.key].length === 0" class="pt-1.5 text-ink-faint">No override</p>
+                            <div v-for="(w, i) in editHours[d.key]" :key="i" class="flex items-center gap-2">
+                              <input v-model="w[0]" type="time" class="h-8 rounded-ctl border border-line-control bg-surface px-2 text-[13px]" />
+                              <span class="text-ink-faint">–</span>
+                              <input v-model="w[1]" type="time" class="h-8 rounded-ctl border border-line-control bg-surface px-2 text-[13px]" />
+                              <button type="button" class="text-ink-faint hover:text-danger-text" @click="removeWindow(d.key, i)">✕</button>
+                            </div>
+                            <button type="button" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover" @click="addWindow(d.key)">+ Add hours</button>
+                          </div>
+                        </div>
+                      </div>
+                      <UiBtn variant="primary" class="mt-4" :disabled="savingHours" @click="saveSchedule(m)">
+                        {{ savingHours ? 'Saving…' : 'Save' }}
+                      </UiBtn>
+                    </td>
+                  </tr>
+                </template>
               </tbody>
             </table>
           </div>

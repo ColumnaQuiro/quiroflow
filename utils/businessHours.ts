@@ -32,3 +32,28 @@ export function isWithinBusinessHours(date: Date, hours: BusinessHours | null | 
   const mins = date.getHours() * 60 + date.getMinutes()
   return windows.some(([start, end]) => mins >= toMinutes(start) && mins < toMinutes(end))
 }
+
+// A practitioner without their own configured hours is bookable across the
+// clinic's full hours (opt-in override, same convention as
+// hasBusinessHoursConfigured) -- so an empty/undefined practitionerWindows
+// means "no restriction", not "no availability".
+export function intersectWindows(clinicWindows: [string, string][], practitionerWindows: [string, string][] | undefined): [string, string][] {
+  if (!practitionerWindows || practitionerWindows.length === 0) return clinicWindows
+  const result: [string, string][] = []
+  for (const [cStart, cEnd] of clinicWindows) {
+    const cStartMin = toMinutes(cStart)
+    const cEndMin = toMinutes(cEnd)
+    for (const [pStart, pEnd] of practitionerWindows) {
+      const start = Math.max(cStartMin, toMinutes(pStart))
+      const end = Math.min(cEndMin, toMinutes(pEnd))
+      if (start < end) result.push([minutesToHHMM(start), minutesToHHMM(end)])
+    }
+  }
+  return result
+}
+
+function minutesToHHMM(mins: number): string {
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}

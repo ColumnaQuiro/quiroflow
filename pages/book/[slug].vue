@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { COUNTRIES } from '~/utils/countries'
 import { effectiveDuration, effectivePriceCents, type AppointmentTypeOverride } from '~/utils/appointmentOverrides'
+import { intersectWindows } from '~/utils/businessHours'
 
 definePageMeta({ layout: false })
 
@@ -16,12 +17,14 @@ interface BookingAppointmentType {
   duration_minutes: number
   color: string
   default_price_cents: number
+  online_payment_required: boolean
 }
 interface BookingTeamMember {
   id: string
   full_name: string
   color: string
   clinic_ids: string[]
+  business_hours: Record<string, [string, string][]> | null
 }
 interface BookingInfo {
   account: { id: string; name: string }
@@ -35,7 +38,7 @@ const route = useRoute()
 const slug = route.params.slug as string
 const supabase = useSupabaseClient()
 
-const phase = ref<'loading' | 'not_found' | 'select' | 'datetime' | 'details' | 'success'>('loading')
+const phase = ref<'loading' | 'not_found' | 'select' | 'datetime' | 'details' | 'payment' | 'success'>('loading')
 
 const info = ref<BookingInfo | null>(null)
 const clinicId = ref('')
@@ -131,8 +134,9 @@ const calendarDays = computed(() => {
 function dayHasHours(date: Date) {
   const hours = clinic.value?.business_hours
   if (!hours) return false
-  const windows = hours[WEEKDAY_KEYS[date.getDay()]]
-  return !!windows && windows.length > 0
+  const clinicWindows = hours[WEEKDAY_KEYS[date.getDay()]] ?? []
+  const windows = intersectWindows(clinicWindows, teamMember.value?.business_hours?.[WEEKDAY_KEYS[date.getDay()]])
+  return windows.length > 0
 }
 
 function prevMonth() {
@@ -163,7 +167,9 @@ async function selectDate(day: { date: Date; bookable: boolean }) {
 
 const daySlots = computed(() => {
   if (!selectedDate.value || !appointmentType.value) return []
-  const windows = clinic.value?.business_hours?.[WEEKDAY_KEYS[selectedDate.value.getDay()]] ?? []
+  const weekday = WEEKDAY_KEYS[selectedDate.value.getDay()]
+  const clinicWindows = clinic.value?.business_hours?.[weekday] ?? []
+  const windows = intersectWindows(clinicWindows, teamMember.value?.business_hours?.[weekday])
   const duration = effectiveDurationMinutes.value
   const now = new Date()
   const slots: Date[] = []
@@ -205,6 +211,8 @@ const note = ref('')
 const submitting = ref(false)
 const submitError = ref('')
 const confirmation = ref<{ starts_at: string } | null>(null)
+const invoiceId = ref('')
+const paymentRequiredCents = ref(0)
 
 async function submitBooking() {
   if (!selectedSlot.value) return
@@ -228,7 +236,23 @@ async function submitBooking() {
     submitError.value = error.message
     return
   }
-  confirmation.value = data as unknown as { starts_at: string }
+  const result = data as unknown as { starts_at: string; invoice_id: string | null; payment_required_cents: number }
+  confirmation.value = result
+  // Booking always succeeds first regardless of payment -- if the type requires
+  // online payment, the appointment already exists (visible to staff) before
+  // the patient even sees the payment step, so a dropped connection here never
+  // leaves a charged customer with no booking or a booking silently unpaid
+  // and untracked.
+  if (result.invoice_id && result.payment_required_cents > 0) {
+    invoiceId.value = result.invoice_id
+    paymentRequiredCents.value = result.payment_required_cents
+    phase.value = 'payment'
+  } else {
+    phase.value = 'success'
+  }
+}
+
+function onPaymentSucceeded() {
   phase.value = 'success'
 }
 
@@ -371,7 +395,7 @@ if (import.meta.client) {
               </template>
             </div>
 
-            <BookingSummary :clinic="clinic" :appointment-type="appointmentType" :price-cents="effectivePrice" :team-member="teamMember" :slot="selectedSlot" :format-price="formatPrice" />
+            <BookingSummary :clinic="clinic" :appointment-type="appointmentType" :price-cents="effectivePrice" :team-member="teamMember" :slot="selectedSlot" :format-price="formatPrice" :online-payment-required="appointmentType?.online_payment_required" />
           </div>
         </div>
 
@@ -422,8 +446,15 @@ if (import.meta.client) {
               </UiBtn>
             </form>
 
-            <BookingSummary :clinic="clinic" :appointment-type="appointmentType" :price-cents="effectivePrice" :team-member="teamMember" :slot="selectedSlot" :format-price="formatPrice" />
+            <BookingSummary :clinic="clinic" :appointment-type="appointmentType" :price-cents="effectivePrice" :team-member="teamMember" :slot="selectedSlot" :format-price="formatPrice" :online-payment-required="appointmentType?.online_payment_required" />
           </div>
+        </div>
+
+        <!-- Step 3: payment (only when the appointment type requires it) -->
+        <div v-else-if="phase === 'payment'" class="mx-auto mt-8 max-w-md">
+          <h2 class="text-center text-xl font-semibold text-ink-900">Pago</h2>
+          <p class="mt-1 text-center text-sm text-ink-muted">Su cita ya está reservada. Complete el pago para confirmarla.</p>
+          <BookingPayment class="mt-6" :account-slug="slug" :invoice-id="invoiceId" :amount-cents="paymentRequiredCents" :format-price="formatPrice" @paid="onPaymentSucceeded" />
         </div>
 
         <!-- Success -->

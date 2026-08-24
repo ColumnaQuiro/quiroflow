@@ -67,6 +67,23 @@ async function toggleBookable(type: Tables<'appointment_types'>) {
   await supabase.from('appointment_types').update({ online_booking_enabled: next }).eq('id', type.id)
 }
 
+// Payment requires Stripe to be set up for the account at all (Settings >
+// Payments) -- same precondition the existing card-on-file feature already
+// has, so the toggle is disabled rather than silently breaking checkout.
+const stripeConfigured = ref(false)
+async function loadStripeConfigured() {
+  const { data } = await supabase.from('accounts').select('stripe_publishable_key').eq('id', store.accountId!).maybeSingle()
+  stripeConfigured.value = !!data?.stripe_publishable_key
+}
+onMounted(loadStripeConfigured)
+
+async function toggleOnlinePayment(type: Tables<'appointment_types'>) {
+  if (!stripeConfigured.value) return
+  const next = !type.online_payment_required
+  type.online_payment_required = next
+  await supabase.from('appointment_types').update({ online_payment_required: next }).eq('id', type.id)
+}
+
 async function updateStage(type: Tables<'appointment_types'>, stage: string) {
   type.stage = stage || null
   await supabase.from('appointment_types').update({ stage: stage || null }).eq('id', type.id)
@@ -180,16 +197,17 @@ function updateOverridePrice(typeId: string, teamMemberId: string, value: string
                   <th class="px-4 py-2">Default price</th>
                   <th class="px-4 py-2">Stage</th>
                   <th class="px-4 py-2">Online booking</th>
+                  <th class="px-4 py-2">Online payment</th>
                   <th class="px-4 py-2"></th>
                   <th class="px-4 py-2"></th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-line-row">
                 <tr v-if="loading">
-                  <td colspan="7" class="px-4 py-6 text-center text-ink-faint">Loading…</td>
+                  <td colspan="8" class="px-4 py-6 text-center text-ink-faint">Loading…</td>
                 </tr>
                 <tr v-else-if="types.length === 0">
-                  <td colspan="7" class="px-4 py-6 text-center text-ink-faint">No appointment types yet.</td>
+                  <td colspan="8" class="px-4 py-6 text-center text-ink-faint">No appointment types yet.</td>
                 </tr>
                 <template v-for="t in types" :key="t.id">
                 <tr>
@@ -251,6 +269,12 @@ function updateOverridePrice(typeId: string, teamMemberId: string, value: string
                     </label>
                   </td>
                   <td class="px-4 py-2.5">
+                    <label class="flex items-center gap-2 text-ink-600" :title="stripeConfigured ? '' : 'Set up Stripe in Settings > Payments first'">
+                      <SettingsToggle :model-value="t.online_payment_required" :disabled="!stripeConfigured" @update:model-value="toggleOnlinePayment(t)" />
+                      Require payment
+                    </label>
+                  </td>
+                  <td class="px-4 py-2.5">
                     <button type="button" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover" @click="toggleOverrides(t.id)">
                       Overrides
                     </button>
@@ -260,7 +284,7 @@ function updateOverridePrice(typeId: string, teamMemberId: string, value: string
                   </td>
                 </tr>
                 <tr v-if="openOverridesTypeId === t.id">
-                  <td colspan="7" class="bg-surface-subtle px-4 py-3">
+                  <td colspan="8" class="bg-surface-subtle px-4 py-3">
                     <p class="text-[12px] text-ink-muted2">
                       Per-practitioner duration/price for <span class="font-medium text-ink-700">{{ t.name }}</span> — leave blank to use the defaults above.
                     </p>

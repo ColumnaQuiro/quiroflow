@@ -10,6 +10,7 @@ const TRIGGER_OPTIONS = [
   { value: 'appointment.booked', label: 'Appointment booked' },
   { value: 'appointment.completed', label: 'Appointment completed' },
   { value: 'appointment.cancelled', label: 'Appointment cancelled' },
+  { value: 'appointment.rescheduled', label: 'Appointment rescheduled' },
   { value: 'appointment.no_show', label: 'Appointment marked as missed' },
   { value: 'invoice.paid', label: 'Invoice paid' },
 ]

@@ -817,12 +817,14 @@ async function onAppointmentDragEnd(e: PointerEvent) {
 
   const { error } = await supabase
     .from('appointments')
-    .update({ starts_at: appt.starts_at, ends_at: appt.ends_at, room_id: appt.room_id })
+    .update({ starts_at: appt.starts_at, ends_at: appt.ends_at, room_id: appt.room_id, rescheduled: true })
     .eq('id', appt.id)
   if (error) {
     revert()
     alert(error.message)
+    return
   }
+  fire('appointment.rescheduled', { patientId: appt.patient_id, appointmentId: appt.id })
 }
 
 // Wraps openEditModal so the click the browser synthesizes right after a

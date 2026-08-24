@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { hasBusinessHoursConfigured, isWithinBusinessHours } from '~/utils/businessHours'
 import { computeBonoStatus } from '~/utils/bonoStatus'
+import { effectivePriceCents, type AppointmentTypeOverride } from '~/utils/appointmentOverrides'
 
 const START_HOUR = 8
 const END_HOUR = 20
@@ -102,6 +103,7 @@ const anchorDate = ref(new Date())
 const rooms = ref<Room[]>([])
 const appointmentTypes = ref<AppointmentType[]>([])
 const teamMembers = ref<TeamMember[]>([])
+const overrides = ref<AppointmentTypeOverride[]>([])
 const appointments = ref<AppointmentRow[]>([])
 const availabilityBlocks = ref<AvailabilityBlock[]>([])
 const loading = ref(true)
@@ -207,12 +209,14 @@ function selectMiniDate(d: Date) {
 }
 
 async function loadReferenceData() {
-  const [{ data: types }, { data: members }] = await Promise.all([
+  const [{ data: types }, { data: members }, { data: ovr }] = await Promise.all([
     supabase.from('appointment_types').select('id, name, duration_minutes, color, default_price_cents').order('name'),
     supabase.from('team_members').select('id, full_name, color').order('full_name'),
+    supabase.from('appointment_type_overrides').select('appointment_type_id, team_member_id, duration_minutes, price_cents'),
   ])
   appointmentTypes.value = types ?? []
   teamMembers.value = members ?? []
+  overrides.value = ovr ?? []
 }
 
 async function loadRooms() {
@@ -504,10 +508,13 @@ function appointmentColorStyle(appt: AppointmentRow) {
 // appointment.
 function balanceIconTone(appt: AppointmentRow): 'success' | 'danger' | 'warning' | null {
   const pkg = activePackageByPatient.value[appt.patient_id] ?? null
+  const defaultPriceCents = appt.appointment_types?.default_price_cents ?? 0
   return computeBonoStatus({
     balanceCents: appt.patients?.balance_cents ?? 0,
     activePackage: pkg,
-    appointmentPriceCents: appt.appointment_types?.default_price_cents ?? 0,
+    appointmentPriceCents: appt.appointment_type_id
+      ? effectivePriceCents(defaultPriceCents, appt.appointment_type_id, appt.practitioner_id, overrides.value)
+      : defaultPriceCents,
   }).tone
 }
 
@@ -679,6 +686,153 @@ async function onSaved() {
   modalOpen.value = false
   await loadAppointments()
   await loadTodayGlance()
+}
+
+// --- Drag-to-move / drag-to-resize ---
+// Mutates the real appointment object in `appointments.value` live during
+// the drag rather than tracking a separate shadow position -- the existing
+// per-column layout functions (blocksForRoom/layoutForRoom/
+// layoutForRoomOnDay, timeToPx/durationToPx/cascadeStyle) already key off
+// an appointment's own starts_at/ends_at/room_id, so this gets a fully
+// WYSIWYG live preview (including realistic overlap-cascade behavior) for
+// free instead of a separate rendering path just for the dragged block.
+interface DragState {
+  apptId: string
+  mode: 'move' | 'resize'
+  pointerId: number
+  startClientX: number
+  startClientY: number
+  origStartsAt: string
+  origEndsAt: string
+  origRoomId: string | null
+}
+const dragState = ref<DragState | null>(null)
+// Distinguishes "dragged" from "clicked" -- a pointerdown/pointerup pair
+// with no meaningful movement in between should still open the edit modal
+// like before, but the browser's own synthesized click after a real drag
+// must NOT reopen it. Reset by the click handler itself once consumed.
+const dragMoved = ref(false)
+let dragColumnRects: { roomId: string | null; dayKey: string; rect: DOMRect }[] = []
+
+function hourPxForView() {
+  return viewMode.value === 'day' ? DAY_HOUR_PX.value : WEEK_HOUR_PX.value
+}
+// Inverse of timeToPx, but returns a raw (signed, snapped) minute delta for
+// drag math instead of an absolute "HH:MM" -- pxToTime always measures from
+// the grid's top and can't represent a negative offset.
+function pxToMinutesSinceStart(px: number, hourPx: number) {
+  const totalMin = (px / hourPx) * 60
+  return Math.round(totalMin / SLOT_MIN.value) * SLOT_MIN.value
+}
+function captureColumnRects() {
+  dragColumnRects = Array.from(document.querySelectorAll<HTMLElement>('[data-cal-col]')).map((el) => ({
+    roomId: !el.dataset.roomId || el.dataset.roomId === '__none' ? null : el.dataset.roomId,
+    dayKey: el.dataset.dayKey || toDateKey(anchorDate.value),
+    rect: el.getBoundingClientRect(),
+  }))
+}
+function columnAtPoint(x: number, y: number) {
+  return dragColumnRects.find((c) => x >= c.rect.left && x <= c.rect.right && y >= c.rect.top && y <= c.rect.bottom)
+}
+
+function startAppointmentDrag(appt: AppointmentRow, mode: 'move' | 'resize', e: PointerEvent) {
+  if (appt.status !== 'booked') return
+  e.stopPropagation()
+  dragState.value = {
+    apptId: appt.id,
+    mode,
+    pointerId: e.pointerId,
+    startClientX: e.clientX,
+    startClientY: e.clientY,
+    origStartsAt: appt.starts_at,
+    origEndsAt: appt.ends_at,
+    origRoomId: appt.room_id,
+  }
+  dragMoved.value = false
+  captureColumnRects()
+  window.addEventListener('pointermove', onAppointmentDragMove)
+  window.addEventListener('pointerup', onAppointmentDragEnd)
+}
+
+function onAppointmentDragMove(e: PointerEvent) {
+  const s = dragState.value
+  if (!s || e.pointerId !== s.pointerId) return
+  const dx = e.clientX - s.startClientX
+  const dy = e.clientY - s.startClientY
+  if (!dragMoved.value) {
+    if (Math.abs(dx) < 5 && Math.abs(dy) < 5) return
+    dragMoved.value = true
+  }
+  const appt = appointments.value.find((a) => a.id === s.apptId)
+  if (!appt) return
+  const deltaMin = pxToMinutesSinceStart(dy, hourPxForView())
+
+  if (s.mode === 'resize') {
+    const newEnd = new Date(new Date(s.origEndsAt).getTime() + deltaMin * 60000)
+    const minEnd = new Date(new Date(s.origStartsAt).getTime() + SLOT_MIN.value * 60000)
+    appt.ends_at = (newEnd < minEnd ? minEnd : newEnd).toISOString()
+  } else {
+    const newStart = new Date(new Date(s.origStartsAt).getTime() + deltaMin * 60000)
+    const durationMs = new Date(s.origEndsAt).getTime() - new Date(s.origStartsAt).getTime()
+    const col = columnAtPoint(e.clientX, e.clientY)
+    let finalStart = newStart
+    if (col) {
+      appt.room_id = col.roomId
+      const [y, m, d] = col.dayKey.split('-').map(Number)
+      finalStart = new Date(y, m - 1, d, newStart.getHours(), newStart.getMinutes(), 0, 0)
+    }
+    appt.starts_at = finalStart.toISOString()
+    appt.ends_at = new Date(finalStart.getTime() + durationMs).toISOString()
+  }
+}
+
+async function onAppointmentDragEnd(e: PointerEvent) {
+  const s = dragState.value
+  window.removeEventListener('pointermove', onAppointmentDragMove)
+  window.removeEventListener('pointerup', onAppointmentDragEnd)
+  if (!s || e.pointerId !== s.pointerId) return
+  dragState.value = null
+  if (!dragMoved.value) return
+
+  const appt = appointments.value.find((a) => a.id === s.apptId)
+  if (!appt) return
+  const orig = { starts_at: s.origStartsAt, ends_at: s.origEndsAt, room_id: s.origRoomId }
+
+  function revert() {
+    appt!.starts_at = orig.starts_at
+    appt!.ends_at = orig.ends_at
+    appt!.room_id = orig.room_id
+  }
+
+  const hours = store.currentClinic?.business_hours
+  if (
+    hasBusinessHoursConfigured(hours) &&
+    (!isWithinBusinessHours(new Date(appt.starts_at), hours) || !isWithinBusinessHours(new Date(new Date(appt.ends_at).getTime() - 1), hours))
+  ) {
+    if (!confirm("This falls outside the clinic's working hours. Save it anyway?")) {
+      revert()
+      return
+    }
+  }
+
+  const { error } = await supabase
+    .from('appointments')
+    .update({ starts_at: appt.starts_at, ends_at: appt.ends_at, room_id: appt.room_id })
+    .eq('id', appt.id)
+  if (error) {
+    revert()
+    alert(error.message)
+  }
+}
+
+// Wraps openEditModal so the click the browser synthesizes right after a
+// real drag doesn't reopen the modal the drag was meant to replace.
+function handleAppointmentClick(appt: AppointmentRow) {
+  if (dragMoved.value) {
+    dragMoved.value = false
+    return
+  }
+  openEditModal(appt)
 }
 
 const { fire } = useAutomations()
@@ -917,7 +1071,15 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                 </span>
               </div>
 
-              <div v-for="col in dayColumns" :key="col.id" class="relative flex-1 cursor-pointer border-r border-line last:border-r-0" @click="openCreateModal(col.id === '__none' ? undefined : col.id, $event.offsetY)">
+              <div
+                v-for="col in dayColumns"
+                :key="col.id"
+                data-cal-col
+                :data-room-id="col.id"
+                :data-day-key="toDateKey(anchorDate)"
+                class="relative flex-1 cursor-pointer border-r border-line last:border-r-0"
+                @click="openCreateModal(col.id === '__none' ? undefined : col.id, $event.offsetY)"
+              >
                 <div v-for="m in slotMarks" :key="`slot-${m}`" class="pointer-events-none absolute left-0 right-0 border-t border-[#E9EBF0]" :style="{ top: `${(m / 60) * DAY_HOUR_PX}px` }" />
                 <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-[#D6D9E0]" :style="{ top: `${(h - START_HOUR) * DAY_HOUR_PX}px` }" />
                 <div v-for="rect in closedSlotRects(anchorDate, DAY_HOUR_PX)" :key="rect.top" class="pointer-events-none absolute left-0 right-0 bg-line-row2" :style="{ top: `${rect.top}px`, height: `${rect.height}px` }" />
@@ -947,14 +1109,16 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                   </div>
                   <div
                     v-else
-                    class="absolute overflow-hidden rounded-[7px] border border-l-[3px] shadow-card"
+                    class="absolute scroll-mt-10 overflow-hidden rounded-[7px] border border-l-[3px] shadow-card"
+                    :class="appt.status === 'booked' ? 'cursor-grab active:cursor-grabbing' : ''"
                     :style="{
                       ...appointmentColorStyle(appt),
                       ...cascadeStyle(appt, DAY_CASCADE_PX),
                       top: `${timeToPx(appt.starts_at, DAY_HOUR_PX)}px`,
                       height: `${Math.max(0, durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) - 3)}px`,
                     }"
-                    @click.stop="openEditModal(appt)"
+                    @pointerdown="startAppointmentDrag(appt, 'move', $event)"
+                    @click.stop="handleAppointmentClick(appt)"
                     @mouseenter="scheduleHoverCard(appt, $event)"
                     @mouseleave="cancelHoverShow"
                   >
@@ -976,6 +1140,11 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                         </span>
                       </div>
                     </div>
+                    <div
+                      v-if="appt.status === 'booked'"
+                      class="absolute inset-x-0 bottom-0 h-[6px] cursor-ns-resize"
+                      @pointerdown.stop="startAppointmentDrag(appt, 'resize', $event)"
+                    ></div>
                   </div>
                 </template>
               </div>
@@ -1042,6 +1211,9 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                 <div
                   v-for="col in dayColumns"
                   :key="col.id"
+                  data-cal-col
+                  :data-room-id="col.id"
+                  :data-day-key="toDateKey(day)"
                   class="relative flex-1 cursor-pointer border-r border-line-divider last:border-r-0"
                   :style="{ minWidth: `${WEEK_ROOM_COL_PX}px` }"
                   @click="openCreateModalForRoomOnDayAtY(day, col.id, $event.offsetY)"
@@ -1077,13 +1249,15 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                     <div
                       v-else
                       class="absolute flex flex-col justify-start overflow-hidden rounded-[7px] border border-l-[3px] px-1.5 py-0.5 shadow-card"
+                      :class="appt.status === 'booked' ? 'cursor-grab active:cursor-grabbing' : ''"
                       :style="{
                         ...appointmentColorStyle(appt),
                         ...cascadeStyle(appt, WEEK_CASCADE_PX),
                         top: `${timeToPx(appt.starts_at, WEEK_HOUR_PX)}px`,
                         height: `${Math.max(0, durationToPx(appt.starts_at, appt.ends_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX) - 2)}px`,
                       }"
-                      @click.stop="openEditModal(appt)"
+                      @pointerdown="startAppointmentDrag(appt, 'move', $event)"
+                      @click.stop="handleAppointmentClick(appt)"
                       @mouseenter="scheduleHoverCard(appt, $event)"
                       @mouseleave="cancelHoverShow"
                     >
@@ -1100,6 +1274,11 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                           </svg>
                         </span>
                       </div>
+                      <div
+                        v-if="appt.status === 'booked'"
+                        class="absolute inset-x-0 bottom-0 h-[6px] cursor-ns-resize"
+                        @pointerdown.stop="startAppointmentDrag(appt, 'resize', $event)"
+                      ></div>
                     </div>
                   </template>
                 </div>
@@ -1139,6 +1318,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
       v-if="hoveredAppt"
       :appointment="hoveredAppt"
       :room-name="hoveredRoomName"
+      :overrides="overrides"
       class="fixed z-30"
       :style="{ left: `${hoverPos.x}px`, top: `${hoverPos.y}px` }"
       @mouseenter="keepHoverCard"

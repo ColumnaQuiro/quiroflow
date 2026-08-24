@@ -830,6 +830,10 @@ function money(cents: number) {
                 <p v-if="autopayError" class="w-full text-[11px] text-danger-text">{{ autopayError }}</p>
               </form>
             </div>
+            <div v-else class="mt-2 flex items-center justify-between rounded-ctlSm bg-surface-subtle px-2 py-1.5">
+              <span class="text-[11.5px] text-ink-muted2">No card on file -- add one to enable autopay for the remaining balance.</span>
+              <button type="button" class="text-[11.5px] font-medium text-brand-text hover:text-brand-hover" @click="showCardModal = true">Add card</button>
+            </div>
           </div>
           <p v-if="purchases.length === 0" class="text-[12.5px] text-ink-faint">No packages purchased.</p>
         </div>
@@ -919,6 +923,10 @@ function money(cents: number) {
                 <button type="button" class="text-[11px] text-ink-muted2 hover:underline" @click="autopayFormFor = null">Cancel</button>
                 <p v-if="autopayError" class="w-full text-[11px] text-danger-text">{{ autopayError }}</p>
               </form>
+            </div>
+            <div v-else class="mt-2 flex items-center justify-between rounded-ctlSm bg-surface-subtle px-2 py-1.5">
+              <span class="text-[11.5px] text-ink-muted2">No card on file -- add one to enable autopay for this membership.</span>
+              <button type="button" class="text-[11.5px] font-medium text-brand-text hover:text-brand-hover" @click="showCardModal = true">Add card</button>
             </div>
           </div>
         </div>

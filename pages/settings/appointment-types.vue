@@ -171,7 +171,7 @@ function updateOverridePrice(typeId: string, teamMemberId: string, value: string
         <div class="min-w-0 max-w-[660px] flex-1">
           <p class="text-[13px] text-ink-muted2">Visit types, durations, colors, and default price.</p>
 
-          <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
+          <div class="mt-4 overflow-x-auto rounded-card border border-line bg-surface shadow-card">
             <table class="w-full text-[13px]">
               <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted2">
                 <tr>

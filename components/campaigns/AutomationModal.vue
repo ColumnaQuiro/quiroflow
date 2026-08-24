@@ -13,6 +13,7 @@ const TRIGGER_OPTIONS = [
   { value: 'appointment.rescheduled', label: 'Appointment rescheduled' },
   { value: 'appointment.no_show', label: 'Appointment marked as missed' },
   { value: 'invoice.paid', label: 'Invoice paid' },
+  { value: 'patient.birthday', label: "Patient's birthday (daily check)" },
 ]
 const VARIABLE_SOURCES = [
   { value: 'first_name', label: 'First name' },
@@ -56,6 +57,13 @@ const triggerEvent = ref(TRIGGER_OPTIONS[0].value)
 const enabled = ref(true)
 const actions = ref<ActionForm[]>([blankAction()])
 const docTemplates = ref<{ id: string; title: string }[]>([])
+const appointmentTypes = ref<{ id: string; name: string }[]>([])
+const filterAppointmentTypeId = ref('')
+const filterTotalVisits = ref('')
+// no_prior_appointments/has_future_appointment aren't editable in this UI
+// (only the two migrated birthday/first-booking rules use them) -- carried
+// through untouched on save so editing a rule here doesn't silently drop them.
+let otherFilters: Record<string, unknown> = {}
 const loading = ref(!!props.ruleId)
 const saving = ref(false)
 const testing = ref(false)
@@ -66,6 +74,9 @@ onMounted(async () => {
   const { data: templates } = await supabase.from('doc_templates').select('id, title').order('title')
   docTemplates.value = templates ?? []
 
+  const { data: types } = await supabase.from('appointment_types').select('id, name').order('name')
+  appointmentTypes.value = types ?? []
+
   try {
     const { templates: waList } = await $fetch<{ templates: WhatsAppTemplate[] }>('/api/whatsapp/templates')
     whatsappTemplates.value = waList
@@ -75,13 +86,18 @@ onMounted(async () => {
 
   if (props.ruleId) {
     const [{ data: rule }, { data: existingActions }] = await Promise.all([
-      supabase.from('automation_rules').select('name, trigger_event, enabled').eq('id', props.ruleId).maybeSingle(),
+      supabase.from('automation_rules').select('name, trigger_event, enabled, filters').eq('id', props.ruleId).maybeSingle(),
       supabase.from('automation_actions').select('action_type, config').eq('rule_id', props.ruleId).order('position'),
     ])
     if (rule) {
       name.value = rule.name
       triggerEvent.value = rule.trigger_event
       enabled.value = rule.enabled
+      const filters = (rule.filters ?? {}) as Record<string, unknown>
+      filterAppointmentTypeId.value = typeof filters.appointment_type_id === 'string' ? filters.appointment_type_id : ''
+      filterTotalVisits.value = typeof filters.total_visits === 'number' ? String(filters.total_visits) : ''
+      const { appointment_type_id: _a, total_visits: _t, ...rest } = filters
+      otherFilters = rest
     }
     if (existingActions && existingActions.length > 0) {
       actions.value = existingActions.map((a) => {
@@ -150,7 +166,11 @@ async function persist(): Promise<string | null> {
     return null
   }
 
-  const rulePayload = { account_id: store.accountId!, name: name.value.trim() || 'Campaign', trigger_event: triggerEvent.value, enabled: enabled.value }
+  const filters: Record<string, unknown> = { ...otherFilters }
+  if (filterAppointmentTypeId.value) filters.appointment_type_id = filterAppointmentTypeId.value
+  if (filterTotalVisits.value !== '') filters.total_visits = Number(filterTotalVisits.value)
+
+  const rulePayload = { account_id: store.accountId!, name: name.value.trim() || 'Campaign', trigger_event: triggerEvent.value, enabled: enabled.value, filters: filters as any }
 
   const ruleResult = savedRuleId.value
     ? await supabase.from('automation_rules').update(rulePayload).eq('id', savedRuleId.value).select('id').single()
@@ -253,6 +273,29 @@ async function sendTestToMe() {
               <option v-for="t in TRIGGER_OPTIONS" :key="t.value" :value="t.value">{{ t.label }}</option>
             </select>
             <p class="mt-1.5 text-[11.5px] leading-relaxed text-ink-muted2">Or leave this and use "Send now" from the campaign list to make this a one-off send only.</p>
+          </div>
+
+          <div v-if="triggerEvent !== 'patient.birthday'" class="rounded-card border border-[#EDEEF2] bg-surface-subtle p-3.5">
+            <label class="block text-[12.5px] font-medium text-ink-700">Only when</label>
+            <div class="mt-1.5 grid grid-cols-2 gap-2.5">
+              <select
+                v-model="filterAppointmentTypeId"
+                class="h-9 w-full rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              >
+                <option value="">Any appointment type</option>
+                <option v-for="t in appointmentTypes" :key="t.id" :value="t.id">{{ t.name }}</option>
+              </select>
+              <input
+                v-model="filterTotalVisits"
+                type="number"
+                min="0"
+                placeholder="Any visit count"
+                class="h-9 w-full rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              />
+            </div>
+            <p class="mt-1.5 text-[11.5px] leading-relaxed text-ink-muted2">
+              Visit count is the patient's total completed visits of that type (e.g. 1 = the first time it's ever completed for them, 0 = never completed).
+            </p>
           </div>
 
           <div class="border-t border-line-divider pt-4">

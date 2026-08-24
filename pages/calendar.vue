@@ -91,8 +91,14 @@ interface AppointmentRow {
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const { can } = usePermission()
 
 const SLOT_MIN = computed(() => store.currentClinic?.slot_duration_minutes ?? 30)
+
+// Cash Shift ("Caja") was only reachable from the account-menu dropdown --
+// surfacing it directly on the calendar too, where staff actually work
+// through the day, matches PracticeHub's placement.
+const cashShiftOpen = ref(false)
 
 // 'day' so today's own appointments are always visible on load -- 'workweek'
 // hides Sat/Sun entirely, which silently hides everything booked for today
@@ -762,6 +768,7 @@ function onAppointmentDragMove(e: PointerEvent) {
   if (!dragMoved.value) {
     if (Math.abs(dx) < 5 && Math.abs(dy) < 5) return
     dragMoved.value = true
+    closeHoverCardNow()
   }
   const appt = appointments.value.find((a) => a.id === s.apptId)
   if (!appt) return
@@ -902,6 +909,20 @@ function keepHoverCard() {
 function hideHoverCard() {
   hoverHideTimer = setTimeout(() => (hoveredAppt.value = null), 200)
 }
+// Dragging an appointment keeps the pointer over the calendar the whole
+// time, so mouseleave never fires on the original block -- the hover card
+// would otherwise stay open (and stale) through the entire drag.
+function closeHoverCardNow() {
+  if (hoverShowTimer) {
+    clearTimeout(hoverShowTimer)
+    hoverShowTimer = null
+  }
+  if (hoverHideTimer) {
+    clearTimeout(hoverHideTimer)
+    hoverHideTimer = null
+  }
+  hoveredAppt.value = null
+}
 const hoveredRoomName = computed(() => rooms.value.find((r) => r.id === hoveredAppt.value?.room_id)?.name ?? null)
 
 // Current-time indicator (day view only, per spec).
@@ -940,6 +961,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
           <button type="button" class="rounded-[5px] px-2.5 py-1 font-medium" :class="viewMode === 'workweek' ? 'bg-brand text-white' : 'text-ink-500 hover:bg-surface-subtle'" @click="viewMode = 'workweek'">Work week</button>
           <button type="button" class="rounded-[5px] px-2.5 py-1 font-medium" :class="viewMode === 'week' ? 'bg-brand text-white' : 'text-ink-500 hover:bg-surface-subtle'" @click="viewMode = 'week'">Week</button>
         </div>
+        <UiBtn v-if="can('payments_allocate')" variant="secondary" size="sm" @click="cashShiftOpen = true">Cash Shift</UiBtn>
         <UiBtn variant="secondary" size="sm" @click="openBlockCreateModal()">Block time</UiBtn>
         <UiBtn variant="primary" size="sm" @click="openCreateModal()">+ New Appointment</UiBtn>
       </div>
@@ -1315,6 +1337,8 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
       @close="blockModalOpen = false"
       @saved="onBlockSaved"
     />
+
+    <CashShiftModal v-if="cashShiftOpen" @close="cashShiftOpen = false" />
 
     <CalendarAppointmentHoverCard
       v-if="hoveredAppt"

@@ -160,7 +160,27 @@ const composerText = ref('')
 const sending = ref(false)
 const sendError = ref('')
 const fileInput = ref<HTMLInputElement>()
+const composerTextarea = ref<HTMLTextAreaElement>()
 const templateModalOpen = ref(false)
+
+// Inserts at the cursor rather than replacing composerText outright, so
+// picking a saved reply doesn't clobber anything the practitioner already
+// typed.
+function insertReply(text: string) {
+  const el = composerTextarea.value
+  if (!el) {
+    composerText.value += text
+    return
+  }
+  const start = el.selectionStart ?? composerText.value.length
+  const end = el.selectionEnd ?? composerText.value.length
+  composerText.value = composerText.value.slice(0, start) + text + composerText.value.slice(end)
+  nextTick(() => {
+    el.focus()
+    const cursor = start + text.length
+    el.setSelectionRange(cursor, cursor)
+  })
+}
 
 async function sendText() {
   if (!composerText.value.trim() || !selected.value) return
@@ -412,7 +432,9 @@ onUnmounted(() => {
               📎
             </button>
             <input ref="fileInput" type="file" class="hidden" accept="image/*,video/*,audio/*,.pdf,.doc,.docx" @change="onFileChosen" />
+            <SavedRepliesPicker @insert="insertReply" />
             <textarea
+              ref="composerTextarea"
               v-model="composerText"
               rows="1"
               placeholder="Type a message…"

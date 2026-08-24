@@ -88,6 +88,23 @@ const within24h = computed(() => {
 const composerText = ref('')
 const sending = ref(false)
 const sendError = ref('')
+const composerTextarea = ref<HTMLTextAreaElement>()
+
+function insertReply(text: string) {
+  const el = composerTextarea.value
+  if (!el) {
+    composerText.value += text
+    return
+  }
+  const start = el.selectionStart ?? composerText.value.length
+  const end = el.selectionEnd ?? composerText.value.length
+  composerText.value = composerText.value.slice(0, start) + text + composerText.value.slice(end)
+  nextTick(() => {
+    el.focus()
+    const cursor = start + text.length
+    el.setSelectionRange(cursor, cursor)
+  })
+}
 
 async function sendText() {
   if (!composerText.value.trim() || !selected.value) return
@@ -190,7 +207,9 @@ onUnmounted(() => {
           More than 24h since {{ selected.name }} last messaged — free-form replies are blocked by WhatsApp.
         </p>
         <div v-else class="flex items-end gap-2">
+          <SavedRepliesPicker size="lg" @insert="insertReply" />
           <textarea
+            ref="composerTextarea"
             v-model="composerText"
             rows="1"
             placeholder="Type a message…"

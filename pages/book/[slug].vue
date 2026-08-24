@@ -218,7 +218,6 @@ async function submitBooking() {
   if (!selectedSlot.value) return
   submitError.value = ''
   submitting.value = true
-  const dial = COUNTRIES.find((c) => c.code === dialCode.value)?.dial ?? ''
   const { data, error } = await supabase.rpc('create_public_booking', {
     p_account_slug: slug,
     p_clinic_id: clinicId.value,
@@ -228,7 +227,11 @@ async function submitBooking() {
     p_first_name: firstName.value,
     p_last_name: lastName.value,
     p_email: email.value,
-    p_phone: phoneNumber.value ? `${dial} ${phoneNumber.value}` : '',
+    // Bare number, no dial prefix -- country_code is stored separately and
+    // every display site (DetailSidebar.vue, ContactNumbersEditor.vue)
+    // already prepends the dial code itself from country_code.
+    p_phone: phoneNumber.value,
+    p_country_code: dialCode.value,
     p_note: note.value,
   })
   submitting.value = false

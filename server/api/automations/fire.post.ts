@@ -1,3 +1,5 @@
+import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
+
 // Fires every enabled automation_rule matching a trigger event -- called
 // from the client right after the underlying action already happened (a
 // patient checked in, an appointment saved as completed, an invoice paid),
@@ -24,7 +26,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: rules } = await supabase
     .from('automation_rules')
-    .select('id, name')
+    .select('id, name, filters')
     .eq('account_id', accountId)
     .eq('trigger_event', body.triggerEvent)
     .eq('enabled', true)
@@ -40,9 +42,12 @@ export default defineEventHandler(async (event) => {
 
   const origin = getRequestURL(event).origin
 
+  let fired = 0
   for (const rule of rules) {
+    if (!(await ruleFiltersMatch(supabase, patient.id, rule.filters as AutomationFilters, body.appointmentId))) continue
     await runRuleActions(supabase, accountId, rule.id, patient, origin, body.appointmentId, body)
+    fired += 1
   }
 
-  return { fired: rules.length }
+  return { fired }
 })

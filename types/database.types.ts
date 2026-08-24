@@ -606,6 +606,7 @@ export type Database = {
           created_at: string
           created_by: string | null
           enabled: boolean
+          filters: Json
           id: string
           name: string
           trigger_event: string
@@ -615,6 +616,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           enabled?: boolean
+          filters?: Json
           id?: string
           name?: string
           trigger_event: string
@@ -624,6 +626,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           enabled?: boolean
+          filters?: Json
           id?: string
           name?: string
           trigger_event?: string

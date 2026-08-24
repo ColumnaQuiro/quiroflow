@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "972446092693",
+    "project_id": "quiroflow-b3a5b",
+    "storage_bucket": "quiroflow-b3a5b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:972446092693:android:1ad31b1453dbb14a803a9c",
+        "android_client_info": {
+          "package_name": "com.quiroflow.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAre478b_jt_qHQL1YYBG7BzFVGz6qfHjI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

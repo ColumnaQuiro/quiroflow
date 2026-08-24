@@ -1,4 +1,4 @@
-import { PushNotifications } from '@capacitor/push-notifications'
+import { FirebaseMessaging } from '@capacitor-firebase/messaging'
 import { Capacitor } from '@capacitor/core'
 
 // Requests permission and registers this device for push -- called once the
@@ -6,6 +6,15 @@ import { Capacitor } from '@capacitor/core'
 // messages. No-ops on web (native-only API) and swallows errors so a device
 // that can't register (permission denied, no Firebase config yet on
 // Android, etc.) doesn't break the rest of the app.
+//
+// Uses @capacitor-firebase/messaging rather than the official
+// @capacitor/push-notifications: on iOS that plugin only ever hands back the
+// raw APNs device token, not an FCM registration token, and the server sends
+// via FCM's v1 API (server/utils/pushNotifications.ts), which needs a real
+// FCM token. This plugin does the APNs<->FCM exchange natively via the
+// Firebase SDK on both platforms, so getToken() always returns something the
+// server can actually send to.
+//
 // Module-level, not per-call-site: only ever one real device token per app
 // instance, and sign-out (from wherever it's triggered) needs it to
 // unregister.
@@ -17,17 +26,22 @@ export function usePushNotifications() {
   async function register() {
     if (!Capacitor.isNativePlatform()) return
     try {
-      const permission = await PushNotifications.requestPermissions()
+      const permission = await FirebaseMessaging.requestPermissions()
       if (permission.receive !== 'granted') return
 
-      await PushNotifications.register()
+      const { token } = await FirebaseMessaging.getToken()
+      lastToken = token
+      await authedFetch('/api/mobile/register-push-token', {
+        method: 'POST',
+        body: { token, platform: Capacitor.getPlatform() },
+      })
 
-      PushNotifications.addListener('registration', async (token) => {
-        lastToken = token.value
+      FirebaseMessaging.addListener('tokenReceived', async (event) => {
+        lastToken = event.token
         try {
           await authedFetch('/api/mobile/register-push-token', {
             method: 'POST',
-            body: { token: token.value, platform: Capacitor.getPlatform() },
+            body: { token: event.token, platform: Capacitor.getPlatform() },
           })
         } catch {
           // Best-effort -- the Inbox still works without push.

@@ -22,7 +22,9 @@ const TRIGGER_LABELS: Record<string, string> = {
   'appointment.completed': 'Appointment completed',
   'appointment.cancelled': 'Appointment cancelled',
   'appointment.no_show': 'Appointment marked as missed',
+  'appointment.rescheduled': 'Appointment rescheduled',
   'invoice.paid': 'Invoice paid',
+  'patient.birthday': "Patient's birthday (daily check)",
 }
 // Plain-language description shown in the expanded row's Trigger card.
 const TRIGGER_DESCRIPTIONS: Record<string, string> = {
@@ -31,7 +33,9 @@ const TRIGGER_DESCRIPTIONS: Record<string, string> = {
   'appointment.completed': 'Fires right after a visit is marked completed.',
   'appointment.cancelled': 'Fires when an appointment is cancelled.',
   'appointment.no_show': 'Fires when an appointment is marked as a missed visit.',
+  'appointment.rescheduled': "Fires when an appointment's date or time changes.",
   'invoice.paid': 'Fires once an invoice is marked paid in full.',
+  'patient.birthday': "Runs once a day; fires for any patient whose birthday is today.",
 }
 const ACTION_LABELS: Record<string, string> = {
   whatsapp_template: 'WhatsApp',

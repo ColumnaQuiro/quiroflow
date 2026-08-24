@@ -65,12 +65,21 @@ export async function runActionsList(
   // sent to the patient.
   const canContact = !patient.is_minor && !patient.do_not_contact
 
+  // Resolved once per rule firing (not per-action) since the {{next_appointment}}
+  // merge token always refers to the appointment that triggered this rule --
+  // there's no other appointment in scope an email action could mean instead.
+  let nextAppointmentAt: string | undefined
+  if (appointmentId) {
+    const { data: appt } = await supabase.from('appointments').select('starts_at').eq('id', appointmentId).maybeSingle()
+    nextAppointmentAt = appt?.starts_at ?? undefined
+  }
+
   for (const action of actions) {
     try {
       if (action.action_type === 'whatsapp_template') {
         if (canContact) await runWhatsAppAction(supabase, accountId, patient, action.config, origin, appointmentId)
       } else if (action.action_type === 'email') {
-        if (canContact) await runEmailAction(patient, action.config)
+        if (canContact) await runEmailAction(patient, action.config, { nextAppointmentAt })
       } else if (action.action_type === 'webhook') {
         await runWebhookAction(action.config, triggerBody ?? { triggerEvent: 'manual', patientId: patient.id, appointmentId })
       }
@@ -80,10 +89,16 @@ export async function runActionsList(
   }
 }
 
-function patientFieldValue(patient: PatientForAction, source: string): string {
+interface MergeContext { nextAppointmentAt?: string }
+
+function patientFieldValue(patient: PatientForAction, source: string, context?: MergeContext): string {
   if (source === 'first_name') return patient.first_name ?? ''
   if (source === 'last_name') return patient.last_name ?? ''
   if (source === 'email') return patient.email ?? ''
+  if (source === 'next_appointment') {
+    if (!context?.nextAppointmentAt) return ''
+    return new Date(context.nextAppointmentAt).toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  }
   return ''
 }
 
@@ -177,19 +192,19 @@ async function runWhatsAppAction(
   })
 }
 
-async function runEmailAction(patient: PatientForAction, config: Record<string, any>) {
+async function runEmailAction(patient: PatientForAction, config: Record<string, any>, context?: MergeContext) {
   const subject: string | undefined = config.subject
   const rawBody: string | undefined = config.body
   if (!subject || !rawBody || !patient.email) return
 
   const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-  const mergePlain = (text: string) => text.replace(/\{\{(\w+)\}\}/g, (_, key: string) => patientFieldValue(patient, key))
+  const mergePlain = (text: string) => text.replace(/\{\{(\w+)\}\}/g, (_, key: string) => patientFieldValue(patient, key, context))
   // rawBody is HTML produced by the account's own rich-text editor (bold/
   // italic/underline/image, no freeform tag entry), so unlike the plain
   // subject it's trusted and must NOT be escaped wholesale -- that would
   // turn every tag into literal text. Only the substituted variable values
   // (patient-controlled data) get escaped.
-  const mergeHtml = (html: string) => html.replace(/\{\{(\w+)\}\}/g, (_, key: string) => escapeHtml(patientFieldValue(patient, key)))
+  const mergeHtml = (html: string) => html.replace(/\{\{(\w+)\}\}/g, (_, key: string) => escapeHtml(patientFieldValue(patient, key, context)))
 
   const runtimeConfig = useRuntimeConfig()
   if (!runtimeConfig.resendApiKey) return

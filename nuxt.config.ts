@@ -61,6 +61,11 @@ export default defineNuxtConfig({
     // server/utils/pushNotifications.ts just no-ops, same as WhatsApp
     // delivery tracking being optional when unconfigured.
     fcmServiceAccountJson: '',
+    // Shared secret checked by server/api/automations/birthday-cron.post.ts
+    // -- that endpoint is called by a Postgres pg_cron job (via pg_net),
+    // which carries no session, so this stands in for auth on that one
+    // request. Optional -- if unset, the endpoint just always rejects.
+    cronSecret: '',
     public: {
       // Booking subdomains: <account-slug>.<appDomain> gets rewritten to
       // /book/<account-slug> by server/middleware/subdomain-booking.ts.

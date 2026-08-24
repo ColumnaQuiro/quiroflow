@@ -1532,6 +1532,7 @@ export type Database = {
         Row: {
           account_id: string
           completed_at: string | null
+          completed_ip: unknown
           created_at: string
           created_by: string | null
           external_reference: string | null
@@ -1547,6 +1548,7 @@ export type Database = {
         Insert: {
           account_id: string
           completed_at?: string | null
+          completed_ip?: unknown
           created_at?: string
           created_by?: string | null
           external_reference?: string | null
@@ -1562,6 +1564,7 @@ export type Database = {
         Update: {
           account_id?: string
           completed_at?: string | null
+          completed_ip?: unknown
           created_at?: string
           created_by?: string | null
           external_reference?: string | null

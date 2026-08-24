@@ -153,7 +153,10 @@ function statusFor(doc: Doc): { label: string; tone: 'success' | 'brand' } {
   return doc.completed_at ? { label: 'Complete', tone: 'success' } : { label: 'Sent', tone: 'brand' }
 }
 function metaFor(doc: Doc) {
-  if (doc.completed_at) return `Signed ${new Date(doc.completed_at).toLocaleDateString()}`
+  if (doc.completed_at) {
+    const ip = doc.completed_ip ? ` from ${doc.completed_ip}` : ''
+    return `Signed ${new Date(doc.completed_at).toLocaleDateString()}${ip}`
+  }
   return `Sent ${new Date(doc.updated_at).toLocaleDateString()}`
 }
 </script>

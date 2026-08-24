@@ -22,6 +22,7 @@ export type Database = {
           created_by: string | null
           id: string
           invoice_id: string | null
+          method: string | null
           patient_id: string
           reason: string | null
         }
@@ -32,6 +33,7 @@ export type Database = {
           created_by?: string | null
           id?: string
           invoice_id?: string | null
+          method?: string | null
           patient_id: string
           reason?: string | null
         }
@@ -42,6 +44,7 @@ export type Database = {
           created_by?: string | null
           id?: string
           invoice_id?: string | null
+          method?: string | null
           patient_id?: string
           reason?: string | null
         }
@@ -2725,6 +2728,7 @@ export type Database = {
           p_account_slug: string
           p_appointment_type_id: string
           p_clinic_id: string
+          p_country_code?: string
           p_email: string
           p_first_name: string
           p_last_name: string

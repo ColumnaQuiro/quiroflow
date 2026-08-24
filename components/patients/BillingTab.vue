@@ -52,9 +52,10 @@ const supabase = useSupabaseClient()
 const store = useAccountStore()
 
 const { balanceCents, creditLedgerCents, refresh: refreshCreditSummary } = usePatientFinancialSummary(() => props.patientId)
-const creditHistory = ref<{ id: string; amount_cents: number; reason: string | null; created_at: string }[]>([])
+const creditHistory = ref<{ id: string; amount_cents: number; reason: string | null; method: string | null; created_at: string }[]>([])
 const addCreditAmount = ref('')
 const addCreditReason = ref('')
+const addCreditMethod = ref<'card' | 'cash' | 'other'>('cash')
 const addingCredit = ref(false)
 const applyCreditInvoiceId = ref('')
 const applyCreditAmount = ref('')
@@ -67,7 +68,7 @@ const activePanel = ref<'credit' | 'payment' | null>(null)
 async function loadCreditHistory() {
   const { data } = await supabase
     .from('account_credits')
-    .select('id, amount_cents, reason, created_at')
+    .select('id, amount_cents, reason, method, created_at')
     .eq('patient_id', props.patientId)
     .order('created_at', { ascending: false })
     .limit(10)
@@ -84,10 +85,12 @@ async function addCredit() {
     patient_id: props.patientId,
     amount_cents: amountCents,
     reason: addCreditReason.value || null,
+    method: addCreditMethod.value,
     created_by: store.teamMember?.id ?? null,
   })
   addCreditAmount.value = ''
   addCreditReason.value = ''
+  addCreditMethod.value = 'cash'
   addingCredit.value = false
   activePanel.value = null
   await Promise.all([refreshCreditSummary(), loadCreditHistory()])
@@ -199,13 +202,59 @@ const loading = ref(true)
 const packageTemplates = ref<PackageTemplate[]>([])
 const purchases = ref<PackagePurchaseRow[]>([])
 const sellPackageId = ref('')
+const sellAmountPaid = ref('')
+const sellMethod = ref<'cash' | 'card' | 'other' | 'credit'>('cash')
 const sellingPackage = ref(false)
 
 const membershipTemplates = ref<MembershipTemplate[]>([])
 const patientMemberships = ref<PatientMembershipRow[]>([])
 const membershipPayments = ref<MembershipPaymentRow[]>([])
 const activateMembershipId = ref('')
+const activateAmountPaid = ref('')
+const activateMethod = ref<'cash' | 'card' | 'other' | 'credit'>('cash')
 const activatingMembership = ref(false)
+
+watch(sellPackageId, (id) => {
+  const tpl = packageTemplates.value.find((p) => p.id === id)
+  sellAmountPaid.value = tpl ? (tpl.price_cents / 100).toFixed(2) : ''
+})
+watch(activateMembershipId, (id) => {
+  const tpl = membershipTemplates.value.find((m) => m.id === id)
+  activateAmountPaid.value = tpl ? (tpl.price_cents / 100).toFixed(2) : ''
+})
+
+// Records what was actually collected at the point of sale (may be less than
+// the package/membership's full price -- the rest is expected to go through
+// the existing Stripe autopay/installments flow below, which already has an
+// "already paid" concept for exactly this). Same compound cash/card/other/
+// credit handling as recordPayment's credit branch and applyCreditToInvoice.
+async function recordSalePayment(description: string, amountCents: number, method: 'cash' | 'card' | 'other' | 'credit') {
+  const { count } = await supabase.from('invoices').select('id', { count: 'exact', head: true })
+  const invoiceNumber = `INV-${String((count ?? 0) + 1).padStart(4, '0')}`
+
+  const { data: invoice } = await supabase
+    .from('invoices')
+    .insert({ account_id: store.accountId!, patient_id: props.patientId, invoice_number: invoiceNumber, status: 'paid', total_cents: amountCents })
+    .select('id')
+    .single()
+  if (!invoice) return
+
+  await supabase.from('invoice_line_items').insert({ account_id: store.accountId!, invoice_id: invoice.id, description, quantity: 1, price_cents: amountCents })
+
+  if (method === 'credit') {
+    await supabase.from('payments').insert({ account_id: store.accountId!, invoice_id: invoice.id, amount_cents: amountCents, method: 'other' })
+    await supabase.from('account_credits').insert({
+      account_id: store.accountId!,
+      patient_id: props.patientId,
+      amount_cents: -amountCents,
+      reason: `Applied to ${description}`,
+      invoice_id: invoice.id,
+      created_by: store.teamMember?.id ?? null,
+    })
+  } else {
+    await supabase.from('payments').insert({ account_id: store.accountId!, invoice_id: invoice.id, amount_cents: amountCents, method })
+  }
+}
 
 async function loadAll() {
   const [{ data: inv }, { data: pkgTemplates }, { data: pkgPurchases }, { data: memTemplates }, { data: patMemberships }] = await Promise.all([
@@ -408,6 +457,11 @@ const statusTone: Record<string, 'success' | 'danger' | 'warning' | 'neutral'> =
 async function sellPackage() {
   const tpl = packageTemplates.value.find((p) => p.id === sellPackageId.value)
   if (!tpl) return
+  const amountCents = Math.round((parseFloat(sellAmountPaid.value) || 0) * 100)
+  if (sellMethod.value === 'credit' && amountCents > creditLedgerCents.value) {
+    creditError.value = 'Amount exceeds available credit.'
+    return
+  }
   sellingPackage.value = true
   await supabase.from('package_purchases').insert({
     account_id: store.accountId!,
@@ -418,9 +472,14 @@ async function sellPackage() {
     price_cents: tpl.price_cents,
     created_by: store.teamMember?.id ?? null,
   })
+  // Amount paid can be less than the package's full price -- the rest is
+  // expected via the existing "Set up autopay" Stripe schedule below.
+  if (amountCents > 0) await recordSalePayment(tpl.name, amountCents, sellMethod.value)
   sellingPackage.value = false
   sellPackageId.value = ''
-  await loadAll()
+  sellAmountPaid.value = ''
+  sellMethod.value = 'cash'
+  await Promise.all([loadAll(), refreshCreditSummary()])
 }
 
 async function useSession(purchase: PackagePurchaseRow) {
@@ -487,6 +546,11 @@ async function removeShare(packageId: string, patientId: string) {
 async function activateMembership() {
   const tpl = membershipTemplates.value.find((m) => m.id === activateMembershipId.value)
   if (!tpl) return
+  const amountCents = Math.round((parseFloat(activateAmountPaid.value) || 0) * 100)
+  if (activateMethod.value === 'credit' && amountCents > creditLedgerCents.value) {
+    creditError.value = 'Amount exceeds available credit.'
+    return
+  }
   activatingMembership.value = true
   await supabase.from('patient_memberships').insert({
     account_id: store.accountId!,
@@ -496,9 +560,12 @@ async function activateMembership() {
     price_cents: tpl.price_cents,
     created_by: store.teamMember?.id ?? null,
   })
+  if (amountCents > 0) await recordSalePayment(tpl.name, amountCents, activateMethod.value)
   activatingMembership.value = false
   activateMembershipId.value = ''
-  await loadAll()
+  activateAmountPaid.value = ''
+  activateMethod.value = 'cash'
+  await Promise.all([loadAll(), refreshCreditSummary()])
 }
 
 async function setMembershipStatus(m: PatientMembershipRow, status: string) {
@@ -558,6 +625,14 @@ function money(cents: number) {
             <label class="block text-[11px] text-ink-muted">Amount (€)</label>
             <input v-model="addCreditAmount" type="number" min="0" step="0.01" class="mt-0.5 w-24 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]" />
           </div>
+          <div>
+            <label class="block text-[11px] text-ink-muted">Method</label>
+            <select v-model="addCreditMethod" class="mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
+              <option value="cash">Cash</option>
+              <option value="card">Card</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
           <div class="flex-1">
             <label class="block text-[11px] text-ink-muted">Reason</label>
             <input v-model="addCreditReason" type="text" placeholder="e.g. Birthday gift" class="mt-0.5 w-full rounded-ctlSm border border-line-control px-2 py-1 text-[13px]" />
@@ -587,6 +662,7 @@ function money(cents: number) {
           <li v-for="c in creditHistory" :key="c.id">
             {{ new Date(c.created_at).toLocaleDateString() }} &middot;
             <span :class="c.amount_cents > 0 ? 'text-success-text' : 'text-danger-text'">{{ c.amount_cents > 0 ? '+' : '' }}{{ money(c.amount_cents) }}</span>
+            <span v-if="c.method"> &middot; {{ c.method }}</span>
             <span v-if="c.reason"> &middot; {{ c.reason }}</span>
           </li>
         </ul>
@@ -762,8 +838,24 @@ function money(cents: number) {
             <option value="" disabled>Sell a package…</option>
             <option v-for="t in packageTemplates" :key="t.id" :value="t.id">{{ t.name }} ({{ t.session_count }}, {{ money(t.price_cents) }})</option>
           </select>
+          <div v-if="sellPackageId">
+            <label class="block text-[11px] text-ink-muted">Paid now (€)</label>
+            <input v-model="sellAmountPaid" type="number" min="0" step="0.01" class="mt-0.5 w-24 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]" />
+          </div>
+          <div v-if="sellPackageId && Number(sellAmountPaid) > 0">
+            <label class="block text-[11px] text-ink-muted">Method</label>
+            <select v-model="sellMethod" class="mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]">
+              <option value="cash">Cash</option>
+              <option value="card">Card</option>
+              <option value="other">Other</option>
+              <option v-if="creditLedgerCents > 0" value="credit">Credit (€{{ (creditLedgerCents / 100).toFixed(2) }} available)</option>
+            </select>
+          </div>
           <UiBtn size="sm" variant="secondary" :disabled="!sellPackageId || sellingPackage" @click="sellPackage">{{ sellingPackage ? 'Selling…' : 'Sell' }}</UiBtn>
         </form>
+        <p v-if="sellPackageId && Number(sellAmountPaid) > 0 && packageTemplates.find((t) => t.id === sellPackageId) && Number(sellAmountPaid) * 100 < packageTemplates.find((t) => t.id === sellPackageId)!.price_cents" class="mt-1.5 text-[11px] text-ink-faint">
+          Remaining balance can be scheduled via Stripe autopay after the sale.
+        </p>
       </div>
 
       <!-- Memberships -->
@@ -835,6 +927,19 @@ function money(cents: number) {
             <option value="" disabled>Activate a membership…</option>
             <option v-for="t in membershipTemplates" :key="t.id" :value="t.id">{{ t.name }} ({{ money(t.price_cents) }})</option>
           </select>
+          <div v-if="activateMembershipId">
+            <label class="block text-[11px] text-ink-muted">Paid now (€)</label>
+            <input v-model="activateAmountPaid" type="number" min="0" step="0.01" class="mt-0.5 w-24 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]" />
+          </div>
+          <div v-if="activateMembershipId && Number(activateAmountPaid) > 0">
+            <label class="block text-[11px] text-ink-muted">Method</label>
+            <select v-model="activateMethod" class="mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]">
+              <option value="cash">Cash</option>
+              <option value="card">Card</option>
+              <option value="other">Other</option>
+              <option v-if="creditLedgerCents > 0" value="credit">Credit (€{{ (creditLedgerCents / 100).toFixed(2) }} available)</option>
+            </select>
+          </div>
           <UiBtn size="sm" variant="secondary" :disabled="!activateMembershipId || activatingMembership" @click="activateMembership">{{ activatingMembership ? 'Activating…' : 'Activate' }}</UiBtn>
         </form>
       </div>

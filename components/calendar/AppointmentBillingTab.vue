@@ -223,7 +223,7 @@ async function recordPayment() {
     if (patient?.invoice_email_enabled && patient.email) {
       // Best-effort -- a failed auto-send shouldn't block having just
       // completed the visit and taken payment.
-      $fetch(`/api/invoices/${invoice.value.id}/send`, { method: 'POST' }).catch(() => {})
+      useStaffFetch(`/api/invoices/${invoice.value.id}/send`, { method: 'POST' }).catch(() => {})
     }
   }
 

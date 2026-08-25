@@ -62,7 +62,7 @@ async function loadTemplates() {
   loadingTemplates.value = true
   templatesError.value = ''
   try {
-    const { templates: list } = await $fetch<{ templates: Template[] }>('/api/whatsapp/templates')
+    const { templates: list } = await useStaffFetch<{ templates: Template[] }>('/api/whatsapp/templates')
     templates.value = list
   } catch (err: any) {
     templatesError.value = err?.data?.statusMessage ?? 'Failed to load templates'

@@ -28,7 +28,7 @@ async function onSubmit() {
   // Best-effort -- if this fails (e.g. Netlify not configured), the clinic
   // still works fine, its booking subdomain just needs adding manually.
   try {
-    await $fetch('/api/internal/register-clinic-subdomain', { method: 'POST' })
+    await useStaffFetch('/api/internal/register-clinic-subdomain', { method: 'POST' })
   } catch {
     // ignore
   }

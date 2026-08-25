@@ -98,7 +98,7 @@ async function sendEmail() {
   sendMessage.value = ''
   sending.value = true
   try {
-    await $fetch(`/api/invoices/${invoiceId}/send`, { method: 'POST' })
+    await useStaffFetch(`/api/invoices/${invoiceId}/send`, { method: 'POST' })
     sendMessage.value = 'Invoice emailed.'
   } catch (e: any) {
     sendMessage.value = e?.data?.message ?? 'Failed to send email.'

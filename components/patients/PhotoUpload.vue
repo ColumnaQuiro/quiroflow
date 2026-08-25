@@ -54,7 +54,7 @@ async function useYourPhone() {
   menuOpen.value = false
   error.value = ''
   try {
-    const { token } = await $fetch<{ token: string }>('/api/photo-upload/create-token', { method: 'POST', body: { patientId: props.patientId } })
+    const { token } = await useStaffFetch<{ token: string }>('/api/photo-upload/create-token', { method: 'POST', body: { patientId: props.patientId } })
     qrToken.value = token
     const url = `${window.location.origin}/photo-upload/${token}`
     qrDataUrl.value = await QRCode.toDataURL(url, { width: 220, margin: 1 })

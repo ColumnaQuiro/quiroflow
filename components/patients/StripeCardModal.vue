@@ -48,7 +48,7 @@ async function submit() {
     submitting.value = false
     return
   }
-  await $fetch('/api/stripe/save-payment-method', { method: 'POST', body: { patientId: props.patientId, paymentMethodId } })
+  await useStaffFetch('/api/stripe/save-payment-method', { method: 'POST', body: { patientId: props.patientId, paymentMethodId } })
   submitting.value = false
   emit('saved')
 }

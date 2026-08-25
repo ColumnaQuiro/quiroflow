@@ -78,7 +78,7 @@ async function createInvite() {
 
   if (email) {
     try {
-      await $fetch('/api/invites/send', { method: 'POST', body: { inviteId: data.id } })
+      await useStaffFetch('/api/invites/send', { method: 'POST', body: { inviteId: data.id } })
       emailStatus.value = 'sent'
     } catch {
       emailStatus.value = 'failed'

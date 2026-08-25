@@ -79,7 +79,7 @@ async function testConnection() {
   testResult.value = ''
   testError.value = ''
   try {
-    const res = await $fetch<{ livemode: boolean }>('/api/stripe/test-connection', { method: 'POST' })
+    const res = await useStaffFetch<{ livemode: boolean }>('/api/stripe/test-connection', { method: 'POST' })
     testResult.value = res.livemode ? 'Connected — live mode.' : 'Connected — test mode.'
   } catch (err: any) {
     testError.value = err?.data?.statusMessage ?? 'Connection failed'

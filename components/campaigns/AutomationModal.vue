@@ -78,7 +78,7 @@ onMounted(async () => {
   appointmentTypes.value = types ?? []
 
   try {
-    const { templates: waList } = await $fetch<{ templates: WhatsAppTemplate[] }>('/api/whatsapp/templates')
+    const { templates: waList } = await useStaffFetch<{ templates: WhatsAppTemplate[] }>('/api/whatsapp/templates')
     whatsappTemplates.value = waList
   } catch (err: any) {
     templatesError.value = err?.data?.statusMessage ?? 'Failed to load WhatsApp templates'
@@ -217,7 +217,7 @@ async function sendTestToMe() {
     // Sends the draft as it stands right now -- deliberately not persisted
     // first, so previewing a campaign never has the side effect of writing a
     // real (enabled) automation_rules row before the user has chosen to save.
-    const result = await $fetch<{ sent: boolean; email: string }>('/api/automations/send-test', {
+    const result = await useStaffFetch<{ sent: boolean; email: string }>('/api/automations/send-test', {
       method: 'POST',
       body: { actions: actions.value.map((a) => ({ action_type: a.action_type, config: configFor(a) })) },
     })

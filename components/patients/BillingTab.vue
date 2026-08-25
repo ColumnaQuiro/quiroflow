@@ -175,7 +175,7 @@ async function takePayment() {
     // happened from, when the patient has opted in.
     const { data: patient } = await supabase.from('patients').select('invoice_email_enabled, email').eq('id', props.patientId).maybeSingle()
     if (patient?.invoice_email_enabled && patient.email) {
-      $fetch(`/api/invoices/${invoice.id}/send`, { method: 'POST' }).catch(() => {})
+      useStaffFetch(`/api/invoices/${invoice.id}/send`, { method: 'POST' }).catch(() => {})
     }
   }
 

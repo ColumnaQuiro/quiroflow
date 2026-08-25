@@ -262,7 +262,7 @@ async function sendNow(patient: PatientOption) {
   if (!sendNowForId.value) return
   sending.value = true
   try {
-    await $fetch('/api/automations/send-now', { method: 'POST', body: { ruleId: sendNowForId.value, patientId: patient.id } })
+    await useStaffFetch('/api/automations/send-now', { method: 'POST', body: { ruleId: sendNowForId.value, patientId: patient.id } })
     sentMessage.value = `Sent to ${patient.first_name} ${patient.last_name ?? ''}`
     patientQuery.value = ''
     patients.value = []

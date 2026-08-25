@@ -2550,6 +2550,32 @@ export type Database = {
           },
         ]
       }
+      whatsapp_conversation_reads: {
+        Row: {
+          account_id: string
+          conversation_key: string
+          last_read_at: string
+        }
+        Insert: {
+          account_id: string
+          conversation_key: string
+          last_read_at?: string
+        }
+        Update: {
+          account_id?: string
+          conversation_key?: string
+          last_read_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_conversation_reads_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       whatsapp_messages: {
         Row: {
           account_id: string

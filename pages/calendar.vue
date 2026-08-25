@@ -1154,7 +1154,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                         <span class="flex h-[10px] w-[10px] shrink-0 items-center justify-center rounded-full bg-white">
                           <span class="h-[6px] w-[6px] shrink-0 rounded-full" :class="dotClass(appt)" />
                         </span>
-                        <p class="min-w-0 flex-1 truncate text-[12.5px] font-semibold" :class="[nameClass(appt), { 'blur-sm select-none': settings.privacyMode, 'line-through opacity-70': appt.status === 'cancelled' }]">
+                        <p class="min-w-0 flex-1 truncate text-[12.5px] font-semibold" :class="[nameClass(appt), { 'blur-sm select-none': settings.privacyMode, 'line-through opacity-70': appt.status === 'cancelled' || appt.status === 'completed' }]">
                           {{ appt.patients?.first_name }} {{ appt.patients?.last_name }}
                         </p>
                         <span v-if="balanceIconTone(appt)" class="flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-full bg-white">
@@ -1289,7 +1289,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                         <span class="flex h-[9px] w-[9px] shrink-0 items-center justify-center rounded-full bg-white">
                           <span class="h-[5px] w-[5px] shrink-0 rounded-full" :class="dotClass(appt)" />
                         </span>
-                        <p class="min-w-0 flex-1 truncate text-[11px] font-semibold" :class="[nameClass(appt), { 'blur-sm select-none': settings.privacyMode, 'line-through opacity-70': appt.status === 'cancelled' }]">
+                        <p class="min-w-0 flex-1 truncate text-[11px] font-semibold" :class="[nameClass(appt), { 'blur-sm select-none': settings.privacyMode, 'line-through opacity-70': appt.status === 'cancelled' || appt.status === 'completed' }]">
                           {{ appt.patients?.first_name }} {{ appt.patients?.last_name }}
                         </p>
                         <span v-if="balanceIconTone(appt)" class="flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded-full bg-white">

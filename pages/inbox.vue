@@ -39,6 +39,20 @@ const patientNames = ref<Record<string, string>>({})
 const patients = ref<PatientOption[]>([])
 const loading = ref(true)
 const search = ref('')
+// conversation_key -> ISO timestamp of when staff last opened it. Loaded
+// once and updated locally on open/delete rather than reloaded from the
+// server each time -- this account's whole team shares one inbox, so a
+// stale read state from someone else's concurrent session is a rare,
+// low-stakes edge case, not worth a realtime subscription of its own.
+const readTimestamps = ref<Record<string, string>>({})
+async function loadReadTimestamps() {
+  if (!store.accountId) return
+  const { data } = await supabase.from('whatsapp_conversation_reads').select('conversation_key, last_read_at').eq('account_id', store.accountId)
+  const next: Record<string, string> = {}
+  for (const r of data ?? []) next[r.conversation_key] = r.last_read_at
+  readTimestamps.value = next
+}
+onMounted(loadReadTimestamps)
 
 async function load() {
   loading.value = true
@@ -86,7 +100,7 @@ const conversations = computed<Conversation[]>(() => {
       name: (last.patient_id && patientNames.value[last.patient_id]) || last.phone_number || 'Unknown',
       channel: last.channel,
       lastMessage: last,
-      unread: last.direction === 'inbound',
+      unread: last.direction === 'inbound' && (!readTimestamps.value[key] || readTimestamps.value[key] < last.created_at),
     })
   }
   return list.sort((a, b) => b.lastMessage!.created_at.localeCompare(a.lastMessage!.created_at))
@@ -150,9 +164,35 @@ function startConversationWith(p: PatientOption) {
   selectedKey.value = p.id
 }
 
+async function markRead(key: string) {
+  const now = new Date().toISOString()
+  readTimestamps.value = { ...readTimestamps.value, [key]: now }
+  if (!store.accountId) return
+  await supabase.from('whatsapp_conversation_reads').upsert({ account_id: store.accountId, conversation_key: key, last_read_at: now } as never)
+}
+
 function selectConversation(c: Conversation) {
   draftConversation.value = null
   selectedKey.value = c.key
+  if (c.unread) markRead(c.key)
+}
+
+const deletingConversation = ref(false)
+async function deleteConversation() {
+  if (!selected.value || !selectedKey.value) return
+  if (!confirm(`Delete this whole conversation with ${selected.value.name}? This removes all messages and can't be undone.`)) return
+  deletingConversation.value = true
+  const key = selectedKey.value
+  try {
+    let query = supabase.from('whatsapp_messages').delete()
+    query = selected.value.patientId ? query.eq('patient_id', selected.value.patientId) : query.eq('phone_number', selected.value.phoneNumber!)
+    await query
+    if (store.accountId) await supabase.from('whatsapp_conversation_reads').delete().eq('account_id', store.accountId).eq('conversation_key', key)
+    messages.value = messages.value.filter((m) => (m.patient_id ?? m.phone_number ?? 'unknown') !== key)
+    selectedKey.value = null
+  } finally {
+    deletingConversation.value = false
+  }
 }
 
 // Signed URLs for media, resolved on demand and cached per storage path --
@@ -395,6 +435,15 @@ onUnmounted(() => {
           <NuxtLink v-if="selected.patientId" :to="`/patients/${selected.patientId}`" class="shrink-0 text-[12.5px] text-brand-text hover:text-brand-hover">
             View patient →
           </NuxtLink>
+          <button
+            v-if="!isNewConversation"
+            type="button"
+            class="shrink-0 text-[12.5px] text-danger-text hover:underline disabled:opacity-50"
+            :disabled="deletingConversation"
+            @click="deleteConversation"
+          >
+            Delete conversation
+          </button>
         </div>
 
         <div class="flex-1 space-y-3 overflow-y-auto px-4 py-4">
@@ -430,9 +479,12 @@ onUnmounted(() => {
                 <p v-else-if="m.template_name" class="whitespace-pre-wrap text-[13px]">{{ m.body_preview ?? `Template: ${m.template_name}` }}</p>
                 <p v-else class="whitespace-pre-wrap text-[13px]">{{ m.body_preview }}</p>
 
-                <p class="mt-1 text-right text-[10.5px]" :class="m.direction === 'outbound' ? 'text-white/70' : 'text-ink-faint'">
-                  {{ shortTime(m.created_at) }}
-                  <span v-if="m.direction === 'outbound'">· {{ m.status }}</span>
+                <p class="mt-1 flex items-center justify-end gap-1 text-right text-[10.5px]" :class="m.direction === 'outbound' ? 'text-white/70' : 'text-ink-faint'">
+                  <span>{{ shortTime(m.created_at) }}</span>
+                  <span v-if="m.direction === 'outbound' && m.status === 'failed'" class="text-danger-text" title="Failed to send">⚠</span>
+                  <span v-else-if="m.direction === 'outbound' && m.status === 'read'" class="text-[13px] leading-none text-[#34B7F1]" title="Read">✓✓</span>
+                  <span v-else-if="m.direction === 'outbound' && m.status === 'delivered'" class="text-[13px] leading-none" title="Delivered">✓✓</span>
+                  <span v-else-if="m.direction === 'outbound'" class="text-[13px] leading-none" title="Sent">✓</span>
                 </p>
               </div>
             </div>

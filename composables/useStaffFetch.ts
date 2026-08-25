@@ -12,9 +12,19 @@
 // cookie-less requests (server/utils/requirePermission.ts) -- so sending
 // the browser SDK's own current access token the same way sidesteps
 // whatever's stale in the cookie instead of trusting it.
-export function useStaffFetch<T = unknown>(url: string, opts: Record<string, any> = {}): Promise<T> {
-  const session = useSupabaseSession()
+//
+// Reads the token via supabase.auth.getSession() rather than the
+// useSupabaseSession() reactive ref: that ref is only as fresh as the last
+// auth-state-change event this tab happened to receive, which on a
+// long-lived tab can itself go stale (observed live -- a session held open
+// for hours sent a Bearer token that 403'd even though the cookie and
+// supabase.auth.getSession() both had a valid, current one). getSession()
+// forces the SDK to check/refresh before returning, so this can't go stale
+// in either direction. Same pattern mobile's useAuthedFetch already uses.
+export async function useStaffFetch<T = unknown>(url: string, opts: Record<string, any> = {}): Promise<T> {
+  const supabase = useSupabaseClient()
+  const { data } = await supabase.auth.getSession()
   const headers = { ...(opts.headers as Record<string, string> | undefined) }
-  if (session.value?.access_token) headers.Authorization = `Bearer ${session.value.access_token}`
+  if (data.session?.access_token) headers.Authorization = `Bearer ${data.session.access_token}`
   return $fetch(url, { ...opts, headers }) as Promise<T>
 }

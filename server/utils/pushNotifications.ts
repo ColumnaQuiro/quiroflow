@@ -3,6 +3,35 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import type { H3Event } from 'h3'
 import type { Database } from '~/types/database.types'
 
+// Push notification for a new inbound message (WhatsApp or in-app), to
+// every team member who can see the Inbox -- the owner (bypasses all
+// permission checks, see has_permission()) plus anyone whose role has
+// inbox_access. Shared by server/api/whatsapp/webhook.post.ts and
+// server/api/patient-messages/send.post.ts rather than duplicated, since
+// "who should be notified about a new Inbox message" is one policy
+// regardless of which channel it arrived on.
+export async function notifyInboxTeamMembers(
+  event: H3Event,
+  supabase: ReturnType<typeof serverSupabaseServiceRole<Database>>,
+  accountId: string,
+  senderName: string,
+  preview: string,
+  data: Record<string, string> = {},
+) {
+  const { data: members } = await supabase
+    .from('team_members')
+    .select('user_id, is_owner, account_roles(permissions)')
+    .eq('account_id', accountId)
+    .not('user_id', 'is', null)
+  if (!members) return
+
+  const userIds = members
+    .filter((m) => m.is_owner || (m.account_roles as { permissions: Record<string, unknown> } | null)?.permissions?.inbox_access === true)
+    .map((m) => m.user_id as string)
+
+  await sendPushToUsers(event, userIds, { title: senderName, body: preview, data })
+}
+
 // FCM v1 needs an OAuth access token minted from the Firebase service
 // account key, not a static server key (Google retired the legacy server-key
 // API). No dependency added for this -- just RS256-signing a JWT assertion

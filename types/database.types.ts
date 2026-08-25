@@ -1476,6 +1476,55 @@ export type Database = {
           },
         ]
       }
+      patient_app_messages: {
+        Row: {
+          account_id: string
+          body: string
+          created_at: string
+          direction: string
+          id: string
+          patient_id: string
+        }
+        Insert: {
+          account_id: string
+          body: string
+          created_at?: string
+          direction: string
+          id?: string
+          patient_id: string
+        }
+        Update: {
+          account_id?: string
+          body?: string
+          created_at?: string
+          direction?: string
+          id?: string
+          patient_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_app_messages_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_app_messages_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_app_messages_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "recall_candidates"
+            referencedColumns: ["patient_id"]
+          },
+        ]
+      }
       patient_contact_numbers: {
         Row: {
           account_id: string

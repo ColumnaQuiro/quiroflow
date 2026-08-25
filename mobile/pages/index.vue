@@ -5,26 +5,31 @@ watch(user, (u) => { if (!u) navigateTo('/login') }, { immediate: true })
 const { patient, teamMember, loading } = useIdentity()
 
 // Dual-identity users (rare, but the schema allows it -- see useIdentity.ts)
-// get a simple view switcher instead of the app guessing for them.
+// get a simple view switcher instead of the app guessing for them. Picking
+// "Practitioner" routes into the tabbed practitioner section (/my-day etc.);
+// "Patient" stays here rendering PatientHome, since patients don't get tabs.
 const view = ref<'patient' | 'practitioner' | null>(null)
 watch(
   [patient, teamMember, loading],
   ([p, tm, l]) => {
     if (l) return
+    if (tm && !p) {
+      navigateTo('/my-day')
+      return
+    }
     if (view.value) return
     if (p && !tm) view.value = 'patient'
-    else if (tm && !p) view.value = 'practitioner'
   },
   { immediate: true },
 )
 
+watch(view, (v) => {
+  if (v === 'practitioner') navigateTo('/my-day')
+})
+
 const supabase = useSupabaseClient()
-const { unregister: unregisterPush } = usePushNotifications()
 async function signOut() {
-  await unregisterPush()
   await supabase.auth.signOut()
-  // See login.vue's onSubmit for why: give any in-flight keyboard-dismiss
-  // animation a beat to finish before the route change.
   ;(document.activeElement as HTMLElement | null)?.blur()
   await new Promise((resolve) => setTimeout(resolve, 350))
   await navigateTo('/login')
@@ -41,12 +46,6 @@ async function signOut() {
     </div>
 
     <template v-else>
-      <!--
-        Sign out lives in a slim top bar, not below the content -- the
-        practitioner Inbox is a chat UI with its composer pinned to the
-        bottom, and a full-width button below it would either crowd the
-        composer or (worse) get pushed out of view entirely.
-      -->
       <div class="flex shrink-0 items-center border-b border-line bg-surface px-3 py-1.5">
         <div v-if="patient && teamMember" class="flex gap-2">
           <button
@@ -69,8 +68,7 @@ async function signOut() {
         <button type="button" class="ml-auto px-2 py-1.5 text-[12.5px] text-ink-faint" @click="signOut">Sign out</button>
       </div>
 
-      <PatientHome v-if="view === 'patient' && patient" :patient-id="patient.id" :patient-first-name="patient.first_name" />
-      <PractitionerInbox v-else-if="view === 'practitioner' && teamMember" :account-id="teamMember.account_id" />
+      <PatientHome v-if="patient" :patient-id="patient.id" :patient-first-name="patient.first_name" />
     </template>
   </div>
 </template>

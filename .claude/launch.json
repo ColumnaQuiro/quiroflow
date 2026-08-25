@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 3000
+    },
+    {
+      "name": "quiroflow-mobile-static",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "-l", "3010", "mobile/.output/public"],
+      "port": 3010
     }
   ]
 }

@@ -15,6 +15,8 @@
     class="flex h-screen flex-col overflow-x-hidden overflow-y-auto bg-surface-page font-sans text-ink-700"
     style="padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom)"
   >
-    <NuxtPage class="flex-1" />
+    <NuxtLayout>
+      <NuxtPage />
+    </NuxtLayout>
   </div>
 </template>

@@ -10,6 +10,9 @@ interface Message {
   body_preview: string | null
   template_name: string | null
   media_type: string | null
+  media_storage_path: string | null
+  media_mime_type: string | null
+  media_filename: string | null
   channel: string
   created_at: string
 }
@@ -24,8 +27,6 @@ interface Conversation {
 
 const supabase = useSupabaseClient()
 const authedFetch = useAuthedFetch()
-const { register: registerForPush } = usePushNotifications()
-onMounted(registerForPush)
 
 const messages = ref<Message[]>([])
 const patientNames = ref<Record<string, string>>({})
@@ -35,7 +36,7 @@ async function load() {
   loading.value = true
   const { data } = await supabase
     .from('whatsapp_messages')
-    .select('id, patient_id, phone_number, direction, status, body_preview, template_name, media_type, channel, created_at')
+    .select('id, patient_id, phone_number, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, channel, created_at')
     .order('created_at', { ascending: false })
     .limit(500)
   messages.value = data ?? []
@@ -79,6 +80,19 @@ const thread = computed(() =>
   selectedKey.value ? messages.value.filter((m) => (m.patient_id ?? m.phone_number ?? 'unknown') === selectedKey.value).slice().reverse() : [],
 )
 
+const mediaUrls = ref<Record<string, string>>({})
+watch(thread, async (msgs) => {
+  const paths = [...new Set(msgs.map((m) => m.media_storage_path).filter((p): p is string => !!p && !mediaUrls.value[p]))]
+  if (paths.length === 0) return
+  const results = await Promise.all(paths.map((p) => supabase.storage.from('whatsapp-media').createSignedUrl(p, 60 * 30)))
+  const next = { ...mediaUrls.value }
+  paths.forEach((p, i) => {
+    const url = results[i].data?.signedUrl
+    if (url) next[p] = url
+  })
+  mediaUrls.value = next
+})
+
 const within24h = computed(() => {
   const lastInbound = thread.value.filter((m) => m.direction === 'inbound').at(-1)
   if (!lastInbound) return false
@@ -89,6 +103,7 @@ const composerText = ref('')
 const sending = ref(false)
 const sendError = ref('')
 const composerTextarea = ref<HTMLTextAreaElement>()
+const fileInput = ref<HTMLInputElement>()
 
 function insertReply(text: string) {
   const el = composerTextarea.value
@@ -125,6 +140,52 @@ async function sendText() {
     sendError.value = err?.data?.statusMessage ?? 'Failed to send'
   } finally {
     sending.value = false
+  }
+}
+
+const MAX_MEDIA_BYTES = 16 * 1024 * 1024
+function mediaKindForFile(file: File): 'image' | 'video' | 'audio' | 'document' {
+  if (file.type.startsWith('image/')) return 'image'
+  if (file.type.startsWith('video/')) return 'video'
+  if (file.type.startsWith('audio/')) return 'audio'
+  return 'document'
+}
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve((reader.result as string).split(',')[1] ?? '')
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+async function onFileChosen(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file || !selected.value) return
+  if (file.size > MAX_MEDIA_BYTES) {
+    sendError.value = 'File is too large (max 16 MB).'
+    return
+  }
+  sendError.value = ''
+  sending.value = true
+  try {
+    const base64 = await fileToBase64(file)
+    await authedFetch('/api/whatsapp/inbox-send', {
+      method: 'POST',
+      body: {
+        patientId: selected.value.patientId ?? undefined,
+        phoneNumber: selected.value.patientId ? undefined : selected.value.phoneNumber,
+        mediaBase64: base64,
+        mediaMimeType: file.type,
+        mediaFilename: file.name,
+        mediaKind: mediaKindForFile(file),
+      },
+    })
+    await load()
+  } catch (err: any) {
+    sendError.value = err?.data?.statusMessage ?? 'Failed to send'
+  } finally {
+    sending.value = false
+    if (fileInput.value) fileInput.value.value = ''
   }
 }
 
@@ -195,7 +256,27 @@ onUnmounted(() => {
             class="max-w-[80%] rounded-card px-3 py-2 shadow-card"
             :class="m.direction === 'outbound' ? 'bg-brand text-white' : 'border border-line bg-surface text-ink-900'"
           >
-            <p class="whitespace-pre-wrap text-[13.5px]">{{ previewText(m) }}</p>
+            <img v-if="m.media_type === 'image' && m.media_storage_path && mediaUrls[m.media_storage_path]" :src="mediaUrls[m.media_storage_path]" class="max-w-full rounded-ctl" />
+            <video v-else-if="m.media_type === 'video' && m.media_storage_path && mediaUrls[m.media_storage_path]" :src="mediaUrls[m.media_storage_path]" controls class="max-w-full rounded-ctl" />
+            <audio v-else-if="m.media_type === 'audio' && m.media_storage_path && mediaUrls[m.media_storage_path]" :src="mediaUrls[m.media_storage_path]" controls class="max-w-full" />
+            <a
+              v-else-if="m.media_type === 'document' && m.media_storage_path && mediaUrls[m.media_storage_path]"
+              :href="mediaUrls[m.media_storage_path]"
+              target="_blank"
+              class="flex items-center gap-2 text-[13px] underline"
+              :class="m.direction === 'outbound' ? 'text-white' : 'text-brand-text'"
+            >
+              📄 {{ m.media_filename ?? 'Document' }}
+            </a>
+            <img
+              v-else-if="m.media_type === 'sticker' && m.media_storage_path && mediaUrls[m.media_storage_path]"
+              :src="mediaUrls[m.media_storage_path]"
+              class="h-24 w-24"
+            />
+            <p v-else-if="m.media_type" class="text-[12.5px] italic opacity-70">Media unavailable</p>
+
+            <p v-if="m.body_preview && m.media_type" class="mt-1 whitespace-pre-wrap text-[13.5px]">{{ m.body_preview }}</p>
+            <p v-else-if="!m.media_type" class="whitespace-pre-wrap text-[13.5px]">{{ previewText(m) }}</p>
             <p class="mt-1 text-right text-[10.5px]" :class="m.direction === 'outbound' ? 'text-white/70' : 'text-ink-faint'">{{ shortTime(m.created_at) }}</p>
           </div>
         </div>
@@ -208,6 +289,17 @@ onUnmounted(() => {
         </p>
         <div v-else class="flex items-end gap-2">
           <SavedRepliesPicker size="lg" @insert="insertReply" />
+          <input ref="fileInput" type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx" class="hidden" @change="onFileChosen" />
+          <button
+            type="button"
+            class="flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-muted disabled:opacity-50"
+            :disabled="sending"
+            @click="fileInput?.click()"
+          >
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+              <path d="M11.5 5.5l-5 5a2 2 0 102.8 2.8l5-5a3.5 3.5 0 10-5-5l-5 5a1 1 0 001.4 1.4" />
+            </svg>
+          </button>
           <textarea
             ref="composerTextarea"
             v-model="composerText"

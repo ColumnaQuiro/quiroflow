@@ -22,7 +22,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: candidates } = await supabase
     .from('patients')
-    .select('id, account_id, first_name, last_name, email, is_minor, do_not_contact, date_of_birth')
+    .select('id, account_id, first_name, last_name, email, is_minor, do_not_contact, marketing_channels, date_of_birth')
     .not('date_of_birth', 'is', null)
   if (!candidates || candidates.length === 0) return { fired: 0 }
 

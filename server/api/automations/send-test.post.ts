@@ -40,12 +40,16 @@ export default defineEventHandler(async (event) => {
   const [firstName, ...rest] = fullName.split(' ')
 
   const origin = getRequestURL(event).origin
+  // isMarketing: false -- a deliberately-requested preview send should never
+  // be blocked by a consent gate the staff member sending it already knows
+  // about; the gate exists for real automated sends to real patients.
   await runActionsList(
     supabase,
     accountId,
     body.actions.map((a, i) => ({ id: `test-${i}`, action_type: a.action_type, config: a.config ?? {} })),
     { id: teamMember.id, first_name: firstName, last_name: rest.join(' ') || null, email: user.email },
     origin,
+    false,
   )
 
   return { sent: true, email: user.email }

@@ -19,7 +19,11 @@ export default defineEventHandler(async (event) => {
   const { data: rule } = await supabase.from('automation_rules').select('id').eq('id', body.ruleId).eq('account_id', accountId).maybeSingle()
   if (!rule) throw createError({ statusCode: 404, statusMessage: 'Campaign not found' })
 
-  const { data: patient } = await supabase.from('patients').select('id, first_name, last_name, email, is_minor, do_not_contact').eq('id', body.patientId).maybeSingle()
+  const { data: patient } = await supabase
+    .from('patients')
+    .select('id, first_name, last_name, email, is_minor, do_not_contact, marketing_channels')
+    .eq('id', body.patientId)
+    .maybeSingle()
   if (!patient) throw createError({ statusCode: 404, statusMessage: 'Patient not found' })
 
   const origin = getRequestURL(event).origin

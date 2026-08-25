@@ -55,6 +55,12 @@ const savedRuleId = ref<string | null>(props.ruleId ?? null)
 const name = ref('Campaign')
 const triggerEvent = ref(TRIGGER_OPTIONS[0].value)
 const enabled = ref(true)
+// Marketing rules only reach patients who've opted that channel in via
+// marketing_channels (see server/utils/runAutomationActions.ts) -- off by
+// default since the built-in triggers are transactional (tied to a specific
+// appointment/invoice), except patient.birthday which isn't tied to any
+// transaction and is close to always promotional in practice.
+const isMarketing = ref(false)
 const actions = ref<ActionForm[]>([blankAction()])
 const docTemplates = ref<{ id: string; title: string }[]>([])
 const appointmentTypes = ref<{ id: string; name: string }[]>([])
@@ -86,13 +92,14 @@ onMounted(async () => {
 
   if (props.ruleId) {
     const [{ data: rule }, { data: existingActions }] = await Promise.all([
-      supabase.from('automation_rules').select('name, trigger_event, enabled, filters').eq('id', props.ruleId).maybeSingle(),
+      supabase.from('automation_rules').select('name, trigger_event, enabled, filters, is_marketing').eq('id', props.ruleId).maybeSingle(),
       supabase.from('automation_actions').select('action_type, config').eq('rule_id', props.ruleId).order('position'),
     ])
     if (rule) {
       name.value = rule.name
       triggerEvent.value = rule.trigger_event
       enabled.value = rule.enabled
+      isMarketing.value = rule.is_marketing
       const filters = (rule.filters ?? {}) as Record<string, unknown>
       filterAppointmentTypeId.value = typeof filters.appointment_type_id === 'string' ? filters.appointment_type_id : ''
       filterTotalVisits.value = typeof filters.total_visits === 'number' ? String(filters.total_visits) : ''
@@ -170,7 +177,14 @@ async function persist(): Promise<string | null> {
   if (filterAppointmentTypeId.value) filters.appointment_type_id = filterAppointmentTypeId.value
   if (filterTotalVisits.value !== '') filters.total_visits = Number(filterTotalVisits.value)
 
-  const rulePayload = { account_id: store.accountId!, name: name.value.trim() || 'Campaign', trigger_event: triggerEvent.value, enabled: enabled.value, filters: filters as any }
+  const rulePayload = {
+    account_id: store.accountId!,
+    name: name.value.trim() || 'Campaign',
+    trigger_event: triggerEvent.value,
+    enabled: enabled.value,
+    filters: filters as any,
+    is_marketing: isMarketing.value,
+  }
 
   const ruleResult = savedRuleId.value
     ? await supabase.from('automation_rules').update(rulePayload).eq('id', savedRuleId.value).select('id').single()
@@ -263,6 +277,28 @@ async function sendTestToMe() {
               <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform" :class="enabled ? 'translate-x-[16px]' : 'translate-x-[2px]'" />
             </button>
           </label>
+
+          <div class="rounded-card border border-line px-3.5 py-2.5">
+            <label class="flex items-center justify-between">
+              <span class="text-[12.5px] font-medium text-ink-700">Marketing message</span>
+              <button
+                type="button"
+                role="switch"
+                :aria-checked="isMarketing"
+                class="relative inline-flex h-5 w-[34px] shrink-0 items-center rounded-full transition-colors"
+                :class="isMarketing ? 'bg-brand' : 'bg-toggle-off'"
+                @click="isMarketing = !isMarketing"
+              >
+                <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform" :class="isMarketing ? 'translate-x-[16px]' : 'translate-x-[2px]'" />
+              </button>
+            </label>
+            <p class="mt-1.5 text-[11.5px] leading-relaxed text-ink-muted2">
+              Only sends to patients who've opted that channel in under Marketing channels on their profile. Turn this on for promotional content
+              (offers, birthday greetings) -- leave it off for transactional messages tied to a specific appointment or invoice, which don't need
+              separate marketing consent.
+              <template v-if="triggerEvent === 'patient.birthday' && !isMarketing"> Birthday campaigns are usually marketing.</template>
+            </p>
+          </div>
 
           <div class="rounded-card border border-[#EDEEF2] bg-surface-subtle p-3.5">
             <label class="block text-[12.5px] font-medium text-ink-700">When this happens</label>

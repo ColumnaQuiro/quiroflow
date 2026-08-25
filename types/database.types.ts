@@ -640,6 +640,7 @@ export type Database = {
           enabled: boolean
           filters: Json
           id: string
+          is_marketing: boolean
           name: string
           trigger_event: string
         }
@@ -650,6 +651,7 @@ export type Database = {
           enabled?: boolean
           filters?: Json
           id?: string
+          is_marketing?: boolean
           name?: string
           trigger_event: string
         }
@@ -660,6 +662,7 @@ export type Database = {
           enabled?: boolean
           filters?: Json
           id?: string
+          is_marketing?: boolean
           name?: string
           trigger_event?: string
         }

@@ -14,6 +14,7 @@ interface PatientForAction {
   email: string | null
   is_minor?: boolean
   do_not_contact?: boolean
+  marketing_channels?: string[]
 }
 interface ActionRow {
   id: string
@@ -36,13 +37,12 @@ export async function runRuleActions(
   appointmentId?: string,
   triggerBody?: TriggerBody,
 ) {
-  const { data: actions } = await supabase
-    .from('automation_actions')
-    .select('id, action_type, config')
-    .eq('rule_id', ruleId)
-    .order('position')
+  const [{ data: rule }, { data: actions }] = await Promise.all([
+    supabase.from('automation_rules').select('is_marketing').eq('id', ruleId).maybeSingle(),
+    supabase.from('automation_actions').select('id, action_type, config').eq('rule_id', ruleId).order('position'),
+  ])
 
-  await runActionsList(supabase, accountId, (actions ?? []) as ActionRow[], patient, origin, appointmentId, triggerBody)
+  await runActionsList(supabase, accountId, (actions ?? []) as ActionRow[], patient, origin, rule?.is_marketing ?? false, appointmentId, triggerBody)
 }
 
 // Split out from runRuleActions so a caller that already has an in-memory
@@ -57,6 +57,7 @@ export async function runActionsList(
   actions: ActionRow[],
   patient: PatientForAction,
   origin: string,
+  isMarketing = false,
   appointmentId?: string,
   triggerBody?: TriggerBody,
 ) {
@@ -64,6 +65,12 @@ export async function runActionsList(
   // actions still run since those are internal side effects, not messages
   // sent to the patient.
   const canContact = !patient.is_minor && !patient.do_not_contact
+  // Marketing rules (patient.birthday campaigns, or any rule staff has
+  // explicitly flagged as promotional rather than transactional) only reach
+  // patients who've opted that channel in via marketing_channels -- LSSI-CE
+  // and GDPR require real opt-in for unsolicited commercial communications,
+  // distinct from transactional ones like an appointment confirmation.
+  const channelAllowed = (channel: string) => !isMarketing || (patient.marketing_channels ?? []).includes(channel)
 
   // Resolved once per rule firing (not per-action) since the {{next_appointment}}
   // merge token always refers to the appointment that triggered this rule --
@@ -77,9 +84,9 @@ export async function runActionsList(
   for (const action of actions) {
     try {
       if (action.action_type === 'whatsapp_template') {
-        if (canContact) await runWhatsAppAction(supabase, accountId, patient, action.config, origin, appointmentId)
+        if (canContact && channelAllowed('whatsapp')) await runWhatsAppAction(supabase, accountId, patient, action.config, origin, appointmentId)
       } else if (action.action_type === 'email') {
-        if (canContact) await runEmailAction(patient, action.config, { nextAppointmentAt })
+        if (canContact && channelAllowed('email')) await runEmailAction(patient, action.config, { nextAppointmentAt })
       } else if (action.action_type === 'webhook') {
         await runWebhookAction(action.config, triggerBody ?? { triggerEvent: 'manual', patientId: patient.id, appointmentId })
       }

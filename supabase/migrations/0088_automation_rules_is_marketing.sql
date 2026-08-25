@@ -1,0 +1,11 @@
+-- Automations currently send to every matching patient regardless of
+-- patients.marketing_channels -- that field is stored (and editable in
+-- Overview) but nothing checks it before sending. That's fine for
+-- transactional triggers (appointment booked/cancelled/completed, invoice
+-- paid) which are contract-performance communications under GDPR
+-- Art 6(1)(b), not requiring separate marketing consent. It's not fine for
+-- promotional content -- patient.birthday campaigns being the clear case,
+-- but staff can write any content into any rule's WhatsApp/email action, so
+-- this needs to be an explicit per-rule choice rather than inferred from
+-- trigger_event alone.
+alter table automation_rules add column is_marketing boolean not null default false;

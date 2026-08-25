@@ -208,7 +208,7 @@ async function sendText() {
   sendError.value = ''
   sending.value = true
   try {
-    await $fetch('/api/whatsapp/inbox-send', {
+    await useStaffFetch('/api/whatsapp/inbox-send', {
       method: 'POST',
       body: {
         patientId: selected.value.patientId ?? undefined,
@@ -251,7 +251,7 @@ async function onFileChosen(e: Event) {
   sending.value = true
   try {
     const base64 = await fileToBase64(file)
-    await $fetch('/api/whatsapp/inbox-send', {
+    await useStaffFetch('/api/whatsapp/inbox-send', {
       method: 'POST',
       body: {
         patientId: selected.value.patientId ?? undefined,

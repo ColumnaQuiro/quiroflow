@@ -27,7 +27,7 @@ const selectedTemplate = computed(() => templates.value.find((t) => templateKey(
 
 onMounted(async () => {
   try {
-    const { templates: list } = await $fetch<{ templates: Template[] }>('/api/whatsapp/templates')
+    const { templates: list } = await useStaffFetch<{ templates: Template[] }>('/api/whatsapp/templates')
     templates.value = list
     const candidates = list.filter((t) => t.name === props.defaultTemplateName)
     if (candidates[0]) selectTemplate(templateKey(candidates[0]))
@@ -59,7 +59,7 @@ async function send() {
   for (const target of props.targets) {
     const variables = [target.firstName, ...sharedVariables.value]
     try {
-      await $fetch('/api/whatsapp/send', {
+      await useStaffFetch('/api/whatsapp/send', {
         method: 'POST',
         body: {
           patientId: target.patientId,

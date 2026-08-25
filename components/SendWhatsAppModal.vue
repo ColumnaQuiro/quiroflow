@@ -47,7 +47,7 @@ const selectedTemplate = computed(() => templates.value.find((t) => templateKey(
 
 onMounted(async () => {
   try {
-    const { templates: list } = await $fetch<{ templates: Template[] }>('/api/whatsapp/templates')
+    const { templates: list } = await useStaffFetch<{ templates: Template[] }>('/api/whatsapp/templates')
     templates.value = list
     const candidates = list.filter((t) => t.name === props.defaultTemplateName)
     // Prefer the variant matching the patient's own communication language,
@@ -85,7 +85,7 @@ async function send() {
   if (!selectedTemplate.value) return
   sending.value = true
   try {
-    await $fetch('/api/whatsapp/send', {
+    await useStaffFetch('/api/whatsapp/send', {
       method: 'POST',
       body: {
         patientId: props.patientId,

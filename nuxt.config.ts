@@ -76,6 +76,23 @@ export default defineNuxtConfig({
       // Connect "client ID" (ca_...) from Stripe Dashboard > Connect >
       // Settings -- not a secret, it's meant to sit in a redirect URL.
       stripeConnectClientId: '',
+      // Firebase web app config + VAPID key, for browser push notifications
+      // (composables/useWebPush.ts). Not secrets -- Firebase's own docs have
+      // these shipped in the client bundle; the actual security boundary is
+      // Firestore/RTDB rules and the FCM send-side service account, neither
+      // of which this config exposes. Registered as the "QuiroFlow Web" app
+      // in the same Firebase project mobile push already uses, so both land
+      // in the one device_push_tokens table server/utils/pushNotifications.ts
+      // already sends to.
+      firebaseWebConfig: {
+        apiKey: 'AIzaSyAxzrb1SFgtc5yFgvlIc5w1NJFTKMUaJLA',
+        authDomain: 'quiroflow-b3a5b.firebaseapp.com',
+        projectId: 'quiroflow-b3a5b',
+        storageBucket: 'quiroflow-b3a5b.firebasestorage.app',
+        messagingSenderId: '972446092693',
+        appId: '1:972446092693:web:01dcbf0f547de4ba803a9c',
+      },
+      firebaseVapidKey: 'BGeaAYWoNrfHHHE4g9lLol7Ae8mq8H_RktEKFzQiZvNF-9ILLDjkmEYrDnJMS-d4BDwf2Wu6PeynXlamrrYbNO8',
     },
   },
   // Vite's dev server rejects unrecognized Host headers by default; allow

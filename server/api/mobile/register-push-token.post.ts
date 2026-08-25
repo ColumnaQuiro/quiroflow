@@ -1,7 +1,7 @@
 // Called by the mobile app after Capacitor's push-notification registration
 // succeeds, so server/utils/pushNotifications.ts knows where to send.
 export default defineEventHandler(async (event) => {
-  const body = await readBody<{ token?: string; platform?: 'ios' | 'android' }>(event)
+  const body = await readBody<{ token?: string; platform?: 'ios' | 'android' | 'web' }>(event)
   if (!body?.token || !body?.platform) {
     throw createError({ statusCode: 400, statusMessage: 'token and platform are required' })
   }

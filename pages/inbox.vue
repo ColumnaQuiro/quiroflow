@@ -33,6 +33,8 @@ interface PatientOption {
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const webPush = useWebPush()
+const pushBannerDismissed = ref(false)
 
 const messages = ref<Message[]>([])
 const patientNames = ref<Record<string, string>>({})
@@ -351,6 +353,13 @@ onUnmounted(() => {
 <template>
   <div class="flex h-full flex-col">
     <PageHeader title="Inbox" />
+    <div v-if="webPush.supported.value && webPush.permission.value === 'default' && !pushBannerDismissed" class="flex shrink-0 items-center justify-between gap-3 border-b border-line bg-brand-tint px-4 py-2">
+      <p class="text-[12.5px] text-brand-text">Get notified here when a patient messages you, even with the tab in the background.</p>
+      <div class="flex shrink-0 items-center gap-3">
+        <UiBtn variant="primary" size="sm" @click="webPush.register()">Enable notifications</UiBtn>
+        <button type="button" class="text-[12.5px] text-ink-faint hover:text-ink-muted" @click="pushBannerDismissed = true">Not now</button>
+      </div>
+    </div>
     <div class="flex flex-1 overflow-hidden">
       <!-- Conversation list -->
       <div class="flex w-[320px] shrink-0 flex-col border-r border-line bg-surface">

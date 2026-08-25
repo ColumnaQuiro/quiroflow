@@ -10,6 +10,11 @@ export default defineNuxtConfig({
   ignore: ['mobile/**'],
   app: {
     head: {
+      // The whole app currently lives on app.quiroflow.com -- there's no
+      // separate marketing site yet, so nothing here should be indexed.
+      // robots.txt alone doesn't stop a page Google discovers via an
+      // external link from being indexed; this tag is the actual guarantee.
+      meta: [{ name: 'robots', content: 'noindex, nofollow' }],
       link: [
         { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
         { rel: 'alternate icon', href: '/favicon.ico' },

@@ -1,3 +1,16 @@
+<script setup lang="ts">
+// Upserts last_seen_at for this device on every cold start, once a clinic
+// is known -- see composables/useAppOpenPing.ts. Only catches cold starts,
+// not background->foreground resumes (Capacitor suspends rather than kills
+// a backgrounded WebView, so this doesn't refire on a plain app-switch-back;
+// true foreground tracking would need @capacitor/app's appStateChange
+// listener, a new native dependency not worth adding for this).
+onMounted(() => {
+  const slug = localStorage.getItem('clinic_slug')
+  if (slug) useAppOpenPing().pingAppOpen(slug)
+})
+</script>
+
 <template>
   <!--
     h-screen (not min-h-screen) + overflow-y-auto is deliberate: min-height

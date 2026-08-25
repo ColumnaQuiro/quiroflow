@@ -62,8 +62,15 @@ export function useIdentity() {
     // own copy of this call in middleware/portal.global.ts; mobile has no
     // equivalent middleware, so it belongs here instead, where both
     // platforms' one shared identity resolution passes through.
+    //
+    // Mobile scopes the match to one clinic via the slug entered in
+    // mobile/pages/join.vue (see mobile/middleware/clinic-code.global.ts) --
+    // without it, the same patient email at two different clinics would
+    // resolve ambiguously. Web has no such gate, so this is always
+    // undefined there and the RPC falls back to its unscoped match.
     if (!p && !tm) {
-      const { error } = await supabase.rpc('claim_patient_profile')
+      const accountSlug = import.meta.client ? (localStorage.getItem('clinic_slug') ?? undefined) : undefined
+      const { error } = await supabase.rpc('claim_patient_profile', { p_account_slug: accountSlug })
       if (!error) ({ p, tm } = await queryIdentity(user.value.sub))
     }
     patient.value = p

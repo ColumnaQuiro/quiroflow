@@ -286,6 +286,38 @@ export type Database = {
           },
         ]
       }
+      app_opens: {
+        Row: {
+          account_id: string
+          device_id: string
+          first_seen_at: string
+          last_seen_at: string
+          platform: string
+        }
+        Insert: {
+          account_id: string
+          device_id: string
+          first_seen_at?: string
+          last_seen_at?: string
+          platform: string
+        }
+        Update: {
+          account_id?: string
+          device_id?: string
+          first_seen_at?: string
+          last_seen_at?: string
+          platform?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_opens_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       appointment_type_overrides: {
         Row: {
           account_id: string
@@ -2770,7 +2802,7 @@ export type Database = {
         Returns: boolean
       }
       claim_patient_profile: {
-        Args: never
+        Args: { p_account_slug?: string }
         Returns: {
           patient_id: string
         }[]
@@ -2863,6 +2895,14 @@ export type Database = {
       permission_scope: {
         Args: { perm_key: string; target_account_id: string }
         Returns: string
+      }
+      record_app_open: {
+        Args: {
+          p_account_slug: string
+          p_device_id: string
+          p_platform: string
+        }
+        Returns: undefined
       }
       save_public_patient_doc: {
         Args: { p_complete?: boolean; p_fields: Json; p_token: string }
@@ -3006,3 +3046,4 @@ export const Constants = {
     Enums: {},
   },
 } as const
+

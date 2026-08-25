@@ -10,10 +10,18 @@
     lets a browser treat the x-axis as scrollable too per spec -- any stray
     horizontal nudge (e.g. from a diagonal touch during a page transition)
     then leaves the whole app permanently scrolled sideways, clipping content.
+
+    Only the top inset lives here. The bottom inset is deliberately NOT
+    applied at this level: AppTabBar already pads itself for it (so the tabs
+    sit above the home indicator), and applying it again here on the outer
+    scroll container left a second, empty safe-area-height gap of the page's
+    own background below the tab bar -- the "grey area at the bottom"
+    reported live on device. Layouts without a tab bar (login, patient view)
+    apply their own bottom inset instead; see layouts/default.vue.
   -->
   <div
     class="flex h-screen flex-col overflow-x-hidden overflow-y-auto bg-surface-page font-sans text-ink-700"
-    style="padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom)"
+    style="padding-top: env(safe-area-inset-top)"
   >
     <NuxtLayout>
       <NuxtPage />

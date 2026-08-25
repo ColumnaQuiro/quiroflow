@@ -27,10 +27,23 @@ interface Conversation {
 
 const supabase = useSupabaseClient()
 const authedFetch = useAuthedFetch()
+const { keyboardHeight } = useKeyboardInset()
+const messagesEl = ref<HTMLElement>()
+watch(keyboardHeight, (h) => {
+  if (h > 0) nextTick(() => { if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight })
+})
 
 const messages = ref<Message[]>([])
 const patientNames = ref<Record<string, string>>({})
 const loading = ref(true)
+const readTimestamps = ref<Record<string, string>>({})
+async function loadReadTimestamps() {
+  const { data } = await supabase.from('whatsapp_conversation_reads').select('conversation_key, last_read_at').eq('account_id', props.accountId)
+  const next: Record<string, string> = {}
+  for (const r of data ?? []) next[r.conversation_key] = r.last_read_at
+  readTimestamps.value = next
+}
+onMounted(loadReadTimestamps)
 
 async function load() {
   loading.value = true
@@ -68,7 +81,7 @@ const conversations = computed<Conversation[]>(() => {
       phoneNumber: last.phone_number,
       name: (last.patient_id && patientNames.value[last.patient_id]) || last.phone_number || 'Unknown',
       lastMessage: last,
-      unread: last.direction === 'inbound',
+      unread: last.direction === 'inbound' && (!readTimestamps.value[key] || readTimestamps.value[key] < last.created_at),
     })
   }
   return list.sort((a, b) => b.lastMessage.created_at.localeCompare(a.lastMessage.created_at))
@@ -79,6 +92,34 @@ const selected = computed(() => conversations.value.find((c) => c.key === select
 const thread = computed(() =>
   selectedKey.value ? messages.value.filter((m) => (m.patient_id ?? m.phone_number ?? 'unknown') === selectedKey.value).slice().reverse() : [],
 )
+
+async function markRead(key: string) {
+  const now = new Date().toISOString()
+  readTimestamps.value = { ...readTimestamps.value, [key]: now }
+  await supabase.from('whatsapp_conversation_reads').upsert({ account_id: props.accountId, conversation_key: key, last_read_at: now } as never)
+}
+function openConversation(c: Conversation) {
+  selectedKey.value = c.key
+  if (c.unread) markRead(c.key)
+}
+
+const deletingConversation = ref(false)
+async function deleteConversation() {
+  if (!selected.value || !selectedKey.value) return
+  if (!confirm(`Delete this whole conversation with ${selected.value.name}? This removes all messages and can't be undone.`)) return
+  deletingConversation.value = true
+  const key = selectedKey.value
+  try {
+    let query = supabase.from('whatsapp_messages').delete()
+    query = selected.value.patientId ? query.eq('patient_id', selected.value.patientId) : query.eq('phone_number', selected.value.phoneNumber!)
+    await query
+    await supabase.from('whatsapp_conversation_reads').delete().eq('account_id', props.accountId).eq('conversation_key', key)
+    messages.value = messages.value.filter((m) => (m.patient_id ?? m.phone_number ?? 'unknown') !== key)
+    selectedKey.value = null
+  } finally {
+    deletingConversation.value = false
+  }
+}
 
 const mediaUrls = ref<Record<string, string>>({})
 watch(thread, async (msgs) => {
@@ -222,7 +263,7 @@ onUnmounted(() => {
         :key="c.key"
         type="button"
         class="flex w-full items-start gap-3 border-b border-line-row px-4 py-3 text-left active:bg-surface-subtle"
-        @click="selectedKey = c.key"
+        @click="openConversation(c)"
       >
         <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[13px] font-semibold text-brand-text">
           {{ c.name.slice(0, 2).toUpperCase() }}
@@ -241,16 +282,24 @@ onUnmounted(() => {
     </div>
 
     <!-- Thread -->
-    <div v-else-if="selected" class="flex min-h-0 flex-1 flex-col">
+    <div v-else-if="selected" class="flex min-h-0 flex-1 flex-col" :style="{ paddingBottom: keyboardHeight + 'px' }">
       <div class="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
         <button type="button" class="flex h-11 w-11 shrink-0 items-center justify-center text-[15px] text-brand-text" @click="selectedKey = null">&larr;</button>
         <div class="min-w-0 flex-1">
           <p class="truncate text-[14px] font-[600] text-ink-900">{{ selected.name }}</p>
           <p v-if="selected.phoneNumber" class="truncate text-[12px] text-ink-muted2">{{ selected.phoneNumber }}</p>
         </div>
+        <button
+          type="button"
+          class="shrink-0 px-2 py-1.5 text-[12px] text-danger-text disabled:opacity-50"
+          :disabled="deletingConversation"
+          @click="deleteConversation"
+        >
+          Delete
+        </button>
       </div>
 
-      <div class="flex-1 space-y-2.5 overflow-y-auto px-3 py-3">
+      <div ref="messagesEl" class="flex-1 space-y-2.5 overflow-y-auto px-3 py-3">
         <div v-for="m in thread" :key="m.id" class="flex" :class="m.direction === 'outbound' ? 'justify-end' : 'justify-start'">
           <div
             class="max-w-[80%] rounded-card px-3 py-2 shadow-card"
@@ -277,7 +326,13 @@ onUnmounted(() => {
 
             <p v-if="m.body_preview && m.media_type" class="mt-1 whitespace-pre-wrap text-[13.5px]">{{ m.body_preview }}</p>
             <p v-else-if="!m.media_type" class="whitespace-pre-wrap text-[13.5px]">{{ previewText(m) }}</p>
-            <p class="mt-1 text-right text-[10.5px]" :class="m.direction === 'outbound' ? 'text-white/70' : 'text-ink-faint'">{{ shortTime(m.created_at) }}</p>
+            <p class="mt-1 flex items-center justify-end gap-1 text-right text-[10.5px]" :class="m.direction === 'outbound' ? 'text-white/70' : 'text-ink-faint'">
+              <span>{{ shortTime(m.created_at) }}</span>
+              <span v-if="m.direction === 'outbound' && m.status === 'failed'" class="text-danger-text">⚠</span>
+              <span v-else-if="m.direction === 'outbound' && m.status === 'read'" class="text-[13px] leading-none text-[#34B7F1]">✓✓</span>
+              <span v-else-if="m.direction === 'outbound' && m.status === 'delivered'" class="text-[13px] leading-none">✓✓</span>
+              <span v-else-if="m.direction === 'outbound'" class="text-[13px] leading-none">✓</span>
+            </p>
           </div>
         </div>
       </div>

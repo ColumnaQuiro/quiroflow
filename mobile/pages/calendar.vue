@@ -83,15 +83,22 @@ function formatTime(iso: string) {
     <p v-else-if="appointments.length === 0" class="flex flex-1 items-center justify-center px-6 text-center text-sm text-ink-muted">No appointments this day.</p>
 
     <div v-else class="flex-1 space-y-2 overflow-y-auto px-3 py-3">
-      <div v-for="a in appointments" :key="a.id" class="flex items-center gap-3 rounded-card border border-line bg-surface px-3.5 py-2.5 shadow-card">
+      <NuxtLink
+        v-for="a in appointments"
+        :key="a.id"
+        :to="`/calendar/${a.id}`"
+        class="flex items-center gap-3 rounded-card border border-line bg-surface px-3.5 py-2.5 shadow-card active:bg-surface-subtle"
+      >
         <span class="h-full w-1 shrink-0 self-stretch rounded-full" :style="{ backgroundColor: a.appointment_types?.color || '#ddd' }" />
         <div class="min-w-0 flex-1">
-          <p class="text-[13.5px] font-[600] text-ink-900">{{ formatTime(a.starts_at) }} · {{ a.patients?.first_name }} {{ a.patients?.last_name ?? '' }}</p>
+          <p class="text-[13.5px] font-[600]" :class="a.status === 'completed' ? 'text-ink-faint line-through' : 'text-ink-900'">
+            {{ formatTime(a.starts_at) }} · {{ a.patients?.first_name }} {{ a.patients?.last_name ?? '' }}
+          </p>
           <p class="truncate text-[12px] text-ink-muted2">
             {{ a.appointment_types?.name ?? 'Appointment' }}<template v-if="a.team_members"> · {{ a.team_members.full_name }}</template>
           </p>
         </div>
-      </div>
+      </NuxtLink>
     </div>
   </div>
 </template>

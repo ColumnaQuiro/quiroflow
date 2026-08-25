@@ -35,7 +35,9 @@ function skipAsTeamMember() {
     <div class="w-full max-w-sm rounded-card border border-line bg-surface p-8 shadow-card">
       <img src="/logo/quiroflow-mark.svg" alt="" class="h-8 w-8" />
       <h1 class="mt-4 text-xl font-semibold text-ink-900">Join your clinic</h1>
-      <p class="mt-1 text-sm text-ink-muted">Enter the code your clinic gave you to link this app to them.</p>
+      <p class="mt-1 text-sm text-ink-muted">
+        Enter the code your clinic gave you, then sign up with the same email your clinic has on file for you -- both have to match.
+      </p>
       <form class="mt-6 space-y-4" @submit.prevent="onSubmit">
         <div>
           <label class="block text-sm font-medium text-ink-700" for="code">Clinic code</label>

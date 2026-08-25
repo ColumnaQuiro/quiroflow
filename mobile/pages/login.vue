@@ -28,7 +28,7 @@ async function onSubmit() {
 </script>
 
 <template>
-  <div class="flex min-h-screen items-center justify-center bg-surface-page px-6">
+  <div class="flex h-full items-center justify-center bg-surface-page px-6">
     <div class="w-full max-w-sm rounded-card border border-line bg-surface p-8 shadow-card">
       <img src="/logo/quiroflow-mark.svg" alt="" class="h-8 w-8" />
       <h1 class="mt-4 text-xl font-semibold text-ink-900">Sign in to QuiroFlow</h1>

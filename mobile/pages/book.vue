@@ -213,7 +213,7 @@ async function submitBooking() {
 </script>
 
 <template>
-  <div class="flex min-h-screen flex-col p-4">
+  <div class="flex h-full flex-col p-4">
     <div class="mb-4 flex items-center gap-2">
       <NuxtLink to="/" class="text-[13px] font-medium text-brand-text">&larr; Back</NuxtLink>
       <h1 class="ml-auto text-[15px] font-semibold text-ink-900">New appointment</h1>

@@ -24,7 +24,16 @@ export default defineEventHandler(async (event) => {
   }
 
   const supabase = await serverSupabaseClient<Database>(event)
-  const { data: teamMember } = await supabase.from('team_members').select('id, account_id').maybeSingle()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  // .eq('user_id', ...) is required: team_members' RLS scopes SELECT by
+  // account membership, not row ownership, so an unfiltered query returns
+  // every team_members row for the account once there's more than one,
+  // and .maybeSingle() throws on that (see requirePermission.ts).
+  const { data: teamMember } = user
+    ? await supabase.from('team_members').select('id, account_id').eq('user_id', user.id).maybeSingle()
+    : { data: null }
   if (!teamMember) {
     return redirectTo({ stripe_error: 'You were signed out during the connection. Please log in and try again.' })
   }

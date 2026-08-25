@@ -36,9 +36,25 @@ export async function requireAuthedUser(event: H3Event) {
 
 export async function requireTeamMember(event: H3Event) {
   const supabase = await resolveSupabaseClient(event)
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) {
+    throw createError({ statusCode: 403, statusMessage: 'Not signed in as a team member' })
+  }
+
+  // Filtering by user_id is required, not optional: the RLS policy on
+  // team_members scopes SELECT by account membership ("can this caller see
+  // any row for this account"), not by row ownership -- so an unfiltered
+  // query returns every team_members row for the account, not just the
+  // caller's own. .maybeSingle() throws once an account has a second team
+  // member, which is exactly what broke every staff-authenticated route the
+  // moment ColumnaQuiro's account passed one team member (confirmed live:
+  // works with 1 row, 403s the instant a 2nd exists).
   const { data: teamMember } = await supabase
     .from('team_members')
     .select('id, account_id, is_owner, role_id')
+    .eq('user_id', user.id)
     .maybeSingle()
 
   if (!teamMember) {

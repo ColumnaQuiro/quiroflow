@@ -17,6 +17,17 @@ async function onSubmit() {
   localStorage.setItem('clinic_slug', slug)
   await navigateTo('/login')
 }
+
+// Staff already know their login and resolve via team_members, not the
+// email-match RPC this code exists to disambiguate -- there's nothing for
+// them to "join". clinic_gate_seen (not clinic_slug) marks the gate as
+// handled so mobile/middleware/clinic-code.global.ts stops redirecting
+// here, while leaving clinic_slug unset so useIdentity.ts's optional slug
+// stays undefined for this device, same as before this gate existed.
+function skipAsTeamMember() {
+  localStorage.setItem('clinic_gate_seen', '1')
+  navigateTo('/login')
+}
 </script>
 
 <template>
@@ -43,6 +54,9 @@ async function onSubmit() {
           {{ loading ? 'Checking…' : 'Continue' }}
         </UiBtn>
       </form>
+      <button type="button" class="mt-4 block w-full text-center text-sm text-ink-muted hover:text-ink-700" @click="skipAsTeamMember">
+        I'm on the clinic's team &rarr;
+      </button>
     </div>
   </div>
 </template>

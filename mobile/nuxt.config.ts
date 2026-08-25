@@ -28,6 +28,17 @@ export default defineNuxtConfig({
       viewport: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover',
     },
   },
+  runtimeConfig: {
+    public: {
+      // The app's own server routes (/api/**) don't exist inside the mobile
+      // bundle -- it's a static Capacitor build with no Nitro server on
+      // device, only the pages/assets themselves. useAuthedFetch.ts uses
+      // this to turn every relative '/api/...' call into an absolute one
+      // against the real deployment, since a relative fetch from a
+      // capacitor://localhost origin was silently resolving nowhere.
+      apiBase: 'https://app.quiroflow.com',
+    },
+  },
   modules: ['@nuxtjs/tailwindcss', '@nuxtjs/supabase'],
   css: ['~/assets/css/main.css'],
   components: [`${root}/components`, '~/components'],

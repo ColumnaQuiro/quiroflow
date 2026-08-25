@@ -9,6 +9,22 @@ onMounted(() => {
   const slug = localStorage.getItem('clinic_slug')
   if (slug) useAppOpenPing().pingAppOpen(slug)
 })
+
+// Tapping outside the keyboard didn't dismiss it anywhere in the app --
+// Keyboard.resize is 'none' (see capacitor.config.ts), so the WebView never
+// resizes and there's no native "tap outside to dismiss" behavior to rely
+// on; the OS keyboard only ever hides when the focused field itself loses
+// focus. One app-wide listener blurs whatever's focused whenever a tap
+// lands outside any input/textarea, which is what actually closes it.
+function dismissKeyboardOnOutsideTap(e: PointerEvent) {
+  const active = document.activeElement as HTMLElement | null
+  if (!active || !['INPUT', 'TEXTAREA'].includes(active.tagName)) return
+  const target = e.target as HTMLElement | null
+  if (target && (target === active || active.contains(target))) return
+  active.blur()
+}
+onMounted(() => document.addEventListener('pointerdown', dismissKeyboardOnOutsideTap))
+onUnmounted(() => document.removeEventListener('pointerdown', dismissKeyboardOnOutsideTap))
 </script>
 
 <template>

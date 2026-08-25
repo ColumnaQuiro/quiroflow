@@ -5,6 +5,16 @@ const password = ref('')
 const error = ref('')
 const loading = ref(false)
 
+// Once "I'm on the clinic's team" is tapped on /join, clinic_gate_seen is
+// set permanently and there was no way back to /join to instead enter a
+// patient's clinic code -- clearing both localStorage keys and returning
+// there resets the choice entirely, same fresh state as a new install.
+function backToJoin() {
+  localStorage.removeItem('clinic_gate_seen')
+  localStorage.removeItem('clinic_slug')
+  navigateTo('/join')
+}
+
 async function onSubmit() {
   error.value = ''
   loading.value = true
@@ -64,6 +74,9 @@ async function onSubmit() {
         New patient?
         <NuxtLink to="/signup" class="font-medium text-brand hover:text-brand-hover">Create an account</NuxtLink>
       </p>
+      <button type="button" class="mt-3 block w-full text-center text-sm text-ink-faint hover:text-ink-muted" @click="backToJoin">
+        &larr; Not on the team? Enter a clinic code instead
+      </button>
     </div>
   </div>
 </template>

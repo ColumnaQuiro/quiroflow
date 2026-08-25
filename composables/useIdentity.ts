@@ -56,6 +56,16 @@ export function useIdentity() {
       await new Promise((resolve) => setTimeout(resolve, 400))
       ;({ p, tm } = await queryIdentity(user.value.sub))
     }
+    // A freshly signed-up patient's auth user has no patients row yet --
+    // claim_patient_profile() links it by matching email against an
+    // existing patients row with user_id IS NULL. The web portal has its
+    // own copy of this call in middleware/portal.global.ts; mobile has no
+    // equivalent middleware, so it belongs here instead, where both
+    // platforms' one shared identity resolution passes through.
+    if (!p && !tm) {
+      const { error } = await supabase.rpc('claim_patient_profile')
+      if (!error) ({ p, tm } = await queryIdentity(user.value.sub))
+    }
     patient.value = p
     teamMember.value = tm
     loading.value = false

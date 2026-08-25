@@ -37,6 +37,11 @@ function formatDate(iso: string) {
   <div class="flex-1 space-y-5 p-4">
     <h1 class="text-lg font-semibold text-ink-900">Hi, {{ patientFirstName }}</h1>
 
+    <NuxtLink to="/messages" class="flex items-center justify-between rounded-card border border-line bg-surface px-4 py-3">
+      <span class="text-[13.5px] font-medium text-ink-900">Messages</span>
+      <span class="text-[13px] text-ink-faint">&rarr;</span>
+    </NuxtLink>
+
     <section>
       <div class="flex items-center justify-between">
         <h2 class="text-[13px] font-semibold text-ink-700">Upcoming appointments</h2>

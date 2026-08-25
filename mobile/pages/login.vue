@@ -60,6 +60,10 @@ async function onSubmit() {
           {{ loading ? 'Signing in…' : 'Sign in' }}
         </UiBtn>
       </form>
+      <p class="mt-4 text-center text-sm text-ink-muted">
+        New patient?
+        <NuxtLink to="/signup" class="font-medium text-brand hover:text-brand-hover">Create an account</NuxtLink>
+      </p>
     </div>
   </div>
 </template>

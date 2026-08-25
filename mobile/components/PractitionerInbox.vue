@@ -21,6 +21,7 @@ interface Conversation {
   patientId: string | null
   phoneNumber: string | null
   name: string
+  channel: string
   lastMessage: Message
   unread: boolean
 }
@@ -47,12 +48,30 @@ onMounted(loadReadTimestamps)
 
 async function load() {
   loading.value = true
-  const { data } = await supabase
-    .from('whatsapp_messages')
-    .select('id, patient_id, phone_number, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, channel, created_at')
-    .order('created_at', { ascending: false })
-    .limit(500)
-  messages.value = data ?? []
+  const [{ data: waData }, { data: appData }] = await Promise.all([
+    supabase
+      .from('whatsapp_messages')
+      .select('id, patient_id, phone_number, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, channel, created_at')
+      .order('created_at', { ascending: false })
+      .limit(500),
+    supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at').order('created_at', { ascending: false }).limit(500),
+  ])
+  const appMessages: Message[] = (appData ?? []).map((m) => ({
+    id: m.id,
+    patient_id: m.patient_id,
+    phone_number: null,
+    direction: m.direction,
+    status: 'sent',
+    body_preview: m.body,
+    template_name: null,
+    media_type: null,
+    media_storage_path: null,
+    media_mime_type: null,
+    media_filename: null,
+    channel: 'in_app',
+    created_at: m.created_at,
+  }))
+  messages.value = [...(waData ?? []), ...appMessages].sort((a, b) => b.created_at.localeCompare(a.created_at))
 
   const patientIds = [...new Set(messages.value.map((m) => m.patient_id).filter((id): id is string => !!id))]
   if (patientIds.length > 0) {
@@ -80,6 +99,7 @@ const conversations = computed<Conversation[]>(() => {
       patientId: last.patient_id,
       phoneNumber: last.phone_number,
       name: (last.patient_id && patientNames.value[last.patient_id]) || last.phone_number || 'Unknown',
+      channel: last.channel,
       lastMessage: last,
       unread: last.direction === 'inbound' && (!readTimestamps.value[key] || readTimestamps.value[key] < last.created_at),
     })
@@ -113,6 +133,7 @@ async function deleteConversation() {
     let query = supabase.from('whatsapp_messages').delete()
     query = selected.value.patientId ? query.eq('patient_id', selected.value.patientId) : query.eq('phone_number', selected.value.phoneNumber!)
     await query
+    if (selected.value.patientId) await supabase.from('patient_app_messages').delete().eq('patient_id', selected.value.patientId)
     await supabase.from('whatsapp_conversation_reads').delete().eq('account_id', props.accountId).eq('conversation_key', key)
     messages.value = messages.value.filter((m) => (m.patient_id ?? m.phone_number ?? 'unknown') !== key)
     selectedKey.value = null
@@ -134,8 +155,10 @@ watch(thread, async (msgs) => {
   mediaUrls.value = next
 })
 
+const replyChannel = computed(() => (thread.value.length === 0 ? 'whatsapp' : thread.value[thread.value.length - 1].channel))
 const within24h = computed(() => {
-  const lastInbound = thread.value.filter((m) => m.direction === 'inbound').at(-1)
+  if (replyChannel.value === 'in_app') return true
+  const lastInbound = thread.value.filter((m) => m.direction === 'inbound' && m.channel === 'whatsapp').at(-1)
   if (!lastInbound) return false
   return Date.now() - new Date(lastInbound.created_at).getTime() < 24 * 60 * 60 * 1000
 })
@@ -167,14 +190,19 @@ async function sendText() {
   sendError.value = ''
   sending.value = true
   try {
-    await authedFetch('/api/whatsapp/inbox-send', {
-      method: 'POST',
-      body: {
-        patientId: selected.value.patientId ?? undefined,
-        phoneNumber: selected.value.patientId ? undefined : selected.value.phoneNumber,
-        text: composerText.value.trim(),
-      },
-    })
+    if (replyChannel.value === 'in_app') {
+      if (!selected.value.patientId) throw new Error('In-app messages require a linked patient')
+      await authedFetch('/api/patient-messages/send', { method: 'POST', body: { patientId: selected.value.patientId, text: composerText.value.trim() } })
+    } else {
+      await authedFetch('/api/whatsapp/inbox-send', {
+        method: 'POST',
+        body: {
+          patientId: selected.value.patientId ?? undefined,
+          phoneNumber: selected.value.patientId ? undefined : selected.value.phoneNumber,
+          text: composerText.value.trim(),
+        },
+      })
+    }
     composerText.value = ''
     await load()
   } catch (err: any) {
@@ -245,6 +273,7 @@ onMounted(() => {
     .channel('mobile-inbox-whatsapp-messages')
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'whatsapp_messages', filter: `account_id=eq.${props.accountId}` }, () => load())
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'whatsapp_messages', filter: `account_id=eq.${props.accountId}` }, () => load())
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'patient_app_messages', filter: `account_id=eq.${props.accountId}` }, () => load())
     .subscribe()
 })
 onUnmounted(() => {
@@ -265,8 +294,14 @@ onUnmounted(() => {
         class="flex w-full items-start gap-3 border-b border-line-row px-4 py-3 text-left active:bg-surface-subtle"
         @click="openConversation(c)"
       >
-        <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[13px] font-semibold text-brand-text">
+        <span class="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[13px] font-semibold text-brand-text">
           {{ c.name.slice(0, 2).toUpperCase() }}
+          <span v-if="c.channel === 'whatsapp'" class="absolute -bottom-0.5 -right-0.5 flex h-[15px] w-[15px] items-center justify-center rounded-full border border-surface bg-[#25D366]" title="WhatsApp">
+            <svg viewBox="0 0 24 24" class="h-[9px] w-[9px] fill-white"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm5.6 14.2c-.2.6-1.2 1.1-1.7 1.2-.4.1-1 .1-1.6-.1-.4-.1-.9-.3-1.5-.6-2.6-1.1-4.3-3.8-4.4-4-.1-.2-1-1.4-1-2.6 0-1.2.6-1.8.9-2.1.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .5.4.2.5.7 1.7.7 1.8.1.1.1.3 0 .4-.1.2-.1.3-.3.4-.1.2-.3.4-.4.5-.1.1-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.4 2.5 1.5.3.1.5.1.6-.1.2-.2.7-.8.9-1.1.2-.3.4-.2.6-.1.2.1 1.5.7 1.8.8.3.1.4.2.5.3.1.2.1.7-.1 1.3z" /></svg>
+          </span>
+          <span v-else class="absolute -bottom-0.5 -right-0.5 flex h-[15px] w-[15px] items-center justify-center rounded-full border border-surface bg-brand" title="In-app message">
+            <svg viewBox="0 0 24 24" class="h-[9px] w-[9px] fill-white"><path d="M4 4h16v12H7l-3 3z" /></svg>
+          </span>
         </span>
         <div class="min-w-0 flex-1">
           <div class="flex items-center justify-between gap-2">
@@ -287,7 +322,11 @@ onUnmounted(() => {
         <button type="button" class="flex h-11 w-11 shrink-0 items-center justify-center text-[15px] text-brand-text" @click="selectedKey = null">&larr;</button>
         <div class="min-w-0 flex-1">
           <p class="truncate text-[14px] font-[600] text-ink-900">{{ selected.name }}</p>
-          <p v-if="selected.phoneNumber" class="truncate text-[12px] text-ink-muted2">{{ selected.phoneNumber }}</p>
+          <p class="truncate text-[12px] text-ink-muted2">
+            <span v-if="selected.channel === 'whatsapp'" class="rounded-pill bg-[#25D366]/10 px-1.5 py-px font-medium text-[#128C4B]">WhatsApp</span>
+            <span v-else class="rounded-pill bg-brand-tint px-1.5 py-px font-medium text-brand-text">In-app</span>
+            <span v-if="selected.phoneNumber" class="ml-1.5">{{ selected.phoneNumber }}</span>
+          </p>
         </div>
         <button
           type="button"

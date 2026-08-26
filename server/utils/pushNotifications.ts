@@ -88,12 +88,16 @@ export async function sendPushToUsers(event: H3Event, userIds: string[], notific
 
   const config = useRuntimeConfig()
   const raw = config.fcmServiceAccountJson
-  if (!raw) return
+  if (!raw) {
+    console.error('[push] fcmServiceAccountJson is not configured -- skipping push send')
+    return
+  }
 
   let account: ServiceAccount
   try {
     account = JSON.parse(raw)
-  } catch {
+  } catch (err) {
+    console.error('[push] fcmServiceAccountJson is not valid JSON', err)
     return
   }
 
@@ -101,9 +105,19 @@ export async function sendPushToUsers(event: H3Event, userIds: string[], notific
   const { data: tokens } = await supabase.from('device_push_tokens').select('fcm_token').in('user_id', userIds)
   if (!tokens || tokens.length === 0) return
 
-  const accessToken = await getAccessToken(account)
+  let accessToken: string
+  try {
+    accessToken = await getAccessToken(account)
+  } catch (err) {
+    // Was previously unguarded -- a bad service account key/network hiccup
+    // here threw past this function's "best-effort" contract straight into
+    // whatever caller triggered it (a WhatsApp webhook, a message send),
+    // with nothing logged to explain why push silently never worked.
+    console.error('[push] failed to obtain an FCM access token', err)
+    return
+  }
 
-  await Promise.all(
+  const results = await Promise.all(
     tokens.map((t) =>
       $fetch(`https://fcm.googleapis.com/v1/projects/${account.project_id}/messages:send`, {
         method: 'POST',
@@ -115,10 +129,14 @@ export async function sendPushToUsers(event: H3Event, userIds: string[], notific
             data: notification.data,
           },
         },
-      }).catch(() => {
+      })
+        .then(() => ({ ok: true as const }))
         // A dead/expired token failing shouldn't block the others -- it'll
-        // just naturally stop being registered next time the app opens.
-      }),
+        // just naturally stop being registered next time the app opens --
+        // but it should still be visible in logs instead of vanishing.
+        .catch((err) => ({ ok: false as const, error: err?.data ?? err?.message ?? err })),
     ),
   )
+  const failed = results.filter((r) => !r.ok)
+  if (failed.length > 0) console.error('[push] send failed for', failed.length, 'of', tokens.length, 'device(s)', failed)
 }

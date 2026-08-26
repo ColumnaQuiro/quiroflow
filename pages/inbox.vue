@@ -374,6 +374,13 @@ async function performTextSend(tempId: string, text: string, channel: string, ta
         },
       })
     }
+    // Flip the pending bubble to "sent" in place, same array entry and same
+    // v-for key, before the reconcile below -- Vue can patch the icon alone
+    // with no layout shift. Swapping straight to the real server row here
+    // instead would change the element's key mid-transition (tempId -> real
+    // id), forcing a full remount at the exact moment the icon changes,
+    // which is what read as a visible "jump" on the sent tick appearing.
+    pendingMessages.value = pendingMessages.value.map((m) => (m.id === tempId ? { ...m, status: 'sent' } : m))
     await load()
     pendingMessages.value = pendingMessages.value.filter((m) => m.id !== tempId)
     delete retryPayloads.value[tempId]
@@ -445,6 +452,7 @@ async function performMediaSend(
         mediaKind,
       },
     })
+    pendingMessages.value = pendingMessages.value.map((m) => (m.id === tempId ? { ...m, status: 'sent' } : m))
     await load()
     pendingMessages.value = pendingMessages.value.filter((m) => m.id !== tempId)
     delete retryPayloads.value[tempId]
@@ -762,7 +770,7 @@ onUnmounted(() => {
             </div>
             <div class="flex" :class="m.direction === 'outbound' ? 'justify-end' : 'justify-start'">
               <div
-                class="max-w-[70%] rounded-card px-3 py-2 shadow-card"
+                class="max-w-[70%] rounded-card px-[8px] py-[6px] shadow-card"
                 :class="[
                   m.direction === 'outbound' ? 'bg-brand text-white' : 'border border-line bg-surface text-ink-900',
                   m.status === 'failed' && 'cursor-pointer',

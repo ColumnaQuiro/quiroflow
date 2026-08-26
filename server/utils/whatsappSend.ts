@@ -58,12 +58,24 @@ export async function sendWhatsAppMedia(
   return metaSend(account, { to, type: mediaType, [mediaType]: mediaObj })
 }
 
+// Meta's media upload is strict about the Content-Type matching exactly
+// one of its documented values -- notably, a codec parameter (as
+// MediaRecorder reports it, e.g. "audio/mp4; codecs=mp4a.40.2") makes Meta
+// reject the file with "however on processing it is of type
+// application/octet-stream", since that string isn't one of the exact
+// types it recognizes. audio/ogg is the one documented exception where
+// Meta actually requires the codec parameter, so it's kept verbatim.
+function normalizeMimeTypeForMeta(mimeType: string): string {
+  if (mimeType.startsWith('audio/ogg')) return 'audio/ogg; codecs=opus'
+  return mimeType.split(';')[0].trim()
+}
+
 // Uploads a local file to Meta so a send call can reference it by id --
 // avoids needing to expose a public URL for outbound media.
 export async function uploadMediaToMeta(account: WhatsAppAccount, fileBuffer: Buffer, mimeType: string, filename: string): Promise<string> {
   const form = new FormData()
   form.append('messaging_product', 'whatsapp')
-  form.append('file', new Blob([fileBuffer], { type: mimeType }), filename)
+  form.append('file', new Blob([fileBuffer], { type: normalizeMimeTypeForMeta(mimeType) }), filename)
   const response = await $fetch<{ id: string }>(`${GRAPH_BASE}/${account.whatsapp_phone_number_id}/media`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${account.whatsapp_access_token}` },

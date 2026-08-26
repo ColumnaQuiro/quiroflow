@@ -31,7 +31,7 @@ const payments = ref<PaymentRow[]>([])
 const loading = ref(true)
 const billingOpen = ref(false)
 const paymentAmount = ref('')
-const paymentMethod = ref<'card' | 'cash' | 'other'>('cash')
+const paymentMethod = ref<'card' | 'cash'>('cash')
 const saving = ref(false)
 const error = ref('')
 
@@ -201,7 +201,6 @@ function euros(cents: number) {
               <select v-model="paymentMethod" class="flex-1 rounded-ctl border border-line-control px-2.5 py-2 text-[14px]">
                 <option value="cash">Cash</option>
                 <option value="card">Card</option>
-                <option value="other">Other</option>
               </select>
             </div>
             <UiBtn variant="primary" class="w-full" :disabled="saving" @click="recordPayment">{{ saving ? 'Saving…' : `Record ${euros(Math.round((parseFloat(paymentAmount) || 0) * 100))}` }}</UiBtn>

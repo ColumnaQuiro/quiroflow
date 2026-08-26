@@ -34,7 +34,7 @@ const paymentAmount = ref('')
 // 'credit' triggers a compound operation: a payments row (method: 'credit')
 // plus a negative account_credits row -- the same pattern the patient's main
 // Billing tab already uses for "Apply credit" (BillingTab.vue).
-const paymentMethod = ref<'card' | 'cash' | 'other' | 'credit'>('cash')
+const paymentMethod = ref<'card' | 'cash' | 'credit'>('cash')
 const savingPayment = ref(false)
 const error = ref('')
 
@@ -343,7 +343,6 @@ async function recordPayment() {
           <select v-model="paymentMethod" class="mt-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm">
             <option value="cash">Cash</option>
             <option value="card">Card</option>
-            <option value="other">Other</option>
             <option v-if="balanceCents > 0" value="credit">Credit on account (€{{ (balanceCents / 100).toFixed(2) }} available)</option>
           </select>
         </div>

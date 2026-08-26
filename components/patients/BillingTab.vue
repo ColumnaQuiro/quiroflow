@@ -55,7 +55,7 @@ const { can } = usePermission()
 const { balanceCents, creditLedgerCents, refresh: refreshCreditSummary } = usePatientFinancialSummary(() => props.patientId)
 const addCreditAmount = ref('')
 const addCreditReason = ref('')
-const addCreditMethod = ref<'card' | 'cash' | 'other'>('cash')
+const addCreditMethod = ref<'card' | 'cash'>('cash')
 const addingCredit = ref(false)
 const applyCreditInvoiceId = ref('')
 const applyCreditAmount = ref('')
@@ -124,10 +124,10 @@ async function applyCreditToInvoice() {
   await Promise.all([refreshCreditSummary(), loadAll()])
 }
 
-// -- Take a payment against an unpaid invoice (cash/card/other) -----------
+// -- Take a payment against an unpaid invoice (cash/card) -----------------
 const paymentInvoiceId = ref('')
 const paymentAmount = ref('')
-const paymentMethod = ref<'card' | 'cash' | 'other'>('cash')
+const paymentMethod = ref<'card' | 'cash'>('cash')
 const takingPayment = ref(false)
 const paymentError = ref('')
 
@@ -193,7 +193,7 @@ const packageTemplates = ref<PackageTemplate[]>([])
 const purchases = ref<PackagePurchaseRow[]>([])
 const sellPackageId = ref('')
 const sellAmountPaid = ref('')
-const sellMethod = ref<'cash' | 'card' | 'other' | 'credit'>('cash')
+const sellMethod = ref<'cash' | 'card' | 'credit'>('cash')
 const sellingPackage = ref(false)
 
 const membershipTemplates = ref<MembershipTemplate[]>([])
@@ -201,7 +201,7 @@ const patientMemberships = ref<PatientMembershipRow[]>([])
 const membershipPayments = ref<MembershipPaymentRow[]>([])
 const activateMembershipId = ref('')
 const activateAmountPaid = ref('')
-const activateMethod = ref<'cash' | 'card' | 'other' | 'credit'>('cash')
+const activateMethod = ref<'cash' | 'card' | 'credit'>('cash')
 const activatingMembership = ref(false)
 
 watch(sellPackageId, (id) => {
@@ -218,7 +218,7 @@ watch(activateMembershipId, (id) => {
 // the existing Stripe autopay/installments flow below, which already has an
 // "already paid" concept for exactly this). Same compound cash/card/other/
 // credit handling as recordPayment's credit branch and applyCreditToInvoice.
-async function recordSalePayment(description: string, amountCents: number, method: 'cash' | 'card' | 'other' | 'credit') {
+async function recordSalePayment(description: string, amountCents: number, method: 'cash' | 'card' | 'credit') {
   const { count } = await supabase.from('invoices').select('id', { count: 'exact', head: true })
   const invoiceNumber = `INV-${String((count ?? 0) + 1).padStart(4, '0')}`
 
@@ -657,7 +657,6 @@ function money(cents: number) {
             <select v-model="addCreditMethod" class="mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
               <option value="cash">Cash</option>
               <option value="card">Card</option>
-              <option value="other">Other</option>
             </select>
           </div>
           <div class="flex-1">
@@ -704,7 +703,6 @@ function money(cents: number) {
             <select v-model="paymentMethod" class="mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
               <option value="card">Card</option>
               <option value="cash">Cash</option>
-              <option value="other">Other</option>
             </select>
           </div>
           <UiBtn variant="primary" size="sm" :disabled="!paymentInvoiceId || !paymentAmount || takingPayment" @click="takePayment">
@@ -848,7 +846,6 @@ function money(cents: number) {
             <select v-model="sellMethod" class="mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]">
               <option value="cash">Cash</option>
               <option value="card">Card</option>
-              <option value="other">Other</option>
               <option v-if="creditLedgerCents > 0" value="credit">Credit (€{{ (creditLedgerCents / 100).toFixed(2) }} available)</option>
             </select>
           </div>
@@ -941,7 +938,6 @@ function money(cents: number) {
             <select v-model="activateMethod" class="mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]">
               <option value="cash">Cash</option>
               <option value="card">Card</option>
-              <option value="other">Other</option>
               <option v-if="creditLedgerCents > 0" value="credit">Credit (€{{ (creditLedgerCents / 100).toFixed(2) }} available)</option>
             </select>
           </div>

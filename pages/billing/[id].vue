@@ -27,7 +27,7 @@ const loading = ref(true)
 const notFound = ref(false)
 
 const paymentAmount = ref('')
-const paymentMethod = ref<'card' | 'cash' | 'other' | 'credit'>('card')
+const paymentMethod = ref<'card' | 'cash' | 'credit'>('card')
 const savingPayment = ref(false)
 const error = ref('')
 const sending = ref(false)
@@ -315,7 +315,6 @@ function formatDate(iso: string) {
               <select v-model="paymentMethod" class="mt-1 rounded-ctl border border-line-control px-3 py-1.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
                 <option value="card">Card</option>
                 <option value="cash">Cash</option>
-                <option value="other">Other</option>
                 <option v-if="balanceCents > 0" value="credit">Credit on account (€{{ (balanceCents / 100).toFixed(2) }} available)</option>
               </select>
             </div>

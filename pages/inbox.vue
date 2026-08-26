@@ -859,7 +859,7 @@ onUnmounted(() => {
                 <path d="M3 8a5 5 0 0 0 10 0M8 13v1.5" stroke-linecap="round" />
               </svg>
             </button>
-            <SavedRepliesPicker @insert="insertReply" />
+            <InboxSavedRepliesPicker @insert="insertReply" />
             <textarea
               ref="composerTextarea"
               v-model="composerText"

@@ -792,7 +792,7 @@ onUnmounted(() => {
           <UiBtn variant="primary" size="sm" @click="toggleAudioRecording">Send</UiBtn>
         </div>
         <div v-else class="flex items-end gap-2">
-          <SavedRepliesPicker size="lg" @insert="insertReply" />
+          <InboxSavedRepliesPicker size="lg" @insert="insertReply" />
           <input ref="fileInput" type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx" class="hidden" @change="onFileChosen" />
           <button
             type="button"

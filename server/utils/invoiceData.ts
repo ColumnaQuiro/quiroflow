@@ -9,9 +9,12 @@ export interface InvoiceDocumentData {
   invoiceNumber: string
   createdAt: string
   totalCents: number
+  paidCents: number
+  balanceDueCents: number
   lineItems: { description: string; quantity: number; price_cents: number }[]
   patient: { firstName: string; lastName: string | null; email: string | null; address: string | null; nationalId: string | null }
-  clinic: { name: string; legalName: string | null; address: string | null; taxId: string | null } | null
+  clinic: { name: string; legalName: string | null; address: string | null; taxId: string | null; footerText: string | null } | null
+  nextAppointmentDate: string | null
 }
 
 export async function loadInvoiceDocumentData(
@@ -20,12 +23,24 @@ export async function loadInvoiceDocumentData(
 ): Promise<InvoiceDocumentData | null> {
   const { data: invoice } = await supabase
     .from('invoices')
-    .select('invoice_number, created_at, total_cents, account_id, patients(first_name, last_name, email, address, national_id), appointments(clinic_id)')
+    .select('invoice_number, created_at, total_cents, account_id, patient_id, patients(first_name, last_name, email, address, national_id), appointments(clinic_id)')
     .eq('id', invoiceId)
     .maybeSingle()
   if (!invoice) return null
 
-  const { data: lineItems } = await supabase.from('invoice_line_items').select('description, quantity, price_cents').eq('invoice_id', invoiceId)
+  const [{ data: lineItems }, { data: payments }, { data: nextAppointment }] = await Promise.all([
+    supabase.from('invoice_line_items').select('description, quantity, price_cents').eq('invoice_id', invoiceId),
+    supabase.from('payments').select('amount_cents').eq('invoice_id', invoiceId),
+    supabase
+      .from('appointments')
+      .select('starts_at')
+      .eq('patient_id', invoice.patient_id)
+      .neq('status', 'cancelled')
+      .gt('starts_at', new Date().toISOString())
+      .order('starts_at', { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+  ])
 
   const patient = invoice.patients as unknown as {
     first_name: string
@@ -40,18 +55,31 @@ export async function loadInvoiceDocumentData(
   // package/membership sale invoice doesn't, so this falls back to the
   // account's first clinic -- accurate for the common single-clinic case.
   const { data: clinicRow } = appointment?.clinic_id
-    ? await supabase.from('clinics').select('name, legal_name, address, tax_id').eq('id', appointment.clinic_id).maybeSingle()
-    : await supabase.from('clinics').select('name, legal_name, address, tax_id').eq('account_id', invoice.account_id).order('created_at').limit(1).maybeSingle()
+    ? await supabase.from('clinics').select('name, legal_name, address, tax_id, invoice_footer_text').eq('id', appointment.clinic_id).maybeSingle()
+    : await supabase
+        .from('clinics')
+        .select('name, legal_name, address, tax_id, invoice_footer_text')
+        .eq('account_id', invoice.account_id)
+        .order('created_at')
+        .limit(1)
+        .maybeSingle()
+
+  const paidCents = (payments ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
 
   return {
     invoiceNumber: invoice.invoice_number,
     createdAt: invoice.created_at,
     totalCents: invoice.total_cents,
+    paidCents,
+    balanceDueCents: invoice.total_cents - paidCents,
     lineItems: lineItems ?? [],
     patient: patient
       ? { firstName: patient.first_name, lastName: patient.last_name, email: patient.email, address: patient.address, nationalId: patient.national_id }
       : { firstName: '', lastName: null, email: null, address: null, nationalId: null },
-    clinic: clinicRow ? { name: clinicRow.name, legalName: clinicRow.legal_name, address: clinicRow.address, taxId: clinicRow.tax_id } : null,
+    clinic: clinicRow
+      ? { name: clinicRow.name, legalName: clinicRow.legal_name, address: clinicRow.address, taxId: clinicRow.tax_id, footerText: clinicRow.invoice_footer_text }
+      : null,
+    nextAppointmentDate: nextAppointment?.starts_at ?? null,
   }
 }
 
@@ -114,11 +142,29 @@ export function generateInvoicePdf(data: InvoiceDocumentData): Promise<Buffer> {
       .lineTo(545, y + 4)
       .strokeColor('#ddd')
       .stroke()
+
+    let totalsY = y + 14
+    doc.font('Helvetica').fontSize(10).fillColor('#555')
+    doc.text(`Subtotal: €${(data.totalCents / 100).toFixed(2)}`, col.price, totalsY, { width: 145, align: 'right' })
+    totalsY += 15
+    doc.text(`Paid: €${(data.paidCents / 100).toFixed(2)}`, col.price, totalsY, { width: 145, align: 'right' })
+    totalsY += 18
     doc
       .font('Helvetica-Bold')
       .fontSize(11)
       .fillColor('#000')
-      .text(`Total: €${(data.totalCents / 100).toFixed(2)}`, col.price, y + 14, { width: 145, align: 'right' })
+      .text(`Balance due: €${(data.balanceDueCents / 100).toFixed(2)}`, col.price, totalsY, { width: 145, align: 'right' })
+
+    let footerY = totalsY + 40
+    if (data.clinic?.footerText) {
+      doc.font('Helvetica').fontSize(9).fillColor('#777').text(data.clinic.footerText, 50, footerY, { width: 495 })
+      footerY = doc.y + 10
+    }
+    doc
+      .font('Helvetica')
+      .fontSize(9)
+      .fillColor('#777')
+      .text(`Your next visit: ${data.nextAppointmentDate ? new Date(data.nextAppointmentDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}`, 50, footerY)
 
     doc.end()
   })

@@ -31,10 +31,8 @@ const loadingInvoice = ref(true)
 const hasFutureAppointment = ref(true)
 
 const paymentAmount = ref('')
-// 'credit' isn't a real payments.method value (that CHECK constraint only
-// allows card/cash/other) -- it's a UI-only choice that recordPayment()
-// expands into a payments row (method: 'other') plus a negative
-// account_credits row, the same compound operation the patient's main
+// 'credit' triggers a compound operation: a payments row (method: 'credit')
+// plus a negative account_credits row -- the same pattern the patient's main
 // Billing tab already uses for "Apply credit" (BillingTab.vue).
 const paymentMethod = ref<'card' | 'cash' | 'other' | 'credit'>('cash')
 const savingPayment = ref(false)
@@ -195,7 +193,7 @@ async function recordPayment() {
     account_id: store.accountId!,
     invoice_id: invoice.value.id,
     amount_cents: amountCents,
-    method: paymentMethod.value === 'credit' ? 'other' : paymentMethod.value,
+    method: paymentMethod.value,
   })
   if (paymentMethod.value === 'credit') {
     await supabase.from('account_credits').insert({
@@ -239,17 +237,10 @@ async function recordPayment() {
     <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
       <div v-if="summaryLoading" class="text-gray-400">Loading patient summary…</div>
       <div v-else class="space-y-1.5">
-        <p>
+        <p class="flex items-center gap-1.5">
           <span class="text-gray-500">Balance:</span>
-          <span class="ml-1 font-medium" :class="balanceCents > 0 ? 'text-green-600' : balanceCents < 0 ? 'text-red-600' : 'text-gray-700'">
-            {{
-              balanceCents === 0
-                ? '€0.00'
-                : balanceCents > 0
-                  ? `€${(balanceCents / 100).toFixed(2)} in credit`
-                  : `€${(Math.abs(balanceCents) / 100).toFixed(2)} owed`
-            }}
-          </span>
+          <UiBalancePill v-if="balanceCents !== 0" :balance-cents="balanceCents" />
+          <span v-else class="font-medium text-gray-700">€0.00</span>
         </p>
         <p v-if="activeMembership">
           <span class="text-gray-500">Membership:</span>

@@ -138,11 +138,6 @@ const statusLabel = computed(() => {
   return { booked: 'Booked', completed: 'Completed', unconfirmed: 'Unconfirmed', no_show: 'No-show', cancelled: 'Cancelled' }[visualStatus.value]
 })
 
-function formatMoney(cents: number) {
-  return `€${(Math.abs(cents) / 100).toFixed(2)}`
-}
-const balanceLabel = computed(() => (balanceCents.value === 0 ? 'No balance due' : balanceCents.value < 0 ? `${formatMoney(balanceCents.value)} owing` : `${formatMoney(balanceCents.value)} credit`))
-
 function visitOrdinal(n: number) {
   return `${n}${n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th'}`
 }
@@ -167,8 +162,9 @@ function visitOrdinal(n: number) {
       <span class="text-ink-muted2">Practitioner</span>
       <span class="truncate text-right text-ink-700">{{ practitionerName }}</span>
       <span class="text-ink-muted2">Balance</span>
-      <span class="text-right font-medium" :class="balanceCents < 0 ? 'text-danger-text' : balanceCents > 0 ? 'text-success-text' : 'text-ink-muted2'">
-        {{ balanceLabel }}
+      <span class="flex justify-end">
+        <UiBalancePill v-if="balanceCents !== 0" :balance-cents="balanceCents" />
+        <span v-else class="text-ink-muted2">No balance due</span>
       </span>
     </div>
     <p v-if="visitNumber" class="mt-1.5 text-[11px] text-ink-faint">

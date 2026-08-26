@@ -12,6 +12,7 @@ interface LineItem {
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const route = useRoute()
 
 const patients = ref<PatientOption[]>([])
 const services = ref<Tables<'services_products'>[]>([])
@@ -28,6 +29,14 @@ onMounted(async () => {
   ])
   patients.value = pts ?? []
   services.value = svc ?? []
+
+  // Preselects the patient when arriving from their own Account Ledger
+  // ("New Invoice" there links here with ?patient_id= rather than opening a
+  // separate modal, so this page needs to skip its own patient search step).
+  const requestedId = route.query.patient_id
+  if (typeof requestedId === 'string' && patients.value.some((p) => p.id === requestedId)) {
+    patientId.value = requestedId
+  }
 })
 
 const filteredPatients = computed(() => {

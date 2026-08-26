@@ -53,7 +53,6 @@ const store = useAccountStore()
 const { can } = usePermission()
 
 const { balanceCents, creditLedgerCents, refresh: refreshCreditSummary } = usePatientFinancialSummary(() => props.patientId)
-const creditHistory = ref<{ id: string; amount_cents: number; reason: string | null; method: string | null; created_at: string }[]>([])
 const addCreditAmount = ref('')
 const addCreditReason = ref('')
 const addCreditMethod = ref<'card' | 'cash' | 'other'>('cash')
@@ -65,16 +64,6 @@ const creditError = ref('')
 
 // Which quick-action panel (if any) is expanded below the summary strip.
 const activePanel = ref<'credit' | 'payment' | null>(null)
-
-async function loadCreditHistory() {
-  const { data } = await supabase
-    .from('account_credits')
-    .select('id, amount_cents, reason, method, created_at')
-    .eq('patient_id', props.patientId)
-    .order('created_at', { ascending: false })
-    .limit(10)
-  creditHistory.value = data ?? []
-}
 
 async function addCredit() {
   const amountCents = Math.round((parseFloat(addCreditAmount.value) || 0) * 100)
@@ -94,7 +83,7 @@ async function addCredit() {
   addCreditMethod.value = 'cash'
   addingCredit.value = false
   activePanel.value = null
-  await Promise.all([refreshCreditSummary(), loadCreditHistory()])
+  await refreshCreditSummary()
 }
 
 async function applyCreditToInvoice() {
@@ -112,7 +101,7 @@ async function applyCreditToInvoice() {
     account_id: store.accountId!,
     invoice_id: invoice.id,
     amount_cents: amountCents,
-    method: 'other',
+    method: 'credit',
   })
   await supabase.from('account_credits').insert({
     account_id: store.accountId!,
@@ -132,7 +121,7 @@ async function applyCreditToInvoice() {
   applyCreditInvoiceId.value = ''
   applyCreditAmount.value = ''
   applyingCredit.value = false
-  await Promise.all([refreshCreditSummary(), loadCreditHistory(), loadAll()])
+  await Promise.all([refreshCreditSummary(), loadAll()])
 }
 
 // -- Take a payment against an unpaid invoice (cash/card/other) -----------
@@ -243,7 +232,7 @@ async function recordSalePayment(description: string, amountCents: number, metho
   await supabase.from('invoice_line_items').insert({ account_id: store.accountId!, invoice_id: invoice.id, description, quantity: 1, price_cents: amountCents })
 
   if (method === 'credit') {
-    await supabase.from('payments').insert({ account_id: store.accountId!, invoice_id: invoice.id, amount_cents: amountCents, method: 'other' })
+    await supabase.from('payments').insert({ account_id: store.accountId!, invoice_id: invoice.id, amount_cents: amountCents, method: 'credit' })
     await supabase.from('account_credits').insert({
       account_id: store.accountId!,
       patient_id: props.patientId,
@@ -315,7 +304,6 @@ async function loadAll() {
 }
 onMounted(() => {
   loadAll()
-  loadCreditHistory()
   maybeOpenPaymentFromTrigger()
 })
 // The sidebar's "Charge" button sets this to jump straight to the "Take
@@ -358,16 +346,25 @@ async function deleteInvoice(invoice: InvoiceRow) {
   await Promise.all([loadAll(), refreshCreditSummary()])
 }
 
+// Settles an invoice's remaining balance without collecting money -- same
+// paidCents->status flip every other payment path already uses, just
+// tagged 'write_off' so the ledger can label it honestly.
+async function writeOffInvoice(invoiceId: string) {
+  const invoice = invoices.value.find((i) => i.id === invoiceId)
+  if (!invoice) return
+  const { data: paid } = await supabase.from('payments').select('amount_cents').eq('invoice_id', invoiceId)
+  const paidCents = (paid ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
+  const openCents = invoice.total_cents - paidCents
+  if (openCents <= 0) return
+  if (!confirm(`Write off ${money(openCents)} remaining on ${invoice.invoice_number}? This settles the invoice without collecting payment.`)) return
+  await supabase.from('payments').insert({ account_id: store.accountId!, invoice_id: invoiceId, amount_cents: openCents, method: 'write_off' })
+  await supabase.from('invoices').update({ status: 'paid' }).eq('id', invoiceId)
+  await Promise.all([loadAll(), refreshCreditSummary()])
+}
+
 const hasCard = computed(() => !!stripeCustomer.value?.default_payment_method_id)
 const unpaidInvoices = computed(() => invoices.value.filter((i) => i.status === 'unpaid'))
 const outstandingCents = computed(() => (balanceCents.value < 0 ? -balanceCents.value : 0))
-
-function itemsSummary(invoiceId: string) {
-  const items = lineItemDescriptions.value[invoiceId] ?? []
-  if (items.length === 0) return '—'
-  if (items.length === 1) return items[0]
-  return `${items[0]} +${items.length - 1} more`
-}
 
 function scheduleForPackage(purchaseId: string) {
   return schedules.value.find((s) => s.package_purchase_id === purchaseId)
@@ -449,11 +446,6 @@ const scheduleTone: Record<string, 'success' | 'neutral' | 'danger'> = {
   completed: 'neutral',
   canceled: 'neutral',
   past_due: 'danger',
-}
-const invoiceTone: Record<string, 'success' | 'danger' | 'neutral'> = {
-  paid: 'success',
-  unpaid: 'danger',
-  void: 'neutral',
 }
 const statusTone: Record<string, 'success' | 'danger' | 'warning' | 'neutral'> = {
   paid: 'success',
@@ -683,14 +675,6 @@ function unallocatedCents(p: { price_cents: number; sessions_total: number; sess
         </form>
 
         <p v-if="creditError" class="mt-2 text-[12px] text-danger-text">{{ creditError }}</p>
-        <ul v-if="creditHistory.length > 0" class="mt-3 space-y-1 border-t border-line-divider pt-2 text-[11.5px] text-ink-muted2">
-          <li v-for="c in creditHistory" :key="c.id">
-            {{ new Date(c.created_at).toLocaleDateString() }} &middot;
-            <span :class="c.amount_cents > 0 ? 'text-success-text' : 'text-danger-text'">{{ c.amount_cents > 0 ? '+' : '' }}{{ money(c.amount_cents) }}</span>
-            <span v-if="c.method"> &middot; {{ c.method }}</span>
-            <span v-if="c.reason"> &middot; {{ c.reason }}</span>
-          </li>
-        </ul>
       </div>
 
       <div v-if="activePanel === 'payment'" class="mt-4 border-t border-line-divider pt-4">
@@ -722,62 +706,26 @@ function unallocatedCents(p: { price_cents: number; sessions_total: number; sess
       </div>
     </div>
 
-    <!-- Invoices -->
-    <div class="rounded-card border border-line bg-surface shadow-card">
-      <div v-if="loading" class="p-8 text-center text-[13px] text-ink-faint">Loading…</div>
-      <div v-else-if="invoices.length === 0" class="p-8 text-center text-[13px] text-ink-faint">No invoices yet.</div>
-      <table v-else class="w-full text-[13px]">
-        <thead class="border-b border-line-divider text-left text-[11px] font-medium uppercase tracking-wide text-ink-faint">
-          <tr>
-            <th class="px-4 py-2">Invoice</th>
-            <th class="px-4 py-2">Date</th>
-            <th class="px-4 py-2">Items</th>
-            <th class="px-4 py-2 text-right">Total</th>
-            <th class="px-4 py-2">Status</th>
-            <th class="px-4 py-2"></th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-line-row">
-          <tr v-for="invoice in invoices" :key="invoice.id" class="h-[46px]">
-            <td class="px-4">
-              <NuxtLink :to="`/billing/${invoice.id}`" class="font-mono text-[12.5px] text-brand-text hover:text-brand-hover">{{ invoice.invoice_number }}</NuxtLink>
-            </td>
-            <td class="px-4 text-ink-muted">{{ new Date(invoice.created_at).toLocaleDateString() }}</td>
-            <td class="px-4 max-w-[240px] truncate text-ink-muted">{{ itemsSummary(invoice.id) }}</td>
-            <td class="px-4 text-right font-mono text-ink-700">{{ money(invoice.total_cents) }}</td>
-            <td class="px-4">
-              <UiPill :tone="invoiceTone[invoice.status] ?? 'neutral'">{{ invoice.status }}</UiPill>
-            </td>
-            <td class="px-4 text-right">
-              <span v-if="sendResultInvoiceId === invoice.id" class="text-[11.5px] text-ink-faint">{{ sendResultMessage }}</span>
-              <button
-                v-else
-                type="button"
-                title="Email this invoice to the patient"
-                class="text-ink-faint hover:text-brand-text disabled:opacity-50"
-                :disabled="sendingInvoiceId === invoice.id"
-                @click="sendInvoiceEmail(invoice.id)"
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
-                  <path d="M3 7l9 6 9-6M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1z" stroke-linecap="round" stroke-linejoin="round" />
-                </svg>
-              </button>
-              <button
-                v-if="can('financials_edit_all')"
-                type="button"
-                title="Delete this invoice"
-                class="ml-2 text-ink-faint hover:text-danger-text"
-                @click="deleteInvoice(invoice)"
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
-                  <path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2m3 0-1 14a1 1 0 01-1 1H7a1 1 0 01-1-1L5 6h14z" stroke-linecap="round" stroke-linejoin="round" />
-                </svg>
-              </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <!-- Account Ledger -->
+    <div v-if="loading" class="rounded-card border border-line bg-surface p-8 text-center text-[13px] text-ink-faint shadow-card">Loading…</div>
+    <PatientsAccountLedger
+      v-else
+      :patient-id="patientId"
+      :invoices="invoices"
+      :line-item-descriptions="lineItemDescriptions"
+      :credit-ledger-cents="creditLedgerCents"
+      :sending-invoice-id="sendingInvoiceId"
+      :send-result-invoice-id="sendResultInvoiceId"
+      :send-result-message="sendResultMessage"
+      :can-delete-invoices="can('financials_edit_all')"
+      :can-write-off="can('financials_edit_all')"
+      @add-credit="activePanel = 'credit'"
+      @take-payment="activePanel === 'payment' ? (activePanel = null) : openTakePayment()"
+      @send-invoice="sendInvoiceEmail"
+      @delete-invoice="(id: string) => { const inv = invoices.find((i) => i.id === id); if (inv) deleteInvoice(inv) }"
+      @write-off-invoice="writeOffInvoice"
+      @credits-changed="refreshCreditSummary"
+    />
 
     <div v-if="!loading" class="grid grid-cols-2 gap-4">
       <!-- Packages / bonos -->

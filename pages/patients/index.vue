@@ -8,7 +8,6 @@ type Patient = Pick<
   | 'id'
   | 'first_name'
   | 'last_name'
-  | 'balance_cents'
   | 'tags'
   | 'clinic_id'
   | 'email'
@@ -28,8 +27,9 @@ interface TeamMemberOption { id: string; full_name: string }
 interface CarePlanInfo { name: string; totalVisits: number; completed: number }
 
 const search = ref('')
-// Two stateful filter chips from the design (distinct from the raw
-// balance_cents sign, which the Balance column always shows regardless).
+// Two stateful filter chips from the design. "Outstanding balance" filters
+// on the live-computed patient_live_balances view, not a stored column --
+// see loadPatients()/exportCsv() below.
 const outstandingBalanceFilter = ref(false)
 const carePlanFilter = ref(false)
 const missingContact = ref<'any' | 'email' | 'phone'>('any')
@@ -37,6 +37,7 @@ const practitionerFilter = ref('')
 const statusFilter = ref<'active' | 'inactive' | 'any'>('active')
 const exporting = ref(false)
 const patients = ref<Patient[]>([])
+const balanceByPatient = ref<Record<string, number>>({})
 const nextAppointmentByPatient = ref<Record<string, string>>({})
 const carePlanByPatient = ref<Record<string, CarePlanInfo>>({})
 const whatsappConsentByPatient = ref<Record<string, boolean>>({})
@@ -67,13 +68,20 @@ async function loadPatients() {
   // patients with at least one care_plans row without duplicating the
   // patient row per plan (PostgREST nests the match, it doesn't join-fan-out).
   const selectCols =
-    'id, first_name, last_name, balance_cents, tags, clinic_id, email, default_practitioner_id, invoice_email_enabled, status, is_minor, do_not_contact' +
+    'id, first_name, last_name, tags, clinic_id, email, default_practitioner_id, invoice_email_enabled, status, is_minor, do_not_contact' +
     (carePlanFilter.value ? ', care_plans!inner(id)' : '')
 
   let query = supabase.from('patients').select(selectCols, { count: 'exact' })
 
   if (store.currentClinicId) query = query.eq('clinic_id', store.currentClinicId)
-  if (outstandingBalanceFilter.value) query = query.lt('balance_cents', 0)
+  // balance_cents lives on a live-computed view (patient_live_balances), not
+  // a column on patients -- narrow to matching ids first, same trick already
+  // used below for the single-token phone search.
+  if (outstandingBalanceFilter.value) {
+    const { data: owing } = await supabase.from('patient_live_balances').select('patient_id').lt('balance_cents', 0)
+    const owingIds = (owing ?? []).map((r) => r.patient_id!)
+    query = query.in('id', owingIds.length > 0 ? owingIds : ['00000000-0000-0000-0000-000000000000'])
+  }
   if (missingContact.value === 'email') query = query.or('email.is.null,email.eq.')
   if (missingContact.value === 'phone') query = query.eq('has_phone', false)
   if (practitionerFilter.value) query = query.eq('default_practitioner_id', practitionerFilter.value)
@@ -114,7 +122,7 @@ async function loadPatients() {
 
   const ids = patients.value.map((p) => p.id)
   if (ids.length > 0) {
-    const [{ data: upcoming }, { data: plans }, { data: completedAppts }, { data: contactNumbers }] = await Promise.all([
+    const [{ data: upcoming }, { data: plans }, { data: completedAppts }, { data: contactNumbers }, { data: balances }] = await Promise.all([
       supabase
         .from('appointments')
         .select('patient_id, starts_at')
@@ -133,7 +141,12 @@ async function loadPatients() {
         .select('patient_id, number, country_code, is_whatsapp')
         .in('patient_id', ids)
         .order('created_at'),
+      supabase.from('patient_live_balances').select('patient_id, balance_cents').in('patient_id', ids),
     ])
+
+    const balByPatient: Record<string, number> = {}
+    for (const b of balances ?? []) balByPatient[b.patient_id!] = b.balance_cents ?? 0
+    balanceByPatient.value = balByPatient
 
     const nextByPatient: Record<string, string> = {}
     for (const a of upcoming ?? []) {
@@ -166,6 +179,7 @@ async function loadPatients() {
     carePlanByPatient.value = {}
     whatsappConsentByPatient.value = {}
     primaryPhoneByPatient.value = {}
+    balanceByPatient.value = {}
   }
 
   loading.value = false
@@ -189,17 +203,35 @@ watch([outstandingBalanceFilter, carePlanFilter, missingContact, practitionerFil
 function csvEscape(v: string) {
   return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
 }
+// patient_live_balances has no filters of its own to page against --
+// chunking a plain .in() keeps each request's id list a sane size rather
+// than sending a single query with 1000+ ids.
+async function fetchBalances(ids: string[]): Promise<Record<string, number>> {
+  const result: Record<string, number> = {}
+  const CHUNK = 300
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const { data } = await supabase.from('patient_live_balances').select('patient_id, balance_cents').in('patient_id', ids.slice(i, i + CHUNK))
+    for (const b of data ?? []) result[b.patient_id!] = b.balance_cents ?? 0
+  }
+  return result
+}
+
 async function exportCsv() {
   exporting.value = true
   try {
     const selectCols =
-      'id, first_name, last_name, balance_cents, tags, email, status, is_minor, do_not_contact' +
-      (carePlanFilter.value ? ', care_plans!inner(id)' : '')
+      'id, first_name, last_name, tags, email, status, is_minor, do_not_contact' + (carePlanFilter.value ? ', care_plans!inner(id)' : '')
+
+    let owingIds: string[] | null = null
+    if (outstandingBalanceFilter.value) {
+      const { data: owing } = await supabase.from('patient_live_balances').select('patient_id').lt('balance_cents', 0)
+      owingIds = (owing ?? []).map((r) => r.patient_id!)
+    }
 
     const rows = await fetchAllRows<Patient & { tags: string[] }>((from, to) => {
       let q = supabase.from('patients').select(selectCols) as any
       if (store.currentClinicId) q = q.eq('clinic_id', store.currentClinicId)
-      if (outstandingBalanceFilter.value) q = q.lt('balance_cents', 0)
+      if (owingIds) q = q.in('id', owingIds.length > 0 ? owingIds : ['00000000-0000-0000-0000-000000000000'])
       if (missingContact.value === 'email') q = q.or('email.is.null,email.eq.')
       if (missingContact.value === 'phone') q = q.eq('has_phone', false)
       if (practitionerFilter.value) q = q.eq('default_practitioner_id', practitionerFilter.value)
@@ -211,12 +243,14 @@ async function exportCsv() {
       return q.order('first_name').range(from, to)
     })
 
+    const exportBalances = await fetchBalances(rows.map((p) => p.id))
+
     const header = ['First name', 'Last name', 'Email', 'Balance', 'Status', 'Under age', 'Do not contact', 'Tags']
     const csvRows = rows.map((p) => [
       p.first_name ?? '',
       p.last_name ?? '',
       p.email ?? '',
-      (p.balance_cents / 100).toFixed(2),
+      ((exportBalances[p.id] ?? 0) / 100).toFixed(2),
       p.status ?? 'active',
       p.is_minor ? 'yes' : 'no',
       p.do_not_contact ? 'yes' : 'no',
@@ -425,8 +459,8 @@ function tagClass(tag: string) {
 
             <!-- Balance -->
             <div class="w-[120px] shrink-0 text-right">
-              <span class="inline-flex rounded-[6px] px-2 py-0.5 font-mono text-[12.5px]" :class="balancePill(patient.balance_cents).class">
-                {{ balancePill(patient.balance_cents).text }}
+              <span class="inline-flex rounded-[6px] px-2 py-0.5 font-mono text-[12.5px]" :class="balancePill(balanceByPatient[patient.id] ?? 0).class">
+                {{ balancePill(balanceByPatient[patient.id] ?? 0).text }}
               </span>
             </div>
 

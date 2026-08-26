@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.15"
+    PostgrestVersion: "14.17"
   }
   public: {
     Tables: {
@@ -69,6 +69,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "invoices"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_credits_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patient_live_balances"
+            referencedColumns: ["patient_id"]
           },
           {
             foreignKeyName: "account_credits_patient_id_fkey"
@@ -513,6 +520,13 @@ export type Database = {
             foreignKeyName: "appointments_patient_id_fkey"
             columns: ["patient_id"]
             isOneToOne: false
+            referencedRelation: "patient_live_balances"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "appointments_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
             referencedRelation: "patients"
             referencedColumns: ["id"]
           },
@@ -843,6 +857,13 @@ export type Database = {
             foreignKeyName: "care_plans_patient_id_fkey"
             columns: ["patient_id"]
             isOneToOne: false
+            referencedRelation: "patient_live_balances"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "care_plans_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
             referencedRelation: "patients"
             referencedColumns: ["id"]
           },
@@ -917,6 +938,7 @@ export type Database = {
           business_hours: Json
           created_at: string
           id: string
+          invoice_footer_text: string | null
           legal_name: string | null
           name: string
           online_booking_enabled: boolean
@@ -929,6 +951,7 @@ export type Database = {
           business_hours?: Json
           created_at?: string
           id?: string
+          invoice_footer_text?: string | null
           legal_name?: string | null
           name: string
           online_booking_enabled?: boolean
@@ -941,6 +964,7 @@ export type Database = {
           business_hours?: Json
           created_at?: string
           id?: string
+          invoice_footer_text?: string | null
           legal_name?: string | null
           name?: string
           online_booking_enabled?: boolean
@@ -1012,6 +1036,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "team_members"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contact_log_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patient_live_balances"
+            referencedColumns: ["patient_id"]
           },
           {
             foreignKeyName: "contact_log_patient_id_fkey"
@@ -1255,6 +1286,13 @@ export type Database = {
             foreignKeyName: "invoices_patient_id_fkey"
             columns: ["patient_id"]
             isOneToOne: false
+            referencedRelation: "patient_live_balances"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "invoices_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
             referencedRelation: "patients"
             referencedColumns: ["id"]
           },
@@ -1385,6 +1423,13 @@ export type Database = {
             foreignKeyName: "package_purchase_shares_patient_id_fkey"
             columns: ["patient_id"]
             isOneToOne: false
+            referencedRelation: "patient_live_balances"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "package_purchase_shares_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
             referencedRelation: "patients"
             referencedColumns: ["id"]
           },
@@ -1465,6 +1510,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "packages"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "package_purchases_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patient_live_balances"
+            referencedColumns: ["patient_id"]
           },
           {
             foreignKeyName: "package_purchases_patient_id_fkey"
@@ -1554,6 +1606,13 @@ export type Database = {
             foreignKeyName: "patient_app_messages_patient_id_fkey"
             columns: ["patient_id"]
             isOneToOne: false
+            referencedRelation: "patient_live_balances"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "patient_app_messages_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
             referencedRelation: "patients"
             referencedColumns: ["id"]
           },
@@ -1601,6 +1660,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "accounts"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_contact_numbers_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patient_live_balances"
+            referencedColumns: ["patient_id"]
           },
           {
             foreignKeyName: "patient_contact_numbers_patient_id_fkey"
@@ -1686,6 +1752,13 @@ export type Database = {
             foreignKeyName: "patient_docs_patient_id_fkey"
             columns: ["patient_id"]
             isOneToOne: false
+            referencedRelation: "patient_live_balances"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "patient_docs_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
             referencedRelation: "patients"
             referencedColumns: ["id"]
           },
@@ -1759,6 +1832,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "accounts"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_files_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patient_live_balances"
+            referencedColumns: ["patient_id"]
           },
           {
             foreignKeyName: "patient_files_patient_id_fkey"
@@ -1843,6 +1923,13 @@ export type Database = {
             foreignKeyName: "patient_memberships_patient_id_fkey"
             columns: ["patient_id"]
             isOneToOne: false
+            referencedRelation: "patient_live_balances"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "patient_memberships_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
             referencedRelation: "patients"
             referencedColumns: ["id"]
           },
@@ -1887,6 +1974,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "accounts"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_stripe_customers_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patient_live_balances"
+            referencedColumns: ["patient_id"]
           },
           {
             foreignKeyName: "patient_stripe_customers_patient_id_fkey"
@@ -2051,6 +2145,13 @@ export type Database = {
             foreignKeyName: "patients_tutor_patient_id_fkey"
             columns: ["tutor_patient_id"]
             isOneToOne: false
+            referencedRelation: "patient_live_balances"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "patients_tutor_patient_id_fkey"
+            columns: ["tutor_patient_id"]
+            isOneToOne: false
             referencedRelation: "patients"
             referencedColumns: ["id"]
           },
@@ -2123,6 +2224,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "package_purchases"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_schedules_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patient_live_balances"
+            referencedColumns: ["patient_id"]
           },
           {
             foreignKeyName: "payment_schedules_patient_id_fkey"
@@ -2221,6 +2329,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "accounts"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "photo_upload_tokens_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patient_live_balances"
+            referencedColumns: ["patient_id"]
           },
           {
             foreignKeyName: "photo_upload_tokens_patient_id_fkey"
@@ -2752,6 +2867,13 @@ export type Database = {
             foreignKeyName: "whatsapp_messages_patient_id_fkey"
             columns: ["patient_id"]
             isOneToOne: false
+            referencedRelation: "patient_live_balances"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "whatsapp_messages_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
             referencedRelation: "patients"
             referencedColumns: ["id"]
           },
@@ -2766,6 +2888,22 @@ export type Database = {
       }
     }
     Views: {
+      patient_live_balances: {
+        Row: {
+          account_id: string | null
+          balance_cents: number | null
+          patient_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patients_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       recall_candidates: {
         Row: {
           account_id: string | null

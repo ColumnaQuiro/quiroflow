@@ -20,6 +20,7 @@ export interface Clinic {
   business_hours: Record<string, [string, string][]> | null
   legal_name: string | null
   tax_id: string | null
+  invoice_footer_text: string | null
 }
 
 export const useAccountStore = defineStore('account', {
@@ -75,7 +76,10 @@ export const useAccountStore = defineStore('account', {
           .select('name, slug, whatsapp_confirmation_template_name, whatsapp_recall_template_name')
           .eq('id', teamMember.account_id)
           .maybeSingle(),
-        supabase.from('clinics').select('id, account_id, name, address, slot_duration_minutes, business_hours, legal_name, tax_id').eq('account_id', teamMember.account_id),
+        supabase
+          .from('clinics')
+          .select('id, account_id, name, address, slot_duration_minutes, business_hours, legal_name, tax_id, invoice_footer_text')
+          .eq('account_id', teamMember.account_id),
         supabase.rpc('get_my_permissions', { target_account_id: teamMember.account_id }),
       ])
 

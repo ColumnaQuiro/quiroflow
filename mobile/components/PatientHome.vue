@@ -64,9 +64,7 @@ function formatDate(iso: string) {
       <div class="mt-2 rounded-card border border-line bg-surface p-4">
         <div v-if="financeLoading" class="text-[13px] text-ink-faint">Loading…</div>
         <template v-else>
-          <p v-if="balanceCents !== 0" class="text-[13px]" :class="balanceCents > 0 ? 'text-success-text' : 'text-danger-text'">
-            {{ balanceCents > 0 ? `€${(balanceCents / 100).toFixed(2)} credit on account` : `€${(Math.abs(balanceCents) / 100).toFixed(2)} owed` }}
-          </p>
+          <UiBalancePill v-if="balanceCents !== 0" :balance-cents="balanceCents" />
           <p v-else class="text-[13px] text-ink-muted">Balance is settled.</p>
 
           <div v-if="activePackages.length > 0" class="mt-2 space-y-1 border-t border-line-divider pt-2">

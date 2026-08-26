@@ -84,7 +84,7 @@ interface AppointmentRow {
   rescheduled: boolean
   confirmation_status: string | null
   note: string | null
-  patients: { first_name: string; last_name: string | null; balance_cents: number } | null
+  patients: { first_name: string; last_name: string | null } | null
   appointment_types: { name: string; color: string; default_price_cents: number } | null
   team_members: { full_name: string; color: string } | null
 }
@@ -250,7 +250,7 @@ async function loadAppointments() {
   const { data } = await supabase
     .from('appointments')
     .select(
-      'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, rescheduled, confirmation_status, note, patients(first_name, last_name, balance_cents), appointment_types(name, color, default_price_cents), team_members(full_name, color)',
+      'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, rescheduled, confirmation_status, note, patients(first_name, last_name), appointment_types(name, color, default_price_cents), team_members(full_name, color)',
     )
     .eq('clinic_id', store.currentClinicId)
     .gte('starts_at', rangeStart.toISOString())
@@ -258,8 +258,21 @@ async function loadAppointments() {
     .order('starts_at')
 
   appointments.value = (data as unknown as AppointmentRow[]) ?? []
-  await loadActivePackages([...new Set(appointments.value.map((a) => a.patient_id))])
+  const patientIds = [...new Set(appointments.value.map((a) => a.patient_id))]
+  await Promise.all([loadActivePackages(patientIds), loadLiveBalances(patientIds)])
   loading.value = false
+}
+
+const balanceByPatient = ref<Record<string, number>>({})
+async function loadLiveBalances(patientIds: string[]) {
+  if (patientIds.length === 0) {
+    balanceByPatient.value = {}
+    return
+  }
+  const { data } = await supabase.from('patient_live_balances').select('patient_id, balance_cents').in('patient_id', patientIds)
+  const map: Record<string, number> = {}
+  for (const b of data ?? []) map[b.patient_id!] = b.balance_cents ?? 0
+  balanceByPatient.value = map
 }
 
 interface ActivePackageInfo { sessionsTotal: number; sessionsUsed: number; priceCents: number }
@@ -516,7 +529,7 @@ function balanceIconTone(appt: AppointmentRow): 'success' | 'danger' | 'warning'
   const pkg = activePackageByPatient.value[appt.patient_id] ?? null
   const defaultPriceCents = appt.appointment_types?.default_price_cents ?? 0
   return computeBonoStatus({
-    balanceCents: appt.patients?.balance_cents ?? 0,
+    balanceCents: balanceByPatient.value[appt.patient_id] ?? 0,
     activePackage: pkg,
     appointmentPriceCents: appt.appointment_type_id
       ? effectivePriceCents(defaultPriceCents, appt.appointment_type_id, appt.practitioner_id, overrides.value)

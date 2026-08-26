@@ -5,6 +5,7 @@ const store = useAccountStore()
 const editingId = ref<string | null>(null)
 const legalName = ref('')
 const taxId = ref('')
+const footerText = ref('')
 const saving = ref(false)
 const error = ref('')
 
@@ -14,6 +15,7 @@ function openEditor(id: string) {
   editingId.value = id
   legalName.value = clinic.legal_name ?? ''
   taxId.value = clinic.tax_id ?? ''
+  footerText.value = clinic.invoice_footer_text ?? ''
   error.value = ''
 }
 
@@ -22,7 +24,7 @@ async function save() {
   saving.value = true
   const { error: updateError } = await supabase
     .from('clinics')
-    .update({ legal_name: legalName.value.trim() || null, tax_id: taxId.value.trim() || null })
+    .update({ legal_name: legalName.value.trim() || null, tax_id: taxId.value.trim() || null, invoice_footer_text: footerText.value.trim() || null })
     .eq('id', editingId.value)
   saving.value = false
   if (updateError) {
@@ -43,8 +45,8 @@ async function save() {
         <SettingsNav />
         <div class="min-w-0 max-w-[660px] flex-1">
           <p class="text-[13px] text-ink-muted2">
-            Legal name and tax ID shown on invoices, separate from the clinic's everyday display name. Required for invoices to be
-            fiscally valid.
+            Legal name, tax ID, and address shown on invoices, plus a footer note printed at the bottom of every invoice. Required for
+            invoices to be fiscally valid.
           </p>
 
           <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
@@ -54,17 +56,22 @@ async function save() {
                   <th class="px-4 py-2">Clinic</th>
                   <th class="px-4 py-2">Legal name</th>
                   <th class="px-4 py-2">Tax ID</th>
+                  <th class="px-4 py-2">Address</th>
                   <th class="px-4 py-2"></th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-line-row">
                 <tr v-if="store.clinics.length === 0">
-                  <td colspan="4" class="px-4 py-6 text-center text-ink-faint">No clinics yet -- add one in Settings &rarr; Clinics.</td>
+                  <td colspan="5" class="px-4 py-6 text-center text-ink-faint">No clinics yet -- add one in Settings &rarr; Clinics.</td>
                 </tr>
                 <tr v-for="c in store.clinics" :key="c.id">
                   <td class="px-4 py-2.5 text-ink-700">{{ c.name }}</td>
                   <td class="px-4 py-2.5 text-ink-muted2">{{ c.legal_name ?? 'Not set' }}</td>
                   <td class="px-4 py-2.5 text-ink-muted2">{{ c.tax_id ?? 'Not set' }}</td>
+                  <td class="px-4 py-2.5 text-ink-muted2">
+                    <span v-if="c.address">{{ c.address }}</span>
+                    <NuxtLink v-else to="/settings/clinics" class="text-brand-text hover:text-brand-hover">Missing — add in Clinics</NuxtLink>
+                  </td>
                   <td class="px-4 py-2.5 text-right">
                     <button type="button" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover" @click="openEditor(c.id)">Edit</button>
                   </td>
@@ -73,27 +80,44 @@ async function save() {
             </table>
           </div>
 
-          <form v-if="editingId" class="mt-4 flex flex-wrap items-end gap-3 rounded-card border border-line bg-surface p-4 shadow-card" @submit.prevent="save">
-            <div>
-              <label class="block text-[12.5px] font-medium text-ink-600">Legal name</label>
-              <input
-                v-model="legalName"
-                type="text"
-                placeholder="Centro Quiropractico Columnaquiro S.L."
-                class="mt-1 h-8 w-72 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
-              />
+          <form v-if="editingId" class="mt-4 space-y-3 rounded-card border border-line bg-surface p-4 shadow-card" @submit.prevent="save">
+            <div class="flex flex-wrap items-end gap-3">
+              <div>
+                <label class="block text-[12.5px] font-medium text-ink-600">Legal name</label>
+                <input
+                  v-model="legalName"
+                  type="text"
+                  placeholder="Centro Quiropractico Columnaquiro S.L."
+                  class="mt-1 h-8 w-72 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+                />
+              </div>
+              <div>
+                <label class="block text-[12.5px] font-medium text-ink-600">Tax ID</label>
+                <input
+                  v-model="taxId"
+                  type="text"
+                  placeholder="B12345678"
+                  class="mt-1 h-8 w-40 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+                />
+              </div>
             </div>
+            <p class="text-[12px] text-ink-faint">
+              Address is edited in <NuxtLink to="/settings/clinics" class="text-brand-text hover:text-brand-hover">Settings &rarr; Clinics</NuxtLink> and reused here automatically.
+            </p>
             <div>
-              <label class="block text-[12.5px] font-medium text-ink-600">Tax ID</label>
-              <input
-                v-model="taxId"
-                type="text"
-                placeholder="B12345678"
-                class="mt-1 h-8 w-40 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
-              />
+              <label class="block text-[12.5px] font-medium text-ink-600">Invoice footer text</label>
+              <p class="text-[11.5px] text-ink-faint">Printed at the bottom of every invoice for this clinic (payment terms, thank-you note, etc.).</p>
+              <textarea
+                v-model="footerText"
+                rows="3"
+                placeholder="Thank you for your visit. Payment due within 14 days."
+                class="mt-1 w-full resize-y rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+              ></textarea>
             </div>
-            <UiBtn variant="primary" type="submit" :disabled="saving">{{ saving ? 'Saving…' : 'Save' }}</UiBtn>
-            <button type="button" class="text-[12.5px] text-ink-faint hover:text-ink-muted" @click="editingId = null">Cancel</button>
+            <div class="flex items-center gap-3">
+              <UiBtn variant="primary" type="submit" :disabled="saving">{{ saving ? 'Saving…' : 'Save' }}</UiBtn>
+              <button type="button" class="text-[12.5px] text-ink-faint hover:text-ink-muted" @click="editingId = null">Cancel</button>
+            </div>
           </form>
           <p v-if="error" class="mt-2 text-[12.5px] text-danger-text">{{ error }}</p>
         </div>

@@ -25,6 +25,7 @@ const sending = ref(false)
 const sendMessage = ref('')
 
 const { balanceCents, refresh: refreshCreditSummary } = usePatientFinancialSummary(() => invoice.value?.patient_id ?? '')
+const { nextAppointmentDate } = useNextAppointment(() => invoice.value?.patient_id ?? '')
 
 async function load() {
   loading.value = true
@@ -86,7 +87,7 @@ async function recordPayment() {
     account_id: store.accountId!,
     invoice_id: invoiceId,
     amount_cents: amountCents,
-    method: paymentMethod.value === 'credit' ? 'other' : paymentMethod.value,
+    method: paymentMethod.value,
   })
   if (paymentMethod.value === 'credit') {
     await supabase.from('account_credits').insert({
@@ -230,6 +231,11 @@ function formatDate(iso: string) {
                 <span class="font-mono">€{{ (balanceDueCents / 100).toFixed(2) }}</span>
               </div>
             </div>
+          </div>
+
+          <div class="border-t border-line-divider px-6 py-4">
+            <p v-if="invoiceClinic?.invoice_footer_text" class="whitespace-pre-line text-[12px] text-ink-faint2">{{ invoiceClinic.invoice_footer_text }}</p>
+            <p class="mt-1.5 text-[12px] text-ink-faint2">Your next visit: {{ nextAppointmentDate ? formatDate(nextAppointmentDate) : '—' }}</p>
           </div>
 
           <div class="flex items-center justify-between gap-3 border-t border-line bg-surface-subtle2 px-6 py-4 print:hidden">

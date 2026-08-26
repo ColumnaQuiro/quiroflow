@@ -7,7 +7,16 @@ const store = useAccountStore()
 const invoiceId = route.params.id as string
 
 interface InvoiceWithPatient extends Tables<'invoices'> {
-  patients: { first_name: string; last_name: string | null; email: string | null; address: string | null; national_id: string | null } | null
+  patients: {
+    first_name: string
+    last_name: string | null
+    email: string | null
+    address: string | null
+    city: string | null
+    postal_code: string | null
+    country: string | null
+    national_id: string | null
+  } | null
   appointments: { clinic_id: string } | null
 }
 
@@ -31,7 +40,7 @@ async function load() {
   loading.value = true
   const { data } = await supabase
     .from('invoices')
-    .select('*, patients(first_name, last_name, email, address, national_id), appointments(clinic_id)')
+    .select('*, patients(first_name, last_name, email, address, city, postal_code, country, national_id), appointments(clinic_id)')
     .eq('id', invoiceId)
     .maybeSingle()
 
@@ -66,6 +75,24 @@ const invoiceClinic = computed(() => {
   const clinicId = invoice.value?.appointments?.clinic_id
   return (clinicId && store.clinics.find((c) => c.id === clinicId)) || store.clinics[0] || null
 })
+const invoiceClinicLogoUrl = computed(() => {
+  const path = invoiceClinic.value?.logo_storage_path
+  return path ? supabase.storage.from('clinic-logos').getPublicUrl(path).data.publicUrl : null
+})
+
+// "123 Main St" + "28001 Madrid, Spain" on separate lines, skipping any that
+// are empty rather than leaving blank lines or stray commas -- mirrors
+// server/utils/invoiceData.ts's addressLines() so the PDF and the on-screen
+// invoice can't drift apart.
+function patientAddressLines(p: InvoiceWithPatient['patients']): string[] {
+  if (!p) return []
+  const lines: string[] = []
+  if (p.address) lines.push(p.address)
+  const cityLine = [p.postal_code, p.city].filter(Boolean).join(' ')
+  const cityCountry = [cityLine, p.country].filter(Boolean).join(', ')
+  if (cityCountry) lines.push(cityCountry)
+  return lines
+}
 
 const STATUS_TONE: Record<string, 'success' | 'danger' | 'neutral'> = {
   paid: 'success',
@@ -171,10 +198,13 @@ function formatDate(iso: string) {
 
       <div v-else-if="invoice" class="mx-auto max-w-[720px] space-y-4">
         <div class="overflow-hidden rounded-card border border-line bg-surface shadow-card">
-          <div v-if="invoiceClinic?.legal_name || invoiceClinic?.tax_id" class="border-b border-line-divider px-6 py-4">
-            <p class="text-[13.5px] font-[620] text-ink-900">{{ invoiceClinic.legal_name || invoiceClinic.name }}</p>
-            <p v-if="invoiceClinic.address" class="mt-0.5 text-[12px] text-ink-muted2">{{ invoiceClinic.address }}</p>
-            <p v-if="invoiceClinic.tax_id" class="mt-0.5 text-[12px] text-ink-muted2">Tax ID: {{ invoiceClinic.tax_id }}</p>
+          <div v-if="invoiceClinic?.legal_name || invoiceClinic?.tax_id || invoiceClinicLogoUrl" class="flex items-start gap-3 border-b border-line-divider px-6 py-4">
+            <img v-if="invoiceClinicLogoUrl" :src="invoiceClinicLogoUrl" class="h-12 w-12 shrink-0 rounded-ctlSm object-contain" alt="" />
+            <div>
+              <p class="text-[13.5px] font-[620] text-ink-900">{{ invoiceClinic.legal_name || invoiceClinic.name }}</p>
+              <p v-if="invoiceClinic.address" class="mt-0.5 text-[12px] text-ink-muted2">{{ invoiceClinic.address }}</p>
+              <p v-if="invoiceClinic.tax_id" class="mt-0.5 text-[12px] text-ink-muted2">Tax ID: {{ invoiceClinic.tax_id }}</p>
+            </div>
           </div>
 
           <div class="flex items-start justify-between p-6">
@@ -183,7 +213,7 @@ function formatDate(iso: string) {
               <p class="mt-1 text-[17px] font-[620] text-ink-900">
                 {{ invoice.patients?.first_name }} {{ invoice.patients?.last_name }}
               </p>
-              <p v-if="invoice.patients?.address" class="mt-0.5 text-[12.5px] text-ink-muted2">{{ invoice.patients.address }}</p>
+              <p v-for="(line, i) in patientAddressLines(invoice.patients)" :key="i" class="mt-0.5 text-[12.5px] text-ink-muted2">{{ line }}</p>
               <p v-if="invoice.patients?.national_id" class="mt-0.5 text-[12.5px] text-ink-muted2">ID: {{ invoice.patients.national_id }}</p>
               <p class="mt-1 text-[12.5px] text-ink-muted2">Issued {{ formatDate(invoice.created_at) }}</p>
             </div>

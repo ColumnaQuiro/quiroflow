@@ -19,6 +19,12 @@ function openEditor(id: string) {
   error.value = ''
 }
 
+const editingClinic = computed(() => store.clinics.find((c) => c.id === editingId.value) ?? null)
+async function onLogoUploaded() {
+  store.reset()
+  await store.load()
+}
+
 async function save() {
   if (!editingId.value) return
   saving.value = true
@@ -80,7 +86,11 @@ async function save() {
             </table>
           </div>
 
-          <form v-if="editingId" class="mt-4 space-y-3 rounded-card border border-line bg-surface p-4 shadow-card" @submit.prevent="save">
+          <form v-if="editingId && editingClinic" class="mt-4 space-y-3 rounded-card border border-line bg-surface p-4 shadow-card" @submit.prevent="save">
+            <div>
+              <label class="block text-[12.5px] font-medium text-ink-600">Logo</label>
+              <SettingsClinicLogoUpload class="mt-1" :clinic-id="editingClinic.id" :logo-storage-path="editingClinic.logo_storage_path" @uploaded="onLogoUploaded" />
+            </div>
             <div class="flex flex-wrap items-end gap-3">
               <div>
                 <label class="block text-[12.5px] font-medium text-ink-600">Legal name</label>

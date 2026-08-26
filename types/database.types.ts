@@ -940,6 +940,7 @@ export type Database = {
           id: string
           invoice_footer_text: string | null
           legal_name: string | null
+          logo_storage_path: string | null
           name: string
           online_booking_enabled: boolean
           slot_duration_minutes: number
@@ -953,6 +954,7 @@ export type Database = {
           id?: string
           invoice_footer_text?: string | null
           legal_name?: string | null
+          logo_storage_path?: string | null
           name: string
           online_booking_enabled?: boolean
           slot_duration_minutes?: number
@@ -966,6 +968,7 @@ export type Database = {
           id?: string
           invoice_footer_text?: string | null
           legal_name?: string | null
+          logo_storage_path?: string | null
           name?: string
           online_booking_enabled?: boolean
           slot_duration_minutes?: number
@@ -2004,8 +2007,10 @@ export type Database = {
           address: string | null
           balance_cents: number
           chief_complaint: string | null
+          city: string | null
           clinic_id: string | null
           confirmation_channel: string
+          country: string | null
           created_at: string
           date_of_birth: string | null
           default_practitioner_id: string | null
@@ -2025,11 +2030,13 @@ export type Database = {
           notes: string | null
           occupation: string | null
           photo_storage_path: string | null
+          postal_code: string | null
           preferred_language: string
           recall_priority: boolean
           recall_status: string
           red_flags: string | null
           referral_source: string | null
+          referred_by_patient_id: string | null
           reminder_channel: string
           search_name: string | null
           status: string
@@ -2044,8 +2051,10 @@ export type Database = {
           address?: string | null
           balance_cents?: number
           chief_complaint?: string | null
+          city?: string | null
           clinic_id?: string | null
           confirmation_channel?: string
+          country?: string | null
           created_at?: string
           date_of_birth?: string | null
           default_practitioner_id?: string | null
@@ -2065,11 +2074,13 @@ export type Database = {
           notes?: string | null
           occupation?: string | null
           photo_storage_path?: string | null
+          postal_code?: string | null
           preferred_language?: string
           recall_priority?: boolean
           recall_status?: string
           red_flags?: string | null
           referral_source?: string | null
+          referred_by_patient_id?: string | null
           reminder_channel?: string
           search_name?: string | null
           status?: string
@@ -2084,8 +2095,10 @@ export type Database = {
           address?: string | null
           balance_cents?: number
           chief_complaint?: string | null
+          city?: string | null
           clinic_id?: string | null
           confirmation_channel?: string
+          country?: string | null
           created_at?: string
           date_of_birth?: string | null
           default_practitioner_id?: string | null
@@ -2105,11 +2118,13 @@ export type Database = {
           notes?: string | null
           occupation?: string | null
           photo_storage_path?: string | null
+          postal_code?: string | null
           preferred_language?: string
           recall_priority?: boolean
           recall_status?: string
           red_flags?: string | null
           referral_source?: string | null
+          referred_by_patient_id?: string | null
           reminder_channel?: string
           search_name?: string | null
           status?: string
@@ -2140,6 +2155,27 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "team_members"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patients_referred_by_patient_id_fkey"
+            columns: ["referred_by_patient_id"]
+            isOneToOne: false
+            referencedRelation: "patient_live_balances"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "patients_referred_by_patient_id_fkey"
+            columns: ["referred_by_patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patients_referred_by_patient_id_fkey"
+            columns: ["referred_by_patient_id"]
+            isOneToOne: false
+            referencedRelation: "recall_candidates"
+            referencedColumns: ["patient_id"]
           },
           {
             foreignKeyName: "patients_tutor_patient_id_fkey"

@@ -15,6 +15,9 @@ const clinicId = ref(store.currentClinicId ?? '')
 const tagsInput = ref('')
 const gender = ref('')
 const address = ref('')
+const postalCode = ref('')
+const city = ref('')
+const country = ref('')
 const referralSource = ref('')
 const error = ref('')
 const saving = ref(false)
@@ -45,6 +48,9 @@ async function onSubmit() {
       email: email.value || null,
       gender: gender.value || null,
       address: address.value || null,
+      postal_code: postalCode.value || null,
+      city: city.value || null,
+      country: country.value || null,
       referral_source: referralSource.value || null,
       tags,
     })
@@ -171,7 +177,7 @@ async function onSubmit() {
           </div>
 
           <div>
-            <label class="block text-sm font-medium text-ink-700" for="address">Address</label>
+            <label class="block text-sm font-medium text-ink-700" for="address">Street address</label>
             <input
               id="address"
               v-model="address"
@@ -179,6 +185,36 @@ async function onSubmit() {
               placeholder="For invoices"
               class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
             />
+          </div>
+
+          <div class="grid grid-cols-3 gap-4">
+            <div>
+              <label class="block text-sm font-medium text-ink-700" for="postal-code">Postal code</label>
+              <input
+                id="postal-code"
+                v-model="postalCode"
+                type="text"
+                class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-ink-700" for="city">City</label>
+              <input
+                id="city"
+                v-model="city"
+                type="text"
+                class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-ink-700" for="country">Country</label>
+              <input
+                id="country"
+                v-model="country"
+                type="text"
+                class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              />
+            </div>
           </div>
 
           <div>

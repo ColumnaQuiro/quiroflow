@@ -21,6 +21,7 @@ export interface Clinic {
   legal_name: string | null
   tax_id: string | null
   invoice_footer_text: string | null
+  logo_storage_path: string | null
 }
 
 export const useAccountStore = defineStore('account', {
@@ -78,7 +79,7 @@ export const useAccountStore = defineStore('account', {
           .maybeSingle(),
         supabase
           .from('clinics')
-          .select('id, account_id, name, address, slot_duration_minutes, business_hours, legal_name, tax_id, invoice_footer_text')
+          .select('id, account_id, name, address, slot_duration_minutes, business_hours, legal_name, tax_id, invoice_footer_text, logo_storage_path')
           .eq('account_id', teamMember.account_id),
         supabase.rpc('get_my_permissions', { target_account_id: teamMember.account_id }),
       ])

@@ -15,6 +15,22 @@ const referralSources = ref<Tables<'referral_sources'>[]>([])
 const tutorSearch = ref('')
 const tutorResults = ref<TutorOption[]>([])
 const selectedTutor = ref<TutorOption | null>(null)
+
+// "Referred by" a specific patient -- same self-search pattern as tutor,
+// shown only when referral_source is exactly the "Patient" option (seeded
+// per-account by migration 0095; a display-string match, not a schema
+// flag, so renaming that referral source would silently break this).
+type ReferrerOption = TutorOption
+const referredBySearch = ref('')
+const referredByResults = ref<ReferrerOption[]>([])
+const selectedReferredBy = ref<ReferrerOption | null>(null)
+const referredPatients = ref<TutorOption[]>([])
+
+async function loadReferredPatients() {
+  const { data } = await supabase.from('patients').select('id, first_name, last_name').eq('referred_by_patient_id', props.patient.id)
+  referredPatients.value = data ?? []
+}
+
 onMounted(async () => {
   const [{ data: members }, { data: sources }] = await Promise.all([
     supabase.from('team_members').select('id, full_name').order('full_name'),
@@ -26,7 +42,13 @@ onMounted(async () => {
     const { data } = await supabase.from('patients').select('id, first_name, last_name').eq('id', props.patient.tutor_patient_id).maybeSingle()
     if (data) selectedTutor.value = data
   }
+  if (props.patient.referred_by_patient_id) {
+    const { data } = await supabase.from('patients').select('id, first_name, last_name').eq('id', props.patient.referred_by_patient_id).maybeSingle()
+    if (data) selectedReferredBy.value = data
+  }
+  await loadReferredPatients()
 })
+watch(() => props.patient.id, loadReferredPatients)
 
 let tutorDebounce: ReturnType<typeof setTimeout> | undefined
 watch(tutorSearch, (value) => {
@@ -52,6 +74,29 @@ function pickTutor(t: TutorOption) {
 }
 function tutorName(t: TutorOption) {
   return `${t.first_name} ${t.last_name ?? ''}`.trim()
+}
+
+let referredByDebounce: ReturnType<typeof setTimeout> | undefined
+watch(referredBySearch, (value) => {
+  clearTimeout(referredByDebounce)
+  if (!value.trim()) {
+    referredByResults.value = []
+    return
+  }
+  referredByDebounce = setTimeout(async () => {
+    const { data } = await supabase
+      .from('patients')
+      .select('id, first_name, last_name')
+      .neq('id', props.patient.id)
+      .ilike('search_name', `%${normalizeSearchTerm(value.trim())}%`)
+      .limit(8)
+    referredByResults.value = data ?? []
+  }, 250)
+})
+function pickReferredBy(p: ReferrerOption) {
+  selectedReferredBy.value = p
+  referredBySearch.value = ''
+  referredByResults.value = []
 }
 
 function teamMemberName(id: string | null) {
@@ -169,6 +214,9 @@ const lastName = ref(props.patient.last_name ?? '')
 const dateOfBirth = ref(props.patient.date_of_birth ?? '')
 const email = ref(props.patient.email ?? '')
 const address = ref(props.patient.address ?? '')
+const postalCode = ref(props.patient.postal_code ?? '')
+const city = ref(props.patient.city ?? '')
+const country = ref(props.patient.country ?? '')
 const nationalId = ref(props.patient.national_id ?? '')
 const clinicId = ref(props.patient.clinic_id ?? '')
 const tagsInput = ref(props.patient.tags.join(', '))
@@ -191,6 +239,9 @@ async function startEditing() {
   dateOfBirth.value = props.patient.date_of_birth ?? ''
   email.value = props.patient.email ?? ''
   address.value = props.patient.address ?? ''
+  postalCode.value = props.patient.postal_code ?? ''
+  city.value = props.patient.city ?? ''
+  country.value = props.patient.country ?? ''
   nationalId.value = props.patient.national_id ?? ''
   clinicId.value = props.patient.clinic_id ?? ''
   tagsInput.value = props.patient.tags.join(', ')
@@ -211,6 +262,11 @@ async function startEditing() {
     const { data } = await supabase.from('patients').select('id, first_name, last_name').eq('id', props.patient.tutor_patient_id).maybeSingle()
     if (data) selectedTutor.value = data
   }
+  selectedReferredBy.value = null
+  if (props.patient.referred_by_patient_id) {
+    const { data } = await supabase.from('patients').select('id, first_name, last_name').eq('id', props.patient.referred_by_patient_id).maybeSingle()
+    if (data) selectedReferredBy.value = data
+  }
   editing.value = true
 }
 
@@ -230,6 +286,9 @@ async function save() {
       date_of_birth: dateOfBirth.value || null,
       email: email.value || null,
       address: address.value || null,
+      postal_code: postalCode.value || null,
+      city: city.value || null,
+      country: country.value || null,
       national_id: nationalId.value || null,
       clinic_id: clinicId.value || null,
       tags,
@@ -246,6 +305,7 @@ async function save() {
       is_minor: isMinor.value,
       do_not_contact: doNotContact.value,
       tutor_patient_id: isMinor.value ? (selectedTutor.value?.id ?? null) : null,
+      referred_by_patient_id: referralSource.value === 'Patient' ? (selectedReferredBy.value?.id ?? null) : null,
     })
     .eq('id', props.patient.id)
 
@@ -304,7 +364,12 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
         </div>
         <div>
           <dt class="text-[11.5px] text-ink-muted2">Address</dt>
-          <dd class="mt-0.5 truncate text-[13.5px] text-ink-700">{{ patient.address ?? 'N/A' }}</dd>
+          <dd class="mt-0.5 text-[13.5px] text-ink-700">
+            <p class="truncate">{{ patient.address ?? 'N/A' }}</p>
+            <p v-if="patient.city || patient.postal_code || patient.country" class="truncate text-ink-muted">
+              {{ [patient.postal_code, patient.city].filter(Boolean).join(' ') }}{{ patient.country ? (patient.city || patient.postal_code ? ', ' : '') + patient.country : '' }}
+            </p>
+          </dd>
         </div>
         <div>
           <dt class="text-[11.5px] text-ink-muted2">National ID</dt>
@@ -320,7 +385,16 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
         </div>
         <div>
           <dt class="text-[11.5px] text-ink-muted2">Referral source</dt>
-          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.referral_source ?? 'N/A' }}</dd>
+          <dd class="mt-0.5 text-[13.5px] text-ink-700">
+            {{ patient.referral_source ?? 'N/A' }}
+            <template v-if="patient.referral_source === 'Patient'">
+              &middot;
+              <NuxtLink v-if="patient.referred_by_patient_id" :to="`/patients/${patient.referred_by_patient_id}`" class="text-brand-text hover:underline">
+                {{ selectedReferredBy ? tutorName(selectedReferredBy) : 'View patient' }}
+              </NuxtLink>
+              <span v-else class="text-danger-text">No patient linked</span>
+            </template>
+          </dd>
         </div>
         <div>
           <dt class="text-[11.5px] text-ink-muted2">Preferred language</dt>
@@ -356,6 +430,12 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
             <span v-else class="text-danger-text">No tutor linked</span>
           </dd>
         </div>
+        <div v-if="referredPatients.length > 0">
+          <dt class="text-[11.5px] text-ink-muted2">Referred patients</dt>
+          <dd class="mt-0.5 flex flex-wrap gap-x-2 text-[13.5px] text-ink-700">
+            <NuxtLink v-for="r in referredPatients" :key="r.id" :to="`/patients/${r.id}`" class="text-brand-text hover:underline">{{ tutorName(r) }}</NuxtLink>
+          </dd>
+        </div>
         <div>
           <dt class="text-[11.5px] text-ink-muted2">Communication flags</dt>
           <dd class="mt-0.5 flex flex-wrap gap-1">
@@ -385,8 +465,20 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
             <input v-model="email" type="email" :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">Address</label>
+            <label :class="labelClass">Street address</label>
             <input v-model="address" type="text" :class="inputClass" />
+          </div>
+          <div>
+            <label :class="labelClass">Postal code</label>
+            <input v-model="postalCode" type="text" :class="inputClass" />
+          </div>
+          <div>
+            <label :class="labelClass">City</label>
+            <input v-model="city" type="text" :class="inputClass" />
+          </div>
+          <div>
+            <label :class="labelClass">Country</label>
+            <input v-model="country" type="text" :class="inputClass" />
           </div>
           <div>
             <label :class="labelClass">National ID</label>
@@ -408,6 +500,23 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
               <!-- Preserves legacy freeform data that doesn't match a configured source. -->
               <option v-if="referralSource && !referralSources.some((s) => s.name === referralSource)" :value="referralSource">{{ referralSource }}</option>
             </select>
+            <div v-if="referralSource === 'Patient'" class="mt-2">
+              <label :class="labelClass">Referred by (existing patient)</label>
+              <div v-if="selectedReferredBy" class="mt-1 flex items-center gap-2">
+                <span class="text-[13px] text-ink-700">{{ tutorName(selectedReferredBy) }}</span>
+                <button type="button" class="text-[12px] text-danger-text hover:underline" @click="selectedReferredBy = null">Remove</button>
+              </div>
+              <div v-else class="relative mt-1">
+                <input v-model="referredBySearch" type="text" placeholder="Search patient by name…" :class="inputClass" />
+                <ul v-if="referredByResults.length > 0" class="absolute z-10 mt-1 w-full rounded-ctl border border-line bg-surface py-1 shadow-popover">
+                  <li v-for="p in referredByResults" :key="p.id">
+                    <button type="button" class="block w-full px-3 py-1.5 text-left text-[13px] text-ink-700 hover:bg-surface-subtle" @click="pickReferredBy(p)">
+                      {{ tutorName(p) }}
+                    </button>
+                  </li>
+                </ul>
+              </div>
+            </div>
           </div>
           <div>
             <label :class="labelClass">Preferred language</label>

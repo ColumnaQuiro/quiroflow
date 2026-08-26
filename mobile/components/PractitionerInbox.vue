@@ -35,6 +35,21 @@ watch(keyboardHeight, (h) => {
   if (h > 0) nextTick(() => { if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight })
 })
 
+// Edge-swipe from the thread back to the conversation list, like the
+// native iOS back gesture -- there's no real navigation stack here for iOS
+// to hook its own gesture into, so this reimplements the recognizable part
+// of it by hand. Watches selected rather than attaching once on mount:
+// threadEl only exists in the DOM while a conversation is open (v-else-if),
+// so the ref is null every time it closes and needs reattaching next open.
+const threadEl = ref<HTMLElement>()
+const swipeBack = useSwipeBack(() => {
+  selectedKey.value = null
+})
+watch(threadEl, (el, prevEl) => {
+  if (prevEl) swipeBack.detach(prevEl)
+  if (el) swipeBack.attach(el)
+})
+
 // Messages this device has sent but the server hasn't confirmed into the
 // real table yet -- rendered inline with a clock icon so the composer
 // clears and the message appears immediately (WhatsApp-style) instead of
@@ -137,23 +152,87 @@ function openConversation(c: Conversation) {
 }
 
 const deletingConversation = ref(false)
-async function deleteConversation() {
-  if (!selected.value || !selectedKey.value) return
-  if (!confirm(`Delete this whole conversation with ${selected.value.name}? This removes all messages and can't be undone.`)) return
+async function deleteConversationByKey(c: Conversation) {
+  if (!confirm(`Delete this whole conversation with ${c.name}? This removes all messages and can't be undone.`)) return
   deletingConversation.value = true
-  const key = selectedKey.value
   try {
     let query = supabase.from('whatsapp_messages').delete()
-    query = selected.value.patientId ? query.eq('patient_id', selected.value.patientId) : query.eq('phone_number', selected.value.phoneNumber!)
+    query = c.patientId ? query.eq('patient_id', c.patientId) : query.eq('phone_number', c.phoneNumber!)
     await query
-    if (selected.value.patientId) await supabase.from('patient_app_messages').delete().eq('patient_id', selected.value.patientId)
-    await supabase.from('whatsapp_conversation_reads').delete().eq('account_id', props.accountId).eq('conversation_key', key)
-    messages.value = messages.value.filter((m) => (m.patient_id ?? m.phone_number ?? 'unknown') !== key)
-    pendingMessages.value = pendingMessages.value.filter((m) => (m.patient_id ?? m.phone_number ?? 'unknown') !== key)
-    selectedKey.value = null
+    if (c.patientId) await supabase.from('patient_app_messages').delete().eq('patient_id', c.patientId)
+    await supabase.from('whatsapp_conversation_reads').delete().eq('account_id', props.accountId).eq('conversation_key', c.key)
+    messages.value = messages.value.filter((m) => (m.patient_id ?? m.phone_number ?? 'unknown') !== c.key)
+    pendingMessages.value = pendingMessages.value.filter((m) => (m.patient_id ?? m.phone_number ?? 'unknown') !== c.key)
+    if (selectedKey.value === c.key) selectedKey.value = null
   } finally {
     deletingConversation.value = false
   }
+}
+async function deleteConversation() {
+  if (!selected.value) return
+  await deleteConversationByKey(selected.value)
+}
+function deleteFromList(c: Conversation) {
+  swipedKey.value = null
+  deleteConversationByKey(c)
+}
+
+// Marking unread is the mirror of markRead: back-date the read timestamp
+// instead of clearing it, since a conversation with no read record at all
+// is already "unread" by definition (see the `unread` computed above) --
+// backdating just re-triggers that same rule on demand.
+async function toggleUnread(c: Conversation) {
+  swipedKey.value = null
+  if (c.unread) {
+    await markRead(c.key)
+    return
+  }
+  const past = new Date(0).toISOString()
+  readTimestamps.value = { ...readTimestamps.value, [c.key]: past }
+  await supabase.from('whatsapp_conversation_reads').upsert({ account_id: props.accountId, conversation_key: c.key, last_read_at: past } as never)
+}
+
+// Swipe-to-reveal on each conversation row, snap-open/closed rather than
+// live-following the finger -- simpler to get right than a full drag
+// gesture, and still the recognizable "swipe left for actions" pattern.
+// justSwiped exists because a touchend that opens/closes the row is
+// immediately followed by a synthesized click on the same element; without
+// it, that click's own handler (see the template) would see swipedKey
+// already set and instantly close what touchend just opened.
+const swipedKey = ref<string | null>(null)
+let rowTouchStartX = 0
+let rowTouchStartY = 0
+let rowSwiping = false
+let justSwiped = false
+function onRowTouchStart(e: TouchEvent) {
+  rowTouchStartX = e.touches[0]?.clientX ?? 0
+  rowTouchStartY = e.touches[0]?.clientY ?? 0
+  rowSwiping = false
+}
+function onRowTouchMove(e: TouchEvent) {
+  const t = e.touches[0]
+  if (!t) return
+  const dx = t.clientX - rowTouchStartX
+  const dy = Math.abs(t.clientY - rowTouchStartY)
+  if (Math.abs(dx) > 10 && dy < 20) rowSwiping = true
+}
+function onRowTouchEnd(e: TouchEvent, c: Conversation) {
+  if (!rowSwiping) return
+  justSwiped = true
+  const dx = (e.changedTouches[0]?.clientX ?? 0) - rowTouchStartX
+  if (dx < -40) swipedKey.value = c.key
+  else if (dx > 20) swipedKey.value = null
+}
+function onRowClick(c: Conversation) {
+  if (justSwiped) {
+    justSwiped = false
+    return
+  }
+  if (swipedKey.value) {
+    swipedKey.value = null
+    return
+  }
+  openConversation(c)
 }
 
 const mediaUrls = ref<Record<string, string>>({})
@@ -274,15 +353,6 @@ function mediaKindForFile(file: File): 'image' | 'video' | 'audio' | 'document' 
   if (file.type.startsWith('audio/')) return 'audio'
   return 'document'
 }
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve((reader.result as string).split(',')[1] ?? '')
-    reader.onerror = reject
-    reader.readAsDataURL(file)
-  })
-}
-
 async function performMediaSend(
   tempId: string,
   mediaBase64: string,
@@ -365,8 +435,19 @@ async function onFileChosen(e: Event) {
     sendError.value = 'File is too large (max 16 MB).'
     return
   }
-  const base64 = await fileToBase64(file)
-  await sendMedia(base64, file.type, file.name, mediaKindForFile(file))
+  const kind = mediaKindForFile(file)
+  if (kind === 'image') {
+    try {
+      const { blob, mimeType } = await normalizeImageForWhatsApp(file)
+      const base64 = await blobToBase64(blob)
+      await sendMedia(base64, mimeType, file.name.replace(/\.\w+$/, '.jpg'), 'image')
+    } catch (err: any) {
+      sendError.value = err?.message ?? 'Could not process this image.'
+    }
+  } else {
+    const base64 = await blobToBase64(file)
+    await sendMedia(base64, file.type, file.name, kind)
+  }
   if (fileInput.value) fileInput.value.value = ''
 }
 
@@ -406,6 +487,14 @@ function previewText(m: Message) {
   if (m.template_name) return m.body_preview ?? `Template: ${m.template_name}`
   return m.body_preview ?? '—'
 }
+// What actually renders as the bubble's text, distinct from previewText
+// (used only for the conversation-list row) -- empty for media with no
+// caption, since there's nothing to attach the inline time+status to.
+function bubbleText(m: Message): string {
+  if (m.media_type) return m.body_preview ?? ''
+  if (m.template_name) return m.body_preview ?? `Template: ${m.template_name}`
+  return m.body_preview ?? ''
+}
 
 let channel: ReturnType<typeof supabase.channel> | null = null
 onMounted(() => {
@@ -440,13 +529,24 @@ onUnmounted(() => {
     <div v-if="!selectedKey" class="flex-1 overflow-y-auto">
       <div v-if="loading" class="p-6 text-center text-[13px] text-ink-faint">Loading…</div>
       <p v-else-if="conversations.length === 0" class="p-6 text-center text-[13px] text-ink-faint">No conversations yet.</p>
-      <button
-        v-for="c in conversations"
-        :key="c.key"
-        type="button"
-        class="flex w-full items-start gap-3 border-b border-line-row px-4 py-3 text-left active:bg-surface-subtle"
-        @click="openConversation(c)"
-      >
+      <div v-for="c in conversations" :key="c.key" class="relative overflow-hidden border-b border-line-row">
+        <div class="absolute inset-y-0 right-0 flex">
+          <button type="button" class="flex w-[76px] items-center justify-center bg-brand text-[12px] font-medium text-white" @click="toggleUnread(c)">
+            {{ c.unread ? 'Read' : 'Unread' }}
+          </button>
+          <button type="button" class="flex w-[76px] items-center justify-center bg-danger-text text-[12px] font-medium text-white" @click="deleteFromList(c)">
+            Delete
+          </button>
+        </div>
+        <button
+          type="button"
+          class="flex w-full items-start gap-3 bg-surface px-4 py-3 text-left transition-transform duration-200 active:bg-surface-subtle"
+          :style="{ transform: swipedKey === c.key ? 'translateX(-152px)' : 'translateX(0)' }"
+          @touchstart="onRowTouchStart($event)"
+          @touchmove="onRowTouchMove($event)"
+          @touchend="onRowTouchEnd($event, c)"
+          @click="onRowClick(c)"
+        >
         <span class="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[13px] font-semibold text-brand-text">
           {{ c.name.slice(0, 2).toUpperCase() }}
           <span v-if="c.channel === 'whatsapp'" class="absolute -bottom-0.5 -right-0.5 flex h-[15px] w-[15px] items-center justify-center rounded-full border border-surface bg-[#25D366]" title="WhatsApp">
@@ -466,11 +566,12 @@ onUnmounted(() => {
           </p>
         </div>
         <span v-if="c.unread" class="mt-2 h-[9px] w-[9px] shrink-0 rounded-full bg-brand" />
-      </button>
+        </button>
+      </div>
     </div>
 
     <!-- Thread -->
-    <div v-else-if="selected" class="flex min-h-0 flex-1 flex-col" :style="{ paddingBottom: keyboardHeight + 'px' }">
+    <div v-else-if="selected" ref="threadEl" class="flex min-h-0 flex-1 flex-col" :style="{ paddingBottom: keyboardHeight + 'px' }">
       <div class="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
         <button type="button" class="flex h-11 w-11 shrink-0 items-center justify-center text-[15px] text-brand-text" @click="selectedKey = null">&larr;</button>
         <div class="min-w-0 flex-1">
@@ -481,14 +582,6 @@ onUnmounted(() => {
             <span v-if="selected.phoneNumber" class="ml-1.5">{{ selected.phoneNumber }}</span>
           </p>
         </div>
-        <button
-          type="button"
-          class="shrink-0 px-2 py-1.5 text-[12px] text-danger-text disabled:opacity-50"
-          :disabled="deletingConversation"
-          @click="deleteConversation"
-        >
-          Delete
-        </button>
       </div>
 
       <div ref="messagesEl" class="flex-1 space-y-2.5 overflow-y-auto px-3 py-3">
@@ -525,9 +618,23 @@ onUnmounted(() => {
             />
             <p v-else-if="m.media_type" class="text-[12.5px] italic opacity-70">{{ m.pending ? 'Uploading…' : 'Media unavailable' }}</p>
 
-            <p v-if="m.body_preview && m.media_type" class="mt-1 whitespace-pre-wrap text-[13.5px]">{{ m.body_preview }}</p>
-            <p v-else-if="!m.media_type" class="whitespace-pre-wrap text-[13.5px]">{{ previewText(m) }}</p>
-            <p class="mt-1 flex items-center justify-end gap-1.5 text-right text-[10.5px]" :class="m.direction === 'outbound' ? 'text-white/70' : 'text-ink-faint'">
+            <!-- Text (or a caption/template fallback) carries its own trailing
+                 time+status inline, WhatsApp-style: same line as the last word
+                 whenever there's room, wrapping below only if there isn't.
+                 Media with no text/caption has nothing to attach that to, so
+                 it falls back to its own line under it. -->
+            <p v-if="bubbleText(m)" class="whitespace-pre-wrap text-[13.5px]" :class="m.media_type && 'mt-1'">
+              {{ bubbleText(m) }}
+              <span
+                class="ml-1.5 inline-flex translate-y-[2px] items-center gap-1 whitespace-nowrap text-[10.5px]"
+                :class="m.direction === 'outbound' ? 'text-white/70' : 'text-ink-faint'"
+              >
+                <span v-if="m.status === 'failed'" class="underline">Tap to retry</span>
+                <span v-else>{{ shortTime(m.created_at) }}</span>
+                <InboxMessageStatus v-if="m.direction === 'outbound'" :status="m.status" />
+              </span>
+            </p>
+            <p v-else class="mt-1 flex items-center justify-end gap-1.5 text-right text-[10.5px]" :class="m.direction === 'outbound' ? 'text-white/70' : 'text-ink-faint'">
               <span v-if="m.status === 'failed'" class="underline">Tap to retry</span>
               <span v-else>{{ shortTime(m.created_at) }}</span>
               <InboxMessageStatus v-if="m.direction === 'outbound'" :status="m.status" />

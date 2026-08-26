@@ -15,7 +15,7 @@ import { notifyInboxTeamMembers } from '~/server/utils/pushNotifications'
 interface MetaStatus {
   id: string
   status: 'sent' | 'delivered' | 'read' | 'failed'
-  errors?: { code: number; title: string }[]
+  errors?: { code: number; title: string; error_data?: { details?: string } }[]
 }
 interface MetaMedia {
   id: string
@@ -91,12 +91,18 @@ export default defineEventHandler(async (event) => {
       if (!account) continue
 
       for (const status of value?.statuses ?? []) {
+        // error_data.details carries the actual reason behind a generic
+        // title like "Media upload error" (e.g. which mime type/constraint
+        // was violated) -- appending it is the difference between a
+        // diagnosable failure and a guess next time one happens.
+        const error = status.errors?.[0]
+        const errorMessage = error ? [error.title, error.error_data?.details].filter(Boolean).join(' -- ') : null
         await supabase
           .from('whatsapp_messages')
           .update({
             status: status.status,
-            error_code: status.errors?.[0]?.code != null ? String(status.errors[0].code) : null,
-            error_message: status.errors?.[0]?.title ?? null,
+            error_code: error?.code != null ? String(error.code) : null,
+            error_message: errorMessage,
             updated_at: new Date().toISOString(),
           })
           .eq('wamid', status.id)

@@ -59,10 +59,16 @@ export function useAudioRecorder() {
         return
       }
       const mimeType = mediaRecorder.mimeType || 'audio/webm'
+      // Below ~500ms some browsers hand back a technically-valid but
+      // near-empty container (a header with no real audio data) -- Meta's
+      // media processor rejects that as corrupt rather than "too short",
+      // which read as a mysterious, hard-to-diagnose failure. Rejecting it
+      // here instead gives an honest reason.
+      const tooShort = seconds.value < 1
       mediaRecorder.onstop = () => {
         const blob = new Blob(chunks, { type: mimeType })
         cleanup()
-        resolve(blob.size > 0 ? { blob, mimeType } : null)
+        resolve(blob.size > 0 && !tooShort ? { blob, mimeType } : null)
       }
       mediaRecorder.stop()
     })
@@ -74,15 +80,6 @@ export function useAudioRecorder() {
   }
 
   return { recording, seconds, start, stop, cancel }
-}
-
-export function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve((reader.result as string).split(',')[1] ?? '')
-    reader.onerror = reject
-    reader.readAsDataURL(blob)
-  })
 }
 
 export function extensionForAudioMimeType(mimeType: string): string {

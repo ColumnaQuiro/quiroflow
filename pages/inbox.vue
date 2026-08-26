@@ -368,15 +368,6 @@ function mediaKindForFile(file: File): 'image' | 'video' | 'audio' | 'document' 
   if (file.type.startsWith('audio/')) return 'audio'
   return 'document'
 }
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve((reader.result as string).split(',')[1] ?? '')
-    reader.onerror = reject
-    reader.readAsDataURL(file)
-  })
-}
-
 async function performMediaSend(
   tempId: string,
   mediaBase64: string,
@@ -459,8 +450,19 @@ async function onFileChosen(e: Event) {
     sendError.value = 'File is too large (max 16 MB).'
     return
   }
-  const base64 = await fileToBase64(file)
-  await sendMedia(base64, file.type, file.name, mediaKindForFile(file))
+  const kind = mediaKindForFile(file)
+  if (kind === 'image') {
+    try {
+      const { blob, mimeType } = await normalizeImageForWhatsApp(file)
+      const base64 = await blobToBase64(blob)
+      await sendMedia(base64, mimeType, file.name.replace(/\.\w+$/, '.jpg'), 'image')
+    } catch (err: any) {
+      sendError.value = err?.message ?? 'Could not process this image.'
+    }
+  } else {
+    const base64 = await blobToBase64(file)
+    await sendMedia(base64, file.type, file.name, kind)
+  }
   if (fileInput.value) fileInput.value.value = ''
 }
 
@@ -513,6 +515,14 @@ function previewText(m: Message) {
   if (m.media_type) return `📎 ${m.media_type}${m.body_preview ? ` — ${m.body_preview}` : ''}`
   if (m.template_name) return m.body_preview ?? `Template: ${m.template_name}`
   return m.body_preview ?? '—'
+}
+// What actually renders as the bubble's text, distinct from previewText
+// (used only for the conversation-list row) -- empty for media with no
+// caption, since there's nothing to attach the inline time+status to.
+function bubbleText(m: Message): string {
+  if (m.media_type) return m.body_preview ?? ''
+  if (m.template_name) return m.body_preview ?? `Template: ${m.template_name}`
+  return m.body_preview ?? ''
 }
 
 // Live updates: new inbound/outbound messages land without a manual refresh.
@@ -690,11 +700,23 @@ onUnmounted(() => {
                 />
                 <p v-else-if="m.media_type" class="text-[12.5px] italic opacity-70">{{ m.pending ? 'Uploading…' : 'Media unavailable' }}</p>
 
-                <p v-if="m.body_preview && m.media_type" class="mt-1 whitespace-pre-wrap text-[13px]">{{ m.body_preview }}</p>
-                <p v-else-if="m.template_name" class="whitespace-pre-wrap text-[13px]">{{ m.body_preview ?? `Template: ${m.template_name}` }}</p>
-                <p v-else class="whitespace-pre-wrap text-[13px]">{{ m.body_preview }}</p>
-
-                <p class="mt-1 flex items-center justify-end gap-1.5 text-right text-[10.5px]" :class="m.direction === 'outbound' ? 'text-white/70' : 'text-ink-faint'">
+                <!-- Text (or a caption/template fallback) carries its own trailing
+                     time+status inline, WhatsApp-style: it sits on the same line
+                     as the last word whenever there's room, wrapping below only
+                     if there isn't. Media with no text/caption has nothing to
+                     attach that to, so it falls back to its own line under it. -->
+                <p v-if="bubbleText(m)" class="whitespace-pre-wrap text-[13px]" :class="m.media_type && 'mt-1'">
+                  {{ bubbleText(m) }}
+                  <span
+                    class="ml-1.5 inline-flex translate-y-[2px] items-center gap-1 whitespace-nowrap text-[10.5px]"
+                    :class="m.direction === 'outbound' ? 'text-white/70' : 'text-ink-faint'"
+                  >
+                    <span v-if="m.status === 'failed'" class="underline">Tap to retry</span>
+                    <span v-else>{{ shortTime(m.created_at) }}</span>
+                    <InboxMessageStatus v-if="m.direction === 'outbound'" :status="m.status" />
+                  </span>
+                </p>
+                <p v-else class="mt-1 flex items-center justify-end gap-1.5 text-right text-[10.5px]" :class="m.direction === 'outbound' ? 'text-white/70' : 'text-ink-faint'">
                   <span v-if="m.status === 'failed'" class="underline">Tap to retry</span>
                   <span v-else>{{ shortTime(m.created_at) }}</span>
                   <InboxMessageStatus v-if="m.direction === 'outbound'" :status="m.status" />

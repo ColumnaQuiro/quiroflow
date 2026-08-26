@@ -15,12 +15,23 @@ onMounted(() => {
 // resizes and there's no native "tap outside to dismiss" behavior to rely
 // on; the OS keyboard only ever hides when the focused field itself loses
 // focus. One app-wide listener blurs whatever's focused whenever a tap
-// lands outside any input/textarea, which is what actually closes it.
+// lands on genuinely dead space, which is what actually closes it.
+//
+// Buttons are explicitly excluded: blurring on pointerdown (before the
+// click fires) starts the keyboard-close animation immediately, which
+// shifts the composer layout (see useKeyboardInset) out from under the
+// finger before touchend -- the Send tap landed on empty space by the time
+// it registered, so the keyboard closed but nothing sent, and a *second*
+// tap (keyboard now fully closed, button now settled) was what actually
+// worked. Skipping blur for any button/link/control lets its own click
+// handler run first, on an unmoved layout.
 function dismissKeyboardOnOutsideTap(e: PointerEvent) {
   const active = document.activeElement as HTMLElement | null
   if (!active || !['INPUT', 'TEXTAREA'].includes(active.tagName)) return
   const target = e.target as HTMLElement | null
-  if (target && (target === active || active.contains(target))) return
+  if (!target) return
+  if (target === active || active.contains(target)) return
+  if (target.closest('button, a, [role="button"], input, textarea, select')) return
   active.blur()
 }
 onMounted(() => document.addEventListener('pointerdown', dismissKeyboardOnOutsideTap))

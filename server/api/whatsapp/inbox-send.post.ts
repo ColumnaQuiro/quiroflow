@@ -96,7 +96,11 @@ export default defineEventHandler(async (event) => {
       insert.body_preview = body.text.slice(0, 2000)
     }
   } catch (err: any) {
-    const metaMessage = err?.data?.error?.message
+    // error_data.details carries the actual reason behind a generic title
+    // like "Media upload error" (e.g. an unsupported mime type) -- surfacing
+    // it is the difference between a diagnosable failure and a guess.
+    const metaError = err?.data?.error
+    const metaMessage = metaError ? [metaError.message, metaError.error_data?.details].filter(Boolean).join(' -- ') : null
     throw createError({ statusCode: 502, statusMessage: metaMessage ?? 'WhatsApp send failed' })
   }
 

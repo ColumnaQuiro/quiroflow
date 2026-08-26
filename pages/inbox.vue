@@ -15,6 +15,7 @@ interface Message {
   media_filename: string | null
   channel: string
   created_at: string
+  pending?: boolean
 }
 interface Conversation {
   key: string
@@ -35,6 +36,14 @@ const supabase = useSupabaseClient()
 const store = useAccountStore()
 const webPush = useWebPush()
 const pushBannerDismissed = ref(false)
+
+// Messages this tab has sent but the server hasn't confirmed into the real
+// table yet -- rendered inline with a clock icon so the composer clears and
+// the message appears immediately (WhatsApp-style) instead of waiting on
+// the round trip. load() naturally supersedes one once the real row shows
+// up in `messages`; on failure it's kept and flipped to a failed status
+// instead of vanishing.
+const pendingMessages = ref<Message[]>([])
 
 const messages = ref<Message[]>([])
 const patientNames = ref<Record<string, string>>({})
@@ -106,9 +115,18 @@ onMounted(async () => {
   patients.value = data ?? []
 })
 
+// Pending messages count toward "last message" previews and the thread,
+// but never toward unread state (they're mine, outbound) -- combining them
+// here rather than in `messages` itself keeps `messages` as strictly "what
+// the server has," which load() can keep replacing wholesale without
+// needing to know pending messages exist.
+const allMessages = computed<Message[]>(() =>
+  [...messages.value, ...pendingMessages.value].sort((a, b) => b.created_at.localeCompare(a.created_at)),
+)
+
 const conversations = computed<Conversation[]>(() => {
   const byKey = new Map<string, Message[]>()
-  for (const m of messages.value) {
+  for (const m of allMessages.value) {
     const key = m.patient_id ?? m.phone_number ?? 'unknown'
     if (!byKey.has(key)) byKey.set(key, [])
     byKey.get(key)!.push(m)
@@ -144,7 +162,7 @@ const selected = computed(
   () => conversations.value.find((c) => c.key === selectedKey.value) ?? (draftConversation.value?.key === selectedKey.value ? draftConversation.value : null),
 )
 const thread = computed(() =>
-  selectedKey.value ? messages.value.filter((m) => (m.patient_id ?? m.phone_number ?? 'unknown') === selectedKey.value).slice().reverse() : [],
+  selectedKey.value ? allMessages.value.filter((m) => (m.patient_id ?? m.phone_number ?? 'unknown') === selectedKey.value).slice().reverse() : [],
 )
 
 const composeOpen = ref(false)
@@ -213,6 +231,7 @@ async function deleteConversation() {
     if (selected.value.patientId) await supabase.from('patient_app_messages').delete().eq('patient_id', selected.value.patientId)
     if (store.accountId) await supabase.from('whatsapp_conversation_reads').delete().eq('account_id', store.accountId).eq('conversation_key', key)
     messages.value = messages.value.filter((m) => (m.patient_id ?? m.phone_number ?? 'unknown') !== key)
+    pendingMessages.value = pendingMessages.value.filter((m) => (m.patient_id ?? m.phone_number ?? 'unknown') !== key)
     selectedKey.value = null
   } finally {
     deletingConversation.value = false
@@ -274,31 +293,72 @@ function insertReply(text: string) {
   })
 }
 
-async function sendText() {
-  if (!composerText.value.trim() || !selected.value) return
-  sendError.value = ''
+// What it takes to redo a send: kept per pending/failed message id so a
+// failed bubble can be retried in place (same id, same position in the
+// thread) rather than the user having to retype or reattach anything.
+// Cleared once a send actually succeeds.
+type RetryPayload =
+  | { kind: 'text'; text: string; channel: string }
+  | { kind: 'media'; mediaBase64: string; mediaMimeType: string; mediaFilename: string; mediaKind: 'image' | 'video' | 'audio' | 'document' }
+const retryPayloads = ref<Record<string, RetryPayload>>({})
+
+async function performTextSend(tempId: string, text: string, channel: string, target: Conversation) {
   sending.value = true
   try {
-    if (replyChannel.value === 'in_app') {
-      if (!selected.value.patientId) throw new Error('In-app messages require a linked patient')
-      await useStaffFetch('/api/patient-messages/send', { method: 'POST', body: { patientId: selected.value.patientId, text: composerText.value.trim() } })
+    if (channel === 'in_app') {
+      if (!target.patientId) throw new Error('In-app messages require a linked patient')
+      await useStaffFetch('/api/patient-messages/send', { method: 'POST', body: { patientId: target.patientId, text } })
     } else {
       await useStaffFetch('/api/whatsapp/inbox-send', {
         method: 'POST',
         body: {
-          patientId: selected.value.patientId ?? undefined,
-          phoneNumber: selected.value.patientId ? undefined : selected.value.phoneNumber,
-          text: composerText.value.trim(),
+          patientId: target.patientId ?? undefined,
+          phoneNumber: target.patientId ? undefined : target.phoneNumber,
+          text,
         },
       })
     }
-    composerText.value = ''
     await load()
+    pendingMessages.value = pendingMessages.value.filter((m) => m.id !== tempId)
+    delete retryPayloads.value[tempId]
   } catch (err: any) {
     sendError.value = err?.data?.statusMessage ?? 'Failed to send'
+    pendingMessages.value = pendingMessages.value.map((m) => (m.id === tempId ? { ...m, pending: false, status: 'failed' } : m))
   } finally {
     sending.value = false
   }
+}
+
+async function sendText() {
+  if (!composerText.value.trim() || !selected.value) return
+  sendError.value = ''
+  const text = composerText.value.trim()
+  const channel = replyChannel.value
+  const target = selected.value
+  composerText.value = ''
+
+  const tempId = `pending-${Date.now()}`
+  retryPayloads.value[tempId] = { kind: 'text', text, channel }
+  pendingMessages.value = [
+    ...pendingMessages.value,
+    {
+      id: tempId,
+      patient_id: target.patientId,
+      phone_number: target.phoneNumber,
+      direction: 'outbound',
+      status: 'pending',
+      body_preview: text,
+      template_name: null,
+      media_type: null,
+      media_storage_path: null,
+      media_mime_type: null,
+      media_filename: null,
+      channel,
+      created_at: new Date().toISOString(),
+      pending: true,
+    },
+  ]
+  await performTextSend(tempId, text, channel, target)
 }
 
 const MAX_MEDIA_BYTES = 16 * 1024 * 1024
@@ -316,6 +376,82 @@ function fileToBase64(file: File): Promise<string> {
     reader.readAsDataURL(file)
   })
 }
+
+async function performMediaSend(
+  tempId: string,
+  mediaBase64: string,
+  mediaMimeType: string,
+  mediaFilename: string,
+  mediaKind: 'image' | 'video' | 'audio' | 'document',
+  target: Conversation,
+) {
+  sending.value = true
+  try {
+    await useStaffFetch('/api/whatsapp/inbox-send', {
+      method: 'POST',
+      body: {
+        patientId: target.patientId ?? undefined,
+        phoneNumber: target.patientId ? undefined : target.phoneNumber,
+        mediaBase64,
+        mediaMimeType,
+        mediaFilename,
+        mediaKind,
+      },
+    })
+    await load()
+    pendingMessages.value = pendingMessages.value.filter((m) => m.id !== tempId)
+    delete retryPayloads.value[tempId]
+  } catch (err: any) {
+    sendError.value = err?.data?.statusMessage ?? 'Failed to send'
+    pendingMessages.value = pendingMessages.value.map((m) => (m.id === tempId ? { ...m, pending: false, status: 'failed' } : m))
+  } finally {
+    sending.value = false
+  }
+}
+
+async function sendMedia(mediaBase64: string, mediaMimeType: string, mediaFilename: string, mediaKind: 'image' | 'video' | 'audio' | 'document') {
+  if (!selected.value) return
+  sendError.value = ''
+  const target = selected.value
+  const tempId = `pending-${Date.now()}`
+  retryPayloads.value[tempId] = { kind: 'media', mediaBase64, mediaMimeType, mediaFilename, mediaKind }
+  pendingMessages.value = [
+    ...pendingMessages.value,
+    {
+      id: tempId,
+      patient_id: target.patientId,
+      phone_number: target.phoneNumber,
+      direction: 'outbound',
+      status: 'pending',
+      body_preview: null,
+      template_name: null,
+      media_type: mediaKind,
+      media_storage_path: null,
+      media_mime_type: mediaMimeType,
+      media_filename: mediaFilename,
+      channel: replyChannel.value,
+      created_at: new Date().toISOString(),
+      pending: true,
+    },
+  ]
+  await performMediaSend(tempId, mediaBase64, mediaMimeType, mediaFilename, mediaKind, target)
+}
+
+// Tapping a failed bubble (text or media) retries with the exact same
+// payload, in place -- same id, same spot in the thread, just flips back
+// to the pending clock icon while it's in flight.
+async function retryMessage(m: Message) {
+  const payload = retryPayloads.value[m.id]
+  if (!payload || !selected.value) return
+  sendError.value = ''
+  pendingMessages.value = pendingMessages.value.map((p) => (p.id === m.id ? { ...p, pending: true, status: 'pending' } : p))
+  if (payload.kind === 'text') {
+    await performTextSend(m.id, payload.text, payload.channel, selected.value)
+  } else {
+    await performMediaSend(m.id, payload.mediaBase64, payload.mediaMimeType, payload.mediaFilename, payload.mediaKind, selected.value)
+  }
+}
+
 async function onFileChosen(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0]
   if (!file || !selected.value) return
@@ -323,28 +459,37 @@ async function onFileChosen(e: Event) {
     sendError.value = 'File is too large (max 16 MB).'
     return
   }
-  sendError.value = ''
-  sending.value = true
-  try {
-    const base64 = await fileToBase64(file)
-    await useStaffFetch('/api/whatsapp/inbox-send', {
-      method: 'POST',
-      body: {
-        patientId: selected.value.patientId ?? undefined,
-        phoneNumber: selected.value.patientId ? undefined : selected.value.phoneNumber,
-        mediaBase64: base64,
-        mediaMimeType: file.type,
-        mediaFilename: file.name,
-        mediaKind: mediaKindForFile(file),
-      },
-    })
-    await load()
-  } catch (err: any) {
-    sendError.value = err?.data?.statusMessage ?? 'Failed to send'
-  } finally {
-    sending.value = false
-    if (fileInput.value) fileInput.value.value = ''
+  const base64 = await fileToBase64(file)
+  await sendMedia(base64, file.type, file.name, mediaKindForFile(file))
+  if (fileInput.value) fileInput.value.value = ''
+}
+
+const { recording: audioRecording, seconds: audioSeconds, start: startAudioRecording, stop: stopAudioRecording, cancel: cancelAudioRecording } =
+  useAudioRecorder()
+
+async function toggleAudioRecording() {
+  if (audioRecording.value) {
+    const result = await stopAudioRecording()
+    if (!result) return
+    const filename = `voice-note.${extensionForAudioMimeType(result.mimeType)}`
+    const base64 = await blobToBase64(result.blob)
+    await sendMedia(base64, result.mimeType, filename, 'audio')
+  } else {
+    try {
+      await startAudioRecording()
+    } catch {
+      sendError.value = 'Could not access the microphone -- check your browser permissions.'
+    }
   }
+}
+
+// Fullscreen viewer for tapping any image in the thread (mine or theirs) --
+// mediaUrls' signed URL already works as a direct download link.
+const lightboxUrl = ref<string | null>(null)
+function recordingLabel(secs: number) {
+  const m = Math.floor(secs / 60)
+  const s = secs % 60
+  return `${m}:${s.toString().padStart(2, '0')}`
 }
 
 function onTemplateSent() {
@@ -382,6 +527,19 @@ onMounted(() => {
 })
 onUnmounted(() => {
   if (channel) supabase.removeChannel(channel)
+})
+
+// Belt-and-suspenders alongside the realtime subscription above -- a
+// websocket that silently drops (backgrounded tab, network blip) leaves the
+// thread stuck until something else forces a reload, which reads as "I have
+// to leave and come back to see a new message." A cheap periodic refetch
+// bounds how stale the inbox can get even if realtime isn't delivering.
+let pollTimer: ReturnType<typeof setInterval> | null = null
+onMounted(() => {
+  pollTimer = setInterval(load, 15000)
+})
+onUnmounted(() => {
+  if (pollTimer) clearInterval(pollTimer)
 })
 </script>
 
@@ -502,9 +660,18 @@ onUnmounted(() => {
             <div class="flex" :class="m.direction === 'outbound' ? 'justify-end' : 'justify-start'">
               <div
                 class="max-w-[70%] rounded-card px-3 py-2 shadow-card"
-                :class="m.direction === 'outbound' ? 'bg-brand text-white' : 'border border-line bg-surface text-ink-900'"
+                :class="[
+                  m.direction === 'outbound' ? 'bg-brand text-white' : 'border border-line bg-surface text-ink-900',
+                  m.status === 'failed' && 'cursor-pointer',
+                ]"
+                @click="m.status === 'failed' && retryMessage(m)"
               >
-                <img v-if="m.media_type === 'image' && m.media_storage_path && mediaUrls[m.media_storage_path]" :src="mediaUrls[m.media_storage_path]" class="max-w-full rounded-ctl" />
+                <img
+                  v-if="m.media_type === 'image' && m.media_storage_path && mediaUrls[m.media_storage_path]"
+                  :src="mediaUrls[m.media_storage_path]"
+                  class="max-w-full cursor-pointer rounded-ctl"
+                  @click.stop="lightboxUrl = mediaUrls[m.media_storage_path]"
+                />
                 <video v-else-if="m.media_type === 'video' && m.media_storage_path && mediaUrls[m.media_storage_path]" :src="mediaUrls[m.media_storage_path]" controls class="max-w-full rounded-ctl" />
                 <audio v-else-if="m.media_type === 'audio' && m.media_storage_path && mediaUrls[m.media_storage_path]" :src="mediaUrls[m.media_storage_path]" controls class="max-w-full" />
                 <a
@@ -521,18 +688,16 @@ onUnmounted(() => {
                   :src="mediaUrls[m.media_storage_path]"
                   class="h-24 w-24"
                 />
-                <p v-else-if="m.media_type" class="text-[12.5px] italic opacity-70">Media unavailable</p>
+                <p v-else-if="m.media_type" class="text-[12.5px] italic opacity-70">{{ m.pending ? 'Uploading…' : 'Media unavailable' }}</p>
 
                 <p v-if="m.body_preview && m.media_type" class="mt-1 whitespace-pre-wrap text-[13px]">{{ m.body_preview }}</p>
                 <p v-else-if="m.template_name" class="whitespace-pre-wrap text-[13px]">{{ m.body_preview ?? `Template: ${m.template_name}` }}</p>
                 <p v-else class="whitespace-pre-wrap text-[13px]">{{ m.body_preview }}</p>
 
-                <p class="mt-1 flex items-center justify-end gap-1 text-right text-[10.5px]" :class="m.direction === 'outbound' ? 'text-white/70' : 'text-ink-faint'">
-                  <span>{{ shortTime(m.created_at) }}</span>
-                  <span v-if="m.direction === 'outbound' && m.status === 'failed'" class="text-danger-text" title="Failed to send">⚠</span>
-                  <span v-else-if="m.direction === 'outbound' && m.status === 'read'" class="text-[13px] leading-none text-[#34B7F1]" title="Read">✓✓</span>
-                  <span v-else-if="m.direction === 'outbound' && m.status === 'delivered'" class="text-[13px] leading-none" title="Delivered">✓✓</span>
-                  <span v-else-if="m.direction === 'outbound'" class="text-[13px] leading-none" title="Sent">✓</span>
+                <p class="mt-1 flex items-center justify-end gap-1.5 text-right text-[10.5px]" :class="m.direction === 'outbound' ? 'text-white/70' : 'text-ink-faint'">
+                  <span v-if="m.status === 'failed'" class="underline">Tap to retry</span>
+                  <span v-else>{{ shortTime(m.created_at) }}</span>
+                  <InboxMessageStatus v-if="m.direction === 'outbound'" :status="m.status" />
                 </p>
               </div>
             </div>
@@ -548,11 +713,29 @@ onUnmounted(() => {
             </p>
             <UiBtn v-if="selected.patientId" variant="primary" size="sm" @click="templateModalOpen = true">Send template</UiBtn>
           </div>
+          <div v-else-if="audioRecording" class="flex items-center gap-3 rounded-ctl border border-line-control bg-surface-subtle px-3 py-2">
+            <span class="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-danger-text" />
+            <span class="flex-1 text-[13.5px] text-ink-700">Recording… {{ recordingLabel(audioSeconds) }}</span>
+            <button type="button" class="shrink-0 text-[12.5px] text-ink-faint hover:text-ink-muted" @click="cancelAudioRecording">Cancel</button>
+            <UiBtn variant="primary" size="sm" @click="toggleAudioRecording">Send</UiBtn>
+          </div>
           <div v-else class="flex items-end gap-2">
             <button type="button" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-500 hover:bg-surface-subtle" :disabled="sending" @click="fileInput?.click()">
               📎
             </button>
             <input ref="fileInput" type="file" class="hidden" accept="image/*,video/*,audio/*,.pdf,.doc,.docx" @change="onFileChosen" />
+            <button
+              type="button"
+              class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-500 hover:bg-surface-subtle disabled:opacity-50"
+              :disabled="sending"
+              title="Record a voice note"
+              @click="toggleAudioRecording"
+            >
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+                <rect x="5.5" y="1.5" width="5" height="8" rx="2.5" />
+                <path d="M3 8a5 5 0 0 0 10 0M8 13v1.5" stroke-linecap="round" />
+              </svg>
+            </button>
             <SavedRepliesPicker @insert="insertReply" />
             <textarea
               ref="composerTextarea"
@@ -575,5 +758,21 @@ onUnmounted(() => {
       @close="templateModalOpen = false"
       @sent="onTemplateSent"
     />
+
+    <div v-if="lightboxUrl" class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-6" @click="lightboxUrl = null">
+      <img :src="lightboxUrl" class="max-h-full max-w-full rounded-ctl object-contain" @click.stop />
+      <div class="absolute right-4 top-4 flex gap-2">
+        <a :href="lightboxUrl" download target="_blank" class="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20" title="Download" @click.stop>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+            <path d="M8 1.5v9M4.5 7 8 10.5 11.5 7M2 12.5v1a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-1" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </a>
+        <button type="button" class="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20" title="Close" @click="lightboxUrl = null">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+            <path d="M3 3l10 10M13 3 3 13" stroke-linecap="round" />
+          </svg>
+        </button>
+      </div>
+    </div>
   </div>
 </template>

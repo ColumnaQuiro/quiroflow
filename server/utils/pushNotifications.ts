@@ -150,5 +150,10 @@ export async function sendPushToUsers(event: H3Event, userIds: string[], notific
     ),
   )
   const failed = results.filter((r) => !r.ok)
-  if (failed.length > 0) console.error('[push] send failed for', failed.length, 'of', tokens.length, 'device(s)', failed)
+  // console.error's default inspect depth (2) was hiding the actual FCM
+  // rejection reason inside the nested error body -- e.g. a stale token
+  // reports as {error:{error:{code,message,status}}}, three levels deep --
+  // logging as "[Object]" with no way to tell why a send failed. Stringify
+  // explicitly so the real reason survives into the log.
+  if (failed.length > 0) console.error(`[push] send failed for ${failed.length} of ${tokens.length} device(s)`, JSON.stringify(failed, null, 2))
 }

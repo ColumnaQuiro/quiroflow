@@ -33,6 +33,7 @@ const allGroups: NavGroup[] = [
       { label: 'Packages / Bonos', to: '/settings/packages', perm: 'billing_config' },
       { label: 'Memberships', to: '/settings/memberships', perm: 'billing_config' },
       { label: 'Payments (Stripe)', to: '/settings/payments', perm: 'billing_config' },
+      { label: 'Fiscal Data', to: '/settings/fiscal-data', perm: 'billing_config' },
     ],
   },
   {

@@ -3,18 +3,11 @@ export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig()
   const { supabase } = await requirePermission(event, 'billing_access')
 
-  const { data: invoice } = await supabase
-    .from('invoices')
-    .select('invoice_number, total_cents, patients(first_name, last_name, email)')
-    .eq('id', invoiceId)
-    .maybeSingle()
-
-  if (!invoice) {
+  const data = await loadInvoiceDocumentData(supabase, invoiceId!)
+  if (!data) {
     throw createError({ statusCode: 404, statusMessage: 'Invoice not found' })
   }
-
-  const patient = invoice.patients as unknown as { first_name: string; last_name: string | null; email: string | null } | null
-  if (!patient?.email) {
+  if (!data.patient.email) {
     throw createError({ statusCode: 400, statusMessage: 'Patient has no email address' })
   }
 
@@ -22,12 +15,9 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 500, statusMessage: 'Email sending is not configured (missing RESEND_API_KEY)' })
   }
 
-  const { data: lineItems } = await supabase
-    .from('invoice_line_items')
-    .select('description, quantity, price_cents')
-    .eq('invoice_id', invoiceId)
+  const pdf = await generateInvoicePdf(data)
 
-  const rows = (lineItems ?? [])
+  const rows = data.lineItems
     .map(
       (l) =>
         `<tr><td style="padding:4px 8px">${l.description}</td><td style="padding:4px 8px;text-align:right">${l.quantity}</td><td style="padding:4px 8px;text-align:right">€${((l.price_cents * l.quantity) / 100).toFixed(2)}</td></tr>`,
@@ -36,14 +26,14 @@ export default defineEventHandler(async (event) => {
 
   const html = `
     <div style="font-family:sans-serif">
-      <h2>Invoice ${invoice.invoice_number}</h2>
-      <p>Hi ${patient.first_name},</p>
-      <p>Here is your invoice:</p>
+      <h2>Invoice ${data.invoiceNumber}</h2>
+      <p>Hi ${data.patient.firstName},</p>
+      <p>Here is your invoice -- the full PDF is attached.</p>
       <table style="border-collapse:collapse;width:100%">
         <thead><tr><th align="left">Description</th><th align="right">Qty</th><th align="right">Total</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
-      <p style="margin-top:16px"><strong>Total: €${(invoice.total_cents / 100).toFixed(2)}</strong></p>
+      <p style="margin-top:16px"><strong>Total: €${(data.totalCents / 100).toFixed(2)}</strong></p>
     </div>
   `
 
@@ -55,9 +45,10 @@ export default defineEventHandler(async (event) => {
     },
     body: JSON.stringify({
       from: 'QuiroFlow <notifications@quiroflow.com>',
-      to: patient.email,
-      subject: `Invoice ${invoice.invoice_number}`,
+      to: data.patient.email,
+      subject: `Invoice ${data.invoiceNumber}`,
       html,
+      attachments: [{ filename: `${data.invoiceNumber}.pdf`, content: pdf.toString('base64') }],
     }),
   })
 

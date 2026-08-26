@@ -71,7 +71,7 @@ function formatDate(iso: string) {
 
           <div v-if="activePackages.length > 0" class="mt-2 space-y-1 border-t border-line-divider pt-2">
             <p v-for="pkg in activePackages" :key="pkg.id" class="text-[12.5px] text-ink-muted">
-              {{ pkg.package_name }} — {{ pkg.sessions_total - pkg.sessions_used }} of {{ pkg.sessions_total }} sessions left
+              {{ pkg.package_name }} — {{ pkg.sessions_total - pkg.sessions_used }} of {{ pkg.sessions_total }} sessions left &middot; €{{ (pkg.unallocated_cents / 100).toFixed(2) }} unallocated
             </p>
           </div>
           <p v-if="activeMembership" class="mt-2 border-t border-line-divider pt-2 text-[12.5px] text-ink-muted">

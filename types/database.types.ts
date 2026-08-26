@@ -917,9 +917,11 @@ export type Database = {
           business_hours: Json
           created_at: string
           id: string
+          legal_name: string | null
           name: string
           online_booking_enabled: boolean
           slot_duration_minutes: number
+          tax_id: string | null
         }
         Insert: {
           account_id: string
@@ -927,9 +929,11 @@ export type Database = {
           business_hours?: Json
           created_at?: string
           id?: string
+          legal_name?: string | null
           name: string
           online_booking_enabled?: boolean
           slot_duration_minutes?: number
+          tax_id?: string | null
         }
         Update: {
           account_id?: string
@@ -937,9 +941,11 @@ export type Database = {
           business_hours?: Json
           created_at?: string
           id?: string
+          legal_name?: string | null
           name?: string
           online_booking_enabled?: boolean
           slot_duration_minutes?: number
+          tax_id?: string | null
         }
         Relationships: [
           {
@@ -3049,4 +3055,3 @@ export const Constants = {
     Enums: {},
   },
 } as const
-

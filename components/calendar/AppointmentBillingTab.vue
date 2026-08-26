@@ -264,7 +264,7 @@ async function recordPayment() {
             :key="p.id"
             class="inline-flex items-center gap-1.5 rounded bg-indigo-50 px-1.5 py-0.5 text-xs font-medium text-indigo-700"
           >
-            {{ p.package_name }}: {{ p.sessions_total - p.sessions_used }} left
+            {{ p.package_name }}: {{ p.sessions_total - p.sessions_used }} left &middot; €{{ (p.unallocated_cents / 100).toFixed(2) }} unallocated
           </span>
         </div>
       </div>

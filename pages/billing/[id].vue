@@ -7,7 +7,8 @@ const store = useAccountStore()
 const invoiceId = route.params.id as string
 
 interface InvoiceWithPatient extends Tables<'invoices'> {
-  patients: { first_name: string; last_name: string | null; email: string | null } | null
+  patients: { first_name: string; last_name: string | null; email: string | null; address: string | null; national_id: string | null } | null
+  appointments: { clinic_id: string } | null
 }
 
 const invoice = ref<InvoiceWithPatient | null>(null)
@@ -17,17 +18,19 @@ const loading = ref(true)
 const notFound = ref(false)
 
 const paymentAmount = ref('')
-const paymentMethod = ref<'card' | 'cash' | 'other'>('card')
+const paymentMethod = ref<'card' | 'cash' | 'other' | 'credit'>('card')
 const savingPayment = ref(false)
 const error = ref('')
 const sending = ref(false)
 const sendMessage = ref('')
 
+const { balanceCents, refresh: refreshCreditSummary } = usePatientFinancialSummary(() => invoice.value?.patient_id ?? '')
+
 async function load() {
   loading.value = true
   const { data } = await supabase
     .from('invoices')
-    .select('*, patients(first_name, last_name, email)')
+    .select('*, patients(first_name, last_name, email, address, national_id), appointments(clinic_id)')
     .eq('id', invoiceId)
     .maybeSingle()
 
@@ -52,6 +55,17 @@ onMounted(load)
 const paidCents = computed(() => payments.value.reduce((sum, p) => sum + p.amount_cents, 0))
 const balanceDueCents = computed(() => (invoice.value?.total_cents ?? 0) - paidCents.value)
 
+// Which clinic issued this invoice, for the fiscal letterhead -- most
+// invoices come from an appointment (which has a clinic_id), but a
+// package/membership sale invoice doesn't, so this falls back to the
+// account's first clinic (accurate for the common single-clinic case;
+// a multi-clinic account selling packages would need to record which
+// clinic made the sale to do better than this).
+const invoiceClinic = computed(() => {
+  const clinicId = invoice.value?.appointments?.clinic_id
+  return (clinicId && store.clinics.find((c) => c.id === clinicId)) || store.clinics[0] || null
+})
+
 const STATUS_TONE: Record<string, 'success' | 'danger' | 'neutral'> = {
   paid: 'success',
   unpaid: 'danger',
@@ -62,14 +76,28 @@ async function recordPayment() {
   error.value = ''
   const amountCents = Math.round((parseFloat(paymentAmount.value) || 0) * 100)
   if (amountCents <= 0) return
+  if (paymentMethod.value === 'credit' && amountCents > balanceCents.value) {
+    error.value = 'Amount exceeds available credit.'
+    return
+  }
   savingPayment.value = true
 
   await supabase.from('payments').insert({
     account_id: store.accountId!,
     invoice_id: invoiceId,
     amount_cents: amountCents,
-    method: paymentMethod.value,
+    method: paymentMethod.value === 'credit' ? 'other' : paymentMethod.value,
   })
+  if (paymentMethod.value === 'credit') {
+    await supabase.from('account_credits').insert({
+      account_id: store.accountId!,
+      patient_id: invoice.value!.patient_id,
+      amount_cents: -amountCents,
+      reason: `Applied to invoice ${invoice.value!.invoice_number}`,
+      invoice_id: invoiceId,
+      created_by: store.teamMember?.id ?? null,
+    })
+  }
 
   const newPaid = paidCents.value + amountCents
   if (newPaid >= (invoice.value?.total_cents ?? 0)) {
@@ -77,7 +105,7 @@ async function recordPayment() {
   }
 
   savingPayment.value = false
-  await load()
+  await Promise.all([load(), refreshCreditSummary()])
 }
 
 // Footer quick action from the design spec -- settles the remaining balance
@@ -106,8 +134,14 @@ async function sendEmail() {
   sending.value = false
 }
 
-function downloadPdf() {
-  window.print()
+async function downloadPdf() {
+  const blob = await useStaffFetch<Blob>(`/api/invoices/${invoiceId}/pdf`, { responseType: 'blob' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${invoice.value?.invoice_number ?? 'invoice'}.pdf`
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 function backToBilling() {
@@ -136,12 +170,20 @@ function formatDate(iso: string) {
 
       <div v-else-if="invoice" class="mx-auto max-w-[720px] space-y-4">
         <div class="overflow-hidden rounded-card border border-line bg-surface shadow-card">
+          <div v-if="invoiceClinic?.legal_name || invoiceClinic?.tax_id" class="border-b border-line-divider px-6 py-4">
+            <p class="text-[13.5px] font-[620] text-ink-900">{{ invoiceClinic.legal_name || invoiceClinic.name }}</p>
+            <p v-if="invoiceClinic.address" class="mt-0.5 text-[12px] text-ink-muted2">{{ invoiceClinic.address }}</p>
+            <p v-if="invoiceClinic.tax_id" class="mt-0.5 text-[12px] text-ink-muted2">Tax ID: {{ invoiceClinic.tax_id }}</p>
+          </div>
+
           <div class="flex items-start justify-between p-6">
             <div>
               <p class="font-mono text-[13px] text-ink-muted2">{{ invoice.invoice_number }}</p>
               <p class="mt-1 text-[17px] font-[620] text-ink-900">
                 {{ invoice.patients?.first_name }} {{ invoice.patients?.last_name }}
               </p>
+              <p v-if="invoice.patients?.address" class="mt-0.5 text-[12.5px] text-ink-muted2">{{ invoice.patients.address }}</p>
+              <p v-if="invoice.patients?.national_id" class="mt-0.5 text-[12.5px] text-ink-muted2">ID: {{ invoice.patients.national_id }}</p>
               <p class="mt-1 text-[12.5px] text-ink-muted2">Issued {{ formatDate(invoice.created_at) }}</p>
             </div>
             <div class="text-right">
@@ -238,6 +280,7 @@ function formatDate(iso: string) {
                 <option value="card">Card</option>
                 <option value="cash">Cash</option>
                 <option value="other">Other</option>
+                <option v-if="balanceCents > 0" value="credit">Credit on account (€{{ (balanceCents / 100).toFixed(2) }} available)</option>
               </select>
             </div>
             <button

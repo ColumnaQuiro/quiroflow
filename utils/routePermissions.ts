@@ -26,7 +26,7 @@ const rules: Rule[] = [
     check: (s) => can(s, 'settings_access') && can(s, 'clinic_config'),
   },
   {
-    test: (p) => ['/settings/packages', '/settings/memberships', '/settings/payments'].includes(p),
+    test: (p) => ['/settings/packages', '/settings/memberships', '/settings/payments', '/settings/fiscal-data'].includes(p),
     check: (s) => can(s, 'settings_access') && can(s, 'billing_config'),
   },
   {

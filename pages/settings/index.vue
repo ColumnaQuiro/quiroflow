@@ -53,6 +53,7 @@ const groups = [
       { to: '/settings/packages', label: 'Packages / Bonos', description: 'Session bundle templates you can sell to patients.', icon: ICONS.gift },
       { to: '/settings/memberships', label: 'Memberships', description: 'Recurring plan templates for patients.', icon: ICONS.badgeCheck },
       { to: '/settings/payments', label: 'Payments (Stripe)', description: 'Automate installments and renewals with a saved card.', icon: ICONS.creditCard },
+      { to: '/settings/fiscal-data', label: 'Fiscal Data', description: 'Legal name and tax ID shown on invoices.', icon: ICONS.documentText },
     ],
   },
   {

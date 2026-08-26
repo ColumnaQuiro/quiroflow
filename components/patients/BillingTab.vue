@@ -611,6 +611,13 @@ async function logPayment(m: PatientMembershipRow, status: 'paid' | 'failed') {
 function money(cents: number) {
   return `€${(cents / 100).toFixed(2)}`
 }
+
+// Remaining monetary value of a package, not just remaining sessions -- see
+// usePatientFinancialSummary.ts for why this stays a display-only figure
+// separate from account_credits/balanceCents.
+function unallocatedCents(p: { price_cents: number; sessions_total: number; sessions_used: number }) {
+  return p.price_cents - Math.round((p.price_cents * p.sessions_used) / p.sessions_total)
+}
 </script>
 
 <template>
@@ -786,7 +793,7 @@ function money(cents: number) {
               <div class="h-full rounded-full bg-brand" :style="{ width: `${Math.min(100, Math.round((p.sessions_used / p.sessions_total) * 100))}%` }" />
             </div>
             <div class="mt-1.5 flex items-center justify-between gap-2">
-              <p class="text-[11.5px] text-ink-faint">{{ p.sessions_used }}/{{ p.sessions_total }} used &middot; {{ money(p.price_cents) }}</p>
+              <p class="text-[11.5px] text-ink-faint">{{ p.sessions_used }}/{{ p.sessions_total }} used &middot; {{ money(p.price_cents) }} &middot; {{ money(unallocatedCents(p)) }} unallocated</p>
               <div class="flex items-center gap-2">
                 <button type="button" class="text-[11.5px] font-medium text-ink-muted hover:text-brand-text" @click="toggleShares(p.id)">
                   Share{{ shares[p.id]?.length ? ` (${shares[p.id].length})` : '' }}…

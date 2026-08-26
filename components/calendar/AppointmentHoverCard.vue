@@ -172,7 +172,8 @@ function visitOrdinal(n: number) {
       <span v-if="nextVisit">&middot; Next: {{ new Date(nextVisit).toLocaleDateString([], { day: 'numeric', month: 'short' }) }}</span>
     </p>
     <p v-if="!billingLoading && activePackages.length > 0" class="mt-1 truncate text-[11px] text-ink-faint">
-      {{ activePackages[0].package_name }} ({{ activePackages[0].sessions_used }}/{{ activePackages[0].sessions_total }})
+      {{ activePackages[0].package_name }} ({{ activePackages[0].sessions_used }}/{{ activePackages[0].sessions_total }}) &middot;
+      €{{ (activePackages[0].unallocated_cents / 100).toFixed(2) }} unallocated
     </p>
 
     <BonoStatusBadge v-if="!billingLoading" class="mt-2.5" :tone="bonoStatus.tone" :label="bonoStatus.label" />

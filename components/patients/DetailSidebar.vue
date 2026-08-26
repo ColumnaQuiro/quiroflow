@@ -1,13 +1,24 @@
 <script setup lang="ts">
 import type { Tables } from '~/types/database.types'
 
+interface ActivePackage { id: string; package_name: string; sessions_total: number; sessions_used: number; unallocated_cents: number }
+
 const props = defineProps<{
   patient: Tables<'patients'>
   balanceCents: number
   creditCents: number
+  activePackages: ActivePackage[]
   financialLoading: boolean
 }>()
 const emit = defineEmits<{ message: []; charge: []; photoUpdated: [] }>()
+
+// Money the patient has already paid toward packages but hasn't used yet --
+// shown separately from balanceCents/creditCents (real cash credit/debt) so
+// an unpaid invoice never reads as "covered" just because a bono has value
+// left, but still surfaced prominently: a patient who paid for a bono has
+// real money sitting with the clinic, and staff kept asking why the sidebar
+// (unlike the appointment billing panel) never showed it.
+const packageCreditCents = computed(() => props.activePackages.reduce((sum, p) => sum + p.unallocated_cents, 0))
 
 const canContact = computed(() => !props.patient.is_minor && !props.patient.do_not_contact)
 
@@ -83,7 +94,10 @@ function money(cents: number) {
         </div>
       </div>
 
-      <UiBalancePill v-if="!financialLoading" class="mt-2.5" :balance-cents="balanceCents" />
+      <div v-if="!financialLoading" class="mt-2.5 flex flex-wrap items-center gap-1.5">
+        <UiBalancePill :balance-cents="balanceCents" />
+        <UiPill v-if="packageCreditCents > 0" tone="brand">€{{ (packageCreditCents / 100).toFixed(2) }} bono</UiPill>
+      </div>
 
       <div class="mt-3.5 grid gap-2" :class="canContact ? 'grid-cols-2' : 'grid-cols-1'">
         <UiBtn v-if="canContact" size="sm" variant="secondary" class="w-full justify-center" @click="emit('message')">WhatsApp</UiBtn>
@@ -125,6 +139,10 @@ function money(cents: number) {
           <dd class="mt-0.5 font-mono text-[12.5px] text-ink-700">{{ financialLoading ? '…' : money(creditCents) }}</dd>
         </div>
         <div>
+          <dt class="text-ink-faint">Bono credit</dt>
+          <dd class="mt-0.5 font-mono text-[12.5px] text-ink-700">{{ financialLoading ? '…' : money(packageCreditCents) }}</dd>
+        </div>
+        <div>
           <dt class="text-ink-faint">Lifetime</dt>
           <dd class="mt-0.5 font-mono text-[12.5px] text-ink-700">{{ loading ? '…' : money(lifetimeCents) }}</dd>
         </div>
@@ -133,6 +151,12 @@ function money(cents: number) {
           <dd class="mt-0.5 text-[12.5px] text-ink-700">{{ loading ? '…' : hasCardOnFile ? 'On file' : 'None' }}</dd>
         </div>
       </div>
+
+      <ul v-if="activePackages.length > 0" class="mt-3 space-y-1 border-t border-line-divider pt-2.5">
+        <li v-for="p in activePackages" :key="p.id" class="text-[11.5px] text-ink-muted2">
+          {{ p.package_name }}: {{ p.sessions_total - p.sessions_used }} left &middot; {{ money(p.unallocated_cents) }} unallocated
+        </li>
+      </ul>
     </div>
   </aside>
 </template>

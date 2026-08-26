@@ -16,6 +16,10 @@ const { fire } = useAutomations()
 const { loading: summaryLoading, balanceCents, activeMembership, activePackages, refresh: refreshSummary } = usePatientFinancialSummary(
   () => props.patientId,
 )
+// Money already paid toward a package but not yet used -- shown next to
+// Balance (real cash credit/debt) rather than folded into it, so an unpaid
+// invoice never reads as "covered" just because a bono has value left.
+const packageCreditCents = computed(() => activePackages.value.reduce((sum, p) => sum + p.unallocated_cents, 0))
 
 interface InvoiceRow { id: string; invoice_number: string; status: string; total_cents: number }
 interface LineItemRow { id: string; description: string; quantity: number; price_cents: number }
@@ -237,10 +241,11 @@ async function recordPayment() {
     <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
       <div v-if="summaryLoading" class="text-gray-400">Loading patient summary…</div>
       <div v-else class="space-y-1.5">
-        <p class="flex items-center gap-1.5">
+        <p class="flex flex-wrap items-center gap-1.5">
           <span class="text-gray-500">Balance:</span>
           <UiBalancePill v-if="balanceCents !== 0" :balance-cents="balanceCents" />
           <span v-else class="font-medium text-gray-700">€0.00</span>
+          <UiPill v-if="packageCreditCents > 0" tone="brand">€{{ (packageCreditCents / 100).toFixed(2) }} bono</UiPill>
         </p>
         <p v-if="activeMembership">
           <span class="text-gray-500">Membership:</span>

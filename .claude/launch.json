@@ -12,6 +12,12 @@
       "runtimeExecutable": "npx",
       "runtimeArgs": ["serve", "-l", "3010", "mobile/.output/public"],
       "port": 3010
+    },
+    {
+      "name": "quiroflow-mobile-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "mobile", "run", "dev", "--", "--port", "3011"],
+      "port": 3011
     }
   ]
 }

@@ -31,8 +31,13 @@ const supabase = useSupabaseClient()
 const authedFetch = useAuthedFetch()
 const { keyboardHeight } = useKeyboardInset()
 const messagesEl = ref<HTMLElement>()
+function scrollThreadToBottom() {
+  nextTick(() => {
+    if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight
+  })
+}
 watch(keyboardHeight, (h) => {
-  if (h > 0) nextTick(() => { if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight })
+  if (h > 0) scrollThreadToBottom()
 })
 
 // Edge-swipe from the thread back to the conversation list, like the
@@ -135,11 +140,54 @@ const conversations = computed<Conversation[]>(() => {
   return list.sort((a, b) => b.lastMessage.created_at.localeCompare(a.lastMessage.created_at))
 })
 
+// Search matches name, phone number, and anything said in the conversation
+// -- not just the last message -- so finding "that time they mentioned X"
+// works the same as finding a patient by name or number.
+const search = ref('')
+const conversationSearchText = computed(() => {
+  const map: Record<string, string> = {}
+  for (const m of allMessages.value) {
+    const key = m.patient_id ?? m.phone_number ?? 'unknown'
+    map[key] = `${map[key] ?? ''} ${m.body_preview ?? ''}`
+  }
+  return map
+})
+const filteredConversations = computed(() => {
+  if (!search.value.trim()) return conversations.value
+  const q = normalizeSearchTerm(search.value.trim())
+  return conversations.value.filter((c) =>
+    normalizeSearchTerm(`${c.name} ${c.phoneNumber ?? ''} ${conversationSearchText.value[c.key] ?? ''}`).includes(q),
+  )
+})
+
+// Bulk select: tap "Select" to enter the mode, tap rows to check them, then
+// mark them all unread or delete them together instead of one swipe at a
+// time.
+const selectionMode = ref(false)
+const selectedKeys = ref<Set<string>>(new Set())
+function toggleSelectKey(key: string) {
+  const next = new Set(selectedKeys.value)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  selectedKeys.value = next
+}
+function exitSelectionMode() {
+  selectionMode.value = false
+  selectedKeys.value = new Set()
+}
+
 const selectedKey = ref<string | null>(null)
 const selected = computed(() => conversations.value.find((c) => c.key === selectedKey.value) ?? null)
 const thread = computed(() =>
   selectedKey.value ? allMessages.value.filter((m) => (m.patient_id ?? m.phone_number ?? 'unknown') === selectedKey.value).slice().reverse() : [],
 )
+// Follows the bottom of the thread automatically -- a reply the practitioner
+// just sent, or a message that just arrived, used to sit hidden behind the
+// composer bar until they scrolled by hand.
+watch(thread, () => scrollThreadToBottom())
+watch(selectedKey, (key) => {
+  if (key) scrollThreadToBottom()
+})
 
 async function markRead(key: string) {
   const now = new Date().toISOString()
@@ -152,21 +200,28 @@ function openConversation(c: Conversation) {
 }
 
 const deletingConversation = ref(false)
-async function deleteConversationByKey(c: Conversation) {
-  if (!confirm(`Delete this whole conversation with ${c.name}? This removes all messages and can't be undone.`)) return
+async function deleteKeys(keys: string[]) {
   deletingConversation.value = true
   try {
-    let query = supabase.from('whatsapp_messages').delete()
-    query = c.patientId ? query.eq('patient_id', c.patientId) : query.eq('phone_number', c.phoneNumber!)
-    await query
-    if (c.patientId) await supabase.from('patient_app_messages').delete().eq('patient_id', c.patientId)
-    await supabase.from('whatsapp_conversation_reads').delete().eq('account_id', props.accountId).eq('conversation_key', c.key)
-    messages.value = messages.value.filter((m) => (m.patient_id ?? m.phone_number ?? 'unknown') !== c.key)
-    pendingMessages.value = pendingMessages.value.filter((m) => (m.patient_id ?? m.phone_number ?? 'unknown') !== c.key)
-    if (selectedKey.value === c.key) selectedKey.value = null
+    for (const key of keys) {
+      const c = conversations.value.find((conv) => conv.key === key)
+      if (!c) continue
+      let query = supabase.from('whatsapp_messages').delete()
+      query = c.patientId ? query.eq('patient_id', c.patientId) : query.eq('phone_number', c.phoneNumber!)
+      await query
+      if (c.patientId) await supabase.from('patient_app_messages').delete().eq('patient_id', c.patientId)
+      await supabase.from('whatsapp_conversation_reads').delete().eq('account_id', props.accountId).eq('conversation_key', key)
+    }
+    messages.value = messages.value.filter((m) => !keys.includes(m.patient_id ?? m.phone_number ?? 'unknown'))
+    pendingMessages.value = pendingMessages.value.filter((m) => !keys.includes(m.patient_id ?? m.phone_number ?? 'unknown'))
+    if (selectedKey.value && keys.includes(selectedKey.value)) selectedKey.value = null
   } finally {
     deletingConversation.value = false
   }
+}
+async function deleteConversationByKey(c: Conversation) {
+  if (!confirm(`Delete this whole conversation with ${c.name}? This removes all messages and can't be undone.`)) return
+  await deleteKeys([c.key])
 }
 async function deleteConversation() {
   if (!selected.value) return
@@ -175,6 +230,21 @@ async function deleteConversation() {
 function deleteFromList(c: Conversation) {
   swipedKey.value = null
   deleteConversationByKey(c)
+}
+async function bulkDeleteSelected() {
+  const keys = [...selectedKeys.value]
+  if (keys.length === 0) return
+  if (!confirm(`Delete ${keys.length} conversation${keys.length > 1 ? 's' : ''}? This removes all their messages and can't be undone.`)) return
+  await deleteKeys(keys)
+  exitSelectionMode()
+}
+async function bulkMarkUnreadSelected() {
+  const past = new Date(0).toISOString()
+  for (const key of selectedKeys.value) {
+    readTimestamps.value = { ...readTimestamps.value, [key]: past }
+    await supabase.from('whatsapp_conversation_reads').upsert({ account_id: props.accountId, conversation_key: key, last_read_at: past } as never)
+  }
+  exitSelectionMode()
 }
 
 // Marking unread is the mirror of markRead: back-date the read timestamp
@@ -205,11 +275,13 @@ let rowTouchStartY = 0
 let rowSwiping = false
 let justSwiped = false
 function onRowTouchStart(e: TouchEvent) {
+  if (selectionMode.value) return
   rowTouchStartX = e.touches[0]?.clientX ?? 0
   rowTouchStartY = e.touches[0]?.clientY ?? 0
   rowSwiping = false
 }
 function onRowTouchMove(e: TouchEvent) {
+  if (selectionMode.value) return
   const t = e.touches[0]
   if (!t) return
   const dx = t.clientX - rowTouchStartX
@@ -217,13 +289,17 @@ function onRowTouchMove(e: TouchEvent) {
   if (Math.abs(dx) > 10 && dy < 20) rowSwiping = true
 }
 function onRowTouchEnd(e: TouchEvent, c: Conversation) {
-  if (!rowSwiping) return
+  if (selectionMode.value || !rowSwiping) return
   justSwiped = true
   const dx = (e.changedTouches[0]?.clientX ?? 0) - rowTouchStartX
   if (dx < -40) swipedKey.value = c.key
   else if (dx > 20) swipedKey.value = null
 }
 function onRowClick(c: Conversation) {
+  if (selectionMode.value) {
+    toggleSelectKey(c.key)
+    return
+  }
   if (justSwiped) {
     justSwiped = false
     return
@@ -261,6 +337,7 @@ const sending = ref(false)
 const sendError = ref('')
 const composerTextarea = ref<HTMLTextAreaElement>()
 const fileInput = ref<HTMLInputElement>()
+const cameraInput = ref<HTMLInputElement>()
 
 function insertReply(text: string) {
   const el = composerTextarea.value
@@ -429,10 +506,15 @@ async function retryMessage(m: Message) {
 }
 
 async function onFileChosen(e: Event) {
-  const file = (e.target as HTMLInputElement).files?.[0]
-  if (!file || !selected.value) return
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file || !selected.value) {
+    input.value = ''
+    return
+  }
   if (file.size > MAX_MEDIA_BYTES) {
     sendError.value = 'File is too large (max 16 MB).'
+    input.value = ''
     return
   }
   const kind = mediaKindForFile(file)
@@ -448,7 +530,7 @@ async function onFileChosen(e: Event) {
     const base64 = await blobToBase64(file)
     await sendMedia(base64, file.type, file.name, kind)
   }
-  if (fileInput.value) fileInput.value.value = ''
+  input.value = ''
 }
 
 const { recording: audioRecording, seconds: audioSeconds, start: startAudioRecording, stop: stopAudioRecording, cancel: cancelAudioRecording } =
@@ -481,6 +563,20 @@ const lightboxUrl = ref<string | null>(null)
 
 function shortTime(iso: string) {
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+// The conversation list's timestamp, WhatsApp-style: a bare hour today loses
+// meaning for anything older, so it steps down in precision the further back
+// it goes -- hour today, "Yesterday", the weekday name within the last week,
+// then a full date beyond that.
+function listTime(iso: string) {
+  const d = new Date(iso)
+  const now = new Date()
+  const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+  const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / 86400000)
+  if (diffDays === 0) return shortTime(iso)
+  if (diffDays === 1) return 'Yesterday'
+  if (diffDays > 1 && diffDays < 7) return d.toLocaleDateString([], { weekday: 'long' })
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
 }
 function previewText(m: Message) {
   if (m.media_type) return `📎 ${m.media_type}${m.body_preview ? ` — ${m.body_preview}` : ''}`
@@ -526,54 +622,87 @@ onUnmounted(() => {
 <template>
   <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
     <!-- Conversation list -->
-    <div v-if="!selectedKey" class="flex-1 overflow-y-auto">
-      <div v-if="loading" class="p-6 text-center text-[13px] text-ink-faint">Loading…</div>
-      <p v-else-if="conversations.length === 0" class="p-6 text-center text-[13px] text-ink-faint">No conversations yet.</p>
-      <div v-for="c in conversations" :key="c.key" class="relative overflow-hidden border-b border-line-row">
-        <div class="absolute inset-y-0 right-0 flex">
-          <button type="button" class="flex w-[76px] items-center justify-center bg-brand text-[12px] font-medium text-white" @click="toggleUnread(c)">
-            {{ c.unread ? 'Read' : 'Unread' }}
-          </button>
-          <button type="button" class="flex w-[76px] items-center justify-center bg-danger-text text-[12px] font-medium text-white" @click="deleteFromList(c)">
-            Delete
-          </button>
+    <div v-if="!selectedKey" class="flex min-h-0 flex-1 flex-col">
+      <div v-if="!selectionMode" class="flex shrink-0 items-center gap-2 border-b border-line bg-surface px-3 py-2">
+        <input
+          v-model="search"
+          type="search"
+          placeholder="Search name, number, messages…"
+          class="h-9 flex-1 rounded-ctl border border-line-control bg-surface-subtle px-3 text-[14px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none"
+        />
+        <button type="button" class="shrink-0 px-1 text-[13px] font-medium text-brand-text" @click="selectionMode = true">Select</button>
+      </div>
+      <div v-else class="flex shrink-0 items-center justify-between gap-2 border-b border-line bg-surface px-3 py-2">
+        <button type="button" class="shrink-0 px-1 text-[13px] text-ink-muted2" @click="exitSelectionMode">Cancel</button>
+        <p class="truncate text-[13px] text-ink-700">{{ selectedKeys.size }} selected</p>
+        <div class="flex shrink-0 items-center gap-3">
+          <button type="button" class="text-[13px] font-medium text-brand-text disabled:opacity-40" :disabled="selectedKeys.size === 0" @click="bulkMarkUnreadSelected">Unread</button>
+          <button type="button" class="text-[13px] font-medium text-danger-text disabled:opacity-40" :disabled="selectedKeys.size === 0" @click="bulkDeleteSelected">Delete</button>
         </div>
-        <button
-          type="button"
-          class="flex w-full items-start gap-3 bg-surface px-4 py-3 text-left transition-transform duration-200 active:bg-surface-subtle"
-          :style="{ transform: swipedKey === c.key ? 'translateX(-152px)' : 'translateX(0)' }"
-          @touchstart="onRowTouchStart($event)"
-          @touchmove="onRowTouchMove($event)"
-          @touchend="onRowTouchEnd($event, c)"
-          @click="onRowClick(c)"
-        >
-        <span class="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[13px] font-semibold text-brand-text">
-          {{ c.name.slice(0, 2).toUpperCase() }}
-          <span v-if="c.channel === 'whatsapp'" class="absolute -bottom-0.5 -right-0.5 flex h-[15px] w-[15px] items-center justify-center rounded-full border border-surface bg-[#25D366]" title="WhatsApp">
-            <svg viewBox="0 0 24 24" class="h-[9px] w-[9px] fill-white"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm5.6 14.2c-.2.6-1.2 1.1-1.7 1.2-.4.1-1 .1-1.6-.1-.4-.1-.9-.3-1.5-.6-2.6-1.1-4.3-3.8-4.4-4-.1-.2-1-1.4-1-2.6 0-1.2.6-1.8.9-2.1.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .5.4.2.5.7 1.7.7 1.8.1.1.1.3 0 .4-.1.2-.1.3-.3.4-.1.2-.3.4-.4.5-.1.1-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.4 2.5 1.5.3.1.5.1.6-.1.2-.2.7-.8.9-1.1.2-.3.4-.2.6-.1.2.1 1.5.7 1.8.8.3.1.4.2.5.3.1.2.1.7-.1 1.3z" /></svg>
-          </span>
-          <span v-else class="absolute -bottom-0.5 -right-0.5 flex h-[15px] w-[15px] items-center justify-center rounded-full border border-surface bg-brand" title="In-app message">
-            <svg viewBox="0 0 24 24" class="h-[9px] w-[9px] fill-white"><path d="M4 4h16v12H7l-3 3z" /></svg>
-          </span>
-        </span>
-        <div class="min-w-0 flex-1">
-          <div class="flex items-center justify-between gap-2">
-            <p class="truncate text-[14px] font-[560]" :class="c.unread ? 'text-ink-900' : 'text-ink-700'">{{ c.name }}</p>
-            <span class="shrink-0 text-[12px] text-ink-faint">{{ shortTime(c.lastMessage.created_at) }}</span>
+      </div>
+      <div class="flex-1 overflow-y-auto">
+        <div v-if="loading" class="p-6 text-center text-[13px] text-ink-faint">Loading…</div>
+        <p v-else-if="filteredConversations.length === 0" class="p-6 text-center text-[13px] text-ink-faint">No conversations yet.</p>
+        <div v-for="c in filteredConversations" :key="c.key" class="relative overflow-hidden border-b border-line-row">
+          <div class="absolute inset-y-0 right-0 flex">
+            <button type="button" class="flex w-[76px] items-center justify-center bg-brand text-[12px] font-medium text-white" @click="toggleUnread(c)">
+              {{ c.unread ? 'Read' : 'Unread' }}
+            </button>
+            <button type="button" class="flex w-[76px] items-center justify-center bg-danger-text text-[12px] font-medium text-white" @click="deleteFromList(c)">
+              Delete
+            </button>
           </div>
-          <p class="truncate text-[13px]" :class="c.unread ? 'font-medium text-ink-800' : 'text-ink-muted2'">
-            {{ c.lastMessage.direction === 'outbound' ? 'You: ' : '' }}{{ previewText(c.lastMessage) }}
-          </p>
+          <button
+            type="button"
+            class="flex w-full items-start gap-3 bg-surface px-4 py-3 text-left transition-transform duration-200 active:bg-surface-subtle"
+            :style="{ transform: swipedKey === c.key ? 'translateX(-152px)' : 'translateX(0)' }"
+            @touchstart="onRowTouchStart($event)"
+            @touchmove="onRowTouchMove($event)"
+            @touchend="onRowTouchEnd($event, c)"
+            @click="onRowClick(c)"
+          >
+          <span
+            v-if="selectionMode"
+            class="mt-1.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border"
+            :class="selectedKeys.has(c.key) ? 'border-brand bg-brand' : 'border-line-control bg-surface'"
+          >
+            <svg v-if="selectedKeys.has(c.key)" viewBox="0 0 16 16" class="h-3 w-3 text-white" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 8l3.5 3.5L13 5" />
+            </svg>
+          </span>
+          <span class="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[13px] font-semibold text-brand-text">
+            {{ c.name.slice(0, 2).toUpperCase() }}
+            <span v-if="c.channel === 'whatsapp'" class="absolute -bottom-0.5 -right-0.5 flex h-[15px] w-[15px] items-center justify-center rounded-full border border-surface bg-[#25D366]" title="WhatsApp">
+              <svg viewBox="0 0 24 24" class="h-[9px] w-[9px] fill-white"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm5.6 14.2c-.2.6-1.2 1.1-1.7 1.2-.4.1-1 .1-1.6-.1-.4-.1-.9-.3-1.5-.6-2.6-1.1-4.3-3.8-4.4-4-.1-.2-1-1.4-1-2.6 0-1.2.6-1.8.9-2.1.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .5.4.2.5.7 1.7.7 1.8.1.1.1.3 0 .4-.1.2-.1.3-.3.4-.1.2-.3.4-.4.5-.1.1-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.4 2.5 1.5.3.1.5.1.6-.1.2-.2.7-.8.9-1.1.2-.3.4-.2.6-.1.2.1 1.5.7 1.8.8.3.1.4.2.5.3.1.2.1.7-.1 1.3z" /></svg>
+            </span>
+            <span v-else class="absolute -bottom-0.5 -right-0.5 flex h-[15px] w-[15px] items-center justify-center rounded-full border border-surface bg-brand" title="In-app message">
+              <svg viewBox="0 0 24 24" class="h-[9px] w-[9px] fill-white"><path d="M4 4h16v12H7l-3 3z" /></svg>
+            </span>
+          </span>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center justify-between gap-2">
+              <p class="truncate text-[14px] font-[560]" :class="c.unread ? 'text-ink-900' : 'text-ink-700'">
+                {{ c.name }}
+                <span v-if="c.phoneNumber && c.patientId" class="font-normal text-ink-faint">{{ c.phoneNumber }}</span>
+              </p>
+              <span class="shrink-0 text-[12px] text-ink-faint">{{ listTime(c.lastMessage.created_at) }}</span>
+            </div>
+            <p class="truncate text-[13px]" :class="c.unread ? 'font-medium text-ink-800' : 'text-ink-muted2'">
+              {{ c.lastMessage.direction === 'outbound' ? 'You: ' : '' }}{{ previewText(c.lastMessage) }}
+            </p>
+          </div>
+          <span v-if="c.unread" class="mt-2 h-[9px] w-[9px] shrink-0 rounded-full bg-brand" />
+          </button>
         </div>
-        <span v-if="c.unread" class="mt-2 h-[9px] w-[9px] shrink-0 rounded-full bg-brand" />
-        </button>
       </div>
     </div>
 
     <!-- Thread -->
     <div v-else-if="selected" ref="threadEl" class="flex min-h-0 flex-1 flex-col" :style="{ paddingBottom: keyboardHeight + 'px' }">
       <div class="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
-        <button type="button" class="flex h-11 w-11 shrink-0 items-center justify-center text-[15px] text-brand-text" @click="selectedKey = null">&larr;</button>
+        <button type="button" class="flex h-11 w-11 shrink-0 items-center justify-center text-brand-text" @click="selectedKey = null">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7" /></svg>
+        </button>
         <div class="min-w-0 flex-1">
           <p class="truncate text-[14px] font-[600] text-ink-900">{{ selected.name }}</p>
           <p class="truncate text-[12px] text-ink-muted2">
@@ -661,10 +790,37 @@ onUnmounted(() => {
             type="button"
             class="flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-muted disabled:opacity-50"
             :disabled="sending"
+            title="Attach a file"
             @click="fileInput?.click()"
           >
-            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
-              <path d="M11.5 5.5l-5 5a2 2 0 102.8 2.8l5-5a3.5 3.5 0 10-5-5l-5 5a1 1 0 001.4 1.4" />
+            <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+              <path d="M8 2.5v11M2.5 8h11" />
+            </svg>
+          </button>
+          <!-- No visible Send button -- Enter on a hardware keyboard already
+               sends (see the handler below); enterkeyhint swaps the virtual
+               keyboard's own return key to a "Send" label so the native
+               keyboard button does the same job, same as iMessage/WhatsApp. -->
+          <textarea
+            ref="composerTextarea"
+            v-model="composerText"
+            rows="1"
+            enterkeyhint="send"
+            placeholder="Type a message…"
+            class="max-h-24 min-h-11 flex-1 resize-none rounded-ctl border border-line-control bg-surface px-3 py-2.5 text-[14px] text-ink-700 focus:border-brand focus:outline-none"
+            @keydown.enter.exact.prevent="sendText"
+          />
+          <input ref="cameraInput" type="file" accept="image/*" capture="environment" class="hidden" @change="onFileChosen" />
+          <button
+            type="button"
+            class="flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-muted disabled:opacity-50"
+            :disabled="sending"
+            title="Take a photo"
+            @click="cameraInput?.click()"
+          >
+            <svg width="19" height="19" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+              <path d="M2 5.5A1.5 1.5 0 0 1 3.5 4h1.2l.5-1h5.6l.5 1h1.2A1.5 1.5 0 0 1 14 5.5v6A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5v-6Z" stroke-linejoin="round" />
+              <circle cx="8" cy="8.2" r="2.3" />
             </svg>
           </button>
           <button
@@ -679,15 +835,6 @@ onUnmounted(() => {
               <path d="M3 8a5 5 0 0 0 10 0M8 13v1.5" stroke-linecap="round" />
             </svg>
           </button>
-          <textarea
-            ref="composerTextarea"
-            v-model="composerText"
-            rows="1"
-            placeholder="Type a message…"
-            class="max-h-24 min-h-11 flex-1 resize-none rounded-ctl border border-line-control bg-surface px-3 py-2.5 text-[14px] text-ink-700 focus:border-brand focus:outline-none"
-            @keydown.enter.exact.prevent="sendText"
-          />
-          <UiBtn variant="primary" :disabled="sending || !composerText.trim()" @click="sendText">{{ sending ? '…' : 'Send' }}</UiBtn>
         </div>
       </div>
     </div>

@@ -23,5 +23,10 @@
   },
   "devDependencies": {
     "@capacitor/cli": "^7.4.4"
+  },
+  "overrides": {
+    "@nuxt/devtools": {
+      "vite": "7.3.6"
+    }
   }
 }

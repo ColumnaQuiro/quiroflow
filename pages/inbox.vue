@@ -147,11 +147,46 @@ const conversations = computed<Conversation[]>(() => {
   return list.sort((a, b) => b.lastMessage!.created_at.localeCompare(a.lastMessage!.created_at))
 })
 
+// Search matches name, phone number, and anything said in the conversation
+// -- not just the last message -- so finding "that time they mentioned X"
+// works the same as finding a patient by name or number.
+const conversationSearchText = computed(() => {
+  const map: Record<string, string> = {}
+  for (const m of allMessages.value) {
+    const key = m.patient_id ?? m.phone_number ?? 'unknown'
+    map[key] = `${map[key] ?? ''} ${m.body_preview ?? ''}`
+  }
+  return map
+})
 const filteredConversations = computed(() => {
   if (!search.value.trim()) return conversations.value
-  const q = search.value.trim().toLowerCase()
-  return conversations.value.filter((c) => c.name.toLowerCase().includes(q))
+  const q = normalizeSearchTerm(search.value.trim())
+  return conversations.value.filter((c) =>
+    normalizeSearchTerm(`${c.name} ${c.phoneNumber ?? ''} ${conversationSearchText.value[c.key] ?? ''}`).includes(q),
+  )
 })
+
+// Bulk select: "Select" enters the mode, clicking rows checks them, then
+// mark-unread or delete applies to everything checked at once.
+const selectionMode = ref(false)
+const selectedKeys = ref<Set<string>>(new Set())
+function toggleSelectKey(key: string) {
+  const next = new Set(selectedKeys.value)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  selectedKeys.value = next
+}
+function exitSelectionMode() {
+  selectionMode.value = false
+  selectedKeys.value = new Set()
+}
+function onRowClick(c: Conversation) {
+  if (selectionMode.value) {
+    toggleSelectKey(c.key)
+    return
+  }
+  selectConversation(c)
+}
 
 const selectedKey = ref<string | null>(null)
 // A brand-new conversation started via "New message" has no rows in
@@ -219,23 +254,44 @@ function selectConversation(c: Conversation) {
 }
 
 const deletingConversation = ref(false)
-async function deleteConversation() {
-  if (!selected.value || !selectedKey.value) return
-  if (!confirm(`Delete this whole conversation with ${selected.value.name}? This removes all messages and can't be undone.`)) return
+async function deleteKeys(keys: string[]) {
   deletingConversation.value = true
-  const key = selectedKey.value
   try {
-    let query = supabase.from('whatsapp_messages').delete()
-    query = selected.value.patientId ? query.eq('patient_id', selected.value.patientId) : query.eq('phone_number', selected.value.phoneNumber!)
-    await query
-    if (selected.value.patientId) await supabase.from('patient_app_messages').delete().eq('patient_id', selected.value.patientId)
-    if (store.accountId) await supabase.from('whatsapp_conversation_reads').delete().eq('account_id', store.accountId).eq('conversation_key', key)
-    messages.value = messages.value.filter((m) => (m.patient_id ?? m.phone_number ?? 'unknown') !== key)
-    pendingMessages.value = pendingMessages.value.filter((m) => (m.patient_id ?? m.phone_number ?? 'unknown') !== key)
-    selectedKey.value = null
+    for (const key of keys) {
+      const c = conversations.value.find((conv) => conv.key === key)
+      if (!c) continue
+      let query = supabase.from('whatsapp_messages').delete()
+      query = c.patientId ? query.eq('patient_id', c.patientId) : query.eq('phone_number', c.phoneNumber!)
+      await query
+      if (c.patientId) await supabase.from('patient_app_messages').delete().eq('patient_id', c.patientId)
+      if (store.accountId) await supabase.from('whatsapp_conversation_reads').delete().eq('account_id', store.accountId).eq('conversation_key', key)
+    }
+    messages.value = messages.value.filter((m) => !keys.includes(m.patient_id ?? m.phone_number ?? 'unknown'))
+    pendingMessages.value = pendingMessages.value.filter((m) => !keys.includes(m.patient_id ?? m.phone_number ?? 'unknown'))
+    if (selectedKey.value && keys.includes(selectedKey.value)) selectedKey.value = null
   } finally {
     deletingConversation.value = false
   }
+}
+async function deleteConversation() {
+  if (!selected.value || !selectedKey.value) return
+  if (!confirm(`Delete this whole conversation with ${selected.value.name}? This removes all messages and can't be undone.`)) return
+  await deleteKeys([selectedKey.value])
+}
+async function bulkDeleteSelected() {
+  const keys = [...selectedKeys.value]
+  if (keys.length === 0) return
+  if (!confirm(`Delete ${keys.length} conversation${keys.length > 1 ? 's' : ''}? This removes all their messages and can't be undone.`)) return
+  await deleteKeys(keys)
+  exitSelectionMode()
+}
+async function bulkMarkUnreadSelected() {
+  const past = new Date(0).toISOString()
+  for (const key of selectedKeys.value) {
+    readTimestamps.value = { ...readTimestamps.value, [key]: past }
+    if (store.accountId) await supabase.from('whatsapp_conversation_reads').upsert({ account_id: store.accountId, conversation_key: key, last_read_at: past } as never)
+  }
+  exitSelectionMode()
 }
 
 // Signed URLs for media, resolved on demand and cached per storage path --
@@ -503,6 +559,20 @@ function onTemplateSent() {
 function shortTime(iso: string) {
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
+// The conversation list's timestamp, WhatsApp-style: a bare hour today loses
+// meaning for anything older, so it steps down in precision the further back
+// it goes -- hour today, "Yesterday", the weekday name within the last week,
+// then a full date beyond that.
+function listTime(iso: string) {
+  const d = new Date(iso)
+  const now = new Date()
+  const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+  const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / 86400000)
+  if (diffDays === 0) return shortTime(iso)
+  if (diffDays === 1) return 'Yesterday'
+  if (diffDays > 1 && diffDays < 7) return d.toLocaleDateString([], { weekday: 'long' })
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
+}
 function relativeDay(iso: string) {
   const d = new Date(iso)
   const today = new Date()
@@ -566,34 +636,45 @@ onUnmounted(() => {
     <div class="flex flex-1 overflow-hidden">
       <!-- Conversation list -->
       <div class="flex w-[320px] shrink-0 flex-col border-r border-line bg-surface">
-        <div class="flex items-center gap-2 border-b border-line-divider p-3">
-          <input
-            v-model="search"
-            type="search"
-            placeholder="Search conversations…"
-            class="h-8 w-full flex-1 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none"
-          />
-          <div ref="composeEl" class="relative shrink-0">
-            <UiBtn variant="primary" size="sm" @click="composeOpen = !composeOpen">+ New</UiBtn>
-            <div v-if="composeOpen" class="absolute right-0 top-[calc(100%+4px)] z-20 w-64 rounded-card border border-line bg-surface p-2 shadow-popover">
-              <input
-                v-model="composeQuery"
-                type="text"
-                autofocus
-                placeholder="Search patients…"
-                class="h-8 w-full rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none"
-              />
-              <ul class="mt-1.5 max-h-56 overflow-y-auto">
-                <li
-                  v-for="p in filteredComposePatients"
-                  :key="p.id"
-                  class="cursor-pointer rounded-ctlSm px-2 py-1.5 text-[13px] text-ink-700 hover:bg-surface-subtle"
-                  @click="startConversationWith(p)"
-                >
-                  {{ p.first_name }} {{ p.last_name }}
-                </li>
-                <li v-if="filteredComposePatients.length === 0" class="px-2 py-1.5 text-[13px] text-ink-faint">No matches</li>
-              </ul>
+        <div class="border-b border-line-divider p-3">
+          <div v-if="!selectionMode" class="flex items-center gap-2">
+            <input
+              v-model="search"
+              type="search"
+              placeholder="Search name, number, messages…"
+              class="h-8 w-full flex-1 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none"
+            />
+            <button type="button" class="shrink-0 text-[12.5px] text-ink-faint hover:text-ink-muted" @click="selectionMode = true">Select</button>
+            <div ref="composeEl" class="relative shrink-0">
+              <UiBtn variant="primary" size="sm" @click="composeOpen = !composeOpen">+ New</UiBtn>
+              <div v-if="composeOpen" class="absolute right-0 top-[calc(100%+4px)] z-20 w-64 rounded-card border border-line bg-surface p-2 shadow-popover">
+                <input
+                  v-model="composeQuery"
+                  type="text"
+                  autofocus
+                  placeholder="Search patients…"
+                  class="h-8 w-full rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none"
+                />
+                <ul class="mt-1.5 max-h-56 overflow-y-auto">
+                  <li
+                    v-for="p in filteredComposePatients"
+                    :key="p.id"
+                    class="cursor-pointer rounded-ctlSm px-2 py-1.5 text-[13px] text-ink-700 hover:bg-surface-subtle"
+                    @click="startConversationWith(p)"
+                  >
+                    {{ p.first_name }} {{ p.last_name }}
+                  </li>
+                  <li v-if="filteredComposePatients.length === 0" class="px-2 py-1.5 text-[13px] text-ink-faint">No matches</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          <div v-else class="flex items-center justify-between gap-2">
+            <p class="text-[12.5px] text-ink-700">{{ selectedKeys.size }} selected</p>
+            <div class="flex items-center gap-3">
+              <button type="button" class="text-[12.5px] text-brand-text hover:underline disabled:opacity-40" :disabled="selectedKeys.size === 0" @click="bulkMarkUnreadSelected">Mark unread</button>
+              <button type="button" class="text-[12.5px] text-danger-text hover:underline disabled:opacity-40" :disabled="selectedKeys.size === 0" @click="bulkDeleteSelected">Delete</button>
+              <button type="button" class="text-[12.5px] text-ink-faint hover:text-ink-muted" @click="exitSelectionMode">Cancel</button>
             </div>
           </div>
         </div>
@@ -605,9 +686,18 @@ onUnmounted(() => {
             :key="c.key"
             type="button"
             class="flex w-full items-start gap-2.5 border-b border-line-row px-3 py-2.5 text-left hover:bg-surface-subtle"
-            :class="selectedKey === c.key ? 'bg-brand-tint' : ''"
-            @click="selectConversation(c)"
+            :class="selectedKey === c.key && !selectionMode ? 'bg-brand-tint' : ''"
+            @click="onRowClick(c)"
           >
+            <span
+              v-if="selectionMode"
+              class="mt-1 flex h-4 w-4 shrink-0 items-center justify-center rounded border"
+              :class="selectedKeys.has(c.key) ? 'border-brand bg-brand' : 'border-line-control bg-surface'"
+            >
+              <svg v-if="selectedKeys.has(c.key)" viewBox="0 0 16 16" class="h-2.5 w-2.5 text-white" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 8l3.5 3.5L13 5" />
+              </svg>
+            </span>
             <span class="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[11px] font-semibold text-brand-text">
               {{ c.name.slice(0, 2).toUpperCase() }}
               <span v-if="c.channel === 'whatsapp'" class="absolute -bottom-0.5 -right-0.5 flex h-[13px] w-[13px] items-center justify-center rounded-full border border-surface bg-[#25D366]" title="WhatsApp">
@@ -619,8 +709,11 @@ onUnmounted(() => {
             </span>
             <div class="min-w-0 flex-1">
               <div class="flex items-center justify-between gap-2">
-                <p class="truncate text-[13px] font-[560]" :class="c.unread ? 'text-ink-900' : 'text-ink-700'">{{ c.name }}</p>
-                <span class="shrink-0 text-[11px] text-ink-faint">{{ shortTime(c.lastMessage!.created_at) }}</span>
+                <p class="truncate text-[13px] font-[560]" :class="c.unread ? 'text-ink-900' : 'text-ink-700'">
+                  {{ c.name }}
+                  <span v-if="c.phoneNumber && c.patientId" class="font-normal text-ink-faint">{{ c.phoneNumber }}</span>
+                </p>
+                <span class="shrink-0 text-[11px] text-ink-faint">{{ listTime(c.lastMessage!.created_at) }}</span>
               </div>
               <p class="truncate text-[12px]" :class="c.unread ? 'font-medium text-ink-800' : 'text-ink-muted2'">
                 {{ c.lastMessage!.direction === 'outbound' ? 'You: ' : '' }}{{ previewText(c.lastMessage!) }}

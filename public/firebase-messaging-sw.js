@@ -26,15 +26,21 @@ messaging.onBackgroundMessage((payload) => {
   })
 })
 
-// Clicking the notification focuses an existing QuiroFlow tab if one's
-// open, otherwise opens the Inbox -- the only thing this sends today.
+// Clicking the notification should land on the Inbox, on the conversation
+// that actually triggered it when we know which one (the "key" set below
+// matches the same patient_id/phone_number the Inbox groups threads by).
+// An existing tab used to only get focus()'d, never navigated -- landing
+// wherever it already was (Calendar, Patients, ...) instead of the Inbox,
+// which read as the notification just not working.
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
+  const key = event.notification.data?.key
+  const url = key ? `/inbox?open=${encodeURIComponent(key)}` : '/inbox'
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientsArr) => {
       const existing = clientsArr.find((c) => c.url.includes(self.registration.scope))
-      if (existing) return existing.focus()
-      return self.clients.openWindow('/inbox')
+      if (existing) return 'navigate' in existing ? existing.navigate(url).then((c) => c.focus()) : existing.focus()
+      return self.clients.openWindow(url)
     }),
   )
 })

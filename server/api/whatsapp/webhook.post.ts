@@ -155,7 +155,10 @@ export default defineEventHandler(async (event) => {
           const { data: patient } = await supabase.from('patients').select('first_name, last_name').eq('id', patientId).maybeSingle()
           if (patient) senderName = `${patient.first_name} ${patient.last_name ?? ''}`.trim()
         }
-        await notifyInboxTeamMembers(event, supabase, account.id, senderName, insert.body_preview ?? 'New message', { type: 'whatsapp_message' })
+        await notifyInboxTeamMembers(event, supabase, account.id, senderName, insert.body_preview ?? 'New message', {
+          type: 'whatsapp_message',
+          key: patientId ?? msg.from,
+        })
 
         const intent = classifyReply(replyText(msg))
         if (intent && patientId) {

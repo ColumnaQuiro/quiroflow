@@ -34,7 +34,17 @@ export function useWebPush() {
       // as a system notification the way a background one does.
       onMessage(messaging, (payload) => {
         if (Notification.permission !== 'granted') return
-        new Notification(payload.notification?.title ?? 'QuiroFlow', { body: payload.notification?.body, icon: '/logo/quiroflow-mark.svg' })
+        const n = new Notification(payload.notification?.title ?? 'QuiroFlow', { body: payload.notification?.body, icon: '/logo/quiroflow-mark.svg' })
+        // A plain page-created Notification (unlike one shown via the
+        // service worker's registration.showNotification) fires its own
+        // click event here rather than the service worker's
+        // notificationclick -- needs its own navigation, or clicking it
+        // does nothing at all.
+        n.onclick = () => {
+          window.focus()
+          const key = payload.data?.key
+          navigateTo(key ? `/inbox?open=${encodeURIComponent(key)}` : '/inbox')
+        }
       })
     } catch {
       // Best-effort -- the Inbox still works without push.

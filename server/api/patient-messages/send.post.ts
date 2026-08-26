@@ -35,7 +35,7 @@ export default defineEventHandler(async (event) => {
   if (direction === 'inbound') {
     const serviceSupabase = serverSupabaseServiceRole<Database>(event)
     const senderName = `${patient.first_name} ${patient.last_name ?? ''}`.trim()
-    await notifyInboxTeamMembers(event, serviceSupabase, patient.account_id, senderName, text, { type: 'patient_app_message' })
+    await notifyInboxTeamMembers(event, serviceSupabase, patient.account_id, senderName, text, { type: 'patient_app_message', key: patient.id })
   }
 
   return { success: true }

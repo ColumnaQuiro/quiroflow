@@ -253,6 +253,27 @@ function selectConversation(c: Conversation) {
   if (c.unread) markRead(c.key)
 }
 
+// Clicking a push notification lands here with ?open=<conversation key> --
+// waits for the list to finish loading (the key won't match anything
+// before then) and opens that thread once, the same way a manual click on
+// the row would. Without this, the notification just opened the Inbox at
+// its default "pick a conversation" state, landing nowhere near what
+// triggered it.
+const route = useRoute()
+let openedFromNotification = false
+watch(
+  [conversations, loading],
+  () => {
+    if (openedFromNotification || loading.value) return
+    openedFromNotification = true
+    const key = route.query.open
+    if (typeof key !== 'string') return
+    const match = conversations.value.find((c) => c.key === key)
+    if (match) selectConversation(match)
+  },
+  { immediate: true },
+)
+
 const deletingConversation = ref(false)
 async function deleteKeys(keys: string[]) {
   deletingConversation.value = true

@@ -931,6 +931,58 @@ export type Database = {
           },
         ]
       }
+      cash_shifts: {
+        Row: {
+          account_id: string
+          closed_at: string | null
+          closed_by: string | null
+          id: string
+          note: string | null
+          opened_at: string
+          opened_by: string
+        }
+        Insert: {
+          account_id: string
+          closed_at?: string | null
+          closed_by?: string | null
+          id?: string
+          note?: string | null
+          opened_at?: string
+          opened_by: string
+        }
+        Update: {
+          account_id?: string
+          closed_at?: string | null
+          closed_by?: string | null
+          id?: string
+          note?: string | null
+          opened_at?: string
+          opened_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cash_shifts_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cash_shifts_closed_by_fkey"
+            columns: ["closed_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cash_shifts_opened_by_fkey"
+            columns: ["opened_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       clinics: {
         Row: {
           account_id: string

@@ -38,6 +38,23 @@ async function updateSlotDuration(clinicId: string, minutes: number) {
   if (clinic) clinic.slot_duration_minutes = minutes
 }
 
+// Name/address on an existing clinic previously had no edit path at all --
+// the form below only ever created new clinics, and the table's only
+// per-row inputs were slot duration and delete.
+async function updateClinicName(clinicId: string, value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) return
+  await supabase.from('clinics').update({ name: trimmed }).eq('id', clinicId)
+  const clinic = store.clinics.find((c) => c.id === clinicId)
+  if (clinic) clinic.name = trimmed
+}
+async function updateClinicAddress(clinicId: string, value: string) {
+  const trimmed = value.trim() || null
+  await supabase.from('clinics').update({ address: trimmed }).eq('id', clinicId)
+  const clinic = store.clinics.find((c) => c.id === clinicId)
+  if (clinic) clinic.address = trimmed
+}
+
 async function removeClinic(id: string) {
   if (!confirm('Delete this clinic?')) return
   await supabase.from('clinics').delete().eq('id', id)
@@ -151,8 +168,23 @@ function copy(text: string) {
                   <td colspan="4" class="px-4 py-6 text-center text-ink-faint">No clinics yet.</td>
                 </tr>
                 <tr v-for="c in store.clinics" :key="c.id">
-                  <td class="px-4 py-2.5 text-ink-700">{{ c.name }}</td>
-                  <td class="px-4 py-2.5 text-ink-muted2">{{ c.address ?? 'N/A' }}</td>
+                  <td class="px-4 py-2.5">
+                    <input
+                      :value="c.name"
+                      type="text"
+                      class="w-full min-w-[120px] rounded-ctlSm border border-transparent bg-transparent px-1.5 py-1 text-[13px] text-ink-700 hover:border-line-control focus:border-brand focus:bg-surface focus:outline-none focus:ring-1 focus:ring-brand/20"
+                      @change="updateClinicName(c.id, ($event.target as HTMLInputElement).value)"
+                    />
+                  </td>
+                  <td class="px-4 py-2.5">
+                    <input
+                      :value="c.address ?? ''"
+                      type="text"
+                      placeholder="Add address…"
+                      class="w-full min-w-[180px] rounded-ctlSm border border-transparent bg-transparent px-1.5 py-1 text-[13px] text-ink-muted2 placeholder:text-ink-faint2 hover:border-line-control focus:border-brand focus:bg-surface focus:text-ink-700 focus:outline-none focus:ring-1 focus:ring-brand/20"
+                      @change="updateClinicAddress(c.id, ($event.target as HTMLInputElement).value)"
+                    />
+                  </td>
                   <td class="px-4 py-2.5">
                     <select
                       :value="c.slot_duration_minutes"

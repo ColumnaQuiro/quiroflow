@@ -477,7 +477,24 @@ async function sellPackage() {
   })
   // Amount paid can be less than the package's full price -- the rest is
   // expected via the existing "Set up autopay" Stripe schedule below.
-  if (amountCents > 0) await recordSalePayment(tpl.name, amountCents, sellMethod.value)
+  if (amountCents > 0) {
+    await recordSalePayment(tpl.name, amountCents, sellMethod.value)
+    // recordSalePayment's invoice+payment pair nets to zero on balanceCents
+    // (paid == invoiced) -- it's the cash-up/Lifetime record of the sale,
+    // not spendable credit. Depositing the same amount as real account
+    // credit is what makes it usable against future sessions; paying with
+    // existing credit (method 'credit') already spent that credit inside
+    // recordSalePayment, so it doesn't get topped back up here.
+    if (sellMethod.value !== 'credit') {
+      await supabase.from('account_credits').insert({
+        account_id: store.accountId!,
+        patient_id: props.patientId,
+        amount_cents: amountCents,
+        reason: `Package purchase: ${tpl.name}`,
+        created_by: store.teamMember?.id ?? null,
+      })
+    }
+  }
   sellingPackage.value = false
   sellPackageId.value = ''
   sellAmountPaid.value = ''
@@ -602,13 +619,6 @@ async function logPayment(m: PatientMembershipRow, status: 'paid' | 'failed') {
 
 function money(cents: number) {
   return `€${(cents / 100).toFixed(2)}`
-}
-
-// Remaining monetary value of a package, not just remaining sessions -- see
-// usePatientFinancialSummary.ts for why this stays a display-only figure
-// separate from account_credits/balanceCents.
-function unallocatedCents(p: { price_cents: number; sessions_total: number; sessions_used: number }) {
-  return p.price_cents - Math.round((p.price_cents * p.sessions_used) / p.sessions_total)
 }
 </script>
 
@@ -741,7 +751,7 @@ function unallocatedCents(p: { price_cents: number; sessions_total: number; sess
               <div class="h-full rounded-full bg-brand" :style="{ width: `${Math.min(100, Math.round((p.sessions_used / p.sessions_total) * 100))}%` }" />
             </div>
             <div class="mt-1.5 flex items-center justify-between gap-2">
-              <p class="text-[11.5px] text-ink-faint">{{ p.sessions_used }}/{{ p.sessions_total }} used &middot; {{ money(p.price_cents) }} &middot; {{ money(unallocatedCents(p)) }} unallocated</p>
+              <p class="text-[11.5px] text-ink-faint">{{ p.sessions_used }}/{{ p.sessions_total }} used &middot; {{ money(p.price_cents) }}</p>
               <div class="flex items-center gap-2">
                 <button type="button" class="text-[11.5px] font-medium text-ink-muted hover:text-brand-text" @click="toggleShares(p.id)">
                   Share{{ shares[p.id]?.length ? ` (${shares[p.id].length})` : '' }}…

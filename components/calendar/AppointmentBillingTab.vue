@@ -16,10 +16,6 @@ const { fire } = useAutomations()
 const { loading: summaryLoading, balanceCents, activeMembership, activePackages, refresh: refreshSummary } = usePatientFinancialSummary(
   () => props.patientId,
 )
-// Money already paid toward a package but not yet used -- shown next to
-// Balance (real cash credit/debt) rather than folded into it, so an unpaid
-// invoice never reads as "covered" just because a bono has value left.
-const packageCreditCents = computed(() => activePackages.value.reduce((sum, p) => sum + p.unallocated_cents, 0))
 
 interface InvoiceRow { id: string; invoice_number: string; status: string; total_cents: number }
 interface LineItemRow { id: string; description: string; quantity: number; price_cents: number }
@@ -163,11 +159,34 @@ async function removeLineItem(item: LineItemRow) {
   await recalcInvoiceTotal()
 }
 
-async function usePackageSession(pkg: { id: string; sessions_used: number; sessions_total: number }) {
+async function usePackageSession(pkg: { id: string; package_name: string; sessions_used: number; sessions_total: number }) {
   if (pkg.sessions_used >= pkg.sessions_total || !invoice.value) return
   savingPayment.value = true
 
   await supabase.from('package_purchases').update({ sessions_used: pkg.sessions_used + 1 }).eq('id', pkg.id)
+  // A package session spends real credit at this appointment's actual
+  // price -- a payment (method 'credit') plus a matching negative
+  // account_credits row, same compound pattern as "Credit on account"
+  // below. Previously this just flipped the invoice to 'paid' with no
+  // payment behind it at all, which silently broke balanceCents (paid
+  // never caught up to invoiced) for every package-covered visit.
+  const remainingCents = invoice.value.total_cents - paidCents.value
+  if (remainingCents > 0) {
+    await supabase.from('payments').insert({
+      account_id: store.accountId!,
+      invoice_id: invoice.value.id,
+      amount_cents: remainingCents,
+      method: 'credit',
+    })
+    await supabase.from('account_credits').insert({
+      account_id: store.accountId!,
+      patient_id: props.patientId,
+      amount_cents: -remainingCents,
+      reason: `Package session: ${pkg.package_name}`,
+      invoice_id: invoice.value.id,
+      created_by: store.teamMember?.id ?? null,
+    })
+  }
   await supabase.from('invoices').update({ status: 'paid' }).eq('id', invoice.value.id)
   // Mirrors recordPayment()'s full-payment side effect: a package session
   // covers the visit, so completing it works the same as taking cash/card.
@@ -241,11 +260,10 @@ async function recordPayment() {
     <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
       <div v-if="summaryLoading" class="text-gray-400">Loading patient summary…</div>
       <div v-else class="space-y-1.5">
-        <p class="flex flex-wrap items-center gap-1.5">
+        <p class="flex items-center gap-1.5">
           <span class="text-gray-500">Balance:</span>
           <UiBalancePill v-if="balanceCents !== 0" :balance-cents="balanceCents" />
           <span v-else class="font-medium text-gray-700">€0.00</span>
-          <UiPill v-if="packageCreditCents > 0" tone="brand">€{{ (packageCreditCents / 100).toFixed(2) }} bono</UiPill>
         </p>
         <p v-if="activeMembership">
           <span class="text-gray-500">Membership:</span>
@@ -260,7 +278,7 @@ async function recordPayment() {
             :key="p.id"
             class="inline-flex items-center gap-1.5 rounded bg-indigo-50 px-1.5 py-0.5 text-xs font-medium text-indigo-700"
           >
-            {{ p.package_name }}: {{ p.sessions_total - p.sessions_used }} left &middot; €{{ (p.unallocated_cents / 100).toFixed(2) }} unallocated
+            {{ p.package_name }}: {{ p.sessions_total - p.sessions_used }} left
           </span>
         </div>
       </div>

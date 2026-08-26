@@ -9,7 +9,6 @@ interface ActivePackage {
   sessions_total: number
   sessions_used: number
   price_cents: number
-  unallocated_cents: number
   shared?: boolean
 }
 
@@ -77,22 +76,19 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     state.balanceCents.value = paidCents - invoicedCents + state.creditLedgerCents.value
 
     state.activeMembership.value = memberships?.[0] ?? null
-    // Remaining monetary value of a package, not just remaining sessions --
-    // e.g. an 8/12-used €264 bono has €88 "unallocated". Purely a display
-    // figure computed from data that already exists (price_cents pro-rated
-    // by sessions left); deliberately not folded into balanceCents/
-    // account_credits, matching PracticeHub's own UI, which shows package
-    // value and general account credit as two separate numbers rather than
-    // one merged balance.
-    const withUnallocated = <T extends { price_cents: number; sessions_total: number; sessions_used: number }>(p: T) => ({
-      ...p,
-      unallocated_cents: p.price_cents - Math.round((p.price_cents * p.sessions_used) / p.sessions_total),
-    })
+    // Packages are pure session-count tracking (name, sessions left) -- the
+    // money a package purchase is worth lives in the real credit ledger
+    // (account_credits, folded into balanceCents above) as soon as it's
+    // paid for, and gets spent for real (a payment + a matching negative
+    // account_credits row) each time a session is used against it. There's
+    // deliberately no separate "unallocated value" computed from price
+    // pro-rated by sessions left -- that number never matched what the
+    // patient actually paid, and didn't move in step with real spend.
     const sharedPackages = (shares ?? [])
       .map((s) => s.package_purchases)
       .filter((p): p is NonNullable<typeof p> => p !== null)
-      .map((p) => ({ ...withUnallocated(p), shared: true }))
-    state.activePackages.value = [...(packages ?? []).map(withUnallocated), ...sharedPackages].filter((p) => p.sessions_used < p.sessions_total)
+      .map((p) => ({ ...p, shared: true }))
+    state.activePackages.value = [...(packages ?? []), ...sharedPackages].filter((p) => p.sessions_used < p.sessions_total)
 
     state.loading.value = false
   }

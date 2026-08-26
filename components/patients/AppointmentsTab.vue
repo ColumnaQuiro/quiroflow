@@ -62,6 +62,23 @@ const statusLabel: Record<string, string> = {
   booked: 'Booked',
 }
 
+const sendMenuOpen = ref(false)
+const sending = ref(false)
+const sendMessage = ref('')
+async function sendHistory(channel: 'email' | 'whatsapp') {
+  sendMenuOpen.value = false
+  sending.value = true
+  sendMessage.value = ''
+  try {
+    await useStaffFetch(`/api/patients/${props.patientId}/appointment-history/${channel === 'email' ? 'send' : 'send-whatsapp'}`, { method: 'POST' })
+    sendMessage.value = `Sent by ${channel === 'email' ? 'email' : 'WhatsApp'}.`
+  } catch (e: any) {
+    sendMessage.value = e?.data?.statusMessage ?? 'Failed to send.'
+  }
+  sending.value = false
+  setTimeout(() => (sendMessage.value = ''), 4000)
+}
+
 const notesAppointmentId = ref<string | null>(null)
 const confirmingAppointment = ref<AppointmentRow | null>(null)
 const confirmationAutofill = computed<Record<string, string>>(() => {
@@ -98,7 +115,17 @@ const confirmationAutofill = computed<Record<string, string>>(() => {
     <div class="rounded-card border border-line bg-surface shadow-card">
       <div class="flex items-center justify-between border-b border-line-divider px-4 py-3">
         <p class="text-[13.5px] font-semibold text-ink-700">Visit history</p>
-        <UiBtn variant="primary" size="sm" @click="navigateTo('/calendar')">Book visit</UiBtn>
+        <div class="flex items-center gap-2">
+          <span v-if="sendMessage" class="text-[12px] text-ink-faint">{{ sendMessage }}</span>
+          <div class="relative">
+            <UiBtn variant="secondary" size="sm" :disabled="sending" @click="sendMenuOpen = !sendMenuOpen">{{ sending ? 'Sending…' : 'Send history' }}</UiBtn>
+            <div v-if="sendMenuOpen" class="absolute right-0 z-10 mt-1 w-36 rounded-ctl border border-line bg-surface py-1 shadow-popover">
+              <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="sendHistory('email')">Email</button>
+              <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="sendHistory('whatsapp')">WhatsApp</button>
+            </div>
+          </div>
+          <UiBtn variant="primary" size="sm" @click="navigateTo('/calendar')">Book visit</UiBtn>
+        </div>
       </div>
 
       <div v-if="loading" class="p-8 text-center text-[13px] text-ink-faint">Loading…</div>

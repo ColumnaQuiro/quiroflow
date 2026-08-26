@@ -12,10 +12,40 @@ export async function handleStripeEvent(supabase: SupabaseClient<Database>, acco
     if (!subscriptionId) return null
     const { data } = await supabase
       .from('payment_schedules')
-      .select('id, installments_paid, installments_total, package_purchase_id')
+      .select('id, installments_paid, installments_total, package_purchase_id, patient_membership_id, patient_id')
       .eq('stripe_subscription_id', subscriptionId)
       .maybeSingle()
     return data
+  }
+
+  // A successful membership installment only ever touched
+  // stripe_payment_events/payment_schedules -- invisible to balanceCents,
+  // the Account Ledger, and the cash-up report. This makes it a normal
+  // invoice+payment pair like any other charge, so no new UI is needed.
+  async function recordMembershipCharge(patientId: string, membershipId: string, amountCents: number, periodStart: string, paymentIntentId: string | null) {
+    const { data: membership } = await supabase.from('patient_memberships').select('membership_name').eq('id', membershipId).maybeSingle()
+    const periodLabel = new Date(periodStart).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+
+    const { count } = await supabase.from('invoices').select('id', { count: 'exact', head: true })
+    const invoiceNumber = `INV-${String((count ?? 0) + 1).padStart(4, '0')}`
+
+    const { data: invoice } = await supabase
+      .from('invoices')
+      .insert({ account_id: accountId, patient_id: patientId, invoice_number: invoiceNumber, status: 'paid', total_cents: amountCents })
+      .select('id')
+      .single()
+    if (!invoice) return
+
+    await supabase.from('invoice_line_items').insert({
+      account_id: accountId,
+      invoice_id: invoice.id,
+      description: `Membership: ${membership?.membership_name ?? 'Membership'} — ${periodLabel}`,
+      quantity: 1,
+      price_cents: amountCents,
+    })
+    await supabase
+      .from('payments')
+      .insert({ account_id: accountId, invoice_id: invoice.id, amount_cents: amountCents, method: 'card', stripe_payment_intent_id: paymentIntentId })
   }
 
   if (stripeEvent.type === 'invoice.paid' || stripeEvent.type === 'invoice.payment_failed') {
@@ -41,6 +71,12 @@ export async function handleStripeEvent(supabase: SupabaseClient<Database>, acco
           .from('payment_schedules')
           .update({ installments_paid: installmentsPaid, status: completed ? 'completed' : 'active' })
           .eq('id', schedule.id)
+
+        if (schedule.patient_membership_id) {
+          const paymentIntentId = typeof (invoice as any).payment_intent === 'string' ? (invoice as any).payment_intent : null
+          const periodStart = new Date((invoice.period_start ?? Math.floor(Date.now() / 1000)) * 1000).toISOString()
+          await recordMembershipCharge(schedule.patient_id, schedule.patient_membership_id, invoice.amount_paid || invoice.amount_due, periodStart, paymentIntentId)
+        }
       } else {
         await supabase.from('payment_schedules').update({ status: 'past_due' }).eq('id', schedule.id)
       }

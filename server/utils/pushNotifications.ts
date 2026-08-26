@@ -93,12 +93,24 @@ export async function sendPushToUsers(event: H3Event, userIds: string[], notific
     return
   }
 
+  // Nitro's env-to-runtimeConfig override auto-parses any env var value
+  // that looks like JSON (starts with "{"/"[") into a real object/array,
+  // regardless of the runtimeConfig default's declared type -- our default
+  // is '' (a string), but that doesn't stop it. So `raw` arrives here
+  // already parsed, not as a JSON string. Calling JSON.parse() on an
+  // object unconditionally coerces it to the string "[object Object]"
+  // first (JSON.parse always stringifies non-string input), which is
+  // exactly the confusing "not valid JSON" failure this produced.
   let account: ServiceAccount
-  try {
-    account = JSON.parse(raw)
-  } catch (err) {
-    console.error('[push] fcmServiceAccountJson is not valid JSON', err)
-    return
+  if (typeof raw === 'string') {
+    try {
+      account = JSON.parse(raw)
+    } catch (err) {
+      console.error('[push] fcmServiceAccountJson is not valid JSON', err)
+      return
+    }
+  } else {
+    account = raw as unknown as ServiceAccount
   }
 
   const supabase = serverSupabaseServiceRole<Database>(event)

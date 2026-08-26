@@ -31,7 +31,8 @@ const payments = ref<PaymentRow[]>([])
 const loading = ref(true)
 const billingOpen = ref(false)
 const paymentAmount = ref('')
-const paymentMethod = ref<'card' | 'cash'>('cash')
+const paymentMethod = ref<'card' | 'cash' | 'credit'>('cash')
+const { balanceCents } = usePatientFinancialSummary(() => appointment.value?.patient_id ?? '')
 const saving = ref(false)
 const error = ref('')
 
@@ -107,6 +108,10 @@ async function recordPayment() {
   error.value = ''
   const amountCents = Math.round((parseFloat(paymentAmount.value) || 0) * 100)
   if (amountCents <= 0) return
+  if (paymentMethod.value === 'credit' && amountCents > balanceCents.value) {
+    error.value = 'Amount exceeds available credit.'
+    return
+  }
   saving.value = true
   try {
     await supabase.from('payments').insert({
@@ -115,6 +120,15 @@ async function recordPayment() {
       amount_cents: amountCents,
       method: paymentMethod.value,
     } as never)
+    if (paymentMethod.value === 'credit') {
+      await supabase.from('account_credits').insert({
+        account_id: context.value.accountId,
+        patient_id: appointment.value.patient_id,
+        amount_cents: -amountCents,
+        reason: `Applied to invoice ${invoice.value.invoice_number}`,
+        invoice_id: invoice.value.id,
+      } as never)
+    }
 
     const newPaid = paidCents.value + amountCents
     if (newPaid >= invoice.value.total_cents) {
@@ -201,6 +215,7 @@ function euros(cents: number) {
               <select v-model="paymentMethod" class="flex-1 rounded-ctl border border-line-control px-2.5 py-2 text-[14px]">
                 <option value="cash">Cash</option>
                 <option value="card">Card</option>
+                <option v-if="balanceCents > 0" value="credit">Credit on account (€{{ (balanceCents / 100).toFixed(2) }} available)</option>
               </select>
             </div>
             <UiBtn variant="primary" class="w-full" :disabled="saving" @click="recordPayment">{{ saving ? 'Saving…' : `Record ${euros(Math.round((parseFloat(paymentAmount) || 0) * 100))}` }}</UiBtn>

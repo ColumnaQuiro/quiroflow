@@ -124,10 +124,10 @@ async function applyCreditToInvoice() {
   await Promise.all([refreshCreditSummary(), loadAll()])
 }
 
-// -- Take a payment against an unpaid invoice (cash/card) -----------------
+// -- Take a payment against an unpaid invoice (cash/card/credit) ----------
 const paymentInvoiceId = ref('')
 const paymentAmount = ref('')
-const paymentMethod = ref<'card' | 'cash'>('cash')
+const paymentMethod = ref<'card' | 'cash' | 'credit'>('cash')
 const takingPayment = ref(false)
 const paymentError = ref('')
 
@@ -146,6 +146,10 @@ async function takePayment() {
   const amountCents = Math.round((parseFloat(paymentAmount.value) || 0) * 100)
   if (amountCents <= 0) return
   paymentError.value = ''
+  if (paymentMethod.value === 'credit' && amountCents > balanceCents.value) {
+    paymentError.value = 'Amount exceeds available credit.'
+    return
+  }
   takingPayment.value = true
 
   await supabase.from('payments').insert({
@@ -154,6 +158,16 @@ async function takePayment() {
     amount_cents: amountCents,
     method: paymentMethod.value,
   })
+  if (paymentMethod.value === 'credit') {
+    await supabase.from('account_credits').insert({
+      account_id: store.accountId!,
+      patient_id: props.patientId,
+      amount_cents: -amountCents,
+      reason: `Applied to invoice ${invoice.invoice_number}`,
+      invoice_id: invoice.id,
+      created_by: store.teamMember?.id ?? null,
+    })
+  }
 
   const { data: paid } = await supabase.from('payments').select('amount_cents').eq('invoice_id', invoice.id)
   const paidCents = (paid ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
@@ -703,6 +717,7 @@ function money(cents: number) {
             <select v-model="paymentMethod" class="mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
               <option value="card">Card</option>
               <option value="cash">Cash</option>
+              <option v-if="balanceCents > 0" value="credit">Credit on account (€{{ (balanceCents / 100).toFixed(2) }} available)</option>
             </select>
           </div>
           <UiBtn variant="primary" size="sm" :disabled="!paymentInvoiceId || !paymentAmount || takingPayment" @click="takePayment">
@@ -846,7 +861,7 @@ function money(cents: number) {
             <select v-model="sellMethod" class="mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]">
               <option value="cash">Cash</option>
               <option value="card">Card</option>
-              <option v-if="creditLedgerCents > 0" value="credit">Credit (€{{ (creditLedgerCents / 100).toFixed(2) }} available)</option>
+              <option v-if="creditLedgerCents > 0" value="credit">Credit on account (€{{ (creditLedgerCents / 100).toFixed(2) }} available)</option>
             </select>
           </div>
           <UiBtn size="sm" variant="secondary" :disabled="!sellPackageId || sellingPackage" @click="sellPackage">{{ sellingPackage ? 'Selling…' : 'Sell' }}</UiBtn>
@@ -938,7 +953,7 @@ function money(cents: number) {
             <select v-model="activateMethod" class="mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]">
               <option value="cash">Cash</option>
               <option value="card">Card</option>
-              <option v-if="creditLedgerCents > 0" value="credit">Credit (€{{ (creditLedgerCents / 100).toFixed(2) }} available)</option>
+              <option v-if="creditLedgerCents > 0" value="credit">Credit on account (€{{ (creditLedgerCents / 100).toFixed(2) }} available)</option>
             </select>
           </div>
           <UiBtn size="sm" variant="secondary" :disabled="!activateMembershipId || activatingMembership" @click="activateMembership">{{ activatingMembership ? 'Activating…' : 'Activate' }}</UiBtn>

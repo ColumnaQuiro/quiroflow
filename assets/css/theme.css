@@ -149,3 +149,26 @@ html[data-theme='dark'] {
 html[data-theme='light'] {
   color-scheme: light;
 }
+
+/* Skeleton loading placeholders (UiSkeleton.vue) -- a moving highlight
+   sweeping across the base chip-bg color, same idea as LinkedIn/Slack-style
+   loading states. Kept as a plain CSS animation rather than a Tailwind
+   config addition since this is the only place that needs it. */
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+.skeleton-shimmer {
+  background-image: linear-gradient(90deg, rgb(var(--color-chip-bg)) 25%, rgb(var(--color-chip-bg2)) 50%, rgb(var(--color-chip-bg)) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-shimmer {
+    animation: none;
+  }
+}

@@ -438,7 +438,19 @@ function tagClass(tag: string) {
           <div class="w-[150px] shrink-0">Tags</div>
         </div>
 
-        <div v-if="loading" class="px-5 py-10 text-center text-[13px] text-ink-faint">Loading…</div>
+        <div v-if="loading">
+          <div v-for="row in 8" :key="row" class="flex items-center gap-4 border-b border-line-row px-5 py-2.5 last:border-b-0">
+            <div class="flex min-w-0 flex-1 items-center gap-2.5">
+              <UiSkeleton class="h-[26px] w-[26px] shrink-0 rounded-full" />
+              <UiSkeleton class="h-3 w-36 rounded-ctlSm" />
+            </div>
+            <div class="w-[120px] shrink-0 flex justify-end"><UiSkeleton class="h-3 w-14 rounded-ctlSm" /></div>
+            <div class="w-[170px] shrink-0"><UiSkeleton class="h-3 w-24 rounded-ctlSm" /></div>
+            <div class="w-[220px] shrink-0"><UiSkeleton class="h-3 w-32 rounded-ctlSm" /></div>
+            <div class="w-[104px] shrink-0"><UiSkeleton class="h-5 w-12 rounded-pill" /></div>
+            <div class="w-[150px] shrink-0"><UiSkeleton class="h-5 w-20 rounded-pill" /></div>
+          </div>
+        </div>
         <div v-else-if="patients.length === 0" class="px-5 py-10 text-center text-[13px] text-ink-faint">No patients found.</div>
 
         <div v-else>

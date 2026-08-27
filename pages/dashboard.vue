@@ -125,7 +125,24 @@ function widgetMeta(type: string): string | undefined {
     <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
       <DashboardAddWidgetPicker v-if="editing" :existing-types="widgets.map((w) => w.type)" @add="onAddWidget" />
 
-      <div v-if="!loaded" class="py-10 text-center text-[13px] text-ink-faint">Loading…</div>
+      <div v-if="!loaded" class="grid grid-cols-12 gap-3">
+        <!-- Mirrors the default layout's shape (1 two-thirds-width widget + 7
+             third-width ones) so the page doesn't visibly jump once real
+             widgets replace these. -->
+        <div
+          v-for="(span, i) in ['col-span-8', 'col-span-4', 'col-span-4', 'col-span-4', 'col-span-4', 'col-span-4', 'col-span-4', 'col-span-4']"
+          :key="i"
+          class="rounded-card border border-line bg-surface p-4 shadow-card"
+          :class="span"
+        >
+          <UiSkeleton class="h-4 w-28 rounded-ctlSm" />
+          <div class="mt-4 space-y-2.5">
+            <UiSkeleton class="h-3 w-full rounded-ctlSm" />
+            <UiSkeleton class="h-3 w-4/5 rounded-ctlSm" />
+            <UiSkeleton class="h-3 w-3/5 rounded-ctlSm" />
+          </div>
+        </div>
+      </div>
       <div v-else class="grid grid-cols-12 gap-3">
         <DashboardWidgetFrame
           v-for="(w, i) in widgets"

@@ -1176,7 +1176,14 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
 
       <!-- Main content -->
       <div ref="scrollAreaRef" class="flex min-w-0 flex-1 flex-col overflow-y-auto">
-        <div v-if="loading" class="p-6 text-[13px] text-ink-faint">Loading…</div>
+        <div v-if="loading" class="flex min-w-0 flex-1 p-3">
+          <div v-for="col in 3" :key="col" class="flex-1 border-r border-line px-3 last:border-r-0">
+            <UiSkeleton class="mb-4 h-4 w-24 rounded-ctlSm" />
+            <div class="space-y-3">
+              <UiSkeleton v-for="row in 6" :key="row" class="rounded-ctl" :class="row % 3 === 1 ? 'h-14' : 'h-8'" />
+            </div>
+          </div>
+        </div>
 
         <div v-else-if="!store.currentClinicId" class="p-6 text-[13px] text-ink-faint">
           No clinic selected.

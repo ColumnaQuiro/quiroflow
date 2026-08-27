@@ -78,7 +78,7 @@ async function deleteRole(role: RoleRow) {
                 <tr v-for="r in roles" :key="r.id">
                   <td class="px-4 py-2.5">
                     <NuxtLink :to="`/settings/roles/${r.id}`" class="font-[560] text-ink-700 hover:text-brand-text">{{ r.name }}</NuxtLink>
-                    <UiPill v-if="r.is_system" tone="neutral" class="ml-2">🔒 Owner (fixed)</UiPill>
+                    <UiPill v-if="r.is_system" tone="neutral" class="ml-2">Owner (fixed)</UiPill>
                   </td>
                   <td class="px-4 py-2.5 text-right">
                     <button v-if="!r.is_system" type="button" class="text-ink-faint hover:text-danger-text" @click="deleteRole(r)">✕</button>

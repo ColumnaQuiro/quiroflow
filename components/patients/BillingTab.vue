@@ -51,6 +51,7 @@ interface StripeEventRow { id: string; payment_schedule_id: string; period_start
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const { can } = usePermission()
+const { fire } = useAutomations()
 
 const { balanceCents, creditLedgerCents, refresh: refreshCreditSummary } = usePatientFinancialSummary(() => props.patientId)
 const addCreditAmount = ref('')
@@ -593,14 +594,19 @@ async function activateMembership() {
     return
   }
   activatingMembership.value = true
-  await supabase.from('patient_memberships').insert({
-    account_id: store.accountId!,
-    patient_id: props.patientId,
-    membership_id: tpl.id,
-    membership_name: tpl.name,
-    price_cents: tpl.price_cents,
-    created_by: store.teamMember?.id ?? null,
-  })
+  const { data: newMembership } = await supabase
+    .from('patient_memberships')
+    .insert({
+      account_id: store.accountId!,
+      patient_id: props.patientId,
+      membership_id: tpl.id,
+      membership_name: tpl.name,
+      price_cents: tpl.price_cents,
+      created_by: store.teamMember?.id ?? null,
+    })
+    .select('id')
+    .single()
+  if (newMembership) fire('membership.new_member', { patientId: props.patientId, membershipId: newMembership.id })
   if (amountCents > 0) await recordSalePayment(tpl.name, amountCents, activateMethod.value)
   activatingMembership.value = false
   activateMembershipId.value = ''
@@ -611,6 +617,7 @@ async function activateMembership() {
 
 async function setMembershipStatus(m: PatientMembershipRow, status: string) {
   await supabase.from('patient_memberships').update({ status }).eq('id', m.id)
+  if (status === 'cancelled') fire('membership.removed', { patientId: props.patientId, membershipId: m.id })
   await loadAll()
 }
 

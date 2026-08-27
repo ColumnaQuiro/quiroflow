@@ -4,6 +4,8 @@ import type { Database } from '~/types/database.types'
 import { toE164 } from '~/utils/phone'
 import { downloadMetaMedia, extensionForMimeType, type MediaKind } from '~/server/utils/whatsappSend'
 import { notifyInboxTeamMembers } from '~/server/utils/pushNotifications'
+import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
+import { runRuleActions } from '~/server/utils/runAutomationActions'
 
 // Meta's ongoing webhook: delivers both outbound message status updates
 // (sent/delivered/read/failed) and inbound replies from patients, in the
@@ -46,14 +48,16 @@ const MEDIA_KINDS: MediaKind[] = ['image', 'video', 'audio', 'document', 'sticke
 
 const CONFIRM_WORDS = ['confirmo', 'confirmar', 'confirmado', 'sí', 'si', 'yes', 'confirm', 'vale', 'ok', 'okay']
 const RESCHEDULE_WORDS = ['cambiar', 'cambio', 'reprogramar', 'reschedule', 'aplazar', 'posponer', 'mover']
+const CANCEL_WORDS = ['cancelar', 'cancelo', 'cancelado', 'anular', 'cancel']
 
 function replyText(msg: MetaMessage): string {
   return msg.button?.text ?? msg.interactive?.button_reply?.title ?? msg.interactive?.list_reply?.title ?? msg.text?.body ?? ''
 }
 
-function classifyReply(text: string): 'confirmed' | 'reschedule_requested' | null {
+function classifyReply(text: string): 'confirmed' | 'reschedule_requested' | 'cancelled' | null {
   const t = text.trim().toLowerCase()
   if (!t) return null
+  if (CANCEL_WORDS.some((w) => t === w || t.startsWith(w + ' ') || t.startsWith(w + '!'))) return 'cancelled'
   if (CONFIRM_WORDS.some((w) => t === w || t.startsWith(w + ' ') || t.startsWith(w + '!'))) return 'confirmed'
   if (RESCHEDULE_WORDS.some((w) => t.includes(w))) return 'reschedule_requested'
   return null
@@ -170,7 +174,45 @@ export default defineEventHandler(async (event) => {
             .order('starts_at', { ascending: true })
             .limit(1)
             .maybeSingle()
-          if (appt) await supabase.from('appointments').update({ confirmation_status: intent }).eq('id', appt.id)
+          if (appt) {
+            if (intent === 'cancelled') {
+              // 'cancelled' isn't a confirmation_status value (that column
+              // only tracks pending/confirmed/reschedule_requested) -- a
+              // cancellation reply cancels the appointment itself, same
+              // field the in-app cancel flow uses, minus any cancellation
+              // fee (that's a staff judgment call made from a confirm()
+              // dialog elsewhere, not something to apply automatically off
+              // an inbound message).
+              await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', appt.id)
+              // No staff session on a Meta webhook call, so this can't go
+              // through fire.post.ts (requireTeamMember-gated) -- same
+              // direct-call pattern as birthday-cron.post.ts.
+              const { data: patient } = await supabase
+                .from('patients')
+                .select('id, first_name, last_name, email, is_minor, do_not_contact, marketing_channels')
+                .eq('id', patientId)
+                .maybeSingle()
+              if (patient) {
+                const { data: rules } = await supabase
+                  .from('automation_rules')
+                  .select('id, filters')
+                  .eq('account_id', account.id)
+                  .eq('trigger_event', 'appointment.cancelled')
+                  .eq('enabled', true)
+                const origin = getRequestURL(event).origin
+                for (const rule of rules ?? []) {
+                  if (!(await ruleFiltersMatch(supabase, patient.id, rule.filters as AutomationFilters, appt.id))) continue
+                  await runRuleActions(supabase, account.id, rule.id, patient, origin, appt.id, {
+                    triggerEvent: 'appointment.cancelled',
+                    patientId: patient.id,
+                    appointmentId: appt.id,
+                  })
+                }
+              }
+            } else {
+              await supabase.from('appointments').update({ confirmation_status: intent }).eq('id', appt.id)
+            }
+          }
         }
       }
     }

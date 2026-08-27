@@ -26,6 +26,7 @@ interface TriggerBody {
   patientId: string
   appointmentId?: string
   invoiceId?: string
+  membershipId?: string
 }
 
 export async function runRuleActions(

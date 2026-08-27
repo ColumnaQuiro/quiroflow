@@ -14,7 +14,13 @@ const TRIGGER_OPTIONS = [
   { value: 'appointment.no_show', label: 'Appointment marked as missed' },
   { value: 'invoice.paid', label: 'Invoice paid' },
   { value: 'patient.birthday', label: "Patient's birthday (daily check)" },
+  { value: 'membership.new_member', label: 'New membership started' },
+  { value: 'membership.removed', label: 'Membership cancelled' },
+  { value: 'membership.payment_processed', label: 'Membership payment processed' },
 ]
+// These fire with no appointment in scope, same as patient.birthday --
+// the appointment-type/visit-count filter block below doesn't apply.
+const NO_APPOINTMENT_CONTEXT_TRIGGERS = ['patient.birthday', 'membership.new_member', 'membership.removed', 'membership.payment_processed']
 const VARIABLE_SOURCES = [
   { value: 'first_name', label: 'First name' },
   { value: 'last_name', label: 'Last name' },
@@ -311,7 +317,7 @@ async function sendTestToMe() {
             <p class="mt-1.5 text-[11.5px] leading-relaxed text-ink-muted2">Or leave this and use "Send now" from the campaign list to make this a one-off send only.</p>
           </div>
 
-          <div v-if="triggerEvent !== 'patient.birthday'" class="rounded-card border border-[#EDEEF2] bg-surface-subtle p-3.5">
+          <div v-if="!NO_APPOINTMENT_CONTEXT_TRIGGERS.includes(triggerEvent)" class="rounded-card border border-[#EDEEF2] bg-surface-subtle p-3.5">
             <label class="block text-[12.5px] font-medium text-ink-700">Only when</label>
             <div class="mt-1.5 grid grid-cols-2 gap-2.5">
               <select

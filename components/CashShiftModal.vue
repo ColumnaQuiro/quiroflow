@@ -39,9 +39,35 @@ async function loadOpenShift() {
   shift.value = data
 }
 
+function isToday(iso: string) {
+  return new Date(iso).toDateString() === new Date().toDateString()
+}
+
+// The shift is now a daily boundary rather than something staff has to
+// remember to open every morning: a shift left open from a previous day
+// rolls over into today's automatically, and if none is open at all, one
+// opens right here. Staff only ever has to press "Close Shift" -- and only
+// if they want to leave an end-of-day note -- since tomorrow's view opens
+// itself either way.
+async function ensureTodayShift() {
+  if (!store.teamMember) return
+  if (shift.value && !isToday(shift.value.opened_at)) {
+    await supabase
+      .from('cash_shifts')
+      .update({ closed_at: new Date().toISOString(), closed_by: store.teamMember.id, note: shift.value.note ?? 'Auto-closed at day rollover' })
+      .eq('id', shift.value.id)
+    shift.value = null
+  }
+  if (!shift.value) {
+    await supabase.from('cash_shifts').insert({ account_id: store.accountId!, opened_by: store.teamMember.id })
+    await loadOpenShift()
+  }
+}
+
 async function load() {
   loading.value = true
   await loadOpenShift()
+  await ensureTodayShift()
   if (!shift.value) {
     loading.value = false
     return
@@ -165,7 +191,7 @@ async function addMovement() {
       <div v-if="loading" class="mt-4 text-sm text-gray-400">Loading…</div>
 
       <div v-else-if="!shift" class="mt-4">
-        <p class="text-sm text-gray-500">No shift is currently open.</p>
+        <p class="text-sm text-gray-500">Couldn't open today's shift automatically.</p>
         <button
           type="button"
           :disabled="opening"
@@ -178,7 +204,8 @@ async function addMovement() {
 
       <template v-else>
         <p class="mt-1 text-xs text-gray-400">
-          Open since {{ new Date(shift.opened_at).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) }}, across the whole account.
+          Today's shift, open since {{ new Date(shift.opened_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) }}. Closes itself over into tomorrow --
+          only close it now if you want to leave an end-of-day note.
         </p>
 
         <div class="mt-4 rounded-md bg-gray-50 p-3 text-sm">

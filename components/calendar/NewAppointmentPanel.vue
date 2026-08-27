@@ -239,7 +239,10 @@ async function save() {
       <div class="flex items-center justify-between">
         <div>
           <h2 class="flex items-center gap-1.5 text-[16px] font-[640] text-ink-900">
-            <span aria-hidden="true">📅</span>
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" class="shrink-0 text-ink-muted2" aria-hidden="true">
+              <rect x="2" y="3" width="12" height="11" rx="1.3" />
+              <path d="M2 6.5h12M5 1.5v3M11 1.5v3" stroke-linecap="round" />
+            </svg>
             {{ headerLabel }}
           </h2>
           <p v-if="roomLabel" class="mt-0.5 text-[12.5px] text-ink-muted2">{{ roomLabel }}</p>
@@ -306,7 +309,11 @@ async function save() {
               :class="patientMode === 'existing' ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-600 hover:bg-surface-subtle'"
               @click="patientMode = 'existing'"
             >
-              🔍 Existing Patient
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" class="shrink-0" aria-hidden="true">
+                <circle cx="6.8" cy="6.8" r="4.3" />
+                <path d="M13 13l-3-3" stroke-linecap="round" />
+              </svg>
+              Existing Patient
             </button>
             <button
               type="button"
@@ -361,7 +368,11 @@ async function save() {
 
         <div class="flex items-center justify-between">
           <label class="flex items-center gap-1.5 text-[12.5px] font-medium text-ink-600">
-            <span aria-hidden="true">💳</span> Collect Payment
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" class="shrink-0" aria-hidden="true">
+              <rect x="1.5" y="3.5" width="13" height="9" rx="1.3" />
+              <path d="M1.5 6.5h13" />
+            </svg>
+            Collect Payment
           </label>
           <button
             type="button"

@@ -25,6 +25,9 @@ const TRIGGER_LABELS: Record<string, string> = {
   'appointment.rescheduled': 'Appointment rescheduled',
   'invoice.paid': 'Invoice paid',
   'patient.birthday': "Patient's birthday (daily check)",
+  'membership.new_member': 'New membership started',
+  'membership.removed': 'Membership cancelled',
+  'membership.payment_processed': 'Membership payment processed',
 }
 // Plain-language description shown in the expanded row's Trigger card.
 const TRIGGER_DESCRIPTIONS: Record<string, string> = {
@@ -36,6 +39,9 @@ const TRIGGER_DESCRIPTIONS: Record<string, string> = {
   'appointment.rescheduled': "Fires when an appointment's date or time changes.",
   'invoice.paid': 'Fires once an invoice is marked paid in full.',
   'patient.birthday': "Runs once a day; fires for any patient whose birthday is today.",
+  'membership.new_member': 'Fires when a patient starts a new membership.',
+  'membership.removed': "Fires when a patient's membership is cancelled.",
+  'membership.payment_processed': 'Fires each time a recurring membership charge succeeds via Stripe.',
 }
 const ACTION_LABELS: Record<string, string> = {
   whatsapp_template: 'WhatsApp',

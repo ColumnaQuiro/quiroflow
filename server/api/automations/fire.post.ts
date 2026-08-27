@@ -13,6 +13,7 @@ interface FireBody {
   patientId: string
   appointmentId?: string
   invoiceId?: string
+  membershipId?: string
 }
 
 export default defineEventHandler(async (event) => {

@@ -611,7 +611,7 @@ function relativeDay(iso: string) {
   return d.toLocaleDateString([], { day: 'numeric', month: 'short' })
 }
 function previewText(m: Message) {
-  if (m.media_type) return `📎 ${m.media_type}${m.body_preview ? ` — ${m.body_preview}` : ''}`
+  if (m.media_type) return `${m.media_type[0].toUpperCase()}${m.media_type.slice(1)}${m.body_preview ? ` — ${m.body_preview}` : ''}`
   if (m.template_name) return m.body_preview ?? `Template: ${m.template_name}`
   return m.body_preview ?? '—'
 }
@@ -813,7 +813,11 @@ onUnmounted(() => {
                   class="flex items-center gap-2 text-[13px] underline"
                   :class="m.direction === 'outbound' ? 'text-white' : 'text-brand-text'"
                 >
-                  📄 {{ m.media_filename ?? 'Document' }}
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" class="shrink-0" aria-hidden="true">
+                    <path d="M4 1.5h5.5L12.5 4.5V14.5H4z" stroke-linejoin="round" />
+                    <path d="M9.5 1.5V4.5H12.5" stroke-linejoin="round" />
+                  </svg>
+                  {{ m.media_filename ?? 'Document' }}
                 </a>
                 <img
                   v-else-if="m.media_type === 'sticker' && m.media_storage_path && mediaUrls[m.media_storage_path]"
@@ -865,7 +869,9 @@ onUnmounted(() => {
           </div>
           <div v-else class="flex items-end gap-2">
             <button type="button" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-500 hover:bg-surface-subtle" :disabled="sending" @click="fileInput?.click()">
-              📎
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
+                <path d="M11.5 5.5L6.4 10.6a2 2 0 002.8 2.8l5.1-5.1a3.5 3.5 0 00-4.95-4.95L4.25 8.45a5 5 0 007.07 7.07" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
             </button>
             <input ref="fileInput" type="file" class="hidden" accept="image/*,video/*,audio/*,.pdf,.doc,.docx" @change="onFileChosen" />
             <button

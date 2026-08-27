@@ -38,6 +38,21 @@ const paymentMethod = ref<'card' | 'cash' | 'credit'>('cash')
 const savingPayment = ref(false)
 const error = ref('')
 
+const sendingInvoice = ref(false)
+const sendResult = ref('')
+async function sendInvoiceEmail() {
+  if (!invoice.value) return
+  sendingInvoice.value = true
+  sendResult.value = ''
+  try {
+    await useStaffFetch(`/api/invoices/${invoice.value.id}/send`, { method: 'POST' })
+    sendResult.value = 'Sent'
+  } catch (e: any) {
+    sendResult.value = e?.data?.message ?? 'Failed to send'
+  }
+  sendingInvoice.value = false
+}
+
 const paidCents = computed(() => payments.value.reduce((sum, p) => sum + p.amount_cents, 0))
 const balanceDueCents = computed(() => (invoice.value?.total_cents ?? 0) - paidCents.value)
 
@@ -201,11 +216,17 @@ async function usePackageSession(pkg: { id: string; package_name: string; sessio
   }
   await supabase.from('invoices').update({ status: 'paid' }).eq('id', invoice.value.id)
   // Mirrors recordPayment()'s full-payment side effect: a package session
-  // covers the visit, so completing it works the same as taking cash/card.
+  // covers the visit, so completing it works the same as taking cash/card --
+  // including the same auto-send-if-enabled behavior below.
   await supabase.from('appointments').update({ status: 'completed' }).eq('id', props.appointmentId)
   emit('completed')
   fire('invoice.paid', { patientId: props.patientId, appointmentId: props.appointmentId, invoiceId: invoice.value.id })
   fire('appointment.completed', { patientId: props.patientId, appointmentId: props.appointmentId })
+
+  const { data: patientForSend } = await supabase.from('patients').select('invoice_email_enabled, email').eq('id', props.patientId).maybeSingle()
+  if (patientForSend?.invoice_email_enabled && patientForSend.email) {
+    useStaffFetch(`/api/invoices/${invoice.value.id}/send`, { method: 'POST' }).catch(() => {})
+  }
 
   savingPayment.value = false
   await loadInvoice()
@@ -301,12 +322,24 @@ async function recordPayment() {
     <div v-else-if="invoice" class="rounded-lg border border-gray-200 bg-white p-3">
       <div class="flex items-center justify-between">
         <NuxtLink :to="`/billing/${invoice.id}`" class="font-medium text-indigo-600 hover:text-indigo-700">{{ invoice.invoice_number }}</NuxtLink>
-        <span
-          class="rounded px-1.5 py-0.5 text-xs font-medium"
-          :class="invoice.status === 'paid' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'"
-        >
-          {{ invoice.status }}
-        </span>
+        <div class="flex items-center gap-2">
+          <span
+            class="rounded px-1.5 py-0.5 text-xs font-medium"
+            :class="invoice.status === 'paid' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'"
+          >
+            {{ invoice.status }}
+          </span>
+          <span v-if="sendResult" class="text-xs text-gray-400">{{ sendResult }}</span>
+          <button
+            v-else-if="can('billing_access')"
+            type="button"
+            class="text-xs font-medium text-indigo-600 hover:text-indigo-700 disabled:opacity-50"
+            :disabled="sendingInvoice"
+            @click="sendInvoiceEmail"
+          >
+            {{ sendingInvoice ? 'Sending…' : 'Send invoice' }}
+          </button>
+        </div>
       </div>
       <ul class="mt-2 space-y-1">
         <li v-for="line in lineItems" :key="line.id" class="flex items-center justify-between text-gray-700">

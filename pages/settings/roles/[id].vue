@@ -154,7 +154,7 @@ async function save() {
                 class="h-8 w-[230px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20 disabled:bg-surface-subtle disabled:text-ink-faint"
               />
               <template v-if="isSystem" #helper>
-                🔒 This is the account owner's role — its permissions are always full and can't be changed, to
+                This is the account owner's role — its permissions are always full and can't be changed, to
                 prevent anyone (including the owner) from being locked out by mistake.
               </template>
             </SettingsFieldRow>

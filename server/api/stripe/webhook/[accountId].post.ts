@@ -35,7 +35,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: `Invalid signature: ${err?.message}` })
   }
 
-  await handleStripeEvent(supabase, account.id, stripeEvent)
+  await handleStripeEvent(supabase, account.id, stripeEvent, getRequestURL(event).origin)
 
   return { received: true }
 })

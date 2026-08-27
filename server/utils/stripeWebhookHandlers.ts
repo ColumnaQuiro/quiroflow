@@ -1,13 +1,44 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 import type Stripe from 'stripe'
+import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
+import { runRuleActions } from '~/server/utils/runAutomationActions'
 
 // Shared by both webhook routes: the legacy per-account endpoint
 // (webhook/[accountId].post.ts) and the platform-level Connect endpoint
 // (webhook.post.ts). Mirrors Stripe's outcome into payment_schedules /
 // stripe_payment_events so the app's reports stay in sync -- Stripe does
 // the actual charging (Subscription Schedules) on its own.
-export async function handleStripeEvent(supabase: SupabaseClient<Database>, accountId: string, stripeEvent: Stripe.Event) {
+export async function handleStripeEvent(supabase: SupabaseClient<Database>, accountId: string, stripeEvent: Stripe.Event, origin: string) {
+  // No staff session exists on a Stripe webhook call, so this can't go
+  // through fire.post.ts (requireTeamMember-gated) like every client
+  // trigger -- same direct-call pattern as birthday-cron.post.ts.
+  async function fireMembershipPaymentProcessed(membershipId: string) {
+    const { data: membership } = await supabase.from('patient_memberships').select('patient_id').eq('id', membershipId).maybeSingle()
+    if (!membership) return
+    const { data: patient } = await supabase
+      .from('patients')
+      .select('id, first_name, last_name, email, is_minor, do_not_contact, marketing_channels')
+      .eq('id', membership.patient_id)
+      .maybeSingle()
+    if (!patient) return
+
+    const { data: rules } = await supabase
+      .from('automation_rules')
+      .select('id, filters')
+      .eq('account_id', accountId)
+      .eq('trigger_event', 'membership.payment_processed')
+      .eq('enabled', true)
+    for (const rule of rules ?? []) {
+      if (!(await ruleFiltersMatch(supabase, patient.id, rule.filters as AutomationFilters))) continue
+      await runRuleActions(supabase, accountId, rule.id, patient, origin, undefined, {
+        triggerEvent: 'membership.payment_processed',
+        patientId: patient.id,
+        membershipId,
+      })
+    }
+  }
+
   async function findSchedule(subscriptionId: string | null) {
     if (!subscriptionId) return null
     const { data } = await supabase
@@ -48,6 +79,43 @@ export async function handleStripeEvent(supabase: SupabaseClient<Database>, acco
       .insert({ account_id: accountId, invoice_id: invoice.id, amount_cents: amountCents, method: 'card', stripe_payment_intent_id: paymentIntentId })
   }
 
+  // Mirrors recordMembershipCharge, plus one extra step: a package
+  // installment's invoice+payment pair nets to zero on balanceCents (it's
+  // just the sale record), but the money still needs to become spendable
+  // credit against the bono's sessions -- same account_credits top-up
+  // sellPackage() already does for a manual cash/card payment at sale time.
+  async function recordPackageCharge(patientId: string, packagePurchaseId: string, amountCents: number, paymentIntentId: string | null) {
+    const { data: purchase } = await supabase.from('package_purchases').select('package_name').eq('id', packagePurchaseId).maybeSingle()
+
+    const { count } = await supabase.from('invoices').select('id', { count: 'exact', head: true })
+    const invoiceNumber = `INV-${String((count ?? 0) + 1).padStart(4, '0')}`
+
+    const { data: invoice } = await supabase
+      .from('invoices')
+      .insert({ account_id: accountId, patient_id: patientId, invoice_number: invoiceNumber, status: 'paid', total_cents: amountCents })
+      .select('id')
+      .single()
+    if (!invoice) return
+
+    await supabase.from('invoice_line_items').insert({
+      account_id: accountId,
+      invoice_id: invoice.id,
+      description: `Package installment: ${purchase?.package_name ?? 'Package'}`,
+      quantity: 1,
+      price_cents: amountCents,
+    })
+    await supabase
+      .from('payments')
+      .insert({ account_id: accountId, invoice_id: invoice.id, amount_cents: amountCents, method: 'card', stripe_payment_intent_id: paymentIntentId })
+    await supabase.from('account_credits').insert({
+      account_id: accountId,
+      patient_id: patientId,
+      amount_cents: amountCents,
+      reason: `Package installment: ${purchase?.package_name ?? 'Package'}`,
+      invoice_id: invoice.id,
+    })
+  }
+
   if (stripeEvent.type === 'invoice.paid' || stripeEvent.type === 'invoice.payment_failed') {
     const invoice = stripeEvent.data.object as Stripe.Invoice
     const subscriptionId = typeof (invoice as any).subscription === 'string' ? (invoice as any).subscription : null
@@ -72,10 +140,13 @@ export async function handleStripeEvent(supabase: SupabaseClient<Database>, acco
           .update({ installments_paid: installmentsPaid, status: completed ? 'completed' : 'active' })
           .eq('id', schedule.id)
 
+        const paymentIntentId = typeof (invoice as any).payment_intent === 'string' ? (invoice as any).payment_intent : null
         if (schedule.patient_membership_id) {
-          const paymentIntentId = typeof (invoice as any).payment_intent === 'string' ? (invoice as any).payment_intent : null
           const periodStart = new Date((invoice.period_start ?? Math.floor(Date.now() / 1000)) * 1000).toISOString()
           await recordMembershipCharge(schedule.patient_id, schedule.patient_membership_id, invoice.amount_paid || invoice.amount_due, periodStart, paymentIntentId)
+          await fireMembershipPaymentProcessed(schedule.patient_membership_id)
+        } else if (schedule.package_purchase_id) {
+          await recordPackageCharge(schedule.patient_id, schedule.package_purchase_id, invoice.amount_paid || invoice.amount_due, paymentIntentId)
         }
       } else {
         await supabase.from('payment_schedules').update({ status: 'past_due' }).eq('id', schedule.id)

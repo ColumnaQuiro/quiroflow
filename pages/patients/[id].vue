@@ -59,7 +59,30 @@ function handleCharge() {
 </script>
 
 <template>
-  <div v-if="loading" class="flex h-full items-center justify-center text-[13px] text-ink-faint">Loading…</div>
+  <div v-if="loading" class="flex h-full flex-col">
+    <header class="flex h-14 shrink-0 items-center gap-2.5 border-b border-line bg-surface px-6">
+      <UiSkeleton class="h-[15px] w-40 rounded" />
+    </header>
+    <div class="flex-1 overflow-y-auto bg-surface-page">
+      <div class="flex items-start gap-6 px-6 py-6">
+        <div class="w-[280px] shrink-0 rounded-card border border-line bg-surface p-4">
+          <UiSkeleton class="mx-auto h-16 w-16 rounded-full" />
+          <UiSkeleton class="mx-auto mt-3 h-4 w-32 rounded" />
+          <div class="mt-5 space-y-3">
+            <UiSkeleton v-for="i in 5" :key="i" class="h-3.5 w-full rounded" />
+          </div>
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="flex gap-4 border-b border-chip-border pb-3">
+            <UiSkeleton v-for="i in 5" :key="i" class="h-4 w-16 rounded" />
+          </div>
+          <div class="mt-5 space-y-3">
+            <UiSkeleton v-for="i in 6" :key="i" class="h-4 w-full rounded" />
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
   <div v-else-if="notFound" class="flex h-full items-center justify-center text-[13px] text-ink-faint">Patient not found.</div>
   <div v-else-if="patient" class="flex h-full flex-col">
     <header class="flex h-14 shrink-0 items-center justify-between border-b border-line bg-surface px-6">

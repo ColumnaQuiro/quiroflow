@@ -354,10 +354,11 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
       </div>
 
       <!-- Phone numbers are a separate one-to-many table (patient_contact_numbers),
-           not a scalar field on `patients` -- this manages its own add/remove and
-           saves immediately, so it's shown outside the editing-toggle form below. -->
+           not a scalar field on `patients` -- it manages its own add/remove and
+           saves immediately (no Save button), but the add/remove controls are only
+           shown while editing, matching every other field on this card. -->
       <div class="mt-4 border-b border-line-divider pb-4">
-        <PatientsContactNumbersEditor :patient-id="patient.id" />
+        <PatientsContactNumbersEditor :patient-id="patient.id" :editable="editing" />
       </div>
 
       <dl v-if="!editing" class="mt-4 grid grid-cols-3 gap-x-6 gap-y-4">

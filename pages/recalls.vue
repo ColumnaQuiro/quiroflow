@@ -440,9 +440,23 @@ function exportCsv() {
             </tr>
           </thead>
           <tbody class="divide-y divide-line-row">
-            <tr v-if="loading">
-              <td colspan="8" class="px-4 py-8 text-center text-ink-faint">Loading…</td>
-            </tr>
+            <template v-if="loading">
+              <tr v-for="i in 6" :key="i" class="align-top">
+                <td class="px-4 py-2.5"><UiSkeleton class="h-3.5 w-3.5 rounded-[4px]" /></td>
+                <td class="px-4 py-2.5">
+                  <div class="flex items-start gap-2.5">
+                    <UiSkeleton class="h-8 w-8 shrink-0 rounded-full" />
+                    <UiSkeleton class="mt-1 h-3.5 w-32 rounded" />
+                  </div>
+                </td>
+                <td class="px-4 py-2.5"><UiSkeleton class="h-3.5 w-20 rounded" /></td>
+                <td class="px-4 py-2.5"><UiSkeleton class="h-4 w-16 rounded-pill" /></td>
+                <td class="px-4 py-2.5"><UiSkeleton class="h-3.5 w-24 rounded" /></td>
+                <td class="px-4 py-2.5 text-right"><UiSkeleton class="ml-auto h-3.5 w-16 rounded" /></td>
+                <td class="px-4 py-2.5"><UiSkeleton class="h-3.5 w-28 rounded" /></td>
+                <td class="px-4 py-2.5 text-right"><UiSkeleton class="ml-auto h-7 w-8 rounded-ctlSm" /></td>
+              </tr>
+            </template>
             <tr v-else-if="filtered.length === 0">
               <td colspan="8" class="px-4 py-8 text-center text-ink-faint">No recalls match these filters.</td>
             </tr>

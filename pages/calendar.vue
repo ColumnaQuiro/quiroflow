@@ -547,11 +547,16 @@ function hexToRgba(hex: string, alpha: number) {
 // type's color actually shows up on the calendar, and a Massage and an
 // Adjustment don't look identical just because both are "booked") -- status
 // is conveyed through the small dot + text style instead of the block color.
+const { resolved: resolvedTheme } = useTheme()
 function appointmentColorStyle(appt: AppointmentRow) {
   const color = appt.appointment_types?.color || '#4C6FEB'
+  // Full-saturation hex borders read as neon/oversaturated against a dark
+  // page background even though they look fine on a light one -- dimmed a
+  // touch in dark mode only, same color hue, just less harsh.
+  const borderAlpha = resolvedTheme.value === 'dark' ? 0.7 : 1
   return {
-    borderColor: color,
-    borderLeftColor: color,
+    borderColor: hexToRgba(color, borderAlpha),
+    borderLeftColor: hexToRgba(color, borderAlpha),
     backgroundColor: hexToRgba(color, appt.status === 'cancelled' ? 0.12 : 0.32),
   }
 }
@@ -1041,6 +1046,32 @@ function closeHoverCardNow() {
 }
 const hoveredRoomName = computed(() => rooms.value.find((r) => r.id === hoveredAppt.value?.room_id)?.name ?? null)
 
+// The credit/no-future-appointment icons live inside each appointment
+// block's own `overflow-hidden` (needed to clip content to its rounded
+// corners) -- a plain CSS group-hover tooltip positioned via bottom-full
+// never actually became visible, since it was clipped away the instant it
+// tried to escape the block's bounds. Same fixed-position-computed-from-
+// the-hovered-element approach as the appointment hover card above sidesteps
+// that entirely.
+const iconTooltip = ref<{ text: string; x: number; y: number } | null>(null)
+let iconTooltipTimer: ReturnType<typeof setTimeout> | null = null
+function scheduleIconTooltip(event: MouseEvent, text: string) {
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  iconTooltipTimer = setTimeout(() => {
+    // Centered on the icon via -translate-x-1/2, but clamped so it doesn't
+    // run off either edge of the viewport near the calendar's own edges.
+    const x = Math.min(Math.max(rect.left + rect.width / 2, 100), window.innerWidth - 100)
+    iconTooltip.value = { text, x, y: rect.top }
+  }, 2000)
+}
+function cancelIconTooltip() {
+  if (iconTooltipTimer) {
+    clearTimeout(iconTooltipTimer)
+    iconTooltipTimer = null
+  }
+  iconTooltip.value = null
+}
+
 // Current-time indicator (day view only, per spec).
 const now = ref(new Date())
 let nowTimer: ReturnType<typeof setInterval> | null = null
@@ -1229,8 +1260,8 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                 class="relative flex-1 cursor-pointer border-r border-line last:border-r-0"
                 @click="openCreateModal(col.id === '__none' ? undefined : col.id, $event.offsetY)"
               >
-                <div v-for="m in slotMarks" :key="`slot-${m}`" class="pointer-events-none absolute left-0 right-0 border-t border-[#E9EBF0]" :style="{ top: `${(m / 60) * DAY_HOUR_PX}px` }" />
-                <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-[#D6D9E0]" :style="{ top: `${(h - START_HOUR) * DAY_HOUR_PX}px` }" />
+                <div v-for="m in slotMarks" :key="`slot-${m}`" class="pointer-events-none absolute left-0 right-0 border-t border-line" :style="{ top: `${(m / 60) * DAY_HOUR_PX}px` }" />
+                <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-line-control" :style="{ top: `${(h - START_HOUR) * DAY_HOUR_PX}px` }" />
                 <div v-for="rect in closedSlotRects(anchorDate, DAY_HOUR_PX)" :key="rect.top" class="pointer-events-none absolute left-0 right-0 bg-line-row2" :style="{ top: `${rect.top}px`, height: `${rect.height}px` }" />
 
                 <div
@@ -1282,21 +1313,25 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                         <p class="min-w-0 flex-1 truncate text-[12.5px] font-semibold" :class="[nameClass(appt), { 'blur-sm select-none': settings.privacyMode, 'line-through opacity-70': appt.status === 'cancelled' || appt.status === 'completed' }]">
                           {{ appt.patients?.first_name }} {{ appt.patients?.last_name }}
                         </p>
-                        <span v-if="(balanceByPatient[appt.patient_id] ?? 0) > 0" class="group/credit relative flex h-[15px] w-[15px] shrink-0 items-center justify-center">
+                        <span
+                          v-if="(balanceByPatient[appt.patient_id] ?? 0) > 0"
+                          class="relative flex h-[15px] w-[15px] shrink-0 items-center justify-center"
+                          @mouseenter="scheduleIconTooltip($event, `Patient in credit (${formatCredit(balanceByPatient[appt.patient_id] ?? 0)})`)"
+                          @mouseleave="cancelIconTooltip"
+                        >
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" class="text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.5)]">
                             <path d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                           </svg>
-                          <span class="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-ctlSm bg-ink-900 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-popover transition-opacity delay-0 group-hover/credit:opacity-100 group-hover/credit:delay-[2000ms]">
-                            Patient in credit ({{ formatCredit(balanceByPatient[appt.patient_id] ?? 0) }})
-                          </span>
                         </span>
-                        <span v-if="!hasFutureAppointment(appt)" class="group/noappt relative flex h-[15px] w-[15px] shrink-0 items-center justify-center">
+                        <span
+                          v-if="!hasFutureAppointment(appt)"
+                          class="relative flex h-[15px] w-[15px] shrink-0 items-center justify-center"
+                          @mouseenter="scheduleIconTooltip($event, 'No future appointment')"
+                          @mouseleave="cancelIconTooltip"
+                        >
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" class="text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.5)]">
                             <path d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5A2.25 2.25 0 015.25 5.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0V11.25A2.25 2.25 0 015.25 9h13.5a2.25 2.25 0 012.25 2.25v7.5M9.75 13.5l4.5 4.5m0-4.5l-4.5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                           </svg>
-                          <span class="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-ctlSm bg-ink-900 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-popover transition-opacity delay-0 group-hover/noappt:opacity-100 group-hover/noappt:delay-[2000ms]">
-                            No future appointment
-                          </span>
                         </span>
                       </div>
                     </div>
@@ -1378,8 +1413,8 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                   :style="{ minWidth: `${WEEK_ROOM_COL_PX}px` }"
                   @click="openCreateModalForRoomOnDayAtY(day, col.id, $event.offsetY)"
                 >
-                  <div v-for="m in slotMarks" :key="`slot-${m}`" class="pointer-events-none absolute left-0 right-0 border-t border-[#E9EBF0]" :style="{ top: `${(m / 60) * WEEK_HOUR_PX}px` }" />
-                  <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-[#D6D9E0]" :style="{ top: `${(h - START_HOUR) * WEEK_HOUR_PX}px` }" />
+                  <div v-for="m in slotMarks" :key="`slot-${m}`" class="pointer-events-none absolute left-0 right-0 border-t border-line" :style="{ top: `${(m / 60) * WEEK_HOUR_PX}px` }" />
+                  <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-line-control" :style="{ top: `${(h - START_HOUR) * WEEK_HOUR_PX}px` }" />
                   <div v-for="rect in closedSlotRects(day, WEEK_HOUR_PX)" :key="rect.top" class="pointer-events-none absolute left-0 right-0 bg-line-row2" :style="{ top: `${rect.top}px`, height: `${rect.height}px` }" />
 
                   <div
@@ -1428,21 +1463,25 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                         <p class="min-w-0 flex-1 truncate text-[11px] font-semibold" :class="[nameClass(appt), { 'blur-sm select-none': settings.privacyMode, 'line-through opacity-70': appt.status === 'cancelled' || appt.status === 'completed' }]">
                           {{ appt.patients?.first_name }} {{ appt.patients?.last_name }}
                         </p>
-                        <span v-if="(balanceByPatient[appt.patient_id] ?? 0) > 0" class="group/credit relative flex h-[14px] w-[14px] shrink-0 items-center justify-center">
+                        <span
+                          v-if="(balanceByPatient[appt.patient_id] ?? 0) > 0"
+                          class="relative flex h-[14px] w-[14px] shrink-0 items-center justify-center"
+                          @mouseenter="scheduleIconTooltip($event, `Patient in credit (${formatCredit(balanceByPatient[appt.patient_id] ?? 0)})`)"
+                          @mouseleave="cancelIconTooltip"
+                        >
                           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" class="text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.5)]">
                             <path d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                           </svg>
-                          <span class="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-ctlSm bg-ink-900 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-popover transition-opacity delay-0 group-hover/credit:opacity-100 group-hover/credit:delay-[2000ms]">
-                            Patient in credit ({{ formatCredit(balanceByPatient[appt.patient_id] ?? 0) }})
-                          </span>
                         </span>
-                        <span v-if="!hasFutureAppointment(appt)" class="group/noappt relative flex h-[14px] w-[14px] shrink-0 items-center justify-center">
+                        <span
+                          v-if="!hasFutureAppointment(appt)"
+                          class="relative flex h-[14px] w-[14px] shrink-0 items-center justify-center"
+                          @mouseenter="scheduleIconTooltip($event, 'No future appointment')"
+                          @mouseleave="cancelIconTooltip"
+                        >
                           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" class="text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.5)]">
                             <path d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5A2.25 2.25 0 015.25 5.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0V11.25A2.25 2.25 0 015.25 9h13.5a2.25 2.25 0 012.25 2.25v7.5M9.75 13.5l4.5 4.5m0-4.5l-4.5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                           </svg>
-                          <span class="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-ctlSm bg-ink-900 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-popover transition-opacity delay-0 group-hover/noappt:opacity-100 group-hover/noappt:delay-[2000ms]">
-                            No future appointment
-                          </span>
                         </span>
                       </div>
                       <div
@@ -1523,5 +1562,13 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
       @note-saved="loadAppointments"
       @check-in="toggleCheckedIn(hoveredAppt)"
     />
+
+    <div
+      v-if="iconTooltip"
+      class="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-[calc(100%+6px)] whitespace-nowrap rounded-ctlSm bg-ink-900 px-2 py-1 text-[11px] font-medium text-white shadow-popover"
+      :style="{ left: `${iconTooltip.x}px`, top: `${iconTooltip.y}px` }"
+    >
+      {{ iconTooltip.text }}
+    </div>
   </div>
 </template>

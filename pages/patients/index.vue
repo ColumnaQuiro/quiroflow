@@ -457,7 +457,7 @@ function tagClass(tag: string) {
           <div
             v-for="patient in patients"
             :key="patient.id"
-            class="flex cursor-pointer items-center gap-4 border-b border-line-row px-5 py-2.5 last:border-b-0 hover:bg-[#FAFAFC]"
+            class="flex cursor-pointer items-center gap-4 border-b border-line-row px-5 py-2.5 last:border-b-0 hover:bg-surface-subtle"
             @click="navigateTo(`/patients/${patient.id}`)"
           >
             <!-- Patient -->

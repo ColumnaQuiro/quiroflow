@@ -403,7 +403,7 @@ async function sendNow(patient: PatientOption) {
                 <UiPill tone="neutral" dot class="max-w-[190px] shrink-0 truncate">{{ TRIGGER_LABELS[rule.trigger_event] ?? rule.trigger_event }}</UiPill>
                 <span class="shrink-0 text-[18px] leading-none text-[#C9CCD5]">→</span>
                 <template v-for="(a, i) in actionsByRule[rule.id] ?? []" :key="i">
-                  <UiPill :tone="ACTION_TONE[a.action_type] ?? 'neutral'" class="max-w-[200px] shrink-0 truncate">
+                  <UiPill :tone="ACTION_TONE[a.action_type] ?? 'neutral'" class="shrink-0 whitespace-normal">
                     {{ ACTION_LABELS[a.action_type] ?? a.action_type }}<template v-if="actionTitle(a)"> · {{ actionTitle(a) }}</template>
                   </UiPill>
                 </template>

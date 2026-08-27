@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Tables } from '~/types/database.types'
 
-const props = defineProps<{ patientId: string }>()
+const props = withDefaults(defineProps<{ patientId: string; editable?: boolean }>(), { editable: false })
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
@@ -62,7 +62,7 @@ async function removeNumber(id: string) {
           {{ countryByCode(n.country_code).flag }} {{ countryByCode(n.country_code).dial }} {{ n.number }}
           <UiPill v-if="n.is_whatsapp" tone="success" class="ml-1.5">WhatsApp</UiPill>
         </span>
-        <button type="button" class="text-ink-faint hover:text-danger-text" @click="removeNumber(n.id)">
+        <button v-if="editable" type="button" class="text-ink-faint hover:text-danger-text" @click="removeNumber(n.id)">
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
             <path d="M4 4l8 8M12 4l-8 8" stroke-linecap="round" />
           </svg>
@@ -71,7 +71,7 @@ async function removeNumber(id: string) {
     </ul>
     <p v-else-if="!loading" class="mt-1.5 text-[13px] text-ink-faint">No numbers yet.</p>
 
-    <div class="mt-2 flex flex-wrap items-center gap-2">
+    <div v-if="editable" class="mt-2 flex flex-wrap items-center gap-2">
       <select v-model="newCountry" class="h-9 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
         <option v-for="c in COUNTRIES" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }}</option>
       </select>

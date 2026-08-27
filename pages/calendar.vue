@@ -316,29 +316,51 @@ async function loadAvailabilityBlocks() {
 
 // "Today at a glance" always reflects the real calendar day (not whatever
 // day/week the grid below happens to be navigated to), so it's loaded
-// independently of the main grid's date range.
-const todayGlance = ref({ booked: 0, completed: 0, unconfirmed: 0, freeSlots: 0 })
+// independently of the main grid's date range. Mirrors PracticeHub's own
+// widget: "Booked" is the total universe of appointments that belonged to
+// today at some point (including ones since dragged away), and the other
+// four are a status breakdown of that same universe, each shown as a
+// percentage of Booked -- a reschedule-away is its own bucket rather than
+// falling out of the day's numbers entirely once it moves.
+const todayGlance = ref({ booked: 0, seen: 0, rescheduled: 0, cancelled: 0, missed: 0 })
 async function loadTodayGlance() {
   if (!store.currentClinicId) {
-    todayGlance.value = { booked: 0, completed: 0, unconfirmed: 0, freeSlots: 0 }
+    todayGlance.value = { booked: 0, seen: 0, rescheduled: 0, cancelled: 0, missed: 0 }
     return
   }
   const start = startOfDay(new Date())
   const end = addDays(start, 1)
-  const { data } = await supabase
-    .from('appointments')
-    .select('status, confirmation_status')
-    .eq('clinic_id', store.currentClinicId)
-    .gte('starts_at', start.toISOString())
-    .lt('starts_at', end.toISOString())
-    .neq('status', 'cancelled')
-  const rows = data ?? []
-  const booked = rows.filter((r) => r.status === 'booked').length
-  const completed = rows.filter((r) => r.status === 'completed').length
-  const unconfirmed = rows.filter((r) => r.status === 'booked' && (r.confirmation_status === 'pending' || r.confirmation_status === 'reschedule_requested')).length
-  const capacity = Math.max(rooms.value.length, 1) * (TOTAL_MIN / SLOT_MIN.value)
-  const freeSlots = Math.max(0, capacity - rows.length)
-  todayGlance.value = { booked, completed, unconfirmed, freeSlots }
+  const [{ data: currentRows }, { data: rescheduleRows }] = await Promise.all([
+    supabase
+      .from('appointments')
+      .select('id, status')
+      .eq('clinic_id', store.currentClinicId)
+      .gte('starts_at', start.toISOString())
+      .lt('starts_at', end.toISOString()),
+    supabase
+      .from('appointment_reschedules')
+      .select('appointment_id, to_starts_at')
+      .eq('account_id', store.accountId!)
+      .gte('from_starts_at', start.toISOString())
+      .lt('from_starts_at', end.toISOString()),
+  ])
+  const rows = currentRows ?? []
+  const currentIds = new Set(rows.map((r) => r.id))
+  const rescheduledAwayIds = new Set(
+    (rescheduleRows ?? [])
+      .filter((r) => (r.to_starts_at < start.toISOString() || r.to_starts_at >= end.toISOString()) && !currentIds.has(r.appointment_id))
+      .map((r) => r.appointment_id),
+  )
+
+  const seen = rows.filter((r) => r.status === 'completed').length
+  const cancelled = rows.filter((r) => r.status === 'cancelled').length
+  const missed = rows.filter((r) => r.status === 'no_show').length
+  const rescheduled = rescheduledAwayIds.size
+  const booked = rows.length + rescheduled
+  todayGlance.value = { booked, seen, rescheduled, cancelled, missed }
+}
+function glancePct(count: number) {
+  return todayGlance.value.booked > 0 ? ((count / todayGlance.value.booked) * 100).toFixed(1) : '0.0'
 }
 
 onMounted(async () => {
@@ -1080,23 +1102,26 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
         </div>
 
         <div class="mx-3 rounded-card border border-line bg-surface p-3">
-          <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">Today at a glance</p>
-          <div class="mt-2 space-y-1.5">
+          <div class="space-y-1.5">
             <div class="flex items-center justify-between text-[12.5px]">
               <span class="text-ink-600">Booked</span>
               <span class="font-mono text-[12.5px] font-medium text-ink-900">{{ todayGlance.booked }}</span>
             </div>
             <div class="flex items-center justify-between text-[12.5px]">
-              <span class="text-success-text">Completed</span>
-              <span class="font-mono text-[12.5px] font-medium text-success-text">{{ todayGlance.completed }}</span>
+              <span class="text-success-text">Seen</span>
+              <span class="font-mono text-[12.5px] font-medium text-success-text">{{ todayGlance.seen }} ({{ glancePct(todayGlance.seen) }}%)</span>
             </div>
             <div class="flex items-center justify-between text-[12.5px]">
-              <span class="text-warning-text">Unconfirmed</span>
-              <span class="font-mono text-[12.5px] font-medium text-warning-text">{{ todayGlance.unconfirmed }}</span>
+              <span class="text-warning-text">Rescheduled</span>
+              <span class="font-mono text-[12.5px] font-medium text-warning-text">{{ todayGlance.rescheduled }} ({{ glancePct(todayGlance.rescheduled) }}%)</span>
             </div>
             <div class="flex items-center justify-between text-[12.5px]">
-              <span class="text-ink-muted2">Free slots</span>
-              <span class="font-mono text-[12.5px] font-medium text-ink-muted2">{{ todayGlance.freeSlots }}</span>
+              <span class="text-danger-text">Cancelled</span>
+              <span class="font-mono text-[12.5px] font-medium text-danger-text">{{ todayGlance.cancelled }} ({{ glancePct(todayGlance.cancelled) }}%)</span>
+            </div>
+            <div class="flex items-center justify-between text-[12.5px]">
+              <span class="text-ink-muted2">Missed</span>
+              <span class="font-mono text-[12.5px] font-medium text-ink-muted2">{{ todayGlance.missed }} ({{ glancePct(todayGlance.missed) }}%)</span>
             </div>
           </div>
         </div>

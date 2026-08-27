@@ -194,12 +194,44 @@ async function save() {
     if (status.value !== props.appointment!.status) {
       const trigger = { completed: 'appointment.completed', cancelled: 'appointment.cancelled', no_show: 'appointment.no_show' }[status.value]
       if (trigger) fire(trigger, { patientId: patientId.value, appointmentId: props.appointment!.id })
+      await maybeApplyStatusFee(status.value)
     }
     // Independent of the status check above -- a save can change both the
     // time and the status at once, and each should fire its own automation.
     if (timeChanged) fire('appointment.rescheduled', { patientId: patientId.value, appointmentId: props.appointment!.id })
   }
   emit('saved')
+}
+
+// Cancellation/missed-appointment fees from Settings > Scheduling Policies.
+// A plain confirm() rather than a full dialog like the reschedule one --
+// there's no reason/note/next-appointment context to show here, just "charge
+// the configured fee or not."
+async function maybeApplyStatusFee(newStatus: string) {
+  const feeColumn = newStatus === 'cancelled' ? 'cancellation_fee_cents' : newStatus === 'no_show' ? 'missed_appointment_fee_cents' : null
+  if (!feeColumn) return
+  const { data: account } = await supabase.from('accounts').select(feeColumn).eq('id', store.accountId!).maybeSingle()
+  const feeCents = (account as Record<string, number | null> | null)?.[feeColumn]
+  if (!feeCents) return
+
+  const label = newStatus === 'cancelled' ? 'cancellation' : 'missed appointment'
+  if (!confirm(`Apply the €${(feeCents / 100).toFixed(2)} ${label} fee to this patient's account?`)) return
+
+  const { count } = await supabase.from('invoices').select('id', { count: 'exact', head: true })
+  const invoiceNumber = `INV-${String((count ?? 0) + 1).padStart(4, '0')}`
+  const { data: invoice } = await supabase
+    .from('invoices')
+    .insert({ account_id: store.accountId!, patient_id: patientId.value, invoice_number: invoiceNumber, status: 'unpaid', total_cents: feeCents })
+    .select('id')
+    .single()
+  if (!invoice) return
+  await supabase.from('invoice_line_items').insert({
+    account_id: store.accountId!,
+    invoice_id: invoice.id,
+    description: newStatus === 'cancelled' ? 'Cancellation fee' : 'Missed appointment fee',
+    quantity: 1,
+    price_cents: feeCents,
+  })
 }
 
 async function remove() {

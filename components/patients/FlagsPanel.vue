@@ -4,6 +4,8 @@ const props = defineProps<{ patientId: string }>()
 const supabase = useSupabaseClient()
 
 const chiefComplaint = ref('')
+const diagnosis = ref('')
+const goals = ref('')
 const redFlags = ref('')
 const yellowFlags = ref('')
 const tags = ref<string[]>([])
@@ -15,10 +17,12 @@ async function load() {
   loading.value = true
   const { data } = await supabase
     .from('patients')
-    .select('chief_complaint, red_flags, yellow_flags, tags')
+    .select('chief_complaint, diagnosis, goals, red_flags, yellow_flags, tags')
     .eq('id', props.patientId)
     .maybeSingle()
   chiefComplaint.value = data?.chief_complaint ?? ''
+  diagnosis.value = data?.diagnosis ?? ''
+  goals.value = data?.goals ?? ''
   redFlags.value = data?.red_flags ?? ''
   yellowFlags.value = data?.yellow_flags ?? ''
   tags.value = data?.tags ?? []
@@ -28,6 +32,12 @@ watch(() => props.patientId, load, { immediate: true })
 
 async function saveChiefComplaint() {
   await supabase.from('patients').update({ chief_complaint: chiefComplaint.value || null }).eq('id', props.patientId)
+}
+async function saveDiagnosis() {
+  await supabase.from('patients').update({ diagnosis: diagnosis.value || null }).eq('id', props.patientId)
+}
+async function saveGoals() {
+  await supabase.from('patients').update({ goals: goals.value || null }).eq('id', props.patientId)
 }
 async function saveRedFlags() {
   await supabase.from('patients').update({ red_flags: redFlags.value || null }).eq('id', props.patientId)
@@ -56,6 +66,8 @@ const flagRows = computed(() => {
   if (redFlags.value) rows.push({ text: redFlags.value, dot: 'bg-danger-text' })
   if (yellowFlags.value) rows.push({ text: yellowFlags.value, dot: 'bg-warning-accent' })
   if (chiefComplaint.value) rows.push({ text: chiefComplaint.value, dot: 'bg-ink-faint3' })
+  if (diagnosis.value) rows.push({ text: diagnosis.value, dot: 'bg-ink-faint3' })
+  if (goals.value) rows.push({ text: goals.value, dot: 'bg-ink-faint3' })
   return rows
 })
 </script>
@@ -93,6 +105,28 @@ const flagRows = computed(() => {
             placeholder="Enter patient's chief complaint here"
             class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-2.5 py-1.5 text-[12.5px] text-ink-700 focus:border-brand focus:outline-none"
             @blur="saveChiefComplaint"
+          ></textarea>
+        </div>
+
+        <div>
+          <label class="block text-[11px] font-medium text-ink-muted2">Diagnosis</label>
+          <textarea
+            v-model="diagnosis"
+            rows="2"
+            placeholder="Working diagnosis"
+            class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-2.5 py-1.5 text-[12.5px] text-ink-700 focus:border-brand focus:outline-none"
+            @blur="saveDiagnosis"
+          ></textarea>
+        </div>
+
+        <div>
+          <label class="block text-[11px] font-medium text-ink-muted2">Goals</label>
+          <textarea
+            v-model="goals"
+            rows="2"
+            placeholder="Treatment goals"
+            class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-2.5 py-1.5 text-[12.5px] text-ink-700 focus:border-brand focus:outline-none"
+            @blur="saveGoals"
           ></textarea>
         </div>
 

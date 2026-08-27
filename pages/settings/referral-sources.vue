@@ -7,6 +7,7 @@ const store = useAccountStore()
 const sources = ref<Tables<'referral_sources'>[]>([])
 const loading = ref(true)
 const name = ref('')
+const visibility = ref<'private' | 'public'>('private')
 const saving = ref(false)
 const error = ref('')
 
@@ -25,6 +26,7 @@ async function addSource() {
   const { error: insertError } = await supabase.from('referral_sources').insert({
     account_id: store.accountId!,
     name: name.value.trim(),
+    visibility: visibility.value,
   })
   saving.value = false
   if (insertError) {
@@ -32,7 +34,14 @@ async function addSource() {
     return
   }
   name.value = ''
+  visibility.value = 'private'
   await load()
+}
+
+async function toggleStatus(source: Tables<'referral_sources'>) {
+  const status = source.status === 'active' ? 'inactive' : 'active'
+  source.status = status
+  await supabase.from('referral_sources').update({ status }).eq('id', source.id)
 }
 
 async function removeSource(id: string) {
@@ -56,18 +65,31 @@ async function removeSource(id: string) {
               <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted2">
                 <tr>
                   <th class="px-4 py-2">Name</th>
+                  <th class="px-4 py-2">Visibility</th>
+                  <th class="px-4 py-2">Status</th>
                   <th class="px-4 py-2"></th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-line-row">
                 <tr v-if="loading">
-                  <td colspan="2" class="px-4 py-6 text-center text-ink-faint">Loading…</td>
+                  <td colspan="4" class="px-4 py-6 text-center text-ink-faint">Loading…</td>
                 </tr>
                 <tr v-else-if="sources.length === 0">
-                  <td colspan="2" class="px-4 py-6 text-center text-ink-faint">No referral sources yet.</td>
+                  <td colspan="4" class="px-4 py-6 text-center text-ink-faint">No referral sources yet.</td>
                 </tr>
                 <tr v-for="s in sources" :key="s.id">
                   <td class="px-4 py-2.5 text-ink-700">{{ s.name }}</td>
+                  <td class="px-4 py-2.5 text-ink-muted2">{{ s.visibility === 'public' ? 'Public' : 'Private (Staff only)' }}</td>
+                  <td class="px-4 py-2.5">
+                    <button
+                      type="button"
+                      class="rounded-pill px-2 py-0.5 text-[11px] font-medium"
+                      :class="s.status === 'active' ? 'bg-success-bg text-success-text' : 'bg-chip-bg text-chip-text'"
+                      @click="toggleStatus(s)"
+                    >
+                      {{ s.status === 'active' ? 'Active' : 'Inactive' }}
+                    </button>
+                  </td>
                   <td class="px-4 py-2.5 text-right">
                     <button type="button" class="text-ink-faint hover:text-danger-text" @click="removeSource(s.id)">✕</button>
                   </td>
@@ -80,6 +102,13 @@ async function removeSource(id: string) {
             <div>
               <label class="block text-[12.5px] font-medium text-ink-600">Name</label>
               <input v-model="name" type="text" required placeholder="TikTok" class="mt-1 h-8 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20" />
+            </div>
+            <div>
+              <label class="block text-[12.5px] font-medium text-ink-600">Visibility</label>
+              <select v-model="visibility" class="mt-1 h-8 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
+                <option value="private">Private (Staff only)</option>
+                <option value="public">Public</option>
+              </select>
             </div>
             <UiBtn variant="primary" type="submit" :disabled="saving">{{ saving ? 'Adding…' : 'Add Source' }}</UiBtn>
           </form>

@@ -160,6 +160,20 @@ async function saveEdit(member: Tables<'team_members'>) {
   await supabase.from('team_members').update({ full_name: name }).eq('id', member.id)
 }
 
+const resettingId = ref<string | null>(null)
+async function sendPasswordReset(member: Tables<'team_members'>) {
+  if (!confirm(`Send a password reset email to ${member.full_name}?`)) return
+  resettingId.value = member.id
+  try {
+    const result = await useStaffFetch<{ email: string }>(`/api/team-members/${member.id}/reset-password`, { method: 'POST' })
+    alert(`Password reset email sent to ${result.email}.`)
+  } catch (e: any) {
+    alert(e?.data?.statusMessage || e?.message || 'Could not send password reset.')
+  } finally {
+    resettingId.value = null
+  }
+}
+
 function inviteLink(token: string) {
   return `${window.location.origin}/join?token=${token}`
 }
@@ -222,6 +236,10 @@ function copy(text: string) {
                     <td class="px-4 py-2.5 text-right">
                       <button type="button" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover" @click="openScheduleEditor(m)">
                         {{ hasScheduleOverride(m) ? 'Schedule (custom)' : 'Schedule' }}
+                      </button>
+                      <span class="mx-2 text-line-control">·</span>
+                      <button type="button" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover" :disabled="resettingId === m.id" @click="sendPasswordReset(m)">
+                        {{ resettingId === m.id ? 'Sending…' : 'Reset password' }}
                       </button>
                     </td>
                   </tr>

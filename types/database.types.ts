@@ -187,10 +187,26 @@ export type Database = {
       }
       accounts: {
         Row: {
+          cancellation_fee_cents: number | null
           created_at: string
+          hide_account_balance: boolean
+          hide_invoice_balance: boolean
+          hide_logo_on_invoices: boolean
+          hide_next_visit_on_invoices: boolean
+          hide_payments_on_invoices: boolean
+          hide_provider_on_invoices: boolean
           id: string
+          invoice_email_body: string | null
+          invoice_email_subject: string | null
+          missed_appointment_fee_cents: number | null
           name: string
+          new_patient_field_config: Json
+          next_invoice_number: number | null
           scheduling_policy_fee_cents: number | null
+          send_invoices_automatically_default: boolean
+          show_dob_on_invoices: boolean
+          show_ssn_on_invoices: boolean
+          show_taxes_on_invoices: boolean
           slug: string
           stripe_connect_account_id: string | null
           stripe_publishable_key: string | null
@@ -205,10 +221,26 @@ export type Database = {
           whatsapp_recall_template_name: string | null
         }
         Insert: {
+          cancellation_fee_cents?: number | null
           created_at?: string
+          hide_account_balance?: boolean
+          hide_invoice_balance?: boolean
+          hide_logo_on_invoices?: boolean
+          hide_next_visit_on_invoices?: boolean
+          hide_payments_on_invoices?: boolean
+          hide_provider_on_invoices?: boolean
           id?: string
+          invoice_email_body?: string | null
+          invoice_email_subject?: string | null
+          missed_appointment_fee_cents?: number | null
           name: string
+          new_patient_field_config?: Json
+          next_invoice_number?: number | null
           scheduling_policy_fee_cents?: number | null
+          send_invoices_automatically_default?: boolean
+          show_dob_on_invoices?: boolean
+          show_ssn_on_invoices?: boolean
+          show_taxes_on_invoices?: boolean
           slug: string
           stripe_connect_account_id?: string | null
           stripe_publishable_key?: string | null
@@ -223,10 +255,26 @@ export type Database = {
           whatsapp_recall_template_name?: string | null
         }
         Update: {
+          cancellation_fee_cents?: number | null
           created_at?: string
+          hide_account_balance?: boolean
+          hide_invoice_balance?: boolean
+          hide_logo_on_invoices?: boolean
+          hide_next_visit_on_invoices?: boolean
+          hide_payments_on_invoices?: boolean
+          hide_provider_on_invoices?: boolean
           id?: string
+          invoice_email_body?: string | null
+          invoice_email_subject?: string | null
+          missed_appointment_fee_cents?: number | null
           name?: string
+          new_patient_field_config?: Json
+          next_invoice_number?: number | null
           scheduling_policy_fee_cents?: number | null
+          send_invoices_automatically_default?: boolean
+          show_dob_on_invoices?: boolean
+          show_ssn_on_invoices?: boolean
+          show_taxes_on_invoices?: boolean
           slug?: string
           stripe_connect_account_id?: string | null
           stripe_publishable_key?: string | null
@@ -1508,6 +1556,38 @@ export type Database = {
           },
         ]
       }
+      modalities: {
+        Row: {
+          account_id: string
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "modalities_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       package_purchase_shares: {
         Row: {
           account_id: string
@@ -2137,12 +2217,14 @@ export type Database = {
           created_at: string
           date_of_birth: string | null
           default_practitioner_id: string | null
+          diagnosis: string | null
           do_not_contact: boolean
           email: string | null
           emergency_contact: string | null
           external_reference: string | null
           first_name: string
           gender: string | null
+          goals: string | null
           has_phone: boolean
           id: string
           invoice_email_enabled: boolean
@@ -2181,12 +2263,14 @@ export type Database = {
           created_at?: string
           date_of_birth?: string | null
           default_practitioner_id?: string | null
+          diagnosis?: string | null
           do_not_contact?: boolean
           email?: string | null
           emergency_contact?: string | null
           external_reference?: string | null
           first_name: string
           gender?: string | null
+          goals?: string | null
           has_phone?: boolean
           id?: string
           invoice_email_enabled?: boolean
@@ -2225,12 +2309,14 @@ export type Database = {
           created_at?: string
           date_of_birth?: string | null
           default_practitioner_id?: string | null
+          diagnosis?: string | null
           do_not_contact?: boolean
           email?: string | null
           emergency_contact?: string | null
           external_reference?: string | null
           first_name?: string
           gender?: string | null
+          goals?: string | null
           has_phone?: boolean
           id?: string
           invoice_email_enabled?: boolean
@@ -2320,6 +2406,41 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "recall_candidates"
             referencedColumns: ["patient_id"]
+          },
+        ]
+      }
+      payment_methods: {
+        Row: {
+          account_id: string
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          sort_order: number
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          sort_order?: number
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_methods_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -2518,18 +2639,24 @@ export type Database = {
           created_at: string
           id: string
           name: string
+          status: string
+          visibility: string
         }
         Insert: {
           account_id: string
           created_at?: string
           id?: string
           name: string
+          status?: string
+          visibility?: string
         }
         Update: {
           account_id?: string
           created_at?: string
           id?: string
           name?: string
+          status?: string
+          visibility?: string
         }
         Relationships: [
           {

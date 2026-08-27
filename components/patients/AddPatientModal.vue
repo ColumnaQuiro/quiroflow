@@ -21,13 +21,29 @@ const postalCode = ref('')
 const city = ref('')
 const country = ref('')
 const referralSource = ref('')
+const occupation = ref('')
+const preferredLanguage = ref('es')
+const notes = ref('')
 const error = ref('')
 const saving = ref(false)
 
+interface FieldConfig { visible: boolean; required: boolean }
+const fieldConfig = ref<Record<string, FieldConfig>>({})
+function isVisible(key: string) {
+  return fieldConfig.value[key]?.visible ?? true
+}
+function isRequired(key: string) {
+  return fieldConfig.value[key]?.required ?? false
+}
+
 const referralSources = ref<Tables<'referral_sources'>[]>([])
 onMounted(async () => {
-  const { data } = await supabase.from('referral_sources').select('*').order('name')
-  referralSources.value = data ?? []
+  const [{ data: sources }, { data: account }] = await Promise.all([
+    supabase.from('referral_sources').select('*').eq('status', 'active').order('name'),
+    supabase.from('accounts').select('new_patient_field_config').eq('id', store.accountId!).maybeSingle(),
+  ])
+  referralSources.value = sources ?? []
+  fieldConfig.value = (account?.new_patient_field_config as unknown as Record<string, FieldConfig>) ?? {}
 })
 
 async function onSubmit() {
@@ -54,6 +70,9 @@ async function onSubmit() {
       city: city.value || null,
       country: country.value || null,
       referral_source: referralSource.value || null,
+      occupation: occupation.value || null,
+      preferred_language: preferredLanguage.value,
+      notes: notes.value || null,
       tags,
     })
     .select('id')
@@ -111,27 +130,29 @@ async function onSubmit() {
           </div>
         </div>
 
-        <div>
+        <div v-if="isVisible('date_of_birth')">
           <label class="block text-sm font-medium text-ink-700" for="dob">Date of birth</label>
           <input
             id="dob"
             v-model="dateOfBirth"
             type="date"
+            :required="isRequired('date_of_birth')"
             class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           />
         </div>
 
         <div class="grid grid-cols-2 gap-4">
-          <div>
+          <div v-if="isVisible('email')">
             <label class="block text-sm font-medium text-ink-700" for="email">Email</label>
             <input
               id="email"
               v-model="email"
               type="email"
+              :required="isRequired('email')"
               class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
             />
           </div>
-          <div class="min-w-0">
+          <div v-if="isVisible('phone')" class="min-w-0">
             <label class="block text-sm font-medium text-ink-700">Phone</label>
             <div class="mt-1 flex gap-2">
               <select
@@ -144,6 +165,7 @@ async function onSubmit() {
                 v-model="phoneNumber"
                 type="tel"
                 placeholder="612 34 56 78"
+                :required="isRequired('phone')"
                 class="min-w-0 flex-1 rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
               />
             </div>
@@ -155,11 +177,12 @@ async function onSubmit() {
         </div>
 
         <div class="grid grid-cols-2 gap-4">
-          <div>
-            <label class="block text-sm font-medium text-ink-700" for="gender">Gender</label>
+          <div v-if="isVisible('gender')">
+            <label class="block text-sm font-medium text-ink-700" for="gender">Sex</label>
             <select
               id="gender"
               v-model="gender"
+              :required="isRequired('gender')"
               class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
             >
               <option value="">Not set</option>
@@ -181,18 +204,45 @@ async function onSubmit() {
           </div>
         </div>
 
-        <div>
+        <div class="grid grid-cols-2 gap-4">
+          <div v-if="isVisible('occupation')">
+            <label class="block text-sm font-medium text-ink-700" for="occupation">Occupation</label>
+            <input
+              id="occupation"
+              v-model="occupation"
+              type="text"
+              :required="isRequired('occupation')"
+              class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            />
+          </div>
+          <div v-if="isVisible('preferred_language')">
+            <label class="block text-sm font-medium text-ink-700" for="preferred-language">Preferred Language</label>
+            <select
+              id="preferred-language"
+              v-model="preferredLanguage"
+              class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            >
+              <option value="es">Español</option>
+              <option value="en">English</option>
+              <option value="ca">Català</option>
+              <option value="fr">Français</option>
+            </select>
+          </div>
+        </div>
+
+        <div v-if="isVisible('address')">
           <label class="block text-sm font-medium text-ink-700" for="address">Street address</label>
           <input
             id="address"
             v-model="address"
             type="text"
             placeholder="For invoices"
+            :required="isRequired('address')"
             class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           />
         </div>
 
-        <div class="grid grid-cols-3 gap-4">
+        <div v-if="isVisible('address')" class="grid grid-cols-3 gap-4">
           <div>
             <label class="block text-sm font-medium text-ink-700" for="postal-code">Postal code</label>
             <input
@@ -220,6 +270,17 @@ async function onSubmit() {
               class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
             />
           </div>
+        </div>
+
+        <div v-if="isVisible('notes')">
+          <label class="block text-sm font-medium text-ink-700" for="patient-note">Patient Note</label>
+          <textarea
+            id="patient-note"
+            v-model="notes"
+            rows="2"
+            :required="isRequired('notes')"
+            class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+          />
         </div>
 
         <div>

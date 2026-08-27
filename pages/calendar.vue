@@ -1422,9 +1422,21 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
       </div>
     </div>
 
+    <CalendarNewAppointmentPanel
+      v-if="modalOpen && modalMode === 'create'"
+      :rooms="rooms"
+      :appointment-types="appointmentTypes"
+      :team-members="teamMembers"
+      :prefill-date="prefill?.date"
+      :prefill-time="prefill?.time"
+      :prefill-room-id="prefill?.roomId"
+      @close="modalOpen = false"
+      @saved="onSaved"
+    />
+
     <CalendarAppointmentModal
-      v-if="modalOpen"
-      :mode="modalMode"
+      v-if="modalOpen && modalMode === 'edit'"
+      mode="edit"
       :rooms="rooms"
       :appointment-types="appointmentTypes"
       :team-members="teamMembers"

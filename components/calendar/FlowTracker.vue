@@ -17,9 +17,12 @@ const awaitingCheckout = computed(() => props.appointments.filter((a) => a.flow_
 </script>
 
 <template>
-  <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+  <div class="space-y-3">
     <div class="rounded-card border border-line bg-surface p-3">
-      <h3 class="text-[12.5px] font-[640] text-ink-700">Arrived</h3>
+      <div class="flex items-center justify-between">
+        <h3 class="text-[12.5px] font-[640] text-ink-700">Arrived</h3>
+        <span class="rounded-pill bg-chip-bg px-1.5 py-0.5 text-[11px] font-medium text-chip-text">{{ arrived.length }}</span>
+      </div>
       <div class="mt-2 space-y-1.5">
         <div v-for="a in arrived" :key="a.id" class="flex items-center justify-between gap-2 rounded-ctlSm border border-line-row px-2 py-1.5 text-[13px]">
           <span class="truncate text-ink-700" :class="{ 'blur-sm select-none': privacyMode }">{{ a.patients?.first_name }} {{ a.patients?.last_name }}</span>
@@ -29,7 +32,10 @@ const awaitingCheckout = computed(() => props.appointments.filter((a) => a.flow_
       </div>
     </div>
     <div class="rounded-card border border-line bg-surface p-3">
-      <h3 class="text-[12.5px] font-[640] text-ink-700">With Practitioner</h3>
+      <div class="flex items-center justify-between">
+        <h3 class="text-[12.5px] font-[640] text-ink-700">In Session</h3>
+        <span class="rounded-pill bg-chip-bg px-1.5 py-0.5 text-[11px] font-medium text-chip-text">{{ withPractitioner.length }}</span>
+      </div>
       <div class="mt-2 space-y-1.5">
         <div v-for="a in withPractitioner" :key="a.id" class="flex items-center justify-between gap-2 rounded-ctlSm border border-line-row px-2 py-1.5 text-[13px]">
           <span class="truncate text-ink-700" :class="{ 'blur-sm select-none': privacyMode }">{{ a.patients?.first_name }} {{ a.patients?.last_name }}</span>
@@ -39,7 +45,10 @@ const awaitingCheckout = computed(() => props.appointments.filter((a) => a.flow_
       </div>
     </div>
     <div class="rounded-card border border-line bg-surface p-3">
-      <h3 class="text-[12.5px] font-[640] text-ink-700">Awaiting Checkout</h3>
+      <div class="flex items-center justify-between">
+        <h3 class="text-[12.5px] font-[640] text-ink-700">Awaiting Checkout</h3>
+        <span class="rounded-pill bg-chip-bg px-1.5 py-0.5 text-[11px] font-medium text-chip-text">{{ awaitingCheckout.length }}</span>
+      </div>
       <div class="mt-2 space-y-1.5">
         <div v-for="a in awaitingCheckout" :key="a.id" class="flex items-center justify-between gap-2 rounded-ctlSm border border-line-row px-2 py-1.5 text-[13px]">
           <span class="truncate text-ink-700" :class="{ 'blur-sm select-none': privacyMode }">{{ a.patients?.first_name }} {{ a.patients?.last_name }}</span>

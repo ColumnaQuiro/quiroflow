@@ -9,6 +9,18 @@ const accountMenuOpen = ref(false)
 const accountMenuRef = ref<HTMLElement | null>(null)
 const cashShiftOpen = ref(false)
 
+// Per-device UI preference (not per-user in the DB) -- purely a "give me
+// more horizontal room" toggle, same spirit as the calendar's Display
+// toggles, so it doesn't need to sync across devices.
+const collapsed = ref(false)
+onMounted(() => {
+  collapsed.value = localStorage.getItem('quiroflow-sidebar-collapsed') === '1'
+})
+function toggleCollapsed() {
+  collapsed.value = !collapsed.value
+  localStorage.setItem('quiroflow-sidebar-collapsed', collapsed.value ? '1' : '0')
+}
+
 const recallsCount = ref(0)
 const myDayCount = ref(0)
 const campaignsActive = ref(false)
@@ -132,17 +144,17 @@ async function signOut() {
 </script>
 
 <template>
-  <aside class="flex w-[236px] shrink-0 flex-col bg-surface-sidebar border-r border-line print:hidden">
-    <div class="flex items-center gap-[9px] px-4 pb-3 pt-4">
+  <aside class="flex shrink-0 flex-col bg-surface-sidebar border-r border-line print:hidden" :class="collapsed ? 'w-[60px]' : 'w-[236px]'">
+    <div class="flex items-center gap-[9px] px-4 pb-3 pt-4" :class="{ 'justify-center px-0': collapsed }">
       <div class="flex h-6 w-6 items-center justify-center rounded-ctlSm bg-brand">
         <img src="/logo/quiroflow-mark-white.svg" alt="" class="h-3.5 w-3.5" />
       </div>
-      <NuxtLink to="/dashboard" class="text-[14.5px] font-[640] tracking-tightTitle text-ink-900">QuiroFlow</NuxtLink>
+      <NuxtLink v-if="!collapsed" to="/dashboard" class="text-[14.5px] font-[640] tracking-tightTitle text-ink-900">QuiroFlow</NuxtLink>
     </div>
 
-    <div class="flex flex-col gap-1.5 px-3 pb-2.5">
+    <div class="flex flex-col gap-1.5 px-3 pb-2.5" :class="{ 'items-center px-1.5': collapsed }">
       <button
-        v-if="store.clinics.length > 0"
+        v-if="store.clinics.length > 0 && !collapsed"
         type="button"
         class="flex h-[34px] items-center gap-2 rounded-ctl border border-chip-border bg-surface px-2.5 text-left text-[13px] text-ink-700 hover:border-line-controlHover"
       >
@@ -152,62 +164,92 @@ async function signOut() {
       </button>
       <button
         type="button"
-        class="flex h-8 items-center gap-2 rounded-ctl bg-chip px-2.5 text-left text-[13px] text-ink-muted hover:bg-[#ECEDF1]"
+        class="flex h-8 items-center gap-2 rounded-ctl bg-chip text-left text-[13px] text-ink-muted hover:bg-[#ECEDF1]"
+        :class="collapsed ? 'w-8 justify-center' : 'w-full px-2.5'"
+        :title="collapsed ? 'Search or jump to (⌘K)' : undefined"
         @click="paletteOpen = true"
       >
         <svg width="13" height="13" viewBox="0 0 14 14" class="shrink-0"><circle cx="6" cy="6" r="4.2" stroke="currentColor" stroke-width="1.4" fill="none" /><line x1="9.2" y1="9.2" x2="12" y2="12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg>
-        <span class="flex-1">Search or jump to</span>
-        <span class="rounded border border-line-control bg-surface px-1 py-px font-mono text-[10.5px] text-ink-faint2">⌘K</span>
+        <template v-if="!collapsed">
+          <span class="flex-1">Search or jump to</span>
+          <span class="rounded border border-line-control bg-surface px-1 py-px font-mono text-[10.5px] text-ink-faint2">⌘K</span>
+        </template>
       </button>
     </div>
 
-    <nav class="flex flex-1 flex-col gap-3.5 overflow-y-auto px-3 pb-3 pt-0.5">
-      <div v-for="group in visibleGroups" :key="group.label" class="flex flex-col gap-0.5">
-        <div class="px-[9px] py-1 text-[10.5px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ group.label }}</div>
+    <nav class="flex flex-1 flex-col gap-3.5 overflow-y-auto px-3 pb-3 pt-0.5" :class="{ 'items-center px-1.5': collapsed }">
+      <div v-for="group in visibleGroups" :key="group.label" class="flex flex-col gap-0.5" :class="{ 'items-center': collapsed }">
+        <div v-if="!collapsed" class="px-[9px] py-1 text-[10.5px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ group.label }}</div>
         <NuxtLink
           v-for="item in group.items"
           :key="item.to"
           :to="item.to"
-          class="flex h-8 items-center gap-[9px] rounded-ctlSm px-[9px] text-[13.5px]"
-          :class="isActive(item.to) ? 'bg-brand-tint text-brand-text font-semibold' : 'text-ink-600 hover:bg-[#EFF0F4]'"
+          class="relative flex h-8 items-center gap-[9px] rounded-ctlSm text-[13.5px]"
+          :class="[collapsed ? 'w-8 justify-center' : 'w-full px-[9px]', isActive(item.to) ? 'bg-brand-tint text-brand-text font-semibold' : 'text-ink-600 hover:bg-[#EFF0F4]']"
+          :title="collapsed ? item.label : undefined"
         >
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path :d="item.icon" /></svg>
-          <span class="flex-1">{{ item.label }}</span>
-          <span v-if="item.badge === 'myday' && myDayCount > 0" class="font-mono text-[11px] text-ink-muted2">{{ myDayCount }}</span>
-          <span v-if="item.badge === 'recalls' && recallsCount > 0" class="rounded-pill bg-danger-bg px-1.5 py-px text-[10.5px] font-semibold text-danger-text">{{ recallsCount }}</span>
-          <span v-if="item.badge === 'campaigns' && campaignsActive" class="h-[5px] w-[5px] rounded-full bg-success-accent" />
-          <span v-if="item.badge === 'inbox' && inboxUnreadCount > 0" class="rounded-pill bg-brand px-1.5 py-px text-[10.5px] font-semibold text-white">{{ inboxUnreadCount }}</span>
+          <template v-if="!collapsed">
+            <span class="flex-1">{{ item.label }}</span>
+            <span v-if="item.badge === 'myday' && myDayCount > 0" class="font-mono text-[11px] text-ink-muted2">{{ myDayCount }}</span>
+            <span v-if="item.badge === 'recalls' && recallsCount > 0" class="rounded-pill bg-danger-bg px-1.5 py-px text-[10.5px] font-semibold text-danger-text">{{ recallsCount }}</span>
+            <span v-if="item.badge === 'campaigns' && campaignsActive" class="h-[5px] w-[5px] rounded-full bg-success-accent" />
+            <span v-if="item.badge === 'inbox' && inboxUnreadCount > 0" class="rounded-pill bg-brand px-1.5 py-px text-[10.5px] font-semibold text-white">{{ inboxUnreadCount }}</span>
+          </template>
+          <span v-else-if="(item.badge === 'myday' && myDayCount > 0) || (item.badge === 'recalls' && recallsCount > 0) || (item.badge === 'campaigns' && campaignsActive) || (item.badge === 'inbox' && inboxUnreadCount > 0)" class="absolute right-1 top-1 h-[6px] w-[6px] rounded-full bg-danger-text" />
         </NuxtLink>
       </div>
     </nav>
 
-    <div class="flex flex-col gap-0.5 border-t border-line px-3 py-2.5">
+    <div class="flex flex-col gap-0.5 border-t border-line px-3 py-2.5" :class="{ 'items-center px-1.5': collapsed }">
+      <button
+        type="button"
+        class="flex h-8 items-center gap-[9px] rounded-ctlSm text-[13px] text-ink-muted2 hover:bg-[#EFF0F4]"
+        :class="collapsed ? 'w-8 justify-center' : 'w-full px-[9px]'"
+        :title="collapsed ? 'Expand sidebar' : undefined"
+        @click="toggleCollapsed"
+      >
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+          <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
+          <path d="M6.2 2.5v11" />
+          <path v-if="collapsed" d="M9.5 6.2l2 1.8-2 1.8" stroke-linecap="round" stroke-linejoin="round" />
+          <path v-else d="M11.5 6.2l-2 1.8 2 1.8" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        <span v-if="!collapsed" class="flex-1 text-left">Collapse sidebar</span>
+      </button>
+
       <NuxtLink
         v-if="can('settings_access')"
         to="/settings"
-        class="flex h-8 items-center gap-[9px] rounded-ctlSm px-[9px] text-[13.5px]"
-        :class="isActive('/settings') ? 'bg-brand-tint text-brand-text font-semibold' : 'text-ink-600 hover:bg-[#EFF0F4]'"
+        class="flex h-8 items-center gap-[9px] rounded-ctlSm text-[13.5px]"
+        :class="[collapsed ? 'w-8 justify-center' : 'w-full px-[9px]', isActive('/settings') ? 'bg-brand-tint text-brand-text font-semibold' : 'text-ink-600 hover:bg-[#EFF0F4]']"
+        :title="collapsed ? 'Settings' : undefined"
       >
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="5.3" /><circle cx="8" cy="8" r="1.9" /></svg>
-        <span class="flex-1">Settings</span>
+        <span v-if="!collapsed" class="flex-1">Settings</span>
       </NuxtLink>
 
-      <div ref="accountMenuRef" class="relative">
+      <div ref="accountMenuRef" class="relative w-full" :class="{ 'flex justify-center': collapsed }">
         <button
           type="button"
-          class="flex h-10 w-full items-center gap-[9px] rounded-ctlSm px-2 text-left hover:bg-[#EFF0F4]"
+          class="flex h-10 items-center gap-[9px] rounded-ctlSm text-left hover:bg-[#EFF0F4]"
+          :class="collapsed ? 'w-8 justify-center' : 'w-full px-2'"
+          :title="collapsed ? (store.teamMember?.full_name ?? 'Account') : undefined"
           @click="accountMenuOpen = !accountMenuOpen"
         >
           <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand text-[10px] font-bold text-white">{{ initials }}</span>
-          <span class="min-w-0 flex-1">
-            <span class="block truncate text-[12.5px] font-medium text-ink-700">{{ store.teamMember?.full_name }}</span>
-            <span class="block text-[11px] text-ink-muted2">{{ roleLine }}</span>
-          </span>
-          <svg width="10" height="10" viewBox="0 0 10 10" class="shrink-0 text-ink-faint"><path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" /></svg>
+          <template v-if="!collapsed">
+            <span class="min-w-0 flex-1">
+              <span class="block truncate text-[12.5px] font-medium text-ink-700">{{ store.teamMember?.full_name }}</span>
+              <span class="block text-[11px] text-ink-muted2">{{ roleLine }}</span>
+            </span>
+            <svg width="10" height="10" viewBox="0 0 10 10" class="shrink-0 text-ink-faint"><path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" /></svg>
+          </template>
         </button>
         <div
           v-if="accountMenuOpen"
-          class="absolute bottom-full left-0 z-20 mb-1 w-full min-w-[180px] rounded-ctl border border-line bg-surface py-1 shadow-popover"
+          class="absolute bottom-full z-20 mb-1 w-max min-w-[180px] rounded-ctl border border-line bg-surface py-1 shadow-popover"
+          :class="collapsed ? 'left-full ml-1' : 'left-0 w-full'"
         >
           <NuxtLink to="/account" class="block px-3 py-2 text-left text-[13px] text-ink-500 hover:bg-surface-subtle" @click="accountMenuOpen = false">
             Account Settings

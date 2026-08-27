@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { hasBusinessHoursConfigured, isWithinBusinessHours } from '~/utils/businessHours'
-import { computeBonoStatus } from '~/utils/bonoStatus'
-import { effectivePriceCents, type AppointmentTypeOverride } from '~/utils/appointmentOverrides'
+import type { AppointmentTypeOverride } from '~/utils/appointmentOverrides'
 
 const START_HOUR = 8
 const END_HOUR = 20
@@ -105,6 +104,7 @@ const cashShiftOpen = ref(false)
 // on a weekend (clinics that work weekends would see an apparently-empty
 // calendar). Work week stays one click away via the toggle.
 const viewMode = ref<'day' | 'workweek' | 'week'>('day')
+const practitionerFilter = ref('')
 const anchorDate = ref(new Date())
 const rooms = ref<Room[]>([])
 const appointmentTypes = ref<AppointmentType[]>([])
@@ -126,7 +126,7 @@ const blockPrefill = ref<{ date: string; time: string; roomId: string } | null>(
 // "Display" toggles in the left panel, per the redesign spec.
 const settings = reactive({
   privacyMode: false,
-  flowTracker: false,
+  flowTracker: true,
   showAvailability: true,
   hideCancelled: true,
   compactRows: false,
@@ -247,7 +247,7 @@ async function loadAppointments() {
   const rangeStart = viewMode.value === 'day' ? startOfDay(anchorDate.value) : weekStart.value
   const rangeEnd = viewMode.value === 'day' ? addDays(rangeStart, 1) : addDays(rangeStart, 7)
 
-  const { data } = await supabase
+  let query = supabase
     .from('appointments')
     .select(
       'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, rescheduled, confirmation_status, note, patients(first_name, last_name), appointment_types(name, color, default_price_cents), team_members(full_name, color)',
@@ -256,10 +256,12 @@ async function loadAppointments() {
     .gte('starts_at', rangeStart.toISOString())
     .lt('starts_at', rangeEnd.toISOString())
     .order('starts_at')
+  if (practitionerFilter.value) query = query.eq('practitioner_id', practitionerFilter.value)
+  const { data } = await query
 
   appointments.value = (data as unknown as AppointmentRow[]) ?? []
   const patientIds = [...new Set(appointments.value.map((a) => a.patient_id))]
-  await Promise.all([loadActivePackages(patientIds), loadLiveBalances(patientIds)])
+  await Promise.all([loadLiveBalances(patientIds), loadFutureAppointmentIds(patientIds)])
   loading.value = false
 }
 
@@ -275,25 +277,34 @@ async function loadLiveBalances(patientIds: string[]) {
   balanceByPatient.value = map
 }
 
-interface ActivePackageInfo { sessionsTotal: number; sessionsUsed: number; priceCents: number }
-const activePackageByPatient = ref<Record<string, ActivePackageInfo>>({})
-async function loadActivePackages(patientIds: string[]) {
+// Which of today's/this-view's appointments' patients have some OTHER
+// upcoming appointment already on the books -- drives the calendar-with-X
+// icon on a block ("no future appointment") so staff can spot who needs a
+// follow-up booked without opening each patient.
+const futureAppointmentIdsByPatient = ref<Record<string, Set<string>>>({})
+async function loadFutureAppointmentIds(patientIds: string[]) {
   if (patientIds.length === 0) {
-    activePackageByPatient.value = {}
+    futureAppointmentIdsByPatient.value = {}
     return
   }
   const { data } = await supabase
-    .from('package_purchases')
-    .select('patient_id, sessions_total, sessions_used, price_cents, purchased_at')
+    .from('appointments')
+    .select('id, patient_id')
     .in('patient_id', patientIds)
-    .order('purchased_at', { ascending: false })
-  const map: Record<string, ActivePackageInfo> = {}
-  for (const p of data ?? []) {
-    if (p.sessions_used >= p.sessions_total) continue // exhausted -- not the "active" one
-    if (!map[p.patient_id]) map[p.patient_id] = { sessionsTotal: p.sessions_total, sessionsUsed: p.sessions_used, priceCents: p.price_cents }
+    .neq('status', 'cancelled')
+    .gt('starts_at', new Date().toISOString())
+  const map: Record<string, Set<string>> = {}
+  for (const a of data ?? []) {
+    ;(map[a.patient_id] ??= new Set()).add(a.id)
   }
-  activePackageByPatient.value = map
+  futureAppointmentIdsByPatient.value = map
 }
+function hasFutureAppointment(appt: AppointmentRow) {
+  const ids = futureAppointmentIdsByPatient.value[appt.patient_id]
+  if (!ids) return false
+  return [...ids].some((id) => id !== appt.id)
+}
+
 
 async function loadAvailabilityBlocks() {
   if (!store.currentClinicId) {
@@ -376,7 +387,7 @@ watch(() => store.currentClinicId, async () => {
   await loadAvailabilityBlocks()
   await loadTodayGlance()
 })
-watch([viewMode, anchorDate], async () => {
+watch([viewMode, anchorDate, practitionerFilter], async () => {
   await loadAppointments()
   await loadAvailabilityBlocks()
 })
@@ -513,11 +524,8 @@ function dotClass(appt: AppointmentRow) {
 function nameClass(appt: AppointmentRow) {
   return appointmentVisualStatus(appt) === 'no_show' ? 'text-danger-text' : 'text-ink-900'
 }
-function balanceIconColorClass(tone: 'success' | 'danger' | 'warning' | null) {
-  if (tone === 'success') return 'text-success-accent'
-  if (tone === 'danger') return 'text-danger-text'
-  if (tone === 'warning') return 'text-warning-accent'
-  return ''
+function formatCredit(cents: number) {
+  return `€${(cents / 100).toFixed(2)}`
 }
 
 function hexToRgba(hex: string, alpha: number) {
@@ -539,24 +547,6 @@ function appointmentColorStyle(appt: AppointmentRow) {
     borderLeftColor: color,
     backgroundColor: hexToRgba(color, appt.status === 'cancelled' ? 0.12 : 0.32),
   }
-}
-
-// A small card icon on the block, colored via the shared bono/balance
-// logic in utils/bonoStatus.ts (also used by the hover card and the
-// appointment edit modal, so the green/yellow/red call is consistent
-// wherever it shows up) -- lets staff spot who to collect from, who's
-// prepaid, or whose package is about to run out, without opening the
-// appointment.
-function balanceIconTone(appt: AppointmentRow): 'success' | 'danger' | 'warning' | null {
-  const pkg = activePackageByPatient.value[appt.patient_id] ?? null
-  const defaultPriceCents = appt.appointment_types?.default_price_cents ?? 0
-  return computeBonoStatus({
-    balanceCents: balanceByPatient.value[appt.patient_id] ?? 0,
-    activePackage: pkg,
-    appointmentPriceCents: appt.appointment_type_id
-      ? effectivePriceCents(defaultPriceCents, appt.appointment_type_id, appt.practitioner_id, overrides.value)
-      : defaultPriceCents,
-  }).tone
 }
 
 // Cascade positioning for an overlapping block: each lane insets from the
@@ -1062,11 +1052,15 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
         <span class="text-[13.5px] font-[560] text-ink-700">{{ rangeLabel }}</span>
       </div>
       <div class="flex items-center gap-2">
-        <div class="flex items-center rounded-ctlSm border border-line-control p-0.5 text-[12.5px]">
-          <button type="button" class="rounded-[5px] px-2.5 py-1 font-medium" :class="viewMode === 'day' ? 'bg-brand text-white' : 'text-ink-500 hover:bg-surface-subtle'" @click="viewMode = 'day'">Day</button>
-          <button type="button" class="rounded-[5px] px-2.5 py-1 font-medium" :class="viewMode === 'workweek' ? 'bg-brand text-white' : 'text-ink-500 hover:bg-surface-subtle'" @click="viewMode = 'workweek'">Work week</button>
-          <button type="button" class="rounded-[5px] px-2.5 py-1 font-medium" :class="viewMode === 'week' ? 'bg-brand text-white' : 'text-ink-500 hover:bg-surface-subtle'" @click="viewMode = 'week'">Week</button>
-        </div>
+        <select v-model="practitionerFilter" class="h-[26px] rounded-ctlSm border border-line-control bg-surface px-2 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover focus:border-brand focus:outline-none">
+          <option value="">All Practitioners</option>
+          <option v-for="m in teamMembers" :key="m.id" :value="m.id">{{ m.full_name }}</option>
+        </select>
+        <select v-model="viewMode" class="h-[26px] rounded-ctlSm border border-line-control bg-surface px-2 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover focus:border-brand focus:outline-none">
+          <option value="day">Day</option>
+          <option value="workweek">Work week</option>
+          <option value="week">Week</option>
+        </select>
         <UiBtn v-if="can('payments_allocate')" variant="secondary" size="sm" @click="cashShiftOpen = true">Cash Shift</UiBtn>
         <UiBtn variant="secondary" size="sm" @click="openBlockCreateModal()">Block time</UiBtn>
         <UiBtn variant="primary" size="sm" @click="openCreateModal()">+ New Appointment</UiBtn>
@@ -1156,17 +1150,12 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
         </div>
       </aside>
 
+      <aside v-if="settings.flowTracker" class="w-[220px] shrink-0 overflow-y-auto border-r border-line bg-surface-sidebar p-3">
+        <CalendarFlowTracker :appointments="appointments" :privacy-mode="settings.privacyMode" @advance="advanceFlow" @complete="completeFlow" />
+      </aside>
+
       <!-- Main content -->
       <div ref="scrollAreaRef" class="flex min-w-0 flex-1 flex-col overflow-y-auto">
-        <CalendarFlowTracker
-          v-if="settings.flowTracker"
-          class="m-4"
-          :appointments="appointments"
-          :privacy-mode="settings.privacyMode"
-          @advance="advanceFlow"
-          @complete="completeFlow"
-        />
-
         <div v-if="loading" class="p-6 text-[13px] text-ink-faint">Loading…</div>
 
         <div v-else-if="!store.currentClinicId" class="p-6 text-[13px] text-ink-faint">
@@ -1266,10 +1255,21 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                         <p class="min-w-0 flex-1 truncate text-[12.5px] font-semibold" :class="[nameClass(appt), { 'blur-sm select-none': settings.privacyMode, 'line-through opacity-70': appt.status === 'cancelled' || appt.status === 'completed' }]">
                           {{ appt.patients?.first_name }} {{ appt.patients?.last_name }}
                         </p>
-                        <span v-if="balanceIconTone(appt)" class="flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-full bg-white">
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" :class="balanceIconColorClass(balanceIconTone(appt))">
-                            <path d="M3 10h18M7 15h1m4 0h1m-7 4h12a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                        <span v-if="(balanceByPatient[appt.patient_id] ?? 0) > 0" class="group/credit relative flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-full bg-white">
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" class="text-ink-900">
+                            <path d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                           </svg>
+                          <span class="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-ctlSm bg-ink-900 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-popover transition-opacity delay-0 group-hover/credit:opacity-100 group-hover/credit:delay-[3000ms]">
+                            Patient in credit ({{ formatCredit(balanceByPatient[appt.patient_id] ?? 0) }})
+                          </span>
+                        </span>
+                        <span v-if="!hasFutureAppointment(appt)" class="group/noappt relative flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-full bg-white">
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" class="text-ink-900">
+                            <path d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5A2.25 2.25 0 015.25 5.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0V11.25A2.25 2.25 0 015.25 9h13.5a2.25 2.25 0 012.25 2.25v7.5M9.75 13.5l4.5 4.5m0-4.5l-4.5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                          </svg>
+                          <span class="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-ctlSm bg-ink-900 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-popover transition-opacity delay-0 group-hover/noappt:opacity-100 group-hover/noappt:delay-[3000ms]">
+                            No future appointment
+                          </span>
                         </span>
                       </div>
                     </div>
@@ -1401,10 +1401,21 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                         <p class="min-w-0 flex-1 truncate text-[11px] font-semibold" :class="[nameClass(appt), { 'blur-sm select-none': settings.privacyMode, 'line-through opacity-70': appt.status === 'cancelled' || appt.status === 'completed' }]">
                           {{ appt.patients?.first_name }} {{ appt.patients?.last_name }}
                         </p>
-                        <span v-if="balanceIconTone(appt)" class="flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded-full bg-white">
-                          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" :class="balanceIconColorClass(balanceIconTone(appt))">
-                            <path d="M3 10h18M7 15h1m4 0h1m-7 4h12a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                        <span v-if="(balanceByPatient[appt.patient_id] ?? 0) > 0" class="group/credit relative flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded-full bg-white">
+                          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" class="text-ink-900">
+                            <path d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                           </svg>
+                          <span class="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-ctlSm bg-ink-900 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-popover transition-opacity delay-0 group-hover/credit:opacity-100 group-hover/credit:delay-[3000ms]">
+                            Patient in credit ({{ formatCredit(balanceByPatient[appt.patient_id] ?? 0) }})
+                          </span>
+                        </span>
+                        <span v-if="!hasFutureAppointment(appt)" class="group/noappt relative flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded-full bg-white">
+                          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" class="text-ink-900">
+                            <path d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5A2.25 2.25 0 015.25 5.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0V11.25A2.25 2.25 0 015.25 9h13.5a2.25 2.25 0 012.25 2.25v7.5M9.75 13.5l4.5 4.5m0-4.5l-4.5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                          </svg>
+                          <span class="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-ctlSm bg-ink-900 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-popover transition-opacity delay-0 group-hover/noappt:opacity-100 group-hover/noappt:delay-[3000ms]">
+                            No future appointment
+                          </span>
                         </span>
                       </div>
                       <div

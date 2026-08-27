@@ -41,6 +41,7 @@ const groups = [
       { to: '/settings/practitioners', label: 'Practitioners', description: 'Link migrated names to real accounts, or invite them.', icon: ICONS.userCircle },
       { to: '/settings/roles', label: 'Roles & Permissions', description: 'Control what each role can see and do.', icon: ICONS.lockClosed },
       { to: '/settings/appointment-types', label: 'Appointment Types', description: 'Visit types, durations, colors, default price.', icon: ICONS.tag },
+      { to: '/settings/reschedule-reasons', label: 'Reschedule Reasons', description: 'Reasons staff pick when dragging an appointment to a new time, and the scheduling policy fee.', icon: ICONS.calendar },
       { to: '/settings/rooms', label: 'Calendar Resources', description: 'Rooms used for scheduling per clinic.', icon: ICONS.calendar },
       { to: '/settings/app', label: 'Mobile App', description: "Your clinic's join code, QR code, and app install stats.", icon: ICONS.devicePhoneMobile },
       { to: '/settings/referral-sources', label: 'Referral Sources', description: 'The options on a patient\'s referral source field.', icon: ICONS.tag },

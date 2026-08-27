@@ -190,6 +190,7 @@ export type Database = {
           created_at: string
           id: string
           name: string
+          scheduling_policy_fee_cents: number | null
           slug: string
           stripe_connect_account_id: string | null
           stripe_publishable_key: string | null
@@ -207,6 +208,7 @@ export type Database = {
           created_at?: string
           id?: string
           name: string
+          scheduling_policy_fee_cents?: number | null
           slug: string
           stripe_connect_account_id?: string | null
           stripe_publishable_key?: string | null
@@ -224,6 +226,7 @@ export type Database = {
           created_at?: string
           id?: string
           name?: string
+          scheduling_policy_fee_cents?: number | null
           slug?: string
           stripe_connect_account_id?: string | null
           stripe_publishable_key?: string | null
@@ -321,6 +324,74 @@ export type Database = {
             columns: ["account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      appointment_reschedules: {
+        Row: {
+          account_id: string
+          appointment_id: string
+          created_at: string
+          created_by: string | null
+          fee_applied: boolean
+          from_starts_at: string
+          id: string
+          note: string | null
+          reason_id: string | null
+          to_starts_at: string
+        }
+        Insert: {
+          account_id: string
+          appointment_id: string
+          created_at?: string
+          created_by?: string | null
+          fee_applied?: boolean
+          from_starts_at: string
+          id?: string
+          note?: string | null
+          reason_id?: string | null
+          to_starts_at: string
+        }
+        Update: {
+          account_id?: string
+          appointment_id?: string
+          created_at?: string
+          created_by?: string | null
+          fee_applied?: boolean
+          from_starts_at?: string
+          id?: string
+          note?: string | null
+          reason_id?: string | null
+          to_starts_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "appointment_reschedules_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointment_reschedules_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointment_reschedules_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointment_reschedules_reason_id_fkey"
+            columns: ["reason_id"]
+            isOneToOne: false
+            referencedRelation: "reschedule_reasons"
             referencedColumns: ["id"]
           },
         ]
@@ -2463,6 +2534,35 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "referral_sources_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reschedule_reasons: {
+        Row: {
+          account_id: string
+          created_at: string
+          id: string
+          name: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          id?: string
+          name: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          id?: string
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reschedule_reasons_account_id_fkey"
             columns: ["account_id"]
             isOneToOne: false
             referencedRelation: "accounts"

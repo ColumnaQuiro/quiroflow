@@ -31,6 +31,7 @@ export const useAccountStore = defineStore('account', {
     accountSlug: '' as string,
     whatsappConfirmationTemplateName: '' as string,
     whatsappRecallTemplateName: '' as string,
+    schedulingPolicyFeeCents: null as number | null,
     clinics: [] as Clinic[],
     currentClinicId: null as string | null,
     permissions: {} as Record<string, PermissionValue>,
@@ -74,7 +75,7 @@ export const useAccountStore = defineStore('account', {
       const [{ data: account }, { data: clinics }, { data: permissions }] = await Promise.all([
         supabase
           .from('accounts')
-          .select('name, slug, whatsapp_confirmation_template_name, whatsapp_recall_template_name')
+          .select('name, slug, whatsapp_confirmation_template_name, whatsapp_recall_template_name, scheduling_policy_fee_cents')
           .eq('id', teamMember.account_id)
           .maybeSingle(),
         supabase
@@ -88,6 +89,7 @@ export const useAccountStore = defineStore('account', {
       this.accountSlug = account?.slug ?? ''
       this.whatsappConfirmationTemplateName = account?.whatsapp_confirmation_template_name ?? ''
       this.whatsappRecallTemplateName = account?.whatsapp_recall_template_name ?? ''
+      this.schedulingPolicyFeeCents = account?.scheduling_policy_fee_cents ?? null
       this.clinics = (clinics as Clinic[]) ?? []
       this.permissions = (permissions as Record<string, PermissionValue>) ?? {}
       if (!this.currentClinicId && this.clinics.length > 0) {
@@ -103,6 +105,7 @@ export const useAccountStore = defineStore('account', {
       this.accountSlug = ''
       this.whatsappConfirmationTemplateName = ''
       this.whatsappRecallTemplateName = ''
+      this.schedulingPolicyFeeCents = null
       this.clinics = []
       this.currentClinicId = null
       this.permissions = {}

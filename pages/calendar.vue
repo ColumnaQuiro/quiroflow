@@ -806,6 +806,19 @@ function onAppointmentDragMove(e: PointerEvent) {
   }
 }
 
+interface PendingReschedule {
+  appointmentId: string
+  patientId: string
+  patientName: string
+  appointmentTypeName: string | null
+  origStartsAt: string
+  newStartsAt: string
+  newEndsAt: string
+  newRoomId: string | null
+  revert: () => void
+}
+const pendingReschedule = ref<PendingReschedule | null>(null)
+
 async function onAppointmentDragEnd(e: PointerEvent) {
   const s = dragState.value
   window.removeEventListener('pointermove', onAppointmentDragMove)
@@ -835,16 +848,74 @@ async function onAppointmentDragEnd(e: PointerEvent) {
     }
   }
 
+  pendingReschedule.value = {
+    appointmentId: appt.id,
+    patientId: appt.patient_id,
+    patientName: appt.patients ? `${appt.patients.first_name} ${appt.patients.last_name ?? ''}`.trim() : '',
+    appointmentTypeName: appt.appointment_types?.name ?? null,
+    origStartsAt: orig.starts_at,
+    newStartsAt: appt.starts_at,
+    newEndsAt: appt.ends_at,
+    newRoomId: appt.room_id,
+    revert,
+  }
+}
+
+function cancelReschedule() {
+  pendingReschedule.value?.revert()
+  pendingReschedule.value = null
+}
+
+async function confirmReschedule(payload: { reasonId: string | null; note: string; applyFee: boolean; resendConfirmation: boolean }) {
+  const pending = pendingReschedule.value
+  if (!pending) return
+
   const { error } = await supabase
     .from('appointments')
-    .update({ starts_at: appt.starts_at, ends_at: appt.ends_at, room_id: appt.room_id, rescheduled: true })
-    .eq('id', appt.id)
+    .update({ starts_at: pending.newStartsAt, ends_at: pending.newEndsAt, room_id: pending.newRoomId, rescheduled: true })
+    .eq('id', pending.appointmentId)
   if (error) {
-    revert()
+    pending.revert()
     alert(error.message)
+    pendingReschedule.value = null
     return
   }
-  fire('appointment.rescheduled', { patientId: appt.patient_id, appointmentId: appt.id })
+
+  await supabase.from('appointment_reschedules').insert({
+    account_id: store.accountId!,
+    appointment_id: pending.appointmentId,
+    from_starts_at: pending.origStartsAt,
+    to_starts_at: pending.newStartsAt,
+    reason_id: payload.reasonId,
+    note: payload.note || null,
+    fee_applied: payload.applyFee,
+    created_by: store.teamMember?.id ?? null,
+  })
+
+  if (payload.applyFee && store.schedulingPolicyFeeCents) {
+    const { count } = await supabase.from('invoices').select('id', { count: 'exact', head: true })
+    const invoiceNumber = `INV-${String((count ?? 0) + 1).padStart(4, '0')}`
+    const { data: feeInvoice } = await supabase
+      .from('invoices')
+      .insert({ account_id: store.accountId!, patient_id: pending.patientId, invoice_number: invoiceNumber, status: 'unpaid', total_cents: store.schedulingPolicyFeeCents })
+      .select('id')
+      .single()
+    if (feeInvoice) {
+      await supabase.from('invoice_line_items').insert({
+        account_id: store.accountId!,
+        invoice_id: feeInvoice.id,
+        description: 'Scheduling policy fee',
+        quantity: 1,
+        price_cents: store.schedulingPolicyFeeCents,
+      })
+    }
+  }
+
+  if (payload.resendConfirmation) {
+    fire('appointment.rescheduled', { patientId: pending.patientId, appointmentId: pending.appointmentId })
+  }
+
+  pendingReschedule.value = null
 }
 
 // Wraps openEditModal so the click the browser synthesizes right after a
@@ -1338,6 +1409,18 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
       :prefill-room-id="prefill?.roomId"
       @close="modalOpen = false"
       @saved="onSaved"
+    />
+
+    <CalendarRescheduleConfirmModal
+      v-if="pendingReschedule"
+      :appointment-id="pendingReschedule.appointmentId"
+      :patient-id="pendingReschedule.patientId"
+      :patient-name="pendingReschedule.patientName"
+      :appointment-type-name="pendingReschedule.appointmentTypeName"
+      :orig-starts-at="pendingReschedule.origStartsAt"
+      :new-starts-at="pendingReschedule.newStartsAt"
+      @close="cancelReschedule"
+      @confirm="confirmReschedule"
     />
 
     <CalendarAvailabilityBlockModal

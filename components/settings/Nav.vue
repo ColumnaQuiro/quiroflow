@@ -22,6 +22,7 @@ const allGroups: NavGroup[] = [
       { label: 'Practitioners', to: '/settings/practitioners', perm: 'team_admin' },
       { label: 'Roles & Permissions', to: '/settings/roles', perm: 'roles_admin' },
       { label: 'Appointment Types', to: '/settings/appointment-types', perm: 'clinic_config' },
+      { label: 'Reschedule Reasons', to: '/settings/reschedule-reasons', perm: 'clinic_config' },
       { label: 'Calendar Resources', to: '/settings/rooms', perm: 'clinic_config' },
       { label: 'Mobile App', to: '/settings/app', perm: 'clinic_config' },
     ],

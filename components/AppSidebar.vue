@@ -173,7 +173,7 @@ async function signOut() {
       </button>
       <button
         type="button"
-        class="flex h-8 items-center gap-2 rounded-ctl bg-chip text-left text-[13px] text-ink-muted hover:bg-[#ECEDF1]"
+        class="flex h-8 items-center gap-2 rounded-ctl bg-chip text-left text-[13px] text-ink-muted hover:bg-surface-subtle"
         :class="collapsed ? 'w-8 justify-center' : 'w-full px-2.5'"
         :title="collapsed ? 'Search or jump to (⌘K)' : undefined"
         @click="paletteOpen = true"
@@ -194,7 +194,7 @@ async function signOut() {
           :key="item.to"
           :to="item.to"
           class="relative flex h-8 items-center gap-[9px] rounded-ctlSm text-[13.5px]"
-          :class="[collapsed ? 'w-8 justify-center' : 'w-full px-[9px]', isActive(item.to) ? 'bg-brand-tint text-brand-text font-semibold' : 'text-ink-600 hover:bg-[#EFF0F4]']"
+          :class="[collapsed ? 'w-8 justify-center' : 'w-full px-[9px]', isActive(item.to) ? 'bg-brand-tint text-brand-text font-semibold' : 'text-ink-600 hover:bg-surface-subtle']"
           :title="collapsed ? item.label : undefined"
         >
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path :d="item.icon" /></svg>
@@ -213,7 +213,7 @@ async function signOut() {
     <div class="flex flex-col gap-0.5 border-t border-line px-3 py-2.5" :class="{ 'items-center px-1.5': collapsed }">
       <button
         type="button"
-        class="flex h-8 items-center gap-[9px] rounded-ctlSm text-[13px] text-ink-muted2 hover:bg-[#EFF0F4]"
+        class="flex h-8 items-center gap-[9px] rounded-ctlSm text-[13px] text-ink-muted2 hover:bg-surface-subtle"
         :class="collapsed ? 'w-8 justify-center' : 'w-full px-[9px]'"
         :title="collapsed ? 'Expand sidebar' : undefined"
         @click="toggleCollapsed"
@@ -231,7 +231,7 @@ async function signOut() {
         v-if="can('settings_access')"
         to="/settings"
         class="flex h-8 items-center gap-[9px] rounded-ctlSm text-[13.5px]"
-        :class="[collapsed ? 'w-8 justify-center' : 'w-full px-[9px]', isActive('/settings') ? 'bg-brand-tint text-brand-text font-semibold' : 'text-ink-600 hover:bg-[#EFF0F4]']"
+        :class="[collapsed ? 'w-8 justify-center' : 'w-full px-[9px]', isActive('/settings') ? 'bg-brand-tint text-brand-text font-semibold' : 'text-ink-600 hover:bg-surface-subtle']"
         :title="collapsed ? 'Settings' : undefined"
       >
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="5.3" /><circle cx="8" cy="8" r="1.9" /></svg>
@@ -241,7 +241,7 @@ async function signOut() {
       <div ref="accountMenuRef" class="relative w-full" :class="{ 'flex justify-center': collapsed }">
         <button
           type="button"
-          class="flex h-10 items-center gap-[9px] rounded-ctlSm text-left hover:bg-[#EFF0F4]"
+          class="flex h-10 items-center gap-[9px] rounded-ctlSm text-left hover:bg-surface-subtle"
           :class="collapsed ? 'w-8 justify-center' : 'w-full px-2'"
           :title="collapsed ? (store.teamMember?.full_name ?? 'Account') : undefined"
           @click="accountMenuOpen = !accountMenuOpen"

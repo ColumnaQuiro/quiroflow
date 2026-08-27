@@ -5,7 +5,7 @@ const { can } = usePermission()
 interface NavItem {
   label: string
   to: string
-  perm: string
+  perm?: string
 }
 interface NavGroup {
   label: string
@@ -13,6 +13,10 @@ interface NavGroup {
 }
 
 const allGroups: NavGroup[] = [
+  {
+    label: 'General',
+    items: [{ label: 'Appearance', to: '/settings/appearance' }],
+  },
   {
     label: 'Clinic',
     items: [
@@ -56,7 +60,7 @@ const allGroups: NavGroup[] = [
 ]
 
 const groups = computed(() =>
-  allGroups.map((group) => ({ ...group, items: group.items.filter((item) => can(item.perm)) })).filter((group) => group.items.length > 0),
+  allGroups.map((group) => ({ ...group, items: group.items.filter((item) => !item.perm || can(item.perm)) })).filter((group) => group.items.length > 0),
 )
 
 function isActive(to: string) {

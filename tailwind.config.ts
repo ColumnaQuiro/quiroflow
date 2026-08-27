@@ -1,9 +1,14 @@
 import type { Config } from 'tailwindcss'
 
 // Design tokens from the "QuiroFlow UI Redesign" Claude Design handoff.
-// Values are the literal hex/px specs from that handoff, mapped onto named
-// Tailwind theme keys so every screen pulls from the same palette instead of
-// re-deriving close-enough grays ad hoc.
+// Every color is a CSS variable (defined in assets/css/theme.css as an RGB
+// triplet, light in :root and dark in [data-theme='dark']) rather than a
+// literal hex, so useTheme() can flip the whole app's palette by setting one
+// attribute on <html> instead of every screen needing its own dark variant.
+function themeColor(variable: string) {
+  return `rgb(var(${variable}) / <alpha-value>)`
+}
+
 export default <Partial<Config>>{
   theme: {
     extend: {
@@ -13,80 +18,80 @@ export default <Partial<Config>>{
       },
       colors: {
         brand: {
-          DEFAULT: '#4F46E5',
-          hover: '#4339CE',
-          text: '#3B32C9',
-          text2: '#4338CA',
-          tint: '#EEF0FE',
-          tintBorder: '#D8DCFB',
-          tintDeep: '#F2F3FE',
-          tintDeepBorder: '#DEE1FC',
+          DEFAULT: themeColor('--color-brand'),
+          hover: themeColor('--color-brand-hover'),
+          text: themeColor('--color-brand-text'),
+          text2: themeColor('--color-brand-text2'),
+          tint: themeColor('--color-brand-tint'),
+          tintBorder: themeColor('--color-brand-tintBorder'),
+          tintDeep: themeColor('--color-brand-tintDeep'),
+          tintDeepBorder: themeColor('--color-brand-tintDeepBorder'),
         },
         surface: {
-          page: '#F7F8FA',
-          sidebar: '#FBFBFC',
-          DEFAULT: '#FFFFFF',
-          subtle: '#FAFAFB',
-          subtle2: '#FCFCFD',
+          page: themeColor('--color-surface-page'),
+          sidebar: themeColor('--color-surface-sidebar'),
+          DEFAULT: themeColor('--color-surface'),
+          subtle: themeColor('--color-surface-subtle'),
+          subtle2: themeColor('--color-surface-subtle2'),
         },
         line: {
-          DEFAULT: '#E8E9ED',
-          control: '#E1E3EA',
-          controlHover: '#CFD2DC',
-          divider: '#F0F1F4',
-          row: '#F1F2F5',
-          row2: '#F3F4F7',
-          faint: '#F5F6F8',
+          DEFAULT: themeColor('--color-line'),
+          control: themeColor('--color-line-control'),
+          controlHover: themeColor('--color-line-controlHover'),
+          divider: themeColor('--color-line-divider'),
+          row: themeColor('--color-line-row'),
+          row2: themeColor('--color-line-row2'),
+          faint: themeColor('--color-line-faint'),
         },
         ink: {
-          900: '#15171E',
-          800: '#1B1E28',
-          700: '#22252F',
-          600: '#2B3040',
-          550: '#31364A',
-          500: '#3A3F52',
-          450: '#4A4F60',
-          muted: '#6B7180',
-          muted2: '#8A8FA0',
-          faint: '#9BA0B0',
-          faint2: '#A2A7B6',
-          faint3: '#B6BAC6',
+          900: themeColor('--color-ink-900'),
+          800: themeColor('--color-ink-800'),
+          700: themeColor('--color-ink-700'),
+          600: themeColor('--color-ink-600'),
+          550: themeColor('--color-ink-550'),
+          500: themeColor('--color-ink-500'),
+          450: themeColor('--color-ink-450'),
+          muted: themeColor('--color-ink-muted'),
+          muted2: themeColor('--color-ink-muted2'),
+          faint: themeColor('--color-ink-faint'),
+          faint2: themeColor('--color-ink-faint2'),
+          faint3: themeColor('--color-ink-faint3'),
         },
         success: {
-          text: '#157F52',
-          deep: '#136B47',
-          accent: '#1D8A5B',
-          bg: '#E9F6EF',
-          bg2: '#F0F9F4',
-          border: '#CBE9DA',
-          border2: '#D7EEE2',
+          text: themeColor('--color-success-text'),
+          deep: themeColor('--color-success-deep'),
+          accent: themeColor('--color-success-accent'),
+          bg: themeColor('--color-success-bg'),
+          bg2: themeColor('--color-success-bg2'),
+          border: themeColor('--color-success-border'),
+          border2: themeColor('--color-success-border2'),
         },
         warning: {
-          text: '#96591A',
-          accent: '#B45309',
-          bg: '#FEF6E7',
-          bg2: '#FEF9EF',
-          border: '#F2E3C9',
+          text: themeColor('--color-warning-text'),
+          accent: themeColor('--color-warning-accent'),
+          bg: themeColor('--color-warning-bg'),
+          bg2: themeColor('--color-warning-bg2'),
+          border: themeColor('--color-warning-border'),
         },
         danger: {
-          text: '#B4233C',
-          bg: '#FDF0F2',
-          bg2: '#FEF4F5',
-          bg3: '#FFF8F8',
-          border: '#F4DADE',
+          text: themeColor('--color-danger-text'),
+          bg: themeColor('--color-danger-bg'),
+          bg2: themeColor('--color-danger-bg2'),
+          bg3: themeColor('--color-danger-bg3'),
+          border: themeColor('--color-danger-border'),
         },
         chip: {
-          bg: '#F1F2F5',
-          bg2: '#F4F5F8',
-          border: '#E4E5EB',
-          text: '#6B7180',
+          bg: themeColor('--color-chip-bg'),
+          bg2: themeColor('--color-chip-bg2'),
+          border: themeColor('--color-chip-border'),
+          text: themeColor('--color-chip-text'),
         },
         chart: {
-          cancelled: '#F6C7CE',
-          projected: '#C7CBFA',
+          cancelled: themeColor('--color-chart-cancelled'),
+          projected: themeColor('--color-chart-projected'),
         },
         toggle: {
-          off: '#D8DAE2',
+          off: themeColor('--color-toggle-off'),
         },
       },
       borderRadius: {

@@ -8,6 +8,7 @@ export default defineNuxtConfig({
   // per-process open-file limit (EMFILE) once CocoaPods/Gradle populate
   // mobile/ios and mobile/android.
   ignore: ['mobile/**'],
+  css: ['~/assets/css/theme.css'],
   app: {
     head: {
       // The whole app currently lives on app.quiroflow.com -- there's no

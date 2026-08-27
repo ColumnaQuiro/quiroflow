@@ -2754,6 +2754,7 @@ export type Database = {
           online_booking_enabled: boolean
           role: string
           role_id: string | null
+          theme_preference: string
           user_id: string
         }
         Insert: {
@@ -2768,6 +2769,7 @@ export type Database = {
           online_booking_enabled?: boolean
           role?: string
           role_id?: string | null
+          theme_preference?: string
           user_id: string
         }
         Update: {
@@ -2782,6 +2784,7 @@ export type Database = {
           online_booking_enabled?: boolean
           role?: string
           role_id?: string | null
+          theme_preference?: string
           user_id?: string
         }
         Relationships: [

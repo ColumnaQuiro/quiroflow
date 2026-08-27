@@ -7,6 +7,7 @@ export interface TeamMember {
   role: 'owner' | 'practitioner' | 'front_desk'
   color: string
   is_owner: boolean
+  theme_preference: 'light' | 'dark' | 'system'
 }
 
 export type PermissionValue = boolean | 'all' | 'own' | 'none'
@@ -59,7 +60,7 @@ export const useAccountStore = defineStore('account', {
 
       const { data: teamMember } = await supabase
         .from('team_members')
-        .select('id, account_id, full_name, role, color, is_owner')
+        .select('id, account_id, full_name, role, color, is_owner, theme_preference')
         .eq('user_id', user.value.sub)
         .maybeSingle()
 
@@ -71,6 +72,10 @@ export const useAccountStore = defineStore('account', {
       }
 
       this.teamMember = teamMember as TeamMember
+      // The client plugin already applied whatever was cached in
+      // localStorage before this resolved -- this reconciles it with the
+      // user's real saved preference (e.g. first login on a new device).
+      useTheme().setPreference(teamMember.theme_preference as 'light' | 'dark' | 'system')
 
       const [{ data: account }, { data: clinics }, { data: permissions }] = await Promise.all([
         supabase

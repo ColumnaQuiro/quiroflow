@@ -159,18 +159,28 @@ async function removeLineItem(item: LineItemRow) {
   await recalcInvoiceTotal()
 }
 
-async function usePackageSession(pkg: { id: string; package_name: string; sessions_used: number; sessions_total: number }) {
+async function usePackageSession(pkg: { id: string; package_name: string; sessions_used: number; sessions_total: number; price_cents: number }) {
   if (pkg.sessions_used >= pkg.sessions_total || !invoice.value) return
   savingPayment.value = true
 
   await supabase.from('package_purchases').update({ sessions_used: pkg.sessions_used + 1 }).eq('id', pkg.id)
-  // A package session spends real credit at this appointment's actual
-  // price -- a payment (method 'credit') plus a matching negative
-  // account_credits row, same compound pattern as "Credit on account"
-  // below. Previously this just flipped the invoice to 'paid' with no
-  // payment behind it at all, which silently broke balanceCents (paid
-  // never caught up to invoiced) for every package-covered visit.
+  // A package session spends real credit -- a payment (method 'credit')
+  // plus a matching negative account_credits row, same compound pattern as
+  // "Credit on account" below. Previously this just flipped the invoice to
+  // 'paid' with no payment behind it at all, which silently broke
+  // balanceCents (paid never caught up to invoiced) for every
+  // package-covered visit.
+  //
+  // The payment (marking THIS invoice paid) is the visit's own listed
+  // price, same as any other invoice. The credit withdrawal is a separate
+  // number: the bono's own per-session value (total price ÷ total
+  // sessions), which is what the patient actually paid per visit when they
+  // bought the bono -- it has nothing to do with what any one appointment
+  // type happens to be priced at. A 10-session, €1000 bono draws €100 per
+  // session regardless of whether this particular visit's invoice reads
+  // €55 or €150.
   const remainingCents = invoice.value.total_cents - paidCents.value
+  const perSessionCents = Math.round(pkg.price_cents / pkg.sessions_total)
   if (remainingCents > 0) {
     await supabase.from('payments').insert({
       account_id: store.accountId!,
@@ -178,10 +188,12 @@ async function usePackageSession(pkg: { id: string; package_name: string; sessio
       amount_cents: remainingCents,
       method: 'credit',
     })
+  }
+  if (perSessionCents > 0) {
     await supabase.from('account_credits').insert({
       account_id: store.accountId!,
       patient_id: props.patientId,
-      amount_cents: -remainingCents,
+      amount_cents: -perSessionCents,
       reason: `Package session: ${pkg.package_name}`,
       invoice_id: invoice.value.id,
       created_by: store.teamMember?.id ?? null,

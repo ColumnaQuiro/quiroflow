@@ -122,7 +122,7 @@ function handleCharge() {
         />
 
         <div class="min-w-0 flex-1">
-          <nav class="sticky top-6 z-10 flex gap-1 border-b border-chip-border bg-surface-page">
+          <nav class="sticky top-0 z-10 flex gap-1 border-b border-chip-border bg-surface-page">
             <button
               v-for="tab in tabs"
               :key="tab.key"

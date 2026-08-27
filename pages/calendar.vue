@@ -975,6 +975,13 @@ const hoverPos = ref({ x: 0, y: 0 })
 let hoverShowTimer: ReturnType<typeof setTimeout> | null = null
 let hoverHideTimer: ReturnType<typeof setTimeout> | null = null
 
+// Hovercard is a fixed 300px wide (AppointmentHoverCard.vue) -- shown on
+// whichever side of the block actually has room, so on a block near the
+// right edge of the screen it opens to the left instead of clamping back
+// over the block itself and blocking clicks on it.
+const HOVERCARD_WIDTH = 300
+const HOVERCARD_GAP = 10
+
 function scheduleHoverCard(appt: AppointmentRow, event: MouseEvent) {
   if (hoverHideTimer) {
     clearTimeout(hoverHideTimer)
@@ -983,11 +990,17 @@ function scheduleHoverCard(appt: AppointmentRow, event: MouseEvent) {
   const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
   hoverShowTimer = setTimeout(() => {
     hoveredAppt.value = appt
+    const spaceRight = window.innerWidth - rect.right
+    const spaceLeft = rect.left
+    const showRight = spaceRight >= HOVERCARD_WIDTH + HOVERCARD_GAP || spaceRight >= spaceLeft
+    const x = showRight
+      ? Math.min(rect.right + HOVERCARD_GAP, window.innerWidth - HOVERCARD_WIDTH - HOVERCARD_GAP)
+      : Math.max(HOVERCARD_GAP, rect.left - HOVERCARD_WIDTH - HOVERCARD_GAP)
     hoverPos.value = {
-      x: Math.min(rect.right + 10, window.innerWidth - 316),
+      x,
       y: Math.max(8, Math.min(rect.top, window.innerHeight - 380)),
     }
-  }, 350)
+  }, 500)
 }
 function cancelHoverShow() {
   if (hoverShowTimer) {

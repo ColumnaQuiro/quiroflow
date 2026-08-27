@@ -2,7 +2,8 @@ describe('Patients', () => {
   it('creates a patient and lands on their detail page', () => {
     cy.seedStaffAccount().then((account) => {
       cy.login(account.email, account.password)
-      cy.visit('/patients/new')
+      cy.visit('/patients')
+      cy.contains('button', 'New patient').click()
 
       cy.get('#first-name').type('Jane')
       cy.get('#last-name').type('Doe')

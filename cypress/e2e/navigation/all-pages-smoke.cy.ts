@@ -2,7 +2,6 @@ const STATIC_AUTHENTICATED_PAGES = [
   '/dashboard',
   '/calendar',
   '/patients',
-  '/patients/new',
   '/recalls',
   '/billing',
   '/billing/new',

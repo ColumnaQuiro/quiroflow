@@ -36,6 +36,7 @@ const missingContact = ref<'any' | 'email' | 'phone'>('any')
 const practitionerFilter = ref('')
 const statusFilter = ref<'active' | 'inactive' | 'any'>('active')
 const exporting = ref(false)
+const showAddPatient = ref(false)
 const patients = ref<Patient[]>([])
 const balanceByPatient = ref<Record<string, number>>({})
 const nextAppointmentByPatient = ref<Record<string, string>>({})
@@ -326,8 +327,14 @@ function tagClass(tag: string) {
     >
       <UiBtn variant="secondary" :disabled="exporting" @click="exportCsv">{{ exporting ? 'Exporting…' : 'Export' }}</UiBtn>
       <UiBtn variant="secondary" @click="navigateTo('/settings/import')">Import</UiBtn>
-      <UiBtn variant="primary" @click="navigateTo('/patients/new')">New patient</UiBtn>
+      <UiBtn variant="primary" @click="showAddPatient = true">New patient</UiBtn>
     </PageHeader>
+
+    <PatientsAddPatientModal
+      v-if="showAddPatient"
+      @close="showAddPatient = false"
+      @created="(id) => { showAddPatient = false; navigateTo(`/patients/${id}`) }"
+    />
 
     <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
       <!-- Filter bar -->

@@ -35,14 +35,19 @@ const sendMessage = ref('')
 
 const { balanceCents, refresh: refreshCreditSummary } = usePatientFinancialSummary(() => invoice.value?.patient_id ?? '')
 const { nextAppointmentDate } = useNextAppointment(() => invoice.value?.patient_id ?? '')
+const hideNextVisit = ref(false)
 
 async function load() {
   loading.value = true
-  const { data } = await supabase
-    .from('invoices')
-    .select('*, patients(first_name, last_name, email, address, city, postal_code, country, national_id), appointments(clinic_id)')
-    .eq('id', invoiceId)
-    .maybeSingle()
+  const [{ data }, { data: account }] = await Promise.all([
+    supabase
+      .from('invoices')
+      .select('*, patients(first_name, last_name, email, address, city, postal_code, country, national_id), appointments(clinic_id)')
+      .eq('id', invoiceId)
+      .maybeSingle(),
+    supabase.from('accounts').select('hide_next_visit_on_invoices').eq('id', store.accountId!).maybeSingle(),
+  ])
+  hideNextVisit.value = !!account?.hide_next_visit_on_invoices
 
   if (!data) {
     notFound.value = true
@@ -265,7 +270,7 @@ function formatDate(iso: string) {
 
           <div class="border-t border-line-divider px-6 py-4">
             <p v-if="invoiceClinic?.invoice_footer_text" class="whitespace-pre-line text-[12px] text-ink-faint2">{{ invoiceClinic.invoice_footer_text }}</p>
-            <p class="mt-1.5 text-[12px] text-ink-faint2">Your next visit: {{ nextAppointmentDate ? formatDate(nextAppointmentDate) : '—' }}</p>
+            <p v-if="!hideNextVisit" class="mt-1.5 text-[12px] text-ink-faint2">Your next visit: {{ nextAppointmentDate ? formatDate(nextAppointmentDate) : '—' }}</p>
           </div>
 
           <div class="flex items-center justify-between gap-3 border-t border-line bg-surface-subtle2 px-6 py-4 print:hidden">

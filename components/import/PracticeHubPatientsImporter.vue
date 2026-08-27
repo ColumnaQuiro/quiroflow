@@ -18,7 +18,21 @@ const dragOver = ref(false)
 const fileError = ref('')
 const fileName = ref('')
 
-const targetClinicId = ref(store.currentClinicId ?? '')
+// A plain `ref(store.currentClinicId ?? '')` snapshot here would silently
+// stick at '' forever if this component mounts before the account store's
+// own async load() resolves -- every imported patient would end up with no
+// clinic at all (invisible on the main Patients list once its clinic
+// filter applies) with no error anywhere. This stays in sync until the
+// user actually touches the dropdown themselves.
+const targetClinicId = ref('')
+const clinicManuallySet = ref(false)
+watch(
+  () => store.currentClinicId,
+  (id) => {
+    if (!clinicManuallySet.value && id) targetClinicId.value = id
+  },
+  { immediate: true },
+)
 
 const toImport = ref<MappedPatient[]>([])
 const skippedDuplicate = ref(0)
@@ -58,6 +72,17 @@ function parseBalanceCents(value: string): number {
 function parseLanguage(value: string): string {
   const code = value.trim().toLowerCase()
   return LANGUAGES.some((l) => l.code === code) ? code : 'es'
+}
+
+// Same "Created" column/parsing PracticeHubFileAttachmentsImporter.vue
+// already uses. Without this, every migrated patient's created_at defaults
+// to the moment of import (now()) instead of when they actually joined the
+// practice -- e.g. tenure-based reports and "new patient" filters would be
+// wrong for the entire migrated patient base.
+function parseCreatedAt(value: string): string | undefined {
+  if (!value?.trim()) return undefined
+  const d = new Date(value.trim().replace(' ', 'T'))
+  return Number.isNaN(d.getTime()) ? undefined : d.toISOString()
 }
 
 function buildNotes(row: CsvRow): string | null {
@@ -140,6 +165,11 @@ async function handleFile(file: File) {
         last_name: row['First Name']?.trim() ? row['Last Name']?.trim() || null : null,
         email: email || null,
         date_of_birth: row['Date of Birth']?.trim() || null,
+        // Explicit fallback rather than an `undefined` value -- a bulk
+        // insert's request body doesn't reliably strip an `undefined`-valued
+        // key the way a single-object insert would, and a NULL landing on
+        // this NOT NULL column fails the whole batch's insert.
+        created_at: parseCreatedAt(row['Created'] || '') ?? new Date().toISOString(),
         balance_cents: parseBalanceCents(row['Account Balance'] || '0'),
         tags: row['Tags']?.trim() ? [row['Tags'].trim()] : [],
         referral_source: row['Referral Source']?.trim() || null,
@@ -253,7 +283,11 @@ function reset() {
 
       <div>
         <label class="block text-sm font-medium text-gray-700">Import into clinic</label>
-        <select v-model="targetClinicId" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+        <select
+          v-model="targetClinicId"
+          class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          @change="clinicManuallySet = true"
+        >
           <option value="">No primary clinic</option>
           <option v-for="c in store.clinics" :key="c.id" :value="c.id">{{ c.name }}</option>
         </select>

@@ -23,6 +23,7 @@ async function load() {
     .from('appointments')
     .select('id, starts_at, practitioner_name, patients(first_name, last_name)')
     .eq('status', 'booked')
+    .is('deleted_at', null)
     .gte('starts_at', now.toISOString())
     .lte('starts_at', endOfDay.toISOString())
     .order('starts_at', { ascending: true })

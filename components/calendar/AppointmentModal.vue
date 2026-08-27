@@ -238,7 +238,10 @@ async function remove() {
   if (!props.appointment) return
   if (!confirm('Delete this appointment?')) return
   saving.value = true
-  const { error: deleteError } = await supabase.from('appointments').delete().eq('id', props.appointment.id)
+  // Soft delete -- the calendar's "Hide deleted" toggle needs a real record
+  // to hide rather than nothing at all, same idea as `rescheduled` already
+  // being a flag instead of a hard state change.
+  const { error: deleteError } = await supabase.from('appointments').update({ deleted_at: new Date().toISOString() }).eq('id', props.appointment.id)
   saving.value = false
   if (deleteError) {
     error.value = deleteError.message

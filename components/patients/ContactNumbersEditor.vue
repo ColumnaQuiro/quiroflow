@@ -50,47 +50,42 @@ async function removeNumber(id: string) {
 
 <template>
   <div>
-    <h3 class="text-sm font-medium text-gray-700">Contact Numbers</h3>
+    <p class="text-[12px] font-medium text-ink-muted">Phone numbers</p>
 
-    <ul v-if="!loading && numbers.length > 0" class="mt-2 space-y-2">
+    <ul v-if="!loading && numbers.length > 0" class="mt-1.5 space-y-1.5">
       <li
         v-for="n in numbers"
         :key="n.id"
-        class="flex items-center justify-between rounded-md border border-gray-200 px-3 py-2 text-sm"
+        class="flex items-center justify-between rounded-ctl border border-line-control px-3 py-1.5 text-[13px] text-ink-700"
       >
         <span>
           {{ countryByCode(n.country_code).flag }} {{ countryByCode(n.country_code).dial }} {{ n.number }}
-          <span v-if="n.is_whatsapp" class="ml-2 rounded bg-green-100 px-1.5 py-0.5 text-xs font-medium text-green-700">
-            WhatsApp
-          </span>
+          <UiPill v-if="n.is_whatsapp" tone="success" class="ml-1.5">WhatsApp</UiPill>
         </span>
-        <button type="button" class="text-gray-400 hover:text-red-600" @click="removeNumber(n.id)">✕</button>
+        <button type="button" class="text-ink-faint hover:text-danger-text" @click="removeNumber(n.id)">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+            <path d="M4 4l8 8M12 4l-8 8" stroke-linecap="round" />
+          </svg>
+        </button>
       </li>
     </ul>
-    <p v-else-if="!loading" class="mt-2 text-sm text-gray-400">No numbers yet.</p>
+    <p v-else-if="!loading" class="mt-1.5 text-[13px] text-ink-faint">No numbers yet.</p>
 
-    <div class="mt-3 flex flex-wrap items-center gap-2">
-      <select v-model="newCountry" class="rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+    <div class="mt-2 flex flex-wrap items-center gap-2">
+      <select v-model="newCountry" class="h-9 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
         <option v-for="c in COUNTRIES" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }}</option>
       </select>
       <input
         v-model="newNumber"
         type="tel"
         placeholder="612 34 56 78"
-        class="flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+        class="h-9 flex-1 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none"
       />
-      <label class="flex items-center gap-1.5 text-sm text-gray-600">
-        <input v-model="newIsWhatsapp" type="checkbox" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+      <label class="flex items-center gap-1.5 text-[12.5px] text-ink-muted2">
+        <input v-model="newIsWhatsapp" type="checkbox" class="h-4 w-4 rounded border-line-control text-brand focus:ring-brand" />
         WhatsApp
       </label>
-      <button
-        type="button"
-        :disabled="adding || !newNumber.trim()"
-        class="rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
-        @click="addNumber"
-      >
-        Add Number
-      </button>
+      <UiBtn variant="secondary" size="sm" :disabled="adding || !newNumber.trim()" @click="addNumber">Add</UiBtn>
     </div>
   </div>
 </template>

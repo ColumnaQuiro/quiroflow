@@ -3,7 +3,8 @@ describe('Patients', () => {
     cy.seedStaffAccount().then((account) => {
       cy.login(account.email, account.password)
       cy.visit('/patients')
-      cy.contains('button', 'New patient').click()
+      // First click after a fresh visit can race Vue hydration (see commands.ts clickUntil).
+      cy.clickUntil('button:contains("New patient")', '#first-name')
 
       cy.get('#first-name').type('Jane')
       cy.get('#last-name').type('Doe')

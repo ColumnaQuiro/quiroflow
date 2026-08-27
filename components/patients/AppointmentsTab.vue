@@ -28,6 +28,7 @@ async function load() {
     .from('appointments')
     .select('id, starts_at, status, practitioner_name, appointment_types(name), team_members(full_name), calendar_resources(name)')
     .eq('patient_id', props.patientId)
+    .is('deleted_at', null)
     .order('starts_at', { ascending: false })
   appointments.value = (data as unknown as AppointmentRow[]) ?? []
 

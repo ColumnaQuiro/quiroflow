@@ -554,6 +554,7 @@ export type Database = {
           clinic_id: string
           confirmation_status: string | null
           created_at: string
+          deleted_at: string | null
           ends_at: string
           external_reference: string | null
           flow_checkout_at: string | null
@@ -576,6 +577,7 @@ export type Database = {
           clinic_id: string
           confirmation_status?: string | null
           created_at?: string
+          deleted_at?: string | null
           ends_at: string
           external_reference?: string | null
           flow_checkout_at?: string | null
@@ -598,6 +600,7 @@ export type Database = {
           clinic_id?: string
           confirmation_status?: string | null
           created_at?: string
+          deleted_at?: string | null
           ends_at?: string
           external_reference?: string | null
           flow_checkout_at?: string | null

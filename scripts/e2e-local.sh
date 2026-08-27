@@ -16,6 +16,17 @@ fi
 echo "Starting local Supabase..."
 supabase start
 
+# `supabase start` only resumes whatever's already in the local DB volume --
+# it does NOT apply migrations added since that volume was first created.
+# In CI (.github/workflows/e2e.yml) this is a non-issue since the runner is
+# always fresh, but a long-lived local volume silently drifts behind the
+# migrations/ directory over time, and every login-dependent test starts
+# failing against the stale schema with no indication why. `db reset`
+# recreates the DB from migrations + seed.sql every run, matching what a
+# truly fresh CI environment gets.
+echo "Resetting local database to the latest migrations..."
+supabase db reset
+
 STATUS_JSON=$(supabase status -o env)
 export NUXT_PUBLIC_SUPABASE_URL=$(echo "$STATUS_JSON" | sed -n 's/^API_URL="\(.*\)"/\1/p')
 export NUXT_PUBLIC_SUPABASE_KEY=$(echo "$STATUS_JSON" | sed -n 's/^ANON_KEY="\(.*\)"/\1/p')

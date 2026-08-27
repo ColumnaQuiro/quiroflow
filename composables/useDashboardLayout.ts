@@ -23,11 +23,20 @@ export function useDashboardLayout() {
   const loaded = ref(false)
 
   async function load() {
-    if (!store.teamMember) return
+    // The account store's own load() is still in flight on a fresh client
+    // boot (its middleware await doesn't block this component's onMounted),
+    // so this previously returned early and never set `loaded` -- leaving
+    // the dashboard stuck on "Loading…" forever with nothing to retry it.
+    // Wait for teamMember to actually arrive instead of giving up on it.
+    if (!store.teamMember) {
+      await new Promise<void>((resolve) => {
+        watch(() => store.teamMember, (v) => { if (v) resolve() }, { once: true })
+      })
+    }
     const { data } = await supabase
       .from('team_members')
       .select('dashboard_layout')
-      .eq('id', store.teamMember.id)
+      .eq('id', store.teamMember!.id)
       .maybeSingle()
     const stored = data?.dashboard_layout as WidgetInstance[] | null | undefined
     if (stored && stored.length > 0) {

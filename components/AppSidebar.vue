@@ -27,13 +27,22 @@ const campaignsActive = ref(false)
 const inboxUnreadCount = ref(0)
 
 async function loadBadges() {
+  // A fresh client boot can reach this mount before the account store's own
+  // load() resolves store.teamMember -- an empty fallback here used to build
+  // `practitioner_id=eq.` (no id at all), which Postgres rejects as a 400.
+  if (!store.teamMember) {
+    await new Promise<void>((resolve) => {
+      watch(() => store.teamMember, (v) => { if (v) resolve() }, { once: true })
+    })
+  }
   const [{ count: recalls }, { count: myDay }, { data: campaigns }, { data: recentMessages }] = await Promise.all([
     supabase.from('recall_candidates').select('patient_id', { count: 'exact', head: true }),
     supabase
       .from('appointments')
       .select('id', { count: 'exact', head: true })
-      .eq('practitioner_id', store.teamMember?.id ?? '')
+      .eq('practitioner_id', store.teamMember!.id)
       .neq('status', 'cancelled')
+      .is('deleted_at', null)
       .gte('starts_at', new Date(new Date().setHours(0, 0, 0, 0)).toISOString())
       .lt('starts_at', new Date(new Date().setHours(24, 0, 0, 0)).toISOString()),
     supabase.from('automation_rules').select('id').eq('enabled', true).limit(1),

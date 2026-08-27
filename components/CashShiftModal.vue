@@ -59,7 +59,12 @@ async function ensureTodayShift() {
     shift.value = null
   }
   if (!shift.value) {
-    await supabase.from('cash_shifts').insert({ account_id: store.accountId!, opened_by: store.teamMember.id })
+    // Stamped at the start of today, not the moment of this click -- staff
+    // rarely opens this modal at 00:00, and a shift that only starts
+    // counting from whenever someone first checks it would silently miss
+    // every invoice/payment from earlier that same day.
+    const startOfToday = new Date(new Date().setHours(0, 0, 0, 0)).toISOString()
+    await supabase.from('cash_shifts').insert({ account_id: store.accountId!, opened_by: store.teamMember.id, opened_at: startOfToday })
     await loadOpenShift()
   }
 }

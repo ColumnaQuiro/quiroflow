@@ -353,6 +353,13 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
         <UiBtn v-if="!editing" variant="secondary" size="sm" @click="startEditing">Edit</UiBtn>
       </div>
 
+      <!-- Phone numbers are a separate one-to-many table (patient_contact_numbers),
+           not a scalar field on `patients` -- this manages its own add/remove and
+           saves immediately, so it's shown outside the editing-toggle form below. -->
+      <div class="mt-4 border-b border-line-divider pb-4">
+        <PatientsContactNumbersEditor :patient-id="patient.id" />
+      </div>
+
       <dl v-if="!editing" class="mt-4 grid grid-cols-3 gap-x-6 gap-y-4">
         <div>
           <dt class="text-[11.5px] text-ink-muted2">Date of birth</dt>

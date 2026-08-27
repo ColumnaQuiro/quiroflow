@@ -25,6 +25,7 @@ export interface InvoiceDocumentData {
   clinic: { name: string; legalName: string | null; address: string | null; taxId: string | null; footerText: string | null } | null
   logoBuffer: Buffer | null
   nextAppointmentDate: string | null
+  hideNextVisit: boolean
 }
 
 // "123 Main St" + "28001 Madrid" + "Spain" on their own lines, skipping any
@@ -51,7 +52,7 @@ export async function loadInvoiceDocumentData(
     .maybeSingle()
   if (!invoice) return null
 
-  const [{ data: lineItems }, { data: payments }, { data: nextAppointment }] = await Promise.all([
+  const [{ data: lineItems }, { data: payments }, { data: nextAppointment }, { data: account }] = await Promise.all([
     supabase.from('invoice_line_items').select('description, quantity, price_cents').eq('invoice_id', invoiceId),
     supabase.from('payments').select('amount_cents').eq('invoice_id', invoiceId),
     supabase
@@ -63,6 +64,7 @@ export async function loadInvoiceDocumentData(
       .order('starts_at', { ascending: true })
       .limit(1)
       .maybeSingle(),
+    supabase.from('accounts').select('hide_next_visit_on_invoices').eq('id', invoice.account_id).maybeSingle(),
   ])
 
   const patient = invoice.patients as unknown as {
@@ -130,6 +132,7 @@ export async function loadInvoiceDocumentData(
       : null,
     logoBuffer,
     nextAppointmentDate: nextAppointment?.starts_at ?? null,
+    hideNextVisit: !!account?.hide_next_visit_on_invoices,
   }
 }
 
@@ -221,11 +224,13 @@ export function generateInvoicePdf(data: InvoiceDocumentData): Promise<Buffer> {
       doc.font('Helvetica').fontSize(9).fillColor('#777').text(data.clinic.footerText, 50, footerY, { width: 495 })
       footerY = doc.y + 10
     }
-    doc
-      .font('Helvetica')
-      .fontSize(9)
-      .fillColor('#777')
-      .text(`Your next visit: ${data.nextAppointmentDate ? new Date(data.nextAppointmentDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}`, 50, footerY)
+    if (!data.hideNextVisit) {
+      doc
+        .font('Helvetica')
+        .fontSize(9)
+        .fillColor('#777')
+        .text(`Your next visit: ${data.nextAppointmentDate ? new Date(data.nextAppointmentDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}`, 50, footerY)
+    }
 
     doc.end()
   })

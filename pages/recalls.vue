@@ -18,6 +18,11 @@ const loading = ref(true)
 const search = ref('')
 const practitionerFilter = ref('')
 const minWeeksOverdue = ref(3) // "N+ weeks overdue" filter -- 3+ on by default per design spec
+// Alternative to minWeeksOverdue -- an absolute cutoff ("hasn't been in
+// since this date") instead of a rolling N-weeks-from-today window. Takes
+// over the overdue calculation entirely when set, since combining a
+// relative and an absolute threshold at once has no coherent meaning.
+const dateFrom = ref('')
 const balanceFilter = ref<'any' | 'credit' | 'debit'>('any')
 const tagFilter = ref('')
 const notContactedOnly = ref(false)
@@ -74,7 +79,11 @@ const filtered = computed(() => {
         if (!name.includes(search.value.toLowerCase())) return false
       }
       if (practitionerFilter.value && r.default_practitioner_id !== practitionerFilter.value) return false
-      if ((r.days_since_last_appointment ?? 0) < minWeeksOverdue.value * 7) return false
+      if (dateFrom.value) {
+        if (!r.last_appointment_at || new Date(r.last_appointment_at) > new Date(`${dateFrom.value}T23:59:59`)) return false
+      } else if ((r.days_since_last_appointment ?? 0) < minWeeksOverdue.value * 7) {
+        return false
+      }
       if (balanceFilter.value === 'credit' && (r.balance_cents ?? 0) <= 0) return false
       if (balanceFilter.value === 'debit' && (r.balance_cents ?? 0) >= 0) return false
       if (tagFilter.value && !(r.tags ?? []).some((t) => t.toLowerCase().includes(tagFilter.value.toLowerCase()))) return false
@@ -299,7 +308,8 @@ function exportCsv() {
         <div class="relative">
           <select
             v-model.number="minWeeksOverdue"
-            class="h-7 appearance-none rounded-pill border border-brand-tintBorder bg-brand-tint pl-3 pr-7 text-[12.5px] font-medium text-brand-text focus:outline-none"
+            :disabled="!!dateFrom"
+            class="h-7 appearance-none rounded-pill border border-brand-tintBorder bg-brand-tint pl-3 pr-7 text-[12.5px] font-medium text-brand-text focus:outline-none disabled:opacity-40"
           >
             <option :value="1">1+ weeks overdue</option>
             <option :value="2">2+ weeks overdue</option>
@@ -312,6 +322,17 @@ function exportCsv() {
           <svg class="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-brand-text" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
           </svg>
+        </div>
+
+        <div class="flex items-center gap-1.5">
+          <label class="text-[12.5px] text-ink-muted2">No visit since</label>
+          <input
+            v-model="dateFrom"
+            type="date"
+            class="h-7 rounded-pill border px-3 text-[12.5px] font-medium focus:outline-none"
+            :class="dateFrom ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control text-ink-500 hover:border-line-controlHover'"
+          />
+          <button v-if="dateFrom" type="button" class="text-[12px] text-ink-faint hover:text-ink-600" @click="dateFrom = ''">Clear</button>
         </div>
 
         <div class="relative">

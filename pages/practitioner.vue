@@ -127,6 +127,7 @@ async function loadDay() {
     .eq('clinic_id', store.currentClinicId)
     .eq('practitioner_id', practitionerId.value)
     .neq('status', 'cancelled')
+    .is('deleted_at', null)
     .gte('starts_at', rangeStart.toISOString())
     .lt('starts_at', rangeEnd.toISOString())
     .order('starts_at')

@@ -82,6 +82,7 @@ interface AppointmentRow {
   flow_checkout_at: string | null
   rescheduled: boolean
   confirmation_status: string | null
+  deleted_at: string | null
   note: string | null
   patients: { first_name: string; last_name: string | null } | null
   appointment_types: { name: string; color: string; default_price_cents: number } | null
@@ -129,6 +130,8 @@ const settings = reactive({
   flowTracker: true,
   showAvailability: true,
   hideCancelled: true,
+  hideRescheduled: false,
+  hideDeleted: true,
   compactRows: false,
 })
 const displayToggles: { key: keyof typeof settings; label: string }[] = [
@@ -136,6 +139,8 @@ const displayToggles: { key: keyof typeof settings; label: string }[] = [
   { key: 'flowTracker', label: 'Flow tracker' },
   { key: 'showAvailability', label: 'Show availability' },
   { key: 'hideCancelled', label: 'Hide cancelled' },
+  { key: 'hideRescheduled', label: 'Hide rescheduled' },
+  { key: 'hideDeleted', label: 'Hide deleted' },
   { key: 'compactRows', label: 'Compact rows' },
 ]
 
@@ -250,7 +255,7 @@ async function loadAppointments() {
   let query = supabase
     .from('appointments')
     .select(
-      'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, rescheduled, confirmation_status, note, patients(first_name, last_name), appointment_types(name, color, default_price_cents), team_members(full_name, color)',
+      'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, rescheduled, confirmation_status, deleted_at, note, patients(first_name, last_name), appointment_types(name, color, default_price_cents), team_members(full_name, color)',
     )
     .eq('clinic_id', store.currentClinicId)
     .gte('starts_at', rangeStart.toISOString())
@@ -414,6 +419,8 @@ async function onBlockSaved() {
 
 function isApptVisible(appt: AppointmentRow) {
   if (appt.status === 'cancelled' && settings.hideCancelled) return false
+  if (appt.rescheduled && settings.hideRescheduled) return false
+  if (appt.deleted_at && settings.hideDeleted) return false
   return true
 }
 

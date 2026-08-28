@@ -13,6 +13,7 @@ describe('Public online booking', () => {
   it('books an appointment as an unauthenticated visitor', () => {
     cy.seedStaffAccount().then((account) => {
       cy.task('db:enableOnlineBooking', { clinicId: account.clinicId })
+      cy.task('db:enableEmailConfirmations', { accountId: account.accountId })
       cy.task('db:createAppointmentType', {
         accountId: account.accountId,
         name: 'Consultation',

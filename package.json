@@ -13,7 +13,8 @@
     "test:e2e:open": "start-server-and-test dev http://localhost:3000 'cypress open'",
     "cypress:run": "cypress run",
     "cypress:open": "cypress open",
-    "supabase:test:reset": "supabase db reset"
+    "supabase:test:reset": "supabase db reset",
+    "prepare": "husky"
   },
   "dependencies": {
     "@nuxtjs/supabase": "^2.0.10",
@@ -45,6 +46,7 @@
     "@types/qrcode": "^1.5.6",
     "cypress": "^15.21.0",
     "dotenv": "^17.4.2",
+    "husky": "^9.1.7",
     "playwright": "^1.62.1",
     "start-server-and-test": "^3.0.12",
     "typescript": "5.7",

@@ -1,0 +1,7 @@
+# Runs the full e2e suite against a fresh local Supabase before every push,
+# mirroring .github/workflows/e2e.yml -- catches a broken suite locally
+# instead of red CI. Needs Docker running + the Supabase CLI on PATH (same
+# prerequisites as `npm run test:e2e:local`); skip once with
+# `git push --no-verify` if you know what you're doing.
+echo "Running e2e suite before push (this starts a local Supabase and takes a few minutes)..."
+npm run test:e2e:local

@@ -210,6 +210,17 @@ async function enableOnlineBooking(opts: { clinicId: string }) {
   return { businessHours }
 }
 
+/** Adds 'email' to the account's confirmation channels -- accounts default to whatsapp-only. */
+async function enableEmailConfirmations(opts: { accountId: string }) {
+  unwrap(
+    await admin
+      .from('accounts')
+      .update({ appointment_confirmation_enabled: true, appointment_confirmation_channels: ['whatsapp', 'email'] })
+      .eq('id', opts.accountId),
+  )
+  return null
+}
+
 async function createInvoice(opts: { accountId: string; patientId: string; invoiceNumber?: string }) {
   const { accountId, patientId, invoiceNumber } = opts
   const row = unwrap(
@@ -259,6 +270,7 @@ export const dbTasks = {
   'db:createAppointmentType': createAppointmentType,
   'db:createServiceProduct': createServiceProduct,
   'db:enableOnlineBooking': enableOnlineBooking,
+  'db:enableEmailConfirmations': enableEmailConfirmations,
   'db:createInvoice': createInvoice,
   'db:createWhatsappMessage': createWhatsappMessage,
 }

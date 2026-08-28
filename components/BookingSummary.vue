@@ -7,10 +7,14 @@ const props = defineProps<{
   slot: Date | null
   formatPrice: (cents: number) => string
   onlinePaymentRequired?: boolean
+  depositCents?: number | null
 }>()
 
-const dueNowCents = computed(() => (props.onlinePaymentRequired ? props.priceCents : 0))
-const dueAtVisitCents = computed(() => (props.onlinePaymentRequired ? 0 : props.priceCents))
+const dueNowCents = computed(() => {
+  if (!props.onlinePaymentRequired) return 0
+  return props.depositCents ?? props.priceCents
+})
+const dueAtVisitCents = computed(() => (props.onlinePaymentRequired ? props.priceCents - dueNowCents.value : props.priceCents))
 </script>
 
 <template>

@@ -46,6 +46,15 @@ async function removeNumber(id: string) {
   await supabase.from('patient_contact_numbers').delete().eq('id', id)
   await load()
 }
+
+// Edits persist immediately (no outer Save button for this widget -- see the
+// comment where it's embedded in OverviewTab.vue), so each field commits on
+// its own change/blur rather than waiting on a submit action.
+async function updateNumber(n: Tables<'patient_contact_numbers'>, patch: Partial<Pick<Tables<'patient_contact_numbers'>, 'country_code' | 'number' | 'is_whatsapp'>>) {
+  Object.assign(n, patch)
+  if (patch.number !== undefined && !patch.number.trim()) return
+  await supabase.from('patient_contact_numbers').update(patch).eq('id', n.id)
+}
 </script>
 
 <template>
@@ -53,20 +62,40 @@ async function removeNumber(id: string) {
     <p class="text-[12px] font-medium text-ink-muted">Phone numbers</p>
 
     <ul v-if="!loading && numbers.length > 0" class="mt-1.5 space-y-1.5">
-      <li
-        v-for="n in numbers"
-        :key="n.id"
-        class="flex items-center justify-between rounded-ctl border border-line-control px-3 py-1.5 text-[13px] text-ink-700"
-      >
-        <span>
+      <li v-for="n in numbers" :key="n.id" class="flex items-center gap-2">
+        <template v-if="editable">
+          <select
+            :value="n.country_code"
+            class="h-9 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none"
+            @change="updateNumber(n, { country_code: ($event.target as HTMLSelectElement).value })"
+          >
+            <option v-for="c in COUNTRIES" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }}</option>
+          </select>
+          <input
+            :value="n.number"
+            type="tel"
+            class="h-9 flex-1 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none"
+            @blur="updateNumber(n, { number: ($event.target as HTMLInputElement).value })"
+          />
+          <label class="flex shrink-0 items-center gap-1.5 text-[12.5px] text-ink-muted2">
+            <input
+              :checked="n.is_whatsapp"
+              type="checkbox"
+              class="h-4 w-4 rounded border-line-control text-brand focus:ring-brand"
+              @change="updateNumber(n, { is_whatsapp: ($event.target as HTMLInputElement).checked })"
+            />
+            WhatsApp
+          </label>
+          <button type="button" class="shrink-0 text-ink-faint hover:text-danger-text" @click="removeNumber(n.id)">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+              <path d="M4 4l8 8M12 4l-8 8" stroke-linecap="round" />
+            </svg>
+          </button>
+        </template>
+        <span v-else class="rounded-ctl border border-line-control px-3 py-1.5 text-[13px] text-ink-700">
           {{ countryByCode(n.country_code).flag }} {{ countryByCode(n.country_code).dial }} {{ n.number }}
           <UiPill v-if="n.is_whatsapp" tone="success" class="ml-1.5">WhatsApp</UiPill>
         </span>
-        <button v-if="editable" type="button" class="text-ink-faint hover:text-danger-text" @click="removeNumber(n.id)">
-          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-            <path d="M4 4l8 8M12 4l-8 8" stroke-linecap="round" />
-          </svg>
-        </button>
       </li>
     </ul>
     <p v-else-if="!loading" class="mt-1.5 text-[13px] text-ink-faint">No numbers yet.</p>

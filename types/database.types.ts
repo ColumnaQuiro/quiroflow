@@ -7,10 +7,30 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
-  __InternalSupabase: {
-    PostgrestVersion: "14.17"
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
   }
   public: {
     Tables: {
@@ -187,8 +207,17 @@ export type Database = {
       }
       accounts: {
         Row: {
+          appointment_confirmation_channels: string[]
+          appointment_confirmation_enabled: boolean
+          appointment_reminder_channels: string[]
+          appointment_reminder_enabled: boolean
+          appointment_reminder_hours_before: number
           cancellation_fee_cents: number | null
           created_at: string
+          email_confirmation_body: string | null
+          email_confirmation_subject: string | null
+          email_reminder_body: string | null
+          email_reminder_subject: string | null
           hide_account_balance: boolean
           hide_invoice_balance: boolean
           hide_logo_on_invoices: boolean
@@ -202,6 +231,14 @@ export type Database = {
           name: string
           new_patient_field_config: Json
           next_invoice_number: number | null
+          online_booking_gtm_id: string | null
+          online_booking_hide_logo: boolean
+          online_booking_max_days_ahead: number
+          online_booking_practitioner_order: string
+          online_booking_primary_color: string | null
+          online_booking_referral_url: string | null
+          online_booking_secondary_color: string | null
+          online_booking_text_overrides: Json
           scheduling_policy_fee_cents: number | null
           send_invoices_automatically_default: boolean
           show_dob_on_invoices: boolean
@@ -219,10 +256,21 @@ export type Database = {
           whatsapp_phone_number_id: string | null
           whatsapp_recall_template_language: string
           whatsapp_recall_template_name: string | null
+          whatsapp_reminder_template_language: string | null
+          whatsapp_reminder_template_name: string | null
         }
         Insert: {
+          appointment_confirmation_channels?: string[]
+          appointment_confirmation_enabled?: boolean
+          appointment_reminder_channels?: string[]
+          appointment_reminder_enabled?: boolean
+          appointment_reminder_hours_before?: number
           cancellation_fee_cents?: number | null
           created_at?: string
+          email_confirmation_body?: string | null
+          email_confirmation_subject?: string | null
+          email_reminder_body?: string | null
+          email_reminder_subject?: string | null
           hide_account_balance?: boolean
           hide_invoice_balance?: boolean
           hide_logo_on_invoices?: boolean
@@ -236,6 +284,14 @@ export type Database = {
           name: string
           new_patient_field_config?: Json
           next_invoice_number?: number | null
+          online_booking_gtm_id?: string | null
+          online_booking_hide_logo?: boolean
+          online_booking_max_days_ahead?: number
+          online_booking_practitioner_order?: string
+          online_booking_primary_color?: string | null
+          online_booking_referral_url?: string | null
+          online_booking_secondary_color?: string | null
+          online_booking_text_overrides?: Json
           scheduling_policy_fee_cents?: number | null
           send_invoices_automatically_default?: boolean
           show_dob_on_invoices?: boolean
@@ -253,10 +309,21 @@ export type Database = {
           whatsapp_phone_number_id?: string | null
           whatsapp_recall_template_language?: string
           whatsapp_recall_template_name?: string | null
+          whatsapp_reminder_template_language?: string | null
+          whatsapp_reminder_template_name?: string | null
         }
         Update: {
+          appointment_confirmation_channels?: string[]
+          appointment_confirmation_enabled?: boolean
+          appointment_reminder_channels?: string[]
+          appointment_reminder_enabled?: boolean
+          appointment_reminder_hours_before?: number
           cancellation_fee_cents?: number | null
           created_at?: string
+          email_confirmation_body?: string | null
+          email_confirmation_subject?: string | null
+          email_reminder_body?: string | null
+          email_reminder_subject?: string | null
           hide_account_balance?: boolean
           hide_invoice_balance?: boolean
           hide_logo_on_invoices?: boolean
@@ -270,6 +337,14 @@ export type Database = {
           name?: string
           new_patient_field_config?: Json
           next_invoice_number?: number | null
+          online_booking_gtm_id?: string | null
+          online_booking_hide_logo?: boolean
+          online_booking_max_days_ahead?: number
+          online_booking_practitioner_order?: string
+          online_booking_primary_color?: string | null
+          online_booking_referral_url?: string | null
+          online_booking_secondary_color?: string | null
+          online_booking_text_overrides?: Json
           scheduling_policy_fee_cents?: number | null
           send_invoices_automatically_default?: boolean
           show_dob_on_invoices?: boolean
@@ -287,6 +362,8 @@ export type Database = {
           whatsapp_phone_number_id?: string | null
           whatsapp_recall_template_language?: string
           whatsapp_recall_template_name?: string | null
+          whatsapp_reminder_template_language?: string | null
+          whatsapp_reminder_template_name?: string | null
         }
         Relationships: []
       }
@@ -508,7 +585,11 @@ export type Database = {
           duration_minutes: number
           id: string
           name: string
+          online_bookable_by: string
           online_booking_enabled: boolean
+          online_bypass_practitioner: boolean
+          online_deposit_cents: number | null
+          online_max_days_ahead: number | null
           online_payment_required: boolean
           stage: string | null
         }
@@ -520,7 +601,11 @@ export type Database = {
           duration_minutes?: number
           id?: string
           name: string
+          online_bookable_by?: string
           online_booking_enabled?: boolean
+          online_bypass_practitioner?: boolean
+          online_deposit_cents?: number | null
+          online_max_days_ahead?: number | null
           online_payment_required?: boolean
           stage?: string | null
         }
@@ -532,7 +617,11 @@ export type Database = {
           duration_minutes?: number
           id?: string
           name?: string
+          online_bookable_by?: string
           online_booking_enabled?: boolean
+          online_bypass_practitioner?: boolean
+          online_deposit_cents?: number | null
+          online_max_days_ahead?: number | null
           online_payment_required?: boolean
           stage?: string | null
         }
@@ -552,6 +641,7 @@ export type Database = {
           appointment_type_id: string | null
           checked_in_at: string | null
           clinic_id: string
+          confirmation_sent_at: string | null
           confirmation_status: string | null
           created_at: string
           deleted_at: string | null
@@ -564,6 +654,7 @@ export type Database = {
           patient_id: string
           practitioner_id: string | null
           practitioner_name: string | null
+          reminder_sent_at: string | null
           rescheduled: boolean
           room_id: string | null
           source: string
@@ -575,6 +666,7 @@ export type Database = {
           appointment_type_id?: string | null
           checked_in_at?: string | null
           clinic_id: string
+          confirmation_sent_at?: string | null
           confirmation_status?: string | null
           created_at?: string
           deleted_at?: string | null
@@ -587,6 +679,7 @@ export type Database = {
           patient_id: string
           practitioner_id?: string | null
           practitioner_name?: string | null
+          reminder_sent_at?: string | null
           rescheduled?: boolean
           room_id?: string | null
           source?: string
@@ -598,6 +691,7 @@ export type Database = {
           appointment_type_id?: string | null
           checked_in_at?: string | null
           clinic_id?: string
+          confirmation_sent_at?: string | null
           confirmation_status?: string | null
           created_at?: string
           deleted_at?: string | null
@@ -610,6 +704,7 @@ export type Database = {
           patient_id?: string
           practitioner_id?: string | null
           practitioner_name?: string | null
+          reminder_sent_at?: string | null
           rescheduled?: boolean
           room_id?: string | null
           source?: string
@@ -1584,6 +1679,53 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "modalities_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      online_booking_discount_codes: {
+        Row: {
+          account_id: string
+          active: boolean
+          amount_off_cents: number | null
+          code: string
+          created_at: string
+          expires_at: string | null
+          id: string
+          max_uses: number | null
+          percent_off: number | null
+          times_used: number
+        }
+        Insert: {
+          account_id: string
+          active?: boolean
+          amount_off_cents?: number | null
+          code: string
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          max_uses?: number | null
+          percent_off?: number | null
+          times_used?: number
+        }
+        Update: {
+          account_id?: string
+          active?: boolean
+          amount_off_cents?: number | null
+          code?: string
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          max_uses?: number | null
+          percent_off?: number | null
+          times_used?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "online_booking_discount_codes_account_id_fkey"
             columns: ["account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
@@ -3310,6 +3452,7 @@ export type Database = {
           p_appointment_type_id: string
           p_clinic_id: string
           p_country_code?: string
+          p_discount_code?: string
           p_email: string
           p_first_name: string
           p_last_name: string
@@ -3510,7 +3653,11 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {},
   },
 } as const
+

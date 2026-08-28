@@ -18,6 +18,10 @@ interface BookingAppointmentType {
   color: string
   default_price_cents: number
   online_payment_required: boolean
+  online_bookable_by: 'all' | 'new_patients' | 'existing_patients'
+  online_bypass_practitioner: boolean
+  online_max_days_ahead: number | null
+  online_deposit_cents: number | null
 }
 interface BookingTeamMember {
   id: string
@@ -27,7 +31,18 @@ interface BookingTeamMember {
   business_hours: Record<string, [string, string][]> | null
 }
 interface BookingInfo {
-  account: { id: string; name: string }
+  account: {
+    id: string
+    name: string
+    appointment_confirmation_enabled: boolean
+    appointment_confirmation_channels: string[]
+    online_booking_max_days_ahead: number
+    online_booking_gtm_id: string | null
+    online_booking_primary_color: string | null
+    online_booking_secondary_color: string | null
+    online_booking_text_overrides: Record<string, string>
+    discount_codes_enabled: boolean
+  }
   clinics: BookingClinic[]
   appointment_types: BookingAppointmentType[]
   team_members: BookingTeamMember[]
@@ -65,6 +80,37 @@ function formatPrice(cents: number) {
   return (cents / 100).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })
 }
 
+// Overrides the theme's brand color CSS vars for just this page's root
+// element -- every bg-brand/text-brand-text/hover:bg-brand-tint class already
+// on this page picks it up for free, same rgb-triplet convention theme.css
+// uses (see tailwind.config.ts's themeColor()).
+function hexToRgbTriplet(hex: string): string | null {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim())
+  if (!m) return null
+  const n = parseInt(m[1], 16)
+  return `${(n >> 16) & 255} ${(n >> 8) & 255} ${n & 255}`
+}
+const brandStyle = computed(() => {
+  const style: Record<string, string> = {}
+  const primary = info.value?.account.online_booking_primary_color ? hexToRgbTriplet(info.value.account.online_booking_primary_color) : null
+  const secondary = info.value?.account.online_booking_secondary_color ? hexToRgbTriplet(info.value.account.online_booking_secondary_color) : null
+  if (primary) {
+    style['--color-brand'] = primary
+    style['--color-brand-hover'] = primary
+    style['--color-brand-text'] = primary
+  }
+  if (secondary) style['--color-brand-tint'] = secondary
+  return style
+})
+
+function t(key: string, fallback: string) {
+  return info.value?.account.online_booking_text_overrides?.[key] || fallback
+}
+
+// --- discount code (validated server-side at submit, in create_public_booking) ---
+const discountCode = ref('')
+const discountAppliedCents = ref(0)
+
 onMounted(async () => {
   const { data, error } = await supabase.rpc('get_public_booking_info', { p_slug: slug })
   if (error || !data) {
@@ -80,14 +126,31 @@ onMounted(async () => {
   clinicId.value = parsed.clinics[0].id
   if (parsed.appointment_types.length === 1) appointmentTypeId.value = parsed.appointment_types[0].id
   const forClinic = parsed.team_members.filter((m) => m.clinic_ids.includes(clinicId.value))
-  if (forClinic.length === 1) teamMemberId.value = forClinic[0].id
+  if (forClinic.length === 1 || bypassPractitioner.value) teamMemberId.value = forClinic[0]?.id ?? ''
   phase.value = 'select'
+
+  if (parsed.account.online_booking_gtm_id) {
+    const script = document.createElement('script')
+    script.async = true
+    script.src = `https://www.googletagmanager.com/gtm.js?id=${encodeURIComponent(parsed.account.online_booking_gtm_id)}`
+    document.head.appendChild(script)
+  }
 })
 
 function onClinicChange() {
   const forClinic = availablePractitioners.value
-  teamMemberId.value = forClinic.length === 1 ? forClinic[0].id : ''
+  teamMemberId.value = forClinic.length === 1 || bypassPractitioner.value ? (forClinic[0]?.id ?? '') : ''
 }
+
+// "Bypass practitioner selection" shows any available practitioner rather
+// than asking the patient to pick one -- this app has no per-type
+// practitioner-eligibility list yet, so "any" is simplified to "the first
+// one offering this clinic", same one-practitioner auto-pick the page
+// already did before this feature existed.
+const bypassPractitioner = computed(() => !!appointmentType.value?.online_bypass_practitioner)
+watch(appointmentTypeId, () => {
+  if (bypassPractitioner.value) teamMemberId.value = availablePractitioners.value[0]?.id ?? ''
+})
 
 const canContinueFromSelect = computed(() => !!clinicId.value && !!appointmentTypeId.value && !!teamMemberId.value)
 
@@ -117,6 +180,16 @@ const monthLabel = computed(() =>
   viewMonth.value.toLocaleDateString('es-ES', { month: 'short', year: 'numeric' }).replace(/^./, (c) => c.toUpperCase())
 )
 
+// Per-type override falls back to the account default, same convention as
+// every other appointment_type_overrides-style field in this app.
+const maxAllowedDate = computed(() => {
+  const days = appointmentType.value?.online_max_days_ahead ?? info.value?.account.online_booking_max_days_ahead ?? 90
+  const d = new Date()
+  d.setDate(d.getDate() + days)
+  d.setHours(23, 59, 59, 999)
+  return d
+})
+
 const calendarDays = computed(() => {
   const first = viewMonth.value
   const firstWeekday = (first.getDay() + 6) % 7 // Monday = 0
@@ -126,7 +199,7 @@ const calendarDays = computed(() => {
   for (let i = 0; i < 42; i++) {
     const date = new Date(gridStart)
     date.setDate(gridStart.getDate() + i)
-    days.push({ date, inMonth: date.getMonth() === first.getMonth(), bookable: dayHasHours(date) && date >= today() })
+    days.push({ date, inMonth: date.getMonth() === first.getMonth(), bookable: dayHasHours(date) && date >= today() && date <= maxAllowedDate.value })
   }
   return days
 })
@@ -233,14 +306,20 @@ async function submitBooking() {
     p_phone: phoneNumber.value,
     p_country_code: dialCode.value,
     p_note: note.value,
+    p_discount_code: discountCode.value.trim() || undefined,
   })
   submitting.value = false
   if (error) {
     submitError.value = error.message
     return
   }
-  const result = data as unknown as { starts_at: string; invoice_id: string | null; payment_required_cents: number }
+  const result = data as unknown as { appointment_id: string; starts_at: string; invoice_id: string | null; payment_required_cents: number; discount_applied_cents: number }
   confirmation.value = result
+  discountAppliedCents.value = result.discount_applied_cents ?? 0
+  // Fire-and-forget, same as the staff-booking side (AppointmentModal.vue) --
+  // a failed confirmation send should never block the success screen the
+  // patient is about to see.
+  $fetch('/api/public-booking/send-confirmation', { method: 'POST', body: { accountSlug: slug, appointmentId: result.appointment_id } }).catch(() => {})
   // Booking always succeeds first regardless of payment -- if the type requires
   // online payment, the appointment already exists (visible to staff) before
   // the patient even sees the payment step, so a dropped connection here never
@@ -282,7 +361,7 @@ if (import.meta.client) {
 </script>
 
 <template>
-  <div class="min-h-screen bg-surface-page px-4 py-10">
+  <div class="min-h-screen bg-surface-page px-4 py-10" :style="brandStyle">
     <div class="mx-auto max-w-5xl">
       <div v-if="phase === 'loading'" class="py-24 text-center text-sm text-ink-faint">Cargando…</div>
 
@@ -291,7 +370,7 @@ if (import.meta.client) {
       </div>
 
       <template v-else-if="info">
-        <h1 class="text-center text-2xl font-semibold text-ink-900">Reservar una cita</h1>
+        <h1 class="text-center text-2xl font-semibold text-ink-900">{{ t('heading', 'Reservar una cita') }}</h1>
         <p class="mt-1 text-center text-sm text-ink-muted">{{ info.account.name }}</p>
 
         <!-- Step 0: service / practitioner selection -->
@@ -310,8 +389,8 @@ if (import.meta.client) {
               </option>
             </select>
           </div>
-          <div v-if="availablePractitioners.length > 1" class="mt-4">
-            <label class="block text-sm font-medium text-ink-700">Profesional</label>
+          <div v-if="!bypassPractitioner && availablePractitioners.length > 1" class="mt-4">
+            <label class="block text-sm font-medium text-ink-700">{{ t('choose_practitioner', 'Profesional') }}</label>
             <select v-model="teamMemberId" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm">
               <option v-for="m in availablePractitioners" :key="m.id" :value="m.id">{{ m.full_name }}</option>
             </select>
@@ -327,7 +406,7 @@ if (import.meta.client) {
         <!-- Step 1: date & time -->
         <div v-else-if="phase === 'datetime'">
           <p class="mt-6 text-center text-xs font-semibold uppercase tracking-wide text-warning-text">Paso 1 de 2</p>
-          <h2 class="text-center text-xl font-semibold text-ink-900">Elija su fecha y hora</h2>
+          <h2 class="text-center text-xl font-semibold text-ink-900">{{ t('choose_datetime', 'Elija su fecha y hora') }}</h2>
 
           <div class="mt-6 grid gap-6 md:grid-cols-3">
             <div class="rounded-card border border-line bg-surface p-4 shadow-card">
@@ -398,7 +477,7 @@ if (import.meta.client) {
               </template>
             </div>
 
-            <BookingSummary :clinic="clinic" :appointment-type="appointmentType" :price-cents="effectivePrice" :team-member="teamMember" :slot="selectedSlot" :format-price="formatPrice" :online-payment-required="appointmentType?.online_payment_required" />
+            <BookingSummary :clinic="clinic" :appointment-type="appointmentType" :price-cents="effectivePrice" :team-member="teamMember" :slot="selectedSlot" :format-price="formatPrice" :online-payment-required="appointmentType?.online_payment_required" :deposit-cents="appointmentType?.online_deposit_cents" />
           </div>
         </div>
 
@@ -407,7 +486,7 @@ if (import.meta.client) {
           <div class="mt-6 flex items-center justify-between">
             <div>
               <p class="text-xs font-semibold uppercase tracking-wide text-warning-text">Paso 2 de 2</p>
-              <h2 class="text-xl font-semibold text-ink-900">Introduzca sus datos</h2>
+              <h2 class="text-xl font-semibold text-ink-900">{{ t('enter_details', 'Introduzca sus datos') }}</h2>
             </div>
             <UiBtn type="button" variant="secondary" @click="backToDatetime">
               &larr; Atrás
@@ -443,13 +522,17 @@ if (import.meta.client) {
                 <label class="block text-sm font-medium text-ink-700">Notas</label>
                 <textarea v-model="note" rows="3" placeholder="¿Algo que quiera que sepamos?" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"></textarea>
               </div>
+              <div v-if="info.account.discount_codes_enabled" class="mt-4">
+                <label class="block text-sm font-medium text-ink-700">Código de descuento</label>
+                <input v-model="discountCode" type="text" placeholder="Opcional" class="mt-1 w-full max-w-[200px] rounded-ctl border border-line-control px-3 py-2 text-sm uppercase focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
+              </div>
               <p v-if="submitError" class="mt-3 text-sm text-danger-text">{{ submitError }}</p>
               <UiBtn type="submit" variant="primary" class="mt-5" :disabled="submitting">
-                {{ submitting ? 'Reservando…' : 'Reservar cita' }}
+                {{ submitting ? 'Reservando…' : t('confirm_button', 'Reservar cita') }}
               </UiBtn>
             </form>
 
-            <BookingSummary :clinic="clinic" :appointment-type="appointmentType" :price-cents="effectivePrice" :team-member="teamMember" :slot="selectedSlot" :format-price="formatPrice" :online-payment-required="appointmentType?.online_payment_required" />
+            <BookingSummary :clinic="clinic" :appointment-type="appointmentType" :price-cents="effectivePrice" :team-member="teamMember" :slot="selectedSlot" :format-price="formatPrice" :online-payment-required="appointmentType?.online_payment_required" :deposit-cents="appointmentType?.online_deposit_cents" />
           </div>
         </div>
 
@@ -463,12 +546,18 @@ if (import.meta.client) {
         <!-- Success -->
         <div v-else-if="phase === 'success'" class="mx-auto mt-10 max-w-md rounded-card border border-line bg-surface p-8 text-center shadow-card">
           <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-success-bg text-2xl text-success-text">✓</div>
-          <h2 class="mt-4 text-lg font-semibold text-ink-900">¡Cita reservada!</h2>
+          <h2 class="mt-4 text-lg font-semibold text-ink-900">{{ t('success_heading', '¡Cita reservada!') }}</h2>
           <p class="mt-2 text-sm text-ink-muted">
             {{ confirmation ? new Date(confirmation.starts_at).toLocaleString('es-ES', { dateStyle: 'full', timeStyle: 'short' }) : '' }}
           </p>
           <p class="mt-1 text-sm text-ink-muted">{{ teamMember?.full_name }} · {{ clinic?.name }}</p>
-          <p class="mt-4 text-xs text-ink-faint">Le hemos enviado los detalles a {{ email }}.</p>
+          <p v-if="discountAppliedCents > 0" class="mt-1 text-sm text-success-text">Descuento aplicado: {{ formatPrice(discountAppliedCents) }}</p>
+          <p
+            v-if="info.account.appointment_confirmation_enabled && info.account.appointment_confirmation_channels.includes('email')"
+            class="mt-4 text-xs text-ink-faint"
+          >
+            Le hemos enviado los detalles a {{ email }}.
+          </p>
         </div>
       </template>
     </div>

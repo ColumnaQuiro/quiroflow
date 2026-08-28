@@ -21,7 +21,8 @@ const allGroups: NavGroup[] = [
     label: 'Clinic',
     items: [
       { label: 'Clinics', to: '/settings/clinics', perm: 'clinic_config' },
-      { label: 'Online Booking', to: '/settings/clinics#online-booking', perm: 'clinic_config' },
+      { label: 'Online Booking Hours', to: '/settings/clinics#online-booking', perm: 'clinic_config' },
+      { label: 'Online Booking Settings', to: '/settings/online-booking', perm: 'clinic_config' },
       { label: 'Team Members', to: '/settings/team', perm: 'team_admin' },
       { label: 'Practitioners', to: '/settings/practitioners', perm: 'team_admin' },
       { label: 'Roles & Permissions', to: '/settings/roles', perm: 'roles_admin' },
@@ -49,6 +50,7 @@ const allGroups: NavGroup[] = [
   {
     label: 'Communication',
     items: [
+      { label: 'General', to: '/settings/communications-general', perm: 'communication_config' },
       { label: 'WhatsApp', to: '/settings/whatsapp', perm: 'communication_config' },
       { label: 'Saved Replies', to: '/settings/saved-replies', perm: 'communication_config' },
       { label: 'Docs', to: '/settings/docs', perm: 'communication_config' },
@@ -84,7 +86,7 @@ function isActive(to: string) {
           :key="item.to"
           :to="item.to"
           class="block h-8 rounded-ctlSm px-2 text-[13px] leading-8"
-          :class="isActive(item.to) ? 'bg-brand-tint font-semibold text-brand-text' : 'text-ink-muted2 hover:bg-[#EFF0F4]'"
+          :class="isActive(item.to) ? 'bg-brand-tint font-semibold text-brand-text' : 'text-ink-muted2 hover:bg-surface-subtle'"
         >
           {{ item.label }}
         </NuxtLink>

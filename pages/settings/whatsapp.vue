@@ -12,6 +12,8 @@ const confirmationTemplateName = ref('')
 const confirmationTemplateLanguage = ref('es')
 const recallTemplateName = ref('')
 const recallTemplateLanguage = ref('es')
+const reminderTemplateName = ref('')
+const reminderTemplateLanguage = ref('es')
 
 const loading = ref(true)
 const saving = ref(false)
@@ -41,7 +43,7 @@ async function load() {
   const { data } = await supabase
     .from('accounts')
     .select(
-      'whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_access_token, whatsapp_confirmation_template_name, whatsapp_confirmation_template_language, whatsapp_recall_template_name, whatsapp_recall_template_language',
+      'whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_access_token, whatsapp_confirmation_template_name, whatsapp_confirmation_template_language, whatsapp_recall_template_name, whatsapp_recall_template_language, whatsapp_reminder_template_name, whatsapp_reminder_template_language',
     )
     .eq('id', store.accountId!)
     .maybeSingle()
@@ -52,6 +54,8 @@ async function load() {
   confirmationTemplateLanguage.value = data?.whatsapp_confirmation_template_language ?? 'es'
   recallTemplateName.value = data?.whatsapp_recall_template_name ?? ''
   recallTemplateLanguage.value = data?.whatsapp_recall_template_language ?? 'es'
+  reminderTemplateName.value = data?.whatsapp_reminder_template_name ?? ''
+  reminderTemplateLanguage.value = data?.whatsapp_reminder_template_language ?? 'es'
   loading.value = false
 
   if (hasStoredToken.value && businessAccountId.value) loadTemplates()
@@ -79,6 +83,10 @@ function useForRecall(t: Template) {
   recallTemplateName.value = t.name
   recallTemplateLanguage.value = t.language
 }
+function useForReminder(t: Template) {
+  reminderTemplateName.value = t.name
+  reminderTemplateLanguage.value = t.language
+}
 
 async function save() {
   error.value = ''
@@ -91,6 +99,8 @@ async function save() {
     whatsapp_confirmation_template_language: confirmationTemplateLanguage.value.trim() || 'es',
     whatsapp_recall_template_name: recallTemplateName.value.trim() || null,
     whatsapp_recall_template_language: recallTemplateLanguage.value.trim() || 'es',
+    whatsapp_reminder_template_name: reminderTemplateName.value.trim() || null,
+    whatsapp_reminder_template_language: reminderTemplateLanguage.value.trim() || 'es',
   }
   if (accessToken.value.trim()) update.whatsapp_access_token = accessToken.value.trim()
 
@@ -184,6 +194,27 @@ async function save() {
               </div>
             </SettingsFieldRow>
 
+            <SettingsFieldRow
+              label="Default reminder template"
+              helper="Used automatically for appointment reminders. Enable/disable reminders and pick how far ahead they send in Settings → Communication → General."
+              align="top"
+            >
+              <div class="flex gap-2">
+                <input
+                  v-model="reminderTemplateName"
+                  type="text"
+                  placeholder="template_name"
+                  class="h-8 w-[152px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+                />
+                <input
+                  v-model="reminderTemplateLanguage"
+                  type="text"
+                  placeholder="es"
+                  class="h-8 w-[70px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+                />
+              </div>
+            </SettingsFieldRow>
+
             <div class="rounded-card border border-line bg-surface p-4 shadow-card">
               <div class="flex items-center justify-between">
                 <p class="text-[13.5px] font-[560] text-ink-700">Approved templates</p>
@@ -201,6 +232,7 @@ async function save() {
                   <div class="flex gap-3 text-[12px] font-medium">
                     <button type="button" class="text-brand-text hover:text-brand-hover" @click="useForConfirmation(t)">Use for confirmation</button>
                     <button type="button" class="text-brand-text hover:text-brand-hover" @click="useForRecall(t)">Use for recall</button>
+                    <button type="button" class="text-brand-text hover:text-brand-hover" @click="useForReminder(t)">Use for reminder</button>
                   </div>
                 </li>
               </ul>

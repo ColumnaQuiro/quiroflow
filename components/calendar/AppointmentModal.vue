@@ -189,7 +189,10 @@ async function save() {
 
   if (props.mode === 'create') {
     const newId = (result.data as { id: string } | null)?.id
-    if (newId) fire('appointment.booked', { patientId: patientId.value, appointmentId: newId })
+    if (newId) {
+      fire('appointment.booked', { patientId: patientId.value, appointmentId: newId })
+      useStaffFetch('/api/appointments/send-confirmation', { method: 'POST', body: { appointmentId: newId } }).catch(() => {})
+    }
   } else {
     if (status.value !== props.appointment!.status) {
       const trigger = { completed: 'appointment.completed', cancelled: 'appointment.cancelled', no_show: 'appointment.no_show' }[status.value]

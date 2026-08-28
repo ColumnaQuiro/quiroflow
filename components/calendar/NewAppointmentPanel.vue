@@ -184,6 +184,7 @@ async function save() {
     }
     if (i === 0) firstAppointmentId = created.id
     fire('appointment.booked', { patientId, appointmentId: created.id })
+    useStaffFetch('/api/appointments/send-confirmation', { method: 'POST', body: { appointmentId: created.id } }).catch(() => {})
   }
 
   if (collectPayment.value && firstAppointmentId) {

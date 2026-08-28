@@ -12,6 +12,7 @@ const TRIGGER_OPTIONS = [
   { value: 'appointment.cancelled', label: 'Appointment cancelled' },
   { value: 'appointment.rescheduled', label: 'Appointment rescheduled' },
   { value: 'appointment.no_show', label: 'Appointment marked as missed' },
+  { value: 'appointment.same_day', label: 'Day of appointment (morning send)' },
   { value: 'invoice.paid', label: 'Invoice paid' },
   { value: 'patient.birthday', label: "Patient's birthday (daily check)" },
   { value: 'membership.new_member', label: 'New membership started' },
@@ -72,9 +73,10 @@ const docTemplates = ref<{ id: string; title: string }[]>([])
 const appointmentTypes = ref<{ id: string; name: string }[]>([])
 const filterAppointmentTypeId = ref('')
 const filterTotalVisits = ref('')
-// no_prior_appointments/has_future_appointment aren't editable in this UI
-// (only the two migrated birthday/first-booking rules use them) -- carried
-// through untouched on save so editing a rule here doesn't silently drop them.
+const filterNoPriorAppointments = ref(false)
+// has_future_appointment isn't editable in this UI (only the birthday rule
+// uses it) -- carried through untouched on save so editing a rule here
+// doesn't silently drop it.
 let otherFilters: Record<string, unknown> = {}
 const loading = ref(!!props.ruleId)
 const saving = ref(false)
@@ -109,7 +111,8 @@ onMounted(async () => {
       const filters = (rule.filters ?? {}) as Record<string, unknown>
       filterAppointmentTypeId.value = typeof filters.appointment_type_id === 'string' ? filters.appointment_type_id : ''
       filterTotalVisits.value = typeof filters.total_visits === 'number' ? String(filters.total_visits) : ''
-      const { appointment_type_id: _a, total_visits: _t, ...rest } = filters
+      filterNoPriorAppointments.value = filters.no_prior_appointments === true
+      const { appointment_type_id: _a, total_visits: _t, no_prior_appointments: _n, ...rest } = filters
       otherFilters = rest
     }
     if (existingActions && existingActions.length > 0) {
@@ -182,6 +185,7 @@ async function persist(): Promise<string | null> {
   const filters: Record<string, unknown> = { ...otherFilters }
   if (filterAppointmentTypeId.value) filters.appointment_type_id = filterAppointmentTypeId.value
   if (filterTotalVisits.value !== '') filters.total_visits = Number(filterTotalVisits.value)
+  if (filterNoPriorAppointments.value) filters.no_prior_appointments = true
 
   const rulePayload = {
     account_id: store.accountId!,
@@ -338,6 +342,10 @@ async function sendTestToMe() {
             <p class="mt-1.5 text-[11.5px] leading-relaxed text-ink-muted2">
               Visit count is the patient's total completed visits of that type (e.g. 1 = the first time it's ever completed for them, 0 = never completed).
             </p>
+            <label class="mt-2.5 flex items-center gap-2 text-[12.5px] text-ink-700">
+              <input v-model="filterNoPriorAppointments" type="checkbox" class="h-3.5 w-3.5 rounded border-line-control text-brand focus:ring-brand" />
+              Only for first-time patients (no other appointments at all, past or future)
+            </label>
           </div>
 
           <div class="border-t border-line-divider pt-4">

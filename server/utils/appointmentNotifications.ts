@@ -20,6 +20,7 @@ interface AppointmentContext {
   patientFirstName: string
   patientLastName: string | null
   patientEmail: string | null
+  patientPreferredLanguage: string | null
   patientIsMinor: boolean
   patientDoNotContact: boolean
 }
@@ -28,7 +29,7 @@ async function loadAppointmentContext(supabase: any, appointmentId: string): Pro
   const { data } = await supabase
     .from('appointments')
     .select(
-      'id, account_id, patient_id, starts_at, team_members(full_name), appointment_types(name), patients(first_name, last_name, email, is_minor, do_not_contact)',
+      'id, account_id, patient_id, starts_at, team_members(full_name), appointment_types(name), patients(first_name, last_name, email, preferred_language, is_minor, do_not_contact)',
     )
     .eq('id', appointmentId)
     .maybeSingle()
@@ -44,6 +45,7 @@ async function loadAppointmentContext(supabase: any, appointmentId: string): Pro
     patientFirstName: data.patients.first_name ?? '',
     patientLastName: data.patients.last_name ?? null,
     patientEmail: data.patients.email ?? null,
+    patientPreferredLanguage: data.patients.preferred_language ?? null,
     patientIsMinor: !!data.patients.is_minor,
     patientDoNotContact: !!data.patients.do_not_contact,
   }
@@ -73,30 +75,48 @@ interface MetaTemplate {
   components: MetaTemplateComponent[]
 }
 
+// A template name isn't unique on its own -- Meta approves one language
+// variant at a time under the same name (e.g. "appointment_reminder" in
+// es/en/fr, as seen in Settings > WhatsApp's own template list), so sending
+// in the patient's own language means picking the right *variant*, not just
+// resending the account's stored default. Same fallback order
+// SendWhatsAppModal.vue already uses for a manual send: exact language match,
+// then a locale-prefix match (e.g. patient 'en' against template 'en_US'),
+// then the account's configured default language, then whatever's left.
+async function resolveTemplateVariant(
+  businessAccountId: string,
+  accessToken: string,
+  templateName: string,
+  accountDefaultLanguage: string,
+  patientPreferredLanguage: string | null,
+): Promise<{ language: string; bodyText: string } | null> {
+  const response = await $fetch<{ data: MetaTemplate[] }>(`https://graph.facebook.com/v21.0/${businessAccountId}/message_templates`, {
+    params: { fields: 'name,language,components', limit: 100 },
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  const candidates: MetaTemplate[] = (response.data ?? []).filter((t: MetaTemplate) => t.name === templateName)
+  if (candidates.length === 0) return null
+
+  const match: MetaTemplate =
+    (patientPreferredLanguage && candidates.find((t: MetaTemplate) => t.language === patientPreferredLanguage)) ||
+    (patientPreferredLanguage && candidates.find((t: MetaTemplate) => t.language.split('_')[0] === patientPreferredLanguage)) ||
+    candidates.find((t: MetaTemplate) => t.language === accountDefaultLanguage) ||
+    candidates[0]
+
+  return { language: match.language, bodyText: match.components.find((c: MetaTemplateComponent) => c.type === 'BODY')?.text ?? '' }
+}
+
 // Meta template variables are positional ({{1}}, {{2}}...), not named merge
-// tags -- fetch the template once to know how many slots it needs, then fill
-// them with the most generally-useful values in a fixed order (name, date,
-// practitioner, type), same guess order SendWhatsAppModal.vue uses for a
-// manual send. A slot beyond what we have falls back to an empty string
-// rather than failing the send outright.
-async function resolveWhatsAppVariables(businessAccountId: string, accessToken: string, templateName: string, templateLanguage: string, ctx: AppointmentContext): Promise<string[]> {
+// tags -- fill them with the most generally-useful values in a fixed order
+// (name, date, practitioner, type), same guess order SendWhatsAppModal.vue
+// uses for a manual send. A slot beyond what we have falls back to an empty
+// string rather than failing the send outright.
+function resolveWhatsAppVariables(bodyText: string, ctx: AppointmentContext): string[] {
   const appointmentDate = new Date(ctx.startsAt).toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
   const guesses = [ctx.patientFirstName, appointmentDate, ctx.practitionerName, ctx.appointmentTypeName]
-
-  try {
-    const response = await $fetch<{ data: MetaTemplate[] }>(`https://graph.facebook.com/v21.0/${businessAccountId}/message_templates`, {
-      params: { fields: 'name,language,components', limit: 100 },
-      headers: { Authorization: `Bearer ${accessToken}` },
-    })
-    const match = (response.data ?? []).find((t: MetaTemplate) => t.name === templateName && t.language === templateLanguage)
-    const bodyText = match?.components.find((c: MetaTemplateComponent) => c.type === 'BODY')?.text ?? ''
-    const slots = new Set<string>()
-    for (const m of bodyText.matchAll(/\{\{(\d+)\}\}/g)) slots.add(m[1])
-    const count = slots.size
-    return Array.from({ length: count }, (_, i) => guesses[i] ?? '')
-  } catch {
-    return guesses.slice(0, 1)
-  }
+  const slots = new Set<string>()
+  for (const m of bodyText.matchAll(/\{\{(\d+)\}\}/g)) slots.add(m[1])
+  return Array.from({ length: slots.size }, (_, i) => guesses[i] ?? '')
 }
 
 async function sendWhatsApp(
@@ -122,7 +142,19 @@ async function sendWhatsApp(
   const to = toE164(target.number, target.country_code)
   if (!to) return
 
-  const variables = await resolveWhatsAppVariables(account.whatsapp_business_account_id ?? '', account.whatsapp_access_token, templateName, templateLanguage, ctx)
+  let resolvedLanguage = templateLanguage
+  let bodyText = ''
+  try {
+    const variant = await resolveTemplateVariant(account.whatsapp_business_account_id ?? '', account.whatsapp_access_token, templateName, templateLanguage, ctx.patientPreferredLanguage)
+    if (variant) {
+      resolvedLanguage = variant.language
+      bodyText = variant.bodyText
+    }
+  } catch {
+    // Best-effort: fall back to the account's stored default language/variable
+    // count (1 slot, first_name) rather than failing the send outright.
+  }
+  const variables = resolveWhatsAppVariables(bodyText, ctx)
 
   let wamid: string | null = null
   let status = 'sent'
@@ -134,7 +166,7 @@ async function sendWhatsApp(
         messaging_product: 'whatsapp',
         to,
         type: 'template',
-        template: { name: templateName, language: { code: templateLanguage }, components: [{ type: 'body', parameters: variables.map((v) => ({ type: 'text', text: v })) }] },
+        template: { name: templateName, language: { code: resolvedLanguage }, components: [{ type: 'body', parameters: variables.map((v) => ({ type: 'text', text: v })) }] },
       },
     })
     wamid = response?.messages?.[0]?.id ?? null

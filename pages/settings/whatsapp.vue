@@ -196,7 +196,7 @@ async function save() {
 
             <SettingsFieldRow
               label="Default reminder template"
-              helper="Used automatically for appointment reminders. Enable/disable reminders and pick how far ahead they send in Settings → Communication → General."
+              helper="Used automatically for appointment reminders. If the patient's preferred language has its own approved variant, that one is used instead. Enable/disable reminders and pick how far ahead they send in Settings → Communication → General."
               align="top"
             >
               <div class="flex gap-2">

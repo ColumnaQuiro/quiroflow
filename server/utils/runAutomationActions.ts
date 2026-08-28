@@ -2,6 +2,13 @@ import { createHmac } from 'node:crypto'
 import { toE164 } from '~/utils/phone'
 import { renderTemplateFields } from '~/utils/docFields'
 
+// The server runs in UTC, so formatting a UTC Date with toLocaleString and no
+// timeZone renders the UTC wall-clock time, not the clinic's -- a booking at
+// 16:00 Madrid time (CEST, UTC+2) would merge into a message as "14:00".
+// There's no per-account timezone column yet, so this is hardcoded the same
+// way same-day-cron.post.ts and appointmentNotifications.ts hardcode it.
+const CLINIC_TIMEZONE = 'Europe/Madrid'
+
 // Shared by both the trigger-based fire endpoint and the one-off "Send Now"
 // endpoint: both ultimately just need to run one rule's actions for one
 // patient. Kept here (server/utils/*.ts auto-imports into server routes per
@@ -106,7 +113,7 @@ function patientFieldValue(patient: PatientForAction, source: string, context?: 
   if (source === 'email') return patient.email ?? ''
   if (source === 'next_appointment') {
     if (!context?.nextAppointmentAt) return ''
-    return new Date(context.nextAppointmentAt).toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    return new Date(context.nextAppointmentAt).toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: CLINIC_TIMEZONE })
   }
   return ''
 }

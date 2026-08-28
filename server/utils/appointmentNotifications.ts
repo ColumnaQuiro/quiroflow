@@ -1,6 +1,13 @@
 import { toE164 } from '~/utils/phone'
 import { sendResendEmail } from './resend'
 
+// The server runs in UTC, so formatting a UTC Date with toLocaleString and no
+// timeZone renders the UTC wall-clock time, not the clinic's -- a booking at
+// 16:00 Madrid time (CEST, UTC+2) would render as "14:00" in a confirmation/
+// reminder message. There's no per-account timezone column yet, so this is
+// hardcoded the same way same-day-cron.post.ts hardcodes it.
+const CLINIC_TIMEZONE = 'Europe/Madrid'
+
 // Automatic appointment confirmation/reminder sends (Settings > Communication
 // > General). Deliberately its own small module rather than routed through
 // runAutomationActions.ts's runActionsList: unlike a staff-built automation
@@ -54,7 +61,7 @@ async function loadAppointmentContext(supabase: any, appointmentId: string): Pro
 function mergeText(template: string, ctx: AppointmentContext, escape = false): string {
   const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
   const wrap = (s: string) => (escape ? escapeHtml(s) : s)
-  const appointmentDate = new Date(ctx.startsAt).toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  const appointmentDate = new Date(ctx.startsAt).toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: CLINIC_TIMEZONE })
   return template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => {
     if (key === 'first_name') return wrap(ctx.patientFirstName)
     if (key === 'last_name') return wrap(ctx.patientLastName ?? '')
@@ -117,8 +124,8 @@ async function resolveTemplateVariant(
 // to the patient's first name rather than '' to keep the send from failing.
 function resolveWhatsAppVariables(bodyText: string, ctx: AppointmentContext): string[] {
   const start = new Date(ctx.startsAt)
-  const dateOnly = start.toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })
-  const timeOnly = start.toLocaleString('es-ES', { hour: '2-digit', minute: '2-digit' })
+  const dateOnly = start.toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', timeZone: CLINIC_TIMEZONE })
+  const timeOnly = start.toLocaleString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: CLINIC_TIMEZONE })
   const guesses = [ctx.patientFirstName, dateOnly, timeOnly, ctx.appointmentTypeName, ctx.practitionerName]
   const slots = new Set<string>()
   for (const m of bodyText.matchAll(/\{\{(\d+)\}\}/g)) slots.add(m[1])

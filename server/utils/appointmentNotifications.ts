@@ -108,15 +108,21 @@ async function resolveTemplateVariant(
 
 // Meta template variables are positional ({{1}}, {{2}}...), not named merge
 // tags -- fill them with the most generally-useful values in a fixed order
-// (name, date, practitioner, type), same guess order SendWhatsAppModal.vue
-// uses for a manual send. A slot beyond what we have falls back to an empty
-// string rather than failing the send outright.
+// (name, date, time, type, practitioner). Date and time are split into their
+// own slots because the one template actually in use for this
+// (appointment_reminder: "el día {{2}} a las {{3}}h") needs them separate.
+// Meta rejects a template send outright (error 131008) if any parameter is
+// an empty string, so a slot beyond what we have -- or one whose real value
+// is empty, e.g. an appointment with no practitioner assigned -- falls back
+// to the patient's first name rather than '' to keep the send from failing.
 function resolveWhatsAppVariables(bodyText: string, ctx: AppointmentContext): string[] {
-  const appointmentDate = new Date(ctx.startsAt).toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-  const guesses = [ctx.patientFirstName, appointmentDate, ctx.practitionerName, ctx.appointmentTypeName]
+  const start = new Date(ctx.startsAt)
+  const dateOnly = start.toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })
+  const timeOnly = start.toLocaleString('es-ES', { hour: '2-digit', minute: '2-digit' })
+  const guesses = [ctx.patientFirstName, dateOnly, timeOnly, ctx.appointmentTypeName, ctx.practitionerName]
   const slots = new Set<string>()
   for (const m of bodyText.matchAll(/\{\{(\d+)\}\}/g)) slots.add(m[1])
-  return Array.from({ length: slots.size }, (_, i) => guesses[i] ?? '')
+  return Array.from({ length: slots.size }, (_, i) => guesses[i] || ctx.patientFirstName)
 }
 
 async function sendWhatsApp(
@@ -158,6 +164,7 @@ async function sendWhatsApp(
 
   let wamid: string | null = null
   let status = 'sent'
+  let errorMessage: string | null = null
   try {
     const response = await $fetch<{ messages?: { id: string }[] }>(`https://graph.facebook.com/v21.0/${account.whatsapp_phone_number_id}/messages`, {
       method: 'POST',
@@ -170,8 +177,9 @@ async function sendWhatsApp(
       },
     })
     wamid = response?.messages?.[0]?.id ?? null
-  } catch {
+  } catch (e: any) {
     status = 'failed'
+    errorMessage = e?.data?.error?.message ?? e?.message ?? 'Unknown error'
   }
 
   await Promise.all([
@@ -192,6 +200,7 @@ async function sendWhatsApp(
       purpose,
       template_name: templateName,
       status,
+      error_message: errorMessage,
     }),
   ])
 

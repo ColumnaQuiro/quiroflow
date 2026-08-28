@@ -1,4 +1,5 @@
 import { serverSupabaseUser } from '#supabase/server'
+import { toE164 } from '~/utils/phone'
 
 // "Send test to me" in the campaign editor drawer: runs the actions currently
 // on screen -- saved or not -- against the signed-in team member instead of a
@@ -13,14 +14,16 @@ import { serverSupabaseUser } from '#supabase/server'
 // of one read back from automation_actions.
 //
 // Team members aren't patients and have no phone number on file, so a
-// whatsapp_template action's lookup in patient_contact_numbers will simply
-// find nothing and no-op (see runWhatsAppAction) -- test sends only really
-// exercise the email action. A WhatsApp action with a document attached will
-// also fail its patient_docs insert (patient_id has a real FK to patients)
+// whatsapp_template action's lookup in patient_contact_numbers would simply
+// find nothing and no-op (see runWhatsAppAction) -- the caller supplies a
+// whatsappNumber to test against instead, passed through as an override
+// that skips that lookup. A WhatsApp action with a document attached will
+// still fail its patient_docs insert (patient_id has a real FK to patients)
 // and be swallowed by runActionsList's per-action try/catch, same as any
 // other best-effort action failure.
 interface SendTestBody {
   actions: { action_type: 'whatsapp_template' | 'email' | 'webhook'; config: Record<string, any> }[]
+  whatsappNumber?: string
 }
 
 export default defineEventHandler(async (event) => {
@@ -36,6 +39,14 @@ export default defineEventHandler(async (event) => {
   const user = await serverSupabaseUser(event)
   if (!user?.email) throw createError({ statusCode: 400, statusMessage: 'Your account has no email on file to send a test to.' })
 
+  const hasWhatsAppAction = body.actions.some((a) => a.action_type === 'whatsapp_template')
+  let whatsappNumber: string | undefined
+  if (hasWhatsAppAction) {
+    if (!body.whatsappNumber?.trim()) throw createError({ statusCode: 400, statusMessage: 'Enter a WhatsApp number to send the test to.' })
+    whatsappNumber = toE164(body.whatsappNumber, 'ES') ?? undefined
+    if (!whatsappNumber) throw createError({ statusCode: 400, statusMessage: 'That WhatsApp number looks invalid.' })
+  }
+
   const fullName = member?.full_name?.trim() || 'Test'
   const [firstName, ...rest] = fullName.split(' ')
 
@@ -50,7 +61,11 @@ export default defineEventHandler(async (event) => {
     { id: teamMember.id, first_name: firstName, last_name: rest.join(' ') || null, email: user.email },
     origin,
     false,
+    undefined,
+    undefined,
+    whatsappNumber,
   )
 
-  return { sent: true, email: user.email }
+  const hasEmailAction = body.actions.some((a) => a.action_type === 'email')
+  return { sent: true, email: hasEmailAction ? user.email : null, whatsappNumber: whatsappNumber ?? null }
 })

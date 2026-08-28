@@ -82,6 +82,7 @@ const loading = ref(!!props.ruleId)
 const saving = ref(false)
 const testing = ref(false)
 const testMessage = ref('')
+const testWhatsAppNumber = ref('')
 const error = ref('')
 
 onMounted(async () => {
@@ -230,9 +231,15 @@ async function save() {
   if (ruleId) emit('saved')
 }
 
+const hasWhatsAppAction = computed(() => actions.value.some((a) => a.action_type === 'whatsapp_template'))
+
 async function sendTestToMe() {
   if (actions.value.length === 0) {
     error.value = 'Add at least one action.'
+    return
+  }
+  if (hasWhatsAppAction.value && !testWhatsAppNumber.value.trim()) {
+    testMessage.value = 'Enter a WhatsApp number to test with.'
     return
   }
   testing.value = true
@@ -241,11 +248,17 @@ async function sendTestToMe() {
     // Sends the draft as it stands right now -- deliberately not persisted
     // first, so previewing a campaign never has the side effect of writing a
     // real (enabled) automation_rules row before the user has chosen to save.
-    const result = await useStaffFetch<{ sent: boolean; email: string }>('/api/automations/send-test', {
+    const result = await useStaffFetch<{ sent: boolean; email: string | null; whatsappNumber: string | null }>('/api/automations/send-test', {
       method: 'POST',
-      body: { actions: actions.value.map((a) => ({ action_type: a.action_type, config: configFor(a) })) },
+      body: {
+        actions: actions.value.map((a) => ({ action_type: a.action_type, config: configFor(a) })),
+        whatsappNumber: hasWhatsAppAction.value ? testWhatsAppNumber.value : undefined,
+      },
     })
-    testMessage.value = `Sent to ${result.email}`
+    const parts: string[] = []
+    if (result.whatsappNumber) parts.push(`WhatsApp to +${result.whatsappNumber}`)
+    if (result.email) parts.push(`email to ${result.email}`)
+    testMessage.value = parts.length > 0 ? `Sent: ${parts.join(', ')}` : 'Nothing to send.'
   } catch {
     testMessage.value = 'Failed to send test.'
   } finally {
@@ -255,7 +268,7 @@ async function sendTestToMe() {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-30 flex justify-end bg-[rgba(20,22,30,.32)]" @click.self="emit('close')">
+  <div class="fixed inset-0 z-30 flex justify-end bg-ink-900/40" @click.self="emit('close')">
     <div class="flex h-full w-[560px] flex-col bg-surface shadow-drawer">
       <div class="flex h-14 shrink-0 items-center justify-between border-b border-line px-6">
         <h2 class="text-[15px] font-semibold text-ink-900">{{ savedRuleId ? 'Edit campaign' : 'New campaign' }}</h2>
@@ -450,8 +463,15 @@ async function sendTestToMe() {
 
         <div class="flex shrink-0 items-center justify-between border-t border-line-divider bg-surface-subtle2 px-6 py-3.5">
           <div class="flex items-center gap-2.5">
+            <input
+              v-if="hasWhatsAppAction"
+              v-model="testWhatsAppNumber"
+              type="text"
+              placeholder="Your WhatsApp number, e.g. +34600000000"
+              class="h-8 w-56 rounded-ctl border border-line-control px-2.5 text-[12.5px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            />
             <UiBtn variant="ghost" size="sm" type="button" :disabled="testing" @click="sendTestToMe">{{ testing ? 'Sending…' : 'Send test to me' }}</UiBtn>
-            <p v-if="testMessage" class="text-[12px]" :class="testMessage.startsWith('Failed') ? 'text-danger-text' : 'text-success-text'">{{ testMessage }}</p>
+            <p v-if="testMessage" class="text-[12px]" :class="testMessage.startsWith('Failed') || testMessage.startsWith('Enter') ? 'text-danger-text' : 'text-success-text'">{{ testMessage }}</p>
           </div>
           <div class="flex items-center gap-2">
             <UiBtn variant="secondary" type="button" @click="emit('close')">Cancel</UiBtn>

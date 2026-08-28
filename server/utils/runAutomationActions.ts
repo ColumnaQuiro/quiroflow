@@ -61,6 +61,7 @@ export async function runActionsList(
   isMarketing = false,
   appointmentId?: string,
   triggerBody?: TriggerBody,
+  whatsappOverrideNumber?: string,
 ) {
   // Minors and do-not-contact patients get no communications -- webhook
   // actions still run since those are internal side effects, not messages
@@ -85,7 +86,7 @@ export async function runActionsList(
   for (const action of actions) {
     try {
       if (action.action_type === 'whatsapp_template') {
-        if (canContact && channelAllowed('whatsapp')) await runWhatsAppAction(supabase, accountId, patient, action.config, origin, appointmentId)
+        if (canContact && channelAllowed('whatsapp')) await runWhatsAppAction(supabase, accountId, patient, action.config, origin, appointmentId, whatsappOverrideNumber)
       } else if (action.action_type === 'email') {
         if (canContact && channelAllowed('email')) await runEmailAction(patient, action.config, { nextAppointmentAt })
       } else if (action.action_type === 'webhook') {
@@ -117,6 +118,7 @@ async function runWhatsAppAction(
   config: Record<string, any>,
   origin: string,
   appointmentId?: string,
+  toOverride?: string,
 ) {
   const templateName: string | undefined = config.template_name
   const templateLanguage: string = config.template_language || 'es'
@@ -124,18 +126,21 @@ async function runWhatsAppAction(
 
   const { data: account } = await supabase
     .from('accounts')
-    .select('whatsapp_phone_number_id, whatsapp_access_token')
+    .select('whatsapp_phone_number_id, whatsapp_access_token, whatsapp_business_account_id')
     .eq('id', accountId)
     .maybeSingle()
   if (!account?.whatsapp_phone_number_id || !account?.whatsapp_access_token) return
 
-  const { data: numbers } = await supabase
-    .from('patient_contact_numbers')
-    .select('number, country_code, is_whatsapp')
-    .eq('patient_id', patient.id)
-  const target = numbers?.find((n: any) => n.is_whatsapp) ?? numbers?.[0]
-  if (!target) return
-  const to = toE164(target.number, target.country_code)
+  let to = toOverride
+  if (!to) {
+    const { data: numbers } = await supabase
+      .from('patient_contact_numbers')
+      .select('number, country_code, is_whatsapp')
+      .eq('patient_id', patient.id)
+    const target = numbers?.find((n: any) => n.is_whatsapp) ?? numbers?.[0]
+    if (!target) return
+    to = toE164(target.number, target.country_code) ?? undefined
+  }
   if (!to) return
 
   // Each configured variable slot maps to a patient field (first_name,
@@ -175,28 +180,93 @@ async function runWhatsAppAction(
     }
   }
 
-  const response = await $fetch<{ messages?: { id: string }[] }>(
-    `https://graph.facebook.com/v21.0/${account.whatsapp_phone_number_id}/messages`,
-    {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${account.whatsapp_access_token}` },
-      body: {
-        messaging_product: 'whatsapp',
-        to,
-        type: 'template',
-        template: { name: templateName, language: { code: templateLanguage }, components: [{ type: 'body', parameters: variables.map((v) => ({ type: 'text', text: v })) }] },
+  // Fetch the live approved template so the send always matches what Meta
+  // actually expects, rather than trusting the staff-entered config alone:
+  // (a) a template can carry URL buttons whose link needs a per-recipient
+  // suffix -- Meta requires a "button" component for every URL button that
+  // has a {{n}} placeholder, or the whole send is rejected with error
+  // 131008 "Required parameter is missing" (found via new_patient_arrived_tasks's
+  // onboarding-form links, built this way); the approved template's own Meta
+  // example for these buttons is a `?name=<name>&id=<id>` query string, so
+  // that's what's sent here too. (b) the body's own placeholder count can
+  // differ from what staff configured (e.g. new_patient_arrived_tasks_2 has
+  // no {{n}} at all but was configured with a first_name slot anyway),
+  // which Meta rejects with error 132000 "Number of parameters does not
+  // match" -- so the configured variables are trimmed/padded to match.
+  const bodyComponents: Record<string, any>[] = []
+  const buttonComponents: Record<string, any>[] = []
+  if (account.whatsapp_business_account_id) {
+    const templates = await $fetch<{ data: { name: string; language: string; components: any[] }[] }>(
+      `https://graph.facebook.com/v21.0/${account.whatsapp_business_account_id}/message_templates`,
+      { params: { name: templateName, fields: 'name,language,components' }, headers: { Authorization: `Bearer ${account.whatsapp_access_token}` } },
+    ).catch(() => null)
+    // Meta's `name` query param is a fuzzy/substring match, not an exact
+    // filter -- e.g. querying "new_patient_arrived_tasks" also returns
+    // "new_patient_arrived_tasks_2" -- so the exact name has to be checked
+    // again client-side or the wrong template's body/buttons get used.
+    const candidates = (templates?.data ?? []).filter((t: { name: string }) => t.name === templateName)
+    const match = candidates.find((t: { language: string }) => t.language === templateLanguage) ?? candidates[0]
+
+    const bodyText: string = match?.components?.find((c: any) => c.type === 'BODY')?.text ?? ''
+    const bodySlots = new Set<string>()
+    for (const m of bodyText.matchAll(/\{\{(\d+)\}\}/g)) bodySlots.add(m[1])
+    if (bodySlots.size > 0) {
+      const trimmed = Array.from({ length: bodySlots.size }, (_, i) => variables[i] ?? patient.first_name ?? '')
+      bodyComponents.push({ type: 'body', parameters: trimmed.map((v) => ({ type: 'text', text: v })) })
+    }
+
+    const buttons = match?.components?.find((c: any) => c.type === 'BUTTONS')?.buttons ?? []
+    buttons.forEach((b: any, index: number) => {
+      if (b.type === 'URL' && /\{\{\d+\}\}/.test(b.url ?? '')) {
+        buttonComponents.push({
+          type: 'button',
+          sub_type: 'url',
+          index: String(index),
+          parameters: [{ type: 'text', text: `name=${encodeURIComponent(patient.first_name ?? '')}&id=${patient.id}` }],
+        })
+      }
+    })
+  } else if (variables.length > 0) {
+    // No business-account id on file to look the template up against --
+    // fall back to sending exactly what was configured, same as before.
+    bodyComponents.push({ type: 'body', parameters: variables.map((v) => ({ type: 'text', text: v })) })
+  }
+
+  let wamid: string | null = null
+  let errorMessage: string | null = null
+  try {
+    const response = await $fetch<{ messages?: { id: string }[] }>(
+      `https://graph.facebook.com/v21.0/${account.whatsapp_phone_number_id}/messages`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${account.whatsapp_access_token}` },
+        body: {
+          messaging_product: 'whatsapp',
+          to,
+          type: 'template',
+          template: {
+            name: templateName,
+            language: { code: templateLanguage },
+            components: [...bodyComponents, ...buttonComponents],
+          },
+        },
       },
-    },
-  ).catch(() => null)
+    )
+    wamid = response?.messages?.[0]?.id ?? null
+  } catch (e: any) {
+    errorMessage = e?.data?.error?.message ?? e?.message ?? 'Unknown error'
+  }
 
   await supabase.from('whatsapp_messages').insert({
     account_id: accountId,
     patient_id: patient.id,
     appointment_id: appointmentId ?? null,
-    wamid: response?.messages?.[0]?.id ?? null,
+    wamid,
     purpose: 'other',
     template_name: templateName,
-    status: response ? 'sent' : 'failed',
+    status: wamid ? 'sent' : 'failed',
+    error_message: errorMessage,
+    phone_number: to,
   })
 }
 

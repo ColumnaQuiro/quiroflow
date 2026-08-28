@@ -19,6 +19,7 @@ export interface DocField {
   // 'choice' only
   options?: string[]
   multiple?: boolean
+  allowOther?: boolean
 }
 
 export const FIELD_TYPES: { type: DocFieldType; label: string }[] = [

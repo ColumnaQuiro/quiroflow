@@ -80,6 +80,49 @@ function toggleChoiceOption(index: number, option: string) {
   update(index, { value: current })
 }
 
+// "Other" is represented as a value not present in `options`, rather than a
+// separate field -- for multi-select that's whichever array entry isn't a
+// known option, for single-select it's the value itself.
+function isOtherActive(field: DocField): boolean {
+  const options = field.options ?? []
+  if (field.multiple) return Array.isArray(field.value) && (field.value as string[]).some((v) => !options.includes(v))
+  return typeof field.value === 'string' && !options.includes(field.value)
+}
+
+function otherText(field: DocField): string {
+  const options = field.options ?? []
+  if (field.multiple) return (Array.isArray(field.value) ? (field.value as string[]) : []).find((v) => !options.includes(v)) ?? ''
+  return typeof field.value === 'string' && !options.includes(field.value) ? field.value : ''
+}
+
+function toggleOther(index: number) {
+  const field = props.fields[index]
+  const options = field.options ?? []
+  if (field.multiple) {
+    const arr = Array.isArray(field.value) ? [...(field.value as string[])] : []
+    const oi = arr.findIndex((v) => !options.includes(v))
+    if (oi === -1) arr.push('')
+    else arr.splice(oi, 1)
+    update(index, { value: arr })
+  } else {
+    update(index, { value: isOtherActive(field) ? null : '' })
+  }
+}
+
+function updateOtherText(index: number, text: string) {
+  const field = props.fields[index]
+  const options = field.options ?? []
+  if (field.multiple) {
+    const arr = Array.isArray(field.value) ? [...(field.value as string[])] : []
+    const oi = arr.findIndex((v) => !options.includes(v))
+    if (oi === -1) arr.push(text)
+    else arr[oi] = text
+    update(index, { value: arr })
+  } else {
+    update(index, { value: text })
+  }
+}
+
 const showAddMenu = ref(false)
 </script>
 
@@ -152,6 +195,15 @@ const showAddMenu = ref(false)
             />
             Allow multiple selections
           </label>
+          <label class="flex items-center gap-1.5 text-xs text-gray-500">
+            <input
+              type="checkbox"
+              :checked="field.allowOther"
+              class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              @change="update(i, { allowOther: ($event.target as HTMLInputElement).checked })"
+            />
+            Allow "Other" (free text)
+          </label>
         </div>
 
         <div class="mt-2 flex items-center gap-3">
@@ -216,6 +268,34 @@ const showAddMenu = ref(false)
               />
               {{ opt }}
             </label>
+            <div v-if="field.allowOther">
+              <label class="flex items-center gap-2 text-sm text-gray-800">
+                <input
+                  v-if="field.multiple"
+                  type="checkbox"
+                  :checked="isOtherActive(field)"
+                  class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  @change="toggleOther(i)"
+                />
+                <input
+                  v-else
+                  type="radio"
+                  :name="field.id"
+                  :checked="isOtherActive(field)"
+                  class="border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  @change="toggleOther(i)"
+                />
+                Other
+              </label>
+              <input
+                v-if="isOtherActive(field)"
+                type="text"
+                :value="otherText(field)"
+                placeholder="Please specify…"
+                class="mt-1 w-full rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                @input="updateOtherText(i, ($event.target as HTMLInputElement).value)"
+              />
+            </div>
           </div>
         </div>
 

@@ -100,11 +100,17 @@ const SLOT_MIN = computed(() => store.currentClinic?.slot_duration_minutes ?? 30
 // through the day, matches PracticeHub's placement.
 const cashShiftOpen = ref(false)
 
-// 'day' so today's own appointments are always visible on load -- 'workweek'
-// hides Sat/Sun entirely, which silently hides everything booked for today
-// on a weekend (clinics that work weekends would see an apparently-empty
-// calendar). Work week stays one click away via the toggle.
-const viewMode = ref<'day' | 'workweek' | 'week'>('day')
+// Defaults to 'workweek', but this is really just the fallback for a
+// browser that's never opened the calendar before -- the real value is
+// whatever the user last picked, persisted in localStorage below so a
+// refresh doesn't silently snap back to a hardcoded default.
+const CALENDAR_VIEW_MODE_KEY = 'quiroflow-calendar-view-mode'
+const viewMode = ref<'day' | 'workweek' | 'week'>('workweek')
+onMounted(() => {
+  const stored = localStorage.getItem(CALENDAR_VIEW_MODE_KEY)
+  if (stored === 'day' || stored === 'workweek' || stored === 'week') viewMode.value = stored
+})
+watch(viewMode, (v) => localStorage.setItem(CALENDAR_VIEW_MODE_KEY, v))
 const practitionerFilter = ref('')
 const anchorDate = ref(new Date())
 const rooms = ref<Room[]>([])

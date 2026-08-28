@@ -200,6 +200,53 @@ const thread = computed(() =>
   selectedKey.value ? allMessages.value.filter((m) => (m.patient_id ?? m.phone_number ?? 'unknown') === selectedKey.value).slice().reverse() : [],
 )
 
+// Auto-scroll, WhatsApp-style: snap to the bottom when a conversation is
+// opened, and keep following new messages only while already at the bottom
+// -- scrolling up to read history shouldn't get yanked back down by an
+// incoming message. That case (and any message sent/received while
+// scrolled up) surfaces the floating "jump to latest" button instead.
+const threadScrollEl = ref<HTMLElement | null>(null)
+const showJumpToLatest = ref(false)
+
+function isThreadNearBottom(threshold = 120) {
+  const el = threadScrollEl.value
+  if (!el) return true
+  return el.scrollHeight - el.scrollTop - el.clientHeight < threshold
+}
+function scrollThreadToBottom(smooth = false) {
+  const el = threadScrollEl.value
+  if (!el) return
+  el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
+}
+// nextTick alone lands a few pixels short -- it resolves once Vue has
+// patched the DOM, but the browser hasn't necessarily run layout yet, so
+// el.scrollHeight can still reflect the pre-update height. Waiting a frame
+// after nextTick gives layout a chance to catch up first.
+function scrollThreadToBottomNextFrame(smooth = false) {
+  nextTick(() => requestAnimationFrame(() => scrollThreadToBottom(smooth)))
+}
+function onThreadScroll() {
+  showJumpToLatest.value = !isThreadNearBottom()
+}
+function jumpToLatest() {
+  scrollThreadToBottomNextFrame(true)
+  showJumpToLatest.value = false
+}
+
+watch(selectedKey, () => {
+  showJumpToLatest.value = false
+  scrollThreadToBottomNextFrame(false)
+})
+watch(thread, () => {
+  const wasNearBottom = isThreadNearBottom()
+  const isOwnSend = thread.value.at(-1)?.direction === 'outbound'
+  if (wasNearBottom || isOwnSend) {
+    scrollThreadToBottomNextFrame(true)
+  } else {
+    showJumpToLatest.value = true
+  }
+})
+
 const composeOpen = ref(false)
 const composeQuery = ref('')
 const composeEl = ref<HTMLElement | null>(null)
@@ -784,7 +831,8 @@ onUnmounted(() => {
           </button>
         </div>
 
-        <div class="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+        <div class="relative min-h-0 flex-1">
+          <div ref="threadScrollEl" class="h-full space-y-3 overflow-y-auto px-4 py-4" @scroll="onThreadScroll">
           <template v-for="(m, i) in thread" :key="m.id">
             <div v-if="i === 0 || relativeDay(m.created_at) !== relativeDay(thread[i - 1].created_at)" class="flex justify-center">
               <span class="rounded-pill bg-chip-bg px-2.5 py-0.5 text-[11px] font-medium text-chip-text">{{ relativeDay(m.created_at) }}</span>
@@ -850,6 +898,19 @@ onUnmounted(() => {
               </div>
             </div>
           </template>
+          </div>
+
+          <button
+            v-if="showJumpToLatest"
+            type="button"
+            class="absolute bottom-4 right-4 flex h-9 w-9 items-center justify-center rounded-full border border-line bg-surface text-ink-600 shadow-popover hover:bg-surface-subtle"
+            title="Jump to latest"
+            @click="jumpToLatest"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+              <path d="M3.5 6.5L8 11l4.5-4.5" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
         </div>
 
         <div class="shrink-0 border-t border-line bg-surface p-3">

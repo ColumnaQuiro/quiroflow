@@ -32,7 +32,7 @@ function fullDate(iso: string) {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="emit('close')">
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 p-4" @click.self="emit('close')">
     <div class="flex max-h-[80vh] w-full max-w-md flex-col rounded-card bg-surface shadow-xl">
       <div class="flex h-12 shrink-0 items-center justify-between border-b border-line px-4">
         <h3 class="text-[13.5px] font-semibold text-ink-900">Contact history — {{ patientName }}</h3>

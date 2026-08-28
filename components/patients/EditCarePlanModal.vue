@@ -48,7 +48,7 @@ async function save() {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-20 flex items-center justify-center bg-black/30 p-4" @click.self="emit('close')">
+  <div class="fixed inset-0 z-20 flex items-center justify-center bg-ink-900/40 p-4" @click.self="emit('close')">
     <div class="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl">
       <div class="flex items-center justify-between">
         <h2 class="text-lg font-semibold text-gray-900">{{ plan ? 'Edit Plan' : 'New Care Plan' }}</h2>

@@ -65,7 +65,7 @@ function onKeydown(e: KeyboardEvent) {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-start justify-center bg-[rgba(20,22,30,.32)] pt-[15vh]" @click.self="emit('close')" @keydown="onKeydown">
+  <div class="fixed inset-0 z-50 flex items-start justify-center bg-ink-900/40 pt-[15vh]" @click.self="emit('close')" @keydown="onKeydown">
     <div class="w-full max-w-lg overflow-hidden rounded-card border border-line bg-surface shadow-popover">
       <div class="flex items-center gap-2.5 border-b border-line px-4 py-3">
         <svg width="15" height="15" viewBox="0 0 14 14" class="shrink-0 text-ink-faint"><circle cx="6" cy="6" r="4.2" stroke="currentColor" stroke-width="1.4" fill="none" /><line x1="9.2" y1="9.2" x2="12" y2="12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg>

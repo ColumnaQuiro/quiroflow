@@ -333,71 +333,73 @@ async function sendStatement() {
 
     <div v-if="loading" class="p-8 text-center text-[13px] text-ink-faint">Loading…</div>
     <div v-else-if="rows.length === 0" class="p-8 text-center text-[13px] text-ink-faint">No transactions yet.</div>
-    <table v-else class="w-full text-[13px]">
-      <thead class="border-b border-line-divider text-left text-[11px] font-medium uppercase tracking-wide text-ink-faint">
-        <tr>
-          <th class="w-6 px-2 py-2"></th>
-          <th class="px-2 py-2">Ref</th>
-          <th class="px-2 py-2">Date</th>
-          <th class="px-2 py-2">Description</th>
-          <th class="px-2 py-2 text-right">Debit</th>
-          <th class="px-2 py-2 text-right">Credit</th>
-          <th class="px-4 py-2 text-right">Balance</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-line-row">
-        <template v-for="row in rows" :key="row.key">
-          <tr class="h-[42px] cursor-pointer hover:bg-surface-subtle" :class="row.voided ? 'opacity-60' : ''" @click="toggleExpanded(row.key)">
-            <td class="px-2 text-ink-faint">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="transition-transform" :class="expandedKey === row.key ? 'rotate-90' : ''">
-                <path d="M9 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            </td>
-            <td class="px-2 font-mono text-[12px] text-ink-muted">{{ row.ref }}</td>
-            <td class="px-2 text-ink-muted">{{ formatDate(row.date) }}</td>
-            <td class="px-2 text-ink-700">{{ row.description }}</td>
-            <td class="px-2 text-right font-mono text-ink-700">{{ row.debitCents > 0 ? money(row.debitCents) : '' }}</td>
-            <td class="px-2 text-right font-mono text-success-text">{{ row.creditCents > 0 ? money(row.creditCents) : '' }}</td>
-            <td class="px-4 text-right font-mono" :class="row.balanceTone === 'danger' ? 'text-danger-text' : 'text-ink-muted'">{{ row.balanceText }}</td>
+    <div v-else class="max-h-[420px] overflow-y-auto">
+      <table class="w-full text-[13px]">
+        <thead class="sticky top-0 border-b border-line-divider bg-surface text-left text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+          <tr>
+            <th class="w-6 px-2 py-2"></th>
+            <th class="px-2 py-2">Ref</th>
+            <th class="px-2 py-2">Date</th>
+            <th class="px-2 py-2">Description</th>
+            <th class="px-2 py-2 text-right">Debit</th>
+            <th class="px-2 py-2 text-right">Credit</th>
+            <th class="px-4 py-2 text-right">Balance</th>
           </tr>
-          <tr v-if="expandedKey === row.key">
-            <td colspan="7" class="bg-surface-subtle px-8 py-3">
-              <dl class="grid grid-cols-2 gap-x-6 gap-y-1 text-[12px]">
-                <template v-for="(d, i) in row.detail" :key="i">
-                  <dt class="text-ink-faint">{{ d.label }}</dt>
-                  <dd class="text-ink-muted2">{{ d.value }}</dd>
-                </template>
-              </dl>
-              <div v-if="row.invoiceId" class="mt-2 flex items-center gap-3 border-t border-line-divider pt-2 text-[12px]">
-                <NuxtLink :to="`/billing/${row.invoiceId}`" class="font-medium text-brand-text hover:text-brand-hover">Open invoice</NuxtLink>
-                <span v-if="sendResultInvoiceId === row.invoiceId" class="text-ink-faint">{{ sendResultMessage }}</span>
-                <button
-                  v-else
-                  type="button"
-                  class="text-ink-faint hover:text-brand-text disabled:opacity-50"
-                  :disabled="sendingInvoiceId === row.invoiceId"
-                  @click="emit('sendInvoice', row.invoiceId)"
-                >
-                  {{ sendingInvoiceId === row.invoiceId ? 'Sending…' : 'Email invoice' }}
-                </button>
-                <button v-if="canDeleteInvoices" type="button" class="text-ink-faint hover:text-danger-text" @click="emit('deleteInvoice', row.invoiceId)">Delete</button>
-                <button
-                  v-if="canWriteOff && !row.voided && (row.invoiceOpenCents ?? 0) > 0"
-                  type="button"
-                  class="text-ink-faint hover:text-warning-text"
-                  @click="writeOffInvoice(row.invoiceId)"
-                >
-                  Write off {{ money(row.invoiceOpenCents ?? 0) }}
-                </button>
-              </div>
-            </td>
-          </tr>
-        </template>
-      </tbody>
-    </table>
+        </thead>
+        <tbody class="divide-y divide-line-row">
+          <template v-for="row in rows" :key="row.key">
+            <tr class="h-[42px] cursor-pointer hover:bg-surface-subtle" :class="row.voided ? 'opacity-60' : ''" @click="toggleExpanded(row.key)">
+              <td class="px-2 text-ink-faint">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="transition-transform" :class="expandedKey === row.key ? 'rotate-90' : ''">
+                  <path d="M9 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </td>
+              <td class="px-2 font-mono text-[12px] text-ink-muted">{{ row.ref }}</td>
+              <td class="px-2 text-ink-muted">{{ formatDate(row.date) }}</td>
+              <td class="px-2 text-ink-700">{{ row.description }}</td>
+              <td class="px-2 text-right font-mono text-ink-700">{{ row.debitCents > 0 ? money(row.debitCents) : '' }}</td>
+              <td class="px-2 text-right font-mono text-success-text">{{ row.creditCents > 0 ? money(row.creditCents) : '' }}</td>
+              <td class="px-4 text-right font-mono" :class="row.balanceTone === 'danger' ? 'text-danger-text' : 'text-ink-muted'">{{ row.balanceText }}</td>
+            </tr>
+            <tr v-if="expandedKey === row.key">
+              <td colspan="7" class="bg-surface-subtle px-8 py-3">
+                <dl class="grid grid-cols-2 gap-x-6 gap-y-1 text-[12px]">
+                  <template v-for="(d, i) in row.detail" :key="i">
+                    <dt class="text-ink-faint">{{ d.label }}</dt>
+                    <dd class="text-ink-muted2">{{ d.value }}</dd>
+                  </template>
+                </dl>
+                <div v-if="row.invoiceId" class="mt-2 flex items-center gap-3 border-t border-line-divider pt-2 text-[12px]">
+                  <NuxtLink :to="`/billing/${row.invoiceId}`" class="font-medium text-brand-text hover:text-brand-hover">Open invoice</NuxtLink>
+                  <span v-if="sendResultInvoiceId === row.invoiceId" class="text-ink-faint">{{ sendResultMessage }}</span>
+                  <button
+                    v-else
+                    type="button"
+                    class="text-ink-faint hover:text-brand-text disabled:opacity-50"
+                    :disabled="sendingInvoiceId === row.invoiceId"
+                    @click="emit('sendInvoice', row.invoiceId)"
+                  >
+                    {{ sendingInvoiceId === row.invoiceId ? 'Sending…' : 'Email invoice' }}
+                  </button>
+                  <button v-if="canDeleteInvoices" type="button" class="text-ink-faint hover:text-danger-text" @click="emit('deleteInvoice', row.invoiceId)">Delete</button>
+                  <button
+                    v-if="canWriteOff && !row.voided && (row.invoiceOpenCents ?? 0) > 0"
+                    type="button"
+                    class="text-ink-faint hover:text-warning-text"
+                    @click="writeOffInvoice(row.invoiceId)"
+                  >
+                    Write off {{ money(row.invoiceOpenCents ?? 0) }}
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
   </div>
 
-  <div v-if="transferModalOpen" class="fixed inset-0 z-20 flex items-center justify-center bg-black/30 p-4" @click.self="transferModalOpen = false">
+  <div v-if="transferModalOpen" class="fixed inset-0 z-20 flex items-center justify-center bg-ink-900/40 p-4" @click.self="transferModalOpen = false">
     <div class="w-full max-w-sm rounded-card border border-line bg-surface p-4 shadow-popover">
       <p class="text-[13.5px] font-semibold text-ink-700">Transfer credit</p>
       <p class="mt-1 text-[12px] text-ink-faint">Moves an amount from this patient's credit (€{{ (creditLedgerCents / 100).toFixed(2) }} available) to another patient's account.</p>

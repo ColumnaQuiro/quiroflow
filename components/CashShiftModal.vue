@@ -186,7 +186,7 @@ async function addMovement() {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="emit('close')">
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 p-4" @click.self="emit('close')">
     <div class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 shadow-xl">
       <div class="flex items-center justify-between">
         <h3 class="text-sm font-semibold text-gray-900">Cash Shift</h3>

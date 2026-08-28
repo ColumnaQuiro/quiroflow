@@ -275,34 +275,37 @@ async function loadAll() {
   membershipTemplates.value = memTemplates ?? []
   patientMemberships.value = (patMemberships as PatientMembershipRow[]) ?? []
 
+  // None of the four queries below depend on each other's results (only on
+  // invoices/patientMemberships from the wave above), so they run as one
+  // parallel batch instead of four sequential round-trips -- each extra
+  // sequential await here was adding a full network round-trip to every
+  // patient's billing-tab load regardless of how little data came back.
   const invoiceIds = invoices.value.map((i) => i.id)
-  if (invoiceIds.length > 0) {
-    const { data: lines } = await supabase.from('invoice_line_items').select('invoice_id, description').in('invoice_id', invoiceIds)
-    const byInvoice: Record<string, string[]> = {}
-    for (const l of lines ?? []) {
-      ;(byInvoice[l.invoice_id] ??= []).push(l.description)
-    }
-    lineItemDescriptions.value = byInvoice
-  } else {
-    lineItemDescriptions.value = {}
-  }
-
-  if (patientMemberships.value.length > 0) {
-    const { data: payments } = await supabase
-      .from('membership_payments')
-      .select('id, patient_membership_id, period_start, amount_cents, status')
-      .in('patient_membership_id', patientMemberships.value.map((m) => m.id))
-      .order('period_start', { ascending: false })
-    membershipPayments.value = payments ?? []
-  }
-
-  const [{ data: customer }, { data: sch }] = await Promise.all([
+  const membershipIds = patientMemberships.value.map((m) => m.id)
+  const [{ data: lines }, { data: membershipPaymentRows }, { data: customer }, { data: sch }] = await Promise.all([
+    invoiceIds.length > 0
+      ? supabase.from('invoice_line_items').select('invoice_id, description').in('invoice_id', invoiceIds)
+      : Promise.resolve({ data: [] as { invoice_id: string; description: string }[] }),
+    membershipIds.length > 0
+      ? supabase
+          .from('membership_payments')
+          .select('id, patient_membership_id, period_start, amount_cents, status')
+          .in('patient_membership_id', membershipIds)
+          .order('period_start', { ascending: false })
+      : Promise.resolve({ data: [] as typeof membershipPayments.value }),
     supabase.from('patient_stripe_customers').select('stripe_customer_id, default_payment_method_id').eq('patient_id', props.patientId).maybeSingle(),
     supabase
       .from('payment_schedules')
       .select('id, package_purchase_id, patient_membership_id, interval, interval_count, installments_total, installments_paid, status')
       .eq('patient_id', props.patientId),
   ])
+
+  const byInvoice: Record<string, string[]> = {}
+  for (const l of lines ?? []) {
+    ;(byInvoice[l.invoice_id] ??= []).push(l.description)
+  }
+  lineItemDescriptions.value = byInvoice
+  membershipPayments.value = membershipPaymentRows ?? []
   stripeCustomer.value = customer
   schedules.value = sch ?? []
 
@@ -675,7 +678,7 @@ function money(cents: number) {
           </div>
           <div>
             <label class="block text-[11px] text-ink-muted">Method</label>
-            <select v-model="addCreditMethod" class="mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
+            <select v-model="addCreditMethod" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
               <option value="cash">Cash</option>
               <option value="card">Card</option>
             </select>
@@ -690,7 +693,7 @@ function money(cents: number) {
         <form v-if="creditLedgerCents > 0 && unpaidInvoices.length > 0" class="mt-3 flex flex-wrap items-end gap-2 border-t border-line-divider pt-3" @submit.prevent="applyCreditToInvoice">
           <div>
             <label class="block text-[11px] text-ink-muted">Apply to invoice</label>
-            <select v-model="applyCreditInvoiceId" class="mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
+            <select v-model="applyCreditInvoiceId" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
               <option value="" disabled>Select invoice…</option>
               <option v-for="inv in unpaidInvoices" :key="inv.id" :value="inv.id">{{ inv.invoice_number }} ({{ money(inv.total_cents) }})</option>
             </select>
@@ -711,7 +714,7 @@ function money(cents: number) {
         <form v-if="unpaidInvoices.length > 0" class="flex flex-wrap items-end gap-2" @submit.prevent="takePayment">
           <div>
             <label class="block text-[11px] text-ink-muted">Invoice</label>
-            <select v-model="paymentInvoiceId" class="mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
+            <select v-model="paymentInvoiceId" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
               <option v-for="inv in unpaidInvoices" :key="inv.id" :value="inv.id">{{ inv.invoice_number }} ({{ money(inv.total_cents) }})</option>
             </select>
           </div>
@@ -721,7 +724,7 @@ function money(cents: number) {
           </div>
           <div>
             <label class="block text-[11px] text-ink-muted">Method</label>
-            <select v-model="paymentMethod" class="mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
+            <select v-model="paymentMethod" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
               <option value="card">Card</option>
               <option value="cash">Cash</option>
               <option v-if="balanceCents > 0" value="credit">Credit on account (€{{ (balanceCents / 100).toFixed(2) }} available)</option>
@@ -833,7 +836,7 @@ function money(cents: number) {
               <form v-else class="mt-1 flex flex-wrap items-end gap-1.5 rounded-ctlSm bg-surface-subtle p-2" @submit.prevent="setUpPackageAutopay(p)">
                 <input v-model.number="autopayInstallments" type="number" min="1" title="Installments" class="w-14 rounded border border-line-control px-1.5 py-1 text-[11.5px]" />
                 <input v-model.number="autopayIntervalCount" type="number" min="1" title="Every" class="w-12 rounded border border-line-control px-1.5 py-1 text-[11.5px]" />
-                <select v-model="autopayInterval" class="rounded border border-line-control px-1.5 py-1 text-[11.5px]">
+                <select v-model="autopayInterval" class="bg-surface rounded border border-line-control px-1.5 py-1 text-[11.5px]">
                   <option value="day">day(s)</option>
                   <option value="week">week(s)</option>
                   <option value="month">month(s)</option>
@@ -855,7 +858,7 @@ function money(cents: number) {
           <p v-if="purchases.length === 0" class="text-[12.5px] text-ink-faint">No packages purchased.</p>
         </div>
         <form class="mt-3 flex flex-wrap items-end gap-2 border-t border-line-divider pt-3" @submit.prevent="sellPackage">
-          <select v-model="sellPackageId" class="flex-1 rounded-ctl border border-line-control px-2.5 py-1.5 text-[12.5px]">
+          <select v-model="sellPackageId" class="bg-surface flex-1 rounded-ctl border border-line-control px-2.5 py-1.5 text-[12.5px]">
             <option value="" disabled>Sell a package…</option>
             <option v-for="t in packageTemplates" :key="t.id" :value="t.id">{{ t.name }} ({{ t.session_count }}, {{ money(t.price_cents) }})</option>
           </select>
@@ -865,7 +868,7 @@ function money(cents: number) {
           </div>
           <div v-if="sellPackageId && Number(sellAmountPaid) > 0">
             <label class="block text-[11px] text-ink-muted">Method</label>
-            <select v-model="sellMethod" class="mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]">
+            <select v-model="sellMethod" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]">
               <option value="cash">Cash</option>
               <option value="card">Card</option>
               <option v-if="creditLedgerCents > 0" value="credit">Credit on account (€{{ (creditLedgerCents / 100).toFixed(2) }} available)</option>
@@ -896,7 +899,7 @@ function money(cents: number) {
               <button type="button" class="text-[11.5px] font-medium text-danger-text hover:text-danger-text/80" @click="logPayment(m, 'failed')">Log failed</button>
               <select
                 :value="m.status"
-                class="ml-auto rounded-ctlSm border border-line-control px-1.5 py-0.5 text-[11.5px]"
+                class="ml-auto rounded-ctlSm border border-line-control bg-surface px-1.5 py-0.5 text-[11.5px]"
                 @change="setMembershipStatus(m, ($event.target as HTMLSelectElement).value)"
               >
                 <option value="active">active</option>
@@ -927,7 +930,7 @@ function money(cents: number) {
               </button>
               <form v-else class="mt-1 flex flex-wrap items-end gap-1.5 rounded-ctlSm bg-surface-subtle p-2" @submit.prevent="setUpMembershipAutopay(m)">
                 <input v-model.number="autopayIntervalCount" type="number" min="1" title="Every" class="w-12 rounded border border-line-control px-1.5 py-1 text-[11.5px]" />
-                <select v-model="autopayInterval" class="rounded border border-line-control px-1.5 py-1 text-[11.5px]">
+                <select v-model="autopayInterval" class="bg-surface rounded border border-line-control px-1.5 py-1 text-[11.5px]">
                   <option value="day">day(s)</option>
                   <option value="week">week(s)</option>
                   <option value="month">month(s)</option>
@@ -947,7 +950,7 @@ function money(cents: number) {
           </div>
         </div>
         <form class="mt-3 flex flex-wrap items-end gap-2 border-t border-line-divider pt-3" @submit.prevent="activateMembership">
-          <select v-model="activateMembershipId" class="flex-1 rounded-ctl border border-line-control px-2.5 py-1.5 text-[12.5px]">
+          <select v-model="activateMembershipId" class="bg-surface flex-1 rounded-ctl border border-line-control px-2.5 py-1.5 text-[12.5px]">
             <option value="" disabled>Activate a membership…</option>
             <option v-for="t in membershipTemplates" :key="t.id" :value="t.id">{{ t.name }} ({{ money(t.price_cents) }})</option>
           </select>
@@ -957,7 +960,7 @@ function money(cents: number) {
           </div>
           <div v-if="activateMembershipId && Number(activateAmountPaid) > 0">
             <label class="block text-[11px] text-ink-muted">Method</label>
-            <select v-model="activateMethod" class="mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]">
+            <select v-model="activateMethod" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]">
               <option value="cash">Cash</option>
               <option value="card">Card</option>
               <option v-if="creditLedgerCents > 0" value="credit">Credit on account (€{{ (creditLedgerCents / 100).toFixed(2) }} available)</option>

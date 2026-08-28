@@ -8,6 +8,14 @@ describe('Appointment booking and billing checkout', () => {
           cy.login(account.email, account.password)
           cy.visit('/calendar')
 
+          // The calendar defaults to Work week, which only shows today's
+          // column within the visible viewport if today happens to fall
+          // early in the Mon-Fri range -- on other days it sits off to the
+          // right behind horizontal scroll, so the freshly-created
+          // appointment below wouldn't actually be visible without one.
+          // Day view guarantees a single, always-visible column instead.
+          cy.contains('select', 'Work week').select('day')
+
           // First click after a fresh visit can race Vue hydration (see commands.ts clickUntil).
           cy.clickUntil('button:contains("New Appointment")', 'input[placeholder="Search by name, phone, or email…"]')
 

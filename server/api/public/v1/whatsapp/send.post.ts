@@ -49,7 +49,10 @@ export default defineEventHandler(async (event) => {
     to = e164
   }
   if (!patientId) {
-    const { data: numbers } = await supabase.from('patient_contact_numbers').select('patient_id, number, country_code')
+    // Scoped to this token's account -- unscoped, this pulled every clinic's
+    // contact numbers into memory on every send (service-role bypasses RLS),
+    // which is what took the process down as the table grew.
+    const { data: numbers } = await supabase.from('patient_contact_numbers').select('patient_id, number, country_code').eq('account_id', accountId)
     patientId = numbers?.find((n) => toE164(n.number, n.country_code) === to)?.patient_id ?? null
   }
   if (patientId) {

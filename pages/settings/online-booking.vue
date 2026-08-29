@@ -23,6 +23,8 @@ const secondaryColor = ref('')
 const hideLogo = ref(false)
 const practitionerOrder = ref<'default' | 'alphabetical'>('default')
 const textOverrides = ref<Record<string, string>>({})
+const notifyEmail = ref('')
+const notifyWhatsapp = ref('')
 
 const loading = ref(true)
 const saving = ref(false)
@@ -33,7 +35,7 @@ async function loadAccountSettings() {
   const { data } = await supabase
     .from('accounts')
     .select(
-      'online_booking_max_days_ahead, online_booking_gtm_id, online_booking_referral_url, online_booking_primary_color, online_booking_secondary_color, online_booking_hide_logo, online_booking_practitioner_order, online_booking_text_overrides',
+      'online_booking_max_days_ahead, online_booking_gtm_id, online_booking_referral_url, online_booking_primary_color, online_booking_secondary_color, online_booking_hide_logo, online_booking_practitioner_order, online_booking_text_overrides, online_booking_notify_email, online_booking_notify_whatsapp',
     )
     .eq('id', store.accountId!)
     .maybeSingle()
@@ -45,6 +47,8 @@ async function loadAccountSettings() {
   hideLogo.value = data?.online_booking_hide_logo ?? false
   practitionerOrder.value = (data?.online_booking_practitioner_order as 'default' | 'alphabetical') ?? 'default'
   textOverrides.value = (data?.online_booking_text_overrides as Record<string, string>) ?? {}
+  notifyEmail.value = data?.online_booking_notify_email ?? ''
+  notifyWhatsapp.value = data?.online_booking_notify_whatsapp ?? ''
   loading.value = false
 }
 onMounted(loadAccountSettings)
@@ -61,6 +65,8 @@ async function saveAccountSettings() {
     online_booking_hide_logo: hideLogo.value,
     online_booking_practitioner_order: practitionerOrder.value,
     online_booking_text_overrides: textOverrides.value,
+    online_booking_notify_email: notifyEmail.value.trim() || null,
+    online_booking_notify_whatsapp: notifyWhatsapp.value.trim() || null,
   }
   await supabase.from('accounts').update(update).eq('id', store.accountId!)
   saving.value = false
@@ -216,6 +222,36 @@ const OVERRIDABLE_STRINGS = [
                   <button type="button" class="h-8 shrink-0 rounded-ctl border border-line-control px-3 text-[12.5px] text-ink-600 hover:border-line-controlHover" @click="copy(bookingUrl(store.accountSlug))">
                     Copy
                   </button>
+                </div>
+              </div>
+
+              <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+                <p class="text-[13.5px] font-[560] text-ink-700">Booking notifications</p>
+                <p class="mt-0.5 text-[12.5px] text-ink-muted2">Get pinged as soon as a patient books online -- by email, WhatsApp, or both.</p>
+                <div class="mt-3 space-y-3">
+                  <div>
+                    <label class="block text-[12px] font-medium text-ink-muted">Notify email</label>
+                    <input
+                      v-model="notifyEmail"
+                      type="email"
+                      placeholder="you@clinic.com"
+                      class="mt-1 h-8 w-64 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-[12px] font-medium text-ink-muted">Notify WhatsApp number</label>
+                    <input
+                      v-model="notifyWhatsapp"
+                      type="text"
+                      placeholder="+34600000000"
+                      class="mt-1 h-8 w-64 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none"
+                    />
+                    <p class="mt-1 text-[11.5px] text-ink-faint">
+                      In E.164 format. WhatsApp only delivers a free-form message like this one within 24h of that
+                      number last messaging your clinic's WhatsApp number -- send it a message occasionally to keep
+                      notifications flowing.
+                    </p>
+                  </div>
                 </div>
               </div>
             </template>

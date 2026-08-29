@@ -5,7 +5,10 @@ import type { Database } from '~/types/database.types'
 // booking widget has no session. Guarded by re-deriving the appointment from
 // the account slug and requiring it to have just been created (rather than
 // trusting an arbitrary appointmentId), so this can't be used to spam a
-// confirmation at an unrelated appointment.
+// confirmation at an unrelated appointment. Also fires the clinic's own
+// "new online booking" notification (Settings > Online Booking) -- same
+// guard, since that's just as much a one-shot, just-created-appointment
+// side effect as the patient's own confirmation.
 export default defineEventHandler(async (event) => {
   const body = await readBody<{ accountSlug: string; appointmentId: string }>(event)
   if (!body?.accountSlug || !body?.appointmentId) {
@@ -30,6 +33,7 @@ export default defineEventHandler(async (event) => {
   }
 
   await sendAppointmentConfirmation(supabase, account.id, body.appointmentId)
+  await notifyStaffOfOnlineBooking(supabase, account.id, body.appointmentId)
 
   return { success: true }
 })

@@ -5,6 +5,7 @@ interface AppointmentRow {
   id: string
   starts_at: string
   status: string
+  source: string
   practitioner_name: string | null
   appointment_types: { name: string } | null
   team_members: { full_name: string } | null
@@ -26,7 +27,7 @@ const showPercentage = computed(() => {
 async function load() {
   const { data } = await supabase
     .from('appointments')
-    .select('id, starts_at, status, practitioner_name, appointment_types(name), team_members(full_name), calendar_resources(name)')
+    .select('id, starts_at, status, source, practitioner_name, appointment_types(name), team_members(full_name), calendar_resources(name)')
     .eq('patient_id', props.patientId)
     .is('deleted_at', null)
     .order('starts_at', { ascending: false })
@@ -150,7 +151,10 @@ const confirmationAutofill = computed<Record<string, string>>(() => {
             <td class="px-4 text-ink-muted">{{ appt.appointment_types?.name ?? 'N/A' }}</td>
             <td class="px-4 text-ink-muted">{{ practitionerLabel(appt) }}</td>
             <td class="px-4">
-              <UiPill :tone="statusTone[appt.status] ?? 'neutral'">{{ statusLabel[appt.status] ?? appt.status }}</UiPill>
+              <div class="flex items-center gap-1.5">
+                <UiPill :tone="statusTone[appt.status] ?? 'neutral'">{{ statusLabel[appt.status] ?? appt.status }}</UiPill>
+                <UiPill v-if="appt.source === 'online'" tone="brand">Online</UiPill>
+              </div>
             </td>
             <td class="px-4 text-right">
               <div class="flex items-center justify-end gap-3">

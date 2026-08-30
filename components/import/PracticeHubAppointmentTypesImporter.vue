@@ -18,9 +18,11 @@ const STAGE_BY_NAME: Record<string, string> = {
   'mantenimiento quiropractico': 'maintenance',
 }
 
-const stage = ref<'connect' | 'importing' | 'done'>('connect')
+const stage = ref<'connect' | 'importing' | 'done' | 'error'>('connect')
 const phase = ref('')
 const progress = ref({ done: 0, total: 0 })
+const runError = ref('')
+const lastConn = ref<{ baseUrl: string; apiKey: string; appDetails: string } | null>(null)
 
 const typesCreated = ref(0)
 const appointmentsUpdated = ref(0)
@@ -28,79 +30,94 @@ const skippedNoMatch = ref(0)
 const importErrors = ref<string[]>([])
 
 async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }) {
+  lastConn.value = conn
   stage.value = 'importing'
+  runError.value = ''
+  typesCreated.value = 0
+  appointmentsUpdated.value = 0
+  skippedNoMatch.value = 0
+  importErrors.value = []
   const api = usePracticeHubApi(conn)
 
-  phase.value = 'Fetching appointment types…'
-  const phTypes = await api.fetchAll<PHAppointmentType>('/appointment_types')
+  try {
+    phase.value = 'Fetching appointment types…'
+    const phTypes = await api.fetchAll<PHAppointmentType>('/appointment_types')
 
-  phase.value = 'Matching to existing types…'
-  const { data: existing } = await supabase.from('appointment_types').select('id, name')
-  const existingByName = new Map((existing ?? []).map((t) => [t.name.trim().toLowerCase(), t.id]))
+    phase.value = 'Matching to existing types…'
+    const { data: existing } = await supabase.from('appointment_types').select('id, name')
+    const existingByName = new Map((existing ?? []).map((t) => [t.name.trim().toLowerCase(), t.id]))
 
-  const phIdToOurId = new Map<number, string>()
-  for (const phType of phTypes) {
-    const key = phType.name.trim().toLowerCase()
-    let ourId = existingByName.get(key)
-    if (!ourId) {
-      const { data: created, error } = await supabase
-        .from('appointment_types')
-        .insert({
-          account_id: store.accountId!,
-          name: phType.name,
-          stage: STAGE_BY_NAME[key] ?? null,
-        })
-        .select('id')
-        .single()
-      if (error || !created) {
-        importErrors.value.push(`Creating type "${phType.name}": ${error?.message}`)
+    const phIdToOurId = new Map<number, string>()
+    for (const phType of phTypes) {
+      const key = phType.name.trim().toLowerCase()
+      let ourId = existingByName.get(key)
+      if (!ourId) {
+        const { data: created, error } = await supabase
+          .from('appointment_types')
+          .insert({
+            account_id: store.accountId!,
+            name: phType.name,
+            stage: STAGE_BY_NAME[key] ?? null,
+          })
+          .select('id')
+          .single()
+        if (error || !created) {
+          importErrors.value.push(`Creating type "${phType.name}": ${error?.message}`)
+          continue
+        }
+        ourId = created.id
+        existingByName.set(key, ourId)
+        typesCreated.value++
+      }
+      phIdToOurId.set(phType.id, ourId)
+    }
+
+    phase.value = 'Fetching appointments…'
+    progress.value = { done: 0, total: 0 }
+    const phAppointments = await api.fetchAll<PHAppointment>('/appointments', (done, total) => (progress.value = { done, total }))
+
+    phase.value = 'Updating…'
+    progress.value = { done: 0, total: phAppointments.length }
+
+    // Group by target type so each chunk is one bulk update instead of one
+    // request per appointment -- 8000+ individual updates would be far too slow.
+    const refsByOurTypeId = new Map<string, string[]>()
+    for (const appt of phAppointments) {
+      const ourTypeId = appt.appointment_type_id ? phIdToOurId.get(appt.appointment_type_id) : undefined
+      if (!ourTypeId) {
+        skippedNoMatch.value++
         continue
       }
-      ourId = created.id
-      existingByName.set(key, ourId)
-      typesCreated.value++
+      const list = refsByOurTypeId.get(ourTypeId) ?? []
+      list.push(String(appt.id))
+      refsByOurTypeId.set(ourTypeId, list)
     }
-    phIdToOurId.set(phType.id, ourId)
-  }
 
-  phase.value = 'Fetching appointments…'
-  progress.value = { done: 0, total: 0 }
-  const phAppointments = await api.fetchAll<PHAppointment>('/appointments', (done, total) => (progress.value = { done, total }))
-
-  phase.value = 'Updating…'
-  progress.value = { done: 0, total: phAppointments.length }
-
-  // Group by target type so each chunk is one bulk update instead of one
-  // request per appointment -- 8000+ individual updates would be far too slow.
-  const refsByOurTypeId = new Map<string, string[]>()
-  for (const appt of phAppointments) {
-    const ourTypeId = appt.appointment_type_id ? phIdToOurId.get(appt.appointment_type_id) : undefined
-    if (!ourTypeId) {
-      skippedNoMatch.value++
-      continue
+    const CHUNK_SIZE = 200
+    let done = 0
+    for (const [ourTypeId, refs] of refsByOurTypeId) {
+      for (let i = 0; i < refs.length; i += CHUNK_SIZE) {
+        const chunk = refs.slice(i, i + CHUNK_SIZE)
+        const { error } = await supabase
+          .from('appointments')
+          .update({ appointment_type_id: ourTypeId })
+          .in('external_reference', chunk)
+        if (error) importErrors.value.push(`Updating batch near ref ${chunk[0]}: ${error.message}`)
+        else appointmentsUpdated.value += chunk.length
+        done += chunk.length
+        progress.value = { done, total: phAppointments.length }
+      }
     }
-    const list = refsByOurTypeId.get(ourTypeId) ?? []
-    list.push(String(appt.id))
-    refsByOurTypeId.set(ourTypeId, list)
-  }
 
-  const CHUNK_SIZE = 200
-  let done = 0
-  for (const [ourTypeId, refs] of refsByOurTypeId) {
-    for (let i = 0; i < refs.length; i += CHUNK_SIZE) {
-      const chunk = refs.slice(i, i + CHUNK_SIZE)
-      const { error } = await supabase
-        .from('appointments')
-        .update({ appointment_type_id: ourTypeId })
-        .in('external_reference', chunk)
-      if (error) importErrors.value.push(`Updating batch near ref ${chunk[0]}: ${error.message}`)
-      else appointmentsUpdated.value += chunk.length
-      done += chunk.length
-      progress.value = { done, total: phAppointments.length }
-    }
+    stage.value = 'done'
+  } catch (err) {
+    runError.value = err instanceof Error ? err.message : String(err)
+    stage.value = 'error'
   }
+}
 
-  stage.value = 'done'
+function retryRun() {
+  if (lastConn.value) run(lastConn.value)
 }
 
 function reset() {
@@ -128,6 +145,16 @@ function reset() {
     <div v-else-if="stage === 'importing'" class="mt-4 rounded-lg border border-gray-200 bg-white p-8 text-center">
       <p class="text-sm text-gray-600">{{ phase }}</p>
       <p v-if="progress.total > 0" class="mt-1 text-xs text-gray-400">{{ progress.done }} / {{ progress.total }}</p>
+    </div>
+
+    <div v-else-if="stage === 'error'" class="mt-4 space-y-4">
+      <div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        <p class="font-medium">Import failed:</p>
+        <p class="mt-1">{{ runError }}</p>
+      </div>
+      <button type="button" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700" @click="retryRun">
+        Retry
+      </button>
     </div>
 
     <div v-else-if="stage === 'done'" class="mt-4 space-y-4">

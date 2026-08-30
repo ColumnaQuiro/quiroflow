@@ -84,6 +84,7 @@ interface AppointmentRow {
   confirmation_status: string | null
   deleted_at: string | null
   note: string | null
+  source: string
   patients: { first_name: string; last_name: string | null } | null
   appointment_types: { name: string; color: string; default_price_cents: number } | null
   team_members: { full_name: string; color: string } | null
@@ -261,7 +262,7 @@ async function loadAppointments() {
   let query = supabase
     .from('appointments')
     .select(
-      'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, rescheduled, confirmation_status, deleted_at, note, patients(first_name, last_name), appointment_types(name, color, default_price_cents), team_members(full_name, color)',
+      'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, rescheduled, confirmation_status, deleted_at, note, source, patients(first_name, last_name), appointment_types(name, color, default_price_cents), team_members(full_name, color)',
     )
     .eq('clinic_id', store.currentClinicId)
     .gte('starts_at', rangeStart.toISOString())

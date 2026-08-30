@@ -18,6 +18,7 @@ interface EditingAppointment {
   starts_at: string
   ends_at: string
   status: string
+  source: string
 }
 
 const props = defineProps<{
@@ -259,9 +260,12 @@ async function remove() {
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" @click.self="emit('close')">
     <div class="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-card border border-line bg-surface p-6 shadow-popover">
       <div class="flex items-center justify-between">
-        <h2 class="text-[16px] font-[640] text-ink-900">
-          {{ mode === 'create' ? 'New Appointment' : 'Edit Appointment' }}
-        </h2>
+        <div class="flex items-center gap-2">
+          <h2 class="text-[16px] font-[640] text-ink-900">
+            {{ mode === 'create' ? 'New Appointment' : 'Edit Appointment' }}
+          </h2>
+          <UiPill v-if="appointment?.source === 'online'" tone="brand">Online</UiPill>
+        </div>
         <button type="button" class="text-ink-faint hover:text-ink-600" @click="emit('close')">✕</button>
       </div>
 

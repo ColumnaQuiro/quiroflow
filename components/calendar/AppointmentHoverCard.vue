@@ -11,6 +11,7 @@ interface HoverAppointment {
   starts_at: string
   ends_at: string
   status: string
+  source: string
   confirmation_status: string | null
   checked_in_at: string | null
   note: string | null
@@ -152,6 +153,7 @@ function visitOrdinal(n: number) {
         <p class="truncate text-[11.5px] text-ink-muted2">{{ practitionerName }} &middot; {{ roomName ?? 'No room' }}</p>
       </div>
       <UiPill :tone="PILL_TONE[visualStatus]" dot class="shrink-0">{{ statusLabel }}</UiPill>
+      <UiPill v-if="appointment.source === 'online'" tone="brand" class="shrink-0">Online</UiPill>
     </div>
 
     <div class="mt-3 grid grid-cols-2 gap-y-1.5 border-t border-line-divider pt-3 text-[12.5px]">

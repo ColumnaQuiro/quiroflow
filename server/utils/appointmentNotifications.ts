@@ -1,5 +1,6 @@
 import { toE164 } from '~/utils/phone'
 import { sendResendEmail } from './resend'
+import { sendWhatsAppText } from './whatsappSend'
 
 // The server runs in UTC, so formatting a UTC Date with toLocaleString and no
 // timeZone renders the UTC wall-clock time, not the clinic's -- a booking at
@@ -279,6 +280,53 @@ export async function sendAppointmentConfirmation(supabase: any, accountId: stri
     whatsappTemplateLanguage: account.whatsapp_confirmation_template_language ?? 'es',
   })
   if (sent) await supabase.from('appointments').update({ confirmation_sent_at: new Date().toISOString() }).eq('id', appointmentId)
+}
+
+// Pings the clinic itself (Settings > Online Booking > General) whenever a
+// patient books online -- separate from sendAppointmentConfirmation above,
+// which messages the patient. Best-effort throughout: an unreachable
+// notify address/number, or the WhatsApp free-form 24h window being closed,
+// shouldn't affect the booking that already succeeded.
+export async function notifyStaffOfOnlineBooking(supabase: any, accountId: string, appointmentId: string): Promise<void> {
+  const { data: account } = await supabase
+    .from('accounts')
+    .select('online_booking_notify_email, online_booking_notify_whatsapp, whatsapp_phone_number_id, whatsapp_access_token')
+    .eq('id', accountId)
+    .maybeSingle()
+  if (!account?.online_booking_notify_email && !account?.online_booking_notify_whatsapp) return
+
+  const ctx = await loadAppointmentContext(supabase, appointmentId)
+  if (!ctx) return
+
+  const when = new Date(ctx.startsAt).toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: CLINIC_TIMEZONE })
+  const patientName = [ctx.patientFirstName, ctx.patientLastName].filter(Boolean).join(' ')
+  const summary = `Nueva reserva online: ${patientName} con ${ctx.practitionerName || 'un profesional'} el ${when}${ctx.appointmentTypeName ? ` (${ctx.appointmentTypeName})` : ''}.`
+
+  if (account.online_booking_notify_email) {
+    try {
+      await sendResendEmail({
+        to: account.online_booking_notify_email,
+        subject: 'Nueva reserva online',
+        html: `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;color:#4A4A57;line-height:1.6;">${summary}</div>`,
+      })
+    } catch {
+      // Best-effort, see comment above.
+    }
+  }
+
+  if (account.online_booking_notify_whatsapp && account.whatsapp_phone_number_id && account.whatsapp_access_token) {
+    try {
+      await sendWhatsAppText(
+        { whatsapp_phone_number_id: account.whatsapp_phone_number_id, whatsapp_access_token: account.whatsapp_access_token },
+        account.online_booking_notify_whatsapp,
+        summary,
+      )
+    } catch {
+      // Best-effort -- the likeliest failure here is the notify number not
+      // having messaged the clinic's WhatsApp number in the last 24h, which
+      // the settings screen calls out as a WhatsApp platform rule.
+    }
+  }
 }
 
 export async function sendAppointmentReminder(supabase: any, accountId: string, appointmentId: string): Promise<void> {

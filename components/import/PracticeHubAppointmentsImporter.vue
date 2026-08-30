@@ -49,6 +49,19 @@ function formatValue(value: unknown): string {
   return value === null || value === undefined || value === '' ? '(blank)' : String(value)
 }
 
+const DATE_FIELDS = new Set(['starts_at', 'ends_at'])
+
+// starts_at/ends_at come back from Supabase as Postgres's own timestamptz
+// serialization (e.g. "2023-11-06T15:00:00+00:00"), while the freshly-parsed
+// CSV value here is JS's toISOString() format (e.g.
+// "2023-11-06T15:00:00.000Z") -- same instant, different string, so a plain
+// `!==` flagged every single appointment as changed regardless of whether
+// its time actually moved.
+function valuesDiffer(field: string, value: unknown, existingValue: unknown): boolean {
+  if (DATE_FIELDS.has(field)) return new Date(value as string).getTime() !== new Date(existingValue as string).getTime()
+  return value !== existingValue
+}
+
 function buildAppointmentUpdate(existing: ExistingAppointment, incoming: AppointmentOverwritable) {
   const updates: TablesUpdate<'appointments'> = {}
   const diff: FieldDiff[] = []
@@ -56,7 +69,7 @@ function buildAppointmentUpdate(existing: ExistingAppointment, incoming: Appoint
     const value = incoming[field]
     if (value === null || value === undefined || value === '') continue
     const existingValue = existing[field]
-    if (value !== existingValue) {
+    if (valuesDiffer(field, value, existingValue)) {
       ;(updates as Record<string, unknown>)[field] = value
       diff.push({ field, from: formatValue(existingValue), to: formatValue(value) })
     }

@@ -17,7 +17,7 @@ describe('CSV patient import (PracticeHub)', () => {
       cy.contains('td', 'TestOne').scrollIntoView().should('be.visible')
       cy.contains('td', 'TestTwo').scrollIntoView().should('be.visible')
 
-      cy.contains('button', /Import \d+ patients/).click()
+      cy.contains('button', /Import \d+, update \d+/).click()
       // Exact count, not just /Imported \d+ patients\./ -- that regex is
       // satisfied just as well by "Imported 0 patients." if every row
       // silently failed to insert, which would otherwise pass this

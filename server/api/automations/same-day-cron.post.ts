@@ -14,6 +14,10 @@ import { runRuleActions } from '~/server/utils/runAutomationActions'
 const SEND_HOUR = 9
 const WINDOW_BUFFER_MINUTES = 20
 const CLINIC_TIMEZONE = 'Europe/Madrid'
+// See server/utils/concurrency.ts -- bounds how many appointments' actions
+// run at once so one send window across many accounts still finishes
+// promptly without approaching the shared send-provider rate limit.
+const SEND_CONCURRENCY = 5
 
 function clinicWallClock(now: Date) {
   const fmt = new Intl.DateTimeFormat('en-GB', {
@@ -78,11 +82,10 @@ export default defineEventHandler(async (event) => {
   const patientsById = new Map((patients ?? []).map((p) => [p.id, p]))
 
   const origin = getRequestURL(event).origin
-  let sent = 0
 
-  for (const appt of appointments) {
+  const sentFlags = await mapWithConcurrency(appointments, SEND_CONCURRENCY, async (appt) => {
     const patient = patientsById.get(appt.patient_id)
-    if (!patient) continue
+    if (!patient) return false
     const accountRules = rules.filter((r) => r.account_id === appt.account_id)
 
     let matched = false
@@ -92,11 +95,9 @@ export default defineEventHandler(async (event) => {
       matched = true
     }
 
-    if (matched) {
-      await supabase.from('appointments').update({ same_day_info_sent_at: new Date().toISOString() }).eq('id', appt.id)
-      sent += 1
-    }
-  }
+    if (matched) await supabase.from('appointments').update({ same_day_info_sent_at: new Date().toISOString() }).eq('id', appt.id)
+    return matched
+  })
 
-  return { sent }
+  return { sent: sentFlags.filter(Boolean).length }
 })

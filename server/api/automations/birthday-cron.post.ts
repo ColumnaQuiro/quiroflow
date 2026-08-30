@@ -3,6 +3,11 @@ import type { Database } from '~/types/database.types'
 import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
 import { runRuleActions } from '~/server/utils/runAutomationActions'
 
+// See server/utils/concurrency.ts -- bounds how many patients' birthday
+// actions run at once so a day with birthdays across many accounts still
+// finishes promptly without approaching the shared send-provider rate limit.
+const SEND_CONCURRENCY = 5
+
 // Fires the 'patient.birthday' trigger -- the one automation trigger that
 // isn't a client action, so unlike every other trigger in fire.post.ts it
 // has to be invoked on a schedule. There's no scheduled-function wiring
@@ -45,15 +50,16 @@ export default defineEventHandler(async (event) => {
   if (!rules || rules.length === 0) return { fired: 0 }
 
   const origin = getRequestURL(event).origin
-  let fired = 0
-  for (const patient of birthdayPatients) {
+  const firedCounts = await mapWithConcurrency(birthdayPatients, SEND_CONCURRENCY, async (patient) => {
     const accountRules = rules.filter((r) => r.account_id === patient.account_id)
+    let count = 0
     for (const rule of accountRules) {
       if (!(await ruleFiltersMatch(supabase, patient.id, rule.filters as AutomationFilters))) continue
       await runRuleActions(supabase, patient.account_id, rule.id, patient, origin)
-      fired += 1
+      count += 1
     }
-  }
+    return count
+  })
 
-  return { fired }
+  return { fired: firedCounts.reduce((a, b) => a + b, 0) }
 })

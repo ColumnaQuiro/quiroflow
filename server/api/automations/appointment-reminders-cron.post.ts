@@ -11,6 +11,11 @@ import type { Database } from '~/types/database.types'
 // catches every appointment exactly once (reminder_sent_at is the guard
 // against ever sending it twice).
 const WINDOW_BUFFER_MINUTES = 20
+// Bounded rather than one-at-a-time so a tick with many due appointments
+// across many accounts still finishes within the 15-minute schedule as the
+// account base grows -- see server/utils/concurrency.ts for why this stays
+// conservative instead of maxing out the shared send-provider rate limit.
+const SEND_CONCURRENCY = 5
 
 export default defineEventHandler(async (event) => {
   const runtimeConfig = useRuntimeConfig()
@@ -28,7 +33,7 @@ export default defineEventHandler(async (event) => {
   if (!accounts || accounts.length === 0) return { sent: 0 }
 
   const now = Date.now()
-  let sent = 0
+  const dueAppointments: { accountId: string; appointmentId: string }[] = []
 
   for (const account of accounts) {
     const hoursBefore = account.appointment_reminder_hours_before ?? 24
@@ -44,11 +49,10 @@ export default defineEventHandler(async (event) => {
       .gte('starts_at', windowStart)
       .lt('starts_at', windowEnd)
 
-    for (const appt of appointments ?? []) {
-      await sendAppointmentReminder(supabase, account.id, appt.id)
-      sent += 1
-    }
+    for (const appt of appointments ?? []) dueAppointments.push({ accountId: account.id, appointmentId: appt.id })
   }
 
-  return { sent }
+  await mapWithConcurrency(dueAppointments, SEND_CONCURRENCY, (due) => sendAppointmentReminder(supabase, due.accountId, due.appointmentId))
+
+  return { sent: dueAppointments.length }
 })

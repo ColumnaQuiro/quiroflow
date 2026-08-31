@@ -48,25 +48,15 @@ const BLOCK_DROP_ROW3_BELOW = 34
 const DAY_MIN_AVAILABILITY_PX = 20
 const WEEK_MIN_AVAILABILITY_PX = 16
 
-// Overlapping appointments cascade (PracticeHub-style) instead of splitting
-// into N equal-width lanes: each later lane is inset from the left by a
-// fixed pixel offset and stacks on top (higher z-index), so every block
-// stays near full width and its name stays fully readable instead of being
-// squeezed down to initials. Past maxLanes, the remaining appointments in
-// that cluster collapse into a single "+N more" chip in the last lane. Day
-// view's room columns are wider than week view's, so it tolerates a couple
-// more cascade layers before the last one gets too narrow to read.
+// Overlapping appointments split into equal-width side-by-side columns --
+// every appointment stays fully visible (nothing layered behind another),
+// at the cost of each one getting narrower as more pile up at the same
+// time. Past maxLanes, the remaining appointments in that cluster collapse
+// into a single "+N more" chip in the last lane rather than splitting into
+// slivers too narrow to read at all. Day view's room columns are wider
+// than week view's, so it tolerates a couple more lanes before that kicks in.
 const DAY_MAX_LANES = 6
 const WEEK_MAX_LANES = 4
-const DAY_CASCADE_PX = 26
-const WEEK_CASCADE_PX = 16
-// Each cascade lane also nudges down by this much so the lane behind still
-// shows its own name row peeking out above -- without it, two appointments
-// starting at the same time stack with identical tops and their name rows
-// draw exactly on top of each other, unreadable regardless of the
-// horizontal inset.
-const DAY_CASCADE_TOP_PX = 20
-const WEEK_CASCADE_TOP_PX = 14
 const OVERFLOW_CHIP_PX = 20
 
 interface Room { id: string; name: string }
@@ -617,24 +607,20 @@ function appointmentColorStyle(appt: AppointmentRow) {
   }
 }
 
-// Cascade positioning for an overlapping block: each lane insets from the
-// left by a fixed pixel amount, rather than every lane getting an equal
-// fraction of the column's width. Later lanes also crop in from the TOP by
-// topOffsetPx per lane -- shrinking height and pushing top down by the same
-// amount keeps the block's own bottom edge exactly where its real end time
-// puts it, so it never bleeds down into a separate, non-overlapping
-// appointment right after it. The lane behind (lower _col, unshifted) then
-// shows its own name row peeking out above, instead of both blocks drawing
-// their name row at the identical top and rendering illegibly on top of
-// each other.
-function cascadeStyle(block: LayoutBlock, cascadePx: number, top: number, height: number, topOffsetPx = 0) {
-  const offset = Math.min(block._col * topOffsetPx, Math.max(0, height - 4))
+// Equal-width column positioning for an overlapping block: each lane gets
+// an even fraction of the column's width (_totalCols-wide), at its natural
+// time-based top/height -- unlike a cascade, lanes never overlap each
+// other, so there's no need to crop height or stack z-index to keep a
+// block from hiding the one behind it.
+function columnStyle(block: LayoutBlock, top: number, height: number) {
+  const totalCols = Math.max(block._totalCols, 1)
+  const widthPct = 100 / totalCols
   return {
-    left: `calc(${block._col * cascadePx}px + 2px)`,
-    width: `calc(100% - ${block._col * cascadePx}px - 4px)`,
-    top: `${top + offset}px`,
-    height: `${height - offset}px`,
-    zIndex: String(10 + block._col),
+    left: `calc(${block._col * widthPct}% + 2px)`,
+    width: `calc(${widthPct}% - 4px)`,
+    top: `${top}px`,
+    height: `${height}px`,
+    zIndex: '10',
   }
 }
 
@@ -683,11 +669,11 @@ function isOverflowBlock(b: LayoutBlock): b is OverflowBlock {
 
 // Assigns each appointment in a pre-sorted (by start time) list a lane via
 // a greedy sweep (grouped into clusters of transitively overlapping
-// appointments). The lane index (_col) drives a cascading offset in the
-// template rather than an equal-width split, so overlapping appointments
-// stay near full width and readable instead of shrinking to initials. Past
-// maxLanes, the remaining appointments in that cluster collapse into a
-// single "+N more" marker in the last lane.
+// appointments). The lane index (_col) and cluster size (_totalCols) drive
+// an equal-width column split in the template, so every appointment in a
+// cluster stays fully visible instead of any of them being hidden behind
+// another. Past maxLanes, the remaining appointments in that cluster
+// collapse into a single "+N more" marker in the last lane.
 //
 // "Overlapping" is judged by each block's RENDERED end, not its real
 // ends_at: durationToPx enforces a minimum block height so short
@@ -805,9 +791,9 @@ async function onSaved() {
 // Mutates the real appointment object in `appointments.value` live during
 // the drag rather than tracking a separate shadow position -- the existing
 // per-column layout functions (blocksForRoom/layoutForRoom/
-// layoutForRoomOnDay, timeToPx/durationToPx/cascadeStyle) already key off
+// layoutForRoomOnDay, timeToPx/durationToPx/columnStyle) already key off
 // an appointment's own starts_at/ends_at/room_id, so this gets a fully
-// WYSIWYG live preview (including realistic overlap-cascade behavior) for
+// WYSIWYG live preview (including realistic overlap-column behavior) for
 // free instead of a separate rendering path just for the dragged block.
 interface DragState {
   apptId: string
@@ -1365,7 +1351,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                     v-if="isOverflowBlock(appt)"
                     class="absolute flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[10.5px] font-medium text-ink-muted2 shadow-card"
                     :title="`${appt.count} more appointment${appt.count === 1 ? '' : 's'} at this time`"
-                    :style="cascadeStyle(appt, DAY_CASCADE_PX, timeToPx(appt.starts_at, DAY_HOUR_PX), OVERFLOW_CHIP_PX)"
+                    :style="columnStyle(appt, timeToPx(appt.starts_at, DAY_HOUR_PX), OVERFLOW_CHIP_PX)"
                   >
                     +{{ appt.count }} more
                   </div>
@@ -1375,12 +1361,10 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                     :class="appt.status === 'booked' ? 'cursor-grab active:cursor-grabbing' : ''"
                     :style="{
                       ...appointmentColorStyle(appt),
-                      ...cascadeStyle(
+                      ...columnStyle(
                         appt,
-                        DAY_CASCADE_PX,
                         timeToPx(appt.starts_at, DAY_HOUR_PX),
                         Math.max(0, durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) - 3),
-                        DAY_CASCADE_TOP_PX,
                       ),
                     }"
                     @pointerdown="startAppointmentDrag(appt, 'move', $event)"
@@ -1518,7 +1502,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                       type="button"
                       class="absolute flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[10px] font-medium text-ink-muted2 shadow-card hover:border-line-controlHover"
                       :title="`${appt.count} more appointment${appt.count === 1 ? '' : 's'} at this time -- click to see them all in Day view`"
-                      :style="cascadeStyle(appt, WEEK_CASCADE_PX, timeToPx(appt.starts_at, WEEK_HOUR_PX), OVERFLOW_CHIP_PX)"
+                      :style="columnStyle(appt, timeToPx(appt.starts_at, WEEK_HOUR_PX), OVERFLOW_CHIP_PX)"
                       @click.stop="showOverflowDay(day)"
                     >
                       +{{ appt.count }}
@@ -1529,12 +1513,10 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                       :class="appt.status === 'booked' ? 'cursor-grab active:cursor-grabbing' : ''"
                       :style="{
                         ...appointmentColorStyle(appt),
-                        ...cascadeStyle(
+                        ...columnStyle(
                           appt,
-                          WEEK_CASCADE_PX,
                           timeToPx(appt.starts_at, WEEK_HOUR_PX),
                           Math.max(0, durationToPx(appt.starts_at, appt.ends_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX) - 2),
-                          WEEK_CASCADE_TOP_PX,
                         ),
                       }"
                       @pointerdown="startAppointmentDrag(appt, 'move', $event)"

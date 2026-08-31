@@ -951,6 +951,7 @@ export type Database = {
           ends_at: string
           id: string
           note: string | null
+          practitioner_id: string | null
           room_id: string | null
           starts_at: string
         }
@@ -962,6 +963,7 @@ export type Database = {
           ends_at: string
           id?: string
           note?: string | null
+          practitioner_id?: string | null
           room_id?: string | null
           starts_at: string
         }
@@ -973,6 +975,7 @@ export type Database = {
           ends_at?: string
           id?: string
           note?: string | null
+          practitioner_id?: string | null
           room_id?: string | null
           starts_at?: string
         }
@@ -994,6 +997,13 @@ export type Database = {
           {
             foreignKeyName: "availability_blocks_created_by_fkey"
             columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "availability_blocks_practitioner_id_fkey"
+            columns: ["practitioner_id"]
             isOneToOne: false
             referencedRelation: "team_members"
             referencedColumns: ["id"]
@@ -3503,6 +3513,7 @@ export type Database = {
         Args: { p_clinic_id: string; p_from: string; p_to: string }
         Returns: {
           ends_at: string
+          practitioner_id: string
           starts_at: string
         }[]
       }

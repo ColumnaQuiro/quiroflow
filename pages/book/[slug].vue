@@ -267,7 +267,13 @@ const monthBusyByMember = ref<Record<string, { starts_at: string; ends_at: strin
 // patient pick a room -- so any block for the clinic counts as unavailable
 // for every practitioner rather than risk double-booking whichever room
 // turns out to be assigned.
-const monthBlocked = ref<{ starts_at: string; ends_at: string }[]>([])
+const monthBlocked = ref<{ starts_at: string; ends_at: string; practitioner_id: string | null }[]>([])
+// A block with no practitioner_id applies to everyone (matches the staff
+// calendar's "whole clinic" block); one with a specific practitioner_id
+// only counts as busy for that practitioner.
+function blocksForMember(memberId: string) {
+  return monthBlocked.value.filter((b) => b.practitioner_id === null || b.practitioner_id === memberId)
+}
 const monthAvailabilityLoading = ref(false)
 const monthAvailabilityLoaded = ref(false)
 
@@ -376,7 +382,7 @@ async function loadMonthAvailability() {
     supabase.rpc('get_booking_blocked_times', { p_clinic_id: clinicId.value, p_from: fromIso, p_to: toIso }),
   ])
   monthBusyByMember.value = Object.fromEntries(busyEntries)
-  monthBlocked.value = (blockedResult.data as { starts_at: string; ends_at: string }[]) ?? []
+  monthBlocked.value = (blockedResult.data as { starts_at: string; ends_at: string; practitioner_id: string | null }[]) ?? []
   monthAvailabilityLoading.value = false
   monthAvailabilityLoaded.value = true
 }
@@ -427,11 +433,11 @@ function dayHasAvailability(date: Date): boolean {
   const clinicWindows = clinic.value?.business_hours?.[weekday] ?? []
   if (anyPractitionerMode.value) {
     return availablePractitioners.value.some((m) => {
-      const busy = [...(monthBusyByMember.value[m.id] ?? []), ...monthBlocked.value]
+      const busy = [...(monthBusyByMember.value[m.id] ?? []), ...blocksForMember(m.id)]
       return slotsForMember(date, weekday, clinicWindows, m.business_hours, busy).length > 0
     })
   }
-  const busy = [...(monthBusyByMember.value[teamMemberId.value] ?? []), ...monthBlocked.value]
+  const busy = [...(monthBusyByMember.value[teamMemberId.value] ?? []), ...blocksForMember(teamMemberId.value)]
   return slotsForMember(date, weekday, clinicWindows, teamMember.value?.business_hours, busy).length > 0
 }
 
@@ -447,7 +453,7 @@ const daySlots = computed<DaySlot[]>(() => {
     // resolve teamMemberId to a real practitioner once the patient commits.
     const merged = new Map<number, string>()
     for (const m of availablePractitioners.value) {
-      const busy = [...(monthBusyByMember.value[m.id] ?? []), ...monthBlocked.value]
+      const busy = [...(monthBusyByMember.value[m.id] ?? []), ...blocksForMember(m.id)]
       const times = slotsForMember(date, weekday, clinicWindows, m.business_hours, busy)
       for (const time of times) {
         if (!merged.has(time.getTime())) merged.set(time.getTime(), m.id)
@@ -456,7 +462,7 @@ const daySlots = computed<DaySlot[]>(() => {
     return [...merged.entries()].sort((a, b) => a[0] - b[0]).map(([ms, memberId]) => ({ time: new Date(ms), memberId }))
   }
 
-  const busy = [...(monthBusyByMember.value[teamMemberId.value] ?? []), ...monthBlocked.value]
+  const busy = [...(monthBusyByMember.value[teamMemberId.value] ?? []), ...blocksForMember(teamMemberId.value)]
   const times = slotsForMember(date, weekday, clinicWindows, teamMember.value?.business_hours, busy)
   return times.map((time) => ({ time, memberId: teamMemberId.value }))
 })

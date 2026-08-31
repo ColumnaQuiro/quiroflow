@@ -60,6 +60,13 @@ const DAY_MAX_LANES = 6
 const WEEK_MAX_LANES = 4
 const DAY_CASCADE_PX = 26
 const WEEK_CASCADE_PX = 16
+// Each cascade lane also nudges down by this much so the lane behind still
+// shows its own name row peeking out above -- without it, two appointments
+// starting at the same time stack with identical tops and their name rows
+// draw exactly on top of each other, unreadable regardless of the
+// horizontal inset.
+const DAY_CASCADE_TOP_PX = 20
+const WEEK_CASCADE_TOP_PX = 14
 const OVERFLOW_CHIP_PX = 20
 
 interface Room { id: string; name: string }
@@ -67,7 +74,7 @@ interface AppointmentType { id: string; name: string; duration_minutes: number; 
 interface TeamMember { id: string; full_name: string; color: string }
 interface TeamMemberClinic { team_member_id: string; clinic_id: string }
 
-interface AvailabilityBlock { id: string; room_id: string | null; starts_at: string; ends_at: string; note: string | null }
+interface AvailabilityBlock { id: string; room_id: string | null; practitioner_id: string | null; starts_at: string; ends_at: string; note: string | null }
 
 interface AppointmentRow {
   id: string
@@ -359,7 +366,7 @@ async function loadAvailabilityBlocks() {
 
   const { data } = await supabase
     .from('availability_blocks')
-    .select('id, room_id, starts_at, ends_at, note')
+    .select('id, room_id, practitioner_id, starts_at, ends_at, note')
     .eq('clinic_id', store.currentClinicId)
     .lt('starts_at', rangeEnd.toISOString())
     .gt('ends_at', rangeStart.toISOString())
@@ -439,9 +446,18 @@ watch([viewMode, anchorDate, practitionerFilter], async () => {
 
 const dayColumns = computed(() => [...rooms.value, { id: '__none', name: 'Unassigned' }])
 
+function blockLabel(block: AvailabilityBlock) {
+  if (block.note) return block.note
+  const who = block.practitioner_id ? teamMembers.value.find((m) => m.id === block.practitioner_id)?.full_name : null
+  if (who) return `Blocked for ${who}`
+  return block.room_id === null ? 'Blocked (whole clinic)' : 'Blocked'
+}
+
 function blocksForRoom(roomId: string) {
   if (!settings.showAvailability) return []
-  return availabilityBlocks.value.filter((b) => b.room_id === roomId || b.room_id === null)
+  return availabilityBlocks.value.filter(
+    (b) => (b.room_id === roomId || b.room_id === null) && (b.practitioner_id === null || b.practitioner_id === practitionerFilter.value),
+  )
 }
 function openBlockCreateModal(roomId?: string) {
   blockPrefill.value = { date: toDateKey(anchorDate.value), time: '09:00', roomId: roomId ?? '' }
@@ -603,11 +619,14 @@ function appointmentColorStyle(appt: AppointmentRow) {
 
 // Cascade positioning for an overlapping block: each lane insets from the
 // left by a fixed pixel amount and sits above the previous lane, rather
-// than every lane getting an equal fraction of the column's width.
-function cascadeStyle(block: LayoutBlock, cascadePx: number) {
+// than every lane getting an equal fraction of the column's width. Also
+// nudged down by topOffsetPx per lane (added as margin, on top of the
+// block's own time-based `top`) so the lane behind still shows its name row.
+function cascadeStyle(block: LayoutBlock, cascadePx: number, topOffsetPx = 0) {
   return {
     left: `calc(${block._col * cascadePx}px + 2px)`,
     width: `calc(100% - ${block._col * cascadePx}px - 4px)`,
+    marginTop: `${block._col * topOffsetPx}px`,
     zIndex: String(10 + block._col),
   }
 }
@@ -749,7 +768,11 @@ function blocksForRoomOnDay(day: Date, roomId: string) {
   const dayStart = startOfDay(day).getTime()
   const dayEnd = addDays(startOfDay(day), 1).getTime()
   return availabilityBlocks.value.filter(
-    (b) => (b.room_id === roomId || b.room_id === null) && new Date(b.starts_at).getTime() < dayEnd && new Date(b.ends_at).getTime() > dayStart,
+    (b) =>
+      (b.room_id === roomId || b.room_id === null) &&
+      (b.practitioner_id === null || b.practitioner_id === practitionerFilter.value) &&
+      new Date(b.starts_at).getTime() < dayEnd &&
+      new Date(b.ends_at).getTime() > dayStart,
   )
 }
 function layoutForRoomOnDay(day: Date, roomId: string): LayoutBlock[] {
@@ -1327,7 +1350,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                   :style="{ top: `${timeToPx(block.starts_at, DAY_HOUR_PX)}px`, height: `${durationToPx(block.starts_at, block.ends_at, DAY_HOUR_PX, DAY_MIN_AVAILABILITY_PX)}px` }"
                   @click.stop="openBlockEditModal(block)"
                 >
-                  {{ block.note || (block.room_id === null ? 'Blocked (whole clinic)' : 'Blocked') }}
+                  {{ blockLabel(block) }}
                 </div>
 
                 <template v-for="(appt, i) in layoutForRoom(col.id)" :key="isOverflowBlock(appt) ? `overflow-${col.id}-${i}` : appt.id">
@@ -1349,7 +1372,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                     :class="appt.status === 'booked' ? 'cursor-grab active:cursor-grabbing' : ''"
                     :style="{
                       ...appointmentColorStyle(appt),
-                      ...cascadeStyle(appt, DAY_CASCADE_PX),
+                      ...cascadeStyle(appt, DAY_CASCADE_PX, DAY_CASCADE_TOP_PX),
                       top: `${timeToPx(appt.starts_at, DAY_HOUR_PX)}px`,
                       height: `${Math.max(0, durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) - 3)}px`,
                     }"
@@ -1503,7 +1526,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                       :class="appt.status === 'booked' ? 'cursor-grab active:cursor-grabbing' : ''"
                       :style="{
                         ...appointmentColorStyle(appt),
-                        ...cascadeStyle(appt, WEEK_CASCADE_PX),
+                        ...cascadeStyle(appt, WEEK_CASCADE_PX, WEEK_CASCADE_TOP_PX),
                         top: `${timeToPx(appt.starts_at, WEEK_HOUR_PX)}px`,
                         height: `${Math.max(0, durationToPx(appt.starts_at, appt.ends_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX) - 2)}px`,
                       }"
@@ -1597,10 +1620,12 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
     <CalendarAvailabilityBlockModal
       v-if="blockModalOpen"
       :rooms="rooms"
+      :team-members="clinicTeamMembers"
       :block="editingBlock ?? undefined"
       :prefill-date="blockPrefill?.date"
       :prefill-time="blockPrefill?.time"
       :prefill-room-id="blockPrefill?.roomId"
+      :prefill-practitioner-id="practitionerFilter"
       @close="blockModalOpen = false"
       @saved="onBlockSaved"
     />

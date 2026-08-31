@@ -65,11 +65,45 @@ const teamMemberId = ref('')
 // first visit) shouldn't let the patient switch to some other, unrelated
 // service from the dropdown.
 const typeLockedByQuery = ref(false)
+// Sentinel teamMemberId meaning "let the patient skip picking a specific
+// practitioner" -- distinct from bypassPractitioner below (an admin-forced
+// auto-pick with no UI at all). Resolved to a real member id the moment a
+// slot is picked in pickSlot(), so nothing downstream (summary, submit,
+// success screen) ever needs to know this mode existed.
+const ANY_PRACTITIONER = '__any__'
 
 const clinic = computed(() => info.value?.clinics.find((c) => c.id === clinicId.value) ?? null)
 const appointmentType = computed(() => info.value?.appointment_types.find((t) => t.id === appointmentTypeId.value) ?? null)
 const teamMember = computed(() => info.value?.team_members.find((m) => m.id === teamMemberId.value) ?? null)
 const availablePractitioners = computed(() => (info.value?.team_members ?? []).filter((m) => m.clinic_ids.includes(clinicId.value)))
+const anyPractitionerMode = computed(() => teamMemberId.value === ANY_PRACTITIONER)
+
+function practitionerInitials(name: string) {
+  return name.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('')
+}
+const WEEKDAY_FULL = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
+function practitionerAvailabilityLabel(member: BookingTeamMember) {
+  const days: string[] = []
+  for (let i = 0; i < 7; i++) {
+    const clinicWindows = clinic.value?.business_hours?.[WEEKDAY_KEYS[i]] ?? []
+    if (intersectWindows(clinicWindows, member.business_hours?.[WEEKDAY_KEYS[i]]).length > 0) days.push(WEEKDAY_FULL[i])
+  }
+  if (days.length === 0) return 'Sin disponibilidad'
+  if (days.length === 1) return `Disponible ${days[0]}`
+  return `Disponible ${days.slice(0, -1).join(', ')} y ${days[days.length - 1]}`
+}
+function chooseTeamMember(id: string) {
+  teamMemberId.value = id
+  proceedToDatetime()
+}
+
+const stepNumber = computed(() => (phase.value === 'select' ? 1 : phase.value === 'datetime' ? 2 : phase.value === 'details' ? 3 : 0))
+const stepTitle = computed(() => {
+  if (phase.value === 'select') return t('select_heading', 'Elija un profesional')
+  if (phase.value === 'datetime') return t('choose_datetime', 'Elija su fecha y hora')
+  if (phase.value === 'details') return t('enter_details', 'Introduzca sus datos')
+  return ''
+})
 
 const effectiveDurationMinutes = computed(() =>
   appointmentType.value
@@ -202,6 +236,10 @@ const viewMonth = ref(startOfMonth(new Date()))
 const selectedDate = ref<Date | null>(null)
 const selectedSlot = ref<Date | null>(null)
 const busyRanges = ref<{ starts_at: string; ends_at: string }[]>([])
+// Keyed by team_member_id -- only populated in anyPractitionerMode, since
+// that's the only case needing more than one practitioner's busy times for
+// the same day.
+const busyRangesByMember = ref<Record<string, { starts_at: string; ends_at: string }[]>>({})
 const slotsLoading = ref(false)
 
 function startOfMonth(d: Date) {
@@ -248,6 +286,9 @@ function dayHasHours(date: Date) {
   const hours = clinic.value?.business_hours
   if (!hours) return false
   const clinicWindows = hours[WEEKDAY_KEYS[date.getDay()]] ?? []
+  if (anyPractitionerMode.value) {
+    return availablePractitioners.value.some((m) => intersectWindows(clinicWindows, m.business_hours?.[WEEKDAY_KEYS[date.getDay()]]).length > 0)
+  }
   const windows = intersectWindows(clinicWindows, teamMember.value?.business_hours?.[WEEKDAY_KEYS[date.getDay()]])
   return windows.length > 0
 }
@@ -268,49 +309,95 @@ async function selectDate(day: { date: Date; bookable: boolean }) {
   dayStart.setHours(0, 0, 0, 0)
   const dayEnd = new Date(day.date)
   dayEnd.setHours(23, 59, 59, 999)
-  const { data } = await supabase.rpc('get_booking_busy_times', {
-    p_clinic_id: clinicId.value,
-    p_team_member_id: teamMemberId.value,
-    p_from: dayStart.toISOString(),
-    p_to: dayEnd.toISOString(),
-  })
-  busyRanges.value = (data as { starts_at: string; ends_at: string }[]) ?? []
+  if (anyPractitionerMode.value) {
+    const entries = await Promise.all(
+      availablePractitioners.value.map(async (m) => {
+        const { data } = await supabase.rpc('get_booking_busy_times', {
+          p_clinic_id: clinicId.value,
+          p_team_member_id: m.id,
+          p_from: dayStart.toISOString(),
+          p_to: dayEnd.toISOString(),
+        })
+        return [m.id, (data as { starts_at: string; ends_at: string }[]) ?? []] as const
+      }),
+    )
+    busyRangesByMember.value = Object.fromEntries(entries)
+  } else {
+    const { data } = await supabase.rpc('get_booking_busy_times', {
+      p_clinic_id: clinicId.value,
+      p_team_member_id: teamMemberId.value,
+      p_from: dayStart.toISOString(),
+      p_to: dayEnd.toISOString(),
+    })
+    busyRanges.value = (data as { starts_at: string; ends_at: string }[]) ?? []
+  }
   slotsLoading.value = false
 }
 
-const daySlots = computed(() => {
-  if (!selectedDate.value || !appointmentType.value) return []
-  const weekday = WEEKDAY_KEYS[selectedDate.value.getDay()]
-  const clinicWindows = clinic.value?.business_hours?.[weekday] ?? []
-  const windows = intersectWindows(clinicWindows, teamMember.value?.business_hours?.[weekday])
+interface DaySlot {
+  time: Date
+  memberId: string
+}
+
+function slotsForMember(
+  weekday: string,
+  clinicWindows: [string, string][],
+  memberBusinessHours: Record<string, [string, string][]> | null | undefined,
+  busy: { starts_at: string; ends_at: string }[],
+): Date[] {
+  const windows = intersectWindows(clinicWindows, memberBusinessHours?.[weekday])
   const duration = effectiveDurationMinutes.value
   const now = new Date()
-  const slots: Date[] = []
+  const result: Date[] = []
   for (const [startStr, endStr] of windows) {
     const [sh, sm] = startStr.split(':').map(Number)
     const [eh, em] = endStr.split(':').map(Number)
-    let cursor = new Date(selectedDate.value)
+    let cursor = new Date(selectedDate.value!)
     cursor.setHours(sh, sm, 0, 0)
-    const windowEnd = new Date(selectedDate.value)
+    const windowEnd = new Date(selectedDate.value!)
     windowEnd.setHours(eh, em, 0, 0)
     while (true) {
       const slotEnd = new Date(cursor.getTime() + duration * 60000)
       if (slotEnd > windowEnd) break
       if (cursor > now) {
-        const overlaps = busyRanges.value.some((b) => new Date(b.starts_at) < slotEnd && new Date(b.ends_at) > cursor)
-        if (!overlaps) slots.push(new Date(cursor))
+        const overlaps = busy.some((b) => new Date(b.starts_at) < slotEnd && new Date(b.ends_at) > cursor)
+        if (!overlaps) result.push(new Date(cursor))
       }
       cursor = new Date(cursor.getTime() + duration * 60000)
     }
   }
-  return slots
+  return result
+}
+
+const daySlots = computed<DaySlot[]>(() => {
+  if (!selectedDate.value || !appointmentType.value) return []
+  const weekday = WEEKDAY_KEYS[selectedDate.value.getDay()]
+  const clinicWindows = clinic.value?.business_hours?.[weekday] ?? []
+
+  if (anyPractitionerMode.value) {
+    // Union across every practitioner -- a slot is offered if at least one of
+    // them is free then, and gets tagged with whichever one so pickSlot can
+    // resolve teamMemberId to a real practitioner once the patient commits.
+    const merged = new Map<number, string>()
+    for (const m of availablePractitioners.value) {
+      const times = slotsForMember(weekday, clinicWindows, m.business_hours, busyRangesByMember.value[m.id] ?? [])
+      for (const time of times) {
+        if (!merged.has(time.getTime())) merged.set(time.getTime(), m.id)
+      }
+    }
+    return [...merged.entries()].sort((a, b) => a[0] - b[0]).map(([ms, memberId]) => ({ time: new Date(ms), memberId }))
+  }
+
+  const times = slotsForMember(weekday, clinicWindows, teamMember.value?.business_hours, busyRanges.value)
+  return times.map((time) => ({ time, memberId: teamMemberId.value }))
 })
 
-const morningSlots = computed(() => daySlots.value.filter((s) => s.getHours() < 14))
-const afternoonSlots = computed(() => daySlots.value.filter((s) => s.getHours() >= 14))
+const morningSlots = computed(() => daySlots.value.filter((s) => s.time.getHours() < 14))
+const afternoonSlots = computed(() => daySlots.value.filter((s) => s.time.getHours() >= 14))
 
-function pickSlot(slot: Date) {
-  selectedSlot.value = slot
+function pickSlot(slot: DaySlot) {
+  selectedSlot.value = slot.time
+  if (anyPractitionerMode.value) teamMemberId.value = slot.memberId
   phase.value = 'details'
 }
 
@@ -424,40 +511,92 @@ if (import.meta.client) {
         <h1 class="text-center text-2xl font-semibold text-ink-900">{{ t('heading', 'Reservar una cita') }}</h1>
         <p class="mt-1 text-center text-sm text-ink-muted">{{ info.account.name }}</p>
 
-        <!-- Step 0: service / practitioner selection -->
-        <div v-if="phase === 'select'" class="mx-auto mt-8 max-w-md rounded-card border border-line bg-surface p-6 shadow-card">
-          <div v-if="info.clinics.length > 1">
-            <label class="block text-sm font-medium text-ink-700">Clínica</label>
-            <select v-model="clinicId" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm" @change="onClinicChange">
-              <option v-for="c in info.clinics" :key="c.id" :value="c.id">{{ c.name }}</option>
-            </select>
+        <!-- Step 1: service / practitioner selection -->
+        <div v-if="phase === 'select'">
+          <div class="mt-6 flex flex-col items-center gap-2">
+            <p class="text-xs font-semibold uppercase tracking-wide text-warning-text">Paso {{ stepNumber }} de 3</p>
+            <div class="flex gap-1.5">
+              <span v-for="n in 3" :key="n" class="h-1.5 w-1.5 rounded-full" :class="n === stepNumber ? 'bg-brand' : 'bg-line'"></span>
+            </div>
           </div>
-          <div v-if="info.appointment_types.length > 1 && !typeLockedByQuery" class="mt-4">
-            <label class="block text-sm font-medium text-ink-700">Servicio</label>
-            <select v-model="appointmentTypeId" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm">
-              <option v-for="t in info.appointment_types" :key="t.id" :value="t.id">
-                {{ t.name }} — {{ t.duration_minutes }} min
-              </option>
-            </select>
+          <h2 class="mt-2 text-center text-2xl font-semibold text-ink-900">{{ stepTitle }}</h2>
+
+          <div class="mt-6 grid gap-6 md:grid-cols-3">
+            <div class="space-y-3 md:col-span-2">
+              <div v-if="info.clinics.length > 1 || (info.appointment_types.length > 1 && !typeLockedByQuery)" class="rounded-card border border-line bg-surface p-4 shadow-card">
+                <div v-if="info.clinics.length > 1">
+                  <label class="block text-sm font-medium text-ink-700">Clínica</label>
+                  <select v-model="clinicId" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm" @change="onClinicChange">
+                    <option v-for="c in info.clinics" :key="c.id" :value="c.id">{{ c.name }}</option>
+                  </select>
+                </div>
+                <div v-if="info.appointment_types.length > 1 && !typeLockedByQuery" :class="info.clinics.length > 1 ? 'mt-4' : ''">
+                  <label class="block text-sm font-medium text-ink-700">Servicio</label>
+                  <select v-model="appointmentTypeId" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm">
+                    <option v-for="t in info.appointment_types" :key="t.id" :value="t.id">
+                      {{ t.name }} — {{ t.duration_minutes }} min
+                    </option>
+                  </select>
+                </div>
+              </div>
+
+              <template v-if="!bypassPractitioner && availablePractitioners.length > 1">
+                <button
+                  type="button"
+                  class="flex w-full items-center justify-between rounded-card border border-line bg-surface p-4 text-left shadow-card transition hover:border-brand"
+                  @click="chooseTeamMember(ANY_PRACTITIONER)"
+                >
+                  <div>
+                    <p class="font-semibold text-ink-900">{{ t('any_practitioner_label', 'Cualquier profesional') }}</p>
+                    <p class="mt-1 text-sm text-ink-muted">
+                      {{ t('any_practitioner_description', 'Esta opción le permite reservar una cita con cualquier profesional disponible en la especialidad y horario seleccionados.') }}
+                    </p>
+                  </div>
+                  <span class="ml-4 flex h-8 w-8 shrink-0 items-center justify-center rounded-ctl bg-surface-subtle text-ink-faint">&rsaquo;</span>
+                </button>
+                <button
+                  v-for="m in availablePractitioners"
+                  :key="m.id"
+                  type="button"
+                  class="flex w-full items-center justify-between rounded-card border border-line bg-surface p-4 text-left shadow-card transition hover:border-brand"
+                  @click="chooseTeamMember(m.id)"
+                >
+                  <div class="flex items-center gap-3">
+                    <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-tint text-sm font-semibold text-brand-text">
+                      {{ practitionerInitials(m.full_name) }}
+                    </div>
+                    <div>
+                      <p class="font-semibold text-ink-900">{{ m.full_name }}</p>
+                      <p class="mt-0.5 text-sm text-ink-muted">{{ practitionerAvailabilityLabel(m) }}</p>
+                    </div>
+                  </div>
+                  <span class="ml-4 flex h-8 w-8 shrink-0 items-center justify-center rounded-ctl bg-surface-subtle text-ink-faint">&rsaquo;</span>
+                </button>
+              </template>
+
+              <div v-else class="rounded-card border border-line bg-surface p-6 shadow-card">
+                <p v-if="availablePractitioners.length === 0" class="text-sm text-danger-text">
+                  No hay profesionales disponibles para reserva online en esta clínica.
+                </p>
+                <UiBtn type="button" variant="primary" class="w-full" :class="availablePractitioners.length === 0 ? 'mt-4' : ''" :disabled="!canContinueFromSelect" @click="proceedToDatetime">
+                  Continuar
+                </UiBtn>
+              </div>
+            </div>
+
+            <BookingSummary :clinic="clinic" :appointment-type="appointmentType" :price-cents="effectivePrice" :team-member="null" :slot="null" :format-price="formatPrice" :online-payment-required="appointmentType?.online_payment_required" :deposit-cents="appointmentType?.online_deposit_cents" />
           </div>
-          <div v-if="!bypassPractitioner && availablePractitioners.length > 1" class="mt-4">
-            <label class="block text-sm font-medium text-ink-700">{{ t('choose_practitioner', 'Profesional') }}</label>
-            <select v-model="teamMemberId" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm">
-              <option v-for="m in availablePractitioners" :key="m.id" :value="m.id">{{ m.full_name }}</option>
-            </select>
-          </div>
-          <p v-if="availablePractitioners.length === 0" class="mt-4 text-sm text-danger-text">
-            No hay profesionales disponibles para reserva online en esta clínica.
-          </p>
-          <UiBtn type="button" variant="primary" class="mt-6 w-full" :disabled="!canContinueFromSelect" @click="proceedToDatetime">
-            Continuar
-          </UiBtn>
         </div>
 
-        <!-- Step 1: date & time -->
+        <!-- Step 2: date & time -->
         <div v-else-if="phase === 'datetime'">
-          <p class="mt-6 text-center text-xs font-semibold uppercase tracking-wide text-warning-text">Paso 1 de 2</p>
-          <h2 class="text-center text-xl font-semibold text-ink-900">{{ t('choose_datetime', 'Elija su fecha y hora') }}</h2>
+          <div class="mt-6 flex flex-col items-center gap-2">
+            <p class="text-xs font-semibold uppercase tracking-wide text-warning-text">Paso {{ stepNumber }} de 3</p>
+            <div class="flex gap-1.5">
+              <span v-for="n in 3" :key="n" class="h-1.5 w-1.5 rounded-full" :class="n === stepNumber ? 'bg-brand' : 'bg-line'"></span>
+            </div>
+          </div>
+          <h2 class="mt-2 text-center text-xl font-semibold text-ink-900">{{ stepTitle }}</h2>
 
           <div class="mt-6 grid gap-6 md:grid-cols-3">
             <div class="rounded-card border border-line bg-surface p-4 shadow-card">
@@ -475,10 +614,11 @@ if (import.meta.client) {
                   :key="i"
                   type="button"
                   :disabled="!day.bookable"
-                  class="aspect-square rounded-full text-sm"
+                  class="aspect-square rounded-full text-sm font-medium"
                   :class="[
-                    !day.inMonth ? 'text-ink-faint' : day.bookable ? 'text-ink-700 hover:bg-brand-tint' : 'text-ink-faint',
-                    selectedDate && isSameDay(day.date, selectedDate) ? 'bg-brand text-white hover:bg-brand' : '',
+                    !day.inMonth || !day.bookable ? 'text-ink-faint' : '',
+                    day.bookable && !(selectedDate && isSameDay(day.date, selectedDate)) ? 'bg-brand text-white hover:bg-brand-hover' : '',
+                    selectedDate && isSameDay(day.date, selectedDate) ? 'border-2 border-brand text-ink-900' : '',
                   ]"
                   @click="selectDate(day)"
                 >
@@ -501,12 +641,12 @@ if (import.meta.client) {
                     <div class="mt-1.5 flex flex-wrap gap-2">
                       <button
                         v-for="s in morningSlots"
-                        :key="s.toISOString()"
+                        :key="s.time.toISOString() + s.memberId"
                         type="button"
                         class="rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-hover"
                         @click="pickSlot(s)"
                       >
-                        {{ s.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) }}
+                        {{ s.time.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) }}
                       </button>
                     </div>
                   </div>
@@ -515,12 +655,12 @@ if (import.meta.client) {
                     <div class="mt-1.5 flex flex-wrap gap-2">
                       <button
                         v-for="s in afternoonSlots"
-                        :key="s.toISOString()"
+                        :key="s.time.toISOString() + s.memberId"
                         type="button"
                         class="rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-hover"
                         @click="pickSlot(s)"
                       >
-                        {{ s.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) }}
+                        {{ s.time.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) }}
                       </button>
                     </div>
                   </div>
@@ -532,12 +672,17 @@ if (import.meta.client) {
           </div>
         </div>
 
-        <!-- Step 2: patient details -->
+        <!-- Step 3: patient details -->
         <div v-else-if="phase === 'details'">
           <div class="mt-6 flex items-center justify-between">
             <div>
-              <p class="text-xs font-semibold uppercase tracking-wide text-warning-text">Paso 2 de 2</p>
-              <h2 class="text-xl font-semibold text-ink-900">{{ t('enter_details', 'Introduzca sus datos') }}</h2>
+              <div class="flex items-center gap-2">
+                <p class="text-xs font-semibold uppercase tracking-wide text-warning-text">Paso {{ stepNumber }} de 3</p>
+                <div class="flex gap-1.5">
+                  <span v-for="n in 3" :key="n" class="h-1.5 w-1.5 rounded-full" :class="n === stepNumber ? 'bg-brand' : 'bg-line'"></span>
+                </div>
+              </div>
+              <h2 class="mt-1 text-xl font-semibold text-ink-900">{{ stepTitle }}</h2>
             </div>
             <UiBtn type="button" variant="secondary" @click="backToDatetime">
               &larr; Atrás

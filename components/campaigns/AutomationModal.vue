@@ -268,6 +268,12 @@ async function save() {
 }
 
 const hasWhatsAppAction = computed(() => actions.value.some((a) => a.action_type === 'whatsapp_template'))
+// A test send impersonates the signed-in team member, not a real patient --
+// document links need a real patients row (patient_docs.patient_id has a
+// hard FK to it), so any document button/variable here will silently fail
+// to generate and fall back to a broken placeholder. Only "Send now" against
+// a real patient (from the campaign list) can actually verify one.
+const hasDocAttached = computed(() => actions.value.some((a) => a.action_type === 'whatsapp_template' && a.doc_template_ids.some(Boolean)))
 
 async function sendTestToMe() {
   if (actions.value.length === 0) {
@@ -523,6 +529,9 @@ async function sendTestToMe() {
             />
             <UiBtn variant="ghost" size="sm" type="button" :disabled="testing" @click="sendTestToMe">{{ testing ? 'Sending…' : 'Send test to me' }}</UiBtn>
             <p v-if="testMessage" class="text-[12px]" :class="testMessage.startsWith('Failed') || testMessage.startsWith('Enter') ? 'text-danger-text' : 'text-success-text'">{{ testMessage }}</p>
+            <p v-if="hasDocAttached" class="w-full text-[11px] text-ink-faint2">
+              A test send isn't a real patient, so document links/buttons won't resolve -- use "Send now" against a real patient from the campaign list to verify those.
+            </p>
           </div>
           <div class="flex shrink-0 items-center gap-2">
             <UiBtn variant="secondary" type="button" @click="emit('close')">Cancel</UiBtn>

@@ -547,16 +547,19 @@ function closedSlotRects(forDate: Date, hourPx: number) {
   return rects
 }
 
-// The block palette collapses onto four visual states from the spec; a
-// pending or reschedule-requested confirmation on an otherwise-booked
-// appointment both read as "Unconfirmed" since the app has no separate 4th
-// status column to key off of.
-type VisualStatus = 'booked' | 'completed' | 'unconfirmed' | 'no_show' | 'cancelled'
+// The block palette collapses onto these visual states; a pending or
+// reschedule-requested confirmation on an otherwise-booked appointment both
+// read as "Unconfirmed" since the app has no separate status column for
+// each. A patient-confirmed booking gets its own "Confirmed" state instead
+// of falling back to plain "Booked", so staff can see who's actually
+// replied without opening each appointment.
+type VisualStatus = 'booked' | 'confirmed' | 'completed' | 'unconfirmed' | 'no_show' | 'cancelled'
 function appointmentVisualStatus(appt: AppointmentRow): VisualStatus {
   if (appt.status === 'completed') return 'completed'
   if (appt.status === 'no_show') return 'no_show'
   if (appt.status === 'cancelled') return 'cancelled'
   if (appt.status === 'booked' && (appt.confirmation_status === 'pending' || appt.confirmation_status === 'reschedule_requested')) return 'unconfirmed'
+  if (appt.status === 'booked' && appt.confirmation_status === 'confirmed') return 'confirmed'
   return 'booked'
 }
 // Tailwind classes rather than inline hex -- these map 1:1 onto the
@@ -564,6 +567,7 @@ function appointmentVisualStatus(appt: AppointmentRow): VisualStatus {
 // already carry the exact hex values from the redesign spec.
 const STATUS_STYLES: Record<VisualStatus, { dotClass: string; label: string; pillTone: 'brand' | 'success' | 'warning' | 'danger' | 'neutral' }> = {
   booked: { dotClass: 'bg-brand', label: 'Booked', pillTone: 'brand' },
+  confirmed: { dotClass: 'bg-success-accent', label: 'Confirmed', pillTone: 'success' },
   completed: { dotClass: 'bg-success-accent', label: 'Completed', pillTone: 'success' },
   unconfirmed: { dotClass: 'bg-warning-accent', label: 'Unconfirmed', pillTone: 'warning' },
   no_show: { dotClass: 'bg-danger-text', label: 'No-show', pillTone: 'danger' },
@@ -1040,8 +1044,12 @@ async function completeFlow(appt: AppointmentRow) {
 // disappearing first.
 const hoveredAppt = ref<AppointmentRow | null>(null)
 const hoverPos = ref({ x: 0, y: 0 })
+const hoverCardEl = ref<any>(null)
 let hoverShowTimer: ReturnType<typeof setTimeout> | null = null
 let hoverHideTimer: ReturnType<typeof setTimeout> | null = null
+let hoverAnchorRect: DOMRect | null = null
+let hoverX = 0
+let hoverResizeObserver: ResizeObserver | null = null
 
 // Hovercard is a fixed 300px wide (AppointmentHoverCard.vue) -- shown on
 // whichever side of the block actually has room, so on a block near the
@@ -1049,6 +1057,31 @@ let hoverHideTimer: ReturnType<typeof setTimeout> | null = null
 // over the block itself and blocking clicks on it.
 const HOVERCARD_WIDTH = 300
 const HOVERCARD_GAP = 10
+
+// The card's height isn't just unknown until first render -- it keeps
+// changing after that too (usePatientFinancialSummary's balance/package
+// fetch resolves async, "Recent activity" populates once loaded), so a
+// single post-mount measurement still clipped a card that grew taller
+// after that. A ResizeObserver re-clamps every time the real height
+// changes instead, however many times that happens.
+function updateHoverY() {
+  if (!hoverAnchorRect) return
+  const height = hoverCardEl.value?.$el?.offsetHeight ?? 380
+  hoverPos.value = { x: hoverX, y: Math.max(8, Math.min(hoverAnchorRect.top, window.innerHeight - height - 8)) }
+}
+
+watch(hoveredAppt, async (appt) => {
+  hoverResizeObserver?.disconnect()
+  hoverResizeObserver = null
+  if (!appt) return
+  await nextTick()
+  const el = hoverCardEl.value?.$el as HTMLElement | undefined
+  if (!el) return
+  hoverResizeObserver = new ResizeObserver(updateHoverY)
+  hoverResizeObserver.observe(el)
+  updateHoverY()
+})
+onUnmounted(() => hoverResizeObserver?.disconnect())
 
 function scheduleHoverCard(appt: AppointmentRow, event: MouseEvent) {
   if (hoverHideTimer) {
@@ -1061,13 +1094,13 @@ function scheduleHoverCard(appt: AppointmentRow, event: MouseEvent) {
     const spaceRight = window.innerWidth - rect.right
     const spaceLeft = rect.left
     const showRight = spaceRight >= HOVERCARD_WIDTH + HOVERCARD_GAP || spaceRight >= spaceLeft
-    const x = showRight
+    hoverX = showRight
       ? Math.min(rect.right + HOVERCARD_GAP, window.innerWidth - HOVERCARD_WIDTH - HOVERCARD_GAP)
       : Math.max(HOVERCARD_GAP, rect.left - HOVERCARD_WIDTH - HOVERCARD_GAP)
-    hoverPos.value = {
-      x,
-      y: Math.max(8, Math.min(rect.top, window.innerHeight - 380)),
-    }
+    hoverAnchorRect = rect
+    // Rough guess for the instant the card appears, before the resize
+    // observer above has attached and measured anything real yet.
+    hoverPos.value = { x: hoverX, y: Math.max(8, Math.min(rect.top, window.innerHeight - 380)) }
   }, 500)
 }
 function cancelHoverShow() {
@@ -1623,6 +1656,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
 
     <CalendarAppointmentHoverCard
       v-if="hoveredAppt"
+      ref="hoverCardEl"
       :appointment="hoveredAppt"
       :room-name="hoveredRoomName"
       :overrides="overrides"

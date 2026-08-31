@@ -116,19 +116,23 @@ const initials = computed(() => {
 const patientName = computed(() => `${props.appointment.patients?.first_name ?? ''} ${props.appointment.patients?.last_name ?? ''}`.trim())
 const practitionerName = computed(() => props.appointment.team_members?.full_name ?? 'Unassigned')
 
-// The block palette collapses onto four visual states; a pending or
+// The block palette collapses onto these visual states; a pending or
 // reschedule-requested confirmation on an otherwise-booked appointment both
-// read as "Unconfirmed" (amber) since the app has no separate 4th status.
-const visualStatus = computed<'booked' | 'completed' | 'unconfirmed' | 'no_show' | 'cancelled'>(() => {
+// read as "Unconfirmed" (amber). A patient-confirmed booking gets its own
+// "Confirmed" state instead of falling back to plain "Booked", matching
+// pages/calendar.vue's appointmentVisualStatus.
+const visualStatus = computed<'booked' | 'confirmed' | 'completed' | 'unconfirmed' | 'no_show' | 'cancelled'>(() => {
   const a = props.appointment
   if (a.status === 'completed') return 'completed'
   if (a.status === 'no_show') return 'no_show'
   if (a.status === 'cancelled') return 'cancelled'
   if (a.status === 'booked' && (a.confirmation_status === 'pending' || a.confirmation_status === 'reschedule_requested')) return 'unconfirmed'
+  if (a.status === 'booked' && a.confirmation_status === 'confirmed') return 'confirmed'
   return 'booked'
 })
 const PILL_TONE: Record<string, 'brand' | 'success' | 'warning' | 'danger' | 'neutral'> = {
   booked: 'brand',
+  confirmed: 'success',
   completed: 'success',
   unconfirmed: 'warning',
   no_show: 'danger',
@@ -136,7 +140,7 @@ const PILL_TONE: Record<string, 'brand' | 'success' | 'warning' | 'danger' | 'ne
 }
 const statusLabel = computed(() => {
   if (visualStatus.value === 'unconfirmed' && props.appointment.confirmation_status === 'reschedule_requested') return 'Wants to reschedule'
-  return { booked: 'Booked', completed: 'Completed', unconfirmed: 'Unconfirmed', no_show: 'No-show', cancelled: 'Cancelled' }[visualStatus.value]
+  return { booked: 'Booked', confirmed: 'Confirmed', completed: 'Completed', unconfirmed: 'Unconfirmed', no_show: 'No-show', cancelled: 'Cancelled' }[visualStatus.value]
 })
 
 function visitOrdinal(n: number) {

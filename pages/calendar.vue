@@ -65,6 +65,7 @@ const OVERFLOW_CHIP_PX = 20
 interface Room { id: string; name: string }
 interface AppointmentType { id: string; name: string; duration_minutes: number; color: string; default_price_cents: number }
 interface TeamMember { id: string; full_name: string; color: string }
+interface TeamMemberClinic { team_member_id: string; clinic_id: string }
 
 interface AvailabilityBlock { id: string; room_id: string | null; starts_at: string; ends_at: string; note: string | null }
 
@@ -112,11 +113,18 @@ onMounted(() => {
   if (stored === 'day' || stored === 'workweek' || stored === 'week') viewMode.value = stored
 })
 watch(viewMode, (v) => localStorage.setItem(CALENDAR_VIEW_MODE_KEY, v))
+// PracticeHub never shows a merged "all practitioners" calendar -- with
+// several practitioners double-booking the same room at different times,
+// a merged view stacks unrelated appointments on top of each other into an
+// unreadable pile. One practitioner tab at a time, like PH, sidesteps that
+// entirely instead of trying to render overlaps nicely.
+const CALENDAR_PRACTITIONER_KEY = 'quiroflow-calendar-practitioner'
 const practitionerFilter = ref('')
 const anchorDate = ref(new Date())
 const rooms = ref<Room[]>([])
 const appointmentTypes = ref<AppointmentType[]>([])
 const teamMembers = ref<TeamMember[]>([])
+const teamMemberClinics = ref<TeamMemberClinic[]>([])
 const overrides = ref<AppointmentTypeOverride[]>([])
 const appointments = ref<AppointmentRow[]>([])
 const availabilityBlocks = ref<AvailabilityBlock[]>([])
@@ -227,15 +235,38 @@ function selectMiniDate(d: Date) {
 }
 
 async function loadReferenceData() {
-  const [{ data: types }, { data: members }, { data: ovr }] = await Promise.all([
+  const [{ data: types }, { data: members }, { data: ovr }, { data: memberClinics }] = await Promise.all([
     supabase.from('appointment_types').select('id, name, duration_minutes, color, default_price_cents').order('name'),
     supabase.from('team_members').select('id, full_name, color').order('full_name'),
     supabase.from('appointment_type_overrides').select('appointment_type_id, team_member_id, duration_minutes, price_cents'),
+    supabase.from('team_member_clinics').select('team_member_id, clinic_id'),
   ])
   appointmentTypes.value = types ?? []
   teamMembers.value = members ?? []
   overrides.value = ovr ?? []
+  teamMemberClinics.value = memberClinics ?? []
 }
+
+// Only practitioners assigned to the clinic currently in view -- same
+// scoping the public booking widget already uses -- so a multi-clinic
+// account doesn't clutter the tab bar with staff who don't work here.
+const clinicTeamMembers = computed(() =>
+  teamMembers.value.filter((m) => teamMemberClinics.value.some((tc) => tc.team_member_id === m.id && tc.clinic_id === store.currentClinicId)),
+)
+
+// Keeps practitionerFilter pointing at a real, visible tab -- restores the
+// last-used practitioner from localStorage when it's still valid for this
+// clinic, otherwise falls back to the first tab (e.g. right after switching
+// clinics, or on first load).
+function ensureValidPractitionerFilter() {
+  if (clinicTeamMembers.value.some((m) => m.id === practitionerFilter.value)) return
+  const stored = localStorage.getItem(CALENDAR_PRACTITIONER_KEY)
+  const restored = stored && clinicTeamMembers.value.some((m) => m.id === stored) ? stored : ''
+  practitionerFilter.value = restored || (clinicTeamMembers.value[0]?.id ?? '')
+}
+watch(practitionerFilter, (v) => {
+  if (v) localStorage.setItem(CALENDAR_PRACTITIONER_KEY, v)
+})
 
 async function loadRooms() {
   if (!store.currentClinicId) {
@@ -388,12 +419,14 @@ function glancePct(count: number) {
 
 onMounted(async () => {
   await loadReferenceData()
+  ensureValidPractitionerFilter()
   await loadRooms()
   await loadAppointments()
   await loadAvailabilityBlocks()
   await loadTodayGlance()
 })
 watch(() => store.currentClinicId, async () => {
+  ensureValidPractitionerFilter()
   await loadRooms()
   await loadAppointments()
   await loadAvailabilityBlocks()
@@ -1110,10 +1143,6 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
         <span class="text-[13.5px] font-[560] text-ink-700">{{ rangeLabel }}</span>
       </div>
       <div class="flex items-center gap-2">
-        <select v-model="practitionerFilter" class="h-[26px] rounded-ctlSm border border-line-control bg-surface px-2 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover focus:border-brand focus:outline-none">
-          <option value="">All Practitioners</option>
-          <option v-for="m in teamMembers" :key="m.id" :value="m.id">{{ m.full_name }}</option>
-        </select>
         <select v-model="viewMode" class="h-[26px] rounded-ctlSm border border-line-control bg-surface px-2 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover focus:border-brand focus:outline-none">
           <option value="day">Day</option>
           <option value="workweek">Work week</option>
@@ -1124,6 +1153,26 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
         <UiBtn variant="primary" size="sm" @click="openCreateModal()">+ New Appointment</UiBtn>
       </div>
     </header>
+
+    <!-- One tab per practitioner, PracticeHub-style -- there is no merged
+         "all practitioners" view, since two practitioners double-booked into
+         the same room at overlapping times would otherwise render as an
+         unreadable stack of superimposed cards. -->
+    <div v-if="clinicTeamMembers.length > 0" class="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b border-line bg-surface px-6">
+      <button
+        v-for="m in clinicTeamMembers"
+        :key="m.id"
+        type="button"
+        class="h-[26px] shrink-0 rounded-ctlSm px-3 text-[12.5px] font-medium transition-colors"
+        :class="practitionerFilter === m.id ? 'bg-brand text-white' : 'text-ink-600 hover:bg-surface-subtle'"
+        @click="practitionerFilter = m.id"
+      >
+        {{ m.full_name }}
+      </button>
+    </div>
+    <div v-else class="flex h-9 shrink-0 items-center border-b border-line bg-surface px-6 text-[12.5px] text-ink-faint">
+      No practitioners are assigned to this clinic yet.
+    </div>
 
     <div class="flex flex-1 overflow-hidden">
       <!-- Left panel: mini month, glance stats, display toggles, status key -->
@@ -1514,6 +1563,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
       :prefill-date="prefill?.date"
       :prefill-time="prefill?.time"
       :prefill-room-id="prefill?.roomId"
+      :prefill-practitioner-id="practitionerFilter"
       @close="modalOpen = false"
       @saved="onSaved"
     />

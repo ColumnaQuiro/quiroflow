@@ -15,6 +15,7 @@ const props = defineProps<{
   prefillDate?: string
   prefillTime?: string
   prefillRoomId?: string
+  prefillPractitionerId?: string
 }>()
 
 const emit = defineEmits<{ close: []; saved: [] }>()
@@ -33,7 +34,7 @@ function toDateInput(iso: string) {
 const date = ref(props.prefillDate ?? toDateInput(new Date().toISOString()))
 const time = ref(props.prefillTime ?? '09:00')
 const roomId = ref(props.prefillRoomId ?? '')
-const practitionerId = ref('')
+const practitionerId = ref(props.prefillPractitionerId ?? '')
 const appointmentTypeId = ref(props.appointmentTypes[0]?.id ?? '')
 const note = ref('')
 const repeat = ref<'none' | 'daily' | 'weekly' | 'monthly'>('none')

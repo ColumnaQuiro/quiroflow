@@ -124,9 +124,22 @@ onMounted(async () => {
   }
   info.value = parsed
   clinicId.value = parsed.clinics[0].id
-  if (parsed.appointment_types.length === 1) appointmentTypeId.value = parsed.appointment_types[0].id
+  // Marketing pages can deep-link straight into a specific offer (e.g. a
+  // promo page's own appointment type/practitioner) via ?type=&practitioner=
+  // -- falls back to the usual auto-select when absent or invalid.
+  const queryTypeId = typeof route.query.type === 'string' ? route.query.type : null
+  const queryPractitionerId = typeof route.query.practitioner === 'string' ? route.query.practitioner : null
+  if (queryTypeId && parsed.appointment_types.some((t) => t.id === queryTypeId)) {
+    appointmentTypeId.value = queryTypeId
+  } else if (parsed.appointment_types.length === 1) {
+    appointmentTypeId.value = parsed.appointment_types[0].id
+  }
   const forClinic = parsed.team_members.filter((m) => m.clinic_ids.includes(clinicId.value))
-  if (forClinic.length === 1 || bypassPractitioner.value) teamMemberId.value = forClinic[0]?.id ?? ''
+  if (queryPractitionerId && forClinic.some((m) => m.id === queryPractitionerId)) {
+    teamMemberId.value = queryPractitionerId
+  } else if (forClinic.length === 1 || bypassPractitioner.value) {
+    teamMemberId.value = forClinic[0]?.id ?? ''
+  }
   phase.value = 'select'
 
   if (parsed.account.online_booking_gtm_id) {
@@ -316,6 +329,17 @@ async function submitBooking() {
   const result = data as unknown as { appointment_id: string; starts_at: string; invoice_id: string | null; payment_required_cents: number; discount_applied_cents: number }
   confirmation.value = result
   discountAppliedCents.value = result.discount_applied_cents ?? 0
+  // Conversion event for whatever's listening on the account's GTM container
+  // (Settings > Online Booking > General) -- the appointment already exists
+  // at this point regardless of payment, so this fires once per real booking
+  // rather than only after a successful online payment.
+  ;(window as any).dataLayer = (window as any).dataLayer || []
+  ;(window as any).dataLayer.push({
+    event: 'booking_completed',
+    booking_appointment_type: appointmentType.value?.name ?? '',
+    booking_value: effectivePrice.value ? effectivePrice.value / 100 : 0,
+    booking_currency: 'EUR',
+  })
   // Fire-and-forget, same as the staff-booking side (AppointmentModal.vue) --
   // a failed confirmation send should never block the success screen the
   // patient is about to see.

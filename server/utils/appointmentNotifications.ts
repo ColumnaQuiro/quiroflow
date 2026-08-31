@@ -31,6 +31,7 @@ interface AppointmentContext {
   patientPreferredLanguage: string | null
   patientIsMinor: boolean
   patientDoNotContact: boolean
+  patientPhone: string | null
 }
 
 async function loadAppointmentContext(supabase: any, appointmentId: string): Promise<AppointmentContext | null> {
@@ -42,6 +43,10 @@ async function loadAppointmentContext(supabase: any, appointmentId: string): Pro
     .eq('id', appointmentId)
     .maybeSingle()
   if (!data || !data.patients) return null
+
+  const { data: numbers } = await supabase.from('patient_contact_numbers').select('number, country_code, is_whatsapp').eq('patient_id', data.patient_id)
+  const preferredNumber = numbers?.find((n: any) => n.is_whatsapp) ?? numbers?.[0]
+  const patientPhone = preferredNumber ? (toE164(preferredNumber.number, preferredNumber.country_code) ?? preferredNumber.number) : null
 
   return {
     id: data.id,
@@ -56,6 +61,7 @@ async function loadAppointmentContext(supabase: any, appointmentId: string): Pro
     patientPreferredLanguage: data.patients.preferred_language ?? null,
     patientIsMinor: !!data.patients.is_minor,
     patientDoNotContact: !!data.patients.do_not_contact,
+    patientPhone,
   }
 }
 
@@ -300,7 +306,7 @@ export async function notifyStaffOfOnlineBooking(supabase: any, accountId: strin
 
   const when = new Date(ctx.startsAt).toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: CLINIC_TIMEZONE })
   const patientName = [ctx.patientFirstName, ctx.patientLastName].filter(Boolean).join(' ')
-  const summary = `Nueva reserva online: ${patientName} con ${ctx.practitionerName || 'un profesional'} el ${when}${ctx.appointmentTypeName ? ` (${ctx.appointmentTypeName})` : ''}.`
+  const summary = `Nueva reserva online: ${patientName}${ctx.patientPhone ? ` (${ctx.patientPhone})` : ''} con ${ctx.practitionerName || 'un profesional'} el ${when}${ctx.appointmentTypeName ? ` (${ctx.appointmentTypeName})` : ''}.`
 
   if (account.online_booking_notify_email) {
     try {

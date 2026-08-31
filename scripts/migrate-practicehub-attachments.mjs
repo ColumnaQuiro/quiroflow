@@ -44,7 +44,7 @@ import { chromium } from 'playwright'
 import { createClient } from '@supabase/supabase-js'
 import WebSocket from 'ws'
 import Papa from 'papaparse'
-import { readFileSync, existsSync, appendFileSync } from 'node:fs'
+import { readFileSync, existsSync, appendFileSync, writeFileSync } from 'node:fs'
 import { createInterface } from 'node:readline/promises'
 import { stdin, stdout } from 'node:process'
 import { fileURLToPath } from 'node:url'
@@ -107,6 +107,29 @@ const ACCENT_MAP = {
 function sanitizeStorageFilename(name) {
   const transliterated = name.replace(/[áéíóúüñÁÉÍÓÚÜÑ]/g, (c) => ACCENT_MAP[c] ?? c)
   return transliterated.replace(/[^a-zA-Z0-9._-]/g, '_')
+}
+
+// Some patient_files rows point at a filename that's genuinely gone from
+// PracticeHub (renamed or deleted there since the CSV was exported) -- not a
+// bug in this script, just source data that no longer exists to migrate.
+// Once a file is confirmed absent on its patient's own Files tab, its id is
+// recorded here so every later run (this is meant to be re-run until clean)
+// skips it silently instead of re-discovering and re-warning about the same
+// permanently-missing file every time. Shared across --offset slices since
+// they all read/write the same file; each save is a full rewrite, so run
+// slices with staggered starts rather than perfectly simultaneously if you
+// want to avoid one run's confirmation briefly clobbering another's.
+const NOT_FOUND_FILE = join(__dirname, 'migrate-attachments-not-found.json')
+function loadNotFoundIds() {
+  if (!existsSync(NOT_FOUND_FILE)) return new Set()
+  try {
+    return new Set(JSON.parse(readFileSync(NOT_FOUND_FILE, 'utf8')))
+  } catch {
+    return new Set()
+  }
+}
+function saveNotFoundIds(ids) {
+  writeFileSync(NOT_FOUND_FILE, JSON.stringify([...ids], null, 2))
 }
 
 async function prompt(question, { hidden = false } = {}) {
@@ -202,11 +225,15 @@ async function main() {
   // Every patient_files row still missing content, joined back to its CSV
   // row to recover the PracticeHub patient name (needed to search PH's UI --
   // PH's own patient ID isn't stored anywhere in QuiroFlow) and filename.
-  const pending = await fetchAll('patient_files', 'id, patient_id, file_name, external_reference', (q) =>
+  const allPending = await fetchAll('patient_files', 'id, patient_id, file_name, external_reference', (q) =>
     q.eq('account_id', accountId).is('storage_path', null).not('external_reference', 'is', null),
   )
 
-  log(`${pending.length} files still pending.`)
+  const notFoundIds = loadNotFoundIds()
+  const pending = allPending.filter((f) => !notFoundIds.has(f.id))
+  const alreadyConfirmedMissing = allPending.length - pending.length
+
+  log(`${allPending.length} files still pending${alreadyConfirmedMissing > 0 ? ` (${alreadyConfirmedMissing} already confirmed missing from PracticeHub in a previous run, excluded)` : ''}.`)
   if (pending.length === 0) {
     log('Nothing to do.')
     return
@@ -323,13 +350,32 @@ async function main() {
       await page.locator('text=Files').first().click().catch(() => {})
       await page.waitForTimeout(500)
 
+      // A patient can legitimately have zero files in PracticeHub (the CSV's
+      // per-file metadata rows sometimes outlive the files themselves being
+      // removed there) -- that's not a mismatch worth a WARN, just nothing
+      // to migrate. DataTables renders one placeholder row ("No data
+      // available in table") rather than zero rows when empty, so check for
+      // that too, not just a bare row count of 0.
+      const filesTableRows = page.locator('table tbody tr')
+      const filesTableRowCount = await filesTableRows.count()
+      const filesTableEmpty =
+        filesTableRowCount === 0 ||
+        (filesTableRowCount === 1 && /no (data|files|records)/i.test(await filesTableRows.first().innerText().catch(() => '')))
+      if (filesTableEmpty) {
+        skipped += files.length
+        log(`${progress()} ${phName} has no attachments in PracticeHub, skipping ${files.length} file(s) (nothing to migrate, not an error)`)
+        continue
+      }
+
       for (const { file, csvRow } of files) {
         try {
           const fileRow = page.locator('tr', { hasText: csvRow['Filename'].trim() }).first()
           const viewLink = fileRow.locator('a:has-text("View")').first()
           if ((await viewLink.count()) === 0) {
             skipped++
-            log(`${progress()} WARN "${csvRow['Filename']}" not found on ${phName}'s Files tab, skipping`)
+            notFoundIds.add(file.id)
+            saveNotFoundIds(notFoundIds)
+            log(`${progress()} WARN "${csvRow['Filename']}" not found on ${phName}'s Files tab -- recording as permanently missing, future runs won't re-check it`)
             continue
           }
 

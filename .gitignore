@@ -13,6 +13,9 @@ node_modules
 logs
 *.log
 
+# Local migration-script run state (per-machine, not shared)
+scripts/migrate-attachments-not-found.json
+
 # Misc
 .DS_Store
 .fleet

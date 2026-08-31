@@ -532,8 +532,8 @@ if (import.meta.client) {
           </div>
           <h2 class="mt-2 text-center text-2xl font-semibold text-ink-900">{{ stepTitle }}</h2>
 
-          <div class="mt-6 grid gap-6 md:grid-cols-3">
-            <div class="space-y-3 md:col-span-2">
+          <div class="mt-6 grid gap-6 sm:grid-cols-3">
+            <div class="space-y-3 sm:col-span-2">
               <div v-if="info.clinics.length > 1 || (info.appointment_types.length > 1 && !typeLockedByQuery)" class="rounded-card border border-line bg-surface p-4 shadow-card">
                 <div v-if="info.clinics.length > 1">
                   <label class="block text-sm font-medium text-ink-700">Clínica</label>
@@ -609,7 +609,7 @@ if (import.meta.client) {
           </div>
           <h2 class="mt-2 text-center text-xl font-semibold text-ink-900">{{ stepTitle }}</h2>
 
-          <div class="mt-6 grid gap-6 md:grid-cols-3">
+          <div class="mt-6 grid gap-6 sm:grid-cols-3">
             <div class="rounded-card border border-line bg-surface p-4 shadow-card">
               <div class="flex items-center justify-between">
                 <button type="button" class="rounded p-1 text-ink-faint hover:bg-surface-subtle" @click="prevMonth">&lsaquo;</button>
@@ -700,8 +700,8 @@ if (import.meta.client) {
             </UiBtn>
           </div>
 
-          <div class="mt-6 grid gap-6 md:grid-cols-3">
-            <form class="rounded-card border border-line bg-surface p-6 shadow-card md:col-span-2" @submit.prevent="submitBooking">
+          <div class="mt-6 grid gap-6 sm:grid-cols-3">
+            <form class="rounded-card border border-line bg-surface p-6 shadow-card sm:col-span-2" @submit.prevent="submitBooking">
               <div class="grid gap-4 sm:grid-cols-2">
                 <div>
                   <label class="block text-sm font-medium text-ink-700">Nombre *</label>

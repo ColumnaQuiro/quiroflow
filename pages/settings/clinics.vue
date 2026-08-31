@@ -58,6 +58,11 @@ async function removeClinic(id: string) {
   store.reset()
   await store.load()
 }
+
+async function onLogoUploaded() {
+  store.reset()
+  await store.load()
+}
 </script>
 
 <template>
@@ -73,6 +78,7 @@ async function removeClinic(id: string) {
             <table class="w-full text-[13px]">
               <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted2">
                 <tr>
+                  <th class="px-4 py-2">Logo</th>
                   <th class="px-4 py-2">Name</th>
                   <th class="px-4 py-2">Address</th>
                   <th class="px-4 py-2">Calendar slot</th>
@@ -81,9 +87,12 @@ async function removeClinic(id: string) {
               </thead>
               <tbody class="divide-y divide-line-row">
                 <tr v-if="store.clinics.length === 0">
-                  <td colspan="4" class="px-4 py-6 text-center text-ink-faint">No clinics yet.</td>
+                  <td colspan="5" class="px-4 py-6 text-center text-ink-faint">No clinics yet.</td>
                 </tr>
                 <tr v-for="c in store.clinics" :key="c.id">
+                  <td class="px-4 py-2.5">
+                    <SettingsClinicLogoUpload :clinic-id="c.id" :logo-storage-path="c.logo_storage_path" @uploaded="onLogoUploaded" />
+                  </td>
                   <td class="px-4 py-2.5">
                     <input
                       :value="c.name"

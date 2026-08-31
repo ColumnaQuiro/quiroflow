@@ -13,10 +13,9 @@ const webhookSecret = ref('')
 const hasStoredWebhookSecret = ref(false)
 const showLegacyForm = ref(false)
 
+const { showToast } = useToast()
 const loading = ref(true)
 const saving = ref(false)
-const saved = ref(false)
-const error = ref('')
 
 const testing = ref(false)
 const testResult = ref('')
@@ -52,8 +51,6 @@ async function load() {
 onMounted(load)
 
 async function save() {
-  error.value = ''
-  saved.value = false
   saving.value = true
   const update: TablesUpdate<'accounts'> = {
     stripe_publishable_key: publishableKey.value.trim() || null,
@@ -64,10 +61,10 @@ async function save() {
   const { error: updateError } = await supabase.from('accounts').update(update).eq('id', store.accountId!)
   saving.value = false
   if (updateError) {
-    error.value = updateError.message
+    showToast(updateError.message, 'error')
     return
   }
-  saved.value = true
+  showToast('Saved')
   if (secretKey.value.trim()) hasStoredSecretKey.value = true
   if (webhookSecret.value.trim()) hasStoredWebhookSecret.value = true
   secretKey.value = ''
@@ -184,9 +181,6 @@ async function disconnect() {
                   class="h-8 w-[230px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
                 />
               </SettingsFieldRow>
-
-              <p v-if="saved" class="text-[12.5px] text-success-text">Saved.</p>
-              <p v-if="error" class="text-[12.5px] text-danger-text">{{ error }}</p>
 
               <div class="rounded-card border border-line bg-surface-subtle p-4">
                 <h3 class="text-[13.5px] font-[560] text-ink-700">Webhook</h3>

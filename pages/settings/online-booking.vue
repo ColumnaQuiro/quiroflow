@@ -28,9 +28,9 @@ const textOverrides = ref<Record<string, string>>({})
 const notifyEmail = ref('')
 const notifyWhatsapp = ref('')
 
+const { showToast } = useToast()
 const loading = ref(true)
 const saving = ref(false)
-const saved = ref(false)
 
 async function loadAccountSettings() {
   loading.value = true
@@ -58,7 +58,6 @@ onMounted(loadAccountSettings)
 
 async function saveAccountSettings() {
   saving.value = true
-  saved.value = false
   const update: TablesUpdate<'accounts'> = {
     online_booking_max_days_ahead: maxDaysAhead.value,
     online_booking_gtm_id: gtmId.value.trim() || null,
@@ -72,9 +71,13 @@ async function saveAccountSettings() {
     online_booking_notify_email: notifyEmail.value.trim() || null,
     online_booking_notify_whatsapp: notifyWhatsapp.value.trim() || null,
   }
-  await supabase.from('accounts').update(update).eq('id', store.accountId!)
+  const { error: updateError } = await supabase.from('accounts').update(update).eq('id', store.accountId!)
   saving.value = false
-  saved.value = true
+  if (updateError) {
+    showToast(updateError.message, 'error')
+    return
+  }
+  showToast('Saved')
 }
 
 function bookingUrl(slug: string) {
@@ -508,8 +511,6 @@ const OVERRIDABLE_STRINGS = [
               </div>
             </div>
           </div>
-
-          <p v-if="saved" class="mt-3 text-[12.5px] text-success-text">Saved.</p>
         </div>
       </div>
     </div>

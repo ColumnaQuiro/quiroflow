@@ -15,10 +15,9 @@ const recallTemplateLanguage = ref('es')
 const reminderTemplateName = ref('')
 const reminderTemplateLanguage = ref('es')
 
+const { showToast } = useToast()
 const loading = ref(true)
 const saving = ref(false)
-const saved = ref(false)
-const error = ref('')
 
 // Set only after mount, not as a computed keyed on import.meta.client --
 // that would render an empty string during SSR but the real URL on the
@@ -89,8 +88,6 @@ function useForReminder(t: Template) {
 }
 
 async function save() {
-  error.value = ''
-  saved.value = false
   saving.value = true
   const update: TablesUpdate<'accounts'> = {
     whatsapp_phone_number_id: phoneNumberId.value.trim() || null,
@@ -107,10 +104,10 @@ async function save() {
   const { error: updateError } = await supabase.from('accounts').update(update).eq('id', store.accountId!)
   saving.value = false
   if (updateError) {
-    error.value = updateError.message
+    showToast(updateError.message, 'error')
     return
   }
-  saved.value = true
+  showToast('Saved')
   if (accessToken.value.trim()) hasStoredToken.value = true
   accessToken.value = ''
   if (hasStoredToken.value && businessAccountId.value) loadTemplates()
@@ -238,8 +235,6 @@ async function save() {
               </ul>
             </div>
 
-            <p v-if="saved" class="text-[12.5px] text-success-text">Saved.</p>
-            <p v-if="error" class="text-[12.5px] text-danger-text">{{ error }}</p>
           </form>
 
           <div class="mt-6 rounded-card border border-line bg-surface p-4 shadow-card">

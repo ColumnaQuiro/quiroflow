@@ -15,10 +15,9 @@ const reminderHoursBefore = ref(24)
 const emailReminderSubject = ref('')
 const emailReminderBody = ref('')
 
+const { showToast } = useToast()
 const loading = ref(true)
 const saving = ref(false)
-const saved = ref(false)
-const error = ref('')
 
 async function load() {
   loading.value = true
@@ -43,8 +42,6 @@ async function load() {
 onMounted(load)
 
 async function save() {
-  error.value = ''
-  saved.value = false
   saving.value = true
   const update: TablesUpdate<'accounts'> = {
     appointment_confirmation_enabled: confirmationEnabled.value,
@@ -60,10 +57,10 @@ async function save() {
   const { error: updateError } = await supabase.from('accounts').update(update).eq('id', store.accountId!)
   saving.value = false
   if (updateError) {
-    error.value = updateError.message
+    showToast(updateError.message, 'error')
     return
   }
-  saved.value = true
+  showToast('Saved')
 }
 </script>
 
@@ -195,8 +192,6 @@ async function save() {
               </template>
             </div>
 
-            <p v-if="saved" class="text-[12.5px] text-success-text">Saved.</p>
-            <p v-if="error" class="text-[12.5px] text-danger-text">{{ error }}</p>
           </form>
         </div>
       </div>

@@ -3,11 +3,11 @@ const supabase = useSupabaseClient()
 const user = useSupabaseUser()
 const store = useAccountStore()
 
+const { showToast } = useToast()
+
 const fullName = ref('')
 const color = ref('#4C6FEB')
 const savingProfile = ref(false)
-const profileSaved = ref(false)
-const profileError = ref('')
 
 watch(
   () => store.teamMember,
@@ -22,8 +22,6 @@ watch(
 
 async function saveProfile() {
   if (!store.teamMember) return
-  profileError.value = ''
-  profileSaved.value = false
   savingProfile.value = true
   const { error } = await supabase
     .from('team_members')
@@ -31,41 +29,37 @@ async function saveProfile() {
     .eq('id', store.teamMember.id)
   savingProfile.value = false
   if (error) {
-    profileError.value = error.message
+    showToast(error.message, 'error')
     return
   }
   store.teamMember.full_name = fullName.value.trim()
   store.teamMember.color = color.value
-  profileSaved.value = true
+  showToast('Saved')
 }
 
 const newPassword = ref('')
 const confirmPassword = ref('')
 const savingPassword = ref(false)
-const passwordSaved = ref(false)
-const passwordError = ref('')
 
 async function changePassword() {
-  passwordError.value = ''
-  passwordSaved.value = false
   if (newPassword.value.length < 8) {
-    passwordError.value = 'Password must be at least 8 characters.'
+    showToast('Password must be at least 8 characters.', 'error')
     return
   }
   if (newPassword.value !== confirmPassword.value) {
-    passwordError.value = 'Passwords do not match.'
+    showToast('Passwords do not match.', 'error')
     return
   }
   savingPassword.value = true
   const { error } = await supabase.auth.updateUser({ password: newPassword.value })
   savingPassword.value = false
   if (error) {
-    passwordError.value = error.message
+    showToast(error.message, 'error')
     return
   }
   newPassword.value = ''
   confirmPassword.value = ''
-  passwordSaved.value = true
+  showToast('Password updated.')
 }
 </script>
 
@@ -94,8 +88,6 @@ async function changePassword() {
         <UiBtn type="submit" variant="primary" :disabled="savingProfile">
           {{ savingProfile ? 'Saving…' : 'Save' }}
         </UiBtn>
-        <p v-if="profileSaved" class="text-sm text-success-text">Saved.</p>
-        <p v-if="profileError" class="text-sm text-danger-text">{{ profileError }}</p>
       </div>
     </form>
 
@@ -113,8 +105,6 @@ async function changePassword() {
         <UiBtn type="submit" variant="primary" :disabled="savingPassword">
           {{ savingPassword ? 'Saving…' : 'Update Password' }}
         </UiBtn>
-        <p v-if="passwordSaved" class="text-sm text-success-text">Password updated.</p>
-        <p v-if="passwordError" class="text-sm text-danger-text">{{ passwordError }}</p>
       </div>
     </form>
     </div>

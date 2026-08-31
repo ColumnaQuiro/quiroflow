@@ -10,6 +10,7 @@ interface BookingClinic {
   name: string
   address: string | null
   business_hours: Record<string, [string, string][]>
+  logo_storage_path: string | null
 }
 interface BookingAppointmentType {
   id: string
@@ -41,6 +42,7 @@ interface BookingInfo {
     online_booking_primary_color: string | null
     online_booking_secondary_color: string | null
     online_booking_background_color: string | null
+    online_booking_hide_logo: boolean
     online_booking_text_overrides: Record<string, string>
     discount_codes_enabled: boolean
   }
@@ -151,6 +153,14 @@ const brandStyle = computed(() => {
 function t(key: string, fallback: string) {
   return info.value?.account.online_booking_text_overrides?.[key] || fallback
 }
+
+// Public bucket (0096_clinic_logo.sql) -- getPublicUrl is a pure local URL
+// computation, no network round trip, so this is safe to compute per-render.
+const clinicLogoUrl = computed(() => {
+  if (info.value?.account.online_booking_hide_logo) return null
+  const path = clinic.value?.logo_storage_path
+  return path ? supabase.storage.from('clinic-logos').getPublicUrl(path).data.publicUrl : null
+})
 
 // --- discount code (validated server-side at submit, in create_public_booking) ---
 const discountCode = ref('')
@@ -508,7 +518,8 @@ if (import.meta.client) {
       </div>
 
       <template v-else-if="info">
-        <h1 class="text-center text-2xl font-semibold text-ink-900">{{ t('heading', 'Reservar una cita') }}</h1>
+        <img v-if="clinicLogoUrl" :src="clinicLogoUrl" alt="" class="mx-auto h-12 w-auto object-contain" />
+        <h1 class="text-center text-2xl font-semibold text-ink-900" :class="clinicLogoUrl ? 'mt-3' : ''">{{ t('heading', 'Reservar una cita') }}</h1>
         <p class="mt-1 text-center text-sm text-ink-muted">{{ info.account.name }}</p>
 
         <!-- Step 1: service / practitioner selection -->

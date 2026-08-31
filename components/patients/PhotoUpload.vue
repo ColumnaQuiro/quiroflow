@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import QRCode from 'qrcode'
+import { sanitizeStorageFilename } from '~/utils/storageFilename'
 
 const props = defineProps<{ patientId: string; photoStoragePath: string | null; initials: string }>()
 const emit = defineEmits<{ uploaded: [] }>()
@@ -32,7 +33,7 @@ function pickFromComputer() {
 async function uploadFile(file: File) {
   uploading.value = true
   error.value = ''
-  const path = `${useAccountStore().accountId}/${props.patientId}/${Date.now()}-${file.name}`
+  const path = `${useAccountStore().accountId}/${props.patientId}/${Date.now()}-${sanitizeStorageFilename(file.name)}`
   const { error: uploadError } = await supabase.storage.from('patient-photos').upload(path, file)
   if (uploadError) {
     error.value = uploadError.message

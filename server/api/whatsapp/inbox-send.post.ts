@@ -1,4 +1,5 @@
 import { toE164 } from '~/utils/phone'
+import { sanitizeStorageFilename } from '~/utils/storageFilename'
 import { isWithin24hWindow, sendWhatsAppText, sendWhatsAppMedia, uploadMediaToMeta, type MediaKind } from '~/server/utils/whatsappSend'
 
 // The Inbox composer's send: free-form text or media, only ever within
@@ -84,7 +85,7 @@ export default defineEventHandler(async (event) => {
       const mediaId = await uploadMediaToMeta(waAccount, buffer, body.mediaMimeType, filename)
       wamid = await sendWhatsAppMedia(waAccount, to, body.mediaKind, mediaId, { caption: body.caption, filename })
 
-      const path = `${account.id}/out-${Date.now()}-${filename}`
+      const path = `${account.id}/out-${Date.now()}-${sanitizeStorageFilename(filename)}`
       await supabase.storage.from('whatsapp-media').upload(path, buffer, { contentType: body.mediaMimeType, upsert: true })
       insert.media_type = body.mediaKind
       insert.media_storage_path = path

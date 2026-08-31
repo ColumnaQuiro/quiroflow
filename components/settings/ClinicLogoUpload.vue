@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { sanitizeStorageFilename } from '~/utils/storageFilename'
+
 // Same upload-to-public-bucket pattern as PatientsPhotoUpload, minus the
 // QR/phone flow (irrelevant here -- staff upload a clinic logo from the
 // settings page they're already on, not from a phone camera).
@@ -23,7 +25,7 @@ function pick() {
 async function uploadFile(file: File) {
   uploading.value = true
   error.value = ''
-  const path = `${useAccountStore().accountId}/${props.clinicId}/${Date.now()}-${file.name}`
+  const path = `${useAccountStore().accountId}/${props.clinicId}/${Date.now()}-${sanitizeStorageFilename(file.name)}`
   const { error: uploadError } = await supabase.storage.from('clinic-logos').upload(path, file)
   if (uploadError) {
     error.value = uploadError.message

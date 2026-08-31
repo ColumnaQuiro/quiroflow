@@ -618,15 +618,22 @@ function appointmentColorStyle(appt: AppointmentRow) {
 }
 
 // Cascade positioning for an overlapping block: each lane insets from the
-// left by a fixed pixel amount and sits above the previous lane, rather
-// than every lane getting an equal fraction of the column's width. Also
-// nudged down by topOffsetPx per lane (added as margin, on top of the
-// block's own time-based `top`) so the lane behind still shows its name row.
-function cascadeStyle(block: LayoutBlock, cascadePx: number, topOffsetPx = 0) {
+// left by a fixed pixel amount, rather than every lane getting an equal
+// fraction of the column's width. Later lanes also crop in from the TOP by
+// topOffsetPx per lane -- shrinking height and pushing top down by the same
+// amount keeps the block's own bottom edge exactly where its real end time
+// puts it, so it never bleeds down into a separate, non-overlapping
+// appointment right after it. The lane behind (lower _col, unshifted) then
+// shows its own name row peeking out above, instead of both blocks drawing
+// their name row at the identical top and rendering illegibly on top of
+// each other.
+function cascadeStyle(block: LayoutBlock, cascadePx: number, top: number, height: number, topOffsetPx = 0) {
+  const offset = Math.min(block._col * topOffsetPx, Math.max(0, height - 4))
   return {
     left: `calc(${block._col * cascadePx}px + 2px)`,
     width: `calc(100% - ${block._col * cascadePx}px - 4px)`,
-    marginTop: `${block._col * topOffsetPx}px`,
+    top: `${top + offset}px`,
+    height: `${height - offset}px`,
     zIndex: String(10 + block._col),
   }
 }
@@ -1358,11 +1365,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                     v-if="isOverflowBlock(appt)"
                     class="absolute flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[10.5px] font-medium text-ink-muted2 shadow-card"
                     :title="`${appt.count} more appointment${appt.count === 1 ? '' : 's'} at this time`"
-                    :style="{
-                      ...cascadeStyle(appt, DAY_CASCADE_PX),
-                      top: `${timeToPx(appt.starts_at, DAY_HOUR_PX)}px`,
-                      height: `${OVERFLOW_CHIP_PX}px`,
-                    }"
+                    :style="cascadeStyle(appt, DAY_CASCADE_PX, timeToPx(appt.starts_at, DAY_HOUR_PX), OVERFLOW_CHIP_PX)"
                   >
                     +{{ appt.count }} more
                   </div>
@@ -1372,9 +1375,13 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                     :class="appt.status === 'booked' ? 'cursor-grab active:cursor-grabbing' : ''"
                     :style="{
                       ...appointmentColorStyle(appt),
-                      ...cascadeStyle(appt, DAY_CASCADE_PX, DAY_CASCADE_TOP_PX),
-                      top: `${timeToPx(appt.starts_at, DAY_HOUR_PX)}px`,
-                      height: `${Math.max(0, durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) - 3)}px`,
+                      ...cascadeStyle(
+                        appt,
+                        DAY_CASCADE_PX,
+                        timeToPx(appt.starts_at, DAY_HOUR_PX),
+                        Math.max(0, durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) - 3),
+                        DAY_CASCADE_TOP_PX,
+                      ),
                     }"
                     @pointerdown="startAppointmentDrag(appt, 'move', $event)"
                     @click.stop="handleAppointmentClick(appt)"
@@ -1511,11 +1518,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                       type="button"
                       class="absolute flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[10px] font-medium text-ink-muted2 shadow-card hover:border-line-controlHover"
                       :title="`${appt.count} more appointment${appt.count === 1 ? '' : 's'} at this time -- click to see them all in Day view`"
-                      :style="{
-                        ...cascadeStyle(appt, WEEK_CASCADE_PX),
-                        top: `${timeToPx(appt.starts_at, WEEK_HOUR_PX)}px`,
-                        height: `${OVERFLOW_CHIP_PX}px`,
-                      }"
+                      :style="cascadeStyle(appt, WEEK_CASCADE_PX, timeToPx(appt.starts_at, WEEK_HOUR_PX), OVERFLOW_CHIP_PX)"
                       @click.stop="showOverflowDay(day)"
                     >
                       +{{ appt.count }}
@@ -1526,9 +1529,13 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                       :class="appt.status === 'booked' ? 'cursor-grab active:cursor-grabbing' : ''"
                       :style="{
                         ...appointmentColorStyle(appt),
-                        ...cascadeStyle(appt, WEEK_CASCADE_PX, WEEK_CASCADE_TOP_PX),
-                        top: `${timeToPx(appt.starts_at, WEEK_HOUR_PX)}px`,
-                        height: `${Math.max(0, durationToPx(appt.starts_at, appt.ends_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX) - 2)}px`,
+                        ...cascadeStyle(
+                          appt,
+                          WEEK_CASCADE_PX,
+                          timeToPx(appt.starts_at, WEEK_HOUR_PX),
+                          Math.max(0, durationToPx(appt.starts_at, appt.ends_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX) - 2),
+                          WEEK_CASCADE_TOP_PX,
+                        ),
                       }"
                       @pointerdown="startAppointmentDrag(appt, 'move', $event)"
                       @click.stop="handleAppointmentClick(appt)"

@@ -1,7 +1,12 @@
+interface MetaTemplateButton {
+  type: string
+  url?: string
+}
 interface MetaTemplateComponent {
   type: 'HEADER' | 'BODY' | 'FOOTER' | 'BUTTONS'
   format?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT'
   text?: string
+  buttons?: MetaTemplateButton[]
 }
 interface MetaTemplate {
   name: string
@@ -41,12 +46,18 @@ export default defineEventHandler(async (event) => {
       const header = t.components.find((c) => c.type === 'HEADER')
       const bodyText = body?.text ?? ''
       const variableCount = new Set(Array.from(bodyText.matchAll(/\{\{(\d+)\}\}/g)).map((m) => m[1])).size
+      const buttons = t.components.find((c) => c.type === 'BUTTONS')?.buttons ?? []
+      // Only URL buttons with a {{n}} placeholder take a per-recipient
+      // parameter -- a static "Call us" or plain non-dynamic website button
+      // doesn't need (or accept) a doc link.
+      const urlButtonCount = buttons.filter((b) => b.type === 'URL' && /\{\{\d+\}\}/.test(b.url ?? '')).length
       return {
         name: t.name,
         language: t.language,
         category: t.category,
         bodyText,
         variableCount,
+        urlButtonCount,
         mediaHeaderFormat: header?.format && header.format !== 'TEXT' ? header.format : null,
       }
     })

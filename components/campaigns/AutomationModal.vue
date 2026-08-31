@@ -44,7 +44,7 @@ interface ActionForm {
   action_type: ActionType
   template_name: string
   template_language: string
-  doc_template_id: string
+  doc_template_ids: string[]
   variables: WhatsAppVariable[]
   subject: string
   body: string
@@ -52,10 +52,10 @@ interface ActionForm {
   secret: string
 }
 function blankAction(): ActionForm {
-  return { action_type: 'whatsapp_template', template_name: '', template_language: 'es', doc_template_id: '', variables: [{ source: 'first_name', text: '' }], subject: '', body: '', url: '', secret: '' }
+  return { action_type: 'whatsapp_template', template_name: '', template_language: 'es', doc_template_ids: [], variables: [{ source: 'first_name', text: '' }], subject: '', body: '', url: '', secret: '' }
 }
 
-interface WhatsAppTemplate { name: string; language: string; variableCount: number }
+interface WhatsAppTemplate { name: string; language: string; variableCount: number; urlButtonCount: number }
 const whatsappTemplates = ref<WhatsAppTemplate[]>([])
 const templatesError = ref('')
 function templateKey(t: Pick<WhatsAppTemplate, 'name' | 'language'>) {
@@ -133,7 +133,7 @@ onMounted(async () => {
           action_type: a.action_type as ActionType,
           template_name: config.template_name ?? '',
           template_language: config.template_language ?? 'es',
-          doc_template_id: config.doc_template_id ?? '',
+          doc_template_ids: Array.isArray(config.doc_template_ids) ? config.doc_template_ids : [],
           variables: Array.isArray(config.variables) && config.variables.length > 0 ? config.variables : [{ source: 'first_name', text: '' }],
           subject: config.subject ?? '',
           body: config.body ?? '',
@@ -163,6 +163,29 @@ function selectTemplate(a: ActionForm, key: string) {
   a.template_name = t.name
   a.template_language = t.language
   a.variables = Array.from({ length: t.variableCount }, () => ({ source: 'first_name', text: '' }))
+  // One doc slot per dynamic URL button on the template, or a single slot
+  // (appended to the body instead) for a template with none.
+  a.doc_template_ids = Array.from({ length: Math.max(t.urlButtonCount, 1) }, () => '')
+}
+// How many doc-link pickers to show for this action: matches the selected
+// template's dynamic URL button count when known, otherwise falls back to
+// whatever's already configured so an unrecognized/renamed template doesn't
+// lose its saved picks.
+function docSlotCountFor(a: ActionForm) {
+  const t = whatsappTemplates.value.find((tpl) => templateKey(tpl) === templateKeyFor(a))
+  return t ? Math.max(t.urlButtonCount, 1) : Math.max(a.doc_template_ids.length, 1)
+}
+function whatsappTemplateFor(a: ActionForm) {
+  return whatsappTemplates.value.find((tpl) => templateKey(tpl) === templateKeyFor(a))
+}
+function docSlotLabel(a: ActionForm, index: number) {
+  return (whatsappTemplateFor(a)?.urlButtonCount ?? 0) > 0 ? `Button ${index + 1} document` : 'Document'
+}
+// True when the configured doc (slot 0 only) is sent as a body variable
+// instead of a button parameter -- i.e. the template has no dynamic URL
+// button to attach it to.
+function isBodyDocSlot(a: ActionForm) {
+  return (whatsappTemplateFor(a)?.urlButtonCount ?? 0) === 0
 }
 function addVariable(a: ActionForm) {
   a.variables.push({ source: 'first_name', text: '' })
@@ -176,7 +199,7 @@ function configFor(a: ActionForm): Record<string, unknown> {
     return {
       template_name: a.template_name.trim(),
       template_language: a.template_language.trim() || 'es',
-      doc_template_id: a.doc_template_id || null,
+      doc_template_ids: a.doc_template_ids.map((id) => id || null),
       variables: a.variables.map((v) => ({ source: v.source, text: v.source === 'text' ? v.text.trim() : undefined })),
     }
   }
@@ -423,15 +446,17 @@ async function sendTestToMe() {
                   <p v-if="a.template_name && !templateKeyFor(a) && !templatesError" class="text-[11.5px] text-warning-text">
                     Currently set to "{{ a.template_name }}" ({{ a.template_language }}), which isn't in the approved template list anymore.
                   </p>
-                  <div>
+                  <div v-for="(_, di) in docSlotCountFor(a)" :key="di">
                     <select
-                      v-model="a.doc_template_id"
+                      v-model="a.doc_template_ids[di]"
                       class="h-8 w-full rounded-ctl border border-line-control px-2.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
                     >
                       <option value="">No document</option>
                       <option v-for="t in docTemplates" :key="t.id" :value="t.id">{{ t.title }}</option>
                     </select>
-                    <p class="mt-1 text-[11px] text-ink-muted2">Only one document can be attached per template send, matching WhatsApp's own template format.</p>
+                    <p class="mt-1 text-[11px] text-ink-muted2">
+                      {{ docSlotLabel(a, di) }}<template v-if="isBodyDocSlot(a)"> — sent as the last variable, after these.</template>
+                    </p>
                   </div>
                   <div>
                     <p class="text-[11.5px] font-medium text-ink-muted2">Template variables, in order (match however many numbered placeholders your template has)</p>
@@ -453,7 +478,6 @@ async function sendTestToMe() {
                       <button v-if="a.variables.length > 1" type="button" class="shrink-0 text-[12px] text-danger-text hover:underline" @click="removeVariable(a, vi)">✕</button>
                     </div>
                     <button type="button" class="mt-1.5 text-[12px] font-medium text-brand-text hover:text-brand-hover" @click="addVariable(a)">+ Add variable</button>
-                    <p v-if="a.doc_template_id" class="mt-1 text-[11px] text-ink-muted2">The document link is sent as the last variable, after these.</p>
                   </div>
                 </div>
 

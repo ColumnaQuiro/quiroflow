@@ -185,7 +185,8 @@ function actionSummary(a: Action): string {
   if (a.action_type === 'whatsapp_template') {
     const varCount = Array.isArray(a.config?.variables) ? a.config.variables.length : 0
     const parts = [`${varCount} variable${varCount === 1 ? '' : 's'}`]
-    if (a.config?.doc_template_id) parts.push('document attached')
+    const docCount = Array.isArray(a.config?.doc_template_ids) ? a.config.doc_template_ids.filter(Boolean).length : 0
+    if (docCount > 0) parts.push(`${docCount} document${docCount === 1 ? '' : 's'} attached`)
     return parts.join(' · ')
   }
   if (a.action_type === 'email') {

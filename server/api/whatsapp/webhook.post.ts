@@ -63,17 +63,29 @@ function classifyReply(text: string): 'confirmed' | 'reschedule_requested' | 'ca
   return null
 }
 
-async function findPatientByPhone(supabase: ReturnType<typeof serverSupabaseServiceRole<Database>>, accountId: string, fromNumber: string) {
+// Returns every patient whose contact number resolves to this phone --
+// plural, not singular: staff testing (or a family sharing one phone
+// across a few real patients) can leave more than one patient record
+// pointing at the same number. Most callers below just need any one of
+// them (a message can only be attributed to a single patient_id), but the
+// confirm/reschedule/cancel handler needs all of them: it identifies which
+// specific appointment a reply is about by whichever matching patient
+// actually has a pending confirmation, not by an arbitrary first match --
+// picking the wrong one silently no-ops the reply against a patient with
+// nothing pending.
+async function findPatientIdsByPhone(supabase: ReturnType<typeof serverSupabaseServiceRole<Database>>, accountId: string, fromNumber: string): Promise<string[]> {
   const PAGE_SIZE = 1000
+  const matches: string[] = []
   for (let page = 0; ; page++) {
     const { data } = await supabase
       .from('patient_contact_numbers')
       .select('patient_id, number, country_code')
       .eq('account_id', accountId)
       .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
-    const match = (data ?? []).find((c) => toE164(c.number, c.country_code) === fromNumber)
-    if (match) return match.patient_id
-    if (!data || data.length < PAGE_SIZE) return null
+    for (const c of data ?? []) {
+      if (toE164(c.number, c.country_code) === fromNumber) matches.push(c.patient_id)
+    }
+    if (!data || data.length < PAGE_SIZE) return matches
   }
 }
 
@@ -113,7 +125,8 @@ export default defineEventHandler(async (event) => {
       }
 
       for (const msg of value?.messages ?? []) {
-        const patientId = await findPatientByPhone(supabase, account.id, msg.from)
+        const patientIds = await findPatientIdsByPhone(supabase, account.id, msg.from)
+        const patientId = patientIds[0] ?? null
         const mediaKind = MEDIA_KINDS.includes(msg.type as MediaKind) ? (msg.type as MediaKind) : null
         const media = mediaKind ? msg[mediaKind] : undefined
 
@@ -165,11 +178,11 @@ export default defineEventHandler(async (event) => {
         })
 
         const intent = classifyReply(replyText(msg))
-        if (intent && patientId) {
+        if (intent && patientIds.length > 0) {
           const { data: appt } = await supabase
             .from('appointments')
-            .select('id')
-            .eq('patient_id', patientId)
+            .select('id, patient_id')
+            .in('patient_id', patientIds)
             .eq('confirmation_status', 'pending')
             .order('starts_at', { ascending: true })
             .limit(1)
@@ -190,7 +203,7 @@ export default defineEventHandler(async (event) => {
               const { data: patient } = await supabase
                 .from('patients')
                 .select('id, first_name, last_name, email, is_minor, do_not_contact, marketing_channels')
-                .eq('id', patientId)
+                .eq('id', appt.patient_id)
                 .maybeSingle()
               if (patient) {
                 const { data: rules } = await supabase

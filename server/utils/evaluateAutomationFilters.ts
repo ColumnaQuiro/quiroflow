@@ -9,6 +9,9 @@ export interface AutomationFilters {
   total_visits?: number
   no_prior_appointments?: boolean
   has_future_appointment?: boolean
+  // Only read by hours-before-cron.post.ts to pick its scan window -- not a
+  // patient-targeting filter, so ruleFiltersMatch below never looks at it.
+  hours_before?: number
 }
 
 export async function ruleFiltersMatch(

@@ -93,7 +93,7 @@ export async function runActionsList(
   for (const action of actions) {
     try {
       if (action.action_type === 'whatsapp_template') {
-        if (canContact && channelAllowed('whatsapp')) await runWhatsAppAction(supabase, accountId, patient, action.config, origin, appointmentId, whatsappOverrideNumber)
+        if (canContact && channelAllowed('whatsapp')) await runWhatsAppAction(supabase, accountId, patient, action.config, origin, appointmentId, whatsappOverrideNumber, { nextAppointmentAt })
       } else if (action.action_type === 'email') {
         if (canContact && channelAllowed('email')) await runEmailAction(patient, action.config, { nextAppointmentAt })
       } else if (action.action_type === 'webhook') {
@@ -115,6 +115,17 @@ function patientFieldValue(patient: PatientForAction, source: string, context?: 
     if (!context?.nextAppointmentAt) return ''
     return new Date(context.nextAppointmentAt).toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: CLINIC_TIMEZONE })
   }
+  // Split date/time -- some WhatsApp templates (Meta's own approved
+  // "appointment_reminder" among them) have separate {{n}} slots for the
+  // date and the time rather than one combined string like next_appointment.
+  if (source === 'appointment_date') {
+    if (!context?.nextAppointmentAt) return ''
+    return new Date(context.nextAppointmentAt).toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', timeZone: CLINIC_TIMEZONE })
+  }
+  if (source === 'appointment_time') {
+    if (!context?.nextAppointmentAt) return ''
+    return new Date(context.nextAppointmentAt).toLocaleString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: CLINIC_TIMEZONE })
+  }
   return ''
 }
 
@@ -126,6 +137,7 @@ async function runWhatsAppAction(
   origin: string,
   appointmentId?: string,
   toOverride?: string,
+  context?: MergeContext,
 ) {
   const templateName: string | undefined = config.template_name
   const templateLanguage: string = config.template_language || 'es'
@@ -158,7 +170,7 @@ async function runWhatsAppAction(
   const configuredVariables: { source: string; text?: string }[] = Array.isArray(config.variables) && config.variables.length > 0
     ? config.variables
     : [{ source: 'first_name' }]
-  const variables: string[] = configuredVariables.map((v) => (v.source === 'text' ? (v.text ?? '') : patientFieldValue(patient, v.source)))
+  const variables: string[] = configuredVariables.map((v) => (v.source === 'text' ? (v.text ?? '') : patientFieldValue(patient, v.source, context)))
 
   if (config.doc_template_id) {
     const { data: template } = await supabase

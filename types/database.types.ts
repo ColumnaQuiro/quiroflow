@@ -855,6 +855,42 @@ export type Database = {
           },
         ]
       }
+      automation_rule_sends: {
+        Row: {
+          appointment_id: string
+          id: string
+          rule_id: string
+          sent_at: string
+        }
+        Insert: {
+          appointment_id: string
+          id?: string
+          rule_id: string
+          sent_at?: string
+        }
+        Update: {
+          appointment_id?: string
+          id?: string
+          rule_id?: string
+          sent_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "automation_rule_sends_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "automation_rule_sends_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "automation_rules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       automation_rules: {
         Row: {
           account_id: string

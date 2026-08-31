@@ -13,6 +13,7 @@ const TRIGGER_OPTIONS = [
   { value: 'appointment.rescheduled', label: 'Appointment rescheduled' },
   { value: 'appointment.no_show', label: 'Appointment marked as missed' },
   { value: 'appointment.same_day', label: 'Day of appointment (morning send)' },
+  { value: 'appointment.hours_before', label: 'X hours before appointment' },
   { value: 'invoice.paid', label: 'Invoice paid' },
   { value: 'patient.birthday', label: "Patient's birthday (daily check)" },
   { value: 'membership.new_member', label: 'New membership started' },
@@ -26,6 +27,9 @@ const VARIABLE_SOURCES = [
   { value: 'first_name', label: 'First name' },
   { value: 'last_name', label: 'Last name' },
   { value: 'email', label: 'Email' },
+  { value: 'next_appointment', label: 'Appointment date & time' },
+  { value: 'appointment_date', label: 'Appointment date' },
+  { value: 'appointment_time', label: 'Appointment time' },
   { value: 'text', label: 'Fixed text' },
 ]
 const ACTION_TONE: Record<string, string> = {
@@ -74,6 +78,11 @@ const appointmentTypes = ref<{ id: string; name: string }[]>([])
 const filterAppointmentTypeId = ref('')
 const filterTotalVisits = ref('')
 const filterNoPriorAppointments = ref(false)
+// Only meaningful for the appointment.hours_before trigger -- how long
+// before the appointment's start time this rule fires (e.g. 24 for a
+// day-before reminder, 72 for three days before). A clinic wanting both
+// just creates two rules on this same trigger with different values.
+const filterHoursBefore = ref('24')
 // has_future_appointment isn't editable in this UI (only the birthday rule
 // uses it) -- carried through untouched on save so editing a rule here
 // doesn't silently drop it.
@@ -113,7 +122,8 @@ onMounted(async () => {
       filterAppointmentTypeId.value = typeof filters.appointment_type_id === 'string' ? filters.appointment_type_id : ''
       filterTotalVisits.value = typeof filters.total_visits === 'number' ? String(filters.total_visits) : ''
       filterNoPriorAppointments.value = filters.no_prior_appointments === true
-      const { appointment_type_id: _a, total_visits: _t, no_prior_appointments: _n, ...rest } = filters
+      filterHoursBefore.value = typeof filters.hours_before === 'number' ? String(filters.hours_before) : '24'
+      const { appointment_type_id: _a, total_visits: _t, no_prior_appointments: _n, hours_before: _h, ...rest } = filters
       otherFilters = rest
     }
     if (existingActions && existingActions.length > 0) {
@@ -187,6 +197,9 @@ async function persist(): Promise<string | null> {
   if (filterAppointmentTypeId.value) filters.appointment_type_id = filterAppointmentTypeId.value
   if (filterTotalVisits.value !== '') filters.total_visits = Number(filterTotalVisits.value)
   if (filterNoPriorAppointments.value) filters.no_prior_appointments = true
+  if (triggerEvent.value === 'appointment.hours_before') {
+    filters.hours_before = Math.max(1, Math.round(Number(filterHoursBefore.value) || 24))
+  }
 
   const rulePayload = {
     account_id: store.accountId!,
@@ -332,6 +345,20 @@ async function sendTestToMe() {
               <option v-for="t in TRIGGER_OPTIONS" :key="t.value" :value="t.value">{{ t.label }}</option>
             </select>
             <p class="mt-1.5 text-[11.5px] leading-relaxed text-ink-muted2">Or leave this and use "Send now" from the campaign list to make this a one-off send only.</p>
+          </div>
+
+          <div v-if="triggerEvent === 'appointment.hours_before'" class="rounded-card border border-[#EDEEF2] bg-surface-subtle p-3.5">
+            <label class="block text-[12.5px] font-medium text-ink-700">Send this many hours before the appointment</label>
+            <input
+              v-model="filterHoursBefore"
+              type="number"
+              min="1"
+              placeholder="e.g. 24"
+              class="mt-1.5 h-9 w-32 rounded-ctl border border-line-control bg-surface px-3 text-[13.5px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            />
+            <p class="mt-1.5 text-[11.5px] leading-relaxed text-ink-muted2">
+              For a second reminder at a different point (e.g. 3 days before as well as 24 hours before), create another campaign on this same trigger with a different value here.
+            </p>
           </div>
 
           <div v-if="!NO_APPOINTMENT_CONTEXT_TRIGGERS.includes(triggerEvent)" class="rounded-card border border-[#EDEEF2] bg-surface-subtle p-3.5">

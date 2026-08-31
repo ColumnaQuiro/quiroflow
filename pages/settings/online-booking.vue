@@ -20,6 +20,7 @@ const gtmId = ref('')
 const referralUrl = ref('')
 const primaryColor = ref('')
 const secondaryColor = ref('')
+const backgroundColor = ref('')
 const hideLogo = ref(false)
 const practitionerOrder = ref<'default' | 'alphabetical'>('default')
 const textOverrides = ref<Record<string, string>>({})
@@ -35,7 +36,7 @@ async function loadAccountSettings() {
   const { data } = await supabase
     .from('accounts')
     .select(
-      'online_booking_max_days_ahead, online_booking_gtm_id, online_booking_referral_url, online_booking_primary_color, online_booking_secondary_color, online_booking_hide_logo, online_booking_practitioner_order, online_booking_text_overrides, online_booking_notify_email, online_booking_notify_whatsapp',
+      'online_booking_max_days_ahead, online_booking_gtm_id, online_booking_referral_url, online_booking_primary_color, online_booking_secondary_color, online_booking_background_color, online_booking_hide_logo, online_booking_practitioner_order, online_booking_text_overrides, online_booking_notify_email, online_booking_notify_whatsapp',
     )
     .eq('id', store.accountId!)
     .maybeSingle()
@@ -44,6 +45,7 @@ async function loadAccountSettings() {
   referralUrl.value = data?.online_booking_referral_url ?? ''
   primaryColor.value = data?.online_booking_primary_color ?? ''
   secondaryColor.value = data?.online_booking_secondary_color ?? ''
+  backgroundColor.value = data?.online_booking_background_color ?? ''
   hideLogo.value = data?.online_booking_hide_logo ?? false
   practitionerOrder.value = (data?.online_booking_practitioner_order as 'default' | 'alphabetical') ?? 'default'
   textOverrides.value = (data?.online_booking_text_overrides as Record<string, string>) ?? {}
@@ -62,6 +64,7 @@ async function saveAccountSettings() {
     online_booking_referral_url: referralUrl.value.trim() || null,
     online_booking_primary_color: primaryColor.value.trim() || null,
     online_booking_secondary_color: secondaryColor.value.trim() || null,
+    online_booking_background_color: backgroundColor.value.trim() || null,
     online_booking_hide_logo: hideLogo.value,
     online_booking_practitioner_order: practitionerOrder.value,
     online_booking_text_overrides: textOverrides.value,
@@ -383,6 +386,12 @@ const OVERRIDABLE_STRINGS = [
               <div class="flex items-center gap-2">
                 <input v-model="secondaryColor" type="color" class="h-8 w-14 rounded-ctl border border-line-control" />
                 <input v-model="secondaryColor" type="text" placeholder="#EEF1FF" class="h-8 w-28 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none" />
+              </div>
+            </SettingsFieldRow>
+            <SettingsFieldRow label="Background color" helper="The page itself is always light -- it never follows a visitor's dark-mode setting. Use this to blend it with whatever site embeds it." align="top">
+              <div class="flex items-center gap-2">
+                <input v-model="backgroundColor" type="color" class="h-8 w-14 rounded-ctl border border-line-control" />
+                <input v-model="backgroundColor" type="text" placeholder="#F7F8FA" class="h-8 w-28 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none" />
               </div>
             </SettingsFieldRow>
           </div>

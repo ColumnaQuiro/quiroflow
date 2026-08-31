@@ -40,6 +40,7 @@ interface BookingInfo {
     online_booking_gtm_id: string | null
     online_booking_primary_color: string | null
     online_booking_secondary_color: string | null
+    online_booking_background_color: string | null
     online_booking_text_overrides: Record<string, string>
     discount_codes_enabled: boolean
   }
@@ -59,6 +60,11 @@ const info = ref<BookingInfo | null>(null)
 const clinicId = ref('')
 const appointmentTypeId = ref('')
 const teamMemberId = ref('')
+// True once a valid ?type= deep-link has forced the appointment type -- a
+// marketing page linking to one specific offer (e.g. a promo's discounted
+// first visit) shouldn't let the patient switch to some other, unrelated
+// service from the dropdown.
+const typeLockedByQuery = ref(false)
 
 const clinic = computed(() => info.value?.clinics.find((c) => c.id === clinicId.value) ?? null)
 const appointmentType = computed(() => info.value?.appointment_types.find((t) => t.id === appointmentTypeId.value) ?? null)
@@ -94,12 +100,17 @@ const brandStyle = computed(() => {
   const style: Record<string, string> = {}
   const primary = info.value?.account.online_booking_primary_color ? hexToRgbTriplet(info.value.account.online_booking_primary_color) : null
   const secondary = info.value?.account.online_booking_secondary_color ? hexToRgbTriplet(info.value.account.online_booking_secondary_color) : null
+  const background = info.value?.account.online_booking_background_color ? hexToRgbTriplet(info.value.account.online_booking_background_color) : null
   if (primary) {
     style['--color-brand'] = primary
     style['--color-brand-hover'] = primary
     style['--color-brand-text'] = primary
   }
   if (secondary) style['--color-brand-tint'] = secondary
+  // Overrides the page's own background -- separate from the brand accent
+  // colors above, this is what actually shows through around the card when
+  // the widget is embedded (e.g. to match a marketing site's own tone).
+  if (background) style['--color-surface-page'] = background
   return style
 })
 
@@ -112,6 +123,12 @@ const discountCode = ref('')
 const discountAppliedCents = ref(0)
 
 onMounted(async () => {
+  // This is a public storefront other sites embed -- it must never follow
+  // the visitor's OS/browser dark-mode preference (or an internal staff
+  // member's saved theme, if previewed from inside the app). Always light,
+  // with brand colors layered on top via brandStyle above.
+  document.documentElement.setAttribute('data-theme', 'light')
+
   const { data, error } = await supabase.rpc('get_public_booking_info', { p_slug: slug })
   if (error || !data) {
     phase.value = 'not_found'
@@ -131,6 +148,7 @@ onMounted(async () => {
   const queryPractitionerId = typeof route.query.practitioner === 'string' ? route.query.practitioner : null
   if (queryTypeId && parsed.appointment_types.some((t) => t.id === queryTypeId)) {
     appointmentTypeId.value = queryTypeId
+    typeLockedByQuery.value = true
   } else if (parsed.appointment_types.length === 1) {
     appointmentTypeId.value = parsed.appointment_types[0].id
   }
@@ -148,6 +166,15 @@ onMounted(async () => {
     script.src = `https://www.googletagmanager.com/gtm.js?id=${encodeURIComponent(parsed.account.online_booking_gtm_id)}`
     document.head.appendChild(script)
   }
+})
+
+// Restore whatever theme the visitor actually had if they navigate away
+// within the same session (only relevant when staff preview this page from
+// inside the authenticated app) -- setPreference re-resolves and re-applies
+// the stored preference, same as it does on a normal toggle.
+onUnmounted(() => {
+  const { preference, setPreference } = useTheme()
+  setPreference(preference.value)
 })
 
 function onClinicChange() {
@@ -405,7 +432,7 @@ if (import.meta.client) {
               <option v-for="c in info.clinics" :key="c.id" :value="c.id">{{ c.name }}</option>
             </select>
           </div>
-          <div v-if="info.appointment_types.length > 1" class="mt-4">
+          <div v-if="info.appointment_types.length > 1 && !typeLockedByQuery" class="mt-4">
             <label class="block text-sm font-medium text-ink-700">Servicio</label>
             <select v-model="appointmentTypeId" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm">
               <option v-for="t in info.appointment_types" :key="t.id" :value="t.id">

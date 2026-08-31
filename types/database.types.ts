@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.17"
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
@@ -211,6 +211,7 @@ export type Database = {
           name: string
           new_patient_field_config: Json
           next_invoice_number: number | null
+          online_booking_background_color: string | null
           online_booking_gtm_id: string | null
           online_booking_hide_logo: boolean
           online_booking_max_days_ahead: number
@@ -266,6 +267,7 @@ export type Database = {
           name: string
           new_patient_field_config?: Json
           next_invoice_number?: number | null
+          online_booking_background_color?: string | null
           online_booking_gtm_id?: string | null
           online_booking_hide_logo?: boolean
           online_booking_max_days_ahead?: number
@@ -321,6 +323,7 @@ export type Database = {
           name?: string
           new_patient_field_config?: Json
           next_invoice_number?: number | null
+          online_booking_background_color?: string | null
           online_booking_gtm_id?: string | null
           online_booking_hide_logo?: boolean
           online_booking_max_days_ahead?: number

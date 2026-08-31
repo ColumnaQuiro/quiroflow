@@ -256,12 +256,20 @@ const WEEKDAY_LABELS = ['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa', 'Do']
 const viewMonth = ref(startOfMonth(new Date()))
 const selectedDate = ref<Date | null>(null)
 const selectedSlot = ref<Date | null>(null)
-const busyRanges = ref<{ starts_at: string; ends_at: string }[]>([])
-// Keyed by team_member_id -- only populated in anyPractitionerMode, since
-// that's the only case needing more than one practitioner's busy times for
-// the same day.
-const busyRangesByMember = ref<Record<string, { starts_at: string; ends_at: string }[]>>({})
-const slotsLoading = ref(false)
+// Keyed by team_member_id -- covers every practitioner being checked, since
+// anyPractitionerMode needs all of them and the single-practitioner path is
+// just a map with one entry. Loaded for the whole visible 42-day grid at
+// once (see loadMonthAvailability) so the calendar can grey out a day with
+// no free slot left without a fetch per day.
+const monthBusyByMember = ref<Record<string, { starts_at: string; ends_at: string }[]>>({})
+// Blocked time isn't practitioner-specific (availability_blocks has no
+// practitioner column, only an optional room), and the widget never lets a
+// patient pick a room -- so any block for the clinic counts as unavailable
+// for every practitioner rather than risk double-booking whichever room
+// turns out to be assigned.
+const monthBlocked = ref<{ starts_at: string; ends_at: string }[]>([])
+const monthAvailabilityLoading = ref(false)
+const monthAvailabilityLoaded = ref(false)
 
 function startOfMonth(d: Date) {
   return new Date(d.getFullYear(), d.getMonth(), 1)
@@ -289,16 +297,28 @@ const maxAllowedDate = computed(() => {
   return d
 })
 
-const calendarDays = computed(() => {
+const gridRange = computed(() => {
   const first = viewMonth.value
   const firstWeekday = (first.getDay() + 6) % 7 // Monday = 0
   const gridStart = new Date(first)
   gridStart.setDate(first.getDate() - firstWeekday)
+  const gridEnd = new Date(gridStart)
+  gridEnd.setDate(gridStart.getDate() + 42)
+  return { gridStart, gridEnd }
+})
+
+const calendarDays = computed(() => {
+  const { gridStart } = gridRange.value
   const days: { date: Date; inMonth: boolean; bookable: boolean }[] = []
   for (let i = 0; i < 42; i++) {
     const date = new Date(gridStart)
     date.setDate(gridStart.getDate() + i)
-    days.push({ date, inMonth: date.getMonth() === first.getMonth(), bookable: dayHasHours(date) && date >= today() && date <= maxAllowedDate.value })
+    const inRange = date >= today() && date <= maxAllowedDate.value
+    days.push({
+      date,
+      inMonth: date.getMonth() === viewMonth.value.getMonth(),
+      bookable: inRange && dayHasHours(date) && dayHasAvailability(date),
+    })
   }
   return days
 })
@@ -316,43 +336,49 @@ function dayHasHours(date: Date) {
 
 function prevMonth() {
   viewMonth.value = new Date(viewMonth.value.getFullYear(), viewMonth.value.getMonth() - 1, 1)
+  loadMonthAvailability()
 }
 function nextMonth() {
   viewMonth.value = new Date(viewMonth.value.getFullYear(), viewMonth.value.getMonth() + 1, 1)
+  loadMonthAvailability()
 }
 
-async function selectDate(day: { date: Date; bookable: boolean }) {
+// Busy/blocked times for the whole visible grid are already loaded (see
+// loadMonthAvailability), so picking a day is just a local state change --
+// no per-day fetch, and the day was never clickable unless dayHasAvailability
+// already found it a free slot.
+function selectDate(day: { date: Date; bookable: boolean }) {
   if (!day.bookable) return
   selectedDate.value = day.date
   selectedSlot.value = null
-  slotsLoading.value = true
-  const dayStart = new Date(day.date)
-  dayStart.setHours(0, 0, 0, 0)
-  const dayEnd = new Date(day.date)
-  dayEnd.setHours(23, 59, 59, 999)
-  if (anyPractitionerMode.value) {
-    const entries = await Promise.all(
-      availablePractitioners.value.map(async (m) => {
+}
+
+async function loadMonthAvailability() {
+  if (!clinicId.value) return
+  monthAvailabilityLoading.value = true
+  monthAvailabilityLoaded.value = false
+  const { gridStart, gridEnd } = gridRange.value
+  const fromIso = gridStart.toISOString()
+  const toIso = gridEnd.toISOString()
+  const memberIds = anyPractitionerMode.value ? availablePractitioners.value.map((m) => m.id) : teamMemberId.value ? [teamMemberId.value] : []
+  const [busyEntries, blockedResult] = await Promise.all([
+    Promise.all(
+      memberIds.map(async (id) => {
         const { data } = await supabase.rpc('get_booking_busy_times', {
           p_clinic_id: clinicId.value,
-          p_team_member_id: m.id,
-          p_from: dayStart.toISOString(),
-          p_to: dayEnd.toISOString(),
+          p_team_member_id: id,
+          p_from: fromIso,
+          p_to: toIso,
         })
-        return [m.id, (data as { starts_at: string; ends_at: string }[]) ?? []] as const
+        return [id, (data as { starts_at: string; ends_at: string }[]) ?? []] as const
       }),
-    )
-    busyRangesByMember.value = Object.fromEntries(entries)
-  } else {
-    const { data } = await supabase.rpc('get_booking_busy_times', {
-      p_clinic_id: clinicId.value,
-      p_team_member_id: teamMemberId.value,
-      p_from: dayStart.toISOString(),
-      p_to: dayEnd.toISOString(),
-    })
-    busyRanges.value = (data as { starts_at: string; ends_at: string }[]) ?? []
-  }
-  slotsLoading.value = false
+    ),
+    supabase.rpc('get_booking_blocked_times', { p_clinic_id: clinicId.value, p_from: fromIso, p_to: toIso }),
+  ])
+  monthBusyByMember.value = Object.fromEntries(busyEntries)
+  monthBlocked.value = (blockedResult.data as { starts_at: string; ends_at: string }[]) ?? []
+  monthAvailabilityLoading.value = false
+  monthAvailabilityLoaded.value = true
 }
 
 interface DaySlot {
@@ -361,6 +387,7 @@ interface DaySlot {
 }
 
 function slotsForMember(
+  date: Date,
   weekday: string,
   clinicWindows: [string, string][],
   memberBusinessHours: Record<string, [string, string][]> | null | undefined,
@@ -373,9 +400,9 @@ function slotsForMember(
   for (const [startStr, endStr] of windows) {
     const [sh, sm] = startStr.split(':').map(Number)
     const [eh, em] = endStr.split(':').map(Number)
-    let cursor = new Date(selectedDate.value!)
+    let cursor = new Date(date)
     cursor.setHours(sh, sm, 0, 0)
-    const windowEnd = new Date(selectedDate.value!)
+    const windowEnd = new Date(date)
     windowEnd.setHours(eh, em, 0, 0)
     while (true) {
       const slotEnd = new Date(cursor.getTime() + duration * 60000)
@@ -390,9 +417,28 @@ function slotsForMember(
   return result
 }
 
+// A day only ever renders as clickable once this agrees a free slot exists
+// there -- optimistically bookable (true) until the month's busy/blocked
+// data has actually loaded, so the grid doesn't flash everything grey while
+// loadMonthAvailability is still in flight.
+function dayHasAvailability(date: Date): boolean {
+  if (!monthAvailabilityLoaded.value || !appointmentType.value) return true
+  const weekday = WEEKDAY_KEYS[date.getDay()]
+  const clinicWindows = clinic.value?.business_hours?.[weekday] ?? []
+  if (anyPractitionerMode.value) {
+    return availablePractitioners.value.some((m) => {
+      const busy = [...(monthBusyByMember.value[m.id] ?? []), ...monthBlocked.value]
+      return slotsForMember(date, weekday, clinicWindows, m.business_hours, busy).length > 0
+    })
+  }
+  const busy = [...(monthBusyByMember.value[teamMemberId.value] ?? []), ...monthBlocked.value]
+  return slotsForMember(date, weekday, clinicWindows, teamMember.value?.business_hours, busy).length > 0
+}
+
 const daySlots = computed<DaySlot[]>(() => {
   if (!selectedDate.value || !appointmentType.value) return []
-  const weekday = WEEKDAY_KEYS[selectedDate.value.getDay()]
+  const date = selectedDate.value
+  const weekday = WEEKDAY_KEYS[date.getDay()]
   const clinicWindows = clinic.value?.business_hours?.[weekday] ?? []
 
   if (anyPractitionerMode.value) {
@@ -401,7 +447,8 @@ const daySlots = computed<DaySlot[]>(() => {
     // resolve teamMemberId to a real practitioner once the patient commits.
     const merged = new Map<number, string>()
     for (const m of availablePractitioners.value) {
-      const times = slotsForMember(weekday, clinicWindows, m.business_hours, busyRangesByMember.value[m.id] ?? [])
+      const busy = [...(monthBusyByMember.value[m.id] ?? []), ...monthBlocked.value]
+      const times = slotsForMember(date, weekday, clinicWindows, m.business_hours, busy)
       for (const time of times) {
         if (!merged.has(time.getTime())) merged.set(time.getTime(), m.id)
       }
@@ -409,7 +456,8 @@ const daySlots = computed<DaySlot[]>(() => {
     return [...merged.entries()].sort((a, b) => a[0] - b[0]).map(([ms, memberId]) => ({ time: new Date(ms), memberId }))
   }
 
-  const times = slotsForMember(weekday, clinicWindows, teamMember.value?.business_hours, busyRanges.value)
+  const busy = [...(monthBusyByMember.value[teamMemberId.value] ?? []), ...monthBlocked.value]
+  const times = slotsForMember(date, weekday, clinicWindows, teamMember.value?.business_hours, busy)
   return times.map((time) => ({ time, memberId: teamMemberId.value }))
 })
 
@@ -503,6 +551,7 @@ function backToDatetime() {
 
 function proceedToDatetime() {
   phase.value = 'datetime'
+  loadMonthAvailability()
 }
 
 // --- iframe embed: report height to parent so a fixed-height iframe isn't needed ---
@@ -655,7 +704,7 @@ if (import.meta.client) {
                 <p class="text-sm font-semibold text-ink-900">
                   {{ selectedDate.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) }}
                 </p>
-                <div v-if="slotsLoading" class="mt-3 text-sm text-ink-faint">Cargando horarios…</div>
+                <div v-if="monthAvailabilityLoading" class="mt-3 text-sm text-ink-faint">Cargando horarios…</div>
                 <template v-else>
                   <div v-if="daySlots.length === 0" class="mt-3 text-sm text-ink-faint">No hay horas disponibles ese día.</div>
                   <div v-if="morningSlots.length" class="mt-3">

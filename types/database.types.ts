@@ -3499,6 +3499,13 @@ export type Database = {
         Args: { base_name: string }
         Returns: string
       }
+      get_booking_blocked_times: {
+        Args: { p_clinic_id: string; p_from: string; p_to: string }
+        Returns: {
+          ends_at: string
+          starts_at: string
+        }[]
+      }
       get_booking_busy_times: {
         Args: {
           p_clinic_id: string

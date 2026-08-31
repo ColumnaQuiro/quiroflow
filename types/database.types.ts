@@ -217,6 +217,8 @@ export type Database = {
           online_booking_max_days_ahead: number
           online_booking_notify_email: string | null
           online_booking_notify_whatsapp: string | null
+          online_booking_notify_whatsapp_template_language: string
+          online_booking_notify_whatsapp_template_name: string | null
           online_booking_practitioner_order: string
           online_booking_primary_color: string | null
           online_booking_referral_url: string | null
@@ -273,6 +275,8 @@ export type Database = {
           online_booking_max_days_ahead?: number
           online_booking_notify_email?: string | null
           online_booking_notify_whatsapp?: string | null
+          online_booking_notify_whatsapp_template_language?: string
+          online_booking_notify_whatsapp_template_name?: string | null
           online_booking_practitioner_order?: string
           online_booking_primary_color?: string | null
           online_booking_referral_url?: string | null
@@ -329,6 +333,8 @@ export type Database = {
           online_booking_max_days_ahead?: number
           online_booking_notify_email?: string | null
           online_booking_notify_whatsapp?: string | null
+          online_booking_notify_whatsapp_template_language?: string
+          online_booking_notify_whatsapp_template_name?: string | null
           online_booking_practitioner_order?: string
           online_booking_primary_color?: string | null
           online_booking_referral_url?: string | null

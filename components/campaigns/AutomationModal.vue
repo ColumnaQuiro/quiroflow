@@ -512,19 +512,19 @@ async function sendTestToMe() {
           <p v-if="error" class="text-[12.5px] text-danger-text">{{ error }}</p>
         </div>
 
-        <div class="flex shrink-0 items-center justify-between border-t border-line-divider bg-surface-subtle2 px-6 py-3.5">
-          <div class="flex items-center gap-2.5">
+        <div class="flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-line-divider bg-surface-subtle2 px-6 py-3.5">
+          <div class="flex min-w-0 flex-wrap items-center gap-2.5">
             <input
               v-if="hasWhatsAppAction"
               v-model="testWhatsAppNumber"
               type="text"
               placeholder="Your WhatsApp number, e.g. +34600000000"
-              class="h-8 w-56 rounded-ctl border border-line-control px-2.5 text-[12.5px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              class="h-8 w-56 shrink-0 rounded-ctl border border-line-control px-2.5 text-[12.5px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
             />
             <UiBtn variant="ghost" size="sm" type="button" :disabled="testing" @click="sendTestToMe">{{ testing ? 'Sending…' : 'Send test to me' }}</UiBtn>
             <p v-if="testMessage" class="text-[12px]" :class="testMessage.startsWith('Failed') || testMessage.startsWith('Enter') ? 'text-danger-text' : 'text-success-text'">{{ testMessage }}</p>
           </div>
-          <div class="flex items-center gap-2">
+          <div class="flex shrink-0 items-center gap-2">
             <UiBtn variant="secondary" type="button" @click="emit('close')">Cancel</UiBtn>
             <UiBtn variant="primary" type="submit" :disabled="saving">{{ saving ? 'Saving…' : 'Save campaign' }}</UiBtn>
           </div>

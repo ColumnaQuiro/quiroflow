@@ -311,7 +311,8 @@ const OVERRIDABLE_STRINGS = [
                     <p class="mt-1 text-[11.5px] text-ink-faint">
                       In E.164 format. WhatsApp only delivers a free-form message like this one within 24h of that
                       number last messaging your clinic's WhatsApp number -- send it a message occasionally to keep
-                      notifications flowing.
+                      notifications flowing, or set a staff notification template in Settings &rarr; WhatsApp to send
+                      outside that window too.
                     </p>
                   </div>
                 </div>

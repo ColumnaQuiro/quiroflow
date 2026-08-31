@@ -555,6 +555,10 @@ function backToDatetime() {
   phase.value = 'datetime'
 }
 
+function backToSelect() {
+  phase.value = 'select'
+}
+
 function proceedToDatetime() {
   phase.value = 'datetime'
   loadMonthAvailability()
@@ -667,13 +671,20 @@ if (import.meta.client) {
 
         <!-- Step 2: date & time -->
         <div v-else-if="phase === 'datetime'">
-          <div class="mt-6 flex flex-col items-center gap-2">
-            <p class="text-xs font-semibold uppercase tracking-wide text-warning-text">Paso {{ stepNumber }} de 3</p>
-            <div class="flex gap-1.5">
-              <span v-for="n in 3" :key="n" class="h-1.5 w-1.5 rounded-full" :class="n === stepNumber ? 'bg-brand' : 'bg-line'"></span>
+          <div class="mt-6 flex items-center justify-between">
+            <div>
+              <div class="flex items-center gap-2">
+                <p class="text-xs font-semibold uppercase tracking-wide text-warning-text">Paso {{ stepNumber }} de 3</p>
+                <div class="flex gap-1.5">
+                  <span v-for="n in 3" :key="n" class="h-1.5 w-1.5 rounded-full" :class="n === stepNumber ? 'bg-brand' : 'bg-line'"></span>
+                </div>
+              </div>
+              <h2 class="mt-1 text-xl font-semibold text-ink-900">{{ stepTitle }}</h2>
             </div>
+            <UiBtn type="button" variant="secondary" @click="backToSelect">
+              &larr; Atrás
+            </UiBtn>
           </div>
-          <h2 class="mt-2 text-center text-xl font-semibold text-ink-900">{{ stepTitle }}</h2>
 
           <div class="mt-6 grid gap-6 sm:grid-cols-3">
             <div class="rounded-card border border-line bg-surface p-4 shadow-card">

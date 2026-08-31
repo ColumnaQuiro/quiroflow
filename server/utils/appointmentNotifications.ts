@@ -1,6 +1,6 @@
 import { toE164 } from '~/utils/phone'
 import { sendResendEmail } from './resend'
-import { sendWhatsAppText } from './whatsappSend'
+import { sendWhatsAppTemplate, sendWhatsAppText } from './whatsappSend'
 
 // The server runs in UTC, so formatting a UTC Date with toLocaleString and no
 // timeZone renders the UTC wall-clock time, not the clinic's -- a booking at
@@ -137,6 +137,20 @@ function resolveWhatsAppVariables(bodyText: string, ctx: AppointmentContext): st
   const slots = new Set<string>()
   for (const m of bodyText.matchAll(/\{\{(\d+)\}\}/g)) slots.add(m[1])
   return Array.from({ length: slots.size }, (_, i) => guesses[i] || ctx.patientFirstName)
+}
+
+// Same positional-placeholder approach as resolveWhatsAppVariables above,
+// but for the staff-facing "new online booking" notification -- patient
+// name/phone first since that's what staff actually need to act on it,
+// then when/with whom.
+function resolveStaffNotifyVariables(bodyText: string, ctx: AppointmentContext, patientName: string): string[] {
+  const start = new Date(ctx.startsAt)
+  const dateOnly = start.toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', timeZone: CLINIC_TIMEZONE })
+  const timeOnly = start.toLocaleString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: CLINIC_TIMEZONE })
+  const guesses = [patientName, ctx.patientPhone ?? '', dateOnly, timeOnly, ctx.practitionerName, ctx.appointmentTypeName]
+  const slots = new Set<string>()
+  for (const m of bodyText.matchAll(/\{\{(\d+)\}\}/g)) slots.add(m[1])
+  return Array.from({ length: slots.size }, (_, i) => guesses[i] || patientName)
 }
 
 async function sendWhatsApp(
@@ -296,7 +310,9 @@ export async function sendAppointmentConfirmation(supabase: any, accountId: stri
 export async function notifyStaffOfOnlineBooking(supabase: any, accountId: string, appointmentId: string): Promise<void> {
   const { data: account } = await supabase
     .from('accounts')
-    .select('online_booking_notify_email, online_booking_notify_whatsapp, whatsapp_phone_number_id, whatsapp_access_token')
+    .select(
+      'online_booking_notify_email, online_booking_notify_whatsapp, whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_access_token, online_booking_notify_whatsapp_template_name, online_booking_notify_whatsapp_template_language',
+    )
     .eq('id', accountId)
     .maybeSingle()
   if (!account?.online_booking_notify_email && !account?.online_booking_notify_whatsapp) return
@@ -321,16 +337,30 @@ export async function notifyStaffOfOnlineBooking(supabase: any, accountId: strin
   }
 
   if (account.online_booking_notify_whatsapp && account.whatsapp_phone_number_id && account.whatsapp_access_token) {
+    const whatsappAccount = { whatsapp_phone_number_id: account.whatsapp_phone_number_id, whatsapp_access_token: account.whatsapp_access_token }
     try {
-      await sendWhatsAppText(
-        { whatsapp_phone_number_id: account.whatsapp_phone_number_id, whatsapp_access_token: account.whatsapp_access_token },
-        account.online_booking_notify_whatsapp,
-        summary,
-      )
+      if (account.online_booking_notify_whatsapp_template_name) {
+        // A template send works regardless of the 24h free-form window --
+        // the free-text send below only reaches the clinic if that number
+        // has messaged the WhatsApp business number recently.
+        const templateLanguage = account.online_booking_notify_whatsapp_template_language ?? 'es'
+        let bodyText = ''
+        try {
+          const variant = await resolveTemplateVariant(account.whatsapp_business_account_id ?? '', account.whatsapp_access_token, account.online_booking_notify_whatsapp_template_name, templateLanguage, null)
+          if (variant) bodyText = variant.bodyText
+        } catch {
+          // Best-effort: bodyText stays '', so no {{n}} placeholders are
+          // detected below and the template sends with no body variables.
+        }
+        await sendWhatsAppTemplate(whatsappAccount, account.online_booking_notify_whatsapp, account.online_booking_notify_whatsapp_template_name, templateLanguage, resolveStaffNotifyVariables(bodyText, ctx, patientName))
+      } else {
+        await sendWhatsAppText(whatsappAccount, account.online_booking_notify_whatsapp, summary)
+      }
     } catch {
-      // Best-effort -- the likeliest failure here is the notify number not
-      // having messaged the clinic's WhatsApp number in the last 24h, which
-      // the settings screen calls out as a WhatsApp platform rule.
+      // Best-effort -- with no template configured, the likeliest failure
+      // is the notify number not having messaged the clinic's WhatsApp
+      // number in the last 24h, which the settings screen calls out as a
+      // WhatsApp platform rule.
     }
   }
 }

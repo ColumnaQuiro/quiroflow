@@ -7,6 +7,7 @@ const config = useRuntimeConfig()
 
 const tabs = [
   { key: 'general', label: 'General' },
+  { key: 'hours', label: 'Clinics & Hours' },
   { key: 'entities', label: 'Bookable Entities' },
   { key: 'discounts', label: 'Discount Codes' },
   { key: 'layout', label: 'Layout' },
@@ -84,6 +85,64 @@ function bookingUrl(slug: string) {
 }
 function copy(text: string) {
   navigator.clipboard?.writeText(text)
+}
+
+// --- Clinics & Hours: per-clinic enable toggle + business hours ---
+// business_hours narrowed away from Supabase's recursive Json type here --
+// it blows up Vue's template type-checker (TS2589) when combined with v-for.
+type BookingClinic = Omit<Tables<'clinics'>, 'business_hours'> & { business_hours: Record<string, [string, string][]> }
+type Windows = [string, string][]
+const WEEKDAYS: { key: string; label: string }[] = [
+  { key: 'mon', label: 'Mon' },
+  { key: 'tue', label: 'Tue' },
+  { key: 'wed', label: 'Wed' },
+  { key: 'thu', label: 'Thu' },
+  { key: 'fri', label: 'Fri' },
+  { key: 'sat', label: 'Sat' },
+  { key: 'sun', label: 'Sun' },
+]
+
+const bookingClinics = ref<BookingClinic[]>([])
+const openClinicId = ref<string | null>(null)
+const editHours = ref<Record<string, Windows>>({})
+const editEnabled = ref(false)
+const savingHours = ref(false)
+const hoursError = ref('')
+
+async function loadBookingClinics() {
+  const { data } = await supabase.from('clinics').select('*').order('name')
+  bookingClinics.value = (data as unknown as BookingClinic[]) ?? []
+}
+onMounted(loadBookingClinics)
+
+function openBookingEditor(c: BookingClinic) {
+  openClinicId.value = openClinicId.value === c.id ? null : c.id
+  if (openClinicId.value === c.id) {
+    editEnabled.value = c.online_booking_enabled
+    const hours = (c.business_hours as Record<string, Windows>) ?? {}
+    editHours.value = Object.fromEntries(WEEKDAYS.map((d) => [d.key, hours[d.key] ? hours[d.key].map((w) => [...w] as [string, string]) : []]))
+  }
+}
+
+function addWindow(day: string) {
+  editHours.value[day].push(['09:00', '17:00'])
+}
+function removeWindow(day: string, i: number) {
+  editHours.value[day].splice(i, 1)
+}
+
+async function saveBooking(clinicId: string) {
+  savingHours.value = true
+  const { error: updateError } = await supabase
+    .from('clinics')
+    .update({ online_booking_enabled: editEnabled.value, business_hours: editHours.value })
+    .eq('id', clinicId)
+  savingHours.value = false
+  if (!updateError) {
+    await loadBookingClinics()
+  } else {
+    hoursError.value = updateError.message
+  }
 }
 
 // --- Bookable Entities: eligibility / bypass / max-days / deposit per type ---
@@ -181,10 +240,7 @@ const OVERRIDABLE_STRINGS = [
       <div class="flex gap-8 p-6">
         <SettingsNav />
         <div class="min-w-0 max-w-[720px] flex-1">
-          <p class="text-[13px] leading-relaxed text-ink-muted2">
-            Configure how patients book appointments online. Per-clinic business hours and the enable/disable switch
-            still live in <NuxtLink to="/settings/clinics#online-booking" class="text-brand-text hover:underline">Settings → Clinics → Online Booking Hours</NuxtLink>.
-          </p>
+          <p class="text-[13px] leading-relaxed text-ink-muted2">Configure how patients book appointments online.</p>
 
           <div class="mt-4 flex gap-1 border-b border-line">
             <button
@@ -258,6 +314,46 @@ const OVERRIDABLE_STRINGS = [
                 </div>
               </div>
             </template>
+          </div>
+
+          <!-- Clinics & Hours -->
+          <div v-else-if="activeTab === 'hours'" class="mt-4 space-y-2">
+            <div v-for="c in bookingClinics" :key="c.id" class="rounded-card border border-line bg-surface shadow-card">
+              <button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left" @click="openBookingEditor(c)">
+                <span class="text-[13.5px] font-[560] text-ink-700">{{ c.name }}</span>
+                <UiPill :tone="c.online_booking_enabled ? 'success' : 'neutral'">{{ c.online_booking_enabled ? 'Enabled' : 'Disabled' }}</UiPill>
+              </button>
+
+              <div v-if="openClinicId === c.id" class="border-t border-line-divider p-4">
+                <label class="flex items-center gap-2.5 text-[13px] text-ink-600">
+                  <SettingsToggle v-model="editEnabled" />
+                  Enable online booking for this clinic
+                </label>
+
+                <div class="mt-4 space-y-2">
+                  <p class="text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">Business hours</p>
+                  <div v-for="d in WEEKDAYS" :key="d.key" class="flex items-start gap-3 text-[13px]">
+                    <span class="w-10 pt-1.5 text-ink-muted2">{{ d.label }}</span>
+                    <div class="flex-1 space-y-1.5">
+                      <p v-if="editHours[d.key].length === 0" class="pt-1.5 text-ink-faint">Closed</p>
+                      <div v-for="(w, i) in editHours[d.key]" :key="i" class="flex items-center gap-2">
+                        <input v-model="w[0]" type="time" class="h-8 rounded-ctl border border-line-control bg-surface px-2 text-[13px]" />
+                        <span class="text-ink-faint">–</span>
+                        <input v-model="w[1]" type="time" class="h-8 rounded-ctl border border-line-control bg-surface px-2 text-[13px]" />
+                        <button type="button" class="text-ink-faint hover:text-danger-text" @click="removeWindow(d.key, i)">✕</button>
+                      </div>
+                      <button type="button" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover" @click="addWindow(d.key)">+ Add hours</button>
+                    </div>
+                  </div>
+                </div>
+
+                <UiBtn variant="primary" class="mt-4" :disabled="savingHours" @click="saveBooking(c.id)">
+                  {{ savingHours ? 'Saving…' : 'Save' }}
+                </UiBtn>
+              </div>
+            </div>
+            <p v-if="bookingClinics.length === 0" class="px-4 py-6 text-center text-[13px] text-ink-faint">No clinics yet.</p>
+            <p v-if="hoursError" class="mt-2 text-[12.5px] text-danger-text">{{ hoursError }}</p>
           </div>
 
           <!-- Bookable Entities -->

@@ -41,8 +41,7 @@ const groups = [
     label: 'Clinic',
     items: [
       { to: '/settings/clinics', label: 'Clinics', description: 'Locations your practice operates from.', icon: ICONS.building },
-      { to: '/settings/clinics#online-booking', label: 'Online Booking Hours', description: 'Public booking link and embed code for patients to book their own appointments.', icon: ICONS.globe },
-      { to: '/settings/online-booking', label: 'Online Booking Settings', description: 'Booking window, patient eligibility, discount codes, layout, and language overrides.', icon: ICONS.globe },
+      { to: '/settings/online-booking', label: 'Online Booking', description: 'Per-clinic hours, booking window, patient eligibility, discount codes, layout, and language overrides.', icon: ICONS.globe },
       { to: '/settings/team', label: 'Team Members', description: 'Staff accounts, roles, and invites.', icon: ICONS.users },
       { to: '/settings/practitioners', label: 'Practitioners', description: 'Link migrated names to real accounts, or invite them.', icon: ICONS.userCircle },
       { to: '/settings/roles', label: 'Roles & Permissions', description: 'Control what each role can see and do.', icon: ICONS.lockClosed },

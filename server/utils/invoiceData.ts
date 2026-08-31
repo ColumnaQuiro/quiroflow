@@ -154,8 +154,9 @@ export function generateInvoicePdf(data: InvoiceDocumentData): Promise<Buffer> {
 
     if (data.clinic) {
       const clinicX = data.logoBuffer ? 185 : 50
-      doc.fontSize(14).font('Helvetica-Bold').text(data.clinic.legalName || data.clinic.name, clinicX, 50)
+      doc.fontSize(14).font('Helvetica-Bold').text(data.clinic.name, clinicX, 50)
       doc.fontSize(10).font('Helvetica').fillColor('#555')
+      if (data.clinic.legalName) doc.text(data.clinic.legalName, clinicX)
       for (const line of addressLines(data.clinic.address, null, null, null)) doc.text(line, clinicX)
       if (data.clinic.taxId) doc.text(`Tax ID: ${data.clinic.taxId}`, clinicX)
       doc.moveDown(1.5)

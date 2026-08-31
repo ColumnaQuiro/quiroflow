@@ -203,6 +203,10 @@ onMounted(async () => {
     teamMemberId.value = forClinic[0]?.id ?? ''
   }
   phase.value = 'select'
+  // No real choice to present (bypass, or a single available practitioner)
+  // -- skip straight to date/time instead of a screen whose only content is
+  // a "Continuar" button.
+  if (!showPractitionerCards.value && canContinueFromSelect.value) proceedToDatetime()
 
   if (parsed.account.online_booking_gtm_id) {
     const script = document.createElement('script')
@@ -237,6 +241,13 @@ watch(appointmentTypeId, () => {
 })
 
 const canContinueFromSelect = computed(() => !!clinicId.value && !!appointmentTypeId.value && !!teamMemberId.value)
+const showPractitionerCards = computed(() => !bypassPractitioner.value && availablePractitioners.value.length > 1)
+// Covers picking a service (from the dropdown) that resolves down to a
+// single practitioner after the page already mounted -- the onMounted skip
+// above only covers what's known at load time.
+watch(canContinueFromSelect, (can) => {
+  if (can && phase.value === 'select' && !showPractitionerCards.value) proceedToDatetime()
+})
 
 // --- date/time ---
 const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
@@ -551,7 +562,7 @@ if (import.meta.client) {
                 </div>
               </div>
 
-              <template v-if="!bypassPractitioner && availablePractitioners.length > 1">
+              <template v-if="showPractitionerCards">
                 <button
                   type="button"
                   class="flex w-full items-center justify-between rounded-card border border-line bg-surface p-4 text-left shadow-card transition hover:border-brand"

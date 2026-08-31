@@ -132,7 +132,7 @@ function reset() {
 
 <template>
   <div>
-    <p class="text-sm text-gray-500">
+    <p class="text-sm text-ink-muted2">
       Pulls the real appointment types directly from PracticeHub's API and re-links every appointment to its actual
       type (matched by the internal appointment ID) — fixes reports like Statistics when the original CSV import
       only captured one type or none. Safe to re-run.
@@ -142,37 +142,37 @@ function reset() {
       <ImportPracticeHubConnectForm @connect="run" />
     </div>
 
-    <div v-else-if="stage === 'importing'" class="mt-4 rounded-lg border border-gray-200 bg-white p-8 text-center">
-      <p class="text-sm text-gray-600">{{ phase }}</p>
-      <p v-if="progress.total > 0" class="mt-1 text-xs text-gray-400">{{ progress.done }} / {{ progress.total }}</p>
+    <div v-else-if="stage === 'importing'" class="mt-4 rounded-lg border border-line bg-surface p-8 text-center">
+      <p class="text-sm text-ink-600">{{ phase }}</p>
+      <p v-if="progress.total > 0" class="mt-1 text-xs text-ink-faint">{{ progress.done }} / {{ progress.total }}</p>
     </div>
 
     <div v-else-if="stage === 'error'" class="mt-4 space-y-4">
-      <div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+      <div class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
         <p class="font-medium">Import failed:</p>
         <p class="mt-1">{{ runError }}</p>
       </div>
-      <button type="button" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700" @click="retryRun">
+      <button type="button" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover" @click="retryRun">
         Retry
       </button>
     </div>
 
     <div v-else-if="stage === 'done'" class="mt-4 space-y-4">
-      <div class="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+      <div class="rounded-lg border border-success-border bg-success-bg p-4 text-sm text-success-text">
         Created {{ typesCreated }} new appointment type(s), updated {{ appointmentsUpdated }} appointments. Skipped
         {{ skippedNoMatch }} with no type in PracticeHub.
       </div>
-      <div v-if="importErrors.length > 0" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+      <div v-if="importErrors.length > 0" class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
         <p class="font-medium">Some rows failed:</p>
         <ul class="mt-1 list-disc pl-5">
           <li v-for="(e, i) in importErrors" :key="i">{{ e }}</li>
         </ul>
       </div>
       <div class="flex gap-3">
-        <NuxtLink to="/settings/appointment-types" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+        <NuxtLink to="/settings/appointment-types" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover">
           Review Appointment Types
         </NuxtLink>
-        <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50" @click="reset">
+        <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-ink-600 hover:bg-surface-subtle" @click="reset">
           Run again
         </button>
       </div>

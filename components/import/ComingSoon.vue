@@ -3,7 +3,7 @@ defineProps<{ label: string }>()
 </script>
 
 <template>
-  <div class="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-400">
+  <div class="rounded-lg border border-dashed border-line-control bg-surface p-8 text-center text-sm text-ink-faint">
     {{ label }} import isn't built yet.
   </div>
 </template>

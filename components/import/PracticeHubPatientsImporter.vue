@@ -471,44 +471,44 @@ function reset() {
 
 <template>
   <div>
-    <p class="text-sm text-gray-500">
+    <p class="text-sm text-ink-muted2">
       Export "Patients" as CSV from PracticeHub (Settings &rarr; Data Exports), then drop it here.
     </p>
 
     <div v-if="stage === 'pick'" class="mt-4">
       <div
         class="flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-12 text-center"
-        :class="dragOver ? 'border-indigo-400 bg-indigo-50' : 'border-gray-300 bg-white'"
+        :class="dragOver ? 'border-brand bg-brand-tint' : 'border-line-control bg-surface'"
         @dragover.prevent="dragOver = true"
         @dragleave.prevent="dragOver = false"
         @drop.prevent="onDrop"
       >
-        <p class="text-sm text-gray-600">Drag and drop a CSV file here, or</p>
-        <label class="mt-2 cursor-pointer text-sm font-medium text-indigo-600 hover:text-indigo-500">
+        <p class="text-sm text-ink-600">Drag and drop a CSV file here, or</p>
+        <label class="mt-2 cursor-pointer text-sm font-medium text-brand-text hover:text-brand-text">
           browse for a file
           <input type="file" accept=".csv" class="hidden" @change="onFileInput" />
         </label>
       </div>
-      <p v-if="fileError" class="mt-2 text-sm text-red-600">{{ fileError }}</p>
+      <p v-if="fileError" class="mt-2 text-sm text-danger-text">{{ fileError }}</p>
     </div>
 
     <div v-else-if="stage === 'preview'" class="mt-4 space-y-4">
-      <div class="rounded-lg border border-gray-200 bg-white p-4">
-        <p class="text-sm font-medium text-gray-900">{{ fileName }}</p>
+      <div class="rounded-lg border border-line bg-surface p-4">
+        <p class="text-sm font-medium text-ink-900">{{ fileName }}</p>
         <dl class="mt-2 grid grid-cols-2 gap-2 text-sm sm:grid-cols-5">
-          <div><dt class="text-gray-500">Total rows</dt><dd class="font-medium text-gray-900">{{ totalRows }}</dd></div>
-          <div><dt class="text-gray-500">Will import</dt><dd class="font-medium text-green-700">{{ toImport.length }}</dd></div>
-          <div><dt class="text-gray-500">Will update</dt><dd class="font-medium text-blue-700">{{ toUpdate.length }}</dd></div>
-          <div><dt class="text-gray-500">No changes</dt><dd class="font-medium text-gray-900">{{ skippedDuplicate }}</dd></div>
-          <div><dt class="text-gray-500">Deleted/no-name skipped</dt><dd class="font-medium text-gray-900">{{ skippedDeleted + skippedNoName }}</dd></div>
+          <div><dt class="text-ink-muted2">Total rows</dt><dd class="font-medium text-ink-900">{{ totalRows }}</dd></div>
+          <div><dt class="text-ink-muted2">Will import</dt><dd class="font-medium text-success-text">{{ toImport.length }}</dd></div>
+          <div><dt class="text-ink-muted2">Will update</dt><dd class="font-medium text-brand-text">{{ toUpdate.length }}</dd></div>
+          <div><dt class="text-ink-muted2">No changes</dt><dd class="font-medium text-ink-900">{{ skippedDuplicate }}</dd></div>
+          <div><dt class="text-ink-muted2">Deleted/no-name skipped</dt><dd class="font-medium text-ink-900">{{ skippedDeleted + skippedNoName }}</dd></div>
         </dl>
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-gray-700">Import into clinic</label>
+        <label class="block text-sm font-medium text-ink-700">Import into clinic</label>
         <select
           v-model="targetClinicId"
-          class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          class="mt-1 w-full rounded-md border border-line-control bg-surface px-3 py-2 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           @change="clinicManuallySet = true"
         >
           <option value="">No primary clinic</option>
@@ -516,9 +516,9 @@ function reset() {
         </select>
       </div>
 
-      <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <div class="overflow-hidden rounded-lg border border-line bg-surface">
         <table class="w-full text-sm">
-          <thead class="border-b border-gray-200 bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
+          <thead class="border-b border-line bg-surface-subtle text-left text-xs font-medium uppercase tracking-wide text-ink-muted2">
             <tr>
               <th class="px-3 py-2">Name</th>
               <th class="px-3 py-2">Email</th>
@@ -527,27 +527,27 @@ function reset() {
               <th class="px-3 py-2">Tags</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-gray-100">
+          <tbody class="divide-y divide-line-divider">
             <tr v-for="(row, i) in toImport.slice(0, 10)" :key="i">
-              <td class="px-3 py-2 text-gray-900">{{ row.patient.first_name }} {{ row.patient.last_name }}</td>
-              <td class="px-3 py-2 text-gray-500">{{ row.patient.email ?? 'N/A' }}</td>
-              <td class="px-3 py-2 text-gray-500">€{{ ((row.patient.balance_cents ?? 0) / 100).toFixed(2) }}</td>
-              <td class="px-3 py-2 text-gray-500">{{ row.patient.preferred_language }}</td>
-              <td class="px-3 py-2 text-gray-500">{{ (row.patient.tags ?? []).join(', ') || 'N/A' }}</td>
+              <td class="px-3 py-2 text-ink-900">{{ row.patient.first_name }} {{ row.patient.last_name }}</td>
+              <td class="px-3 py-2 text-ink-muted2">{{ row.patient.email ?? 'N/A' }}</td>
+              <td class="px-3 py-2 text-ink-muted2">€{{ ((row.patient.balance_cents ?? 0) / 100).toFixed(2) }}</td>
+              <td class="px-3 py-2 text-ink-muted2">{{ row.patient.preferred_language }}</td>
+              <td class="px-3 py-2 text-ink-muted2">{{ (row.patient.tags ?? []).join(', ') || 'N/A' }}</td>
             </tr>
           </tbody>
         </table>
-        <p v-if="toImport.length > 10" class="border-t border-gray-100 px-3 py-2 text-xs text-gray-400">
+        <p v-if="toImport.length > 10" class="border-t border-line-divider px-3 py-2 text-xs text-ink-faint">
           + {{ toImport.length - 10 }} more rows
         </p>
       </div>
 
-      <div v-if="toUpdate.length > 0" class="overflow-hidden rounded-lg border border-gray-200 bg-white">
-        <div class="border-b border-gray-100 px-3 py-2 text-xs font-medium uppercase tracking-wide text-gray-500">
+      <div v-if="toUpdate.length > 0" class="overflow-hidden rounded-lg border border-line bg-surface">
+        <div class="border-b border-line-divider px-3 py-2 text-xs font-medium uppercase tracking-wide text-ink-muted2">
           Sample of changes to existing patients
         </div>
         <table class="w-full text-sm">
-          <thead class="border-b border-gray-200 bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
+          <thead class="border-b border-line bg-surface-subtle text-left text-xs font-medium uppercase tracking-wide text-ink-muted2">
             <tr>
               <th class="px-3 py-2">Patient</th>
               <th class="px-3 py-2">Field</th>
@@ -555,18 +555,18 @@ function reset() {
               <th class="px-3 py-2">New</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-gray-100">
+          <tbody class="divide-y divide-line-divider">
             <template v-for="(row, i) in toUpdate.slice(0, 5)" :key="i">
               <tr v-for="(d, j) in row.diff" :key="j">
-                <td class="px-3 py-2 text-gray-900">{{ j === 0 ? row.label : '' }}</td>
-                <td class="px-3 py-2 text-gray-500">{{ d.field }}</td>
-                <td class="px-3 py-2 text-gray-500">{{ d.from }}</td>
-                <td class="px-3 py-2 text-gray-900">{{ d.to }}</td>
+                <td class="px-3 py-2 text-ink-900">{{ j === 0 ? row.label : '' }}</td>
+                <td class="px-3 py-2 text-ink-muted2">{{ d.field }}</td>
+                <td class="px-3 py-2 text-ink-muted2">{{ d.from }}</td>
+                <td class="px-3 py-2 text-ink-900">{{ d.to }}</td>
               </tr>
             </template>
           </tbody>
         </table>
-        <p v-if="toUpdate.length > 5" class="border-t border-gray-100 px-3 py-2 text-xs text-gray-400">
+        <p v-if="toUpdate.length > 5" class="border-t border-line-divider px-3 py-2 text-xs text-ink-faint">
           + {{ toUpdate.length - 5 }} more patients to update
         </p>
       </div>
@@ -575,46 +575,46 @@ function reset() {
         <button
           type="button"
           :disabled="toImport.length === 0 && toUpdate.length === 0"
-          class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+          class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50"
           @click="runImport"
         >
           Import {{ toImport.length }}, update {{ toUpdate.length }}
         </button>
-        <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50" @click="reset">
+        <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-ink-600 hover:bg-surface-subtle" @click="reset">
           Cancel
         </button>
       </div>
     </div>
 
-    <div v-else-if="stage === 'importing'" class="mt-4 rounded-lg border border-gray-200 bg-white p-8 text-center">
-      <p class="text-sm text-gray-600">Importing… {{ importedCount + updatedCount }} / {{ toImport.length + toUpdate.length }}</p>
+    <div v-else-if="stage === 'importing'" class="mt-4 rounded-lg border border-line bg-surface p-8 text-center">
+      <p class="text-sm text-ink-600">Importing… {{ importedCount + updatedCount }} / {{ toImport.length + toUpdate.length }}</p>
     </div>
 
     <div v-else-if="stage === 'error'" class="mt-4 space-y-4">
-      <div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+      <div class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
         <p class="font-medium">Import failed:</p>
         <p class="mt-1">{{ runError }}</p>
       </div>
-      <button type="button" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700" @click="retryImport">
+      <button type="button" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover" @click="retryImport">
         Retry
       </button>
     </div>
 
     <div v-else-if="stage === 'done'" class="mt-4 space-y-4">
-      <div class="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+      <div class="rounded-lg border border-success-border bg-success-bg p-4 text-sm text-success-text">
         Imported {{ importedCount }} patients. Updated {{ updatedCount }} existing patients.
       </div>
-      <div v-if="importErrors.length > 0" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+      <div v-if="importErrors.length > 0" class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
         <p class="font-medium">Some rows failed:</p>
         <ul class="mt-1 list-disc pl-5">
           <li v-for="(e, i) in importErrors" :key="i">{{ e }}</li>
         </ul>
       </div>
       <div class="flex gap-3">
-        <NuxtLink to="/patients" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+        <NuxtLink to="/patients" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover">
           View Patients
         </NuxtLink>
-        <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50" @click="reset">
+        <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-ink-600 hover:bg-surface-subtle" @click="reset">
           Import another file
         </button>
       </div>

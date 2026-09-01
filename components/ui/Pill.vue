@@ -1,5 +1,5 @@
 <script setup lang="ts">
-withDefaults(defineProps<{ tone?: 'brand' | 'success' | 'warning' | 'danger' | 'neutral'; dot?: boolean }>(), {
+withDefaults(defineProps<{ tone?: 'brand' | 'success' | 'warning' | 'info' | 'danger' | 'neutral'; dot?: boolean }>(), {
   tone: 'neutral',
 })
 
@@ -7,6 +7,7 @@ const TONE_CLASSES: Record<string, string> = {
   brand: 'bg-brand-tint text-brand-text',
   success: 'bg-success-bg text-success-text',
   warning: 'bg-warning-bg text-warning-text',
+  info: 'bg-info-bg text-info-text',
   danger: 'bg-danger-bg text-danger-text',
   neutral: 'bg-chip-bg text-chip-text',
 }
@@ -14,6 +15,7 @@ const DOT_CLASSES: Record<string, string> = {
   brand: 'bg-brand',
   success: 'bg-success-accent',
   warning: 'bg-warning-accent',
+  info: 'bg-info-accent',
   danger: 'bg-danger-text',
   neutral: 'bg-ink-faint3',
 }

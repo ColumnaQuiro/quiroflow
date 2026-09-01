@@ -232,8 +232,19 @@ async function sendWhatsApp(
     }),
   ])
 
-  if (purpose === 'confirmation' && status === 'sent') {
-    await supabase.from('appointments').update({ confirmation_status: 'pending' }).eq('id', ctx.id)
+  // A reminder asks the patient to confirm just as much as the initial
+  // confirmation send does (both templates carry the same Confirm/Cambiar/
+  // Cancelar reply options), so the webhook needs confirmation_status set
+  // to 'pending' before either goes out -- otherwise its lookup for "which
+  // appointment is this reply about" (.eq('confirmation_status', 'pending'))
+  // finds nothing and a genuine "Confirmar" reply to a reminder silently
+  // no-ops. Skip only if the patient already confirmed, so a reminder sent
+  // after a confirmed reply doesn't reset the appointment back to pending.
+  if (status === 'sent') {
+    const { data: current } = await supabase.from('appointments').select('confirmation_status').eq('id', ctx.id).maybeSingle()
+    if (current?.confirmation_status !== 'confirmed') {
+      await supabase.from('appointments').update({ confirmation_status: 'pending' }).eq('id', ctx.id)
+    }
   }
 }
 

@@ -547,29 +547,30 @@ function closedSlotRects(forDate: Date, hourPx: number) {
   return rects
 }
 
-// The block palette collapses onto these visual states; a pending or
-// reschedule-requested confirmation on an otherwise-booked appointment both
-// read as "Unconfirmed" since the app has no separate status column for
-// each. A patient-confirmed booking gets its own "Confirmed" state instead
-// of falling back to plain "Booked", so staff can see who's actually
-// replied without opening each appointment.
-type VisualStatus = 'booked' | 'confirmed' | 'completed' | 'unconfirmed' | 'no_show' | 'cancelled'
+// The block palette collapses onto these visual states; a patient-confirmed
+// booking gets its own "Confirmed" state instead of falling back to plain
+// "Booked", and a reschedule request gets its own "Wants to reschedule"
+// state instead of collapsing into "Unconfirmed", so staff can see who's
+// actually replied -- and how -- without opening each appointment.
+type VisualStatus = 'booked' | 'confirmed' | 'completed' | 'unconfirmed' | 'reschedule_requested' | 'no_show' | 'cancelled'
 function appointmentVisualStatus(appt: AppointmentRow): VisualStatus {
   if (appt.status === 'completed') return 'completed'
   if (appt.status === 'no_show') return 'no_show'
   if (appt.status === 'cancelled') return 'cancelled'
-  if (appt.status === 'booked' && (appt.confirmation_status === 'pending' || appt.confirmation_status === 'reschedule_requested')) return 'unconfirmed'
+  if (appt.status === 'booked' && appt.confirmation_status === 'reschedule_requested') return 'reschedule_requested'
+  if (appt.status === 'booked' && appt.confirmation_status === 'pending') return 'unconfirmed'
   if (appt.status === 'booked' && appt.confirmation_status === 'confirmed') return 'confirmed'
   return 'booked'
 }
 // Tailwind classes rather than inline hex -- these map 1:1 onto the
-// existing brand/success/warning/danger tokens in tailwind.config.ts, which
-// already carry the exact hex values from the redesign spec.
-const STATUS_STYLES: Record<VisualStatus, { dotClass: string; label: string; pillTone: 'brand' | 'success' | 'warning' | 'danger' | 'neutral' }> = {
+// existing brand/success/warning/info/danger tokens in tailwind.config.ts,
+// which already carry the exact hex values from the redesign spec.
+const STATUS_STYLES: Record<VisualStatus, { dotClass: string; label: string; pillTone: 'brand' | 'success' | 'warning' | 'info' | 'danger' | 'neutral' }> = {
   booked: { dotClass: 'bg-brand', label: 'Booked', pillTone: 'brand' },
   confirmed: { dotClass: 'bg-success-accent', label: 'Confirmed', pillTone: 'success' },
   completed: { dotClass: 'bg-success-accent', label: 'Completed', pillTone: 'success' },
   unconfirmed: { dotClass: 'bg-warning-accent', label: 'Unconfirmed', pillTone: 'warning' },
+  reschedule_requested: { dotClass: 'bg-info-accent', label: 'Wants to reschedule', pillTone: 'info' },
   no_show: { dotClass: 'bg-danger-text', label: 'No-show', pillTone: 'danger' },
   cancelled: { dotClass: 'bg-ink-faint3', label: 'Cancelled', pillTone: 'neutral' },
 }

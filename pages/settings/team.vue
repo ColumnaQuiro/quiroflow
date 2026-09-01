@@ -29,7 +29,7 @@ const roleName = computed(() => {
 async function load() {
   loading.value = true
   const [{ data: m }, { data: i }, { data: r }] = await Promise.all([
-    supabase.from('team_members').select('*').order('full_name'),
+    supabase.from('team_members').select('*').is('deleted_at', null).order('full_name'),
     supabase.from('account_invites').select('*').is('accepted_at', null).order('created_at', { ascending: false }),
     supabase.from('account_roles').select('id, name').order('is_system', { ascending: false }).order('name'),
   ])

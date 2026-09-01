@@ -62,6 +62,7 @@ export const useAccountStore = defineStore('account', {
         .from('team_members')
         .select('id, account_id, full_name, role, color, is_owner, theme_preference')
         .eq('user_id', user.value.sub)
+        .is('deleted_at', null)
         .maybeSingle()
 
       if (!teamMember) {

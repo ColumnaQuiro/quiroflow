@@ -234,7 +234,7 @@ function selectMiniDate(d: Date) {
 async function loadReferenceData() {
   const [{ data: types }, { data: members }, { data: ovr }, { data: memberClinics }] = await Promise.all([
     supabase.from('appointment_types').select('id, name, duration_minutes, color, default_price_cents').order('name'),
-    supabase.from('team_members').select('id, full_name, color').order('full_name'),
+    supabase.from('team_members').select('id, full_name, color').is('deleted_at', null).order('full_name'),
     supabase.from('appointment_type_overrides').select('appointment_type_id, team_member_id, duration_minutes, price_cents'),
     supabase.from('team_member_clinics').select('team_member_id, clinic_id'),
   ])

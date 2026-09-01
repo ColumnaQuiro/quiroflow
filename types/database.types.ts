@@ -3064,6 +3064,7 @@ export type Database = {
           color: string
           created_at: string
           dashboard_layout: Json
+          deleted_at: string | null
           full_name: string
           id: string
           is_owner: boolean
@@ -3079,6 +3080,7 @@ export type Database = {
           color?: string
           created_at?: string
           dashboard_layout?: Json
+          deleted_at?: string | null
           full_name: string
           id?: string
           is_owner?: boolean
@@ -3094,6 +3096,7 @@ export type Database = {
           color?: string
           created_at?: string
           dashboard_layout?: Json
+          deleted_at?: string | null
           full_name?: string
           id?: string
           is_owner?: boolean

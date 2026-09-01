@@ -61,6 +61,21 @@ async function changePassword() {
   confirmPassword.value = ''
   showToast('Password updated.')
 }
+
+const deletingAccount = ref(false)
+async function deleteAccount() {
+  if (!confirm("Delete your account? This signs you out and revokes your login immediately. This can't be undone by you -- an owner would need to re-invite you to come back.")) return
+  deletingAccount.value = true
+  try {
+    await $fetch('/api/account/delete', { method: 'POST' })
+  } catch (err: any) {
+    deletingAccount.value = false
+    showToast(err?.data?.statusMessage ?? 'Failed to delete account.', 'error')
+    return
+  }
+  await supabase.auth.signOut()
+  await navigateTo('/login')
+}
 </script>
 
 <template>
@@ -107,6 +122,17 @@ async function changePassword() {
         </UiBtn>
       </div>
     </form>
+
+    <div class="mt-6 space-y-3 rounded-card border border-danger-border bg-danger-bg p-4">
+      <h2 class="text-sm font-semibold text-danger-text">Delete Account</h2>
+      <p class="text-sm text-ink-muted">
+        Removes your login from this clinic immediately. Your name stays attached to past appointments and records for
+        the clinic's own history -- it isn't erased, just your access to it.
+      </p>
+      <UiBtn type="button" variant="secondary" class="border-danger-border text-danger-text" :disabled="deletingAccount" @click="deleteAccount">
+        {{ deletingAccount ? 'Deleting…' : 'Delete Account' }}
+      </UiBtn>
+    </div>
     </div>
     </div>
   </div>

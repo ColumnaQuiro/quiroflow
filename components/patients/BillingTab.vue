@@ -189,6 +189,20 @@ async function takePayment() {
 }
 
 const showCardModal = ref(false)
+const copyingCardLink = ref(false)
+const { showToast } = useToast()
+async function copyCardLink() {
+  copyingCardLink.value = true
+  try {
+    const { url } = await useStaffFetch<{ url: string }>('/api/stripe/create-card-link', { method: 'POST', body: { patientId: props.patientId } })
+    await navigator.clipboard.writeText(url)
+    showToast('Card link copied -- send it to the patient')
+  } catch (err: any) {
+    showToast(err?.data?.statusMessage ?? 'Could not create card link', 'error')
+  } finally {
+    copyingCardLink.value = false
+  }
+}
 const stripeCustomer = ref<StripeCustomerRow | null>(null)
 const schedules = ref<PaymentScheduleRow[]>([])
 const stripeEvents = ref<StripeEventRow[]>([])
@@ -667,6 +681,7 @@ function money(cents: number) {
           <UiBtn variant="secondary" size="sm" @click="activePanel = activePanel === 'credit' ? null : 'credit'">Add credit</UiBtn>
           <UiBtn variant="primary" size="sm" @click="activePanel === 'payment' ? (activePanel = null) : openTakePayment()">Take payment</UiBtn>
           <UiBtn variant="secondary" size="sm" @click="showCardModal = true">{{ hasCard ? 'Replace card' : 'Add card' }}</UiBtn>
+          <UiBtn variant="secondary" size="sm" :disabled="copyingCardLink" @click="copyCardLink">{{ copyingCardLink ? 'Copying…' : 'Copy card link' }}</UiBtn>
         </div>
       </div>
 

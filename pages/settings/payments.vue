@@ -189,8 +189,9 @@ async function disconnect() {
                   <code class="rounded-ctlSm bg-surface px-1 py-0.5 text-[12px]">invoice.paid</code>,
                   <code class="rounded-ctlSm bg-surface px-1 py-0.5 text-[12px]">invoice.payment_failed</code>,
                   <code class="rounded-ctlSm bg-surface px-1 py-0.5 text-[12px]">subscription_schedule.updated</code>,
-                  <code class="rounded-ctlSm bg-surface px-1 py-0.5 text-[12px]">subscription_schedule.released</code>, and
-                  <code class="rounded-ctlSm bg-surface px-1 py-0.5 text-[12px]">subscription_schedule.canceled</code>.
+                  <code class="rounded-ctlSm bg-surface px-1 py-0.5 text-[12px]">subscription_schedule.released</code>,
+                  <code class="rounded-ctlSm bg-surface px-1 py-0.5 text-[12px]">subscription_schedule.canceled</code>, and
+                  <code class="rounded-ctlSm bg-surface px-1 py-0.5 text-[12px]">setup_intent.succeeded</code>.
                 </p>
                 <div class="mt-1.5 flex items-center gap-2">
                   <code class="flex-1 overflow-x-auto rounded-ctlSm bg-surface px-2 py-1 text-[12px] text-ink-600">{{ webhookUrl }}</code>

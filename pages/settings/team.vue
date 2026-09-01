@@ -54,6 +54,8 @@ async function createInvite() {
     error.value = 'Email is required.'
     return
   }
+  const selectedRoleName = roles.value.find((r) => r.id === inviteRoleId.value)?.name
+  const legacyRole = selectedRoleName === 'Owner' ? 'owner' : selectedRoleName === 'Front Desk' ? 'front_desk' : 'practitioner'
   const { data, error: insertError } = await supabase
     .from('account_invites')
     .insert({
@@ -61,9 +63,10 @@ async function createInvite() {
       email,
       role_id: inviteRoleId.value,
       // Legacy column still has a check constraint (owner/practitioner/front_desk) and is
-      // no longer the source of truth for permissions — role_id above is. This is just a
-      // safe placeholder so the insert satisfies the constraint.
-      role: 'practitioner',
+      // no longer the source of truth for permissions — role_id above is. Derived from the
+      // selected role's name so it stays in sync with role_id (e.g. AppSidebar's role label
+      // still reads this column).
+      role: legacyRole,
     })
     .select('id, token')
     .single()

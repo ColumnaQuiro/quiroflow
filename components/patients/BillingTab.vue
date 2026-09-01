@@ -190,6 +190,7 @@ async function takePayment() {
 
 const showCardModal = ref(false)
 const copyingCardLink = ref(false)
+const removingCard = ref(false)
 const { showToast } = useToast()
 async function copyCardLink() {
   copyingCardLink.value = true
@@ -201,6 +202,19 @@ async function copyCardLink() {
     showToast(err?.data?.statusMessage ?? 'Could not create card link', 'error')
   } finally {
     copyingCardLink.value = false
+  }
+}
+async function removeCard() {
+  if (!confirm('Remove the saved card for this patient?')) return
+  removingCard.value = true
+  try {
+    await useStaffFetch('/api/stripe/remove-card', { method: 'POST', body: { patientId: props.patientId } })
+    showToast('Card removed')
+    await loadAll()
+  } catch (err: any) {
+    showToast(err?.data?.statusMessage ?? 'Could not remove card', 'error')
+  } finally {
+    removingCard.value = false
   }
 }
 const stripeCustomer = ref<StripeCustomerRow | null>(null)
@@ -682,6 +696,7 @@ function money(cents: number) {
           <UiBtn variant="primary" size="sm" @click="activePanel === 'payment' ? (activePanel = null) : openTakePayment()">Take payment</UiBtn>
           <UiBtn variant="secondary" size="sm" @click="showCardModal = true">{{ hasCard ? 'Replace card' : 'Add card' }}</UiBtn>
           <UiBtn variant="secondary" size="sm" :disabled="copyingCardLink" @click="copyCardLink">{{ copyingCardLink ? 'Copying…' : 'Copy card link' }}</UiBtn>
+          <UiBtn v-if="hasCard" variant="secondary" size="sm" :disabled="removingCard" @click="removeCard">{{ removingCard ? 'Removing…' : 'Remove card' }}</UiBtn>
         </div>
       </div>
 

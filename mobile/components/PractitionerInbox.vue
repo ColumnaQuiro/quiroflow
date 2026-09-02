@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const props = defineProps<{ accountId: string }>()
+const props = defineProps<{ accountId: string; teamMemberId: string }>()
 
 interface Message {
   id: string
@@ -43,9 +43,10 @@ watch(keyboardHeight, (h) => {
 // Edge-swipe from the thread back to the conversation list, like the
 // native iOS back gesture -- there's no real navigation stack here for iOS
 // to hook its own gesture into, so this reimplements the recognizable part
-// of it by hand. Watches selected rather than attaching once on mount:
-// threadEl only exists in the DOM while a conversation is open (v-else-if),
-// so the ref is null every time it closes and needs reattaching next open.
+// of it by hand, including live tracking (see useSwipeBack). Watches
+// selected rather than attaching once on mount: threadEl only exists in the
+// DOM while a conversation is open or the close animation is still
+// settling, so the ref is null between opens and needs reattaching each time.
 const threadEl = ref<HTMLElement>()
 const swipeBack = useSwipeBack(() => {
   selectedKey.value = null
@@ -74,6 +75,24 @@ async function loadReadTimestamps() {
   readTimestamps.value = next
 }
 onMounted(loadReadTimestamps)
+
+interface LabelDef { id: string; name: string; color: string }
+const archivedKeys = ref<Set<string>>(new Set())
+const myLabelsByKey = ref<Record<string, string[]>>({})
+const labels = ref<LabelDef[]>([])
+async function loadArchivesAndLabels() {
+  const [{ data: archives }, { data: assigns }, { data: labelRows }] = await Promise.all([
+    supabase.from('whatsapp_conversation_archives').select('conversation_key').eq('team_member_id', props.teamMemberId),
+    supabase.from('whatsapp_conversation_labels').select('conversation_key, label_id').eq('team_member_id', props.teamMemberId),
+    supabase.from('whatsapp_labels').select('id, name, color').order('name'),
+  ])
+  archivedKeys.value = new Set((archives ?? []).map((a) => a.conversation_key))
+  const byKey: Record<string, string[]> = {}
+  for (const a of assigns ?? []) (byKey[a.conversation_key] ??= []).push(a.label_id)
+  myLabelsByKey.value = byKey
+  labels.value = labelRows ?? []
+}
+onMounted(loadArchivesAndLabels)
 
 async function load() {
   loading.value = true
@@ -152,12 +171,23 @@ const conversationSearchText = computed(() => {
   }
   return map
 })
+const view = ref<'active' | 'archived'>('active')
+const unreadOnly = ref(false)
+const replyFilter = ref<'all' | 'awaiting_us' | 'awaiting_patient'>('all')
+const labelFilter = ref<string | null>(null)
+const filterSheetOpen = ref(false)
+
 const filteredConversations = computed(() => {
-  if (!search.value.trim()) return conversations.value
-  const q = normalizeSearchTerm(search.value.trim())
-  return conversations.value.filter((c) =>
-    normalizeSearchTerm(`${c.name} ${c.phoneNumber ?? ''} ${conversationSearchText.value[c.key] ?? ''}`).includes(q),
-  )
+  let list = conversations.value.filter((c) => archivedKeys.value.has(c.key) === (view.value === 'archived'))
+  if (search.value.trim()) {
+    const q = normalizeSearchTerm(search.value.trim())
+    list = list.filter((c) => normalizeSearchTerm(`${c.name} ${c.phoneNumber ?? ''} ${conversationSearchText.value[c.key] ?? ''}`).includes(q))
+  }
+  if (unreadOnly.value) list = list.filter((c) => c.unread)
+  if (replyFilter.value === 'awaiting_us') list = list.filter((c) => c.lastMessage.direction === 'inbound')
+  else if (replyFilter.value === 'awaiting_patient') list = list.filter((c) => c.lastMessage.direction === 'outbound')
+  if (labelFilter.value) list = list.filter((c) => myLabelsByKey.value[c.key]?.includes(labelFilter.value!))
+  return list
 })
 
 // Bulk select: tap "Select" to enter the mode, tap rows to check them, then
@@ -211,6 +241,8 @@ async function deleteKeys(keys: string[]) {
       await query
       if (c.patientId) await supabase.from('patient_app_messages').delete().eq('patient_id', c.patientId)
       await supabase.from('whatsapp_conversation_reads').delete().eq('account_id', props.accountId).eq('conversation_key', key)
+      await supabase.from('whatsapp_conversation_archives').delete().eq('team_member_id', props.teamMemberId).eq('conversation_key', key)
+      await supabase.from('whatsapp_conversation_labels').delete().eq('team_member_id', props.teamMemberId).eq('conversation_key', key)
     }
     messages.value = messages.value.filter((m) => !keys.includes(m.patient_id ?? m.phone_number ?? 'unknown'))
     pendingMessages.value = pendingMessages.value.filter((m) => !keys.includes(m.patient_id ?? m.phone_number ?? 'unknown'))
@@ -247,6 +279,64 @@ async function bulkMarkUnreadSelected() {
   exitSelectionMode()
 }
 
+async function bulkArchiveSelected(archive: boolean) {
+  const keys = [...selectedKeys.value]
+  if (keys.length === 0) return
+  if (archive) {
+    const next = new Set(archivedKeys.value)
+    for (const k of keys) next.add(k)
+    archivedKeys.value = next
+    await supabase.from('whatsapp_conversation_archives').upsert(keys.map((k) => ({ account_id: props.accountId, team_member_id: props.teamMemberId, conversation_key: k })) as never)
+  } else {
+    const next = new Set(archivedKeys.value)
+    for (const k of keys) next.delete(k)
+    archivedKeys.value = next
+    await supabase.from('whatsapp_conversation_archives').delete().eq('team_member_id', props.teamMemberId).in('conversation_key', keys)
+  }
+  exitSelectionMode()
+}
+
+// Single-conversation archive toggle, used from the row swipe action.
+async function toggleArchive(c: Conversation) {
+  swipedKey.value = null
+  const isArchived = archivedKeys.value.has(c.key)
+  const next = new Set(archivedKeys.value)
+  if (isArchived) next.delete(c.key)
+  else next.add(c.key)
+  archivedKeys.value = next
+  if (isArchived) {
+    await supabase.from('whatsapp_conversation_archives').delete().eq('team_member_id', props.teamMemberId).eq('conversation_key', c.key)
+  } else {
+    await supabase.from('whatsapp_conversation_archives').upsert({ account_id: props.accountId, team_member_id: props.teamMemberId, conversation_key: c.key } as never)
+  }
+}
+
+// Mixed-selection rule matches the checkbox convention used elsewhere: if
+// every key already has the label, remove it from all; otherwise add it to
+// whichever are missing it, rather than clearing first.
+async function toggleLabelForKeys(labelId: string, keys: string[]) {
+  if (keys.length === 0) return
+  const allApplied = keys.every((k) => myLabelsByKey.value[k]?.includes(labelId))
+  const nextByKey = { ...myLabelsByKey.value }
+  if (allApplied) {
+    for (const k of keys) nextByKey[k] = (nextByKey[k] ?? []).filter((id) => id !== labelId)
+    myLabelsByKey.value = nextByKey
+    await supabase.from('whatsapp_conversation_labels').delete().eq('team_member_id', props.teamMemberId).eq('label_id', labelId).in('conversation_key', keys)
+  } else {
+    const toAdd = keys.filter((k) => !myLabelsByKey.value[k]?.includes(labelId))
+    for (const k of toAdd) nextByKey[k] = [...(nextByKey[k] ?? []), labelId]
+    myLabelsByKey.value = nextByKey
+    await supabase.from('whatsapp_conversation_labels').upsert(toAdd.map((k) => ({ account_id: props.accountId, team_member_id: props.teamMemberId, conversation_key: k, label_id: labelId })) as never)
+  }
+}
+
+async function createLabel(name: string, color: string, applyToKeys: string[]) {
+  const { data } = await supabase.from('whatsapp_labels').insert({ account_id: props.accountId, name, color, created_by: props.teamMemberId }).select('id, name, color').single()
+  if (!data) return
+  labels.value = [...labels.value, data].sort((a, b) => a.name.localeCompare(b.name))
+  if (applyToKeys.length > 0) await toggleLabelForKeys(data.id, applyToKeys)
+}
+
 // Marking unread is the mirror of markRead: back-date the read timestamp
 // instead of clearing it, since a conversation with no read record at all
 // is already "unread" by definition (see the `unread` computed above) --
@@ -262,38 +352,77 @@ async function toggleUnread(c: Conversation) {
   await supabase.from('whatsapp_conversation_reads').upsert({ account_id: props.accountId, conversation_key: c.key, last_read_at: past } as never)
 }
 
-// Swipe-to-reveal on each conversation row, snap-open/closed rather than
-// live-following the finger -- simpler to get right than a full drag
-// gesture, and still the recognizable "swipe left for actions" pattern.
-// justSwiped exists because a touchend that opens/closes the row is
+// Swipe-to-reveal on each conversation row, live-following the finger like
+// the native iOS gesture rather than only snapping at the end -- dragX
+// tracks the actual touch position during the gesture (with resistance past
+// either end, since there's nothing further to reveal beyond the buttons or
+// left of closed), and only touchend decides open/closed, by final distance
+// OR flick velocity so a fast short swipe commits the same as a slow long
+// one. justSwiped exists because a touchend that opens/closes the row is
 // immediately followed by a synthesized click on the same element; without
 // it, that click's own handler (see the template) would see swipedKey
 // already set and instantly close what touchend just opened.
+const ROW_ACTIONS_WIDTH = 228 // Unread + Archive + Delete, 76px each
 const swipedKey = ref<string | null>(null)
+const draggingKey = ref<string | null>(null)
+const rowDragX = ref(0)
 let rowTouchStartX = 0
 let rowTouchStartY = 0
 let rowSwiping = false
 let justSwiped = false
-function onRowTouchStart(e: TouchEvent) {
+let rowSamples: { x: number; t: number }[] = []
+function rowBaseOffset(key: string) {
+  return swipedKey.value === key ? -ROW_ACTIONS_WIDTH : 0
+}
+function onRowTouchStart(e: TouchEvent, c: Conversation) {
   if (selectionMode.value) return
   rowTouchStartX = e.touches[0]?.clientX ?? 0
   rowTouchStartY = e.touches[0]?.clientY ?? 0
   rowSwiping = false
+  draggingKey.value = c.key
+  rowDragX.value = rowBaseOffset(c.key)
+  rowSamples = [{ x: rowTouchStartX, t: performance.now() }]
 }
-function onRowTouchMove(e: TouchEvent) {
+function onRowTouchMove(e: TouchEvent, c: Conversation) {
   if (selectionMode.value) return
   const t = e.touches[0]
   if (!t) return
   const dx = t.clientX - rowTouchStartX
   const dy = Math.abs(t.clientY - rowTouchStartY)
-  if (Math.abs(dx) > 10 && dy < 20) rowSwiping = true
+  if (!rowSwiping) {
+    if (dy > 20 && dy > Math.abs(dx)) {
+      draggingKey.value = null
+      return
+    }
+    if (Math.abs(dx) > 10) {
+      rowSwiping = true
+      draggingKey.value = c.key
+    }
+  }
+  if (!rowSwiping) return
+  let next = rowBaseOffset(c.key) + dx
+  if (next > 0) next *= 0.3
+  else if (next < -ROW_ACTIONS_WIDTH) next = -ROW_ACTIONS_WIDTH + (next + ROW_ACTIONS_WIDTH) * 0.3
+  rowDragX.value = next
+  rowSamples.push({ x: t.clientX, t: performance.now() })
+  if (rowSamples.length > 6) rowSamples.shift()
 }
 function onRowTouchEnd(e: TouchEvent, c: Conversation) {
-  if (selectionMode.value || !rowSwiping) return
+  if (selectionMode.value || !rowSwiping) {
+    draggingKey.value = null
+    return
+  }
   justSwiped = true
-  const dx = (e.changedTouches[0]?.clientX ?? 0) - rowTouchStartX
-  if (dx < -40) swipedKey.value = c.key
-  else if (dx > 20) swipedKey.value = null
+  const first = rowSamples[0]
+  const last = rowSamples[rowSamples.length - 1]
+  const dt = Math.max(1, last.t - first.t)
+  const velocity = (last.x - first.x) / dt // px/ms, negative = moving left (opening)
+  let willOpen: boolean
+  if (velocity < -0.5) willOpen = true
+  else if (velocity > 0.5) willOpen = false
+  else willOpen = rowDragX.value < -ROW_ACTIONS_WIDTH / 2
+  swipedKey.value = willOpen ? c.key : null
+  draggingKey.value = null
 }
 function onRowClick(c: Conversation) {
   if (selectionMode.value) {
@@ -613,6 +742,19 @@ onUnmounted(() => {
   if (channel) supabase.removeChannel(channel)
 })
 
+let orgChannel: ReturnType<typeof supabase.channel> | null = null
+onMounted(() => {
+  orgChannel = supabase
+    .channel('mobile-inbox-labels-archives')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'whatsapp_labels', filter: `account_id=eq.${props.accountId}` }, () => loadArchivesAndLabels())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'whatsapp_conversation_labels', filter: `account_id=eq.${props.accountId}` }, () => loadArchivesAndLabels())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'whatsapp_conversation_archives', filter: `account_id=eq.${props.accountId}` }, () => loadArchivesAndLabels())
+    .subscribe()
+})
+onUnmounted(() => {
+  if (orgChannel) supabase.removeChannel(orgChannel)
+})
+
 // Belt-and-suspenders alongside the realtime subscription above -- a
 // websocket that silently drops (backgrounded app, network blip) leaves the
 // thread stuck until something else forces a reload, which reads as "I have
@@ -628,9 +770,9 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-    <!-- Conversation list -->
-    <div v-if="!selectedKey" class="flex min-h-0 flex-1 flex-col">
+  <div class="relative flex min-h-0 flex-1 overflow-hidden">
+    <!-- Conversation list: always mounted underneath the thread overlay -->
+    <div class="absolute inset-0 flex min-h-0 flex-col bg-surface">
       <div v-if="!selectionMode" class="flex shrink-0 items-center gap-2 border-b border-line bg-surface px-3 py-2">
         <input
           v-model="search"
@@ -638,23 +780,66 @@ onUnmounted(() => {
           placeholder="Search name, number, messages…"
           class="h-9 flex-1 rounded-ctl border border-line-control bg-surface-subtle px-3 text-[14px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none"
         />
+        <button
+          type="button"
+          class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl border"
+          :class="view === 'archived' ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted'"
+          :title="view === 'archived' ? 'Show active conversations' : 'Show archived conversations'"
+          @click="view = view === 'archived' ? 'active' : 'archived'"
+        >
+          <svg viewBox="0 0 16 16" class="h-[18px] w-[18px]" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 3.5h12v2.5H2z" />
+            <path d="M2.8 6v6.5a1 1 0 0 0 1 1h8.4a1 1 0 0 0 1-1V6" />
+            <path d="M6.5 8.5h3" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          class="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl border"
+          :class="unreadOnly || replyFilter !== 'all' || labelFilter ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted'"
+          title="Filter"
+          @click="filterSheetOpen = true"
+        >
+          <svg viewBox="0 0 16 16" class="h-[18px] w-[18px]" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 4h12M4.5 8h7M7 12h2" />
+          </svg>
+        </button>
         <button type="button" class="shrink-0 px-1 text-[13px] font-medium text-brand-text" @click="selectionMode = true">Select</button>
       </div>
       <div v-else class="flex shrink-0 items-center justify-between gap-2 border-b border-line bg-surface px-3 py-2">
         <button type="button" class="shrink-0 px-1 text-[13px] text-ink-muted2" @click="exitSelectionMode">Cancel</button>
         <p class="truncate text-[13px] text-ink-700">{{ selectedKeys.size }} selected</p>
         <div class="flex shrink-0 items-center gap-3">
+          <InboxLabelPicker
+            :labels="labels"
+            :applied-ids="[]"
+            @toggle-label="(id: string) => toggleLabelForKeys(id, [...selectedKeys])"
+            @create-label="(name: string, color: string) => createLabel(name, color, [...selectedKeys])"
+          />
+          <button
+            type="button"
+            class="text-[13px] font-medium text-brand-text disabled:opacity-40"
+            :disabled="selectedKeys.size === 0"
+            @click="bulkArchiveSelected(view !== 'archived')"
+          >
+            {{ view === 'archived' ? 'Unarchive' : 'Archive' }}
+          </button>
           <button type="button" class="text-[13px] font-medium text-brand-text disabled:opacity-40" :disabled="selectedKeys.size === 0" @click="bulkMarkUnreadSelected">Unread</button>
           <button type="button" class="text-[13px] font-medium text-danger-text disabled:opacity-40" :disabled="selectedKeys.size === 0" @click="bulkDeleteSelected">Delete</button>
         </div>
       </div>
       <div class="flex-1 overflow-y-auto">
         <div v-if="loading" class="p-6 text-center text-[13px] text-ink-faint">Loading…</div>
-        <p v-else-if="filteredConversations.length === 0" class="p-6 text-center text-[13px] text-ink-faint">No conversations yet.</p>
+        <p v-else-if="filteredConversations.length === 0" class="p-6 text-center text-[13px] text-ink-faint">
+          {{ view === 'archived' ? 'No archived conversations.' : 'No conversations yet.' }}
+        </p>
         <div v-for="c in filteredConversations" :key="c.key" class="relative overflow-hidden border-b border-line-row">
           <div class="absolute inset-y-0 right-0 flex">
             <button type="button" class="flex w-[76px] items-center justify-center bg-brand text-[12px] font-medium text-white" @click="toggleUnread(c)">
               {{ c.unread ? 'Read' : 'Unread' }}
+            </button>
+            <button type="button" class="flex w-[76px] items-center justify-center bg-ink-muted text-[12px] font-medium text-white" @click="toggleArchive(c)">
+              {{ archivedKeys.has(c.key) ? 'Unarchive' : 'Archive' }}
             </button>
             <button type="button" class="flex w-[76px] items-center justify-center bg-danger-text text-[12px] font-medium text-white" @click="deleteFromList(c)">
               Delete
@@ -662,10 +847,13 @@ onUnmounted(() => {
           </div>
           <button
             type="button"
-            class="flex w-full items-start gap-3 bg-surface px-4 py-3 text-left transition-transform duration-200 active:bg-surface-subtle"
-            :style="{ transform: swipedKey === c.key ? 'translateX(-152px)' : 'translateX(0)' }"
-            @touchstart="onRowTouchStart($event)"
-            @touchmove="onRowTouchMove($event)"
+            class="flex w-full items-start gap-3 bg-surface px-4 py-3 text-left active:bg-surface-subtle"
+            :style="{
+              transform: `translateX(${draggingKey === c.key ? rowDragX : swipedKey === c.key ? -ROW_ACTIONS_WIDTH : 0}px)`,
+              transition: draggingKey === c.key ? 'none' : 'transform 200ms ease-out',
+            }"
+            @touchstart="onRowTouchStart($event, c)"
+            @touchmove="onRowTouchMove($event, c)"
             @touchend="onRowTouchEnd($event, c)"
             @click="onRowClick(c)"
           >
@@ -698,6 +886,16 @@ onUnmounted(() => {
             <p class="truncate text-[13px]" :class="c.unread ? 'font-medium text-ink-800' : 'text-ink-muted2'">
               {{ c.lastMessage.direction === 'outbound' ? 'You: ' : '' }}{{ previewText(c.lastMessage) }}
             </p>
+            <div v-if="myLabelsByKey[c.key]?.length" class="mt-1 flex flex-wrap gap-1">
+              <span
+                v-for="lid in myLabelsByKey[c.key]"
+                :key="lid"
+                class="rounded-pill px-1.5 py-px text-[10px] font-medium text-white"
+                :style="{ backgroundColor: labels.find((l) => l.id === lid)?.color }"
+              >
+                {{ labels.find((l) => l.id === lid)?.name }}
+              </span>
+            </div>
           </div>
           <span v-if="c.unread" class="mt-2 h-[9px] w-[9px] shrink-0 rounded-full bg-brand" />
           </button>
@@ -705,8 +903,67 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- Thread -->
-    <div v-else-if="selected" ref="threadEl" class="flex min-h-0 flex-1 flex-col" :style="{ paddingBottom: keyboardHeight + 'px' }">
+    <!-- Filter bottom sheet -->
+    <div v-if="filterSheetOpen" class="absolute inset-0 z-40 flex items-end bg-black/30" @click="filterSheetOpen = false">
+      <div class="w-full rounded-t-card border-t border-line bg-surface p-4 pb-[calc(env(safe-area-inset-bottom)+16px)]" @click.stop>
+        <p class="mb-3 text-[13px] font-[600] text-ink-900">Filter conversations</p>
+        <div class="flex flex-col gap-1">
+          <button
+            type="button"
+            class="flex items-center justify-between rounded-ctl px-3 py-2.5 text-left text-[14px]"
+            :class="unreadOnly ? 'bg-brand-tint text-brand-text' : 'text-ink-700'"
+            @click="unreadOnly = !unreadOnly"
+          >
+            Unread
+            <svg v-if="unreadOnly" viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l3.5 3.5L13 5" /></svg>
+          </button>
+          <button
+            type="button"
+            class="flex items-center justify-between rounded-ctl px-3 py-2.5 text-left text-[14px]"
+            :class="replyFilter === 'awaiting_us' ? 'bg-brand-tint text-brand-text' : 'text-ink-700'"
+            @click="replyFilter = replyFilter === 'awaiting_us' ? 'all' : 'awaiting_us'"
+          >
+            Awaiting us
+            <svg v-if="replyFilter === 'awaiting_us'" viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l3.5 3.5L13 5" /></svg>
+          </button>
+          <button
+            type="button"
+            class="flex items-center justify-between rounded-ctl px-3 py-2.5 text-left text-[14px]"
+            :class="replyFilter === 'awaiting_patient' ? 'bg-brand-tint text-brand-text' : 'text-ink-700'"
+            @click="replyFilter = replyFilter === 'awaiting_patient' ? 'all' : 'awaiting_patient'"
+          >
+            Awaiting patient
+            <svg v-if="replyFilter === 'awaiting_patient'" viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l3.5 3.5L13 5" /></svg>
+          </button>
+          <div v-if="labels.length > 0" class="my-1.5 border-t border-line-divider" />
+          <button
+            v-for="l in labels"
+            :key="l.id"
+            type="button"
+            class="flex items-center gap-2.5 rounded-ctl px-3 py-2.5 text-left text-[14px]"
+            :class="labelFilter === l.id ? 'bg-brand-tint text-brand-text' : 'text-ink-700'"
+            @click="labelFilter = labelFilter === l.id ? null : l.id"
+          >
+            <span class="h-[9px] w-[9px] shrink-0 rounded-full" :style="{ backgroundColor: l.color }" />
+            <span class="flex-1 truncate">{{ l.name }}</span>
+            <svg v-if="labelFilter === l.id" viewBox="0 0 16 16" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l3.5 3.5L13 5" /></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Thread: overlay shown while open or animating closed via the back gesture -->
+    <div
+      v-if="selectedKey || swipeBack.active.value"
+      ref="threadEl"
+      class="absolute inset-0 z-30 flex min-h-0 flex-col bg-surface-page shadow-[-2px_0_12px_rgba(0,0,0,0.12)]"
+      :style="{
+        transform: `translateX(${swipeBack.dragX.value}px)`,
+        transition: swipeBack.dragging.value ? 'none' : 'transform 200ms ease-out',
+        paddingBottom: keyboardHeight + 'px',
+      }"
+    >
+      <template v-if="selected">
       <div class="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
         <button type="button" class="flex h-11 w-11 shrink-0 items-center justify-center text-brand-text" @click="selectedKey = null">
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7" /></svg>
@@ -845,6 +1102,7 @@ onUnmounted(() => {
           </button>
         </div>
       </div>
+      </template>
     </div>
 
     <div v-if="lightboxUrl" class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-6" @click="lightboxUrl = null">

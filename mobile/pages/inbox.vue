@@ -13,6 +13,6 @@ const { context, loading } = usePractitionerContext()
     <p v-else-if="!context" class="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-sm text-ink-muted">
       This account isn't linked to a team record.
     </p>
-    <PractitionerInbox v-else :account-id="context.accountId" />
+    <PractitionerInbox v-else :account-id="context.accountId" :team-member-id="context.teamMemberId" />
   </div>
 </template>

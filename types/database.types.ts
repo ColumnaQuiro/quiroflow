@@ -3268,6 +3268,88 @@ export type Database = {
           },
         ]
       }
+      whatsapp_conversation_archives: {
+        Row: {
+          account_id: string
+          archived_at: string
+          conversation_key: string
+          team_member_id: string
+        }
+        Insert: {
+          account_id: string
+          archived_at?: string
+          conversation_key: string
+          team_member_id: string
+        }
+        Update: {
+          account_id?: string
+          archived_at?: string
+          conversation_key?: string
+          team_member_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_conversation_archives_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_conversation_archives_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_conversation_labels: {
+        Row: {
+          account_id: string
+          conversation_key: string
+          created_at: string
+          label_id: string
+          team_member_id: string
+        }
+        Insert: {
+          account_id: string
+          conversation_key: string
+          created_at?: string
+          label_id: string
+          team_member_id: string
+        }
+        Update: {
+          account_id?: string
+          conversation_key?: string
+          created_at?: string
+          label_id?: string
+          team_member_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_conversation_labels_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_conversation_labels_label_id_fkey"
+            columns: ["label_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_labels"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_conversation_labels_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       whatsapp_conversation_reads: {
         Row: {
           account_id: string
@@ -3290,6 +3372,48 @@ export type Database = {
             columns: ["account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_labels: {
+        Row: {
+          account_id: string
+          color: string
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+        }
+        Insert: {
+          account_id: string
+          color?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+        }
+        Update: {
+          account_id?: string
+          color?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_labels_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_labels_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
             referencedColumns: ["id"]
           },
         ]

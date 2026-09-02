@@ -96,7 +96,7 @@ function closeQr() {
     <button
       type="button"
       class="group relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-brand-tint text-[14px] font-semibold text-brand-text"
-      title="Change profile photo"
+      :title="t('Change profile photo', 'Cambiar foto de perfil')"
       @click="openMenu"
     >
       <img v-if="photoUrl" :src="photoUrl" class="h-full w-full object-cover" alt="" />
@@ -106,20 +106,20 @@ function closeQr() {
 
     <div v-if="menuOpen" class="absolute left-0 top-11 z-20 w-44 rounded-card border border-line bg-surface py-1 shadow-popover" @click.self="menuOpen = false">
       <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="pickFromComputer">
-        Upload from computer
+        {{ t('Upload from computer', 'Subir desde el ordenador') }}
       </button>
       <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="useYourPhone">
-        Use your phone (QR)
+        {{ t('Use your phone (QR)', 'Usar tu móvil (QR)') }}
       </button>
     </div>
     <input ref="fileInput" type="file" accept="image/*" class="hidden" @change="onFileChosen" />
 
     <div v-if="qrOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" @click.self="closeQr">
       <div class="w-full max-w-xs rounded-card border border-line bg-surface p-6 text-center shadow-popover">
-        <p class="text-[13.5px] font-[620] text-ink-900">Scan with your phone</p>
-        <p class="mt-1 text-[12px] text-ink-muted2">Take a photo -- it'll appear here automatically.</p>
-        <img :src="qrDataUrl" class="mx-auto mt-4 h-[220px] w-[220px]" alt="QR code" />
-        <UiBtn variant="secondary" class="mt-4 w-full justify-center" @click="closeQr">Cancel</UiBtn>
+        <p class="text-[13.5px] font-[620] text-ink-900">{{ t('Scan with your phone', 'Escanea con tu móvil') }}</p>
+        <p class="mt-1 text-[12px] text-ink-muted2">{{ t("Take a photo -- it'll appear here automatically.", 'Haz una foto: aparecerá aquí automáticamente.') }}</p>
+        <img :src="qrDataUrl" class="mx-auto mt-4 h-[220px] w-[220px]" :alt="t('QR code', 'Código QR')" />
+        <UiBtn variant="secondary" class="mt-4 w-full justify-center" @click="closeQr">{{ t('Cancel', 'Cancelar') }}</UiBtn>
       </div>
     </div>
     <p v-if="error" class="absolute left-0 top-11 z-20 w-48 text-[11px] text-danger-text">{{ error }}</p>

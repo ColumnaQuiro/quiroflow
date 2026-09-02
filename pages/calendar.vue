@@ -1294,21 +1294,21 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                   :style="{ top: `${timeToPx(block.starts_at, DAY_HOUR_PX)}px`, height: `${durationToPx(block.starts_at, block.ends_at, DAY_HOUR_PX, DAY_MIN_AVAILABILITY_PX)}px` }"
                   @click.stop="openBlockEditModal(block)"
                 >
-                  {{ block.note || (block.room_id === null ? 'Blocked (whole clinic)' : 'Blocked') }}
+                  {{ block.note || (block.room_id === null ? t('Blocked (whole clinic)', 'Bloqueado (toda la clínica)') : t('Blocked', 'Bloqueado')) }}
                 </div>
 
                 <template v-for="(appt, i) in layoutForRoom(col.id)" :key="isOverflowBlock(appt) ? `overflow-${col.id}-${i}` : appt.id">
                   <div
                     v-if="isOverflowBlock(appt)"
                     class="absolute flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[10.5px] font-medium text-ink-muted2 shadow-card"
-                    :title="`${appt.count} more appointment${appt.count === 1 ? '' : 's'} at this time`"
+                    :title="`${appt.count} ${appt.count === 1 ? t('more appointment', 'cita más') : t('more appointments', 'citas más')} ${t('at this time', 'a esta hora')}`"
                     :style="{
                       ...cascadeStyle(appt, DAY_CASCADE_PX),
                       top: `${timeToPx(appt.starts_at, DAY_HOUR_PX)}px`,
                       height: `${OVERFLOW_CHIP_PX}px`,
                     }"
                   >
-                    +{{ appt.count }} more
+                    +{{ appt.count }} {{ t('more', 'más') }}
                   </div>
                   <div
                     v-else
@@ -1446,7 +1446,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                     class="pointer-events-none absolute left-0 right-0 z-0 flex items-center justify-center overflow-hidden bg-[repeating-linear-gradient(135deg,#F4F5F8,#F4F5F8_6px,#EBECF1_6px,#EBECF1_12px)] font-mono text-[10px] text-ink-muted2"
                     :style="{ top: `${timeToPx(block.starts_at, WEEK_HOUR_PX)}px`, height: `${durationToPx(block.starts_at, block.ends_at, WEEK_HOUR_PX, WEEK_MIN_AVAILABILITY_PX)}px` }"
                   >
-                    Blocked
+                    {{ t('Blocked', 'Bloqueado') }}
                   </div>
 
                   <template v-for="(appt, i) in layoutForRoomOnDay(day, col.id)" :key="isOverflowBlock(appt) ? `overflow-${toDateKey(day)}-${col.id}-${i}` : appt.id">
@@ -1454,7 +1454,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                       v-if="isOverflowBlock(appt)"
                       type="button"
                       class="absolute flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[10px] font-medium text-ink-muted2 shadow-card hover:border-line-controlHover"
-                      :title="`${appt.count} more appointment${appt.count === 1 ? '' : 's'} at this time -- click to see them all in Day view`"
+                      :title="`${appt.count} ${appt.count === 1 ? t('more appointment', 'cita más') : t('more appointments', 'citas más')} ${t('at this time -- click to see them all in Day view', 'a esta hora -- haz clic para verlas todas en la vista Día')}`"
                       :style="{
                         ...cascadeStyle(appt, WEEK_CASCADE_PX),
                         top: `${timeToPx(appt.starts_at, WEEK_HOUR_PX)}px`,

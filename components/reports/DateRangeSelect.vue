@@ -6,6 +6,7 @@ const props = withDefaults(defineProps<{ modelValue: DateRange; presets?: DateRa
 })
 const emit = defineEmits<{ 'update:modelValue': [value: DateRange] }>()
 
+const t = useT()
 const open = ref(false)
 const customFrom = ref(props.modelValue.from)
 const customTo = ref(props.modelValue.to)
@@ -79,7 +80,7 @@ onUnmounted(() => document.removeEventListener('click', onClickOutside))
         {{ p.label }}
       </button>
       <div class="mt-1 border-t border-line-divider pt-2">
-        <p class="px-2 text-[11px] font-medium uppercase tracking-wide text-ink-faint2">Custom range</p>
+        <p class="px-2 text-[11px] font-medium uppercase tracking-wide text-ink-faint2">{{ t('Custom range', 'Rango personalizado') }}</p>
         <div class="mt-1 flex items-center gap-1.5 px-2">
           <input v-model="customFrom" type="date" :max="customTo" class="min-w-0 flex-1 rounded-ctlSm border border-line-control px-1.5 py-1 text-xs text-ink-600" />
           <span class="shrink-0 text-ink-faint2">–</span>
@@ -91,7 +92,7 @@ onUnmounted(() => document.removeEventListener('click', onClickOutside))
           class="mt-2 w-full rounded-ctl border border-brand bg-brand px-2 py-1.5 text-xs font-semibold text-white hover:bg-brand-hover disabled:opacity-50"
           @click="applyCustom"
         >
-          Apply
+          {{ t('Apply', 'Aplicar') }}
         </button>
       </div>
     </div>

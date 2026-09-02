@@ -4,6 +4,7 @@ import type { TablesInsert } from '~/types/database.types'
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 type CsvRow = Record<string, string>
 
@@ -50,7 +51,10 @@ async function handleFile(file: File) {
   const parsed = Papa.parse<CsvRow>(text, { header: true, skipEmptyLines: true })
 
   if (parsed.errors.length > 0) {
-    fileError.value = `Could not parse this file: ${parsed.errors[0].message}`
+    fileError.value = t(
+      `Could not parse this file: ${parsed.errors[0].message}`,
+      `No se pudo procesar este archivo: ${parsed.errors[0].message}`,
+    )
     return
   }
 
@@ -181,7 +185,7 @@ async function handleFile(file: File) {
       file: {
         account_id: store.accountId!,
         patient_id: patient.id,
-        file_name: row['Filename']?.trim() || 'Untitled',
+        file_name: row['Filename']?.trim() || t('Untitled', 'Sin título'),
         file_type: row['Mime Type']?.trim() || null,
         size_bytes: parseSize(row['Size (bytes)'] || ''),
         external_reference: fileId || null,
@@ -220,7 +224,12 @@ async function runImport() {
       .select('id')
 
     if (error) {
-      importErrors.value.push(`Rows ${chunk[0].sourceRow}-${chunk[chunk.length - 1].sourceRow}: ${error.message}`)
+      importErrors.value.push(
+        t(
+          `Rows ${chunk[0].sourceRow}-${chunk[chunk.length - 1].sourceRow}: ${error.message}`,
+          `Filas ${chunk[0].sourceRow}-${chunk[chunk.length - 1].sourceRow}: ${error.message}`,
+        ),
+      )
       continue
     }
     importedCount.value += inserted.length
@@ -243,10 +252,12 @@ function reset() {
 <template>
   <div>
     <p class="text-sm text-gray-500">
-      Export "File Attachments - List" as CSV from PracticeHub (Reports &rarr; Data Exports), then drop it here.
-      Patients must already be imported first, since files are matched by PracticeHub's patient ID. PracticeHub's
-      export only lists file metadata (name, size, type) — it doesn't include the actual file content, so these
-      import as placeholder records; the real files need to be attached per patient afterward from their Files tab.
+      {{
+        t(
+          "Export \"File Attachments - List\" as CSV from PracticeHub (Reports → Data Exports), then drop it here. Patients must already be imported first, since files are matched by PracticeHub's patient ID. PracticeHub's export only lists file metadata (name, size, type) — it doesn't include the actual file content, so these import as placeholder records; the real files need to be attached per patient afterward from their Files tab.",
+          'Exporta "File Attachments - List" como CSV desde PracticeHub (Reports → Data Exports) y luego suéltalo aquí. Los pacientes deben haberse importado ya, puesto que los archivos se emparejan por el ID de paciente de PracticeHub. La exportación de PracticeHub solo incluye los metadatos del archivo (nombre, tamaño, tipo); no incluye el contenido real del archivo, así que se importan como registros de marcador de posición; los archivos reales deberán adjuntarse por paciente después desde su pestaña de archivos.',
+        )
+      }}
     </p>
 
     <div v-if="stage === 'pick'" class="mt-4">
@@ -257,9 +268,9 @@ function reset() {
         @dragleave.prevent="dragOver = false"
         @drop.prevent="onDrop"
       >
-        <p class="text-sm text-gray-600">Drag and drop a CSV file here, or</p>
+        <p class="text-sm text-gray-600">{{ t('Drag and drop a CSV file here, or', 'Arrastra y suelta un archivo CSV aquí, o') }}</p>
         <label class="mt-2 cursor-pointer text-sm font-medium text-indigo-600 hover:text-indigo-500">
-          browse for a file
+          {{ t('browse for a file', 'busca un archivo') }}
           <input type="file" accept=".csv" class="hidden" @change="onFileInput" />
         </label>
       </div>
@@ -270,10 +281,10 @@ function reset() {
       <div class="rounded-lg border border-gray-200 bg-white p-4">
         <p class="text-sm font-medium text-gray-900">{{ fileName }}</p>
         <dl class="mt-2 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
-          <div><dt class="text-gray-500">Total rows</dt><dd class="font-medium text-gray-900">{{ totalRows }}</dd></div>
-          <div><dt class="text-gray-500">Will import</dt><dd class="font-medium text-green-700">{{ toImport.length }}</dd></div>
-          <div><dt class="text-gray-500">Already imported</dt><dd class="font-medium text-gray-900">{{ skippedDuplicate }}</dd></div>
-          <div><dt class="text-gray-500">No matching patient</dt><dd class="font-medium text-gray-900">{{ skippedUnmatched }}</dd></div>
+          <div><dt class="text-gray-500">{{ t('Total rows', 'Filas totales') }}</dt><dd class="font-medium text-gray-900">{{ totalRows }}</dd></div>
+          <div><dt class="text-gray-500">{{ t('Will import', 'Se importarán') }}</dt><dd class="font-medium text-green-700">{{ toImport.length }}</dd></div>
+          <div><dt class="text-gray-500">{{ t('Already imported', 'Ya importados') }}</dt><dd class="font-medium text-gray-900">{{ skippedDuplicate }}</dd></div>
+          <div><dt class="text-gray-500">{{ t('No matching patient', 'Sin paciente coincidente') }}</dt><dd class="font-medium text-gray-900">{{ skippedUnmatched }}</dd></div>
         </dl>
       </div>
 
@@ -281,25 +292,25 @@ function reset() {
         <table class="w-full text-sm">
           <thead class="border-b border-gray-200 bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
             <tr>
-              <th class="px-3 py-2">Patient</th>
-              <th class="px-3 py-2">Filename</th>
-              <th class="px-3 py-2">Type</th>
-              <th class="px-3 py-2">Size</th>
-              <th class="px-3 py-2">Created</th>
+              <th class="px-3 py-2">{{ t('Patient', 'Paciente') }}</th>
+              <th class="px-3 py-2">{{ t('Filename', 'Nombre de archivo') }}</th>
+              <th class="px-3 py-2">{{ t('Type', 'Tipo') }}</th>
+              <th class="px-3 py-2">{{ t('Size', 'Tamaño') }}</th>
+              <th class="px-3 py-2">{{ t('Created', 'Creado') }}</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-100">
             <tr v-for="(row, i) in toImport.slice(0, 10)" :key="i">
               <td class="px-3 py-2 text-gray-900">{{ row.patientLabel }}</td>
               <td class="px-3 py-2 text-gray-500">{{ row.file.file_name }}</td>
-              <td class="px-3 py-2 text-gray-500">{{ row.file.file_type ?? 'N/A' }}</td>
-              <td class="px-3 py-2 text-gray-500">{{ row.file.size_bytes ? `${(row.file.size_bytes / 1024).toFixed(0)} KB` : 'N/A' }}</td>
-              <td class="px-3 py-2 text-gray-500">{{ row.file.created_at ? new Date(row.file.created_at).toLocaleDateString() : 'N/A' }}</td>
+              <td class="px-3 py-2 text-gray-500">{{ row.file.file_type ?? t('N/A', 'N/D') }}</td>
+              <td class="px-3 py-2 text-gray-500">{{ row.file.size_bytes ? `${(row.file.size_bytes / 1024).toFixed(0)} KB` : t('N/A', 'N/D') }}</td>
+              <td class="px-3 py-2 text-gray-500">{{ row.file.created_at ? new Date(row.file.created_at).toLocaleDateString() : t('N/A', 'N/D') }}</td>
             </tr>
           </tbody>
         </table>
         <p v-if="toImport.length > 10" class="border-t border-gray-100 px-3 py-2 text-xs text-gray-400">
-          + {{ toImport.length - 10 }} more rows
+          + {{ toImport.length - 10 }} {{ t('more rows', 'filas más') }}
         </p>
       </div>
 
@@ -310,38 +321,42 @@ function reset() {
           class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
           @click="runImport"
         >
-          Import {{ toImport.length }} file records
+          {{ t(`Import ${toImport.length} file records`, `Importar ${toImport.length} registros de archivos`) }}
         </button>
         <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50" @click="reset">
-          Cancel
+          {{ t('Cancel', 'Cancelar') }}
         </button>
       </div>
     </div>
 
     <div v-else-if="stage === 'importing'" class="mt-4 rounded-lg border border-gray-200 bg-white p-8 text-center">
-      <p class="text-sm text-gray-600">Importing… {{ importedCount }} / {{ toImport.length }}</p>
+      <p class="text-sm text-gray-600">{{ t(`Importing… ${importedCount} / ${toImport.length}`, `Importando… ${importedCount} / ${toImport.length}`) }}</p>
     </div>
 
     <div v-else-if="stage === 'done'" class="mt-4 space-y-4">
       <div class="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">
-        Imported {{ importedCount }} file records. These are placeholders (name/size/type known, content not yet
-        attached) — PracticeHub has no bulk file-download API, so pulling in the actual content is a separate step.
-        Head to
-        <NuxtLink to="/settings/migrate-attachments" class="font-medium underline">Settings &rarr; Migrate Attachments</NuxtLink>
-        for the download and instructions.
+        {{
+          t(
+            `Imported ${importedCount} file records. These are placeholders (name/size/type known, content not yet attached) — PracticeHub has no bulk file-download API, so pulling in the actual content is a separate step.`,
+            `Se importaron ${importedCount} registros de archivos. Son marcadores de posición (se conoce el nombre/tamaño/tipo, el contenido aún no está adjunto); PracticeHub no tiene una API de descarga masiva de archivos, así que traer el contenido real es un paso aparte.`,
+          )
+        }}
+        {{ t('Head to', 'Ve a') }}
+        <NuxtLink to="/settings/migrate-attachments" class="font-medium underline">{{ t('Settings → Migrate Attachments', 'Ajustes → Migrar archivos adjuntos') }}</NuxtLink>
+        {{ t('for the download and instructions.', 'para la descarga y las instrucciones.') }}
       </div>
       <div v-if="importErrors.length > 0" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-        <p class="font-medium">Some rows failed:</p>
+        <p class="font-medium">{{ t('Some rows failed:', 'Algunas filas fallaron:') }}</p>
         <ul class="mt-1 list-disc pl-5">
           <li v-for="(e, i) in importErrors" :key="i">{{ e }}</li>
         </ul>
       </div>
       <div class="flex gap-3">
         <NuxtLink to="/patients" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-          View Patients
+          {{ t('View Patients', 'Ver pacientes') }}
         </NuxtLink>
         <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50" @click="reset">
-          Import another file
+          {{ t('Import another file', 'Importar otro archivo') }}
         </button>
       </div>
     </div>

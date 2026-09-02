@@ -186,7 +186,7 @@ const curlFreeform = computed(() => `curl -X POST https://app.quiroflow.com/api/
                   <tr>
                     <td class="py-1.5 pr-3 font-mono text-ink-900">to</td>
                     <td class="py-1.5 pr-3 text-ink-muted2">string</td>
-                    <td class="py-1.5 text-ink-muted2">{{ t('E.164 phone number. Required unless', 'Número de teléfono en formato E.164. Obligatorio salvo que se indique') }} <code>patientId</code>{{ t('.', '.') }}</td>
+                    <td class="py-1.5 text-ink-muted2">{{ t('E.164 phone number. Required unless', 'Número de teléfono en formato E.164. Obligatorio a menos que se indique') }} <code>patientId</code>{{ t(' is given.', '.') }}</td>
                   </tr>
                   <tr>
                     <td class="py-1.5 pr-3 font-mono text-ink-900">patientId</td>
@@ -206,7 +206,7 @@ const curlFreeform = computed(() => `curl -X POST https://app.quiroflow.com/api/
                   <tr>
                     <td class="py-1.5 pr-3 font-mono text-ink-900">variables</td>
                     <td class="py-1.5 pr-3 text-ink-muted2">string[]</td>
-                    <td class="py-1.5 text-ink-muted2">{{ t("Fills the template's {{1}}, {{2}}… placeholders in order.", 'Rellena los marcadores {{1}}, {{2}}… de la plantilla en orden.') }}</td>
+                    <td class="py-1.5 text-ink-muted2">{{ t("Fills the template's " + String.fromCharCode(123,123) + "1" + String.fromCharCode(125,125) + ", " + String.fromCharCode(123,123) + "2" + String.fromCharCode(125,125) + "… placeholders in order.", "Rellena los marcadores " + String.fromCharCode(123,123) + "1" + String.fromCharCode(125,125) + ", " + String.fromCharCode(123,123) + "2" + String.fromCharCode(125,125) + "… de la plantilla en orden.") }}</td>
                   </tr>
                   <tr>
                     <td class="py-1.5 pr-3 font-mono text-ink-900">text</td>

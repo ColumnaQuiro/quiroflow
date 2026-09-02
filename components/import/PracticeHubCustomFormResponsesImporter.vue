@@ -3,6 +3,7 @@ import type { DocField } from '~/utils/docFields'
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 interface PHFormField { name: string; value: string; label: string; help_text?: string }
 interface PHFormResponse {
@@ -65,7 +66,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
   stage.value = 'importing'
   const api = usePracticeHubApi(conn)
 
-  phase.value = 'Matching patients…'
+  phase.value = t('Matching patients…', 'Emparejando pacientes…')
   const phPatients = await api.fetchAll<{ id: number; patient_number: string }>('/patients', (done, total) => (progress.value = { done, total }))
   const patientNumberById = new Map(phPatients.map((p) => [String(p.id), p.patient_number]))
 
@@ -77,7 +78,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     if (!data || data.length < PAGE_SIZE) break
   }
 
-  phase.value = 'Checking for already-imported forms…'
+  phase.value = t('Checking for already-imported forms…', 'Comprobando formularios ya importados…')
   const existingRefs = new Set<string>()
   for (let page = 0; ; page++) {
     const { data } = await supabase
@@ -89,11 +90,11 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     if (!data || data.length < PAGE_SIZE) break
   }
 
-  phase.value = 'Fetching form responses…'
+  phase.value = t('Fetching form responses…', 'Obteniendo respuestas de formularios…')
   progress.value = { done: 0, total: 0 }
   const responses = await api.fetchAll<PHFormResponse>('/custom_form_responses', (done, total) => (progress.value = { done, total }))
 
-  phase.value = 'Importing…'
+  phase.value = t('Importing…', 'Importando…')
   progress.value = { done: 0, total: responses.length }
 
   const CHUNK_SIZE = 100
@@ -126,7 +127,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     if (rows.length > 0) {
       const { error } = await supabase.from('patient_docs').insert(rows)
       if (error) {
-        importErrors.value.push(`Forms near row ${i}: ${error.message}`)
+        importErrors.value.push(t(`Forms near row ${i}: ${error.message}`, `Formularios cerca de la fila ${i}: ${error.message}`))
       } else {
         importedCount.value += rows.length
       }
@@ -151,8 +152,12 @@ function reset() {
 <template>
   <div>
     <p class="text-sm text-gray-500">
-      Pulls submitted custom forms (consent forms, health questionnaires, signed documents) directly from
-      PracticeHub's API into each patient's Docs tab here. Safe to re-run — already-imported forms are skipped.
+      {{
+        t(
+          "Pulls submitted custom forms (consent forms, health questionnaires, signed documents) directly from PracticeHub's API into each patient's Docs tab here. Safe to re-run — already-imported forms are skipped.",
+          'Obtiene los formularios personalizados enviados (formularios de consentimiento, cuestionarios de salud, documentos firmados) directamente de la API de PracticeHub y los añade a la pestaña de documentos de cada paciente. Se puede volver a ejecutar sin riesgo: los formularios ya importados se omiten.',
+        )
+      }}
     </p>
 
     <div v-if="stage === 'connect'" class="mt-4 max-w-md">
@@ -166,20 +171,25 @@ function reset() {
 
     <div v-else-if="stage === 'done'" class="mt-4 space-y-4">
       <div class="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">
-        Imported {{ importedCount }} forms. Skipped {{ skippedDuplicate }} already-imported, {{ skippedUnmatched }} with no matching patient.
+        {{
+          t(
+            `Imported ${importedCount} forms. Skipped ${skippedDuplicate} already-imported, ${skippedUnmatched} with no matching patient.`,
+            `Se importaron ${importedCount} formularios. Se omitieron ${skippedDuplicate} ya importados, ${skippedUnmatched} sin paciente coincidente.`,
+          )
+        }}
       </div>
       <div v-if="importErrors.length > 0" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-        <p class="font-medium">Some rows failed:</p>
+        <p class="font-medium">{{ t('Some rows failed:', 'Algunas filas fallaron:') }}</p>
         <ul class="mt-1 list-disc pl-5">
           <li v-for="(e, i) in importErrors" :key="i">{{ e }}</li>
         </ul>
       </div>
       <div class="flex gap-3">
         <NuxtLink to="/patients" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-          View Patients
+          {{ t('View Patients', 'Ver pacientes') }}
         </NuxtLink>
         <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50" @click="reset">
-          Run again
+          {{ t('Run again', 'Ejecutar de nuevo') }}
         </button>
       </div>
     </div>

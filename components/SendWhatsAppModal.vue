@@ -26,6 +26,7 @@ const props = withDefaults(
 const emit = defineEmits<{ close: []; sent: [] }>()
 
 const supabase = useSupabaseClient()
+const t = useT()
 const templates = ref<Template[]>([])
 const templatesError = ref('')
 const loadingTemplates = ref(true)
@@ -58,7 +59,7 @@ onMounted(async () => {
       candidates[0]
     if (defaultMatch) selectTemplate(templateKey(defaultMatch))
   } catch (err: any) {
-    templatesError.value = err?.data?.statusMessage ?? 'Failed to load WhatsApp templates'
+    templatesError.value = err?.data?.statusMessage ?? t('Failed to load WhatsApp templates', 'No se han podido cargar las plantillas de WhatsApp')
   } finally {
     loadingTemplates.value = false
   }
@@ -100,7 +101,7 @@ async function send() {
     emit('sent')
     emit('close')
   } catch (err: any) {
-    error.value = err?.data?.statusMessage ?? 'Failed to send'
+    error.value = err?.data?.statusMessage ?? t('Failed to send', 'No se ha podido enviar')
   } finally {
     sending.value = false
   }
@@ -110,23 +111,23 @@ async function send() {
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 p-4" @click.self="emit('close')">
     <div class="w-full max-w-md rounded-card border border-line bg-surface p-5 shadow-popover">
-      <h3 class="text-[14px] font-semibold text-ink-900">Send WhatsApp message</h3>
+      <h3 class="text-[14px] font-semibold text-ink-900">{{ t('Send WhatsApp message', 'Enviar mensaje de WhatsApp') }}</h3>
 
-      <div v-if="loadingTemplates" class="mt-3 text-[13px] text-ink-faint">Loading templates…</div>
+      <div v-if="loadingTemplates" class="mt-3 text-[13px] text-ink-faint">{{ t('Loading templates…', 'Cargando plantillas…') }}</div>
       <p v-else-if="templatesError" class="mt-3 text-[13px] text-danger-text">{{ templatesError }}</p>
       <p v-else-if="!allowTemplateOverride && !selectedTemplate" class="mt-3 text-[13px] text-danger-text">
-        No default template is configured. Set one in Settings &gt; WhatsApp.
+        {{ t('No default template is configured. Set one in Settings > WhatsApp.', 'No hay ninguna plantilla predeterminada configurada. Configura una en Ajustes > WhatsApp.') }}
       </p>
       <template v-else>
         <div v-if="allowTemplateOverride" class="mt-3">
-          <label class="block text-xs font-medium text-ink-muted">Template</label>
+          <label class="block text-xs font-medium text-ink-muted">{{ t('Template', 'Plantilla') }}</label>
           <select
             :value="selectedTemplateKey"
             class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-1.5 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
             @change="selectTemplate(($event.target as HTMLSelectElement).value)"
           >
-            <option value="" disabled>Choose a template…</option>
-            <option v-for="t in templates" :key="templateKey(t)" :value="templateKey(t)">{{ t.name }} ({{ t.language }})</option>
+            <option value="" disabled>{{ t('Choose a template…', 'Elige una plantilla…') }}</option>
+            <option v-for="tpl in templates" :key="templateKey(tpl)" :value="templateKey(tpl)">{{ tpl.name }} ({{ tpl.language }})</option>
           </select>
         </div>
 
@@ -145,9 +146,9 @@ async function send() {
           </div>
 
           <div v-if="selectedTemplate.mediaHeaderFormat" class="mt-3">
-            <label class="block text-xs font-medium text-ink-muted">Attach {{ selectedTemplate.mediaHeaderFormat.toLowerCase() }} (required by template)</label>
+            <label class="block text-xs font-medium text-ink-muted">{{ t('Attach', 'Adjuntar') }} {{ selectedTemplate.mediaHeaderFormat.toLowerCase() }} {{ t('(required by template)', '(requerido por la plantilla)') }}</label>
             <select v-model="attachmentFileId" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-1.5 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20">
-              <option value="">No attachment</option>
+              <option value="">{{ t('No attachment', 'Sin adjunto') }}</option>
               <option v-for="f in files" :key="f.id" :value="f.id">{{ f.file_name }}</option>
             </select>
           </div>
@@ -157,9 +158,9 @@ async function send() {
       <p v-if="error" class="mt-2 text-[13px] text-danger-text">{{ error }}</p>
 
       <div class="mt-4 flex justify-end gap-2">
-        <UiBtn type="button" variant="secondary" @click="emit('close')">Cancel</UiBtn>
+        <UiBtn type="button" variant="secondary" @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</UiBtn>
         <UiBtn type="button" variant="primary" :disabled="sending || !selectedTemplate" @click="send">
-          {{ sending ? 'Sending…' : 'Send' }}
+          {{ sending ? t('Sending…', 'Enviando…') : t('Send', 'Enviar') }}
         </UiBtn>
       </div>
     </div>

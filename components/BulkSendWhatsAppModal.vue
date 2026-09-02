@@ -11,6 +11,7 @@ interface Template {
 
 const props = defineProps<{ targets: Target[]; defaultTemplateName?: string }>()
 const emit = defineEmits<{ close: []; sent: [] }>()
+const t = useT()
 
 const templates = ref<Template[]>([])
 const templatesError = ref('')
@@ -32,7 +33,7 @@ onMounted(async () => {
     const candidates = list.filter((t) => t.name === props.defaultTemplateName)
     if (candidates[0]) selectTemplate(templateKey(candidates[0]))
   } catch (err: any) {
-    templatesError.value = err?.data?.statusMessage ?? 'Failed to load WhatsApp templates'
+    templatesError.value = err?.data?.statusMessage ?? t('Failed to load WhatsApp templates', 'No se han podido cargar las plantillas de WhatsApp')
   } finally {
     loadingTemplates.value = false
   }
@@ -71,7 +72,7 @@ async function send() {
       })
       results.value.push({ name: target.firstName, ok: true })
     } catch (err: any) {
-      results.value.push({ name: target.firstName, ok: false, error: err?.data?.statusMessage ?? 'Failed' })
+      results.value.push({ name: target.firstName, ok: false, error: err?.data?.statusMessage ?? t('Failed', 'Fallido') })
     }
   }
   sending.value = false

@@ -320,24 +320,24 @@ async function remove() {
 
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <label class="block text-[12.5px] font-medium text-ink-600">Date</label>
+            <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Date', 'Fecha') }}</label>
             <input v-model="date" type="date" required class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
           </div>
           <div>
-            <label class="block text-[12.5px] font-medium text-ink-600">Time</label>
+            <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Time', 'Hora') }}</label>
             <input v-model="time" type="time" required class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
           </div>
         </div>
 
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <label class="block text-[12.5px] font-medium text-ink-600">Duration (min)</label>
+            <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Duration (min)', 'Duración (min)') }}</label>
             <input v-model.number="duration" type="number" min="5" step="5" required class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
           </div>
           <div>
-            <label class="block text-[12.5px] font-medium text-ink-600">Type</label>
+            <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Type', 'Tipo') }}</label>
             <select v-model="appointmentTypeId" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
-              <option value="">No type</option>
+              <option value="">{{ t('No type', 'Sin tipo') }}</option>
               <option v-for="t in appointmentTypes" :key="t.id" :value="t.id">{{ t.name }}</option>
             </select>
           </div>
@@ -345,28 +345,28 @@ async function remove() {
 
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <label class="block text-[12.5px] font-medium text-ink-600">Room</label>
+            <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Room', 'Sala') }}</label>
             <select v-model="roomId" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
-              <option value="">No room</option>
+              <option value="">{{ t('No room', 'Sin sala') }}</option>
               <option v-for="r in rooms" :key="r.id" :value="r.id">{{ r.name }}</option>
             </select>
           </div>
           <div>
-            <label class="block text-[12.5px] font-medium text-ink-600">Practitioner</label>
+            <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Practitioner', 'Profesional') }}</label>
             <select v-model="practitionerId" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
-              <option value="">Unassigned</option>
+              <option value="">{{ t('Unassigned', 'Sin asignar') }}</option>
               <option v-for="m in teamMembers" :key="m.id" :value="m.id">{{ m.full_name }}</option>
             </select>
           </div>
         </div>
 
         <div v-if="mode === 'edit'">
-          <label class="block text-[12.5px] font-medium text-ink-600">Status</label>
+          <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Status', 'Estado') }}</label>
           <select v-model="status" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
-            <option value="booked">Booked</option>
-            <option value="completed">Completed</option>
-            <option value="cancelled">Cancelled</option>
-            <option value="no_show">No show</option>
+            <option value="booked">{{ t('Booked', 'Reservada') }}</option>
+            <option value="completed">{{ t('Completed', 'Completada') }}</option>
+            <option value="cancelled">{{ t('Cancelled', 'Cancelada') }}</option>
+            <option value="no_show">{{ t('No show', 'No presentado') }}</option>
           </select>
         </div>
 
@@ -375,14 +375,14 @@ async function remove() {
         <div class="flex items-center justify-between">
           <div class="flex gap-3">
             <UiBtn variant="primary" :disabled="saving" @click="save">
-              {{ saving ? 'Saving…' : 'Save' }}
+              {{ saving ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}
             </UiBtn>
             <UiBtn variant="secondary" @click="emit('close')">
-              Cancel
+              {{ t('Cancel', 'Cancelar') }}
             </UiBtn>
           </div>
           <button v-if="mode === 'edit'" type="button" class="text-[13px] font-medium text-danger-text hover:opacity-80" @click="remove">
-            Delete
+            {{ t('Delete', 'Eliminar') }}
           </button>
         </div>
       </form>

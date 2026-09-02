@@ -363,10 +363,10 @@ function reset() {
     <div v-else-if="stage === 'preview'" class="mt-4 space-y-4">
       <div class="rounded-lg border border-gray-200 bg-white p-4">
         <dl class="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
-          <div><dt class="text-gray-500">Total rows</dt><dd class="font-medium text-gray-900">{{ totalRows }}</dd></div>
-          <div><dt class="text-gray-500">Will import</dt><dd class="font-medium text-green-700">{{ toImport.length }}</dd></div>
-          <div><dt class="text-gray-500">No matching patient</dt><dd class="font-medium text-gray-900">{{ skippedNoPatient }}</dd></div>
-          <div><dt class="text-gray-500">Duplicates / bad dates</dt><dd class="font-medium text-gray-900">{{ skippedDuplicate + skippedInvalidDate }}</dd></div>
+          <div><dt class="text-gray-500">{{ t('Total rows', 'Filas totales') }}</dt><dd class="font-medium text-gray-900">{{ totalRows }}</dd></div>
+          <div><dt class="text-gray-500">{{ t('Will import', 'Se importarán') }}</dt><dd class="font-medium text-green-700">{{ toImport.length }}</dd></div>
+          <div><dt class="text-gray-500">{{ t('No matching patient', 'Sin paciente coincidente') }}</dt><dd class="font-medium text-gray-900">{{ skippedNoPatient }}</dd></div>
+          <div><dt class="text-gray-500">{{ t('Duplicates / bad dates', 'Duplicados / fechas incorrectas') }}</dt><dd class="font-medium text-gray-900">{{ skippedDuplicate + skippedInvalidDate }}</dd></div>
         </dl>
       </div>
 
@@ -374,21 +374,21 @@ function reset() {
         <table class="w-full text-sm">
           <thead class="border-b border-gray-200 bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
             <tr>
-              <th class="px-3 py-2">Date</th>
-              <th class="px-3 py-2">Practitioner</th>
-              <th class="px-3 py-2">Status</th>
+              <th class="px-3 py-2">{{ t('Date', 'Fecha') }}</th>
+              <th class="px-3 py-2">{{ t('Practitioner', 'Profesional') }}</th>
+              <th class="px-3 py-2">{{ t('Status', 'Estado') }}</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-100">
             <tr v-for="(row, i) in toImport.slice(0, 10)" :key="i">
               <td class="px-3 py-2 text-gray-900">{{ new Date(row.appointment.starts_at).toLocaleString() }}</td>
-              <td class="px-3 py-2 text-gray-500">{{ row.appointment.practitioner_name ?? 'N/A' }}</td>
+              <td class="px-3 py-2 text-gray-500">{{ row.appointment.practitioner_name ?? t('N/A', 'N/D') }}</td>
               <td class="px-3 py-2 text-gray-500">{{ row.appointment.status }}</td>
             </tr>
           </tbody>
         </table>
         <p v-if="toImport.length > 10" class="border-t border-gray-100 px-3 py-2 text-xs text-gray-400">
-          + {{ toImport.length - 10 }} more rows
+          + {{ toImport.length - 10 }} {{ t('more rows', 'filas más') }}
         </p>
       </div>
 
@@ -399,34 +399,34 @@ function reset() {
           class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
           @click="runImport"
         >
-          Import {{ toImport.length }} appointments
+          {{ t(`Import ${toImport.length} appointments`, `Importar ${toImport.length} citas`) }}
         </button>
         <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50" @click="reset">
-          Cancel
+          {{ t('Cancel', 'Cancelar') }}
         </button>
       </div>
     </div>
 
     <div v-else-if="stage === 'importing'" class="mt-4 rounded-lg border border-gray-200 bg-white p-8 text-center">
-      <p class="text-sm text-gray-600">Importing… {{ importedCount }} / {{ toImport.length }}</p>
+      <p class="text-sm text-gray-600">{{ t(`Importing… ${importedCount} / ${toImport.length}`, `Importando… ${importedCount} / ${toImport.length}`) }}</p>
     </div>
 
     <div v-else-if="stage === 'done'" class="mt-4 space-y-4">
       <div class="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">
-        Imported {{ importedCount }} appointments.
+        {{ t(`Imported ${importedCount} appointments.`, `Se importaron ${importedCount} citas.`) }}
       </div>
       <div v-if="importErrors.length > 0" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-        <p class="font-medium">Some rows failed:</p>
+        <p class="font-medium">{{ t('Some rows failed:', 'Algunas filas fallaron:') }}</p>
         <ul class="mt-1 list-disc pl-5">
           <li v-for="(e, i) in importErrors" :key="i">{{ e }}</li>
         </ul>
       </div>
       <div class="flex gap-3">
         <NuxtLink to="/calendar" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-          View Calendar
+          {{ t('View Calendar', 'Ver calendario') }}
         </NuxtLink>
         <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50" @click="reset">
-          Import another file
+          {{ t('Import another file', 'Importar otro archivo') }}
         </button>
       </div>
     </div>

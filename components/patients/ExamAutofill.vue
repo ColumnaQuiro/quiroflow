@@ -16,6 +16,7 @@ const emit = defineEmits<{ saved: [] }>()
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 interface Segment { level: string; band: 'cervical' | 'thoracic' | 'lumbar' }
 const SEGMENTS: Segment[] = [
@@ -143,7 +144,7 @@ async function save() {
     noteId.value = data?.id ?? null
   }
   saving.value = false
-  savedMessage.value = 'Saved'
+  savedMessage.value = t('Saved', 'Guardado')
   setTimeout(() => (savedMessage.value = ''), 2000)
   if (isFirstSave && noteId.value) emit('saved')
 }

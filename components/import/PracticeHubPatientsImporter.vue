@@ -4,6 +4,7 @@ import type { TablesInsert } from '~/types/database.types'
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 type CsvRow = Record<string, string>
 
@@ -106,7 +107,10 @@ async function handleFile(file: File) {
   const parsed = Papa.parse<CsvRow>(text, { header: true, skipEmptyLines: true })
 
   if (parsed.errors.length > 0) {
-    fileError.value = `Could not parse this file: ${parsed.errors[0].message}`
+    fileError.value = t(
+      `Could not parse this file: ${parsed.errors[0].message}`,
+      `No se pudo procesar este archivo: ${parsed.errors[0].message}`,
+    )
     return
   }
 
@@ -212,7 +216,12 @@ async function runImport() {
       .select('id')
 
     if (error) {
-      importErrors.value.push(`Rows ${chunk[0].sourceRow}-${chunk[chunk.length - 1].sourceRow}: ${error.message}`)
+      importErrors.value.push(
+        t(
+          `Rows ${chunk[0].sourceRow}-${chunk[chunk.length - 1].sourceRow}: ${error.message}`,
+          `Filas ${chunk[0].sourceRow}-${chunk[chunk.length - 1].sourceRow}: ${error.message}`,
+        ),
+      )
       continue
     }
 
@@ -229,7 +238,13 @@ async function runImport() {
     )
     if (numberRows.length > 0) {
       const { error: numbersError } = await supabase.from('patient_contact_numbers').insert(numberRows)
-      if (numbersError) importErrors.value.push(`Contact numbers for rows near ${chunk[0].sourceRow}: ${numbersError.message}`)
+      if (numbersError)
+        importErrors.value.push(
+          t(
+            `Contact numbers for rows near ${chunk[0].sourceRow}: ${numbersError.message}`,
+            `Números de contacto de filas cerca de ${chunk[0].sourceRow}: ${numbersError.message}`,
+          ),
+        )
     }
   }
 
@@ -250,7 +265,12 @@ function reset() {
 <template>
   <div>
     <p class="text-sm text-gray-500">
-      Export "Patients" as CSV from PracticeHub (Settings &rarr; Data Exports), then drop it here.
+      {{
+        t(
+          'Export "Patients" as CSV from PracticeHub (Settings → Data Exports), then drop it here.',
+          'Exporta "Patients" como CSV desde PracticeHub (Settings → Data Exports) y luego suéltalo aquí.',
+        )
+      }}
     </p>
 
     <div v-if="stage === 'pick'" class="mt-4">
@@ -261,9 +281,9 @@ function reset() {
         @dragleave.prevent="dragOver = false"
         @drop.prevent="onDrop"
       >
-        <p class="text-sm text-gray-600">Drag and drop a CSV file here, or</p>
+        <p class="text-sm text-gray-600">{{ t('Drag and drop a CSV file here, or', 'Arrastra y suelta un archivo CSV aquí, o') }}</p>
         <label class="mt-2 cursor-pointer text-sm font-medium text-indigo-600 hover:text-indigo-500">
-          browse for a file
+          {{ t('browse for a file', 'busca un archivo') }}
           <input type="file" accept=".csv" class="hidden" @change="onFileInput" />
         </label>
       </div>
@@ -274,21 +294,21 @@ function reset() {
       <div class="rounded-lg border border-gray-200 bg-white p-4">
         <p class="text-sm font-medium text-gray-900">{{ fileName }}</p>
         <dl class="mt-2 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
-          <div><dt class="text-gray-500">Total rows</dt><dd class="font-medium text-gray-900">{{ totalRows }}</dd></div>
-          <div><dt class="text-gray-500">Will import</dt><dd class="font-medium text-green-700">{{ toImport.length }}</dd></div>
-          <div><dt class="text-gray-500">Duplicates skipped</dt><dd class="font-medium text-gray-900">{{ skippedDuplicate }}</dd></div>
-          <div><dt class="text-gray-500">Deleted/no-name skipped</dt><dd class="font-medium text-gray-900">{{ skippedDeleted + skippedNoName }}</dd></div>
+          <div><dt class="text-gray-500">{{ t('Total rows', 'Filas totales') }}</dt><dd class="font-medium text-gray-900">{{ totalRows }}</dd></div>
+          <div><dt class="text-gray-500">{{ t('Will import', 'Se importarán') }}</dt><dd class="font-medium text-green-700">{{ toImport.length }}</dd></div>
+          <div><dt class="text-gray-500">{{ t('Duplicates skipped', 'Duplicados omitidos') }}</dt><dd class="font-medium text-gray-900">{{ skippedDuplicate }}</dd></div>
+          <div><dt class="text-gray-500">{{ t('Deleted/no-name skipped', 'Eliminados/sin nombre omitidos') }}</dt><dd class="font-medium text-gray-900">{{ skippedDeleted + skippedNoName }}</dd></div>
         </dl>
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-gray-700">Import into clinic</label>
+        <label class="block text-sm font-medium text-gray-700">{{ t('Import into clinic', 'Importar a la clínica') }}</label>
         <select
           v-model="targetClinicId"
           class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
           @change="clinicManuallySet = true"
         >
-          <option value="">No primary clinic</option>
+          <option value="">{{ t('No primary clinic', 'Sin clínica principal') }}</option>
           <option v-for="c in store.clinics" :key="c.id" :value="c.id">{{ c.name }}</option>
         </select>
       </div>
@@ -297,25 +317,25 @@ function reset() {
         <table class="w-full text-sm">
           <thead class="border-b border-gray-200 bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
             <tr>
-              <th class="px-3 py-2">Name</th>
-              <th class="px-3 py-2">Email</th>
-              <th class="px-3 py-2">Balance</th>
-              <th class="px-3 py-2">Language</th>
-              <th class="px-3 py-2">Tags</th>
+              <th class="px-3 py-2">{{ t('Name', 'Nombre') }}</th>
+              <th class="px-3 py-2">{{ t('Email', 'Correo electrónico') }}</th>
+              <th class="px-3 py-2">{{ t('Balance', 'Saldo') }}</th>
+              <th class="px-3 py-2">{{ t('Language', 'Idioma') }}</th>
+              <th class="px-3 py-2">{{ t('Tags', 'Etiquetas') }}</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-100">
             <tr v-for="(row, i) in toImport.slice(0, 10)" :key="i">
               <td class="px-3 py-2 text-gray-900">{{ row.patient.first_name }} {{ row.patient.last_name }}</td>
-              <td class="px-3 py-2 text-gray-500">{{ row.patient.email ?? 'N/A' }}</td>
+              <td class="px-3 py-2 text-gray-500">{{ row.patient.email ?? t('N/A', 'N/D') }}</td>
               <td class="px-3 py-2 text-gray-500">€{{ ((row.patient.balance_cents ?? 0) / 100).toFixed(2) }}</td>
               <td class="px-3 py-2 text-gray-500">{{ row.patient.preferred_language }}</td>
-              <td class="px-3 py-2 text-gray-500">{{ (row.patient.tags ?? []).join(', ') || 'N/A' }}</td>
+              <td class="px-3 py-2 text-gray-500">{{ (row.patient.tags ?? []).join(', ') || t('N/A', 'N/D') }}</td>
             </tr>
           </tbody>
         </table>
         <p v-if="toImport.length > 10" class="border-t border-gray-100 px-3 py-2 text-xs text-gray-400">
-          + {{ toImport.length - 10 }} more rows
+          + {{ toImport.length - 10 }} {{ t('more rows', 'filas más') }}
         </p>
       </div>
 
@@ -326,34 +346,34 @@ function reset() {
           class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
           @click="runImport"
         >
-          Import {{ toImport.length }} patients
+          {{ t(`Import ${toImport.length} patients`, `Importar ${toImport.length} pacientes`) }}
         </button>
         <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50" @click="reset">
-          Cancel
+          {{ t('Cancel', 'Cancelar') }}
         </button>
       </div>
     </div>
 
     <div v-else-if="stage === 'importing'" class="mt-4 rounded-lg border border-gray-200 bg-white p-8 text-center">
-      <p class="text-sm text-gray-600">Importing… {{ importedCount }} / {{ toImport.length }}</p>
+      <p class="text-sm text-gray-600">{{ t(`Importing… ${importedCount} / ${toImport.length}`, `Importando… ${importedCount} / ${toImport.length}`) }}</p>
     </div>
 
     <div v-else-if="stage === 'done'" class="mt-4 space-y-4">
       <div class="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">
-        Imported {{ importedCount }} patients.
+        {{ t(`Imported ${importedCount} patients.`, `Se importaron ${importedCount} pacientes.`) }}
       </div>
       <div v-if="importErrors.length > 0" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-        <p class="font-medium">Some rows failed:</p>
+        <p class="font-medium">{{ t('Some rows failed:', 'Algunas filas fallaron:') }}</p>
         <ul class="mt-1 list-disc pl-5">
           <li v-for="(e, i) in importErrors" :key="i">{{ e }}</li>
         </ul>
       </div>
       <div class="flex gap-3">
         <NuxtLink to="/patients" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-          View Patients
+          {{ t('View Patients', 'Ver pacientes') }}
         </NuxtLink>
         <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50" @click="reset">
-          Import another file
+          {{ t('Import another file', 'Importar otro archivo') }}
         </button>
       </div>
     </div>

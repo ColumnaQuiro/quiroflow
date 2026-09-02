@@ -35,6 +35,7 @@ interface PatientOption {
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const webPush = useWebPush()
+const t = useT()
 const pushBannerDismissed = ref(false)
 
 // Messages this tab has sent but the server hasn't confirmed into the real
@@ -138,7 +139,7 @@ const conversations = computed<Conversation[]>(() => {
       key,
       patientId: last.patient_id,
       phoneNumber: last.phone_number,
-      name: (last.patient_id && patientNames.value[last.patient_id]) || last.phone_number || 'Unknown',
+      name: (last.patient_id && patientNames.value[last.patient_id]) || last.phone_number || t('Unknown', 'Desconocido'),
       channel: last.channel,
       lastMessage: last,
       unread: last.direction === 'inbound' && (!readTimestamps.value[key] || readTimestamps.value[key] < last.created_at),
@@ -343,7 +344,7 @@ async function deleteKeys(keys: string[]) {
 }
 async function deleteConversation() {
   if (!selected.value || !selectedKey.value) return
-  if (!confirm(`Delete this whole conversation with ${selected.value.name}? This removes all messages and can't be undone.`)) return
+  if (!confirm(`${t('Delete this whole conversation with', 'Eliminar toda la conversación con')} ${selected.value.name}${t('? This removes all messages and can\'t be undone.', '? Esto elimina todos los mensajes y no se puede deshacer.')}`)) return
   await deleteKeys([selectedKey.value])
 }
 async function bulkDeleteSelected() {

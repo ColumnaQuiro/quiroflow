@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 interface PHPatient { id: number; patient_number: string }
 interface PHPatientLog {
@@ -31,7 +32,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
   stage.value = 'importing'
   const api = usePracticeHubApi(conn)
 
-  phase.value = 'Matching patients…'
+  phase.value = t('Matching patients…', 'Emparejando pacientes…')
   const phPatients = await api.fetchAll<PHPatient>('/patients', (done, total) => (progress.value = { done, total }))
   const patientNumberById = new Map(phPatients.map((p) => [p.id, p.patient_number]))
 
@@ -43,7 +44,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     if (!data || data.length < PAGE_SIZE) break
   }
 
-  phase.value = 'Checking for already-imported logs…'
+  phase.value = t('Checking for already-imported logs…', 'Comprobando registros ya importados…')
   const existingRefs = new Set<string>()
   for (let page = 0; ; page++) {
     const { data } = await supabase
@@ -55,11 +56,11 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     if (!data || data.length < PAGE_SIZE) break
   }
 
-  phase.value = 'Fetching patient logs…'
+  phase.value = t('Fetching patient logs…', 'Obteniendo registros de pacientes…')
   progress.value = { done: 0, total: 0 }
   const logs = await api.fetchAll<PHPatientLog>('/patient_logs', (done, total) => (progress.value = { done, total }))
 
-  phase.value = 'Importing…'
+  phase.value = t('Importing…', 'Importando…')
   progress.value = { done: 0, total: logs.length }
 
   const CHUNK_SIZE = 200
@@ -98,7 +99,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     if (rows.length > 0) {
       const { error } = await supabase.from('contact_log').insert(rows)
       if (error) {
-        importErrors.value.push(`Logs near row ${i}: ${error.message}`)
+        importErrors.value.push(t(`Logs near row ${i}: ${error.message}`, `Registros cerca de la fila ${i}: ${error.message}`))
       } else {
         importedCount.value += rows.length
       }
@@ -123,8 +124,12 @@ function reset() {
 <template>
   <div>
     <p class="text-sm text-gray-500">
-      Pulls the patient activity log directly from PracticeHub's API (notes, appointment activity, and other
-      logged events) into each patient's contact log here. Safe to re-run — already-imported entries are skipped.
+      {{
+        t(
+          "Pulls the patient activity log directly from PracticeHub's API (notes, appointment activity, and other logged events) into each patient's contact log here. Safe to re-run — already-imported entries are skipped.",
+          'Obtiene el registro de actividad de pacientes directamente de la API de PracticeHub (notas, actividad de citas y otros eventos registrados) y lo añade al registro de contacto de cada paciente. Se puede volver a ejecutar sin riesgo: las entradas ya importadas se omiten.',
+        )
+      }}
     </p>
 
     <div v-if="stage === 'connect'" class="mt-4 max-w-md">
@@ -138,20 +143,25 @@ function reset() {
 
     <div v-else-if="stage === 'done'" class="mt-4 space-y-4">
       <div class="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">
-        Imported {{ importedCount }} log entries. Skipped {{ skippedDuplicate }} already-imported, {{ skippedUnmatched }} with no matching patient.
+        {{
+          t(
+            `Imported ${importedCount} log entries. Skipped ${skippedDuplicate} already-imported, ${skippedUnmatched} with no matching patient.`,
+            `Se importaron ${importedCount} entradas de registro. Se omitieron ${skippedDuplicate} ya importadas, ${skippedUnmatched} sin paciente coincidente.`,
+          )
+        }}
       </div>
       <div v-if="importErrors.length > 0" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-        <p class="font-medium">Some rows failed:</p>
+        <p class="font-medium">{{ t('Some rows failed:', 'Algunas filas fallaron:') }}</p>
         <ul class="mt-1 list-disc pl-5">
           <li v-for="(e, i) in importErrors" :key="i">{{ e }}</li>
         </ul>
       </div>
       <div class="flex gap-3">
         <NuxtLink to="/patients" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-          View Patients
+          {{ t('View Patients', 'Ver pacientes') }}
         </NuxtLink>
         <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50" @click="reset">
-          Run again
+          {{ t('Run again', 'Ejecutar de nuevo') }}
         </button>
       </div>
     </div>

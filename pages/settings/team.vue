@@ -3,6 +3,7 @@ import type { Tables } from '~/types/database.types'
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 interface RoleOption {
   id: string
@@ -23,7 +24,7 @@ const emailStatus = ref<'sent' | 'failed' | ''>('')
 
 const roleName = computed(() => {
   const byId = new Map(roles.value.map((r) => [r.id, r.name]))
-  return (roleId: string | null) => (roleId ? (byId.get(roleId) ?? 'Unknown role') : 'No role')
+  return (roleId: string | null) => (roleId ? (byId.get(roleId) ?? t('Unknown role', 'Rol desconocido')) : t('No role', 'Sin rol'))
 })
 
 async function load() {
@@ -51,7 +52,7 @@ async function createInvite() {
   const email = inviteEmail.value.trim()
   if (!email) {
     inviting.value = false
-    error.value = 'Email is required.'
+    error.value = t('Email is required.', 'El correo electrónico es obligatorio.')
     return
   }
   const { data, error: insertError } = await supabase
@@ -105,15 +106,15 @@ async function toggleBookable(member: Tables<'team_members'>) {
 // the practitioner stays bookable across the clinic's own hours until they
 // configure something narrower here.
 type Windows = [string, string][]
-const WEEKDAYS: { key: string; label: string }[] = [
-  { key: 'mon', label: 'Mon' },
-  { key: 'tue', label: 'Tue' },
-  { key: 'wed', label: 'Wed' },
-  { key: 'thu', label: 'Thu' },
-  { key: 'fri', label: 'Fri' },
-  { key: 'sat', label: 'Sat' },
-  { key: 'sun', label: 'Sun' },
-]
+const WEEKDAYS = computed<{ key: string; label: string }[]>(() => [
+  { key: 'mon', label: t('Mon', 'Lun') },
+  { key: 'tue', label: t('Tue', 'Mar') },
+  { key: 'wed', label: t('Wed', 'Mié') },
+  { key: 'thu', label: t('Thu', 'Jue') },
+  { key: 'fri', label: t('Fri', 'Vie') },
+  { key: 'sat', label: t('Sat', 'Sáb') },
+  { key: 'sun', label: t('Sun', 'Dom') },
+])
 const openScheduleId = ref<string | null>(null)
 const editHours = ref<Record<string, Windows>>({})
 const savingHours = ref(false)
@@ -122,7 +123,7 @@ function openScheduleEditor(m: Tables<'team_members'>) {
   openScheduleId.value = openScheduleId.value === m.id ? null : m.id
   if (openScheduleId.value === m.id) {
     const hours = (m.business_hours as Record<string, Windows>) ?? {}
-    editHours.value = Object.fromEntries(WEEKDAYS.map((d) => [d.key, hours[d.key] ? hours[d.key].map((w) => [...w] as [string, string]) : []]))
+    editHours.value = Object.fromEntries(WEEKDAYS.value.map((d) => [d.key, hours[d.key] ? hours[d.key].map((w) => [...w] as [string, string]) : []]))
   }
 }
 function addWindow(day: string) {
@@ -162,13 +163,13 @@ async function saveEdit(member: Tables<'team_members'>) {
 
 const resettingId = ref<string | null>(null)
 async function sendPasswordReset(member: Tables<'team_members'>) {
-  if (!confirm(`Send a password reset email to ${member.full_name}?`)) return
+  if (!confirm(t(`Send a password reset email to ${member.full_name}?`, `¿Enviar un correo de restablecimiento de contraseña a ${member.full_name}?`))) return
   resettingId.value = member.id
   try {
     const result = await useStaffFetch<{ email: string }>(`/api/team-members/${member.id}/reset-password`, { method: 'POST' })
-    alert(`Password reset email sent to ${result.email}.`)
+    alert(t(`Password reset email sent to ${result.email}.`, `Correo de restablecimiento de contraseña enviado a ${result.email}.`))
   } catch (e: any) {
-    alert(e?.data?.statusMessage || e?.message || 'Could not send password reset.')
+    alert(e?.data?.statusMessage || e?.message || t('Could not send password reset.', 'No se pudo enviar el restablecimiento de contraseña.'))
   } finally {
     resettingId.value = null
   }
@@ -185,26 +186,26 @@ function copy(text: string) {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Team Members" />
+    <PageHeader :title="t('Team Members', 'Miembros del Equipo')" />
     <div class="flex-1 overflow-y-auto">
       <div class="flex gap-8 p-6">
         <SettingsNav />
         <div class="min-w-0 max-w-[660px] flex-1">
-          <p class="text-[13px] text-ink-muted2">Staff accounts, roles, and invites.</p>
+          <p class="text-[13px] text-ink-muted2">{{ t('Staff accounts, roles, and invites.', 'Cuentas del personal, roles e invitaciones.') }}</p>
 
           <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
             <table class="w-full text-[13px]">
               <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted2">
                 <tr>
-                  <th class="px-4 py-2">Name</th>
-                  <th class="px-4 py-2">Role</th>
-                  <th class="px-4 py-2">Online booking</th>
+                  <th class="px-4 py-2">{{ t('Name', 'Nombre') }}</th>
+                  <th class="px-4 py-2">{{ t('Role', 'Rol') }}</th>
+                  <th class="px-4 py-2">{{ t('Online booking', 'Reserva en línea') }}</th>
                   <th class="px-4 py-2"></th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-line-row">
                 <tr v-if="loading">
-                  <td colspan="4" class="px-4 py-6 text-center text-ink-faint">Loading…</td>
+                  <td colspan="4" class="px-4 py-6 text-center text-ink-faint">{{ t('Loading…', 'Cargando…') }}</td>
                 </tr>
                 <template v-for="m in members" v-else :key="m.id">
                   <tr>
@@ -230,41 +231,41 @@ function copy(text: string) {
                     <td class="px-4 py-2.5">
                       <label class="flex items-center gap-2.5 text-ink-600">
                         <SettingsToggle :model-value="m.online_booking_enabled" @update:model-value="toggleBookable(m)" />
-                        Bookable
+                        {{ t('Bookable', 'Reservable') }}
                       </label>
                     </td>
                     <td class="px-4 py-2.5 text-right">
                       <button type="button" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover" @click="openScheduleEditor(m)">
-                        {{ hasScheduleOverride(m) ? 'Schedule (custom)' : 'Schedule' }}
+                        {{ hasScheduleOverride(m) ? t('Schedule (custom)', 'Horario (personalizado)') : t('Schedule', 'Horario') }}
                       </button>
                       <span class="mx-2 text-line-control">·</span>
                       <button type="button" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover" :disabled="resettingId === m.id" @click="sendPasswordReset(m)">
-                        {{ resettingId === m.id ? 'Sending…' : 'Reset password' }}
+                        {{ resettingId === m.id ? t('Sending…', 'Enviando…') : t('Reset password', 'Restablecer contraseña') }}
                       </button>
                     </td>
                   </tr>
                   <tr v-if="openScheduleId === m.id">
                     <td colspan="4" class="border-t border-line-divider bg-surface-subtle px-4 py-4">
                       <p class="text-[12px] text-ink-muted2">
-                        Leave every day empty to keep {{ m.full_name }} bookable across the clinic's own hours. Set hours here to restrict online booking to a narrower schedule.
+                        {{ t(`Leave every day empty to keep ${m.full_name} bookable across the clinic's own hours. Set hours here to restrict online booking to a narrower schedule.`, `Deja todos los días vacíos para mantener a ${m.full_name} reservable según el propio horario de la clínica. Configura horas aquí para restringir la reserva en línea a un horario más limitado.`) }}
                       </p>
                       <div class="mt-3 space-y-2">
                         <div v-for="d in WEEKDAYS" :key="d.key" class="flex items-start gap-3 text-[13px]">
                           <span class="w-10 pt-1.5 text-ink-muted2">{{ d.label }}</span>
                           <div class="flex-1 space-y-1.5">
-                            <p v-if="editHours[d.key].length === 0" class="pt-1.5 text-ink-faint">No override</p>
+                            <p v-if="editHours[d.key].length === 0" class="pt-1.5 text-ink-faint">{{ t('No override', 'Sin anulación') }}</p>
                             <div v-for="(w, i) in editHours[d.key]" :key="i" class="flex items-center gap-2">
                               <input v-model="w[0]" type="time" class="h-8 rounded-ctl border border-line-control bg-surface px-2 text-[13px]" />
                               <span class="text-ink-faint">–</span>
                               <input v-model="w[1]" type="time" class="h-8 rounded-ctl border border-line-control bg-surface px-2 text-[13px]" />
                               <button type="button" class="text-ink-faint hover:text-danger-text" @click="removeWindow(d.key, i)">✕</button>
                             </div>
-                            <button type="button" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover" @click="addWindow(d.key)">+ Add hours</button>
+                            <button type="button" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover" @click="addWindow(d.key)">{{ t('+ Add hours', '+ Añadir horas') }}</button>
                           </div>
                         </div>
                       </div>
                       <UiBtn variant="primary" class="mt-4" :disabled="savingHours" @click="saveSchedule(m)">
-                        {{ savingHours ? 'Saving…' : 'Save' }}
+                        {{ savingHours ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}
                       </UiBtn>
                     </td>
                   </tr>
@@ -274,13 +275,13 @@ function copy(text: string) {
           </div>
 
           <div v-if="invites.length > 0" class="mt-4">
-            <h2 class="text-[13.5px] font-[560] text-ink-700">Pending invites</h2>
+            <h2 class="text-[13.5px] font-[560] text-ink-700">{{ t('Pending invites', 'Invitaciones pendientes') }}</h2>
             <ul class="mt-2 space-y-2">
               <li v-for="inv in invites" :key="inv.id" class="flex items-center justify-between rounded-card border border-line bg-surface px-3 py-2 text-[13px] shadow-card">
-                <span class="text-ink-600">{{ inv.email || 'Any email' }} &middot; {{ roleName(inv.role_id) }}</span>
+                <span class="text-ink-600">{{ inv.email || t('Any email', 'Cualquier correo') }} &middot; {{ roleName(inv.role_id) }}</span>
                 <div class="flex gap-3 text-[12.5px] font-medium">
-                  <button type="button" class="text-brand-text hover:text-brand-hover" @click="copy(inviteLink(inv.token))">Copy link</button>
-                  <button type="button" class="text-danger-text hover:text-danger-text/80" @click="revokeInvite(inv.id)">Revoke</button>
+                  <button type="button" class="text-brand-text hover:text-brand-hover" @click="copy(inviteLink(inv.token))">{{ t('Copy link', 'Copiar enlace') }}</button>
+                  <button type="button" class="text-danger-text hover:text-danger-text/80" @click="revokeInvite(inv.id)">{{ t('Revoke', 'Revocar') }}</button>
                 </div>
               </li>
             </ul>
@@ -288,23 +289,23 @@ function copy(text: string) {
 
           <form class="mt-4 flex flex-wrap items-end gap-3 rounded-card border border-line bg-surface p-4 shadow-card" @submit.prevent="createInvite">
             <div>
-              <label class="block text-[12.5px] font-medium text-ink-600">Email</label>
+              <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Email', 'Correo electrónico') }}</label>
               <input v-model="inviteEmail" type="email" required placeholder="colleague@example.com" class="mt-1 h-8 w-56 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20" />
             </div>
             <div>
-              <label class="block text-[12.5px] font-medium text-ink-600">Role</label>
+              <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Role', 'Rol') }}</label>
               <select v-model="inviteRoleId" class="mt-1 h-8 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20">
                 <option v-for="r in roles" :key="r.id" :value="r.id">{{ r.name }}</option>
               </select>
             </div>
-            <UiBtn variant="primary" type="submit" :disabled="inviting">{{ inviting ? 'Creating…' : 'Create Invite Link' }}</UiBtn>
+            <UiBtn variant="primary" type="submit" :disabled="inviting">{{ inviting ? t('Creating…', 'Creando…') : t('Create Invite Link', 'Crear Enlace de Invitación') }}</UiBtn>
           </form>
           <p v-if="error" class="mt-2 text-[12.5px] text-danger-text">{{ error }}</p>
-          <p v-if="emailStatus === 'sent'" class="mt-2 text-[12.5px] text-success-text">Invite email sent ✓</p>
-          <p v-if="emailStatus === 'failed'" class="mt-2 text-[12.5px] text-warning-text">Couldn't send the invite email — share the link below instead.</p>
+          <p v-if="emailStatus === 'sent'" class="mt-2 text-[12.5px] text-success-text">{{ t('Invite email sent ✓', 'Correo de invitación enviado ✓') }}</p>
+          <p v-if="emailStatus === 'failed'" class="mt-2 text-[12.5px] text-warning-text">{{ t("Couldn't send the invite email — share the link below instead.", 'No se pudo enviar el correo de invitación — comparte el enlace de abajo en su lugar.') }}</p>
           <div v-if="lastInviteLink" class="mt-2 rounded-ctl border border-success-border bg-success-bg p-3 text-[12.5px] text-success-deep">
-            Share this link (e.g. via WhatsApp): <span class="break-all font-medium">{{ lastInviteLink }}</span>
-            <button type="button" class="ml-2 font-medium underline" @click="copy(lastInviteLink)">Copy</button>
+            {{ t('Share this link (e.g. via WhatsApp):', 'Comparte este enlace (p. ej. por WhatsApp):') }} <span class="break-all font-medium">{{ lastInviteLink }}</span>
+            <button type="button" class="ml-2 font-medium underline" @click="copy(lastInviteLink)">{{ t('Copy', 'Copiar') }}</button>
           </div>
         </div>
       </div>

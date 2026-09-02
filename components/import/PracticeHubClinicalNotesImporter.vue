@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 interface SoapItem { key?: string; val?: string; label?: string; value?: string }
 interface PHClinicalNote {
@@ -41,7 +42,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
   stage.value = 'importing'
   const api = usePracticeHubApi(conn)
 
-  phase.value = 'Matching patients…'
+  phase.value = t('Matching patients…', 'Emparejando pacientes…')
   const phPatients = await api.fetchAll<{ id: number; patient_number: string }>('/patients', (done, total) => (progress.value = { done, total }))
   const patientNumberById = new Map(phPatients.map((p) => [p.id, p.patient_number]))
 
@@ -53,7 +54,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     if (!data || data.length < PAGE_SIZE) break
   }
 
-  phase.value = 'Checking for already-imported notes…'
+  phase.value = t('Checking for already-imported notes…', 'Comprobando notas ya importadas…')
   const existingRefs = new Set<string>()
   for (let page = 0; ; page++) {
     const { data } = await supabase
@@ -65,11 +66,11 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     if (!data || data.length < PAGE_SIZE) break
   }
 
-  phase.value = 'Fetching clinical notes…'
+  phase.value = t('Fetching clinical notes…', 'Obteniendo notas clínicas…')
   progress.value = { done: 0, total: 0 }
   const notes = await api.fetchAll<PHClinicalNote>('/clinical_notes', (done, total) => (progress.value = { done, total }))
 
-  phase.value = 'Importing…'
+  phase.value = t('Importing…', 'Importando…')
   const rows = []
   for (const note of notes) {
     const ref = `PH-clinicalnote-${note.id}`
@@ -115,8 +116,12 @@ function reset() {
 <template>
   <div>
     <p class="text-sm text-gray-500">
-      Pulls clinical/SOAP notes directly from PracticeHub's API into each patient's contact log here. Safe to
-      re-run — already-imported notes are skipped.
+      {{
+        t(
+          "Pulls clinical/SOAP notes directly from PracticeHub's API into each patient's contact log here. Safe to re-run — already-imported notes are skipped.",
+          'Obtiene las notas clínicas/SOAP directamente de la API de PracticeHub y las añade al registro de contacto de cada paciente. Se puede volver a ejecutar sin riesgo: las notas ya importadas se omiten.',
+        )
+      }}
     </p>
 
     <div v-if="stage === 'connect'" class="mt-4 max-w-md">
@@ -130,20 +135,25 @@ function reset() {
 
     <div v-else-if="stage === 'done'" class="mt-4 space-y-4">
       <div class="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">
-        Imported {{ importedCount }} clinical notes. Skipped {{ skippedDuplicate }} already-imported, {{ skippedUnmatched }} with no matching patient.
+        {{
+          t(
+            `Imported ${importedCount} clinical notes. Skipped ${skippedDuplicate} already-imported, ${skippedUnmatched} with no matching patient.`,
+            `Se importaron ${importedCount} notas clínicas. Se omitieron ${skippedDuplicate} ya importadas, ${skippedUnmatched} sin paciente coincidente.`,
+          )
+        }}
       </div>
       <div v-if="importErrors.length > 0" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-        <p class="font-medium">Some rows failed:</p>
+        <p class="font-medium">{{ t('Some rows failed:', 'Algunas filas fallaron:') }}</p>
         <ul class="mt-1 list-disc pl-5">
           <li v-for="(e, i) in importErrors" :key="i">{{ e }}</li>
         </ul>
       </div>
       <div class="flex gap-3">
         <NuxtLink to="/patients" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-          View Patients
+          {{ t('View Patients', 'Ver pacientes') }}
         </NuxtLink>
         <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50" @click="reset">
-          Run again
+          {{ t('Run again', 'Ejecutar de nuevo') }}
         </button>
       </div>
     </div>

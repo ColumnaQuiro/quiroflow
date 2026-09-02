@@ -21,6 +21,7 @@ interface AppointmentRow {
 interface PatientRow { id: string; first_name: string; last_name: string | null }
 
 const supabase = useSupabaseClient()
+const t = useT()
 
 const range = ref(computePresetRange({ months: 1 }))
 const loading = ref(true)

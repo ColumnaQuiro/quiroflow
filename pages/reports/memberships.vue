@@ -17,6 +17,7 @@ interface PaymentRow {
 interface PatientRow { id: string; first_name: string; last_name: string }
 
 const supabase = useSupabaseClient()
+const t = useT()
 const loading = ref(true)
 const memberships = ref<MembershipRow[]>([])
 const payments = ref<PaymentRow[]>([])
@@ -89,27 +90,27 @@ function lastPayment(membershipId: string) {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Memberships" meta="Active count, monthly revenue, and failed payments">
-      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; Reports</NuxtLink>
+    <PageHeader :title="t('Memberships', 'Membresías')" :meta="t('Active count, monthly revenue, and failed payments', 'Recuento activo, ingresos mensuales y pagos fallidos')">
+      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
     </PageHeader>
 
     <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
-      <p class="text-[13px] text-ink-muted2">Manual and Stripe autopay combined.</p>
+      <p class="text-[13px] text-ink-muted2">{{ t('Manual and Stripe autopay combined.', 'Combina pagos manuales y cobro automático de Stripe.') }}</p>
 
-      <div v-if="loading" class="mt-6 text-[13px] text-ink-faint2">Loading…</div>
+      <div v-if="loading" class="mt-6 text-[13px] text-ink-faint2">{{ t('Loading…', 'Cargando…') }}</div>
       <template v-else>
         <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div class="rounded-card border border-line bg-surface p-4 shadow-card">
             <p class="font-mono text-[23px] font-semibold text-ink-900">{{ active.length }}</p>
-            <p class="text-[12px] text-ink-muted2">Active memberships</p>
+            <p class="text-[12px] text-ink-muted2">{{ t('Active memberships', 'Membresías activas') }}</p>
           </div>
           <div class="rounded-card border border-line bg-surface p-4 shadow-card">
             <p class="font-mono text-[23px] font-semibold text-ink-900">€{{ (monthlyRevenue / 100).toFixed(2) }}</p>
-            <p class="text-[12px] text-ink-muted2">Revenue this month (paid)</p>
+            <p class="text-[12px] text-ink-muted2">{{ t('Revenue this month (paid)', 'Ingresos este mes (pagado)') }}</p>
           </div>
           <div class="rounded-card border border-line bg-surface p-4 shadow-card">
             <p class="font-mono text-[23px] font-semibold" :class="failedPayments.length > 0 ? 'text-danger-text' : 'text-ink-900'">{{ failedPayments.length }}</p>
-            <p class="text-[12px] text-ink-muted2">Failed payments (all time)</p>
+            <p class="text-[12px] text-ink-muted2">{{ t('Failed payments (all time)', 'Pagos fallidos (histórico)') }}</p>
           </div>
         </div>
 
@@ -117,16 +118,16 @@ function lastPayment(membershipId: string) {
           <table class="w-full text-[13px]">
             <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">
               <tr>
-                <th class="px-4 py-2">Patient</th>
-                <th class="px-4 py-2">Plan</th>
-                <th class="px-4 py-2">Status</th>
-                <th class="px-4 py-2">Started</th>
-                <th class="px-4 py-2">Last payment</th>
+                <th class="px-4 py-2">{{ t('Patient', 'Paciente') }}</th>
+                <th class="px-4 py-2">{{ t('Plan', 'Plan') }}</th>
+                <th class="px-4 py-2">{{ t('Status', 'Estado') }}</th>
+                <th class="px-4 py-2">{{ t('Started', 'Inicio') }}</th>
+                <th class="px-4 py-2">{{ t('Last payment', 'Último pago') }}</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-line-row">
               <tr v-if="memberships.length === 0">
-                <td colspan="5" class="px-4 py-6 text-center text-ink-faint2">No memberships yet.</td>
+                <td colspan="5" class="px-4 py-6 text-center text-ink-faint2">{{ t('No memberships yet.', 'Todavía no hay membresías.') }}</td>
               </tr>
               <tr v-for="m in memberships" :key="m.id">
                 <td class="px-4 py-2.5 text-ink-900">

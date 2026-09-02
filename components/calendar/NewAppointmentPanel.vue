@@ -22,6 +22,7 @@ const emit = defineEmits<{ close: []; saved: [] }>()
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const { fire } = useAutomations()
+const t = useT()
 
 const activeTab = ref<'create' | 'availability'>('create')
 
@@ -107,7 +108,7 @@ watch([collectPayment, effectivePrice], ([on]) => {
 async function save() {
   error.value = ''
   if (patientMode.value === 'existing' ? !selectedPatient.value : !newPatientFirstName.value.trim()) {
-    error.value = patientMode.value === 'existing' ? 'Select a patient.' : "Enter the new patient's first name."
+    error.value = patientMode.value === 'existing' ? t('Select a patient.', 'Selecciona un paciente.') : t("Enter the new patient's first name.", 'Introduce el nombre del nuevo paciente.')
     return
   }
   saving.value = true
@@ -126,7 +127,7 @@ async function save() {
       .select('id')
       .single()
     if (patientError || !newPatient) {
-      error.value = patientError?.message ?? 'Could not create patient.'
+      error.value = patientError?.message ?? t('Could not create patient.', 'No se ha podido crear el paciente.')
       saving.value = false
       return
     }
@@ -144,7 +145,7 @@ async function save() {
   const startsAt = new Date(`${date.value}T${time.value}`)
   const hours = store.currentClinic?.business_hours
   if (hasBusinessHoursConfigured(hours) && !isWithinBusinessHours(startsAt, hours)) {
-    if (!confirm("This appointment falls outside the clinic's working hours. Book it anyway?")) {
+    if (!confirm(t("This appointment falls outside the clinic's working hours. Book it anyway?", 'Esta cita está fuera del horario de atención de la clínica. ¿Reservarla de todos modos?'))) {
       saving.value = false
       return
     }
@@ -178,7 +179,7 @@ async function save() {
       .select('id')
       .single()
     if (apptError || !created) {
-      error.value = apptError?.message ?? 'Could not create appointment.'
+      error.value = apptError?.message ?? t('Could not create appointment.', 'No se ha podido crear la cita.')
       saving.value = false
       return
     }
@@ -260,49 +261,49 @@ async function save() {
           :class="activeTab === tab ? 'border-brand text-brand-text' : 'border-transparent text-ink-muted2 hover:text-ink-600'"
           @click="activeTab = tab"
         >
-          {{ tab === 'create' ? 'Create Appointment' : 'Availability Manager' }}
+          {{ tab === 'create' ? t('Create Appointment', 'Crear cita') : t('Availability Manager', 'Gestor de disponibilidad') }}
         </button>
       </div>
 
       <form v-if="activeTab === 'create'" class="mt-4 space-y-4" @submit.prevent="save">
         <div>
-          <label class="block text-[12.5px] font-medium text-ink-600">Appointment Type</label>
+          <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Appointment Type', 'Tipo de cita') }}</label>
           <select v-model="appointmentTypeId" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
-            <option value="">No type</option>
+            <option value="">{{ t('No type', 'Sin tipo') }}</option>
             <option v-for="t in appointmentTypes" :key="t.id" :value="t.id">{{ t.name }} ({{ effectiveDuration(t.duration_minutes, t.id, practitionerId, overrides) }} min)</option>
           </select>
         </div>
 
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <label class="block text-[12.5px] font-medium text-ink-600">Date</label>
+            <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Date', 'Fecha') }}</label>
             <input v-model="date" type="date" required class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
           </div>
           <div>
-            <label class="block text-[12.5px] font-medium text-ink-600">Time</label>
+            <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Time', 'Hora') }}</label>
             <input v-model="time" type="time" required class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
           </div>
         </div>
 
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <label class="block text-[12.5px] font-medium text-ink-600">Room</label>
+            <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Room', 'Sala') }}</label>
             <select v-model="roomId" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
-              <option value="">No room</option>
+              <option value="">{{ t('No room', 'Sin sala') }}</option>
               <option v-for="r in rooms" :key="r.id" :value="r.id">{{ r.name }}</option>
             </select>
           </div>
           <div>
-            <label class="block text-[12.5px] font-medium text-ink-600">Practitioner</label>
+            <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Practitioner', 'Profesional') }}</label>
             <select v-model="practitionerId" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
-              <option value="">Unassigned</option>
+              <option value="">{{ t('Unassigned', 'Sin asignar') }}</option>
               <option v-for="m in teamMembers" :key="m.id" :value="m.id">{{ m.full_name }}</option>
             </select>
           </div>
         </div>
 
         <div>
-          <label class="block text-[12.5px] font-medium text-ink-600">Patient</label>
+          <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Patient', 'Paciente') }}</label>
           <div class="mt-1 flex gap-2">
             <button
               type="button"
@@ -314,7 +315,7 @@ async function save() {
                 <circle cx="6.8" cy="6.8" r="4.3" />
                 <path d="M13 13l-3-3" stroke-linecap="round" />
               </svg>
-              Existing Patient
+              {{ t('Existing Patient', 'Paciente existente') }}
             </button>
             <button
               type="button"
@@ -322,7 +323,7 @@ async function save() {
               :class="patientMode === 'new' ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-600 hover:bg-surface-subtle'"
               @click="patientMode = 'new'"
             >
-              + New Patient
+              {{ t('+ New Patient', '+ Nuevo paciente') }}
             </button>
           </div>
 
@@ -330,40 +331,40 @@ async function save() {
             <input
               v-model="patientQuery"
               type="text"
-              :placeholder="selectedPatient ? `${selectedPatient.first_name} ${selectedPatient.last_name ?? ''}` : 'Search by name, phone, or email…'"
+              :placeholder="selectedPatient ? `${selectedPatient.first_name} ${selectedPatient.last_name ?? ''}` : t('Search by name, phone, or email…', 'Buscar por nombre, teléfono o email…')"
               class="mt-2 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none"
             />
             <ul v-if="patientQuery" class="mt-1 max-h-40 overflow-y-auto rounded-ctl border border-line">
               <li v-for="p in searchResults" :key="p.id" class="cursor-pointer px-3 py-1.5 text-[13px] text-ink-700 hover:bg-surface-subtle" @click="selectPatient(p)">
                 {{ p.first_name }} {{ p.last_name }}
               </li>
-              <li v-if="searchResults.length === 0" class="px-3 py-1.5 text-[13px] text-ink-faint">No matches</li>
+              <li v-if="searchResults.length === 0" class="px-3 py-1.5 text-[13px] text-ink-faint">{{ t('No matches', 'Sin resultados') }}</li>
             </ul>
             <p v-if="selectedPatient && !patientQuery" class="mt-1 text-[12.5px] text-ink-muted2">
-              Selected: <span class="font-medium text-ink-900">{{ selectedPatient.first_name }} {{ selectedPatient.last_name }}</span>
+              {{ t('Selected:', 'Seleccionado:') }} <span class="font-medium text-ink-900">{{ selectedPatient.first_name }} {{ selectedPatient.last_name }}</span>
             </p>
           </template>
 
           <div v-else class="mt-2 grid grid-cols-2 gap-2">
-            <input v-model="newPatientFirstName" type="text" placeholder="First name" required class="rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
-            <input v-model="newPatientLastName" type="text" placeholder="Last name" class="rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
-            <input v-model="newPatientEmail" type="email" placeholder="Email" class="rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
-            <input v-model="newPatientPhone" type="tel" placeholder="Phone" class="rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
+            <input v-model="newPatientFirstName" type="text" :placeholder="t('First name', 'Nombre')" required class="rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
+            <input v-model="newPatientLastName" type="text" :placeholder="t('Last name', 'Apellidos')" class="rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
+            <input v-model="newPatientEmail" type="email" :placeholder="t('Email', 'Email')" class="rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
+            <input v-model="newPatientPhone" type="tel" :placeholder="t('Phone', 'Teléfono')" class="rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
           </div>
         </div>
 
         <div>
-          <label class="block text-[12.5px] font-medium text-ink-600">Note (Optional)</label>
-          <textarea v-model="note" rows="2" placeholder="Any additional notes…" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
+          <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Note (Optional)', 'Nota (opcional)') }}</label>
+          <textarea v-model="note" rows="2" :placeholder="t('Any additional notes…', 'Notas adicionales…')" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
         </div>
 
         <div>
-          <label class="block text-[12.5px] font-medium text-ink-600">Repeat</label>
+          <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Repeat', 'Repetir') }}</label>
           <select v-model="repeat" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
-            <option value="none">Does not repeat</option>
-            <option value="daily">Daily (8 occurrences)</option>
-            <option value="weekly">Weekly (8 occurrences)</option>
-            <option value="monthly">Monthly (8 occurrences)</option>
+            <option value="none">{{ t('Does not repeat', 'No se repite') }}</option>
+            <option value="daily">{{ t('Daily (8 occurrences)', 'Diariamente (8 repeticiones)') }}</option>
+            <option value="weekly">{{ t('Weekly (8 occurrences)', 'Semanalmente (8 repeticiones)') }}</option>
+            <option value="monthly">{{ t('Monthly (8 occurrences)', 'Mensualmente (8 repeticiones)') }}</option>
           </select>
         </div>
 
@@ -373,7 +374,7 @@ async function save() {
               <rect x="1.5" y="3.5" width="13" height="9" rx="1.3" />
               <path d="M1.5 6.5h13" />
             </svg>
-            Collect Payment
+            {{ t('Collect Payment', 'Cobrar pago') }}
           </label>
           <button
             type="button"
@@ -389,15 +390,15 @@ async function save() {
 
         <div v-if="collectPayment" class="grid grid-cols-2 gap-4">
           <div>
-            <label class="block text-[12.5px] font-medium text-ink-600">Amount (€)</label>
+            <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Amount (€)', 'Importe (€)') }}</label>
             <input v-model="paymentAmount" type="number" min="0" step="0.01" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
           </div>
           <div>
-            <label class="block text-[12.5px] font-medium text-ink-600">Method</label>
+            <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Method', 'Método') }}</label>
             <select v-model="paymentMethod" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
-              <option value="cash">Cash</option>
-              <option value="card">Card</option>
-              <option value="credit">Credit on account</option>
+              <option value="cash">{{ t('Cash', 'Efectivo') }}</option>
+              <option value="card">{{ t('Card', 'Tarjeta') }}</option>
+              <option value="credit">{{ t('Credit on account', 'Crédito en cuenta') }}</option>
             </select>
           </div>
         </div>
@@ -405,8 +406,8 @@ async function save() {
         <p v-if="error" class="text-[13px] text-danger-text">{{ error }}</p>
 
         <div class="flex justify-end gap-2 pt-2">
-          <UiBtn variant="secondary" :disabled="saving" @click="emit('close')">Cancel</UiBtn>
-          <UiBtn variant="primary" :disabled="saving" @click="save">{{ saving ? 'Creating…' : 'Create' }}</UiBtn>
+          <UiBtn variant="secondary" :disabled="saving" @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</UiBtn>
+          <UiBtn variant="primary" :disabled="saving" @click="save">{{ saving ? t('Creating…', 'Creando…') : t('Create', 'Crear') }}</UiBtn>
         </div>
       </form>
 

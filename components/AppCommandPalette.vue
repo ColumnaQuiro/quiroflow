@@ -5,18 +5,19 @@ interface PatientResult { id: string; first_name: string; last_name: string | nu
 
 const emit = defineEmits<{ close: [] }>()
 const supabase = useSupabaseClient()
+const t = useT()
 
-const NAV_ITEMS = [
-  { label: 'Dashboard', to: '/dashboard' },
-  { label: 'My Day', to: '/practitioner' },
-  { label: 'Calendar', to: '/calendar' },
-  { label: 'Patients', to: '/patients' },
-  { label: 'Recalls', to: '/recalls' },
-  { label: 'Billing', to: '/billing' },
-  { label: 'Reports', to: '/reports' },
-  { label: 'Campaigns', to: '/campaigns' },
-  { label: 'Settings', to: '/settings' },
-]
+const NAV_ITEMS = computed(() => [
+  { label: t('Dashboard', 'Panel'), to: '/dashboard' },
+  { label: t('My Day', 'Mi día'), to: '/practitioner' },
+  { label: t('Calendar', 'Calendario'), to: '/calendar' },
+  { label: t('Patients', 'Pacientes'), to: '/patients' },
+  { label: t('Recalls', 'Recordatorios'), to: '/recalls' },
+  { label: t('Billing', 'Facturación'), to: '/billing' },
+  { label: t('Reports', 'Informes'), to: '/reports' },
+  { label: t('Campaigns', 'Campañas'), to: '/campaigns' },
+  { label: t('Settings', 'Ajustes'), to: '/settings' },
+])
 
 const query = ref('')
 const patients = ref<PatientResult[]>([])
@@ -26,8 +27,8 @@ let searchTimer: ReturnType<typeof setTimeout>
 
 const filteredNav = computed(() => {
   const q = query.value.trim().toLowerCase()
-  if (!q) return NAV_ITEMS
-  return NAV_ITEMS.filter((n) => n.label.toLowerCase().includes(q))
+  if (!q) return NAV_ITEMS.value
+  return NAV_ITEMS.value.filter((n) => n.label.toLowerCase().includes(q))
 })
 
 watch(query, (q) => {
@@ -73,7 +74,7 @@ function onKeydown(e: KeyboardEvent) {
           ref="inputRef"
           v-model="query"
           type="text"
-          placeholder="Search patients or jump to a page…"
+          :placeholder="t('Search patients or jump to a page…', 'Busca pacientes o ve a una página…')"
           class="flex-1 border-0 text-[14px] text-ink-900 outline-none placeholder:text-ink-faint"
           @keydown="onKeydown"
         />
@@ -82,8 +83,8 @@ function onKeydown(e: KeyboardEvent) {
 
       <div class="max-h-96 overflow-y-auto py-2">
         <template v-if="query.trim() && (searching || patients.length > 0)">
-          <div class="px-3 py-1 text-[10.5px] font-[640] uppercase tracking-[.06em] text-ink-faint">Patients</div>
-          <p v-if="searching" class="px-3 py-2 text-[13px] text-ink-faint">Searching…</p>
+          <div class="px-3 py-1 text-[10.5px] font-[640] uppercase tracking-[.06em] text-ink-faint">{{ t('Patients', 'Pacientes') }}</div>
+          <p v-if="searching" class="px-3 py-2 text-[13px] text-ink-faint">{{ t('Searching…', 'Buscando…') }}</p>
           <button
             v-for="p in patients"
             :key="p.id"
@@ -98,8 +99,8 @@ function onKeydown(e: KeyboardEvent) {
           </button>
         </template>
 
-        <div class="px-3 py-1 text-[10.5px] font-[640] uppercase tracking-[.06em] text-ink-faint">Go to</div>
-        <p v-if="filteredNav.length === 0" class="px-3 py-2 text-[13px] text-ink-faint">No matches.</p>
+        <div class="px-3 py-1 text-[10.5px] font-[640] uppercase tracking-[.06em] text-ink-faint">{{ t('Go to', 'Ir a') }}</div>
+        <p v-if="filteredNav.length === 0" class="px-3 py-2 text-[13px] text-ink-faint">{{ t('No matches.', 'Sin resultados.') }}</p>
         <button
           v-for="n in filteredNav"
           :key="n.to"

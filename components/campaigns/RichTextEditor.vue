@@ -37,7 +37,7 @@ function exec(command: string) {
   onInput()
 }
 function insertLink() {
-  const url = prompt('Link URL')
+  const url = prompt(t('Link URL', 'URL del enlace'))
   if (!url) return
   document.execCommand('createLink', false, url)
   onInput()
@@ -59,11 +59,11 @@ function onDrop(e: DragEvent) {
 async function uploadAndInsert(file: File) {
   uploadError.value = ''
   if (!file.type.startsWith('image/')) {
-    uploadError.value = 'Only image files can be inserted.'
+    uploadError.value = t('Only image files can be inserted.', 'Solo se pueden insertar archivos de imagen.')
     return
   }
   if (file.size > MAX_IMAGE_BYTES) {
-    uploadError.value = `Image is too large (max ${(MAX_IMAGE_BYTES / (1024 * 1024)).toFixed(0)} MB).`
+    uploadError.value = `${t('Image is too large', 'La imagen es demasiado grande')} (max ${(MAX_IMAGE_BYTES / (1024 * 1024)).toFixed(0)} MB).`
     return
   }
   uploading.value = true
@@ -99,15 +99,15 @@ function onInput() {
       <button type="button" class="flex h-6 w-6 items-center justify-center rounded-ctlSm text-[13px] italic text-ink-600 hover:bg-line-faint" @click="exec('italic')">I</button>
       <button type="button" class="flex h-6 w-6 items-center justify-center rounded-ctlSm text-[13px] underline text-ink-600 hover:bg-line-faint" @click="exec('underline')">U</button>
       <span class="mx-1 h-4 w-px bg-line-control"></span>
-      <button type="button" class="rounded-ctlSm px-2 py-1 text-[12px] font-medium text-ink-600 hover:bg-line-faint" @click="insertLink">Link</button>
+      <button type="button" class="rounded-ctlSm px-2 py-1 text-[12px] font-medium text-ink-600 hover:bg-line-faint" @click="insertLink">{{ t('Link', 'Enlace') }}</button>
       <button type="button" class="rounded-ctlSm px-2 py-1 text-[12px] font-medium text-ink-600 hover:bg-line-faint" :disabled="uploading" @click="pickImage">
-        {{ uploading ? 'Uploading…' : 'Image' }}
+        {{ uploading ? t('Uploading…', 'Subiendo…') : t('Image', 'Imagen') }}
       </button>
       <input ref="fileInputRef" type="file" accept="image/*" class="hidden" @change="onFileChosen" />
       <div class="ml-auto flex items-center gap-1">
-        <button type="button" class="rounded-pill border border-line-control bg-surface px-2 py-0.5 text-[11px] text-ink-muted2 hover:border-brand-tintBorder hover:bg-brand-tint hover:text-brand-text" @click="insertVariable('first_name')">First name</button>
-        <button type="button" class="rounded-pill border border-line-control bg-surface px-2 py-0.5 text-[11px] text-ink-muted2 hover:border-brand-tintBorder hover:bg-brand-tint hover:text-brand-text" @click="insertVariable('last_name')">Last name</button>
-        <button type="button" class="rounded-pill border border-line-control bg-surface px-2 py-0.5 text-[11px] text-ink-muted2 hover:border-brand-tintBorder hover:bg-brand-tint hover:text-brand-text" @click="insertVariable('email')">Email</button>
+        <button type="button" class="rounded-pill border border-line-control bg-surface px-2 py-0.5 text-[11px] text-ink-muted2 hover:border-brand-tintBorder hover:bg-brand-tint hover:text-brand-text" @click="insertVariable('first_name')">{{ t('First name', 'Nombre') }}</button>
+        <button type="button" class="rounded-pill border border-line-control bg-surface px-2 py-0.5 text-[11px] text-ink-muted2 hover:border-brand-tintBorder hover:bg-brand-tint hover:text-brand-text" @click="insertVariable('last_name')">{{ t('Last name', 'Apellidos') }}</button>
+        <button type="button" class="rounded-pill border border-line-control bg-surface px-2 py-0.5 text-[11px] text-ink-muted2 hover:border-brand-tintBorder hover:bg-brand-tint hover:text-brand-text" @click="insertVariable('email')">{{ t('Email', 'Correo electrónico') }}</button>
       </div>
     </div>
     <div
@@ -121,6 +121,6 @@ function onInput() {
       @drop.prevent="onDrop"
     ></div>
     <p v-if="uploadError" class="border-t border-line-control px-3 py-1.5 text-[11.5px] text-danger-text">{{ uploadError }}</p>
-    <p class="border-t border-line-control px-3 py-1.5 text-[11px] text-ink-faint2">Drag an image into the editor, or use the Image button. Max {{ (MAX_IMAGE_BYTES / (1024 * 1024)).toFixed(0) }} MB.</p>
+    <p class="border-t border-line-control px-3 py-1.5 text-[11px] text-ink-faint2">{{ t('Drag an image into the editor, or use the Image button. Max', 'Arrastra una imagen al editor, o usa el botón Imagen. Máx.') }} {{ (MAX_IMAGE_BYTES / (1024 * 1024)).toFixed(0) }} MB.</p>
   </div>
 </template>

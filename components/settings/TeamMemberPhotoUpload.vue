@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { sanitizeStorageFilename } from '~/utils/storageFilename'
+import { sanitizeStorageFilename } from '../../utils/storageFilename'
 
 // Same upload-to-public-bucket pattern as ClinicLogoUpload/PatientsPhotoUpload.
 // `accountId` is taken as a prop rather than read from useAccountStore()

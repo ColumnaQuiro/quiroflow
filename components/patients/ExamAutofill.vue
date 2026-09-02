@@ -237,7 +237,7 @@ defineExpose({ save, copyLastNote })
         class="flex w-full items-center justify-between px-5 py-2.5 text-[12.5px] font-medium text-ink-muted2 hover:text-ink-600"
         @click="advancedOpen = !advancedOpen"
       >
-        <span>Advanced findings picker (spine segments &amp; codes)</span>
+        <span>{{ t('Advanced findings picker (spine segments & codes)', 'Selector avanzado de hallazgos (segmentos vertebrales y códigos)') }}</span>
         <svg width="9" height="9" viewBox="0 0 10 10" class="shrink-0 transition-transform" :class="{ 'rotate-180': advancedOpen }">
           <path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" />
         </svg>
@@ -270,15 +270,15 @@ defineExpose({ save, copyLastNote })
         <!-- Utility + modifier + code grid -->
         <div class="min-w-0 flex-1">
           <p class="text-[11.5px] text-ink-muted2">
-            Selected: <span class="font-medium text-ink-700">{{ selectedSegment ? `${selectedSegment.level}${selectedSegment.side}` : 'None' }}</span>
+            {{ t('Selected:', 'Seleccionado:') }} <span class="font-medium text-ink-700">{{ selectedSegment ? `${selectedSegment.level}${selectedSegment.side}` : t('None', 'Ninguno') }}</span>
             <span v-if="selectedModifier"> &middot; {{ selectedModifier }}</span>
           </p>
 
           <div class="mt-2 grid grid-cols-4 gap-1 text-[11px]">
-            <button type="button" class="rounded-ctlSm border border-line-control py-1.5 font-medium text-ink-500 hover:border-line-controlHover" @click="insertDatestamp">Datestamp</button>
-            <button type="button" class="rounded-ctlSm border border-line-control py-1.5 font-medium text-ink-500 hover:border-line-controlHover" @click="clearAll">Clear All</button>
-            <button type="button" class="rounded-ctlSm border border-line-control py-1.5 font-medium text-ink-500 hover:border-line-controlHover" @click="newLine">New Line</button>
-            <button type="button" class="rounded-ctlSm border border-line-control py-1.5 font-medium text-ink-500 hover:border-line-controlHover" @click="undoLast">Undo Last</button>
+            <button type="button" class="rounded-ctlSm border border-line-control py-1.5 font-medium text-ink-500 hover:border-line-controlHover" @click="insertDatestamp">{{ t('Datestamp', 'Marca de fecha') }}</button>
+            <button type="button" class="rounded-ctlSm border border-line-control py-1.5 font-medium text-ink-500 hover:border-line-controlHover" @click="clearAll">{{ t('Clear All', 'Borrar todo') }}</button>
+            <button type="button" class="rounded-ctlSm border border-line-control py-1.5 font-medium text-ink-500 hover:border-line-controlHover" @click="newLine">{{ t('New Line', 'Nueva línea') }}</button>
+            <button type="button" class="rounded-ctlSm border border-line-control py-1.5 font-medium text-ink-500 hover:border-line-controlHover" @click="undoLast">{{ t('Undo Last', 'Deshacer último') }}</button>
           </div>
 
           <div class="mt-1 grid grid-cols-6 gap-1 text-[11px]">

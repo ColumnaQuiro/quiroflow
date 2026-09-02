@@ -5,6 +5,7 @@ const props = defineProps<{ patientId: string }>()
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 // `visibility` isn't in the generated Supabase types yet -- merge it in
 // locally rather than editing the generated file by hand.
@@ -90,7 +91,7 @@ async function view(file: Tables<'patient_files'>) {
 }
 
 async function remove(file: Tables<'patient_files'>) {
-  if (!confirm(`Delete ${file.file_name}?`)) return
+  if (!confirm(`${t('Delete', 'Eliminar')} ${file.file_name}?`)) return
   if (file.storage_path) await supabase.storage.from('patient-files').remove([file.storage_path])
   await supabase.from('patient_files').delete().eq('id', file.id)
   files.value = files.value.filter((f) => f.id !== file.id)
@@ -100,16 +101,16 @@ async function remove(file: Tables<'patient_files'>) {
 <template>
   <div class="rounded-card border border-line bg-surface shadow-card">
     <div class="flex items-center justify-between border-b border-line-divider px-4 py-3">
-      <p class="text-[13.5px] font-semibold text-ink-700">Files</p>
+      <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Files', 'Archivos') }}</p>
       <label class="inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-white hover:bg-brand-hover">
-        {{ uploading ? 'Uploading…' : 'Upload file' }}
+        {{ uploading ? t('Uploading…', 'Subiendo…') : t('Upload file', 'Subir archivo') }}
         <input ref="fileInput" type="file" multiple class="hidden" :disabled="uploading" @change="(e) => uploadFiles((e.target as HTMLInputElement).files!)" />
       </label>
     </div>
     <p v-if="error" class="px-4 pt-3 text-[13px] text-danger-text">{{ error }}</p>
 
-    <div v-if="loading" class="p-8 text-center text-[13px] text-ink-faint">Loading…</div>
-    <div v-else-if="files.length === 0" class="p-8 text-center text-[13px] text-ink-faint">No files uploaded yet.</div>
+    <div v-if="loading" class="p-8 text-center text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+    <div v-else-if="files.length === 0" class="p-8 text-center text-[13px] text-ink-faint">{{ t('No files uploaded yet.', 'Aún no se han subido archivos.') }}</div>
     <div v-else class="grid grid-cols-4 gap-4 p-4">
       <div v-for="file in files" :key="file.id" class="group overflow-hidden rounded-ctl border border-line-divider bg-surface">
         <div
@@ -124,7 +125,7 @@ async function remove(file: Tables<'patient_files'>) {
             {{ kindLabel(file) }}
           </span>
           <span v-if="!file.storage_path" class="absolute right-1.5 top-1.5 rounded-pill bg-warning-bg px-1.5 py-0.5 text-[10px] font-medium text-warning-text">
-            Not migrated
+            {{ t('Not migrated', 'No migrado') }}
           </span>
         </div>
         <div class="p-2.5">

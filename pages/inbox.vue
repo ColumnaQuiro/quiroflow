@@ -581,7 +581,7 @@ async function onFileChosen(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0]
   if (!file || !selected.value) return
   if (file.size > MAX_MEDIA_BYTES) {
-    sendError.value = 'File is too large (max 16 MB).'
+    sendError.value = t('File is too large (max 16 MB).', 'El archivo es demasiado grande (máx. 16 MB).')
     return
   }
   const kind = mediaKindForFile(file)
@@ -591,7 +591,7 @@ async function onFileChosen(e: Event) {
       const base64 = await blobToBase64(blob)
       await sendMedia(base64, mimeType, file.name.replace(/\.\w+$/, '.jpg'), 'image')
     } catch (err: any) {
-      sendError.value = err?.message ?? 'Could not process this image.'
+      sendError.value = err?.message ?? t('Could not process this image.', 'No se pudo procesar esta imagen.')
     }
   } else {
     const base64 = await blobToBase64(file)
@@ -614,7 +614,7 @@ async function toggleAudioRecording() {
     try {
       await startAudioRecording()
     } catch {
-      sendError.value = 'Could not access the microphone -- check your browser permissions.'
+      sendError.value = t('Could not access the microphone -- check your browser permissions.', 'No se pudo acceder al micrófono; comprueba los permisos del navegador.')
     }
   }
 }
@@ -647,7 +647,7 @@ function listTime(iso: string) {
   const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
   const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / 86400000)
   if (diffDays === 0) return shortTime(iso)
-  if (diffDays === 1) return 'Yesterday'
+  if (diffDays === 1) return t('Yesterday', 'Ayer')
   if (diffDays > 1 && diffDays < 7) return d.toLocaleDateString([], { weekday: 'long' })
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
 }
@@ -655,13 +655,25 @@ function relativeDay(iso: string) {
   const d = new Date(iso)
   const today = new Date()
   const diffDays = Math.round((new Date(today.toDateString()).getTime() - new Date(d.toDateString()).getTime()) / 86400000)
-  if (diffDays === 0) return 'Today'
-  if (diffDays === 1) return 'Yesterday'
+  if (diffDays === 0) return t('Today', 'Hoy')
+  if (diffDays === 1) return t('Yesterday', 'Ayer')
   return d.toLocaleDateString([], { day: 'numeric', month: 'short' })
 }
+const MEDIA_TYPE_LABELS: Record<string, [string, string]> = {
+  image: ['Image', 'Imagen'],
+  video: ['Video', 'Vídeo'],
+  audio: ['Audio', 'Audio'],
+  document: ['Document', 'Documento'],
+  sticker: ['Sticker', 'Sticker'],
+}
+function mediaTypeLabel(mediaType: string): string {
+  const pair = MEDIA_TYPE_LABELS[mediaType]
+  if (pair) return t(pair[0], pair[1])
+  return `${mediaType[0].toUpperCase()}${mediaType.slice(1)}`
+}
 function previewText(m: Message) {
-  if (m.media_type) return `${m.media_type[0].toUpperCase()}${m.media_type.slice(1)}${m.body_preview ? ` — ${m.body_preview}` : ''}`
-  if (m.template_name) return m.body_preview ?? `Template: ${m.template_name}`
+  if (m.media_type) return `${mediaTypeLabel(m.media_type)}${m.body_preview ? ` — ${m.body_preview}` : ''}`
+  if (m.template_name) return m.body_preview ?? `${t('Template', 'Plantilla')}: ${m.template_name}`
   return m.body_preview ?? '—'
 }
 // What actually renders as the bubble's text, distinct from previewText
@@ -669,7 +681,7 @@ function previewText(m: Message) {
 // caption, since there's nothing to attach the inline time+status to.
 function bubbleText(m: Message): string {
   if (m.media_type) return m.body_preview ?? ''
-  if (m.template_name) return m.body_preview ?? `Template: ${m.template_name}`
+  if (m.template_name) return m.body_preview ?? `${t('Template', 'Plantilla')}: ${m.template_name}`
   return m.body_preview ?? ''
 }
 
@@ -703,12 +715,12 @@ onUnmounted(() => {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Inbox" />
+    <PageHeader :title="t('Inbox', 'Bandeja de entrada')" />
     <div v-if="webPush.supported.value && webPush.permission.value === 'default' && !pushBannerDismissed" class="flex shrink-0 items-center justify-between gap-3 border-b border-line bg-brand-tint px-4 py-2">
-      <p class="text-[12.5px] text-brand-text">Get notified here when a patient messages you, even with the tab in the background.</p>
+      <p class="text-[12.5px] text-brand-text">{{ t('Get notified here when a patient messages you, even with the tab in the background.', 'Recibe avisos aquí cuando un paciente te escriba, incluso con la pestaña en segundo plano.') }}</p>
       <div class="flex shrink-0 items-center gap-3">
-        <UiBtn variant="primary" size="sm" @click="webPush.register()">Enable notifications</UiBtn>
-        <button type="button" class="text-[12.5px] text-ink-faint hover:text-ink-muted" @click="pushBannerDismissed = true">Not now</button>
+        <UiBtn variant="primary" size="sm" @click="webPush.register()">{{ t('Enable notifications', 'Activar notificaciones') }}</UiBtn>
+        <button type="button" class="text-[12.5px] text-ink-faint hover:text-ink-muted" @click="pushBannerDismissed = true">{{ t('Not now', 'Ahora no') }}</button>
       </div>
     </div>
     <div class="flex flex-1 overflow-hidden">

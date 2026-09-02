@@ -8,6 +8,7 @@ interface InvoiceRow { id: string; appointment_id: string | null }
 
 const supabase = useSupabaseClient()
 const { practitioners, clinics, load: loadFilterOptions } = useReportFilterOptions()
+const t = useT()
 
 const range = ref(computePresetRange({ months: 1 }))
 const practitionerFilter = ref('')

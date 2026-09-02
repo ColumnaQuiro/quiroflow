@@ -14,6 +14,7 @@ const props = defineProps<{ appointment: Appointment; rooms?: RoomOption[] }>()
 const emit = defineEmits<{ charted: [] }>()
 
 const supabase = useSupabaseClient()
+const t = useT()
 const visitNumber = ref<number | null>(null)
 const signing = ref(false)
 
@@ -67,10 +68,10 @@ const roomName = computed(() => props.rooms?.find((r) => r.id === props.appointm
 const visitLine = computed(() => {
   const parts = [
     new Date(props.appointment.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    props.appointment.appointment_types?.name ?? 'No type',
+    props.appointment.appointment_types?.name ?? t('No type', 'Sin tipo'),
   ]
   if (roomName.value) parts.push(roomName.value)
-  const prefix = visitNumber.value ? `Visit #${visitNumber.value} · ` : ''
+  const prefix = visitNumber.value ? `${t('Visit', 'Visita')} #${visitNumber.value} · ` : ''
   return prefix + parts.join(' · ')
 })
 
@@ -109,10 +110,10 @@ async function signAndComplete() {
         </div>
         <div class="flex shrink-0 items-center gap-3">
           <NuxtLink :to="`/patients/${appointment.patient_id}`" target="_blank" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover">
-            View profile &rarr;
+            {{ t('View profile →', 'Ver perfil →') }}
           </NuxtLink>
-          <UiBtn variant="secondary" size="sm" @click="copyLastNote">Copy last note</UiBtn>
-          <UiBtn variant="primary" size="sm" :disabled="signing" @click="signAndComplete">{{ signing ? 'Signing…' : 'Sign & complete' }}</UiBtn>
+          <UiBtn variant="secondary" size="sm" @click="copyLastNote">{{ t('Copy last note', 'Copiar última nota') }}</UiBtn>
+          <UiBtn variant="primary" size="sm" :disabled="signing" @click="signAndComplete">{{ signing ? t('Signing…', 'Firmando…') : t('Sign & complete', 'Firmar y completar') }}</UiBtn>
         </div>
       </div>
 
@@ -122,22 +123,22 @@ async function signAndComplete() {
     <div class="grid grid-cols-3 gap-4">
       <div class="col-span-1 space-y-4">
         <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-          <p class="text-[13.5px] font-semibold text-ink-700">Attendance</p>
+          <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Attendance', 'Asistencia') }}</p>
           <div class="mt-2.5 grid grid-cols-2 gap-2.5">
             <div>
-              <p class="text-[11px] text-ink-muted2">Completed</p>
+              <p class="text-[11px] text-ink-muted2">{{ t('Completed', 'Completadas') }}</p>
               <p class="mt-0.5 font-mono text-[16px] font-semibold text-success-text">{{ attendanceLoading ? '—' : attendance.completed }}</p>
             </div>
             <div>
-              <p class="text-[11px] text-ink-muted2">Missed</p>
+              <p class="text-[11px] text-ink-muted2">{{ t('Missed', 'No asistidas') }}</p>
               <p class="mt-0.5 font-mono text-[16px] font-semibold text-danger-text">{{ attendanceLoading ? '—' : attendance.no_show }}</p>
             </div>
             <div>
-              <p class="text-[11px] text-ink-muted2">Cancelled</p>
+              <p class="text-[11px] text-ink-muted2">{{ t('Cancelled', 'Canceladas') }}</p>
               <p class="mt-0.5 font-mono text-[16px] font-semibold text-warning-accent">{{ attendanceLoading ? '—' : attendance.cancelled }}</p>
             </div>
             <div>
-              <p class="text-[11px] text-ink-muted2">Show rate</p>
+              <p class="text-[11px] text-ink-muted2">{{ t('Show rate', 'Tasa de asistencia') }}</p>
               <p class="mt-0.5 font-mono text-[16px] font-semibold text-ink-900">{{ attendanceLoading || showRate === null ? '—' : `${showRate}%` }}</p>
             </div>
           </div>

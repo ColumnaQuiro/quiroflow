@@ -92,63 +92,63 @@ function fmt(iso: string) {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Scheduled Reminders" meta="WhatsApp delivery and confirmation status">
-      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; Reports</NuxtLink>
+    <PageHeader :title="t('Scheduled Reminders', 'Recordatorios programados')" :meta="t('WhatsApp delivery and confirmation status', 'Estado de entrega y confirmación de WhatsApp')">
+      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
     </PageHeader>
 
     <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
-      <p class="text-[13px] text-ink-muted2">Did every WhatsApp actually send, and who has confirmed, is pending, or asked to reschedule.</p>
+      <p class="text-[13px] text-ink-muted2">{{ t('Did every WhatsApp actually send, and who has confirmed, is pending, or asked to reschedule.', 'Si todos los WhatsApp se enviaron realmente, y quién ha confirmado, está pendiente o ha pedido reprogramar.') }}</p>
 
       <div class="mt-4">
         <ReportsDateRangeSelect v-model="range" />
       </div>
 
-      <div v-if="loading" class="mt-6 text-[13px] text-ink-faint2">Loading…</div>
+      <div v-if="loading" class="mt-6 text-[13px] text-ink-faint2">{{ t('Loading…', 'Cargando…') }}</div>
 
       <template v-else>
         <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
-          <h3 class="text-[13.5px] font-semibold text-ink-800">WhatsApp delivery status</h3>
+          <h3 class="text-[13.5px] font-semibold text-ink-800">{{ t('WhatsApp delivery status', 'Estado de entrega de WhatsApp') }}</h3>
           <div class="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <div class="rounded-ctl bg-surface-subtle p-3 text-center">
               <p class="font-mono text-[23px] font-semibold text-ink-900">{{ byStatus.sent }}</p>
-              <p class="text-[12px] text-ink-muted2">Sent</p>
+              <p class="text-[12px] text-ink-muted2">{{ t('Sent', 'Enviados') }}</p>
             </div>
             <div class="rounded-ctl bg-surface-subtle p-3 text-center">
               <p class="font-mono text-[23px] font-semibold text-ink-900">{{ byStatus.delivered }}</p>
-              <p class="text-[12px] text-ink-muted2">Delivered</p>
+              <p class="text-[12px] text-ink-muted2">{{ t('Delivered', 'Entregados') }}</p>
             </div>
             <div class="rounded-ctl bg-surface-subtle p-3 text-center">
               <p class="font-mono text-[23px] font-semibold text-ink-900">{{ byStatus.read }}</p>
-              <p class="text-[12px] text-ink-muted2">Read</p>
+              <p class="text-[12px] text-ink-muted2">{{ t('Read', 'Leídos') }}</p>
             </div>
             <div class="rounded-ctl p-3 text-center" :class="byStatus.failed > 0 ? 'bg-danger-bg' : 'bg-surface-subtle'">
               <p class="font-mono text-[23px] font-semibold" :class="byStatus.failed > 0 ? 'text-danger-text' : 'text-ink-900'">{{ byStatus.failed }}</p>
-              <p class="text-[12px]" :class="byStatus.failed > 0 ? 'text-danger-text' : 'text-ink-muted2'">Failed</p>
+              <p class="text-[12px]" :class="byStatus.failed > 0 ? 'text-danger-text' : 'text-ink-muted2'">{{ t('Failed', 'Fallidos') }}</p>
             </div>
           </div>
 
           <div v-if="failedMessages.length > 0" class="mt-4">
-            <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">Failed sends — bad number or no WhatsApp account</p>
+            <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ t('Failed sends — bad number or no WhatsApp account', 'Envíos fallidos — número incorrecto o sin cuenta de WhatsApp') }}</p>
             <ul class="mt-2 divide-y divide-line-row text-[13px]">
               <li v-for="m in failedMessages" :key="m.id" class="flex items-center justify-between py-1.5">
                 <NuxtLink v-if="m.patient_id" :to="`/patients/${m.patient_id}`" class="text-ink-600 hover:text-brand-text">
-                  {{ patientById.get(m.patient_id) ?? 'Unknown patient' }}
+                  {{ patientById.get(m.patient_id) ?? t('Unknown patient', 'Paciente desconocido') }}
                 </NuxtLink>
-                <span v-else class="text-ink-faint2">Unknown patient</span>
+                <span v-else class="text-ink-faint2">{{ t('Unknown patient', 'Paciente desconocido') }}</span>
                 <span class="text-[12px] text-danger-text">{{ failureReason(m) }}</span>
               </li>
             </ul>
           </div>
-          <p v-if="messages.length === 0" class="mt-3 text-[13px] text-ink-faint2">No WhatsApp messages sent in this range yet.</p>
+          <p v-if="messages.length === 0" class="mt-3 text-[13px] text-ink-faint2">{{ t('No WhatsApp messages sent in this range yet.', 'Todavía no se han enviado mensajes de WhatsApp en este periodo.') }}</p>
         </div>
 
         <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
-          <h3 class="text-[13.5px] font-semibold text-ink-800">Appointment confirmations</h3>
-          <p class="text-[12px] text-ink-faint2">Only counts appointments that had a confirmation message sent — requires the WhatsApp reply webhook to be configured (Settings &rarr; WhatsApp).</p>
+          <h3 class="text-[13.5px] font-semibold text-ink-800">{{ t('Appointment confirmations', 'Confirmaciones de citas') }}</h3>
+          <p class="text-[12px] text-ink-faint2">{{ t('Only counts appointments that had a confirmation message sent — requires the WhatsApp reply webhook to be configured (Settings → WhatsApp).', 'Solo cuenta citas a las que se envió un mensaje de confirmación — requiere tener configurado el webhook de respuestas de WhatsApp (Ajustes → WhatsApp).') }}</p>
 
           <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div class="rounded-ctl bg-success-bg p-3">
-              <p class="text-[11px] font-medium uppercase tracking-wide text-success-text">Confirmed ({{ confirmed.length }})</p>
+              <p class="text-[11px] font-medium uppercase tracking-wide text-success-text">{{ t(`Confirmed (${confirmed.length})`, `Confirmadas (${confirmed.length})`) }}</p>
               <ul class="mt-1 max-h-40 space-y-1 overflow-y-auto text-[13px]">
                 <li v-for="a in confirmed" :key="a.id">
                   <NuxtLink :to="`/patients/${a.patient_id}`" class="text-ink-600 hover:text-brand-text">{{ patientById.get(a.patient_id) }}</NuxtLink>
@@ -157,7 +157,7 @@ function fmt(iso: string) {
               </ul>
             </div>
             <div class="rounded-ctl bg-warning-bg p-3">
-              <p class="text-[11px] font-medium uppercase tracking-wide text-warning-text">Pending ({{ pending.length }})</p>
+              <p class="text-[11px] font-medium uppercase tracking-wide text-warning-text">{{ t(`Pending (${pending.length})`, `Pendientes (${pending.length})`) }}</p>
               <ul class="mt-1 max-h-40 space-y-1 overflow-y-auto text-[13px]">
                 <li v-for="a in pending" :key="a.id">
                   <NuxtLink :to="`/patients/${a.patient_id}`" class="text-ink-600 hover:text-brand-text">{{ patientById.get(a.patient_id) }}</NuxtLink>
@@ -166,7 +166,7 @@ function fmt(iso: string) {
               </ul>
             </div>
             <div class="rounded-ctl bg-danger-bg p-3">
-              <p class="text-[11px] font-medium uppercase tracking-wide text-danger-text">Wants to reschedule ({{ rescheduleRequested.length }})</p>
+              <p class="text-[11px] font-medium uppercase tracking-wide text-danger-text">{{ t(`Wants to reschedule (${rescheduleRequested.length})`, `Quiere reprogramar (${rescheduleRequested.length})`) }}</p>
               <ul class="mt-1 max-h-40 space-y-1 overflow-y-auto text-[13px]">
                 <li v-for="a in rescheduleRequested" :key="a.id">
                   <NuxtLink :to="`/patients/${a.patient_id}`" class="text-ink-600 hover:text-brand-text">{{ patientById.get(a.patient_id) }}</NuxtLink>

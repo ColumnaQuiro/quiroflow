@@ -86,31 +86,31 @@ const failedCount = computed(() => results.value.filter((r) => !r.ok).length)
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 p-4" @click.self="emit('close')">
     <div class="w-full max-w-md rounded-card border border-line bg-surface p-5 shadow-popover">
-      <h3 class="text-[14px] font-semibold text-ink-900">Send WhatsApp to {{ targets.length }} patient{{ targets.length === 1 ? '' : 's' }}</h3>
+      <h3 class="text-[14px] font-semibold text-ink-900">{{ t('Send WhatsApp to', 'Enviar WhatsApp a') }} {{ targets.length }} {{ targets.length === 1 ? t('patient', 'paciente') : t('patients', 'pacientes') }}</h3>
 
       <template v-if="results.length === 0">
-        <div v-if="loadingTemplates" class="mt-3 text-[13px] text-ink-faint">Loading templates…</div>
+        <div v-if="loadingTemplates" class="mt-3 text-[13px] text-ink-faint">{{ t('Loading templates…', 'Cargando plantillas…') }}</div>
         <p v-else-if="templatesError" class="mt-3 text-[13px] text-danger-text">{{ templatesError }}</p>
         <template v-else>
           <div class="mt-3">
-            <label class="block text-xs font-medium text-ink-muted">Template</label>
+            <label class="block text-xs font-medium text-ink-muted">{{ t('Template', 'Plantilla') }}</label>
             <select
               :value="selectedTemplateKey"
               class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-1.5 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand-tintBorder"
               @change="selectTemplate(($event.target as HTMLSelectElement).value)"
             >
-              <option value="" disabled>Choose a template…</option>
-              <option v-for="t in templates" :key="templateKey(t)" :value="templateKey(t)">{{ t.name }} ({{ t.language }})</option>
+              <option value="" disabled>{{ t('Choose a template…', 'Elige una plantilla…') }}</option>
+              <option v-for="tpl in templates" :key="templateKey(tpl)" :value="templateKey(tpl)">{{ tpl.name }} ({{ tpl.language }})</option>
             </select>
           </div>
 
           <template v-if="selectedTemplate">
             <p class="mt-3 whitespace-pre-wrap rounded-ctl bg-surface-subtle p-2.5 text-xs text-ink-muted">{{ selectedTemplate.bodyText }}</p>
-            <p class="mt-2 text-xs text-ink-faint">{{ slot(1) }} is filled with each patient's own first name.</p>
+            <p class="mt-2 text-xs text-ink-faint">{{ slot(1) }} {{ t("is filled with each patient's own first name.", 'se rellena con el nombre de cada paciente.') }}</p>
 
             <div v-if="sharedVariables.length > 0" class="mt-3 space-y-2">
               <div v-for="(v, i) in sharedVariables" :key="i">
-                <label class="block text-xs font-medium text-ink-muted">{{ slot(i + 2) }} (same for everyone)</label>
+                <label class="block text-xs font-medium text-ink-muted">{{ slot(i + 2) }} {{ t('(same for everyone)', '(igual para todos)') }}</label>
                 <input
                   v-model="sharedVariables[i]"
                   type="text"
@@ -122,22 +122,22 @@ const failedCount = computed(() => results.value.filter((r) => !r.ok).length)
         </template>
 
         <div class="mt-4 flex justify-end gap-2">
-          <UiBtn variant="secondary" @click="emit('close')">Cancel</UiBtn>
+          <UiBtn variant="secondary" @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</UiBtn>
           <UiBtn variant="primary" :disabled="sending || !selectedTemplate" @click="send">
-            {{ sending ? `Sending… (${results.length}/${targets.length})` : `Send to ${targets.length}` }}
+            {{ sending ? `${t('Sending…', 'Enviando…')} (${results.length}/${targets.length})` : `${t('Send to', 'Enviar a')} ${targets.length}` }}
           </UiBtn>
         </div>
       </template>
 
       <template v-else>
         <p class="mt-3 text-[13px] text-ink-600">
-          Sent to {{ sentCount }} patient{{ sentCount === 1 ? '' : 's' }}<span v-if="failedCount > 0">, {{ failedCount }} failed</span>.
+          {{ t('Sent to', 'Enviado a') }} {{ sentCount }} {{ sentCount === 1 ? t('patient', 'paciente') : t('patients', 'pacientes') }}<span v-if="failedCount > 0">, {{ failedCount }} {{ t('failed', 'fallidos') }}</span>.
         </p>
         <ul v-if="failedCount > 0" class="mt-2 max-h-40 space-y-1 overflow-y-auto text-xs text-danger-text">
           <li v-for="(r, i) in results.filter((r) => !r.ok)" :key="i">{{ r.name }}: {{ r.error }}</li>
         </ul>
         <div class="mt-4 flex justify-end">
-          <UiBtn variant="primary" @click="emit('close')">Done</UiBtn>
+          <UiBtn variant="primary" @click="emit('close')">{{ t('Done', 'Hecho') }}</UiBtn>
         </div>
       </template>
     </div>

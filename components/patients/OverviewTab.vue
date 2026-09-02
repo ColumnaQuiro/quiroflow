@@ -7,6 +7,7 @@ const emit = defineEmits<{ updated: [] }>()
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 interface TeamMemberOption { id: string; full_name: string }
 interface TutorOption { id: string; first_name: string; last_name: string | null }
@@ -100,10 +101,10 @@ function pickReferredBy(p: ReferrerOption) {
 }
 
 function teamMemberName(id: string | null) {
-  return teamMembers.value.find((m) => m.id === id)?.full_name ?? 'None'
+  return teamMembers.value.find((m) => m.id === id)?.full_name ?? t('None', 'Ninguno')
 }
 function clinicName(id: string | null) {
-  return store.clinics.find((c) => c.id === id)?.name ?? 'None'
+  return store.clinics.find((c) => c.id === id)?.name ?? t('None', 'Ninguna')
 }
 function languageLabel(code: string) {
   return LANGUAGES.find((l) => l.code === code)?.label ?? code
@@ -175,15 +176,19 @@ async function loadActivity() {
 
   const items: ActivityItem[] = []
   for (const a of (appts as any[]) ?? []) {
-    const typeName = a.appointment_types?.name ?? 'Visit'
-    const verb = a.status === 'completed' ? 'Completed' : a.status === 'cancelled' ? 'Cancelled' : a.status === 'no_show' ? 'Missed' : 'Booked'
-    items.push({ at: a.starts_at, text: `${verb} ${typeName.toLowerCase()} appointment`, dot: a.status === 'completed' ? 'bg-success-accent' : a.status === 'no_show' || a.status === 'cancelled' ? 'bg-warning-accent' : 'bg-brand' })
+    const typeNameEn = a.appointment_types?.name ?? 'Visit'
+    const typeNameEs = a.appointment_types?.name ?? 'Visita'
+    const verbEn = a.status === 'completed' ? 'Completed' : a.status === 'cancelled' ? 'Cancelled' : a.status === 'no_show' ? 'Missed' : 'Booked'
+    const verbEs = a.status === 'completed' ? 'completada' : a.status === 'cancelled' ? 'cancelada' : a.status === 'no_show' ? 'no asistida' : 'reservada'
+    const text = t(`${verbEn} ${typeNameEn.toLowerCase()} appointment`, `Cita de ${typeNameEs.toLowerCase()} ${verbEs}`)
+    items.push({ at: a.starts_at, text, dot: a.status === 'completed' ? 'bg-success-accent' : a.status === 'no_show' || a.status === 'cancelled' ? 'bg-warning-accent' : 'bg-brand' })
   }
   for (const inv of invoices ?? []) {
-    items.push({ at: inv.created_at, text: `Invoice ${inv.invoice_number} ${inv.status === 'paid' ? 'paid' : 'issued'}`, dot: inv.status === 'paid' ? 'bg-success-accent' : 'bg-ink-faint3' })
+    const text = t(`Invoice ${inv.invoice_number} ${inv.status === 'paid' ? 'paid' : 'issued'}`, `Factura ${inv.invoice_number} ${inv.status === 'paid' ? 'pagada' : 'emitida'}`)
+    items.push({ at: inv.created_at, text, dot: inv.status === 'paid' ? 'bg-success-accent' : 'bg-ink-faint3' })
   }
   for (const m of messages ?? []) {
-    items.push({ at: m.created_at, text: m.direction === 'inbound' ? 'Replied via WhatsApp' : 'WhatsApp message sent', dot: 'bg-brand' })
+    items.push({ at: m.created_at, text: m.direction === 'inbound' ? t('Replied via WhatsApp', 'Respondió por WhatsApp') : t('WhatsApp message sent', 'Mensaje de WhatsApp enviado'), dot: 'bg-brand' })
   }
   items.sort((a, b) => b.at.localeCompare(a.at))
   activity.value = items.slice(0, 6)
@@ -195,12 +200,12 @@ watch(() => props.patient.id, loadActivity)
 function relativeTime(iso: string) {
   const diffMs = Date.now() - new Date(iso).getTime()
   const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24))
-  if (diffDays === 0) return 'Today'
-  if (diffDays === 1) return 'Yesterday'
-  if (diffDays === -1) return 'Tomorrow'
-  if (diffDays > 0 && diffDays < 7) return `${diffDays}d ago`
-  if (diffDays < 0 && diffDays > -7) return `in ${-diffDays}d`
-  if (diffDays >= 7 && diffDays < 60) return `${Math.round(diffDays / 7)}w ago`
+  if (diffDays === 0) return t('Today', 'Hoy')
+  if (diffDays === 1) return t('Yesterday', 'Ayer')
+  if (diffDays === -1) return t('Tomorrow', 'Mañana')
+  if (diffDays > 0 && diffDays < 7) return t(`${diffDays}d ago`, `hace ${diffDays}d`)
+  if (diffDays < 0 && diffDays > -7) return t(`in ${-diffDays}d`, `en ${-diffDays}d`)
+  if (diffDays >= 7 && diffDays < 60) return t(`${Math.round(diffDays / 7)}w ago`, `hace ${Math.round(diffDays / 7)}sem`)
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
@@ -327,21 +332,21 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
     <!-- KPI strip -->
     <div class="grid grid-cols-4 gap-3">
       <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-        <p class="text-[11.5px] text-ink-muted2">Visits, 12 mo</p>
+        <p class="text-[11.5px] text-ink-muted2">{{ t('Visits, 12 mo', 'Visitas, 12 meses') }}</p>
         <p class="mt-1 font-mono text-[20px] font-semibold text-ink-900">{{ kpiLoading ? '—' : visits12mo }}</p>
       </div>
       <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-        <p class="text-[11.5px] text-ink-muted2">Attendance</p>
+        <p class="text-[11.5px] text-ink-muted2">{{ t('Attendance', 'Asistencia') }}</p>
         <p class="mt-1 font-mono text-[20px] font-semibold text-ink-900">{{ kpiLoading || attendancePct === null ? '—' : `${attendancePct}%` }}</p>
       </div>
       <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-        <p class="text-[11.5px] text-ink-muted2">Last visit</p>
+        <p class="text-[11.5px] text-ink-muted2">{{ t('Last visit', 'Última visita') }}</p>
         <p class="mt-1 text-[20px] font-semibold text-ink-900">
           {{ kpiLoading ? '—' : lastVisit ? new Date(lastVisit).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '—' }}
         </p>
       </div>
       <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-        <p class="text-[11.5px] text-ink-muted2">Lifetime value</p>
+        <p class="text-[11.5px] text-ink-muted2">{{ t('Lifetime value', 'Valor histórico') }}</p>
         <p class="mt-1 font-mono text-[20px] font-semibold text-ink-900">{{ kpiLoading ? '—' : money(lifetimeCents) }}</p>
       </div>
     </div>
@@ -349,8 +354,8 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
     <!-- Patient details -->
     <div class="rounded-card border border-line bg-surface p-5 shadow-card">
       <div class="flex items-center justify-between">
-        <p class="text-[13.5px] font-semibold text-ink-700">Patient details</p>
-        <UiBtn v-if="!editing" variant="secondary" size="sm" @click="startEditing">Edit</UiBtn>
+        <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Patient details', 'Datos del paciente') }}</p>
+        <UiBtn v-if="!editing" variant="secondary" size="sm" @click="startEditing">{{ t('Edit', 'Editar') }}</UiBtn>
       </div>
 
       <!-- Phone numbers are a separate one-to-many table (patient_contact_numbers),
@@ -363,93 +368,93 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
 
       <dl v-if="!editing" class="mt-4 grid grid-cols-3 gap-x-6 gap-y-4">
         <div>
-          <dt class="text-[11.5px] text-ink-muted2">Date of birth</dt>
-          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.date_of_birth ?? 'N/A' }}</dd>
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Date of birth', 'Fecha de nacimiento') }}</dt>
+          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.date_of_birth ?? t('N/A', 'N/D') }}</dd>
         </div>
         <div>
-          <dt class="text-[11.5px] text-ink-muted2">Email</dt>
-          <dd class="mt-0.5 truncate text-[13.5px] text-ink-700">{{ patient.email ?? 'N/A' }}</dd>
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Email', 'Correo electrónico') }}</dt>
+          <dd class="mt-0.5 truncate text-[13.5px] text-ink-700">{{ patient.email ?? t('N/A', 'N/D') }}</dd>
         </div>
         <div>
-          <dt class="text-[11.5px] text-ink-muted2">Address</dt>
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Address', 'Dirección') }}</dt>
           <dd class="mt-0.5 text-[13.5px] text-ink-700">
-            <p class="truncate">{{ patient.address ?? 'N/A' }}</p>
+            <p class="truncate">{{ patient.address ?? t('N/A', 'N/D') }}</p>
             <p v-if="patient.city || patient.postal_code || patient.country" class="truncate text-ink-muted">
               {{ [patient.postal_code, patient.city].filter(Boolean).join(' ') }}{{ patient.country ? (patient.city || patient.postal_code ? ', ' : '') + patient.country : '' }}
             </p>
           </dd>
         </div>
         <div>
-          <dt class="text-[11.5px] text-ink-muted2">National ID</dt>
-          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.national_id ?? 'N/A' }}</dd>
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('National ID', 'DNI/NIE') }}</dt>
+          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.national_id ?? t('N/A', 'N/D') }}</dd>
         </div>
         <div>
-          <dt class="text-[11.5px] text-ink-muted2">Occupation</dt>
-          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.occupation ?? 'N/A' }}</dd>
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Occupation', 'Profesión') }}</dt>
+          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.occupation ?? t('N/A', 'N/D') }}</dd>
         </div>
         <div>
-          <dt class="text-[11.5px] text-ink-muted2">Emergency contact</dt>
-          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.emergency_contact ?? 'N/A' }}</dd>
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Emergency contact', 'Contacto de emergencia') }}</dt>
+          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.emergency_contact ?? t('N/A', 'N/D') }}</dd>
         </div>
         <div>
-          <dt class="text-[11.5px] text-ink-muted2">Referral source</dt>
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Referral source', 'Origen de la referencia') }}</dt>
           <dd class="mt-0.5 text-[13.5px] text-ink-700">
-            {{ patient.referral_source ?? 'N/A' }}
+            {{ patient.referral_source ?? t('N/A', 'N/D') }}
             <template v-if="patient.referral_source === 'Patient'">
               &middot;
               <NuxtLink v-if="patient.referred_by_patient_id" :to="`/patients/${patient.referred_by_patient_id}`" class="text-brand-text hover:underline">
-                {{ selectedReferredBy ? tutorName(selectedReferredBy) : 'View patient' }}
+                {{ selectedReferredBy ? tutorName(selectedReferredBy) : t('View patient', 'Ver paciente') }}
               </NuxtLink>
-              <span v-else class="text-danger-text">No patient linked</span>
+              <span v-else class="text-danger-text">{{ t('No patient linked', 'Ningún paciente vinculado') }}</span>
             </template>
           </dd>
         </div>
         <div>
-          <dt class="text-[11.5px] text-ink-muted2">Preferred language</dt>
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Preferred language', 'Idioma preferido') }}</dt>
           <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ languageLabel(patient.preferred_language) }}</dd>
         </div>
         <div>
-          <dt class="text-[11.5px] text-ink-muted2">Default practitioner</dt>
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Default practitioner', 'Profesional predeterminado') }}</dt>
           <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ teamMemberName(patient.default_practitioner_id) }}</dd>
         </div>
         <div>
-          <dt class="text-[11.5px] text-ink-muted2">Clinic</dt>
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Clinic', 'Clínica') }}</dt>
           <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ clinicName(patient.clinic_id) }}</dd>
         </div>
         <div class="col-span-2">
-          <dt class="text-[11.5px] text-ink-muted2">Tags</dt>
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Tags', 'Etiquetas') }}</dt>
           <dd class="mt-0.5 text-[13.5px] text-ink-700">
-            <span v-if="patient.tags.length === 0">None</span>
+            <span v-if="patient.tags.length === 0">{{ t('None', 'Ninguna') }}</span>
             <span v-for="tag in patient.tags" :key="tag" class="mr-1 inline-block rounded-pill bg-chip-bg px-2 py-0.5 text-[11px] font-medium text-chip-text">
               {{ tag }}
             </span>
           </dd>
         </div>
         <div>
-          <dt class="text-[11.5px] text-ink-muted2">Status</dt>
-          <dd class="mt-0.5"><UiPill :tone="patient.status === 'active' ? 'success' : 'neutral'">{{ patient.status === 'active' ? 'Active' : 'Inactive' }}</UiPill></dd>
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Status', 'Estado') }}</dt>
+          <dd class="mt-0.5"><UiPill :tone="patient.status === 'active' ? 'success' : 'neutral'">{{ patient.status === 'active' ? t('Active', 'Activo') : t('Inactive', 'Inactivo') }}</UiPill></dd>
         </div>
         <div v-if="patient.is_minor">
-          <dt class="text-[11.5px] text-ink-muted2">Tutor</dt>
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Tutor', 'Tutor') }}</dt>
           <dd class="mt-0.5 text-[13.5px] text-ink-700">
             <NuxtLink v-if="patient.tutor_patient_id" :to="`/patients/${patient.tutor_patient_id}`" class="text-brand-text hover:underline">
-              {{ selectedTutor ? tutorName(selectedTutor) : 'View tutor' }}
+              {{ selectedTutor ? tutorName(selectedTutor) : t('View tutor', 'Ver tutor') }}
             </NuxtLink>
-            <span v-else class="text-danger-text">No tutor linked</span>
+            <span v-else class="text-danger-text">{{ t('No tutor linked', 'Ningún tutor vinculado') }}</span>
           </dd>
         </div>
         <div v-if="referredPatients.length > 0">
-          <dt class="text-[11.5px] text-ink-muted2">Referred patients</dt>
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Referred patients', 'Pacientes referidos') }}</dt>
           <dd class="mt-0.5 flex flex-wrap gap-x-2 text-[13.5px] text-ink-700">
             <NuxtLink v-for="r in referredPatients" :key="r.id" :to="`/patients/${r.id}`" class="text-brand-text hover:underline">{{ tutorName(r) }}</NuxtLink>
           </dd>
         </div>
         <div>
-          <dt class="text-[11.5px] text-ink-muted2">Communication flags</dt>
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Communication flags', 'Alertas de comunicación') }}</dt>
           <dd class="mt-0.5 flex flex-wrap gap-1">
-            <UiPill v-if="patient.is_minor" tone="brand">Under age — no communications</UiPill>
-            <UiPill v-if="patient.do_not_contact" tone="danger">Do not contact</UiPill>
-            <span v-if="!patient.is_minor && !patient.do_not_contact" class="text-[13.5px] text-ink-700">None</span>
+            <UiPill v-if="patient.is_minor" tone="brand">{{ t('Under age — no communications', 'Menor de edad — sin comunicaciones') }}</UiPill>
+            <UiPill v-if="patient.do_not_contact" tone="danger">{{ t('Do not contact', 'No contactar') }}</UiPill>
+            <span v-if="!patient.is_minor && !patient.do_not_contact" class="text-[13.5px] text-ink-700">{{ t('None', 'Ninguna') }}</span>
           </dd>
         </div>
       </dl>

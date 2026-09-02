@@ -93,6 +93,7 @@ interface AppointmentRow {
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const { can } = usePermission()
+const t = useT()
 
 const SLOT_MIN = computed(() => store.currentClinic?.slot_duration_minutes ?? 30)
 
@@ -141,15 +142,15 @@ const settings = reactive({
   hideDeleted: true,
   compactRows: false,
 })
-const displayToggles: { key: keyof typeof settings; label: string }[] = [
-  { key: 'privacyMode', label: 'Privacy mode' },
-  { key: 'flowTracker', label: 'Flow tracker' },
-  { key: 'showAvailability', label: 'Show availability' },
-  { key: 'hideCancelled', label: 'Hide cancelled' },
-  { key: 'hideRescheduled', label: 'Hide rescheduled' },
-  { key: 'hideDeleted', label: 'Hide deleted' },
-  { key: 'compactRows', label: 'Compact rows' },
-]
+const displayToggles = computed<{ key: keyof typeof settings; label: string }[]>(() => [
+  { key: 'privacyMode', label: t('Privacy mode', 'Modo privacidad') },
+  { key: 'flowTracker', label: t('Flow tracker', 'Seguimiento de flujo') },
+  { key: 'showAvailability', label: t('Show availability', 'Mostrar disponibilidad') },
+  { key: 'hideCancelled', label: t('Hide cancelled', 'Ocultar canceladas') },
+  { key: 'hideRescheduled', label: t('Hide rescheduled', 'Ocultar reprogramadas') },
+  { key: 'hideDeleted', label: t('Hide deleted', 'Ocultar eliminadas') },
+  { key: 'compactRows', label: t('Compact rows', 'Filas compactas') },
+])
 
 function pad(n: number) {
   return String(n).padStart(2, '0')

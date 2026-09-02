@@ -8,6 +8,7 @@ interface PackageRow {
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 const packages = ref<PackageRow[]>([])
 const loading = ref(true)
@@ -48,7 +49,7 @@ async function addPackage() {
 }
 
 async function removePackage(id: string) {
-  if (!confirm('Delete this package template? Existing purchases are unaffected.')) return
+  if (!confirm(t('Delete this package template? Existing purchases are unaffected.', '¿Eliminar esta plantilla de bono? Las compras ya existentes no se verán afectadas.'))) return
   await supabase.from('packages').delete().eq('id', id)
   await load()
 }

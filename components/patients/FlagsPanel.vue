@@ -103,58 +103,58 @@ const flagRows = computed(() => {
           <textarea
             v-model="chiefComplaint"
             rows="2"
-            :placeholder="t(\"Enter patient's chief complaint here\", 'Introduce aquí el motivo de consulta del paciente')"
+            :placeholder="t(`Enter patient's chief complaint here`, 'Introduce aquí el motivo de consulta del paciente')"
             class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-2.5 py-1.5 text-[12.5px] text-ink-700 focus:border-brand focus:outline-none"
             @blur="saveChiefComplaint"
           ></textarea>
         </div>
 
         <div>
-          <label class="block text-[11px] font-medium text-ink-muted2">Diagnosis</label>
+          <label class="block text-[11px] font-medium text-ink-muted2">{{ t('Diagnosis', 'Diagnóstico') }}</label>
           <textarea
             v-model="diagnosis"
             rows="2"
-            placeholder="Working diagnosis"
+            :placeholder="t('Working diagnosis', 'Diagnóstico de trabajo')"
             class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-2.5 py-1.5 text-[12.5px] text-ink-700 focus:border-brand focus:outline-none"
             @blur="saveDiagnosis"
           ></textarea>
         </div>
 
         <div>
-          <label class="block text-[11px] font-medium text-ink-muted2">Goals</label>
+          <label class="block text-[11px] font-medium text-ink-muted2">{{ t('Goals', 'Objetivos') }}</label>
           <textarea
             v-model="goals"
             rows="2"
-            placeholder="Treatment goals"
+            :placeholder="t('Treatment goals', 'Objetivos del tratamiento')"
             class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-2.5 py-1.5 text-[12.5px] text-ink-700 focus:border-brand focus:outline-none"
             @blur="saveGoals"
           ></textarea>
         </div>
 
         <div>
-          <label class="block text-[11px] font-medium text-danger-text">Red flags</label>
+          <label class="block text-[11px] font-medium text-danger-text">{{ t('Red flags', 'Alertas rojas') }}</label>
           <textarea
             v-model="redFlags"
             rows="2"
-            placeholder="Urgent findings requiring immediate attention"
+            :placeholder="t('Urgent findings requiring immediate attention', 'Hallazgos urgentes que requieren atención inmediata')"
             class="mt-1 w-full rounded-ctl border border-danger-border bg-surface px-2.5 py-1.5 text-[12.5px] text-ink-700 focus:border-danger-text focus:outline-none"
             @blur="saveRedFlags"
           ></textarea>
         </div>
 
         <div>
-          <label class="block text-[11px] font-medium text-warning-accent">Yellow flags</label>
+          <label class="block text-[11px] font-medium text-warning-accent">{{ t('Yellow flags', 'Alertas amarillas') }}</label>
           <textarea
             v-model="yellowFlags"
             rows="2"
-            placeholder="Psychosocial or risk factors to keep in mind"
+            :placeholder="t('Psychosocial or risk factors to keep in mind', 'Factores psicosociales o de riesgo a tener en cuenta')"
             class="mt-1 w-full rounded-ctl border border-warning-border bg-surface px-2.5 py-1.5 text-[12.5px] text-ink-700 focus:border-warning-accent focus:outline-none"
             @blur="saveYellowFlags"
           ></textarea>
         </div>
 
         <div>
-          <label class="block text-[11px] font-medium text-ink-muted2">Tags</label>
+          <label class="block text-[11px] font-medium text-ink-muted2">{{ t('Tags', 'Etiquetas') }}</label>
           <div class="mt-1 flex flex-wrap items-center gap-1.5">
             <span v-for="tag in tags" :key="tag" class="inline-flex items-center gap-1 rounded-pill bg-chip-bg px-2 py-0.5 text-[11px] font-medium text-chip-text">
               {{ tag }}
@@ -163,7 +163,7 @@ const flagRows = computed(() => {
             <input
               v-model="newTag"
               type="text"
-              placeholder="+ Add tag"
+              :placeholder="t('+ Add tag', '+ Añadir etiqueta')"
               class="w-24 rounded-ctlSm border border-line-control bg-surface px-1.5 py-0.5 text-[11px] focus:border-brand focus:outline-none"
               @keydown.enter.prevent="addTag"
               @blur="addTag"

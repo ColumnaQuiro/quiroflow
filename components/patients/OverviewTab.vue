@@ -609,13 +609,13 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
 
           <div class="mt-3 grid grid-cols-2 gap-4">
             <div>
-              <label :class="labelClass">Reminder type</label>
+              <label :class="labelClass">{{ t('Reminder type', 'Tipo de recordatorio') }}</label>
               <select v-model="reminderChannel" :class="inputClass">
                 <option v-for="opt in CHANNEL_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
               </select>
             </div>
             <div>
-              <label :class="labelClass">Confirmation type</label>
+              <label :class="labelClass">{{ t('Confirmation type', 'Tipo de confirmación') }}</label>
               <select v-model="confirmationChannel" :class="inputClass">
                 <option v-for="opt in CHANNEL_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
               </select>
@@ -624,38 +624,38 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
 
           <label class="mt-3 flex items-center gap-1.5 text-[13px] text-ink-600">
             <input v-model="invoiceEmailEnabled" type="checkbox" class="rounded border-line-control text-brand focus:ring-brand" />
-            Email invoice when an appointment is processed
+            {{ t('Email invoice when an appointment is processed', 'Enviar factura por correo al procesar una cita') }}
           </label>
         </div>
 
         <p v-if="error" class="text-[13px] text-danger-text">{{ error }}</p>
         <div class="flex gap-2">
-          <UiBtn variant="primary" :disabled="saving" @click="save">{{ saving ? 'Saving…' : 'Save' }}</UiBtn>
-          <UiBtn type="button" variant="ghost" @click="editing = false">Cancel</UiBtn>
+          <UiBtn variant="primary" :disabled="saving" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}</UiBtn>
+          <UiBtn type="button" variant="ghost" @click="editing = false">{{ t('Cancel', 'Cancelar') }}</UiBtn>
         </div>
       </form>
     </div>
 
     <div v-if="!editing" class="grid grid-cols-2 gap-4">
       <div class="rounded-card border border-line bg-surface p-5 shadow-card">
-        <p class="text-[13.5px] font-semibold text-ink-700">Communication preferences</p>
+        <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Communication preferences', 'Preferencias de comunicación') }}</p>
         <div class="mt-3 space-y-2.5">
           <div class="flex items-center justify-between gap-3">
-            <span class="text-[12.5px] text-ink-muted">Reminders</span>
+            <span class="text-[12.5px] text-ink-muted">{{ t('Reminders', 'Recordatorios') }}</span>
             <UiPill tone="neutral">{{ channelLabel(patient.reminder_channel) }}</UiPill>
           </div>
           <div class="flex items-center justify-between gap-3">
-            <span class="text-[12.5px] text-ink-muted">Confirmations</span>
+            <span class="text-[12.5px] text-ink-muted">{{ t('Confirmations', 'Confirmaciones') }}</span>
             <UiPill tone="neutral">{{ channelLabel(patient.confirmation_channel) }}</UiPill>
           </div>
           <div class="flex items-center justify-between gap-3">
-            <span class="text-[12.5px] text-ink-muted">Invoice email</span>
-            <UiPill :tone="patient.invoice_email_enabled ? 'success' : 'neutral'">{{ patient.invoice_email_enabled ? 'Enabled' : 'Disabled' }}</UiPill>
+            <span class="text-[12.5px] text-ink-muted">{{ t('Invoice email', 'Factura por correo') }}</span>
+            <UiPill :tone="patient.invoice_email_enabled ? 'success' : 'neutral'">{{ patient.invoice_email_enabled ? t('Enabled', 'Activado') : t('Disabled', 'Desactivado') }}</UiPill>
           </div>
           <div class="flex items-start justify-between gap-3">
-            <span class="text-[12.5px] text-ink-muted">Marketing</span>
+            <span class="text-[12.5px] text-ink-muted">{{ t('Marketing', 'Marketing') }}</span>
             <div class="flex flex-wrap justify-end gap-1">
-              <UiPill v-if="patient.marketing_channels.length === 0" tone="neutral">None</UiPill>
+              <UiPill v-if="patient.marketing_channels.length === 0" tone="neutral">{{ t('None', 'Ninguno') }}</UiPill>
               <UiPill v-for="ch in patient.marketing_channels" :key="ch" tone="brand">{{ channelLabel(ch) }}</UiPill>
             </div>
           </div>
@@ -663,9 +663,9 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
       </div>
 
       <div class="rounded-card border border-line bg-surface p-5 shadow-card">
-        <p class="text-[13.5px] font-semibold text-ink-700">Recent activity</p>
-        <div v-if="activityLoading" class="mt-3 text-[12.5px] text-ink-faint">Loading…</div>
-        <p v-else-if="activity.length === 0" class="mt-3 text-[12.5px] text-ink-faint">No recent activity.</p>
+        <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Recent activity', 'Actividad reciente') }}</p>
+        <div v-if="activityLoading" class="mt-3 text-[12.5px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+        <p v-else-if="activity.length === 0" class="mt-3 text-[12.5px] text-ink-faint">{{ t('No recent activity.', 'Sin actividad reciente.') }}</p>
         <ul v-else class="mt-3 space-y-2.5">
           <li v-for="(item, i) in activity" :key="i" class="flex items-center gap-2.5">
             <span class="h-[6px] w-[6px] shrink-0 rounded-full" :class="item.dot" />

@@ -226,6 +226,15 @@ const miniGrid = computed(() => miniCalendarGrid(miniBase.value))
 function selectMiniDate(d: Date) {
   anchorDate.value = d
 }
+const miniWeekdayAbbrevs = computed(() => [
+  t('Mo', 'Lu'),
+  t('Tu', 'Ma'),
+  t('We', 'Mi'),
+  t('Th', 'Ju'),
+  t('Fr', 'Vi'),
+  t('Sa', 'Sá'),
+  t('Su', 'Do'),
+])
 
 async function loadReferenceData() {
   const [{ data: types }, { data: members }, { data: ovr }] = await Promise.all([
@@ -1104,12 +1113,12 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
   <div class="flex h-full flex-col">
     <header class="flex h-14 shrink-0 items-center justify-between border-b border-line bg-surface px-6">
       <div class="flex items-center gap-4">
-        <h1 class="text-[18px] font-[640] tracking-tightTitle text-ink-900">Calendar</h1>
+        <h1 class="text-[18px] font-[640] tracking-tightTitle text-ink-900">{{ t('Calendar', 'Calendario') }}</h1>
         <div class="flex items-center gap-1">
           <button type="button" class="flex h-[26px] w-[26px] items-center justify-center rounded-ctlSm border border-line-control text-ink-500 hover:border-line-controlHover hover:bg-surface-subtle" @click="stepDate(-1)">
             <svg width="7" height="11" viewBox="0 0 7 11" fill="none"><path d="M6 1L1 5.5L6 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
           </button>
-          <button type="button" class="flex h-[26px] items-center rounded-ctlSm border border-line-control px-2.5 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover hover:bg-surface-subtle" @click="goToday">Today</button>
+          <button type="button" class="flex h-[26px] items-center rounded-ctlSm border border-line-control px-2.5 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover hover:bg-surface-subtle" @click="goToday">{{ t('Today', 'Hoy') }}</button>
           <button type="button" class="flex h-[26px] w-[26px] items-center justify-center rounded-ctlSm border border-line-control text-ink-500 hover:border-line-controlHover hover:bg-surface-subtle" @click="stepDate(1)">
             <svg width="7" height="11" viewBox="0 0 7 11" fill="none"><path d="M1 1L6 5.5L1 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
           </button>
@@ -1118,17 +1127,17 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
       </div>
       <div class="flex items-center gap-2">
         <select v-model="practitionerFilter" class="h-[26px] rounded-ctlSm border border-line-control bg-surface px-2 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover focus:border-brand focus:outline-none">
-          <option value="">All Practitioners</option>
+          <option value="">{{ t('All Practitioners', 'Todos los Profesionales') }}</option>
           <option v-for="m in teamMembers" :key="m.id" :value="m.id">{{ m.full_name }}</option>
         </select>
         <select v-model="viewMode" class="h-[26px] rounded-ctlSm border border-line-control bg-surface px-2 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover focus:border-brand focus:outline-none">
-          <option value="day">Day</option>
-          <option value="workweek">Work week</option>
-          <option value="week">Week</option>
+          <option value="day">{{ t('Day', 'Día') }}</option>
+          <option value="workweek">{{ t('Work week', 'Semana laboral') }}</option>
+          <option value="week">{{ t('Week', 'Semana') }}</option>
         </select>
-        <UiBtn v-if="can('payments_allocate')" variant="secondary" size="sm" @click="cashShiftOpen = true">Cash Shift</UiBtn>
-        <UiBtn variant="secondary" size="sm" @click="openBlockCreateModal()">Block time</UiBtn>
-        <UiBtn variant="primary" size="sm" @click="openCreateModal()">+ New Appointment</UiBtn>
+        <UiBtn v-if="can('payments_allocate')" variant="secondary" size="sm" @click="cashShiftOpen = true">{{ t('Cash Shift', 'Turno de Caja') }}</UiBtn>
+        <UiBtn variant="secondary" size="sm" @click="openBlockCreateModal()">{{ t('Block time', 'Bloquear horario') }}</UiBtn>
+        <UiBtn variant="primary" size="sm" @click="openCreateModal()">{{ t('+ New Appointment', '+ Nueva Cita') }}</UiBtn>
       </div>
     </header>
 
@@ -1142,7 +1151,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
             <button type="button" class="rounded-ctlSm p-1 text-ink-faint hover:bg-surface-subtle hover:text-ink-600" @click="miniBase = addMonths(miniBase, 1)">›</button>
           </div>
           <div class="mt-2 grid grid-cols-7 gap-y-1 text-center">
-            <span v-for="d in ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']" :key="d" class="text-[10px] font-medium uppercase text-ink-faint">{{ d }}</span>
+            <span v-for="d in miniWeekdayAbbrevs" :key="d" class="text-[10px] font-medium uppercase text-ink-faint">{{ d }}</span>
             <template v-for="(cell, i) in miniGrid" :key="i">
               <button
                 v-if="cell"
@@ -1330,7 +1339,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                         <span
                           v-if="(balanceByPatient[appt.patient_id] ?? 0) > 0"
                           class="relative flex h-[15px] w-[15px] shrink-0 items-center justify-center"
-                          @mouseenter="scheduleIconTooltip($event, `Patient in credit (${formatCredit(balanceByPatient[appt.patient_id] ?? 0)})`)"
+                          @mouseenter="scheduleIconTooltip($event, `${t('Patient in credit', 'Paciente con saldo a favor')} (${formatCredit(balanceByPatient[appt.patient_id] ?? 0)})`)"
                           @mouseleave="cancelIconTooltip"
                         >
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" class="text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.5)]">
@@ -1340,7 +1349,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                         <span
                           v-if="!hasFutureAppointment(appt)"
                           class="relative flex h-[15px] w-[15px] shrink-0 items-center justify-center"
-                          @mouseenter="scheduleIconTooltip($event, 'No future appointment')"
+                          @mouseenter="scheduleIconTooltip($event, t('No future appointment', 'Sin cita futura'))"
                           @mouseleave="cancelIconTooltip"
                         >
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" class="text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.5)]">
@@ -1480,7 +1489,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                         <span
                           v-if="(balanceByPatient[appt.patient_id] ?? 0) > 0"
                           class="relative flex h-[14px] w-[14px] shrink-0 items-center justify-center"
-                          @mouseenter="scheduleIconTooltip($event, `Patient in credit (${formatCredit(balanceByPatient[appt.patient_id] ?? 0)})`)"
+                          @mouseenter="scheduleIconTooltip($event, `${t('Patient in credit', 'Paciente con saldo a favor')} (${formatCredit(balanceByPatient[appt.patient_id] ?? 0)})`)"
                           @mouseleave="cancelIconTooltip"
                         >
                           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" class="text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.5)]">
@@ -1490,7 +1499,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                         <span
                           v-if="!hasFutureAppointment(appt)"
                           class="relative flex h-[14px] w-[14px] shrink-0 items-center justify-center"
-                          @mouseenter="scheduleIconTooltip($event, 'No future appointment')"
+                          @mouseenter="scheduleIconTooltip($event, t('No future appointment', 'Sin cita futura'))"
                           @mouseleave="cancelIconTooltip"
                         >
                           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" class="text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.5)]">

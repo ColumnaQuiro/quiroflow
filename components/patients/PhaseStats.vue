@@ -11,6 +11,7 @@ interface CarePlan {
 }
 
 const supabase = useSupabaseClient()
+const t = useT()
 
 const loading = ref(true)
 const plan = ref<CarePlan | null>(null)
@@ -28,7 +29,12 @@ const progressPct = computed(() => {
 })
 const frequencyLabel = computed(() => {
   if (!plan.value) return ''
-  return `every ${plan.value.frequency_value} ${plan.value.frequency_unit}${plan.value.frequency_value > 1 ? 's' : ''}`
+  const unitEs = plan.value.frequency_unit === 'week' ? 'semana' : 'mes'
+  const unitEsPlural = plan.value.frequency_unit === 'week' ? 'semanas' : 'meses'
+  return t(
+    `every ${plan.value.frequency_value} ${plan.value.frequency_unit}${plan.value.frequency_value > 1 ? 's' : ''}`,
+    `cada ${plan.value.frequency_value} ${plan.value.frequency_value > 1 ? unitEsPlural : unitEs}`,
+  )
 })
 
 async function load() {

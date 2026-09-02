@@ -7,6 +7,7 @@ const props = defineProps<{ practitionerId?: string; clinicId?: string }>()
 
 interface ApptRow { status: string }
 
+const t = useT()
 const supabase = useSupabaseClient()
 const loading = ref(true)
 const rate = ref<number | null>(null)
@@ -45,12 +46,12 @@ watch(() => [props.practitionerId, props.clinicId], load)
 </script>
 
 <template>
-  <div v-if="loading" class="text-[13px] text-ink-faint">Loading…</div>
+  <div v-if="loading" class="text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
   <div v-else>
     <p class="font-mono text-[27px] leading-none text-ink-900">{{ rate === null ? '—' : `${rate}%` }}</p>
     <p v-if="deltaPts !== null" class="mt-1.5 text-[12px] font-medium" :class="deltaPts > 0 ? 'text-danger-text' : 'text-success-text'">
-      {{ deltaPts > 0 ? '+' : '' }}{{ deltaPts }} pts vs last week
+      {{ t(`${deltaPts > 0 ? '+' : ''}${deltaPts} pts vs last week`, `${deltaPts > 0 ? '+' : ''}${deltaPts} pts frente a la semana pasada`) }}
     </p>
-    <p v-else class="mt-1.5 text-[12px] text-ink-muted2">No finished visits last week</p>
+    <p v-else class="mt-1.5 text-[12px] text-ink-muted2">{{ t('No finished visits last week', 'Ninguna visita finalizada la semana pasada') }}</p>
   </div>
 </template>

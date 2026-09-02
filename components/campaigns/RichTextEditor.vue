@@ -14,6 +14,7 @@ const MAX_IMAGE_BYTES = 3 * 1024 * 1024
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 const editorRef = ref<HTMLDivElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)

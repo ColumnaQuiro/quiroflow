@@ -8,54 +8,55 @@ type SavedReport = Tables<'custom_reports'>
 
 interface Source { key: string; label: string; groupings: { key: string; label: string }[]; metrics: { key: string; label: string }[] }
 
-const SOURCES: Source[] = [
+const supabase = useSupabaseClient()
+const store = useAccountStore()
+const t = useT()
+
+const SOURCES = computed<Source[]>(() => [
   {
     key: 'appointments',
-    label: 'Appointments',
-    metrics: [{ key: 'count', label: 'Count' }],
+    label: t('Appointments', 'Citas'),
+    metrics: [{ key: 'count', label: t('Count', 'Recuento') }],
     groupings: [
-      { key: 'month', label: 'Month' },
-      { key: 'weekday', label: 'Day of week' },
-      { key: 'status', label: 'Status' },
-      { key: 'practitioner', label: 'Practitioner' },
-      { key: 'appointment_type', label: 'Appointment type' },
+      { key: 'month', label: t('Month', 'Mes') },
+      { key: 'weekday', label: t('Day of week', 'Día de la semana') },
+      { key: 'status', label: t('Status', 'Estado') },
+      { key: 'practitioner', label: t('Practitioner', 'Profesional') },
+      { key: 'appointment_type', label: t('Appointment type', 'Tipo de cita') },
     ],
   },
   {
     key: 'payments',
-    label: 'Payments',
-    metrics: [{ key: 'sum', label: 'Total (€)' }, { key: 'count', label: 'Count' }],
+    label: t('Payments', 'Pagos'),
+    metrics: [{ key: 'sum', label: t('Total (€)', 'Total (€)') }, { key: 'count', label: t('Count', 'Recuento') }],
     groupings: [
-      { key: 'month', label: 'Month' },
-      { key: 'method', label: 'Payment method' },
-      { key: 'practitioner', label: 'Practitioner' },
+      { key: 'month', label: t('Month', 'Mes') },
+      { key: 'method', label: t('Payment method', 'Método de pago') },
+      { key: 'practitioner', label: t('Practitioner', 'Profesional') },
     ],
   },
   {
     key: 'patients',
-    label: 'Patients',
-    metrics: [{ key: 'count', label: 'Count' }],
+    label: t('Patients', 'Pacientes'),
+    metrics: [{ key: 'count', label: t('Count', 'Recuento') }],
     groupings: [
-      { key: 'practitioner', label: 'Default practitioner' },
-      { key: 'recall_status', label: 'Recall status' },
-      { key: 'preferred_language', label: 'Preferred language' },
-      { key: 'confirmation_channel', label: 'Confirmation channel' },
+      { key: 'practitioner', label: t('Default practitioner', 'Profesional habitual') },
+      { key: 'recall_status', label: t('Recall status', 'Estado de seguimiento') },
+      { key: 'preferred_language', label: t('Preferred language', 'Idioma preferido') },
+      { key: 'confirmation_channel', label: t('Confirmation channel', 'Canal de confirmación') },
     ],
   },
-]
-
-const supabase = useSupabaseClient()
-const store = useAccountStore()
+])
 
 const sourceKey = ref('appointments')
-const source = computed(() => SOURCES.find((s) => s.key === sourceKey.value)!)
+const source = computed(() => SOURCES.value.find((s) => s.key === sourceKey.value)!)
 const metricKey = ref('count')
 const groupByKey = ref('month')
 const chartType = ref<'bar' | 'line' | 'table'>('bar')
 const range = ref(computePresetRange({ months: 1 }))
 
 watch(sourceKey, (key) => {
-  const s = SOURCES.find((x) => x.key === key)!
+  const s = SOURCES.value.find((x) => x.key === key)!
   metricKey.value = s.metrics[0].key
   groupByKey.value = s.groupings[0].key
 })

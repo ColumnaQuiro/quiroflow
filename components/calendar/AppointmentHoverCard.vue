@@ -25,6 +25,7 @@ const emit = defineEmits<{ noteSaved: []; checkIn: [] }>()
 
 const supabase = useSupabaseClient()
 const { loading: billingLoading, balanceCents, activePackages } = usePatientFinancialSummary(() => props.appointment.patient_id)
+const t = useT()
 
 const bonoStatus = computed(() => {
   const defaultPriceCents = props.appointment.appointment_types?.default_price_cents ?? 0
@@ -114,7 +115,7 @@ const initials = computed(() => {
   return `${p?.first_name?.[0] ?? ''}${p?.last_name?.[0] ?? ''}`.toUpperCase() || '?'
 })
 const patientName = computed(() => `${props.appointment.patients?.first_name ?? ''} ${props.appointment.patients?.last_name ?? ''}`.trim())
-const practitionerName = computed(() => props.appointment.team_members?.full_name ?? 'Unassigned')
+const practitionerName = computed(() => props.appointment.team_members?.full_name ?? t('Unassigned', 'Sin asignar'))
 
 // The block palette collapses onto four visual states; a pending or
 // reschedule-requested confirmation on an otherwise-booked appointment both
@@ -135,8 +136,14 @@ const PILL_TONE: Record<string, 'brand' | 'success' | 'warning' | 'danger' | 'ne
   cancelled: 'neutral',
 }
 const statusLabel = computed(() => {
-  if (visualStatus.value === 'unconfirmed' && props.appointment.confirmation_status === 'reschedule_requested') return 'Wants to reschedule'
-  return { booked: 'Booked', completed: 'Completed', unconfirmed: 'Unconfirmed', no_show: 'No-show', cancelled: 'Cancelled' }[visualStatus.value]
+  if (visualStatus.value === 'unconfirmed' && props.appointment.confirmation_status === 'reschedule_requested') return t('Wants to reschedule', 'Quiere cambiar la cita')
+  return {
+    booked: t('Booked', 'Reservada'),
+    completed: t('Completed', 'Completada'),
+    unconfirmed: t('Unconfirmed', 'Sin confirmar'),
+    no_show: t('No-show', 'No presentado'),
+    cancelled: t('Cancelled', 'Cancelada'),
+  }[visualStatus.value]
 })
 
 function visitOrdinal(n: number) {
@@ -150,28 +157,28 @@ function visitOrdinal(n: number) {
       <div class="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full bg-brand text-[12px] font-semibold text-white">{{ initials }}</div>
       <div class="min-w-0 flex-1">
         <p class="truncate text-[13.5px] font-[620] text-ink-900">{{ patientName }}</p>
-        <p class="truncate text-[11.5px] text-ink-muted2">{{ practitionerName }} &middot; {{ roomName ?? 'No room' }}</p>
+        <p class="truncate text-[11.5px] text-ink-muted2">{{ practitionerName }} &middot; {{ roomName ?? t('No room', 'Sin sala') }}</p>
       </div>
       <UiPill :tone="PILL_TONE[visualStatus]" dot class="shrink-0">{{ statusLabel }}</UiPill>
-      <UiPill v-if="appointment.source === 'online'" tone="brand" class="shrink-0">Online</UiPill>
+      <UiPill v-if="appointment.source === 'online'" tone="brand" class="shrink-0">{{ t('Online', 'En línea') }}</UiPill>
     </div>
 
     <div class="mt-3 grid grid-cols-2 gap-y-1.5 border-t border-line-divider pt-3 text-[12.5px]">
-      <span class="text-ink-muted2">Time</span>
+      <span class="text-ink-muted2">{{ t('Time', 'Hora') }}</span>
       <span class="text-right font-mono text-[12px] text-ink-700">{{ timeRange }}</span>
-      <span class="text-ink-muted2">Type</span>
+      <span class="text-ink-muted2">{{ t('Type', 'Tipo') }}</span>
       <span class="truncate text-right text-ink-700">{{ appointment.appointment_types?.name ?? '—' }}</span>
-      <span class="text-ink-muted2">Practitioner</span>
+      <span class="text-ink-muted2">{{ t('Practitioner', 'Profesional') }}</span>
       <span class="truncate text-right text-ink-700">{{ practitionerName }}</span>
-      <span class="text-ink-muted2">Balance</span>
+      <span class="text-ink-muted2">{{ t('Balance', 'Saldo') }}</span>
       <span class="flex justify-end">
         <UiBalancePill v-if="balanceCents !== 0" :balance-cents="balanceCents" />
-        <span v-else class="text-ink-muted2">No balance due</span>
+        <span v-else class="text-ink-muted2">{{ t('No balance due', 'Sin saldo pendiente') }}</span>
       </span>
     </div>
     <p v-if="visitNumber" class="mt-1.5 text-[11px] text-ink-faint">
-      {{ visitOrdinal(visitNumber) }} visit
-      <span v-if="nextVisit">&middot; Next: {{ new Date(nextVisit).toLocaleDateString([], { day: 'numeric', month: 'short' }) }}</span>
+      {{ t(`${visitOrdinal(visitNumber)} visit`, `${visitNumber}ª visita`) }}
+      <span v-if="nextVisit">&middot; {{ t('Next:', 'Próxima:') }} {{ new Date(nextVisit).toLocaleDateString([], { day: 'numeric', month: 'short' }) }}</span>
     </p>
     <p v-if="!billingLoading && activePackages.length > 0" class="mt-1 truncate text-[11px] text-ink-faint">
       {{ activePackages[0].package_name }} ({{ activePackages[0].sessions_used }}/{{ activePackages[0].sessions_total }})
@@ -180,42 +187,42 @@ function visitOrdinal(n: number) {
     <BonoStatusBadge v-if="!billingLoading" class="mt-2.5" :tone="bonoStatus.tone" :label="bonoStatus.label" />
 
     <div class="mt-3 border-t border-line-divider pt-3">
-      <label class="block text-[11px] font-medium text-ink-muted2">Note</label>
+      <label class="block text-[11px] font-medium text-ink-muted2">{{ t('Note', 'Nota') }}</label>
       <input
         v-model="apptNote"
         type="text"
-        placeholder="Quick note for this visit…"
+        :placeholder="t('Quick note for this visit…', 'Nota rápida para esta visita…')"
         class="mt-1 w-full rounded-ctlSm border border-line-control bg-surface px-2 py-1 text-[12.5px] text-ink-700 focus:border-brand focus:outline-none"
         @blur="saveApptNote"
       />
     </div>
 
     <div class="mt-2">
-      <label class="block text-[11px] font-medium text-ink-muted2">Patient note</label>
+      <label class="block text-[11px] font-medium text-ink-muted2">{{ t('Patient note', 'Nota del paciente') }}</label>
       <textarea
         v-model="stickyNote"
         rows="2"
-        placeholder="Persistent clinical note for this patient…"
+        :placeholder="t('Persistent clinical note for this patient…', 'Nota clínica permanente para este paciente…')"
         class="mt-1 w-full resize-none rounded-ctlSm border border-line-control bg-surface px-2 py-1 text-[12.5px] text-ink-700 focus:border-brand focus:outline-none"
         @blur="saveStickyNote"
       ></textarea>
     </div>
 
     <div v-if="!loading && changelog.length > 0" class="mt-3 border-t border-line-divider pt-2">
-      <p class="text-[11px] font-medium text-ink-muted2">Recent activity</p>
+      <p class="text-[11px] font-medium text-ink-muted2">{{ t('Recent activity', 'Actividad reciente') }}</p>
       <ul class="mt-1 max-h-16 space-y-0.5 overflow-y-auto text-[11px] text-ink-faint">
         <li v-for="(entry, i) in changelog" :key="i" class="truncate">
-          {{ entry.summary }} &middot; {{ entry.team_members?.full_name ?? 'System' }}
+          {{ entry.summary }} &middot; {{ entry.team_members?.full_name ?? t('System', 'Sistema') }}
         </li>
       </ul>
     </div>
 
     <div class="mt-3 flex gap-2">
       <UiBtn variant="primary" size="sm" class="flex-1 justify-center" @click="emit('checkIn')">
-        {{ appointment.checked_in_at ? 'Checked in' : 'Check in' }}
+        {{ appointment.checked_in_at ? t('Checked in', 'Registrado') : t('Check in', 'Registrar llegada') }}
       </UiBtn>
       <NuxtLink :to="`/patients/${appointment.patient_id}`" target="_blank" class="flex-1">
-        <UiBtn variant="secondary" size="sm" class="w-full justify-center">Open chart</UiBtn>
+        <UiBtn variant="secondary" size="sm" class="w-full justify-center">{{ t('Open chart', 'Abrir ficha') }}</UiBtn>
       </NuxtLink>
     </div>
   </div>

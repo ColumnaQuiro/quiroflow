@@ -52,6 +52,7 @@ const supabase = useSupabaseClient()
 const store = useAccountStore()
 const { can } = usePermission()
 const { fire } = useAutomations()
+const t = useT()
 
 const { balanceCents, creditLedgerCents, refresh: refreshCreditSummary } = usePatientFinancialSummary(() => props.patientId)
 const addCreditAmount = ref('')
@@ -92,7 +93,7 @@ async function applyCreditToInvoice() {
   if (!invoice) return
   const amountCents = Math.round((parseFloat(applyCreditAmount.value) || 0) * 100)
   if (amountCents <= 0 || amountCents > creditLedgerCents.value) {
-    creditError.value = 'Amount must be positive and not exceed available credit.'
+    creditError.value = t('Amount must be positive and not exceed available credit.', 'El importe debe ser positivo y no superar el crédito disponible.')
     return
   }
   creditError.value = ''
@@ -148,7 +149,7 @@ async function takePayment() {
   if (amountCents <= 0) return
   paymentError.value = ''
   if (paymentMethod.value === 'credit' && amountCents > balanceCents.value) {
-    paymentError.value = 'Amount exceeds available credit.'
+    paymentError.value = t('Amount exceeds available credit.', 'El importe supera el crédito disponible.')
     return
   }
   takingPayment.value = true
@@ -480,7 +481,7 @@ async function sellPackage() {
   if (!tpl) return
   const amountCents = Math.round((parseFloat(sellAmountPaid.value) || 0) * 100)
   if (sellMethod.value === 'credit' && amountCents > creditLedgerCents.value) {
-    creditError.value = 'Amount exceeds available credit.'
+    creditError.value = t('Amount exceeds available credit.', 'El importe supera el crédito disponible.')
     return
   }
   sellingPackage.value = true
@@ -593,7 +594,7 @@ async function activateMembership() {
   if (!tpl) return
   const amountCents = Math.round((parseFloat(activateAmountPaid.value) || 0) * 100)
   if (activateMethod.value === 'credit' && amountCents > creditLedgerCents.value) {
-    creditError.value = 'Amount exceeds available credit.'
+    creditError.value = t('Amount exceeds available credit.', 'El importe supera el crédito disponible.')
     return
   }
   activatingMembership.value = true

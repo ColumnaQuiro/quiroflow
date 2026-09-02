@@ -10,6 +10,7 @@ interface PurchaseRow {
 interface InvoiceRow { id: string; status: string }
 interface ScheduleRow { package_purchase_id: string | null; status: string }
 
+const t = useT()
 const supabase = useSupabaseClient()
 const loading = ref(true)
 const purchases = ref<PurchaseRow[]>([])
@@ -43,7 +44,7 @@ const debtors = computed(() =>
 const totalOwed = computed(() => debtors.value.reduce((sum, p) => sum + p.price_cents, 0))
 
 function patientName(p: PurchaseRow) {
-  return p.patients ? `${p.patients.first_name} ${p.patients.last_name ?? ''}`.trim() : 'Unknown patient'
+  return p.patients ? `${p.patients.first_name} ${p.patients.last_name ?? ''}`.trim() : t('Unknown patient', 'Paciente desconocido')
 }
 function euros(cents: number) {
   return `€${(cents / 100).toFixed(2)}`
@@ -51,9 +52,9 @@ function euros(cents: number) {
 </script>
 
 <template>
-  <div v-if="loading" class="text-[13px] text-ink-faint">Loading…</div>
+  <div v-if="loading" class="text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
   <div v-else>
-    <p v-if="debtors.length === 0" class="text-[13px] text-ink-faint">No outstanding balances.</p>
+    <p v-if="debtors.length === 0" class="text-[13px] text-ink-faint">{{ t('No outstanding balances.', 'No hay saldos pendientes.') }}</p>
     <template v-else>
       <ul class="divide-y divide-line-row2">
         <li v-for="p in debtors.slice(0, 5)" :key="p.id" class="flex items-center gap-2 py-1.5 text-[13px] first:pt-0">
@@ -61,7 +62,7 @@ function euros(cents: number) {
           <span class="shrink-0 font-mono text-[12.5px] text-danger-text">{{ euros(p.price_cents) }}</span>
         </li>
       </ul>
-      <p class="mt-1.5 border-t border-line-row2 pt-1.5 text-[11.5px] text-ink-muted2">{{ debtors.length }} outstanding · {{ euros(totalOwed) }} total</p>
+      <p class="mt-1.5 border-t border-line-row2 pt-1.5 text-[11.5px] text-ink-muted2">{{ t(`${debtors.length} outstanding · ${euros(totalOwed)} total`, `${debtors.length} pendientes · ${euros(totalOwed)} en total`) }}</p>
     </template>
   </div>
 </template>

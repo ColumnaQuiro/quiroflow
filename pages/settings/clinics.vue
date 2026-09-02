@@ -3,6 +3,7 @@ import type { Tables } from '~/types/database.types'
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 const name = ref('')
 const address = ref('')
@@ -56,7 +57,7 @@ async function updateClinicAddress(clinicId: string, value: string) {
 }
 
 async function removeClinic(id: string) {
-  if (!confirm('Delete this clinic?')) return
+  if (!confirm(t('Delete this clinic?', '¿Eliminar esta clínica?'))) return
   await supabase.from('clinics').delete().eq('id', id)
   store.reset()
   await store.load()
@@ -68,15 +69,15 @@ async function removeClinic(id: string) {
 // it blows up Vue's template type-checker (TS2589) when combined with v-for.
 type BookingClinic = Omit<Tables<'clinics'>, 'business_hours'> & { business_hours: Record<string, [string, string][]> }
 type Windows = [string, string][]
-const WEEKDAYS: { key: string; label: string }[] = [
-  { key: 'mon', label: 'Mon' },
-  { key: 'tue', label: 'Tue' },
-  { key: 'wed', label: 'Wed' },
-  { key: 'thu', label: 'Thu' },
-  { key: 'fri', label: 'Fri' },
-  { key: 'sat', label: 'Sat' },
-  { key: 'sun', label: 'Sun' },
-]
+const WEEKDAYS = computed(() => [
+  { key: 'mon', label: t('Mon', 'Lun') },
+  { key: 'tue', label: t('Tue', 'Mar') },
+  { key: 'wed', label: t('Wed', 'Mié') },
+  { key: 'thu', label: t('Thu', 'Jue') },
+  { key: 'fri', label: t('Fri', 'Vie') },
+  { key: 'sat', label: t('Sat', 'Sáb') },
+  { key: 'sun', label: t('Sun', 'Dom') },
+])
 
 const bookingClinics = ref<BookingClinic[]>([])
 const openClinicId = ref<string | null>(null)
@@ -95,7 +96,7 @@ function openBookingEditor(c: BookingClinic) {
   if (openClinicId.value === c.id) {
     editEnabled.value = c.online_booking_enabled
     const hours = (c.business_hours as Record<string, Windows>) ?? {}
-    editHours.value = Object.fromEntries(WEEKDAYS.map((d) => [d.key, hours[d.key] ? hours[d.key].map((w) => [...w] as [string, string]) : []]))
+    editHours.value = Object.fromEntries(WEEKDAYS.value.map((d) => [d.key, hours[d.key] ? hours[d.key].map((w) => [...w] as [string, string]) : []]))
   }
 }
 
@@ -146,26 +147,26 @@ function copy(text: string) {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Clinics" />
+    <PageHeader :title="t('Clinics', 'Clínicas')" />
     <div class="flex-1 overflow-y-auto">
       <div class="flex gap-8 p-6">
         <SettingsNav />
         <div class="min-w-0 max-w-[660px] flex-1">
-          <p class="text-[13px] text-ink-muted2">Locations your practice operates from.</p>
+          <p class="text-[13px] text-ink-muted2">{{ t('Locations your practice operates from.', 'Ubicaciones desde las que opera tu clínica.') }}</p>
 
           <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
             <table class="w-full text-[13px]">
               <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted2">
                 <tr>
-                  <th class="px-4 py-2">Name</th>
-                  <th class="px-4 py-2">Address</th>
-                  <th class="px-4 py-2">Calendar slot</th>
+                  <th class="px-4 py-2">{{ t('Name', 'Nombre') }}</th>
+                  <th class="px-4 py-2">{{ t('Address', 'Dirección') }}</th>
+                  <th class="px-4 py-2">{{ t('Calendar slot', 'Franja del calendario') }}</th>
                   <th class="px-4 py-2"></th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-line-row">
                 <tr v-if="store.clinics.length === 0">
-                  <td colspan="4" class="px-4 py-6 text-center text-ink-faint">No clinics yet.</td>
+                  <td colspan="4" class="px-4 py-6 text-center text-ink-faint">{{ t('No clinics yet.', 'Todavía no hay clínicas.') }}</td>
                 </tr>
                 <tr v-for="c in store.clinics" :key="c.id">
                   <td class="px-4 py-2.5">
@@ -180,7 +181,7 @@ function copy(text: string) {
                     <input
                       :value="c.address ?? ''"
                       type="text"
-                      placeholder="Add address…"
+                      :placeholder="t('Add address…', 'Añadir dirección…')"
                       class="w-full min-w-[180px] rounded-ctlSm border border-transparent bg-transparent px-1.5 py-1 text-[13px] text-ink-muted2 placeholder:text-ink-faint2 hover:border-line-control focus:border-brand focus:bg-surface focus:text-ink-700 focus:outline-none focus:ring-1 focus:ring-brand/20"
                       @change="updateClinicAddress(c.id, ($event.target as HTMLInputElement).value)"
                     />
@@ -191,7 +192,7 @@ function copy(text: string) {
                       class="rounded-ctlSm border border-line-control bg-surface py-1 pl-2 pr-6 text-[12.5px] text-ink-600 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
                       @change="updateSlotDuration(c.id, Number(($event.target as HTMLSelectElement).value))"
                     >
-                      <option v-for="m in SLOT_DURATION_OPTIONS" :key="m" :value="m">{{ m }} min</option>
+                      <option v-for="m in SLOT_DURATION_OPTIONS" :key="m" :value="m">{{ m }} {{ t('min', 'min') }}</option>
                     </select>
                   </td>
                   <td class="px-4 py-2.5 text-right">
@@ -202,73 +203,73 @@ function copy(text: string) {
             </table>
           </div>
           <p class="mt-2 text-[12px] text-ink-faint">
-            "Calendar slot" sets how finely the Calendar's time grid is divided (e.g. 15 min shows 9:00, 9:15, 9:30…).
+            {{ t('"Calendar slot" sets how finely the Calendar\'s time grid is divided (e.g. 15 min shows 9:00, 9:15, 9:30…).', '"Franja del calendario" define en qué intervalos se divide la cuadrícula horaria del Calendario (p. ej. 15 min muestra 9:00, 9:15, 9:30…).') }}
           </p>
 
           <form class="mt-4 flex flex-wrap items-end gap-3 rounded-card border border-line bg-surface p-4 shadow-card" @submit.prevent="addClinic">
             <div>
-              <label class="block text-[12.5px] font-medium text-ink-600">Name</label>
+              <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Name', 'Nombre') }}</label>
               <input v-model="name" type="text" required placeholder="Valencia" class="mt-1 h-8 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20" />
             </div>
             <div>
-              <label class="block text-[12.5px] font-medium text-ink-600">Address</label>
+              <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Address', 'Dirección') }}</label>
               <input v-model="address" type="text" class="mt-1 h-8 w-64 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20" />
             </div>
-            <UiBtn variant="primary" type="submit" :disabled="saving">{{ saving ? 'Adding…' : 'Add Clinic' }}</UiBtn>
+            <UiBtn variant="primary" type="submit" :disabled="saving">{{ saving ? t('Adding…', 'Añadiendo…') : t('Add Clinic', 'Añadir clínica') }}</UiBtn>
           </form>
           <p v-if="error" class="mt-2 text-[12.5px] text-danger-text">{{ error }}</p>
 
-          <h2 id="online-booking" class="mt-8 text-[15px] font-[620] text-ink-900">Online Booking</h2>
-          <p class="mt-1 text-[13px] text-ink-muted2">Let patients book their own appointments from a public page or an iframe embedded on your website.</p>
+          <h2 id="online-booking" class="mt-8 text-[15px] font-[620] text-ink-900">{{ t('Online Booking', 'Reserva online') }}</h2>
+          <p class="mt-1 text-[13px] text-ink-muted2">{{ t('Let patients book their own appointments from a public page or an iframe embedded on your website.', 'Permite que los pacientes reserven sus propias citas desde una página pública o un iframe integrado en tu web.') }}</p>
 
           <div class="mt-3 space-y-2">
             <div v-for="c in bookingClinics" :key="c.id" class="rounded-card border border-line bg-surface shadow-card">
               <button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left" @click="openBookingEditor(c)">
                 <span class="text-[13.5px] font-[560] text-ink-700">{{ c.name }}</span>
-                <UiPill :tone="c.online_booking_enabled ? 'success' : 'neutral'">{{ c.online_booking_enabled ? 'Enabled' : 'Disabled' }}</UiPill>
+                <UiPill :tone="c.online_booking_enabled ? 'success' : 'neutral'">{{ c.online_booking_enabled ? t('Enabled', 'Activada') : t('Disabled', 'Desactivada') }}</UiPill>
               </button>
 
               <div v-if="openClinicId === c.id" class="border-t border-line-divider p-4">
                 <label class="flex items-center gap-2.5 text-[13px] text-ink-600">
                   <SettingsToggle v-model="editEnabled" />
-                  Enable online booking for this clinic
+                  {{ t('Enable online booking for this clinic', 'Activar la reserva online para esta clínica') }}
                 </label>
 
                 <div class="mt-4 space-y-2">
-                  <p class="text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">Business hours</p>
+                  <p class="text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">{{ t('Business hours', 'Horario de atención') }}</p>
                   <div v-for="d in WEEKDAYS" :key="d.key" class="flex items-start gap-3 text-[13px]">
                     <span class="w-10 pt-1.5 text-ink-muted2">{{ d.label }}</span>
                     <div class="flex-1 space-y-1.5">
-                      <p v-if="editHours[d.key].length === 0" class="pt-1.5 text-ink-faint">Closed</p>
+                      <p v-if="editHours[d.key].length === 0" class="pt-1.5 text-ink-faint">{{ t('Closed', 'Cerrado') }}</p>
                       <div v-for="(w, i) in editHours[d.key]" :key="i" class="flex items-center gap-2">
                         <input v-model="w[0]" type="time" class="h-8 rounded-ctl border border-line-control bg-surface px-2 text-[13px]" />
                         <span class="text-ink-faint">–</span>
                         <input v-model="w[1]" type="time" class="h-8 rounded-ctl border border-line-control bg-surface px-2 text-[13px]" />
                         <button type="button" class="text-ink-faint hover:text-danger-text" @click="removeWindow(d.key, i)">✕</button>
                       </div>
-                      <button type="button" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover" @click="addWindow(d.key)">+ Add hours</button>
+                      <button type="button" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover" @click="addWindow(d.key)">+ {{ t('Add hours', 'Añadir horario') }}</button>
                     </div>
                   </div>
                 </div>
 
                 <UiBtn variant="primary" class="mt-4" :disabled="savingHours" @click="saveBooking(c.id)">
-                  {{ savingHours ? 'Saving…' : 'Save' }}
+                  {{ savingHours ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}
                 </UiBtn>
 
                 <div v-if="c.online_booking_enabled && store.accountSlug" class="mt-6 border-t border-line-divider pt-4">
-                  <p class="text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">Public booking link</p>
+                  <p class="text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">{{ t('Public booking link', 'Enlace de reserva público') }}</p>
                   <div class="mt-1 flex items-center gap-2">
                     <input :value="bookingUrl(store.accountSlug)" readonly class="h-8 w-full rounded-ctl border border-line-control bg-surface-subtle px-2 text-[13px] text-ink-600" />
                     <button type="button" class="h-8 shrink-0 rounded-ctl border border-line-control px-3 text-[12.5px] text-ink-600 hover:border-line-controlHover" @click="copy(bookingUrl(store.accountSlug))">
-                      Copy
+                      {{ t('Copy', 'Copiar') }}
                     </button>
                   </div>
 
-                  <p class="mt-3 text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">Embed on your website</p>
+                  <p class="mt-3 text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">{{ t('Embed on your website', 'Integrar en tu web') }}</p>
                   <div class="mt-1 flex items-start gap-2">
                     <textarea readonly rows="5" class="w-full rounded-ctl border border-line-control bg-surface-subtle px-2 py-1.5 font-mono text-[12px] text-ink-600">{{ embedSnippet(store.accountSlug) }}</textarea>
                     <button type="button" class="shrink-0 rounded-ctl border border-line-control px-3 py-2 text-[12.5px] text-ink-600 hover:border-line-controlHover" @click="copy(embedSnippet(store.accountSlug))">
-                      Copy
+                      {{ t('Copy', 'Copiar') }}
                     </button>
                   </div>
                 </div>

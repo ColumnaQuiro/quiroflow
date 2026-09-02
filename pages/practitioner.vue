@@ -39,6 +39,7 @@ interface AppointmentRow {
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const { scope } = usePermission()
+const t = useT()
 
 const canSeeAll = computed(() => scope('calendar_scope') === 'all')
 
@@ -207,11 +208,19 @@ function statusTone(status: string) {
   return STATUS_TONE[status] ?? 'neutral'
 }
 function statusLabel(status: string) {
-  if (status === 'no_show') return 'No-show'
+  if (status === 'no_show') return t('No-show', 'No presentado')
+  if (status === 'booked') return t('Booked', 'Reservada')
+  if (status === 'completed') return t('Completed', 'Completada')
   return status.charAt(0).toUpperCase() + status.slice(1)
 }
 
-const STAGE_NAMES = ['Booked', 'Arrived', 'In room', 'Charted', 'Invoiced']
+const STAGE_NAME_DEFS: [string, string][] = [
+  ['Booked', 'Reservada'],
+  ['Arrived', 'Llegada'],
+  ['In room', 'En consulta'],
+  ['Charted', 'Registrada'],
+  ['Invoiced', 'Facturada'],
+]
 function stageIndex(a: AppointmentRow) {
   if (a.status === 'completed') return 4
   if (chartedAppointmentIds.value.has(a.id)) return 3
@@ -220,15 +229,16 @@ function stageIndex(a: AppointmentRow) {
   return 0
 }
 function stageName(a: AppointmentRow) {
-  return STAGE_NAMES[stageIndex(a)]
+  const [en, es] = STAGE_NAME_DEFS[stageIndex(a)]
+  return t(en, es)
 }
 
 const FLOW_STAGE_DEFS = [
-  { key: 'booked', label: 'Booked' },
-  { key: 'arrived', label: 'Arrived' },
-  { key: 'in_room', label: 'In room' },
-  { key: 'charted', label: 'Charted' },
-  { key: 'invoiced', label: 'Invoiced' },
+  { key: 'booked', en: 'Booked', es: 'Reservada' },
+  { key: 'arrived', en: 'Arrived', es: 'Llegada' },
+  { key: 'in_room', en: 'In room', es: 'En consulta' },
+  { key: 'charted', en: 'Charted', es: 'Registrada' },
+  { key: 'invoiced', en: 'Invoiced', es: 'Facturada' },
 ] as const
 
 const flowStages = computed(() => {
@@ -243,7 +253,7 @@ const flowStages = computed(() => {
   return FLOW_STAGE_DEFS.map((def) => {
     const count = counts[def.key]
     const barClass = total === 0 || count === 0 ? 'bg-toggle-off' : count === total ? 'bg-success-accent' : 'bg-brand'
-    return { ...def, count, barClass }
+    return { key: def.key, label: t(def.en, def.es), count, barClass }
   })
 })
 
@@ -252,7 +262,8 @@ const headerMeta = computed(() => {
   if (viewMode.value !== 'day') return dayLabel.value
   const total = appointments.value.length
   const charted = chartedAppointmentIds.value.size
-  return `${dayLabel.value} · ${total} visit${total === 1 ? '' : 's'} · ${charted} charted`
+  const visitWord = total === 1 ? t('visit', 'visita') : t('visits', 'visitas')
+  return `${dayLabel.value} · ${total} ${visitWord} · ${charted} ${t('charted', 'registradas')}`
 })
 </script>
 
@@ -260,7 +271,7 @@ const headerMeta = computed(() => {
   <div class="flex h-full flex-col">
     <header class="flex h-14 shrink-0 items-center justify-between border-b border-line bg-surface px-6">
       <div class="flex items-baseline gap-2.5">
-        <h1 class="text-[18px] font-[640] tracking-tightTitle text-ink-900">My Day</h1>
+        <h1 class="text-[18px] font-[640] tracking-tightTitle text-ink-900">{{ t('My Day', 'Mi Día') }}</h1>
         <p class="text-[12.5px] text-ink-muted2">{{ headerMeta }}</p>
       </div>
       <div class="flex items-center gap-2">
@@ -285,7 +296,7 @@ const headerMeta = computed(() => {
             <path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z" />
             <circle cx="8" cy="8" r="2" />
           </svg>
-          Privacy mode{{ privacyMode ? ': On' : '' }}
+          {{ t('Privacy mode', 'Modo privacidad') }}{{ privacyMode ? t(': On', ': activado') : '' }}
         </button>
       </div>
     </header>
@@ -293,17 +304,17 @@ const headerMeta = computed(() => {
     <div class="flex-1 overflow-y-auto bg-surface-page">
       <div class="flex items-center gap-3 border-b border-line bg-surface px-6 py-2.5">
         <button type="button" class="flex h-7 w-7 items-center justify-center rounded-ctlSm border border-line-control text-[13px] text-ink-500 hover:border-line-controlHover" @click="anchorDate = addDays(anchorDate, viewMode === 'day' ? -1 : -7)">‹</button>
-        <button type="button" class="flex h-7 items-center rounded-ctlSm border border-line-control px-2.5 text-[12.5px] font-medium text-ink-500 hover:border-line-controlHover" @click="anchorDate = new Date()">Today</button>
+        <button type="button" class="flex h-7 items-center rounded-ctlSm border border-line-control px-2.5 text-[12.5px] font-medium text-ink-500 hover:border-line-controlHover" @click="anchorDate = new Date()">{{ t('Today', 'Hoy') }}</button>
         <button type="button" class="flex h-7 w-7 items-center justify-center rounded-ctlSm border border-line-control text-[13px] text-ink-500 hover:border-line-controlHover" @click="anchorDate = addDays(anchorDate, viewMode === 'day' ? 1 : 7)">›</button>
         <span class="text-[13px] font-medium text-ink-700">{{ dayLabel }}</span>
 
         <div class="ml-auto flex h-8 overflow-hidden rounded-ctl border border-line-control text-[12.5px]">
-          <button type="button" class="px-3" :class="viewMode === 'day' ? 'bg-brand font-semibold text-white' : 'text-ink-500 hover:bg-surface-subtle'" @click="viewMode = 'day'">Day</button>
-          <button type="button" class="border-l border-line-control px-3" :class="viewMode === 'week' ? 'bg-brand font-semibold text-white' : 'text-ink-500 hover:bg-surface-subtle'" @click="viewMode = 'week'">Week</button>
+          <button type="button" class="px-3" :class="viewMode === 'day' ? 'bg-brand font-semibold text-white' : 'text-ink-500 hover:bg-surface-subtle'" @click="viewMode = 'day'">{{ t('Day', 'Día') }}</button>
+          <button type="button" class="border-l border-line-control px-3" :class="viewMode === 'week' ? 'bg-brand font-semibold text-white' : 'text-ink-500 hover:bg-surface-subtle'" @click="viewMode = 'week'">{{ t('Week', 'Semana') }}</button>
         </div>
       </div>
 
-      <div v-if="loading" class="p-10 text-center text-[13px] text-ink-faint">Loading…</div>
+      <div v-if="loading" class="p-10 text-center text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
 
       <div v-else class="flex flex-col gap-4 p-6">
         <!-- Flow tracker: shared summary strip for both Day and Week views -->
@@ -320,7 +331,7 @@ const headerMeta = computed(() => {
         <div class="flex items-start gap-4">
         <!-- Day view worklist -->
         <div v-if="viewMode === 'day'" class="w-[404px] shrink-0 overflow-hidden rounded-card border border-line bg-surface-sidebar shadow-card">
-          <div v-if="appointments.length === 0" class="p-8 text-center text-[13px] text-ink-faint">No appointments for this day.</div>
+          <div v-if="appointments.length === 0" class="p-8 text-center text-[13px] text-ink-faint">{{ t('No appointments for this day.', 'No hay citas para este día.') }}</div>
           <ul v-else class="flex flex-col gap-1 p-2">
             <li v-for="a in appointments" :key="a.id" class="group relative">
               <div
@@ -333,7 +344,7 @@ const headerMeta = computed(() => {
                     type="button"
                     class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full"
                     :class="a.checked_in_at ? 'bg-success-accent text-white' : 'border border-line-control text-ink-faint3 hover:border-line-controlHover hover:text-ink-muted2'"
-                    :title="a.checked_in_at ? `Arrived ${formatTime(a.checked_in_at)}` : 'Mark as arrived'"
+                    :title="a.checked_in_at ? `${t('Arrived', 'Llegada')} ${formatTime(a.checked_in_at)}` : t('Mark as arrived', 'Marcar como llegado')"
                     @click.stop="toggleCheckedIn(a)"
                   >
                     <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2.5 6.2l2.4 2.4 4.6-5.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
@@ -349,7 +360,7 @@ const headerMeta = computed(() => {
                     <span class="block truncate text-[13.5px] font-[560] text-ink-900" :class="{ 'blur-sm select-none': privacyMode }">{{ a.patients?.first_name }} {{ a.patients?.last_name }}</span>
                     <span class="flex items-center gap-1.5 truncate text-[11.5px] text-ink-muted2">
                       <span class="h-[6px] w-[6px] shrink-0 rounded-full" :style="{ backgroundColor: a.appointment_types?.color ?? '#9CA3AF' }" />
-                      {{ a.appointment_types?.name ?? 'No type' }}
+                      {{ a.appointment_types?.name ?? t('No type', 'Sin tipo') }}
                     </span>
                   </span>
                   <UiPill :tone="statusTone(a.status)" dot>{{ statusLabel(a.status) }}</UiPill>
@@ -364,7 +375,7 @@ const headerMeta = computed(() => {
               <button
                 type="button"
                 class="pointer-events-none absolute right-2.5 top-2.5 opacity-0 group-hover:pointer-events-auto group-hover:opacity-100"
-                title="Edit appointment"
+                :title="t('Edit appointment', 'Editar cita')"
                 @click.stop="openEditModal(a)"
               >
                 <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" class="text-ink-faint hover:text-ink-600">
@@ -393,7 +404,7 @@ const headerMeta = computed(() => {
                 <p class="truncate font-medium text-ink-700" :class="{ 'blur-sm select-none': privacyMode }">
                   {{ formatTime(a.starts_at) }} {{ a.patients?.first_name }}
                 </p>
-                <p v-if="a.checked_in_at" class="truncate text-success-text">Arrived</p>
+                <p v-if="a.checked_in_at" class="truncate text-success-text">{{ t('Arrived', 'Llegada') }}</p>
               </button>
               <p v-if="appointmentsForDay(day).length === 0" class="px-1 py-2 text-center text-[11.5px] text-ink-faint">—</p>
             </div>
@@ -405,7 +416,7 @@ const headerMeta = computed(() => {
           <PractitionerMyDayPatientView :appointment="selectedAppointment" :rooms="rooms" @charted="loadDay" />
         </div>
         <div v-else class="flex min-w-0 flex-1 items-center justify-center rounded-card border border-dashed border-line-control p-10 text-[13px] text-ink-faint">
-          Select a patient to chart their visit.
+          {{ t('Select a patient to chart their visit.', 'Selecciona un paciente para registrar su visita.') }}
         </div>
         </div>
       </div>

@@ -38,6 +38,7 @@ const emit = defineEmits<{ close: []; saved: [] }>()
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const { fire } = useAutomations()
+const t = useT()
 
 function toDateInput(iso: string) {
   const d = new Date(iso)
@@ -52,6 +53,12 @@ function minutesBetween(startIso: string, endIso: string) {
 }
 
 const activeTab = ref<'details' | 'billing' | 'history' | 'notes'>(props.initialTab ?? 'details')
+const tabLabels = computed<Record<'details' | 'billing' | 'history' | 'notes', string>>(() => ({
+  details: t('details', 'detalles'),
+  billing: t('billing', 'facturación'),
+  history: t('history', 'historial'),
+  notes: t('notes', 'notas'),
+}))
 
 const patientId = ref(props.appointment?.patient_id ?? '')
 const patientQuery = ref('')
@@ -147,7 +154,7 @@ const bonoStatus = computed(() =>
 async function save() {
   error.value = ''
   if (!patientId.value) {
-    error.value = 'Select a patient.'
+    error.value = t('Select a patient.', 'Selecciona un paciente.')
     return
   }
   saving.value = true
@@ -157,7 +164,7 @@ async function save() {
 
   const hours = store.currentClinic?.business_hours
   if (hasBusinessHoursConfigured(hours) && (!isWithinBusinessHours(startsAt, hours) || !isWithinBusinessHours(new Date(endsAt.getTime() - 1), hours))) {
-    if (!confirm('This appointment falls outside the clinic\'s working hours. Book it anyway?')) {
+    if (!confirm(t('This appointment falls outside the clinic\'s working hours. Book it anyway?', 'Esta cita está fuera del horario de atención de la clínica. ¿Reservarla de todos modos?'))) {
       saving.value = false
       return
     }
@@ -219,7 +226,9 @@ async function maybeApplyStatusFee(newStatus: string) {
   if (!feeCents) return
 
   const label = newStatus === 'cancelled' ? 'cancellation' : 'missed appointment'
-  if (!confirm(`Apply the €${(feeCents / 100).toFixed(2)} ${label} fee to this patient's account?`)) return
+  const labelEs = newStatus === 'cancelled' ? 'de cancelación' : 'por no presentarse'
+  const feeAmountStr = (feeCents / 100).toFixed(2)
+  if (!confirm(t(`Apply the €${feeAmountStr} ${label} fee to this patient's account?`, `¿Aplicar el cargo ${labelEs} de €${feeAmountStr} a la cuenta de este paciente?`))) return
 
   const { count } = await supabase.from('invoices').select('id', { count: 'exact', head: true })
   const invoiceNumber = `INV-${String((count ?? 0) + 1).padStart(4, '0')}`
@@ -240,7 +249,7 @@ async function maybeApplyStatusFee(newStatus: string) {
 
 async function remove() {
   if (!props.appointment) return
-  if (!confirm('Delete this appointment?')) return
+  if (!confirm(t('Delete this appointment?', '¿Eliminar esta cita?'))) return
   saving.value = true
   // Soft delete -- the calendar's "Hide deleted" toggle needs a real record
   // to hide rather than nothing at all, same idea as `rescheduled` already
@@ -262,9 +271,9 @@ async function remove() {
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
           <h2 class="text-[16px] font-[640] text-ink-900">
-            {{ mode === 'create' ? 'New Appointment' : 'Edit Appointment' }}
+            {{ mode === 'create' ? t('New Appointment', 'Nueva cita') : t('Edit Appointment', 'Editar cita') }}
           </h2>
-          <UiPill v-if="appointment?.source === 'online'" tone="brand">Online</UiPill>
+          <UiPill v-if="appointment?.source === 'online'" tone="brand">{{ t('Online', 'En línea') }}</UiPill>
         </div>
         <button type="button" class="text-ink-faint hover:text-ink-600" @click="emit('close')">✕</button>
       </div>
@@ -278,17 +287,17 @@ async function remove() {
           :class="activeTab === tab ? 'border-brand text-brand-text' : 'border-transparent text-ink-muted2 hover:text-ink-600'"
           @click="activeTab = tab"
         >
-          {{ tab }}
+          {{ tabLabels[tab] }}
         </button>
       </div>
 
       <form v-if="mode === 'create' || activeTab === 'details'" class="mt-4 space-y-4" @submit.prevent="save">
         <div>
-          <label class="block text-[12.5px] font-medium text-ink-600">Patient</label>
+          <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Patient', 'Paciente') }}</label>
           <input
             v-model="patientQuery"
             type="text"
-            :placeholder="selectedPatientLabel || 'Search patients…'"
+            :placeholder="selectedPatientLabel || t('Search patients…', 'Buscar pacientes…')"
             class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none"
           />
           <ul v-if="patientQuery" class="mt-1 max-h-40 overflow-y-auto rounded-ctl border border-line">
@@ -300,11 +309,11 @@ async function remove() {
             >
               {{ p.first_name }} {{ p.last_name }}
             </li>
-            <li v-if="searchResults.length === 0" class="px-3 py-1.5 text-[13px] text-ink-faint">No matches</li>
+            <li v-if="searchResults.length === 0" class="px-3 py-1.5 text-[13px] text-ink-faint">{{ t('No matches', 'Sin resultados') }}</li>
           </ul>
           <p v-if="selectedPatientLabel && !patientQuery" class="mt-1 text-[12.5px] text-ink-muted2">
-            Selected: <span class="font-medium text-ink-900">{{ selectedPatientLabel }}</span>
-            <NuxtLink :to="`/patients/${patientId}`" target="_blank" class="ml-2 text-brand-text hover:text-brand-hover">View patient &rarr;</NuxtLink>
+            {{ t('Selected:', 'Seleccionado:') }} <span class="font-medium text-ink-900">{{ selectedPatientLabel }}</span>
+            <NuxtLink :to="`/patients/${patientId}`" target="_blank" class="ml-2 text-brand-text hover:text-brand-hover">{{ t('View patient →', 'Ver paciente →') }}</NuxtLink>
           </p>
           <BonoStatusBadge v-if="patientId && !bonoLoading" class="mt-2" :tone="bonoStatus.tone" :label="bonoStatus.label" />
         </div>

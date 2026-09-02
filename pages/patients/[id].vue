@@ -3,6 +3,7 @@ import type { Tables } from '~/types/database.types'
 
 const route = useRoute()
 const supabase = useSupabaseClient()
+const t = useT()
 const patientId = route.params.id as string
 
 const patient = ref<Tables<'patients'> | null>(null)
@@ -29,13 +30,13 @@ const amountDue = computed(() => (balanceCents.value < 0 ? -balanceCents.value :
 const canContact = computed(() => !patient.value?.is_minor && !patient.value?.do_not_contact)
 
 const tabs = computed(() => [
-  { key: 'overview', label: 'Overview' },
-  { key: 'appointments', label: 'Appointments' },
-  { key: 'visit-notes', label: 'Visit notes' },
-  { key: 'billing', label: 'Billing' },
-  ...(patient.value?.is_minor ? [] : [{ key: 'communications', label: 'Communications' }]),
-  { key: 'docs', label: 'Docs' },
-  { key: 'files', label: 'Files' },
+  { key: 'overview', label: t('Overview', 'Resumen') },
+  { key: 'appointments', label: t('Appointments', 'Citas') },
+  { key: 'visit-notes', label: t('Visit notes', 'Notas de visita') },
+  { key: 'billing', label: t('Billing', 'Facturación') },
+  ...(patient.value?.is_minor ? [] : [{ key: 'communications', label: t('Communications', 'Comunicaciones') }]),
+  { key: 'docs', label: t('Docs', 'Documentos') },
+  { key: 'files', label: t('Files', 'Archivos') },
 ])
 
 const activeTab = computed({
@@ -83,31 +84,31 @@ function handleCharge() {
       </div>
     </div>
   </div>
-  <div v-else-if="notFound" class="flex h-full items-center justify-center text-[13px] text-ink-faint">Patient not found.</div>
+  <div v-else-if="notFound" class="flex h-full items-center justify-center text-[13px] text-ink-faint">{{ t('Patient not found.', 'Paciente no encontrado.') }}</div>
   <div v-else-if="patient" class="flex h-full flex-col">
     <header class="flex h-14 shrink-0 items-center justify-between border-b border-line bg-surface px-6">
       <div class="flex min-w-0 items-center gap-2.5">
         <NuxtLink
           to="/patients"
           class="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-ctlSm text-ink-muted hover:bg-surface-subtle hover:text-ink-700"
-          title="Back to patients"
+          :title="t('Back to patients', 'Volver a pacientes')"
         >
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
             <path d="M10 3.5L5 8l5 4.5" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
         </NuxtLink>
-        <NuxtLink to="/patients" class="shrink-0 text-[13px] text-ink-muted2 hover:text-ink-700">Patients /</NuxtLink>
+        <NuxtLink to="/patients" class="shrink-0 text-[13px] text-ink-muted2 hover:text-ink-700">{{ t('Patients /', 'Pacientes /') }}</NuxtLink>
         <h1 class="truncate text-[14.5px] font-[620] text-ink-900">{{ patient.first_name }} {{ patient.last_name }}</h1>
         <div class="flex shrink-0 items-center gap-1.5">
-          <UiPill v-if="isVip" tone="brand" :dot="true">VIP</UiPill>
-          <UiPill v-if="amountDue > 0" tone="danger">€{{ (amountDue / 100).toFixed(2) }} due</UiPill>
-          <UiPill v-if="patient.is_minor" tone="brand">Minor</UiPill>
-          <UiPill v-if="patient.do_not_contact" tone="danger">Do not contact</UiPill>
+          <UiPill v-if="isVip" tone="brand" :dot="true">{{ t('VIP', 'VIP') }}</UiPill>
+          <UiPill v-if="amountDue > 0" tone="danger">€{{ (amountDue / 100).toFixed(2) }} {{ t('due', 'pendiente') }}</UiPill>
+          <UiPill v-if="patient.is_minor" tone="brand">{{ t('Minor', 'Menor') }}</UiPill>
+          <UiPill v-if="patient.do_not_contact" tone="danger">{{ t('Do not contact', 'No contactar') }}</UiPill>
         </div>
       </div>
 
       <div class="flex shrink-0 items-center gap-2">
-        <div class="flex items-center rounded-ctl border border-line-control p-0.5" title="Layout: rail (only variant available)">
+        <div class="flex items-center rounded-ctl border border-line-control p-0.5" :title="t('Layout: rail (only variant available)', 'Diseño: carril (única variante disponible)')">
           <button
             type="button"
             class="flex h-6 w-7 items-center justify-center rounded-[6px]"
@@ -119,14 +120,14 @@ function handleCharge() {
           <button
             type="button"
             class="flex h-6 w-7 items-center justify-center rounded-[6px] text-ink-faint2 opacity-50"
-            title="Summary layout isn't available yet"
+            :title="t(&quot;Summary layout isn't available yet&quot;, 'El diseño resumen aún no está disponible')"
             @click="layoutVariant = 'rail'"
           >
             <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1" y="1" width="12" height="3.5" rx="0.8" /><rect x="1" y="6" width="12" height="7" rx="0.8" /></svg>
           </button>
         </div>
-        <UiBtn v-if="canContact" variant="secondary" @click="whatsAppOpen = true">Message</UiBtn>
-        <UiBtn variant="primary" @click="navigateTo('/calendar')">Book visit</UiBtn>
+        <UiBtn v-if="canContact" variant="secondary" @click="whatsAppOpen = true">{{ t('Message', 'Mensaje') }}</UiBtn>
+        <UiBtn variant="primary" @click="navigateTo('/calendar')">{{ t('Book visit', 'Reservar visita') }}</UiBtn>
       </div>
     </header>
 

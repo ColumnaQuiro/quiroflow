@@ -4,6 +4,7 @@ interface UnlinkedName { name: string; count: number; linkTo: string; inviting: 
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 const teamMembers = ref<TeamMemberRow[]>([])
 const unlinked = ref<UnlinkedName[]>([])
@@ -77,31 +78,29 @@ function copy(text: string) {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Practitioners" />
+    <PageHeader :title="t('Practitioners', 'Profesionales')" />
     <div class="flex-1 overflow-y-auto">
       <div class="flex gap-8 p-6">
         <SettingsNav />
         <div class="min-w-0 max-w-[660px] flex-1">
           <p class="text-[13px] leading-relaxed text-ink-muted2">
-            Migrated appointments sometimes only carry a practitioner's name, not a real account. Link each name to
-            an existing team member, or invite them — the invite link works without an email, and once accepted it
-            automatically re-links their past appointments.
+            {{ t("Migrated appointments sometimes only carry a practitioner's name, not a real account. Link each name to an existing team member, or invite them — the invite link works without an email, and once accepted it automatically re-links their past appointments.", 'Las citas migradas a veces solo llevan el nombre de un profesional, no una cuenta real. Vincula cada nombre a un miembro del equipo existente, o invítalo — el enlace de invitación funciona sin correo electrónico, y una vez aceptado vuelve a vincular automáticamente sus citas pasadas.') }}
           </p>
 
-          <div v-if="loading" class="mt-6 text-[13px] text-ink-faint">Loading…</div>
+          <div v-if="loading" class="mt-6 text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
           <div v-else-if="unlinked.length === 0" class="mt-6 rounded-card border border-dashed border-line-control bg-surface p-6 text-center text-[13px] text-ink-faint">
-            Nothing to link — every appointment already has a real practitioner or no name at all.
+            {{ t('Nothing to link — every appointment already has a real practitioner or no name at all.', 'Nada que vincular — todas las citas ya tienen un profesional real o ningún nombre.') }}
           </div>
           <div v-else class="mt-4 space-y-3">
             <div v-for="row in unlinked" :key="row.name" class="rounded-card border border-line bg-surface p-4 shadow-card">
               <div class="flex items-center justify-between gap-3">
                 <div>
                   <p class="text-[13.5px] font-[560] text-ink-700">{{ row.name }}</p>
-                  <p class="text-[12.5px] text-ink-muted2">{{ row.count }} appointment{{ row.count === 1 ? '' : 's' }}</p>
+                  <p class="text-[12.5px] text-ink-muted2">{{ row.count }} {{ row.count === 1 ? t('appointment', 'cita') : t('appointments', 'citas') }}</p>
                 </div>
                 <div class="flex items-center gap-2">
                   <select v-model="row.linkTo" class="h-8 rounded-ctl border border-line-control bg-surface px-2 text-[12.5px] text-ink-600 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20">
-                    <option value="" disabled>Link to team member…</option>
+                    <option value="" disabled>{{ t('Link to team member…', 'Vincular a un miembro del equipo…') }}</option>
                     <option v-for="tm in teamMembers" :key="tm.id" :value="tm.id">{{ tm.full_name }}</option>
                   </select>
                   <button
@@ -110,16 +109,16 @@ function copy(text: string) {
                     class="h-8 rounded-ctl border border-line-control px-3 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover disabled:opacity-40"
                     @click="linkToExisting(row)"
                   >
-                    Link
+                    {{ t('Link', 'Vincular') }}
                   </button>
                   <UiBtn variant="primary" size="sm" :disabled="row.inviting || !!row.inviteLink" @click="inviteAsPractitioner(row)">
-                    {{ row.inviting ? 'Creating…' : 'Invite as new practitioner' }}
+                    {{ row.inviting ? t('Creating…', 'Creando…') : t('Invite as new practitioner', 'Invitar como nuevo profesional') }}
                   </UiBtn>
                 </div>
               </div>
               <div v-if="row.inviteLink" class="mt-2 rounded-ctl border border-success-border bg-success-bg p-2 text-[12.5px] text-success-deep">
-                Share this link (e.g. via WhatsApp): <span class="break-all font-medium">{{ row.inviteLink }}</span>
-                <button type="button" class="ml-2 font-medium underline" @click="copy(row.inviteLink)">Copy</button>
+                {{ t('Share this link (e.g. via WhatsApp):', 'Comparte este enlace (p. ej. por WhatsApp):') }} <span class="break-all font-medium">{{ row.inviteLink }}</span>
+                <button type="button" class="ml-2 font-medium underline" @click="copy(row.inviteLink)">{{ t('Copy', 'Copiar') }}</button>
               </div>
             </div>
           </div>

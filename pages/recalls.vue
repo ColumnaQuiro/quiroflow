@@ -7,6 +7,7 @@ type ContactLogRow = Pick<Tables<'contact_log'>, 'patient_id' | 'action' | 'crea
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 const recalls = ref<Recall[]>([])
 const teamMembers = ref<TeamMember[]>([])
@@ -97,7 +98,7 @@ const filtered = computed(() => {
 })
 
 function practitionerName(id: string | null) {
-  return teamMembers.value.find((m) => m.id === id)?.full_name ?? 'Unassigned'
+  return teamMembers.value.find((m) => m.id === id)?.full_name ?? t('Unassigned', 'Sin asignar')
 }
 
 function initials(r: Recall) {
@@ -110,14 +111,15 @@ function balanceInfo(cents: number | null) {
   const c = cents ?? 0
   const amount = (Math.abs(c) / 100).toFixed(2)
   if (c < 0) return { text: `€${amount}`, class: 'text-danger-text' }
-  if (c > 0) return { text: `€${amount} CR`, class: 'text-success-text' }
+  if (c > 0) return { text: `€${amount} ${t('CR', 'CR')}`, class: 'text-success-text' }
   return { text: '€0.00', class: 'text-ink-faint' }
 }
 
 function overdueInfo(days: number | null) {
   const d = days ?? 0
   const weeks = Math.floor(d / 7)
-  const label = `${weeks} wk${weeks === 1 ? '' : 's'} overdue`
+  const weekWord = weeks === 1 ? t('wk', 'sem') : t('wks', 'sems')
+  const label = `${weeks} ${weekWord} ${t('overdue', 'de retraso')}`
   if (d >= 56) return { class: 'bg-danger-bg text-danger-text', label }
   if (d >= 28) return { class: 'bg-warning-bg text-warning-text', label }
   return { class: 'bg-chip-bg2 text-chip-text', label }

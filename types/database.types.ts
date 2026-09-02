@@ -3012,6 +3012,7 @@ export type Database = {
           full_name: string
           id: string
           is_owner: boolean
+          language_preference: string
           online_booking_enabled: boolean
           role: string
           role_id: string | null
@@ -3027,6 +3028,7 @@ export type Database = {
           full_name: string
           id?: string
           is_owner?: boolean
+          language_preference?: string
           online_booking_enabled?: boolean
           role?: string
           role_id?: string | null
@@ -3042,6 +3044,7 @@ export type Database = {
           full_name?: string
           id?: string
           is_owner?: boolean
+          language_preference?: string
           online_booking_enabled?: boolean
           role?: string
           role_id?: string | null

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 interface PHAppointmentType { id: number; name: string }
 interface PHAppointment { id: number; appointment_type_id: number | null }
@@ -31,10 +32,10 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
   stage.value = 'importing'
   const api = usePracticeHubApi(conn)
 
-  phase.value = 'Fetching appointment types…'
+  phase.value = t('Fetching appointment types…', 'Obteniendo tipos de cita…')
   const phTypes = await api.fetchAll<PHAppointmentType>('/appointment_types')
 
-  phase.value = 'Matching to existing types…'
+  phase.value = t('Matching to existing types…', 'Emparejando con los tipos existentes…')
   const { data: existing } = await supabase.from('appointment_types').select('id, name')
   const existingByName = new Map((existing ?? []).map((t) => [t.name.trim().toLowerCase(), t.id]))
 
@@ -53,7 +54,9 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         .select('id')
         .single()
       if (error || !created) {
-        importErrors.value.push(`Creating type "${phType.name}": ${error?.message}`)
+        importErrors.value.push(
+          t(`Creating type "${phType.name}": ${error?.message}`, `Creando tipo "${phType.name}": ${error?.message}`),
+        )
         continue
       }
       ourId = created.id
@@ -63,11 +66,11 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     phIdToOurId.set(phType.id, ourId)
   }
 
-  phase.value = 'Fetching appointments…'
+  phase.value = t('Fetching appointments…', 'Obteniendo citas…')
   progress.value = { done: 0, total: 0 }
   const phAppointments = await api.fetchAll<PHAppointment>('/appointments', (done, total) => (progress.value = { done, total }))
 
-  phase.value = 'Updating…'
+  phase.value = t('Updating…', 'Actualizando…')
   progress.value = { done: 0, total: phAppointments.length }
 
   // Group by target type so each chunk is one bulk update instead of one
@@ -93,7 +96,10 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         .from('appointments')
         .update({ appointment_type_id: ourTypeId })
         .in('external_reference', chunk)
-      if (error) importErrors.value.push(`Updating batch near ref ${chunk[0]}: ${error.message}`)
+      if (error)
+        importErrors.value.push(
+          t(`Updating batch near ref ${chunk[0]}: ${error.message}`, `Actualizando lote cerca de la referencia ${chunk[0]}: ${error.message}`),
+        )
       else appointmentsUpdated.value += chunk.length
       done += chunk.length
       progress.value = { done, total: phAppointments.length }
@@ -116,9 +122,12 @@ function reset() {
 <template>
   <div>
     <p class="text-sm text-gray-500">
-      Pulls the real appointment types directly from PracticeHub's API and re-links every appointment to its actual
-      type (matched by the internal appointment ID) — fixes reports like Statistics when the original CSV import
-      only captured one type or none. Safe to re-run.
+      {{
+        t(
+          "Pulls the real appointment types directly from PracticeHub's API and re-links every appointment to its actual type (matched by the internal appointment ID) — fixes reports like Statistics when the original CSV import only captured one type or none. Safe to re-run.",
+          'Obtiene los tipos de cita reales directamente de la API de PracticeHub y vuelve a vincular cada cita con su tipo real (emparejado por el ID interno de la cita); esto corrige informes como Estadísticas cuando la importación original de CSV solo capturó un tipo o ninguno. Se puede volver a ejecutar sin riesgo.',
+        )
+      }}
     </p>
 
     <div v-if="stage === 'connect'" class="mt-4 max-w-md">
@@ -132,21 +141,25 @@ function reset() {
 
     <div v-else-if="stage === 'done'" class="mt-4 space-y-4">
       <div class="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">
-        Created {{ typesCreated }} new appointment type(s), updated {{ appointmentsUpdated }} appointments. Skipped
-        {{ skippedNoMatch }} with no type in PracticeHub.
+        {{
+          t(
+            `Created ${typesCreated} new appointment type(s), updated ${appointmentsUpdated} appointments. Skipped ${skippedNoMatch} with no type in PracticeHub.`,
+            `Se crearon ${typesCreated} tipo(s) de cita nuevos, se actualizaron ${appointmentsUpdated} citas. Se omitieron ${skippedNoMatch} sin tipo en PracticeHub.`,
+          )
+        }}
       </div>
       <div v-if="importErrors.length > 0" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-        <p class="font-medium">Some rows failed:</p>
+        <p class="font-medium">{{ t('Some rows failed:', 'Algunas filas fallaron:') }}</p>
         <ul class="mt-1 list-disc pl-5">
           <li v-for="(e, i) in importErrors" :key="i">{{ e }}</li>
         </ul>
       </div>
       <div class="flex gap-3">
         <NuxtLink to="/settings/appointment-types" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-          Review Appointment Types
+          {{ t('Review Appointment Types', 'Revisar tipos de cita') }}
         </NuxtLink>
         <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50" @click="reset">
-          Run again
+          {{ t('Run again', 'Ejecutar de nuevo') }}
         </button>
       </div>
     </div>

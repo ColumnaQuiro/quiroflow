@@ -2,6 +2,7 @@
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
 const store = useAccountStore()
+const t = useT()
 
 const fullName = ref('')
 const color = ref('#4C6FEB')
@@ -49,11 +50,11 @@ async function changePassword() {
   passwordError.value = ''
   passwordSaved.value = false
   if (newPassword.value.length < 8) {
-    passwordError.value = 'Password must be at least 8 characters.'
+    passwordError.value = t('Password must be at least 8 characters.', 'La contraseña debe tener al menos 8 caracteres.')
     return
   }
   if (newPassword.value !== confirmPassword.value) {
-    passwordError.value = 'Passwords do not match.'
+    passwordError.value = t('Passwords do not match.', 'Las contraseñas no coinciden.')
     return
   }
   savingPassword.value = true
@@ -71,49 +72,49 @@ async function changePassword() {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Account Settings" />
+    <PageHeader :title="t('Account Settings', 'Ajustes de la Cuenta')" />
     <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
     <div class="max-w-lg">
-    <p class="text-sm text-ink-muted">Your personal details and login.</p>
+    <p class="text-sm text-ink-muted">{{ t('Your personal details and login.', 'Tus datos personales y de acceso.') }}</p>
 
     <form class="mt-6 space-y-4 rounded-card border border-line bg-surface p-4 shadow-card" @submit.prevent="saveProfile">
-      <h2 class="text-sm font-semibold text-ink-900">Personal Details</h2>
+      <h2 class="text-sm font-semibold text-ink-900">{{ t('Personal Details', 'Datos Personales') }}</h2>
       <div>
-        <label class="block text-sm font-medium text-ink-700">Full Name</label>
+        <label class="block text-sm font-medium text-ink-700">{{ t('Full Name', 'Nombre Completo') }}</label>
         <input v-model="fullName" type="text" required class="mt-1 w-full rounded-ctl border border-line-control px-3 py-1.5 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
       </div>
       <div>
-        <label class="block text-sm font-medium text-ink-700">Email</label>
+        <label class="block text-sm font-medium text-ink-700">{{ t('Email', 'Correo Electrónico') }}</label>
         <input :value="user?.email" type="email" disabled class="mt-1 w-full rounded-ctl border border-line bg-surface-subtle px-3 py-1.5 text-sm text-ink-muted" />
       </div>
       <div>
-        <label class="block text-sm font-medium text-ink-700">Calendar Color</label>
+        <label class="block text-sm font-medium text-ink-700">{{ t('Calendar Color', 'Color del Calendario') }}</label>
         <input v-model="color" type="color" class="mt-1 h-9 w-14 rounded-ctl border border-line-control" />
       </div>
       <div class="flex items-center gap-3">
         <UiBtn type="submit" variant="primary" :disabled="savingProfile">
-          {{ savingProfile ? 'Saving…' : 'Save' }}
+          {{ savingProfile ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}
         </UiBtn>
-        <p v-if="profileSaved" class="text-sm text-success-text">Saved.</p>
+        <p v-if="profileSaved" class="text-sm text-success-text">{{ t('Saved.', 'Guardado.') }}</p>
         <p v-if="profileError" class="text-sm text-danger-text">{{ profileError }}</p>
       </div>
     </form>
 
     <form class="mt-6 space-y-4 rounded-card border border-line bg-surface p-4 shadow-card" @submit.prevent="changePassword">
-      <h2 class="text-sm font-semibold text-ink-900">Change Password</h2>
+      <h2 class="text-sm font-semibold text-ink-900">{{ t('Change Password', 'Cambiar Contraseña') }}</h2>
       <div>
-        <label class="block text-sm font-medium text-ink-700">New Password</label>
+        <label class="block text-sm font-medium text-ink-700">{{ t('New Password', 'Nueva Contraseña') }}</label>
         <input v-model="newPassword" type="password" required minlength="8" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-1.5 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
       </div>
       <div>
-        <label class="block text-sm font-medium text-ink-700">Confirm New Password</label>
+        <label class="block text-sm font-medium text-ink-700">{{ t('Confirm New Password', 'Confirmar Nueva Contraseña') }}</label>
         <input v-model="confirmPassword" type="password" required minlength="8" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-1.5 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
       </div>
       <div class="flex items-center gap-3">
         <UiBtn type="submit" variant="primary" :disabled="savingPassword">
-          {{ savingPassword ? 'Saving…' : 'Update Password' }}
+          {{ savingPassword ? t('Saving…', 'Guardando…') : t('Update Password', 'Actualizar Contraseña') }}
         </UiBtn>
-        <p v-if="passwordSaved" class="text-sm text-success-text">Password updated.</p>
+        <p v-if="passwordSaved" class="text-sm text-success-text">{{ t('Password updated.', 'Contraseña actualizada.') }}</p>
         <p v-if="passwordError" class="text-sm text-danger-text">{{ passwordError }}</p>
       </div>
     </form>

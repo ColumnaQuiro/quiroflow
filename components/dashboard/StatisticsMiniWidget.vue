@@ -7,6 +7,7 @@ interface ApptRow { id: string; patient_id: string; starts_at: string; practitio
 interface PaymentRow { amount_cents: number; invoice_id: string }
 interface InvoiceRow { id: string; appointment_id: string | null }
 
+const t = useT()
 const supabase = useSupabaseClient()
 const loading = ref(true)
 const allCompleted = ref<ApptRow[]>([])
@@ -75,18 +76,18 @@ const retentionRate = computed(() => {
 </script>
 
 <template>
-  <div v-if="loading" class="text-[13px] text-ink-faint">Loading…</div>
+  <div v-if="loading" class="text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
   <ul v-else class="divide-y divide-line-row2 text-[13px]">
     <li class="flex items-center justify-between py-1.5">
-      <span class="text-ink-700">Visits</span>
+      <span class="text-ink-700">{{ t('Visits', 'Visitas') }}</span>
       <span class="font-mono text-[12.5px] text-ink-900">{{ inRange.length }}</span>
     </li>
     <li class="flex items-center justify-between py-1.5">
-      <span class="text-ink-700">Per-visit average</span>
+      <span class="text-ink-700">{{ t('Per-visit average', 'Media por visita') }}</span>
       <span class="font-mono text-[12.5px] text-ink-900">{{ pva !== null ? `€${pva.toFixed(2)}` : '—' }}</span>
     </li>
     <li class="flex items-center justify-between py-1.5">
-      <span class="text-ink-700">Retention</span>
+      <span class="text-ink-700">{{ t('Retention', 'Retención') }}</span>
       <span class="font-mono text-[12.5px] text-ink-900">{{ retentionRate !== null ? `${retentionRate}%` : '—' }}</span>
     </li>
   </ul>

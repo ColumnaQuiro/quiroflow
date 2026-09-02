@@ -7,6 +7,7 @@ interface PaymentRow { amount_cents: number; paid_at: string; invoice_id: string
 interface InvoiceRow { id: string; total_cents: number; appointment_id: string | null }
 interface AppointmentRow { id: string; practitioner_id: string | null; clinic_id: string | null }
 
+const t = useT()
 const supabase = useSupabaseClient()
 const loading = ref(true)
 const payments = ref<PaymentRow[]>([])
@@ -85,15 +86,15 @@ function euros(cents: number) {
 </script>
 
 <template>
-  <div v-if="loading" class="text-[13px] text-ink-faint">Loading…</div>
+  <div v-if="loading" class="text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
   <div v-else>
     <p class="font-mono text-[27px] leading-none text-ink-900">{{ euros(totalPaid) }}</p>
     <p v-if="deltaPct !== null" class="mt-1.5 text-[12px] font-medium" :class="deltaPct < 0 ? 'text-danger-text' : 'text-success-text'">
-      {{ deltaPct > 0 ? '+' : '' }}{{ deltaPct }}% vs previous period
+      {{ t(`${deltaPct > 0 ? '+' : ''}${deltaPct}% vs previous period`, `${deltaPct > 0 ? '+' : ''}${deltaPct}% frente al periodo anterior`) }}
     </p>
     <div class="mt-2.5 flex items-center gap-4 border-t border-line-row2 pt-2 text-[12px] text-ink-muted2">
-      <span>Charged <span class="font-mono text-ink-700">{{ euros(totalCharged) }}</span></span>
-      <span>Outstanding <span class="font-mono" :class="outstanding > 0 ? 'text-danger-text' : 'text-ink-700'">{{ euros(outstanding) }}</span></span>
+      <span>{{ t('Charged', 'Cobrado') }} <span class="font-mono text-ink-700">{{ euros(totalCharged) }}</span></span>
+      <span>{{ t('Outstanding', 'Pendiente') }} <span class="font-mono" :class="outstanding > 0 ? 'text-danger-text' : 'text-ink-700'">{{ euros(outstanding) }}</span></span>
     </div>
   </div>
 </template>

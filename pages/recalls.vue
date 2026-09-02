@@ -427,7 +427,7 @@ function exportCsv() {
           <button
             type="button"
             class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover"
-            :title="t(&quot;Snoozing recalls isn't available yet&quot;, 'Posponer recordatorios aún no está disponible')"
+            :title="t('Snoozing recalls isn\'t available yet', 'Posponer recordatorios aún no está disponible')"
             @click="bulkSnooze"
           >
             {{ t('Snooze 30 days', 'Posponer 30 días') }}

@@ -32,6 +32,7 @@ interface AppointmentRow {
   checked_in_at: string | null
   flow_with_practitioner_at: string | null
   flow_checkout_at: string | null
+  source: string
   patients: { first_name: string; last_name: string | null } | null
   appointment_types: { name: string; color: string } | null
 }
@@ -123,7 +124,7 @@ async function loadDay() {
   const { data } = await supabase
     .from('appointments')
     .select(
-      'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, patients(first_name, last_name), appointment_types(name, color)',
+      'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, source, patients(first_name, last_name), appointment_types(name, color)',
     )
     .eq('clinic_id', store.currentClinicId)
     .eq('practitioner_id', practitionerId.value)

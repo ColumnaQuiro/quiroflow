@@ -487,7 +487,7 @@ async function sendNow(patient: PatientOption) {
                       <dt class="text-ink-muted2">{{ t('Delivered', 'Entregados') }}</dt>
                       <dd class="font-mono text-ink-800">{{ ruleStatsMap[rule.id]?.deliveredPct != null ? `${ruleStatsMap[rule.id]!.deliveredPct}%` : '—' }}</dd>
                     </div>
-                    <div class="flex items-center justify-between" :title="t(&quot;Replies aren't linked to a specific campaign in the data we track today&quot;, 'Las respuestas no están vinculadas a una campaña específica en los datos que registramos hoy')">
+                    <div class="flex items-center justify-between" :title="t('Replies aren\'t linked to a specific campaign in the data we track today', 'Las respuestas no están vinculadas a una campaña específica en los datos que registramos hoy')">
                       <dt class="text-ink-muted2">{{ t('Replies', 'Respuestas') }}</dt>
                       <dd class="font-mono text-ink-faint">—</dd>
                     </div>

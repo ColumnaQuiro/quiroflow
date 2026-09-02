@@ -120,7 +120,7 @@ function handleCharge() {
           <button
             type="button"
             class="flex h-6 w-7 items-center justify-center rounded-[6px] text-ink-faint2 opacity-50"
-            :title="t(&quot;Summary layout isn't available yet&quot;, 'El diseño resumen aún no está disponible')"
+            :title="t('Summary layout isn\'t available yet', 'El diseño resumen aún no está disponible')"
             @click="layoutVariant = 'rail'"
           >
             <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1" y="1" width="12" height="3.5" rx="0.8" /><rect x="1" y="6" width="12" height="7" rx="0.8" /></svg>

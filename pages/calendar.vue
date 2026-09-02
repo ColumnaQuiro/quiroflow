@@ -1172,30 +1172,30 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
         <div class="mx-3 rounded-card border border-line bg-surface p-3">
           <div class="space-y-1.5">
             <div class="flex items-center justify-between text-[12.5px]">
-              <span class="text-ink-600">Booked</span>
+              <span class="text-ink-600">{{ t('Booked', 'Reservadas') }}</span>
               <span class="font-mono text-[12.5px] font-medium text-ink-900">{{ todayGlance.booked }}</span>
             </div>
             <div class="flex items-center justify-between text-[12.5px]">
-              <span class="text-success-text">Seen</span>
+              <span class="text-success-text">{{ t('Seen', 'Atendidas') }}</span>
               <span class="font-mono text-[12.5px] font-medium text-success-text">{{ todayGlance.seen }} ({{ glancePct(todayGlance.seen) }}%)</span>
             </div>
             <div class="flex items-center justify-between text-[12.5px]">
-              <span class="text-warning-text">Rescheduled</span>
+              <span class="text-warning-text">{{ t('Rescheduled', 'Reprogramadas') }}</span>
               <span class="font-mono text-[12.5px] font-medium text-warning-text">{{ todayGlance.rescheduled }} ({{ glancePct(todayGlance.rescheduled) }}%)</span>
             </div>
             <div class="flex items-center justify-between text-[12.5px]">
-              <span class="text-danger-text">Cancelled</span>
+              <span class="text-danger-text">{{ t('Cancelled', 'Canceladas') }}</span>
               <span class="font-mono text-[12.5px] font-medium text-danger-text">{{ todayGlance.cancelled }} ({{ glancePct(todayGlance.cancelled) }}%)</span>
             </div>
             <div class="flex items-center justify-between text-[12.5px]">
-              <span class="text-ink-muted2">Missed</span>
+              <span class="text-ink-muted2">{{ t('Missed', 'Perdidas') }}</span>
               <span class="font-mono text-[12.5px] font-medium text-ink-muted2">{{ todayGlance.missed }} ({{ glancePct(todayGlance.missed) }}%)</span>
             </div>
           </div>
         </div>
 
         <div class="mx-3 mt-3 rounded-card border border-line bg-surface p-3">
-          <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">Display</p>
+          <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">{{ t('Display', 'Visualización') }}</p>
           <div class="mt-2 space-y-2.5">
             <div v-for="toggle in displayToggles" :key="toggle.key" class="flex items-center justify-between gap-2">
               <span class="text-[12.5px] text-ink-600">{{ toggle.label }}</span>
@@ -1214,7 +1214,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
         </div>
 
         <div class="m-3 rounded-card border border-line bg-surface p-3">
-          <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">Status key</p>
+          <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">{{ t('Status key', 'Leyenda de estados') }}</p>
           <div class="mt-2 space-y-1.5">
             <div v-for="item in statusLegend" :key="item.key" class="flex items-center gap-2 text-[12.5px] text-ink-600">
               <span class="h-[7px] w-[7px] shrink-0 rounded-full" :class="item.dotClass" />
@@ -1240,7 +1240,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
         </div>
 
         <div v-else-if="!store.currentClinicId" class="p-6 text-[13px] text-ink-faint">
-          No clinic selected.
+          {{ t('No clinic selected.', 'Ninguna clínica seleccionada.') }}
         </div>
 
         <!-- Day view: room columns -->

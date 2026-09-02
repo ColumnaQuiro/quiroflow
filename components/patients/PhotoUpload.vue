@@ -5,6 +5,7 @@ const props = defineProps<{ patientId: string; photoStoragePath: string | null; 
 const emit = defineEmits<{ uploaded: [] }>()
 
 const supabase = useSupabaseClient()
+const t = useT()
 
 const photoUrl = computed(() => {
   if (!props.photoStoragePath) return null
@@ -61,7 +62,7 @@ async function useYourPhone() {
     qrOpen.value = true
     startPolling()
   } catch (e: any) {
-    error.value = e?.data?.statusMessage ?? 'Could not create the QR link.'
+    error.value = e?.data?.statusMessage ?? t('Could not create the QR link.', 'No se pudo crear el enlace QR.')
   }
 }
 

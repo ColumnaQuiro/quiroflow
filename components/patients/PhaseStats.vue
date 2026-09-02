@@ -74,18 +74,18 @@ async function onPlanSaved() {
 
 <template>
   <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-    <div v-if="loading" class="text-[13px] text-ink-faint">Loading…</div>
+    <div v-if="loading" class="text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
     <template v-else>
       <div class="flex items-center justify-between gap-2">
-        <p class="truncate text-[13.5px] font-semibold text-ink-700">{{ plan ? plan.name : 'No care plan' }}</p>
+        <p class="truncate text-[13.5px] font-semibold text-ink-700">{{ plan ? plan.name : t('No care plan', 'Sin plan de tratamiento') }}</p>
         <button v-if="editable" type="button" class="shrink-0 text-[12px] font-medium text-brand-text hover:text-brand-hover" @click="editOpen = true">
-          {{ plan ? 'Edit' : '+ Add plan' }}
+          {{ plan ? t('Edit', 'Editar') : t('+ Add plan', '+ Añadir plan') }}
         </button>
       </div>
 
       <template v-if="plan">
         <p class="mt-0.5 text-[12px] text-ink-muted2">
-          {{ completedInPlan }} of {{ plan.total_visits }} visits &middot; {{ frequencyLabel }}
+          {{ completedInPlan }} {{ t('of', 'de') }} {{ plan.total_visits }} {{ t('visits', 'visitas') }} &middot; {{ frequencyLabel }}
         </p>
 
         <div class="mt-2.5 h-[6px] w-full overflow-hidden rounded-full bg-line-faint">
@@ -93,10 +93,10 @@ async function onPlanSaved() {
         </div>
 
         <p class="mt-2 text-[12px] text-ink-muted2">
-          <span class="font-medium text-ink-600">{{ completedInPlan }} completed</span> / {{ remaining }} remaining
+          <span class="font-medium text-ink-600">{{ completedInPlan }} {{ t('completed', 'completadas') }}</span> / {{ remaining }} {{ t('remaining', 'restantes') }}
         </p>
       </template>
-      <p v-else class="mt-1 text-[12.5px] text-ink-faint">No plan set up for this patient yet.</p>
+      <p v-else class="mt-1 text-[12.5px] text-ink-faint">{{ t('No plan set up for this patient yet.', 'Aún no se ha configurado un plan para este paciente.') }}</p>
     </template>
 
     <PatientsEditCarePlanModal v-if="editOpen" :patient-id="patientId" :plan="plan" @close="editOpen = false" @saved="onPlanSaved" />

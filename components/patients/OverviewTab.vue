@@ -462,65 +462,65 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
       <form v-else class="mt-4 space-y-4" @submit.prevent="save">
         <div class="grid grid-cols-3 gap-4">
           <div>
-            <label :class="labelClass">First name</label>
+            <label :class="labelClass">{{ t('First name', 'Nombre') }}</label>
             <input v-model="firstName" type="text" required :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">Last name</label>
+            <label :class="labelClass">{{ t('Last name', 'Apellidos') }}</label>
             <input v-model="lastName" type="text" :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">Date of birth</label>
+            <label :class="labelClass">{{ t('Date of birth', 'Fecha de nacimiento') }}</label>
             <input v-model="dateOfBirth" type="date" :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">Email</label>
+            <label :class="labelClass">{{ t('Email', 'Correo electrónico') }}</label>
             <input v-model="email" type="email" :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">Street address</label>
+            <label :class="labelClass">{{ t('Street address', 'Dirección') }}</label>
             <input v-model="address" type="text" :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">Postal code</label>
+            <label :class="labelClass">{{ t('Postal code', 'Código postal') }}</label>
             <input v-model="postalCode" type="text" :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">City</label>
+            <label :class="labelClass">{{ t('City', 'Ciudad') }}</label>
             <input v-model="city" type="text" :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">Country</label>
+            <label :class="labelClass">{{ t('Country', 'País') }}</label>
             <input v-model="country" type="text" :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">National ID</label>
+            <label :class="labelClass">{{ t('National ID', 'DNI/NIE') }}</label>
             <input v-model="nationalId" type="text" :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">Occupation</label>
+            <label :class="labelClass">{{ t('Occupation', 'Profesión') }}</label>
             <input v-model="occupation" type="text" :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">Emergency contact</label>
+            <label :class="labelClass">{{ t('Emergency contact', 'Contacto de emergencia') }}</label>
             <input v-model="emergencyContact" type="text" :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">Referral source</label>
+            <label :class="labelClass">{{ t('Referral source', 'Origen de la referencia') }}</label>
             <select v-model="referralSource" :class="inputClass">
-              <option value="">Not set</option>
+              <option value="">{{ t('Not set', 'Sin especificar') }}</option>
               <option v-for="s in referralSources" :key="s.id" :value="s.name">{{ s.name }}</option>
               <!-- Preserves legacy freeform data that doesn't match a configured source. -->
               <option v-if="referralSource && !referralSources.some((s) => s.name === referralSource)" :value="referralSource">{{ referralSource }}</option>
             </select>
             <div v-if="referralSource === 'Patient'" class="mt-2">
-              <label :class="labelClass">Referred by (existing patient)</label>
+              <label :class="labelClass">{{ t('Referred by (existing patient)', 'Referido por (paciente existente)') }}</label>
               <div v-if="selectedReferredBy" class="mt-1 flex items-center gap-2">
                 <span class="text-[13px] text-ink-700">{{ tutorName(selectedReferredBy) }}</span>
-                <button type="button" class="text-[12px] text-danger-text hover:underline" @click="selectedReferredBy = null">Remove</button>
+                <button type="button" class="text-[12px] text-danger-text hover:underline" @click="selectedReferredBy = null">{{ t('Remove', 'Quitar') }}</button>
               </div>
               <div v-else class="relative mt-1">
-                <input v-model="referredBySearch" type="text" placeholder="Search patient by name…" :class="inputClass" />
+                <input v-model="referredBySearch" type="text" :placeholder="t('Search patient by name…', 'Buscar paciente por nombre…')" :class="inputClass" />
                 <ul v-if="referredByResults.length > 0" class="absolute z-10 mt-1 w-full rounded-ctl border border-line bg-surface py-1 shadow-popover">
                   <li v-for="p in referredByResults" :key="p.id">
                     <button type="button" class="block w-full px-3 py-1.5 text-left text-[13px] text-ink-700 hover:bg-surface-subtle" @click="pickReferredBy(p)">
@@ -532,52 +532,52 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
             </div>
           </div>
           <div>
-            <label :class="labelClass">Preferred language</label>
+            <label :class="labelClass">{{ t('Preferred language', 'Idioma preferido') }}</label>
             <select v-model="preferredLanguage" :class="inputClass">
               <option v-for="l in LANGUAGES" :key="l.code" :value="l.code">{{ l.label }}</option>
             </select>
           </div>
           <div>
-            <label :class="labelClass">Default practitioner</label>
+            <label :class="labelClass">{{ t('Default practitioner', 'Profesional predeterminado') }}</label>
             <select v-model="defaultPractitionerId" :class="inputClass">
-              <option value="">None</option>
+              <option value="">{{ t('None', 'Ninguno') }}</option>
               <option v-for="m in teamMembers" :key="m.id" :value="m.id">{{ m.full_name }}</option>
             </select>
           </div>
           <div>
-            <label :class="labelClass">Clinic</label>
+            <label :class="labelClass">{{ t('Clinic', 'Clínica') }}</label>
             <select v-model="clinicId" :class="inputClass">
-              <option value="">No primary clinic</option>
+              <option value="">{{ t('No primary clinic', 'Sin clínica principal') }}</option>
               <option v-for="clinic in store.clinics" :key="clinic.id" :value="clinic.id">{{ clinic.name }}</option>
             </select>
           </div>
           <div class="col-span-3">
-            <label :class="labelClass">Tags</label>
-            <input v-model="tagsInput" type="text" placeholder="comma, separated, tags" :class="inputClass" />
+            <label :class="labelClass">{{ t('Tags', 'Etiquetas') }}</label>
+            <input v-model="tagsInput" type="text" :placeholder="t('comma, separated, tags', 'etiquetas, separadas, por, comas')" :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">Status</label>
+            <label :class="labelClass">{{ t('Status', 'Estado') }}</label>
             <select v-model="status" :class="inputClass">
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
+              <option value="active">{{ t('Active', 'Activo') }}</option>
+              <option value="inactive">{{ t('Inactive', 'Inactivo') }}</option>
             </select>
           </div>
         </div>
 
         <div class="border-t border-line-divider pt-4">
-          <p class="text-[13px] font-semibold text-ink-700">Under age &amp; do not contact</p>
+          <p class="text-[13px] font-semibold text-ink-700">{{ t('Under age & do not contact', 'Menor de edad y no contactar') }}</p>
           <label class="mt-3 flex items-center gap-1.5 text-[13px] text-ink-600">
             <input v-model="isMinor" type="checkbox" class="rounded border-line-control text-brand focus:ring-brand" />
-            This patient is under age
+            {{ t('This patient is under age', 'Este paciente es menor de edad') }}
           </label>
           <div v-if="isMinor" class="mt-2.5 pl-5">
-            <label :class="labelClass">Tutor (parent / guardian, must be an existing patient)</label>
+            <label :class="labelClass">{{ t('Tutor (parent / guardian, must be an existing patient)', 'Tutor (padre/madre o tutor legal, debe ser un paciente existente)') }}</label>
             <div v-if="selectedTutor" class="mt-1 flex items-center gap-2">
               <span class="text-[13px] text-ink-700">{{ tutorName(selectedTutor) }}</span>
-              <button type="button" class="text-[12px] text-danger-text hover:underline" @click="selectedTutor = null">Remove</button>
+              <button type="button" class="text-[12px] text-danger-text hover:underline" @click="selectedTutor = null">{{ t('Remove', 'Quitar') }}</button>
             </div>
             <div v-else class="relative mt-1">
-              <input v-model="tutorSearch" type="text" placeholder="Search patient by name…" :class="inputClass" />
+              <input v-model="tutorSearch" type="text" :placeholder="t('Search patient by name…', 'Buscar paciente por nombre…')" :class="inputClass" />
               <ul v-if="tutorResults.length > 0" class="absolute z-10 mt-1 w-full rounded-ctl border border-line bg-surface py-1 shadow-popover">
                 <li v-for="t in tutorResults" :key="t.id">
                   <button type="button" class="block w-full px-3 py-1.5 text-left text-[13px] text-ink-700 hover:bg-surface-subtle" @click="pickTutor(t)">
@@ -586,19 +586,19 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
                 </li>
               </ul>
             </div>
-            <p class="mt-1 text-[11px] text-ink-muted2">While marked under age, no WhatsApp or email communications will be sent to this patient.</p>
+            <p class="mt-1 text-[11px] text-ink-muted2">{{ t('While marked under age, no WhatsApp or email communications will be sent to this patient.', 'Mientras esté marcado como menor de edad, no se enviarán comunicaciones por WhatsApp o correo electrónico a este paciente.') }}</p>
           </div>
           <label class="mt-3 flex items-center gap-1.5 text-[13px] text-ink-600">
             <input v-model="doNotContact" type="checkbox" class="rounded border-line-control text-brand focus:ring-brand" />
-            Do not contact (blocks all communications and recalls)
+            {{ t('Do not contact (blocks all communications and recalls)', 'No contactar (bloquea todas las comunicaciones y recordatorios)') }}
           </label>
         </div>
 
         <div class="border-t border-line-divider pt-4">
-          <p class="text-[13px] font-semibold text-ink-700">Communication preferences</p>
+          <p class="text-[13px] font-semibold text-ink-700">{{ t('Communication preferences', 'Preferencias de comunicación') }}</p>
 
           <div class="mt-3">
-            <label :class="labelClass">Marketing channels</label>
+            <label :class="labelClass">{{ t('Marketing channels', 'Canales de marketing') }}</label>
             <div class="mt-1.5 flex flex-wrap gap-4">
               <label v-for="opt in MARKETING_CHANNEL_OPTIONS" :key="opt.value" class="flex items-center gap-1.5 text-[13px] text-ink-600">
                 <input v-model="marketingChannels" type="checkbox" :value="opt.value" class="rounded border-line-control text-brand focus:ring-brand" />

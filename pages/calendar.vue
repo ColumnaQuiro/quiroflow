@@ -405,7 +405,7 @@ watch([viewMode, anchorDate, practitionerFilter], async () => {
   await loadAvailabilityBlocks()
 })
 
-const dayColumns = computed(() => [...rooms.value, { id: '__none', name: 'Unassigned' }])
+const dayColumns = computed(() => [...rooms.value, { id: '__none', name: t('Unassigned', 'Sin asignar') }])
 
 function blocksForRoom(roomId: string) {
   if (!settings.showAvailability) return []
@@ -524,14 +524,20 @@ function appointmentVisualStatus(appt: AppointmentRow): VisualStatus {
 // Tailwind classes rather than inline hex -- these map 1:1 onto the
 // existing brand/success/warning/danger tokens in tailwind.config.ts, which
 // already carry the exact hex values from the redesign spec.
-const STATUS_STYLES: Record<VisualStatus, { dotClass: string; label: string; pillTone: 'brand' | 'success' | 'warning' | 'danger' | 'neutral' }> = {
-  booked: { dotClass: 'bg-brand', label: 'Booked', pillTone: 'brand' },
-  completed: { dotClass: 'bg-success-accent', label: 'Completed', pillTone: 'success' },
-  unconfirmed: { dotClass: 'bg-warning-accent', label: 'Unconfirmed', pillTone: 'warning' },
-  no_show: { dotClass: 'bg-danger-text', label: 'No-show', pillTone: 'danger' },
-  cancelled: { dotClass: 'bg-ink-faint3', label: 'Cancelled', pillTone: 'neutral' },
+const STATUS_STYLES: Record<VisualStatus, { dotClass: string; labelEn: string; labelEs: string; pillTone: 'brand' | 'success' | 'warning' | 'danger' | 'neutral' }> = {
+  booked: { dotClass: 'bg-brand', labelEn: 'Booked', labelEs: 'Reservada', pillTone: 'brand' },
+  completed: { dotClass: 'bg-success-accent', labelEn: 'Completed', labelEs: 'Completada', pillTone: 'success' },
+  unconfirmed: { dotClass: 'bg-warning-accent', labelEn: 'Unconfirmed', labelEs: 'Sin confirmar', pillTone: 'warning' },
+  no_show: { dotClass: 'bg-danger-text', labelEn: 'No-show', labelEs: 'No presentado', pillTone: 'danger' },
+  cancelled: { dotClass: 'bg-ink-faint3', labelEn: 'Cancelled', labelEs: 'Cancelada', pillTone: 'neutral' },
 }
-const statusLegend = (Object.keys(STATUS_STYLES) as VisualStatus[]).map((key) => ({ key, ...STATUS_STYLES[key] }))
+const statusLegend = computed(() =>
+  (Object.keys(STATUS_STYLES) as VisualStatus[]).map((key) => ({
+    key,
+    ...STATUS_STYLES[key],
+    label: t(STATUS_STYLES[key].labelEn, STATUS_STYLES[key].labelEs),
+  })),
+)
 
 function dotClass(appt: AppointmentRow) {
   return STATUS_STYLES[appointmentVisualStatus(appt)].dotClass
@@ -874,7 +880,7 @@ async function onAppointmentDragEnd(e: PointerEvent) {
     hasBusinessHoursConfigured(hours) &&
     (!isWithinBusinessHours(new Date(appt.starts_at), hours) || !isWithinBusinessHours(new Date(new Date(appt.ends_at).getTime() - 1), hours))
   ) {
-    if (!confirm("This falls outside the clinic's working hours. Save it anyway?")) {
+    if (!confirm(t("This falls outside the clinic's working hours. Save it anyway?", 'Esto queda fuera del horario de atención de la clínica. ¿Guardarlo de todos modos?'))) {
       revert()
       return
     }

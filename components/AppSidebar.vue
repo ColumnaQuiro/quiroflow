@@ -119,6 +119,11 @@ const initials = computed(() => {
   const name = store.teamMember?.full_name ?? ''
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('') || '?'
 })
+const photoUrl = computed(() => {
+  const path = store.teamMember?.photo_storage_path
+  if (!path) return null
+  return supabase.storage.from('team-member-photos').getPublicUrl(path).data.publicUrl
+})
 const clinicInitials = computed(() => {
   const name = store.currentClinic?.name ?? ''
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('') || 'CL'
@@ -246,7 +251,10 @@ async function signOut() {
           :title="collapsed ? (store.teamMember?.full_name ?? 'Account') : undefined"
           @click="accountMenuOpen = !accountMenuOpen"
         >
-          <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand text-[10px] font-bold text-white">{{ initials }}</span>
+          <span class="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-brand text-[10px] font-bold text-white">
+            <img v-if="photoUrl" :src="photoUrl" class="h-full w-full object-cover" alt="" />
+            <template v-else>{{ initials }}</template>
+          </span>
           <template v-if="!collapsed">
             <span class="min-w-0 flex-1">
               <span class="block truncate text-[12.5px] font-medium text-ink-700">{{ store.teamMember?.full_name }}</span>

@@ -87,6 +87,18 @@ async function deleteAccount() {
 
     <form class="mt-6 space-y-4 rounded-card border border-line bg-surface p-4 shadow-card" @submit.prevent="saveProfile">
       <h2 class="text-sm font-semibold text-ink-900">Personal Details</h2>
+      <div v-if="store.teamMember" class="flex items-center gap-3">
+        <SettingsTeamMemberPhotoUpload
+          :account-id="store.accountId!"
+          :team-member-id="store.teamMember.id"
+          :photo-storage-path="store.teamMember.photo_storage_path"
+          :initials="fullName.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('') || '?'"
+          :color="color"
+          :size="56"
+          @uploaded="store.load()"
+        />
+        <p class="text-[12.5px] text-ink-muted">Click to change your photo. Shown in the sidebar, and on online booking if you take appointments.</p>
+      </div>
       <div>
         <label class="block text-sm font-medium text-ink-700">Full Name</label>
         <input v-model="fullName" type="text" required class="mt-1 w-full rounded-ctl border border-line-control px-3 py-1.5 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />

@@ -177,6 +177,10 @@ async function sendPasswordReset(member: Tables<'team_members'>) {
   }
 }
 
+function initialsOf(name: string) {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('') || '?'
+}
+
 function inviteLink(token: string) {
   return `${window.location.origin}/join?token=${token}`
 }
@@ -212,7 +216,17 @@ function copy(text: string) {
                 <template v-for="m in members" v-else :key="m.id">
                   <tr>
                     <td class="px-4 py-2.5 text-ink-700">
-                      <span class="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" :style="{ backgroundColor: m.color }"></span>
+                      <span class="mr-2 inline-flex align-middle">
+                        <SettingsTeamMemberPhotoUpload
+                          :account-id="m.account_id"
+                          :team-member-id="m.id"
+                          :photo-storage-path="m.photo_storage_path"
+                          :initials="initialsOf(m.full_name)"
+                          :color="m.color"
+                          :size="26"
+                          @uploaded="load"
+                        />
+                      </span>
                       <input
                         v-if="editingId === m.id"
                         v-model="editingName"

@@ -8,6 +8,7 @@ export interface TeamMember {
   color: string
   is_owner: boolean
   theme_preference: 'light' | 'dark' | 'system'
+  photo_storage_path: string | null
 }
 
 export type PermissionValue = boolean | 'all' | 'own' | 'none'
@@ -60,7 +61,7 @@ export const useAccountStore = defineStore('account', {
 
       const { data: teamMember } = await supabase
         .from('team_members')
-        .select('id, account_id, full_name, role, color, is_owner, theme_preference')
+        .select('id, account_id, full_name, role, color, is_owner, theme_preference, photo_storage_path')
         .eq('user_id', user.value.sub)
         .is('deleted_at', null)
         .maybeSingle()

@@ -3069,6 +3069,7 @@ export type Database = {
           id: string
           is_owner: boolean
           online_booking_enabled: boolean
+          photo_storage_path: string | null
           role: string
           role_id: string | null
           theme_preference: string
@@ -3085,6 +3086,7 @@ export type Database = {
           id?: string
           is_owner?: boolean
           online_booking_enabled?: boolean
+          photo_storage_path?: string | null
           role?: string
           role_id?: string | null
           theme_preference?: string
@@ -3101,6 +3103,7 @@ export type Database = {
           id?: string
           is_owner?: boolean
           online_booking_enabled?: boolean
+          photo_storage_path?: string | null
           role?: string
           role_id?: string | null
           theme_preference?: string

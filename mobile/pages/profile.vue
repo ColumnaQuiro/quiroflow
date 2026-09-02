@@ -17,6 +17,12 @@ async function signOut() {
   await navigateTo('/login')
 }
 
+async function onPhotoUploaded() {
+  if (!context.value) return
+  const { data } = await supabase.from('team_members').select('photo_storage_path').eq('id', context.value.teamMemberId).maybeSingle()
+  if (data) context.value.photoStoragePath = data.photo_storage_path
+}
+
 const deletingAccount = ref(false)
 async function deleteAccount() {
   if (!confirm("Delete your account? This signs you out and revokes your login immediately. This can't be undone by you -- an owner would need to re-invite you to come back.")) return
@@ -43,10 +49,15 @@ async function deleteAccount() {
     <div v-if="loading" class="flex flex-1 items-center justify-center text-sm text-ink-faint">Loading…</div>
 
     <div v-else class="flex-1 space-y-4 overflow-y-auto px-4 py-4">
-      <div class="flex items-center gap-3">
-        <span class="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[18px] font-semibold text-brand-text">
-          {{ (context?.fullName ?? '?').slice(0, 1).toUpperCase() }}
-        </span>
+      <div v-if="context" class="flex items-center gap-3">
+        <SettingsTeamMemberPhotoUpload
+          :account-id="context.accountId"
+          :team-member-id="context.teamMemberId"
+          :photo-storage-path="context.photoStoragePath"
+          :initials="(context.fullName ?? '?').split(/\s+/).filter(Boolean).slice(0, 2).map((p: string) => p[0]?.toUpperCase()).join('') || '?'"
+          :size="56"
+          @uploaded="onPhotoUploaded"
+        />
         <div class="min-w-0">
           <p class="truncate text-[17px] font-semibold text-ink-900">{{ context?.fullName }}</p>
           <p class="text-[12.5px] text-ink-muted2">{{ context?.isOwner ? 'Owner' : 'Team member' }}</p>

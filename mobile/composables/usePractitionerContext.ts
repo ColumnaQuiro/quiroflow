@@ -15,6 +15,7 @@ export interface PractitionerContext {
   isOwner: boolean
   fullName: string
   clinicId: string | null
+  photoStoragePath: string | null
 }
 
 const context = ref<PractitionerContext | null>(null)
@@ -29,7 +30,7 @@ export function usePractitionerContext() {
     loading.value = true
     const { data: teamMember } = await supabase
       .from('team_members')
-      .select('id, account_id, is_owner, full_name')
+      .select('id, account_id, is_owner, full_name, photo_storage_path')
       .eq('user_id', userId)
       .is('deleted_at', null)
       .maybeSingle()
@@ -45,6 +46,7 @@ export function usePractitionerContext() {
       isOwner: teamMember.is_owner,
       fullName: teamMember.full_name,
       clinicId: clinics?.[0]?.id ?? null,
+      photoStoragePath: teamMember.photo_storage_path,
     }
     loading.value = false
   }

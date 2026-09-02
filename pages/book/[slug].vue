@@ -30,6 +30,7 @@ interface BookingTeamMember {
   color: string
   clinic_ids: string[]
   business_hours: Record<string, [string, string][]> | null
+  photo_storage_path: string | null
 }
 interface BookingInfo {
   account: {
@@ -82,6 +83,10 @@ const anyPractitionerMode = computed(() => teamMemberId.value === ANY_PRACTITION
 
 function practitionerInitials(name: string) {
   return name.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('')
+}
+function practitionerPhotoUrl(member: BookingTeamMember) {
+  if (!member.photo_storage_path) return null
+  return supabase.storage.from('team-member-photos').getPublicUrl(member.photo_storage_path).data.publicUrl
 }
 const WEEKDAY_FULL = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 function practitionerAvailabilityLabel(member: BookingTeamMember) {
@@ -643,8 +648,9 @@ if (import.meta.client) {
                   @click="chooseTeamMember(m.id)"
                 >
                   <div class="flex items-center gap-3">
-                    <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-tint text-sm font-semibold text-brand-text">
-                      {{ practitionerInitials(m.full_name) }}
+                    <div class="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-brand-tint text-sm font-semibold text-brand-text">
+                      <img v-if="practitionerPhotoUrl(m)" :src="practitionerPhotoUrl(m)!" class="h-full w-full object-cover" alt="" />
+                      <template v-else>{{ practitionerInitials(m.full_name) }}</template>
                     </div>
                     <div>
                       <p class="font-semibold text-ink-900">{{ m.full_name }}</p>

@@ -350,7 +350,8 @@ async function deleteConversation() {
 async function bulkDeleteSelected() {
   const keys = [...selectedKeys.value]
   if (keys.length === 0) return
-  if (!confirm(`Delete ${keys.length} conversation${keys.length > 1 ? 's' : ''}? This removes all their messages and can't be undone.`)) return
+  const convWord = keys.length > 1 ? t('conversations', 'conversaciones') : t('conversation', 'conversación')
+  if (!confirm(`${t('Delete', 'Eliminar')} ${keys.length} ${convWord}${t('? This removes all their messages and can\'t be undone.', '? Esto elimina todos sus mensajes y no se puede deshacer.')}`)) return
   await deleteKeys(keys)
   exitSelectionMode()
 }
@@ -454,7 +455,7 @@ async function performTextSend(tempId: string, text: string, channel: string, ta
     pendingMessages.value = pendingMessages.value.filter((m) => m.id !== tempId)
     delete retryPayloads.value[tempId]
   } catch (err: any) {
-    sendError.value = err?.data?.statusMessage ?? 'Failed to send'
+    sendError.value = err?.data?.statusMessage ?? t('Failed to send', 'Error al enviar')
     pendingMessages.value = pendingMessages.value.map((m) => (m.id === tempId ? { ...m, pending: false, status: 'failed' } : m))
   } finally {
     sending.value = false
@@ -526,7 +527,7 @@ async function performMediaSend(
     pendingMessages.value = pendingMessages.value.filter((m) => m.id !== tempId)
     delete retryPayloads.value[tempId]
   } catch (err: any) {
-    sendError.value = err?.data?.statusMessage ?? 'Failed to send'
+    sendError.value = err?.data?.statusMessage ?? t('Failed to send', 'Error al enviar')
     pendingMessages.value = pendingMessages.value.map((m) => (m.id === tempId ? { ...m, pending: false, status: 'failed' } : m))
   } finally {
     sending.value = false

@@ -178,7 +178,7 @@ defineExpose({ save, copyLastNote })
     <!-- Quick add -->
     <div class="border-b border-line-row px-5 py-3">
       <div class="flex items-center justify-between">
-        <p class="text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">Quick add</p>
+        <p class="text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">{{ t('Quick add', 'Añadir rápido') }}</p>
         <span v-if="savedMessage" class="text-[11.5px] text-success-text">{{ savedMessage }}</span>
       </div>
       <div class="mt-2 flex flex-wrap gap-1.5">
@@ -197,7 +197,7 @@ defineExpose({ save, copyLastNote })
     <!-- S/O/A/P grid -->
     <div class="grid grid-cols-2 gap-3 p-5">
       <div>
-        <label class="mb-1 block text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">Subjective</label>
+        <label class="mb-1 block text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">{{ t('Subjective', 'Subjetivo') }}</label>
         <textarea
           v-model="subjective"
           class="w-full min-h-[96px] rounded-[9px] border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
@@ -205,7 +205,7 @@ defineExpose({ save, copyLastNote })
         ></textarea>
       </div>
       <div>
-        <label class="mb-1 block text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">Objective</label>
+        <label class="mb-1 block text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">{{ t('Objective', 'Objetivo') }}</label>
         <textarea
           v-model="objective"
           class="w-full min-h-[96px] rounded-[9px] border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
@@ -213,7 +213,7 @@ defineExpose({ save, copyLastNote })
         ></textarea>
       </div>
       <div>
-        <label class="mb-1 block text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">Action</label>
+        <label class="mb-1 block text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">{{ t('Action', 'Acción') }}</label>
         <textarea
           v-model="action"
           class="w-full min-h-[76px] rounded-[9px] border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
@@ -221,7 +221,7 @@ defineExpose({ save, copyLastNote })
         ></textarea>
       </div>
       <div>
-        <label class="mb-1 block text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">Plan</label>
+        <label class="mb-1 block text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">{{ t('Plan', 'Plan') }}</label>
         <textarea
           v-model="plan"
           class="w-full min-h-[76px] rounded-[9px] border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"

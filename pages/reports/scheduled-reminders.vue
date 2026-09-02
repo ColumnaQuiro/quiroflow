@@ -77,8 +77,8 @@ const failedMessages = computed(() =>
 
 function failureReason(m: WhatsappMessageRow) {
   if (m.error_message) return m.error_message
-  if (m.error_code) return `Error code ${m.error_code}`
-  return 'Unknown error'
+  if (m.error_code) return t(`Error code ${m.error_code}`, `Código de error ${m.error_code}`)
+  return t('Unknown error', 'Error desconocido')
 }
 
 const confirmed = computed(() => appointments.value.filter((a) => a.confirmation_status === 'confirmed'))

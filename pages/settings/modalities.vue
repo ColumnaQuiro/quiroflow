@@ -3,6 +3,7 @@ import type { Tables } from '~/types/database.types'
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 const modalities = ref<Tables<'modalities'>[]>([])
 const loading = ref(true)
@@ -41,7 +42,7 @@ async function toggleActive(modality: Tables<'modalities'>) {
 }
 
 async function removeModality(id: string) {
-  if (!confirm('Delete this modality?')) return
+  if (!confirm(t('Delete this modality?', '¿Eliminar esta modalidad?'))) return
   await supabase.from('modalities').delete().eq('id', id)
   await load()
 }

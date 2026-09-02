@@ -135,15 +135,15 @@ async function remove(file: Tables<'patient_files'>) {
             <select
               v-model="file.visibility"
               class="min-w-0 rounded border border-line-control px-1 py-0.5 text-[10.5px] text-ink-muted focus:border-brand focus:outline-none"
-              title="Whether this file will show to the patient in the mobile app"
+              :title="t('Whether this file will show to the patient in the mobile app', 'Si este archivo se mostrará al paciente en la aplicación móvil')"
               @change="updateVisibility(file)"
             >
-              <option value="generic">Generic</option>
-              <option value="custom">Custom</option>
+              <option value="generic">{{ t('Generic', 'Genérico') }}</option>
+              <option value="custom">{{ t('Custom', 'Personalizado') }}</option>
             </select>
             <div class="flex shrink-0 items-center gap-2">
-              <button v-if="file.storage_path" type="button" class="text-[11px] font-medium text-brand-text hover:text-brand-hover" @click="view(file)">View</button>
-              <button type="button" class="text-[11px] font-medium text-danger-text hover:text-danger-text/80" @click="remove(file)">Delete</button>
+              <button v-if="file.storage_path" type="button" class="text-[11px] font-medium text-brand-text hover:text-brand-hover" @click="view(file)">{{ t('View', 'Ver') }}</button>
+              <button type="button" class="text-[11px] font-medium text-danger-text hover:text-danger-text/80" @click="remove(file)">{{ t('Delete', 'Eliminar') }}</button>
             </div>
           </div>
         </div>

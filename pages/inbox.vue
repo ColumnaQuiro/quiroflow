@@ -731,18 +731,18 @@ onUnmounted(() => {
             <input
               v-model="search"
               type="search"
-              placeholder="Search name, number, messages…"
+              :placeholder="t('Search name, number, messages…', 'Buscar nombre, número, mensajes…')"
               class="h-8 w-full flex-1 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none"
             />
-            <button type="button" class="shrink-0 text-[12.5px] text-ink-faint hover:text-ink-muted" @click="selectionMode = true">Select</button>
+            <button type="button" class="shrink-0 text-[12.5px] text-ink-faint hover:text-ink-muted" @click="selectionMode = true">{{ t('Select', 'Seleccionar') }}</button>
             <div ref="composeEl" class="relative shrink-0">
-              <UiBtn variant="primary" size="sm" @click="composeOpen = !composeOpen">+ New</UiBtn>
+              <UiBtn variant="primary" size="sm" @click="composeOpen = !composeOpen">{{ t('+ New', '+ Nuevo') }}</UiBtn>
               <div v-if="composeOpen" class="absolute right-0 top-[calc(100%+4px)] z-20 w-64 rounded-card border border-line bg-surface p-2 shadow-popover">
                 <input
                   v-model="composeQuery"
                   type="text"
                   autofocus
-                  placeholder="Search patients…"
+                  :placeholder="t('Search patients…', 'Buscar pacientes…')"
                   class="h-8 w-full rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none"
                 />
                 <ul class="mt-1.5 max-h-56 overflow-y-auto">
@@ -754,23 +754,23 @@ onUnmounted(() => {
                   >
                     {{ p.first_name }} {{ p.last_name }}
                   </li>
-                  <li v-if="filteredComposePatients.length === 0" class="px-2 py-1.5 text-[13px] text-ink-faint">No matches</li>
+                  <li v-if="filteredComposePatients.length === 0" class="px-2 py-1.5 text-[13px] text-ink-faint">{{ t('No matches', 'Sin coincidencias') }}</li>
                 </ul>
               </div>
             </div>
           </div>
           <div v-else class="flex items-center justify-between gap-2">
-            <p class="text-[12.5px] text-ink-700">{{ selectedKeys.size }} selected</p>
+            <p class="text-[12.5px] text-ink-700">{{ selectedKeys.size }} {{ t('selected', 'seleccionados') }}</p>
             <div class="flex items-center gap-3">
-              <button type="button" class="text-[12.5px] text-brand-text hover:underline disabled:opacity-40" :disabled="selectedKeys.size === 0" @click="bulkMarkUnreadSelected">Mark unread</button>
-              <button type="button" class="text-[12.5px] text-danger-text hover:underline disabled:opacity-40" :disabled="selectedKeys.size === 0" @click="bulkDeleteSelected">Delete</button>
-              <button type="button" class="text-[12.5px] text-ink-faint hover:text-ink-muted" @click="exitSelectionMode">Cancel</button>
+              <button type="button" class="text-[12.5px] text-brand-text hover:underline disabled:opacity-40" :disabled="selectedKeys.size === 0" @click="bulkMarkUnreadSelected">{{ t('Mark unread', 'Marcar como no leído') }}</button>
+              <button type="button" class="text-[12.5px] text-danger-text hover:underline disabled:opacity-40" :disabled="selectedKeys.size === 0" @click="bulkDeleteSelected">{{ t('Delete', 'Eliminar') }}</button>
+              <button type="button" class="text-[12.5px] text-ink-faint hover:text-ink-muted" @click="exitSelectionMode">{{ t('Cancel', 'Cancelar') }}</button>
             </div>
           </div>
         </div>
         <div class="flex-1 overflow-y-auto">
-          <div v-if="loading" class="p-6 text-center text-[13px] text-ink-faint">Loading…</div>
-          <p v-else-if="filteredConversations.length === 0" class="p-6 text-center text-[13px] text-ink-faint">No conversations yet.</p>
+          <div v-if="loading" class="p-6 text-center text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+          <p v-else-if="filteredConversations.length === 0" class="p-6 text-center text-[13px] text-ink-faint">{{ t('No conversations yet.', 'Aún no hay conversaciones.') }}</p>
           <button
             v-for="c in filteredConversations"
             :key="c.key"
@@ -790,7 +790,7 @@ onUnmounted(() => {
             </span>
             <span class="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[11px] font-semibold text-brand-text">
               {{ c.name.slice(0, 2).toUpperCase() }}
-              <span v-if="c.channel === 'whatsapp'" class="absolute -bottom-0.5 -right-0.5 flex h-[13px] w-[13px] items-center justify-center rounded-full border border-surface bg-[#25D366]" title="WhatsApp">
+              <span v-if="c.channel === 'whatsapp'" class="absolute -bottom-0.5 -right-0.5 flex h-[13px] w-[13px] items-center justify-center rounded-full border border-surface bg-[#25D366]" :title="t('WhatsApp', 'WhatsApp')">
                 <svg viewBox="0 0 24 24" class="h-[8px] w-[8px] fill-white"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm5.6 14.2c-.2.6-1.2 1.1-1.7 1.2-.4.1-1 .1-1.6-.1-.4-.1-.9-.3-1.5-.6-2.6-1.1-4.3-3.8-4.4-4-.1-.2-1-1.4-1-2.6 0-1.2.6-1.8.9-2.1.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .5.4.2.5.7 1.7.7 1.8.1.1.1.3 0 .4-.1.2-.1.3-.3.4-.1.2-.3.4-.4.5-.1.1-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.4 2.5 1.5.3.1.5.1.6-.1.2-.2.7-.8.9-1.1.2-.3.4-.2.6-.1.2.1 1.5.7 1.8.8.3.1.4.2.5.3.1.2.1.7-.1 1.3z" /></svg>
               </span>
               <span v-else class="absolute -bottom-0.5 -right-0.5 flex h-[13px] w-[13px] items-center justify-center rounded-full border border-surface bg-brand" title="In-app message">

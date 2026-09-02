@@ -9,6 +9,7 @@ const props = defineProps<{ appointmentId: string }>()
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 const notes = ref<VisitNote[]>([])
 const newNote = ref('')
@@ -49,7 +50,7 @@ async function removeNote(id: string) {
 
 <template>
   <div>
-    <p v-if="loading" class="text-sm text-gray-400">Loading…</p>
+    <p v-if="loading" class="text-sm text-gray-400">{{ t('Loading…', 'Cargando…') }}</p>
     <ul v-else-if="notes.length > 0" class="space-y-2">
       <li v-for="note in notes" :key="note.id" class="group relative rounded-md bg-amber-50 p-2 pr-7 text-sm text-gray-800">
         <p class="whitespace-pre-wrap">{{ note.body }}</p>
@@ -57,7 +58,7 @@ async function removeNote(id: string) {
         <button
           type="button"
           class="absolute right-1.5 top-1.5 text-gray-300 opacity-0 hover:text-red-600 group-hover:opacity-100"
-          title="Delete note"
+          :title="t('Delete note', 'Eliminar nota')"
           @click="removeNote(note.id)"
         >
           ✕

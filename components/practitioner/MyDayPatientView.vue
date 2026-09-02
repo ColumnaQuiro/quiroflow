@@ -148,19 +148,19 @@ async function signAndComplete() {
       </div>
       <div class="col-span-2 space-y-4">
         <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-          <h3 class="text-[13.5px] font-semibold text-ink-700">Quick Note</h3>
+          <h3 class="text-[13.5px] font-semibold text-ink-700">{{ t('Quick Note', 'Nota rápida') }}</h3>
           <div class="mt-2">
             <AppointmentsNotesPanel :appointment-id="appointment.id" />
           </div>
         </div>
         <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-          <h3 class="text-[13.5px] font-semibold text-ink-700">Notes History</h3>
+          <h3 class="text-[13.5px] font-semibold text-ink-700">{{ t('Notes History', 'Historial de notas') }}</h3>
           <div class="mt-2">
             <PatientsVisitNotesTab :patient-id="appointment.patient_id" />
           </div>
         </div>
         <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-          <h3 class="text-[13.5px] font-semibold text-ink-700">Files & Documents</h3>
+          <h3 class="text-[13.5px] font-semibold text-ink-700">{{ t('Files & Documents', 'Archivos y documentos') }}</h3>
           <div class="mt-2">
             <PatientsFilesTab :patient-id="appointment.patient_id" />
           </div>

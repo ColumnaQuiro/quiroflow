@@ -4,15 +4,17 @@ import type { Tables, TablesUpdate } from '~/types/database.types'
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const config = useRuntimeConfig()
+const t = useT()
 
-const tabs = [
-  { key: 'general', label: 'General' },
-  { key: 'entities', label: 'Bookable Entities' },
-  { key: 'discounts', label: 'Discount Codes' },
-  { key: 'layout', label: 'Layout' },
-  { key: 'language', label: 'Language Overrides' },
-] as const
-const activeTab = ref<(typeof tabs)[number]['key']>('general')
+const TAB_KEYS = ['general', 'entities', 'discounts', 'layout', 'language'] as const
+const activeTab = ref<(typeof TAB_KEYS)[number]>('general')
+const tabs = computed(() => [
+  { key: 'general' as const, label: t('General', 'General') },
+  { key: 'entities' as const, label: t('Bookable Entities', 'Entidades reservables') },
+  { key: 'discounts' as const, label: t('Discount Codes', 'Códigos de descuento') },
+  { key: 'layout' as const, label: t('Layout', 'Diseño') },
+  { key: 'language' as const, label: t('Language Overrides', 'Textos personalizados') },
+])
 
 // --- account-wide settings (General / Layout / Language) ---
 const maxDaysAhead = ref(90)

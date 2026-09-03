@@ -21,6 +21,22 @@ set -e
 export LANG=en_US.UTF-8
 export LC_ALL=en_US.UTF-8
 
+# TestFlight rejects an upload whose CFBundleVersion isn't strictly
+# higher than what's already there for this MARKETING_VERSION, and
+# CURRENT_PROJECT_VERSION in project.pbxproj is a value checked into
+# git -- static until someone remembers to bump it by hand. That's
+# exactly what silently failed two builds in a row after a build 15
+# upload: the next two archives still carried CURRENT_PROJECT_VERSION
+# 15 from git and Xcode Cloud's "Prepare Build for App Store Connect"
+# step rejected both with the generic "Error while uploading build.
+# This might be retried." (no louder failure, no red flag beyond that).
+# A UTC-timestamp build number is always higher than anything before
+# it, regardless of what's committed or already on TestFlight, so this
+# never needs a manual bump again. Runs before `cd mobile` -- agvtool
+# operates on the Xcode project in the current directory.
+cd "$CI_PRIMARY_REPOSITORY_PATH/mobile/ios/App"
+agvtool new-version -all "$(date -u +%Y%m%d%H%M)"
+
 # Build 4 failed with exit 127 ("command not found") right here -- this
 # ci_scripts/*.sh runs as a plain non-interactive /bin/sh, which doesn't
 # source whatever profile/version-manager setup would normally put npm on

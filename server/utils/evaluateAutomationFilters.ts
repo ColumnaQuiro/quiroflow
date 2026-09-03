@@ -15,6 +15,24 @@ export interface AutomationFilters {
   total_visits?: number
   no_prior_appointments?: boolean
   has_future_appointment?: boolean
+  // Same OR-across-one-dimension reasoning as appointment_type_ids -- an
+  // appointment only has one practitioner.
+  practitioner_ids?: string[]
+  // Substring match (case-insensitive) against any one of patients.tags --
+  // mirrors the same "contains" semantics recalls.vue's own tag filter
+  // already uses, since patients.tags holds messy migrated compound values
+  // (e.g. "1x10|No contactar") rather than a clean tag taxonomy an exact
+  // multi-select could work against.
+  tag_contains?: string
+  // Mirrors recalls.vue's "Any balance / Owing / In credit" filter exactly --
+  // 'debit' means the patient owes money (balance_cents < 0), 'credit' means
+  // they're in credit (balance_cents > 0). Reads patients.balance_cents
+  // directly rather than recomputing paid/invoiced/credit-ledger sums here.
+  balance?: 'debit' | 'credit'
+  // true alone means "has any active membership"; paired with membership_ids
+  // it means "has an active membership in one of these specific plans".
+  membership_active?: boolean
+  membership_ids?: string[]
   // Only read by hours-before-cron.post.ts to pick its scan window -- not a
   // patient-targeting filter, so ruleFiltersMatch below never looks at it.
   hours_before?: number
@@ -33,10 +51,13 @@ export async function ruleFiltersMatch(
   if (!filters || Object.keys(filters).length === 0) return true
 
   const typeIds = filters.appointment_type_ids?.length ? filters.appointment_type_ids : filters.appointment_type_id ? [filters.appointment_type_id] : null
-  if (typeIds) {
+  const practitionerIds = filters.practitioner_ids?.length ? filters.practitioner_ids : null
+  if (typeIds || practitionerIds) {
     if (!appointmentId) return false
-    const { data: appt } = await supabase.from('appointments').select('appointment_type_id').eq('id', appointmentId).maybeSingle()
-    if (!appt || !typeIds.includes(appt.appointment_type_id)) return false
+    const { data: appt } = await supabase.from('appointments').select('appointment_type_id, practitioner_id').eq('id', appointmentId).maybeSingle()
+    if (!appt) return false
+    if (typeIds && !typeIds.includes(appt.appointment_type_id)) return false
+    if (practitionerIds && !practitionerIds.includes(appt.practitioner_id)) return false
   }
 
   if (filters.total_visits !== undefined && filters.total_visits !== null) {
@@ -62,6 +83,27 @@ export async function ruleFiltersMatch(
       .gt('starts_at', new Date().toISOString())
     const hasFuture = (count ?? 0) > 0
     if (hasFuture !== filters.has_future_appointment) return false
+  }
+
+  if (filters.tag_contains || filters.balance) {
+    const { data: patient } = await supabase.from('patients').select('tags, balance_cents').eq('id', patientId).maybeSingle()
+    if (filters.tag_contains) {
+      const needle = filters.tag_contains.toLowerCase()
+      const tags: string[] = patient?.tags ?? []
+      if (!tags.some((tag) => tag.toLowerCase().includes(needle))) return false
+    }
+    if (filters.balance) {
+      const balanceCents = patient?.balance_cents ?? 0
+      if (filters.balance === 'debit' && !(balanceCents < 0)) return false
+      if (filters.balance === 'credit' && !(balanceCents > 0)) return false
+    }
+  }
+
+  if (filters.membership_active || filters.membership_ids?.length) {
+    let query = supabase.from('patient_memberships').select('id', { count: 'exact', head: true }).eq('patient_id', patientId).eq('status', 'active')
+    if (filters.membership_ids?.length) query = query.in('membership_id', filters.membership_ids)
+    const { count } = await query
+    if ((count ?? 0) === 0) return false
   }
 
   return true

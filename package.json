@@ -7,6 +7,7 @@
     "dev": "./scripts/with-node.sh nuxt dev",
     "generate": "./scripts/with-node.sh nuxt generate",
     "preview": "./scripts/with-node.sh nuxt preview",
+    "preflight": "./scripts/with-node.sh nuxi typecheck",
     "postinstall": "./scripts/with-node.sh nuxt prepare",
     "test:e2e": "start-server-and-test dev http://localhost:3000 'cypress run'",
     "test:e2e:local": "./scripts/e2e-local.sh",

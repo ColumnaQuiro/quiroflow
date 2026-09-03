@@ -45,6 +45,7 @@ export const useAccountStore = defineStore('account', {
     currentClinicId: null as string | null,
     permissions: {} as Record<string, PermissionValue>,
     subscriptionStatus: null as string | null,
+    trialEndsAt: null as string | null,
     loaded: false,
     loading: false,
   }),
@@ -55,6 +56,13 @@ export const useAccountStore = defineStore('account', {
     // No row at all (shouldn't happen post-backfill, but a store reload
     // mid-migration is possible) fails open, same as requireActiveAccount.
     isBillingLocked: (state) => state.subscriptionStatus === 'locked' || state.subscriptionStatus === 'canceled',
+    // Only meaningful while still trialing -- null once on a real plan (no
+    // trial_ends_at) or already past it (negative), so the banner can just
+    // check `!== null`.
+    trialDaysLeft: (state) => {
+      if (state.subscriptionStatus !== 'trialing' || !state.trialEndsAt) return null
+      return Math.max(0, Math.ceil((new Date(state.trialEndsAt).getTime() - Date.now()) / 86400000))
+    },
   },
   actions: {
     async load() {
@@ -102,7 +110,7 @@ export const useAccountStore = defineStore('account', {
           .select('id, account_id, name, address, slot_duration_minutes, business_hours, legal_name, tax_id, invoice_footer_text, logo_storage_path')
           .eq('account_id', teamMember.account_id),
         supabase.rpc('get_my_permissions', { target_account_id: teamMember.account_id }),
-        supabase.from('subscriptions').select('status').eq('account_id', teamMember.account_id).maybeSingle(),
+        supabase.from('subscriptions').select('status, trial_ends_at').eq('account_id', teamMember.account_id).maybeSingle(),
       ])
 
       this.accountName = account?.name ?? ''
@@ -113,6 +121,7 @@ export const useAccountStore = defineStore('account', {
       this.clinics = (clinics as Clinic[]) ?? []
       this.permissions = (permissions as Record<string, PermissionValue>) ?? {}
       this.subscriptionStatus = subscription?.status ?? null
+      this.trialEndsAt = subscription?.trial_ends_at ?? null
       if (!this.currentClinicId && this.clinics.length > 0) {
         const stored = import.meta.server ? null : localStorage.getItem(CURRENT_CLINIC_STORAGE_KEY)
         this.currentClinicId = (stored && this.clinics.some((c) => c.id === stored)) ? stored : this.clinics[0].id
@@ -139,6 +148,7 @@ export const useAccountStore = defineStore('account', {
       this.currentClinicId = null
       this.permissions = {}
       this.subscriptionStatus = null
+      this.trialEndsAt = null
       this.loaded = false
       this.loading = false
     },

@@ -34,7 +34,7 @@ async function onSubmit() {
   <div class="flex min-h-screen items-center justify-center bg-surface-page px-4">
     <div class="w-full max-w-sm rounded-card border border-line bg-surface p-8 shadow-card">
       <template v-if="!checkEmail">
-        <OnboardingStepProgress :steps="['Create account', 'Practice setup', 'Launch']" :current="1" class="mb-6" />
+        <OnboardingStepProgress :steps="['Create account', 'Practice setup', 'Preferences', 'Launch']" :current="1" class="mb-6" />
         <img src="/logo/quiroflow-mark.svg" alt="" class="h-8 w-8" />
         <h1 class="mt-4 text-xl font-semibold text-ink-900">Create your practice's QuiroFlow account</h1>
         <form class="mt-6 space-y-4" @submit.prevent="onSubmit">

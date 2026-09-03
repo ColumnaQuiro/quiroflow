@@ -25,6 +25,14 @@ function unwrap<T>(result: { data: T; error: unknown }): NonNullable<T> {
   return result.data as NonNullable<T>
 }
 
+// For a plain .update()/.delete() with no trailing .select() -- Supabase
+// returns `data: null` on a SUCCESSFUL call like that (PostgREST only
+// returns affected rows when a .select() asks for them), so unlike
+// unwrap() above, null here is the normal outcome, not a failure signal.
+function assertOk(result: { error: unknown }): void {
+  if (result.error) throw result.error
+}
+
 /** Creates a fresh auth user + account + clinic + default roles via the same RPC onboarding uses. */
 async function createStaffAccount(opts: {
   email: string
@@ -130,7 +138,7 @@ async function setRolePermissions(opts: { accountId: string; roleName: string; p
       .single(),
   )
   const merged = { ...(role.permissions as Record<string, unknown>), ...patch }
-  unwrap(await admin.from('account_roles').update({ permissions: merged }).eq('id', role.id))
+  assertOk(await admin.from('account_roles').update({ permissions: merged }).eq('id', role.id))
   return { roleId: role.id as string, permissions: merged }
 }
 
@@ -207,7 +215,7 @@ async function enableOnlineBooking(opts: { clinicId: string }) {
     sat: [],
     sun: [],
   }
-  unwrap(
+  assertOk(
     await admin
       .from('clinics')
       .update({ online_booking_enabled: true, business_hours: businessHours })
@@ -218,7 +226,7 @@ async function enableOnlineBooking(opts: { clinicId: string }) {
 
 /** Adds 'email' to the account's confirmation channels -- accounts default to whatsapp-only. */
 async function enableEmailConfirmations(opts: { accountId: string }) {
-  unwrap(
+  assertOk(
     await admin
       .from('accounts')
       .update({ appointment_confirmation_enabled: true, appointment_confirmation_channels: ['whatsapp', 'email'] })

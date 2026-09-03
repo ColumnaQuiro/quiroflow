@@ -19,6 +19,7 @@ interface Appointment {
   appointment_types: { name: string; default_price_cents: number } | null
 }
 interface InvoiceRow { id: string; invoice_number: string; status: string; total_cents: number }
+interface LineItemRow { id: string; price_cents: number; service_id: string | null }
 interface PaymentRow { id: string; amount_cents: number; method: string; paid_at: string }
 
 const supabase = useSupabaseClient()
@@ -27,12 +28,13 @@ const { fire } = useAutomations()
 
 const appointment = ref<Appointment | null>(null)
 const invoice = ref<InvoiceRow | null>(null)
+const lineItems = ref<LineItemRow[]>([])
 const payments = ref<PaymentRow[]>([])
 const loading = ref(true)
 const billingOpen = ref(false)
 const paymentAmount = ref('')
 const paymentMethod = ref<'card' | 'cash' | 'credit'>('cash')
-const { balanceCents } = usePatientFinancialSummary(() => appointment.value?.patient_id ?? '')
+const { balanceCents, activePackages } = usePatientFinancialSummary(() => appointment.value?.patient_id ?? '')
 const saving = ref(false)
 const error = ref('')
 
@@ -97,9 +99,67 @@ async function openBilling() {
   const inv = await ensureInvoice()
   invoice.value = inv
   if (inv) {
-    const { data: pays } = await supabase.from('payments').select('id, amount_cents, method, paid_at').eq('invoice_id', inv.id).order('paid_at', { ascending: false })
+    const [{ data: lines }, { data: pays }] = await Promise.all([
+      supabase.from('invoice_line_items').select('id, price_cents, service_id').eq('invoice_id', inv.id),
+      supabase.from('payments').select('id, amount_cents, method, paid_at').eq('invoice_id', inv.id).order('paid_at', { ascending: false }),
+    ])
+    lineItems.value = lines ?? []
     payments.value = pays ?? []
     paymentAmount.value = (balanceDueCents.value / 100).toFixed(2)
+  }
+}
+
+async function usePackageSession(pkg: { id: string; package_name: string; sessions_used: number; sessions_total: number; price_cents: number }) {
+  if (pkg.sessions_used >= pkg.sessions_total || !invoice.value || !context.value || !appointment.value) return
+  error.value = ''
+  saving.value = true
+  try {
+    await supabase.from('package_purchases').update({ sessions_used: pkg.sessions_used + 1 } as never).eq('id', pkg.id)
+
+    // Same rule as the desktop Billing tab: a package-covered visit is
+    // worth the bono's own per-session value, not this appointment type's
+    // standalone price -- correct the auto-created visit line item (not
+    // any separately added services) before totalling.
+    const perSessionCents = Math.round(pkg.price_cents / pkg.sessions_total)
+    const baseLine = lineItems.value.find((l) => !l.service_id)
+    if (baseLine && baseLine.price_cents !== perSessionCents) {
+      await supabase.from('invoice_line_items').update({ price_cents: perSessionCents } as never).eq('id', baseLine.id)
+      baseLine.price_cents = perSessionCents
+      const totalCents = lineItems.value.reduce((sum, l) => sum + l.price_cents, 0)
+      await supabase.from('invoices').update({ total_cents: totalCents } as never).eq('id', invoice.value.id)
+      invoice.value.total_cents = totalCents
+    }
+
+    const remainingCents = invoice.value.total_cents - paidCents.value
+    if (remainingCents > 0) {
+      await supabase.from('payments').insert({
+        account_id: context.value.accountId,
+        invoice_id: invoice.value.id,
+        amount_cents: remainingCents,
+        method: 'credit',
+      } as never)
+      await supabase.from('account_credits').insert({
+        account_id: context.value.accountId,
+        patient_id: appointment.value.patient_id,
+        amount_cents: -remainingCents,
+        reason: `Package session: ${pkg.package_name}`,
+        invoice_id: invoice.value.id,
+      } as never)
+    }
+
+    await supabase.from('invoices').update({ status: 'paid' } as never).eq('id', invoice.value.id)
+    await supabase.from('appointments').update({ status: 'completed' } as never).eq('id', appointmentId)
+    fire('invoice.paid', { patientId: appointment.value.patient_id, appointmentId, invoiceId: invoice.value.id })
+    fire('appointment.completed', { patientId: appointment.value.patient_id, appointmentId })
+    await loadAppointment()
+
+    const { data: pays } = await supabase.from('payments').select('id, amount_cents, method, paid_at').eq('invoice_id', invoice.value.id).order('paid_at', { ascending: false })
+    payments.value = pays ?? []
+    const { data: inv } = await supabase.from('invoices').select('id, invoice_number, status, total_cents').eq('id', invoice.value.id).maybeSingle()
+    invoice.value = inv
+    paymentAmount.value = (balanceDueCents.value / 100).toFixed(2)
+  } finally {
+    saving.value = false
   }
 }
 
@@ -219,6 +279,20 @@ function euros(cents: number) {
               </select>
             </div>
             <UiBtn variant="primary" class="w-full" :disabled="saving" @click="recordPayment">{{ saving ? 'Saving…' : `Record ${euros(Math.round((parseFloat(paymentAmount) || 0) * 100))}` }}</UiBtn>
+
+            <div v-if="activePackages.length > 0" class="flex flex-wrap items-center gap-2 border-t border-line-divider pt-2">
+              <span class="text-[12px] text-ink-muted2">Or use a package session:</span>
+              <button
+                v-for="p in activePackages"
+                :key="p.id"
+                type="button"
+                class="rounded-ctl border border-brand-tintBorder bg-brand-tint px-2 py-1 text-[12px] font-medium text-brand-text active:brightness-95"
+                :disabled="saving"
+                @click="usePackageSession(p)"
+              >
+                {{ p.package_name }} ({{ p.sessions_total - p.sessions_used }} left)
+              </button>
+            </div>
           </div>
         </template>
       </div>

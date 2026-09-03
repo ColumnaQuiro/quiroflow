@@ -20,6 +20,14 @@ import { Capacitor } from '@capacitor/core'
 // unregister.
 let lastToken: string | null = null
 
+// The conversation a notification tap wants opened, read by
+// PractitionerInbox.vue (via mobile/pages/inbox.vue) once mounted -- a
+// module-level ref rather than a route query param because a tap can arrive
+// while the Inbox tab is already open (no navigation happens, so there's no
+// new route to carry it), and because the listener fires from outside any
+// component's setup where injecting page state isn't available.
+export const pendingConversationKey = ref<string | null>(null)
+
 export function usePushNotifications() {
   const authedFetch = useAuthedFetch()
 
@@ -46,6 +54,19 @@ export function usePushNotifications() {
         } catch {
           // Best-effort -- the Inbox still works without push.
         }
+      })
+
+      // Tapping the notification (app backgrounded, or launched fresh by
+      // the tap) -- notifyInboxTeamMembers (server/utils/pushNotifications.ts)
+      // already sends { type, key } in the data payload for exactly this,
+      // it just had nothing on the client reading it until now. Routes to
+      // the Inbox tab and hands off the target conversation key; navigating
+      // there when already on it is a harmless no-op.
+      FirebaseMessaging.addListener('notificationActionPerformed', (event) => {
+        const data = event.notification.data as Record<string, string> | undefined
+        if (!data?.key) return
+        pendingConversationKey.value = data.key
+        navigateTo('/inbox')
       })
     } catch {
       // Best-effort -- the Inbox still works without push.

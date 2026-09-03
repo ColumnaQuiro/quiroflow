@@ -1057,7 +1057,10 @@ onUnmounted(() => {
         <div class="relative min-h-0 flex-1">
           <div ref="threadScrollEl" class="h-full space-y-3 overflow-y-auto px-4 py-4" @scroll="onThreadScroll">
           <template v-for="(m, i) in thread" :key="m.id">
-            <div v-if="i === 0 || relativeDay(m.created_at) !== relativeDay(thread[i - 1].created_at)" class="flex justify-center">
+            <div
+              v-if="i === 0 || relativeDay(m.created_at) !== relativeDay(thread[i - 1].created_at)"
+              class="sticky top-0 z-10 -mx-4 flex justify-center bg-surface-page py-1.5"
+            >
               <span class="rounded-pill bg-chip-bg px-2.5 py-0.5 text-[11px] font-medium text-chip-text">{{ relativeDay(m.created_at) }}</span>
             </div>
             <div class="flex" :class="m.direction === 'outbound' ? 'justify-end' : 'justify-start'">

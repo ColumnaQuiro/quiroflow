@@ -10,6 +10,8 @@ interface InvoiceRow {
   status: string
   total_cents: number
   created_at: string
+  is_refund: boolean
+  refunds_invoice_id: string | null
 }
 interface PackageTemplate { id: string; name: string; session_count: number; price_cents: number }
 interface PackagePurchaseRow {
@@ -291,7 +293,11 @@ async function recordSalePayment(description: string, amountCents: number, metho
 
 async function loadAll() {
   const [{ data: inv }, { data: pkgTemplates }, { data: pkgPurchases }, { data: memTemplates }, { data: patMemberships }] = await Promise.all([
-    supabase.from('invoices').select('id, invoice_number, status, total_cents, created_at').eq('patient_id', props.patientId).order('created_at', { ascending: false }),
+    supabase
+      .from('invoices')
+      .select('id, invoice_number, status, total_cents, created_at, is_refund, refunds_invoice_id')
+      .eq('patient_id', props.patientId)
+      .order('created_at', { ascending: false }),
     supabase.from('packages').select('id, name, session_count, price_cents').order('name'),
     supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used, price_cents, purchased_at').eq('patient_id', props.patientId).order('purchased_at', { ascending: false }),
     supabase.from('memberships').select('id, name, price_cents').order('name'),
@@ -405,6 +411,62 @@ async function writeOffInvoice(invoiceId: string) {
   if (!confirm(`Write off ${money(openCents)} remaining on ${invoice.invoice_number}? This settles the invoice without collecting payment.`)) return
   await supabase.from('payments').insert({ account_id: store.accountId!, invoice_id: invoiceId, amount_cents: openCents, method: 'write_off' })
   await supabase.from('invoices').update({ status: 'paid' }).eq('id', invoiceId)
+  await Promise.all([loadAll(), refreshCreditSummary()])
+}
+
+// -- Refund: a new invoice with a negative total, linked back to the one it
+// refunds -- see the migration comment (0126_invoice_refunds.sql) for why
+// this needs no special-casing in usePatientFinancialSummary's balance
+// formula. Bookkeeping only, same as write-off: no Stripe refund call, this
+// just records that money already went back to the patient by whatever
+// means. Capped at what's actually been paid on the original invoice minus
+// anything already refunded against it, so staff can't refund money that
+// was never collected or refund the same invoice twice over.
+async function refundableCentsFor(invoiceId: string): Promise<number> {
+  const invoice = invoices.value.find((i) => i.id === invoiceId)
+  if (!invoice) return 0
+  const [{ data: paid }, alreadyRefunded] = await Promise.all([
+    supabase.from('payments').select('amount_cents').eq('invoice_id', invoiceId),
+    Promise.resolve(
+      invoices.value.filter((i) => i.is_refund && i.refunds_invoice_id === invoiceId).reduce((sum, i) => sum + Math.abs(i.total_cents), 0),
+    ),
+  ])
+  const paidCents = (paid ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
+  return Math.max(0, paidCents - alreadyRefunded)
+}
+
+async function createRefund(invoiceId: string, amountCents: number, reason: string) {
+  const invoice = invoices.value.find((i) => i.id === invoiceId)
+  if (!invoice || amountCents <= 0) return
+  const maxRefundable = await refundableCentsFor(invoiceId)
+  if (amountCents > maxRefundable) return
+
+  const { count } = await supabase.from('invoices').select('id', { count: 'exact', head: true })
+  const invoiceNumber = `REF-${String((count ?? 0) + 1).padStart(4, '0')}`
+
+  const { data: refund } = await supabase
+    .from('invoices')
+    .insert({
+      account_id: store.accountId!,
+      patient_id: props.patientId,
+      invoice_number: invoiceNumber,
+      status: 'paid',
+      total_cents: -amountCents,
+      is_refund: true,
+      refunds_invoice_id: invoiceId,
+    })
+    .select('id')
+    .single()
+  if (!refund) return
+
+  await supabase.from('invoice_line_items').insert({
+    account_id: store.accountId!,
+    invoice_id: refund.id,
+    description: reason.trim() ? `Refund (${invoice.invoice_number}) — ${reason.trim()}` : `Refund — ${invoice.invoice_number}`,
+    quantity: 1,
+    price_cents: -amountCents,
+  })
+
   await Promise.all([loadAll(), refreshCreditSummary()])
 }
 
@@ -782,11 +844,13 @@ function money(cents: number) {
       :send-result-message="sendResultMessage"
       :can-delete-invoices="can('financials_edit_all')"
       :can-write-off="can('financials_edit_all')"
+      :can-refund="can('financials_edit_all')"
       @add-credit="activePanel = 'credit'"
       @take-payment="activePanel === 'payment' ? (activePanel = null) : openTakePayment()"
       @send-invoice="sendInvoiceEmail"
       @delete-invoice="(id: string) => { const inv = invoices.find((i) => i.id === id); if (inv) deleteInvoice(inv) }"
       @write-off-invoice="writeOffInvoice"
+      @refund-invoice="(payload: { invoiceId: string; amountCents: number; reason: string }) => createRefund(payload.invoiceId, payload.amountCents, payload.reason)"
       @credits-changed="refreshCreditSummary"
     />
 

@@ -14,6 +14,8 @@ interface InvoiceRow {
   status: string
   total_cents: number
   created_at: string
+  is_refund: boolean
+  refunds_invoice_id: string | null
 }
 
 const props = defineProps<{
@@ -26,6 +28,7 @@ const props = defineProps<{
   sendResultMessage: string
   canDeleteInvoices: boolean
   canWriteOff: boolean
+  canRefund: boolean
 }>()
 const emit = defineEmits<{
   addCredit: []
@@ -33,6 +36,7 @@ const emit = defineEmits<{
   sendInvoice: [invoiceId: string]
   deleteInvoice: [invoiceId: string]
   writeOffInvoice: [invoiceId: string]
+  refundInvoice: [payload: { invoiceId: string; amountCents: number; reason: string }]
   creditsChanged: []
 }>()
 
@@ -93,6 +97,8 @@ interface LedgerRow {
   voided: boolean
   invoiceId?: string
   invoiceOpenCents?: number
+  refundableCents?: number
+  isRefund?: boolean
   detail: { label: string; value: string }[]
 }
 
@@ -101,6 +107,37 @@ const rows = computed<LedgerRow[]>(() => {
     const paidForInvoice = payments.value.filter((p) => p.invoice_id === inv.id).reduce((sum, p) => sum + p.amount_cents, 0)
     const openCents = inv.total_cents - paidForInvoice
     const items = props.lineItemDescriptions[inv.id] ?? []
+
+    // A refund invoice reads as a credit against the original, not a
+    // charge -- same "Ref" lookup already used for a payment's "Applied
+    // to" detail line, reused here for the description itself.
+    if (inv.is_refund) {
+      const refundedCents = Math.abs(inv.total_cents)
+      return {
+        key: `invoice-${inv.id}`,
+        ref: inv.invoice_number,
+        date: inv.created_at,
+        description: `Refund — ${invoiceRefFor(inv.refunds_invoice_id) ?? 'deleted invoice'}`,
+        debitCents: 0,
+        creditCents: refundedCents,
+        balanceText: '—',
+        balanceTone: 'neutral' as const,
+        voided: false,
+        invoiceId: inv.id,
+        isRefund: true,
+        detail: items.length > 0 ? items.map((d) => ({ label: 'Item', value: d })) : [{ label: 'Items', value: '—' }],
+      }
+    }
+
+    // How much of what's actually been paid on this invoice hasn't already
+    // been refunded -- caps both whether the Refund action shows at all and
+    // the amount pre-filled into the modal, so staff can't refund money
+    // that was never collected or double-refund the same invoice.
+    const alreadyRefunded = props.invoices
+      .filter((r) => r.is_refund && r.refunds_invoice_id === inv.id)
+      .reduce((sum, r) => sum + Math.abs(r.total_cents), 0)
+    const refundableCents = inv.status === 'void' ? 0 : Math.max(0, paidForInvoice - alreadyRefunded)
+
     return {
       key: `invoice-${inv.id}`,
       ref: inv.invoice_number,
@@ -113,6 +150,7 @@ const rows = computed<LedgerRow[]>(() => {
       voided: inv.status === 'void',
       invoiceId: inv.id,
       invoiceOpenCents: inv.status === 'void' ? 0 : openCents,
+      refundableCents,
       detail: items.length > 0 ? items.map((d) => ({ label: 'Item', value: d })) : [{ label: 'Items', value: '—' }],
     }
   })
@@ -194,6 +232,28 @@ function takePayment() {
 function writeOffInvoice(invoiceId: string) {
   menuOpen.value = false
   emit('writeOffInvoice', invoiceId)
+}
+
+// --- Refund: opens with the full refundable amount pre-filled (the common
+// case, a full refund), staff can lower it for a partial one. -------------
+const refundModalInvoiceId = ref<string | null>(null)
+const refundAmount = ref('')
+const refundReason = ref('')
+const refundMaxCents = ref(0)
+
+function openRefundModal(invoiceId: string, maxCents: number) {
+  menuOpen.value = false
+  refundModalInvoiceId.value = invoiceId
+  refundMaxCents.value = maxCents
+  refundAmount.value = (maxCents / 100).toFixed(2)
+  refundReason.value = ''
+}
+function submitRefund() {
+  if (!refundModalInvoiceId.value) return
+  const amountCents = Math.round((parseFloat(refundAmount.value) || 0) * 100)
+  if (amountCents <= 0 || amountCents > refundMaxCents.value) return
+  emit('refundInvoice', { invoiceId: refundModalInvoiceId.value, amountCents, reason: refundReason.value })
+  refundModalInvoiceId.value = null
 }
 
 // --- Transfer credit: moves an amount from this patient's credit ledger to
@@ -390,6 +450,14 @@ async function sendStatement() {
                   >
                     Write off {{ money(row.invoiceOpenCents ?? 0) }}
                   </button>
+                  <button
+                    v-if="canRefund && !row.isRefund && (row.refundableCents ?? 0) > 0"
+                    type="button"
+                    class="text-ink-faint hover:text-danger-text"
+                    @click="openRefundModal(row.invoiceId, row.refundableCents ?? 0)"
+                  >
+                    Refund…
+                  </button>
                 </div>
               </td>
             </tr>
@@ -441,6 +509,37 @@ async function sendStatement() {
         <button type="button" class="text-[12.5px] text-ink-faint hover:text-ink-muted" @click="transferModalOpen = false">Cancel</button>
         <UiBtn variant="primary" size="sm" :disabled="!transferTarget || !transferAmount || transferring" @click="submitTransferCredit">
           {{ transferring ? 'Transferring…' : 'Transfer' }}
+        </UiBtn>
+      </div>
+    </div>
+  </div>
+
+  <div v-if="refundModalInvoiceId" class="fixed inset-0 z-20 flex items-center justify-center bg-ink-900/40 p-4" @click.self="refundModalInvoiceId = null">
+    <div class="w-full max-w-sm rounded-card border border-line bg-surface p-4 shadow-popover">
+      <p class="text-[13.5px] font-semibold text-ink-700">Refund</p>
+      <p class="mt-1 text-[12px] text-ink-faint">
+        Records a refund against this invoice and reduces the patient's balance -- doesn't move any money itself, so process the actual
+        refund (cash, Stripe, etc.) separately.
+      </p>
+
+      <div class="mt-3">
+        <label class="block text-[11px] text-ink-muted">Amount (€) -- up to {{ money(refundMaxCents) }}</label>
+        <input v-model="refundAmount" type="number" min="0" :max="refundMaxCents / 100" step="0.01" class="mt-0.5 w-32 rounded-ctlSm border border-line-control px-2 py-1.5 text-[13px]" />
+      </div>
+      <div class="mt-3">
+        <label class="block text-[11px] text-ink-muted">Reason (optional)</label>
+        <input v-model="refundReason" type="text" class="mt-0.5 w-full rounded-ctlSm border border-line-control px-2 py-1.5 text-[13px]" placeholder="e.g. patient cancelled package" />
+      </div>
+
+      <div class="mt-4 flex items-center justify-end gap-2">
+        <button type="button" class="text-[12.5px] text-ink-faint hover:text-ink-muted" @click="refundModalInvoiceId = null">Cancel</button>
+        <UiBtn
+          variant="primary"
+          size="sm"
+          :disabled="!refundAmount || Math.round((parseFloat(refundAmount) || 0) * 100) <= 0 || Math.round((parseFloat(refundAmount) || 0) * 100) > refundMaxCents"
+          @click="submitRefund"
+        >
+          Refund
         </UiBtn>
       </div>
     </div>

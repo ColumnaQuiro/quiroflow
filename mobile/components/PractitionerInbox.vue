@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const props = defineProps<{ accountId: string; teamMemberId: string }>()
+const props = defineProps<{ accountId: string; teamMemberId: string; openConversationKey?: string | null }>()
 
 interface Message {
   id: string
@@ -218,6 +218,22 @@ watch(thread, () => scrollThreadToBottom())
 watch(selectedKey, (key) => {
   if (key) scrollThreadToBottom()
 })
+
+// Opens straight to the conversation a push notification tap wants -- fires
+// on mount (app was closed/backgrounded, tap launched/foregrounded it) and
+// again on change (tap arrives while already sitting on this tab, where
+// there's no navigation to remount from). Cleared right after consuming it
+// so it doesn't re-open on the next unrelated visit to this tab.
+watch(
+  () => props.openConversationKey,
+  (key) => {
+    if (!key) return
+    selectedKey.value = key
+    markRead(key)
+    pendingConversationKey.value = null
+  },
+  { immediate: true },
+)
 
 async function markRead(key: string) {
   const now = new Date().toISOString()
@@ -701,6 +717,17 @@ const lightboxUrl = ref<string | null>(null)
 function shortTime(iso: string) {
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
+// Same day-divider label as the web inbox (pages/inbox.vue) -- kept as its
+// own copy rather than a shared util since mobile already duplicates the
+// rest of this Message/Conversation logic rather than importing from web.
+function relativeDay(iso: string) {
+  const d = new Date(iso)
+  const today = new Date()
+  const diffDays = Math.round((new Date(today.toDateString()).getTime() - new Date(d.toDateString()).getTime()) / 86400000)
+  if (diffDays === 0) return 'Today'
+  if (diffDays === 1) return 'Yesterday'
+  return d.toLocaleDateString([], { day: 'numeric', month: 'short' })
+}
 // The conversation list's timestamp, WhatsApp-style: a bare hour today loses
 // meaning for anything older, so it steps down in precision the further back
 // it goes -- hour today, "Yesterday", the weekday name within the last week,
@@ -979,7 +1006,14 @@ onUnmounted(() => {
       </div>
 
       <div ref="messagesEl" class="flex-1 space-y-2.5 overflow-y-auto px-3 py-3">
-        <div v-for="m in thread" :key="m.id" class="flex" :class="m.direction === 'outbound' ? 'justify-end' : 'justify-start'">
+        <template v-for="(m, i) in thread" :key="m.id">
+          <div
+            v-if="i === 0 || relativeDay(m.created_at) !== relativeDay(thread[i - 1].created_at)"
+            class="sticky top-0 z-10 -mx-3 flex justify-center bg-surface-page py-1.5"
+          >
+            <span class="rounded-pill bg-chip-bg px-2.5 py-0.5 text-[11px] font-medium text-chip-text">{{ relativeDay(m.created_at) }}</span>
+          </div>
+        <div class="flex" :class="m.direction === 'outbound' ? 'justify-end' : 'justify-start'">
           <div
             class="max-w-[80%] rounded-card px-[8px] py-[6px] shadow-card"
             :class="[
@@ -1035,6 +1069,7 @@ onUnmounted(() => {
             </p>
           </div>
         </div>
+        </template>
       </div>
 
       <div class="shrink-0 border-t border-line bg-surface p-3">

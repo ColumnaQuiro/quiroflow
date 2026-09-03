@@ -5,10 +5,13 @@ describe('CSV patient import (PracticeHub)', () => {
       // /settings/import now defaults to the PracticeHub "General" tab
       // (saved-connection settings), not "Patients" -- the importer that
       // fetches team_members and renders a file input only mounts once
-      // the "Patients" data-type pill is selected.
+      // the "Patients" data-type pill is selected. clickUntil (see
+      // commands.ts) rather than a plain click: the first click after a
+      // fresh visit can land before Vue finishes hydrating and attaching
+      // the tab's handler, a silent no-op that a plain click can't detect.
       cy.intercept('GET', '**/rest/v1/team_members*').as('teamMembersFetch')
       cy.visit('/settings/import')
-      cy.contains('button', 'Patients').click()
+      cy.clickUntil('button:contains("Patients")', 'input[type=file]')
       // The importer's onMounted fetches team_members before it's ready to
       // handle a file drop; selecting a file before that resolves is a
       // silent no-op, so wait for the request rather than a blind delay.

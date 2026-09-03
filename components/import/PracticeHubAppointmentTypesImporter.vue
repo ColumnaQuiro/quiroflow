@@ -2,6 +2,7 @@
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+const { showToast } = useToast()
 
 interface PHAppointmentType { id: number; name: string }
 interface PHAppointment { id: number; appointment_type_id: number | null }
@@ -116,6 +117,13 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     }
 
     stage.value = 'done'
+    showToast(
+      t(
+        `Created ${typesCreated.value} new appointment type(s), updated ${appointmentsUpdated.value} appointments. Skipped ${skippedNoMatch.value} with no type in PracticeHub.`,
+        `Se crearon ${typesCreated.value} tipo(s) de cita nuevos, se actualizaron ${appointmentsUpdated.value} citas. Se omitieron ${skippedNoMatch.value} sin tipo en PracticeHub.`,
+      ),
+      importErrors.value.length > 0 ? 'error' : 'success',
+    )
   } catch (err) {
     runError.value = err instanceof Error ? err.message : String(err)
     stage.value = 'error'
@@ -167,14 +175,6 @@ function reset() {
     </div>
 
     <div v-else-if="stage === 'done'" class="mt-4 space-y-4">
-      <div class="rounded-lg border border-success-border bg-success-bg p-4 text-sm text-success-text">
-        {{
-          t(
-            `Created ${typesCreated} new appointment type(s), updated ${appointmentsUpdated} appointments. Skipped ${skippedNoMatch} with no type in PracticeHub.`,
-            `Se crearon ${typesCreated} tipo(s) de cita nuevos, se actualizaron ${appointmentsUpdated} citas. Se omitieron ${skippedNoMatch} sin tipo en PracticeHub.`,
-          )
-        }}
-      </div>
       <div v-if="importErrors.length > 0" class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
         <p class="font-medium">{{ t('Some rows failed:', 'Algunas filas fallaron:') }}</p>
         <ul class="mt-1 list-disc pl-5">

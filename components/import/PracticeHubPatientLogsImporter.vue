@@ -2,6 +2,7 @@
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+const { showToast } = useToast()
 
 interface PHPatient { id: number; patient_number: string }
 interface PHPatientLog {
@@ -118,6 +119,13 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     }
 
     stage.value = 'done'
+    showToast(
+      t(
+        `Imported ${importedCount.value} log entries. Skipped ${skippedDuplicate.value} already-imported, ${skippedUnmatched.value} with no matching patient.`,
+        `Se importaron ${importedCount.value} entradas de registro. Se omitieron ${skippedDuplicate.value} ya importadas, ${skippedUnmatched.value} sin paciente coincidente.`,
+      ),
+      importErrors.value.length > 0 ? 'error' : 'success',
+    )
   } catch (err) {
     runError.value = err instanceof Error ? err.message : String(err)
     stage.value = 'error'
@@ -169,14 +177,6 @@ function reset() {
     </div>
 
     <div v-else-if="stage === 'done'" class="mt-4 space-y-4">
-      <div class="rounded-lg border border-success-border bg-success-bg p-4 text-sm text-success-text">
-        {{
-          t(
-            `Imported ${importedCount} log entries. Skipped ${skippedDuplicate} already-imported, ${skippedUnmatched} with no matching patient.`,
-            `Se importaron ${importedCount} entradas de registro. Se omitieron ${skippedDuplicate} ya importadas, ${skippedUnmatched} sin paciente coincidente.`,
-          )
-        }}
-      </div>
       <div v-if="importErrors.length > 0" class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
         <p class="font-medium">{{ t('Some rows failed:', 'Algunas filas fallaron:') }}</p>
         <ul class="mt-1 list-disc pl-5">

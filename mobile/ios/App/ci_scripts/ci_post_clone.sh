@@ -36,11 +36,14 @@ fi
 # app's own .nuxt/tsconfig.json needs to exist too, or Vite's tsconfig
 # lookup for those root-level files fails the same way it did for mobile's
 # own files before mobile/tsconfig.json existed -- `extends` pointing at a
-# .nuxt directory nobody ever generated. Root's `npm ci` already runs `nuxt
-# prepare` as its postinstall, so this is enough; no need to build the root
-# app itself here.
-cd "$CI_PRIMARY_REPOSITORY_PATH"
-npm ci
+# .nuxt directory nobody ever generated. Running the root app's own `npm
+# ci`/`nuxt prepare` to produce that file turned out to be its own rabbit
+# hole (oxc-walker's native parser failing to resolve on a clean CI
+# install) for a file esbuild only needs to parse, not type-check against
+# real project info -- an empty stub satisfies the `extends` resolution
+# just as well, confirmed by building mobile with only this in place.
+mkdir -p "$CI_PRIMARY_REPOSITORY_PATH/.nuxt"
+echo '{}' > "$CI_PRIMARY_REPOSITORY_PATH/.nuxt/tsconfig.json"
 
 cd "$CI_PRIMARY_REPOSITORY_PATH/mobile"
 

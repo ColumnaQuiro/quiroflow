@@ -648,12 +648,20 @@ function columnStyle(block: LayoutBlock, top: number, height: number) {
 
 function openCreateModal(roomId?: string, clickY?: number) {
   const time = clickY !== undefined ? pxToTime(clickY, DAY_HOUR_PX.value) : '09:00'
+  if (reschedulingAppointment.value) {
+    pickRescheduleSlot(anchorDate.value, time, roomId ?? null)
+    return
+  }
   prefill.value = { date: toDateKey(anchorDate.value), time, roomId: roomId ?? '' }
   modalMode.value = 'create'
   editingAppointment.value = null
   modalOpen.value = true
 }
 function openCreateModalForDay(day: Date) {
+  if (reschedulingAppointment.value) {
+    pickRescheduleSlot(day, '09:00', null)
+    return
+  }
   prefill.value = { date: toDateKey(day), time: '09:00', roomId: '' }
   modalMode.value = 'create'
   editingAppointment.value = null
@@ -666,7 +674,12 @@ function openCreateModalForDayAtY(day: Date, clickY: number) {
   modalOpen.value = true
 }
 function openCreateModalForRoomOnDayAtY(day: Date, roomId: string, clickY: number) {
-  prefill.value = { date: toDateKey(day), time: pxToTime(clickY, WEEK_HOUR_PX.value), roomId: roomId === '__none' ? '' : roomId }
+  const time = pxToTime(clickY, WEEK_HOUR_PX.value)
+  if (reschedulingAppointment.value) {
+    pickRescheduleSlot(day, time, roomId === '__none' ? null : roomId)
+    return
+  }
+  prefill.value = { date: toDateKey(day), time, roomId: roomId === '__none' ? '' : roomId }
   modalMode.value = 'create'
   editingAppointment.value = null
   modalOpen.value = true
@@ -858,6 +871,10 @@ function columnAtPoint(x: number, y: number) {
 
 function startAppointmentDrag(appt: AppointmentRow, mode: 'move' | 'resize', e: PointerEvent) {
   if (appt.status !== 'booked') return
+  // A slot click while reschedule-mode is active (see startReschedule below)
+  // is what moves the appointment now -- starting an unrelated drag on some
+  // other block mid-pick would just be confusing.
+  if (reschedulingAppointment.value) return
   e.stopPropagation()
   dragState.value = {
     apptId: appt.id,
@@ -920,6 +937,103 @@ interface PendingReschedule {
   revert: () => void
 }
 const pendingReschedule = ref<PendingReschedule | null>(null)
+
+// --- Reschedule mode ---
+// Drag-and-drop above only works within whatever days/rooms are currently
+// rendered in the DOM -- there's no way to drag an appointment onto a week
+// that isn't on screen. This is the PracticeHub-style alternative: a
+// "Reschedule" button (on the hover card and the edit modal) puts the
+// calendar into a picking mode that survives free navigation -- anchorDate,
+// viewMode, and the mini-calendar all keep working normally -- and the next
+// click on an empty slot (any day, any view, once you've navigated there)
+// builds the same PendingReschedule object the drag flow does, reusing its
+// confirm dialog/audit-row/fee/resend-confirmation logic unchanged.
+interface ReschedulingAppointment {
+  id: string
+  patientId: string
+  patientName: string
+  appointmentTypeName: string | null
+  startsAt: string
+  endsAt: string
+}
+const reschedulingAppointment = ref<ReschedulingAppointment | null>(null)
+
+function startReschedule(appt: {
+  id: string
+  patient_id: string
+  starts_at: string
+  ends_at: string
+  patients: { first_name: string; last_name: string | null } | null
+  appointment_types: { name: string } | null
+}) {
+  modalOpen.value = false
+  hoveredAppt.value = null
+  reschedulingAppointment.value = {
+    id: appt.id,
+    patientId: appt.patient_id,
+    patientName: appt.patients ? `${appt.patients.first_name} ${appt.patients.last_name ?? ''}`.trim() : '',
+    appointmentTypeName: appt.appointment_types?.name ?? null,
+    startsAt: appt.starts_at,
+    endsAt: appt.ends_at,
+  }
+}
+function cancelRescheduleMode() {
+  reschedulingAppointment.value = null
+}
+
+// Builds the exact same PendingReschedule shape onAppointmentDragEnd does,
+// from a slot click instead of a drag. `day`/`time`/`roomId` come from
+// whichever grid the user clicked in (Day or Week view, any date). If the
+// appointment being moved happens to also be in the currently-loaded range
+// (e.g. rescheduling within the same visible week), it's live-mutated the
+// same way a drag does for an immediate WYSIWYG preview and a working
+// revert() on cancel; if it isn't (a genuinely different week), there's
+// nothing in memory to preview -- confirmReschedule()'s reload is what
+// makes the new position show up once that week comes into view.
+function pickRescheduleSlot(day: Date, time: string, roomId: string | null) {
+  const src = reschedulingAppointment.value
+  if (!src) return
+  const [h, m] = time.split(':').map(Number)
+  const newStartsAt = new Date(day.getFullYear(), day.getMonth(), day.getDate(), h, m, 0, 0)
+  const durationMs = new Date(src.endsAt).getTime() - new Date(src.startsAt).getTime()
+  const newEndsAt = new Date(newStartsAt.getTime() + durationMs)
+
+  const hours = store.currentClinic?.business_hours
+  if (
+    hasBusinessHoursConfigured(hours) &&
+    (!isWithinBusinessHours(newStartsAt, hours) || !isWithinBusinessHours(new Date(newEndsAt.getTime() - 1), hours))
+  ) {
+    if (!confirm(t("This falls outside the clinic's working hours. Move it anyway?", 'Esto queda fuera del horario de atención de la clínica. ¿Moverla de todos modos?'))) return
+  }
+
+  const live = appointments.value.find((a) => a.id === src.id)
+  const orig = live ? { starts_at: live.starts_at, ends_at: live.ends_at, room_id: live.room_id } : null
+  function revert() {
+    if (live && orig) {
+      live.starts_at = orig.starts_at
+      live.ends_at = orig.ends_at
+      live.room_id = orig.room_id
+    }
+  }
+  if (live) {
+    live.starts_at = newStartsAt.toISOString()
+    live.ends_at = newEndsAt.toISOString()
+    live.room_id = roomId
+  }
+
+  pendingReschedule.value = {
+    appointmentId: src.id,
+    patientId: src.patientId,
+    patientName: src.patientName,
+    appointmentTypeName: src.appointmentTypeName,
+    origStartsAt: src.startsAt,
+    newStartsAt: newStartsAt.toISOString(),
+    newEndsAt: newEndsAt.toISOString(),
+    newRoomId: roomId,
+    revert,
+  }
+  reschedulingAppointment.value = null
+}
 
 async function onAppointmentDragEnd(e: PointerEvent) {
   const s = dragState.value
@@ -1018,6 +1132,13 @@ async function confirmReschedule(payload: { reasonId: string | null; note: strin
   }
 
   pendingReschedule.value = null
+  // Reschedule-mode moves can land on a day/week that isn't the one already
+  // loaded into `appointments.value` (drag-and-drop moves never leave the
+  // loaded range, so this was a no-op for that flow before) -- reloading
+  // whatever range is currently in view is what makes the appointment show
+  // up in its new slot if that's the range being looked at, and disappear
+  // from it otherwise.
+  await loadAppointments()
 }
 
 // Wraps openEditModal so the click the browser synthesizes right after a
@@ -1027,6 +1148,10 @@ function handleAppointmentClick(appt: AppointmentRow) {
     dragMoved.value = false
     return
   }
+  // A slot click while reschedule-mode is active is what moves the
+  // appointment -- opening some other appointment's edit modal mid-pick
+  // would be a confusing second interaction on top of that.
+  if (reschedulingAppointment.value) return
   openEditModal(appt)
 }
 
@@ -1211,11 +1336,11 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
       <div class="flex items-center gap-4">
         <h1 class="text-[18px] font-[640] tracking-tightTitle text-ink-900">{{ t('Calendar', 'Calendario') }}</h1>
         <div class="flex items-center gap-1">
-          <button type="button" class="flex h-[26px] w-[26px] items-center justify-center rounded-ctlSm border border-line-control text-ink-500 hover:border-line-controlHover hover:bg-surface-subtle" @click="stepDate(-1)">
+          <button type="button" :aria-label="t('Previous', 'Anterior')" class="flex h-[26px] w-[26px] items-center justify-center rounded-ctlSm border border-line-control text-ink-500 hover:border-line-controlHover hover:bg-surface-subtle" @click="stepDate(-1)">
             <svg width="7" height="11" viewBox="0 0 7 11" fill="none"><path d="M6 1L1 5.5L6 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
           </button>
           <button type="button" class="flex h-[26px] items-center rounded-ctlSm border border-line-control px-2.5 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover hover:bg-surface-subtle" @click="goToday">{{ t('Today', 'Hoy') }}</button>
-          <button type="button" class="flex h-[26px] w-[26px] items-center justify-center rounded-ctlSm border border-line-control text-ink-500 hover:border-line-controlHover hover:bg-surface-subtle" @click="stepDate(1)">
+          <button type="button" :aria-label="t('Next', 'Siguiente')" class="flex h-[26px] w-[26px] items-center justify-center rounded-ctlSm border border-line-control text-ink-500 hover:border-line-controlHover hover:bg-surface-subtle" @click="stepDate(1)">
             <svg width="7" height="11" viewBox="0 0 7 11" fill="none"><path d="M1 1L6 5.5L1 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
           </button>
         </div>
@@ -1251,6 +1376,17 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
     </div>
     <div v-else class="flex h-9 shrink-0 items-center border-b border-line bg-surface px-6 text-[12.5px] text-ink-faint">
       No practitioners are assigned to this clinic yet.
+    </div>
+
+    <div v-if="reschedulingAppointment" class="flex h-10 shrink-0 items-center justify-between gap-3 border-b border-line bg-brand-tint px-6">
+      <p class="truncate text-[13px] text-brand-text">
+        <span class="font-semibold">{{ t('Rescheduling', 'Reprogramando') }}</span>
+        {{ reschedulingAppointment.patientName }}<template v-if="reschedulingAppointment.appointmentTypeName"> · {{ reschedulingAppointment.appointmentTypeName }}</template> —
+        {{ t('navigate to any day and click an open slot to move it there.', 'navega a cualquier día y haz clic en un hueco libre para moverla ahí.') }}
+      </p>
+      <button type="button" class="shrink-0 rounded-ctlSm border border-brand/30 px-2.5 py-1 text-[12.5px] font-medium text-brand-text hover:bg-surface" @click="cancelRescheduleMode">
+        {{ t('Cancel', 'Cancelar') }}
+      </button>
     </div>
 
     <div class="flex flex-1 overflow-hidden">
@@ -1655,6 +1791,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
       :prefill-room-id="prefill?.roomId"
       @close="modalOpen = false"
       @saved="onSaved"
+      @reschedule="startReschedule(editingAppointment!)"
     />
 
     <CalendarRescheduleConfirmModal
@@ -1696,6 +1833,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
       @mouseleave="hideHoverCard"
       @note-saved="loadAppointments"
       @check-in="toggleCheckedIn(hoveredAppt)"
+      @reschedule="startReschedule(hoveredAppt)"
     />
 
     <div

@@ -65,8 +65,29 @@ export async function requireTeamMember(event: H3Event) {
   return { supabase, teamMember }
 }
 
-export async function requirePermission(event: H3Event, permKey: string) {
+// Defense-in-depth behind the full-screen lock every staff page already
+// shows once an account is 'locked'/'canceled' (see layouts/default.vue) --
+// this is what stops the underlying API calls too, in case something
+// reaches them without going through that UI (a stale tab, a direct call).
+// Not applied to requireTeamMember itself: a few routes call that directly
+// for internal/system work (webhooks, cron-fired automations) that
+// shouldn't stop just because a clinic hasn't paid.
+export async function requireActiveAccount(event: H3Event) {
   const { supabase, teamMember } = await requireTeamMember(event)
+
+  const { data: subscription } = await supabase.from('subscriptions').select('status').eq('account_id', teamMember.account_id).maybeSingle()
+
+  // No row at all is treated as not-locked rather than as an error -- fail
+  // open, not closed, so a gap in backfill never itself locks someone out.
+  if (subscription && (subscription.status === 'locked' || subscription.status === 'canceled')) {
+    throw createError({ statusCode: 402, statusMessage: 'This account is locked pending payment' })
+  }
+
+  return { supabase, teamMember }
+}
+
+export async function requirePermission(event: H3Event, permKey: string) {
+  const { supabase, teamMember } = await requireActiveAccount(event)
 
   if (!teamMember.is_owner) {
     const { data: allowed } = await supabase.rpc('has_permission', {

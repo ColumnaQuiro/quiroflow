@@ -44,6 +44,7 @@ export const useAccountStore = defineStore('account', {
     clinics: [] as Clinic[],
     currentClinicId: null as string | null,
     permissions: {} as Record<string, PermissionValue>,
+    subscriptionStatus: null as string | null,
     loaded: false,
     loading: false,
   }),
@@ -51,6 +52,9 @@ export const useAccountStore = defineStore('account', {
     accountId: (state) => state.teamMember?.account_id ?? null,
     currentClinic: (state) => state.clinics.find((c) => c.id === state.currentClinicId) ?? null,
     isOwner: (state) => state.teamMember?.is_owner ?? false,
+    // No row at all (shouldn't happen post-backfill, but a store reload
+    // mid-migration is possible) fails open, same as requireActiveAccount.
+    isBillingLocked: (state) => state.subscriptionStatus === 'locked' || state.subscriptionStatus === 'canceled',
   },
   actions: {
     async load() {
@@ -87,7 +91,7 @@ export const useAccountStore = defineStore('account', {
       useTheme().setPreference(teamMember.theme_preference as 'light' | 'dark' | 'system')
       useLang().setPreference(teamMember.language_preference as 'en' | 'es')
 
-      const [{ data: account }, { data: clinics }, { data: permissions }] = await Promise.all([
+      const [{ data: account }, { data: clinics }, { data: permissions }, { data: subscription }] = await Promise.all([
         supabase
           .from('accounts')
           .select('name, slug, whatsapp_confirmation_template_name, whatsapp_recall_template_name, scheduling_policy_fee_cents')
@@ -98,6 +102,7 @@ export const useAccountStore = defineStore('account', {
           .select('id, account_id, name, address, slot_duration_minutes, business_hours, legal_name, tax_id, invoice_footer_text, logo_storage_path')
           .eq('account_id', teamMember.account_id),
         supabase.rpc('get_my_permissions', { target_account_id: teamMember.account_id }),
+        supabase.from('subscriptions').select('status').eq('account_id', teamMember.account_id).maybeSingle(),
       ])
 
       this.accountName = account?.name ?? ''
@@ -107,6 +112,7 @@ export const useAccountStore = defineStore('account', {
       this.schedulingPolicyFeeCents = account?.scheduling_policy_fee_cents ?? null
       this.clinics = (clinics as Clinic[]) ?? []
       this.permissions = (permissions as Record<string, PermissionValue>) ?? {}
+      this.subscriptionStatus = subscription?.status ?? null
       if (!this.currentClinicId && this.clinics.length > 0) {
         const stored = import.meta.server ? null : localStorage.getItem(CURRENT_CLINIC_STORAGE_KEY)
         this.currentClinicId = (stored && this.clinics.some((c) => c.id === stored)) ? stored : this.clinics[0].id
@@ -132,6 +138,7 @@ export const useAccountStore = defineStore('account', {
       this.clinics = []
       this.currentClinicId = null
       this.permissions = {}
+      this.subscriptionStatus = null
       this.loaded = false
       this.loading = false
     },

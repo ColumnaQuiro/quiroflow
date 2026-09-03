@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { hasBusinessHoursConfigured, isWithinBusinessHours } from '~/utils/businessHours'
 import { effectivePriceCents, effectiveDuration, type AppointmentTypeOverride } from '~/utils/appointmentOverrides'
-import { normalizeSearchTerm } from '~/utils/searchText'
+import { normalizeSearchTerm, sanitizeSearchToken } from '~/utils/searchText'
 
 interface RoomOption { id: string; name: string }
 interface AppointmentTypeOption { id: string; name: string; duration_minutes: number; color: string; default_price_cents: number }
@@ -77,10 +77,17 @@ watch(patientQuery, (q) => {
     return
   }
   searchTimer = setTimeout(async () => {
+    // The placeholder promises "name, phone, or email" -- phone numbers live
+    // on a separate table, so a matching one is folded in as an extra id.in
+    // alongside the name match, same approach as pages/patients/index.vue.
+    const token = sanitizeSearchToken(q.trim())
+    const { data: phoneMatches } = await supabase.from('patient_contact_numbers').select('patient_id').ilike('number', `%${token}%`)
+    const phoneIds = [...new Set((phoneMatches ?? []).map((m) => m.patient_id))]
+    const idClause = phoneIds.length > 0 ? `,id.in.(${phoneIds.join(',')})` : ''
     const { data } = await supabase
       .from('patients')
       .select('id, first_name, last_name')
-      .ilike('search_name', `%${normalizeSearchTerm(q.trim())}%`)
+      .or(`search_name.ilike.%${normalizeSearchTerm(token)}%,email.ilike.%${token}%${idClause}`)
       .order('first_name')
       .limit(20)
     searchResults.value = data ?? []

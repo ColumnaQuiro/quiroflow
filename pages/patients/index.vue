@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Tables } from '~/types/database.types'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
-import { normalizeSearchTerm } from '~/utils/searchText'
+import { normalizeSearchTerm, sanitizeSearchToken } from '~/utils/searchText'
 
 type Patient = Pick<
   Tables<'patients'>,
@@ -55,13 +55,6 @@ const page = ref(1)
 const totalCount = ref(0)
 const totalPages = computed(() => Math.max(1, Math.ceil(totalCount.value / PAGE_SIZE)))
 
-// Filter-syntax characters in PostgREST's .or() string -- strip them from
-// search input rather than trying to escape them, so a stray "%" or ","
-// can't wildcard-match or break the filter shape.
-function sanitizeToken(s: string) {
-  return s.replace(/[%_,()]/g, '')
-}
-
 async function loadPatients() {
   loading.value = true
 
@@ -89,14 +82,15 @@ async function loadPatients() {
   if (practitionerFilter.value) query = query.eq('default_practitioner_id', practitionerFilter.value)
   if (statusFilter.value !== 'any') query = query.eq('status', statusFilter.value)
 
-  // Each word must match somewhere in first/last name/email -- chaining
-  // .or() calls ANDs the groups together, so "john sm" matches "John Smith"
-  // regardless of which word landed in which field. A single-token search
-  // additionally checks phone numbers (a separate table), since the
-  // placeholder promises "Name, phone or email".
-  const tokens = search.value.trim().split(/\s+/).map(sanitizeToken).filter(Boolean)
-  if (tokens.length === 1) {
-    const token = tokens[0]
+  // Each word must match somewhere in first/last name/email/phone -- chaining
+  // .or() calls ANDs the groups together, so "john 612" matches a John whose
+  // phone contains "612" regardless of which word landed in which field.
+  // Phone numbers live on a separate table (patient_contact_numbers), so
+  // each token gets its own lookup there alongside the name/email match --
+  // the placeholder promises "Name, phone or email" for any word typed, not
+  // just a lone one.
+  const tokens = search.value.trim().split(/\s+/).map(sanitizeSearchToken).filter(Boolean)
+  for (const token of tokens) {
     const { data: phoneMatches } = await supabase
       .from('patient_contact_numbers')
       .select('patient_id')
@@ -104,10 +98,6 @@ async function loadPatients() {
     const phoneIds = [...new Set((phoneMatches ?? []).map((m) => m.patient_id))]
     const idClause = phoneIds.length > 0 ? `,id.in.(${phoneIds.join(',')})` : ''
     query = query.or(`search_name.ilike.%${normalizeSearchTerm(token)}%,email.ilike.%${token}%${idClause}`)
-  } else {
-    for (const token of tokens) {
-      query = query.or(`search_name.ilike.%${normalizeSearchTerm(token)}%,email.ilike.%${token}%`)
-    }
   }
 
   const from = (page.value - 1) * PAGE_SIZE
@@ -230,6 +220,17 @@ async function exportCsv() {
       owingIds = (owing ?? []).map((r) => r.patient_id!)
     }
 
+    // Computed once (not per page) -- same phone-lookup-per-token approach
+    // as loadPatients() above, so an exported CSV matches what's on screen.
+    const tokens = search.value.trim().split(/\s+/).map(sanitizeSearchToken).filter(Boolean)
+    const tokenIdClauses = await Promise.all(
+      tokens.map(async (token) => {
+        const { data: phoneMatches } = await supabase.from('patient_contact_numbers').select('patient_id').ilike('number', `%${token}%`)
+        const phoneIds = [...new Set((phoneMatches ?? []).map((m) => m.patient_id))]
+        return { token, idClause: phoneIds.length > 0 ? `,id.in.(${phoneIds.join(',')})` : '' }
+      }),
+    )
+
     const rows = await fetchAllRows<Patient & { tags: string[] }>((from, to) => {
       let q = supabase.from('patients').select(selectCols) as any
       if (store.currentClinicId) q = q.eq('clinic_id', store.currentClinicId)
@@ -238,9 +239,8 @@ async function exportCsv() {
       if (missingContact.value === 'phone') q = q.eq('has_phone', false)
       if (practitionerFilter.value) q = q.eq('default_practitioner_id', practitionerFilter.value)
       if (statusFilter.value !== 'any') q = q.eq('status', statusFilter.value)
-      const tokens = search.value.trim().split(/\s+/).map(sanitizeToken).filter(Boolean)
-      for (const token of tokens) {
-        q = q.or(`search_name.ilike.%${normalizeSearchTerm(token)}%,email.ilike.%${token}%`)
+      for (const { token, idClause } of tokenIdClauses) {
+        q = q.or(`search_name.ilike.%${normalizeSearchTerm(token)}%,email.ilike.%${token}%${idClause}`)
       }
       return q.order('first_name').range(from, to)
     })

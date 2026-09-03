@@ -6,7 +6,11 @@ const t = useT()
 interface PHPatient { id: number; patient_number: string }
 interface PHPatientPackage {
   id: number
-  patient_id: number
+  // PracticeHub's docs example shows a top-level patient_id, but real
+  // patient_packages records leave it null and only populate
+  // subscribed_patients -- checking both is what actually finds a match.
+  patient_id: number | null
+  subscribed_patients: { patient_id: number }[] | null
   name: string | null
   package_type: string | null
   active: number | null
@@ -17,6 +21,10 @@ interface PHPatientPackage {
   owing: number | null
   package_balance: number | null
   created: string
+}
+
+function patientIdOf(pkg: PHPatientPackage): number | null {
+  return pkg.patient_id ?? pkg.subscribed_patients?.[0]?.patient_id ?? null
 }
 
 interface Candidate {
@@ -122,7 +130,8 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         continue
       }
 
-      const patientNumber = patientNumberById.get(String(pkg.patient_id))
+      const phPatientId = patientIdOf(pkg)
+      const patientNumber = phPatientId !== null ? patientNumberById.get(String(phPatientId)) : undefined
       const ourPatient = patientNumber ? ourPatientByRef.get(patientNumber) : undefined
       if (!ourPatient) {
         skippedUnmatched.value++

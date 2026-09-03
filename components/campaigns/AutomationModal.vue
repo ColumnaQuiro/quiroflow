@@ -88,7 +88,10 @@ const isMarketing = ref(false)
 const actions = ref<ActionForm[]>([blankAction()])
 const docTemplates = ref<{ id: string; title: string }[]>([])
 const appointmentTypes = ref<{ id: string; name: string }[]>([])
-const filterAppointmentTypeId = ref('')
+// Any of these types matches (OR) -- an appointment only ever has one type,
+// so e.g. "Primera visita" or "Oferta primera visita" both firing this rule
+// means picking both here, not a way to require both at once (AND).
+const filterAppointmentTypeIds = ref<string[]>([])
 const filterTotalVisits = ref('')
 const filterNoPriorAppointments = ref(false)
 // Only meaningful for the appointment.hours_before trigger -- how long
@@ -136,12 +139,19 @@ onMounted(async () => {
       enabled.value = rule.enabled
       isMarketing.value = rule.is_marketing
       const filters = (rule.filters ?? {}) as Record<string, unknown>
-      filterAppointmentTypeId.value = typeof filters.appointment_type_id === 'string' ? filters.appointment_type_id : ''
+      // appointment_type_id (singular) is what rules saved before multi-select
+      // existed still have on disk -- read it as a one-item array so an old
+      // rule shows up with its type still checked instead of silently reset.
+      filterAppointmentTypeIds.value = Array.isArray(filters.appointment_type_ids)
+        ? filters.appointment_type_ids.filter((id): id is string => typeof id === 'string')
+        : typeof filters.appointment_type_id === 'string'
+          ? [filters.appointment_type_id]
+          : []
       filterTotalVisits.value = typeof filters.total_visits === 'number' ? String(filters.total_visits) : ''
       filterNoPriorAppointments.value = filters.no_prior_appointments === true
       filterHoursBefore.value = typeof filters.hours_before === 'number' ? String(filters.hours_before) : '24'
       filterDaysAfter.value = typeof filters.days_after === 'number' ? String(filters.days_after) : '2'
-      const { appointment_type_id: _a, total_visits: _t, no_prior_appointments: _n, hours_before: _h, days_after: _d, ...rest } = filters
+      const { appointment_type_id: _a, appointment_type_ids: _ai, total_visits: _t, no_prior_appointments: _n, hours_before: _h, days_after: _d, ...rest } = filters
       otherFilters = rest
     }
     if (existingActions && existingActions.length > 0) {
@@ -235,7 +245,7 @@ async function persist(): Promise<string | null> {
   }
 
   const filters: Record<string, unknown> = { ...otherFilters }
-  if (filterAppointmentTypeId.value) filters.appointment_type_id = filterAppointmentTypeId.value
+  if (filterAppointmentTypeIds.value.length > 0) filters.appointment_type_ids = filterAppointmentTypeIds.value
   if (filterTotalVisits.value !== '') filters.total_visits = Number(filterTotalVisits.value)
   if (filterNoPriorAppointments.value) filters.no_prior_appointments = true
   if (triggerEvent.value === 'appointment.hours_before') {
@@ -432,13 +442,17 @@ async function sendTestToMe() {
           <div v-if="!NO_APPOINTMENT_CONTEXT_TRIGGERS.includes(triggerEvent)" class="rounded-card border border-[#EDEEF2] bg-surface-subtle p-3.5">
             <label class="block text-[12.5px] font-medium text-ink-700">{{ t('Only when', 'Solo cuando') }}</label>
             <div class="mt-1.5 grid grid-cols-2 gap-2.5">
-              <select
-                v-model="filterAppointmentTypeId"
-                class="h-9 w-full rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-              >
-                <option value="">{{ t('Any appointment type', 'Cualquier tipo de cita') }}</option>
-                <option v-for="at in appointmentTypes" :key="at.id" :value="at.id">{{ at.name }}</option>
-              </select>
+              <div class="rounded-ctl border border-line-control bg-surface px-3 py-1.5">
+                <p class="text-[11px] text-ink-muted2">
+                  {{ filterAppointmentTypeIds.length === 0 ? t('Any appointment type', 'Cualquier tipo de cita') : t('Any of these types', 'Cualquiera de estos tipos') }}
+                </p>
+                <div class="mt-1 flex max-h-24 flex-col gap-1 overflow-y-auto">
+                  <label v-for="at in appointmentTypes" :key="at.id" class="flex items-center gap-1.5 text-[12.5px] text-ink-700">
+                    <input v-model="filterAppointmentTypeIds" type="checkbox" :value="at.id" class="h-3.5 w-3.5 rounded border-line-control text-brand focus:ring-brand" />
+                    {{ at.name }}
+                  </label>
+                </div>
+              </div>
               <input
                 v-model="filterTotalVisits"
                 type="number"

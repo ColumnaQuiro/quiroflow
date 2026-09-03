@@ -5,7 +5,13 @@
 // endpoint and the birthday cron task both need to evaluate the same way
 // before running a rule's actions.
 export interface AutomationFilters {
+  // appointment_type_id (singular) is the legacy shape, still read from rules
+  // saved before multi-select existed -- appointment_type_ids (plural) is
+  // what the UI writes now. A rule matches if the appointment's type is *any*
+  // of these (OR) -- an appointment only ever has one type, so requiring it
+  // to match several at once (AND) could never fire.
   appointment_type_id?: string
+  appointment_type_ids?: string[]
   total_visits?: number
   no_prior_appointments?: boolean
   has_future_appointment?: boolean
@@ -26,15 +32,16 @@ export async function ruleFiltersMatch(
 ): Promise<boolean> {
   if (!filters || Object.keys(filters).length === 0) return true
 
-  if (filters.appointment_type_id) {
+  const typeIds = filters.appointment_type_ids?.length ? filters.appointment_type_ids : filters.appointment_type_id ? [filters.appointment_type_id] : null
+  if (typeIds) {
     if (!appointmentId) return false
     const { data: appt } = await supabase.from('appointments').select('appointment_type_id').eq('id', appointmentId).maybeSingle()
-    if (!appt || appt.appointment_type_id !== filters.appointment_type_id) return false
+    if (!appt || !typeIds.includes(appt.appointment_type_id)) return false
   }
 
   if (filters.total_visits !== undefined && filters.total_visits !== null) {
     let query = supabase.from('appointments').select('id', { count: 'exact', head: true }).eq('patient_id', patientId).eq('status', 'completed')
-    if (filters.appointment_type_id) query = query.eq('appointment_type_id', filters.appointment_type_id)
+    if (typeIds) query = query.in('appointment_type_id', typeIds)
     const { count } = await query
     if ((count ?? 0) !== filters.total_visits) return false
   }

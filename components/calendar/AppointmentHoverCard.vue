@@ -21,7 +21,7 @@ interface HoverAppointment {
 }
 
 const props = defineProps<{ appointment: HoverAppointment; roomName?: string | null; overrides?: AppointmentTypeOverride[] }>()
-const emit = defineEmits<{ noteSaved: []; checkIn: [] }>()
+const emit = defineEmits<{ noteSaved: []; checkIn: []; reschedule: [] }>()
 
 const supabase = useSupabaseClient()
 const { loading: billingLoading, balanceCents, activePackages } = usePatientFinancialSummary(() => props.appointment.patient_id)
@@ -233,6 +233,9 @@ function visitOrdinal(n: number) {
         <UiBtn variant="secondary" size="sm" class="w-full justify-center">{{ t('Open chart', 'Abrir ficha') }}</UiBtn>
       </NuxtLink>
     </div>
+    <UiBtn v-if="appointment.status === 'booked'" variant="secondary" size="sm" class="mt-2 w-full justify-center" @click="emit('reschedule')">
+      {{ t('Reschedule…', 'Reprogramar…') }}
+    </UiBtn>
   </div>
 </template>
 

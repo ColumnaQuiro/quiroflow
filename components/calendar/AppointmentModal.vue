@@ -33,7 +33,7 @@ const props = defineProps<{
   initialTab?: 'details' | 'billing' | 'history' | 'notes'
 }>()
 
-const emit = defineEmits<{ close: []; saved: [] }>()
+const emit = defineEmits<{ close: []; saved: []; reschedule: [] }>()
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
@@ -385,6 +385,9 @@ async function remove() {
             </UiBtn>
             <UiBtn variant="secondary" @click="emit('close')">
               {{ t('Cancel', 'Cancelar') }}
+            </UiBtn>
+            <UiBtn v-if="mode === 'edit' && appointment?.status === 'booked'" variant="secondary" @click="emit('reschedule')">
+              {{ t('Reschedule…', 'Reprogramar…') }}
             </UiBtn>
           </div>
           <button v-if="mode === 'edit'" type="button" class="text-[13px] font-medium text-danger-text hover:opacity-80" @click="remove">

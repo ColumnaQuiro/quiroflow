@@ -24,12 +24,14 @@ async function onSubmit() {
     p_account_name: accountName.value,
     p_clinic_name: clinicName.value,
     p_owner_name: ownerName.value,
+    p_referred_by_slug: localStorage.getItem('signup_referred_by') || null,
   })
   loading.value = false
   if (rpcError) {
     error.value = rpcError.message
     return
   }
+  localStorage.removeItem('signup_referred_by')
   store.reset()
   await store.load()
   // Best-effort -- if this fails (e.g. Netlify not configured), the clinic

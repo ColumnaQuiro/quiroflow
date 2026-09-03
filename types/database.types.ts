@@ -2838,6 +2838,42 @@ export type Database = {
           },
         ]
       }
+      plans: {
+        Row: {
+          annual_price_cents: number
+          created_at: string
+          extra_professional_price_cents: number | null
+          id: string
+          included_clinics: number | null
+          included_professionals: number | null
+          monthly_price_cents: number
+          name: string
+          sort_order: number
+        }
+        Insert: {
+          annual_price_cents: number
+          created_at?: string
+          extra_professional_price_cents?: number | null
+          id: string
+          included_clinics?: number | null
+          included_professionals?: number | null
+          monthly_price_cents: number
+          name: string
+          sort_order: number
+        }
+        Update: {
+          annual_price_cents?: number
+          created_at?: string
+          extra_professional_price_cents?: number | null
+          id?: string
+          included_clinics?: number | null
+          included_professionals?: number | null
+          monthly_price_cents?: number
+          name?: string
+          sort_order?: number
+        }
+        Relationships: []
+      }
       referral_sources: {
         Row: {
           account_id: string
@@ -3039,6 +3075,66 @@ export type Database = {
             columns: ["payment_schedule_id"]
             isOneToOne: false
             referencedRelation: "payment_schedules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      subscriptions: {
+        Row: {
+          account_id: string
+          billing_interval: string
+          comped: boolean
+          created_at: string
+          extra_professionals: number
+          id: string
+          plan_id: string
+          status: string
+          stripe_customer_id: string | null
+          stripe_subscription_id: string | null
+          trial_ends_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          billing_interval?: string
+          comped?: boolean
+          created_at?: string
+          extra_professionals?: number
+          id?: string
+          plan_id: string
+          status?: string
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          trial_ends_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          billing_interval?: string
+          comped?: boolean
+          created_at?: string
+          extra_professionals?: number
+          id?: string
+          plan_id?: string
+          status?: string
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          trial_ends_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "subscriptions_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: true
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "subscriptions_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "plans"
             referencedColumns: ["id"]
           },
         ]

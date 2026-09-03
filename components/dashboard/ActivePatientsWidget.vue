@@ -3,6 +3,7 @@ const ACTIVE_WINDOW_DAYS = 90
 
 const props = defineProps<{ practitionerId?: string }>()
 
+const t = useT()
 const supabase = useSupabaseClient()
 const loading = ref(true)
 const total = ref(0)
@@ -37,11 +38,11 @@ const pct = computed(() => (total.value === 0 ? 0 : Math.round((active.value / t
 </script>
 
 <template>
-  <div v-if="loading" class="text-[13px] text-ink-faint">Loading…</div>
+  <div v-if="loading" class="text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
   <div v-else>
     <p class="font-mono text-[27px] leading-none text-ink-900">
       {{ active }} <span class="font-sans text-[14px] font-medium text-ink-muted2">({{ pct }}%)</span>
     </p>
-    <p class="mt-1.5 text-[12px] text-ink-muted2">Seen in the last {{ ACTIVE_WINDOW_DAYS }} days</p>
+    <p class="mt-1.5 text-[12px] text-ink-muted2">{{ t(`Seen in the last ${ACTIVE_WINDOW_DAYS} days`, `Atendidos en los últimos ${ACTIVE_WINDOW_DAYS} días`) }}</p>
   </div>
 </template>

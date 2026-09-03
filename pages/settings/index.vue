@@ -32,72 +32,74 @@ const ICONS = {
   sun: 'M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-6.364-.386 1.591-1.591M3 12h2.25m.386-6.364 1.591 1.591M16.5 12a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z',
 }
 
-const groups = [
+const t = useT()
+
+const groups = computed(() => [
   {
-    label: 'General',
-    items: [{ to: '/settings/appearance', label: 'Appearance', description: 'Light, dark, or match your device.', icon: ICONS.sun }],
+    label: t('General', 'General'),
+    items: [{ to: '/settings/appearance', label: t('Appearance', 'Apariencia'), description: t('Light, dark, or match your device -- and English/Español.', 'Claro, oscuro, o según tu dispositivo -- y English/Español.'), icon: ICONS.sun }],
   },
   {
-    label: 'Clinic',
+    label: t('Clinic', 'Clínica'),
     items: [
-      { to: '/settings/clinics', label: 'Clinics', description: 'Locations your practice operates from.', icon: ICONS.building },
-      { to: '/settings/online-booking', label: 'Online Booking', description: 'Per-clinic hours, booking window, patient eligibility, discount codes, layout, and language overrides.', icon: ICONS.globe },
-      { to: '/settings/team', label: 'Team Members', description: 'Staff accounts, roles, and invites.', icon: ICONS.users },
-      { to: '/settings/practitioners', label: 'Practitioners', description: 'Link migrated names to real accounts, or invite them.', icon: ICONS.userCircle },
-      { to: '/settings/roles', label: 'Roles & Permissions', description: 'Control what each role can see and do.', icon: ICONS.lockClosed },
-      { to: '/settings/appointment-types', label: 'Appointment Types', description: 'Visit types, durations, colors, default price.', icon: ICONS.tag },
-      { to: '/settings/reschedule-reasons', label: 'Scheduling Policies', description: 'Reschedule, cancellation, and missed-appointment fees, plus reschedule reasons.', icon: ICONS.calendar },
-      { to: '/settings/rooms', label: 'Calendar Resources', description: 'Rooms used for scheduling per clinic.', icon: ICONS.calendar },
-      { to: '/settings/app', label: 'Mobile App', description: "Your clinic's join code, QR code, and app install stats.", icon: ICONS.devicePhoneMobile },
-      { to: '/settings/referral-sources', label: 'Referral Sources', description: 'The options on a patient\'s referral source field.', icon: ICONS.tag },
-      { to: '/settings/modalities', label: 'Modalities', description: 'Categorise practitioners, appointment types, and services by what they provide.', icon: ICONS.tag },
-      { to: '/settings/new-patient-fields', label: 'New Patient Fields', description: 'Which fields show and are required on the Add Patient panel.', icon: ICONS.userCircle },
+      { to: '/settings/clinics', label: t('Clinics', 'Clínicas'), description: t('Locations your practice operates from.', 'Las sedes desde las que opera tu clínica.'), icon: ICONS.building },
+      { to: '/settings/online-booking', label: t('Online Booking', 'Reserva online'), description: t('Per-clinic hours, booking window, patient eligibility, discount codes, layout, and language overrides.', 'Horarios por clínica, ventana de reserva, elegibilidad de pacientes, códigos de descuento, diseño y textos personalizados.'), icon: ICONS.globe },
+      { to: '/settings/team', label: t('Team Members', 'Miembros del equipo'), description: t('Staff accounts, roles, and invites.', 'Cuentas del personal, roles e invitaciones.'), icon: ICONS.users },
+      { to: '/settings/practitioners', label: t('Practitioners', 'Profesionales'), description: t('Link migrated names to real accounts, or invite them.', 'Vincula nombres migrados a cuentas reales, o invítalos.'), icon: ICONS.userCircle },
+      { to: '/settings/roles', label: t('Roles & Permissions', 'Roles y permisos'), description: t('Control what each role can see and do.', 'Controla qué puede ver y hacer cada rol.'), icon: ICONS.lockClosed },
+      { to: '/settings/appointment-types', label: t('Appointment Types', 'Tipos de cita'), description: t('Visit types, durations, colors, default price.', 'Tipos de visita, duraciones, colores, precio predeterminado.'), icon: ICONS.tag },
+      { to: '/settings/reschedule-reasons', label: t('Scheduling Policies', 'Políticas de programación'), description: t('Reschedule, cancellation, and missed-appointment fees, plus reschedule reasons.', 'Comisiones por reprogramación, cancelación e inasistencia, y motivos de reprogramación.'), icon: ICONS.calendar },
+      { to: '/settings/rooms', label: t('Calendar Resources', 'Recursos de calendario'), description: t('Rooms used for scheduling per clinic.', 'Salas usadas para la programación en cada clínica.'), icon: ICONS.calendar },
+      { to: '/settings/app', label: t('Mobile App', 'App móvil'), description: t("Your clinic's join code, QR code, and app install stats.", 'El código de acceso, código QR y estadísticas de instalación de la app de tu clínica.'), icon: ICONS.devicePhoneMobile },
+      { to: '/settings/referral-sources', label: t('Referral Sources', 'Fuentes de referencia'), description: t('The options on a patient\'s referral source field.', 'Las opciones del campo de fuente de referencia del paciente.'), icon: ICONS.tag },
+      { to: '/settings/modalities', label: t('Modalities', 'Modalidades'), description: t('Categorise practitioners, appointment types, and services by what they provide.', 'Clasifica profesionales, tipos de cita y servicios según lo que ofrecen.'), icon: ICONS.tag },
+      { to: '/settings/new-patient-fields', label: t('New Patient Fields', 'Campos de nuevo paciente'), description: t('Which fields show and are required on the Add Patient panel.', 'Qué campos se muestran y son obligatorios en el panel de Añadir paciente.'), icon: ICONS.userCircle },
     ],
   },
   {
-    label: 'Billing',
+    label: t('Billing', 'Facturación'),
     items: [
-      { to: '/billing/services', label: 'Services & Products', description: 'What you bill for.', icon: ICONS.shoppingBag },
-      { to: '/settings/packages', label: 'Packages / Bonos', description: 'Session bundle templates you can sell to patients.', icon: ICONS.gift },
-      { to: '/settings/memberships', label: 'Memberships', description: 'Recurring plan templates for patients.', icon: ICONS.badgeCheck },
-      { to: '/settings/payments', label: 'Payments (Stripe)', description: 'Automate installments and renewals with a saved card.', icon: ICONS.creditCard },
-      { to: '/settings/payment-methods', label: 'Payment Methods', description: 'The methods staff can record a payment against.', icon: ICONS.creditCard },
-      { to: '/settings/invoice-settings', label: 'Invoice Settings', description: 'Numbering, display options, and email templates for invoices.', icon: ICONS.documentText },
-      { to: '/settings/fiscal-data', label: 'Fiscal Data', description: 'Legal name and tax ID shown on invoices.', icon: ICONS.documentText },
+      { to: '/billing/services', label: t('Services & Products', 'Servicios y productos'), description: t('What you bill for.', 'Lo que facturas.'), icon: ICONS.shoppingBag },
+      { to: '/settings/packages', label: t('Packages / Bonos', 'Paquetes / Bonos'), description: t('Session bundle templates you can sell to patients.', 'Plantillas de bonos de sesiones que puedes vender a pacientes.'), icon: ICONS.gift },
+      { to: '/settings/memberships', label: t('Memberships', 'Membresías'), description: t('Recurring plan templates for patients.', 'Plantillas de planes recurrentes para pacientes.'), icon: ICONS.badgeCheck },
+      { to: '/settings/payments', label: t('Payments (Stripe)', 'Pagos (Stripe)'), description: t('Automate installments and renewals with a saved card.', 'Automatiza cuotas y renovaciones con una tarjeta guardada.'), icon: ICONS.creditCard },
+      { to: '/settings/payment-methods', label: t('Payment Methods', 'Métodos de pago'), description: t('The methods staff can record a payment against.', 'Los métodos con los que el personal puede registrar un pago.'), icon: ICONS.creditCard },
+      { to: '/settings/invoice-settings', label: t('Invoice Settings', 'Configuración de facturas'), description: t('Numbering, display options, and email templates for invoices.', 'Numeración, opciones de visualización y plantillas de email para facturas.'), icon: ICONS.documentText },
+      { to: '/settings/fiscal-data', label: t('Fiscal Data', 'Datos fiscales'), description: t('Legal name and tax ID shown on invoices.', 'Razón social y NIF/CIF que aparecen en las facturas.'), icon: ICONS.documentText },
     ],
   },
   {
-    label: 'Communication',
+    label: t('Communication', 'Comunicación'),
     items: [
-      { to: '/settings/communications-general', label: 'General', description: 'Automatic appointment confirmations and reminders.', icon: ICONS.bolt },
-      { to: '/settings/whatsapp', label: 'WhatsApp', description: 'Webhook and message templates for recalls and confirmations.', icon: ICONS.chatBubble },
-      { to: '/settings/saved-replies', label: 'Saved Replies', description: 'Pre-written answers your team can insert into the Inbox composer.', icon: ICONS.bookmark },
-      { to: '/settings/docs', label: 'Docs', description: 'Reusable document templates with patient field placeholders.', icon: ICONS.documentText },
+      { to: '/settings/communications-general', label: t('General', 'General'), description: t('Automatic appointment confirmations and reminders.', 'Confirmaciones y recordatorios de cita automáticos.'), icon: ICONS.bolt },
+      { to: '/settings/whatsapp', label: t('WhatsApp', 'WhatsApp'), description: t('Webhook and message templates for recalls and confirmations.', 'Webhook y plantillas de mensaje para recordatorios y confirmaciones.'), icon: ICONS.chatBubble },
+      { to: '/settings/saved-replies', label: t('Saved Replies', 'Respuestas guardadas'), description: t('Pre-written answers your team can insert into the Inbox composer.', 'Respuestas predefinidas que tu equipo puede insertar en el compositor de la Bandeja de entrada.'), icon: ICONS.bookmark },
+      { to: '/settings/docs', label: t('Docs', 'Documentos'), description: t('Reusable document templates with patient field placeholders.', 'Plantillas de documentos reutilizables con campos de paciente.'), icon: ICONS.documentText },
     ],
   },
   {
-    label: 'Data',
+    label: t('Data', 'Datos'),
     items: [
-      { to: '/settings/import', label: 'Import Patients (CSV)', description: 'Migrate patient records from another system.', icon: ICONS.arrowDownTray },
-      { to: '/settings/migrate-attachments', label: 'Migrate Attachments', description: 'Pull the real file content over from PracticeHub.', icon: ICONS.paperClip },
-      { to: '/settings/webhooks', label: 'Webhooks', description: 'Subscribe an endpoint to patient, appointment, and invoice events.', icon: ICONS.bolt },
+      { to: '/settings/import', label: t('Import Patients (CSV)', 'Importar pacientes (CSV)'), description: t('Migrate patient records from another system.', 'Migra registros de pacientes desde otro sistema.'), icon: ICONS.arrowDownTray },
+      { to: '/settings/migrate-attachments', label: t('Migrate Attachments', 'Migrar archivos adjuntos'), description: t('Pull the real file content over from PracticeHub.', 'Trae el contenido real de los archivos desde PracticeHub.'), icon: ICONS.paperClip },
+      { to: '/settings/webhooks', label: t('Webhooks', 'Webhooks'), description: t('Subscribe an endpoint to patient, appointment, and invoice events.', 'Suscribe un endpoint a eventos de pacientes, citas y facturas.'), icon: ICONS.bolt },
     ],
   },
   {
-    label: 'Developers',
+    label: t('Developers', 'Desarrolladores'),
     items: [
-      { to: '/settings/developers', label: 'API & Tokens', description: 'Create access tokens and see API docs for sending WhatsApp from outside QuiroFlow (e.g. n8n).', icon: ICONS.codeBracket },
+      { to: '/settings/developers', label: t('API & Tokens', 'API y tokens'), description: t('Create access tokens and see API docs for sending WhatsApp from outside QuiroFlow (e.g. n8n).', 'Crea tokens de acceso y consulta la documentación de la API para enviar WhatsApp desde fuera de QuiroFlow (p. ej. n8n).'), icon: ICONS.codeBracket },
     ],
   },
-]
+])
 </script>
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Settings" />
+    <PageHeader :title="t('Settings', 'Ajustes')" />
     <div class="flex-1 overflow-y-auto">
       <div class="p-6">
-        <p class="text-[13px] text-ink-muted2">Manage how your clinic runs in QuiroFlow.</p>
+        <p class="text-[13px] text-ink-muted2">{{ t('Manage how your clinic runs in QuiroFlow.', 'Gestiona cómo funciona tu clínica en QuiroFlow.') }}</p>
         <div class="mt-8 max-w-[960px]">
           <IconLinkGrid :groups="groups" />
         </div>

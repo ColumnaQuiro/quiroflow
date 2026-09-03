@@ -2,6 +2,7 @@
 // List: the next few booked (not yet completed/cancelled) appointments left
 // today, soonest first.
 const props = defineProps<{ practitionerId?: string; clinicId?: string }>()
+const t = useT()
 
 interface ApptRow {
   id: string
@@ -41,13 +42,13 @@ function timeLabel(iso: string) {
   return new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 }
 function patientName(r: ApptRow) {
-  return r.patients ? `${r.patients.first_name} ${r.patients.last_name ?? ''}`.trim() : 'Unknown patient'
+  return r.patients ? `${r.patients.first_name} ${r.patients.last_name ?? ''}`.trim() : t('Unknown patient', 'Paciente desconocido')
 }
 </script>
 
 <template>
-  <div v-if="loading" class="text-[13px] text-ink-faint">Loading…</div>
-  <p v-else-if="rows.length === 0" class="text-[13px] text-ink-faint">Nothing left booked today.</p>
+  <div v-if="loading" class="text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+  <p v-else-if="rows.length === 0" class="text-[13px] text-ink-faint">{{ t('Nothing left booked today.', 'No quedan citas reservadas hoy.') }}</p>
   <ul v-else class="divide-y divide-line-row2">
     <li v-for="r in rows" :key="r.id" class="flex items-center gap-2 py-1.5 text-[13px] first:pt-0 last:pb-0">
       <span class="min-w-0 flex-1 truncate text-ink-700">{{ patientName(r) }}</span>

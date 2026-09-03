@@ -91,6 +91,7 @@ interface AppointmentRow {
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const { can } = usePermission()
+const t = useT()
 
 const SLOT_MIN = computed(() => store.currentClinic?.slot_duration_minutes ?? 30)
 
@@ -146,15 +147,15 @@ const settings = reactive({
   hideDeleted: true,
   compactRows: false,
 })
-const displayToggles: { key: keyof typeof settings; label: string }[] = [
-  { key: 'privacyMode', label: 'Privacy mode' },
-  { key: 'flowTracker', label: 'Flow tracker' },
-  { key: 'showAvailability', label: 'Show availability' },
-  { key: 'hideCancelled', label: 'Hide cancelled' },
-  { key: 'hideRescheduled', label: 'Hide rescheduled' },
-  { key: 'hideDeleted', label: 'Hide deleted' },
-  { key: 'compactRows', label: 'Compact rows' },
-]
+const displayToggles = computed<{ key: keyof typeof settings; label: string }[]>(() => [
+  { key: 'privacyMode', label: t('Privacy mode', 'Modo privacidad') },
+  { key: 'flowTracker', label: t('Flow tracker', 'Seguimiento de flujo') },
+  { key: 'showAvailability', label: t('Show availability', 'Mostrar disponibilidad') },
+  { key: 'hideCancelled', label: t('Hide cancelled', 'Ocultar canceladas') },
+  { key: 'hideRescheduled', label: t('Hide rescheduled', 'Ocultar reprogramadas') },
+  { key: 'hideDeleted', label: t('Hide deleted', 'Ocultar eliminadas') },
+  { key: 'compactRows', label: t('Compact rows', 'Filas compactas') },
+])
 
 function pad(n: number) {
   return String(n).padStart(2, '0')
@@ -230,6 +231,15 @@ const miniGrid = computed(() => miniCalendarGrid(miniBase.value))
 function selectMiniDate(d: Date) {
   anchorDate.value = d
 }
+const miniWeekdayAbbrevs = computed(() => [
+  t('Mo', 'Lu'),
+  t('Tu', 'Ma'),
+  t('We', 'Mi'),
+  t('Th', 'Ju'),
+  t('Fr', 'Vi'),
+  t('Sa', 'Sá'),
+  t('Su', 'Do'),
+])
 
 async function loadReferenceData() {
   const [{ data: types }, { data: members }, { data: ovr }, { data: memberClinics }] = await Promise.all([
@@ -434,13 +444,13 @@ watch([viewMode, anchorDate, practitionerFilter], async () => {
   await loadAvailabilityBlocks()
 })
 
-const dayColumns = computed(() => [...rooms.value, { id: '__none', name: 'Unassigned' }])
+const dayColumns = computed(() => [...rooms.value, { id: '__none', name: t('Unassigned', 'Sin asignar') }])
 
 function blockLabel(block: AvailabilityBlock) {
   if (block.note) return block.note
   const who = block.practitioner_id ? teamMembers.value.find((m) => m.id === block.practitioner_id)?.full_name : null
-  if (who) return `Blocked for ${who}`
-  return block.room_id === null ? 'Blocked (whole clinic)' : 'Blocked'
+  if (who) return t(`Blocked for ${who}`, `Bloqueado para ${who}`)
+  return block.room_id === null ? t('Blocked (whole clinic)', 'Bloqueado (toda la clínica)') : t('Blocked', 'Bloqueado')
 }
 
 function blocksForRoom(roomId: string) {
@@ -565,16 +575,22 @@ function appointmentVisualStatus(appt: AppointmentRow): VisualStatus {
 // Tailwind classes rather than inline hex -- these map 1:1 onto the
 // existing brand/success/warning/info/danger tokens in tailwind.config.ts,
 // which already carry the exact hex values from the redesign spec.
-const STATUS_STYLES: Record<VisualStatus, { dotClass: string; label: string; pillTone: 'brand' | 'success' | 'warning' | 'info' | 'danger' | 'neutral' }> = {
-  booked: { dotClass: 'bg-brand', label: 'Booked', pillTone: 'brand' },
-  confirmed: { dotClass: 'bg-success-accent', label: 'Confirmed', pillTone: 'success' },
-  completed: { dotClass: 'bg-success-accent', label: 'Completed', pillTone: 'success' },
-  unconfirmed: { dotClass: 'bg-warning-accent', label: 'Unconfirmed', pillTone: 'warning' },
-  reschedule_requested: { dotClass: 'bg-info-accent', label: 'Wants to reschedule', pillTone: 'info' },
-  no_show: { dotClass: 'bg-danger-text', label: 'No-show', pillTone: 'danger' },
-  cancelled: { dotClass: 'bg-ink-faint3', label: 'Cancelled', pillTone: 'neutral' },
+const STATUS_STYLES: Record<VisualStatus, { dotClass: string; labelEn: string; labelEs: string; pillTone: 'brand' | 'success' | 'warning' | 'info' | 'danger' | 'neutral' }> = {
+  booked: { dotClass: 'bg-brand', labelEn: 'Booked', labelEs: 'Reservada', pillTone: 'brand' },
+  confirmed: { dotClass: 'bg-success-accent', labelEn: 'Confirmed', labelEs: 'Confirmada', pillTone: 'success' },
+  completed: { dotClass: 'bg-success-accent', labelEn: 'Completed', labelEs: 'Completada', pillTone: 'success' },
+  unconfirmed: { dotClass: 'bg-warning-accent', labelEn: 'Unconfirmed', labelEs: 'Sin confirmar', pillTone: 'warning' },
+  reschedule_requested: { dotClass: 'bg-info-accent', labelEn: 'Wants to reschedule', labelEs: 'Quiere cambiar la cita', pillTone: 'info' },
+  no_show: { dotClass: 'bg-danger-text', labelEn: 'No-show', labelEs: 'No presentado', pillTone: 'danger' },
+  cancelled: { dotClass: 'bg-ink-faint3', labelEn: 'Cancelled', labelEs: 'Cancelada', pillTone: 'neutral' },
 }
-const statusLegend = (Object.keys(STATUS_STYLES) as VisualStatus[]).map((key) => ({ key, ...STATUS_STYLES[key] }))
+const statusLegend = computed(() =>
+  (Object.keys(STATUS_STYLES) as VisualStatus[]).map((key) => ({
+    key,
+    ...STATUS_STYLES[key],
+    label: t(STATUS_STYLES[key].labelEn, STATUS_STYLES[key].labelEs),
+  })),
+)
 
 function dotClass(appt: AppointmentRow) {
   return STATUS_STYLES[appointmentVisualStatus(appt)].dotClass
@@ -927,7 +943,7 @@ async function onAppointmentDragEnd(e: PointerEvent) {
     hasBusinessHoursConfigured(hours) &&
     (!isWithinBusinessHours(new Date(appt.starts_at), hours) || !isWithinBusinessHours(new Date(new Date(appt.ends_at).getTime() - 1), hours))
   ) {
-    if (!confirm("This falls outside the clinic's working hours. Save it anyway?")) {
+    if (!confirm(t("This falls outside the clinic's working hours. Save it anyway?", 'Esto queda fuera del horario de atención de la clínica. ¿Guardarlo de todos modos?'))) {
       revert()
       return
     }
@@ -1026,13 +1042,25 @@ async function toggleCheckedIn(appt: AppointmentRow | null) {
 // Flow Tracker: Arrived (checked_in_at, already tracked elsewhere) -> With
 // Practitioner -> Awaiting Checkout -> Complete (marks the appointment
 // completed). Scoped to whatever's currently loaded (today, for the
-// default Day view), same as the rest of the calendar.
-async function advanceFlow(appt: AppointmentRow, field: 'flow_with_practitioner_at' | 'flow_checkout_at') {
+// default Day view), same as the rest of the calendar. Parameter typed to
+// match CalendarFlowTracker's own (narrower) FlowAppointment emit shape --
+// the object passed at runtime is always the full AppointmentRow (Vue props
+// aren't cloned), but the component only declares needing these fields.
+interface FlowAppointment {
+  id: string
+  checked_in_at: string | null
+  flow_with_practitioner_at: string | null
+  flow_checkout_at: string | null
+  status: string
+  patients: { first_name: string; last_name: string | null } | null
+}
+async function advanceFlow(appt: FlowAppointment, field: 'flow_with_practitioner_at' | 'flow_checkout_at') {
   const now = new Date().toISOString()
   appt[field] = now
-  await supabase.from('appointments').update({ [field]: now }).eq('id', appt.id)
+  const update = field === 'flow_with_practitioner_at' ? { flow_with_practitioner_at: now } : { flow_checkout_at: now }
+  await supabase.from('appointments').update(update).eq('id', appt.id)
 }
-async function completeFlow(appt: AppointmentRow) {
+async function completeFlow(appt: FlowAppointment) {
   appt.status = 'completed'
   await supabase.from('appointments').update({ status: 'completed' }).eq('id', appt.id)
   await loadTodayGlance()
@@ -1180,12 +1208,12 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
   <div class="flex h-full flex-col">
     <header class="flex h-14 shrink-0 items-center justify-between border-b border-line bg-surface px-6">
       <div class="flex items-center gap-4">
-        <h1 class="text-[18px] font-[640] tracking-tightTitle text-ink-900">Calendar</h1>
+        <h1 class="text-[18px] font-[640] tracking-tightTitle text-ink-900">{{ t('Calendar', 'Calendario') }}</h1>
         <div class="flex items-center gap-1">
           <button type="button" class="flex h-[26px] w-[26px] items-center justify-center rounded-ctlSm border border-line-control text-ink-500 hover:border-line-controlHover hover:bg-surface-subtle" @click="stepDate(-1)">
             <svg width="7" height="11" viewBox="0 0 7 11" fill="none"><path d="M6 1L1 5.5L6 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
           </button>
-          <button type="button" class="flex h-[26px] items-center rounded-ctlSm border border-line-control px-2.5 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover hover:bg-surface-subtle" @click="goToday">Today</button>
+          <button type="button" class="flex h-[26px] items-center rounded-ctlSm border border-line-control px-2.5 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover hover:bg-surface-subtle" @click="goToday">{{ t('Today', 'Hoy') }}</button>
           <button type="button" class="flex h-[26px] w-[26px] items-center justify-center rounded-ctlSm border border-line-control text-ink-500 hover:border-line-controlHover hover:bg-surface-subtle" @click="stepDate(1)">
             <svg width="7" height="11" viewBox="0 0 7 11" fill="none"><path d="M1 1L6 5.5L1 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
           </button>
@@ -1194,13 +1222,13 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
       </div>
       <div class="flex items-center gap-2">
         <select v-model="viewMode" class="h-[26px] rounded-ctlSm border border-line-control bg-surface px-2 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover focus:border-brand focus:outline-none">
-          <option value="day">Day</option>
-          <option value="workweek">Work week</option>
-          <option value="week">Week</option>
+          <option value="day">{{ t('Day', 'Día') }}</option>
+          <option value="workweek">{{ t('Work week', 'Semana laboral') }}</option>
+          <option value="week">{{ t('Week', 'Semana') }}</option>
         </select>
-        <UiBtn v-if="can('payments_allocate')" variant="secondary" size="sm" @click="cashShiftOpen = true">Cash Shift</UiBtn>
-        <UiBtn variant="secondary" size="sm" @click="openBlockCreateModal()">Block time</UiBtn>
-        <UiBtn variant="primary" size="sm" @click="openCreateModal()">+ New Appointment</UiBtn>
+        <UiBtn v-if="can('payments_allocate')" variant="secondary" size="sm" @click="cashShiftOpen = true">{{ t('Cash Shift', 'Turno de Caja') }}</UiBtn>
+        <UiBtn variant="secondary" size="sm" @click="openBlockCreateModal()">{{ t('Block time', 'Bloquear horario') }}</UiBtn>
+        <UiBtn variant="primary" size="sm" @click="openCreateModal()">{{ t('+ New Appointment', '+ Nueva Cita') }}</UiBtn>
       </div>
     </header>
 
@@ -1234,7 +1262,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
             <button type="button" class="rounded-ctlSm p-1 text-ink-faint hover:bg-surface-subtle hover:text-ink-600" @click="miniBase = addMonths(miniBase, 1)">›</button>
           </div>
           <div class="mt-2 grid grid-cols-7 gap-y-1 text-center">
-            <span v-for="d in ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']" :key="d" class="text-[10px] font-medium uppercase text-ink-faint">{{ d }}</span>
+            <span v-for="d in miniWeekdayAbbrevs" :key="d" class="text-[10px] font-medium uppercase text-ink-faint">{{ d }}</span>
             <template v-for="(cell, i) in miniGrid" :key="i">
               <button
                 v-if="cell"
@@ -1255,30 +1283,30 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
         <div class="mx-3 rounded-card border border-line bg-surface p-3">
           <div class="space-y-1.5">
             <div class="flex items-center justify-between text-[12.5px]">
-              <span class="text-ink-600">Booked</span>
+              <span class="text-ink-600">{{ t('Booked', 'Reservadas') }}</span>
               <span class="font-mono text-[12.5px] font-medium text-ink-900">{{ todayGlance.booked }}</span>
             </div>
             <div class="flex items-center justify-between text-[12.5px]">
-              <span class="text-success-text">Seen</span>
+              <span class="text-success-text">{{ t('Seen', 'Atendidas') }}</span>
               <span class="font-mono text-[12.5px] font-medium text-success-text">{{ todayGlance.seen }} ({{ glancePct(todayGlance.seen) }}%)</span>
             </div>
             <div class="flex items-center justify-between text-[12.5px]">
-              <span class="text-warning-text">Rescheduled</span>
+              <span class="text-warning-text">{{ t('Rescheduled', 'Reprogramadas') }}</span>
               <span class="font-mono text-[12.5px] font-medium text-warning-text">{{ todayGlance.rescheduled }} ({{ glancePct(todayGlance.rescheduled) }}%)</span>
             </div>
             <div class="flex items-center justify-between text-[12.5px]">
-              <span class="text-danger-text">Cancelled</span>
+              <span class="text-danger-text">{{ t('Cancelled', 'Canceladas') }}</span>
               <span class="font-mono text-[12.5px] font-medium text-danger-text">{{ todayGlance.cancelled }} ({{ glancePct(todayGlance.cancelled) }}%)</span>
             </div>
             <div class="flex items-center justify-between text-[12.5px]">
-              <span class="text-ink-muted2">Missed</span>
+              <span class="text-ink-muted2">{{ t('Missed', 'Perdidas') }}</span>
               <span class="font-mono text-[12.5px] font-medium text-ink-muted2">{{ todayGlance.missed }} ({{ glancePct(todayGlance.missed) }}%)</span>
             </div>
           </div>
         </div>
 
         <div class="mx-3 mt-3 rounded-card border border-line bg-surface p-3">
-          <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">Display</p>
+          <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">{{ t('Display', 'Visualización') }}</p>
           <div class="mt-2 space-y-2.5">
             <div v-for="toggle in displayToggles" :key="toggle.key" class="flex items-center justify-between gap-2">
               <span class="text-[12.5px] text-ink-600">{{ toggle.label }}</span>
@@ -1297,7 +1325,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
         </div>
 
         <div class="m-3 rounded-card border border-line bg-surface p-3">
-          <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">Status key</p>
+          <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">{{ t('Status key', 'Leyenda de estados') }}</p>
           <div class="mt-2 space-y-1.5">
             <div v-for="item in statusLegend" :key="item.key" class="flex items-center gap-2 text-[12.5px] text-ink-600">
               <span class="h-[7px] w-[7px] shrink-0 rounded-full" :class="item.dotClass" />
@@ -1323,7 +1351,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
         </div>
 
         <div v-else-if="!store.currentClinicId" class="p-6 text-[13px] text-ink-faint">
-          No clinic selected.
+          {{ t('No clinic selected.', 'Ninguna clínica seleccionada.') }}
         </div>
 
         <!-- Day view: room columns -->
@@ -1384,10 +1412,10 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                   <div
                     v-if="isOverflowBlock(appt)"
                     class="absolute flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[10.5px] font-medium text-ink-muted2 shadow-card"
-                    :title="`${appt.count} more appointment${appt.count === 1 ? '' : 's'} at this time`"
+                    :title="`${appt.count} ${appt.count === 1 ? t('more appointment', 'cita más') : t('more appointments', 'citas más')} ${t('at this time', 'a esta hora')}`"
                     :style="columnStyle(appt, timeToPx(appt.starts_at, DAY_HOUR_PX), OVERFLOW_CHIP_PX)"
                   >
-                    +{{ appt.count }} more
+                    +{{ appt.count }} {{ t('more', 'más') }}
                   </div>
                   <div
                     v-else
@@ -1420,7 +1448,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                         <span
                           v-if="(balanceByPatient[appt.patient_id] ?? 0) > 0"
                           class="relative flex h-[15px] w-[15px] shrink-0 items-center justify-center"
-                          @mouseenter="scheduleIconTooltip($event, `Patient in credit (${formatCredit(balanceByPatient[appt.patient_id] ?? 0)})`)"
+                          @mouseenter="scheduleIconTooltip($event, `${t('Patient in credit', 'Paciente con saldo a favor')} (${formatCredit(balanceByPatient[appt.patient_id] ?? 0)})`)"
                           @mouseleave="cancelIconTooltip"
                         >
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" class="text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.5)]">
@@ -1430,7 +1458,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                         <span
                           v-if="!hasFutureAppointment(appt)"
                           class="relative flex h-[15px] w-[15px] shrink-0 items-center justify-center"
-                          @mouseenter="scheduleIconTooltip($event, 'No future appointment')"
+                          @mouseenter="scheduleIconTooltip($event, t('No future appointment', 'Sin cita futura'))"
                           @mouseleave="cancelIconTooltip"
                         >
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" class="text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.5)]">
@@ -1527,7 +1555,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                     class="pointer-events-none absolute left-0 right-0 z-0 flex items-center justify-center overflow-hidden bg-[repeating-linear-gradient(135deg,#F4F5F8,#F4F5F8_6px,#EBECF1_6px,#EBECF1_12px)] font-mono text-[10px] text-ink-muted2"
                     :style="{ top: `${timeToPx(block.starts_at, WEEK_HOUR_PX)}px`, height: `${durationToPx(block.starts_at, block.ends_at, WEEK_HOUR_PX, WEEK_MIN_AVAILABILITY_PX)}px` }"
                   >
-                    Blocked
+                    {{ t('Blocked', 'Bloqueado') }}
                   </div>
 
                   <template v-for="(appt, i) in layoutForRoomOnDay(day, col.id)" :key="isOverflowBlock(appt) ? `overflow-${toDateKey(day)}-${col.id}-${i}` : appt.id">
@@ -1535,7 +1563,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                       v-if="isOverflowBlock(appt)"
                       type="button"
                       class="absolute flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[10px] font-medium text-ink-muted2 shadow-card hover:border-line-controlHover"
-                      :title="`${appt.count} more appointment${appt.count === 1 ? '' : 's'} at this time -- click to see them all in Day view`"
+                      :title="`${appt.count} ${appt.count === 1 ? t('more appointment', 'cita más') : t('more appointments', 'citas más')} ${t('at this time -- click to see them all in Day view', 'a esta hora -- haz clic para verlas todas en la vista Día')}`"
                       :style="columnStyle(appt, timeToPx(appt.starts_at, WEEK_HOUR_PX), OVERFLOW_CHIP_PX)"
                       @click.stop="showOverflowDay(day)"
                     >
@@ -1568,7 +1596,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                         <span
                           v-if="(balanceByPatient[appt.patient_id] ?? 0) > 0"
                           class="relative flex h-[14px] w-[14px] shrink-0 items-center justify-center"
-                          @mouseenter="scheduleIconTooltip($event, `Patient in credit (${formatCredit(balanceByPatient[appt.patient_id] ?? 0)})`)"
+                          @mouseenter="scheduleIconTooltip($event, `${t('Patient in credit', 'Paciente con saldo a favor')} (${formatCredit(balanceByPatient[appt.patient_id] ?? 0)})`)"
                           @mouseleave="cancelIconTooltip"
                         >
                           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" class="text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.5)]">
@@ -1578,7 +1606,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                         <span
                           v-if="!hasFutureAppointment(appt)"
                           class="relative flex h-[14px] w-[14px] shrink-0 items-center justify-center"
-                          @mouseenter="scheduleIconTooltip($event, 'No future appointment')"
+                          @mouseenter="scheduleIconTooltip($event, t('No future appointment', 'Sin cita futura'))"
                           @mouseleave="cancelIconTooltip"
                         >
                           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" class="text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.5)]">

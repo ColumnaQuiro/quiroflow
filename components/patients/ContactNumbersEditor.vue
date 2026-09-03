@@ -5,6 +5,7 @@ const props = withDefaults(defineProps<{ patientId: string; editable?: boolean }
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 const numbers = ref<Tables<'patient_contact_numbers'>[]>([])
 const loading = ref(true)
@@ -59,7 +60,7 @@ async function updateNumber(n: Tables<'patient_contact_numbers'>, patch: Partial
 
 <template>
   <div>
-    <p class="text-[12px] font-medium text-ink-muted">Phone numbers</p>
+    <p class="text-[12px] font-medium text-ink-muted">{{ t('Phone numbers', 'Números de teléfono') }}</p>
 
     <ul v-if="!loading && numbers.length > 0" class="mt-1.5 space-y-1.5">
       <li v-for="n in numbers" :key="n.id" class="flex items-center gap-2">
@@ -98,7 +99,7 @@ async function updateNumber(n: Tables<'patient_contact_numbers'>, patch: Partial
         </span>
       </li>
     </ul>
-    <p v-else-if="!loading" class="mt-1.5 text-[13px] text-ink-faint">No numbers yet.</p>
+    <p v-else-if="!loading" class="mt-1.5 text-[13px] text-ink-faint">{{ t('No numbers yet.', 'Aún no hay números.') }}</p>
 
     <div v-if="editable" class="mt-2 flex flex-wrap items-center gap-2">
       <select v-model="newCountry" class="h-9 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
@@ -114,7 +115,7 @@ async function updateNumber(n: Tables<'patient_contact_numbers'>, patch: Partial
         <input v-model="newIsWhatsapp" type="checkbox" class="h-4 w-4 rounded border-line-control text-brand focus:ring-brand" />
         WhatsApp
       </label>
-      <UiBtn variant="secondary" size="sm" :disabled="adding || !newNumber.trim()" @click="addNumber">Add</UiBtn>
+      <UiBtn variant="secondary" size="sm" :disabled="adding || !newNumber.trim()" @click="addNumber">{{ t('Add', 'Añadir') }}</UiBtn>
     </div>
   </div>
 </template>

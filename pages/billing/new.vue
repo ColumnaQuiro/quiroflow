@@ -13,6 +13,7 @@ interface LineItem {
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const route = useRoute()
+const t = useT()
 
 const patients = ref<PatientOption[]>([])
 const services = ref<Tables<'services_products'>[]>([])
@@ -73,12 +74,12 @@ const totalCents = computed(() =>
 async function save() {
   error.value = ''
   if (!patientId.value) {
-    error.value = 'Select a patient.'
+    error.value = t('Select a patient.', 'Selecciona un paciente.')
     return
   }
   const validLines = lines.value.filter((l) => l.description.trim() && parseFloat(l.priceEuros) >= 0)
   if (validLines.length === 0) {
-    error.value = 'Add at least one line item.'
+    error.value = t('Add at least one line item.', 'Añade al menos un concepto.')
     return
   }
   saving.value = true
@@ -126,19 +127,19 @@ async function save() {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Quick invoice">
-      <UiBtn variant="secondary" @click="navigateTo('/billing')">Cancel</UiBtn>
-      <UiBtn variant="primary" :disabled="saving" @click="save">{{ saving ? 'Saving…' : 'Create invoice' }}</UiBtn>
+    <PageHeader :title="t('Quick invoice', 'Factura rápida')">
+      <UiBtn variant="secondary" @click="navigateTo('/billing')">{{ t('Cancel', 'Cancelar') }}</UiBtn>
+      <UiBtn variant="primary" :disabled="saving" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Create invoice', 'Crear factura') }}</UiBtn>
     </PageHeader>
 
     <div class="flex-1 overflow-y-auto bg-surface-page p-6">
       <div class="mx-auto max-w-2xl space-y-4">
         <div class="rounded-card border border-line bg-surface p-6 shadow-card">
-          <label class="block text-[12.5px] font-medium text-ink-500">Patient</label>
+          <label class="block text-[12.5px] font-medium text-ink-500">{{ t('Patient', 'Paciente') }}</label>
           <input
             v-model="patientQuery"
             type="text"
-            :placeholder="selectedPatientLabel || 'Search patients…'"
+            :placeholder="selectedPatientLabel || t('Search patients…', 'Buscar pacientes…')"
             class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           />
           <ul v-if="patientQuery" class="mt-1 max-h-40 overflow-y-auto rounded-ctl border border-line">
@@ -150,15 +151,15 @@ async function save() {
             >
               {{ p.first_name }} {{ p.last_name }}
             </li>
-            <li v-if="filteredPatients.length === 0" class="px-3 py-1.5 text-[13px] text-ink-muted2">No matches</li>
+            <li v-if="filteredPatients.length === 0" class="px-3 py-1.5 text-[13px] text-ink-muted2">{{ t('No matches', 'Sin coincidencias') }}</li>
           </ul>
           <p v-if="selectedPatientLabel && !patientQuery" class="mt-1 text-[13px] text-ink-muted">
-            Selected: <span class="font-medium text-ink-900">{{ selectedPatientLabel }}</span>
+            {{ t('Selected:', 'Seleccionado:') }} <span class="font-medium text-ink-900">{{ selectedPatientLabel }}</span>
           </p>
         </div>
 
         <div class="rounded-card border border-line bg-surface p-6 shadow-card">
-          <label class="block text-[12.5px] font-medium text-ink-500">Services &amp; products</label>
+          <label class="block text-[12.5px] font-medium text-ink-500">{{ t('Services & products', 'Servicios y productos') }}</label>
           <div class="mt-2 space-y-2">
             <div v-for="(line, i) in lines" :key="i" class="flex items-center gap-2">
               <select
@@ -166,13 +167,13 @@ async function save() {
                 class="w-40 shrink-0 rounded-ctl border border-line-control px-2 py-1.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
                 @change="onServiceChange(line)"
               >
-                <option value="">Custom</option>
+                <option value="">{{ t('Custom', 'Personalizado') }}</option>
                 <option v-for="s in services" :key="s.id" :value="s.id">{{ s.name }}</option>
               </select>
               <input
                 v-model="line.description"
                 type="text"
-                placeholder="Description"
+                :placeholder="t('Description', 'Descripción')"
                 class="flex-1 rounded-ctl border border-line-control px-3 py-1.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
               />
               <input
@@ -193,12 +194,12 @@ async function save() {
             </div>
           </div>
           <button type="button" class="mt-2 text-[13px] font-medium text-brand-text hover:text-brand-hover" @click="addLine">
-            + Add line
+            + {{ t('Add line', 'Añadir línea') }}
           </button>
 
           <div class="mt-4 flex justify-end border-t border-line-row2 pt-4 text-[13px]">
             <span class="font-semibold text-ink-900">
-              Total: <span class="font-mono">€{{ (totalCents / 100).toFixed(2) }}</span>
+              {{ t('Total:', 'Total:') }} <span class="font-mono">€{{ (totalCents / 100).toFixed(2) }}</span>
             </span>
           </div>
         </div>

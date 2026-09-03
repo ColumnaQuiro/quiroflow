@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const props = defineProps<{ practitionerId?: string; clinicId?: string }>()
 
+const t = useT()
 const supabase = useSupabaseClient()
 const loading = ref(true)
 
@@ -37,7 +38,7 @@ async function load() {
     if (appt.status === 'booked' || appt.status === 'completed') estimatedCount++
     if (appt.status === 'booked' && new Date(appt.starts_at) > now) remainingCount++
     if (appt.status === 'completed') {
-      const name = appt.appointment_types?.name ?? 'No type'
+      const name = appt.appointment_types?.name ?? t('No type', 'Sin tipo')
       typeCounts.set(name, (typeCounts.get(name) ?? 0) + 1)
     }
   }
@@ -77,35 +78,35 @@ function euros(cents: number) {
 </script>
 
 <template>
-  <div v-if="loading" class="text-[13px] text-ink-faint">Loading…</div>
+  <div v-if="loading" class="text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
   <div v-else>
     <ul class="divide-y divide-line-row2 text-[13px]">
       <li class="flex items-center justify-between py-1.5">
-        <span class="text-ink-700">Remaining visits</span>
+        <span class="text-ink-700">{{ t('Remaining visits', 'Visitas restantes') }}</span>
         <span class="font-mono text-[12.5px] text-ink-900">{{ remaining }}</span>
       </li>
       <li class="flex items-center justify-between py-1.5">
-        <span class="text-ink-700">Estimated visits</span>
+        <span class="text-ink-700">{{ t('Estimated visits', 'Visitas estimadas') }}</span>
         <span class="font-mono text-[12.5px] text-ink-900">{{ estimated }}</span>
       </li>
       <li class="flex items-center justify-between py-1.5">
-        <span class="text-ink-700">Payments this week</span>
+        <span class="text-ink-700">{{ t('Payments this week', 'Pagos esta semana') }}</span>
         <span class="font-mono text-[12.5px] text-ink-900">{{ euros(paymentsCents) }}</span>
       </li>
       <li class="flex items-center justify-between py-1.5">
-        <span class="text-ink-700">Service generated</span>
+        <span class="text-ink-700">{{ t('Service generated', 'Servicio generado') }}</span>
         <span class="font-mono text-[12.5px] text-ink-900">{{ euros(serviceCents) }}</span>
       </li>
       <li class="flex items-center justify-between py-1.5">
-        <span class="text-ink-700">Cancellations</span>
+        <span class="text-ink-700">{{ t('Cancellations', 'Cancelaciones') }}</span>
         <span class="font-mono text-[12.5px]" :class="cancellations > 0 ? 'text-danger-text' : 'text-ink-900'">{{ cancellations }}</span>
       </li>
     </ul>
     <div v-if="byType.length > 0" class="mt-2 border-t border-line-row2 pt-2">
-      <p class="mb-1 text-[11px] font-semibold uppercase tracking-[.05em] text-ink-faint">By type</p>
-      <div v-for="t in byType" :key="t.name" class="flex items-center justify-between py-0.5 text-[12.5px]">
-        <span class="text-ink-muted2">{{ t.name }}</span>
-        <span class="font-mono text-ink-600">{{ t.count }}</span>
+      <p class="mb-1 text-[11px] font-semibold uppercase tracking-[.05em] text-ink-faint">{{ t('By type', 'Por tipo') }}</p>
+      <div v-for="bt in byType" :key="bt.name" class="flex items-center justify-between py-0.5 text-[12.5px]">
+        <span class="text-ink-muted2">{{ bt.name }}</span>
+        <span class="font-mono text-ink-600">{{ bt.count }}</span>
       </div>
     </div>
   </div>

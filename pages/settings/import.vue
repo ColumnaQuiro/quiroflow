@@ -11,33 +11,35 @@ interface Source {
   dataTypes: DataType[]
 }
 
-const sources: Source[] = [
+const t = useT()
+
+const sources = computed<Source[]>(() => [
   {
     key: 'practicehub',
     label: 'PracticeHub',
     available: true,
     dataTypes: [
-      { key: 'patients', label: 'Patients' },
-      { key: 'appointments', label: 'Appointments' },
-      { key: 'appointment_types', label: 'Appointment Types (fix)' },
-      { key: 'payments', label: 'Payments' },
-      { key: 'patient_logs', label: 'Patient Logs' },
-      { key: 'treatment_notes', label: 'Treatment Notes' },
-      { key: 'care_plans', label: 'Care Plans' },
-      { key: 'custom_form_responses', label: 'Custom Form Responses' },
-      { key: 'file_attachments', label: 'File Attachments' },
+      { key: 'patients', label: t('Patients', 'Pacientes') },
+      { key: 'appointments', label: t('Appointments', 'Citas') },
+      { key: 'appointment_types', label: t('Appointment Types (fix)', 'Tipos de cita (fix)') },
+      { key: 'payments', label: t('Payments', 'Pagos') },
+      { key: 'patient_logs', label: t('Patient Logs', 'Registros de pacientes') },
+      { key: 'treatment_notes', label: t('Treatment Notes', 'Notas de tratamiento') },
+      { key: 'care_plans', label: t('Care Plans', 'Planes de tratamiento') },
+      { key: 'custom_form_responses', label: t('Custom Form Responses', 'Respuestas de formularios personalizados') },
+      { key: 'file_attachments', label: t('File Attachments', 'Archivos adjuntos') },
     ],
   },
-  { key: 'other', label: 'Other system', available: false, dataTypes: [] },
-]
+  { key: 'other', label: t('Other system', 'Otro sistema'), available: false, dataTypes: [] },
+])
 
 const sourceKey = ref('practicehub')
 const dataTypeKey = ref('patients')
 
-const activeSource = computed(() => sources.find((s) => s.key === sourceKey.value)!)
+const activeSource = computed(() => sources.value.find((s) => s.key === sourceKey.value)!)
 
 function selectSource(key: string) {
-  const source = sources.find((s) => s.key === key)
+  const source = sources.value.find((s) => s.key === key)
   if (!source?.available) return
   sourceKey.value = key
   dataTypeKey.value = source.dataTypes[0]?.key ?? ''
@@ -46,12 +48,12 @@ function selectSource(key: string) {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Import Patients (CSV)" />
+    <PageHeader :title="t('Import Patients (CSV)', 'Importar pacientes (CSV)')" />
     <div class="flex-1 overflow-y-auto">
       <div class="flex gap-8 p-6">
         <SettingsNav />
         <div class="min-w-0 max-w-[660px] flex-1">
-          <p class="text-[13px] text-ink-muted2">Migrate records from another practice management system.</p>
+          <p class="text-[13px] text-ink-muted2">{{ t('Migrate records from another practice management system.', 'Migra registros desde otro sistema de gestión de clínicas.') }}</p>
 
           <div class="mt-4 border-b border-line">
             <nav class="-mb-px flex gap-6">
@@ -67,7 +69,7 @@ function selectSource(key: string) {
                 @click="selectSource(s.key)"
               >
                 {{ s.label }}
-                <span v-if="!s.available" class="rounded-ctlSm bg-chip-bg px-1.5 py-0.5 text-[11px] text-chip-text">Coming soon</span>
+                <span v-if="!s.available" class="rounded-ctlSm bg-chip-bg px-1.5 py-0.5 text-[11px] text-chip-text">{{ t('Coming soon', 'Próximamente') }}</span>
               </button>
             </nav>
           </div>

@@ -7,6 +7,7 @@ type ContactLogRow = Pick<Tables<'contact_log'>, 'patient_id' | 'action' | 'crea
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 const recalls = ref<Recall[]>([])
 const teamMembers = ref<TeamMember[]>([])
@@ -98,7 +99,7 @@ const filtered = computed(() => {
 })
 
 function practitionerName(id: string | null) {
-  return teamMembers.value.find((m) => m.id === id)?.full_name ?? 'Unassigned'
+  return teamMembers.value.find((m) => m.id === id)?.full_name ?? t('Unassigned', 'Sin asignar')
 }
 
 function initials(r: Recall) {
@@ -111,14 +112,15 @@ function balanceInfo(cents: number | null) {
   const c = cents ?? 0
   const amount = (Math.abs(c) / 100).toFixed(2)
   if (c < 0) return { text: `€${amount}`, class: 'text-danger-text' }
-  if (c > 0) return { text: `€${amount} CR`, class: 'text-success-text' }
+  if (c > 0) return { text: `€${amount} ${t('CR', 'CR')}`, class: 'text-success-text' }
   return { text: '€0.00', class: 'text-ink-faint' }
 }
 
 function overdueInfo(days: number | null) {
   const d = days ?? 0
   const weeks = Math.floor(d / 7)
-  const label = `${weeks} wk${weeks === 1 ? '' : 's'} overdue`
+  const weekWord = weeks === 1 ? t('wk', 'sem') : t('wks', 'sems')
+  const label = `${weeks} ${weekWord} ${t('overdue', 'de retraso')}`
   if (d >= 56) return { class: 'bg-danger-bg text-danger-text', label }
   if (d >= 28) return { class: 'bg-warning-bg text-warning-text', label }
   return { class: 'bg-chip-bg2 text-chip-text', label }
@@ -130,20 +132,24 @@ function shortDate(iso: string) {
   return `${month} ${String(d.getDate()).padStart(2, '0')}`
 }
 
-const actionLabels: Record<string, string> = {
-  sent_whatsapp: 'WhatsApp sent',
-  called_no_answer: 'Called, no answer',
-  called_left_message: 'Left a message',
-  booked: 'Booked',
-  other: 'Contacted',
+const actionLabels: Record<string, [string, string]> = {
+  sent_whatsapp: ['WhatsApp sent', 'WhatsApp enviado'],
+  called_no_answer: ['Called, no answer', 'Llamada, sin respuesta'],
+  called_left_message: ['Left a message', 'Se dejó un mensaje'],
+  booked: ['Booked', 'Reservada'],
+  other: ['Contacted', 'Contactado'],
 }
 
 function lastActionText(r: Recall) {
   const entry = lastActionByPatient.value[r.patient_id!]
-  if (entry) return `${actionLabels[entry.action] ?? entry.action} ${shortDate(entry.created_at)}`
+  if (entry) {
+    const pair = actionLabels[entry.action]
+    const label = pair ? t(pair[0], pair[1]) : entry.action
+    return `${label} ${shortDate(entry.created_at)}`
+  }
   const hasPhone = hasPhoneByPatient.value[r.patient_id!] ?? false
-  if (!hasPhone && !r.email) return 'Missing phone and email'
-  return 'No contact yet'
+  if (!hasPhone && !r.email) return t('Missing phone and email', 'Falta teléfono y correo electrónico')
+  return t('No contact yet', 'Aún sin contacto')
 }
 
 async function refreshLastAction(patientId: string) {
@@ -176,7 +182,7 @@ async function togglePriority(recall: Recall) {
 }
 
 async function dismiss(recall: Recall) {
-  if (!confirm(`Remove ${recall.first_name} from recalls?`)) return
+  if (!confirm(`${t('Remove', '¿Eliminar a')} ${recall.first_name} ${t('from recalls?', 'de la lista de recordatorios?')}`)) return
   await supabase.from('patients').update({ recall_status: 'dismissed' }).eq('id', recall.patient_id!)
   recalls.value = recalls.value.filter((r) => r.patient_id !== recall.patient_id)
 }
@@ -269,7 +275,14 @@ function csvEscape(v: string) {
   return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
 }
 function exportCsv() {
-  const header = ['Patient', 'Last visit', 'Days overdue', 'Practitioner', 'Balance', 'Last action']
+  const header = [
+    t('Patient', 'Paciente'),
+    t('Last visit', 'Última visita'),
+    t('Days overdue', 'Días de retraso'),
+    t('Practitioner', 'Profesional'),
+    t('Balance', 'Saldo'),
+    t('Last action', 'Última acción'),
+  ]
   const rows = filtered.value.map((r) => [
     `${r.first_name ?? ''} ${r.last_name ?? ''}`.trim(),
     r.last_appointment_at ? new Date(r.last_appointment_at).toLocaleDateString() : '',
@@ -291,9 +304,12 @@ function exportCsv() {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Recalls" :meta="`${filtered.length} patient${filtered.length === 1 ? '' : 's'} with no future appointment`">
-      <UiBtn variant="secondary" @click="exportCsv">Export</UiBtn>
-      <UiBtn variant="primary" :disabled="selectedIds.size === 0" @click="bulkWhatsAppOpen = true">Message selected</UiBtn>
+    <PageHeader
+      :title="t('Recalls', 'Recordatorios')"
+      :meta="`${filtered.length} ${filtered.length === 1 ? t('patient', 'paciente') : t('patients', 'pacientes')} ${t('with no future appointment', 'sin cita futura')}`"
+    >
+      <UiBtn variant="secondary" @click="exportCsv">{{ t('Export', 'Exportar') }}</UiBtn>
+      <UiBtn variant="primary" :disabled="selectedIds.size === 0" @click="bulkWhatsAppOpen = true">{{ t('Message selected', 'Enviar mensaje a seleccionados') }}</UiBtn>
     </PageHeader>
 
     <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
@@ -302,7 +318,7 @@ function exportCsv() {
         <input
           v-model="search"
           type="search"
-          placeholder="Search by name"
+          :placeholder="t('Search by name', 'Buscar por nombre')"
           class="h-8 w-52 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand-tintBorder"
         />
 
@@ -312,13 +328,13 @@ function exportCsv() {
             :disabled="!!dateFrom"
             class="h-7 appearance-none rounded-pill border border-brand-tintBorder bg-brand-tint pl-3 pr-7 text-[12.5px] font-medium text-brand-text focus:outline-none disabled:opacity-40"
           >
-            <option :value="1">1+ weeks overdue</option>
-            <option :value="2">2+ weeks overdue</option>
-            <option :value="3">3+ weeks overdue</option>
-            <option :value="4">4+ weeks overdue</option>
-            <option :value="6">6+ weeks overdue</option>
-            <option :value="8">8+ weeks overdue</option>
-            <option :value="12">12+ weeks overdue</option>
+            <option :value="1">{{ t('1+ weeks overdue', '1+ semanas de retraso') }}</option>
+            <option :value="2">{{ t('2+ weeks overdue', '2+ semanas de retraso') }}</option>
+            <option :value="3">{{ t('3+ weeks overdue', '3+ semanas de retraso') }}</option>
+            <option :value="4">{{ t('4+ weeks overdue', '4+ semanas de retraso') }}</option>
+            <option :value="6">{{ t('6+ weeks overdue', '6+ semanas de retraso') }}</option>
+            <option :value="8">{{ t('8+ weeks overdue', '8+ semanas de retraso') }}</option>
+            <option :value="12">{{ t('12+ weeks overdue', '12+ semanas de retraso') }}</option>
           </select>
           <svg class="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-brand-text" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
@@ -326,14 +342,14 @@ function exportCsv() {
         </div>
 
         <div class="flex items-center gap-1.5">
-          <label class="text-[12.5px] text-ink-muted2">Last visit since</label>
+          <label class="text-[12.5px] text-ink-muted2">{{ t('Last visit since', 'Última visita desde') }}</label>
           <input
             v-model="dateFrom"
             type="date"
             class="h-7 rounded-pill border px-3 text-[12.5px] font-medium focus:outline-none"
             :class="dateFrom ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control text-ink-500 hover:border-line-controlHover'"
           />
-          <button v-if="dateFrom" type="button" class="text-[12px] text-ink-faint hover:text-ink-600" @click="dateFrom = ''">Clear</button>
+          <button v-if="dateFrom" type="button" class="text-[12px] text-ink-faint hover:text-ink-600" @click="dateFrom = ''">{{ t('Clear', 'Borrar') }}</button>
         </div>
 
         <div class="relative">
@@ -342,7 +358,7 @@ function exportCsv() {
             class="h-7 appearance-none rounded-pill border bg-surface pl-3 pr-7 text-[12.5px] font-medium focus:outline-none"
             :class="practitionerFilter ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control text-ink-500 hover:border-line-controlHover'"
           >
-            <option value="">Any practitioner</option>
+            <option value="">{{ t('Any practitioner', 'Cualquier profesional') }}</option>
             <option v-for="m in teamMembers" :key="m.id" :value="m.id">{{ m.full_name }}</option>
           </select>
           <svg class="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-ink-faint2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -356,9 +372,9 @@ function exportCsv() {
             class="h-7 appearance-none rounded-pill border bg-surface pl-3 pr-7 text-[12.5px] font-medium focus:outline-none"
             :class="balanceFilter !== 'any' ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control text-ink-500 hover:border-line-controlHover'"
           >
-            <option value="any">Any balance</option>
-            <option value="debit">Owing</option>
-            <option value="credit">In credit</option>
+            <option value="any">{{ t('Any balance', 'Cualquier saldo') }}</option>
+            <option value="debit">{{ t('Owing', 'Pendiente') }}</option>
+            <option value="credit">{{ t('In credit', 'A favor') }}</option>
           </select>
           <svg class="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-ink-faint2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
@@ -368,7 +384,7 @@ function exportCsv() {
         <input
           v-model="tagFilter"
           type="search"
-          placeholder="Filter by tag"
+          :placeholder="t('Filter by tag', 'Filtrar por etiqueta')"
           class="h-7 w-32 rounded-pill border border-line-control bg-surface px-3 text-[12.5px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand-tintBorder"
         />
 
@@ -378,23 +394,23 @@ function exportCsv() {
           :class="notContactedOnly ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control bg-surface text-ink-500 hover:border-line-controlHover'"
           @click="notContactedOnly = !notContactedOnly"
         >
-          Not contacted yet
+          {{ t('Not contacted yet', 'Sin contactar aún') }}
         </button>
 
-        <span class="ml-auto text-[12.5px] text-ink-muted2">Sorted by most overdue first</span>
+        <span class="ml-auto text-[12.5px] text-ink-muted2">{{ t('Sorted by most overdue first', 'Ordenado por mayor retraso primero') }}</span>
       </div>
 
       <!-- Table card -->
       <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
         <div v-if="selectedIds.size > 0" class="flex h-11 items-center gap-4 border-b border-chip-border bg-[#F7F7FE] px-4">
-          <span class="text-[13px] font-semibold text-brand-text">{{ selectedIds.size }} selected</span>
+          <span class="text-[13px] font-semibold text-brand-text">{{ selectedIds.size }} {{ t('selected', 'seleccionados') }}</span>
           <span class="h-4 w-px bg-line-control"></span>
           <button type="button" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover" @click="bulkWhatsAppOpen = true">
-            Send WhatsApp recall
+            {{ t('Send WhatsApp recall', 'Enviar recordatorio por WhatsApp') }}
           </button>
           <div class="relative">
             <button type="button" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover" @click="assignMenuOpen = !assignMenuOpen">
-              Assign to practitioner
+              {{ t('Assign to practitioner', 'Asignar a profesional') }}
             </button>
             <div v-if="assignMenuOpen" class="absolute left-0 top-full z-10 mt-1 w-48 rounded-ctl border border-line bg-surface py-1 shadow-popover">
               <button
@@ -406,18 +422,18 @@ function exportCsv() {
               >
                 {{ m.full_name }}
               </button>
-              <p v-if="teamMembers.length === 0" class="px-3 py-1.5 text-[12.5px] text-ink-faint">No practitioners</p>
+              <p v-if="teamMembers.length === 0" class="px-3 py-1.5 text-[12.5px] text-ink-faint">{{ t('No practitioners', 'Sin profesionales') }}</p>
             </div>
           </div>
           <button
             type="button"
             class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover"
-            title="Snoozing recalls isn't available yet"
+            :title="t('Snoozing recalls isn\'t available yet', 'Posponer recordatorios aún no está disponible')"
             @click="bulkSnooze"
           >
-            Snooze 30 days
+            {{ t('Snooze 30 days', 'Posponer 30 días') }}
           </button>
-          <button type="button" class="ml-auto text-[12.5px] text-ink-muted2 hover:text-ink-500" @click="clearSelection">Clear selection</button>
+          <button type="button" class="ml-auto text-[12.5px] text-ink-muted2 hover:text-ink-500" @click="clearSelection">{{ t('Clear selection', 'Borrar selección') }}</button>
         </div>
 
         <table class="w-full text-left text-[13px]">
@@ -431,12 +447,12 @@ function exportCsv() {
                   @change="toggleSelectAll"
                 />
               </th>
-              <th class="px-4 py-2.5">Patient</th>
-              <th class="px-4 py-2.5">Last visit</th>
-              <th class="px-4 py-2.5">Overdue</th>
-              <th class="px-4 py-2.5">Practitioner</th>
-              <th class="px-4 py-2.5 text-right">Balance</th>
-              <th class="px-4 py-2.5">Last action</th>
+              <th class="px-4 py-2.5">{{ t('Patient', 'Paciente') }}</th>
+              <th class="px-4 py-2.5">{{ t('Last visit', 'Última visita') }}</th>
+              <th class="px-4 py-2.5">{{ t('Overdue', 'Retraso') }}</th>
+              <th class="px-4 py-2.5">{{ t('Practitioner', 'Profesional') }}</th>
+              <th class="px-4 py-2.5 text-right">{{ t('Balance', 'Saldo') }}</th>
+              <th class="px-4 py-2.5">{{ t('Last action', 'Última acción') }}</th>
               <th class="w-10 px-4 py-2.5"></th>
             </tr>
           </thead>
@@ -459,7 +475,7 @@ function exportCsv() {
               </tr>
             </template>
             <tr v-else-if="filtered.length === 0">
-              <td colspan="8" class="px-4 py-8 text-center text-ink-faint">No recalls match these filters.</td>
+              <td colspan="8" class="px-4 py-8 text-center text-ink-faint">{{ t('No recalls match these filters.', 'Ningún recordatorio coincide con estos filtros.') }}</td>
             </tr>
             <tr v-for="r in filtered" :key="r.patient_id!" class="align-top hover:bg-surface-subtle2">
               <td class="px-4 py-2.5">
@@ -480,14 +496,14 @@ function exportCsv() {
                       {{ r.first_name }} {{ r.last_name }}
                     </NuxtLink>
                     <div v-if="r.recall_priority || (r.tags ?? []).length > 0" class="mt-1 flex flex-wrap items-center gap-1">
-                      <UiPill v-if="r.recall_priority" tone="warning" :dot="true">Priority</UiPill>
+                      <UiPill v-if="r.recall_priority" tone="warning" :dot="true">{{ t('Priority', 'Prioridad') }}</UiPill>
                       <span v-for="tag in r.tags" :key="tag" class="rounded bg-chip-bg px-1.5 py-0.5 text-[11px] text-chip-text">{{ tag }}</span>
                     </div>
                   </div>
                 </div>
               </td>
               <td class="px-4 py-2.5 text-ink-muted">
-                {{ r.last_appointment_at ? new Date(r.last_appointment_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A' }}
+                {{ r.last_appointment_at ? new Date(r.last_appointment_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : t('N/A', 'N/D') }}
               </td>
               <td class="px-4 py-2.5">
                 <span class="inline-flex items-center rounded-pill px-2 py-0.5 text-[11px] font-semibold" :class="overdueInfo(r.days_since_last_appointment).class">
@@ -504,7 +520,7 @@ function exportCsv() {
                   @click="historyFor = r"
                 >
                   {{ lastActionText(r) }}
-                  <span class="text-ink-faint2">· {{ actionCountByPatient[r.patient_id!] }} action{{ actionCountByPatient[r.patient_id!] === 1 ? '' : 's' }}</span>
+                  <span class="text-ink-faint2">· {{ actionCountByPatient[r.patient_id!] }} {{ actionCountByPatient[r.patient_id!] === 1 ? t('action', 'acción') : t('actions', 'acciones') }}</span>
                 </button>
                 <span v-else class="text-ink-muted2">{{ lastActionText(r) }}</span>
               </td>
@@ -513,13 +529,13 @@ function exportCsv() {
                   class="h-7 rounded-ctlSm border border-line-control bg-surface px-1.5 text-[12px] text-ink-500 focus:outline-none"
                   @change="onRowAction(r, $event)"
                 >
-                  <option value="">Action…</option>
-                  <option value="whatsapp">Send WhatsApp</option>
-                  <option value="called_no_answer">Called – no answer</option>
-                  <option value="called_left_message">Called – left message</option>
-                  <option value="booked">Booked</option>
-                  <option value="priority">{{ r.recall_priority ? 'Unmark priority' : 'Mark as high priority' }}</option>
-                  <option value="dismiss">Dismiss from recalls</option>
+                  <option value="">{{ t('Action…', 'Acción…') }}</option>
+                  <option value="whatsapp">{{ t('Send WhatsApp', 'Enviar WhatsApp') }}</option>
+                  <option value="called_no_answer">{{ t('Called – no answer', 'Llamado – sin respuesta') }}</option>
+                  <option value="called_left_message">{{ t('Called – left message', 'Llamado – mensaje dejado') }}</option>
+                  <option value="booked">{{ t('Booked', 'Reservada') }}</option>
+                  <option value="priority">{{ r.recall_priority ? t('Unmark priority', 'Quitar prioridad') : t('Mark as high priority', 'Marcar como alta prioridad') }}</option>
+                  <option value="dismiss">{{ t('Dismiss from recalls', 'Descartar de recordatorios') }}</option>
                 </select>
               </td>
             </tr>

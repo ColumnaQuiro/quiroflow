@@ -1,6 +1,7 @@
 <script setup lang="ts">
 defineProps<{ dateRange?: unknown; practitionerId?: string; clinicId?: string }>()
 
+const t = useT()
 const supabase = useSupabaseClient()
 const loading = ref(true)
 const totalCount = ref(0)
@@ -42,20 +43,20 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div v-if="loading" class="text-[13px] text-ink-faint">Loading…</div>
+  <div v-if="loading" class="text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
   <ul v-else class="divide-y divide-line-row2 text-[13px]">
     <li class="flex items-center justify-between py-1.5">
-      <span class="text-ink-700">This month</span>
+      <span class="text-ink-700">{{ t('This month', 'Este mes') }}</span>
       <span class="font-mono text-[12.5px] text-ink-900">{{ totalCount }}</span>
     </li>
     <li class="flex items-center justify-between py-1.5">
-      <span class="text-ink-700">vs. last month</span>
+      <span class="text-ink-700">{{ t('vs. last month', 'frente al mes pasado') }}</span>
       <span class="font-mono text-[12.5px]" :class="changePct !== null && changePct < 0 ? 'text-danger-text' : 'text-success-text'">
         {{ changePct === null ? '—' : `${changePct > 0 ? '+' : ''}${changePct}%` }}
       </span>
     </li>
     <li class="flex items-center justify-between py-1.5">
-      <span class="text-ink-700">Daily average</span>
+      <span class="text-ink-700">{{ t('Daily average', 'Media diaria') }}</span>
       <span class="font-mono text-[12.5px] text-ink-900">{{ dailyAvg.toFixed(1) }}</span>
     </li>
   </ul>

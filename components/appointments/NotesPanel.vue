@@ -9,6 +9,7 @@ const props = defineProps<{ appointmentId: string }>()
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 const notes = ref<VisitNote[]>([])
 const newNote = ref('')
@@ -49,7 +50,7 @@ async function removeNote(id: string) {
 
 <template>
   <div>
-    <p v-if="loading" class="text-sm text-gray-400">Loading…</p>
+    <p v-if="loading" class="text-sm text-gray-400">{{ t('Loading…', 'Cargando…') }}</p>
     <ul v-else-if="notes.length > 0" class="space-y-2">
       <li v-for="note in notes" :key="note.id" class="group relative rounded-md bg-amber-50 p-2 pr-7 text-sm text-gray-800">
         <p class="whitespace-pre-wrap">{{ note.body }}</p>
@@ -57,7 +58,7 @@ async function removeNote(id: string) {
         <button
           type="button"
           class="absolute right-1.5 top-1.5 text-gray-300 opacity-0 hover:text-red-600 group-hover:opacity-100"
-          title="Delete note"
+          :title="t('Delete note', 'Eliminar nota')"
           @click="removeNote(note.id)"
         >
           ✕
@@ -68,7 +69,7 @@ async function removeNote(id: string) {
       <input
         v-model="newNote"
         type="text"
-        placeholder="Add a sticky note…"
+        :placeholder="t('Add a sticky note…', 'Añade una nota adhesiva…')"
         class="flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
         @keydown.enter.prevent="addNote"
       />
@@ -78,7 +79,7 @@ async function removeNote(id: string) {
         class="rounded-md bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-200 disabled:opacity-50"
         @click="addNote"
       >
-        Add
+        {{ t('Add', 'Añadir') }}
       </button>
     </div>
   </div>

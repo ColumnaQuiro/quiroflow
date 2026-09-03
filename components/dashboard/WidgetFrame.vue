@@ -9,6 +9,8 @@ const emit = defineEmits<{
   dragStart: [index: number]
   dragOver: [index: number]
 }>()
+
+const t = useT()
 </script>
 
 <template>
@@ -21,7 +23,7 @@ const emit = defineEmits<{
   >
     <div class="flex items-center justify-between gap-2">
       <div class="flex min-w-0 items-center gap-1.5">
-        <span v-if="editing" class="shrink-0 cursor-move select-none text-[13px] leading-none text-ink-faint2" title="Drag to reorder">⠿</span>
+        <span v-if="editing" class="shrink-0 cursor-move select-none text-[13px] leading-none text-ink-faint2" :title="t('Drag to reorder', 'Arrastra para reordenar')">⠿</span>
         <h3 class="truncate text-[13px] font-semibold text-ink-900">{{ title }}</h3>
       </div>
       <div class="flex shrink-0 items-center gap-2">
@@ -30,12 +32,12 @@ const emit = defineEmits<{
           <button
             type="button"
             class="rounded-ctlSm border border-line-control px-1.5 py-0.5 text-[10.5px] font-medium text-ink-muted2 hover:border-line-controlHover hover:text-ink-600"
-            title="Cycle widget width"
+            :title="t('Cycle widget width', 'Cambiar el ancho del widget')"
             @click="emit('cycleSize')"
           >
             {{ size }}
           </button>
-          <button type="button" class="text-ink-faint2 hover:text-danger-text" title="Remove widget" @click="emit('remove')">✕</button>
+          <button type="button" class="text-ink-faint2 hover:text-danger-text" :title="t('Remove widget', 'Eliminar widget')" @click="emit('remove')">✕</button>
         </template>
       </div>
     </div>

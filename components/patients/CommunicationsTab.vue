@@ -13,6 +13,7 @@ interface MessageRow {
 }
 
 const supabase = useSupabaseClient()
+const t = useT()
 const messages = ref<MessageRow[]>([])
 const loading = ref(true)
 const newMessageOpen = ref(false)
@@ -40,17 +41,17 @@ const statusTone: Record<string, 'brand' | 'success' | 'danger' | 'neutral'> = {
   failed: 'danger',
   received: 'neutral',
 }
-const statusLabel: Record<string, string> = {
-  sent: 'Sent',
-  delivered: 'Delivered',
-  read: 'Read',
-  failed: 'Failed',
-  received: 'Received',
-}
+const statusLabel = computed<Record<string, string>>(() => ({
+  sent: t('Sent', 'Enviado'),
+  delivered: t('Delivered', 'Entregado'),
+  read: t('Read', 'Leído'),
+  failed: t('Failed', 'Fallido'),
+  received: t('Received', 'Recibido'),
+}))
 
 function titleFor(m: MessageRow) {
-  if (m.direction === 'inbound') return 'Received message'
-  return m.template_name ?? m.purpose ?? 'Message sent'
+  if (m.direction === 'inbound') return t('Received message', 'Mensaje recibido')
+  return m.template_name ?? m.purpose ?? t('Message sent', 'Mensaje enviado')
 }
 </script>
 
@@ -64,7 +65,7 @@ function titleFor(m: MessageRow) {
           :class="channelFilter === 'all' ? 'bg-brand-tint text-brand-text' : 'text-ink-muted hover:bg-surface-subtle'"
           @click="channelFilter = 'all'"
         >
-          All
+          {{ t('All', 'Todos') }}
         </button>
         <button
           type="button"
@@ -75,14 +76,14 @@ function titleFor(m: MessageRow) {
           WhatsApp
         </button>
       </div>
-      <UiBtn v-if="canContact" variant="primary" size="sm" @click="newMessageOpen = true">New message</UiBtn>
+      <UiBtn v-if="canContact" variant="primary" size="sm" @click="newMessageOpen = true">{{ t('New message', 'Nuevo mensaje') }}</UiBtn>
     </div>
     <p v-if="!canContact" class="border-b border-line-divider bg-danger-bg px-4 py-2 text-[12px] text-danger-text">
-      This patient is marked "do not contact" — new messages are disabled.
+      {{ t('This patient is marked "do not contact" — new messages are disabled.', 'Este paciente está marcado como "no contactar": los nuevos mensajes están deshabilitados.') }}
     </p>
 
-    <div v-if="loading" class="p-8 text-center text-[13px] text-ink-faint">Loading…</div>
-    <p v-else-if="filteredMessages.length === 0" class="p-8 text-center text-[13px] text-ink-faint">No WhatsApp messages sent to this patient yet.</p>
+    <div v-if="loading" class="p-8 text-center text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+    <p v-else-if="filteredMessages.length === 0" class="p-8 text-center text-[13px] text-ink-faint">{{ t('No WhatsApp messages sent to this patient yet.', 'Aún no se han enviado mensajes de WhatsApp a este paciente.') }}</p>
     <ul v-else class="divide-y divide-line-row">
       <li v-for="m in filteredMessages" :key="m.id" class="flex items-center gap-3 px-4 py-3">
         <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-ctlSm bg-success-bg text-[9.5px] font-bold text-success-text">WA</span>

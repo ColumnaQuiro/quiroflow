@@ -44,6 +44,7 @@ const PERIOD_SCOPED_TYPES = new Set(['income_mini', 'appointment_distribution_mi
 const store = useAccountStore()
 const { practitioners, load: loadFilterOptions } = useReportFilterOptions()
 const { widgets, loaded, load: loadLayout, save, add, remove, setSize, reorder } = useDashboardLayout()
+const t = useT()
 
 const editing = ref(false)
 const practitionerFilter = ref('')
@@ -91,9 +92,9 @@ const widgetProps = computed(() => ({
 
 const greeting = computed(() => {
   const hour = new Date().getHours()
-  if (hour < 12) return 'Good morning'
-  if (hour < 18) return 'Good afternoon'
-  return 'Good evening'
+  if (hour < 12) return t('Good morning', 'Buenos días')
+  if (hour < 18) return t('Good afternoon', 'Buenas tardes')
+  return t('Good evening', 'Buenas noches')
 })
 const firstName = computed(() => store.teamMember?.full_name?.split(' ')[0] ?? '')
 const todayLabel = computed(() => new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }))
@@ -102,7 +103,7 @@ function formatShort(iso: string) {
   return new Date(`${iso}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 function widgetMeta(type: string): string | undefined {
-  if (THIS_WEEK_TYPES.has(type)) return 'This week'
+  if (THIS_WEEK_TYPES.has(type)) return t('This week', 'Esta semana')
   if (PERIOD_SCOPED_TYPES.has(type)) return `${formatShort(range.value.from)} – ${formatShort(range.value.to)}`
   return undefined
 }
@@ -118,7 +119,7 @@ function widgetMeta(type: string): string | undefined {
       <div class="flex items-center gap-2">
         <ReportsDateRangeSelect v-model="range" />
         <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" :practitioners="practitioners" :clinics="[]" :show-clinic="false" />
-        <UiBtn :variant="editing ? 'primary' : 'secondary'" @click="toggleEditing">{{ editing ? 'Done' : 'Edit layout' }}</UiBtn>
+        <UiBtn :variant="editing ? 'primary' : 'secondary'" @click="toggleEditing">{{ editing ? t('Done', 'Hecho') : t('Edit layout', 'Editar diseño') }}</UiBtn>
       </div>
     </header>
 

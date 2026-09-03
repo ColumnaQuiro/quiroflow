@@ -16,46 +16,47 @@ const ICONS = {
   adjustments:
     'M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75',
 }
-const groups = [
+const t = useT()
+const groups = computed(() => [
   {
-    label: 'Operations',
+    label: t('Operations', 'Operaciones'),
     items: [
-      { to: '/reports/scheduled-reminders', label: 'Scheduled Reminders', description: 'WhatsApp delivery status and who has confirmed, is pending, or wants to reschedule.', icon: ICONS.bell },
-      { to: '/reports/upcoming-visits', label: 'Upcoming Visits', description: 'How appointments are distributed across the month.', icon: ICONS.calendar },
-      { to: '/reports/appointment-distribution', label: 'Appointment Distribution', description: 'Which shift/time of day performs best, by volume and completion.', icon: ICONS.squares },
+      { to: '/reports/scheduled-reminders', label: t('Scheduled Reminders', 'Recordatorios programados'), description: t('WhatsApp delivery status and who has confirmed, is pending, or wants to reschedule.', 'Estado de entrega de WhatsApp y quién ha confirmado, está pendiente o quiere reprogramar.'), icon: ICONS.bell },
+      { to: '/reports/upcoming-visits', label: t('Upcoming Visits', 'Próximas visitas'), description: t('How appointments are distributed across the month.', 'Cómo se distribuyen las citas a lo largo del mes.'), icon: ICONS.calendar },
+      { to: '/reports/appointment-distribution', label: t('Appointment Distribution', 'Distribución de citas'), description: t('Which shift/time of day performs best, by volume and completion.', 'Qué turno/hora del día rinde mejor, por volumen y finalización.'), icon: ICONS.squares },
     ],
   },
   {
-    label: 'Growth & Performance',
+    label: t('Growth & Performance', 'Crecimiento y rendimiento'),
     items: [
-      { to: '/reports/statistics', label: 'Statistics', description: 'First visits, reports, revisions, PVA, conversion, and retention.', icon: ICONS.chartBar },
-      { to: '/reports/income-performance', label: 'Income Performance', description: 'Compare practitioners and months side by side, with growth curves.', icon: ICONS.trendingUp },
+      { to: '/reports/statistics', label: t('Statistics', 'Estadísticas'), description: t('First visits, reports, revisions, PVA, conversion, and retention.', 'Primeras visitas, informes, revisiones, PVA, conversión y retención.'), icon: ICONS.chartBar },
+      { to: '/reports/income-performance', label: t('Income Performance', 'Rendimiento de ingresos'), description: t('Compare practitioners and months side by side, with growth curves.', 'Compara profesionales y meses uno junto a otro, con curvas de crecimiento.'), icon: ICONS.trendingUp },
     ],
   },
   {
-    label: 'Financial',
+    label: t('Financial', 'Financiero'),
     items: [
-      { to: '/reports/income', label: 'Income & Payments', description: 'Revenue by day/week/month/year, payment method, practitioner, visit type.', icon: ICONS.billing },
-      { to: '/reports/debtors', label: 'Debtors', description: 'Package/bono purchases with no paid invoice, and how much is outstanding.', icon: ICONS.exclamationTriangle },
-      { to: '/reports/memberships', label: 'Memberships', description: 'Active membership count, monthly revenue, and failed payments.', icon: ICONS.badgeCheck },
+      { to: '/reports/income', label: t('Income & Payments', 'Ingresos y pagos'), description: t('Revenue by day/week/month/year, payment method, practitioner, visit type.', 'Ingresos por día/semana/mes/año, método de pago, profesional y tipo de visita.'), icon: ICONS.billing },
+      { to: '/reports/debtors', label: t('Debtors', 'Deudores'), description: t('Package/bono purchases with no paid invoice, and how much is outstanding.', 'Compras de bonos/paquetes sin factura pagada y cuánto queda pendiente.'), icon: ICONS.exclamationTriangle },
+      { to: '/reports/memberships', label: t('Memberships', 'Membresías'), description: t('Active membership count, monthly revenue, and failed payments.', 'Número de membresías activas, ingresos mensuales y pagos fallidos.'), icon: ICONS.badgeCheck },
     ],
   },
   {
-    label: 'Data',
+    label: t('Data', 'Datos'),
     items: [
-      { to: '/reports/data-exports', label: 'Data Exports', description: 'Patients missing an email, phone, or a consent/data protection form.', icon: ICONS.arrowDownTray },
-      { to: '/reports/custom', label: 'Custom Reports', description: 'Build and save your own report: source, metric, and chart.', icon: ICONS.adjustments },
+      { to: '/reports/data-exports', label: t('Data Exports', 'Exportaciones de datos'), description: t('Patients missing an email, phone, or a consent/data protection form.', 'Pacientes sin correo, teléfono o formulario de consentimiento/protección de datos.'), icon: ICONS.arrowDownTray },
+      { to: '/reports/custom', label: t('Custom Reports', 'Informes personalizados'), description: t('Build and save your own report: source, metric, and chart.', 'Crea y guarda tu propio informe: fuente, métrica y gráfico.'), icon: ICONS.adjustments },
     ],
   },
-]
+])
 </script>
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Reports" />
+    <PageHeader :title="t('Reports', 'Informes')" />
     <div class="flex-1 overflow-y-auto">
       <div class="p-6">
-        <p class="text-[13px] text-ink-muted2">Metrics across patients, appointments, and billing. Each report below has its own filters and date range.</p>
+        <p class="text-[13px] text-ink-muted2">{{ t('Metrics across patients, appointments, and billing. Each report below has its own filters and date range.', 'Métricas de pacientes, citas y facturación. Cada informe tiene sus propios filtros y periodo.') }}</p>
         <div class="mt-8 max-w-[960px]">
           <IconLinkGrid :groups="groups" />
         </div>

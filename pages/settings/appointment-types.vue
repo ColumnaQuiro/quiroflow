@@ -3,17 +3,18 @@ import type { Tables } from '~/types/database.types'
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
-const STAGE_OPTIONS = [
-  { value: '', label: 'Not classified' },
-  { value: 'first_visit', label: 'First visit' },
-  { value: 'first_visit_offer', label: 'First visit (offer)' },
-  { value: 'report', label: 'Report / exam findings' },
-  { value: 'revision', label: 'Revision / check-up' },
-  { value: 'maintenance', label: 'Maintenance package' },
-  { value: 'adjustment', label: 'Adjustment' },
-  { value: 'other', label: 'Other' },
-]
+const STAGE_OPTIONS = computed(() => [
+  { value: '', label: t('Not classified', 'Sin clasificar') },
+  { value: 'first_visit', label: t('First visit', 'Primera visita') },
+  { value: 'first_visit_offer', label: t('First visit (offer)', 'Primera visita (oferta)') },
+  { value: 'report', label: t('Report / exam findings', 'Informe / hallazgos del examen') },
+  { value: 'revision', label: t('Revision / check-up', 'Revisión / control') },
+  { value: 'maintenance', label: t('Maintenance package', 'Bono de mantenimiento') },
+  { value: 'adjustment', label: t('Adjustment', 'Ajuste') },
+  { value: 'other', label: t('Other', 'Otro') },
+])
 
 const types = ref<Tables<'appointment_types'>[]>([])
 const loading = ref(true)
@@ -56,7 +57,7 @@ async function addType() {
 }
 
 async function removeType(id: string) {
-  if (!confirm('Delete this appointment type?')) return
+  if (!confirm(t('Delete this appointment type?', '¿Eliminar este tipo de cita?'))) return
   await supabase.from('appointment_types').delete().eq('id', id)
   await load()
 }
@@ -181,142 +182,142 @@ function updateOverridePrice(typeId: string, teamMemberId: string, value: string
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Appointment Types" />
+    <PageHeader :title="t('Appointment Types', 'Tipos de cita')" />
     <div class="flex-1 overflow-y-auto">
       <div class="flex gap-8 p-6">
         <SettingsNav />
         <div class="min-w-0 max-w-[660px] flex-1">
-          <p class="text-[13px] text-ink-muted2">Visit types, durations, colors, and default price.</p>
+          <p class="text-[13px] text-ink-muted2">{{ t('Visit types, durations, colors, and default price.', 'Tipos de visita, duraciones, colores y precio por defecto.') }}</p>
 
           <div class="mt-4 overflow-x-auto rounded-card border border-line bg-surface shadow-card">
             <table class="w-full text-[13px]">
               <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted2">
                 <tr>
-                  <th class="px-4 py-2">Name</th>
-                  <th class="px-4 py-2">Duration</th>
-                  <th class="px-4 py-2">Default price</th>
-                  <th class="px-4 py-2">Stage</th>
-                  <th class="px-4 py-2">Online booking</th>
-                  <th class="px-4 py-2">Online payment</th>
+                  <th class="px-4 py-2">{{ t('Name', 'Nombre') }}</th>
+                  <th class="px-4 py-2">{{ t('Duration', 'Duración') }}</th>
+                  <th class="px-4 py-2">{{ t('Default price', 'Precio por defecto') }}</th>
+                  <th class="px-4 py-2">{{ t('Stage', 'Etapa') }}</th>
+                  <th class="px-4 py-2">{{ t('Online booking', 'Reserva online') }}</th>
+                  <th class="px-4 py-2">{{ t('Online payment', 'Pago online') }}</th>
                   <th class="px-4 py-2"></th>
                   <th class="px-4 py-2"></th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-line-row">
                 <tr v-if="loading">
-                  <td colspan="8" class="px-4 py-6 text-center text-ink-faint">Loading…</td>
+                  <td colspan="8" class="px-4 py-6 text-center text-ink-faint">{{ t('Loading…', 'Cargando…') }}</td>
                 </tr>
                 <tr v-else-if="types.length === 0">
-                  <td colspan="8" class="px-4 py-6 text-center text-ink-faint">No appointment types yet.</td>
+                  <td colspan="8" class="px-4 py-6 text-center text-ink-faint">{{ t('No appointment types yet.', 'Todavía no hay tipos de cita.') }}</td>
                 </tr>
-                <template v-for="t in types" :key="t.id">
+                <template v-for="at in types" :key="at.id">
                 <tr>
                   <td class="px-4 py-2.5 text-ink-700">
                     <div class="flex items-center gap-2">
                       <input
                         type="color"
-                        :value="t.color"
+                        :value="at.color"
                         class="h-6 w-6 shrink-0 rounded border border-line-control p-0"
-                        @change="updateColor(t, ($event.target as HTMLInputElement).value)"
+                        @change="updateColor(at, ($event.target as HTMLInputElement).value)"
                       />
                       <input
-                        :value="t.name"
+                        :value="at.name"
                         type="text"
                         class="w-full min-w-0 rounded-ctlSm border border-transparent px-1.5 py-1 hover:border-line-control focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
-                        @change="updateName(t, ($event.target as HTMLInputElement).value)"
+                        @change="updateName(at, ($event.target as HTMLInputElement).value)"
                       />
                     </div>
                   </td>
                   <td class="px-4 py-2.5 text-ink-muted2">
                     <div class="flex items-center gap-1">
                       <input
-                        :value="t.duration_minutes"
+                        :value="at.duration_minutes"
                         type="number"
                         min="5"
                         step="5"
                         class="w-16 rounded-ctlSm border border-transparent px-1.5 py-1 hover:border-line-control focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
-                        @change="updateDuration(t, ($event.target as HTMLInputElement).value)"
+                        @change="updateDuration(at, ($event.target as HTMLInputElement).value)"
                       />
-                      min
+                      {{ t('min', 'min') }}
                     </div>
                   </td>
                   <td class="px-4 py-2.5 text-ink-muted2">
                     <div class="flex items-center gap-1">
                       €
                       <input
-                        :value="(t.default_price_cents / 100).toFixed(2)"
+                        :value="(at.default_price_cents / 100).toFixed(2)"
                         type="number"
                         min="0"
                         step="0.01"
                         class="w-20 rounded-ctlSm border border-transparent px-1.5 py-1 hover:border-line-control focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
-                        @change="updatePrice(t, ($event.target as HTMLInputElement).value)"
+                        @change="updatePrice(at, ($event.target as HTMLInputElement).value)"
                       />
                     </div>
                   </td>
                   <td class="px-4 py-2.5">
                     <select
-                      :value="t.stage ?? ''"
+                      :value="at.stage ?? ''"
                       class="rounded-ctlSm border border-line-control bg-surface py-1 pl-2 pr-6 text-[12.5px] text-ink-600 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
-                      @change="updateStage(t, ($event.target as HTMLSelectElement).value)"
+                      @change="updateStage(at, ($event.target as HTMLSelectElement).value)"
                     >
                       <option v-for="s in STAGE_OPTIONS" :key="s.value" :value="s.value">{{ s.label }}</option>
                     </select>
                   </td>
                   <td class="px-4 py-2.5">
                     <label class="flex items-center gap-2 text-ink-600">
-                      <SettingsToggle :model-value="t.online_booking_enabled" @update:model-value="toggleBookable(t)" />
-                      Bookable
+                      <SettingsToggle :model-value="at.online_booking_enabled" @update:model-value="toggleBookable(at)" />
+                      {{ t('Bookable', 'Reservable') }}
                     </label>
                   </td>
                   <td class="px-4 py-2.5">
-                    <label class="flex items-center gap-2 text-ink-600" :title="stripeConfigured ? '' : 'Set up Stripe in Settings > Payments first'">
-                      <SettingsToggle :model-value="t.online_payment_required" :disabled="!stripeConfigured" @update:model-value="toggleOnlinePayment(t)" />
-                      Require payment
+                    <label class="flex items-center gap-2 text-ink-600" :title="stripeConfigured ? '' : t('Set up Stripe in Settings > Payments first', 'Configura Stripe en Ajustes > Pagos primero')">
+                      <SettingsToggle :model-value="at.online_payment_required" :disabled="!stripeConfigured" @update:model-value="toggleOnlinePayment(at)" />
+                      {{ t('Require payment', 'Requerir pago') }}
                     </label>
                   </td>
                   <td class="px-4 py-2.5">
-                    <button type="button" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover" @click="toggleOverrides(t.id)">
-                      Overrides
+                    <button type="button" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover" @click="toggleOverrides(at.id)">
+                      {{ t('Overrides', 'Excepciones') }}
                     </button>
                   </td>
                   <td class="px-4 py-2.5 text-right">
-                    <button type="button" class="text-ink-faint hover:text-danger-text" @click="removeType(t.id)">✕</button>
+                    <button type="button" class="text-ink-faint hover:text-danger-text" @click="removeType(at.id)">✕</button>
                   </td>
                 </tr>
-                <tr v-if="openOverridesTypeId === t.id">
+                <tr v-if="openOverridesTypeId === at.id">
                   <td colspan="8" class="bg-surface-subtle px-4 py-3">
                     <p class="text-[12px] text-ink-muted2">
-                      Per-practitioner duration/price for <span class="font-medium text-ink-700">{{ t.name }}</span> — leave blank to use the defaults above.
+                      {{ t('Per-practitioner duration/price for', 'Duración/precio por profesional para') }} <span class="font-medium text-ink-700">{{ at.name }}</span> — {{ t('leave blank to use the defaults above.', 'deja en blanco para usar los valores por defecto de arriba.') }}
                     </p>
                     <div class="mt-2 space-y-1.5">
                       <div v-for="m in teamMembers" :key="m.id" class="flex items-center gap-3 text-[13px]">
                         <span class="w-40 shrink-0 truncate text-ink-700">{{ m.full_name }}</span>
                         <div class="flex items-center gap-1">
                           <input
-                            :value="overrideFor(t.id, m.id)?.duration_minutes ?? ''"
+                            :value="overrideFor(at.id, m.id)?.duration_minutes ?? ''"
                             type="number"
                             min="5"
                             step="5"
-                            :placeholder="String(t.duration_minutes)"
+                            :placeholder="String(at.duration_minutes)"
                             class="w-16 rounded-ctlSm border border-line-control bg-surface px-1.5 py-1 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
-                            @change="updateOverrideDuration(t.id, m.id, ($event.target as HTMLInputElement).value)"
+                            @change="updateOverrideDuration(at.id, m.id, ($event.target as HTMLInputElement).value)"
                           />
-                          <span class="text-ink-faint">min</span>
+                          <span class="text-ink-faint">{{ t('min', 'min') }}</span>
                         </div>
                         <div class="flex items-center gap-1">
                           <span class="text-ink-faint">€</span>
                           <input
-                            :value="overrideFor(t.id, m.id)?.price_cents != null ? (overrideFor(t.id, m.id)!.price_cents! / 100).toFixed(2) : ''"
+                            :value="overrideFor(at.id, m.id)?.price_cents != null ? (overrideFor(at.id, m.id)!.price_cents! / 100).toFixed(2) : ''"
                             type="number"
                             min="0"
                             step="0.01"
-                            :placeholder="(t.default_price_cents / 100).toFixed(2)"
+                            :placeholder="(at.default_price_cents / 100).toFixed(2)"
                             class="w-20 rounded-ctlSm border border-line-control bg-surface px-1.5 py-1 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
-                            @change="updateOverridePrice(t.id, m.id, ($event.target as HTMLInputElement).value)"
+                            @change="updateOverridePrice(at.id, m.id, ($event.target as HTMLInputElement).value)"
                           />
                         </div>
                       </div>
-                      <p v-if="teamMembers.length === 0" class="text-[12.5px] text-ink-faint">No team members yet.</p>
+                      <p v-if="teamMembers.length === 0" class="text-[12.5px] text-ink-faint">{{ t('No team members yet.', 'Todavía no hay miembros del equipo.') }}</p>
                     </div>
                   </td>
                 </tr>
@@ -325,28 +326,27 @@ function updateOverridePrice(typeId: string, teamMemberId: string, value: string
             </table>
           </div>
           <p class="mt-2 text-[12px] text-ink-faint">
-            "Stage" lets the Statistics report count first visits, reports, revisions, etc. — pick whichever bucket
-            each type maps to for you.
+            {{ t('"Stage" lets the Statistics report count first visits, reports, revisions, etc. — pick whichever bucket each type maps to for you.', '"Etapa" permite que el informe de Estadísticas cuente primeras visitas, informes, revisiones, etc. — elige la categoría que corresponda a cada tipo.') }}
           </p>
 
           <form class="mt-4 flex flex-wrap items-end gap-3 rounded-card border border-line bg-surface p-4 shadow-card" @submit.prevent="addType">
             <div>
-              <label class="block text-[12.5px] font-medium text-ink-600">Name</label>
+              <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Name', 'Nombre') }}</label>
               <input v-model="name" type="text" required placeholder="Ajuste Quiropractico" class="mt-1 h-8 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20" />
             </div>
             <div>
-              <label class="block text-[12.5px] font-medium text-ink-600">Duration (min)</label>
+              <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Duration (min)', 'Duración (min)') }}</label>
               <input v-model="duration" type="number" min="5" step="5" class="mt-1 h-8 w-24 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20" />
             </div>
             <div>
-              <label class="block text-[12.5px] font-medium text-ink-600">Default price (€)</label>
+              <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Default price (€)', 'Precio por defecto (€)') }}</label>
               <input v-model="price" type="number" step="0.01" min="0" class="mt-1 h-8 w-28 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20" />
             </div>
             <div>
-              <label class="block text-[12.5px] font-medium text-ink-600">Color</label>
+              <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Color', 'Color') }}</label>
               <input v-model="color" type="color" class="mt-1 h-8 w-14 rounded-ctl border border-line-control" />
             </div>
-            <UiBtn variant="primary" type="submit" :disabled="saving">{{ saving ? 'Adding…' : 'Add Type' }}</UiBtn>
+            <UiBtn variant="primary" type="submit" :disabled="saving">{{ saving ? t('Adding…', 'Añadiendo…') : t('Add Type', 'Añadir tipo') }}</UiBtn>
           </form>
           <p v-if="error" class="mt-2 text-[12.5px] text-danger-text">{{ error }}</p>
         </div>

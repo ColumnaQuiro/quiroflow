@@ -60,7 +60,7 @@ export default defineEventHandler(async (event) => {
       .select('storage_path')
       .eq('id', body.attachmentFileId)
       .maybeSingle()
-    if (file) {
+    if (file?.storage_path) {
       const { data: signed } = await supabase.storage
         .from('patient-files')
         .createSignedUrl(file.storage_path, 60 * 60 * 24)

@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import Papa from 'papaparse'
 import { computePresetRange, STANDARD_PRESETS, type DateRange } from '~/composables/useDateRangePresets'
+import type { Database } from '~/types/database.types'
+
+type TableOrView = keyof Database['public']['Tables'] | keyof Database['public']['Views']
 
 interface PatientRow {
   id: string
@@ -24,21 +27,22 @@ interface GeneratedExport {
   filename: string
 }
 
+const supabase = useSupabaseClient()
+const t = useT()
+
 // Only "Patients" actually generates anything today -- the other data types
 // mirror PracticeHub's own dropdown (matching its layout, per the QA
 // request) but aren't wired to real exports yet, so picking one just
 // disables the button rather than pretending to support it.
-const DATA_TYPES = [
-  { value: 'patients', label: 'Patients' },
-  { value: 'patient_logs', label: 'Patient Logs' },
-  { value: 'appointments', label: 'Appointments' },
-  { value: 'care_plans', label: 'Care Plans' },
-  { value: 'treatment_notes', label: 'Treatment Notes' },
-  { value: 'custom_form_responses', label: 'Custom Form Responses' },
-  { value: 'file_attachments', label: 'File Attachments - List' },
-]
-
-const supabase = useSupabaseClient()
+const DATA_TYPES = computed(() => [
+  { value: 'patients', label: t('Patients', 'Pacientes') },
+  { value: 'patient_logs', label: t('Patient Logs', 'Registros de pacientes') },
+  { value: 'appointments', label: t('Appointments', 'Citas') },
+  { value: 'care_plans', label: t('Care Plans', 'Planes de tratamiento') },
+  { value: 'treatment_notes', label: t('Treatment Notes', 'Notas de tratamiento') },
+  { value: 'custom_form_responses', label: t('Custom Form Responses', 'Respuestas de formularios personalizados') },
+  { value: 'file_attachments', label: t('File Attachments - List', 'Archivos adjuntos - Lista') },
+])
 
 const loading = ref(true)
 const patients = ref<PatientRow[]>([])
@@ -57,11 +61,16 @@ const balanceByPatient = ref<Map<string, number>>(new Map())
 const balancesLoading = ref(false)
 const balancesLoaded = ref(false)
 
-async function fetchAllRows<T>(table: string, select: string, filter?: (q: any) => any): Promise<T[]> {
+async function fetchAllRows<T>(table: TableOrView, select: string, filter?: (q: any) => any): Promise<T[]> {
   const PAGE_SIZE = 1000
   const rows: T[] = []
   for (let page = 0; ; page++) {
-    let query = supabase.from(table).select(select).range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+    // Supabase's .from() overloads split cleanly into "tables" and "views"
+    // -- a variable that can be either (as this reusable helper's callers
+    // need) can't satisfy either overload as a whole, so this one spot casts
+    // through `any`; the generic <T> above is what actually keeps each call
+    // site's result shape honest.
+    let query = supabase.from(table as any).select(select).range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
     if (filter) query = filter(query)
     const { data } = await query
     rows.push(...((data as T[]) ?? []))
@@ -150,7 +159,7 @@ function formatDate(iso: string) {
   return new Date(`${iso}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 const dateRangeLabel = computed(() =>
-  dateRange.value ? `${formatDate(dateRange.value.from)} – ${formatDate(dateRange.value.to)}` : 'Select date range…',
+  dateRange.value ? `${formatDate(dateRange.value.from)} – ${formatDate(dateRange.value.to)}` : t('Select date range…', 'Selecciona un periodo…'),
 )
 
 const filterMissingEmail = ref(false)
@@ -195,13 +204,13 @@ const matchingPatients = computed(() => {
 
 const activeFilterLabels = computed(() => {
   const labels: string[] = []
-  if (filterMissingEmail.value) labels.push('Missing email')
-  if (filterMissingPhone.value) labels.push('Missing phone')
-  if (filterMissingDataProtection.value) labels.push('Missing data protection form')
-  if (filterMissingConsent.value) labels.push('Missing consent form')
-  if (filterMissingNextAppointment.value) labels.push('Missing next appointment')
-  if (filterNeedsToPay.value) labels.push('Needs to pay')
-  if (filterAgeMin.value || filterAgeMax.value) labels.push(`Age ${filterAgeMin.value || '0'}–${filterAgeMax.value || '∞'}`)
+  if (filterMissingEmail.value) labels.push(t('Missing email', 'Sin correo'))
+  if (filterMissingPhone.value) labels.push(t('Missing phone', 'Sin teléfono'))
+  if (filterMissingDataProtection.value) labels.push(t('Missing data protection form', 'Sin formulario de protección de datos'))
+  if (filterMissingConsent.value) labels.push(t('Missing consent form', 'Sin formulario de consentimiento'))
+  if (filterMissingNextAppointment.value) labels.push(t('Missing next appointment', 'Sin próxima cita'))
+  if (filterNeedsToPay.value) labels.push(t('Needs to pay', 'Pendiente de pago'))
+  if (filterAgeMin.value || filterAgeMax.value) labels.push(t(`Age ${filterAgeMin.value || '0'}–${filterAgeMax.value || '∞'}`, `Edad ${filterAgeMin.value || '0'}–${filterAgeMax.value || '∞'}`))
   return labels
 })
 
@@ -217,20 +226,20 @@ async function generateExport() {
   const rows = matchingPatients.value
   const csv = Papa.unparse(
     rows.map((p) => ({
-      'First name': p.first_name,
-      'Last name': p.last_name ?? '',
-      Email: p.email ?? '',
-      Phone: phoneByPatient.value.get(p.id) ?? '',
-      'Date of birth': p.date_of_birth ?? '',
-      Age: ageOf(p) ?? '',
-      Practitioner: p.default_practitioner_id ? (memberById.value.get(p.default_practitioner_id) ?? '') : 'Unassigned',
-      'Balance (€)': ((balanceByPatient.value.get(p.id) ?? 0) / 100).toFixed(2),
-      'Has next appointment': patientIdsWithFutureAppointment.value.has(p.id) ? 'Yes' : 'No',
-      'Data protection form signed': patientIdsWithDataProtection.value.has(p.id) ? 'Yes' : 'No',
-      'Consent form signed': patientIdsWithConsent.value.has(p.id) ? 'Yes' : 'No',
-      Status: p.status,
-      Tags: p.tags.join('; '),
-      ID: p.id,
+      [t('First name', 'Nombre')]: p.first_name,
+      [t('Last name', 'Apellidos')]: p.last_name ?? '',
+      [t('Email', 'Correo electrónico')]: p.email ?? '',
+      [t('Phone', 'Teléfono')]: phoneByPatient.value.get(p.id) ?? '',
+      [t('Date of birth', 'Fecha de nacimiento')]: p.date_of_birth ?? '',
+      [t('Age', 'Edad')]: ageOf(p) ?? '',
+      [t('Practitioner', 'Profesional')]: p.default_practitioner_id ? (memberById.value.get(p.default_practitioner_id) ?? '') : t('Unassigned', 'Sin asignar'),
+      [t('Balance (€)', 'Saldo (€)')]: ((balanceByPatient.value.get(p.id) ?? 0) / 100).toFixed(2),
+      [t('Has next appointment', 'Tiene próxima cita')]: patientIdsWithFutureAppointment.value.has(p.id) ? t('Yes', 'Sí') : t('No', 'No'),
+      [t('Data protection form signed', 'Formulario de protección de datos firmado')]: patientIdsWithDataProtection.value.has(p.id) ? t('Yes', 'Sí') : t('No', 'No'),
+      [t('Consent form signed', 'Formulario de consentimiento firmado')]: patientIdsWithConsent.value.has(p.id) ? t('Yes', 'Sí') : t('No', 'No'),
+      [t('Status', 'Estado')]: p.status,
+      [t('Tags', 'Etiquetas')]: p.tags.join('; '),
+      [t('ID', 'ID')]: p.id,
     })),
   )
   const blob = new Blob([csv], { type: 'text/csv' })
@@ -244,8 +253,8 @@ async function generateExport() {
 
   generatedExports.value.unshift({
     id: crypto.randomUUID(),
-    dataTypeLabel: DATA_TYPES.find((t) => t.value === dataType.value)?.label ?? 'Patients',
-    filterSummary: [dateRange.value ? dateRangeLabel.value : null, ...activeFilterLabels.value].filter(Boolean).join(' · ') || 'All patients',
+    dataTypeLabel: DATA_TYPES.value.find((d) => d.value === dataType.value)?.label ?? t('Patients', 'Pacientes'),
+    filterSummary: [dateRange.value ? dateRangeLabel.value : null, ...activeFilterLabels.value].filter(Boolean).join(' · ') || t('All patients', 'Todos los pacientes'),
     rowCount: rows.length,
     generatedAt: new Date().toISOString(),
     blobUrl,
@@ -264,29 +273,29 @@ function redownload(exp: GeneratedExport) {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Data Exports" meta="Export patient data, or find gaps in patient records worth chasing down">
-      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; Reports</NuxtLink>
+    <PageHeader :title="t('Data Exports', 'Exportaciones de datos')" :meta="t('Export patient data, or find gaps in patient records worth chasing down', 'Exporta datos de pacientes o encuentra huecos en los registros que merezca la pena resolver')">
+      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
     </PageHeader>
 
     <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
-      <div v-if="loading" class="text-[13px] text-ink-faint2">Loading…</div>
+      <div v-if="loading" class="text-[13px] text-ink-faint2">{{ t('Loading…', 'Cargando…') }}</div>
 
       <div v-else class="mx-auto max-w-3xl space-y-6">
         <div class="rounded-card border border-line bg-surface p-5 shadow-card">
-          <h3 class="text-[15px] font-semibold text-ink-900">Generate New Export</h3>
-          <p class="mt-0.5 text-[12.5px] text-ink-muted2">Select the data type, date range, and any filters for your export.</p>
+          <h3 class="text-[15px] font-semibold text-ink-900">{{ t('Generate New Export', 'Generar nueva exportación') }}</h3>
+          <p class="mt-0.5 text-[12.5px] text-ink-muted2">{{ t('Select the data type, date range, and any filters for your export.', 'Selecciona el tipo de datos, el periodo y los filtros para tu exportación.') }}</p>
 
           <div class="mt-4">
-            <label class="block text-[12.5px] font-medium text-ink-600">Data Type</label>
+            <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Data Type', 'Tipo de datos') }}</label>
             <select v-model="dataType" class="mt-1 h-9 w-full max-w-xs rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-900 focus:border-brand focus:outline-none">
-              <option v-for="t in DATA_TYPES" :key="t.value" :value="t.value">{{ t.label }}</option>
+              <option v-for="dt in DATA_TYPES" :key="dt.value" :value="dt.value">{{ dt.label }}</option>
             </select>
-            <p v-if="dataType !== 'patients'" class="mt-1 text-[12px] text-warning-text">This data type isn't available to export yet.</p>
+            <p v-if="dataType !== 'patients'" class="mt-1 text-[12px] text-warning-text">{{ t("This data type isn't available to export yet.", 'Este tipo de datos todavía no se puede exportar.') }}</p>
           </div>
 
           <div class="relative mt-4 max-w-xs">
-            <label class="block text-[12.5px] font-medium text-ink-600">Created Date Range</label>
-            <p class="mt-0.5 text-[11.5px] text-ink-faint2">Filters by the created date of each patient</p>
+            <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Created Date Range', 'Periodo de creación') }}</label>
+            <p class="mt-0.5 text-[11.5px] text-ink-faint2">{{ t('Filters by the created date of each patient', 'Filtra por la fecha de creación de cada paciente') }}</p>
             <button
               type="button"
               class="mt-1 flex h-9 w-full items-center justify-between rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 hover:border-line-controlHover"
@@ -313,7 +322,7 @@ function redownload(exp: GeneratedExport) {
                 {{ p.label }}
               </button>
               <div class="mt-1 border-t border-line-divider pt-2">
-                <p class="px-2 text-[11px] font-medium uppercase tracking-wide text-ink-faint2">Custom range</p>
+                <p class="px-2 text-[11px] font-medium uppercase tracking-wide text-ink-faint2">{{ t('Custom range', 'Periodo personalizado') }}</p>
                 <div class="mt-1 flex items-center gap-1.5 px-2">
                   <input v-model="customFrom" type="date" :max="customTo || undefined" class="min-w-0 flex-1 rounded-ctlSm border border-line-control px-1.5 py-1 text-xs text-ink-600" />
                   <span class="shrink-0 text-ink-faint2">–</span>
@@ -325,55 +334,55 @@ function redownload(exp: GeneratedExport) {
                   class="mt-2 w-full rounded-ctl border border-brand bg-brand px-2 py-1.5 text-xs font-semibold text-white hover:bg-brand-hover disabled:opacity-50"
                   @click="applyCustomRange"
                 >
-                  Apply
+                  {{ t('Apply', 'Aplicar') }}
                 </button>
                 <button type="button" class="mt-1 w-full rounded-ctl px-2 py-1.5 text-xs font-medium text-ink-muted2 hover:bg-surface-subtle" @click="clearDateRange">
-                  Clear (all time)
+                  {{ t('Clear (all time)', 'Borrar (todo el tiempo)') }}
                 </button>
               </div>
             </div>
           </div>
 
           <div class="mt-5 border-t border-line-divider pt-4">
-            <p class="text-[12.5px] font-medium text-ink-600">Filters</p>
+            <p class="text-[12.5px] font-medium text-ink-600">{{ t('Filters', 'Filtros') }}</p>
             <div class="mt-2 grid grid-cols-2 gap-x-4 gap-y-2">
               <label class="flex items-center gap-2 text-[13px] text-ink-700">
                 <input v-model="filterMissingEmail" type="checkbox" class="h-4 w-4 rounded border-line-control text-brand focus:ring-brand" />
-                Missing email
+                {{ t('Missing email', 'Sin correo') }}
               </label>
               <label class="flex items-center gap-2 text-[13px] text-ink-700">
                 <input v-model="filterMissingPhone" type="checkbox" class="h-4 w-4 rounded border-line-control text-brand focus:ring-brand" />
-                Missing phone number
+                {{ t('Missing phone number', 'Sin número de teléfono') }}
               </label>
               <label class="flex items-center gap-2 text-[13px] text-ink-700">
                 <input v-model="filterMissingDataProtection" type="checkbox" class="h-4 w-4 rounded border-line-control text-brand focus:ring-brand" />
-                Missing data protection form
+                {{ t('Missing data protection form', 'Sin formulario de protección de datos') }}
               </label>
               <label class="flex items-center gap-2 text-[13px] text-ink-700">
                 <input v-model="filterMissingConsent" type="checkbox" class="h-4 w-4 rounded border-line-control text-brand focus:ring-brand" />
-                Missing consent form
+                {{ t('Missing consent form', 'Sin formulario de consentimiento') }}
               </label>
               <label class="flex items-center gap-2 text-[13px] text-ink-700">
                 <input v-model="filterMissingNextAppointment" type="checkbox" class="h-4 w-4 rounded border-line-control text-brand focus:ring-brand" />
-                Missing next appointment
+                {{ t('Missing next appointment', 'Sin próxima cita') }}
               </label>
               <label class="flex items-center gap-2 text-[13px] text-ink-700">
                 <input v-model="filterNeedsToPay" type="checkbox" class="h-4 w-4 rounded border-line-control text-brand focus:ring-brand" />
-                Patient needs to pay
-                <span v-if="filterNeedsToPay && balancesLoading" class="text-[11.5px] text-ink-faint2">(loading balances…)</span>
+                {{ t('Patient needs to pay', 'El paciente tiene un pago pendiente') }}
+                <span v-if="filterNeedsToPay && balancesLoading" class="text-[11.5px] text-ink-faint2">{{ t('(loading balances…)', '(cargando saldos…)') }}</span>
               </label>
             </div>
             <div class="mt-3 flex items-center gap-2">
-              <label class="text-[13px] text-ink-700">Age</label>
-              <input v-model="filterAgeMin" type="number" min="0" placeholder="Min" class="h-8 w-20 rounded-ctlSm border border-line-control px-2 text-[13px] text-ink-700" />
+              <label class="text-[13px] text-ink-700">{{ t('Age', 'Edad') }}</label>
+              <input v-model="filterAgeMin" type="number" min="0" :placeholder="t('Min', 'Mín.')" class="h-8 w-20 rounded-ctlSm border border-line-control px-2 text-[13px] text-ink-700" />
               <span class="text-ink-faint2">–</span>
-              <input v-model="filterAgeMax" type="number" min="0" placeholder="Max" class="h-8 w-20 rounded-ctlSm border border-line-control px-2 text-[13px] text-ink-700" />
+              <input v-model="filterAgeMax" type="number" min="0" :placeholder="t('Max', 'Máx.')" class="h-8 w-20 rounded-ctlSm border border-line-control px-2 text-[13px] text-ink-700" />
             </div>
           </div>
 
           <div class="mt-5 flex items-center justify-between border-t border-line-divider pt-4">
-            <p class="text-[12.5px] text-ink-muted2">{{ matchingPatients.length }} patient{{ matchingPatients.length === 1 ? '' : 's' }} match{{ matchingPatients.length === 1 ? 'es' : '' }} right now</p>
-            <UiBtn variant="primary" :disabled="dataType !== 'patients' || generating" @click="generateExport">{{ generating ? 'Generating…' : 'Generate Export' }}</UiBtn>
+            <p class="text-[12.5px] text-ink-muted2">{{ t(`${matchingPatients.length} patient${matchingPatients.length === 1 ? '' : 's'} match${matchingPatients.length === 1 ? 'es' : ''} right now`, `${matchingPatients.length} paciente${matchingPatients.length === 1 ? '' : 's'} coincide${matchingPatients.length === 1 ? '' : 'n'} ahora mismo`) }}</p>
+            <UiBtn variant="primary" :disabled="dataType !== 'patients' || generating" @click="generateExport">{{ generating ? t('Generating…', 'Generando…') : t('Generate Export', 'Generar exportación') }}</UiBtn>
           </div>
         </div>
 
@@ -383,28 +392,28 @@ function redownload(exp: GeneratedExport) {
             <path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5" />
             <path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3" />
           </svg>
-          <p class="text-[13.5px] font-semibold text-ink-800">No exports generated</p>
-          <p class="text-[12.5px] text-ink-muted2">To generate a data export, choose from the options above.</p>
+          <p class="text-[13.5px] font-semibold text-ink-800">{{ t('No exports generated', 'No se han generado exportaciones') }}</p>
+          <p class="text-[12.5px] text-ink-muted2">{{ t('To generate a data export, choose from the options above.', 'Para generar una exportación de datos, elige entre las opciones anteriores.') }}</p>
         </div>
 
         <div v-else class="rounded-card border border-line bg-surface shadow-card">
-          <p class="border-b border-line-divider px-4 py-2.5 text-[12.5px] font-medium text-ink-600">Generated this session</p>
+          <p class="border-b border-line-divider px-4 py-2.5 text-[12.5px] font-medium text-ink-600">{{ t('Generated this session', 'Generado en esta sesión') }}</p>
           <ul class="divide-y divide-line-row">
             <li v-for="exp in generatedExports" :key="exp.id" class="flex items-center justify-between gap-3 px-4 py-3">
               <div class="min-w-0">
-                <p class="truncate text-[13px] font-medium text-ink-900">{{ exp.dataTypeLabel }} — {{ exp.rowCount }} row{{ exp.rowCount === 1 ? '' : 's' }}</p>
+                <p class="truncate text-[13px] font-medium text-ink-900">{{ exp.dataTypeLabel }} — {{ t(`${exp.rowCount} row${exp.rowCount === 1 ? '' : 's'}`, `${exp.rowCount} fila${exp.rowCount === 1 ? '' : 's'}`) }}</p>
                 <p class="truncate text-[12px] text-ink-muted2">{{ exp.filterSummary }} · {{ new Date(exp.generatedAt).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) }}</p>
               </div>
-              <UiBtn variant="ghost" size="sm" class="shrink-0" @click="redownload(exp)">Download CSV</UiBtn>
+              <UiBtn variant="ghost" size="sm" class="shrink-0" @click="redownload(exp)">{{ t('Download CSV', 'Descargar CSV') }}</UiBtn>
             </li>
           </ul>
         </div>
 
         <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-          <h3 class="text-[13.5px] font-semibold text-ink-800">Patients per practitioner</h3>
+          <h3 class="text-[13.5px] font-semibold text-ink-800">{{ t('Patients per practitioner', 'Pacientes por profesional') }}</h3>
           <ul class="mt-2 space-y-1.5">
             <li
-              v-for="row in [...teamMembers.map((m) => ({ id: m.id, label: m.full_name })), { id: '__none', label: 'Unassigned' }]
+              v-for="row in [...teamMembers.map((m) => ({ id: m.id, label: m.full_name })), { id: '__none', label: t('Unassigned', 'Sin asignar') }]
                 .map((m) => ({ ...m, count: patients.filter((p) => (p.default_practitioner_id ?? '__none') === m.id).length }))
                 .filter((r) => r.count > 0)
                 .sort((a, b) => b.count - a.count)"

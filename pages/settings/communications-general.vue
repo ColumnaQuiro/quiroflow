@@ -3,6 +3,7 @@ import type { TablesUpdate } from '~/types/database.types'
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 const confirmationEnabled = ref(true)
 const confirmationChannels = ref<string[]>(['whatsapp'])
@@ -66,26 +67,25 @@ async function save() {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="General">
-      <UiBtn variant="primary" :disabled="saving || loading" @click="save">{{ saving ? 'Saving…' : 'Save changes' }}</UiBtn>
+    <PageHeader :title="t('General', 'General')">
+      <UiBtn variant="primary" :disabled="saving || loading" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save changes', 'Guardar cambios') }}</UiBtn>
     </PageHeader>
     <div class="flex-1 overflow-y-auto">
       <div class="flex gap-8 p-6">
         <SettingsNav />
         <div class="min-w-0 max-w-[660px] flex-1">
           <p class="text-[13px] leading-relaxed text-ink-muted2">
-            Manage how appointment confirmations and reminders are sent to your patients. WhatsApp default templates
-            are configured in <NuxtLink to="/settings/whatsapp" class="text-brand-text hover:underline">Settings → WhatsApp</NuxtLink>.
+            {{ t('Manage how appointment confirmations and reminders are sent to your patients. WhatsApp default templates are configured in', 'Gestiona cómo se envían a tus pacientes las confirmaciones y recordatorios de citas. Las plantillas predeterminadas de WhatsApp se configuran en') }} <NuxtLink to="/settings/whatsapp" class="text-brand-text hover:underline">{{ t('Settings → WhatsApp', 'Ajustes → WhatsApp') }}</NuxtLink>.
           </p>
 
-          <div v-if="loading" class="mt-6 text-[13px] text-ink-faint">Loading…</div>
+          <div v-if="loading" class="mt-6 text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
           <form v-else class="mt-5 space-y-4" @submit.prevent="save">
             <div class="rounded-card border border-line bg-surface p-4 shadow-card">
               <div class="flex items-center justify-between">
                 <div>
-                  <p class="text-[13.5px] font-[560] text-ink-700">Appointment Confirmations</p>
+                  <p class="text-[13.5px] font-[560] text-ink-700">{{ t('Appointment Confirmations', 'Confirmaciones de cita') }}</p>
                   <p class="mt-0.5 text-[12.5px] text-ink-muted2">
-                    Sent automatically right after an appointment is booked — by staff or through online booking.
+                    {{ t('Sent automatically right after an appointment is booked — by staff or through online booking.', 'Se envían automáticamente justo después de reservar una cita — por el personal o mediante la reserva online.') }}
                   </p>
                 </div>
                 <SettingsToggle v-model="confirmationEnabled" />
@@ -109,7 +109,7 @@ async function save() {
                       class="h-4 w-4 rounded border-line-control text-brand focus:ring-brand"
                       @change="confirmationChannels = ($event.target as HTMLInputElement).checked ? [...confirmationChannels, 'email'] : confirmationChannels.filter((c) => c !== 'email')"
                     />
-                    Email
+                    {{ t('Email', 'Correo electrónico') }}
                   </label>
                 </div>
 
@@ -117,12 +117,12 @@ async function save() {
                   <input
                     v-model="emailConfirmationSubject"
                     type="text"
-                    placeholder="Subject — e.g. Your appointment is confirmed"
+                    :placeholder="t('Subject — e.g. Your appointment is confirmed', 'Asunto — p. ej. Tu cita ha sido confirmada')"
                     class="h-8 w-full rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
                   />
                   <CampaignsRichTextEditor v-model="emailConfirmationBody" />
                   <p class="text-[11.5px] text-ink-faint">
-                    Merge fields: <code class="rounded-ctlSm bg-surface-subtle px-1">&#123;&#123;first_name&#125;&#125;</code>
+                    {{ t('Merge fields:', 'Campos combinados:') }} <code class="rounded-ctlSm bg-surface-subtle px-1">&#123;&#123;first_name&#125;&#125;</code>
                     <code class="rounded-ctlSm bg-surface-subtle px-1">&#123;&#123;next_appointment&#125;&#125;</code>
                     <code class="rounded-ctlSm bg-surface-subtle px-1">&#123;&#123;practitioner_name&#125;&#125;</code>
                     <code class="rounded-ctlSm bg-surface-subtle px-1">&#123;&#123;appointment_type_name&#125;&#125;</code>
@@ -134,15 +134,15 @@ async function save() {
             <div class="rounded-card border border-line bg-surface p-4 shadow-card">
               <div class="flex items-center justify-between">
                 <div>
-                  <p class="text-[13.5px] font-[560] text-ink-700">Appointment Reminders</p>
-                  <p class="mt-0.5 text-[12.5px] text-ink-muted2">Sent automatically a set number of hours before the visit.</p>
+                  <p class="text-[13.5px] font-[560] text-ink-700">{{ t('Appointment Reminders', 'Recordatorios de cita') }}</p>
+                  <p class="mt-0.5 text-[12.5px] text-ink-muted2">{{ t('Sent automatically a set number of hours before the visit.', 'Se envían automáticamente un número determinado de horas antes de la visita.') }}</p>
                 </div>
                 <SettingsToggle v-model="reminderEnabled" />
               </div>
 
               <template v-if="reminderEnabled">
                 <div class="mt-4 flex items-center gap-2 border-t border-line-divider pt-4 text-[13px] text-ink-600">
-                  <span>Send</span>
+                  <span>{{ t('Send', 'Enviar') }}</span>
                   <input
                     v-model.number="reminderHoursBefore"
                     type="number"
@@ -150,7 +150,7 @@ async function save() {
                     max="168"
                     class="h-8 w-16 rounded-ctl border border-line-control bg-surface px-2 text-center text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
                   />
-                  <span>hours before the appointment</span>
+                  <span>{{ t('hours before the appointment', 'horas antes de la cita') }}</span>
                 </div>
 
                 <div class="mt-3 flex flex-wrap gap-4 text-[13px] text-ink-600">
@@ -170,7 +170,7 @@ async function save() {
                       class="h-4 w-4 rounded border-line-control text-brand focus:ring-brand"
                       @change="reminderChannels = ($event.target as HTMLInputElement).checked ? [...reminderChannels, 'email'] : reminderChannels.filter((c) => c !== 'email')"
                     />
-                    Email
+                    {{ t('Email', 'Correo electrónico') }}
                   </label>
                 </div>
 
@@ -178,12 +178,12 @@ async function save() {
                   <input
                     v-model="emailReminderSubject"
                     type="text"
-                    placeholder="Subject — e.g. Reminder: your appointment is tomorrow"
+                    :placeholder="t('Subject — e.g. Reminder: your appointment is tomorrow', 'Asunto — p. ej. Recordatorio: tu cita es mañana')"
                     class="h-8 w-full rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
                   />
                   <CampaignsRichTextEditor v-model="emailReminderBody" />
                   <p class="text-[11.5px] text-ink-faint">
-                    Merge fields: <code class="rounded-ctlSm bg-surface-subtle px-1">&#123;&#123;first_name&#125;&#125;</code>
+                    {{ t('Merge fields:', 'Campos combinados:') }} <code class="rounded-ctlSm bg-surface-subtle px-1">&#123;&#123;first_name&#125;&#125;</code>
                     <code class="rounded-ctlSm bg-surface-subtle px-1">&#123;&#123;next_appointment&#125;&#125;</code>
                     <code class="rounded-ctlSm bg-surface-subtle px-1">&#123;&#123;practitioner_name&#125;&#125;</code>
                     <code class="rounded-ctlSm bg-surface-subtle px-1">&#123;&#123;appointment_type_name&#125;&#125;</code>

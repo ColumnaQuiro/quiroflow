@@ -6,6 +6,7 @@ const props = defineProps<{ patientId: string }>()
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 // `public_token` isn't in the generated Supabase types yet -- merge it in
 // locally rather than editing the generated file by hand.
@@ -62,7 +63,7 @@ async function copyLink(doc: Doc) {
 }
 function sendViaWhatsApp(doc: Doc) {
   if (!patientPhoneDigits.value) return
-  const message = `Hi! Please complete this document: ${docLink(doc)}`
+  const message = `${t('Hi! Please complete this document:', '¡Hola! Por favor completa este documento:')} ${docLink(doc)}`
   window.open(`https://wa.me/${patientPhoneDigits.value}?text=${encodeURIComponent(message)}`, '_blank')
 }
 
@@ -95,7 +96,7 @@ async function createDoc(initialTitle: string, initialFields: DocField[], templa
 
 async function newBlankDoc() {
   showNewMenu.value = false
-  await createDoc('Untitled', [])
+  await createDoc(t('Untitled', 'Sin título'), [])
 }
 
 async function newFromTemplate(template: Template) {
@@ -126,7 +127,7 @@ async function save() {
   saving.value = true
   const { error } = await supabase
     .from('patient_docs')
-    .update({ title: title.value.trim() || 'Untitled', fields: fields.value as any, updated_by: store.teamMember?.id ?? null })
+    .update({ title: title.value.trim() || t('Untitled', 'Sin título'), fields: fields.value as any, updated_by: store.teamMember?.id ?? null })
     .eq('id', activeDoc.value.id)
   saving.value = false
   if (!error) savedAt.value = new Date()
@@ -143,21 +144,21 @@ async function toggleComplete() {
 }
 
 async function removeDoc(doc: Doc) {
-  if (!confirm(`Delete "${doc.title}"?`)) return
+  if (!confirm(`${t('Delete', 'Eliminar')} "${doc.title}"?`)) return
   await supabase.from('patient_docs').delete().eq('id', doc.id)
   docs.value = docs.value.filter((d) => d.id !== doc.id)
   if (activeDoc.value?.id === doc.id) activeDoc.value = null
 }
 
 function statusFor(doc: Doc): { label: string; tone: 'success' | 'brand' } {
-  return doc.completed_at ? { label: 'Complete', tone: 'success' } : { label: 'Sent', tone: 'brand' }
+  return doc.completed_at ? { label: t('Complete', 'Completado'), tone: 'success' } : { label: t('Sent', 'Enviado'), tone: 'brand' }
 }
 function metaFor(doc: Doc) {
   if (doc.completed_at) {
-    const ip = doc.completed_ip ? ` from ${doc.completed_ip}` : ''
-    return `Signed ${new Date(doc.completed_at).toLocaleDateString()}${ip}`
+    const ip = doc.completed_ip ? ` ${t('from', 'desde')} ${doc.completed_ip}` : ''
+    return `${t('Signed', 'Firmado')} ${new Date(doc.completed_at).toLocaleDateString()}${ip}`
   }
-  return `Sent ${new Date(doc.updated_at).toLocaleDateString()}`
+  return `${t('Sent', 'Enviado')} ${new Date(doc.updated_at).toLocaleDateString()}`
 }
 </script>
 
@@ -165,15 +166,15 @@ function metaFor(doc: Doc) {
   <div class="rounded-card border border-line bg-surface shadow-card">
     <template v-if="!activeDoc">
       <div class="flex items-center justify-between border-b border-line-divider px-4 py-3">
-        <p class="text-[13.5px] font-semibold text-ink-700">Docs</p>
+        <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Docs', 'Documentos') }}</p>
         <div class="relative">
-          <UiBtn variant="primary" size="sm" @click="showNewMenu = !showNewMenu">+ New doc</UiBtn>
+          <UiBtn variant="primary" size="sm" @click="showNewMenu = !showNewMenu">{{ t('+ New doc', '+ Nuevo documento') }}</UiBtn>
           <div v-if="showNewMenu" class="absolute right-0 z-10 mt-1 w-56 rounded-ctl border border-line bg-surface py-1 shadow-popover">
             <button type="button" class="block w-full px-3 py-1.5 text-left text-[13px] text-ink-600 hover:bg-surface-subtle" @click="newBlankDoc">
-              Blank document
+              {{ t('Blank document', 'Documento en blanco') }}
             </button>
             <template v-if="templates.length > 0">
-              <p class="mt-1 border-t border-line-divider px-3 pt-1.5 text-[11px] font-medium uppercase text-ink-faint">From template</p>
+              <p class="mt-1 border-t border-line-divider px-3 pt-1.5 text-[11px] font-medium uppercase text-ink-faint">{{ t('From template', 'Desde plantilla') }}</p>
               <button
                 v-for="t in templates"
                 :key="t.id"
@@ -187,9 +188,9 @@ function metaFor(doc: Doc) {
           </div>
         </div>
       </div>
-      <div v-if="loading" class="p-8 text-center text-[13px] text-ink-faint">Loading…</div>
+      <div v-if="loading" class="p-8 text-center text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
       <div v-else-if="docs.length === 0" class="p-8 text-center text-[13px] text-ink-faint">
-        No docs yet — e.g. a data protection consent record for this patient.
+        {{ t('No docs yet — e.g. a data protection consent record for this patient.', 'Aún no hay documentos — p. ej. un registro de consentimiento de protección de datos para este paciente.') }}
       </div>
       <ul v-else class="divide-y divide-line-row">
         <li v-for="doc in docs" :key="doc.id" class="flex items-center gap-3 px-4 py-3">
@@ -203,22 +204,22 @@ function metaFor(doc: Doc) {
           </button>
           <UiPill :tone="statusFor(doc).tone">{{ statusFor(doc).label }}</UiPill>
           <div class="flex items-center gap-2.5">
-            <button type="button" class="text-[11.5px] font-medium text-brand-text hover:text-brand-hover" title="Open patient link in a new tab" @click="openLink(doc)">
-              Open
+            <button type="button" class="text-[11.5px] font-medium text-brand-text hover:text-brand-hover" :title="t('Open patient link in a new tab', 'Abrir el enlace del paciente en una pestaña nueva')" @click="openLink(doc)">
+              {{ t('Open', 'Abrir') }}
             </button>
-            <button type="button" class="text-[11.5px] font-medium text-brand-text hover:text-brand-hover" title="Copy patient link" @click="copyLink(doc)">
-              {{ copiedId === doc.id ? 'Copied!' : 'Copy link' }}
+            <button type="button" class="text-[11.5px] font-medium text-brand-text hover:text-brand-hover" :title="t('Copy patient link', 'Copiar el enlace del paciente')" @click="copyLink(doc)">
+              {{ copiedId === doc.id ? t('Copied!', '¡Copiado!') : t('Copy link', 'Copiar enlace') }}
             </button>
             <button
               v-if="patientPhoneDigits"
               type="button"
               class="text-[11.5px] font-medium text-success-text hover:text-success-deep"
-              title="Send patient link via WhatsApp"
+              :title="t('Send patient link via WhatsApp', 'Enviar el enlace del paciente por WhatsApp')"
               @click="sendViaWhatsApp(doc)"
             >
               WhatsApp
             </button>
-            <button type="button" class="text-[11.5px] text-danger-text hover:text-danger-text/80" @click="removeDoc(doc)">Delete</button>
+            <button type="button" class="text-[11.5px] text-danger-text hover:text-danger-text/80" @click="removeDoc(doc)">{{ t('Delete', 'Eliminar') }}</button>
           </div>
         </li>
       </ul>
@@ -226,13 +227,13 @@ function metaFor(doc: Doc) {
 
     <template v-else>
       <div class="flex items-center justify-between border-b border-line-divider px-4 py-3">
-        <button type="button" class="text-[13px] text-ink-muted hover:text-ink-700" @click="backToList">&larr; Docs</button>
+        <button type="button" class="text-[13px] text-ink-muted hover:text-ink-700" @click="backToList">&larr; {{ t('Docs', 'Documentos') }}</button>
         <div class="flex items-center gap-3">
-          <span v-if="savedAt" class="text-[12px] text-success-text">Saved</span>
+          <span v-if="savedAt" class="text-[12px] text-success-text">{{ t('Saved', 'Guardado') }}</span>
           <UiBtn :variant="activeDoc?.completed_at ? 'primary' : 'secondary'" size="sm" @click="toggleComplete">
-            {{ activeDoc?.completed_at ? '✓ Completed' : 'Mark as completed' }}
+            {{ activeDoc?.completed_at ? t('✓ Completed', '✓ Completado') : t('Mark as completed', 'Marcar como completado') }}
           </UiBtn>
-          <UiBtn variant="primary" size="sm" :disabled="saving" @click="save">{{ saving ? 'Saving…' : 'Save' }}</UiBtn>
+          <UiBtn variant="primary" size="sm" :disabled="saving" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}</UiBtn>
         </div>
       </div>
 
@@ -240,7 +241,7 @@ function metaFor(doc: Doc) {
         <input
           v-model="title"
           type="text"
-          placeholder="Untitled"
+          :placeholder="t('Untitled', 'Sin título')"
           class="mb-4 w-full border-none text-[20px] font-semibold text-ink-900 placeholder-ink-faint2 focus:outline-none focus:ring-0"
         />
         <DocBlocks :fields="fields" mode="fill" @update:fields="fields = $event" />

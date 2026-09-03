@@ -3068,6 +3068,7 @@ export type Database = {
           full_name: string
           id: string
           is_owner: boolean
+          language_preference: string
           online_booking_enabled: boolean
           photo_storage_path: string | null
           role: string
@@ -3085,6 +3086,7 @@ export type Database = {
           full_name: string
           id?: string
           is_owner?: boolean
+          language_preference?: string
           online_booking_enabled?: boolean
           photo_storage_path?: string | null
           role?: string
@@ -3102,6 +3104,7 @@ export type Database = {
           full_name?: string
           id?: string
           is_owner?: boolean
+          language_preference?: string
           online_booking_enabled?: boolean
           photo_storage_path?: string | null
           role?: string

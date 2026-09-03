@@ -8,6 +8,7 @@ interface PackageRow {
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 const packages = ref<PackageRow[]>([])
 const loading = ref(true)
@@ -48,7 +49,7 @@ async function addPackage() {
 }
 
 async function removePackage(id: string) {
-  if (!confirm('Delete this package template? Existing purchases are unaffected.')) return
+  if (!confirm(t('Delete this package template? Existing purchases are unaffected.', '¿Eliminar esta plantilla de bono? Las compras ya existentes no se verán afectadas.'))) return
   await supabase.from('packages').delete().eq('id', id)
   await load()
 }
@@ -56,29 +57,29 @@ async function removePackage(id: string) {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Packages / Bonos" />
+    <PageHeader :title="t('Packages / Bonos', 'Bonos')" />
     <div class="flex-1 overflow-y-auto">
       <div class="flex gap-8 p-6">
         <SettingsNav />
         <div class="min-w-0 max-w-[660px] flex-1">
-          <p class="text-[13px] text-ink-muted2">Session bundle templates you can sell to patients (e.g. "Bono 10 sesiones").</p>
+          <p class="text-[13px] text-ink-muted2">{{ t('Session bundle templates you can sell to patients (e.g. "Bono 10 sesiones").', 'Plantillas de bonos de sesiones que puedes vender a los pacientes (p. ej. "Bono 10 sesiones").') }}</p>
 
           <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
             <table class="w-full text-[13px]">
               <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted2">
                 <tr>
-                  <th class="px-4 py-2">Name</th>
-                  <th class="px-4 py-2">Sessions</th>
-                  <th class="px-4 py-2">Price</th>
+                  <th class="px-4 py-2">{{ t('Name', 'Nombre') }}</th>
+                  <th class="px-4 py-2">{{ t('Sessions', 'Sesiones') }}</th>
+                  <th class="px-4 py-2">{{ t('Price', 'Precio') }}</th>
                   <th class="px-4 py-2"></th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-line-row">
                 <tr v-if="loading">
-                  <td colspan="4" class="px-4 py-6 text-center text-ink-faint">Loading…</td>
+                  <td colspan="4" class="px-4 py-6 text-center text-ink-faint">{{ t('Loading…', 'Cargando…') }}</td>
                 </tr>
                 <tr v-else-if="packages.length === 0">
-                  <td colspan="4" class="px-4 py-6 text-center text-ink-faint">No packages yet.</td>
+                  <td colspan="4" class="px-4 py-6 text-center text-ink-faint">{{ t('No packages yet.', 'Todavía no hay bonos.') }}</td>
                 </tr>
                 <tr v-for="p in packages" :key="p.id">
                   <td class="px-4 py-2.5 text-ink-700">{{ p.name }}</td>
@@ -94,18 +95,18 @@ async function removePackage(id: string) {
 
           <form class="mt-4 flex flex-wrap items-end gap-3 rounded-card border border-line bg-surface p-4 shadow-card" @submit.prevent="addPackage">
             <div>
-              <label class="block text-[12.5px] font-medium text-ink-600">Name</label>
+              <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Name', 'Nombre') }}</label>
               <input v-model="name" type="text" required placeholder="Bono 10 sesiones" class="mt-1 h-8 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20" />
             </div>
             <div>
-              <label class="block text-[12.5px] font-medium text-ink-600">Sessions</label>
+              <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Sessions', 'Sesiones') }}</label>
               <input v-model.number="sessionCount" type="number" min="1" required class="mt-1 h-8 w-24 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20" />
             </div>
             <div>
-              <label class="block text-[12.5px] font-medium text-ink-600">Price (€)</label>
+              <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Price (€)', 'Precio (€)') }}</label>
               <input v-model.number="price" type="number" min="0" step="0.01" class="mt-1 h-8 w-28 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20" />
             </div>
-            <UiBtn variant="primary" type="submit" :disabled="saving">{{ saving ? 'Adding…' : 'Add Package' }}</UiBtn>
+            <UiBtn variant="primary" type="submit" :disabled="saving">{{ saving ? t('Adding…', 'Añadiendo…') : t('Add Package', 'Añadir bono') }}</UiBtn>
           </form>
           <p v-if="error" class="mt-2 text-[12.5px] text-danger-text">{{ error }}</p>
         </div>

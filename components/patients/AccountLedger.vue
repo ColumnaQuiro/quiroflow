@@ -38,6 +38,7 @@ const emit = defineEmits<{
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 interface PaymentRow { id: string; invoice_id: string; amount_cents: number; method: string; paid_at: string }
 interface CreditRow { id: string; amount_cents: number; reason: string | null; method: string | null; invoice_id: string | null; created_at: string }
@@ -105,7 +106,7 @@ const rows = computed<LedgerRow[]>(() => {
       key: `invoice-${inv.id}`,
       ref: inv.invoice_number,
       date: inv.created_at,
-      description: inv.status === 'void' ? 'Invoice (void)' : 'Invoice',
+      description: inv.status === 'void' ? t('Invoice (void)', 'Factura (anulada)') : t('Invoice', 'Factura'),
       debitCents: inv.status === 'void' ? 0 : inv.total_cents,
       creditCents: 0,
       balanceText: inv.status === 'void' ? '—' : money(openCents),
@@ -113,7 +114,7 @@ const rows = computed<LedgerRow[]>(() => {
       voided: inv.status === 'void',
       invoiceId: inv.id,
       invoiceOpenCents: inv.status === 'void' ? 0 : openCents,
-      detail: items.length > 0 ? items.map((d) => ({ label: 'Item', value: d })) : [{ label: 'Items', value: '—' }],
+      detail: items.length > 0 ? items.map((d) => ({ label: t('Item', 'Artículo'), value: d })) : [{ label: t('Items', 'Artículos'), value: '—' }],
     }
   })
 
@@ -121,15 +122,15 @@ const rows = computed<LedgerRow[]>(() => {
     key: `payment-${p.id}`,
     ref: '',
     date: p.paid_at,
-    description: `Payment — ${p.method}`,
+    description: `${t('Payment', 'Pago')} — ${p.method}`,
     debitCents: 0,
     creditCents: p.amount_cents,
     balanceText: '—',
     balanceTone: 'neutral' as const,
     voided: false,
     detail: [
-      { label: 'Method', value: p.method },
-      { label: 'Applied to', value: invoiceRefFor(p.invoice_id) ?? '—' },
+      { label: t('Method', 'Método'), value: p.method },
+      { label: t('Applied to', 'Aplicado a'), value: invoiceRefFor(p.invoice_id) ?? '—' },
     ],
   }))
 
@@ -144,15 +145,15 @@ const rows = computed<LedgerRow[]>(() => {
       key: `credit-${c.id}`,
       ref: '',
       date: c.created_at,
-      description: c.reason ?? 'Account credit',
+      description: c.reason ?? t('Account credit', 'Crédito en cuenta'),
       debitCents: c.amount_cents < 0 ? -c.amount_cents : 0,
       creditCents: c.amount_cents > 0 ? c.amount_cents : 0,
-      balanceText: `${money(creditRunning)} ledger bal.`,
+      balanceText: `${money(creditRunning)} ${t('ledger bal.', 'saldo cta.')}`,
       balanceTone: creditRunning < 0 ? ('danger' as const) : ('neutral' as const),
       voided: false,
       detail: [
-        ...(c.method ? [{ label: 'Method', value: c.method }] : []),
-        ...(c.invoice_id ? [{ label: 'Linked invoice', value: invoiceRefFor(c.invoice_id) ?? '—' }] : []),
+        ...(c.method ? [{ label: t('Method', 'Método'), value: c.method }] : []),
+        ...(c.invoice_id ? [{ label: t('Linked invoice', 'Factura vinculada'), value: invoiceRefFor(c.invoice_id) ?? '—' }] : []),
       ],
     }
   })
@@ -245,7 +246,7 @@ async function submitTransferCredit() {
   if (!transferTarget.value) return
   const amountCents = Math.round((parseFloat(transferAmount.value) || 0) * 100)
   if (amountCents <= 0 || amountCents > props.creditLedgerCents) {
-    transferError.value = 'Amount must be positive and not exceed available credit.'
+    transferError.value = t('Amount must be positive and not exceed available credit.', 'El importe debe ser positivo y no superar el crédito disponible.')
     return
   }
   transferring.value = true
@@ -290,9 +291,9 @@ async function sendStatement() {
   statementMessage.value = ''
   try {
     await useStaffFetch(`/api/patients/${props.patientId}/statement/send`, { method: 'POST' })
-    statementMessage.value = 'Statement emailed.'
+    statementMessage.value = t('Statement emailed.', 'Extracto enviado por correo.')
   } catch (e: any) {
-    statementMessage.value = e?.data?.message ?? 'Failed to send statement.'
+    statementMessage.value = e?.data?.message ?? t('Failed to send statement.', 'No se pudo enviar el extracto.')
   }
   statementSending.value = false
   setTimeout(() => (statementMessage.value = ''), 4000)
@@ -302,7 +303,7 @@ async function sendStatement() {
 <template>
   <div class="rounded-card border border-line bg-surface shadow-card">
     <div class="flex items-center justify-between border-b border-line-divider px-4 py-3">
-      <p class="text-[13.5px] font-semibold text-ink-700">Account Ledger</p>
+      <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Account Ledger', 'Libro de cuenta') }}</p>
       <div class="flex items-center gap-2">
         <span v-if="statementMessage" class="text-[12px] text-ink-faint">{{ statementMessage }}</span>
         <div class="relative">
@@ -310,40 +311,40 @@ async function sendStatement() {
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>
           </button>
           <div v-if="menuOpen" class="absolute right-0 z-10 mt-1 w-44 rounded-ctl border border-line bg-surface py-1 shadow-popover">
-            <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="newInvoice">New Invoice</button>
-            <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="takePayment">New Payment</button>
-            <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="addCredit">Add Credit</button>
+            <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="newInvoice">{{ t('New Invoice', 'Nueva factura') }}</button>
+            <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="takePayment">{{ t('New Payment', 'Nuevo pago') }}</button>
+            <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="addCredit">{{ t('Add Credit', 'Añadir crédito') }}</button>
             <button v-if="creditLedgerCents > 0" type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="openTransferCredit">
-              Transfer Credit
+              {{ t('Transfer Credit', 'Transferir crédito') }}
             </button>
             <div class="my-1 border-t border-line-divider"></div>
-            <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="downloadStatement">Download Statement</button>
+            <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="downloadStatement">{{ t('Download Statement', 'Descargar extracto') }}</button>
             <button
               type="button"
               class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle disabled:opacity-50"
               :disabled="statementSending"
               @click="sendStatement"
             >
-              {{ statementSending ? 'Sending…' : 'Send Statement' }}
+              {{ statementSending ? t('Sending…', 'Enviando…') : t('Send Statement', 'Enviar extracto') }}
             </button>
           </div>
         </div>
       </div>
     </div>
 
-    <div v-if="loading" class="p-8 text-center text-[13px] text-ink-faint">Loading…</div>
-    <div v-else-if="rows.length === 0" class="p-8 text-center text-[13px] text-ink-faint">No transactions yet.</div>
+    <div v-if="loading" class="p-8 text-center text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+    <div v-else-if="rows.length === 0" class="p-8 text-center text-[13px] text-ink-faint">{{ t('No transactions yet.', 'Aún no hay transacciones.') }}</div>
     <div v-else class="max-h-[420px] overflow-y-auto">
       <table class="w-full text-[13px]">
         <thead class="sticky top-0 border-b border-line-divider bg-surface text-left text-[11px] font-medium uppercase tracking-wide text-ink-faint">
           <tr>
             <th class="w-6 px-2 py-2"></th>
-            <th class="px-2 py-2">Ref</th>
-            <th class="px-2 py-2">Date</th>
-            <th class="px-2 py-2">Description</th>
-            <th class="px-2 py-2 text-right">Debit</th>
-            <th class="px-2 py-2 text-right">Credit</th>
-            <th class="px-4 py-2 text-right">Balance</th>
+            <th class="px-2 py-2">{{ t('Ref', 'Ref.') }}</th>
+            <th class="px-2 py-2">{{ t('Date', 'Fecha') }}</th>
+            <th class="px-2 py-2">{{ t('Description', 'Descripción') }}</th>
+            <th class="px-2 py-2 text-right">{{ t('Debit', 'Debe') }}</th>
+            <th class="px-2 py-2 text-right">{{ t('Credit', 'Haber') }}</th>
+            <th class="px-4 py-2 text-right">{{ t('Balance', 'Saldo') }}</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-line-row">
@@ -370,7 +371,7 @@ async function sendStatement() {
                   </template>
                 </dl>
                 <div v-if="row.invoiceId" class="mt-2 flex items-center gap-3 border-t border-line-divider pt-2 text-[12px]">
-                  <NuxtLink :to="`/billing/${row.invoiceId}`" class="font-medium text-brand-text hover:text-brand-hover">Open invoice</NuxtLink>
+                  <NuxtLink :to="`/billing/${row.invoiceId}`" class="font-medium text-brand-text hover:text-brand-hover">{{ t('Open invoice', 'Abrir factura') }}</NuxtLink>
                   <span v-if="sendResultInvoiceId === row.invoiceId" class="text-ink-faint">{{ sendResultMessage }}</span>
                   <button
                     v-else
@@ -379,16 +380,16 @@ async function sendStatement() {
                     :disabled="sendingInvoiceId === row.invoiceId"
                     @click="emit('sendInvoice', row.invoiceId)"
                   >
-                    {{ sendingInvoiceId === row.invoiceId ? 'Sending…' : 'Email invoice' }}
+                    {{ sendingInvoiceId === row.invoiceId ? t('Sending…', 'Enviando…') : t('Email invoice', 'Enviar factura por correo') }}
                   </button>
-                  <button v-if="canDeleteInvoices" type="button" class="text-ink-faint hover:text-danger-text" @click="emit('deleteInvoice', row.invoiceId)">Delete</button>
+                  <button v-if="canDeleteInvoices" type="button" class="text-ink-faint hover:text-danger-text" @click="emit('deleteInvoice', row.invoiceId)">{{ t('Delete', 'Eliminar') }}</button>
                   <button
                     v-if="canWriteOff && !row.voided && (row.invoiceOpenCents ?? 0) > 0"
                     type="button"
                     class="text-ink-faint hover:text-warning-text"
                     @click="writeOffInvoice(row.invoiceId)"
                   >
-                    Write off {{ money(row.invoiceOpenCents ?? 0) }}
+                    {{ t('Write off', 'Condonar') }} {{ money(row.invoiceOpenCents ?? 0) }}
                   </button>
                 </div>
               </td>
@@ -401,11 +402,11 @@ async function sendStatement() {
 
   <div v-if="transferModalOpen" class="fixed inset-0 z-20 flex items-center justify-center bg-ink-900/40 p-4" @click.self="transferModalOpen = false">
     <div class="w-full max-w-sm rounded-card border border-line bg-surface p-4 shadow-popover">
-      <p class="text-[13.5px] font-semibold text-ink-700">Transfer credit</p>
-      <p class="mt-1 text-[12px] text-ink-faint">Moves an amount from this patient's credit (€{{ (creditLedgerCents / 100).toFixed(2) }} available) to another patient's account.</p>
+      <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Transfer credit', 'Transferir crédito') }}</p>
+      <p class="mt-1 text-[12px] text-ink-faint">{{ t('Moves an amount from this patient\'s credit', 'Mueve un importe del crédito de este paciente') }} (€{{ (creditLedgerCents / 100).toFixed(2) }} {{ t('available', 'disponible') }}) {{ t('to another patient\'s account.', 'a la cuenta de otro paciente.') }}</p>
 
       <div class="mt-3">
-        <label class="block text-[11px] text-ink-muted">To patient</label>
+        <label class="block text-[11px] text-ink-muted">{{ t('To patient', 'Al paciente') }}</label>
         <div v-if="transferTarget" class="mt-0.5 flex items-center justify-between rounded-ctlSm border border-line-control px-2 py-1.5 text-[13px]">
           <span>{{ transferTarget.first_name }} {{ transferTarget.last_name }}</span>
           <button type="button" class="text-ink-faint hover:text-danger-text" @click="transferTarget = null">✕</button>
@@ -414,7 +415,7 @@ async function sendStatement() {
           <input
             v-model="transferSearch"
             type="text"
-            placeholder="Search a patient…"
+            :placeholder="t('Search a patient…', 'Buscar un paciente…')"
             class="w-full rounded-ctlSm border border-line-control px-2 py-1.5 text-[13px]"
           />
           <ul v-if="transferResults.length" class="absolute z-10 mt-1 w-full rounded-ctlSm border border-line bg-surface shadow-popover">
@@ -431,16 +432,16 @@ async function sendStatement() {
       </div>
 
       <div class="mt-3">
-        <label class="block text-[11px] text-ink-muted">Amount (€)</label>
+        <label class="block text-[11px] text-ink-muted">{{ t('Amount (€)', 'Importe (€)') }}</label>
         <input v-model="transferAmount" type="number" min="0" step="0.01" class="mt-0.5 w-32 rounded-ctlSm border border-line-control px-2 py-1.5 text-[13px]" />
       </div>
 
       <p v-if="transferError" class="mt-2 text-[12px] text-danger-text">{{ transferError }}</p>
 
       <div class="mt-4 flex items-center justify-end gap-2">
-        <button type="button" class="text-[12.5px] text-ink-faint hover:text-ink-muted" @click="transferModalOpen = false">Cancel</button>
+        <button type="button" class="text-[12.5px] text-ink-faint hover:text-ink-muted" @click="transferModalOpen = false">{{ t('Cancel', 'Cancelar') }}</button>
         <UiBtn variant="primary" size="sm" :disabled="!transferTarget || !transferAmount || transferring" @click="submitTransferCredit">
-          {{ transferring ? 'Transferring…' : 'Transfer' }}
+          {{ transferring ? t('Transferring…', 'Transfiriendo…') : t('Transfer', 'Transferir') }}
         </UiBtn>
       </div>
     </div>

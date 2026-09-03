@@ -3,6 +3,7 @@ const route = useRoute()
 const { can, scope } = usePermission()
 const store = useAccountStore()
 const supabase = useSupabaseClient()
+const t = useT()
 
 const paletteOpen = ref(false)
 const accountMenuOpen = ref(false)
@@ -75,40 +76,40 @@ interface NavItem {
   badge?: 'myday' | 'recalls' | 'campaigns' | 'inbox'
 }
 
-const navGroups: { label: string; items: NavItem[] }[] = [
+const navGroups = computed<{ label: string; items: NavItem[] }[]>(() => [
   {
-    label: 'Today',
+    label: t('Today', 'Hoy'),
     items: [
-      { label: 'Dashboard', to: '/dashboard', perm: () => scope('dashboard_scope') !== 'none', icon: 'M2 2h5v5H2zM9 2h5v5H9zM2 9h5v5H2zM9 9h5v5H9z' },
-      { label: 'My Day', to: '/practitioner', perm: () => scope('calendar_scope') !== 'none', icon: 'M2.5 2.5h11v11h-11zM5.5 8.2l1.8 1.8 3.2-3.4', badge: 'myday' },
-      { label: 'Calendar', to: '/calendar', perm: () => scope('calendar_scope') !== 'none', icon: 'M2.5 3.5h11v10h-11zM2.5 6.6h11M5.6 2v2M10.4 2v2' },
+      { label: t('Dashboard', 'Panel'), to: '/dashboard', perm: () => scope('dashboard_scope') !== 'none', icon: 'M2 2h5v5H2zM9 2h5v5H9zM2 9h5v5H2zM9 9h5v5H9z' },
+      { label: t('My Day', 'Mi día'), to: '/practitioner', perm: () => scope('calendar_scope') !== 'none', icon: 'M2.5 2.5h11v11h-11zM5.5 8.2l1.8 1.8 3.2-3.4', badge: 'myday' },
+      { label: t('Calendar', 'Calendario'), to: '/calendar', perm: () => scope('calendar_scope') !== 'none', icon: 'M2.5 3.5h11v10h-11zM2.5 6.6h11M5.6 2v2M10.4 2v2' },
     ],
   },
   {
-    label: 'Patients',
+    label: t('Patients', 'Pacientes'),
     items: [
-      { label: 'Patients', to: '/patients', perm: () => scope('patients_scope') !== 'none', icon: 'M6.2 5.6a2.6 2.6 0 11-5.2 0 2.6 2.6 0 015.2 0zM2 13.4c0-2.3 1.9-3.6 4.2-3.6s4.2 1.3 4.2 3.6' },
-      { label: 'Recalls', to: '/recalls', perm: () => can('recalls_access'), icon: 'M8 8m5.3 0a5.3 5.3 0 11-10.6 0 5.3 5.3 0 0110.6 0z', badge: 'recalls' },
-      { label: 'Inbox', to: '/inbox', perm: () => can('inbox_access'), icon: 'M2 3.5h12v9h-8l-3 2.5v-2.5h-1z', badge: 'inbox' },
+      { label: t('Patients', 'Pacientes'), to: '/patients', perm: () => scope('patients_scope') !== 'none', icon: 'M6.2 5.6a2.6 2.6 0 11-5.2 0 2.6 2.6 0 015.2 0zM2 13.4c0-2.3 1.9-3.6 4.2-3.6s4.2 1.3 4.2 3.6' },
+      { label: t('Recalls', 'Recordatorios'), to: '/recalls', perm: () => can('recalls_access'), icon: 'M8 8m5.3 0a5.3 5.3 0 11-10.6 0 5.3 5.3 0 0110.6 0z', badge: 'recalls' },
+      { label: t('Inbox', 'Bandeja de entrada'), to: '/inbox', perm: () => can('inbox_access'), icon: 'M2 3.5h12v9h-8l-3 2.5v-2.5h-1z', badge: 'inbox' },
     ],
   },
   {
-    label: 'Money',
+    label: t('Money', 'Dinero'),
     items: [
-      { label: 'Billing', to: '/billing', perm: () => can('billing_access'), icon: 'M2 4h12v8h-12zM2 7h12' },
-      { label: 'Reports', to: '/reports', perm: () => can('reports_access'), icon: 'M2.4 8h2.6v5.6h-2.6zM6.7 4.6h2.6v9h-2.6zM11 6.6h2.6v7h-2.6z' },
+      { label: t('Billing', 'Facturación'), to: '/billing', perm: () => can('billing_access'), icon: 'M2 4h12v8h-12zM2 7h12' },
+      { label: t('Reports', 'Informes'), to: '/reports', perm: () => can('reports_access'), icon: 'M2.4 8h2.6v5.6h-2.6zM6.7 4.6h2.6v9h-2.6zM11 6.6h2.6v7h-2.6z' },
     ],
   },
   {
-    label: 'Growth',
+    label: t('Growth', 'Crecimiento'),
     items: [
-      { label: 'Campaigns', to: '/campaigns', perm: () => can('communication_config'), icon: 'M8 2l4.5 6H8.9l1.1 6L5.5 8h3.6z', badge: 'campaigns' },
+      { label: t('Campaigns', 'Campañas'), to: '/campaigns', perm: () => can('communication_config'), icon: 'M8 2l4.5 6H8.9l1.1 6L5.5 8h3.6z', badge: 'campaigns' },
     ],
   },
-]
+])
 
 const visibleGroups = computed(() =>
-  navGroups.map((g) => ({ ...g, items: g.items.filter((i) => i.perm()) })).filter((g) => g.items.length > 0),
+  navGroups.value.map((g) => ({ ...g, items: g.items.filter((i) => i.perm()) })).filter((g) => g.items.length > 0),
 )
 
 function isActive(to: string) {
@@ -128,7 +129,7 @@ const clinicInitials = computed(() => {
   const name = store.currentClinic?.name ?? ''
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('') || 'CL'
 })
-const roleLine = computed(() => (store.teamMember?.is_owner ? 'Owner' : store.teamMember?.role === 'front_desk' ? 'Front Desk' : 'Practitioner'))
+const roleLine = computed(() => (store.teamMember?.is_owner ? t('Owner', 'Propietario') : store.teamMember?.role === 'front_desk' ? t('Front Desk', 'Recepción') : t('Practitioner', 'Profesional')))
 
 function onDocumentClick(e: MouseEvent) {
   if (accountMenuOpen.value && accountMenuRef.value && !accountMenuRef.value.contains(e.target as Node)) {
@@ -173,19 +174,19 @@ async function signOut() {
         class="flex h-[34px] items-center gap-2 rounded-ctl border border-chip-border bg-surface px-2.5 text-left text-[13px] text-ink-700 hover:border-line-controlHover"
       >
         <span class="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] bg-brand-tint text-[9.5px] font-bold text-brand">{{ clinicInitials }}</span>
-        <span class="min-w-0 flex-1 truncate">{{ store.currentClinic?.name ?? 'Clinic' }}</span>
+        <span class="min-w-0 flex-1 truncate">{{ store.currentClinic?.name ?? t('Clinic', 'Clínica') }}</span>
         <svg width="10" height="10" viewBox="0 0 10 10" class="shrink-0 text-ink-faint"><path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" /></svg>
       </button>
       <button
         type="button"
         class="flex h-8 items-center gap-2 rounded-ctl bg-chip text-left text-[13px] text-ink-muted hover:bg-surface-subtle"
         :class="collapsed ? 'w-8 justify-center' : 'w-full px-2.5'"
-        :title="collapsed ? 'Search or jump to (⌘K)' : undefined"
+        :title="collapsed ? t('Search or jump to (⌘K)', 'Buscar o ir a (⌘K)') : undefined"
         @click="paletteOpen = true"
       >
         <svg width="13" height="13" viewBox="0 0 14 14" class="shrink-0"><circle cx="6" cy="6" r="4.2" stroke="currentColor" stroke-width="1.4" fill="none" /><line x1="9.2" y1="9.2" x2="12" y2="12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg>
         <template v-if="!collapsed">
-          <span class="flex-1">Search or jump to</span>
+          <span class="flex-1">{{ t('Search or jump to', 'Buscar o ir a') }}</span>
           <span class="rounded border border-line-control bg-surface px-1 py-px font-mono text-[10.5px] text-ink-faint2">⌘K</span>
         </template>
       </button>
@@ -220,7 +221,7 @@ async function signOut() {
         type="button"
         class="flex h-8 items-center gap-[9px] rounded-ctlSm text-[13px] text-ink-muted2 hover:bg-surface-subtle"
         :class="collapsed ? 'w-8 justify-center' : 'w-full px-[9px]'"
-        :title="collapsed ? 'Expand sidebar' : undefined"
+        :title="collapsed ? t('Expand sidebar', 'Expandir barra lateral') : undefined"
         @click="toggleCollapsed"
       >
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
@@ -229,7 +230,7 @@ async function signOut() {
           <path v-if="collapsed" d="M9.5 6.2l2 1.8-2 1.8" stroke-linecap="round" stroke-linejoin="round" />
           <path v-else d="M11.5 6.2l-2 1.8 2 1.8" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
-        <span v-if="!collapsed" class="flex-1 text-left">Collapse sidebar</span>
+        <span v-if="!collapsed" class="flex-1 text-left">{{ t('Collapse sidebar', 'Colapsar barra lateral') }}</span>
       </button>
 
       <NuxtLink
@@ -237,10 +238,10 @@ async function signOut() {
         to="/settings"
         class="flex h-8 items-center gap-[9px] rounded-ctlSm text-[13.5px]"
         :class="[collapsed ? 'w-8 justify-center' : 'w-full px-[9px]', isActive('/settings') ? 'bg-brand-tint text-brand-text font-semibold' : 'text-ink-600 hover:bg-surface-subtle']"
-        :title="collapsed ? 'Settings' : undefined"
+        :title="collapsed ? t('Settings', 'Ajustes') : undefined"
       >
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="5.3" /><circle cx="8" cy="8" r="1.9" /></svg>
-        <span v-if="!collapsed" class="flex-1">Settings</span>
+        <span v-if="!collapsed" class="flex-1">{{ t('Settings', 'Ajustes') }}</span>
       </NuxtLink>
 
       <div ref="accountMenuRef" class="relative w-full" :class="{ 'flex justify-center': collapsed }">
@@ -248,7 +249,7 @@ async function signOut() {
           type="button"
           class="flex h-10 items-center gap-[9px] rounded-ctlSm text-left hover:bg-surface-subtle"
           :class="collapsed ? 'w-8 justify-center' : 'w-full px-2'"
-          :title="collapsed ? (store.teamMember?.full_name ?? 'Account') : undefined"
+          :title="collapsed ? (store.teamMember?.full_name ?? t('Account', 'Cuenta')) : undefined"
           @click="accountMenuOpen = !accountMenuOpen"
         >
           <span class="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-brand text-[10px] font-bold text-white">
@@ -269,7 +270,7 @@ async function signOut() {
           :class="collapsed ? 'left-full ml-1' : 'left-0 w-full'"
         >
           <NuxtLink to="/account" class="block px-3 py-2 text-left text-[13px] text-ink-500 hover:bg-surface-subtle" @click="accountMenuOpen = false">
-            Account Settings
+            {{ t('Account Settings', 'Ajustes de la cuenta') }}
           </NuxtLink>
           <button
             v-if="can('payments_allocate')"
@@ -277,10 +278,10 @@ async function signOut() {
             class="block w-full px-3 py-2 text-left text-[13px] text-ink-500 hover:bg-surface-subtle"
             @click="cashShiftOpen = true; accountMenuOpen = false"
           >
-            Cash Shift
+            {{ t('Cash Shift', 'Turno de caja') }}
           </button>
           <button type="button" class="block w-full px-3 py-2 text-left text-[13px] text-ink-500 hover:bg-surface-subtle" @click="signOut">
-            Sign out
+            {{ t('Sign out', 'Cerrar sesión') }}
           </button>
         </div>
       </div>

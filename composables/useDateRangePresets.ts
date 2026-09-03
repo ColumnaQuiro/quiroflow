@@ -1,5 +1,8 @@
 export interface DateRangePreset {
-  label: string
+  // Optional -- computePresetRange below never reads it, only months/days/
+  // lastMonth. Several report pages call it with a bare { months: N } just
+  // to seed an initial range, with no UI preset (and so no label) involved.
+  label?: string
   months?: number
   days?: number
   lastMonth?: boolean

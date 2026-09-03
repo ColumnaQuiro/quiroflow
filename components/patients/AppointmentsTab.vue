@@ -14,6 +14,7 @@ interface AppointmentRow {
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 const appointments = ref<AppointmentRow[]>([])
 const loading = ref(true)
 
@@ -44,7 +45,7 @@ async function load() {
 onMounted(load)
 
 function practitionerLabel(appt: AppointmentRow) {
-  return appt.team_members?.full_name ?? appt.practitioner_name ?? 'N/A'
+  return appt.team_members?.full_name ?? appt.practitioner_name ?? t('N/A', 'N/D')
 }
 
 function isUpcoming(appt: AppointmentRow) {
@@ -57,12 +58,12 @@ const statusTone: Record<string, 'success' | 'warning' | 'danger' | 'brand' | 'n
   no_show: 'danger',
   booked: 'brand',
 }
-const statusLabel: Record<string, string> = {
-  completed: 'Completed',
-  cancelled: 'Cancelled',
-  no_show: 'Missed',
-  booked: 'Booked',
-}
+const statusLabel = computed<Record<string, string>>(() => ({
+  completed: t('Completed', 'Completada'),
+  cancelled: t('Cancelled', 'Cancelada'),
+  no_show: t('Missed', 'No asistió'),
+  booked: t('Booked', 'Reservada'),
+}))
 
 const sendMenuOpen = ref(false)
 const sending = ref(false)
@@ -73,9 +74,9 @@ async function sendHistory(channel: 'email' | 'whatsapp') {
   sendMessage.value = ''
   try {
     await useStaffFetch(`/api/patients/${props.patientId}/appointment-history/${channel === 'email' ? 'send' : 'send-whatsapp'}`, { method: 'POST' })
-    sendMessage.value = `Sent by ${channel === 'email' ? 'email' : 'WhatsApp'}.`
+    sendMessage.value = channel === 'email' ? t('Sent by email.', 'Enviado por correo.') : t('Sent by WhatsApp.', 'Enviado por WhatsApp.')
   } catch (e: any) {
-    sendMessage.value = e?.data?.statusMessage ?? 'Failed to send.'
+    sendMessage.value = e?.data?.statusMessage ?? t('Failed to send.', 'No se pudo enviar.')
   }
   sending.value = false
   setTimeout(() => (sendMessage.value = ''), 4000)
@@ -97,48 +98,48 @@ const confirmationAutofill = computed<Record<string, string>>(() => {
   <div class="space-y-4">
     <div class="grid grid-cols-4 gap-3">
       <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-        <p class="text-[11.5px] text-ink-muted2">Completed</p>
+        <p class="text-[11.5px] text-ink-muted2">{{ t('Completed', 'Completadas') }}</p>
         <p class="mt-1 font-mono text-[20px] font-semibold text-success-text">{{ loading ? '—' : counts.completed }}</p>
       </div>
       <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-        <p class="text-[11.5px] text-ink-muted2">Cancelled</p>
+        <p class="text-[11.5px] text-ink-muted2">{{ t('Cancelled', 'Canceladas') }}</p>
         <p class="mt-1 font-mono text-[20px] font-semibold text-warning-accent">{{ loading ? '—' : counts.cancelled }}</p>
       </div>
       <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-        <p class="text-[11.5px] text-ink-muted2">Missed</p>
+        <p class="text-[11.5px] text-ink-muted2">{{ t('Missed', 'No asistió') }}</p>
         <p class="mt-1 font-mono text-[20px] font-semibold text-danger-text">{{ loading ? '—' : counts.no_show }}</p>
       </div>
       <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-        <p class="text-[11.5px] text-ink-muted2">Show rate</p>
+        <p class="text-[11.5px] text-ink-muted2">{{ t('Show rate', 'Tasa de asistencia') }}</p>
         <p class="mt-1 font-mono text-[20px] font-semibold text-ink-900">{{ loading || showPercentage === null ? '—' : `${showPercentage}%` }}</p>
       </div>
     </div>
 
     <div class="rounded-card border border-line bg-surface shadow-card">
       <div class="flex items-center justify-between border-b border-line-divider px-4 py-3">
-        <p class="text-[13.5px] font-semibold text-ink-700">Visit history</p>
+        <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Visit history', 'Historial de visitas') }}</p>
         <div class="flex items-center gap-2">
           <span v-if="sendMessage" class="text-[12px] text-ink-faint">{{ sendMessage }}</span>
           <div class="relative">
-            <UiBtn variant="secondary" size="sm" :disabled="sending" @click="sendMenuOpen = !sendMenuOpen">{{ sending ? 'Sending…' : 'Send history' }}</UiBtn>
+            <UiBtn variant="secondary" size="sm" :disabled="sending" @click="sendMenuOpen = !sendMenuOpen">{{ sending ? t('Sending…', 'Enviando…') : t('Send history', 'Enviar historial') }}</UiBtn>
             <div v-if="sendMenuOpen" class="absolute right-0 z-10 mt-1 w-36 rounded-ctl border border-line bg-surface py-1 shadow-popover">
-              <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="sendHistory('email')">Email</button>
+              <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="sendHistory('email')">{{ t('Email', 'Correo electrónico') }}</button>
               <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="sendHistory('whatsapp')">WhatsApp</button>
             </div>
           </div>
-          <UiBtn variant="primary" size="sm" @click="navigateTo('/calendar')">Book visit</UiBtn>
+          <UiBtn variant="primary" size="sm" @click="navigateTo('/calendar')">{{ t('Book visit', 'Reservar visita') }}</UiBtn>
         </div>
       </div>
 
-      <div v-if="loading" class="p-8 text-center text-[13px] text-ink-faint">Loading…</div>
-      <div v-else-if="appointments.length === 0" class="p-8 text-center text-[13px] text-ink-faint">No appointments yet.</div>
+      <div v-if="loading" class="p-8 text-center text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+      <div v-else-if="appointments.length === 0" class="p-8 text-center text-[13px] text-ink-faint">{{ t('No appointments yet.', 'Aún no hay citas.') }}</div>
       <table v-else class="w-full text-[13px]">
         <thead class="border-b border-line-divider text-left text-[11px] font-medium uppercase tracking-wide text-ink-faint">
           <tr>
-            <th class="px-4 py-2">When</th>
-            <th class="px-4 py-2">Type</th>
-            <th class="px-4 py-2">Practitioner</th>
-            <th class="px-4 py-2">Status</th>
+            <th class="px-4 py-2">{{ t('When', 'Cuándo') }}</th>
+            <th class="px-4 py-2">{{ t('Type', 'Tipo') }}</th>
+            <th class="px-4 py-2">{{ t('Practitioner', 'Profesional') }}</th>
+            <th class="px-4 py-2">{{ t('Status', 'Estado') }}</th>
             <th class="px-4 py-2"></th>
           </tr>
         </thead>
@@ -148,20 +149,20 @@ const confirmationAutofill = computed<Record<string, string>>(() => {
               {{ new Date(appt.starts_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }}
               <span v-if="appt.calendar_resources?.name" class="ml-1 text-ink-faint">&middot; {{ appt.calendar_resources.name }}</span>
             </td>
-            <td class="px-4 text-ink-muted">{{ appt.appointment_types?.name ?? 'N/A' }}</td>
+            <td class="px-4 text-ink-muted">{{ appt.appointment_types?.name ?? t('N/A', 'N/D') }}</td>
             <td class="px-4 text-ink-muted">{{ practitionerLabel(appt) }}</td>
             <td class="px-4">
               <div class="flex items-center gap-1.5">
                 <UiPill :tone="statusTone[appt.status] ?? 'neutral'">{{ statusLabel[appt.status] ?? appt.status }}</UiPill>
-                <UiPill v-if="appt.source === 'online'" tone="brand">Online</UiPill>
+                <UiPill v-if="appt.source === 'online'" tone="brand">{{ t('Online', 'En línea') }}</UiPill>
               </div>
             </td>
             <td class="px-4 text-right">
               <div class="flex items-center justify-end gap-3">
                 <button type="button" class="text-[12px] font-medium text-brand-text hover:text-brand-hover" @click="notesAppointmentId = appt.id">
-                  Notes
+                  {{ t('Notes', 'Notas') }}
                 </button>
-                <UiBtn v-if="isUpcoming(appt)" size="sm" variant="secondary" @click="confirmingAppointment = appt">Send confirmation</UiBtn>
+                <UiBtn v-if="isUpcoming(appt)" size="sm" variant="secondary" @click="confirmingAppointment = appt">{{ t('Send confirmation', 'Enviar confirmación') }}</UiBtn>
               </div>
             </td>
           </tr>
@@ -172,7 +173,7 @@ const confirmationAutofill = computed<Record<string, string>>(() => {
     <div v-if="notesAppointmentId" class="fixed inset-0 z-20 flex items-center justify-center bg-ink-900/40 p-4" @click.self="notesAppointmentId = null">
       <div class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-card bg-surface p-6 shadow-drawer">
         <div class="flex items-center justify-between">
-          <h2 class="text-[15px] font-semibold text-ink-900">Visit notes</h2>
+          <h2 class="text-[15px] font-semibold text-ink-900">{{ t('Visit notes', 'Notas de la visita') }}</h2>
           <button type="button" class="text-ink-faint hover:text-ink-600" @click="notesAppointmentId = null">✕</button>
         </div>
         <div class="mt-4">

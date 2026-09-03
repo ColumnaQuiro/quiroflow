@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 interface PHPatient { id: number; patient_number: string }
 interface PHPaymentMethod { id: number; name: string }
@@ -43,7 +44,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     // paid) rather than imported from PracticeHub's own invoices, which
     // reflects what patients actually paid and keeps revenue reports accurate
     // without guessing at unpaid/void status on historical records.
-    phase.value = 'Loading payment methods…'
+    phase.value = t('Loading payment methods…', 'Cargando métodos de pago…')
     const methods = await api.fetchAll<PHPaymentMethod>('/payment_methods')
     // Our payments.method column only accepts 'card' | 'cash' | 'other' --
     // map PracticeHub's free-text method names (which include things like
@@ -56,7 +57,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       }),
     )
 
-    phase.value = 'Matching patients…'
+    phase.value = t('Matching patients…', 'Emparejando pacientes…')
     const phPatients = await api.fetchAll<PHPatient>('/patients', (done, total) => (progress.value = { done, total }))
     const patientNumberById = new Map(phPatients.map((p) => [String(p.id), p.patient_number]))
 
@@ -68,7 +69,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       if (!data || data.length < PAGE_SIZE) break
     }
 
-    phase.value = 'Checking for already-imported payments…'
+    phase.value = t('Checking for already-imported payments…', 'Comprobando pagos ya importados…')
     const existingInvoiceNumbers = new Set<string>()
     for (let page = 0; ; page++) {
       const { data } = await supabase
@@ -80,11 +81,11 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       if (!data || data.length < PAGE_SIZE) break
     }
 
-    phase.value = 'Fetching payments…'
+    phase.value = t('Fetching payments…', 'Obteniendo pagos…')
     progress.value = { done: 0, total: 0 }
     const payments = await api.fetchAll<PHPayment>('/payments', (done, total) => (progress.value = { done, total }))
 
-    phase.value = 'Importing…'
+    phase.value = t('Importing…', 'Importando…')
     progress.value = { done: 0, total: payments.length }
 
     const CHUNK_SIZE = 50
@@ -126,7 +127,12 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
           .select('id')
 
         if (invoiceError || !invoiceRows) {
-          importErrors.value.push(`Payments ${chunk[0]?.id}-${chunk[chunk.length - 1]?.id}: ${invoiceError?.message}`)
+          importErrors.value.push(
+            t(
+              `Payments ${chunk[0]?.id}-${chunk[chunk.length - 1]?.id}: ${invoiceError?.message}`,
+              `Pagos ${chunk[0]?.id}-${chunk[chunk.length - 1]?.id}: ${invoiceError?.message}`,
+            ),
+          )
         } else {
           const lineItems = toInsert.map(({ p, amountCents }, idx) => ({
             account_id: store.accountId!,
@@ -146,8 +152,17 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
             supabase.from('invoice_line_items').insert(lineItems),
             supabase.from('payments').insert(paymentRows),
           ])
-          if (liError) importErrors.value.push(`Line items for payments near ${chunk[0]?.id}: ${liError.message}`)
-          if (payError) importErrors.value.push(`Payments near ${chunk[0]?.id}: ${payError.message}`)
+          if (liError)
+            importErrors.value.push(
+              t(
+                `Line items for payments near ${chunk[0]?.id}: ${liError.message}`,
+                `Conceptos de pagos cerca de ${chunk[0]?.id}: ${liError.message}`,
+              ),
+            )
+          if (payError)
+            importErrors.value.push(
+              t(`Payments near ${chunk[0]?.id}: ${payError.message}`, `Pagos cerca de ${chunk[0]?.id}: ${payError.message}`),
+            )
           importedCount.value += invoiceRows.length
         }
       }
@@ -179,9 +194,12 @@ function reset() {
 <template>
   <div>
     <p class="text-sm text-ink-muted2">
-      Pulls directly from PracticeHub's API (Payments, matched to patients) — no CSV needed. Each payment becomes a
-      paid invoice + line item + payment record here, since PracticeHub's API doesn't expose which invoice a payment
-      was allocated to. Safe to re-run — already-imported payments are skipped.
+      {{
+        t(
+          "Pulls directly from PracticeHub's API (Payments, matched to patients) — no CSV needed. Each payment becomes a paid invoice + line item + payment record here, since PracticeHub's API doesn't expose which invoice a payment was allocated to. Safe to re-run — already-imported payments are skipped.",
+          'Obtiene los datos directamente de la API de PracticeHub (Payments, emparejados con pacientes); no se necesita CSV. Cada pago se convierte aquí en una factura pagada + un concepto + un registro de pago, ya que la API de PracticeHub no expone a qué factura se asignó un pago. Se puede volver a ejecutar sin riesgo: los pagos ya importados se omiten.',
+        )
+      }}
     </p>
 
     <div v-if="stage === 'connect'" class="mt-4 max-w-md">
@@ -205,20 +223,25 @@ function reset() {
 
     <div v-else-if="stage === 'done'" class="mt-4 space-y-4">
       <div class="rounded-lg border border-success-border bg-success-bg p-4 text-sm text-success-text">
-        Imported {{ importedCount }} payments. Skipped {{ skippedDuplicate }} already-imported, {{ skippedUnmatched }} with no matching patient.
+        {{
+          t(
+            `Imported ${importedCount} payments. Skipped ${skippedDuplicate} already-imported, ${skippedUnmatched} with no matching patient.`,
+            `Se importaron ${importedCount} pagos. Se omitieron ${skippedDuplicate} ya importados, ${skippedUnmatched} sin paciente coincidente.`,
+          )
+        }}
       </div>
       <div v-if="importErrors.length > 0" class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
-        <p class="font-medium">Some rows failed:</p>
+        <p class="font-medium">{{ t('Some rows failed:', 'Algunas filas fallaron:') }}</p>
         <ul class="mt-1 list-disc pl-5">
           <li v-for="(e, i) in importErrors" :key="i">{{ e }}</li>
         </ul>
       </div>
       <div class="flex gap-3">
         <NuxtLink to="/reports/income" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover">
-          View Income Report
+          {{ t('View Income Report', 'Ver informe de ingresos') }}
         </NuxtLink>
         <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-ink-600 hover:bg-surface-subtle" @click="reset">
-          Run again
+          {{ t('Run again', 'Ejecutar de nuevo') }}
         </button>
       </div>
     </div>

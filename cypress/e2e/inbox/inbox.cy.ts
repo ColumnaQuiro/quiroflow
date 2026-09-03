@@ -36,14 +36,14 @@ describe('WhatsApp Inbox', () => {
 
   it('lists an existing conversation with a WhatsApp channel badge and the normal composer', () => {
     cy.seedStaffAccount().then((account) => {
-      cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Oren', lastName: 'Ortiz' }).then((patient) => {
+      cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Oren', lastName: 'Ortiz' }).then((patient: any) => {
         cy.task('db:createWhatsappMessage', {
           accountId: account.accountId,
           patientId: patient.id,
           phoneNumber: '+34600000001',
           direction: 'inbound',
           bodyPreview: 'Hola, quiero confirmar mi cita',
-        }).then((message) => {
+        }).then((message: any) => {
           expect(message.channel).to.eq('whatsapp')
 
           cy.login(account.email, account.password)

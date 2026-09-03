@@ -20,6 +20,7 @@ type Patient = Pick<
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 const PAGE_SIZE = 50
 
@@ -246,15 +247,24 @@ async function exportCsv() {
 
     const exportBalances = await fetchBalances(rows.map((p) => p.id))
 
-    const header = ['First name', 'Last name', 'Email', 'Balance', 'Status', 'Under age', 'Do not contact', 'Tags']
+    const header = [
+      t('First name', 'Nombre'),
+      t('Last name', 'Apellidos'),
+      t('Email', 'Correo electrónico'),
+      t('Balance', 'Saldo'),
+      t('Status', 'Estado'),
+      t('Under age', 'Menor de edad'),
+      t('Do not contact', 'No contactar'),
+      t('Tags', 'Etiquetas'),
+    ]
     const csvRows = rows.map((p) => [
       p.first_name ?? '',
       p.last_name ?? '',
       p.email ?? '',
       ((exportBalances[p.id] ?? 0) / 100).toFixed(2),
       p.status ?? 'active',
-      p.is_minor ? 'yes' : 'no',
-      p.do_not_contact ? 'yes' : 'no',
+      p.is_minor ? t('yes', 'sí') : t('no', 'no'),
+      p.do_not_contact ? t('yes', 'sí') : t('no', 'no'),
       (p.tags ?? []).join('; '),
     ])
     const csv = [header, ...csvRows].map((cols) => cols.map(csvEscape).join(',')).join('\n')
@@ -278,8 +288,8 @@ function initials(p: Patient) {
 
 function balancePill(cents: number) {
   const amount = (Math.abs(cents) / 100).toFixed(2)
-  if (cents < 0) return { text: `€${amount} due`, class: 'bg-danger-bg text-danger-text' }
-  if (cents > 0) return { text: `€${amount} cr`, class: 'bg-success-bg text-success-text' }
+  if (cents < 0) return { text: `€${amount} ${t('due', 'pendiente')}`, class: 'bg-danger-bg text-danger-text' }
+  if (cents > 0) return { text: `€${amount} ${t('cr', 'a favor')}`, class: 'bg-success-bg text-success-text' }
   return { text: '€0.00', class: 'bg-chip-bg2 text-ink-muted2' }
 }
 
@@ -289,16 +299,16 @@ function startOfDay(d: Date) {
 
 function nextVisitInfo(patientId: string) {
   const iso = nextAppointmentByPatient.value[patientId]
-  if (!iso) return { date: null as string | null, relative: 'No booking', colorClass: 'text-warning-accent' }
+  if (!iso) return { date: null as string | null, relative: t('No booking', 'Sin cita'), colorClass: 'text-warning-accent' }
 
   const visitDate = new Date(iso)
   const dateText = visitDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
   const timeText = visitDate.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 
   const diffDays = Math.round((startOfDay(visitDate).getTime() - startOfDay(new Date()).getTime()) / 86400000)
-  if (diffDays === 0) return { date: `${dateText} · ${timeText}`, relative: 'Today', colorClass: 'text-brand' }
-  if (diffDays === 1) return { date: `${dateText} · ${timeText}`, relative: 'Tomorrow', colorClass: 'text-ink-faint' }
-  if (diffDays > 1 && diffDays < 7) return { date: `${dateText} · ${timeText}`, relative: `In ${diffDays} days`, colorClass: 'text-ink-faint' }
+  if (diffDays === 0) return { date: `${dateText} · ${timeText}`, relative: t('Today', 'Hoy'), colorClass: 'text-brand' }
+  if (diffDays === 1) return { date: `${dateText} · ${timeText}`, relative: t('Tomorrow', 'Mañana'), colorClass: 'text-ink-faint' }
+  if (diffDays > 1 && diffDays < 7) return { date: `${dateText} · ${timeText}`, relative: `${t('In', 'En')} ${diffDays} ${t('days', 'días')}`, colorClass: 'text-ink-faint' }
   return { date: `${dateText} · ${timeText}`, relative: visitDate.toLocaleDateString(undefined, { weekday: 'long' }), colorClass: 'text-ink-faint' }
 }
 
@@ -322,12 +332,12 @@ function tagClass(tag: string) {
 <template>
   <div class="flex h-full flex-col">
     <PageHeader
-      title="Patients"
-      :meta="!loading ? `${totalCount} patients · ${patients.length} shown` : undefined"
+      :title="t('Patients', 'Pacientes')"
+      :meta="!loading ? `${totalCount} ${t('patients', 'pacientes')} · ${patients.length} ${t('shown', 'mostrados')}` : undefined"
     >
-      <UiBtn variant="secondary" :disabled="exporting" @click="exportCsv">{{ exporting ? 'Exporting…' : 'Export' }}</UiBtn>
-      <UiBtn variant="secondary" @click="navigateTo('/settings/import')">Import</UiBtn>
-      <UiBtn variant="primary" @click="showAddPatient = true">New patient</UiBtn>
+      <UiBtn variant="secondary" :disabled="exporting" @click="exportCsv">{{ exporting ? t('Exporting…', 'Exportando…') : t('Export', 'Exportar') }}</UiBtn>
+      <UiBtn variant="secondary" @click="navigateTo('/settings/import')">{{ t('Import', 'Importar') }}</UiBtn>
+      <UiBtn variant="primary" @click="showAddPatient = true">{{ t('New patient', 'Nuevo paciente') }}</UiBtn>
     </PageHeader>
 
     <PatientsAddPatientModal
@@ -347,7 +357,7 @@ function tagClass(tag: string) {
           <input
             v-model="search"
             type="search"
-            placeholder="Name, phone or email"
+            :placeholder="t('Name, phone or email', 'Nombre, teléfono o correo')"
             class="h-8 w-full rounded-ctl border border-line-control bg-surface pl-[30px] pr-3 text-[13px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           />
         </div>
@@ -363,7 +373,7 @@ function tagClass(tag: string) {
           @click="outstandingBalanceFilter = !outstandingBalanceFilter"
         >
           <span class="h-[6px] w-[6px] shrink-0 rounded-full" :class="outstandingBalanceFilter ? 'bg-danger-text' : 'bg-ink-faint3'" />
-          Outstanding balance
+          {{ t('Outstanding balance', 'Saldo pendiente') }}
         </button>
 
         <button
@@ -377,7 +387,7 @@ function tagClass(tag: string) {
           @click="carePlanFilter = !carePlanFilter"
         >
           <span class="h-[6px] w-[6px] shrink-0 rounded-full" :class="carePlanFilter ? 'bg-brand' : 'bg-ink-faint3'" />
-          On a care plan
+          {{ t('On a care plan', 'Con plan de tratamiento') }}
         </button>
 
         <div class="h-[22px] w-px bg-line" />
@@ -387,7 +397,7 @@ function tagClass(tag: string) {
             v-model="practitionerFilter"
             class="h-8 appearance-none rounded-pill border border-line-control bg-surface px-2.5 pr-6 text-[12.5px] font-medium text-ink-500 hover:border-line-controlHover focus:border-brand focus:outline-none"
           >
-            <option value="">Practitioner</option>
+            <option value="">{{ t('Practitioner', 'Profesional') }}</option>
             <option v-for="m in teamMembers" :key="m.id" :value="m.id">{{ m.full_name }}</option>
           </select>
           <svg width="8" height="8" viewBox="0 0 10 10" class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-faint">
@@ -400,9 +410,9 @@ function tagClass(tag: string) {
             v-model="statusFilter"
             class="h-8 appearance-none rounded-pill border border-line-control bg-surface px-2.5 pr-6 text-[12.5px] font-medium text-ink-500 hover:border-line-controlHover focus:border-brand focus:outline-none"
           >
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-            <option value="any">Any status</option>
+            <option value="active">{{ t('Active', 'Activo') }}</option>
+            <option value="inactive">{{ t('Inactive', 'Inactivo') }}</option>
+            <option value="any">{{ t('Any status', 'Cualquier estado') }}</option>
           </select>
           <svg width="8" height="8" viewBox="0 0 10 10" class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-faint">
             <path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" />
@@ -414,9 +424,9 @@ function tagClass(tag: string) {
             v-model="missingContact"
             class="h-8 appearance-none rounded-pill border border-line-control bg-surface px-2.5 pr-6 text-[12.5px] font-medium text-ink-500 hover:border-line-controlHover focus:border-brand focus:outline-none"
           >
-            <option value="any">Missing contact</option>
-            <option value="email">Missing email</option>
-            <option value="phone">Missing phone</option>
+            <option value="any">{{ t('Missing contact', 'Sin contacto') }}</option>
+            <option value="email">{{ t('Missing email', 'Sin correo electrónico') }}</option>
+            <option value="phone">{{ t('Missing phone', 'Sin teléfono') }}</option>
           </select>
           <svg width="8" height="8" viewBox="0 0 10 10" class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-faint">
             <path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" />
@@ -424,18 +434,18 @@ function tagClass(tag: string) {
         </div>
 
         <div class="flex-1" />
-        <span v-if="!loading" class="text-[12.5px] text-ink-muted2">{{ totalCount }} results</span>
+        <span v-if="!loading" class="text-[12.5px] text-ink-muted2">{{ totalCount }} {{ t('results', 'resultados') }}</span>
       </div>
 
       <!-- Table card -->
       <div class="mt-3.5 overflow-hidden rounded-card border border-line bg-surface shadow-card">
         <div class="flex items-center gap-4 border-b border-line-row bg-surface-subtle2 px-5 py-2.5 text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">
-          <div class="min-w-0 flex-1">Patient</div>
-          <div class="w-[120px] shrink-0 text-right">Balance</div>
-          <div class="w-[170px] shrink-0">Next visit</div>
-          <div class="w-[220px] shrink-0">Care plan</div>
-          <div class="w-[104px] shrink-0">Comms</div>
-          <div class="w-[150px] shrink-0">Tags</div>
+          <div class="min-w-0 flex-1">{{ t('Patient', 'Paciente') }}</div>
+          <div class="w-[120px] shrink-0 text-right">{{ t('Balance', 'Saldo') }}</div>
+          <div class="w-[170px] shrink-0">{{ t('Next visit', 'Próxima visita') }}</div>
+          <div class="w-[220px] shrink-0">{{ t('Care plan', 'Plan de tratamiento') }}</div>
+          <div class="w-[104px] shrink-0">{{ t('Comms', 'Comunicación') }}</div>
+          <div class="w-[150px] shrink-0">{{ t('Tags', 'Etiquetas') }}</div>
         </div>
 
         <div v-if="loading">
@@ -451,7 +461,7 @@ function tagClass(tag: string) {
             <div class="w-[150px] shrink-0"><UiSkeleton class="h-5 w-20 rounded-pill" /></div>
           </div>
         </div>
-        <div v-else-if="patients.length === 0" class="px-5 py-10 text-center text-[13px] text-ink-faint">No patients found.</div>
+        <div v-else-if="patients.length === 0" class="px-5 py-10 text-center text-[13px] text-ink-faint">{{ t('No patients found.', 'No se encontraron pacientes.') }}</div>
 
         <div v-else>
           <div
@@ -468,9 +478,9 @@ function tagClass(tag: string) {
               <div class="min-w-0">
                 <p class="flex items-center gap-1.5 truncate text-[13.5px] font-[560] text-ink-900">
                   <span class="truncate">{{ patient.first_name }} {{ patient.last_name }}</span>
-                  <span v-if="patient.status === 'inactive'" class="shrink-0 rounded-pill bg-chip-bg2 px-1.5 py-0.5 text-[10px] font-[600] text-ink-faint3">Inactive</span>
-                  <span v-if="patient.is_minor" class="shrink-0 rounded-pill bg-brand-tint px-1.5 py-0.5 text-[10px] font-[600] text-brand-text2">Minor</span>
-                  <span v-if="patient.do_not_contact" class="shrink-0 rounded-pill bg-danger-bg px-1.5 py-0.5 text-[10px] font-[600] text-danger-text">DNC</span>
+                  <span v-if="patient.status === 'inactive'" class="shrink-0 rounded-pill bg-chip-bg2 px-1.5 py-0.5 text-[10px] font-[600] text-ink-faint3">{{ t('Inactive', 'Inactivo') }}</span>
+                  <span v-if="patient.is_minor" class="shrink-0 rounded-pill bg-brand-tint px-1.5 py-0.5 text-[10px] font-[600] text-brand-text2">{{ t('Minor', 'Menor') }}</span>
+                  <span v-if="patient.do_not_contact" class="shrink-0 rounded-pill bg-danger-bg px-1.5 py-0.5 text-[10px] font-[600] text-danger-text">{{ t('DNC', 'NC') }}</span>
                 </p>
                 <p class="truncate font-mono text-[11.5px] text-ink-muted2">{{ primaryPhoneByPatient[patient.id] ?? '—' }}</p>
               </div>
@@ -508,7 +518,7 @@ function tagClass(tag: string) {
                   />
                 </div>
               </template>
-              <p v-else class="text-[12.5px] text-ink-faint2">No plan</p>
+              <p v-else class="text-[12.5px] text-ink-faint2">{{ t('No plan', 'Sin plan') }}</p>
             </div>
 
             <!-- Comms -->
@@ -523,7 +533,7 @@ function tagClass(tag: string) {
                 class="rounded-pill px-1.5 py-0.5 text-[10.5px] font-[600]"
                 :class="patient.invoice_email_enabled ? 'bg-brand-tint text-brand-text2' : 'bg-chip-bg2 text-ink-faint3'"
               >
-                Email
+                {{ t('Email', 'Correo') }}
               </span>
             </div>
 
@@ -542,7 +552,7 @@ function tagClass(tag: string) {
         </div>
 
         <div v-if="!loading && totalCount > 0" class="flex items-center justify-between bg-surface-subtle2 px-5 py-2.5 text-[12.5px] text-ink-muted2">
-          <span>Page {{ page }} of {{ totalPages }} · {{ totalCount }} patients</span>
+          <span>{{ t('Page', 'Página') }} {{ page }} {{ t('of', 'de') }} {{ totalPages }} · {{ totalCount }} {{ t('patients', 'pacientes') }}</span>
           <div class="flex gap-2">
             <button
               type="button"
@@ -550,7 +560,7 @@ function tagClass(tag: string) {
               class="flex h-7 items-center rounded-ctlSm border border-line-control bg-surface px-2.5 text-[12.5px] text-ink-500 hover:border-line-controlHover disabled:cursor-not-allowed disabled:opacity-40"
               @click="goToPage(page - 1)"
             >
-              Previous
+              {{ t('Previous', 'Anterior') }}
             </button>
             <button
               type="button"
@@ -558,7 +568,7 @@ function tagClass(tag: string) {
               class="flex h-7 items-center rounded-ctlSm border border-line-control bg-surface px-2.5 text-[12.5px] text-ink-500 hover:border-line-controlHover disabled:cursor-not-allowed disabled:opacity-40"
               @click="goToPage(page + 1)"
             >
-              Next
+              {{ t('Next', 'Siguiente') }}
             </button>
           </div>
         </div>

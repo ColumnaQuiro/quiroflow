@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computePresetRange, rangeBounds } from '~/composables/useDateRangePresets'
+import type { Database } from '~/types/database.types'
 
 interface ApptRow { id: string; patient_id: string; starts_at: string; appointment_type_id: string | null; practitioner_id: string | null; clinic_id: string | null }
 interface TypeRow { id: string; stage: string | null }
@@ -8,6 +9,7 @@ interface InvoiceRow { id: string; appointment_id: string | null }
 
 const supabase = useSupabaseClient()
 const { practitioners, clinics, load: loadFilterOptions } = useReportFilterOptions()
+const t = useT()
 
 const range = ref(computePresetRange({ months: 1 }))
 const practitionerFilter = ref('')
@@ -19,7 +21,7 @@ const payments = ref<PaymentRow[]>([])
 const invoices = ref<InvoiceRow[]>([])
 
 const PAGE_SIZE = 1000
-async function fetchAll<T>(table: string, select: string, filter?: (q: any) => any): Promise<T[]> {
+async function fetchAll<T>(table: keyof Database['public']['Tables'], select: string, filter?: (q: any) => any): Promise<T[]> {
   const rows: T[] = []
   for (let page = 0; ; page++) {
     let query = supabase.from(table).select(select).range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
@@ -169,15 +171,14 @@ const unclassifiedTypes = computed(() => types.value.filter((t) => !t.stage).len
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Statistics" meta="Visit-type counts, conversion, and retention">
-      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; Reports</NuxtLink>
+    <PageHeader :title="t('Statistics', 'Estadísticas')" :meta="t('Visit-type counts, conversion, and retention', 'Recuentos por tipo de visita, conversión y retención')">
+      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
     </PageHeader>
 
     <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
       <p v-if="!loading && unclassifiedTypes > 0" class="rounded-ctl border border-warning-border bg-warning-bg p-3 text-[13px] text-warning-text">
-        {{ unclassifiedTypes }} appointment type(s) aren't tagged with a stage yet, so visits of that type won't show up
-        below. Assign one in
-        <NuxtLink to="/settings/appointment-types" class="font-medium underline">Settings &rarr; Appointment Types</NuxtLink>.
+        {{ t(`${unclassifiedTypes} appointment type(s) aren't tagged with a stage yet, so visits of that type won't show up below. Assign one in`, `${unclassifiedTypes} tipo(s) de cita todavía no tienen una etapa asignada, así que las visitas de ese tipo no aparecerán abajo. Asigna una en`) }}
+        <NuxtLink to="/settings/appointment-types" class="font-medium underline">{{ t('Settings → Appointment Types', 'Ajustes → Tipos de cita') }}</NuxtLink>.
       </p>
 
       <div class="mt-4 flex flex-wrap items-center gap-2">
@@ -185,67 +186,67 @@ const unclassifiedTypes = computed(() => types.value.filter((t) => !t.stage).len
         <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
       </div>
 
-      <div v-if="loading" class="mt-6 text-[13px] text-ink-faint2">Loading…</div>
+      <div v-if="loading" class="mt-6 text-[13px] text-ink-faint2">{{ t('Loading…', 'Cargando…') }}</div>
 
       <template v-else>
         <div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div class="rounded-card border border-line bg-surface p-4 shadow-card">
             <p class="font-mono text-[23px] font-semibold text-ink-900">{{ firstVisits }}</p>
-            <p class="text-[12px] text-ink-muted2">First visits</p>
+            <p class="text-[12px] text-ink-muted2">{{ t('First visits', 'Primeras visitas') }}</p>
           </div>
           <div class="rounded-card border border-line bg-surface p-4 shadow-card">
             <p class="font-mono text-[23px] font-semibold text-ink-900">{{ firstVisitOffers }}</p>
-            <p class="text-[12px] text-ink-muted2">First visit offers</p>
+            <p class="text-[12px] text-ink-muted2">{{ t('First visit offers', 'Ofertas de primera visita') }}</p>
           </div>
           <div class="rounded-card border border-line bg-surface p-4 shadow-card">
             <p class="font-mono text-[23px] font-semibold text-ink-900">{{ reports }}</p>
-            <p class="text-[12px] text-ink-muted2">Reports</p>
+            <p class="text-[12px] text-ink-muted2">{{ t('Reports', 'Informes') }}</p>
           </div>
           <div class="rounded-card border border-line bg-surface p-4 shadow-card">
             <p class="font-mono text-[23px] font-semibold text-ink-900">{{ maintenance }}</p>
-            <p class="text-[12px] text-ink-muted2">Maintenance visits</p>
+            <p class="text-[12px] text-ink-muted2">{{ t('Maintenance visits', 'Visitas de mantenimiento') }}</p>
           </div>
           <div class="rounded-card border border-line bg-surface p-4 shadow-card">
             <p class="font-mono text-[23px] font-semibold text-ink-900">{{ revisionOrdinals.revision1 }}</p>
-            <p class="text-[12px] text-ink-muted2">Revision 1</p>
+            <p class="text-[12px] text-ink-muted2">{{ t('Revision 1', 'Revisión 1') }}</p>
           </div>
           <div class="rounded-card border border-line bg-surface p-4 shadow-card">
             <p class="font-mono text-[23px] font-semibold text-ink-900">{{ revisionOrdinals.revision2 }}</p>
-            <p class="text-[12px] text-ink-muted2">Revision 2</p>
+            <p class="text-[12px] text-ink-muted2">{{ t('Revision 2', 'Revisión 2') }}</p>
           </div>
           <div class="rounded-card border border-line bg-surface p-4 shadow-card">
             <p class="font-mono text-[23px] font-semibold text-ink-900">{{ pva !== null ? `€${pva.toFixed(2)}` : '—' }}</p>
-            <p class="text-[12px] text-ink-muted2">PVA (avg. revenue / visit)</p>
+            <p class="text-[12px] text-ink-muted2">{{ t('PVA (avg. revenue / visit)', 'PVA (ingreso medio / visita)') }}</p>
           </div>
           <div class="rounded-card border border-line bg-surface p-4 shadow-card">
             <p class="font-mono text-[23px] font-semibold text-ink-900">{{ inRange.length }}</p>
-            <p class="text-[12px] text-ink-muted2">Total completed visits</p>
+            <p class="text-[12px] text-ink-muted2">{{ t('Total completed visits', 'Total de visitas completadas') }}</p>
           </div>
         </div>
 
         <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-            <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">Conversion to 3rd visit</p>
+            <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ t('Conversion to 3rd visit', 'Conversión a 3ª visita') }}</p>
             <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ conversion ? `${conversion.pct}%` : '—' }}</p>
-            <p v-if="conversion" class="text-[12px] text-ink-faint2">{{ conversion.converted }} of {{ conversion.newPatients }} new patients this period</p>
-            <p v-else class="text-[12px] text-ink-faint2">No new patients seen this period yet.</p>
+            <p v-if="conversion" class="text-[12px] text-ink-faint2">{{ t(`${conversion.converted} of ${conversion.newPatients} new patients this period`, `${conversion.converted} de ${conversion.newPatients} pacientes nuevos en este periodo`) }}</p>
+            <p v-else class="text-[12px] text-ink-faint2">{{ t('No new patients seen this period yet.', 'Todavía no se ha atendido a ningún paciente nuevo en este periodo.') }}</p>
           </div>
           <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-            <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">Retention post-revision</p>
+            <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ t('Retention post-revision', 'Retención tras revisión') }}</p>
             <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ postRevisionRetention !== null ? `${postRevisionRetention}%` : '—' }}</p>
-            <p class="text-[12px] text-ink-faint2">Booked something after their revision visit</p>
+            <p class="text-[12px] text-ink-faint2">{{ t('Booked something after their revision visit', 'Reservaron algo después de su visita de revisión') }}</p>
           </div>
           <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-            <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">Overall retention</p>
+            <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ t('Overall retention', 'Retención global') }}</p>
             <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ retentionRate !== null ? `${retentionRate}%` : '—' }}</p>
-            <p class="text-[12px] text-ink-faint2">Of patients seen this period, % also seen before it</p>
+            <p class="text-[12px] text-ink-faint2">{{ t('Of patients seen this period, % also seen before it', 'Del total de pacientes atendidos en este periodo, % también atendidos antes') }}</p>
           </div>
         </div>
 
         <p class="mt-4 text-[12px] text-ink-faint2">
-          Package/bono sales are tracked separately — see
-          <NuxtLink to="/reports/debtors" class="underline hover:text-ink-600">Debtors</NuxtLink> and
-          <NuxtLink to="/reports/memberships" class="underline hover:text-ink-600">Memberships</NuxtLink>.
+          {{ t('Package/bono sales are tracked separately — see', 'Las ventas de bonos/paquetes se controlan aparte — consulta') }}
+          <NuxtLink to="/reports/debtors" class="underline hover:text-ink-600">{{ t('Debtors', 'Deudores') }}</NuxtLink> {{ t('and', 'y') }}
+          <NuxtLink to="/reports/memberships" class="underline hover:text-ink-600">{{ t('Memberships', 'Membresías') }}</NuxtLink>.
         </p>
       </template>
     </div>

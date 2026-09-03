@@ -5,6 +5,7 @@ import { fetchAllRows } from '~/composables/useFetchAllRows'
 
 const supabase = useSupabaseClient()
 const { practitioners, clinics, load: loadFilterOptions } = useReportFilterOptions()
+const t = useT()
 
 interface AppointmentRow { starts_at: string; status: string }
 
@@ -31,14 +32,14 @@ onMounted(() => {
 })
 watch([range, practitionerFilter, clinicFilter], load)
 
-const SHIFTS = [
-  { key: 'morning', label: 'Morning (before 12pm)', test: (h: number) => h < 12 },
-  { key: 'afternoon', label: 'Afternoon (12–4pm)', test: (h: number) => h >= 12 && h < 16 },
-  { key: 'evening', label: 'Evening (4pm+)', test: (h: number) => h >= 16 },
-]
+const SHIFTS = computed(() => [
+  { key: 'morning', label: t('Morning (before 12pm)', 'Mañana (antes de las 12h)'), test: (h: number) => h < 12 },
+  { key: 'afternoon', label: t('Afternoon (12–4pm)', 'Tarde (12–16h)'), test: (h: number) => h >= 12 && h < 16 },
+  { key: 'evening', label: t('Evening (4pm+)', 'Noche (a partir de las 16h)'), test: (h: number) => h >= 16 },
+])
 
 const shiftStats = computed(() => {
-  return SHIFTS.map((shift) => {
+  return SHIFTS.value.map((shift) => {
     const inShift = rows.value.filter((r) => shift.test(new Date(r.starts_at).getHours()))
     const completed = inShift.filter((r) => r.status === 'completed').length
     const noShow = inShift.filter((r) => r.status === 'no_show').length
@@ -59,12 +60,12 @@ const shiftStats = computed(() => {
 })
 
 const shiftChartData = computed(() => ({
-  labels: SHIFTS.map((s) => s.label),
+  labels: SHIFTS.value.map((s) => s.label),
   datasets: [
-    { label: 'Completed', data: shiftStats.value.map((s) => s.completed), backgroundColor: '#4f46e5' },
-    { label: 'No-show', data: shiftStats.value.map((s) => s.noShow), backgroundColor: '#ef4444' },
-    { label: 'Cancelled', data: shiftStats.value.map((s) => s.cancelled), backgroundColor: '#fca5a5' },
-    { label: 'Booked (upcoming)', data: shiftStats.value.map((s) => s.booked), backgroundColor: '#c7d2fe' },
+    { label: t('Completed', 'Completadas'), data: shiftStats.value.map((s) => s.completed), backgroundColor: '#4f46e5' },
+    { label: t('No-show', 'No presentado'), data: shiftStats.value.map((s) => s.noShow), backgroundColor: '#ef4444' },
+    { label: t('Cancelled', 'Canceladas'), data: shiftStats.value.map((s) => s.cancelled), backgroundColor: '#fca5a5' },
+    { label: t('Booked (upcoming)', 'Reservadas (próximas)'), data: shiftStats.value.map((s) => s.booked), backgroundColor: '#c7d2fe' },
   ],
 }))
 const shiftChartOptions = {
@@ -85,7 +86,7 @@ const byHour = computed(() => {
 })
 const hourChartData = computed(() => ({
   labels: hourLabels,
-  datasets: [{ label: 'Appointments', data: byHour.value, backgroundColor: '#4f46e5' }],
+  datasets: [{ label: t('Appointments', 'Citas'), data: byHour.value, backgroundColor: '#4f46e5' }],
 }))
 const hourChartOptions = {
   responsive: true,
@@ -97,8 +98,8 @@ const hourChartOptions = {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Appointment Distribution" meta="Volume and show-up rate by shift and time of day">
-      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; Reports</NuxtLink>
+    <PageHeader :title="t('Appointment Distribution', 'Distribución de citas')" :meta="t('Volume and show-up rate by shift and time of day', 'Volumen y tasa de asistencia por turno y hora del día')">
+      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
     </PageHeader>
 
     <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
@@ -112,20 +113,20 @@ const hourChartOptions = {
           <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ s.label }}</p>
           <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ loading ? '—' : s.total }}</p>
           <p class="text-[12px] text-ink-faint2">
-            {{ loading ? '' : s.showRate === null ? 'No completed history yet' : `${s.showRate}% show-up rate` }}
+            {{ loading ? '' : s.showRate === null ? t('No completed history yet', 'Sin historial de citas completadas') : t(`${s.showRate}% show-up rate`, `${s.showRate}% de tasa de asistencia`) }}
           </p>
         </div>
       </div>
 
       <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
-        <h3 class="text-[13.5px] font-semibold text-ink-800">By shift, by outcome</h3>
+        <h3 class="text-[13.5px] font-semibold text-ink-800">{{ t('By shift, by outcome', 'Por turno, por resultado') }}</h3>
         <div class="mt-3 h-72">
           <Bar v-if="!loading" :data="shiftChartData" :options="shiftChartOptions" />
         </div>
       </div>
 
       <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
-        <h3 class="text-[13.5px] font-semibold text-ink-800">By hour of day</h3>
+        <h3 class="text-[13.5px] font-semibold text-ink-800">{{ t('By hour of day', 'Por hora del día') }}</h3>
         <div class="mt-3 h-64">
           <Bar v-if="!loading" :data="hourChartData" :options="hourChartOptions" />
         </div>

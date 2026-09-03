@@ -5,6 +5,7 @@ const emit = defineEmits<{ close: []; created: [id: string] }>()
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 const firstName = ref('')
 const lastName = ref('')
@@ -103,14 +104,14 @@ async function onSubmit() {
   <div class="fixed inset-0 z-50 flex justify-end bg-ink-900/30" @click.self="emit('close')">
     <div class="flex h-full w-full max-w-lg flex-col overflow-y-auto border-l border-line bg-surface p-6 shadow-popover">
       <div class="flex items-center justify-between">
-        <h2 class="text-[16px] font-[640] text-ink-900">Add Patient</h2>
+        <h2 class="text-[16px] font-[640] text-ink-900">{{ t('Add Patient', 'Añadir paciente') }}</h2>
         <button type="button" class="text-ink-faint hover:text-ink-600" @click="emit('close')">✕</button>
       </div>
 
       <form class="mt-4 space-y-4" @submit.prevent="onSubmit">
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <label class="block text-sm font-medium text-ink-700" for="first-name">First name</label>
+            <label class="block text-sm font-medium text-ink-700" for="first-name">{{ t('First name', 'Nombre') }}</label>
             <input
               id="first-name"
               v-model="firstName"
@@ -120,7 +121,7 @@ async function onSubmit() {
             />
           </div>
           <div>
-            <label class="block text-sm font-medium text-ink-700" for="last-name">Last name</label>
+            <label class="block text-sm font-medium text-ink-700" for="last-name">{{ t('Last name', 'Apellidos') }}</label>
             <input
               id="last-name"
               v-model="lastName"
@@ -131,7 +132,7 @@ async function onSubmit() {
         </div>
 
         <div v-if="isVisible('date_of_birth')">
-          <label class="block text-sm font-medium text-ink-700" for="dob">Date of birth</label>
+          <label class="block text-sm font-medium text-ink-700" for="dob">{{ t('Date of birth', 'Fecha de nacimiento') }}</label>
           <input
             id="dob"
             v-model="dateOfBirth"
@@ -143,7 +144,7 @@ async function onSubmit() {
 
         <div class="grid grid-cols-2 gap-4">
           <div v-if="isVisible('email')">
-            <label class="block text-sm font-medium text-ink-700" for="email">Email</label>
+            <label class="block text-sm font-medium text-ink-700" for="email">{{ t('Email', 'Correo electrónico') }}</label>
             <input
               id="email"
               v-model="email"
@@ -153,7 +154,7 @@ async function onSubmit() {
             />
           </div>
           <div v-if="isVisible('phone')" class="min-w-0">
-            <label class="block text-sm font-medium text-ink-700">Phone</label>
+            <label class="block text-sm font-medium text-ink-700">{{ t('Phone', 'Teléfono') }}</label>
             <div class="mt-1 flex gap-2">
               <select
                 v-model="phoneCountry"
@@ -171,34 +172,34 @@ async function onSubmit() {
             </div>
             <label class="mt-1.5 flex items-center gap-1.5 text-sm text-ink-muted">
               <input v-model="phoneIsWhatsapp" type="checkbox" class="rounded border-line-control accent-brand focus:ring-brand" />
-              This number has WhatsApp
+              {{ t('This number has WhatsApp', 'Este número tiene WhatsApp') }}
             </label>
           </div>
         </div>
 
         <div class="grid grid-cols-2 gap-4">
           <div v-if="isVisible('gender')">
-            <label class="block text-sm font-medium text-ink-700" for="gender">Sex</label>
+            <label class="block text-sm font-medium text-ink-700" for="gender">{{ t('Sex', 'Sexo') }}</label>
             <select
               id="gender"
               v-model="gender"
               :required="isRequired('gender')"
               class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
             >
-              <option value="">Not set</option>
-              <option value="female">Female</option>
-              <option value="male">Male</option>
-              <option value="other">Other</option>
+              <option value="">{{ t('Not set', 'Sin especificar') }}</option>
+              <option value="female">{{ t('Female', 'Mujer') }}</option>
+              <option value="male">{{ t('Male', 'Hombre') }}</option>
+              <option value="other">{{ t('Other', 'Otro') }}</option>
             </select>
           </div>
           <div>
-            <label class="block text-sm font-medium text-ink-700" for="referral-source">Referral source</label>
+            <label class="block text-sm font-medium text-ink-700" for="referral-source">{{ t('Referral source', 'Origen de la referencia') }}</label>
             <select
               id="referral-source"
               v-model="referralSource"
               class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
             >
-              <option value="">Not set</option>
+              <option value="">{{ t('Not set', 'Sin especificar') }}</option>
               <option v-for="s in referralSources" :key="s.id" :value="s.name">{{ s.name }}</option>
             </select>
           </div>
@@ -206,7 +207,7 @@ async function onSubmit() {
 
         <div class="grid grid-cols-2 gap-4">
           <div v-if="isVisible('occupation')">
-            <label class="block text-sm font-medium text-ink-700" for="occupation">Occupation</label>
+            <label class="block text-sm font-medium text-ink-700" for="occupation">{{ t('Occupation', 'Profesión') }}</label>
             <input
               id="occupation"
               v-model="occupation"
@@ -216,7 +217,7 @@ async function onSubmit() {
             />
           </div>
           <div v-if="isVisible('preferred_language')">
-            <label class="block text-sm font-medium text-ink-700" for="preferred-language">Preferred Language</label>
+            <label class="block text-sm font-medium text-ink-700" for="preferred-language">{{ t('Preferred Language', 'Idioma preferido') }}</label>
             <select
               id="preferred-language"
               v-model="preferredLanguage"
@@ -231,12 +232,12 @@ async function onSubmit() {
         </div>
 
         <div v-if="isVisible('address')">
-          <label class="block text-sm font-medium text-ink-700" for="address">Street address</label>
+          <label class="block text-sm font-medium text-ink-700" for="address">{{ t('Street address', 'Dirección') }}</label>
           <input
             id="address"
             v-model="address"
             type="text"
-            placeholder="For invoices"
+            :placeholder="t('For invoices', 'Para facturas')"
             :required="isRequired('address')"
             class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           />
@@ -244,7 +245,7 @@ async function onSubmit() {
 
         <div v-if="isVisible('address')" class="grid grid-cols-3 gap-4">
           <div>
-            <label class="block text-sm font-medium text-ink-700" for="postal-code">Postal code</label>
+            <label class="block text-sm font-medium text-ink-700" for="postal-code">{{ t('Postal code', 'Código postal') }}</label>
             <input
               id="postal-code"
               v-model="postalCode"
@@ -253,7 +254,7 @@ async function onSubmit() {
             />
           </div>
           <div>
-            <label class="block text-sm font-medium text-ink-700" for="city">City</label>
+            <label class="block text-sm font-medium text-ink-700" for="city">{{ t('City', 'Ciudad') }}</label>
             <input
               id="city"
               v-model="city"
@@ -262,7 +263,7 @@ async function onSubmit() {
             />
           </div>
           <div>
-            <label class="block text-sm font-medium text-ink-700" for="country">Country</label>
+            <label class="block text-sm font-medium text-ink-700" for="country">{{ t('Country', 'País') }}</label>
             <input
               id="country"
               v-model="country"
@@ -273,7 +274,7 @@ async function onSubmit() {
         </div>
 
         <div v-if="isVisible('notes')">
-          <label class="block text-sm font-medium text-ink-700" for="patient-note">Patient Note</label>
+          <label class="block text-sm font-medium text-ink-700" for="patient-note">{{ t('Patient Note', 'Nota del paciente') }}</label>
           <textarea
             id="patient-note"
             v-model="notes"
@@ -284,13 +285,13 @@ async function onSubmit() {
         </div>
 
         <div>
-          <label class="block text-sm font-medium text-ink-700" for="clinic">Clinic</label>
+          <label class="block text-sm font-medium text-ink-700" for="clinic">{{ t('Clinic', 'Clínica') }}</label>
           <select
             id="clinic"
             v-model="clinicId"
             class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           >
-            <option value="">No primary clinic</option>
+            <option value="">{{ t('No primary clinic', 'Sin clínica principal') }}</option>
             <option v-for="clinic in store.clinics" :key="clinic.id" :value="clinic.id">
               {{ clinic.name }}
             </option>
@@ -298,12 +299,12 @@ async function onSubmit() {
         </div>
 
         <div>
-          <label class="block text-sm font-medium text-ink-700" for="tags">Tags</label>
+          <label class="block text-sm font-medium text-ink-700" for="tags">{{ t('Tags', 'Etiquetas') }}</label>
           <input
             id="tags"
             v-model="tagsInput"
             type="text"
-            placeholder="comma, separated, tags"
+            :placeholder="t('comma, separated, tags', 'etiquetas, separadas, por, comas')"
             class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           />
         </div>
@@ -312,10 +313,10 @@ async function onSubmit() {
 
         <div class="flex gap-3">
           <UiBtn type="submit" variant="primary" :disabled="saving">
-            {{ saving ? 'Saving…' : 'Add Patient' }}
+            {{ saving ? t('Saving…', 'Guardando…') : t('Add Patient', 'Añadir paciente') }}
           </UiBtn>
           <button type="button" class="rounded-ctl px-4 py-2 text-sm font-medium text-ink-muted hover:bg-surface-subtle" @click="emit('close')">
-            Cancel
+            {{ t('Cancel', 'Cancelar') }}
           </button>
         </div>
       </form>

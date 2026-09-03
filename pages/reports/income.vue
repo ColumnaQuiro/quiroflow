@@ -12,6 +12,7 @@ interface TeamMemberRow { id: string; full_name: string }
 
 const supabase = useSupabaseClient()
 const { practitioners, clinics, load: loadFilterOptions } = useReportFilterOptions()
+const t = useT()
 
 const range = ref(computePresetRange({ months: 1 }))
 const practitionerFilter = ref('')
@@ -99,7 +100,7 @@ const revenueByMonth = computed(() => {
 })
 const revenueChartData = computed(() => ({
   labels: monthKeys.value.map(monthLabel),
-  datasets: [{ label: 'Revenue (€)', data: revenueByMonth.value, borderColor: '#4f46e5', backgroundColor: '#4f46e5', tension: 0.3 }],
+  datasets: [{ label: t('Revenue (€)', 'Ingresos (€)'), data: revenueByMonth.value, borderColor: '#4f46e5', backgroundColor: '#4f46e5', tension: 0.3 }],
 }))
 const lineChartOptions = { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } }, plugins: { legend: { display: false } } }
 
@@ -110,7 +111,7 @@ const byMethod = computed(() => {
 })
 const methodChartData = computed(() => ({
   labels: byMethod.value.map((m) => m.method),
-  datasets: [{ label: 'Revenue (€)', data: byMethod.value.map((m) => m.cents / 100), backgroundColor: '#4f46e5' }],
+  datasets: [{ label: t('Revenue (€)', 'Ingresos (€)'), data: byMethod.value.map((m) => m.cents / 100), backgroundColor: '#4f46e5' }],
 }))
 const barChartOptions = { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } }, plugins: { legend: { display: false } } }
 
@@ -122,7 +123,7 @@ const byPractitioner = computed(() => {
     const invoice = invoiceById.value.get(p.invoice_id)
     const appt = invoice?.appointment_id ? appointmentById.value.get(invoice.appointment_id) : undefined
     const practitionerId = appt?.practitioner_id ?? null
-    const label = practitionerId ? (memberById.value.get(practitionerId) ?? 'Unknown') : 'Unassigned'
+    const label = practitionerId ? (memberById.value.get(practitionerId) ?? t('Unknown', 'Desconocido')) : t('Unassigned', 'Sin asignar')
     totals.set(label, (totals.get(label) ?? 0) + p.amount_cents)
   }
   return [...totals.entries()].map(([label, cents]) => ({ label, cents })).sort((a, b) => b.cents - a.cents)
@@ -134,7 +135,7 @@ const byService = computed(() => {
   const totals = new Map<string, number>()
   for (const li of lineItems.value) {
     if (!paidInvoiceIds.has(li.invoice_id)) continue
-    const label = li.service_id ? (serviceById.value.get(li.service_id) ?? 'Unknown service') : 'No service linked'
+    const label = li.service_id ? (serviceById.value.get(li.service_id) ?? t('Unknown service', 'Servicio desconocido')) : t('No service linked', 'Sin servicio vinculado')
     totals.set(label, (totals.get(label) ?? 0) + li.price_cents * li.quantity)
   }
   return [...totals.entries()].map(([label, cents]) => ({ label, cents })).sort((a, b) => b.cents - a.cents)
@@ -143,8 +144,8 @@ const byService = computed(() => {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Income & Payments" meta="Revenue over time, by method, practitioner, and service">
-      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; Reports</NuxtLink>
+    <PageHeader :title="t('Income & Payments', 'Ingresos y pagos')" :meta="t('Revenue over time, by method, practitioner, and service', 'Ingresos a lo largo del tiempo, por método, profesional y servicio')">
+      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
     </PageHeader>
 
     <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
@@ -153,41 +154,41 @@ const byService = computed(() => {
         <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
       </div>
 
-      <div v-if="loading" class="mt-6 text-[13px] text-ink-faint2">Loading…</div>
+      <div v-if="loading" class="mt-6 text-[13px] text-ink-faint2">{{ t('Loading…', 'Cargando…') }}</div>
 
       <template v-else>
         <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-            <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">Total charged</p>
+            <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ t('Total charged', 'Total facturado') }}</p>
             <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ eur(totalCharged) }}</p>
           </div>
           <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-            <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">Total paid</p>
+            <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ t('Total paid', 'Total pagado') }}</p>
             <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ eur(totalPaid) }}</p>
           </div>
           <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-            <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">Outstanding</p>
+            <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ t('Outstanding', 'Pendiente') }}</p>
             <p class="mt-1.5 font-mono text-[23px] font-semibold" :class="outstanding > 0 ? 'text-warning-text' : 'text-ink-900'">{{ eur(outstanding) }}</p>
           </div>
         </div>
 
         <div v-if="filteredPayments.length === 0" class="mt-4 rounded-card border border-dashed border-line-control bg-surface p-6 text-center text-[13px] text-ink-faint2">
-          No payments recorded yet in this range — charts will fill in as invoices get paid.
+          {{ t('No payments recorded yet in this range — charts will fill in as invoices get paid.', 'Todavía no hay pagos registrados en este periodo — los gráficos se completarán a medida que se paguen facturas.') }}
         </div>
 
         <template v-else>
           <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
-            <h3 class="text-[13.5px] font-semibold text-ink-800">Revenue by month</h3>
+            <h3 class="text-[13.5px] font-semibold text-ink-800">{{ t('Revenue by month', 'Ingresos por mes') }}</h3>
             <div class="mt-3 h-64"><Line :data="revenueChartData" :options="lineChartOptions" /></div>
           </div>
 
           <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-              <h3 class="text-[13.5px] font-semibold text-ink-800">By payment method</h3>
+              <h3 class="text-[13.5px] font-semibold text-ink-800">{{ t('By payment method', 'Por método de pago') }}</h3>
               <div class="mt-3 h-56"><Bar :data="methodChartData" :options="barChartOptions" /></div>
             </div>
             <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-              <h3 class="text-[13.5px] font-semibold text-ink-800">By practitioner</h3>
+              <h3 class="text-[13.5px] font-semibold text-ink-800">{{ t('By practitioner', 'Por profesional') }}</h3>
               <ul class="mt-2 space-y-1.5 text-[13px]">
                 <li v-for="row in byPractitioner" :key="row.label" class="flex items-center justify-between">
                   <span class="text-ink-600">{{ row.label }}</span>
@@ -198,8 +199,8 @@ const byService = computed(() => {
           </div>
 
           <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
-            <h3 class="text-[13.5px] font-semibold text-ink-800">By service</h3>
-            <p class="text-[12px] text-ink-faint2">e.g. "Primera Visita €600, Informe €6,000" — set up under Billing &rarr; Services.</p>
+            <h3 class="text-[13.5px] font-semibold text-ink-800">{{ t('By service', 'Por servicio') }}</h3>
+            <p class="text-[12px] text-ink-faint2">{{ t('e.g. "Primera Visita €600, Informe €6,000" — set up under Billing → Services.', 'p. ej. "Primera Visita 600 €, Informe 6.000 €" — configúralo en Facturación → Servicios.') }}</p>
             <ul class="mt-2 space-y-1.5 text-[13px]">
               <li v-for="row in byService" :key="row.label" class="flex items-center justify-between">
                 <span class="text-ink-600">{{ row.label }}</span>

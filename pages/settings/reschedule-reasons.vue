@@ -3,6 +3,7 @@ import type { Tables } from '~/types/database.types'
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 const reasons = ref<Tables<'reschedule_reasons'>[]>([])
 const loading = ref(true)
@@ -54,7 +55,7 @@ async function addReason() {
 }
 
 async function removeReason(id: string) {
-  if (!confirm('Delete this reschedule reason?')) return
+  if (!confirm(t('Delete this reschedule reason?', '¿Eliminar este motivo de reprogramación?'))) return
   await supabase.from('reschedule_reasons').delete().eq('id', id)
   await load()
 }
@@ -75,31 +76,31 @@ async function saveFees() {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Scheduling Policies" />
+    <PageHeader :title="t('Scheduling Policies', 'Políticas de Programación')" />
     <div class="flex-1 overflow-y-auto">
       <div class="flex gap-8 p-6">
         <SettingsNav />
         <div class="min-w-0 max-w-[660px] flex-1">
-          <p class="text-[13px] text-ink-muted2">Flat fees for reschedule, cancellation, and missed appointments, plus the reasons staff pick when dragging an appointment to a new time.</p>
+          <p class="text-[13px] text-ink-muted2">{{ t('Flat fees for reschedule, cancellation, and missed appointments, plus the reasons staff pick when dragging an appointment to a new time.', 'Tarifas fijas para reprogramación, cancelación y citas perdidas, además de los motivos que el personal elige al arrastrar una cita a una nueva hora.') }}</p>
 
           <form class="mt-4 space-y-3 rounded-card border border-line bg-surface p-4 shadow-card" @submit.prevent="saveFees">
             <div class="grid grid-cols-3 gap-3">
               <div>
-                <label class="block text-[12.5px] font-medium text-ink-600">Reschedule fee (€)</label>
-                <input v-model="rescheduleFeeAmount" type="number" min="0" step="0.01" placeholder="e.g. 15.00" class="mt-1 h-8 w-full rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20" />
+                <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Reschedule fee (€)', 'Tarifa de reprogramación (€)') }}</label>
+                <input v-model="rescheduleFeeAmount" type="number" min="0" step="0.01" :placeholder="t('e.g. 15.00', 'p. ej. 15,00')" class="mt-1 h-8 w-full rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20" />
               </div>
               <div>
-                <label class="block text-[12.5px] font-medium text-ink-600">Cancellation fee (€)</label>
-                <input v-model="cancellationFeeAmount" type="number" min="0" step="0.01" placeholder="e.g. 25.00" class="mt-1 h-8 w-full rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20" />
+                <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Cancellation fee (€)', 'Tarifa de cancelación (€)') }}</label>
+                <input v-model="cancellationFeeAmount" type="number" min="0" step="0.01" :placeholder="t('e.g. 25.00', 'p. ej. 25,00')" class="mt-1 h-8 w-full rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20" />
               </div>
               <div>
-                <label class="block text-[12.5px] font-medium text-ink-600">Missed appointment fee (€)</label>
-                <input v-model="missedFeeAmount" type="number" min="0" step="0.01" placeholder="e.g. 25.00" class="mt-1 h-8 w-full rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20" />
+                <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Missed appointment fee (€)', 'Tarifa por cita perdida (€)') }}</label>
+                <input v-model="missedFeeAmount" type="number" min="0" step="0.01" :placeholder="t('e.g. 25.00', 'p. ej. 25,00')" class="mt-1 h-8 w-full rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20" />
               </div>
             </div>
-            <UiBtn variant="primary" type="submit" :disabled="feeSaving">{{ feeSaving ? 'Saving…' : 'Save Fees' }}</UiBtn>
+            <UiBtn variant="primary" type="submit" :disabled="feeSaving">{{ feeSaving ? t('Saving…', 'Guardando…') : t('Save Fees', 'Guardar Tarifas') }}</UiBtn>
             <p class="text-[12px] text-ink-muted2">
-              Reschedule is offered on the reschedule confirmation dialog. Cancellation and missed-appointment fees are offered when staff change an appointment's status from the Edit Appointment modal.
+              {{ t("Reschedule is offered on the reschedule confirmation dialog. Cancellation and missed-appointment fees are offered when staff change an appointment's status from the Edit Appointment modal.", 'La reprogramación se ofrece en el diálogo de confirmación de reprogramación. Las tarifas de cancelación y cita perdida se ofrecen cuando el personal cambia el estado de una cita desde el modal Editar Cita.') }}
             </p>
           </form>
 
@@ -107,16 +108,16 @@ async function saveFees() {
             <table class="w-full text-[13px]">
               <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted2">
                 <tr>
-                  <th class="px-4 py-2">Reschedule reason</th>
+                  <th class="px-4 py-2">{{ t('Reschedule reason', 'Motivo de reprogramación') }}</th>
                   <th class="px-4 py-2"></th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-line-row">
                 <tr v-if="loading">
-                  <td colspan="2" class="px-4 py-6 text-center text-ink-faint">Loading…</td>
+                  <td colspan="2" class="px-4 py-6 text-center text-ink-faint">{{ t('Loading…', 'Cargando…') }}</td>
                 </tr>
                 <tr v-else-if="reasons.length === 0">
-                  <td colspan="2" class="px-4 py-6 text-center text-ink-faint">No reschedule reasons yet.</td>
+                  <td colspan="2" class="px-4 py-6 text-center text-ink-faint">{{ t('No reschedule reasons yet.', 'Aún no hay motivos de reprogramación.') }}</td>
                 </tr>
                 <tr v-for="r in reasons" :key="r.id">
                   <td class="px-4 py-2.5 text-ink-700">{{ r.name }}</td>
@@ -130,10 +131,10 @@ async function saveFees() {
 
           <form class="mt-4 flex flex-wrap items-end gap-3 rounded-card border border-line bg-surface p-4 shadow-card" @submit.prevent="addReason">
             <div>
-              <label class="block text-[12.5px] font-medium text-ink-600">Name</label>
-              <input v-model="name" type="text" required placeholder="Patient request" class="mt-1 h-8 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20" />
+              <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Name', 'Nombre') }}</label>
+              <input v-model="name" type="text" required :placeholder="t('Patient request', 'Solicitud del paciente')" class="mt-1 h-8 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20" />
             </div>
-            <UiBtn variant="primary" type="submit" :disabled="saving">{{ saving ? 'Adding…' : 'Add Reason' }}</UiBtn>
+            <UiBtn variant="primary" type="submit" :disabled="saving">{{ saving ? t('Adding…', 'Añadiendo…') : t('Add Reason', 'Añadir Motivo') }}</UiBtn>
           </form>
           <p v-if="error" class="mt-2 text-[12.5px] text-danger-text">{{ error }}</p>
         </div>

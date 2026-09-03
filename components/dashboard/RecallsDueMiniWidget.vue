@@ -5,6 +5,7 @@ const props = defineProps<{ practitionerId?: string }>()
 
 interface RecallRow { days_since_last_appointment: number | null }
 
+const t = useT()
 const supabase = useSupabaseClient()
 const loading = ref(true)
 const count = ref(0)
@@ -25,12 +26,12 @@ watch(() => props.practitionerId, load)
 </script>
 
 <template>
-  <div v-if="loading" class="text-[13px] text-ink-faint">Loading…</div>
+  <div v-if="loading" class="text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
   <div v-else>
     <p class="font-mono text-[27px] leading-none text-ink-900">{{ count }}</p>
     <p class="mt-1.5 text-[12px] text-ink-muted2">
-      {{ avgDays !== null ? `Avg ${avgDays} days since last visit` : 'No patients overdue for recall' }}
+      {{ avgDays !== null ? t(`Avg ${avgDays} days since last visit`, `Media de ${avgDays} días desde la última visita`) : t('No patients overdue for recall', 'Ningún paciente pendiente de recuerdo') }}
     </p>
-    <NuxtLink to="/recalls" class="mt-1.5 inline-block text-[12px] font-medium text-brand-text hover:text-brand-hover">View recalls →</NuxtLink>
+    <NuxtLink to="/recalls" class="mt-1.5 inline-block text-[12px] font-medium text-brand-text hover:text-brand-hover">{{ t('View recalls →', 'Ver recuerdos →') }}</NuxtLink>
   </div>
 </template>

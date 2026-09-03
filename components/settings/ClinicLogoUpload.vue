@@ -8,6 +8,7 @@ const props = defineProps<{ clinicId: string; logoStoragePath: string | null }>(
 const emit = defineEmits<{ uploaded: [] }>()
 
 const supabase = useSupabaseClient()
+const t = useT()
 
 const logoUrl = computed(() => {
   if (!props.logoStoragePath) return null
@@ -46,12 +47,12 @@ function onFileChosen(event: Event) {
 
 <template>
   <div class="flex items-center gap-2">
-    <div class="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-ctl border border-line bg-surface-subtle" title="Shown on invoices and the online booking page">
-      <img v-if="logoUrl" :src="logoUrl" class="h-full w-full object-contain" alt="Clinic logo" />
-      <span v-else class="text-[9px] text-ink-faint">None</span>
+    <div class="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-ctl border border-line bg-surface-subtle" :title="t('Shown on invoices and the online booking page', 'Se muestra en las facturas y en la página de reserva online')">
+      <img v-if="logoUrl" :src="logoUrl" class="h-full w-full object-contain" :alt="t('Clinic logo', 'Logo de la clínica')" />
+      <span v-else class="text-[9px] text-ink-faint">{{ t('None', 'Ninguno') }}</span>
     </div>
     <button type="button" class="text-[12px] font-medium text-brand-text hover:text-brand-hover disabled:opacity-50" :disabled="uploading" @click="pick">
-      {{ uploading ? '…' : logoUrl ? 'Replace' : 'Upload' }}
+      {{ uploading ? '…' : logoUrl ? t('Replace', 'Sustituir') : t('Upload', 'Subir') }}
     </button>
     <input ref="fileInput" type="file" accept="image/*" class="hidden" @change="onFileChosen" />
     <p v-if="error" class="text-[11px] text-danger-text">{{ error }}</p>

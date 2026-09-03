@@ -3,19 +3,20 @@ import type { Database } from '~/types/database.types'
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 interface FieldConfig { visible: boolean; required: boolean }
 
-const FIELDS: { key: string; label: string }[] = [
-  { key: 'preferred_language', label: 'Preferred Language' },
-  { key: 'notes', label: 'Patient Note' },
-  { key: 'date_of_birth', label: 'Date of Birth' },
-  { key: 'phone', label: 'Phone Number' },
-  { key: 'email', label: 'Email' },
-  { key: 'address', label: 'Address' },
-  { key: 'occupation', label: 'Occupation' },
-  { key: 'gender', label: 'Sex' },
-]
+const FIELDS = computed<{ key: string; label: string }[]>(() => [
+  { key: 'preferred_language', label: t('Preferred Language', 'Idioma preferido') },
+  { key: 'notes', label: t('Patient Note', 'Nota del paciente') },
+  { key: 'date_of_birth', label: t('Date of Birth', 'Fecha de nacimiento') },
+  { key: 'phone', label: t('Phone Number', 'Número de teléfono') },
+  { key: 'email', label: t('Email', 'Correo electrónico') },
+  { key: 'address', label: t('Address', 'Dirección') },
+  { key: 'occupation', label: t('Occupation', 'Ocupación') },
+  { key: 'gender', label: t('Sex', 'Sexo') },
+])
 
 const config = ref<Record<string, FieldConfig>>({})
 const loading = ref(true)
@@ -51,30 +52,30 @@ async function save() {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="New Patient Fields" />
+    <PageHeader :title="t('New Patient Fields', 'Campos de nuevo paciente')" />
     <div class="flex-1 overflow-y-auto">
       <div class="flex gap-8 p-6">
         <SettingsNav />
         <div class="min-w-0 max-w-[660px] flex-1">
-          <p class="text-[13px] text-ink-muted2">Configure which fields are visible and required on the Add Patient panel.</p>
+          <p class="text-[13px] text-ink-muted2">{{ t('Configure which fields are visible and required on the Add Patient panel.', 'Configura qué campos son visibles y obligatorios en el panel de Añadir paciente.') }}</p>
 
           <div v-if="!loading" class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
             <table class="w-full text-[13px]">
               <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted2">
                 <tr>
-                  <th class="px-4 py-2">Field</th>
-                  <th class="px-4 py-2 text-center">Visible</th>
-                  <th class="px-4 py-2 text-center">Required</th>
+                  <th class="px-4 py-2">{{ t('Field', 'Campo') }}</th>
+                  <th class="px-4 py-2 text-center">{{ t('Visible', 'Visible') }}</th>
+                  <th class="px-4 py-2 text-center">{{ t('Required', 'Obligatorio') }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-line-row">
                 <tr>
-                  <td class="px-4 py-2.5 text-ink-700">First Name</td>
-                  <td class="px-4 py-2.5 text-center text-ink-faint" colspan="2">Always visible and required</td>
+                  <td class="px-4 py-2.5 text-ink-700">{{ t('First Name', 'Nombre') }}</td>
+                  <td class="px-4 py-2.5 text-center text-ink-faint" colspan="2">{{ t('Always visible and required', 'Siempre visible y obligatorio') }}</td>
                 </tr>
                 <tr>
-                  <td class="px-4 py-2.5 text-ink-700">Last Name</td>
-                  <td class="px-4 py-2.5 text-center text-ink-faint" colspan="2">Always visible and required</td>
+                  <td class="px-4 py-2.5 text-ink-700">{{ t('Last Name', 'Apellidos') }}</td>
+                  <td class="px-4 py-2.5 text-center text-ink-faint" colspan="2">{{ t('Always visible and required', 'Siempre visible y obligatorio') }}</td>
                 </tr>
                 <tr v-for="f in FIELDS" :key="f.key">
                   <td class="px-4 py-2.5 text-ink-700">{{ f.label }}</td>
@@ -95,7 +96,7 @@ async function save() {
             </table>
           </div>
 
-          <UiBtn class="mt-4" variant="primary" :disabled="saving" @click="save">{{ saving ? 'Saving…' : 'Save' }}</UiBtn>
+          <UiBtn class="mt-4" variant="primary" :disabled="saving" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}</UiBtn>
         </div>
       </div>
     </div>

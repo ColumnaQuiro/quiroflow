@@ -2,6 +2,7 @@
 const props = defineProps<{ modelValue: string | null | undefined }>()
 const emit = defineEmits<{ 'update:modelValue': [string | null] }>()
 
+const t = useT()
 const canvasRef = ref<HTMLCanvasElement>()
 const drawing = ref(false)
 const hasStroke = ref(false)
@@ -56,7 +57,7 @@ function clear() {
 <template>
   <div>
     <div v-if="modelValue" class="rounded-md border border-gray-300 bg-white p-2">
-      <img :src="modelValue" alt="Signature" class="h-24" />
+      <img :src="modelValue" :alt="t('Signature', 'Firma')" class="h-24" />
     </div>
     <canvas
       v-else
@@ -70,7 +71,7 @@ function clear() {
       @pointerleave="end"
     ></canvas>
     <button type="button" class="mt-1 text-xs font-medium text-indigo-600 hover:text-indigo-700" @click="clear">
-      {{ modelValue ? 'Clear signature' : 'Clear' }}
+      {{ modelValue ? t('Clear signature', 'Borrar firma') : t('Clear', 'Borrar') }}
     </button>
   </div>
 </template>

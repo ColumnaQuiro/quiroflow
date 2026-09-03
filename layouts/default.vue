@@ -27,16 +27,19 @@ function dismissDenied() {
       <a href="mailto:hola@columnaquiro.com" class="mt-4 inline-block text-sm font-medium text-indigo-600 hover:text-indigo-800">hola@columnaquiro.com</a>
     </div>
   </div>
-  <div v-else class="flex h-screen bg-surface-page">
-    <AppSidebar />
-    <div class="flex flex-1 flex-col overflow-hidden">
-      <div v-if="showDenied" class="flex items-center justify-between bg-amber-50 px-6 py-2 text-sm text-amber-800">
-        <span>You don't have access to that section.</span>
-        <button type="button" class="font-medium underline" @click="dismissDenied">Dismiss</button>
+  <div v-else class="flex h-screen flex-col bg-surface-page">
+    <TrialBanner />
+    <div class="flex flex-1 overflow-hidden">
+      <AppSidebar />
+      <div class="flex flex-1 flex-col overflow-hidden">
+        <div v-if="showDenied" class="flex items-center justify-between bg-amber-50 px-6 py-2 text-sm text-amber-800">
+          <span>You don't have access to that section.</span>
+          <button type="button" class="font-medium underline" @click="dismissDenied">Dismiss</button>
+        </div>
+        <main class="flex flex-1 flex-col overflow-hidden">
+          <slot />
+        </main>
       </div>
-      <main class="flex flex-1 flex-col overflow-hidden">
-        <slot />
-      </main>
     </div>
   </div>
 </template>

@@ -20,6 +20,9 @@ describe('Signup and onboarding', () => {
     cy.get('#clinic-name').type(clinicName)
     cy.contains('button', 'Create practice').click()
 
+    cy.contains('h1', 'Make it yours', { timeout: 15000 }).should('be.visible')
+    cy.contains('button', 'Continue').click()
+
     cy.contains('h1', "You're all set", { timeout: 15000 }).should('be.visible')
     cy.contains('button', 'Get started').click()
 

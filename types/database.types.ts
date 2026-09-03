@@ -198,6 +198,7 @@ export type Database = {
           email_confirmation_subject: string | null
           email_reminder_body: string | null
           email_reminder_subject: string | null
+          google_review_url: string | null
           hide_account_balance: boolean
           hide_invoice_balance: boolean
           hide_logo_on_invoices: boolean
@@ -256,6 +257,7 @@ export type Database = {
           email_confirmation_subject?: string | null
           email_reminder_body?: string | null
           email_reminder_subject?: string | null
+          google_review_url?: string | null
           hide_account_balance?: boolean
           hide_invoice_balance?: boolean
           hide_logo_on_invoices?: boolean
@@ -314,6 +316,7 @@ export type Database = {
           email_confirmation_subject?: string | null
           email_reminder_body?: string | null
           email_reminder_subject?: string | null
+          google_review_url?: string | null
           hide_account_balance?: boolean
           hide_invoice_balance?: boolean
           hide_logo_on_invoices?: boolean
@@ -3194,6 +3197,140 @@ export type Database = {
           },
         ]
       }
+      waitlist_entries: {
+        Row: {
+          account_id: string
+          appointment_type_id: string | null
+          booked_appointment_id: string | null
+          claim_token: string | null
+          clinic_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          offer_expires_at: string | null
+          offered_appointment_type_id: string | null
+          offered_at: string | null
+          offered_ends_at: string | null
+          offered_practitioner_id: string | null
+          offered_room_id: string | null
+          offered_starts_at: string | null
+          patient_id: string
+          practitioner_id: string | null
+          status: string
+        }
+        Insert: {
+          account_id: string
+          appointment_type_id?: string | null
+          booked_appointment_id?: string | null
+          claim_token?: string | null
+          clinic_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          offer_expires_at?: string | null
+          offered_appointment_type_id?: string | null
+          offered_at?: string | null
+          offered_ends_at?: string | null
+          offered_practitioner_id?: string | null
+          offered_room_id?: string | null
+          offered_starts_at?: string | null
+          patient_id: string
+          practitioner_id?: string | null
+          status?: string
+        }
+        Update: {
+          account_id?: string
+          appointment_type_id?: string | null
+          booked_appointment_id?: string | null
+          claim_token?: string | null
+          clinic_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          offer_expires_at?: string | null
+          offered_appointment_type_id?: string | null
+          offered_at?: string | null
+          offered_ends_at?: string | null
+          offered_practitioner_id?: string | null
+          offered_room_id?: string | null
+          offered_starts_at?: string | null
+          patient_id?: string
+          practitioner_id?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "waitlist_entries_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waitlist_entries_appointment_type_id_fkey"
+            columns: ["appointment_type_id"]
+            isOneToOne: false
+            referencedRelation: "appointment_types"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waitlist_entries_booked_appointment_id_fkey"
+            columns: ["booked_appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waitlist_entries_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waitlist_entries_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waitlist_entries_offered_appointment_type_id_fkey"
+            columns: ["offered_appointment_type_id"]
+            isOneToOne: false
+            referencedRelation: "appointment_types"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waitlist_entries_offered_practitioner_id_fkey"
+            columns: ["offered_practitioner_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waitlist_entries_offered_room_id_fkey"
+            columns: ["offered_room_id"]
+            isOneToOne: false
+            referencedRelation: "calendar_resources"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waitlist_entries_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waitlist_entries_practitioner_id_fkey"
+            columns: ["practitioner_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       webhook_deliveries: {
         Row: {
           account_id: string
@@ -3544,6 +3681,43 @@ export type Database = {
       }
     }
     Views: {
+      care_plan_continuity_alerts: {
+        Row: {
+          account_id: string | null
+          care_plan_id: string | null
+          care_plan_name: string | null
+          completed_in_plan: number | null
+          days_overdue: number | null
+          default_practitioner_id: string | null
+          due_date: string | null
+          email: string | null
+          first_name: string | null
+          frequency_unit: string | null
+          frequency_value: number | null
+          last_appointment_at: string | null
+          last_name: string | null
+          patient_id: string | null
+          preferred_language: string | null
+          total_visits: number | null
+          visits_remaining: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patients_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patients_default_practitioner_id_fkey"
+            columns: ["default_practitioner_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       patient_live_balances: {
         Row: {
           account_id: string | null

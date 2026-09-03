@@ -9,6 +9,12 @@ const paletteOpen = ref(false)
 const accountMenuOpen = ref(false)
 const accountMenuRef = ref<HTMLElement | null>(null)
 const cashShiftOpen = ref(false)
+const clinicMenuOpen = ref(false)
+const clinicMenuRef = ref<HTMLElement | null>(null)
+function selectClinic(id: string) {
+  store.setCurrentClinic(id)
+  clinicMenuOpen.value = false
+}
 
 // Per-device UI preference (not per-user in the DB) -- purely a "give me
 // more horizontal room" toggle, same spirit as the calendar's Display
@@ -90,6 +96,13 @@ const navGroups = computed<{ label: string; items: NavItem[] }[]>(() => [
     items: [
       { label: t('Patients', 'Pacientes'), to: '/patients', perm: () => scope('patients_scope') !== 'none', icon: 'M6.2 5.6a2.6 2.6 0 11-5.2 0 2.6 2.6 0 015.2 0zM2 13.4c0-2.3 1.9-3.6 4.2-3.6s4.2 1.3 4.2 3.6' },
       { label: t('Recalls', 'Recordatorios'), to: '/recalls', perm: () => can('recalls_access'), icon: 'M8 8m5.3 0a5.3 5.3 0 11-10.6 0 5.3 5.3 0 0110.6 0z', badge: 'recalls' },
+      // Reuses recalls_access rather than a new permission key -- both are
+      // patient-outreach lists with the same "who should staff be allowed to
+      // see this" shape, and a brand new key would default to owner-only
+      // until someone visits Settings > Roles to grant it, hiding the feature
+      // from every non-owner account until then.
+      { label: t('Waitlist', 'Lista de espera'), to: '/waitlist', perm: () => can('recalls_access'), icon: 'M8 2a6 6 0 100 12A6 6 0 008 2zM8 5v3.2l2.2 1.3' },
+      { label: t('Care Plan Alerts', 'Alertas de plan'), to: '/care-plan-alerts', perm: () => can('recalls_access'), icon: 'M8 1.5l1.7 3.5 3.8.5-2.8 2.7.7 3.8L8 10.2 4.6 12l.7-3.8-2.8-2.7 3.8-.5z' },
       { label: t('Inbox', 'Bandeja de entrada'), to: '/inbox', perm: () => can('inbox_access'), icon: 'M2 3.5h12v9h-8l-3 2.5v-2.5h-1z', badge: 'inbox' },
     ],
   },
@@ -135,6 +148,9 @@ function onDocumentClick(e: MouseEvent) {
   if (accountMenuOpen.value && accountMenuRef.value && !accountMenuRef.value.contains(e.target as Node)) {
     accountMenuOpen.value = false
   }
+  if (clinicMenuOpen.value && clinicMenuRef.value && !clinicMenuRef.value.contains(e.target as Node)) {
+    clinicMenuOpen.value = false
+  }
 }
 function onKeydown(e: KeyboardEvent) {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -168,15 +184,31 @@ async function signOut() {
     </div>
 
     <div class="flex flex-col gap-1.5 px-3 pb-2.5" :class="{ 'items-center px-1.5': collapsed }">
-      <button
-        v-if="store.clinics.length > 0 && !collapsed"
-        type="button"
-        class="flex h-[34px] items-center gap-2 rounded-ctl border border-chip-border bg-surface px-2.5 text-left text-[13px] text-ink-700 hover:border-line-controlHover"
-      >
-        <span class="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] bg-brand-tint text-[9.5px] font-bold text-brand">{{ clinicInitials }}</span>
-        <span class="min-w-0 flex-1 truncate">{{ store.currentClinic?.name ?? t('Clinic', 'Clínica') }}</span>
-        <svg width="10" height="10" viewBox="0 0 10 10" class="shrink-0 text-ink-faint"><path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" /></svg>
-      </button>
+      <div v-if="store.clinics.length > 0 && !collapsed" ref="clinicMenuRef" class="relative">
+        <button
+          type="button"
+          class="flex h-[34px] w-full items-center gap-2 rounded-ctl border border-chip-border bg-surface px-2.5 text-left text-[13px] text-ink-700"
+          :class="store.clinics.length > 1 ? 'hover:border-line-controlHover' : 'cursor-default'"
+          @click="store.clinics.length > 1 && (clinicMenuOpen = !clinicMenuOpen)"
+        >
+          <span class="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] bg-brand-tint text-[9.5px] font-bold text-brand">{{ clinicInitials }}</span>
+          <span class="min-w-0 flex-1 truncate">{{ store.currentClinic?.name ?? t('Clinic', 'Clínica') }}</span>
+          <svg v-if="store.clinics.length > 1" width="10" height="10" viewBox="0 0 10 10" class="shrink-0 text-ink-faint"><path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" /></svg>
+        </button>
+        <div v-if="clinicMenuOpen" class="absolute left-0 top-full z-20 mt-1 w-full min-w-[200px] rounded-ctl border border-line bg-surface py-1 shadow-popover">
+          <button
+            v-for="c in store.clinics"
+            :key="c.id"
+            type="button"
+            class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] hover:bg-surface-subtle"
+            :class="c.id === store.currentClinicId ? 'text-brand-text font-medium' : 'text-ink-600'"
+            @click="selectClinic(c.id)"
+          >
+            <span class="min-w-0 flex-1 truncate">{{ c.name }}</span>
+            <svg v-if="c.id === store.currentClinicId" width="12" height="12" viewBox="0 0 12 12" class="shrink-0"><path d="M2.5 6.3l2.3 2.3 4.7-5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          </button>
+        </div>
+      </div>
       <button
         type="button"
         class="flex h-8 items-center gap-2 rounded-ctl bg-chip text-left text-[13px] text-ink-muted hover:bg-surface-subtle"

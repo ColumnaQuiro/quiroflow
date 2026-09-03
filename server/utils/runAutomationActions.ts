@@ -44,13 +44,14 @@ export async function runRuleActions(
   origin: string,
   appointmentId?: string,
   triggerBody?: TriggerBody,
+  extraContext?: Partial<MergeContext>,
 ) {
   const [{ data: rule }, { data: actions }] = await Promise.all([
     supabase.from('automation_rules').select('is_marketing').eq('id', ruleId).maybeSingle(),
     supabase.from('automation_actions').select('id, action_type, config').eq('rule_id', ruleId).order('position'),
   ])
 
-  await runActionsList(supabase, accountId, (actions ?? []) as ActionRow[], patient, origin, rule?.is_marketing ?? false, appointmentId, triggerBody)
+  await runActionsList(supabase, accountId, (actions ?? []) as ActionRow[], patient, origin, rule?.is_marketing ?? false, appointmentId, triggerBody, undefined, extraContext)
 }
 
 // Split out from runRuleActions so a caller that already has an in-memory
@@ -69,6 +70,14 @@ export async function runActionsList(
   appointmentId?: string,
   triggerBody?: TriggerBody,
   whatsappOverrideNumber?: string,
+  // Caller-supplied merge values that can't be derived from appointmentId/
+  // accountId alone -- e.g. waitlistOffer.ts's claim link and slot time,
+  // which describe an appointment that doesn't exist as a row yet (claiming
+  // is what creates it). Auto-resolved fields below still win their own keys
+  // unconditionally rather than merging under extraContext, since only
+  // waitlistOffer.ts (which never sets appointmentId) has any reason to pass
+  // those two keys.
+  extraContext?: Partial<MergeContext>,
 ) {
   // Minors and do-not-contact patients get no communications -- webhook
   // actions still run since those are internal side effects, not messages
@@ -89,13 +98,22 @@ export async function runActionsList(
     const { data: appt } = await supabase.from('appointments').select('starts_at').eq('id', appointmentId).maybeSingle()
     nextAppointmentAt = appt?.starts_at ?? undefined
   }
+  // Also resolved once per firing, not per-action -- backs {{google_review_link}}
+  // for the appointment.review_request campaign (and any other campaign that
+  // wants it). A cheap extra query even when unused, same tradeoff as
+  // nextAppointmentAt above, kept simple rather than conditioned on whether
+  // any action actually references the token.
+  const { data: account } = await supabase.from('accounts').select('google_review_url').eq('id', accountId).maybeSingle()
+  const googleReviewUrl: string | undefined = account?.google_review_url ?? undefined
+
+  const context: MergeContext = { ...extraContext, nextAppointmentAt, googleReviewUrl }
 
   for (const action of actions) {
     try {
       if (action.action_type === 'whatsapp_template') {
-        if (canContact && channelAllowed('whatsapp')) await runWhatsAppAction(supabase, accountId, patient, action.config, origin, appointmentId, whatsappOverrideNumber, { nextAppointmentAt })
+        if (canContact && channelAllowed('whatsapp')) await runWhatsAppAction(supabase, accountId, patient, action.config, origin, appointmentId, whatsappOverrideNumber, context)
       } else if (action.action_type === 'email') {
-        if (canContact && channelAllowed('email')) await runEmailAction(patient, action.config, { nextAppointmentAt })
+        if (canContact && channelAllowed('email')) await runEmailAction(patient, action.config, context)
       } else if (action.action_type === 'webhook') {
         await runWebhookAction(action.config, triggerBody ?? { triggerEvent: 'manual', patientId: patient.id, appointmentId })
       }
@@ -105,12 +123,15 @@ export async function runActionsList(
   }
 }
 
-interface MergeContext { nextAppointmentAt?: string }
+interface MergeContext { nextAppointmentAt?: string; googleReviewUrl?: string; waitlistClaimLink?: string; waitlistSlotDatetime?: string }
 
 function patientFieldValue(patient: PatientForAction, source: string, context?: MergeContext): string {
   if (source === 'first_name') return patient.first_name ?? ''
   if (source === 'last_name') return patient.last_name ?? ''
   if (source === 'email') return patient.email ?? ''
+  if (source === 'google_review_link') return context?.googleReviewUrl ?? ''
+  if (source === 'waitlist_claim_link') return context?.waitlistClaimLink ?? ''
+  if (source === 'waitlist_slot_datetime') return context?.waitlistSlotDatetime ?? ''
   if (source === 'next_appointment') {
     if (!context?.nextAppointmentAt) return ''
     return new Date(context.nextAppointmentAt).toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: CLINIC_TIMEZONE })

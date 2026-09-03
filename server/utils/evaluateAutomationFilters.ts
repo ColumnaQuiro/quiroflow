@@ -12,6 +12,10 @@ export interface AutomationFilters {
   // Only read by hours-before-cron.post.ts to pick its scan window -- not a
   // patient-targeting filter, so ruleFiltersMatch below never looks at it.
   hours_before?: number
+  // Only read by review-request-cron.post.ts to pick its scan window, same
+  // reasoning as hours_before -- how many days after a completed appointment
+  // the review-request campaign fires.
+  days_after?: number
 }
 
 export async function ruleFiltersMatch(

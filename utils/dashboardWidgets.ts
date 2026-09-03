@@ -23,6 +23,7 @@ export const WIDGET_REGISTRY: WidgetDef[] = [
   { type: 'active_patients', label: 'Active patients', defaultSize: 'sm', component: 'DashboardActivePatientsWidget' },
   { type: 'no_show_rate', label: 'No-show rate', defaultSize: 'sm', component: 'DashboardNoShowRateMiniWidget' },
   { type: 'recalls_due', label: 'Recalls due', defaultSize: 'sm', component: 'DashboardRecallsDueMiniWidget' },
+  { type: 'continuity_alerts', label: 'Care plans behind schedule', defaultSize: 'sm', component: 'DashboardContinuityAlertsMiniWidget' },
   { type: 'total_patients', label: 'Total patients', defaultSize: 'sm', component: 'DashboardTotalPatientsWidget' },
   { type: 'appointment_distribution_mini', label: 'Appointment distribution', defaultSize: 'sm', component: 'DashboardAppointmentDistributionMiniWidget' },
   // Note: despite their type/component names, DashboardStatisticsMiniWidget's

@@ -16,6 +16,12 @@ const reminderHoursBefore = ref(24)
 const emailReminderSubject = ref('')
 const emailReminderBody = ref('')
 
+// Backs the {{google_review_link}} / "Google review link" merge field used
+// by the appointment.review_request campaign trigger (Campaigns), not by
+// the confirmation/reminder sends on this page -- kept here anyway since
+// this is the account's one general communications settings page.
+const googleReviewUrl = ref('')
+
 const { showToast } = useToast()
 const loading = ref(true)
 const saving = ref(false)
@@ -25,7 +31,7 @@ async function load() {
   const { data } = await supabase
     .from('accounts')
     .select(
-      'appointment_confirmation_enabled, appointment_confirmation_channels, email_confirmation_subject, email_confirmation_body, appointment_reminder_enabled, appointment_reminder_channels, appointment_reminder_hours_before, email_reminder_subject, email_reminder_body',
+      'appointment_confirmation_enabled, appointment_confirmation_channels, email_confirmation_subject, email_confirmation_body, appointment_reminder_enabled, appointment_reminder_channels, appointment_reminder_hours_before, email_reminder_subject, email_reminder_body, google_review_url',
     )
     .eq('id', store.accountId!)
     .maybeSingle()
@@ -38,6 +44,7 @@ async function load() {
   reminderHoursBefore.value = data?.appointment_reminder_hours_before ?? 24
   emailReminderSubject.value = data?.email_reminder_subject ?? ''
   emailReminderBody.value = data?.email_reminder_body ?? ''
+  googleReviewUrl.value = data?.google_review_url ?? ''
   loading.value = false
 }
 onMounted(load)
@@ -54,6 +61,7 @@ async function save() {
     appointment_reminder_hours_before: reminderHoursBefore.value,
     email_reminder_subject: emailReminderSubject.value.trim() || null,
     email_reminder_body: emailReminderBody.value.trim() || null,
+    google_review_url: googleReviewUrl.value.trim() || null,
   }
   const { error: updateError } = await supabase.from('accounts').update(update).eq('id', store.accountId!)
   saving.value = false
@@ -190,6 +198,19 @@ async function save() {
                   </p>
                 </div>
               </template>
+            </div>
+
+            <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+              <p class="text-[13.5px] font-[560] text-ink-700">{{ t('Google Reviews', 'Reseñas de Google') }}</p>
+              <p class="mt-0.5 text-[12.5px] text-ink-muted2">
+                {{ t('Used by the "X days after visit (review request)" campaign trigger in Campaigns, as the Google review link merge field.', 'Se usa en el disparador de campaña "X días después de la visita (solicitud de reseña)" en Campañas, como campo combinado del enlace de reseña de Google.') }}
+              </p>
+              <input
+                v-model="googleReviewUrl"
+                type="url"
+                placeholder="https://g.page/r/…/review"
+                class="mt-3 h-8 w-full rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+              />
             </div>
 
           </form>

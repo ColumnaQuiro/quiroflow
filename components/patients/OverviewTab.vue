@@ -275,6 +275,8 @@ async function startEditing() {
   editing.value = true
 }
 
+const { fire } = useAutomations()
+
 async function save() {
   error.value = ''
   saving.value = true
@@ -282,6 +284,8 @@ async function save() {
     .split(',')
     .map((t) => t.trim())
     .filter(Boolean)
+
+  const newReferredById = referralSource.value === 'Patient' ? (selectedReferredBy.value?.id ?? null) : null
 
   const { error: updateError } = await supabase
     .from('patients')
@@ -310,7 +314,7 @@ async function save() {
       is_minor: isMinor.value,
       do_not_contact: doNotContact.value,
       tutor_patient_id: isMinor.value ? (selectedTutor.value?.id ?? null) : null,
-      referred_by_patient_id: referralSource.value === 'Patient' ? (selectedReferredBy.value?.id ?? null) : null,
+      referred_by_patient_id: newReferredById,
     })
     .eq('id', props.patient.id)
 
@@ -318,6 +322,12 @@ async function save() {
   if (updateError) {
     error.value = updateError.message
     return
+  }
+  // Fires for the REFERRER, not this patient -- only on the transition into
+  // a newly-linked referrer, so re-saving the form without touching this
+  // field (or clearing it) never re-fires the thank-you campaign.
+  if (newReferredById && newReferredById !== props.patient.referred_by_patient_id) {
+    fire('patient.referred', { patientId: newReferredById })
   }
   editing.value = false
   emit('updated')

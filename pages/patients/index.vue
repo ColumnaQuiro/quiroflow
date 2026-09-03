@@ -189,6 +189,13 @@ watch(search, () => {
   searchDebounce = setTimeout(() => goToPage(1), 300)
 })
 watch([outstandingBalanceFilter, carePlanFilter, missingContact, practitionerFilter, statusFilter], () => goToPage(1))
+// The clinic switcher (AppSidebar.vue) can now change store.currentClinicId
+// mid-session for a multi-location account -- same reload-on-change pattern
+// calendar.vue and practitioner.vue already use for their own clinic-scoped
+// queries. Resets to page 1 rather than just re-running loadPatients() at
+// the current page, since the old page number is unlikely to still be
+// valid against the new clinic's (probably smaller) patient count.
+watch(() => store.currentClinicId, () => goToPage(1))
 
 // Export every patient matching the current filters (not just the loaded
 // page) -- fetchAllRows pages past Supabase's 1000-row select() cap.

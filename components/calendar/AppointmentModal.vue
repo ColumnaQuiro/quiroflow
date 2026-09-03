@@ -205,6 +205,12 @@ async function save() {
     if (status.value !== props.appointment!.status) {
       const trigger = { completed: 'appointment.completed', cancelled: 'appointment.cancelled', no_show: 'appointment.no_show' }[status.value]
       if (trigger) fire(trigger, { patientId: patientId.value, appointmentId: props.appointment!.id })
+      // Offers the freed slot to the next waitlisted patient. Fire-and-forget,
+      // same reasoning as the automation trigger it runs alongside -- a
+      // failed/slow offer shouldn't block the cancellation that triggered it.
+      if (status.value === 'cancelled') {
+        useStaffFetch('/api/waitlist/offer-next', { method: 'POST', body: { appointmentId: props.appointment!.id } }).catch(() => {})
+      }
       await maybeApplyStatusFee(status.value)
     }
     // Independent of the status check above -- a save can change both the

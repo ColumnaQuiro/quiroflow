@@ -24,11 +24,14 @@ const TRIGGER_LABEL_DEFS: Record<string, [string, string]> = {
   'appointment.no_show': ['Appointment marked as missed', 'Cita marcada como no presentada'],
   'appointment.rescheduled': ['Appointment rescheduled', 'Cita reprogramada'],
   'appointment.same_day': ['Day of appointment (morning send)', 'Día de la cita (envío matutino)'],
+  'appointment.review_request': ['X days after visit (review request)', 'X días después de la visita (solicitud de reseña)'],
   'invoice.paid': ['Invoice paid', 'Factura pagada'],
   'patient.birthday': ["Patient's birthday (daily check)", 'Cumpleaños del paciente (comprobación diaria)'],
+  'patient.referred': ['Patient referred someone', 'El paciente refirió a alguien'],
   'membership.new_member': ['New membership started', 'Nueva membresía iniciada'],
   'membership.removed': ['Membership cancelled', 'Membresía cancelada'],
   'membership.payment_processed': ['Membership payment processed', 'Pago de membresía procesado'],
+  'waitlist.slot_offered': ['Waitlist slot offered', 'Plaza de lista de espera ofrecida'],
 }
 // Plain-language description shown in the expanded row's Trigger card.
 const TRIGGER_DESCRIPTION_DEFS: Record<string, [string, string]> = {
@@ -39,11 +42,14 @@ const TRIGGER_DESCRIPTION_DEFS: Record<string, [string, string]> = {
   'appointment.no_show': ['Fires when an appointment is marked as a missed visit.', 'Se activa cuando una cita se marca como visita perdida.'],
   'appointment.rescheduled': ["Fires when an appointment's date or time changes.", 'Se activa cuando cambia la fecha o la hora de una cita.'],
   'appointment.same_day': ['Runs once a day around 9am; fires for any booked appointment happening that day.', 'Se ejecuta una vez al día alrededor de las 9h; se activa para cualquier cita reservada ese día.'],
+  'appointment.review_request': ['Fires a set number of days after a visit is completed — configure how many under this campaign.', 'Se activa un número determinado de días después de completar una visita — configúralo en esta campaña.'],
   'invoice.paid': ['Fires once an invoice is marked paid in full.', 'Se activa cuando una factura se marca como pagada en su totalidad.'],
   'patient.birthday': ["Runs once a day; fires for any patient whose birthday is today.", 'Se ejecuta una vez al día; se activa para cualquier paciente que cumpla años hoy.'],
+  'patient.referred': ['Fires for the referring patient as soon as they’re linked as the referrer of a new patient.', 'Se activa para el paciente que refirió en cuanto se le vincula como referente de un nuevo paciente.'],
   'membership.new_member': ['Fires when a patient starts a new membership.', 'Se activa cuando un paciente inicia una nueva membresía.'],
   'membership.removed': ["Fires when a patient's membership is cancelled.", 'Se activa cuando se cancela la membresía de un paciente.'],
   'membership.payment_processed': ['Fires each time a recurring membership charge succeeds via Stripe.', 'Se activa cada vez que un cobro recurrente de membresía se realiza correctamente a través de Stripe.'],
+  'waitlist.slot_offered': ['Fires when a cancelled appointment is offered to the next waitlisted patient.', 'Se activa cuando una cita cancelada se ofrece al siguiente paciente en la lista de espera.'],
 }
 const ACTION_LABEL_DEFS: Record<string, [string, string]> = {
   whatsapp_template: ['WhatsApp', 'WhatsApp'],

@@ -38,9 +38,51 @@ const roomId = ref(props.prefillRoomId ?? '')
 const practitionerId = ref(props.prefillPractitionerId ?? '')
 const appointmentTypeId = ref(props.appointmentTypes[0]?.id ?? '')
 const note = ref('')
-const repeat = ref<'none' | 'daily' | 'weekly' | 'monthly'>('none')
+const repeat = ref<'none' | 'daily' | 'weekly' | 'monthly' | 'care_plan'>('none')
 const error = ref('')
 const saving = ref(false)
+
+// -- Care plan bulk scheduling ---------------------------------------------
+// Lets "Repeat" book a patient's whole remaining care plan at once instead
+// of one visit at a time. Care plans don't auto-generate appointments
+// (0056_care_plans.sql is explicit about that -- progress is inferred from
+// real appointments, not a stored schedule), so this is the one place that
+// actually creates the plan's future sessions in bulk.
+interface CarePlan { id: string; name: string; frequency_value: number; frequency_unit: 'week' | 'month'; total_visits: number; started_at: string }
+const carePlan = ref<CarePlan | null>(null)
+// Visits with no appointment at all yet -- deliberately NOT the same
+// "remaining" PhaseStats.vue shows on the patient profile (total_visits -
+// completed, which still counts a visit that's already booked as
+// "remaining" toward progress). Booking needs the stricter number: subtract
+// already-scheduled visits too, or re-opening this panel on a patient
+// mid-plan would double-book their remaining sessions.
+const carePlanRemaining = ref(0)
+
+async function loadCarePlan(patientId: string) {
+  carePlan.value = null
+  carePlanRemaining.value = 0
+  const [{ data: plans }, { data: appts }] = await Promise.all([
+    supabase.from('care_plans').select('id, name, frequency_value, frequency_unit, total_visits, started_at').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(1),
+    supabase.from('appointments').select('status, starts_at').eq('patient_id', patientId),
+  ])
+  const plan = (plans as CarePlan[] | null)?.[0] ?? null
+  if (!plan) return
+  const inPlan = (appts ?? []).filter((a) => a.starts_at >= plan.started_at)
+  const completed = inPlan.filter((a) => a.status === 'completed').length
+  const scheduled = inPlan.filter((a) => a.status === 'booked').length
+  carePlan.value = plan
+  carePlanRemaining.value = Math.max(0, plan.total_visits - completed - scheduled)
+  if (repeat.value === 'care_plan' && carePlanRemaining.value === 0) repeat.value = 'none'
+}
+const carePlanFrequencyLabel = computed(() => {
+  if (!carePlan.value) return ''
+  const unitEs = carePlan.value.frequency_unit === 'week' ? 'semana' : 'mes'
+  const unitEsPlural = carePlan.value.frequency_unit === 'week' ? 'semanas' : 'meses'
+  return t(
+    `every ${carePlan.value.frequency_value} ${carePlan.value.frequency_unit}${carePlan.value.frequency_value > 1 ? 's' : ''}`,
+    `cada ${carePlan.value.frequency_value} ${carePlan.value.frequency_value > 1 ? unitEsPlural : unitEs}`,
+  )
+})
 
 const headerLabel = computed(() => {
   const d = new Date(`${date.value}T${time.value}`)
@@ -98,7 +140,15 @@ function selectPatient(p: PatientOption) {
   selectedPatient.value = p
   patientQuery.value = ''
   searchResults.value = []
+  loadCarePlan(p.id)
 }
+watch(patientMode, (mode) => {
+  if (mode === 'new') {
+    carePlan.value = null
+    carePlanRemaining.value = 0
+    if (repeat.value === 'care_plan') repeat.value = 'none'
+  }
+})
 
 const newPatientFirstName = ref('')
 const newPatientLastName = ref('')
@@ -160,11 +210,21 @@ async function save() {
   }
 
   // Repeat is intentionally bounded rather than open-ended -- 8 occurrences
-  // covers a typical short care-plan block without ever silently filling a
-  // patient's calendar for months from one click.
+  // covers a typical short repeat block without ever silently filling a
+  // patient's calendar for months from one click. The care_plan option is
+  // bounded higher (26) since a real bono/plan often runs past 8 sessions,
+  // but still capped -- a mistaken plan shouldn't fill a calendar for years.
   const REPEAT_OCCURRENCES = 8
-  const stepDays = { none: 0, daily: 1, weekly: 7, monthly: 30 }[repeat.value]
-  const occurrences = repeat.value === 'none' ? 1 : REPEAT_OCCURRENCES
+  const MAX_CARE_PLAN_OCCURRENCES = 26
+  let stepDays: number
+  let occurrences: number
+  if (repeat.value === 'care_plan' && carePlan.value) {
+    stepDays = carePlan.value.frequency_value * (carePlan.value.frequency_unit === 'month' ? 30 : 7)
+    occurrences = Math.min(carePlanRemaining.value, MAX_CARE_PLAN_OCCURRENCES)
+  } else {
+    stepDays = { none: 0, daily: 1, weekly: 7, monthly: 30 }[repeat.value as 'none' | 'daily' | 'weekly' | 'monthly'] ?? 0
+    occurrences = repeat.value === 'none' ? 1 : REPEAT_OCCURRENCES
+  }
 
   let firstAppointmentId: string | null = null
   for (let i = 0; i < occurrences; i++) {
@@ -373,7 +433,23 @@ async function save() {
             <option value="daily">{{ t('Daily (8 occurrences)', 'Diariamente (8 repeticiones)') }}</option>
             <option value="weekly">{{ t('Weekly (8 occurrences)', 'Semanalmente (8 repeticiones)') }}</option>
             <option value="monthly">{{ t('Monthly (8 occurrences)', 'Mensualmente (8 repeticiones)') }}</option>
+            <option v-if="carePlan && carePlanRemaining > 0" value="care_plan">
+              {{
+                t(
+                  `Follow care plan — ${carePlanRemaining} sessions left, ${carePlanFrequencyLabel}`,
+                  `Seguir plan de tratamiento — ${carePlanRemaining} sesiones restantes, ${carePlanFrequencyLabel}`,
+                )
+              }}
+            </option>
           </select>
+          <p v-if="repeat === 'care_plan' && carePlan" class="mt-1 text-[12px] text-ink-muted2">
+            {{
+              t(
+                `Books ${Math.min(carePlanRemaining, 26)} appointments from "${carePlan.name}", ${carePlanFrequencyLabel}, starting at the date/time above.`,
+                `Reserva ${Math.min(carePlanRemaining, 26)} citas de "${carePlan.name}", ${carePlanFrequencyLabel}, empezando en la fecha/hora indicada arriba.`,
+              )
+            }}
+          </p>
         </div>
 
         <div class="flex items-center justify-between">

@@ -14,6 +14,7 @@ import DashboardDebtorsMiniWidget from '~/components/dashboard/DebtorsMiniWidget
 import DashboardUpcomingVisitsMiniWidget from '~/components/dashboard/UpcomingVisitsMiniWidget.vue'
 import DashboardNoShowRateMiniWidget from '~/components/dashboard/NoShowRateMiniWidget.vue'
 import DashboardRecallsDueMiniWidget from '~/components/dashboard/RecallsDueMiniWidget.vue'
+import DashboardContinuityAlertsMiniWidget from '~/components/dashboard/ContinuityAlertsMiniWidget.vue'
 import DashboardNextUpTodayMiniWidget from '~/components/dashboard/NextUpTodayMiniWidget.vue'
 
 // <component :is="'StringName'"> doesn't resolve Nuxt's auto-imported
@@ -33,6 +34,7 @@ const WIDGET_COMPONENTS: Record<string, unknown> = {
   DashboardUpcomingVisitsMiniWidget,
   DashboardNoShowRateMiniWidget,
   DashboardRecallsDueMiniWidget,
+  DashboardContinuityAlertsMiniWidget,
   DashboardNextUpTodayMiniWidget,
 }
 

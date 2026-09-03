@@ -17,15 +17,22 @@ const TRIGGER_OPTIONS = computed(() => [
   { value: 'appointment.no_show', label: t('Appointment marked as missed', 'Cita marcada como no asistida') },
   { value: 'appointment.same_day', label: t('Day of appointment (morning send)', 'Día de la cita (envío por la mañana)') },
   { value: 'appointment.hours_before', label: t('X hours before appointment', 'X horas antes de la cita') },
+  { value: 'appointment.review_request', label: t('X days after a completed visit (review request)', 'X días después de una visita completada (solicitud de reseña)') },
   { value: 'invoice.paid', label: t('Invoice paid', 'Factura pagada') },
   { value: 'patient.birthday', label: t("Patient's birthday (daily check)", 'Cumpleaños del paciente (comprobación diaria)') },
+  { value: 'patient.referred', label: t('Patient referred someone (thank the referrer)', 'El paciente refirió a alguien (agradecer a quien refirió)') },
   { value: 'membership.new_member', label: t('New membership started', 'Nueva membresía iniciada') },
   { value: 'membership.removed', label: t('Membership cancelled', 'Membresía cancelada') },
   { value: 'membership.payment_processed', label: t('Membership payment processed', 'Pago de membresía procesado') },
+  { value: 'waitlist.slot_offered', label: t('Waitlist slot offered', 'Plaza de lista de espera ofrecida') },
 ])
 // These fire with no appointment in scope, same as patient.birthday --
 // the appointment-type/visit-count filter block below doesn't apply.
-const NO_APPOINTMENT_CONTEXT_TRIGGERS = ['patient.birthday', 'membership.new_member', 'membership.removed', 'membership.payment_processed']
+// patient.referred fires for the referring patient, not tied to any one of
+// their appointments, so it belongs here too. waitlist.slot_offered fires
+// before the offered slot is a real appointment (claiming is what creates
+// it), so it has no appointment row to filter on either.
+const NO_APPOINTMENT_CONTEXT_TRIGGERS = ['patient.birthday', 'patient.referred', 'waitlist.slot_offered', 'membership.new_member', 'membership.removed', 'membership.payment_processed']
 const VARIABLE_SOURCES = computed(() => [
   { value: 'first_name', label: t('First name', 'Nombre') },
   { value: 'last_name', label: t('Last name', 'Apellidos') },
@@ -33,6 +40,9 @@ const VARIABLE_SOURCES = computed(() => [
   { value: 'next_appointment', label: t('Appointment date & time', 'Fecha y hora de la cita') },
   { value: 'appointment_date', label: t('Appointment date', 'Fecha de la cita') },
   { value: 'appointment_time', label: t('Appointment time', 'Hora de la cita') },
+  { value: 'google_review_link', label: t('Google review link', 'Enlace de reseña de Google') },
+  { value: 'waitlist_claim_link', label: t('Waitlist claim link', 'Enlace para reservar plaza') },
+  { value: 'waitlist_slot_datetime', label: t('Waitlist offered slot date & time', 'Fecha y hora de la plaza ofrecida') },
   { value: 'text', label: t('Fixed text', 'Texto fijo') },
 ])
 const ACTION_TONE: Record<string, string> = {
@@ -86,6 +96,9 @@ const filterNoPriorAppointments = ref(false)
 // day-before reminder, 72 for three days before). A clinic wanting both
 // just creates two rules on this same trigger with different values.
 const filterHoursBefore = ref('24')
+// Only meaningful for appointment.review_request -- how many days after the
+// visit ends this rule fires. Same multi-rule pattern as hours_before.
+const filterDaysAfter = ref('2')
 // has_future_appointment isn't editable in this UI (only the birthday rule
 // uses it) -- carried through untouched on save so editing a rule here
 // doesn't silently drop it.
@@ -127,7 +140,8 @@ onMounted(async () => {
       filterTotalVisits.value = typeof filters.total_visits === 'number' ? String(filters.total_visits) : ''
       filterNoPriorAppointments.value = filters.no_prior_appointments === true
       filterHoursBefore.value = typeof filters.hours_before === 'number' ? String(filters.hours_before) : '24'
-      const { appointment_type_id: _a, total_visits: _t, no_prior_appointments: _n, hours_before: _h, ...rest } = filters
+      filterDaysAfter.value = typeof filters.days_after === 'number' ? String(filters.days_after) : '2'
+      const { appointment_type_id: _a, total_visits: _t, no_prior_appointments: _n, hours_before: _h, days_after: _d, ...rest } = filters
       otherFilters = rest
     }
     if (existingActions && existingActions.length > 0) {
@@ -226,6 +240,9 @@ async function persist(): Promise<string | null> {
   if (filterNoPriorAppointments.value) filters.no_prior_appointments = true
   if (triggerEvent.value === 'appointment.hours_before') {
     filters.hours_before = Math.max(1, Math.round(Number(filterHoursBefore.value) || 24))
+  }
+  if (triggerEvent.value === 'appointment.review_request') {
+    filters.days_after = Math.max(1, Math.round(Number(filterDaysAfter.value) || 2))
   }
 
   const rulePayload = {
@@ -395,6 +412,20 @@ async function sendTestToMe() {
             />
             <p class="mt-1.5 text-[11.5px] leading-relaxed text-ink-muted2">
               For a second reminder at a different point (e.g. 3 days before as well as 24 hours before), create another campaign on this same trigger with a different value here.
+            </p>
+          </div>
+
+          <div v-if="triggerEvent === 'appointment.review_request'" class="rounded-card border border-[#EDEEF2] bg-surface-subtle p-3.5">
+            <label class="block text-[12.5px] font-medium text-ink-700">{{ t('Send this many days after the visit', 'Enviar este número de días después de la visita') }}</label>
+            <input
+              v-model="filterDaysAfter"
+              type="number"
+              min="1"
+              placeholder="e.g. 2"
+              class="mt-1.5 h-9 w-32 rounded-ctl border border-line-control bg-surface px-3 text-[13.5px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            />
+            <p class="mt-1.5 text-[11.5px] leading-relaxed text-ink-muted2">
+              {{ t('Use the Google review link variable/merge field in the message below to link straight to your review page — set it under Settings → Communications → General.', 'Usa la variable/campo combinado del enlace de reseña de Google en el mensaje de abajo para enlazar directamente a tu página de reseñas — configúralo en Ajustes → Comunicaciones → General.') }}
             </p>
           </div>
 

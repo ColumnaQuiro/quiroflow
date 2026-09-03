@@ -14,6 +14,12 @@ export interface TeamMember {
 
 export type PermissionValue = boolean | 'all' | 'own' | 'none'
 
+// Same localStorage convention as useTheme/useLang -- remembers which
+// clinic a team member was last looking at across reloads. Scoped to
+// whatever ends up in this.clinics (account-scoped) before being trusted,
+// so a stale id from a previous account/browser profile can't leak in.
+const CURRENT_CLINIC_STORAGE_KEY = 'quiroflow-current-clinic-id'
+
 export interface Clinic {
   id: string
   account_id: string
@@ -102,11 +108,19 @@ export const useAccountStore = defineStore('account', {
       this.clinics = (clinics as Clinic[]) ?? []
       this.permissions = (permissions as Record<string, PermissionValue>) ?? {}
       if (!this.currentClinicId && this.clinics.length > 0) {
-        this.currentClinicId = this.clinics[0].id
+        const stored = import.meta.server ? null : localStorage.getItem(CURRENT_CLINIC_STORAGE_KEY)
+        this.currentClinicId = (stored && this.clinics.some((c) => c.id === stored)) ? stored : this.clinics[0].id
       }
 
       this.loaded = true
       this.loading = false
+    },
+    // The only place currentClinicId should be written to after initial
+    // load -- routes through here (not a direct state.currentClinicId =
+    // assignment) so the switcher's choice also persists to localStorage.
+    setCurrentClinic(id: string) {
+      this.currentClinicId = id
+      if (!import.meta.server) localStorage.setItem(CURRENT_CLINIC_STORAGE_KEY, id)
     },
     reset() {
       this.teamMember = null

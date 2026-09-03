@@ -30,7 +30,12 @@ const sources = computed<Source[]>(() => [
       { key: 'file_attachments', label: t('File Attachments', 'Archivos adjuntos') },
     ],
   },
-  { key: 'other', label: t('Other system', 'Otro sistema'), available: false, dataTypes: [] },
+  {
+    key: 'other',
+    label: t('Other system', 'Otro sistema'),
+    available: true,
+    dataTypes: [{ key: 'patients', label: t('Patients', 'Pacientes') }],
+  },
 ])
 
 const sourceKey = ref('practicehub')
@@ -97,7 +102,8 @@ function selectSource(key: string) {
             <ImportPracticeHubCarePlansImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'care_plans'" />
             <ImportPracticeHubCustomFormResponsesImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'custom_form_responses'" />
             <ImportPracticeHubFileAttachmentsImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'file_attachments'" />
-            <ImportComingSoon v-else-if="sourceKey === 'practicehub'" :label="activeSource.dataTypes.find((d) => d.key === dataTypeKey)?.label ?? ''" />
+            <ImportGenericCsvPatientsImporter v-else-if="sourceKey === 'other' && dataTypeKey === 'patients'" />
+            <ImportComingSoon v-else :label="activeSource.dataTypes.find((d) => d.key === dataTypeKey)?.label ?? ''" />
           </div>
         </div>
       </div>

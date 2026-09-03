@@ -5,6 +5,7 @@ defineProps<{ dateRange?: unknown; practitionerId?: string; clinicId?: string }>
 interface MembershipRow { id: string; status: string }
 interface PaymentRow { patient_membership_id: string; period_start: string; amount_cents: number; status: string }
 
+const t = useT()
 const supabase = useSupabaseClient()
 const loading = ref(true)
 const memberships = ref<MembershipRow[]>([])
@@ -46,18 +47,18 @@ const failedPayments = computed(() => payments.value.filter((p) => p.status === 
 </script>
 
 <template>
-  <div v-if="loading" class="text-[13px] text-ink-faint">Loading…</div>
+  <div v-if="loading" class="text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
   <ul v-else class="divide-y divide-line-row2 text-[13px]">
     <li class="flex items-center justify-between py-1.5">
-      <span class="text-ink-700">Active memberships</span>
+      <span class="text-ink-700">{{ t('Active memberships', 'Suscripciones activas') }}</span>
       <span class="font-mono text-[12.5px] text-ink-900">{{ active.length }}</span>
     </li>
     <li class="flex items-center justify-between py-1.5">
-      <span class="text-ink-700">Revenue this month</span>
+      <span class="text-ink-700">{{ t('Revenue this month', 'Ingresos este mes') }}</span>
       <span class="font-mono text-[12.5px] text-ink-900">€{{ (monthlyRevenue / 100).toFixed(2) }}</span>
     </li>
     <li class="flex items-center justify-between py-1.5">
-      <span class="text-ink-700">Failed payments</span>
+      <span class="text-ink-700">{{ t('Failed payments', 'Pagos fallidos') }}</span>
       <span class="font-mono text-[12.5px]" :class="failedPayments.length > 0 ? 'text-danger-text' : 'text-ink-900'">{{ failedPayments.length }}</span>
     </li>
   </ul>

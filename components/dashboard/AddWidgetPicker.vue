@@ -4,13 +4,14 @@ import { WIDGET_REGISTRY } from '~/utils/dashboardWidgets'
 const props = defineProps<{ existingTypes: string[] }>()
 const emit = defineEmits<{ add: [type: string] }>()
 
+const t = useT()
 const available = computed(() => WIDGET_REGISTRY.filter((w) => !props.existingTypes.includes(w.type)))
 </script>
 
 <template>
   <div class="mb-3 rounded-card border border-dashed border-line-control bg-surface-subtle px-4 py-3">
-    <p class="mb-2 text-[11px] font-semibold uppercase tracking-[.06em] text-ink-muted2">Add a widget</p>
-    <p v-if="available.length === 0" class="text-[13px] text-ink-faint">All widgets are already on your dashboard.</p>
+    <p class="mb-2 text-[11px] font-semibold uppercase tracking-[.06em] text-ink-muted2">{{ t('Add a widget', 'Añadir un widget') }}</p>
+    <p v-if="available.length === 0" class="text-[13px] text-ink-faint">{{ t('All widgets are already on your dashboard.', 'Todos los widgets ya están en tu panel.') }}</p>
     <div v-else class="flex flex-wrap gap-2">
       <button
         v-for="w in available"

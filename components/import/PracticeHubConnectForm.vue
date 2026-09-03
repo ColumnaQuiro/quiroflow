@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const emit = defineEmits<{ connect: [conn: { baseUrl: string; apiKey: string; appDetails: string }] }>()
 
+const t = useT()
 const user = useSupabaseUser()
 const sharedConn = usePracticeHubConnection()
 
@@ -23,7 +24,7 @@ function submit() {
 <template>
   <form class="space-y-4" @submit.prevent="submit">
     <div>
-      <label class="block text-sm font-medium text-ink-700">PracticeHub URL</label>
+      <label class="block text-sm font-medium text-ink-700">{{ t('PracticeHub URL', 'URL de PracticeHub') }}</label>
       <input
         v-model="baseUrl"
         type="text"
@@ -33,29 +34,29 @@ function submit() {
       />
     </div>
     <div>
-      <label class="block text-sm font-medium text-ink-700">API Key</label>
+      <label class="block text-sm font-medium text-ink-700">{{ t('API Key', 'Clave API') }}</label>
       <input
         v-model="apiKey"
         type="password"
         autocomplete="off"
         required
-        placeholder="From PracticeHub → Developers → API Keys"
+        :placeholder="t('From PracticeHub → Developers → API Keys', 'Desde PracticeHub → Developers → API Keys')"
         class="mt-1 w-full rounded-md border border-line-control bg-surface px-3 py-2 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
       />
-      <p class="mt-1 text-xs text-ink-muted2">Not stored — used only for this import.</p>
+      <p class="mt-1 text-xs text-ink-muted2">{{ t('Not stored — used only for this import.', 'No se almacena; se usa solo para esta importación.') }}</p>
     </div>
     <div>
-      <label class="block text-sm font-medium text-ink-700">Your email</label>
+      <label class="block text-sm font-medium text-ink-700">{{ t('Your email', 'Tu correo electrónico') }}</label>
       <input
         v-model="email"
         type="email"
         required
         class="mt-1 w-full rounded-md border border-line-control bg-surface px-3 py-2 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
       />
-      <p class="mt-1 text-xs text-ink-muted2">Sent as PracticeHub's required app identifier.</p>
+      <p class="mt-1 text-xs text-ink-muted2">{{ t("Sent as PracticeHub's required app identifier.", 'Se envía como identificador de aplicación requerido por PracticeHub.') }}</p>
     </div>
     <button type="submit" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover">
-      Connect
+      {{ t('Connect', 'Conectar') }}
     </button>
   </form>
 </template>

@@ -3,6 +3,7 @@ import { Bar } from 'vue-chartjs'
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 interface AppointmentRow { starts_at: string; status: string }
 
@@ -76,8 +77,8 @@ const byDay = computed(() => {
 const dayChartData = computed(() => ({
   labels: byDay.value.labels,
   datasets: [
-    { label: 'Kept', data: byDay.value.scheduled, backgroundColor: '#4F46E5' },
-    { label: 'Cancelled / No-show', data: byDay.value.cancelledNoShow, backgroundColor: '#F6C7CE' },
+    { label: t('Kept', 'Mantenidas'), data: byDay.value.scheduled, backgroundColor: '#4F46E5' },
+    { label: t('Cancelled / No-show', 'Canceladas / No presentado'), data: byDay.value.cancelledNoShow, backgroundColor: '#F6C7CE' },
   ],
 }))
 const dayChartOptions = {
@@ -87,7 +88,15 @@ const dayChartOptions = {
   plugins: { legend: { position: 'bottom' as const } },
 }
 
-const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const WEEKDAY_LABELS = computed(() => [
+  t('Mon', 'lun'),
+  t('Tue', 'mar'),
+  t('Wed', 'mié'),
+  t('Thu', 'jue'),
+  t('Fri', 'vie'),
+  t('Sat', 'sáb'),
+  t('Sun', 'dom'),
+])
 const byWeekday = computed(() => {
   const counts = new Array(7).fill(0)
   for (const r of rows.value) {
@@ -98,8 +107,8 @@ const byWeekday = computed(() => {
   return counts
 })
 const weekdayChartData = computed(() => ({
-  labels: WEEKDAY_LABELS,
-  datasets: [{ label: 'Appointments', data: byWeekday.value, backgroundColor: '#4F46E5' }],
+  labels: WEEKDAY_LABELS.value,
+  datasets: [{ label: t('Appointments', 'Citas'), data: byWeekday.value, backgroundColor: '#4F46E5' }],
 }))
 const weekdayChartOptions = {
   responsive: true,
@@ -111,35 +120,35 @@ const weekdayChartOptions = {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Upcoming Visits" meta="Appointment distribution across the month">
-      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; Reports</NuxtLink>
+    <PageHeader :title="t('Upcoming Visits', 'Próximas visitas')" :meta="t('Appointment distribution across the month', 'Distribución de citas a lo largo del mes')">
+      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
     </PageHeader>
 
     <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
       <p class="text-[13px] text-ink-muted2">
-        Use it to gauge ad spend, spot maintenance-retention gaps, and predict how the month will close.
+        {{ t('Use it to gauge ad spend, spot maintenance-retention gaps, and predict how the month will close.', 'Úsalo para calibrar el gasto en publicidad, detectar huecos de retención de mantenimiento y predecir cómo cerrará el mes.') }}
       </p>
 
       <div class="mt-4 flex items-center gap-3">
         <button type="button" class="flex h-8 items-center rounded-ctl border border-line-control px-2.5 text-[13px] text-ink-600 hover:border-line-controlHover" @click="monthOffset--">&lsaquo;</button>
         <span class="text-[13px] font-medium text-ink-700">{{ monthLabel }}</span>
         <button type="button" class="flex h-8 items-center rounded-ctl border border-line-control px-2.5 text-[13px] text-ink-600 hover:border-line-controlHover" @click="monthOffset++">&rsaquo;</button>
-        <button v-if="monthOffset !== 0" type="button" class="text-[13px] text-brand-text hover:text-brand-hover" @click="monthOffset = 0">Today</button>
+        <button v-if="monthOffset !== 0" type="button" class="text-[13px] text-brand-text hover:text-brand-hover" @click="monthOffset = 0">{{ t('Today', 'Hoy') }}</button>
       </div>
 
       <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-          <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">Total this month</p>
+          <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ t('Total this month', 'Total este mes') }}</p>
           <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ loading ? '—' : totalCount }}</p>
         </div>
         <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-          <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">vs. previous month</p>
+          <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ t('vs. previous month', 'vs. mes anterior') }}</p>
           <p class="mt-1.5 font-mono text-[23px] font-semibold" :class="changePct !== null && changePct < 0 ? 'text-danger-text' : 'text-success-text'">
             {{ loading || changePct === null ? '—' : `${changePct > 0 ? '+' : ''}${changePct}%` }}
           </p>
         </div>
         <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-          <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">Daily average</p>
+          <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ t('Daily average', 'Media diaria') }}</p>
           <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">
             {{ loading ? '—' : (totalCount / daysInMonth(rangeStart)).toFixed(1) }}
           </p>
@@ -147,15 +156,15 @@ const weekdayChartOptions = {
       </div>
 
       <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
-        <h3 class="text-[13.5px] font-semibold text-ink-800">By day of month</h3>
+        <h3 class="text-[13.5px] font-semibold text-ink-800">{{ t('By day of month', 'Por día del mes') }}</h3>
         <div class="mt-3 h-72">
           <Bar v-if="!loading" :data="dayChartData" :options="dayChartOptions" />
         </div>
       </div>
 
       <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
-        <h3 class="text-[13.5px] font-semibold text-ink-800">By day of week</h3>
-        <p class="text-[12px] text-ink-faint2">Which weekdays fill up fastest — useful for staffing and ad scheduling.</p>
+        <h3 class="text-[13.5px] font-semibold text-ink-800">{{ t('By day of week', 'Por día de la semana') }}</h3>
+        <p class="text-[12px] text-ink-faint2">{{ t('Which weekdays fill up fastest — useful for staffing and ad scheduling.', 'Qué días de la semana se llenan más rápido — útil para la plantilla y la publicidad.') }}</p>
         <div class="mt-3 h-64">
           <Bar v-if="!loading" :data="weekdayChartData" :options="weekdayChartOptions" />
         </div>

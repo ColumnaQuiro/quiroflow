@@ -3,6 +3,33 @@ import type { DocField, DocFieldType } from '~/utils/docFields'
 
 const props = defineProps<{ fields: DocField[]; mode: 'build' | 'fill' }>()
 const emit = defineEmits<{ 'update:fields': [DocField[]] }>()
+const t = useT()
+
+// FIELD_TYPES/DOC_MERGE_FIELDS (from ~/utils/docFields) carry their own
+// English-only labels used to build stored template data (block type,
+// merge-field key) -- these local maps translate the *display* of those
+// same type/key values without touching the shared utils file or the
+// underlying values that get stored/matched against.
+const FIELD_TYPE_LABELS = computed<Record<DocFieldType, string>>(() => ({
+  heading: t('Heading', 'Título'),
+  text: t('Text', 'Texto'),
+  short_text: t('Short answer', 'Respuesta corta'),
+  long_text: t('Long answer', 'Respuesta larga'),
+  checkbox: t('Checkbox', 'Casilla de verificación'),
+  choice: t('Options', 'Opciones'),
+  scale: t('Number scale', 'Escala numérica'),
+  rating: t('Rating', 'Valoración'),
+  date: t('Date', 'Fecha'),
+  signature: t('Signature', 'Firma'),
+}))
+const MERGE_FIELD_LABELS = computed<Record<string, string>>(() => ({
+  first_name: t('First name', 'Nombre'),
+  last_name: t('Last name', 'Apellidos'),
+  date_of_birth: t('Date of birth', 'Fecha de nacimiento'),
+  email: t('Email', 'Correo electrónico'),
+  clinic_name: t('Clinic name', 'Nombre de la clínica'),
+  today: t("Today's date", 'Fecha de hoy'),
+}))
 
 function update(index: number, patch: Partial<DocField>) {
   const next = props.fields.map((f, i) => (i === index ? { ...f, ...patch } : f))
@@ -53,7 +80,7 @@ function insertMergeField(index: number, key: string) {
 
 function addOption(index: number) {
   const options = [...(props.fields[index].options ?? [])]
-  options.push(`Option ${options.length + 1}`)
+  options.push(`${t('Option', 'Opción')} ${options.length + 1}`)
   update(index, { options })
 }
 
@@ -142,19 +169,19 @@ const showAddMenu = ref(false)
             <span
               draggable="true"
               class="cursor-grab select-none text-gray-300 hover:text-gray-500 active:cursor-grabbing"
-              title="Drag to reorder"
+              :title="t('Drag to reorder', 'Arrastrar para reordenar')"
               @dragstart="onDragStart(i)"
               @dragend="onDragEnd"
               >⠿</span
             >
             <span class="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-500">
-              {{ FIELD_TYPES.find((t) => t.type === field.type)?.label }}
+              {{ FIELD_TYPE_LABELS[field.type] }}
             </span>
           </div>
           <div class="flex items-center gap-2 text-xs text-gray-400">
             <button type="button" class="hover:text-gray-700" :disabled="i === 0" @click="move(i, -1)">&uarr;</button>
             <button type="button" class="hover:text-gray-700" :disabled="i === fields.length - 1" @click="move(i, 1)">&darr;</button>
-            <button type="button" class="text-red-500 hover:text-red-700" @click="remove(i)">Remove</button>
+            <button type="button" class="text-red-500 hover:text-red-700" @click="remove(i)">{{ t('Remove', 'Eliminar') }}</button>
           </div>
         </div>
 
@@ -162,7 +189,7 @@ const showAddMenu = ref(false)
           v-if="field.type === 'text'"
           :value="field.label"
           rows="2"
-          placeholder="Text content…"
+          :placeholder="t('Text content…', 'Contenido de texto…')"
           class="mt-2 w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
           @input="update(i, { label: ($event.target as HTMLTextAreaElement).value })"
         ></textarea>
@@ -170,7 +197,7 @@ const showAddMenu = ref(false)
           v-else
           :value="field.label"
           type="text"
-          :placeholder="field.type === 'heading' ? 'Heading text…' : 'Question / label…'"
+          :placeholder="field.type === 'heading' ? t('Heading text…', 'Texto del título…') : t('Question / label…', 'Pregunta / etiqueta…')"
           class="mt-2 w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
           @input="update(i, { label: ($event.target as HTMLInputElement).value })"
         />
@@ -185,7 +212,7 @@ const showAddMenu = ref(false)
             />
             <button type="button" class="text-xs text-gray-400 hover:text-red-600" @click="removeOption(i, oi)">✕</button>
           </div>
-          <button type="button" class="text-xs font-medium text-indigo-600 hover:text-indigo-700" @click="addOption(i)">+ Add option</button>
+          <button type="button" class="text-xs font-medium text-indigo-600 hover:text-indigo-700" @click="addOption(i)">+ {{ t('Add option', 'Añadir opción') }}</button>
           <label class="flex items-center gap-1.5 text-xs text-gray-500">
             <input
               type="checkbox"
@@ -193,7 +220,7 @@ const showAddMenu = ref(false)
               class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
               @change="update(i, { multiple: ($event.target as HTMLInputElement).checked, value: ($event.target as HTMLInputElement).checked ? [] : null })"
             />
-            Allow multiple selections
+            {{ t('Allow multiple selections', 'Permitir varias selecciones') }}
           </label>
           <label class="flex items-center gap-1.5 text-xs text-gray-500">
             <input
@@ -202,7 +229,7 @@ const showAddMenu = ref(false)
               class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
               @change="update(i, { allowOther: ($event.target as HTMLInputElement).checked })"
             />
-            Allow "Other" (free text)
+            {{ t('Allow "Other" (free text)', 'Permitir "Otro" (texto libre)') }}
           </label>
         </div>
 
@@ -218,12 +245,12 @@ const showAddMenu = ref(false)
               }
             "
           >
-            <option value="">+ Insert field</option>
-            <option v-for="f in DOC_MERGE_FIELDS" :key="f.key" :value="f.key">{{ f.label }}</option>
+            <option value="">+ {{ t('Insert field', 'Insertar campo') }}</option>
+            <option v-for="f in DOC_MERGE_FIELDS" :key="f.key" :value="f.key">{{ MERGE_FIELD_LABELS[f.key] }}</option>
           </select>
           <label v-else class="flex items-center gap-1.5 text-xs text-gray-500">
             <input type="checkbox" :checked="field.required" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" @change="update(i, { required: ($event.target as HTMLInputElement).checked })" />
-            Required
+            {{ t('Required', 'Obligatorio') }}
           </label>
         </div>
       </div>
@@ -285,13 +312,13 @@ const showAddMenu = ref(false)
                   class="border-gray-300 text-indigo-600 focus:ring-indigo-500"
                   @change="toggleOther(i)"
                 />
-                Other
+                {{ t('Other', 'Otro') }}
               </label>
               <input
                 v-if="isOtherActive(field)"
                 type="text"
                 :value="otherText(field)"
-                placeholder="Please specify…"
+                :placeholder="t('Please specify…', 'Por favor, especifica…')"
                 class="mt-1 w-full rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                 @input="updateOtherText(i, ($event.target as HTMLInputElement).value)"
               />
@@ -372,21 +399,21 @@ const showAddMenu = ref(false)
 
     <div v-if="mode === 'build'" class="relative">
       <button type="button" class="rounded-md border border-dashed border-gray-300 px-3 py-1.5 text-sm text-gray-500 hover:border-indigo-400 hover:text-indigo-600" @click="showAddMenu = !showAddMenu">
-        + Add block
+        + {{ t('Add block', 'Añadir bloque') }}
       </button>
       <div v-if="showAddMenu" class="absolute left-0 z-10 mt-1 w-40 rounded-md border border-gray-200 bg-white py-1 shadow-lg">
         <button
-          v-for="t in FIELD_TYPES"
-          :key="t.type"
+          v-for="ft in FIELD_TYPES"
+          :key="ft.type"
           type="button"
           class="block w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
-          @click="addBlock(t.type); showAddMenu = false"
+          @click="addBlock(ft.type); showAddMenu = false"
         >
-          {{ t.label }}
+          {{ FIELD_TYPE_LABELS[ft.type] }}
         </button>
       </div>
     </div>
 
-    <p v-if="mode === 'build' && fields.length === 0" class="text-sm text-gray-400">No blocks yet — add one below.</p>
+    <p v-if="mode === 'build' && fields.length === 0" class="text-sm text-gray-400">{{ t('No blocks yet — add one below.', 'Aún no hay bloques — añade uno abajo.') }}</p>
   </div>
 </template>

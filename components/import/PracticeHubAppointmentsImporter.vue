@@ -4,6 +4,7 @@ import type { TablesInsert, TablesUpdate } from '~/types/database.types'
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 type CsvRow = Record<string, string>
 
@@ -137,7 +138,10 @@ async function handleFile(file: File) {
   const text = await file.text()
   const parsed = Papa.parse<CsvRow>(text, { header: true, skipEmptyLines: true })
   if (parsed.errors.length > 0) {
-    fileError.value = `Could not parse this file: ${parsed.errors[0].message}`
+    fileError.value = t(
+      `Could not parse this file: ${parsed.errors[0].message}`,
+      `No se pudo procesar este archivo: ${parsed.errors[0].message}`,
+    )
     return
   }
 
@@ -353,7 +357,12 @@ async function runImport() {
         .select('id')
 
       if (error) {
-        importErrors.value.push(`Rows ${chunk[0].sourceRow}-${chunk[chunk.length - 1].sourceRow}: ${error.message}`)
+        importErrors.value.push(
+          t(
+            `Rows ${chunk[0].sourceRow}-${chunk[chunk.length - 1].sourceRow}: ${error.message}`,
+            `Filas ${chunk[0].sourceRow}-${chunk[chunk.length - 1].sourceRow}: ${error.message}`,
+          ),
+        )
         continue
       }
       importedCount.value += inserted.length
@@ -365,7 +374,13 @@ async function runImport() {
       )
       if (noteRows.length > 0) {
         const { error: noteError } = await supabase.from('visit_notes').insert(noteRows)
-        if (noteError) importErrors.value.push(`Notes for rows near ${chunk[0].sourceRow}: ${noteError.message}`)
+        if (noteError)
+          importErrors.value.push(
+            t(
+              `Notes for rows near ${chunk[0].sourceRow}: ${noteError.message}`,
+              `Notas de filas cerca de ${chunk[0].sourceRow}: ${noteError.message}`,
+            ),
+          )
       }
     }
 
@@ -422,7 +437,12 @@ function reset() {
 <template>
   <div>
     <p class="text-sm text-ink-muted2">
-      Export "Appointments" as CSV from PracticeHub (Settings &rarr; Data Exports), then drop it here.
+      {{
+        t(
+          'Export "Appointments" as CSV from PracticeHub (Settings → Data Exports), then drop it here.',
+          'Exporta "Appointments" como CSV desde PracticeHub (Settings → Data Exports) y luego suéltalo aquí.',
+        )
+      }}
     </p>
 
     <div v-if="stage === 'pick'" class="mt-4">
@@ -433,9 +453,9 @@ function reset() {
         @dragleave.prevent="dragOver = false"
         @drop.prevent="onDrop"
       >
-        <p class="text-sm text-ink-600">Drag and drop a CSV file here, or</p>
+        <p class="text-sm text-ink-600">{{ t('Drag and drop a CSV file here, or', 'Arrastra y suelta un archivo CSV aquí, o') }}</p>
         <label class="mt-2 cursor-pointer text-sm font-medium text-brand-text hover:text-brand-text">
-          browse for a file
+          {{ t('browse for a file', 'busca un archivo') }}
           <input type="file" accept=".csv" class="hidden" @change="onFileInput" />
         </label>
       </div>
@@ -444,28 +464,32 @@ function reset() {
 
     <div v-else-if="stage === 'mapping'" class="mt-4 space-y-4">
       <div class="rounded-lg border border-line bg-surface p-4">
-        <p class="text-sm font-medium text-ink-900">{{ fileName }} &middot; {{ totalRows }} rows</p>
+        <p class="text-sm font-medium text-ink-900">{{ fileName }} &middot; {{ totalRows }} {{ t('rows', 'filas') }}</p>
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-ink-700">Import into clinic</label>
+        <label class="block text-sm font-medium text-ink-700">{{ t('Import into clinic', 'Importar a la clínica') }}</label>
         <select v-model="targetClinicId" class="mt-1 w-full rounded-md border border-line-control bg-surface px-3 py-2 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
-          <option value="" disabled>Select a clinic</option>
+          <option value="" disabled>{{ t('Select a clinic', 'Selecciona una clínica') }}</option>
           <option v-for="c in store.clinics" :key="c.id" :value="c.id">{{ c.name }}</option>
         </select>
       </div>
 
       <div v-if="distinctPractitioners.length > 0" class="rounded-lg border border-line bg-surface p-4">
-        <h3 class="text-sm font-semibold text-ink-900">Practitioners</h3>
+        <h3 class="text-sm font-semibold text-ink-900">{{ t('Practitioners', 'Profesionales') }}</h3>
         <p class="mt-1 text-xs text-ink-muted2">
-          Match each imported practitioner name to a real team member, or keep it as a label only (no login yet, so
-          you can still see who saw the patient — invite them properly from Settings &rarr; Team Members later).
+          {{
+            t(
+              'Match each imported practitioner name to a real team member, or keep it as a label only (no login yet, so you can still see who saw the patient — invite them properly from Settings → Team Members later).',
+              'Empareja cada nombre de profesional importado con un miembro real del equipo, o déjalo solo como etiqueta (sin acceso todavía, para que puedas seguir viendo quién atendió al paciente; invítalo correctamente desde Settings → Team Members más adelante).',
+            )
+          }}
         </p>
         <div class="mt-3 space-y-2">
           <div v-for="name in distinctPractitioners" :key="name" class="flex items-center justify-between gap-3">
             <span class="text-sm text-ink-700">{{ name }}</span>
             <select v-model="practitionerMap[name]" class="w-56 rounded-md border border-line-control bg-surface px-2 py-1.5 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
-              <option value="">Keep as label only</option>
+              <option value="">{{ t('Keep as label only', 'Dejar solo como etiqueta') }}</option>
               <option v-for="m in teamMembers" :key="m.id" :value="m.id">{{ m.full_name }}</option>
             </select>
           </div>
@@ -473,13 +497,13 @@ function reset() {
       </div>
 
       <div v-if="distinctTypes.length > 0" class="rounded-lg border border-line bg-surface p-4">
-        <h3 class="text-sm font-semibold text-ink-900">Appointment types</h3>
+        <h3 class="text-sm font-semibold text-ink-900">{{ t('Appointment types', 'Tipos de cita') }}</h3>
         <div class="mt-3 space-y-2">
           <div v-for="name in distinctTypes" :key="name" class="flex items-center justify-between gap-3">
             <span class="text-sm text-ink-700">{{ name }}</span>
             <select v-model="typeMap[name]" class="w-56 rounded-md border border-line-control bg-surface px-2 py-1.5 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
-              <option value="">No type</option>
-              <option value="__create__">+ Create "{{ name }}"</option>
+              <option value="">{{ t('No type', 'Sin tipo') }}</option>
+              <option value="__create__">{{ t(`+ Create "${name}"`, `+ Crear "${name}"`) }}</option>
               <option v-for="t in appointmentTypes" :key="t.id" :value="t.id">{{ t.name }}</option>
             </select>
           </div>
@@ -493,10 +517,10 @@ function reset() {
           class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50"
           @click="proceedToPreview"
         >
-          {{ preparingPreview ? 'Preparing…' : 'Continue' }}
+          {{ preparingPreview ? t('Preparing…', 'Preparando…') : t('Continue', 'Continuar') }}
         </button>
         <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-ink-600 hover:bg-surface-subtle" @click="reset">
-          Cancel
+          {{ t('Cancel', 'Cancelar') }}
         </button>
       </div>
     </div>
@@ -504,11 +528,11 @@ function reset() {
     <div v-else-if="stage === 'preview'" class="mt-4 space-y-4">
       <div class="rounded-lg border border-line bg-surface p-4">
         <dl class="grid grid-cols-2 gap-2 text-sm sm:grid-cols-5">
-          <div><dt class="text-ink-muted2">Total rows</dt><dd class="font-medium text-ink-900">{{ totalRows }}</dd></div>
-          <div><dt class="text-ink-muted2">Will import</dt><dd class="font-medium text-success-text">{{ toImport.length }}</dd></div>
-          <div><dt class="text-ink-muted2">Will update</dt><dd class="font-medium text-brand-text">{{ toUpdate.length }}</dd></div>
-          <div><dt class="text-ink-muted2">No matching patient</dt><dd class="font-medium text-ink-900">{{ skippedNoPatient }}</dd></div>
-          <div><dt class="text-ink-muted2">No changes / bad dates</dt><dd class="font-medium text-ink-900">{{ skippedDuplicate + skippedInvalidDate }}</dd></div>
+          <div><dt class="text-ink-muted2">{{ t('Total rows', 'Filas totales') }}</dt><dd class="font-medium text-ink-900">{{ totalRows }}</dd></div>
+          <div><dt class="text-ink-muted2">{{ t('Will import', 'Se importarán') }}</dt><dd class="font-medium text-success-text">{{ toImport.length }}</dd></div>
+          <div><dt class="text-ink-muted2">{{ t('Will update', 'Se actualizarán') }}</dt><dd class="font-medium text-brand-text">{{ toUpdate.length }}</dd></div>
+          <div><dt class="text-ink-muted2">{{ t('No matching patient', 'Sin paciente coincidente') }}</dt><dd class="font-medium text-ink-900">{{ skippedNoPatient }}</dd></div>
+          <div><dt class="text-ink-muted2">{{ t('No changes / bad dates', 'Sin cambios / fechas incorrectas') }}</dt><dd class="font-medium text-ink-900">{{ skippedDuplicate + skippedInvalidDate }}</dd></div>
         </dl>
       </div>
 
@@ -516,21 +540,21 @@ function reset() {
         <table class="w-full text-sm">
           <thead class="border-b border-line bg-surface-subtle text-left text-xs font-medium uppercase tracking-wide text-ink-muted2">
             <tr>
-              <th class="px-3 py-2">Date</th>
-              <th class="px-3 py-2">Practitioner</th>
-              <th class="px-3 py-2">Status</th>
+              <th class="px-3 py-2">{{ t('Date', 'Fecha') }}</th>
+              <th class="px-3 py-2">{{ t('Practitioner', 'Profesional') }}</th>
+              <th class="px-3 py-2">{{ t('Status', 'Estado') }}</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-line-divider">
             <tr v-for="(row, i) in toImport.slice(0, 10)" :key="i">
               <td class="px-3 py-2 text-ink-900">{{ new Date(row.appointment.starts_at).toLocaleString() }}</td>
-              <td class="px-3 py-2 text-ink-muted2">{{ row.appointment.practitioner_name ?? 'N/A' }}</td>
+              <td class="px-3 py-2 text-ink-muted2">{{ row.appointment.practitioner_name ?? t('N/A', 'N/D') }}</td>
               <td class="px-3 py-2 text-ink-muted2">{{ row.appointment.status }}</td>
             </tr>
           </tbody>
         </table>
         <p v-if="toImport.length > 10" class="border-t border-line-divider px-3 py-2 text-xs text-ink-faint">
-          + {{ toImport.length - 10 }} more rows
+          + {{ toImport.length - 10 }} {{ t('more rows', 'filas más') }}
         </p>
       </div>
 
@@ -570,44 +594,56 @@ function reset() {
           class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50"
           @click="runImport"
         >
-          Import {{ toImport.length }}, update {{ toUpdate.length }}
+          {{ t(`Import ${toImport.length}, update ${toUpdate.length}`, `Importar ${toImport.length}, actualizar ${toUpdate.length}`) }}
         </button>
         <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-ink-600 hover:bg-surface-subtle" @click="reset">
-          Cancel
+          {{ t('Cancel', 'Cancelar') }}
         </button>
       </div>
     </div>
 
     <div v-else-if="stage === 'importing'" class="mt-4 rounded-lg border border-line bg-surface p-8 text-center">
-      <p class="text-sm text-ink-600">Importing… {{ importedCount + updatedCount }} / {{ toImport.length + toUpdate.length }}</p>
+      <p class="text-sm text-ink-600">
+        {{
+          t(
+            `Importing… ${importedCount + updatedCount} / ${toImport.length + toUpdate.length}`,
+            `Importando… ${importedCount + updatedCount} / ${toImport.length + toUpdate.length}`,
+          )
+        }}
+      </p>
     </div>
 
     <div v-else-if="stage === 'error'" class="mt-4 space-y-4">
       <div class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
-        <p class="font-medium">Import failed:</p>
+        <p class="font-medium">{{ t('Import failed:', 'Error al importar:') }}</p>
         <p class="mt-1">{{ runError }}</p>
       </div>
       <button type="button" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover" @click="retryImport">
-        Retry
+        {{ t('Retry', 'Reintentar') }}
       </button>
     </div>
 
     <div v-else-if="stage === 'done'" class="mt-4 space-y-4">
       <div class="rounded-lg border border-success-border bg-success-bg p-4 text-sm text-success-text">
-        Imported {{ importedCount }} appointments. Updated {{ updatedCount }} existing appointments.
+        {{
+          t(
+            `Imported ${importedCount} appointments. Updated ${updatedCount} existing appointments.`,
+            `Se importaron ${importedCount} citas. Se actualizaron ${updatedCount} citas existentes.`,
+          )
+        }}
       </div>
       <div v-if="importErrors.length > 0" class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
-        <p class="font-medium">Some rows failed:</p>
+        <p class="font-medium">{{ t('Some rows failed:', 'Algunas filas fallaron:') }}</p>
         <ul class="mt-1 list-disc pl-5">
           <li v-for="(e, i) in importErrors" :key="i">{{ e }}</li>
         </ul>
       </div>
       <div class="flex gap-3">
         <NuxtLink to="/calendar" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover">
-          View Calendar
+          {{ t('View Calendar', 'Ver calendario') }}
         </NuxtLink>
         <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-ink-600 hover:bg-surface-subtle" @click="reset">
-          Import another file
+          {{ t('Import another file', 'Importar otro archivo') }}
         </button>
       </div>
     </div>

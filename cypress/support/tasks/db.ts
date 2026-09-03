@@ -14,9 +14,23 @@ const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
 })
 
-function unwrap<T>(result: { data: T; error: unknown }): T {
+// T is inferred from Supabase's actual response union (one branch has
+// `data: Row`, the other `data: null`), so T itself already resolves to
+// `Row | null` at the call site -- returning plain T would still carry the
+// null-ness through. NonNullable<T> strips it from the return type, backed
+// by a real runtime check right above the cast.
+function unwrap<T>(result: { data: T; error: unknown }): NonNullable<T> {
   if (result.error) throw result.error
-  return result.data
+  if (result.data == null) throw new Error('Expected a row but got null')
+  return result.data as NonNullable<T>
+}
+
+// For a plain .update()/.delete() with no trailing .select() -- Supabase
+// returns `data: null` on a SUCCESSFUL call like that (PostgREST only
+// returns affected rows when a .select() asks for them), so unlike
+// unwrap() above, null here is the normal outcome, not a failure signal.
+function assertOk(result: { error: unknown }): void {
+  if (result.error) throw result.error
 }
 
 /** Creates a fresh auth user + account + clinic + default roles via the same RPC onboarding uses. */
@@ -124,7 +138,7 @@ async function setRolePermissions(opts: { accountId: string; roleName: string; p
       .single(),
   )
   const merged = { ...(role.permissions as Record<string, unknown>), ...patch }
-  unwrap(await admin.from('account_roles').update({ permissions: merged }).eq('id', role.id))
+  assertOk(await admin.from('account_roles').update({ permissions: merged }).eq('id', role.id))
   return { roleId: role.id as string, permissions: merged }
 }
 
@@ -201,7 +215,7 @@ async function enableOnlineBooking(opts: { clinicId: string }) {
     sat: [],
     sun: [],
   }
-  unwrap(
+  assertOk(
     await admin
       .from('clinics')
       .update({ online_booking_enabled: true, business_hours: businessHours })
@@ -212,7 +226,7 @@ async function enableOnlineBooking(opts: { clinicId: string }) {
 
 /** Adds 'email' to the account's confirmation channels -- accounts default to whatsapp-only. */
 async function enableEmailConfirmations(opts: { accountId: string }) {
-  unwrap(
+  assertOk(
     await admin
       .from('accounts')
       .update({ appointment_confirmation_enabled: true, appointment_confirmation_channels: ['whatsapp', 'email'] })

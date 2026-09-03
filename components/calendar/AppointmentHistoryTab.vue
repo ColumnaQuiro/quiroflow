@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const props = defineProps<{ patientId: string; excludeAppointmentId?: string }>()
 const supabase = useSupabaseClient()
+const t = useT()
 
 interface AppointmentRow {
   id: string
@@ -34,8 +35,8 @@ const statusClass: Record<string, string> = {
 
 <template>
   <div class="text-sm">
-    <div v-if="loading" class="text-gray-400">Loading…</div>
-    <p v-else-if="appointments.length === 0" class="text-gray-400">No other appointments.</p>
+    <div v-if="loading" class="text-gray-400">{{ t('Loading…', 'Cargando…') }}</div>
+    <p v-else-if="appointments.length === 0" class="text-gray-400">{{ t('No other appointments.', 'No hay otras citas.') }}</p>
     <ul v-else class="max-h-72 space-y-1.5 overflow-y-auto">
       <li v-for="appt in appointments" :key="appt.id" class="flex items-center justify-between rounded-md border border-gray-200 px-3 py-2">
         <div>
@@ -43,7 +44,7 @@ const statusClass: Record<string, string> = {
             {{ new Date(appt.starts_at).toLocaleDateString() }} &middot;
             {{ new Date(appt.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
           </p>
-          <p class="text-xs text-gray-500">{{ appt.appointment_types?.name ?? 'N/A' }} &middot; {{ appt.team_members?.full_name ?? 'Unassigned' }}</p>
+          <p class="text-xs text-gray-500">{{ appt.appointment_types?.name ?? t('N/A', 'N/D') }} &middot; {{ appt.team_members?.full_name ?? t('Unassigned', 'Sin asignar') }}</p>
         </div>
         <span class="rounded px-1.5 py-0.5 text-xs font-medium" :class="statusClass[appt.status] ?? 'bg-gray-100 text-gray-500'">{{ appt.status }}</span>
       </li>

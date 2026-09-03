@@ -35,6 +35,7 @@ interface PatientOption {
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const webPush = useWebPush()
+const t = useT()
 const pushBannerDismissed = ref(false)
 
 // Messages this tab has sent but the server hasn't confirmed into the real
@@ -166,7 +167,7 @@ const conversations = computed<Conversation[]>(() => {
       key,
       patientId: last.patient_id,
       phoneNumber: last.phone_number,
-      name: (last.patient_id && patientNames.value[last.patient_id]) || last.phone_number || 'Unknown',
+      name: (last.patient_id && patientNames.value[last.patient_id]) || last.phone_number || t('Unknown', 'Desconocido'),
       channel: last.channel,
       lastMessage: last,
       unread: last.direction === 'inbound' && (!readTimestamps.value[key] || readTimestamps.value[key] < last.created_at),
@@ -398,13 +399,14 @@ async function deleteKeys(keys: string[]) {
 }
 async function deleteConversation() {
   if (!selected.value || !selectedKey.value) return
-  if (!confirm(`Delete this whole conversation with ${selected.value.name}? This removes all messages and can't be undone.`)) return
+  if (!confirm(`${t('Delete this whole conversation with', 'Eliminar toda la conversación con')} ${selected.value.name}${t('? This removes all messages and can\'t be undone.', '? Esto elimina todos los mensajes y no se puede deshacer.')}`)) return
   await deleteKeys([selectedKey.value])
 }
 async function bulkDeleteSelected() {
   const keys = [...selectedKeys.value]
   if (keys.length === 0) return
-  if (!confirm(`Delete ${keys.length} conversation${keys.length > 1 ? 's' : ''}? This removes all their messages and can't be undone.`)) return
+  const convWord = keys.length > 1 ? t('conversations', 'conversaciones') : t('conversation', 'conversación')
+  if (!confirm(`${t('Delete', 'Eliminar')} ${keys.length} ${convWord}${t('? This removes all their messages and can\'t be undone.', '? Esto elimina todos sus mensajes y no se puede deshacer.')}`)) return
   await deleteKeys(keys)
   exitSelectionMode()
 }
@@ -577,7 +579,7 @@ async function performTextSend(tempId: string, text: string, channel: string, ta
     pendingMessages.value = pendingMessages.value.filter((m) => m.id !== tempId)
     delete retryPayloads.value[tempId]
   } catch (err: any) {
-    sendError.value = err?.data?.statusMessage ?? 'Failed to send'
+    sendError.value = err?.data?.statusMessage ?? t('Failed to send', 'Error al enviar')
     pendingMessages.value = pendingMessages.value.map((m) => (m.id === tempId ? { ...m, pending: false, status: 'failed' } : m))
   } finally {
     sending.value = false
@@ -649,7 +651,7 @@ async function performMediaSend(
     pendingMessages.value = pendingMessages.value.filter((m) => m.id !== tempId)
     delete retryPayloads.value[tempId]
   } catch (err: any) {
-    sendError.value = err?.data?.statusMessage ?? 'Failed to send'
+    sendError.value = err?.data?.statusMessage ?? t('Failed to send', 'Error al enviar')
     pendingMessages.value = pendingMessages.value.map((m) => (m.id === tempId ? { ...m, pending: false, status: 'failed' } : m))
   } finally {
     sending.value = false
@@ -703,7 +705,7 @@ async function onFileChosen(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0]
   if (!file || !selected.value) return
   if (file.size > MAX_MEDIA_BYTES) {
-    sendError.value = 'File is too large (max 16 MB).'
+    sendError.value = t('File is too large (max 16 MB).', 'El archivo es demasiado grande (máx. 16 MB).')
     return
   }
   const kind = mediaKindForFile(file)
@@ -713,7 +715,7 @@ async function onFileChosen(e: Event) {
       const base64 = await blobToBase64(blob)
       await sendMedia(base64, mimeType, file.name.replace(/\.\w+$/, '.jpg'), 'image')
     } catch (err: any) {
-      sendError.value = err?.message ?? 'Could not process this image.'
+      sendError.value = err?.message ?? t('Could not process this image.', 'No se pudo procesar esta imagen.')
     }
   } else {
     const base64 = await blobToBase64(file)
@@ -736,7 +738,7 @@ async function toggleAudioRecording() {
     try {
       await startAudioRecording()
     } catch {
-      sendError.value = 'Could not access the microphone -- check your browser permissions.'
+      sendError.value = t('Could not access the microphone -- check your browser permissions.', 'No se pudo acceder al micrófono; comprueba los permisos del navegador.')
     }
   }
 }
@@ -769,7 +771,7 @@ function listTime(iso: string) {
   const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
   const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / 86400000)
   if (diffDays === 0) return shortTime(iso)
-  if (diffDays === 1) return 'Yesterday'
+  if (diffDays === 1) return t('Yesterday', 'Ayer')
   if (diffDays > 1 && diffDays < 7) return d.toLocaleDateString([], { weekday: 'long' })
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
 }
@@ -777,13 +779,25 @@ function relativeDay(iso: string) {
   const d = new Date(iso)
   const today = new Date()
   const diffDays = Math.round((new Date(today.toDateString()).getTime() - new Date(d.toDateString()).getTime()) / 86400000)
-  if (diffDays === 0) return 'Today'
-  if (diffDays === 1) return 'Yesterday'
+  if (diffDays === 0) return t('Today', 'Hoy')
+  if (diffDays === 1) return t('Yesterday', 'Ayer')
   return d.toLocaleDateString([], { day: 'numeric', month: 'short' })
 }
+const MEDIA_TYPE_LABELS: Record<string, [string, string]> = {
+  image: ['Image', 'Imagen'],
+  video: ['Video', 'Vídeo'],
+  audio: ['Audio', 'Audio'],
+  document: ['Document', 'Documento'],
+  sticker: ['Sticker', 'Sticker'],
+}
+function mediaTypeLabel(mediaType: string): string {
+  const pair = MEDIA_TYPE_LABELS[mediaType]
+  if (pair) return t(pair[0], pair[1])
+  return `${mediaType[0].toUpperCase()}${mediaType.slice(1)}`
+}
 function previewText(m: Message) {
-  if (m.media_type) return `${m.media_type[0].toUpperCase()}${m.media_type.slice(1)}${m.body_preview ? ` — ${m.body_preview}` : ''}`
-  if (m.template_name) return m.body_preview ?? `Template: ${m.template_name}`
+  if (m.media_type) return `${mediaTypeLabel(m.media_type)}${m.body_preview ? ` — ${m.body_preview}` : ''}`
+  if (m.template_name) return m.body_preview ?? `${t('Template', 'Plantilla')}: ${m.template_name}`
   return m.body_preview ?? '—'
 }
 // What actually renders as the bubble's text, distinct from previewText
@@ -791,7 +805,7 @@ function previewText(m: Message) {
 // caption, since there's nothing to attach the inline time+status to.
 function bubbleText(m: Message): string {
   if (m.media_type) return m.body_preview ?? ''
-  if (m.template_name) return m.body_preview ?? `Template: ${m.template_name}`
+  if (m.template_name) return m.body_preview ?? `${t('Template', 'Plantilla')}: ${m.template_name}`
   return m.body_preview ?? ''
 }
 
@@ -843,12 +857,12 @@ onUnmounted(() => {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Inbox" />
+    <PageHeader :title="t('Inbox', 'Bandeja de entrada')" />
     <div v-if="webPush.supported.value && webPush.permission.value === 'default' && !pushBannerDismissed" class="flex shrink-0 items-center justify-between gap-3 border-b border-line bg-brand-tint px-4 py-2">
-      <p class="text-[12.5px] text-brand-text">Get notified here when a patient messages you, even with the tab in the background.</p>
+      <p class="text-[12.5px] text-brand-text">{{ t('Get notified here when a patient messages you, even with the tab in the background.', 'Recibe avisos aquí cuando un paciente te escriba, incluso con la pestaña en segundo plano.') }}</p>
       <div class="flex shrink-0 items-center gap-3">
-        <UiBtn variant="primary" size="sm" @click="webPush.register()">Enable notifications</UiBtn>
-        <button type="button" class="text-[12.5px] text-ink-faint hover:text-ink-muted" @click="pushBannerDismissed = true">Not now</button>
+        <UiBtn variant="primary" size="sm" @click="webPush.register()">{{ t('Enable notifications', 'Activar notificaciones') }}</UiBtn>
+        <button type="button" class="text-[12.5px] text-ink-faint hover:text-ink-muted" @click="pushBannerDismissed = true">{{ t('Not now', 'Ahora no') }}</button>
       </div>
     </div>
     <div class="flex flex-1 overflow-hidden">
@@ -859,14 +873,14 @@ onUnmounted(() => {
             <input
               v-model="search"
               type="search"
-              placeholder="Search name, number, messages…"
+              :placeholder="t('Search name, number, messages…', 'Buscar nombre, número, mensajes…')"
               class="h-8 w-full flex-1 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none"
             />
             <button
               type="button"
               class="flex h-8 w-8 shrink-0 items-center justify-center rounded-ctl border"
               :class="view === 'archived' ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted hover:bg-surface-subtle'"
-              :title="view === 'archived' ? 'Show active conversations' : 'Show archived conversations'"
+              :title="view === 'archived' ? t('Show active conversations', 'Mostrar conversaciones activas') : t('Show archived conversations', 'Mostrar conversaciones archivadas')"
               @click="view = view === 'archived' ? 'active' : 'archived'"
             >
               <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
@@ -875,15 +889,15 @@ onUnmounted(() => {
                 <path d="M6.5 8.5h3" />
               </svg>
             </button>
-            <button type="button" class="shrink-0 text-[12.5px] text-ink-faint hover:text-ink-muted" @click="selectionMode = true">Select</button>
+            <button type="button" class="shrink-0 text-[12.5px] text-ink-faint hover:text-ink-muted" @click="selectionMode = true">{{ t('Select', 'Seleccionar') }}</button>
             <div v-if="view === 'active'" ref="composeEl" class="relative shrink-0">
-              <UiBtn variant="primary" size="sm" @click="composeOpen = !composeOpen">+ New</UiBtn>
+              <UiBtn variant="primary" size="sm" @click="composeOpen = !composeOpen">{{ t('+ New', '+ Nuevo') }}</UiBtn>
               <div v-if="composeOpen" class="absolute right-0 top-[calc(100%+4px)] z-20 w-64 rounded-card border border-line bg-surface p-2 shadow-popover">
                 <input
                   v-model="composeQuery"
                   type="text"
                   autofocus
-                  placeholder="Search patients…"
+                  :placeholder="t('Search patients…', 'Buscar pacientes…')"
                   class="h-8 w-full rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none"
                 />
                 <ul class="mt-1.5 max-h-56 overflow-y-auto">
@@ -895,13 +909,13 @@ onUnmounted(() => {
                   >
                     {{ p.first_name }} {{ p.last_name }}
                   </li>
-                  <li v-if="filteredComposePatients.length === 0" class="px-2 py-1.5 text-[13px] text-ink-faint">No matches</li>
+                  <li v-if="filteredComposePatients.length === 0" class="px-2 py-1.5 text-[13px] text-ink-faint">{{ t('No matches', 'Sin coincidencias') }}</li>
                 </ul>
               </div>
             </div>
           </div>
           <div v-else class="flex items-center justify-between gap-2">
-            <p class="text-[12.5px] text-ink-700">{{ selectedKeys.size }} selected</p>
+            <p class="text-[12.5px] text-ink-700">{{ selectedKeys.size }} {{ t('selected', 'seleccionados') }}</p>
             <div class="flex items-center gap-3">
               <InboxLabelPicker
                 :labels="labels"
@@ -915,11 +929,11 @@ onUnmounted(() => {
                 :disabled="selectedKeys.size === 0"
                 @click="bulkArchiveSelected(view !== 'archived')"
               >
-                {{ view === 'archived' ? 'Unarchive' : 'Archive' }}
+                {{ view === 'archived' ? t('Unarchive', 'Desarchivar') : t('Archive', 'Archivar') }}
               </button>
-              <button type="button" class="text-[12.5px] text-brand-text hover:underline disabled:opacity-40" :disabled="selectedKeys.size === 0" @click="bulkMarkUnreadSelected">Mark unread</button>
-              <button type="button" class="text-[12.5px] text-danger-text hover:underline disabled:opacity-40" :disabled="selectedKeys.size === 0" @click="bulkDeleteSelected">Delete</button>
-              <button type="button" class="text-[12.5px] text-ink-faint hover:text-ink-muted" @click="exitSelectionMode">Cancel</button>
+              <button type="button" class="text-[12.5px] text-brand-text hover:underline disabled:opacity-40" :disabled="selectedKeys.size === 0" @click="bulkMarkUnreadSelected">{{ t('Mark unread', 'Marcar como no leído') }}</button>
+              <button type="button" class="text-[12.5px] text-danger-text hover:underline disabled:opacity-40" :disabled="selectedKeys.size === 0" @click="bulkDeleteSelected">{{ t('Delete', 'Eliminar') }}</button>
+              <button type="button" class="text-[12.5px] text-ink-faint hover:text-ink-muted" @click="exitSelectionMode">{{ t('Cancel', 'Cancelar') }}</button>
             </div>
           </div>
           <div v-if="!selectionMode" class="mt-2 flex flex-wrap items-center gap-1.5">
@@ -929,7 +943,7 @@ onUnmounted(() => {
               :class="unreadOnly ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted hover:bg-surface-subtle'"
               @click="unreadOnly = !unreadOnly"
             >
-              Unread
+              {{ t('Unread', 'No leídos') }}
             </button>
             <button
               type="button"
@@ -937,7 +951,7 @@ onUnmounted(() => {
               :class="replyFilter === 'awaiting_us' ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted hover:bg-surface-subtle'"
               @click="replyFilter = replyFilter === 'awaiting_us' ? 'all' : 'awaiting_us'"
             >
-              Awaiting us
+              {{ t('Awaiting us', 'Esperando respuesta nuestra') }}
             </button>
             <button
               type="button"
@@ -945,15 +959,15 @@ onUnmounted(() => {
               :class="replyFilter === 'awaiting_patient' ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted hover:bg-surface-subtle'"
               @click="replyFilter = replyFilter === 'awaiting_patient' ? 'all' : 'awaiting_patient'"
             >
-              Awaiting patient
+              {{ t('Awaiting patient', 'Esperando respuesta del paciente') }}
             </button>
             <InboxLabelFilterPicker v-model="labelFilter" :labels="labels" />
           </div>
         </div>
         <div class="flex-1 overflow-y-auto">
-          <div v-if="loading" class="p-6 text-center text-[13px] text-ink-faint">Loading…</div>
+          <div v-if="loading" class="p-6 text-center text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
           <p v-else-if="filteredConversations.length === 0" class="p-6 text-center text-[13px] text-ink-faint">
-            {{ view === 'archived' ? 'No archived conversations.' : 'No conversations yet.' }}
+            {{ view === 'archived' ? t('No archived conversations.', 'No hay conversaciones archivadas.') : t('No conversations yet.', 'Aún no hay conversaciones.') }}
           </p>
           <button
             v-for="c in filteredConversations"
@@ -974,10 +988,10 @@ onUnmounted(() => {
             </span>
             <span class="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[11px] font-semibold text-brand-text">
               {{ c.name.slice(0, 2).toUpperCase() }}
-              <span v-if="c.channel === 'whatsapp'" class="absolute -bottom-0.5 -right-0.5 flex h-[13px] w-[13px] items-center justify-center rounded-full border border-surface bg-[#25D366]" title="WhatsApp">
+              <span v-if="c.channel === 'whatsapp'" class="absolute -bottom-0.5 -right-0.5 flex h-[13px] w-[13px] items-center justify-center rounded-full border border-surface bg-[#25D366]" :title="t('WhatsApp', 'WhatsApp')">
                 <svg viewBox="0 0 24 24" class="h-[8px] w-[8px] fill-white"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm5.6 14.2c-.2.6-1.2 1.1-1.7 1.2-.4.1-1 .1-1.6-.1-.4-.1-.9-.3-1.5-.6-2.6-1.1-4.3-3.8-4.4-4-.1-.2-1-1.4-1-2.6 0-1.2.6-1.8.9-2.1.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .5.4.2.5.7 1.7.7 1.8.1.1.1.3 0 .4-.1.2-.1.3-.3.4-.1.2-.3.4-.4.5-.1.1-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.4 2.5 1.5.3.1.5.1.6-.1.2-.2.7-.8.9-1.1.2-.3.4-.2.6-.1.2.1 1.5.7 1.8.8.3.1.4.2.5.3.1.2.1.7-.1 1.3z" /></svg>
               </span>
-              <span v-else class="absolute -bottom-0.5 -right-0.5 flex h-[13px] w-[13px] items-center justify-center rounded-full border border-surface bg-brand" title="In-app message">
+              <span v-else class="absolute -bottom-0.5 -right-0.5 flex h-[13px] w-[13px] items-center justify-center rounded-full border border-surface bg-brand" :title="t('In-app message', 'Mensaje en la app')">
                 <svg viewBox="0 0 24 24" class="h-[8px] w-[8px] fill-white"><path d="M4 4h16v12H7l-3 3z" /></svg>
               </span>
             </span>
@@ -990,7 +1004,7 @@ onUnmounted(() => {
                 <span class="shrink-0 text-[11px] text-ink-faint">{{ listTime(c.lastMessage!.created_at) }}</span>
               </div>
               <p class="truncate text-[12px]" :class="c.unread ? 'font-medium text-ink-800' : 'text-ink-muted2'">
-                {{ c.lastMessage!.direction === 'outbound' ? 'You: ' : '' }}{{ previewText(c.lastMessage!) }}
+                {{ c.lastMessage!.direction === 'outbound' ? t('You: ', 'Tú: ') : '' }}{{ previewText(c.lastMessage!) }}
               </p>
               <div v-if="myLabelsByKey[c.key]?.length" class="mt-1 flex flex-wrap gap-1">
                 <span
@@ -1010,7 +1024,7 @@ onUnmounted(() => {
 
       <!-- Thread -->
       <div v-if="!selected" class="flex flex-1 items-center justify-center text-[13px] text-ink-faint">
-        Select a conversation to view messages.
+        {{ t('Select a conversation to view messages.', 'Selecciona una conversación para ver los mensajes.') }}
       </div>
       <div v-else class="flex min-w-0 flex-1 flex-col bg-surface-page">
         <div class="flex h-14 shrink-0 items-center gap-2.5 border-b border-line bg-surface px-4">
@@ -1020,13 +1034,13 @@ onUnmounted(() => {
           <div class="min-w-0 flex-1">
             <p class="truncate text-[13.5px] font-[600] text-ink-900">{{ selected.name }}</p>
             <p class="truncate text-[11.5px] text-ink-muted2">
-              <span v-if="selected.channel === 'whatsapp'" class="rounded-pill bg-[#25D366]/10 px-1.5 py-px font-medium text-[#128C4B]">WhatsApp</span>
-              <span v-else class="rounded-pill bg-brand-tint px-1.5 py-px font-medium text-brand-text">In-app</span>
+              <span v-if="selected.channel === 'whatsapp'" class="rounded-pill bg-[#25D366]/10 px-1.5 py-px font-medium text-[#128C4B]">{{ t('WhatsApp', 'WhatsApp') }}</span>
+              <span v-else class="rounded-pill bg-brand-tint px-1.5 py-px font-medium text-brand-text">{{ t('In-app', 'En la app') }}</span>
               <span v-if="selected.phoneNumber" class="ml-1.5">{{ selected.phoneNumber }}</span>
             </p>
           </div>
           <NuxtLink v-if="selected.patientId" :to="`/patients/${selected.patientId}`" class="shrink-0 text-[12.5px] text-brand-text hover:text-brand-hover">
-            View patient →
+            {{ t('View patient →', 'Ver paciente →') }}
           </NuxtLink>
           <InboxLabelPicker
             v-if="!isNewConversation"
@@ -1050,7 +1064,7 @@ onUnmounted(() => {
             :disabled="deletingConversation"
             @click="deleteConversation"
           >
-            Delete conversation
+            {{ t('Delete conversation', 'Eliminar conversación') }}
           </button>
         </div>
 
@@ -1091,14 +1105,14 @@ onUnmounted(() => {
                     <path d="M4 1.5h5.5L12.5 4.5V14.5H4z" stroke-linejoin="round" />
                     <path d="M9.5 1.5V4.5H12.5" stroke-linejoin="round" />
                   </svg>
-                  {{ m.media_filename ?? 'Document' }}
+                  {{ m.media_filename ?? t('Document', 'Documento') }}
                 </a>
                 <img
                   v-else-if="m.media_type === 'sticker' && m.media_storage_path && mediaUrls[m.media_storage_path]"
                   :src="mediaUrls[m.media_storage_path]"
                   class="h-24 w-24"
                 />
-                <p v-else-if="m.media_type" class="text-[12.5px] italic opacity-70">{{ m.pending ? 'Uploading…' : 'Media unavailable' }}</p>
+                <p v-else-if="m.media_type" class="text-[12.5px] italic opacity-70">{{ m.pending ? t('Uploading…', 'Subiendo…') : t('Media unavailable', 'Contenido no disponible') }}</p>
 
                 <!-- Text (or a caption/template fallback) carries its own trailing
                      time+status inline, WhatsApp-style: it sits on the same line
@@ -1111,13 +1125,13 @@ onUnmounted(() => {
                     class="ml-1.5 inline-flex translate-y-[2px] items-center gap-1 whitespace-nowrap text-[10.5px]"
                     :class="m.direction === 'outbound' ? 'text-white/70' : 'text-ink-faint'"
                   >
-                    <span v-if="m.status === 'failed'" class="underline">Tap to retry</span>
+                    <span v-if="m.status === 'failed'" class="underline">{{ t('Tap to retry', 'Toca para reintentar') }}</span>
                     <span v-else>{{ shortTime(m.created_at) }}</span>
                     <InboxMessageStatus v-if="m.direction === 'outbound'" :status="m.status" />
                   </span>
                 </p>
                 <p v-else class="mt-1 flex items-center justify-end gap-1.5 text-right text-[10.5px]" :class="m.direction === 'outbound' ? 'text-white/70' : 'text-ink-faint'">
-                  <span v-if="m.status === 'failed'" class="underline">Tap to retry</span>
+                  <span v-if="m.status === 'failed'" class="underline">{{ t('Tap to retry', 'Toca para reintentar') }}</span>
                   <span v-else>{{ shortTime(m.created_at) }}</span>
                   <InboxMessageStatus v-if="m.direction === 'outbound'" :status="m.status" />
                 </p>
@@ -1130,7 +1144,7 @@ onUnmounted(() => {
             v-if="showJumpToLatest"
             type="button"
             class="absolute bottom-4 right-4 flex h-9 w-9 items-center justify-center rounded-full border border-line bg-surface text-ink-600 shadow-popover hover:bg-surface-subtle"
-            title="Jump to latest"
+            :title="t('Jump to latest', 'Ir al último')"
             @click="jumpToLatest"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
@@ -1143,16 +1157,16 @@ onUnmounted(() => {
           <p v-if="sendError" class="mb-2 text-[12.5px] text-danger-text">{{ sendError }}</p>
           <div v-if="!within24h" class="flex items-center justify-between gap-3 rounded-ctl border border-warning-border bg-warning-bg px-3 py-2">
             <p class="text-[12.5px] text-warning-text">
-              <template v-if="isNewConversation">{{ selected.name }} hasn't messaged you before — start with an approved template.</template>
-              <template v-else>More than 24h since {{ selected.name }} last messaged — free-form replies are blocked by WhatsApp. Send a template instead.</template>
+              <template v-if="isNewConversation">{{ selected.name }} {{ t("hasn't messaged you before — start with an approved template.", 'no te ha escrito antes — comienza con una plantilla aprobada.') }}</template>
+              <template v-else>{{ t('More than 24h since', 'Han pasado más de 24h desde que') }} {{ selected.name }} {{ t('last messaged — free-form replies are blocked by WhatsApp. Send a template instead.', 'escribió por última vez — WhatsApp bloquea las respuestas libres. Envía una plantilla en su lugar.') }}</template>
             </p>
-            <UiBtn v-if="selected.patientId" variant="primary" size="sm" @click="templateModalOpen = true">Send template</UiBtn>
+            <UiBtn v-if="selected.patientId" variant="primary" size="sm" @click="templateModalOpen = true">{{ t('Send template', 'Enviar plantilla') }}</UiBtn>
           </div>
           <div v-else-if="audioRecording" class="flex items-center gap-3 rounded-ctl border border-line-control bg-surface-subtle px-3 py-2">
             <span class="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-danger-text" />
-            <span class="flex-1 text-[13.5px] text-ink-700">Recording… {{ recordingLabel(audioSeconds) }}</span>
-            <button type="button" class="shrink-0 text-[12.5px] text-ink-faint hover:text-ink-muted" @click="cancelAudioRecording">Cancel</button>
-            <UiBtn variant="primary" size="sm" @click="toggleAudioRecording">Send</UiBtn>
+            <span class="flex-1 text-[13.5px] text-ink-700">{{ t('Recording…', 'Grabando…') }} {{ recordingLabel(audioSeconds) }}</span>
+            <button type="button" class="shrink-0 text-[12.5px] text-ink-faint hover:text-ink-muted" @click="cancelAudioRecording">{{ t('Cancel', 'Cancelar') }}</button>
+            <UiBtn variant="primary" size="sm" @click="toggleAudioRecording">{{ t('Send', 'Enviar') }}</UiBtn>
           </div>
           <div v-else class="flex items-end gap-2">
             <button type="button" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-500 hover:bg-surface-subtle" :disabled="sending" @click="fileInput?.click()">
@@ -1165,7 +1179,7 @@ onUnmounted(() => {
               type="button"
               class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-500 hover:bg-surface-subtle disabled:opacity-50"
               :disabled="sending"
-              title="Record a voice note"
+              :title="t('Record a voice note', 'Grabar una nota de voz')"
               @click="toggleAudioRecording"
             >
               <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
@@ -1178,11 +1192,11 @@ onUnmounted(() => {
               ref="composerTextarea"
               v-model="composerText"
               rows="1"
-              placeholder="Type a message…"
+              :placeholder="t('Type a message…', 'Escribe un mensaje…')"
               class="max-h-24 min-h-9 flex-1 resize-none rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13.5px] text-ink-700 focus:border-brand focus:outline-none"
               @keydown.enter.exact.prevent="sendText"
             />
-            <UiBtn variant="primary" :disabled="sending || !composerText.trim()" @click="sendText">{{ sending ? '…' : 'Send' }}</UiBtn>
+            <UiBtn variant="primary" :disabled="sending || !composerText.trim()" @click="sendText">{{ sending ? '…' : t('Send', 'Enviar') }}</UiBtn>
           </div>
         </div>
       </div>
@@ -1199,12 +1213,12 @@ onUnmounted(() => {
     <div v-if="lightboxUrl" class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-6" @click="lightboxUrl = null">
       <img :src="lightboxUrl" class="max-h-full max-w-full rounded-ctl object-contain" @click.stop />
       <div class="absolute right-4 top-4 flex gap-2">
-        <a :href="lightboxUrl" download target="_blank" class="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20" title="Download" @click.stop>
+        <a :href="lightboxUrl" download target="_blank" class="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20" :title="t('Download', 'Descargar')" @click.stop>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
             <path d="M8 1.5v9M4.5 7 8 10.5 11.5 7M2 12.5v1a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-1" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
         </a>
-        <button type="button" class="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20" title="Close" @click="lightboxUrl = null">
+        <button type="button" class="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20" :title="t('Close', 'Cerrar')" @click="lightboxUrl = null">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
             <path d="M3 3l10 10M13 3 3 13" stroke-linecap="round" />
           </svg>

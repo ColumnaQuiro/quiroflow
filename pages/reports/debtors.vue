@@ -14,6 +14,7 @@ interface PatientRow { id: string; first_name: string; last_name: string }
 interface ScheduleRow { package_purchase_id: string | null; status: string }
 
 const supabase = useSupabaseClient()
+const t = useT()
 const loading = ref(true)
 const purchases = ref<PurchaseRow[]>([])
 const invoicesById = ref<Map<string, InvoiceRow>>(new Map())
@@ -70,34 +71,34 @@ function patientName(id: string) {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Debtors" meta="Package/bono purchases with no paid invoice">
-      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; Reports</NuxtLink>
+    <PageHeader :title="t('Debtors', 'Deudores')" :meta="t('Package/bono purchases with no paid invoice', 'Compras de bonos/paquetes sin factura pagada')">
+      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
     </PageHeader>
 
     <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
-      <p class="text-[13px] text-ink-muted2">Includes any Stripe autopay charge that failed.</p>
+      <p class="text-[13px] text-ink-muted2">{{ t('Includes any Stripe autopay charge that failed.', 'Incluye cualquier cobro automático de Stripe que haya fallado.') }}</p>
 
-      <div v-if="loading" class="mt-6 text-[13px] text-ink-faint2">Loading…</div>
+      <div v-if="loading" class="mt-6 text-[13px] text-ink-faint2">{{ t('Loading…', 'Cargando…') }}</div>
       <template v-else>
         <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
           <p class="font-mono text-[23px] font-semibold text-ink-900">€{{ (totalOwed / 100).toFixed(2) }}</p>
-          <p class="text-[12px] text-ink-muted2">Total outstanding across {{ debtors.length }} purchase(s)</p>
+          <p class="text-[12px] text-ink-muted2">{{ t(`Total outstanding across ${debtors.length} purchase(s)`, `Total pendiente en ${debtors.length} compra(s)`) }}</p>
         </div>
 
         <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
           <table class="w-full text-[13px]">
             <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">
               <tr>
-                <th class="px-4 py-2">Patient</th>
-                <th class="px-4 py-2">Package</th>
-                <th class="px-4 py-2">Purchased</th>
-                <th class="px-4 py-2">Amount owed</th>
-                <th class="px-4 py-2">Status</th>
+                <th class="px-4 py-2">{{ t('Patient', 'Paciente') }}</th>
+                <th class="px-4 py-2">{{ t('Package', 'Paquete') }}</th>
+                <th class="px-4 py-2">{{ t('Purchased', 'Comprado') }}</th>
+                <th class="px-4 py-2">{{ t('Amount owed', 'Importe adeudado') }}</th>
+                <th class="px-4 py-2">{{ t('Status', 'Estado') }}</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-line-row">
               <tr v-if="debtors.length === 0">
-                <td colspan="5" class="px-4 py-6 text-center text-ink-faint2">No debtors — everyone's paid up.</td>
+                <td colspan="5" class="px-4 py-6 text-center text-ink-faint2">{{ t("No debtors — everyone's paid up.", 'Sin deudores: todo el mundo ha pagado.') }}</td>
               </tr>
               <tr v-for="p in debtors" :key="p.id">
                 <td class="px-4 py-2.5 text-ink-900">
@@ -107,9 +108,9 @@ function patientName(id: string) {
                 <td class="px-4 py-2.5 text-ink-muted2">{{ new Date(p.purchased_at).toLocaleDateString() }}</td>
                 <td class="px-4 py-2.5 font-mono text-ink-900">€{{ (p.price_cents / 100).toFixed(2) }}</td>
                 <td class="px-4 py-2.5">
-                  <span v-if="schedulesByPurchase.get(p.id)" class="rounded-pill bg-danger-bg px-1.5 py-0.5 text-[11px] font-medium text-danger-text">stripe charge failed</span>
+                  <span v-if="schedulesByPurchase.get(p.id)" class="rounded-pill bg-danger-bg px-1.5 py-0.5 text-[11px] font-medium text-danger-text">{{ t('stripe charge failed', 'cobro de stripe fallido') }}</span>
                   <span v-else class="rounded-pill px-1.5 py-0.5 text-[11px] font-medium" :class="p.invoice_id ? 'bg-danger-bg text-danger-text' : 'bg-chip-bg text-chip-text'">
-                    {{ p.invoice_id ? (invoicesById.get(p.invoice_id)?.status ?? 'unknown') : 'no invoice' }}
+                    {{ p.invoice_id ? (invoicesById.get(p.invoice_id)?.status ?? t('unknown', 'desconocido')) : t('no invoice', 'sin factura') }}
                   </span>
                 </td>
               </tr>

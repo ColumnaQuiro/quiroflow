@@ -1,7 +1,12 @@
-# Runs the full e2e suite against a fresh local Supabase before every push,
-# mirroring .github/workflows/e2e.yml -- catches a broken suite locally
-# instead of red CI. Needs Docker running + the Supabase CLI on PATH (same
-# prerequisites as `npm run test:e2e:local`); skip once with
-# `git push --no-verify` if you know what you're doing.
-echo "Running e2e suite before push (this starts a local Supabase and takes a few minutes)..."
-npm run test:e2e:local
+# Fast, Docker-free typecheck before every push -- the full e2e suite now
+# runs in CI on every PR/push to main (.github/workflows/e2e.yml), which has
+# real network access and doesn't fight Docker registry/egress policies the
+# way a local or sandboxed-agent environment can. Catches the same class of
+# build-breaking type errors CI's typecheck job would, just before the push
+# leaves your machine instead of a few minutes later in a red PR check.
+#
+# Still want the full local Cypress run against a real local Supabase before
+# pushing (Docker required)? `npm run test:e2e:local` runs it directly.
+# Skip this check entirely with `git push --no-verify` if you know what
+# you're doing.
+npm run preflight

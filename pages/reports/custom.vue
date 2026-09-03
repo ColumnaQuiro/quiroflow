@@ -1,61 +1,71 @@
 <script setup lang="ts">
 import { Bar, Line } from 'vue-chartjs'
-import type { Tables } from '~/types/database.types'
 import { computePresetRange, monthKeysInRange, rangeBounds, type DateRange } from '~/composables/useDateRangePresets'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
 
-type SavedReport = Tables<'custom_reports'>
+// Deliberately not `Tables<'custom_reports'>` -- that type's `config: Json`
+// field is recursive, and using it as this file's saved[] element type blows
+// past TypeScript's instantiation-depth limit inside both Array.prototype
+// methods and Vue's own v-for/event-binding template type-checking. Only
+// id/name/config (read as `any` below) are ever touched here, and a plain
+// object from Supabase structurally satisfies this narrower shape fine.
+interface SavedReport {
+  id: string
+  name: string
+  config: unknown
+}
 
 interface Source { key: string; label: string; groupings: { key: string; label: string }[]; metrics: { key: string; label: string }[] }
 
-const SOURCES: Source[] = [
+const supabase = useSupabaseClient()
+const store = useAccountStore()
+const t = useT()
+
+const SOURCES = computed<Source[]>(() => [
   {
     key: 'appointments',
-    label: 'Appointments',
-    metrics: [{ key: 'count', label: 'Count' }],
+    label: t('Appointments', 'Citas'),
+    metrics: [{ key: 'count', label: t('Count', 'Recuento') }],
     groupings: [
-      { key: 'month', label: 'Month' },
-      { key: 'weekday', label: 'Day of week' },
-      { key: 'status', label: 'Status' },
-      { key: 'practitioner', label: 'Practitioner' },
-      { key: 'appointment_type', label: 'Appointment type' },
+      { key: 'month', label: t('Month', 'Mes') },
+      { key: 'weekday', label: t('Day of week', 'Día de la semana') },
+      { key: 'status', label: t('Status', 'Estado') },
+      { key: 'practitioner', label: t('Practitioner', 'Profesional') },
+      { key: 'appointment_type', label: t('Appointment type', 'Tipo de cita') },
     ],
   },
   {
     key: 'payments',
-    label: 'Payments',
-    metrics: [{ key: 'sum', label: 'Total (€)' }, { key: 'count', label: 'Count' }],
+    label: t('Payments', 'Pagos'),
+    metrics: [{ key: 'sum', label: t('Total (€)', 'Total (€)') }, { key: 'count', label: t('Count', 'Recuento') }],
     groupings: [
-      { key: 'month', label: 'Month' },
-      { key: 'method', label: 'Payment method' },
-      { key: 'practitioner', label: 'Practitioner' },
+      { key: 'month', label: t('Month', 'Mes') },
+      { key: 'method', label: t('Payment method', 'Método de pago') },
+      { key: 'practitioner', label: t('Practitioner', 'Profesional') },
     ],
   },
   {
     key: 'patients',
-    label: 'Patients',
-    metrics: [{ key: 'count', label: 'Count' }],
+    label: t('Patients', 'Pacientes'),
+    metrics: [{ key: 'count', label: t('Count', 'Recuento') }],
     groupings: [
-      { key: 'practitioner', label: 'Default practitioner' },
-      { key: 'recall_status', label: 'Recall status' },
-      { key: 'preferred_language', label: 'Preferred language' },
-      { key: 'confirmation_channel', label: 'Confirmation channel' },
+      { key: 'practitioner', label: t('Default practitioner', 'Profesional habitual') },
+      { key: 'recall_status', label: t('Recall status', 'Estado de seguimiento') },
+      { key: 'preferred_language', label: t('Preferred language', 'Idioma preferido') },
+      { key: 'confirmation_channel', label: t('Confirmation channel', 'Canal de confirmación') },
     ],
   },
-]
-
-const supabase = useSupabaseClient()
-const store = useAccountStore()
+])
 
 const sourceKey = ref('appointments')
-const source = computed(() => SOURCES.find((s) => s.key === sourceKey.value)!)
+const source = computed(() => SOURCES.value.find((s) => s.key === sourceKey.value)!)
 const metricKey = ref('count')
 const groupByKey = ref('month')
 const chartType = ref<'bar' | 'line' | 'table'>('bar')
 const range = ref(computePresetRange({ months: 1 }))
 
 watch(sourceKey, (key) => {
-  const s = SOURCES.find((x) => x.key === key)!
+  const s = SOURCES.value.find((x) => x.key === key)!
   metricKey.value = s.metrics[0].key
   groupByKey.value = s.groupings[0].key
 })
@@ -72,7 +82,15 @@ function monthKeys() {
 function monthKeyFor(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', year: '2-digit' })
 }
-const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const WEEKDAY_LABELS = computed(() => [
+  t('Mon', 'lun'),
+  t('Tue', 'mar'),
+  t('Wed', 'mié'),
+  t('Thu', 'jue'),
+  t('Fri', 'vie'),
+  t('Sat', 'sáb'),
+  t('Sun', 'dom'),
+])
 
 async function run() {
   loading.value = true
@@ -99,22 +117,22 @@ async function run() {
       for (const k of monthKeys()) totals.set(k, 0)
       for (const a of list) totals.set(monthKeyFor(a.starts_at), (totals.get(monthKeyFor(a.starts_at)) ?? 0) + 1)
     } else if (groupByKey.value === 'weekday') {
-      for (const k of WEEKDAY_LABELS) totals.set(k, 0)
+      for (const k of WEEKDAY_LABELS.value) totals.set(k, 0)
       for (const a of list) {
         const d = new Date(a.starts_at).getDay()
-        const label = WEEKDAY_LABELS[d === 0 ? 6 : d - 1]
+        const label = WEEKDAY_LABELS.value[d === 0 ? 6 : d - 1]
         totals.set(label, (totals.get(label) ?? 0) + 1)
       }
     } else if (groupByKey.value === 'status') {
       for (const a of list) totals.set(a.status, (totals.get(a.status) ?? 0) + 1)
     } else if (groupByKey.value === 'practitioner') {
       for (const a of list) {
-        const label = a.practitioner_id ? (memberById.get(a.practitioner_id) ?? 'Unknown') : 'Unassigned'
+        const label = a.practitioner_id ? (memberById.get(a.practitioner_id) ?? t('Unknown', 'Desconocido')) : t('Unassigned', 'Sin asignar')
         totals.set(label, (totals.get(label) ?? 0) + 1)
       }
     } else if (groupByKey.value === 'appointment_type') {
       for (const a of list) {
-        const label = a.appointment_type_id ? (typeById.get(a.appointment_type_id) ?? 'Unknown') : 'No type'
+        const label = a.appointment_type_id ? (typeById.get(a.appointment_type_id) ?? t('Unknown', 'Desconocido')) : t('No type', 'Sin tipo')
         totals.set(label, (totals.get(label) ?? 0) + 1)
       }
     }
@@ -147,7 +165,7 @@ async function run() {
       for (const p of list) {
         const invoice = invoiceById.get(p.invoice_id)
         const appt = invoice?.appointment_id ? apptById.get(invoice.appointment_id) : undefined
-        const label = appt?.practitioner_id ? (memberById.get(appt.practitioner_id) ?? 'Unknown') : 'Unassigned'
+        const label = appt?.practitioner_id ? (memberById.get(appt.practitioner_id) ?? t('Unknown', 'Desconocido')) : t('Unassigned', 'Sin asignar')
         bump(label, p.amount_cents)
       }
     }
@@ -162,8 +180,8 @@ async function run() {
 
     const totals = new Map<string, number>()
     for (const p of list) {
-      let label = 'Unknown'
-      if (groupByKey.value === 'practitioner') label = p.default_practitioner_id ? (memberById.get(p.default_practitioner_id) ?? 'Unknown') : 'Unassigned'
+      let label = t('Unknown', 'Desconocido')
+      if (groupByKey.value === 'practitioner') label = p.default_practitioner_id ? (memberById.get(p.default_practitioner_id) ?? t('Unknown', 'Desconocido')) : t('Unassigned', 'Sin asignar')
       else if (groupByKey.value === 'recall_status') label = p.recall_status
       else if (groupByKey.value === 'preferred_language') label = p.preferred_language
       else if (groupByKey.value === 'confirmation_channel') label = p.confirmation_channel
@@ -175,7 +193,7 @@ async function run() {
   loading.value = false
 }
 onMounted(run)
-watch([sourceKey, metricKey, groupByKey, range], run)
+watch([sourceKey, metricKey, groupByKey, range, () => useLang().preference], run)
 
 const chartData = computed(() => ({
   labels: rows.value.map((r) => r.label),
@@ -215,7 +233,7 @@ function loadSavedReport(r: SavedReport) {
   range.value = (c.range as DateRange | undefined) ?? computePresetRange({ months: c.rangeMonths ?? 6 })
 }
 async function removeSaved(r: SavedReport) {
-  if (!confirm(`Delete saved report "${r.name}"?`)) return
+  if (!confirm(t(`Delete saved report "${r.name}"?`, `¿Eliminar el informe guardado "${r.name}"?`))) return
   await supabase.from('custom_reports').delete().eq('id', r.id)
   saved.value = saved.value.filter((s) => s.id !== r.id)
 }
@@ -223,8 +241,8 @@ async function removeSaved(r: SavedReport) {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Custom Reports" meta="Pick a source, a metric, and how to group it">
-      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; Reports</NuxtLink>
+    <PageHeader :title="t('Custom Reports', 'Informes personalizados')" :meta="t('Pick a source, a metric, and how to group it', 'Elige una fuente, una métrica y cómo agruparla')">
+      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
     </PageHeader>
 
     <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
@@ -237,49 +255,49 @@ async function removeSaved(r: SavedReport) {
 
       <div class="mt-4 flex flex-wrap items-end gap-3 rounded-card border border-line bg-surface p-4 shadow-card">
         <div>
-          <label class="block text-[11px] font-medium text-ink-muted2">Data source</label>
+          <label class="block text-[11px] font-medium text-ink-muted2">{{ t('Data source', 'Fuente de datos') }}</label>
           <select v-model="sourceKey" class="mt-1 h-8 rounded-ctl border border-line-control px-2 text-[13px] text-ink-600 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
             <option v-for="s in SOURCES" :key="s.key" :value="s.key">{{ s.label }}</option>
           </select>
         </div>
         <div>
-          <label class="block text-[11px] font-medium text-ink-muted2">Metric</label>
+          <label class="block text-[11px] font-medium text-ink-muted2">{{ t('Metric', 'Métrica') }}</label>
           <select v-model="metricKey" class="mt-1 h-8 rounded-ctl border border-line-control px-2 text-[13px] text-ink-600 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
             <option v-for="m in source.metrics" :key="m.key" :value="m.key">{{ m.label }}</option>
           </select>
         </div>
         <div>
-          <label class="block text-[11px] font-medium text-ink-muted2">Group by</label>
+          <label class="block text-[11px] font-medium text-ink-muted2">{{ t('Group by', 'Agrupar por') }}</label>
           <select v-model="groupByKey" class="mt-1 h-8 rounded-ctl border border-line-control px-2 text-[13px] text-ink-600 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
             <option v-for="g in source.groupings" :key="g.key" :value="g.key">{{ g.label }}</option>
           </select>
         </div>
         <div>
-          <label class="block text-[11px] font-medium text-ink-muted2">Chart</label>
+          <label class="block text-[11px] font-medium text-ink-muted2">{{ t('Chart', 'Gráfico') }}</label>
           <select v-model="chartType" class="mt-1 h-8 rounded-ctl border border-line-control px-2 text-[13px] text-ink-600 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
-            <option value="bar">Bar</option>
-            <option value="line">Line</option>
-            <option value="table">Table</option>
+            <option value="bar">{{ t('Bar', 'Barras') }}</option>
+            <option value="line">{{ t('Line', 'Líneas') }}</option>
+            <option value="table">{{ t('Table', 'Tabla') }}</option>
           </select>
         </div>
         <div>
-          <label class="block text-[11px] font-medium text-ink-muted2">Range</label>
+          <label class="block text-[11px] font-medium text-ink-muted2">{{ t('Range', 'Periodo') }}</label>
           <div class="mt-1">
             <ReportsDateRangeSelect v-model="range" />
           </div>
         </div>
-        <UiBtn variant="primary" size="md" @click="showSaveDialog = true">Save report</UiBtn>
+        <UiBtn variant="primary" size="md" @click="showSaveDialog = true">{{ t('Save report', 'Guardar informe') }}</UiBtn>
       </div>
 
       <div v-if="showSaveDialog" class="mt-3 flex items-center gap-2 rounded-card border border-brand-tintBorder bg-brand-tint p-3">
-        <input v-model="reportName" type="text" placeholder="Report name" class="h-8 flex-1 rounded-ctl border border-line-control px-3 text-[13px] text-ink-600 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" @keydown.enter="saveReport" />
-        <UiBtn variant="primary" size="md" @click="saveReport">Save</UiBtn>
-        <button type="button" class="text-[13px] text-ink-muted2 hover:text-ink-600" @click="showSaveDialog = false">Cancel</button>
+        <input v-model="reportName" type="text" :placeholder="t('Report name', 'Nombre del informe')" class="h-8 flex-1 rounded-ctl border border-line-control px-3 text-[13px] text-ink-600 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" @keydown.enter="saveReport" />
+        <UiBtn variant="primary" size="md" @click="saveReport">{{ t('Save', 'Guardar') }}</UiBtn>
+        <button type="button" class="text-[13px] text-ink-muted2 hover:text-ink-600" @click="showSaveDialog = false">{{ t('Cancel', 'Cancelar') }}</button>
       </div>
 
       <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
-        <div v-if="loading" class="py-12 text-center text-[13px] text-ink-faint2">Loading…</div>
-        <div v-else-if="rows.length === 0" class="py-12 text-center text-[13px] text-ink-faint2">No data for this combination yet.</div>
+        <div v-if="loading" class="py-12 text-center text-[13px] text-ink-faint2">{{ t('Loading…', 'Cargando…') }}</div>
+        <div v-else-if="rows.length === 0" class="py-12 text-center text-[13px] text-ink-faint2">{{ t('No data for this combination yet.', 'Todavía no hay datos para esta combinación.') }}</div>
         <template v-else>
           <div v-if="chartType === 'bar'" class="h-80"><Bar :data="chartData" :options="chartOptions" /></div>
           <div v-else-if="chartType === 'line'" class="h-80"><Line :data="chartData" :options="chartOptions" /></div>

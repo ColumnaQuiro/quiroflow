@@ -16,6 +16,7 @@ const canContact = computed(() => !props.patient.is_minor && !props.patient.do_n
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 const primaryNumber = ref<Tables<'patient_contact_numbers'> | null>(null)
 const lifetimeCents = ref(0)
@@ -65,7 +66,7 @@ const patientSince = computed(() => {
 const identityMeta = computed(() => {
   const parts = []
   if (age.value !== null) parts.push(age.value)
-  parts.push(`Patient since ${patientSince.value}`)
+  parts.push(`${t('Patient since', 'Paciente desde')} ${patientSince.value}`)
   return parts.join(' · ')
 })
 
@@ -90,7 +91,7 @@ function money(cents: number) {
 
       <div class="mt-3.5 grid gap-2" :class="canContact ? 'grid-cols-2' : 'grid-cols-1'">
         <UiBtn v-if="canContact" size="sm" variant="secondary" class="w-full justify-center" @click="emit('message')">WhatsApp</UiBtn>
-        <UiBtn size="sm" variant="secondary" class="w-full justify-center" @click="emit('charge')">Charge</UiBtn>
+        <UiBtn size="sm" variant="secondary" class="w-full justify-center" @click="emit('charge')">{{ t('Charge', 'Cobrar') }}</UiBtn>
       </div>
     </div>
 
@@ -98,47 +99,47 @@ function money(cents: number) {
     <PatientsPhaseStats :patient-id="patient.id" />
 
     <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-      <p class="text-[13.5px] font-semibold text-ink-700">Contact</p>
+      <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Contact', 'Contacto') }}</p>
       <dl class="mt-2.5 space-y-2 text-[12.5px]">
         <div>
-          <dt class="text-ink-faint">Email</dt>
-          <dd class="mt-0.5 truncate text-ink-600">{{ patient.email ?? 'N/A' }}</dd>
+          <dt class="text-ink-faint">{{ t('Email', 'Correo electrónico') }}</dt>
+          <dd class="mt-0.5 truncate text-ink-600">{{ patient.email ?? t('N/A', 'N/D') }}</dd>
         </div>
         <div>
-          <dt class="text-ink-faint">Phone</dt>
+          <dt class="text-ink-faint">{{ t('Phone', 'Teléfono') }}</dt>
           <dd class="mt-0.5 text-ink-600">
             <span v-if="primaryNumber">{{ countryByCode(primaryNumber.country_code).flag }} {{ countryByCode(primaryNumber.country_code).dial }} {{ primaryNumber.number }}</span>
-            <span v-else>N/A</span>
+            <span v-else>{{ t('N/A', 'N/D') }}</span>
           </dd>
         </div>
       </dl>
     </div>
 
     <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-      <p class="text-[13.5px] font-semibold text-ink-700">Account</p>
+      <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Account', 'Cuenta') }}</p>
       <div class="mt-2.5 grid grid-cols-2 gap-y-2.5 text-[12.5px]">
         <div>
-          <dt class="text-ink-faint">Balance</dt>
+          <dt class="text-ink-faint">{{ t('Balance', 'Saldo') }}</dt>
           <dd class="mt-0.5 font-mono text-[12.5px]" :class="financialLoading ? 'text-ink-faint' : balanceCents < 0 ? 'text-danger-text' : 'text-ink-700'">
             {{ financialLoading ? '…' : money(balanceCents) }}
           </dd>
         </div>
         <div>
-          <dt class="text-ink-faint">Credit</dt>
+          <dt class="text-ink-faint">{{ t('Credit', 'Crédito') }}</dt>
           <dd class="mt-0.5 font-mono text-[12.5px] text-ink-700">{{ financialLoading ? '…' : money(creditCents) }}</dd>
         </div>
         <div>
-          <dt class="text-ink-faint">Lifetime</dt>
+          <dt class="text-ink-faint">{{ t('Lifetime', 'Total histórico') }}</dt>
           <dd class="mt-0.5 font-mono text-[12.5px] text-ink-700">{{ loading ? '…' : money(lifetimeCents) }}</dd>
         </div>
         <div>
-          <dt class="text-ink-faint">Card on file</dt>
-          <dd class="mt-0.5 text-[12.5px] text-ink-700">{{ loading ? '…' : hasCardOnFile ? 'On file' : 'None' }}</dd>
+          <dt class="text-ink-faint">{{ t('Card on file', 'Tarjeta registrada') }}</dt>
+          <dd class="mt-0.5 text-[12.5px] text-ink-700">{{ loading ? '…' : hasCardOnFile ? t('On file', 'Registrada') : t('None', 'Ninguna') }}</dd>
         </div>
       </div>
 
       <ul v-if="activePackages.length > 0" class="mt-3 space-y-1 border-t border-line-divider pt-2.5">
-        <li v-for="p in activePackages" :key="p.id" class="text-[11.5px] text-ink-muted2">{{ p.package_name }}: {{ p.sessions_total - p.sessions_used }} left</li>
+        <li v-for="p in activePackages" :key="p.id" class="text-[11.5px] text-ink-muted2">{{ p.package_name }}: {{ p.sessions_total - p.sessions_used }} {{ t('left', 'restantes') }}</li>
       </ul>
     </div>
   </aside>

@@ -5,6 +5,7 @@ const props = defineProps<{ dateRange: DateRange; practitionerId?: string; clini
 
 interface AppointmentRow { starts_at: string; status: string }
 
+const t = useT()
 const supabase = useSupabaseClient()
 const loading = ref(true)
 const rows = ref<AppointmentRow[]>([])
@@ -23,14 +24,14 @@ async function load() {
 onMounted(load)
 watch(() => [props.dateRange, props.practitionerId, props.clinicId], load, { deep: true })
 
-const SHIFTS = [
-  { key: 'morning', label: 'Morning', test: (h: number) => h < 12 },
-  { key: 'afternoon', label: 'Afternoon', test: (h: number) => h >= 12 && h < 16 },
-  { key: 'evening', label: 'Evening', test: (h: number) => h >= 16 },
-]
+const SHIFTS = computed(() => [
+  { key: 'morning', label: t('Morning', 'Mañana'), test: (h: number) => h < 12 },
+  { key: 'afternoon', label: t('Afternoon', 'Tarde'), test: (h: number) => h >= 12 && h < 16 },
+  { key: 'evening', label: t('Evening', 'Noche'), test: (h: number) => h >= 16 },
+])
 
 const shiftStats = computed(() =>
-  SHIFTS.map((shift) => {
+  SHIFTS.value.map((shift) => {
     const inShift = rows.value.filter((r) => shift.test(new Date(r.starts_at).getHours()))
     const completed = inShift.filter((r) => r.status === 'completed').length
     const noShow = inShift.filter((r) => r.status === 'no_show').length
@@ -41,11 +42,11 @@ const shiftStats = computed(() =>
 </script>
 
 <template>
-  <div v-if="loading" class="text-[13px] text-ink-faint">Loading…</div>
+  <div v-if="loading" class="text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
   <ul v-else class="divide-y divide-line-row2 text-[13px]">
     <li v-for="s in shiftStats" :key="s.key" class="flex items-center justify-between py-1.5">
       <span class="text-ink-700">{{ s.label }}</span>
-      <span class="text-ink-muted2">{{ s.total }} visits</span>
+      <span class="text-ink-muted2">{{ t(`${s.total} visits`, `${s.total} visitas`) }}</span>
       <span class="font-mono text-[12.5px] text-ink-900">{{ s.showRate === null ? '—' : `${s.showRate}%` }}</span>
     </li>
   </ul>

@@ -5,6 +5,7 @@ type SavedReply = Tables<'saved_replies'>
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 const replies = ref<SavedReply[]>([])
 const loading = ref(true)
@@ -67,7 +68,7 @@ async function save() {
 }
 
 async function removeReply(r: SavedReply) {
-  if (!confirm(`Delete "${r.title}"?`)) return
+  if (!confirm(t(`Delete "${r.title}"?`, `¿Eliminar "${r.title}"?`))) return
   await supabase.from('saved_replies').delete().eq('id', r.id)
   replies.value = replies.value.filter((x) => x.id !== r.id)
   if (activeReply.value?.id === r.id) activeReply.value = null
@@ -76,41 +77,40 @@ async function removeReply(r: SavedReply) {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Saved Replies" />
+    <PageHeader :title="t('Saved Replies', 'Respuestas Guardadas')" />
     <div class="flex-1 overflow-y-auto">
       <div class="flex gap-8 p-6">
         <SettingsNav />
         <div class="min-w-0 max-w-[660px] flex-1">
           <p class="text-[13px] leading-relaxed text-ink-muted2">
-            Pre-written answers your team can insert into the Inbox composer instead of retyping common replies
-            (hours, pricing, availability, etc.). Shared across the whole team.
+            {{ t('Pre-written answers your team can insert into the Inbox composer instead of retyping common replies (hours, pricing, availability, etc.). Shared across the whole team.', 'Respuestas ya redactadas que tu equipo puede insertar en el compositor de la Bandeja en lugar de volver a escribir respuestas comunes (horarios, precios, disponibilidad, etc.). Compartidas con todo el equipo.') }}
           </p>
 
           <div class="mt-6 rounded-card border border-line bg-surface shadow-card">
             <template v-if="!activeReply">
               <div class="flex items-center justify-between border-b border-line-divider p-4">
-                <h3 class="text-[13.5px] font-[560] text-ink-700">Replies</h3>
-                <UiBtn variant="primary" size="sm" @click="newReply">+ New Reply</UiBtn>
+                <h3 class="text-[13.5px] font-[560] text-ink-700">{{ t('Replies', 'Respuestas') }}</h3>
+                <UiBtn variant="primary" size="sm" @click="newReply">{{ t('+ New Reply', '+ Nueva Respuesta') }}</UiBtn>
               </div>
-              <div v-if="loading" class="p-6 text-center text-[13px] text-ink-faint">Loading…</div>
-              <div v-else-if="replies.length === 0" class="p-8 text-center text-[13px] text-ink-faint">No saved replies yet.</div>
+              <div v-if="loading" class="p-6 text-center text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+              <div v-else-if="replies.length === 0" class="p-8 text-center text-[13px] text-ink-faint">{{ t('No saved replies yet.', 'Aún no hay respuestas guardadas.') }}</div>
               <ul v-else class="divide-y divide-line-row">
                 <li v-for="r in replies" :key="r.id" class="flex items-center justify-between gap-3 px-4 py-3">
                   <button type="button" class="min-w-0 flex-1 text-left" @click="openReply(r)">
                     <p class="text-[13.5px] font-[560] text-ink-700 hover:text-brand-text">{{ r.title }}</p>
-                    <p class="truncate text-[12.5px] text-ink-muted2">{{ r.body || 'Empty' }}</p>
+                    <p class="truncate text-[12.5px] text-ink-muted2">{{ r.body || t('Empty', 'Vacío') }}</p>
                   </button>
-                  <button type="button" class="shrink-0 text-[12.5px] text-danger-text hover:text-danger-text/80" @click="removeReply(r)">Delete</button>
+                  <button type="button" class="shrink-0 text-[12.5px] text-danger-text hover:text-danger-text/80" @click="removeReply(r)">{{ t('Delete', 'Eliminar') }}</button>
                 </li>
               </ul>
             </template>
 
             <template v-else>
               <div class="flex items-center justify-between border-b border-line-divider p-4">
-                <button type="button" class="text-[13px] text-ink-muted2 hover:text-ink-600" @click="backToList">&larr; Replies</button>
+                <button type="button" class="text-[13px] text-ink-muted2 hover:text-ink-600" @click="backToList">&larr; {{ t('Replies', 'Respuestas') }}</button>
                 <div class="flex items-center gap-3">
-                  <span v-if="savedAt" class="text-[12.5px] text-success-text">Saved</span>
-                  <UiBtn variant="primary" size="sm" :disabled="saving" @click="save">{{ saving ? 'Saving…' : 'Save' }}</UiBtn>
+                  <span v-if="savedAt" class="text-[12.5px] text-success-text">{{ t('Saved', 'Guardado') }}</span>
+                  <UiBtn variant="primary" size="sm" :disabled="saving" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}</UiBtn>
                 </div>
               </div>
 
@@ -118,13 +118,13 @@ async function removeReply(r: SavedReply) {
                 <input
                   v-model="title"
                   type="text"
-                  placeholder="Untitled reply"
+                  :placeholder="t('Untitled reply', 'Respuesta sin título')"
                   class="mb-3 w-full border-none text-[18px] font-semibold text-ink-900 placeholder-ink-faint3 focus:outline-none focus:ring-0"
                 />
                 <textarea
                   v-model="body"
                   rows="6"
-                  placeholder="What should this reply say?"
+                  :placeholder="t('What should this reply say?', '¿Qué debería decir esta respuesta?')"
                   class="w-full resize-none rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13.5px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
                 />
               </div>

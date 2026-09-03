@@ -7,6 +7,7 @@ const emit = defineEmits<{ updated: [] }>()
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 interface TeamMemberOption { id: string; full_name: string }
 interface TutorOption { id: string; first_name: string; last_name: string | null }
@@ -100,10 +101,10 @@ function pickReferredBy(p: ReferrerOption) {
 }
 
 function teamMemberName(id: string | null) {
-  return teamMembers.value.find((m) => m.id === id)?.full_name ?? 'None'
+  return teamMembers.value.find((m) => m.id === id)?.full_name ?? t('None', 'Ninguno')
 }
 function clinicName(id: string | null) {
-  return store.clinics.find((c) => c.id === id)?.name ?? 'None'
+  return store.clinics.find((c) => c.id === id)?.name ?? t('None', 'Ninguna')
 }
 function languageLabel(code: string) {
   return LANGUAGES.find((l) => l.code === code)?.label ?? code
@@ -175,15 +176,19 @@ async function loadActivity() {
 
   const items: ActivityItem[] = []
   for (const a of (appts as any[]) ?? []) {
-    const typeName = a.appointment_types?.name ?? 'Visit'
-    const verb = a.status === 'completed' ? 'Completed' : a.status === 'cancelled' ? 'Cancelled' : a.status === 'no_show' ? 'Missed' : 'Booked'
-    items.push({ at: a.starts_at, text: `${verb} ${typeName.toLowerCase()} appointment`, dot: a.status === 'completed' ? 'bg-success-accent' : a.status === 'no_show' || a.status === 'cancelled' ? 'bg-warning-accent' : 'bg-brand' })
+    const typeNameEn = a.appointment_types?.name ?? 'Visit'
+    const typeNameEs = a.appointment_types?.name ?? 'Visita'
+    const verbEn = a.status === 'completed' ? 'Completed' : a.status === 'cancelled' ? 'Cancelled' : a.status === 'no_show' ? 'Missed' : 'Booked'
+    const verbEs = a.status === 'completed' ? 'completada' : a.status === 'cancelled' ? 'cancelada' : a.status === 'no_show' ? 'no asistida' : 'reservada'
+    const text = t(`${verbEn} ${typeNameEn.toLowerCase()} appointment`, `Cita de ${typeNameEs.toLowerCase()} ${verbEs}`)
+    items.push({ at: a.starts_at, text, dot: a.status === 'completed' ? 'bg-success-accent' : a.status === 'no_show' || a.status === 'cancelled' ? 'bg-warning-accent' : 'bg-brand' })
   }
   for (const inv of invoices ?? []) {
-    items.push({ at: inv.created_at, text: `Invoice ${inv.invoice_number} ${inv.status === 'paid' ? 'paid' : 'issued'}`, dot: inv.status === 'paid' ? 'bg-success-accent' : 'bg-ink-faint3' })
+    const text = t(`Invoice ${inv.invoice_number} ${inv.status === 'paid' ? 'paid' : 'issued'}`, `Factura ${inv.invoice_number} ${inv.status === 'paid' ? 'pagada' : 'emitida'}`)
+    items.push({ at: inv.created_at, text, dot: inv.status === 'paid' ? 'bg-success-accent' : 'bg-ink-faint3' })
   }
   for (const m of messages ?? []) {
-    items.push({ at: m.created_at, text: m.direction === 'inbound' ? 'Replied via WhatsApp' : 'WhatsApp message sent', dot: 'bg-brand' })
+    items.push({ at: m.created_at, text: m.direction === 'inbound' ? t('Replied via WhatsApp', 'Respondió por WhatsApp') : t('WhatsApp message sent', 'Mensaje de WhatsApp enviado'), dot: 'bg-brand' })
   }
   items.sort((a, b) => b.at.localeCompare(a.at))
   activity.value = items.slice(0, 6)
@@ -195,12 +200,12 @@ watch(() => props.patient.id, loadActivity)
 function relativeTime(iso: string) {
   const diffMs = Date.now() - new Date(iso).getTime()
   const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24))
-  if (diffDays === 0) return 'Today'
-  if (diffDays === 1) return 'Yesterday'
-  if (diffDays === -1) return 'Tomorrow'
-  if (diffDays > 0 && diffDays < 7) return `${diffDays}d ago`
-  if (diffDays < 0 && diffDays > -7) return `in ${-diffDays}d`
-  if (diffDays >= 7 && diffDays < 60) return `${Math.round(diffDays / 7)}w ago`
+  if (diffDays === 0) return t('Today', 'Hoy')
+  if (diffDays === 1) return t('Yesterday', 'Ayer')
+  if (diffDays === -1) return t('Tomorrow', 'Mañana')
+  if (diffDays > 0 && diffDays < 7) return t(`${diffDays}d ago`, `hace ${diffDays}d`)
+  if (diffDays < 0 && diffDays > -7) return t(`in ${-diffDays}d`, `en ${-diffDays}d`)
+  if (diffDays >= 7 && diffDays < 60) return t(`${Math.round(diffDays / 7)}w ago`, `hace ${Math.round(diffDays / 7)}sem`)
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
@@ -327,21 +332,21 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
     <!-- KPI strip -->
     <div class="grid grid-cols-4 gap-3">
       <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-        <p class="text-[11.5px] text-ink-muted2">Visits, 12 mo</p>
+        <p class="text-[11.5px] text-ink-muted2">{{ t('Visits, 12 mo', 'Visitas, 12 meses') }}</p>
         <p class="mt-1 font-mono text-[20px] font-semibold text-ink-900">{{ kpiLoading ? '—' : visits12mo }}</p>
       </div>
       <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-        <p class="text-[11.5px] text-ink-muted2">Attendance</p>
+        <p class="text-[11.5px] text-ink-muted2">{{ t('Attendance', 'Asistencia') }}</p>
         <p class="mt-1 font-mono text-[20px] font-semibold text-ink-900">{{ kpiLoading || attendancePct === null ? '—' : `${attendancePct}%` }}</p>
       </div>
       <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-        <p class="text-[11.5px] text-ink-muted2">Last visit</p>
+        <p class="text-[11.5px] text-ink-muted2">{{ t('Last visit', 'Última visita') }}</p>
         <p class="mt-1 text-[20px] font-semibold text-ink-900">
           {{ kpiLoading ? '—' : lastVisit ? new Date(lastVisit).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '—' }}
         </p>
       </div>
       <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-        <p class="text-[11.5px] text-ink-muted2">Lifetime value</p>
+        <p class="text-[11.5px] text-ink-muted2">{{ t('Lifetime value', 'Valor histórico') }}</p>
         <p class="mt-1 font-mono text-[20px] font-semibold text-ink-900">{{ kpiLoading ? '—' : money(lifetimeCents) }}</p>
       </div>
     </div>
@@ -349,8 +354,8 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
     <!-- Patient details -->
     <div class="rounded-card border border-line bg-surface p-5 shadow-card">
       <div class="flex items-center justify-between">
-        <p class="text-[13.5px] font-semibold text-ink-700">Patient details</p>
-        <UiBtn v-if="!editing" variant="secondary" size="sm" @click="startEditing">Edit</UiBtn>
+        <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Patient details', 'Datos del paciente') }}</p>
+        <UiBtn v-if="!editing" variant="secondary" size="sm" @click="startEditing">{{ t('Edit', 'Editar') }}</UiBtn>
       </div>
 
       <!-- Phone numbers are a separate one-to-many table (patient_contact_numbers),
@@ -363,93 +368,93 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
 
       <dl v-if="!editing" class="mt-4 grid grid-cols-3 gap-x-6 gap-y-4">
         <div>
-          <dt class="text-[11.5px] text-ink-muted2">Date of birth</dt>
-          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.date_of_birth ?? 'N/A' }}</dd>
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Date of birth', 'Fecha de nacimiento') }}</dt>
+          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.date_of_birth ?? t('N/A', 'N/D') }}</dd>
         </div>
         <div>
-          <dt class="text-[11.5px] text-ink-muted2">Email</dt>
-          <dd class="mt-0.5 truncate text-[13.5px] text-ink-700">{{ patient.email ?? 'N/A' }}</dd>
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Email', 'Correo electrónico') }}</dt>
+          <dd class="mt-0.5 truncate text-[13.5px] text-ink-700">{{ patient.email ?? t('N/A', 'N/D') }}</dd>
         </div>
         <div>
-          <dt class="text-[11.5px] text-ink-muted2">Address</dt>
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Address', 'Dirección') }}</dt>
           <dd class="mt-0.5 text-[13.5px] text-ink-700">
-            <p class="truncate">{{ patient.address ?? 'N/A' }}</p>
+            <p class="truncate">{{ patient.address ?? t('N/A', 'N/D') }}</p>
             <p v-if="patient.city || patient.postal_code || patient.country" class="truncate text-ink-muted">
               {{ [patient.postal_code, patient.city].filter(Boolean).join(' ') }}{{ patient.country ? (patient.city || patient.postal_code ? ', ' : '') + patient.country : '' }}
             </p>
           </dd>
         </div>
         <div>
-          <dt class="text-[11.5px] text-ink-muted2">National ID</dt>
-          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.national_id ?? 'N/A' }}</dd>
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('National ID', 'DNI/NIE') }}</dt>
+          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.national_id ?? t('N/A', 'N/D') }}</dd>
         </div>
         <div>
-          <dt class="text-[11.5px] text-ink-muted2">Occupation</dt>
-          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.occupation ?? 'N/A' }}</dd>
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Occupation', 'Profesión') }}</dt>
+          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.occupation ?? t('N/A', 'N/D') }}</dd>
         </div>
         <div>
-          <dt class="text-[11.5px] text-ink-muted2">Emergency contact</dt>
-          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.emergency_contact ?? 'N/A' }}</dd>
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Emergency contact', 'Contacto de emergencia') }}</dt>
+          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.emergency_contact ?? t('N/A', 'N/D') }}</dd>
         </div>
         <div>
-          <dt class="text-[11.5px] text-ink-muted2">Referral source</dt>
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Referral source', 'Origen de la referencia') }}</dt>
           <dd class="mt-0.5 text-[13.5px] text-ink-700">
-            {{ patient.referral_source ?? 'N/A' }}
+            {{ patient.referral_source ?? t('N/A', 'N/D') }}
             <template v-if="patient.referral_source === 'Patient'">
               &middot;
               <NuxtLink v-if="patient.referred_by_patient_id" :to="`/patients/${patient.referred_by_patient_id}`" class="text-brand-text hover:underline">
-                {{ selectedReferredBy ? tutorName(selectedReferredBy) : 'View patient' }}
+                {{ selectedReferredBy ? tutorName(selectedReferredBy) : t('View patient', 'Ver paciente') }}
               </NuxtLink>
-              <span v-else class="text-danger-text">No patient linked</span>
+              <span v-else class="text-danger-text">{{ t('No patient linked', 'Ningún paciente vinculado') }}</span>
             </template>
           </dd>
         </div>
         <div>
-          <dt class="text-[11.5px] text-ink-muted2">Preferred language</dt>
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Preferred language', 'Idioma preferido') }}</dt>
           <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ languageLabel(patient.preferred_language) }}</dd>
         </div>
         <div>
-          <dt class="text-[11.5px] text-ink-muted2">Default practitioner</dt>
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Default practitioner', 'Profesional predeterminado') }}</dt>
           <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ teamMemberName(patient.default_practitioner_id) }}</dd>
         </div>
         <div>
-          <dt class="text-[11.5px] text-ink-muted2">Clinic</dt>
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Clinic', 'Clínica') }}</dt>
           <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ clinicName(patient.clinic_id) }}</dd>
         </div>
         <div class="col-span-2">
-          <dt class="text-[11.5px] text-ink-muted2">Tags</dt>
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Tags', 'Etiquetas') }}</dt>
           <dd class="mt-0.5 text-[13.5px] text-ink-700">
-            <span v-if="patient.tags.length === 0">None</span>
+            <span v-if="patient.tags.length === 0">{{ t('None', 'Ninguna') }}</span>
             <span v-for="tag in patient.tags" :key="tag" class="mr-1 inline-block rounded-pill bg-chip-bg px-2 py-0.5 text-[11px] font-medium text-chip-text">
               {{ tag }}
             </span>
           </dd>
         </div>
         <div>
-          <dt class="text-[11.5px] text-ink-muted2">Status</dt>
-          <dd class="mt-0.5"><UiPill :tone="patient.status === 'active' ? 'success' : 'neutral'">{{ patient.status === 'active' ? 'Active' : 'Inactive' }}</UiPill></dd>
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Status', 'Estado') }}</dt>
+          <dd class="mt-0.5"><UiPill :tone="patient.status === 'active' ? 'success' : 'neutral'">{{ patient.status === 'active' ? t('Active', 'Activo') : t('Inactive', 'Inactivo') }}</UiPill></dd>
         </div>
         <div v-if="patient.is_minor">
-          <dt class="text-[11.5px] text-ink-muted2">Tutor</dt>
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Tutor', 'Tutor') }}</dt>
           <dd class="mt-0.5 text-[13.5px] text-ink-700">
             <NuxtLink v-if="patient.tutor_patient_id" :to="`/patients/${patient.tutor_patient_id}`" class="text-brand-text hover:underline">
-              {{ selectedTutor ? tutorName(selectedTutor) : 'View tutor' }}
+              {{ selectedTutor ? tutorName(selectedTutor) : t('View tutor', 'Ver tutor') }}
             </NuxtLink>
-            <span v-else class="text-danger-text">No tutor linked</span>
+            <span v-else class="text-danger-text">{{ t('No tutor linked', 'Ningún tutor vinculado') }}</span>
           </dd>
         </div>
         <div v-if="referredPatients.length > 0">
-          <dt class="text-[11.5px] text-ink-muted2">Referred patients</dt>
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Referred patients', 'Pacientes referidos') }}</dt>
           <dd class="mt-0.5 flex flex-wrap gap-x-2 text-[13.5px] text-ink-700">
             <NuxtLink v-for="r in referredPatients" :key="r.id" :to="`/patients/${r.id}`" class="text-brand-text hover:underline">{{ tutorName(r) }}</NuxtLink>
           </dd>
         </div>
         <div>
-          <dt class="text-[11.5px] text-ink-muted2">Communication flags</dt>
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Communication flags', 'Alertas de comunicación') }}</dt>
           <dd class="mt-0.5 flex flex-wrap gap-1">
-            <UiPill v-if="patient.is_minor" tone="brand">Under age — no communications</UiPill>
-            <UiPill v-if="patient.do_not_contact" tone="danger">Do not contact</UiPill>
-            <span v-if="!patient.is_minor && !patient.do_not_contact" class="text-[13.5px] text-ink-700">None</span>
+            <UiPill v-if="patient.is_minor" tone="brand">{{ t('Under age — no communications', 'Menor de edad — sin comunicaciones') }}</UiPill>
+            <UiPill v-if="patient.do_not_contact" tone="danger">{{ t('Do not contact', 'No contactar') }}</UiPill>
+            <span v-if="!patient.is_minor && !patient.do_not_contact" class="text-[13.5px] text-ink-700">{{ t('None', 'Ninguna') }}</span>
           </dd>
         </div>
       </dl>
@@ -457,65 +462,65 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
       <form v-else class="mt-4 space-y-4" @submit.prevent="save">
         <div class="grid grid-cols-3 gap-4">
           <div>
-            <label :class="labelClass">First name</label>
+            <label :class="labelClass">{{ t('First name', 'Nombre') }}</label>
             <input v-model="firstName" type="text" required :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">Last name</label>
+            <label :class="labelClass">{{ t('Last name', 'Apellidos') }}</label>
             <input v-model="lastName" type="text" :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">Date of birth</label>
+            <label :class="labelClass">{{ t('Date of birth', 'Fecha de nacimiento') }}</label>
             <input v-model="dateOfBirth" type="date" :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">Email</label>
+            <label :class="labelClass">{{ t('Email', 'Correo electrónico') }}</label>
             <input v-model="email" type="email" :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">Street address</label>
+            <label :class="labelClass">{{ t('Street address', 'Dirección') }}</label>
             <input v-model="address" type="text" :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">Postal code</label>
+            <label :class="labelClass">{{ t('Postal code', 'Código postal') }}</label>
             <input v-model="postalCode" type="text" :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">City</label>
+            <label :class="labelClass">{{ t('City', 'Ciudad') }}</label>
             <input v-model="city" type="text" :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">Country</label>
+            <label :class="labelClass">{{ t('Country', 'País') }}</label>
             <input v-model="country" type="text" :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">National ID</label>
+            <label :class="labelClass">{{ t('National ID', 'DNI/NIE') }}</label>
             <input v-model="nationalId" type="text" :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">Occupation</label>
+            <label :class="labelClass">{{ t('Occupation', 'Profesión') }}</label>
             <input v-model="occupation" type="text" :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">Emergency contact</label>
+            <label :class="labelClass">{{ t('Emergency contact', 'Contacto de emergencia') }}</label>
             <input v-model="emergencyContact" type="text" :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">Referral source</label>
+            <label :class="labelClass">{{ t('Referral source', 'Origen de la referencia') }}</label>
             <select v-model="referralSource" :class="inputClass">
-              <option value="">Not set</option>
+              <option value="">{{ t('Not set', 'Sin especificar') }}</option>
               <option v-for="s in referralSources" :key="s.id" :value="s.name">{{ s.name }}</option>
               <!-- Preserves legacy freeform data that doesn't match a configured source. -->
               <option v-if="referralSource && !referralSources.some((s) => s.name === referralSource)" :value="referralSource">{{ referralSource }}</option>
             </select>
             <div v-if="referralSource === 'Patient'" class="mt-2">
-              <label :class="labelClass">Referred by (existing patient)</label>
+              <label :class="labelClass">{{ t('Referred by (existing patient)', 'Referido por (paciente existente)') }}</label>
               <div v-if="selectedReferredBy" class="mt-1 flex items-center gap-2">
                 <span class="text-[13px] text-ink-700">{{ tutorName(selectedReferredBy) }}</span>
-                <button type="button" class="text-[12px] text-danger-text hover:underline" @click="selectedReferredBy = null">Remove</button>
+                <button type="button" class="text-[12px] text-danger-text hover:underline" @click="selectedReferredBy = null">{{ t('Remove', 'Quitar') }}</button>
               </div>
               <div v-else class="relative mt-1">
-                <input v-model="referredBySearch" type="text" placeholder="Search patient by name…" :class="inputClass" />
+                <input v-model="referredBySearch" type="text" :placeholder="t('Search patient by name…', 'Buscar paciente por nombre…')" :class="inputClass" />
                 <ul v-if="referredByResults.length > 0" class="absolute z-10 mt-1 w-full rounded-ctl border border-line bg-surface py-1 shadow-popover">
                   <li v-for="p in referredByResults" :key="p.id">
                     <button type="button" class="block w-full px-3 py-1.5 text-left text-[13px] text-ink-700 hover:bg-surface-subtle" @click="pickReferredBy(p)">
@@ -527,52 +532,52 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
             </div>
           </div>
           <div>
-            <label :class="labelClass">Preferred language</label>
+            <label :class="labelClass">{{ t('Preferred language', 'Idioma preferido') }}</label>
             <select v-model="preferredLanguage" :class="inputClass">
               <option v-for="l in LANGUAGES" :key="l.code" :value="l.code">{{ l.label }}</option>
             </select>
           </div>
           <div>
-            <label :class="labelClass">Default practitioner</label>
+            <label :class="labelClass">{{ t('Default practitioner', 'Profesional predeterminado') }}</label>
             <select v-model="defaultPractitionerId" :class="inputClass">
-              <option value="">None</option>
+              <option value="">{{ t('None', 'Ninguno') }}</option>
               <option v-for="m in teamMembers" :key="m.id" :value="m.id">{{ m.full_name }}</option>
             </select>
           </div>
           <div>
-            <label :class="labelClass">Clinic</label>
+            <label :class="labelClass">{{ t('Clinic', 'Clínica') }}</label>
             <select v-model="clinicId" :class="inputClass">
-              <option value="">No primary clinic</option>
+              <option value="">{{ t('No primary clinic', 'Sin clínica principal') }}</option>
               <option v-for="clinic in store.clinics" :key="clinic.id" :value="clinic.id">{{ clinic.name }}</option>
             </select>
           </div>
           <div class="col-span-3">
-            <label :class="labelClass">Tags</label>
-            <input v-model="tagsInput" type="text" placeholder="comma, separated, tags" :class="inputClass" />
+            <label :class="labelClass">{{ t('Tags', 'Etiquetas') }}</label>
+            <input v-model="tagsInput" type="text" :placeholder="t('comma, separated, tags', 'etiquetas, separadas, por, comas')" :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">Status</label>
+            <label :class="labelClass">{{ t('Status', 'Estado') }}</label>
             <select v-model="status" :class="inputClass">
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
+              <option value="active">{{ t('Active', 'Activo') }}</option>
+              <option value="inactive">{{ t('Inactive', 'Inactivo') }}</option>
             </select>
           </div>
         </div>
 
         <div class="border-t border-line-divider pt-4">
-          <p class="text-[13px] font-semibold text-ink-700">Under age &amp; do not contact</p>
+          <p class="text-[13px] font-semibold text-ink-700">{{ t('Under age & do not contact', 'Menor de edad y no contactar') }}</p>
           <label class="mt-3 flex items-center gap-1.5 text-[13px] text-ink-600">
             <input v-model="isMinor" type="checkbox" class="rounded border-line-control text-brand focus:ring-brand" />
-            This patient is under age
+            {{ t('This patient is under age', 'Este paciente es menor de edad') }}
           </label>
           <div v-if="isMinor" class="mt-2.5 pl-5">
-            <label :class="labelClass">Tutor (parent / guardian, must be an existing patient)</label>
+            <label :class="labelClass">{{ t('Tutor (parent / guardian, must be an existing patient)', 'Tutor (padre/madre o tutor legal, debe ser un paciente existente)') }}</label>
             <div v-if="selectedTutor" class="mt-1 flex items-center gap-2">
               <span class="text-[13px] text-ink-700">{{ tutorName(selectedTutor) }}</span>
-              <button type="button" class="text-[12px] text-danger-text hover:underline" @click="selectedTutor = null">Remove</button>
+              <button type="button" class="text-[12px] text-danger-text hover:underline" @click="selectedTutor = null">{{ t('Remove', 'Quitar') }}</button>
             </div>
             <div v-else class="relative mt-1">
-              <input v-model="tutorSearch" type="text" placeholder="Search patient by name…" :class="inputClass" />
+              <input v-model="tutorSearch" type="text" :placeholder="t('Search patient by name…', 'Buscar paciente por nombre…')" :class="inputClass" />
               <ul v-if="tutorResults.length > 0" class="absolute z-10 mt-1 w-full rounded-ctl border border-line bg-surface py-1 shadow-popover">
                 <li v-for="t in tutorResults" :key="t.id">
                   <button type="button" class="block w-full px-3 py-1.5 text-left text-[13px] text-ink-700 hover:bg-surface-subtle" @click="pickTutor(t)">
@@ -581,19 +586,19 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
                 </li>
               </ul>
             </div>
-            <p class="mt-1 text-[11px] text-ink-muted2">While marked under age, no WhatsApp or email communications will be sent to this patient.</p>
+            <p class="mt-1 text-[11px] text-ink-muted2">{{ t('While marked under age, no WhatsApp or email communications will be sent to this patient.', 'Mientras esté marcado como menor de edad, no se enviarán comunicaciones por WhatsApp o correo electrónico a este paciente.') }}</p>
           </div>
           <label class="mt-3 flex items-center gap-1.5 text-[13px] text-ink-600">
             <input v-model="doNotContact" type="checkbox" class="rounded border-line-control text-brand focus:ring-brand" />
-            Do not contact (blocks all communications and recalls)
+            {{ t('Do not contact (blocks all communications and recalls)', 'No contactar (bloquea todas las comunicaciones y recordatorios)') }}
           </label>
         </div>
 
         <div class="border-t border-line-divider pt-4">
-          <p class="text-[13px] font-semibold text-ink-700">Communication preferences</p>
+          <p class="text-[13px] font-semibold text-ink-700">{{ t('Communication preferences', 'Preferencias de comunicación') }}</p>
 
           <div class="mt-3">
-            <label :class="labelClass">Marketing channels</label>
+            <label :class="labelClass">{{ t('Marketing channels', 'Canales de marketing') }}</label>
             <div class="mt-1.5 flex flex-wrap gap-4">
               <label v-for="opt in MARKETING_CHANNEL_OPTIONS" :key="opt.value" class="flex items-center gap-1.5 text-[13px] text-ink-600">
                 <input v-model="marketingChannels" type="checkbox" :value="opt.value" class="rounded border-line-control text-brand focus:ring-brand" />
@@ -604,13 +609,13 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
 
           <div class="mt-3 grid grid-cols-2 gap-4">
             <div>
-              <label :class="labelClass">Reminder type</label>
+              <label :class="labelClass">{{ t('Reminder type', 'Tipo de recordatorio') }}</label>
               <select v-model="reminderChannel" :class="inputClass">
                 <option v-for="opt in CHANNEL_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
               </select>
             </div>
             <div>
-              <label :class="labelClass">Confirmation type</label>
+              <label :class="labelClass">{{ t('Confirmation type', 'Tipo de confirmación') }}</label>
               <select v-model="confirmationChannel" :class="inputClass">
                 <option v-for="opt in CHANNEL_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
               </select>
@@ -619,38 +624,38 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
 
           <label class="mt-3 flex items-center gap-1.5 text-[13px] text-ink-600">
             <input v-model="invoiceEmailEnabled" type="checkbox" class="rounded border-line-control text-brand focus:ring-brand" />
-            Email invoice when an appointment is processed
+            {{ t('Email invoice when an appointment is processed', 'Enviar factura por correo al procesar una cita') }}
           </label>
         </div>
 
         <p v-if="error" class="text-[13px] text-danger-text">{{ error }}</p>
         <div class="flex gap-2">
-          <UiBtn variant="primary" :disabled="saving" @click="save">{{ saving ? 'Saving…' : 'Save' }}</UiBtn>
-          <UiBtn type="button" variant="ghost" @click="editing = false">Cancel</UiBtn>
+          <UiBtn variant="primary" :disabled="saving" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}</UiBtn>
+          <UiBtn type="button" variant="ghost" @click="editing = false">{{ t('Cancel', 'Cancelar') }}</UiBtn>
         </div>
       </form>
     </div>
 
     <div v-if="!editing" class="grid grid-cols-2 gap-4">
       <div class="rounded-card border border-line bg-surface p-5 shadow-card">
-        <p class="text-[13.5px] font-semibold text-ink-700">Communication preferences</p>
+        <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Communication preferences', 'Preferencias de comunicación') }}</p>
         <div class="mt-3 space-y-2.5">
           <div class="flex items-center justify-between gap-3">
-            <span class="text-[12.5px] text-ink-muted">Reminders</span>
+            <span class="text-[12.5px] text-ink-muted">{{ t('Reminders', 'Recordatorios') }}</span>
             <UiPill tone="neutral">{{ channelLabel(patient.reminder_channel) }}</UiPill>
           </div>
           <div class="flex items-center justify-between gap-3">
-            <span class="text-[12.5px] text-ink-muted">Confirmations</span>
+            <span class="text-[12.5px] text-ink-muted">{{ t('Confirmations', 'Confirmaciones') }}</span>
             <UiPill tone="neutral">{{ channelLabel(patient.confirmation_channel) }}</UiPill>
           </div>
           <div class="flex items-center justify-between gap-3">
-            <span class="text-[12.5px] text-ink-muted">Invoice email</span>
-            <UiPill :tone="patient.invoice_email_enabled ? 'success' : 'neutral'">{{ patient.invoice_email_enabled ? 'Enabled' : 'Disabled' }}</UiPill>
+            <span class="text-[12.5px] text-ink-muted">{{ t('Invoice email', 'Factura por correo') }}</span>
+            <UiPill :tone="patient.invoice_email_enabled ? 'success' : 'neutral'">{{ patient.invoice_email_enabled ? t('Enabled', 'Activado') : t('Disabled', 'Desactivado') }}</UiPill>
           </div>
           <div class="flex items-start justify-between gap-3">
-            <span class="text-[12.5px] text-ink-muted">Marketing</span>
+            <span class="text-[12.5px] text-ink-muted">{{ t('Marketing', 'Marketing') }}</span>
             <div class="flex flex-wrap justify-end gap-1">
-              <UiPill v-if="patient.marketing_channels.length === 0" tone="neutral">None</UiPill>
+              <UiPill v-if="patient.marketing_channels.length === 0" tone="neutral">{{ t('None', 'Ninguno') }}</UiPill>
               <UiPill v-for="ch in patient.marketing_channels" :key="ch" tone="brand">{{ channelLabel(ch) }}</UiPill>
             </div>
           </div>
@@ -658,9 +663,9 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
       </div>
 
       <div class="rounded-card border border-line bg-surface p-5 shadow-card">
-        <p class="text-[13.5px] font-semibold text-ink-700">Recent activity</p>
-        <div v-if="activityLoading" class="mt-3 text-[12.5px] text-ink-faint">Loading…</div>
-        <p v-else-if="activity.length === 0" class="mt-3 text-[12.5px] text-ink-faint">No recent activity.</p>
+        <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Recent activity', 'Actividad reciente') }}</p>
+        <div v-if="activityLoading" class="mt-3 text-[12.5px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+        <p v-else-if="activity.length === 0" class="mt-3 text-[12.5px] text-ink-faint">{{ t('No recent activity.', 'Sin actividad reciente.') }}</p>
         <ul v-else class="mt-3 space-y-2.5">
           <li v-for="(item, i) in activity" :key="i" class="flex items-center gap-2.5">
             <span class="h-[6px] w-[6px] shrink-0 rounded-full" :class="item.dot" />

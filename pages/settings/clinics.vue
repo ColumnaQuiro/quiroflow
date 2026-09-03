@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const t = useT()
 
 const name = ref('')
 const address = ref('')
@@ -53,7 +54,7 @@ async function updateClinicAddress(clinicId: string, value: string) {
 }
 
 async function removeClinic(id: string) {
-  if (!confirm('Delete this clinic?')) return
+  if (!confirm(t('Delete this clinic?', '¿Eliminar esta clínica?'))) return
   await supabase.from('clinics').delete().eq('id', id)
   store.reset()
   await store.load()
@@ -67,27 +68,27 @@ async function onLogoUploaded() {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Clinics" />
+    <PageHeader :title="t('Clinics', 'Clínicas')" />
     <div class="flex-1 overflow-y-auto">
       <div class="flex gap-8 p-6">
         <SettingsNav />
         <div class="min-w-0 max-w-[660px] flex-1">
-          <p class="text-[13px] text-ink-muted2">Locations your practice operates from.</p>
+          <p class="text-[13px] text-ink-muted2">{{ t('Locations your practice operates from.', 'Ubicaciones desde las que opera tu clínica.') }}</p>
 
           <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
             <table class="w-full text-[13px]">
               <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted2">
                 <tr>
-                  <th class="px-4 py-2">Logo</th>
-                  <th class="px-4 py-2">Name</th>
-                  <th class="px-4 py-2">Address</th>
-                  <th class="px-4 py-2">Calendar slot</th>
+                  <th class="px-4 py-2">{{ t('Logo', 'Logotipo') }}</th>
+                  <th class="px-4 py-2">{{ t('Name', 'Nombre') }}</th>
+                  <th class="px-4 py-2">{{ t('Address', 'Dirección') }}</th>
+                  <th class="px-4 py-2">{{ t('Calendar slot', 'Franja del calendario') }}</th>
                   <th class="px-4 py-2"></th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-line-row">
                 <tr v-if="store.clinics.length === 0">
-                  <td colspan="5" class="px-4 py-6 text-center text-ink-faint">No clinics yet.</td>
+                  <td colspan="5" class="px-4 py-6 text-center text-ink-faint">{{ t('No clinics yet.', 'Todavía no hay clínicas.') }}</td>
                 </tr>
                 <tr v-for="c in store.clinics" :key="c.id">
                   <td class="px-4 py-2.5">
@@ -105,7 +106,7 @@ async function onLogoUploaded() {
                     <input
                       :value="c.address ?? ''"
                       type="text"
-                      placeholder="Add address…"
+                      :placeholder="t('Add address…', 'Añadir dirección…')"
                       class="w-full min-w-[180px] rounded-ctlSm border border-transparent bg-transparent px-1.5 py-1 text-[13px] text-ink-muted2 placeholder:text-ink-faint2 hover:border-line-control focus:border-brand focus:bg-surface focus:text-ink-700 focus:outline-none focus:ring-1 focus:ring-brand/20"
                       @change="updateClinicAddress(c.id, ($event.target as HTMLInputElement).value)"
                     />
@@ -127,25 +128,25 @@ async function onLogoUploaded() {
             </table>
           </div>
           <p class="mt-2 text-[12px] text-ink-faint">
-            "Calendar slot" sets how finely the Calendar's time grid is divided (e.g. 15 min shows 9:00, 9:15, 9:30…).
+            {{ t('"Calendar slot" sets how finely the Calendar\'s time grid is divided (e.g. 15 min shows 9:00, 9:15, 9:30…).', '"Franja del calendario" define en qué intervalos se divide la cuadrícula horaria del Calendario (p. ej. 15 min muestra 9:00, 9:15, 9:30…).') }}
           </p>
 
           <form class="mt-4 flex flex-wrap items-end gap-3 rounded-card border border-line bg-surface p-4 shadow-card" @submit.prevent="addClinic">
             <div>
-              <label class="block text-[12.5px] font-medium text-ink-600">Name</label>
+              <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Name', 'Nombre') }}</label>
               <input v-model="name" type="text" required placeholder="Valencia" class="mt-1 h-8 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20" />
             </div>
             <div>
-              <label class="block text-[12.5px] font-medium text-ink-600">Address</label>
+              <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Address', 'Dirección') }}</label>
               <input v-model="address" type="text" class="mt-1 h-8 w-64 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20" />
             </div>
-            <UiBtn variant="primary" type="submit" :disabled="saving">{{ saving ? 'Adding…' : 'Add Clinic' }}</UiBtn>
+            <UiBtn variant="primary" type="submit" :disabled="saving">{{ saving ? t('Adding…', 'Añadiendo…') : t('Add Clinic', 'Añadir clínica') }}</UiBtn>
           </form>
           <p v-if="error" class="mt-2 text-[12.5px] text-danger-text">{{ error }}</p>
 
           <p class="mt-6 text-[12.5px] text-ink-faint">
-            Online booking (enable/hours per clinic, booking window, layout, discount codes) lives in
-            <NuxtLink to="/settings/online-booking" class="text-brand-text hover:underline">Settings → Online Booking</NuxtLink>.
+            {{ t('Online booking (enable/hours per clinic, booking window, layout, discount codes) lives in', 'La reserva online (activar/horarios por clínica, ventana de reserva, diseño, códigos de descuento) está en') }}
+            <NuxtLink to="/settings/online-booking" class="text-brand-text hover:underline">{{ t('Settings → Online Booking', 'Ajustes → Reserva online') }}</NuxtLink>.
           </p>
         </div>
       </div>

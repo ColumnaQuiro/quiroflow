@@ -10,6 +10,7 @@ interface TeamMemberRow { id: string; full_name: string; color: string }
 
 const supabase = useSupabaseClient()
 const { practitioners, clinics, load: loadFilterOptions } = useReportFilterOptions()
+const t = useT()
 
 const range = ref(computePresetRange({ months: 1 }))
 const practitionerFilter = ref('')
@@ -86,7 +87,7 @@ const series = computed(() => {
     const member = teamMembers.value.find((m) => m.id === id)
     return {
       id,
-      label: member?.full_name ?? 'Unassigned',
+      label: member?.full_name ?? t('Unassigned', 'Sin asignar'),
       color: member?.color ?? '#9ca3af',
       data: monthKeys.value.map((k) => (monthTotals.get(k) ?? 0) / 100),
     }
@@ -109,8 +110,8 @@ const totalsByPractitioner = computed(() => series.value.map((s) => ({ label: s.
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Income Performance" meta="Compare practitioners month over month">
-      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; Reports</NuxtLink>
+    <PageHeader :title="t('Income Performance', 'Rendimiento de ingresos')" :meta="t('Compare practitioners month over month', 'Compara profesionales mes a mes')">
+      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
     </PageHeader>
 
     <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
@@ -119,17 +120,17 @@ const totalsByPractitioner = computed(() => series.value.map((s) => ({ label: s.
         <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
       </div>
 
-      <div v-if="loading" class="mt-6 text-[13px] text-ink-faint2">Loading…</div>
+      <div v-if="loading" class="mt-6 text-[13px] text-ink-faint2">{{ t('Loading…', 'Cargando…') }}</div>
       <div v-else-if="filteredPayments.length === 0" class="mt-6 rounded-card border border-dashed border-line-control bg-surface p-6 text-center text-[13px] text-ink-faint2">
-        No payments recorded yet — this fills in once invoices are being paid.
+        {{ t('No payments recorded yet — this fills in once invoices are being paid.', 'Todavía no hay pagos registrados — esto se completará en cuanto se paguen facturas.') }}
       </div>
       <template v-else>
         <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
-          <h3 class="text-[13.5px] font-semibold text-ink-800">Revenue by practitioner, by month</h3>
+          <h3 class="text-[13.5px] font-semibold text-ink-800">{{ t('Revenue by practitioner, by month', 'Ingresos por profesional, por mes') }}</h3>
           <div class="mt-3 h-80"><Line :data="chartData" :options="chartOptions" /></div>
         </div>
         <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
-          <h3 class="text-[13.5px] font-semibold text-ink-800">Total over range</h3>
+          <h3 class="text-[13.5px] font-semibold text-ink-800">{{ t('Total over range', 'Total del periodo') }}</h3>
           <ul class="mt-2 space-y-1.5 text-[13px]">
             <li v-for="row in totalsByPractitioner" :key="row.label" class="flex items-center justify-between">
               <span class="text-ink-600">{{ row.label }}</span>

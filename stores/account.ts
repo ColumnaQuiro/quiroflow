@@ -8,6 +8,7 @@ export interface TeamMember {
   color: string
   is_owner: boolean
   theme_preference: 'light' | 'dark' | 'system'
+  language_preference: 'en' | 'es'
   photo_storage_path: string | null
 }
 
@@ -61,7 +62,7 @@ export const useAccountStore = defineStore('account', {
 
       const { data: teamMember } = await supabase
         .from('team_members')
-        .select('id, account_id, full_name, role, color, is_owner, theme_preference, photo_storage_path')
+        .select('id, account_id, full_name, role, color, is_owner, theme_preference, language_preference, photo_storage_path')
         .eq('user_id', user.value.sub)
         .is('deleted_at', null)
         .maybeSingle()
@@ -78,6 +79,7 @@ export const useAccountStore = defineStore('account', {
       // localStorage before this resolved -- this reconciles it with the
       // user's real saved preference (e.g. first login on a new device).
       useTheme().setPreference(teamMember.theme_preference as 'light' | 'dark' | 'system')
+      useLang().setPreference(teamMember.language_preference as 'en' | 'es')
 
       const [{ data: account }, { data: clinics }, { data: permissions }] = await Promise.all([
         supabase

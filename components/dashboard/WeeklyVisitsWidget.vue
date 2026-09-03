@@ -1,10 +1,19 @@
 <script setup lang="ts">
 const props = defineProps<{ practitionerId?: string; clinicId?: string }>()
 
+const t = useT()
 const supabase = useSupabaseClient()
 const loading = ref(true)
 
-const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const DAY_LABELS = computed(() => [
+  t('Mon', 'Lun'),
+  t('Tue', 'Mar'),
+  t('Wed', 'Mié'),
+  t('Thu', 'Jue'),
+  t('Fri', 'Vie'),
+  t('Sat', 'Sáb'),
+  t('Sun', 'Dom'),
+])
 const kept = ref<number[]>(Array(7).fill(0))
 const lost = ref<number[]>(Array(7).fill(0))
 
@@ -42,7 +51,7 @@ watch(() => [props.practitionerId, props.clinicId], load)
 // column across the week; a floor of 1 keeps an all-zero week from dividing
 // by zero rather than implying real data.
 const CHART_HEIGHT_PX = 132
-const maxTotal = computed(() => Math.max(1, ...DAY_LABELS.map((_, i) => kept.value[i] + lost.value[i])))
+const maxTotal = computed(() => Math.max(1, ...DAY_LABELS.value.map((_, i) => kept.value[i] + lost.value[i])))
 function keptHeightPx(i: number) {
   return Math.round((kept.value[i] / maxTotal.value) * CHART_HEIGHT_PX)
 }
@@ -52,11 +61,11 @@ function lostHeightPx(i: number) {
 </script>
 
 <template>
-  <div v-if="loading" class="text-[13px] text-ink-faint">Loading…</div>
+  <div v-if="loading" class="text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
   <div v-else>
     <div class="flex items-center gap-4 text-[11.5px] text-ink-muted2">
-      <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-[2px] bg-brand" />Visits</span>
-      <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-[2px] bg-chart-cancelled" />Cancelled / no-show</span>
+      <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-[2px] bg-brand" />{{ t('Visits', 'Visitas') }}</span>
+      <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-[2px] bg-chart-cancelled" />{{ t('Cancelled / no-show', 'Canceladas / no presentado') }}</span>
     </div>
     <div class="mt-2 border-t border-line-row2" />
     <div class="mt-3 flex items-end" :style="{ height: `${CHART_HEIGHT_PX}px`, gap: '10px' }">

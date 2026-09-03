@@ -12,6 +12,7 @@ type StatusFilter = 'all' | 'unpaid' | 'paid' | 'void'
 
 const supabase = useSupabaseClient()
 const route = useRoute()
+const t = useT()
 
 const statusFilter = ref<StatusFilter>('unpaid')
 const invoices = ref<InvoiceRow[]>([])
@@ -26,12 +27,12 @@ const statsLoaded = ref(false)
 // doesn't affect which rows are loaded, purely cosmetic.
 const highlightId = computed(() => (route.query.highlight as string) || '')
 
-const FILTERS: { value: StatusFilter; label: string }[] = [
-  { value: 'unpaid', label: 'Unpaid' },
-  { value: 'paid', label: 'Paid' },
-  { value: 'void', label: 'Void' },
-  { value: 'all', label: 'All' },
-]
+const FILTERS = computed<{ value: StatusFilter; label: string }[]>(() => [
+  { value: 'unpaid', label: t('Unpaid', 'Impagadas') },
+  { value: 'paid', label: t('Paid', 'Pagadas') },
+  { value: 'void', label: t('Void', 'Anuladas') },
+  { value: 'all', label: t('All', 'Todas') },
+])
 
 const STATUS_TONE: Record<string, 'success' | 'danger' | 'neutral'> = {
   paid: 'success',
@@ -89,8 +90,11 @@ watch(statusFilter, () => {
 const outstandingMeta = computed(() => {
   if (!statsLoaded.value) return undefined
   const amount = Math.round(outstandingCents.value / 100).toLocaleString('en-US')
-  const noun = outstandingCount.value === 1 ? 'invoice' : 'invoices'
-  return `€${amount} outstanding across ${outstandingCount.value} ${noun}`
+  const noun = outstandingCount.value === 1 ? t('invoice', 'factura') : t('invoices', 'facturas')
+  return t(
+    `€${amount} outstanding across ${outstandingCount.value} ${noun}`,
+    `€${amount} pendiente en ${outstandingCount.value} ${noun}`,
+  )
 })
 
 function initials(row: InvoiceRow) {
@@ -106,9 +110,9 @@ function formatDate(iso: string) {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Billing" :meta="outstandingMeta">
-      <UiBtn variant="secondary" @click="navigateTo('/billing/services')">Services &amp; products</UiBtn>
-      <UiBtn variant="primary" @click="navigateTo('/billing/new')">+ Quick invoice</UiBtn>
+    <PageHeader :title="t('Billing', 'Facturación')" :meta="outstandingMeta">
+      <UiBtn variant="secondary" @click="navigateTo('/billing/services')">{{ t('Services & products', 'Servicios y productos') }}</UiBtn>
+      <UiBtn variant="primary" @click="navigateTo('/billing/new')">+ {{ t('Quick invoice', 'Factura rápida') }}</UiBtn>
     </PageHeader>
 
     <div class="flex-1 overflow-y-auto bg-surface-page p-6">
@@ -134,8 +138,8 @@ function formatDate(iso: string) {
         </div>
 
         <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
-          <div v-if="loading" class="px-4 py-10 text-center text-[13px] text-ink-muted2">Loading…</div>
-          <div v-else-if="invoices.length === 0" class="px-4 py-10 text-center text-[13px] text-ink-muted2">No invoices yet.</div>
+          <div v-if="loading" class="px-4 py-10 text-center text-[13px] text-ink-muted2">{{ t('Loading…', 'Cargando…') }}</div>
+          <div v-else-if="invoices.length === 0" class="px-4 py-10 text-center text-[13px] text-ink-muted2">{{ t('No invoices yet.', 'Todavía no hay facturas.') }}</div>
           <ul v-else class="divide-y divide-line-row">
             <li
               v-for="invoice in invoices"

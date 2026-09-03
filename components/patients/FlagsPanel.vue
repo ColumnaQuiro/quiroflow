@@ -2,6 +2,7 @@
 const props = defineProps<{ patientId: string }>()
 
 const supabase = useSupabaseClient()
+const t = useT()
 
 const chiefComplaint = ref('')
 const diagnosis = ref('')
@@ -75,9 +76,9 @@ const flagRows = computed(() => {
 <template>
   <div v-if="!loading" class="rounded-card border border-danger-border bg-danger-bg3 p-4 shadow-card">
     <div class="flex items-center justify-between gap-2">
-      <p class="text-[13.5px] font-semibold text-ink-700">Flags</p>
+      <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Flags', 'Alertas') }}</p>
       <button type="button" class="text-[12px] font-medium text-brand-text hover:text-brand-hover" @click="editing = !editing">
-        {{ editing ? 'Done' : 'Edit' }}
+        {{ editing ? t('Done', 'Listo') : t('Edit', 'Editar') }}
       </button>
     </div>
 
@@ -88,7 +89,7 @@ const flagRows = computed(() => {
           <p class="min-w-0 flex-1 whitespace-pre-wrap text-[12.5px] leading-snug text-ink-600">{{ row.text }}</p>
         </div>
       </div>
-      <p v-else class="mt-2 text-[12.5px] text-ink-faint">No flags recorded.</p>
+      <p v-else class="mt-2 text-[12.5px] text-ink-faint">{{ t('No flags recorded.', 'No hay alertas registradas.') }}</p>
 
       <div v-if="tags.length > 0" class="mt-3 flex flex-wrap gap-1.5 border-t border-danger-border pt-2.5">
         <span v-for="tag in tags" :key="tag" class="rounded-pill bg-chip-bg px-2 py-0.5 text-[11px] font-medium text-chip-text">{{ tag }}</span>
@@ -98,62 +99,62 @@ const flagRows = computed(() => {
     <template v-else>
       <div class="mt-3 space-y-2.5">
         <div>
-          <label class="block text-[11px] font-medium text-ink-muted2">Chief complaint</label>
+          <label class="block text-[11px] font-medium text-ink-muted2">{{ t('Chief complaint', 'Motivo de consulta') }}</label>
           <textarea
             v-model="chiefComplaint"
             rows="2"
-            placeholder="Enter patient's chief complaint here"
+            :placeholder="t(`Enter patient's chief complaint here`, 'Introduce aquí el motivo de consulta del paciente')"
             class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-2.5 py-1.5 text-[12.5px] text-ink-700 focus:border-brand focus:outline-none"
             @blur="saveChiefComplaint"
           ></textarea>
         </div>
 
         <div>
-          <label class="block text-[11px] font-medium text-ink-muted2">Diagnosis</label>
+          <label class="block text-[11px] font-medium text-ink-muted2">{{ t('Diagnosis', 'Diagnóstico') }}</label>
           <textarea
             v-model="diagnosis"
             rows="2"
-            placeholder="Working diagnosis"
+            :placeholder="t('Working diagnosis', 'Diagnóstico de trabajo')"
             class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-2.5 py-1.5 text-[12.5px] text-ink-700 focus:border-brand focus:outline-none"
             @blur="saveDiagnosis"
           ></textarea>
         </div>
 
         <div>
-          <label class="block text-[11px] font-medium text-ink-muted2">Goals</label>
+          <label class="block text-[11px] font-medium text-ink-muted2">{{ t('Goals', 'Objetivos') }}</label>
           <textarea
             v-model="goals"
             rows="2"
-            placeholder="Treatment goals"
+            :placeholder="t('Treatment goals', 'Objetivos del tratamiento')"
             class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-2.5 py-1.5 text-[12.5px] text-ink-700 focus:border-brand focus:outline-none"
             @blur="saveGoals"
           ></textarea>
         </div>
 
         <div>
-          <label class="block text-[11px] font-medium text-danger-text">Red flags</label>
+          <label class="block text-[11px] font-medium text-danger-text">{{ t('Red flags', 'Alertas rojas') }}</label>
           <textarea
             v-model="redFlags"
             rows="2"
-            placeholder="Urgent findings requiring immediate attention"
+            :placeholder="t('Urgent findings requiring immediate attention', 'Hallazgos urgentes que requieren atención inmediata')"
             class="mt-1 w-full rounded-ctl border border-danger-border bg-surface px-2.5 py-1.5 text-[12.5px] text-ink-700 focus:border-danger-text focus:outline-none"
             @blur="saveRedFlags"
           ></textarea>
         </div>
 
         <div>
-          <label class="block text-[11px] font-medium text-warning-accent">Yellow flags</label>
+          <label class="block text-[11px] font-medium text-warning-accent">{{ t('Yellow flags', 'Alertas amarillas') }}</label>
           <textarea
             v-model="yellowFlags"
             rows="2"
-            placeholder="Psychosocial or risk factors to keep in mind"
+            :placeholder="t('Psychosocial or risk factors to keep in mind', 'Factores psicosociales o de riesgo a tener en cuenta')"
             class="mt-1 w-full rounded-ctl border border-warning-border bg-surface px-2.5 py-1.5 text-[12.5px] text-ink-700 focus:border-warning-accent focus:outline-none"
             @blur="saveYellowFlags"
           ></textarea>
         </div>
 
         <div>
-          <label class="block text-[11px] font-medium text-ink-muted2">Tags</label>
+          <label class="block text-[11px] font-medium text-ink-muted2">{{ t('Tags', 'Etiquetas') }}</label>
           <div class="mt-1 flex flex-wrap items-center gap-1.5">
             <span v-for="tag in tags" :key="tag" class="inline-flex items-center gap-1 rounded-pill bg-chip-bg px-2 py-0.5 text-[11px] font-medium text-chip-text">
               {{ tag }}
@@ -162,7 +163,7 @@ const flagRows = computed(() => {
             <input
               v-model="newTag"
               type="text"
-              placeholder="+ Add tag"
+              :placeholder="t('+ Add tag', '+ Añadir etiqueta')"
               class="w-24 rounded-ctlSm border border-line-control bg-surface px-1.5 py-0.5 text-[11px] focus:border-brand focus:outline-none"
               @keydown.enter.prevent="addTag"
               @blur="addTag"

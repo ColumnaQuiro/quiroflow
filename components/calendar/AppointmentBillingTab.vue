@@ -12,6 +12,7 @@ const supabase = useSupabaseClient()
 const store = useAccountStore()
 const { can } = usePermission()
 const { fire } = useAutomations()
+const t = useT()
 
 const { loading: summaryLoading, balanceCents, activeMembership, activePackages, refresh: refreshSummary } = usePatientFinancialSummary(
   () => props.patientId,
@@ -46,9 +47,9 @@ async function sendInvoiceEmail() {
   sendResult.value = ''
   try {
     await useStaffFetch(`/api/invoices/${invoice.value.id}/send`, { method: 'POST' })
-    sendResult.value = 'Sent'
+    sendResult.value = t('Sent', 'Enviado')
   } catch (e: any) {
-    sendResult.value = e?.data?.message ?? 'Failed to send'
+    sendResult.value = e?.data?.message ?? t('Failed to send', 'Error al enviar')
   }
   sendingInvoice.value = false
 }
@@ -240,7 +241,7 @@ async function recordPayment() {
   const amountCents = Math.round((parseFloat(paymentAmount.value) || 0) * 100)
   if (amountCents <= 0) return
   if (paymentMethod.value === 'credit' && amountCents > balanceCents.value) {
-    error.value = 'Amount exceeds available credit.'
+    error.value = t('Amount exceeds available credit.', 'El importe supera el crédito disponible.')
     return
   }
   savingPayment.value = true
@@ -291,34 +292,34 @@ async function recordPayment() {
 <template>
   <div class="space-y-4 text-sm">
     <div class="rounded-card border border-line bg-surface-subtle p-3">
-      <div v-if="summaryLoading" class="text-ink-faint">Loading patient summary…</div>
+      <div v-if="summaryLoading" class="text-ink-faint">{{ t('Loading patient summary…', 'Cargando resumen del paciente…') }}</div>
       <div v-else class="space-y-1.5">
         <p class="flex items-center gap-1.5">
-          <span class="text-ink-muted2">Balance:</span>
+          <span class="text-ink-muted2">{{ t('Balance:', 'Saldo:') }}</span>
           <UiBalancePill v-if="balanceCents !== 0" :balance-cents="balanceCents" />
           <span v-else class="font-medium text-ink-700">€0.00</span>
         </p>
         <p v-if="activeMembership">
-          <span class="text-ink-muted2">Membership:</span>
+          <span class="text-ink-muted2">{{ t('Membership:', 'Membresía:') }}</span>
           <span class="ml-1 font-medium text-ink-900">{{ activeMembership.membership_name }}</span>
-          <span class="ml-1 rounded-ctlSm bg-success-bg px-1.5 py-0.5 text-xs font-medium text-success-text">active</span>
+          <span class="ml-1 rounded-ctlSm bg-success-bg px-1.5 py-0.5 text-xs font-medium text-success-text">{{ t('active', 'activa') }}</span>
         </p>
-        <p v-else class="text-ink-faint">No active membership</p>
+        <p v-else class="text-ink-faint">{{ t('No active membership', 'Sin membresía activa') }}</p>
         <div v-if="activePackages.length > 0" class="flex flex-wrap items-center gap-1">
-          <span class="text-ink-muted2">Packages:</span>
+          <span class="text-ink-muted2">{{ t('Packages:', 'Bonos:') }}</span>
           <span
             v-for="p in activePackages"
             :key="p.id"
             class="inline-flex items-center gap-1.5 rounded-ctlSm bg-brand-tint px-1.5 py-0.5 text-xs font-medium text-brand-text"
           >
-            {{ p.package_name }}: {{ p.sessions_total - p.sessions_used }} left
+            {{ p.package_name }}: {{ p.sessions_total - p.sessions_used }} {{ t('left', 'restantes') }}
           </span>
         </div>
       </div>
     </div>
 
-    <div v-if="loadingInvoice" class="text-ink-faint">Loading invoice…</div>
-    <p v-else-if="!invoice && !can('billing_access')" class="text-ink-faint">No invoice for this appointment yet.</p>
+    <div v-if="loadingInvoice" class="text-ink-faint">{{ t('Loading invoice…', 'Cargando factura…') }}</div>
+    <p v-else-if="!invoice && !can('billing_access')" class="text-ink-faint">{{ t('No invoice for this appointment yet.', 'Todavía no hay factura para esta cita.') }}</p>
     <div v-else-if="invoice" class="rounded-card border border-line bg-surface p-3">
       <div class="flex items-center justify-between">
         <NuxtLink :to="`/billing/${invoice.id}`" class="font-medium text-brand-text hover:text-brand-hover">{{ invoice.invoice_number }}</NuxtLink>
@@ -337,7 +338,7 @@ async function recordPayment() {
             :disabled="sendingInvoice"
             @click="sendInvoiceEmail"
           >
-            {{ sendingInvoice ? 'Sending…' : 'Send invoice' }}
+            {{ sendingInvoice ? t('Sending…', 'Enviando…') : t('Send invoice', 'Enviar factura') }}
           </button>
         </div>
       </div>
@@ -364,14 +365,14 @@ async function recordPayment() {
         class="mt-2 w-full rounded-ctl border border-line-control bg-surface px-2 py-1.5 text-sm text-ink-700 focus:border-brand focus:outline-none"
         @change="addLineItem"
       >
-        <option value="" disabled>-- Add Service/Product --</option>
+        <option value="" disabled>{{ t('-- Add Service/Product --', '-- Añadir servicio/producto --') }}</option>
         <option v-for="s in services" :key="s.id" :value="s.id">{{ s.name }} (€{{ (s.price_cents / 100).toFixed(2) }})</option>
       </select>
 
       <div class="mt-2 space-y-0.5 border-t border-line-divider pt-2 text-right">
-        <p class="text-ink-muted2">Total: €{{ (invoice.total_cents / 100).toFixed(2) }}</p>
-        <p class="text-ink-muted2">Paid: €{{ (paidCents / 100).toFixed(2) }}</p>
-        <p class="font-semibold text-ink-900">Balance due: €{{ (balanceDueCents / 100).toFixed(2) }}</p>
+        <p class="text-ink-muted2">{{ t('Total:', 'Total:') }} €{{ (invoice.total_cents / 100).toFixed(2) }}</p>
+        <p class="text-ink-muted2">{{ t('Paid:', 'Pagado:') }} €{{ (paidCents / 100).toFixed(2) }}</p>
+        <p class="font-semibold text-ink-900">{{ t('Balance due:', 'Saldo pendiente:') }} €{{ (balanceDueCents / 100).toFixed(2) }}</p>
       </div>
 
       <form
@@ -380,26 +381,26 @@ async function recordPayment() {
         @submit.prevent="recordPayment"
       >
         <div>
-          <label class="block text-xs font-medium text-ink-700">Amount (€)</label>
+          <label class="block text-xs font-medium text-ink-700">{{ t('Amount (€)', 'Importe (€)') }}</label>
           <input v-model="paymentAmount" type="number" step="0.01" min="0" class="mt-1 w-24 rounded-ctl border border-line-control bg-surface px-2 py-1.5 text-sm text-ink-700 focus:border-brand focus:outline-none" />
         </div>
         <div>
-          <label class="block text-xs font-medium text-ink-700">Method</label>
+          <label class="block text-xs font-medium text-ink-700">{{ t('Method', 'Método') }}</label>
           <select v-model="paymentMethod" class="mt-1 rounded-ctl border border-line-control bg-surface px-2 py-1.5 text-sm text-ink-700 focus:border-brand focus:outline-none">
-            <option value="cash">Cash</option>
-            <option value="card">Card</option>
-            <option v-if="balanceCents > 0" value="credit">Credit on account (€{{ (balanceCents / 100).toFixed(2) }} available)</option>
+            <option value="cash">{{ t('Cash', 'Efectivo') }}</option>
+            <option value="card">{{ t('Card', 'Tarjeta') }}</option>
+            <option v-if="balanceCents > 0" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} (€{{ (balanceCents / 100).toFixed(2) }} {{ t('available', 'disponible') }})</option>
           </select>
         </div>
         <button type="submit" :disabled="savingPayment" class="rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50">
-          {{ savingPayment ? 'Processing…' : 'Process' }}
+          {{ savingPayment ? t('Processing…', 'Procesando…') : t('Process', 'Procesar') }}
         </button>
       </form>
       <div
         v-if="can('billing_access') && invoice.status !== 'paid' && activePackages.length > 0"
         class="mt-2 flex flex-wrap items-center gap-2 border-t border-line-divider pt-2"
       >
-        <span class="text-xs text-ink-muted2">Or use a package session:</span>
+        <span class="text-xs text-ink-muted2">{{ t('Or use a package session:', 'O usar una sesión de bono:') }}</span>
         <button
           v-for="p in activePackages"
           :key="p.id"
@@ -407,7 +408,7 @@ async function recordPayment() {
           class="rounded-ctl border border-brand-tintBorder bg-brand-tint px-2 py-1 text-xs font-medium text-brand-text hover:brightness-95"
           @click="usePackageSession(p)"
         >
-          {{ p.package_name }} ({{ p.sessions_total - p.sessions_used }} left)
+          {{ p.package_name }} ({{ p.sessions_total - p.sessions_used }} {{ t('left', 'restantes') }})
         </button>
       </div>
       <ul v-if="payments.length > 0" class="mt-2 space-y-0.5 text-xs text-ink-muted2">
@@ -415,7 +416,7 @@ async function recordPayment() {
       </ul>
 
       <p v-if="!hasFutureAppointment" class="mt-3 border-t border-line-divider pt-3 text-sm font-medium text-danger-text">
-        No future appointment — this patient will show up in Recalls automatically.
+        {{ t('No future appointment — this patient will show up in Recalls automatically.', 'Sin próxima cita: este paciente aparecerá automáticamente en Recordatorios.') }}
       </p>
     </div>
     <p v-if="error" class="text-danger-text">{{ error }}</p>

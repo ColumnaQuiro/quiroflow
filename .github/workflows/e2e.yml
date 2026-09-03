@@ -1,4 +1,4 @@
-name: E2E tests
+name: CI
 
 on:
   pull_request:
@@ -6,9 +6,40 @@ on:
     branches: [main]
 
 jobs:
-  cypress:
+  typecheck:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run preflight
+
+  cypress:
+    strategy:
+      fail-fast: false
+      # Manual sharding, no Cypress Cloud recording configured (that's what
+      # unlocks --parallel/--record). Each shard still pays its own npm
+      # ci + supabase start cost, but in parallel with the others -- a
+      # worthwhile trade once actual Cypress runtime dominates the fixed
+      # per-job setup cost, as it does once there's more than a couple
+      # specs. Rebalance these groups if one shard consistently lags.
+      matrix:
+        shard:
+          - name: auth-and-calendar
+            specs: "cypress/e2e/auth/**,cypress/e2e/calendar/**"
+          - name: inbox-nav-patients
+            specs: "cypress/e2e/inbox/**,cypress/e2e/navigation/**,cypress/e2e/patients/**"
+          - name: booking-and-settings
+            specs: "cypress/e2e/public-booking/**,cypress/e2e/settings/**"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -24,7 +55,14 @@ jobs:
           version: latest
 
       - name: Start local Supabase
-        run: supabase start
+        # Excludes containers this suite never touches, cutting both image
+        # pulls and startup/health-check time: no supabase/functions/ exists
+        # (edge-runtime unused), no spec reads Mailpit's inbox and
+        # auth.email.enable_confirmations is off anyway (mailpit unused),
+        # and studio/postgres-meta/logflare/vector only serve the local
+        # Studio UI, never the app itself. Local dev (plain `supabase
+        # start`, no -x) still gets the full stack -- this only trims CI.
+        run: supabase start -x studio,edge-runtime,logflare,vector,mailpit,postgres-meta
 
       - name: Export Supabase env vars
         run: |
@@ -32,8 +70,8 @@ jobs:
             | sed -n 's/^API_URL="\(.*\)"/NUXT_PUBLIC_SUPABASE_URL=\1/p;s/^ANON_KEY="\(.*\)"/NUXT_PUBLIC_SUPABASE_KEY=\1/p;s/^SERVICE_ROLE_KEY="\(.*\)"/NUXT_SUPABASE_SECRET_KEY=\1/p' \
             >> "$GITHUB_ENV"
 
-      - name: Run Cypress
-        run: npm run test:e2e
+      - name: Run Cypress (${{ matrix.shard.name }})
+        run: npx start-server-and-test dev http://localhost:3000 "cypress run --spec '${{ matrix.shard.specs }}'"
         env:
           CYPRESS_baseUrl: http://localhost:3000
 
@@ -41,7 +79,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: cypress-screenshots
+          name: cypress-screenshots-${{ matrix.shard.name }}
           path: cypress/screenshots
           if-no-files-found: ignore
 

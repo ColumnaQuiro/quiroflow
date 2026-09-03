@@ -51,5 +51,12 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<!-- The app only ever talks HTTPS/TLS to Supabase, WhatsApp Cloud API,
+	     Stripe, and Resend -- no custom/proprietary encryption -- so it
+	     qualifies for Apple's standard exemption. Without this key, every
+	     TestFlight upload sits in "Missing Compliance" until someone answers
+	     this exact question by hand in App Store Connect. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>

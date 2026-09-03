@@ -5,6 +5,7 @@ import type { TablesInsert } from '~/types/database.types'
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+const { showToast } = useToast()
 
 type CsvRow = Record<string, string>
 
@@ -237,6 +238,10 @@ async function runImport() {
 
   importing.value = false
   stage.value = 'done'
+  showToast(
+    t(`Imported ${importedCount.value} file records.`, `Se importaron ${importedCount.value} registros de archivos.`),
+    importErrors.value.length > 0 ? 'error' : 'success',
+  )
 }
 
 function reset() {
@@ -334,15 +339,15 @@ function reset() {
     </div>
 
     <div v-else-if="stage === 'done'" class="mt-4 space-y-4">
-      <div class="rounded-lg border border-success-border bg-success-bg p-4 text-sm text-success-text">
+      <div class="rounded-lg border border-line bg-surface-subtle p-4 text-sm text-ink-muted2">
         {{
           t(
-            `Imported ${importedCount} file records. These are placeholders (name/size/type known, content not yet attached) — PracticeHub has no bulk file-download API, so pulling in the actual content is a separate step.`,
-            `Se importaron ${importedCount} registros de archivos. Son marcadores de posición (se conoce el nombre/tamaño/tipo, el contenido aún no está adjunto); PracticeHub no tiene una API de descarga masiva de archivos, así que traer el contenido real es un paso aparte.`,
+            'These are placeholders (name/size/type known, content not yet attached) — PracticeHub has no bulk file-download API, so pulling in the actual content is a separate step.',
+            'Son marcadores de posición (se conoce el nombre/tamaño/tipo, el contenido aún no está adjunto); PracticeHub no tiene una API de descarga masiva de archivos, así que traer el contenido real es un paso aparte.',
           )
         }}
         {{ t('Head to', 'Ve a') }}
-        <NuxtLink to="/settings/migrate-attachments" class="font-medium underline">{{ t('Settings → Migrate Attachments', 'Ajustes → Migrar archivos adjuntos') }}</NuxtLink>
+        <NuxtLink to="/settings/migrate-attachments" class="font-medium text-brand-text underline">{{ t('Settings → Migrate Attachments', 'Ajustes → Migrar archivos adjuntos') }}</NuxtLink>
         {{ t('for the download and instructions.', 'para la descarga y las instrucciones.') }}
       </div>
       <div v-if="importErrors.length > 0" class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">

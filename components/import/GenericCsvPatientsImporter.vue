@@ -16,6 +16,7 @@ import type { TablesInsert, TablesUpdate } from '~/types/database.types'
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+const { showToast } = useToast()
 
 type CsvRow = Record<string, string>
 type ContactNumber = { country_code: string; number: string; is_whatsapp: boolean }
@@ -341,6 +342,10 @@ async function runImport() {
 
     importing.value = false
     stage.value = 'done'
+    showToast(
+      t(`Imported ${importedCount.value} patients. Updated ${updatedCount.value} existing patients.`, `Se importaron ${importedCount.value} pacientes. Se actualizaron ${updatedCount.value} pacientes existentes.`),
+      importErrors.value.length > 0 ? 'error' : 'success',
+    )
   } catch (err) {
     importing.value = false
     runError.value = err instanceof Error ? err.message : String(err)
@@ -557,9 +562,6 @@ function reset() {
     </div>
 
     <div v-else-if="stage === 'done'" class="mt-4 space-y-4">
-      <div class="rounded-lg border border-success-border bg-success-bg p-4 text-sm text-success-text">
-        {{ t(`Imported ${importedCount} patients. Updated ${updatedCount} existing patients.`, `Se importaron ${importedCount} pacientes. Se actualizaron ${updatedCount} pacientes existentes.`) }}
-      </div>
       <div v-if="importErrors.length > 0" class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
         <p class="font-medium">{{ t('Some rows failed:', 'Algunas filas fallaron:') }}</p>
         <ul class="mt-1 list-disc pl-5">

@@ -2,6 +2,7 @@
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+const { showToast } = useToast()
 
 interface PHPatient { id: number; patient_number: string }
 interface PHPatientPackage {
@@ -231,6 +232,13 @@ async function applyFixes() {
   }
 
   stage.value = 'done'
+  showToast(
+    t(
+      `Applied ${candidates.value.filter((c) => c.status === 'applied').length} fix(es).`,
+      `Se aplicaron ${candidates.value.filter((c) => c.status === 'applied').length} corrección(es).`,
+    ),
+    candidates.value.some((c) => c.status === 'error') ? 'error' : 'success',
+  )
 }
 
 function retryRun() {
@@ -353,14 +361,6 @@ function formatEuros(cents: number): string {
     </div>
 
     <div v-else-if="stage === 'done'" class="mt-4 space-y-4">
-      <div class="rounded-lg border border-success-border bg-success-bg p-4 text-sm text-success-text">
-        {{
-          t(
-            `Applied ${candidates.filter((c) => c.status === 'applied').length} fix(es).`,
-            `Se aplicaron ${candidates.filter((c) => c.status === 'applied').length} corrección(es).`,
-          )
-        }}
-      </div>
       <div v-if="candidates.some((c) => c.status === 'error')" class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
         <p class="font-medium">{{ t('Some rows failed:', 'Algunas filas fallaron:') }}</p>
         <ul class="mt-1 list-disc pl-5">

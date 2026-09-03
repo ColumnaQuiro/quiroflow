@@ -62,6 +62,15 @@ export default defineNuxtConfig({
     // unset, Settings > Payments falls back to the legacy manual-key flow.
     stripeSecretKey: '',
     stripeConnectWebhookSecret: '',
+    // A SEPARATE Stripe account/keys from the two above -- this is
+    // QuiroFlow's own billing of clinic accounts for using the product
+    // itself, not Connect (which bills clinics' own patients on their
+    // behalf). Deliberately never shares a client or env var with
+    // stripeSecretKey so a bug in one can't reach the other's data. See
+    // server/utils/platformBillingStripe.ts. Optional -- if unset, the
+    // platform-billing webhook endpoint just rejects.
+    stripePlatformBillingSecretKey: '',
+    stripePlatformBillingWebhookSecret: '',
     // Firebase service-account key (JSON, as a single-line string) for
     // sending mobile push notifications via FCM v1. Optional -- if unset,
     // server/utils/pushNotifications.ts just no-ops, same as WhatsApp

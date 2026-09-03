@@ -1,0 +1,12 @@
+{
+  // https://nuxt.com/docs/guide/concepts/typescript
+  //
+  // Without this file, Vite/tsconfck resolving a tsconfig for any file under
+  // mobile/ finds none here and walks up to the repo root's tsconfig.json
+  // instead -- which "works" on a dev machine that's also run the root app
+  // (its .nuxt/tsconfig.json happens to already exist) but fails outright on
+  // a clean checkout that only ever prepared mobile/ (Xcode Cloud): the root
+  // tsconfig's "extends" target doesn't exist there, and `nuxt generate`
+  // fails with a TSConfckParseError before it processes a single mobile file.
+  "extends": "./.nuxt/tsconfig.json"
+}

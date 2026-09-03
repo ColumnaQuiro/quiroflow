@@ -31,6 +31,17 @@ if ! command -v npm >/dev/null 2>&1; then
   brew install node
 fi
 
+# mobile/ imports some shared code straight from the repo root (e.g.
+# utils/appointmentOverrides.ts) rather than duplicating it, so the root
+# app's own .nuxt/tsconfig.json needs to exist too, or Vite's tsconfig
+# lookup for those root-level files fails the same way it did for mobile's
+# own files before mobile/tsconfig.json existed -- `extends` pointing at a
+# .nuxt directory nobody ever generated. Root's `npm ci` already runs `nuxt
+# prepare` as its postinstall, so this is enough; no need to build the root
+# app itself here.
+cd "$CI_PRIMARY_REPOSITORY_PATH"
+npm ci
+
 cd "$CI_PRIMARY_REPOSITORY_PATH/mobile"
 
 export NUXT_PUBLIC_SUPABASE_URL="https://oyaprkfurtuujdfafptw.supabase.co"

@@ -119,5 +119,16 @@ export default defineNuxtConfig({
         ignored: ['**/mobile/**'],
       },
     },
+    // papaparse and @stripe/stripe-js are only ever imported lazily, by CSV
+    // importer and payment components nothing visits on a typical page.
+    // Left off this list, Vite discovers each one mid-request the first
+    // time one of those components mounts on a freshly started dev server
+    // and force-reloads the page to re-bundle -- which lands mid-test in CI
+    // (a cold `npm run dev` every run) and wipes out whatever UI state the
+    // test had just set up. Pre-bundling them here makes that discovery
+    // happen at server boot instead of mid-test.
+    optimizeDeps: {
+      include: ['papaparse', '@stripe/stripe-js'],
+    },
   },
 })

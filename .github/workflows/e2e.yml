@@ -55,7 +55,14 @@ jobs:
           version: latest
 
       - name: Start local Supabase
-        run: supabase start
+        # Excludes containers this suite never touches, cutting both image
+        # pulls and startup/health-check time: no supabase/functions/ exists
+        # (edge-runtime unused), no spec reads Mailpit's inbox and
+        # auth.email.enable_confirmations is off anyway (mailpit unused),
+        # and studio/postgres-meta/logflare/vector only serve the local
+        # Studio UI, never the app itself. Local dev (plain `supabase
+        # start`, no -x) still gets the full stack -- this only trims CI.
+        run: supabase start -x studio,edge-runtime,logflare,vector,mailpit,postgres-meta
 
       - name: Export Supabase env vars
         run: |

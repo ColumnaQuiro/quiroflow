@@ -1,12 +1,22 @@
 <script setup lang="ts">
 definePageMeta({ layout: false })
 
+const route = useRoute()
 const supabase = useSupabaseClient()
 const email = ref('')
 const password = ref('')
 const error = ref('')
 const loading = ref(false)
 const checkEmail = ref(false)
+
+// Carries a "Refer Your Friends!" link's ?ref=<account slug> through the
+// two-step signup -> onboarding flow (the account referring row doesn't
+// exist until onboarding.vue's create_account_with_owner call) the same
+// way signup_intent already does for the staff-vs-patient distinction.
+onMounted(() => {
+  const ref = route.query.ref
+  if (typeof ref === 'string' && ref) localStorage.setItem('signup_referred_by', ref)
+})
 
 async function onSubmit() {
   error.value = ''

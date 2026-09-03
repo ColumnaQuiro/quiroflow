@@ -231,6 +231,7 @@ export type Database = {
           practicehub_api_key: string | null
           practicehub_base_url: string | null
           practicehub_contact_email: string | null
+          referred_by_account_id: string | null
           scheduling_policy_fee_cents: number | null
           send_invoices_automatically_default: boolean
           show_dob_on_invoices: boolean
@@ -293,6 +294,7 @@ export type Database = {
           practicehub_api_key?: string | null
           practicehub_base_url?: string | null
           practicehub_contact_email?: string | null
+          referred_by_account_id?: string | null
           scheduling_policy_fee_cents?: number | null
           send_invoices_automatically_default?: boolean
           show_dob_on_invoices?: boolean
@@ -355,6 +357,7 @@ export type Database = {
           practicehub_api_key?: string | null
           practicehub_base_url?: string | null
           practicehub_contact_email?: string | null
+          referred_by_account_id?: string | null
           scheduling_policy_fee_cents?: number | null
           send_invoices_automatically_default?: boolean
           show_dob_on_invoices?: boolean
@@ -375,7 +378,15 @@ export type Database = {
           whatsapp_reminder_template_language?: string | null
           whatsapp_reminder_template_name?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "accounts_referred_by_account_id_fkey"
+            columns: ["referred_by_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       api_tokens: {
         Row: {
@@ -3920,6 +3931,7 @@ export type Database = {
               p_account_name: string
               p_clinic_name: string
               p_owner_name?: string
+              p_referred_by_slug?: string
             }
             Returns: {
               account_id: string

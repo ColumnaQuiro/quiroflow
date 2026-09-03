@@ -13,7 +13,6 @@ interface InvoiceRow {
   is_refund: boolean
   refunds_invoice_id: string | null
 }
-interface PackageTemplate { id: string; name: string; session_count: number; price_cents: number }
 interface PackagePurchaseRow {
   id: string
   package_name: string
@@ -22,7 +21,6 @@ interface PackagePurchaseRow {
   price_cents: number
   purchased_at: string
 }
-interface MembershipTemplate { id: string; name: string; price_cents: number }
 interface PatientMembershipRow {
   id: string
   membership_name: string
@@ -57,6 +55,7 @@ const { fire } = useAutomations()
 const t = useT()
 
 const { balanceCents, creditLedgerCents, refresh: refreshCreditSummary } = usePatientFinancialSummary(() => props.patientId)
+const { packageTemplates, membershipTemplates, ensureLoaded: ensureBillingTemplatesLoaded } = useBillingTemplates()
 const addCreditAmount = ref('')
 const addCreditReason = ref('')
 const addCreditMethod = ref<'card' | 'cash'>('cash')
@@ -235,14 +234,12 @@ const invoices = ref<InvoiceRow[]>([])
 const lineItemDescriptions = ref<Record<string, string[]>>({})
 const loading = ref(true)
 
-const packageTemplates = ref<PackageTemplate[]>([])
 const purchases = ref<PackagePurchaseRow[]>([])
 const sellPackageId = ref('')
 const sellAmountPaid = ref('')
 const sellMethod = ref<'cash' | 'card' | 'credit'>('cash')
 const sellingPackage = ref(false)
 
-const membershipTemplates = ref<MembershipTemplate[]>([])
 const patientMemberships = ref<PatientMembershipRow[]>([])
 const membershipPayments = ref<MembershipPaymentRow[]>([])
 const activateMembershipId = ref('')
@@ -293,54 +290,47 @@ async function recordSalePayment(description: string, amountCents: number, metho
 }
 
 async function loadAll() {
-  const [{ data: inv }, { data: pkgTemplates }, { data: pkgPurchases }, { data: memTemplates }, { data: patMemberships }] = await Promise.all([
+  // Every query here is keyed directly off props.patientId (invoice_line_items
+  // and membership_payments filter through an embedded !inner join on their
+  // parent's patient_id rather than an .in(ids) collected from a first
+  // round-trip), so all seven run in a single parallel wave instead of the
+  // two-or-three sequential round-trips this used to take -- each extra
+  // wave was adding a full network round-trip to every patient's
+  // billing-tab load regardless of how little data came back.
+  const [{ data: inv }, , { data: pkgPurchases }, { data: patMemberships }, { data: lines }, { data: membershipPaymentRows }, { data: customer }, { data: sch }] = await Promise.all([
     supabase
       .from('invoices')
       .select('id, invoice_number, status, total_cents, created_at, is_refund, refunds_invoice_id')
       .eq('patient_id', props.patientId)
       .order('created_at', { ascending: false }),
-    supabase.from('packages').select('id, name, session_count, price_cents').order('name'),
+    ensureBillingTemplatesLoaded(),
     supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used, price_cents, purchased_at').eq('patient_id', props.patientId).order('purchased_at', { ascending: false }),
-    supabase.from('memberships').select('id, name, price_cents').order('name'),
     supabase.from('patient_memberships').select('id, membership_name, price_cents, status, started_at').eq('patient_id', props.patientId).order('started_at', { ascending: false }),
-  ])
-  invoices.value = inv ?? []
-  packageTemplates.value = pkgTemplates ?? []
-  purchases.value = pkgPurchases ?? []
-  membershipTemplates.value = memTemplates ?? []
-  patientMemberships.value = (patMemberships as PatientMembershipRow[]) ?? []
-
-  // None of the four queries below depend on each other's results (only on
-  // invoices/patientMemberships from the wave above), so they run as one
-  // parallel batch instead of four sequential round-trips -- each extra
-  // sequential await here was adding a full network round-trip to every
-  // patient's billing-tab load regardless of how little data came back.
-  const invoiceIds = invoices.value.map((i) => i.id)
-  const membershipIds = patientMemberships.value.map((m) => m.id)
-  const [{ data: lines }, { data: membershipPaymentRows }, { data: customer }, { data: sch }] = await Promise.all([
-    invoiceIds.length > 0
-      ? supabase.from('invoice_line_items').select('invoice_id, description').in('invoice_id', invoiceIds)
-      : Promise.resolve({ data: [] as { invoice_id: string; description: string }[] }),
-    membershipIds.length > 0
-      ? supabase
-          .from('membership_payments')
-          .select('id, patient_membership_id, period_start, amount_cents, status')
-          .in('patient_membership_id', membershipIds)
-          .order('period_start', { ascending: false })
-      : Promise.resolve({ data: [] as typeof membershipPayments.value }),
+    supabase
+      .from('invoice_line_items')
+      .select('invoice_id, description, invoices!inner(patient_id)')
+      .eq('invoices.patient_id', props.patientId),
+    supabase
+      .from('membership_payments')
+      .select('id, patient_membership_id, period_start, amount_cents, status, patient_memberships!inner(patient_id)')
+      .eq('patient_memberships.patient_id', props.patientId)
+      .order('period_start', { ascending: false }),
     supabase.from('patient_stripe_customers').select('stripe_customer_id, default_payment_method_id').eq('patient_id', props.patientId).maybeSingle(),
     supabase
       .from('payment_schedules')
       .select('id, package_purchase_id, patient_membership_id, interval, interval_count, installments_total, installments_paid, status')
       .eq('patient_id', props.patientId),
   ])
+  invoices.value = inv ?? []
+  purchases.value = pkgPurchases ?? []
+  patientMemberships.value = (patMemberships as PatientMembershipRow[]) ?? []
 
   const byInvoice: Record<string, string[]> = {}
-  for (const l of lines ?? []) {
+  for (const l of (lines ?? []) as unknown as { invoice_id: string; description: string }[]) {
     ;(byInvoice[l.invoice_id] ??= []).push(l.description)
   }
   lineItemDescriptions.value = byInvoice
-  membershipPayments.value = membershipPaymentRows ?? []
+  membershipPayments.value = (membershipPaymentRows ?? []) as unknown as MembershipPaymentRow[]
   stripeCustomer.value = customer
   schedules.value = sch ?? []
 

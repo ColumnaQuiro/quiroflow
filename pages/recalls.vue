@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { Tables } from '~/types/database.types'
+import { sanitizeSearchToken } from '~/utils/searchText'
+import { fetchAllRows } from '~/composables/useFetchAllRows'
 
 type Recall = Tables<'recall_candidates'>
 type TeamMember = Pick<Tables<'team_members'>, 'id' | 'full_name'>
@@ -29,11 +31,33 @@ const balanceFilter = ref<'any' | 'credit' | 'debit'>('any')
 const tagFilter = ref('')
 const notContactedOnly = ref(false)
 
-// Contact history and phone-on-file are fetched for every recall candidate
-// up front (not just the currently-filtered rows) so the "Not contacted
-// yet" chip can filter on them without a circular fetch-then-filter loop.
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 200, 500]
+const page = ref(1)
+const pageSize = ref(100)
+// Whether a page after the current one exists. Deliberately not an exact
+// total: recall_candidates joins patients/appointments/invoices/payments/
+// account_credits through RLS policies (can_access_patient() etc.) that get
+// re-evaluated per row per join, so an exact count -- effectively a second
+// full evaluation of the same expensive query -- was pushing real accounts
+// past Postgres's statement timeout. Fetching pageSize+1 rows and checking
+// for the extra one answers "is there a next page" for the cost of the
+// page itself, no second query.
+const hasNextPage = ref(false)
+// The common case (no tag filter, "not contacted" off -- the defaults) is
+// served as a real DB-paginated page: fast regardless of how many recall
+// candidates the account has. Tag matching and "not contacted" both depend
+// on data (substring tag search, contact_log absence) that can't be pushed
+// down to a single PostgREST predicate, so those two fall back to loading
+// every filter-matching row at once, same as before pagination existed --
+// correctness over speed for two rarely-used filters.
+const isPaginated = computed(() => !tagFilter.value && !notContactedOnly.value)
+
+// Contact history and phone-on-file are fetched for every currently-loaded
+// recall candidate (a bounded page, or the full fallback set) so the "Not
+// contacted yet" chip and the "Last action" column always have real data
+// for whatever's on screen.
 async function loadContactContext() {
-  const ids = recalls.value.map((r) => r.patient_id!).filter(Boolean).slice(0, 300)
+  const ids = recalls.value.map((r) => r.patient_id!).filter(Boolean)
   if (ids.length === 0) {
     lastActionByPatient.value = {}
     hasPhoneByPatient.value = {}
@@ -60,34 +84,85 @@ async function loadContactContext() {
   hasPhoneByPatient.value = phoneMap
 }
 
-async function load() {
+async function loadTeamMembers() {
+  const { data } = await supabase.from('team_members').select('id, full_name').order('full_name')
+  teamMembers.value = data ?? []
+}
+
+// Shared by loadRecalls (one page, or the full fallback set) and exportCsv
+// (always every matching row, regardless of pagination) so the two never
+// drift out of sync on what "matches the current filters" means.
+function buildFilteredQuery() {
+  let query = supabase.from('recall_candidates').select('*')
+
+  // Each word must match somewhere in first or last name -- same
+  // chained-.or() AND-across-tokens trick patients/index.vue uses, so
+  // "john smith" narrows to a John whose last name contains "smith"
+  // regardless of which word the user typed first.
+  const tokens = search.value.trim().split(/\s+/).map(sanitizeSearchToken).filter(Boolean)
+  for (const token of tokens) {
+    query = query.or(`first_name.ilike.%${token}%,last_name.ilike.%${token}%`)
+  }
+  if (practitionerFilter.value) query = query.eq('default_practitioner_id', practitionerFilter.value)
+  if (dateFrom.value) query = query.gte('last_appointment_at', `${dateFrom.value}T00:00:00`)
+  else query = query.gte('days_since_last_appointment', minWeeksOverdue.value * 7)
+  if (balanceFilter.value === 'credit') query = query.gt('balance_cents', 0)
+  if (balanceFilter.value === 'debit') query = query.lt('balance_cents', 0)
+
+  return query.order('recall_priority', { ascending: false, nullsFirst: false }).order('days_since_last_appointment', { ascending: false })
+}
+
+async function loadRecalls() {
   loading.value = true
-  const [{ data: recallData }, { data: members }] = await Promise.all([
-    supabase.from('recall_candidates').select('*'),
-    supabase.from('team_members').select('id, full_name').order('full_name'),
-  ])
-  recalls.value = recallData ?? []
-  teamMembers.value = members ?? []
+
+  let query = buildFilteredQuery()
+  if (isPaginated.value) {
+    const from = (page.value - 1) * pageSize.value
+    // Ask for one row past the page boundary -- its presence is the only
+    // signal needed for "is there a next page", see hasNextPage above.
+    const to = from + pageSize.value
+    query = query.range(from, to)
+  }
+
+  const { data, error } = await query
+  if (error) console.error('[recalls] loadRecalls error', error)
+  const rows = data ?? []
+  if (isPaginated.value) {
+    hasNextPage.value = rows.length > pageSize.value
+    recalls.value = rows.slice(0, pageSize.value)
+  } else {
+    hasNextPage.value = false
+    recalls.value = rows
+  }
   await loadContactContext()
   loading.value = false
 }
-onMounted(load)
 
+onMounted(() => {
+  loadTeamMembers()
+  loadRecalls()
+})
+
+function goToPage(p: number) {
+  page.value = Math.max(1, p)
+  loadRecalls()
+}
+
+let searchDebounce: ReturnType<typeof setTimeout> | undefined
+watch(search, () => {
+  clearTimeout(searchDebounce)
+  searchDebounce = setTimeout(() => goToPage(1), 300)
+})
+watch([practitionerFilter, dateFrom, minWeeksOverdue, balanceFilter, tagFilter, notContactedOnly, pageSize], () => goToPage(1))
+
+// Tag substring matching and "not contacted" (see isPaginated above) still
+// need a client-side pass -- both over a server-narrowed set that's already
+// either one real page or, in fallback mode, every other-filter-matching
+// row. Everything else here is a harmless no-op re-check of predicates the
+// query above already applied.
 const filtered = computed(() => {
   return recalls.value
     .filter((r) => {
-      if (search.value) {
-        const name = `${r.first_name} ${r.last_name ?? ''}`.toLowerCase()
-        if (!name.includes(search.value.toLowerCase())) return false
-      }
-      if (practitionerFilter.value && r.default_practitioner_id !== practitionerFilter.value) return false
-      if (dateFrom.value) {
-        if (!r.last_appointment_at || new Date(r.last_appointment_at) < new Date(`${dateFrom.value}T00:00:00`)) return false
-      } else if ((r.days_since_last_appointment ?? 0) < minWeeksOverdue.value * 7) {
-        return false
-      }
-      if (balanceFilter.value === 'credit' && (r.balance_cents ?? 0) <= 0) return false
-      if (balanceFilter.value === 'debit' && (r.balance_cents ?? 0) >= 0) return false
       if (tagFilter.value && !(r.tags ?? []).some((t) => t.toLowerCase().includes(tagFilter.value.toLowerCase()))) return false
       if (notContactedOnly.value && lastActionByPatient.value[r.patient_id!]) return false
       return true
@@ -96,6 +171,13 @@ const filtered = computed(() => {
       if (!!a.recall_priority !== !!b.recall_priority) return a.recall_priority ? -1 : 1
       return (b.days_since_last_appointment ?? 0) - (a.days_since_last_appointment ?? 0)
     })
+})
+
+// No exact total in paginated mode (see hasNextPage) -- "100+" communicates
+// there's more without paying for a second expensive query to say how much.
+const displayCount = computed(() => {
+  if (!isPaginated.value) return String(filtered.value.length)
+  return hasNextPage.value ? `${recalls.value.length}+` : String(recalls.value.length)
 })
 
 function practitionerName(id: string | null) {
@@ -184,7 +266,10 @@ async function togglePriority(recall: Recall) {
 async function dismiss(recall: Recall) {
   if (!confirm(`${t('Remove', '¿Eliminar a')} ${recall.first_name} ${t('from recalls?', 'de la lista de recordatorios?')}`)) return
   await supabase.from('patients').update({ recall_status: 'dismissed' }).eq('id', recall.patient_id!)
-  recalls.value = recalls.value.filter((r) => r.patient_id !== recall.patient_id)
+  // Reload rather than splice the row out locally -- dismissing the last
+  // row on a page should pull the next page's row in rather than leave a
+  // visible gap.
+  await loadRecalls()
 }
 
 function onRowAction(recall: Recall, e: Event) {
@@ -274,7 +359,27 @@ function bulkSnooze() {
 function csvEscape(v: string) {
   return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
 }
-function exportCsv() {
+const exporting = ref(false)
+async function exportCsv() {
+  exporting.value = true
+  // Export every row matching the current filters, not just the loaded page
+  // -- fetchAllRows pages past both Supabase's 1000-row select() cap and
+  // this view's own pageSize.
+  const allMatching = await fetchAllRows<Recall>((from, to) => buildFilteredQuery().range(from, to))
+  const rows = allMatching
+    .filter((r) => {
+      if (tagFilter.value && !(r.tags ?? []).some((tag) => tag.toLowerCase().includes(tagFilter.value.toLowerCase()))) return false
+      if (notContactedOnly.value && lastActionByPatient.value[r.patient_id!]) return false
+      return true
+    })
+    .map((r) => [
+      `${r.first_name ?? ''} ${r.last_name ?? ''}`.trim(),
+      r.last_appointment_at ? new Date(r.last_appointment_at).toLocaleDateString() : '',
+      String(r.days_since_last_appointment ?? ''),
+      practitionerName(r.default_practitioner_id),
+      balanceInfo(r.balance_cents).text,
+      lastActionText(r),
+    ])
   const header = [
     t('Patient', 'Paciente'),
     t('Last visit', 'Última visita'),
@@ -283,14 +388,6 @@ function exportCsv() {
     t('Balance', 'Saldo'),
     t('Last action', 'Última acción'),
   ]
-  const rows = filtered.value.map((r) => [
-    `${r.first_name ?? ''} ${r.last_name ?? ''}`.trim(),
-    r.last_appointment_at ? new Date(r.last_appointment_at).toLocaleDateString() : '',
-    String(r.days_since_last_appointment ?? ''),
-    practitionerName(r.default_practitioner_id),
-    balanceInfo(r.balance_cents).text,
-    lastActionText(r),
-  ])
   const csv = [header, ...rows].map((cols) => cols.map(csvEscape).join(',')).join('\n')
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
@@ -299,6 +396,7 @@ function exportCsv() {
   a.download = `recalls-${new Date().toISOString().slice(0, 10)}.csv`
   a.click()
   URL.revokeObjectURL(url)
+  exporting.value = false
 }
 </script>
 
@@ -306,9 +404,9 @@ function exportCsv() {
   <div class="flex h-full flex-col">
     <PageHeader
       :title="t('Recalls', 'Recordatorios')"
-      :meta="`${filtered.length} ${filtered.length === 1 ? t('patient', 'paciente') : t('patients', 'pacientes')} ${t('with no future appointment', 'sin cita futura')}`"
+      :meta="`${displayCount} ${displayCount === '1' ? t('patient', 'paciente') : t('patients', 'pacientes')} ${t('with no future appointment', 'sin cita futura')}`"
     >
-      <UiBtn variant="secondary" @click="exportCsv">{{ t('Export', 'Exportar') }}</UiBtn>
+      <UiBtn variant="secondary" :disabled="exporting" @click="exportCsv">{{ exporting ? t('Exporting…', 'Exportando…') : t('Export', 'Exportar') }}</UiBtn>
       <UiBtn variant="primary" :disabled="selectedIds.size === 0" @click="bulkWhatsAppOpen = true">{{ t('Message selected', 'Enviar mensaje a seleccionados') }}</UiBtn>
     </PageHeader>
 
@@ -397,7 +495,21 @@ function exportCsv() {
           {{ t('Not contacted yet', 'Sin contactar aún') }}
         </button>
 
-        <span class="ml-auto text-[12.5px] text-ink-muted2">{{ t('Sorted by most overdue first', 'Ordenado por mayor retraso primero') }}</span>
+        <div class="relative ml-auto">
+          <label class="mr-1.5 text-[12.5px] text-ink-muted2">{{ t('Show', 'Mostrar') }}</label>
+          <select
+            v-model.number="pageSize"
+            :disabled="!isPaginated"
+            class="h-7 appearance-none rounded-pill border border-line-control bg-surface pl-3 pr-7 text-[12.5px] font-medium text-ink-500 focus:outline-none disabled:opacity-40"
+          >
+            <option v-for="size in PAGE_SIZE_OPTIONS" :key="size" :value="size">{{ size }}</option>
+          </select>
+          <svg class="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-ink-faint2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+
+        <span class="text-[12.5px] text-ink-muted2">{{ t('Sorted by most overdue first', 'Ordenado por mayor retraso primero') }}</span>
       </div>
 
       <!-- Table card -->
@@ -541,6 +653,28 @@ function exportCsv() {
             </tr>
           </tbody>
         </table>
+
+        <div v-if="!loading && isPaginated && (page > 1 || recalls.length > 0)" class="flex items-center justify-between bg-surface-subtle2 px-5 py-2.5 text-[12.5px] text-ink-muted2">
+          <span>{{ t('Page', 'Página') }} {{ page }} · {{ recalls.length }} {{ t('shown', 'mostrados') }}</span>
+          <div class="flex gap-2">
+            <button
+              type="button"
+              :disabled="page <= 1"
+              class="flex h-7 items-center rounded-ctlSm border border-line-control bg-surface px-2.5 text-[12.5px] text-ink-500 hover:border-line-controlHover disabled:cursor-not-allowed disabled:opacity-40"
+              @click="goToPage(page - 1)"
+            >
+              {{ t('Previous', 'Anterior') }}
+            </button>
+            <button
+              type="button"
+              :disabled="!hasNextPage"
+              class="flex h-7 items-center rounded-ctlSm border border-line-control bg-surface px-2.5 text-[12.5px] text-ink-500 hover:border-line-controlHover disabled:cursor-not-allowed disabled:opacity-40"
+              @click="goToPage(page + 1)"
+            >
+              {{ t('Next', 'Siguiente') }}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 

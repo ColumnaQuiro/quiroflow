@@ -52,7 +52,13 @@ jobs:
 
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          # Pinned instead of "latest" -- resolving "latest" queries GitHub's
+          # API on every run, across every shard and every PR, and hitting
+          # that endpoint's rate limit fails the job before any test runs
+          # (PR #17's inbox-nav-patients shard: "Failed to resolve latest
+          # Supabase CLI release: rate limit exceeded"). Bump this by hand
+          # when there's a reason to (a CLI feature/fix this suite needs).
+          version: 2.116.0
 
       - name: Start local Supabase
         # Excludes containers this suite never touches, cutting both image

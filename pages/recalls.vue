@@ -618,7 +618,7 @@ async function exportCsv() {
                 {{ r.last_appointment_at ? new Date(r.last_appointment_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : t('N/A', 'N/D') }}
               </td>
               <td class="px-4 py-2.5">
-                <span class="inline-flex items-center rounded-pill px-2 py-0.5 text-[11px] font-semibold" :class="overdueInfo(r.days_since_last_appointment).class">
+                <span class="inline-flex items-center whitespace-nowrap rounded-pill px-2 py-0.5 text-[11px] font-semibold" :class="overdueInfo(r.days_since_last_appointment).class">
                   {{ overdueInfo(r.days_since_last_appointment).label }}
                 </span>
               </td>

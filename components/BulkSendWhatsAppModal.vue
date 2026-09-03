@@ -121,10 +121,17 @@ const failedCount = computed(() => results.value.filter((r) => !r.ok).length)
           </template>
         </template>
 
+        <div v-if="sending" class="mt-4">
+          <div class="h-1.5 w-full overflow-hidden rounded-full bg-surface-subtle">
+            <div class="h-full rounded-full bg-brand transition-[width] duration-150" :style="{ width: `${(results.length / targets.length) * 100}%` }" />
+          </div>
+          <p class="mt-1.5 text-xs text-ink-faint">{{ t('Sending…', 'Enviando…') }} {{ results.length }}/{{ targets.length }}</p>
+        </div>
+
         <div class="mt-4 flex justify-end gap-2">
-          <UiBtn variant="secondary" @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</UiBtn>
+          <UiBtn variant="secondary" :disabled="sending" @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</UiBtn>
           <UiBtn variant="primary" :disabled="sending || !selectedTemplate" @click="send">
-            {{ sending ? `${t('Sending…', 'Enviando…')} (${results.length}/${targets.length})` : `${t('Send to', 'Enviar a')} ${targets.length}` }}
+            {{ sending ? t('Sending…', 'Enviando…') : `${t('Send to', 'Enviar a')} ${targets.length}` }}
           </UiBtn>
         </div>
       </template>

@@ -2,18 +2,21 @@
 const emit = defineEmits<{ connect: [conn: { baseUrl: string; apiKey: string; appDetails: string }] }>()
 
 const user = useSupabaseUser()
+const sharedConn = usePracticeHubConnection()
 
-const baseUrl = ref('')
-const apiKey = ref('')
+const baseUrl = ref(sharedConn.value?.baseUrl ?? '')
+const apiKey = ref(sharedConn.value?.apiKey ?? '')
 const email = ref(user.value?.email ?? '')
 
 function submit() {
   if (!baseUrl.value.trim() || !apiKey.value.trim() || !email.value.trim()) return
-  emit('connect', {
+  const conn = {
     baseUrl: baseUrl.value.trim(),
     apiKey: apiKey.value.trim(),
     appDetails: `QuiroFlow=${email.value.trim()}`,
-  })
+  }
+  sharedConn.value = conn
+  emit('connect', conn)
 }
 </script>
 

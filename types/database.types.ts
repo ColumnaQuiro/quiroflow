@@ -2849,6 +2849,10 @@ export type Database = {
           monthly_price_cents: number
           name: string
           sort_order: number
+          stripe_annual_price_id: string | null
+          stripe_extra_professional_annual_price_id: string | null
+          stripe_extra_professional_monthly_price_id: string | null
+          stripe_monthly_price_id: string | null
         }
         Insert: {
           annual_price_cents: number
@@ -2860,6 +2864,10 @@ export type Database = {
           monthly_price_cents: number
           name: string
           sort_order: number
+          stripe_annual_price_id?: string | null
+          stripe_extra_professional_annual_price_id?: string | null
+          stripe_extra_professional_monthly_price_id?: string | null
+          stripe_monthly_price_id?: string | null
         }
         Update: {
           annual_price_cents?: number
@@ -2871,6 +2879,10 @@ export type Database = {
           monthly_price_cents?: number
           name?: string
           sort_order?: number
+          stripe_annual_price_id?: string | null
+          stripe_extra_professional_annual_price_id?: string | null
+          stripe_extra_professional_monthly_price_id?: string | null
+          stripe_monthly_price_id?: string | null
         }
         Relationships: []
       }

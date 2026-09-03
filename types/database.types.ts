@@ -228,6 +228,9 @@ export type Database = {
           online_booking_referral_url: string | null
           online_booking_secondary_color: string | null
           online_booking_text_overrides: Json
+          practicehub_api_key: string | null
+          practicehub_base_url: string | null
+          practicehub_contact_email: string | null
           scheduling_policy_fee_cents: number | null
           send_invoices_automatically_default: boolean
           show_dob_on_invoices: boolean
@@ -287,6 +290,9 @@ export type Database = {
           online_booking_referral_url?: string | null
           online_booking_secondary_color?: string | null
           online_booking_text_overrides?: Json
+          practicehub_api_key?: string | null
+          practicehub_base_url?: string | null
+          practicehub_contact_email?: string | null
           scheduling_policy_fee_cents?: number | null
           send_invoices_automatically_default?: boolean
           show_dob_on_invoices?: boolean
@@ -346,6 +352,9 @@ export type Database = {
           online_booking_referral_url?: string | null
           online_booking_secondary_color?: string | null
           online_booking_text_overrides?: Json
+          practicehub_api_key?: string | null
+          practicehub_base_url?: string | null
+          practicehub_contact_email?: string | null
           scheduling_policy_fee_cents?: number | null
           send_invoices_automatically_default?: boolean
           show_dob_on_invoices?: boolean

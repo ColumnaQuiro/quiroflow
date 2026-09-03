@@ -56,6 +56,12 @@ const lastConn = ref<{ baseUrl: string; apiKey: string; appDetails: string } | n
 const candidates = ref<Candidate[]>([])
 const skippedUnmatched = ref(0)
 const skippedNoValue = ref(0)
+// Raw, untouched sample of what PracticeHub actually returns -- the field
+// mapping above is a guess reverse-engineered from the docs' example
+// response, which has already been wrong twice. Showing this directly
+// avoids another guess-and-redeploy round trip.
+const rawSample = ref<unknown[]>([])
+const showRawSample = ref(false)
 
 // PracticeHub's own field naming is not documented beyond "apply filter
 // parms to the X column", so this mapping is a best guess until the first
@@ -117,6 +123,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     phase.value = t('Fetching patient packages…', 'Obteniendo bonos de pacientes…')
     progress.value = { done: 0, total: 0 }
     const phPackages = await api.fetchAll<PHPatientPackage>('/patient_packages', (done, total) => (progress.value = { done, total }))
+    rawSample.value = phPackages.slice(0, 3)
 
     const built: Candidate[] = []
     for (const pkg of phPackages) {
@@ -281,6 +288,14 @@ function formatEuros(cents: number): string {
             `Se encontraron ${candidates.filter((c) => c.status === 'pending').length} bono(s) para añadir, ${candidates.filter((c) => c.status === 'skipped-existing').length} ya cubiertos por una entrada manual del mismo día, ${skippedUnmatched} pacientes sin emparejar, ${skippedNoValue} bonos inactivos o sin valor.`,
           )
         }}
+      </div>
+
+      <div v-if="skippedUnmatched > 0 || candidates.filter((c) => c.status === 'pending').length === 0" class="rounded-lg border border-line">
+        <button type="button" class="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-medium text-ink-700" @click="showRawSample = !showRawSample">
+          <span>{{ t('Debug: raw PracticeHub response (first 3)', 'Depurar: respuesta cruda de PracticeHub (primeros 3)') }}</span>
+          <span class="text-ink-muted2">{{ showRawSample ? '▲' : '▼' }}</span>
+        </button>
+        <pre v-if="showRawSample" class="overflow-x-auto border-t border-line bg-surface-subtle p-3 text-[11px] leading-relaxed text-ink-700">{{ JSON.stringify(rawSample, null, 2) }}</pre>
       </div>
 
       <div class="overflow-x-auto rounded-lg border border-line">

@@ -305,7 +305,7 @@ async function signOut() {
             {{ t('Account Settings', 'Ajustes de la cuenta') }}
           </NuxtLink>
           <NuxtLink to="/account/subscription" class="block px-3 py-2 text-left text-[13px] text-ink-500 hover:bg-surface-subtle" @click="accountMenuOpen = false">
-            {{ t('Billing', 'Facturación') }}
+            {{ t('Subscription', 'Suscripción') }}
           </NuxtLink>
           <button
             v-if="can('payments_allocate')"

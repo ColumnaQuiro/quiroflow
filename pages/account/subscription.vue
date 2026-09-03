@@ -69,7 +69,7 @@ const contactHref = computed(() => {
 
 <template>
   <div class="mx-auto max-w-xl px-6 py-8">
-    <h1 class="text-lg font-semibold text-ink-900">Billing</h1>
+    <h1 class="text-lg font-semibold text-ink-900">Subscription</h1>
 
     <div v-if="loading" class="mt-4 text-sm text-ink-muted">Loading…</div>
     <div v-else-if="!subscription" class="mt-4 text-sm text-ink-muted">No subscription found. Contact <a :href="contactHref" class="text-brand hover:text-brand-hover">hola@columnaquiro.com</a>.</div>

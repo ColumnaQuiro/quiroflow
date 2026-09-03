@@ -174,6 +174,21 @@ export async function handleStripeEvent(supabase: SupabaseClient<Database>, acco
     await supabase.from('payment_schedules').update({ status: 'canceled' }).eq('stripe_subscription_schedule_id', schedule.id)
   }
 
+  // Mirrors save-payment-method.post.ts's own update, for a card added via
+  // the patient-facing Checkout link (create-card-link.post.ts) instead of
+  // our embedded Stripe Elements form -- there's no browser-side call to
+  // save-payment-method in that flow since the patient completes it on
+  // Stripe's own hosted page, so this webhook is the only place it's ever
+  // recorded as the patient's default card.
+  if (stripeEvent.type === 'setup_intent.succeeded') {
+    const setupIntent = stripeEvent.data.object as Stripe.SetupIntent
+    const customerId = typeof setupIntent.customer === 'string' ? setupIntent.customer : setupIntent.customer?.id
+    const paymentMethodId = typeof setupIntent.payment_method === 'string' ? setupIntent.payment_method : setupIntent.payment_method?.id
+    if (customerId && paymentMethodId) {
+      await supabase.from('patient_stripe_customers').update({ default_payment_method_id: paymentMethodId }).eq('stripe_customer_id', customerId)
+    }
+  }
+
   // Online booking deposit/full-payment (create-payment-intent.post.ts sets
   // metadata.invoice_id on creation). This is the source of truth for
   // reconciliation -- the booking itself already exists regardless of

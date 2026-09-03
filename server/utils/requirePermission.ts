@@ -55,6 +55,7 @@ export async function requireTeamMember(event: H3Event) {
     .from('team_members')
     .select('id, account_id, is_owner, role_id')
     .eq('user_id', user.id)
+    .is('deleted_at', null)
     .maybeSingle()
 
   if (!teamMember) {

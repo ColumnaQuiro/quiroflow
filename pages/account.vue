@@ -4,11 +4,11 @@ const user = useSupabaseUser()
 const store = useAccountStore()
 const t = useT()
 
+const { showToast } = useToast()
+
 const fullName = ref('')
 const color = ref('#4C6FEB')
 const savingProfile = ref(false)
-const profileSaved = ref(false)
-const profileError = ref('')
 
 watch(
   () => store.teamMember,
@@ -23,8 +23,6 @@ watch(
 
 async function saveProfile() {
   if (!store.teamMember) return
-  profileError.value = ''
-  profileSaved.value = false
   savingProfile.value = true
   const { error } = await supabase
     .from('team_members')
@@ -32,41 +30,52 @@ async function saveProfile() {
     .eq('id', store.teamMember.id)
   savingProfile.value = false
   if (error) {
-    profileError.value = error.message
+    showToast(error.message, 'error')
     return
   }
   store.teamMember.full_name = fullName.value.trim()
   store.teamMember.color = color.value
-  profileSaved.value = true
+  showToast('Saved')
 }
 
 const newPassword = ref('')
 const confirmPassword = ref('')
 const savingPassword = ref(false)
-const passwordSaved = ref(false)
-const passwordError = ref('')
 
 async function changePassword() {
-  passwordError.value = ''
-  passwordSaved.value = false
   if (newPassword.value.length < 8) {
-    passwordError.value = t('Password must be at least 8 characters.', 'La contraseña debe tener al menos 8 caracteres.')
+    showToast(t('Password must be at least 8 characters.', 'La contraseña debe tener al menos 8 caracteres.'), 'error')
     return
   }
   if (newPassword.value !== confirmPassword.value) {
-    passwordError.value = t('Passwords do not match.', 'Las contraseñas no coinciden.')
+    showToast(t('Passwords do not match.', 'Las contraseñas no coinciden.'), 'error')
     return
   }
   savingPassword.value = true
   const { error } = await supabase.auth.updateUser({ password: newPassword.value })
   savingPassword.value = false
   if (error) {
-    passwordError.value = error.message
+    showToast(error.message, 'error')
     return
   }
   newPassword.value = ''
   confirmPassword.value = ''
-  passwordSaved.value = true
+  showToast('Password updated.')
+}
+
+const deletingAccount = ref(false)
+async function deleteAccount() {
+  if (!confirm("Delete your account? This signs you out and revokes your login immediately. This can't be undone by you -- an owner would need to re-invite you to come back.")) return
+  deletingAccount.value = true
+  try {
+    await $fetch('/api/account/delete', { method: 'POST' })
+  } catch (err: any) {
+    deletingAccount.value = false
+    showToast(err?.data?.statusMessage ?? 'Failed to delete account.', 'error')
+    return
+  }
+  await supabase.auth.signOut()
+  await navigateTo('/login')
 }
 </script>
 
@@ -79,6 +88,18 @@ async function changePassword() {
 
     <form class="mt-6 space-y-4 rounded-card border border-line bg-surface p-4 shadow-card" @submit.prevent="saveProfile">
       <h2 class="text-sm font-semibold text-ink-900">{{ t('Personal Details', 'Datos Personales') }}</h2>
+      <div v-if="store.teamMember" class="flex items-center gap-3">
+        <SettingsTeamMemberPhotoUpload
+          :account-id="store.accountId!"
+          :team-member-id="store.teamMember.id"
+          :photo-storage-path="store.teamMember.photo_storage_path"
+          :initials="fullName.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('') || '?'"
+          :color="color"
+          :size="56"
+          @uploaded="store.load()"
+        />
+        <p class="text-[12.5px] text-ink-muted">{{ t('Click to change your photo. Shown in the sidebar, and on online booking if you take appointments.', 'Haz clic para cambiar tu foto. Se muestra en la barra lateral y en la reserva online si atiendes citas.') }}</p>
+      </div>
       <div>
         <label class="block text-sm font-medium text-ink-700">{{ t('Full Name', 'Nombre Completo') }}</label>
         <input v-model="fullName" type="text" required class="mt-1 w-full rounded-ctl border border-line-control px-3 py-1.5 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
@@ -95,8 +116,6 @@ async function changePassword() {
         <UiBtn type="submit" variant="primary" :disabled="savingProfile">
           {{ savingProfile ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}
         </UiBtn>
-        <p v-if="profileSaved" class="text-sm text-success-text">{{ t('Saved.', 'Guardado.') }}</p>
-        <p v-if="profileError" class="text-sm text-danger-text">{{ profileError }}</p>
       </div>
     </form>
 
@@ -114,10 +133,19 @@ async function changePassword() {
         <UiBtn type="submit" variant="primary" :disabled="savingPassword">
           {{ savingPassword ? t('Saving…', 'Guardando…') : t('Update Password', 'Actualizar Contraseña') }}
         </UiBtn>
-        <p v-if="passwordSaved" class="text-sm text-success-text">{{ t('Password updated.', 'Contraseña actualizada.') }}</p>
-        <p v-if="passwordError" class="text-sm text-danger-text">{{ passwordError }}</p>
       </div>
     </form>
+
+    <div class="mt-6 space-y-3 rounded-card border border-danger-border bg-danger-bg p-4">
+      <h2 class="text-sm font-semibold text-danger-text">Delete Account</h2>
+      <p class="text-sm text-ink-muted">
+        Removes your login from this clinic immediately. Your name stays attached to past appointments and records for
+        the clinic's own history -- it isn't erased, just your access to it.
+      </p>
+      <UiBtn type="button" variant="secondary" class="border-danger-border text-danger-text" :disabled="deletingAccount" @click="deleteAccount">
+        {{ deletingAccount ? 'Deleting…' : 'Delete Account' }}
+      </UiBtn>
+    </div>
     </div>
     </div>
   </div>

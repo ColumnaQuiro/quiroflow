@@ -190,6 +190,34 @@ async function takePayment() {
 }
 
 const showCardModal = ref(false)
+const copyingCardLink = ref(false)
+const removingCard = ref(false)
+const { showToast } = useToast()
+async function copyCardLink() {
+  copyingCardLink.value = true
+  try {
+    const { url } = await useStaffFetch<{ url: string }>('/api/stripe/create-card-link', { method: 'POST', body: { patientId: props.patientId } })
+    await navigator.clipboard.writeText(url)
+    showToast('Card link copied -- send it to the patient')
+  } catch (err: any) {
+    showToast(err?.data?.statusMessage ?? 'Could not create card link', 'error')
+  } finally {
+    copyingCardLink.value = false
+  }
+}
+async function removeCard() {
+  if (!confirm('Remove the saved card for this patient?')) return
+  removingCard.value = true
+  try {
+    await useStaffFetch('/api/stripe/remove-card', { method: 'POST', body: { patientId: props.patientId } })
+    showToast('Card removed')
+    await loadAll()
+  } catch (err: any) {
+    showToast(err?.data?.statusMessage ?? 'Could not remove card', 'error')
+  } finally {
+    removingCard.value = false
+  }
+}
 const stripeCustomer = ref<StripeCustomerRow | null>(null)
 const schedules = ref<PaymentScheduleRow[]>([])
 const stripeEvents = ref<StripeEventRow[]>([])
@@ -668,6 +696,8 @@ function money(cents: number) {
           <UiBtn variant="secondary" size="sm" @click="activePanel = activePanel === 'credit' ? null : 'credit'">{{ t('Add credit', 'Añadir crédito') }}</UiBtn>
           <UiBtn variant="primary" size="sm" @click="activePanel === 'payment' ? (activePanel = null) : openTakePayment()">{{ t('Take payment', 'Registrar pago') }}</UiBtn>
           <UiBtn variant="secondary" size="sm" @click="showCardModal = true">{{ hasCard ? t('Replace card', 'Sustituir tarjeta') : t('Add card', 'Añadir tarjeta') }}</UiBtn>
+          <UiBtn variant="secondary" size="sm" :disabled="copyingCardLink" @click="copyCardLink">{{ copyingCardLink ? t('Copying…', 'Copiando…') : t('Copy card link', 'Copiar enlace de tarjeta') }}</UiBtn>
+          <UiBtn v-if="hasCard" variant="secondary" size="sm" :disabled="removingCard" @click="removeCard">{{ removingCard ? t('Removing…', 'Eliminando…') : t('Remove card', 'Eliminar tarjeta') }}</UiBtn>
         </div>
       </div>
 

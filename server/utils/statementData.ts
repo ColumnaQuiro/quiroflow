@@ -86,8 +86,9 @@ export function generateStatementPdf(data: StatementDocumentData): Promise<Buffe
     doc.on('error', reject)
 
     if (data.clinic) {
-      doc.fontSize(14).font('Helvetica-Bold').text(data.clinic.legalName || data.clinic.name)
+      doc.fontSize(14).font('Helvetica-Bold').text(data.clinic.name)
       doc.fontSize(10).font('Helvetica').fillColor('#555')
+      if (data.clinic.legalName) doc.text(data.clinic.legalName)
       if (data.clinic.address) doc.text(data.clinic.address)
       if (data.clinic.taxId) doc.text(`Tax ID: ${data.clinic.taxId}`)
       doc.moveDown(1.5)

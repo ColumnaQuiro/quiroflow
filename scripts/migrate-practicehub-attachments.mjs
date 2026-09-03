@@ -23,6 +23,16 @@
 // Usage:
 //   node migrate-practicehub-attachments.mjs <path-to-csv> --practicehub-url=https://<your-clinic>.practicehub.io
 //
+// For a large backlog, run several of these at once in separate terminals
+// (each will prompt for its own QuiroFlow login and open its own PracticeHub
+// browser window) using --offset/--limit to split the patient list into
+// non-overlapping slices, e.g. four terminals covering 0-249, 250-499,
+// 500-749, and 750+:
+//   node migrate-practicehub-attachments.mjs file.csv --practicehub-url=... --offset=0   --limit=250
+//   node migrate-practicehub-attachments.mjs file.csv --practicehub-url=... --offset=250 --limit=250
+//   node migrate-practicehub-attachments.mjs file.csv --practicehub-url=... --offset=500 --limit=250
+//   node migrate-practicehub-attachments.mjs file.csv --practicehub-url=... --offset=750
+//
 // <path-to-csv> is PracticeHub's "File Attachments - List" export (Reports
 // -> Data Exports), and must already have been imported as patient_files
 // placeholders through QuiroFlow's Settings -> Import Data first.
@@ -34,7 +44,7 @@ import { chromium } from 'playwright'
 import { createClient } from '@supabase/supabase-js'
 import WebSocket from 'ws'
 import Papa from 'papaparse'
-import { readFileSync, existsSync, appendFileSync } from 'node:fs'
+import { readFileSync, existsSync, appendFileSync, writeFileSync } from 'node:fs'
 import { createInterface } from 'node:readline/promises'
 import { stdin, stdout } from 'node:process'
 import { fileURLToPath } from 'node:url'
@@ -50,7 +60,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const SUPABASE_URL = process.env.NUXT_PUBLIC_SUPABASE_URL || 'https://oyaprkfurtuujdfafptw.supabase.co'
 const SUPABASE_KEY = process.env.NUXT_PUBLIC_SUPABASE_KEY || 'sb_publishable_YcvVhzmzvUvhf4vfv2edKg_PmQrl7To'
 const BUCKET = 'patient-files'
-const LOG_FILE = join(__dirname, 'migrate-attachments.log')
 
 const practicehubUrlArg = process.argv.find((a) => a.startsWith('--practicehub-url='))
 if (!practicehubUrlArg) {
@@ -66,10 +75,61 @@ if (!positionalArg) {
 }
 const csvPath = positionalArg
 
+const limitArg = process.argv.find((a) => a.startsWith('--limit='))
+const patientLimit = limitArg ? parseInt(limitArg.split('=')[1], 10) : null
+const offsetArg = process.argv.find((a) => a.startsWith('--offset='))
+const patientOffset = offsetArg ? parseInt(offsetArg.split('=')[1], 10) : 0
+
+// --offset/--limit let you split the work across several terminals running
+// at once, each with its own PracticeHub login -- e.g. 4 windows with
+// --offset=0/250/500/750 --limit=250 each, to get through a large backlog
+// faster than one browser can alone. Patients are sorted by id before
+// slicing (see main()) so every window's slice lines up with the others'
+// and nothing gets double-processed or skipped. Each slice gets its own
+// log file so concurrent runs don't interleave into one unreadable file.
+const LOG_FILE = join(__dirname, patientOffset || patientLimit ? `migrate-attachments-offset${patientOffset}.log` : 'migrate-attachments.log')
+
 function log(msg) {
   const line = `[${new Date().toISOString()}] ${msg}`
   console.log(line)
   appendFileSync(LOG_FILE, line + '\n')
+}
+
+// Supabase Storage rejects object keys containing certain non-ASCII
+// characters outright ("Invalid key") -- PracticeHub filenames are full of
+// them (accented Spanish, enye), same fix as utils/storageFilename.ts in
+// the main app, duplicated here since this script runs standalone via
+// plain `node`, outside the Nuxt build.
+const ACCENT_MAP = {
+  á: 'a', é: 'e', í: 'i', ó: 'o', ú: 'u', ü: 'u', ñ: 'n',
+  Á: 'A', É: 'E', Í: 'I', Ó: 'O', Ú: 'U', Ü: 'U', Ñ: 'N',
+}
+function sanitizeStorageFilename(name) {
+  const transliterated = name.replace(/[áéíóúüñÁÉÍÓÚÜÑ]/g, (c) => ACCENT_MAP[c] ?? c)
+  return transliterated.replace(/[^a-zA-Z0-9._-]/g, '_')
+}
+
+// Some patient_files rows point at a filename that's genuinely gone from
+// PracticeHub (renamed or deleted there since the CSV was exported) -- not a
+// bug in this script, just source data that no longer exists to migrate.
+// Once a file is confirmed absent on its patient's own Files tab, its id is
+// recorded here so every later run (this is meant to be re-run until clean)
+// skips it silently instead of re-discovering and re-warning about the same
+// permanently-missing file every time. Shared across --offset slices since
+// they all read/write the same file; each save is a full rewrite, so run
+// slices with staggered starts rather than perfectly simultaneously if you
+// want to avoid one run's confirmation briefly clobbering another's.
+const NOT_FOUND_FILE = join(__dirname, 'migrate-attachments-not-found.json')
+function loadNotFoundIds() {
+  if (!existsSync(NOT_FOUND_FILE)) return new Set()
+  try {
+    return new Set(JSON.parse(readFileSync(NOT_FOUND_FILE, 'utf8')))
+  } catch {
+    return new Set()
+  }
+}
+function saveNotFoundIds(ids) {
+  writeFileSync(NOT_FOUND_FILE, JSON.stringify([...ids], null, 2))
 }
 
 async function prompt(question, { hidden = false } = {}) {
@@ -140,9 +200,9 @@ async function main() {
   }
   const accountId = teamMember.account_id
 
-  const limitArg = process.argv.find((a) => a.startsWith('--limit='))
-  const patientLimit = limitArg ? parseInt(limitArg.split('=')[1], 10) : null
-  if (patientLimit) log(`--limit=${patientLimit}: only processing the first ${patientLimit} patients this run.`)
+  if (patientOffset || patientLimit) {
+    log(`--offset=${patientOffset}${patientLimit ? ` --limit=${patientLimit}` : ''}: processing a slice of patients this run.`)
+  }
 
   const PAGE_SIZE = 1000
 
@@ -165,11 +225,15 @@ async function main() {
   // Every patient_files row still missing content, joined back to its CSV
   // row to recover the PracticeHub patient name (needed to search PH's UI --
   // PH's own patient ID isn't stored anywhere in QuiroFlow) and filename.
-  const pending = await fetchAll('patient_files', 'id, patient_id, file_name, external_reference', (q) =>
+  const allPending = await fetchAll('patient_files', 'id, patient_id, file_name, external_reference', (q) =>
     q.eq('account_id', accountId).is('storage_path', null).not('external_reference', 'is', null),
   )
 
-  log(`${pending.length} files still pending.`)
+  const notFoundIds = loadNotFoundIds()
+  const pending = allPending.filter((f) => !notFoundIds.has(f.id))
+  const alreadyConfirmedMissing = allPending.length - pending.length
+
+  log(`${allPending.length} files still pending${alreadyConfirmedMissing > 0 ? ` (${alreadyConfirmedMissing} already confirmed missing from PracticeHub in a previous run, excluded)` : ''}.`)
   if (pending.length === 0) {
     log('Nothing to do.')
     return
@@ -202,8 +266,12 @@ async function main() {
     byPatient.set(file.patient_id, list)
   }
 
-  const patientEntries = patientLimit ? [...byPatient.entries()].slice(0, patientLimit) : [...byPatient.entries()]
-  log(`Processing ${patientEntries.length} patient(s), ${patientEntries.reduce((n, [, f]) => n + f.length, 0)} file(s).`)
+  const sortedEntries = [...byPatient.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+  const patientEntries = patientLimit
+    ? sortedEntries.slice(patientOffset, patientOffset + patientLimit)
+    : sortedEntries.slice(patientOffset)
+  const totalFiles = patientEntries.reduce((n, [, f]) => n + f.length, 0)
+  log(`Processing ${patientEntries.length} patient(s), ${totalFiles} file(s).`)
 
   log(`Launching browser. Log into PracticeHub in the window that opens, then come back here.`)
   const browser = await chromium.launch({ headless: false })
@@ -215,13 +283,14 @@ async function main() {
   let succeeded = 0
   let failed = 0
   let skipped = 0
+  const progress = () => `[${succeeded + failed + skipped}/${totalFiles}]`
 
   for (const [patientId, files] of patientEntries) {
     const patient = patientById.get(patientId)
     const phFirstName = files[0].csvRow['Patient First Name']?.trim() ?? ''
     const phLastName = files[0].csvRow['Patient Last Name']?.trim() ?? ''
     const phName = `${phFirstName} ${phLastName}`.trim()
-    log(`--- ${phName} (QuiroFlow: ${patient.first_name} ${patient.last_name ?? ''}) — ${files.length} file(s)`)
+    log(`${progress()} --- ${phName} (QuiroFlow: ${patient.first_name} ${patient.last_name ?? ''}) — ${files.length} file(s)`)
 
     try {
       await page.goto(`${PRACTICEHUB_URL}/patients`)
@@ -245,8 +314,8 @@ async function main() {
       if (phLastName && phFirstName) rows = rows.filter({ hasText: phFirstName })
       const rowCount = await rows.count()
       if (rowCount === 0) {
-        log(`WARN "${phName}" not found in PracticeHub search, skipping ${files.length} file(s)`)
         skipped += files.length
+        log(`${progress()} WARN "${phName}" not found in PracticeHub search, skipping ${files.length} file(s)`)
         continue
       }
 
@@ -267,8 +336,8 @@ async function main() {
           await page.locator('button:has-text("✕"), [aria-label="Close"]').first().click().catch(() => {})
         }
         if (!matched) {
-          log(`WARN ${rowCount} patients named "${phName}" in PracticeHub, couldn't disambiguate by phone, skipping ${files.length} file(s)`)
           skipped += files.length
+          log(`${progress()} WARN ${rowCount} patients named "${phName}" in PracticeHub, couldn't disambiguate by phone, skipping ${files.length} file(s)`)
           continue
         }
       } else {
@@ -281,26 +350,66 @@ async function main() {
       await page.locator('text=Files').first().click().catch(() => {})
       await page.waitForTimeout(500)
 
+      // A patient can legitimately have zero files in PracticeHub (the CSV's
+      // per-file metadata rows sometimes outlive the files themselves being
+      // removed there) -- that's not a mismatch worth a WARN, just nothing
+      // to migrate. DataTables renders one placeholder row ("No data
+      // available in table") rather than zero rows when empty, so check for
+      // that too, not just a bare row count of 0.
+      const filesTableRows = page.locator('table tbody tr')
+      const filesTableRowCount = await filesTableRows.count()
+      const filesTableEmpty =
+        filesTableRowCount === 0 ||
+        (filesTableRowCount === 1 && /no (data|files|records)/i.test(await filesTableRows.first().innerText().catch(() => '')))
+      if (filesTableEmpty) {
+        skipped += files.length
+        log(`${progress()} ${phName} has no attachments in PracticeHub, skipping ${files.length} file(s) (nothing to migrate, not an error)`)
+        continue
+      }
+
       for (const { file, csvRow } of files) {
         try {
           const fileRow = page.locator('tr', { hasText: csvRow['Filename'].trim() }).first()
           const viewLink = fileRow.locator('a:has-text("View")').first()
           if ((await viewLink.count()) === 0) {
-            log(`WARN "${csvRow['Filename']}" not found on ${phName}'s Files tab, skipping`)
             skipped++
+            notFoundIds.add(file.id)
+            saveNotFoundIds(notFoundIds)
+            log(`${progress()} WARN "${csvRow['Filename']}" not found on ${phName}'s Files tab -- recording as permanently missing, future runs won't re-check it`)
             continue
           }
 
-          const [newPage] = await Promise.all([context.waitForEvent('page'), viewLink.click()])
-          await newPage.waitForLoadState('domcontentloaded').catch(() => {})
-          const signedUrl = newPage.url()
-          await newPage.close()
+          // "View" usually opens a new tab at a signed URL the browser can
+          // render (PDF, JPG...), but for a format Chromium can't display
+          // inline -- HEIC being the one that's shown up -- it instead
+          // triggers a native download and the tab never navigates anywhere
+          // fetchable. Race both possible events and branch on whichever
+          // actually fires.
+          const [event] = await Promise.all([
+            Promise.race([
+              context.waitForEvent('page').then((value) => ({ kind: 'page', value })),
+              context.waitForEvent('download').then((value) => ({ kind: 'download', value })),
+            ]),
+            viewLink.click(),
+          ])
 
-          const res = await fetch(signedUrl)
-          if (!res.ok) throw new Error(`download failed: HTTP ${res.status}`)
-          const buffer = Buffer.from(await res.arrayBuffer())
+          let buffer
+          if (event.kind === 'download') {
+            const downloadPath = await event.value.path()
+            buffer = readFileSync(downloadPath)
+          } else {
+            const newPage = event.value
+            await newPage.waitForLoadState('domcontentloaded').catch(() => {})
+            const signedUrl = newPage.url()
+            await newPage.close()
+            if (!signedUrl || signedUrl === 'about:blank') throw new Error('no viewable URL opened for this file')
 
-          const storagePath = `${accountId}/${patientId}/${Date.now()}-${file.file_name}`
+            const res = await fetch(signedUrl)
+            if (!res.ok) throw new Error(`download failed: HTTP ${res.status}`)
+            buffer = Buffer.from(await res.arrayBuffer())
+          }
+
+          const storagePath = `${accountId}/${patientId}/${Date.now()}-${sanitizeStorageFilename(file.file_name)}`
           const { error: uploadError } = await supabase.storage.from(BUCKET).upload(storagePath, buffer, {
             contentType: csvRow['Mime Type']?.trim() || 'application/octet-stream',
           })
@@ -309,19 +418,19 @@ async function main() {
           const { error: updateError } = await supabase.from('patient_files').update({ storage_path: storagePath }).eq('id', file.id)
           if (updateError) throw new Error(`db update failed: ${updateError.message}`)
 
-          log(`OK ${phName}: ${file.file_name} (${buffer.length} bytes)`)
           succeeded++
+          log(`${progress()} OK ${phName}: ${file.file_name} (${buffer.length} bytes)`)
         } catch (err) {
-          log(`ERROR ${phName}: ${file.file_name}: ${err.message}`)
           failed++
+          log(`${progress()} ERROR ${phName}: ${file.file_name}: ${err.message}`)
         }
         await page.waitForTimeout(300)
       }
 
       await page.locator('button:has-text("✕"), [aria-label="Close"]').first().click().catch(() => {})
     } catch (err) {
-      log(`ERROR processing ${phName}: ${err.message}`)
       failed += files.length
+      log(`${progress()} ERROR processing ${phName}: ${err.message}`)
     }
   }
 

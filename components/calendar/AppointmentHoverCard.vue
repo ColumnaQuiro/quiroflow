@@ -117,34 +117,42 @@ const initials = computed(() => {
 const patientName = computed(() => `${props.appointment.patients?.first_name ?? ''} ${props.appointment.patients?.last_name ?? ''}`.trim())
 const practitionerName = computed(() => props.appointment.team_members?.full_name ?? t('Unassigned', 'Sin asignar'))
 
-// The block palette collapses onto four visual states; a pending or
-// reschedule-requested confirmation on an otherwise-booked appointment both
-// read as "Unconfirmed" (amber) since the app has no separate 4th status.
-const visualStatus = computed<'booked' | 'completed' | 'unconfirmed' | 'no_show' | 'cancelled'>(() => {
+// The block palette collapses onto these visual states. A patient-confirmed
+// booking gets its own "Confirmed" state instead of falling back to plain
+// "Booked", and a reschedule request gets its own "Wants to reschedule"
+// state instead of collapsing into "Unconfirmed" (amber), matching
+// pages/calendar.vue's appointmentVisualStatus.
+const visualStatus = computed<'booked' | 'confirmed' | 'completed' | 'unconfirmed' | 'reschedule_requested' | 'no_show' | 'cancelled'>(() => {
   const a = props.appointment
   if (a.status === 'completed') return 'completed'
   if (a.status === 'no_show') return 'no_show'
   if (a.status === 'cancelled') return 'cancelled'
-  if (a.status === 'booked' && (a.confirmation_status === 'pending' || a.confirmation_status === 'reschedule_requested')) return 'unconfirmed'
+  if (a.status === 'booked' && a.confirmation_status === 'reschedule_requested') return 'reschedule_requested'
+  if (a.status === 'booked' && a.confirmation_status === 'pending') return 'unconfirmed'
+  if (a.status === 'booked' && a.confirmation_status === 'confirmed') return 'confirmed'
   return 'booked'
 })
-const PILL_TONE: Record<string, 'brand' | 'success' | 'warning' | 'danger' | 'neutral'> = {
+const PILL_TONE: Record<string, 'brand' | 'success' | 'warning' | 'info' | 'danger' | 'neutral'> = {
   booked: 'brand',
+  confirmed: 'success',
   completed: 'success',
   unconfirmed: 'warning',
+  reschedule_requested: 'info',
   no_show: 'danger',
   cancelled: 'neutral',
 }
-const statusLabel = computed(() => {
-  if (visualStatus.value === 'unconfirmed' && props.appointment.confirmation_status === 'reschedule_requested') return t('Wants to reschedule', 'Quiere cambiar la cita')
-  return {
-    booked: t('Booked', 'Reservada'),
-    completed: t('Completed', 'Completada'),
-    unconfirmed: t('Unconfirmed', 'Sin confirmar'),
-    no_show: t('No-show', 'No presentado'),
-    cancelled: t('Cancelled', 'Cancelada'),
-  }[visualStatus.value]
-})
+const statusLabel = computed(
+  () =>
+    ({
+      booked: t('Booked', 'Reservada'),
+      confirmed: t('Confirmed', 'Confirmada'),
+      completed: t('Completed', 'Completada'),
+      unconfirmed: t('Unconfirmed', 'Sin confirmar'),
+      reschedule_requested: t('Wants to reschedule', 'Quiere cambiar la cita'),
+      no_show: t('No-show', 'No presentado'),
+      cancelled: t('Cancelled', 'Cancelada'),
+    })[visualStatus.value],
+)
 
 function visitOrdinal(n: number) {
   return `${n}${n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th'}`

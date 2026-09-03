@@ -15,11 +15,12 @@ const recallTemplateName = ref('')
 const recallTemplateLanguage = ref('es')
 const reminderTemplateName = ref('')
 const reminderTemplateLanguage = ref('es')
+const staffNotifyTemplateName = ref('')
+const staffNotifyTemplateLanguage = ref('es')
 
+const { showToast } = useToast()
 const loading = ref(true)
 const saving = ref(false)
-const saved = ref(false)
-const error = ref('')
 
 // Set only after mount, not as a computed keyed on import.meta.client --
 // that would render an empty string during SSR but the real URL on the
@@ -44,7 +45,7 @@ async function load() {
   const { data } = await supabase
     .from('accounts')
     .select(
-      'whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_access_token, whatsapp_confirmation_template_name, whatsapp_confirmation_template_language, whatsapp_recall_template_name, whatsapp_recall_template_language, whatsapp_reminder_template_name, whatsapp_reminder_template_language',
+      'whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_access_token, whatsapp_confirmation_template_name, whatsapp_confirmation_template_language, whatsapp_recall_template_name, whatsapp_recall_template_language, whatsapp_reminder_template_name, whatsapp_reminder_template_language, online_booking_notify_whatsapp_template_name, online_booking_notify_whatsapp_template_language',
     )
     .eq('id', store.accountId!)
     .maybeSingle()
@@ -57,6 +58,8 @@ async function load() {
   recallTemplateLanguage.value = data?.whatsapp_recall_template_language ?? 'es'
   reminderTemplateName.value = data?.whatsapp_reminder_template_name ?? ''
   reminderTemplateLanguage.value = data?.whatsapp_reminder_template_language ?? 'es'
+  staffNotifyTemplateName.value = data?.online_booking_notify_whatsapp_template_name ?? ''
+  staffNotifyTemplateLanguage.value = data?.online_booking_notify_whatsapp_template_language ?? 'es'
   loading.value = false
 
   if (hasStoredToken.value && businessAccountId.value) loadTemplates()
@@ -88,10 +91,12 @@ function useForReminder(t: Template) {
   reminderTemplateName.value = t.name
   reminderTemplateLanguage.value = t.language
 }
+function useForStaffNotify(t: Template) {
+  staffNotifyTemplateName.value = t.name
+  staffNotifyTemplateLanguage.value = t.language
+}
 
 async function save() {
-  error.value = ''
-  saved.value = false
   saving.value = true
   const update: TablesUpdate<'accounts'> = {
     whatsapp_phone_number_id: phoneNumberId.value.trim() || null,
@@ -102,16 +107,18 @@ async function save() {
     whatsapp_recall_template_language: recallTemplateLanguage.value.trim() || 'es',
     whatsapp_reminder_template_name: reminderTemplateName.value.trim() || null,
     whatsapp_reminder_template_language: reminderTemplateLanguage.value.trim() || 'es',
+    online_booking_notify_whatsapp_template_name: staffNotifyTemplateName.value.trim() || null,
+    online_booking_notify_whatsapp_template_language: staffNotifyTemplateLanguage.value.trim() || 'es',
   }
   if (accessToken.value.trim()) update.whatsapp_access_token = accessToken.value.trim()
 
   const { error: updateError } = await supabase.from('accounts').update(update).eq('id', store.accountId!)
   saving.value = false
   if (updateError) {
-    error.value = updateError.message
+    showToast(updateError.message, 'error')
     return
   }
-  saved.value = true
+  showToast('Saved')
   if (accessToken.value.trim()) hasStoredToken.value = true
   accessToken.value = ''
   if (hasStoredToken.value && businessAccountId.value) loadTemplates()
@@ -214,6 +221,27 @@ async function save() {
               </div>
             </SettingsFieldRow>
 
+            <SettingsFieldRow
+              label="Staff notification template"
+              helper="Used for the 'new online booking' ping to Settings → Online Booking's notify number when it's outside WhatsApp's 24h free-form window (i.e. that number hasn't messaged your clinic recently). Leave blank to only send free-form, which silently fails outside that window."
+              align="top"
+            >
+              <div class="flex gap-2">
+                <input
+                  v-model="staffNotifyTemplateName"
+                  type="text"
+                  placeholder="template_name"
+                  class="h-8 w-[152px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+                />
+                <input
+                  v-model="staffNotifyTemplateLanguage"
+                  type="text"
+                  placeholder="es"
+                  class="h-8 w-[70px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+                />
+              </div>
+            </SettingsFieldRow>
+
             <div class="rounded-card border border-line bg-surface p-4 shadow-card">
               <div class="flex items-center justify-between">
                 <p class="text-[13.5px] font-[560] text-ink-700">{{ t('Approved templates', 'Plantillas aprobadas') }}</p>
@@ -232,13 +260,12 @@ async function save() {
                     <button type="button" class="text-brand-text hover:text-brand-hover" @click="useForConfirmation(tpl)">{{ t('Use for confirmation', 'Usar para confirmación') }}</button>
                     <button type="button" class="text-brand-text hover:text-brand-hover" @click="useForRecall(tpl)">{{ t('Use for recall', 'Usar para revisión') }}</button>
                     <button type="button" class="text-brand-text hover:text-brand-hover" @click="useForReminder(tpl)">{{ t('Use for reminder', 'Usar para recordatorio') }}</button>
+                    <button type="button" class="text-brand-text hover:text-brand-hover" @click="useForStaffNotify(tpl)">{{ t('Use for staff notify', 'Usar para aviso al personal') }}</button>
                   </div>
                 </li>
               </ul>
             </div>
 
-            <p v-if="saved" class="text-[12.5px] text-success-text">{{ t('Saved.', 'Guardado.') }}</p>
-            <p v-if="error" class="text-[12.5px] text-danger-text">{{ error }}</p>
           </form>
 
           <div class="mt-6 rounded-card border border-line bg-surface p-4 shadow-card">

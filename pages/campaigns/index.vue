@@ -200,7 +200,8 @@ function actionSummary(a: Action): string {
     const varCount = Array.isArray(a.config?.variables) ? a.config.variables.length : 0
     const varWord = varCount === 1 ? t('variable', 'variable') : t('variables', 'variables')
     const parts = [`${varCount} ${varWord}`]
-    if (a.config?.doc_template_id) parts.push(t('document attached', 'documento adjunto'))
+    const docCount = Array.isArray(a.config?.doc_template_ids) ? a.config.doc_template_ids.filter(Boolean).length : 0
+    if (docCount > 0) parts.push(t(`${docCount} document${docCount === 1 ? '' : 's'} attached`, `${docCount} documento${docCount === 1 ? '' : 's'} adjunto${docCount === 1 ? '' : 's'}`))
     return parts.join(' · ')
   }
   if (a.action_type === 'email') {

@@ -22,8 +22,8 @@ describe('Public online booking', () => {
       }).then(() => {
         cy.visit(`/book/${account.accountSlug}`)
 
-        cy.contains('button', 'Continuar').should('not.be.disabled').click()
-
+        // A single practitioner is no real choice, so the widget skips the
+        // practitioner-selection step (and its "Continuar" button) entirely.
         cy.contains('Elija su fecha y hora').should('be.visible')
         selectBookableDayWithSlots()
         cy.contains('button', /^\d{2}:\d{2}$/).first().click()

@@ -15,9 +15,11 @@ interface PHFormResponse {
   created: string
 }
 
-const stage = ref<'connect' | 'importing' | 'done'>('connect')
+const stage = ref<'connect' | 'importing' | 'done' | 'error'>('connect')
 const phase = ref('')
 const progress = ref({ done: 0, total: 0 })
+const runError = ref('')
+const lastConn = ref<{ baseUrl: string; apiKey: string; appDetails: string } | null>(null)
 
 const importedCount = ref(0)
 const skippedDuplicate = ref(0)
@@ -63,80 +65,95 @@ function mapField(f: PHFormField): DocField {
 }
 
 async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }) {
+  lastConn.value = conn
   stage.value = 'importing'
+  runError.value = ''
+  importedCount.value = 0
+  skippedDuplicate.value = 0
+  skippedUnmatched.value = 0
+  importErrors.value = []
   const api = usePracticeHubApi(conn)
 
-  phase.value = t('Matching patients…', 'Emparejando pacientes…')
-  const phPatients = await api.fetchAll<{ id: number; patient_number: string }>('/patients', (done, total) => (progress.value = { done, total }))
-  const patientNumberById = new Map(phPatients.map((p) => [String(p.id), p.patient_number]))
+  try {
+    phase.value = t('Matching patients…', 'Emparejando pacientes…')
+    const phPatients = await api.fetchAll<{ id: number; patient_number: string }>('/patients', (done, total) => (progress.value = { done, total }))
+    const patientNumberById = new Map(phPatients.map((p) => [String(p.id), p.patient_number]))
 
-  const PAGE_SIZE = 1000
-  const ourPatientByRef = new Map<string, string>()
-  for (let page = 0; ; page++) {
-    const { data } = await supabase.from('patients').select('id, external_reference').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
-    for (const p of data ?? []) if (p.external_reference) ourPatientByRef.set(p.external_reference, p.id)
-    if (!data || data.length < PAGE_SIZE) break
-  }
-
-  phase.value = t('Checking for already-imported forms…', 'Comprobando formularios ya importados…')
-  const existingRefs = new Set<string>()
-  for (let page = 0; ; page++) {
-    const { data } = await supabase
-      .from('patient_docs')
-      .select('external_reference')
-      .not('external_reference', 'is', null)
-      .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
-    for (const d of data ?? []) if (d.external_reference) existingRefs.add(d.external_reference)
-    if (!data || data.length < PAGE_SIZE) break
-  }
-
-  phase.value = t('Fetching form responses…', 'Obteniendo respuestas de formularios…')
-  progress.value = { done: 0, total: 0 }
-  const responses = await api.fetchAll<PHFormResponse>('/custom_form_responses', (done, total) => (progress.value = { done, total }))
-
-  phase.value = t('Importing…', 'Importando…')
-  progress.value = { done: 0, total: responses.length }
-
-  const CHUNK_SIZE = 100
-  for (let i = 0; i < responses.length; i += CHUNK_SIZE) {
-    const chunk = responses.slice(i, i + CHUNK_SIZE)
-    const rows = []
-    for (const r of chunk) {
-      const ref = `PH-form-${r.id}`
-      if (existingRefs.has(ref)) {
-        skippedDuplicate.value++
-        continue
-      }
-      const patientNumber = patientNumberById.get(r.patient_id)
-      const patientId = patientNumber ? ourPatientByRef.get(patientNumber) : undefined
-      if (!patientId) {
-        skippedUnmatched.value++
-        continue
-      }
-      rows.push({
-        account_id: store.accountId!,
-        patient_id: patientId,
-        title: r.form_name,
-        fields: (r.data ?? []).map(mapField),
-        completed_at: r.created,
-        external_reference: ref,
-        created_at: r.created,
-      })
+    const PAGE_SIZE = 1000
+    const ourPatientByRef = new Map<string, string>()
+    for (let page = 0; ; page++) {
+      const { data } = await supabase.from('patients').select('id, external_reference').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+      for (const p of data ?? []) if (p.external_reference) ourPatientByRef.set(p.external_reference, p.id)
+      if (!data || data.length < PAGE_SIZE) break
     }
 
-    if (rows.length > 0) {
-      const { error } = await supabase.from('patient_docs').insert(rows)
-      if (error) {
-        importErrors.value.push(t(`Forms near row ${i}: ${error.message}`, `Formularios cerca de la fila ${i}: ${error.message}`))
-      } else {
-        importedCount.value += rows.length
-      }
+    phase.value = t('Checking for already-imported forms…', 'Comprobando formularios ya importados…')
+    const existingRefs = new Set<string>()
+    for (let page = 0; ; page++) {
+      const { data } = await supabase
+        .from('patient_docs')
+        .select('external_reference')
+        .not('external_reference', 'is', null)
+        .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+      for (const d of data ?? []) if (d.external_reference) existingRefs.add(d.external_reference)
+      if (!data || data.length < PAGE_SIZE) break
     }
 
-    progress.value = { done: Math.min(i + CHUNK_SIZE, responses.length), total: responses.length }
-  }
+    phase.value = 'Fetching form responses…'
+    progress.value = { done: 0, total: 0 }
+    const responses = await api.fetchAll<PHFormResponse>('/custom_form_responses', (done, total) => (progress.value = { done, total }))
 
-  stage.value = 'done'
+    phase.value = 'Importing…'
+    progress.value = { done: 0, total: responses.length }
+
+    const CHUNK_SIZE = 100
+    for (let i = 0; i < responses.length; i += CHUNK_SIZE) {
+      const chunk = responses.slice(i, i + CHUNK_SIZE)
+      const rows = []
+      for (const r of chunk) {
+        const ref = `PH-form-${r.id}`
+        if (existingRefs.has(ref)) {
+          skippedDuplicate.value++
+          continue
+        }
+        const patientNumber = patientNumberById.get(r.patient_id)
+        const patientId = patientNumber ? ourPatientByRef.get(patientNumber) : undefined
+        if (!patientId) {
+          skippedUnmatched.value++
+          continue
+        }
+        rows.push({
+          account_id: store.accountId!,
+          patient_id: patientId,
+          title: r.form_name,
+          fields: (r.data ?? []).map(mapField),
+          completed_at: r.created,
+          external_reference: ref,
+          created_at: r.created,
+        })
+      }
+
+      if (rows.length > 0) {
+        const { error } = await supabase.from('patient_docs').insert(rows)
+        if (error) {
+          importErrors.value.push(`Forms near row ${i}: ${error.message}`)
+        } else {
+          importedCount.value += rows.length
+        }
+      }
+
+      progress.value = { done: Math.min(i + CHUNK_SIZE, responses.length), total: responses.length }
+    }
+
+    stage.value = 'done'
+  } catch (err) {
+    runError.value = err instanceof Error ? err.message : String(err)
+    stage.value = 'error'
+  }
+}
+
+function retryRun() {
+  if (lastConn.value) run(lastConn.value)
 }
 
 function reset() {
@@ -151,7 +168,7 @@ function reset() {
 
 <template>
   <div>
-    <p class="text-sm text-gray-500">
+    <p class="text-sm text-ink-muted2">
       {{
         t(
           "Pulls submitted custom forms (consent forms, health questionnaires, signed documents) directly from PracticeHub's API into each patient's Docs tab here. Safe to re-run — already-imported forms are skipped.",
@@ -164,13 +181,23 @@ function reset() {
       <ImportPracticeHubConnectForm @connect="run" />
     </div>
 
-    <div v-else-if="stage === 'importing'" class="mt-4 rounded-lg border border-gray-200 bg-white p-8 text-center">
-      <p class="text-sm text-gray-600">{{ phase }}</p>
-      <p v-if="progress.total > 0" class="mt-1 text-xs text-gray-400">{{ progress.done }} / {{ progress.total }}</p>
+    <div v-else-if="stage === 'importing'" class="mt-4 rounded-lg border border-line bg-surface p-8 text-center">
+      <p class="text-sm text-ink-600">{{ phase }}</p>
+      <p v-if="progress.total > 0" class="mt-1 text-xs text-ink-faint">{{ progress.done }} / {{ progress.total }}</p>
+    </div>
+
+    <div v-else-if="stage === 'error'" class="mt-4 space-y-4">
+      <div class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
+        <p class="font-medium">Import failed:</p>
+        <p class="mt-1">{{ runError }}</p>
+      </div>
+      <button type="button" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover" @click="retryRun">
+        Retry
+      </button>
     </div>
 
     <div v-else-if="stage === 'done'" class="mt-4 space-y-4">
-      <div class="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+      <div class="rounded-lg border border-success-border bg-success-bg p-4 text-sm text-success-text">
         {{
           t(
             `Imported ${importedCount} forms. Skipped ${skippedDuplicate} already-imported, ${skippedUnmatched} with no matching patient.`,
@@ -178,17 +205,17 @@ function reset() {
           )
         }}
       </div>
-      <div v-if="importErrors.length > 0" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+      <div v-if="importErrors.length > 0" class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
         <p class="font-medium">{{ t('Some rows failed:', 'Algunas filas fallaron:') }}</p>
         <ul class="mt-1 list-disc pl-5">
           <li v-for="(e, i) in importErrors" :key="i">{{ e }}</li>
         </ul>
       </div>
       <div class="flex gap-3">
-        <NuxtLink to="/patients" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+        <NuxtLink to="/patients" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover">
           {{ t('View Patients', 'Ver pacientes') }}
         </NuxtLink>
-        <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50" @click="reset">
+        <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-ink-600 hover:bg-surface-subtle" @click="reset">
           {{ t('Run again', 'Ejecutar de nuevo') }}
         </button>
       </div>

@@ -55,6 +55,12 @@
   --color-warning-bg2: 254 249 239;
   --color-warning-border: 242 227 201;
 
+  --color-info-text: 126 34 206;
+  --color-info-accent: 147 51 234;
+  --color-info-bg: 247 240 253;
+  --color-info-bg2: 250 245 254;
+  --color-info-border: 232 213 249;
+
   --color-danger-text: 180 35 60;
   --color-danger-bg: 253 240 242;
   --color-danger-bg2: 254 244 245;
@@ -122,6 +128,12 @@
   --color-warning-bg: 46 36 20;
   --color-warning-bg2: 50 40 24;
   --color-warning-border: 74 59 33;
+
+  --color-info-text: 216 180 254;
+  --color-info-accent: 192 132 252;
+  --color-info-bg: 42 32 58;
+  --color-info-bg2: 46 36 62;
+  --color-info-border: 68 52 90;
 
   --color-danger-text: 248 113 133;
   --color-danger-bg: 46 22 27;

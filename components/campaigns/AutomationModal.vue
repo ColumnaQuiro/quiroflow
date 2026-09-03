@@ -14,6 +14,7 @@ const TRIGGER_OPTIONS = computed(() => [
   { value: 'appointment.rescheduled', label: t('Appointment rescheduled', 'Cita reprogramada') },
   { value: 'appointment.no_show', label: t('Appointment marked as missed', 'Cita marcada como no asistida') },
   { value: 'appointment.same_day', label: t('Day of appointment (morning send)', 'Día de la cita (envío por la mañana)') },
+  { value: 'appointment.hours_before', label: t('X hours before appointment', 'X horas antes de la cita') },
   { value: 'invoice.paid', label: t('Invoice paid', 'Factura pagada') },
   { value: 'patient.birthday', label: t("Patient's birthday (daily check)", 'Cumpleaños del paciente (comprobación diaria)') },
   { value: 'membership.new_member', label: t('New membership started', 'Nueva membresía iniciada') },
@@ -27,6 +28,9 @@ const VARIABLE_SOURCES = computed(() => [
   { value: 'first_name', label: t('First name', 'Nombre') },
   { value: 'last_name', label: t('Last name', 'Apellidos') },
   { value: 'email', label: t('Email', 'Correo electrónico') },
+  { value: 'next_appointment', label: t('Appointment date & time', 'Fecha y hora de la cita') },
+  { value: 'appointment_date', label: t('Appointment date', 'Fecha de la cita') },
+  { value: 'appointment_time', label: t('Appointment time', 'Hora de la cita') },
   { value: 'text', label: t('Fixed text', 'Texto fijo') },
 ])
 const ACTION_TONE: Record<string, string> = {
@@ -41,7 +45,7 @@ interface ActionForm {
   action_type: ActionType
   template_name: string
   template_language: string
-  doc_template_id: string
+  doc_template_ids: string[]
   variables: WhatsAppVariable[]
   subject: string
   body: string
@@ -49,10 +53,10 @@ interface ActionForm {
   secret: string
 }
 function blankAction(): ActionForm {
-  return { action_type: 'whatsapp_template', template_name: '', template_language: 'es', doc_template_id: '', variables: [{ source: 'first_name', text: '' }], subject: '', body: '', url: '', secret: '' }
+  return { action_type: 'whatsapp_template', template_name: '', template_language: 'es', doc_template_ids: [], variables: [{ source: 'first_name', text: '' }], subject: '', body: '', url: '', secret: '' }
 }
 
-interface WhatsAppTemplate { name: string; language: string; variableCount: number }
+interface WhatsAppTemplate { name: string; language: string; variableCount: number; urlButtonCount: number }
 const whatsappTemplates = ref<WhatsAppTemplate[]>([])
 const templatesError = ref('')
 function templateKey(t: Pick<WhatsAppTemplate, 'name' | 'language'>) {
@@ -75,6 +79,11 @@ const appointmentTypes = ref<{ id: string; name: string }[]>([])
 const filterAppointmentTypeId = ref('')
 const filterTotalVisits = ref('')
 const filterNoPriorAppointments = ref(false)
+// Only meaningful for the appointment.hours_before trigger -- how long
+// before the appointment's start time this rule fires (e.g. 24 for a
+// day-before reminder, 72 for three days before). A clinic wanting both
+// just creates two rules on this same trigger with different values.
+const filterHoursBefore = ref('24')
 // has_future_appointment isn't editable in this UI (only the birthday rule
 // uses it) -- carried through untouched on save so editing a rule here
 // doesn't silently drop it.
@@ -115,7 +124,8 @@ onMounted(async () => {
       filterAppointmentTypeId.value = typeof filters.appointment_type_id === 'string' ? filters.appointment_type_id : ''
       filterTotalVisits.value = typeof filters.total_visits === 'number' ? String(filters.total_visits) : ''
       filterNoPriorAppointments.value = filters.no_prior_appointments === true
-      const { appointment_type_id: _a, total_visits: _t, no_prior_appointments: _n, ...rest } = filters
+      filterHoursBefore.value = typeof filters.hours_before === 'number' ? String(filters.hours_before) : '24'
+      const { appointment_type_id: _a, total_visits: _t, no_prior_appointments: _n, hours_before: _h, ...rest } = filters
       otherFilters = rest
     }
     if (existingActions && existingActions.length > 0) {
@@ -125,7 +135,7 @@ onMounted(async () => {
           action_type: a.action_type as ActionType,
           template_name: config.template_name ?? '',
           template_language: config.template_language ?? 'es',
-          doc_template_id: config.doc_template_id ?? '',
+          doc_template_ids: Array.isArray(config.doc_template_ids) ? config.doc_template_ids : [],
           variables: Array.isArray(config.variables) && config.variables.length > 0 ? config.variables : [{ source: 'first_name', text: '' }],
           subject: config.subject ?? '',
           body: config.body ?? '',
@@ -155,6 +165,29 @@ function selectTemplate(a: ActionForm, key: string) {
   a.template_name = t.name
   a.template_language = t.language
   a.variables = Array.from({ length: t.variableCount }, () => ({ source: 'first_name', text: '' }))
+  // One doc slot per dynamic URL button on the template, or a single slot
+  // (appended to the body instead) for a template with none.
+  a.doc_template_ids = Array.from({ length: Math.max(t.urlButtonCount, 1) }, () => '')
+}
+// How many doc-link pickers to show for this action: matches the selected
+// template's dynamic URL button count when known, otherwise falls back to
+// whatever's already configured so an unrecognized/renamed template doesn't
+// lose its saved picks.
+function docSlotCountFor(a: ActionForm) {
+  const t = whatsappTemplates.value.find((tpl) => templateKey(tpl) === templateKeyFor(a))
+  return t ? Math.max(t.urlButtonCount, 1) : Math.max(a.doc_template_ids.length, 1)
+}
+function whatsappTemplateFor(a: ActionForm) {
+  return whatsappTemplates.value.find((tpl) => templateKey(tpl) === templateKeyFor(a))
+}
+function docSlotLabel(a: ActionForm, index: number) {
+  return (whatsappTemplateFor(a)?.urlButtonCount ?? 0) > 0 ? t(`Button ${index + 1} document`, `Documento del botón ${index + 1}`) : t('Document', 'Documento')
+}
+// True when the configured doc (slot 0 only) is sent as a body variable
+// instead of a button parameter -- i.e. the template has no dynamic URL
+// button to attach it to.
+function isBodyDocSlot(a: ActionForm) {
+  return (whatsappTemplateFor(a)?.urlButtonCount ?? 0) === 0
 }
 function addVariable(a: ActionForm) {
   a.variables.push({ source: 'first_name', text: '' })
@@ -168,7 +201,7 @@ function configFor(a: ActionForm): Record<string, unknown> {
     return {
       template_name: a.template_name.trim(),
       template_language: a.template_language.trim() || 'es',
-      doc_template_id: a.doc_template_id || null,
+      doc_template_ids: a.doc_template_ids.map((id) => id || null),
       variables: a.variables.map((v) => ({ source: v.source, text: v.source === 'text' ? v.text.trim() : undefined })),
     }
   }
@@ -189,6 +222,9 @@ async function persist(): Promise<string | null> {
   if (filterAppointmentTypeId.value) filters.appointment_type_id = filterAppointmentTypeId.value
   if (filterTotalVisits.value !== '') filters.total_visits = Number(filterTotalVisits.value)
   if (filterNoPriorAppointments.value) filters.no_prior_appointments = true
+  if (triggerEvent.value === 'appointment.hours_before') {
+    filters.hours_before = Math.max(1, Math.round(Number(filterHoursBefore.value) || 24))
+  }
 
   const rulePayload = {
     account_id: store.accountId!,
@@ -234,6 +270,12 @@ async function save() {
 }
 
 const hasWhatsAppAction = computed(() => actions.value.some((a) => a.action_type === 'whatsapp_template'))
+// A test send impersonates the signed-in team member, not a real patient --
+// document links need a real patients row (patient_docs.patient_id has a
+// hard FK to it), so any document button/variable here will silently fail
+// to generate and fall back to a broken placeholder. Only "Send now" against
+// a real patient (from the campaign list) can actually verify one.
+const hasDocAttached = computed(() => actions.value.some((a) => a.action_type === 'whatsapp_template' && a.doc_template_ids.some(Boolean)))
 
 async function sendTestToMe() {
   if (actions.value.length === 0) {
@@ -340,6 +382,20 @@ async function sendTestToMe() {
             <p class="mt-1.5 text-[11.5px] leading-relaxed text-ink-muted2">{{ t('Or leave this and use "Send now" from the campaign list to make this a one-off send only.', 'O deja esto y usa "Enviar ahora" desde la lista de campañas para hacer un envío único.') }}</p>
           </div>
 
+          <div v-if="triggerEvent === 'appointment.hours_before'" class="rounded-card border border-[#EDEEF2] bg-surface-subtle p-3.5">
+            <label class="block text-[12.5px] font-medium text-ink-700">Send this many hours before the appointment</label>
+            <input
+              v-model="filterHoursBefore"
+              type="number"
+              min="1"
+              placeholder="e.g. 24"
+              class="mt-1.5 h-9 w-32 rounded-ctl border border-line-control bg-surface px-3 text-[13.5px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            />
+            <p class="mt-1.5 text-[11.5px] leading-relaxed text-ink-muted2">
+              For a second reminder at a different point (e.g. 3 days before as well as 24 hours before), create another campaign on this same trigger with a different value here.
+            </p>
+          </div>
+
           <div v-if="!NO_APPOINTMENT_CONTEXT_TRIGGERS.includes(triggerEvent)" class="rounded-card border border-[#EDEEF2] bg-surface-subtle p-3.5">
             <label class="block text-[12.5px] font-medium text-ink-700">{{ t('Only when', 'Solo cuando') }}</label>
             <div class="mt-1.5 grid grid-cols-2 gap-2.5">
@@ -402,15 +458,17 @@ async function sendTestToMe() {
                   <p v-if="a.template_name && !templateKeyFor(a) && !templatesError" class="text-[11.5px] text-warning-text">
                     {{ t('Currently set to', 'Actualmente configurado en') }} "{{ a.template_name }}" ({{ a.template_language }}), {{ t("which isn't in the approved template list anymore.", 'que ya no está en la lista de plantillas aprobadas.') }}
                   </p>
-                  <div>
+                  <div v-for="(_, di) in docSlotCountFor(a)" :key="di">
                     <select
-                      v-model="a.doc_template_id"
+                      v-model="a.doc_template_ids[di]"
                       class="h-8 w-full rounded-ctl border border-line-control px-2.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
                     >
                       <option value="">{{ t('No document', 'Sin documento') }}</option>
                       <option v-for="dt in docTemplates" :key="dt.id" :value="dt.id">{{ dt.title }}</option>
                     </select>
-                    <p class="mt-1 text-[11px] text-ink-muted2">{{ t("Only one document can be attached per template send, matching WhatsApp's own template format.", 'Solo se puede adjuntar un documento por envío de plantilla, según el propio formato de plantillas de WhatsApp.') }}</p>
+                    <p class="mt-1 text-[11px] text-ink-muted2">
+                      {{ docSlotLabel(a, di) }}<template v-if="isBodyDocSlot(a)"> — {{ t('sent as the last variable, after these.', 'se envía como la última variable, después de estas.') }}</template>
+                    </p>
                   </div>
                   <div>
                     <p class="text-[11.5px] font-medium text-ink-muted2">{{ t('Template variables, in order (match however many numbered placeholders your template has)', 'Variables de la plantilla, en orden (coincide con el número de marcadores numerados que tenga tu plantilla)') }}</p>
@@ -432,7 +490,6 @@ async function sendTestToMe() {
                       <button v-if="a.variables.length > 1" type="button" class="shrink-0 text-[12px] text-danger-text hover:underline" @click="removeVariable(a, vi)">✕</button>
                     </div>
                     <button type="button" class="mt-1.5 text-[12px] font-medium text-brand-text hover:text-brand-hover" @click="addVariable(a)">+ {{ t('Add variable', 'Añadir variable') }}</button>
-                    <p v-if="a.doc_template_id" class="mt-1 text-[11px] text-ink-muted2">{{ t('The document link is sent as the last variable, after these.', 'El enlace del documento se envía como la última variable, después de estas.') }}</p>
                   </div>
                 </div>
 
@@ -467,19 +524,22 @@ async function sendTestToMe() {
           <p v-if="error" class="text-[12.5px] text-danger-text">{{ error }}</p>
         </div>
 
-        <div class="flex shrink-0 items-center justify-between border-t border-line-divider bg-surface-subtle2 px-6 py-3.5">
-          <div class="flex items-center gap-2.5">
+        <div class="flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-line-divider bg-surface-subtle2 px-6 py-3.5">
+          <div class="flex min-w-0 flex-wrap items-center gap-2.5">
             <input
               v-if="hasWhatsAppAction"
               v-model="testWhatsAppNumber"
               type="text"
               :placeholder="t('Your WhatsApp number, e.g. +34600000000', 'Tu número de WhatsApp, p. ej. +34600000000')"
-              class="h-8 w-56 rounded-ctl border border-line-control px-2.5 text-[12.5px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              class="h-8 w-56 shrink-0 rounded-ctl border border-line-control px-2.5 text-[12.5px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
             />
             <UiBtn variant="ghost" size="sm" type="button" :disabled="testing" @click="sendTestToMe">{{ testing ? t('Sending…', 'Enviando…') : t('Send test to me', 'Enviarme una prueba') }}</UiBtn>
             <p v-if="testMessage" class="text-[12px]" :class="testMessageIsError ? 'text-danger-text' : 'text-success-text'">{{ testMessage }}</p>
+            <p v-if="hasDocAttached" class="w-full text-[11px] text-ink-faint2">
+              {{ t('A test send isn\'t a real patient, so document links/buttons won\'t resolve -- use "Send now" against a real patient from the campaign list to verify those.', 'Un envío de prueba no es un paciente real, así que los enlaces/botones de documentos no funcionarán -- usa "Enviar ahora" con un paciente real desde la lista de campañas para verificarlos.') }}
+            </p>
           </div>
-          <div class="flex items-center gap-2">
+          <div class="flex shrink-0 items-center gap-2">
             <UiBtn variant="secondary" type="button" @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</UiBtn>
             <UiBtn variant="primary" type="submit" :disabled="saving">{{ saving ? t('Saving…', 'Guardando…') : t('Save campaign', 'Guardar campaña') }}</UiBtn>
           </div>

@@ -34,6 +34,22 @@ async function signOut() {
   await new Promise((resolve) => setTimeout(resolve, 350))
   await navigateTo('/login')
 }
+
+const authedFetch = useAuthedFetch()
+const deletingAccount = ref(false)
+async function deleteAccount() {
+  if (!confirm("Delete your account? This removes your portal login immediately and can't be undone by you.")) return
+  deletingAccount.value = true
+  try {
+    await authedFetch('/api/account/delete', { method: 'POST' })
+  } catch (err: any) {
+    deletingAccount.value = false
+    alert(err?.data?.statusMessage ?? 'Failed to delete account.')
+    return
+  }
+  await supabase.auth.signOut()
+  await navigateTo('/login')
+}
 </script>
 
 <template>
@@ -65,7 +81,16 @@ async function signOut() {
             Practitioner view
           </button>
         </div>
-        <button type="button" class="ml-auto px-2 py-1.5 text-[12.5px] text-ink-faint" @click="signOut">Sign out</button>
+        <button
+          v-if="patient"
+          type="button"
+          class="ml-auto px-2 py-1.5 text-[12.5px] text-danger-text"
+          :disabled="deletingAccount"
+          @click="deleteAccount"
+        >
+          {{ deletingAccount ? 'Deleting…' : 'Delete account' }}
+        </button>
+        <button type="button" class="px-2 py-1.5 text-[12.5px] text-ink-faint" :class="patient ? '' : 'ml-auto'" @click="signOut">Sign out</button>
       </div>
 
       <PatientHome v-if="patient" :patient-id="patient.id" :patient-first-name="patient.first_name" />

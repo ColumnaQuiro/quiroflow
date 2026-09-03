@@ -40,7 +40,12 @@ export default defineNuxtConfig({
     },
   },
   modules: ['@nuxtjs/tailwindcss', '@nuxtjs/supabase'],
-  css: ['~/assets/css/main.css'],
+  // theme.css is what actually sets the --color-brand/--color-ink/etc custom
+  // properties tailwind.config.ts's colors resolve through (rgb(var(--color-x))) --
+  // without it every bg-brand/text-brand-text/border-line-control class
+  // computes to an invalid rgb(var(--undefined)) value the browser silently
+  // drops, rendering as plain black/white with no brand color at all.
+  css: [`${root}/assets/css/theme.css`, '~/assets/css/main.css'],
   components: [`${root}/components`, '~/components'],
   imports: {
     dirs: [`${root}/composables`, `${root}/utils`],

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { sanitizeStorageFilename } from '~/utils/storageFilename'
+
 // Same upload-to-public-bucket pattern as PatientsPhotoUpload, minus the
 // QR/phone flow (irrelevant here -- staff upload a clinic logo from the
 // settings page they're already on, not from a phone camera).
@@ -24,7 +26,7 @@ function pick() {
 async function uploadFile(file: File) {
   uploading.value = true
   error.value = ''
-  const path = `${useAccountStore().accountId}/${props.clinicId}/${Date.now()}-${file.name}`
+  const path = `${useAccountStore().accountId}/${props.clinicId}/${Date.now()}-${sanitizeStorageFilename(file.name)}`
   const { error: uploadError } = await supabase.storage.from('clinic-logos').upload(path, file)
   if (uploadError) {
     error.value = uploadError.message
@@ -44,18 +46,15 @@ function onFileChosen(event: Event) {
 </script>
 
 <template>
-  <div class="flex items-center gap-3">
-    <div class="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-ctl border border-line bg-surface-subtle">
+  <div class="flex items-center gap-2">
+    <div class="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-ctl border border-line bg-surface-subtle" :title="t('Shown on invoices and the online booking page', 'Se muestra en las facturas y en la página de reserva online')">
       <img v-if="logoUrl" :src="logoUrl" class="h-full w-full object-contain" :alt="t('Clinic logo', 'Logo de la clínica')" />
-      <span v-else class="text-[10px] text-ink-faint">{{ t('No logo', 'Sin logo') }}</span>
+      <span v-else class="text-[9px] text-ink-faint">{{ t('None', 'Ninguno') }}</span>
     </div>
-    <div>
-      <UiBtn variant="secondary" size="sm" :disabled="uploading" @click="pick">
-        {{ uploading ? t('Uploading…', 'Subiendo…') : logoUrl ? t('Replace logo', 'Reemplazar logo') : t('Upload logo', 'Subir logo') }}
-      </UiBtn>
-      <p class="mt-1 text-[11px] text-ink-faint">{{ t('Shown at the top of every invoice for this clinic.', 'Se muestra en la parte superior de cada factura de esta clínica.') }}</p>
-      <p v-if="error" class="mt-1 text-[11px] text-danger-text">{{ error }}</p>
-    </div>
+    <button type="button" class="text-[12px] font-medium text-brand-text hover:text-brand-hover disabled:opacity-50" :disabled="uploading" @click="pick">
+      {{ uploading ? '…' : logoUrl ? t('Replace', 'Sustituir') : t('Upload', 'Subir') }}
+    </button>
     <input ref="fileInput" type="file" accept="image/*" class="hidden" @change="onFileChosen" />
+    <p v-if="error" class="text-[11px] text-danger-text">{{ error }}</p>
   </div>
 </template>

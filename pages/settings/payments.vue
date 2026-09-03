@@ -14,10 +14,9 @@ const webhookSecret = ref('')
 const hasStoredWebhookSecret = ref(false)
 const showLegacyForm = ref(false)
 
+const { showToast } = useToast()
 const loading = ref(true)
 const saving = ref(false)
-const saved = ref(false)
-const error = ref('')
 
 const testing = ref(false)
 const testResult = ref('')
@@ -53,8 +52,6 @@ async function load() {
 onMounted(load)
 
 async function save() {
-  error.value = ''
-  saved.value = false
   saving.value = true
   const update: TablesUpdate<'accounts'> = {
     stripe_publishable_key: publishableKey.value.trim() || null,
@@ -65,10 +62,10 @@ async function save() {
   const { error: updateError } = await supabase.from('accounts').update(update).eq('id', store.accountId!)
   saving.value = false
   if (updateError) {
-    error.value = updateError.message
+    showToast(updateError.message, 'error')
     return
   }
-  saved.value = true
+  showToast('Saved')
   if (secretKey.value.trim()) hasStoredSecretKey.value = true
   if (webhookSecret.value.trim()) hasStoredWebhookSecret.value = true
   secretKey.value = ''
@@ -184,9 +181,6 @@ async function disconnect() {
                 />
               </SettingsFieldRow>
 
-              <p v-if="saved" class="text-[12.5px] text-success-text">{{ t('Saved.', 'Guardado.') }}</p>
-              <p v-if="error" class="text-[12.5px] text-danger-text">{{ error }}</p>
-
               <div class="rounded-card border border-line bg-surface-subtle p-4">
                 <h3 class="text-[13.5px] font-[560] text-ink-700">{{ t('Webhook', 'Webhook') }}</h3>
                 <p class="mt-1 text-[12.5px] leading-relaxed text-ink-muted2">
@@ -194,8 +188,9 @@ async function disconnect() {
                   <code class="rounded-ctlSm bg-surface px-1 py-0.5 text-[12px]">invoice.paid</code>,
                   <code class="rounded-ctlSm bg-surface px-1 py-0.5 text-[12px]">invoice.payment_failed</code>,
                   <code class="rounded-ctlSm bg-surface px-1 py-0.5 text-[12px]">subscription_schedule.updated</code>,
-                  <code class="rounded-ctlSm bg-surface px-1 py-0.5 text-[12px]">subscription_schedule.released</code>, {{ t('and', 'y') }}
-                  <code class="rounded-ctlSm bg-surface px-1 py-0.5 text-[12px]">subscription_schedule.canceled</code>.
+                  <code class="rounded-ctlSm bg-surface px-1 py-0.5 text-[12px]">subscription_schedule.released</code>,
+                  <code class="rounded-ctlSm bg-surface px-1 py-0.5 text-[12px]">subscription_schedule.canceled</code>, {{ t('and', 'y') }}
+                  <code class="rounded-ctlSm bg-surface px-1 py-0.5 text-[12px]">setup_intent.succeeded</code>.
                 </p>
                 <div class="mt-1.5 flex items-center gap-2">
                   <code class="flex-1 overflow-x-auto rounded-ctlSm bg-surface px-2 py-1 text-[12px] text-ink-600">{{ webhookUrl }}</code>

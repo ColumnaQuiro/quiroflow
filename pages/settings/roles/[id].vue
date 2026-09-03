@@ -49,10 +49,9 @@ const DEFAULTS: Permissions = {
 const name = ref('')
 const isSystem = ref(false)
 const permissions = ref<Permissions>({ ...DEFAULTS })
+const { showToast } = useToast()
 const loading = ref(true)
 const saving = ref(false)
-const saved = ref(false)
-const error = ref('')
 const notFound = ref(false)
 
 async function load() {
@@ -116,8 +115,6 @@ const clinicalToggles = computed<{ key: string; label: string; hint?: string }[]
 ])
 
 async function save() {
-  error.value = ''
-  saved.value = false
   saving.value = true
   const { error: updateError } = await supabase
     .from('account_roles')
@@ -125,10 +122,10 @@ async function save() {
     .eq('id', roleId)
   saving.value = false
   if (updateError) {
-    error.value = updateError.message
+    showToast(updateError.message, 'error')
     return
   }
-  saved.value = true
+  showToast('Saved')
 }
 </script>
 
@@ -244,8 +241,6 @@ async function save() {
               </div>
             </fieldset>
 
-            <p v-if="saved" class="text-[12.5px] text-success-text">{{ t('Saved.', 'Guardado.') }}</p>
-            <p v-if="error" class="text-[12.5px] text-danger-text">{{ error }}</p>
           </form>
         </div>
       </div>

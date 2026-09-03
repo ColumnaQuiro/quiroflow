@@ -19,10 +19,11 @@ const loading = ref(true)
 const search = ref('')
 const practitionerFilter = ref('')
 const minWeeksOverdue = ref(3) // "N+ weeks overdue" filter -- 3+ on by default per design spec
-// Alternative to minWeeksOverdue -- an absolute cutoff ("hasn't been in
-// since this date") instead of a rolling N-weeks-from-today window. Takes
-// over the overdue calculation entirely when set, since combining a
-// relative and an absolute threshold at once has no coherent meaning.
+// Alternative to minWeeksOverdue -- an absolute lower bound on last visit
+// date ("last seen on/after this date") instead of a rolling
+// N-weeks-from-today window. Takes over the overdue calculation entirely
+// when set, since combining a relative and an absolute threshold at once
+// has no coherent meaning.
 const dateFrom = ref('')
 const balanceFilter = ref<'any' | 'credit' | 'debit'>('any')
 const tagFilter = ref('')
@@ -81,7 +82,7 @@ const filtered = computed(() => {
       }
       if (practitionerFilter.value && r.default_practitioner_id !== practitionerFilter.value) return false
       if (dateFrom.value) {
-        if (!r.last_appointment_at || new Date(r.last_appointment_at) > new Date(`${dateFrom.value}T23:59:59`)) return false
+        if (!r.last_appointment_at || new Date(r.last_appointment_at) < new Date(`${dateFrom.value}T00:00:00`)) return false
       } else if ((r.days_since_last_appointment ?? 0) < minWeeksOverdue.value * 7) {
         return false
       }
@@ -341,7 +342,7 @@ function exportCsv() {
         </div>
 
         <div class="flex items-center gap-1.5">
-          <label class="text-[12.5px] text-ink-muted2">{{ t('No visit since', 'Sin visita desde') }}</label>
+          <label class="text-[12.5px] text-ink-muted2">{{ t('Last visit since', 'Última visita desde') }}</label>
           <input
             v-model="dateFrom"
             type="date"

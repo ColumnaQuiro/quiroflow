@@ -66,6 +66,34 @@ async function loadReadTimestamps() {
 }
 onMounted(loadReadTimestamps)
 
+// Per-user archive + label assignment, unlike readTimestamps above -- these
+// two are private per team member (see the whatsapp_conversation_archives/
+// whatsapp_conversation_labels migration comments), while the label
+// *catalog* itself (whatsapp_labels) is shared account-wide so the whole
+// team draws from one consistent name/color vocabulary.
+interface LabelDef {
+  id: string
+  name: string
+  color: string
+}
+const archivedKeys = ref<Set<string>>(new Set())
+const myLabelsByKey = ref<Record<string, string[]>>({})
+const labels = ref<LabelDef[]>([])
+async function loadArchivesAndLabels() {
+  if (!store.teamMember) return
+  const [{ data: archives }, { data: assigns }, { data: labelRows }] = await Promise.all([
+    supabase.from('whatsapp_conversation_archives').select('conversation_key').eq('team_member_id', store.teamMember.id),
+    supabase.from('whatsapp_conversation_labels').select('conversation_key, label_id').eq('team_member_id', store.teamMember.id),
+    supabase.from('whatsapp_labels').select('id, name, color').order('name'),
+  ])
+  archivedKeys.value = new Set((archives ?? []).map((a) => a.conversation_key))
+  const byKey: Record<string, string[]> = {}
+  for (const a of assigns ?? []) (byKey[a.conversation_key] ??= []).push(a.label_id)
+  myLabelsByKey.value = byKey
+  labels.value = labelRows ?? []
+}
+onMounted(loadArchivesAndLabels)
+
 async function load() {
   loading.value = true
   const [{ data: waData }, { data: appData }] = await Promise.all([
@@ -159,12 +187,30 @@ const conversationSearchText = computed(() => {
   }
   return map
 })
+// Archived view: toggled by a single icon button rather than a filter chip,
+// since it's a whole different list (not a narrowing of the active one) --
+// compose/"+ New" doesn't make sense there either, see the template.
+const view = ref<'active' | 'archived'>('active')
+const unreadOnly = ref(false)
+// "awaiting_us"/"awaiting_patient" is deliberately independent from unread:
+// unread means "I haven't opened this," awaiting-us means "the last message
+// is theirs, regardless of whether I've read it" -- a conversation I've
+// already read but haven't replied to is exactly the case this filter
+// exists to surface that "unread" alone would miss.
+const replyFilter = ref<'all' | 'awaiting_us' | 'awaiting_patient'>('all')
+const labelFilter = ref<string | null>(null)
+
 const filteredConversations = computed(() => {
-  if (!search.value.trim()) return conversations.value
-  const q = normalizeSearchTerm(search.value.trim())
-  return conversations.value.filter((c) =>
-    normalizeSearchTerm(`${c.name} ${c.phoneNumber ?? ''} ${conversationSearchText.value[c.key] ?? ''}`).includes(q),
-  )
+  let list = conversations.value.filter((c) => archivedKeys.value.has(c.key) === (view.value === 'archived'))
+  if (search.value.trim()) {
+    const q = normalizeSearchTerm(search.value.trim())
+    list = list.filter((c) => normalizeSearchTerm(`${c.name} ${c.phoneNumber ?? ''} ${conversationSearchText.value[c.key] ?? ''}`).includes(q))
+  }
+  if (unreadOnly.value) list = list.filter((c) => c.unread)
+  if (replyFilter.value === 'awaiting_us') list = list.filter((c) => c.lastMessage?.direction === 'inbound')
+  else if (replyFilter.value === 'awaiting_patient') list = list.filter((c) => c.lastMessage?.direction === 'outbound')
+  if (labelFilter.value) list = list.filter((c) => myLabelsByKey.value[c.key]?.includes(labelFilter.value!))
+  return list
 })
 
 // Bulk select: "Select" enters the mode, clicking rows checks them, then
@@ -334,6 +380,15 @@ async function deleteKeys(keys: string[]) {
       await query
       if (c.patientId) await supabase.from('patient_app_messages').delete().eq('patient_id', c.patientId)
       if (store.accountId) await supabase.from('whatsapp_conversation_reads').delete().eq('account_id', store.accountId).eq('conversation_key', key)
+      // RLS on these two only lets each user delete their own rows, so this
+      // only ever cleans up the deleting user's own archive/label state for
+      // the key -- any teammate's rows on the same (now-gone) conversation
+      // are left as harmless orphans (cheap, PK-only dead rows) rather than
+      // needing a security-definer cleanup path for what should be rare.
+      if (store.teamMember) {
+        await supabase.from('whatsapp_conversation_archives').delete().eq('team_member_id', store.teamMember.id).eq('conversation_key', key)
+        await supabase.from('whatsapp_conversation_labels').delete().eq('team_member_id', store.teamMember.id).eq('conversation_key', key)
+      }
     }
     messages.value = messages.value.filter((m) => !keys.includes(m.patient_id ?? m.phone_number ?? 'unknown'))
     pendingMessages.value = pendingMessages.value.filter((m) => !keys.includes(m.patient_id ?? m.phone_number ?? 'unknown'))
@@ -362,6 +417,75 @@ async function bulkMarkUnreadSelected() {
     if (store.accountId) await supabase.from('whatsapp_conversation_reads').upsert({ account_id: store.accountId, conversation_key: key, last_read_at: past } as never)
   }
   exitSelectionMode()
+}
+
+async function bulkArchiveSelected(archive: boolean) {
+  const keys = [...selectedKeys.value]
+  if (keys.length === 0 || !store.teamMember || !store.accountId) return
+  if (archive) {
+    const next = new Set(archivedKeys.value)
+    for (const k of keys) next.add(k)
+    archivedKeys.value = next
+    await supabase
+      .from('whatsapp_conversation_archives')
+      .upsert(keys.map((k) => ({ account_id: store.accountId!, team_member_id: store.teamMember!.id, conversation_key: k })) as never)
+  } else {
+    const next = new Set(archivedKeys.value)
+    for (const k of keys) next.delete(k)
+    archivedKeys.value = next
+    await supabase.from('whatsapp_conversation_archives').delete().eq('team_member_id', store.teamMember.id).in('conversation_key', keys)
+  }
+  exitSelectionMode()
+}
+
+// Single-conversation archive toggle, used from the thread header.
+async function toggleArchiveSelected(key: string) {
+  if (!store.teamMember || !store.accountId) return
+  const isArchived = archivedKeys.value.has(key)
+  const next = new Set(archivedKeys.value)
+  if (isArchived) next.delete(key)
+  else next.add(key)
+  archivedKeys.value = next
+  if (isArchived) {
+    await supabase.from('whatsapp_conversation_archives').delete().eq('team_member_id', store.teamMember.id).eq('conversation_key', key)
+  } else {
+    await supabase
+      .from('whatsapp_conversation_archives')
+      .upsert({ account_id: store.accountId, team_member_id: store.teamMember.id, conversation_key: key } as never)
+  }
+}
+
+// Shared by the thread-header LabelPicker (one conversation) and the bulk
+// bar's LabelPicker (a whole selection) -- both just need "toggle this
+// label for these keys," they differ only in how many keys that is.
+async function toggleLabelForKeys(labelId: string, keys: string[]) {
+  if (!store.teamMember || !store.accountId || keys.length === 0) return
+  // "Applied to all" toggles off for all; anything less than that (none, or
+  // a mixed bulk selection) toggles on for whichever don't have it yet --
+  // matches the checkbox convention used elsewhere (e.g. patient tag lists)
+  // where a partially-applied state fills in rather than clearing first.
+  const allApplied = keys.every((k) => myLabelsByKey.value[k]?.includes(labelId))
+  const nextByKey = { ...myLabelsByKey.value }
+  if (allApplied) {
+    for (const k of keys) nextByKey[k] = (nextByKey[k] ?? []).filter((id) => id !== labelId)
+    myLabelsByKey.value = nextByKey
+    await supabase.from('whatsapp_conversation_labels').delete().eq('team_member_id', store.teamMember.id).eq('label_id', labelId).in('conversation_key', keys)
+  } else {
+    const toAdd = keys.filter((k) => !myLabelsByKey.value[k]?.includes(labelId))
+    for (const k of toAdd) nextByKey[k] = [...(nextByKey[k] ?? []), labelId]
+    myLabelsByKey.value = nextByKey
+    await supabase
+      .from('whatsapp_conversation_labels')
+      .upsert(toAdd.map((k) => ({ account_id: store.accountId!, team_member_id: store.teamMember!.id, conversation_key: k, label_id: labelId })) as never)
+  }
+}
+
+async function createLabel(name: string, color: string, applyToKeys: string[]) {
+  if (!store.accountId) return
+  const { data } = await supabase.from('whatsapp_labels').insert({ account_id: store.accountId, name, color, created_by: store.teamMember?.id ?? null }).select('id, name, color').single()
+  if (!data) return
+  labels.value = [...labels.value, data].sort((a, b) => a.name.localeCompare(b.name))
+  if (applyToKeys.length > 0) await toggleLabelForKeys(data.id, applyToKeys)
 }
 
 // Signed URLs for media, resolved on demand and cached per storage path --
@@ -699,6 +823,24 @@ onUnmounted(() => {
   if (channel) supabase.removeChannel(channel)
 })
 
+// A second, coarser channel for the new per-user/shared inbox-organization
+// tables -- unlike whatsapp_messages there's no per-second urgency here, so
+// any change on any of the three just reloads all three rather than trying
+// to patch state precisely. Catches another of this user's own tabs/devices
+// changing something, and a teammate adding a new shared label.
+let orgChannel: ReturnType<typeof supabase.channel> | null = null
+onMounted(() => {
+  orgChannel = supabase
+    .channel('inbox-organization')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'whatsapp_labels', filter: `account_id=eq.${store.accountId}` }, () => loadArchivesAndLabels())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'whatsapp_conversation_labels', filter: `account_id=eq.${store.accountId}` }, () => loadArchivesAndLabels())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'whatsapp_conversation_archives', filter: `account_id=eq.${store.accountId}` }, () => loadArchivesAndLabels())
+    .subscribe()
+})
+onUnmounted(() => {
+  if (orgChannel) supabase.removeChannel(orgChannel)
+})
+
 // Belt-and-suspenders alongside the realtime subscription above -- a
 // websocket that silently drops (backgrounded tab, network blip) leaves the
 // thread stuck until something else forces a reload, which reads as "I have
@@ -734,8 +876,21 @@ onUnmounted(() => {
               :placeholder="t('Search name, number, messages…', 'Buscar nombre, número, mensajes…')"
               class="h-8 w-full flex-1 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none"
             />
+            <button
+              type="button"
+              class="flex h-8 w-8 shrink-0 items-center justify-center rounded-ctl border"
+              :class="view === 'archived' ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted hover:bg-surface-subtle'"
+              :title="view === 'archived' ? t('Show active conversations', 'Mostrar conversaciones activas') : t('Show archived conversations', 'Mostrar conversaciones archivadas')"
+              @click="view = view === 'archived' ? 'active' : 'archived'"
+            >
+              <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M2 3.5h12v2.5H2z" />
+                <path d="M2.8 6v6.5a1 1 0 0 0 1 1h8.4a1 1 0 0 0 1-1V6" />
+                <path d="M6.5 8.5h3" />
+              </svg>
+            </button>
             <button type="button" class="shrink-0 text-[12.5px] text-ink-faint hover:text-ink-muted" @click="selectionMode = true">{{ t('Select', 'Seleccionar') }}</button>
-            <div ref="composeEl" class="relative shrink-0">
+            <div v-if="view === 'active'" ref="composeEl" class="relative shrink-0">
               <UiBtn variant="primary" size="sm" @click="composeOpen = !composeOpen">{{ t('+ New', '+ Nuevo') }}</UiBtn>
               <div v-if="composeOpen" class="absolute right-0 top-[calc(100%+4px)] z-20 w-64 rounded-card border border-line bg-surface p-2 shadow-popover">
                 <input
@@ -762,15 +917,58 @@ onUnmounted(() => {
           <div v-else class="flex items-center justify-between gap-2">
             <p class="text-[12.5px] text-ink-700">{{ selectedKeys.size }} {{ t('selected', 'seleccionados') }}</p>
             <div class="flex items-center gap-3">
+              <InboxLabelPicker
+                :labels="labels"
+                :applied-ids="[]"
+                @toggle-label="(id: string) => toggleLabelForKeys(id, [...selectedKeys])"
+                @create-label="(name: string, color: string) => createLabel(name, color, [...selectedKeys])"
+              />
+              <button
+                type="button"
+                class="text-[12.5px] text-brand-text hover:underline disabled:opacity-40"
+                :disabled="selectedKeys.size === 0"
+                @click="bulkArchiveSelected(view !== 'archived')"
+              >
+                {{ view === 'archived' ? t('Unarchive', 'Desarchivar') : t('Archive', 'Archivar') }}
+              </button>
               <button type="button" class="text-[12.5px] text-brand-text hover:underline disabled:opacity-40" :disabled="selectedKeys.size === 0" @click="bulkMarkUnreadSelected">{{ t('Mark unread', 'Marcar como no leído') }}</button>
               <button type="button" class="text-[12.5px] text-danger-text hover:underline disabled:opacity-40" :disabled="selectedKeys.size === 0" @click="bulkDeleteSelected">{{ t('Delete', 'Eliminar') }}</button>
               <button type="button" class="text-[12.5px] text-ink-faint hover:text-ink-muted" @click="exitSelectionMode">{{ t('Cancel', 'Cancelar') }}</button>
             </div>
           </div>
+          <div v-if="!selectionMode" class="mt-2 flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              class="flex h-7 items-center gap-1 rounded-pill border px-2.5 text-[12px] font-medium"
+              :class="unreadOnly ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted hover:bg-surface-subtle'"
+              @click="unreadOnly = !unreadOnly"
+            >
+              {{ t('Unread', 'No leídos') }}
+            </button>
+            <button
+              type="button"
+              class="flex h-7 items-center gap-1 rounded-pill border px-2.5 text-[12px] font-medium"
+              :class="replyFilter === 'awaiting_us' ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted hover:bg-surface-subtle'"
+              @click="replyFilter = replyFilter === 'awaiting_us' ? 'all' : 'awaiting_us'"
+            >
+              {{ t('Awaiting us', 'Esperando respuesta nuestra') }}
+            </button>
+            <button
+              type="button"
+              class="flex h-7 items-center gap-1 rounded-pill border px-2.5 text-[12px] font-medium"
+              :class="replyFilter === 'awaiting_patient' ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted hover:bg-surface-subtle'"
+              @click="replyFilter = replyFilter === 'awaiting_patient' ? 'all' : 'awaiting_patient'"
+            >
+              {{ t('Awaiting patient', 'Esperando respuesta del paciente') }}
+            </button>
+            <InboxLabelFilterPicker v-model="labelFilter" :labels="labels" />
+          </div>
         </div>
         <div class="flex-1 overflow-y-auto">
           <div v-if="loading" class="p-6 text-center text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
-          <p v-else-if="filteredConversations.length === 0" class="p-6 text-center text-[13px] text-ink-faint">{{ t('No conversations yet.', 'Aún no hay conversaciones.') }}</p>
+          <p v-else-if="filteredConversations.length === 0" class="p-6 text-center text-[13px] text-ink-faint">
+            {{ view === 'archived' ? t('No archived conversations.', 'No hay conversaciones archivadas.') : t('No conversations yet.', 'Aún no hay conversaciones.') }}
+          </p>
           <button
             v-for="c in filteredConversations"
             :key="c.key"
@@ -808,6 +1006,16 @@ onUnmounted(() => {
               <p class="truncate text-[12px]" :class="c.unread ? 'font-medium text-ink-800' : 'text-ink-muted2'">
                 {{ c.lastMessage!.direction === 'outbound' ? t('You: ', 'Tú: ') : '' }}{{ previewText(c.lastMessage!) }}
               </p>
+              <div v-if="myLabelsByKey[c.key]?.length" class="mt-1 flex flex-wrap gap-1">
+                <span
+                  v-for="lid in myLabelsByKey[c.key]"
+                  :key="lid"
+                  class="rounded-pill px-1.5 py-px text-[10px] font-medium text-white"
+                  :style="{ backgroundColor: labels.find((l) => l.id === lid)?.color }"
+                >
+                  {{ labels.find((l) => l.id === lid)?.name }}
+                </span>
+              </div>
             </div>
             <span v-if="c.unread" class="mt-1 h-[8px] w-[8px] shrink-0 rounded-full bg-brand" />
           </button>
@@ -834,6 +1042,21 @@ onUnmounted(() => {
           <NuxtLink v-if="selected.patientId" :to="`/patients/${selected.patientId}`" class="shrink-0 text-[12.5px] text-brand-text hover:text-brand-hover">
             {{ t('View patient →', 'Ver paciente →') }}
           </NuxtLink>
+          <InboxLabelPicker
+            v-if="!isNewConversation"
+            :labels="labels"
+            :applied-ids="myLabelsByKey[selected.key] ?? []"
+            @toggle-label="(id: string) => toggleLabelForKeys(id, [selected!.key])"
+            @create-label="(name: string, color: string) => createLabel(name, color, [selected!.key])"
+          />
+          <button
+            v-if="!isNewConversation"
+            type="button"
+            class="shrink-0 text-[12.5px] text-ink-muted hover:text-ink-700"
+            @click="toggleArchiveSelected(selected!.key)"
+          >
+            {{ archivedKeys.has(selected!.key) ? 'Unarchive' : 'Archive' }}
+          </button>
           <button
             v-if="!isNewConversation"
             type="button"

@@ -93,7 +93,7 @@ export async function runActionsList(
   for (const action of actions) {
     try {
       if (action.action_type === 'whatsapp_template') {
-        if (canContact && channelAllowed('whatsapp')) await runWhatsAppAction(supabase, accountId, patient, action.config, origin, appointmentId, whatsappOverrideNumber)
+        if (canContact && channelAllowed('whatsapp')) await runWhatsAppAction(supabase, accountId, patient, action.config, origin, appointmentId, whatsappOverrideNumber, { nextAppointmentAt })
       } else if (action.action_type === 'email') {
         if (canContact && channelAllowed('email')) await runEmailAction(patient, action.config, { nextAppointmentAt })
       } else if (action.action_type === 'webhook') {
@@ -115,7 +115,40 @@ function patientFieldValue(patient: PatientForAction, source: string, context?: 
     if (!context?.nextAppointmentAt) return ''
     return new Date(context.nextAppointmentAt).toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: CLINIC_TIMEZONE })
   }
+  // Split date/time -- some WhatsApp templates (Meta's own approved
+  // "appointment_reminder" among them) have separate {{n}} slots for the
+  // date and the time rather than one combined string like next_appointment.
+  if (source === 'appointment_date') {
+    if (!context?.nextAppointmentAt) return ''
+    return new Date(context.nextAppointmentAt).toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', timeZone: CLINIC_TIMEZONE })
+  }
+  if (source === 'appointment_time') {
+    if (!context?.nextAppointmentAt) return ''
+    return new Date(context.nextAppointmentAt).toLocaleString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: CLINIC_TIMEZONE })
+  }
   return ''
+}
+
+// Creates the patient's copy of a doc template (health history, consent,
+// etc.) and returns its public_token, or null if the template is gone.
+// Returns just the token, not the full URL, since callers need it in two
+// shapes: appended as `${origin}/doc/${token}` in a message body, or as the
+// bare token substituted into a WhatsApp URL button's {{n}} placeholder
+// (Meta stores the rest of the URL, e.g. ".../doc/{{1}}", on the button itself).
+async function generateDocLink(supabase: any, accountId: string, patient: PatientForAction, docTemplateId: string): Promise<string | null> {
+  const { data: template } = await supabase.from('doc_templates').select('title, fields').eq('id', docTemplateId).maybeSingle()
+  if (!template) return null
+  const rendered = renderTemplateFields(template.fields, {
+    first_name: patient.first_name ?? '',
+    last_name: patient.last_name ?? '',
+    email: patient.email ?? '',
+  })
+  const { data: doc } = await supabase
+    .from('patient_docs')
+    .insert({ account_id: accountId, patient_id: patient.id, title: template.title, fields: rendered, template_id: docTemplateId })
+    .select('public_token')
+    .single()
+  return doc?.public_token ?? null
 }
 
 async function runWhatsAppAction(
@@ -126,6 +159,7 @@ async function runWhatsAppAction(
   origin: string,
   appointmentId?: string,
   toOverride?: string,
+  context?: MergeContext,
 ) {
   const templateName: string | undefined = config.template_name
   const templateLanguage: string = config.template_language || 'es'
@@ -158,34 +192,14 @@ async function runWhatsAppAction(
   const configuredVariables: { source: string; text?: string }[] = Array.isArray(config.variables) && config.variables.length > 0
     ? config.variables
     : [{ source: 'first_name' }]
-  const variables: string[] = configuredVariables.map((v) => (v.source === 'text' ? (v.text ?? '') : patientFieldValue(patient, v.source)))
+  const variables: string[] = configuredVariables.map((v) => (v.source === 'text' ? (v.text ?? '') : patientFieldValue(patient, v.source, context)))
 
-  if (config.doc_template_id) {
-    const { data: template } = await supabase
-      .from('doc_templates')
-      .select('title, fields')
-      .eq('id', config.doc_template_id)
-      .maybeSingle()
-    if (template) {
-      const rendered = renderTemplateFields(template.fields, {
-        first_name: patient.first_name ?? '',
-        last_name: patient.last_name ?? '',
-        email: patient.email ?? '',
-      })
-      const { data: doc } = await supabase
-        .from('patient_docs')
-        .insert({
-          account_id: accountId,
-          patient_id: patient.id,
-          title: template.title,
-          fields: rendered,
-          template_id: config.doc_template_id,
-        })
-        .select('public_token')
-        .single()
-      if (doc?.public_token) variables.push(`${origin}/doc/${doc.public_token}`)
-    }
-  }
+  // One doc-template slot per configured link. A template with URL buttons
+  // that carry a {{n}} placeholder maps each slot to a button by position
+  // (new_patient_arrived_tasks has two separate "fill this form" buttons);
+  // a template with no such buttons instead treats slot 0 (if set) as one
+  // more body variable, appended last -- the original single-link design.
+  const docTemplateIds: (string | null)[] = Array.isArray(config.doc_template_ids) ? config.doc_template_ids : []
 
   // Fetch the live approved template so the send always matches what Meta
   // actually expects, rather than trusting the staff-entered config alone:
@@ -193,13 +207,14 @@ async function runWhatsAppAction(
   // suffix -- Meta requires a "button" component for every URL button that
   // has a {{n}} placeholder, or the whole send is rejected with error
   // 131008 "Required parameter is missing" (found via new_patient_arrived_tasks's
-  // onboarding-form links, built this way); the approved template's own Meta
-  // example for these buttons is a `?name=<name>&id=<id>` query string, so
-  // that's what's sent here too. (b) the body's own placeholder count can
-  // differ from what staff configured (e.g. new_patient_arrived_tasks_2 has
-  // no {{n}} at all but was configured with a first_name slot anyway),
-  // which Meta rejects with error 132000 "Number of parameters does not
-  // match" -- so the configured variables are trimmed/padded to match.
+  // onboarding-form links, built this way); a button with no doc template
+  // configured for its slot falls back to Meta's own example suffix for
+  // these buttons, a `?name=<name>&id=<id>` query string. (b) the body's own
+  // placeholder count can differ from what staff configured (e.g.
+  // new_patient_arrived_tasks_2 has no {{n}} at all but was configured with
+  // a first_name slot anyway), which Meta rejects with error 132000 "Number
+  // of parameters does not match" -- so the configured variables are
+  // trimmed/padded to match.
   const bodyComponents: Record<string, any>[] = []
   const buttonComponents: Record<string, any>[] = []
   if (account.whatsapp_business_account_id) {
@@ -214,6 +229,19 @@ async function runWhatsAppAction(
     const candidates = (templates?.data ?? []).filter((t: { name: string }) => t.name === templateName)
     const match = candidates.find((t: { language: string }) => t.language === templateLanguage) ?? candidates[0]
 
+    const buttons = match?.components?.find((c: any) => c.type === 'BUTTONS')?.buttons ?? []
+    const dynamicUrlButtonIndexes = buttons
+      .map((b: any, index: number) => ({ b, index }))
+      .filter(({ b }: any) => b.type === 'URL' && /\{\{\d+\}\}/.test(b.url ?? ''))
+      .map(({ index }: any) => index)
+
+    // No dynamic URL button to attach a doc link to -- fall back to the
+    // older behaviour of tacking it onto the message body instead.
+    if (dynamicUrlButtonIndexes.length === 0 && docTemplateIds[0]) {
+      const token = await generateDocLink(supabase, accountId, patient, docTemplateIds[0])
+      if (token) variables.push(`${origin}/doc/${token}`)
+    }
+
     const bodyText: string = match?.components?.find((c: any) => c.type === 'BODY')?.text ?? ''
     const bodySlots = new Set<string>()
     for (const m of bodyText.matchAll(/\{\{(\d+)\}\}/g)) bodySlots.add(m[1])
@@ -222,21 +250,20 @@ async function runWhatsAppAction(
       bodyComponents.push({ type: 'body', parameters: trimmed.map((v) => ({ type: 'text', text: v })) })
     }
 
-    const buttons = match?.components?.find((c: any) => c.type === 'BUTTONS')?.buttons ?? []
-    buttons.forEach((b: any, index: number) => {
-      if (b.type === 'URL' && /\{\{\d+\}\}/.test(b.url ?? '')) {
-        buttonComponents.push({
-          type: 'button',
-          sub_type: 'url',
-          index: String(index),
-          parameters: [{ type: 'text', text: `name=${encodeURIComponent(patient.first_name ?? '')}&id=${patient.id}` }],
-        })
-      }
-    })
-  } else if (variables.length > 0) {
+    for (let i = 0; i < dynamicUrlButtonIndexes.length; i++) {
+      const docTemplateId = docTemplateIds[i]
+      const token = docTemplateId ? await generateDocLink(supabase, accountId, patient, docTemplateId) : null
+      const paramText = token ? token : `name=${encodeURIComponent(patient.first_name ?? '')}&id=${patient.id}`
+      buttonComponents.push({ type: 'button', sub_type: 'url', index: String(dynamicUrlButtonIndexes[i]), parameters: [{ type: 'text', text: paramText }] })
+    }
+  } else {
     // No business-account id on file to look the template up against --
     // fall back to sending exactly what was configured, same as before.
-    bodyComponents.push({ type: 'body', parameters: variables.map((v) => ({ type: 'text', text: v })) })
+    if (docTemplateIds[0]) {
+      const token = await generateDocLink(supabase, accountId, patient, docTemplateIds[0])
+      if (token) variables.push(`${origin}/doc/${token}`)
+    }
+    if (variables.length > 0) bodyComponents.push({ type: 'body', parameters: variables.map((v) => ({ type: 'text', text: v })) })
   }
 
   let wamid: string | null = null

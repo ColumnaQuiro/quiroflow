@@ -7,6 +7,8 @@
 // placeholders. Images upload to the public "campaign-images" bucket (not
 // patient-files) -- email clients load the <img> src with no auth, so it
 // can't be a signed URL that expires.
+import { sanitizeStorageFilename } from '~/utils/storageFilename'
+
 const props = defineProps<{ modelValue: string }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 
@@ -68,7 +70,7 @@ async function uploadAndInsert(file: File) {
   }
   uploading.value = true
   try {
-    const path = `${store.accountId}/${Date.now()}-${file.name}`
+    const path = `${store.accountId}/${Date.now()}-${sanitizeStorageFilename(file.name)}`
     const { error } = await supabase.storage.from('campaign-images').upload(path, file)
     if (error) {
       uploadError.value = error.message

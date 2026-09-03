@@ -1,6 +1,6 @@
 import { toE164 } from '~/utils/phone'
 import { sendResendEmail } from './resend'
-import { sendWhatsAppText } from './whatsappSend'
+import { sendWhatsAppTemplate, sendWhatsAppText } from './whatsappSend'
 
 // The server runs in UTC, so formatting a UTC Date with toLocaleString and no
 // timeZone renders the UTC wall-clock time, not the clinic's -- a booking at
@@ -31,6 +31,7 @@ interface AppointmentContext {
   patientPreferredLanguage: string | null
   patientIsMinor: boolean
   patientDoNotContact: boolean
+  patientPhone: string | null
 }
 
 async function loadAppointmentContext(supabase: any, appointmentId: string): Promise<AppointmentContext | null> {
@@ -42,6 +43,10 @@ async function loadAppointmentContext(supabase: any, appointmentId: string): Pro
     .eq('id', appointmentId)
     .maybeSingle()
   if (!data || !data.patients) return null
+
+  const { data: numbers } = await supabase.from('patient_contact_numbers').select('number, country_code, is_whatsapp').eq('patient_id', data.patient_id)
+  const preferredNumber = numbers?.find((n: any) => n.is_whatsapp) ?? numbers?.[0]
+  const patientPhone = preferredNumber ? (toE164(preferredNumber.number, preferredNumber.country_code) ?? preferredNumber.number) : null
 
   return {
     id: data.id,
@@ -56,6 +61,7 @@ async function loadAppointmentContext(supabase: any, appointmentId: string): Pro
     patientPreferredLanguage: data.patients.preferred_language ?? null,
     patientIsMinor: !!data.patients.is_minor,
     patientDoNotContact: !!data.patients.do_not_contact,
+    patientPhone,
   }
 }
 
@@ -131,6 +137,20 @@ function resolveWhatsAppVariables(bodyText: string, ctx: AppointmentContext): st
   const slots = new Set<string>()
   for (const m of bodyText.matchAll(/\{\{(\d+)\}\}/g)) slots.add(m[1])
   return Array.from({ length: slots.size }, (_, i) => guesses[i] || ctx.patientFirstName)
+}
+
+// Same positional-placeholder approach as resolveWhatsAppVariables above,
+// but for the staff-facing "new online booking" notification -- patient
+// name/phone first since that's what staff actually need to act on it,
+// then when/with whom.
+function resolveStaffNotifyVariables(bodyText: string, ctx: AppointmentContext, patientName: string): string[] {
+  const start = new Date(ctx.startsAt)
+  const dateOnly = start.toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', timeZone: CLINIC_TIMEZONE })
+  const timeOnly = start.toLocaleString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: CLINIC_TIMEZONE })
+  const guesses = [patientName, ctx.patientPhone ?? '', dateOnly, timeOnly, ctx.practitionerName, ctx.appointmentTypeName]
+  const slots = new Set<string>()
+  for (const m of bodyText.matchAll(/\{\{(\d+)\}\}/g)) slots.add(m[1])
+  return Array.from({ length: slots.size }, (_, i) => guesses[i] || patientName)
 }
 
 async function sendWhatsApp(
@@ -212,8 +232,19 @@ async function sendWhatsApp(
     }),
   ])
 
-  if (purpose === 'confirmation' && status === 'sent') {
-    await supabase.from('appointments').update({ confirmation_status: 'pending' }).eq('id', ctx.id)
+  // A reminder asks the patient to confirm just as much as the initial
+  // confirmation send does (both templates carry the same Confirm/Cambiar/
+  // Cancelar reply options), so the webhook needs confirmation_status set
+  // to 'pending' before either goes out -- otherwise its lookup for "which
+  // appointment is this reply about" (.eq('confirmation_status', 'pending'))
+  // finds nothing and a genuine "Confirmar" reply to a reminder silently
+  // no-ops. Skip only if the patient already confirmed, so a reminder sent
+  // after a confirmed reply doesn't reset the appointment back to pending.
+  if (status === 'sent') {
+    const { data: current } = await supabase.from('appointments').select('confirmation_status').eq('id', ctx.id).maybeSingle()
+    if (current?.confirmation_status !== 'confirmed') {
+      await supabase.from('appointments').update({ confirmation_status: 'pending' }).eq('id', ctx.id)
+    }
   }
 }
 
@@ -290,7 +321,9 @@ export async function sendAppointmentConfirmation(supabase: any, accountId: stri
 export async function notifyStaffOfOnlineBooking(supabase: any, accountId: string, appointmentId: string): Promise<void> {
   const { data: account } = await supabase
     .from('accounts')
-    .select('online_booking_notify_email, online_booking_notify_whatsapp, whatsapp_phone_number_id, whatsapp_access_token')
+    .select(
+      'online_booking_notify_email, online_booking_notify_whatsapp, whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_access_token, online_booking_notify_whatsapp_template_name, online_booking_notify_whatsapp_template_language',
+    )
     .eq('id', accountId)
     .maybeSingle()
   if (!account?.online_booking_notify_email && !account?.online_booking_notify_whatsapp) return
@@ -300,7 +333,7 @@ export async function notifyStaffOfOnlineBooking(supabase: any, accountId: strin
 
   const when = new Date(ctx.startsAt).toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: CLINIC_TIMEZONE })
   const patientName = [ctx.patientFirstName, ctx.patientLastName].filter(Boolean).join(' ')
-  const summary = `Nueva reserva online: ${patientName} con ${ctx.practitionerName || 'un profesional'} el ${when}${ctx.appointmentTypeName ? ` (${ctx.appointmentTypeName})` : ''}.`
+  const summary = `Nueva reserva online: ${patientName}${ctx.patientPhone ? ` (${ctx.patientPhone})` : ''} con ${ctx.practitionerName || 'un profesional'} el ${when}${ctx.appointmentTypeName ? ` (${ctx.appointmentTypeName})` : ''}.`
 
   if (account.online_booking_notify_email) {
     try {
@@ -315,16 +348,30 @@ export async function notifyStaffOfOnlineBooking(supabase: any, accountId: strin
   }
 
   if (account.online_booking_notify_whatsapp && account.whatsapp_phone_number_id && account.whatsapp_access_token) {
+    const whatsappAccount = { whatsapp_phone_number_id: account.whatsapp_phone_number_id, whatsapp_access_token: account.whatsapp_access_token }
     try {
-      await sendWhatsAppText(
-        { whatsapp_phone_number_id: account.whatsapp_phone_number_id, whatsapp_access_token: account.whatsapp_access_token },
-        account.online_booking_notify_whatsapp,
-        summary,
-      )
+      if (account.online_booking_notify_whatsapp_template_name) {
+        // A template send works regardless of the 24h free-form window --
+        // the free-text send below only reaches the clinic if that number
+        // has messaged the WhatsApp business number recently.
+        const templateLanguage = account.online_booking_notify_whatsapp_template_language ?? 'es'
+        let bodyText = ''
+        try {
+          const variant = await resolveTemplateVariant(account.whatsapp_business_account_id ?? '', account.whatsapp_access_token, account.online_booking_notify_whatsapp_template_name, templateLanguage, null)
+          if (variant) bodyText = variant.bodyText
+        } catch {
+          // Best-effort: bodyText stays '', so no {{n}} placeholders are
+          // detected below and the template sends with no body variables.
+        }
+        await sendWhatsAppTemplate(whatsappAccount, account.online_booking_notify_whatsapp, account.online_booking_notify_whatsapp_template_name, templateLanguage, resolveStaffNotifyVariables(bodyText, ctx, patientName))
+      } else {
+        await sendWhatsAppText(whatsappAccount, account.online_booking_notify_whatsapp, summary)
+      }
     } catch {
-      // Best-effort -- the likeliest failure here is the notify number not
-      // having messaged the clinic's WhatsApp number in the last 24h, which
-      // the settings screen calls out as a WhatsApp platform rule.
+      // Best-effort -- with no template configured, the likeliest failure
+      // is the notify number not having messaged the clinic's WhatsApp
+      // number in the last 24h, which the settings screen calls out as a
+      // WhatsApp platform rule.
     }
   }
 }

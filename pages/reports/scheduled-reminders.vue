@@ -165,8 +165,8 @@ function fmt(iso: string) {
                 </li>
               </ul>
             </div>
-            <div class="rounded-ctl bg-danger-bg p-3">
-              <p class="text-[11px] font-medium uppercase tracking-wide text-danger-text">{{ t(`Wants to reschedule (${rescheduleRequested.length})`, `Quiere reprogramar (${rescheduleRequested.length})`) }}</p>
+            <div class="rounded-ctl bg-info-bg p-3">
+              <p class="text-[11px] font-medium uppercase tracking-wide text-info-text">{{ t(`Wants to reschedule (${rescheduleRequested.length})`, `Quiere reprogramar (${rescheduleRequested.length})`) }}</p>
               <ul class="mt-1 max-h-40 space-y-1 overflow-y-auto text-[13px]">
                 <li v-for="a in rescheduleRequested" :key="a.id">
                   <NuxtLink :to="`/patients/${a.patient_id}`" class="text-ink-600 hover:text-brand-text">{{ patientById.get(a.patient_id) }}</NuxtLink>

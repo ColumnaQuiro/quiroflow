@@ -48,25 +48,23 @@ const BLOCK_DROP_ROW3_BELOW = 34
 const DAY_MIN_AVAILABILITY_PX = 20
 const WEEK_MIN_AVAILABILITY_PX = 16
 
-// Overlapping appointments cascade (PracticeHub-style) instead of splitting
-// into N equal-width lanes: each later lane is inset from the left by a
-// fixed pixel offset and stacks on top (higher z-index), so every block
-// stays near full width and its name stays fully readable instead of being
-// squeezed down to initials. Past maxLanes, the remaining appointments in
-// that cluster collapse into a single "+N more" chip in the last lane. Day
-// view's room columns are wider than week view's, so it tolerates a couple
-// more cascade layers before the last one gets too narrow to read.
+// Overlapping appointments split into equal-width side-by-side columns --
+// every appointment stays fully visible (nothing layered behind another),
+// at the cost of each one getting narrower as more pile up at the same
+// time. Past maxLanes, the remaining appointments in that cluster collapse
+// into a single "+N more" chip in the last lane rather than splitting into
+// slivers too narrow to read at all. Day view's room columns are wider
+// than week view's, so it tolerates a couple more lanes before that kicks in.
 const DAY_MAX_LANES = 6
 const WEEK_MAX_LANES = 4
-const DAY_CASCADE_PX = 26
-const WEEK_CASCADE_PX = 16
 const OVERFLOW_CHIP_PX = 20
 
 interface Room { id: string; name: string }
 interface AppointmentType { id: string; name: string; duration_minutes: number; color: string; default_price_cents: number }
 interface TeamMember { id: string; full_name: string; color: string }
+interface TeamMemberClinic { team_member_id: string; clinic_id: string }
 
-interface AvailabilityBlock { id: string; room_id: string | null; starts_at: string; ends_at: string; note: string | null }
+interface AvailabilityBlock { id: string; room_id: string | null; practitioner_id: string | null; starts_at: string; ends_at: string; note: string | null }
 
 interface AppointmentRow {
   id: string
@@ -113,11 +111,18 @@ onMounted(() => {
   if (stored === 'day' || stored === 'workweek' || stored === 'week') viewMode.value = stored
 })
 watch(viewMode, (v) => localStorage.setItem(CALENDAR_VIEW_MODE_KEY, v))
+// PracticeHub never shows a merged "all practitioners" calendar -- with
+// several practitioners double-booking the same room at different times,
+// a merged view stacks unrelated appointments on top of each other into an
+// unreadable pile. One practitioner tab at a time, like PH, sidesteps that
+// entirely instead of trying to render overlaps nicely.
+const CALENDAR_PRACTITIONER_KEY = 'quiroflow-calendar-practitioner'
 const practitionerFilter = ref('')
 const anchorDate = ref(new Date())
 const rooms = ref<Room[]>([])
 const appointmentTypes = ref<AppointmentType[]>([])
 const teamMembers = ref<TeamMember[]>([])
+const teamMemberClinics = ref<TeamMemberClinic[]>([])
 const overrides = ref<AppointmentTypeOverride[]>([])
 const appointments = ref<AppointmentRow[]>([])
 const availabilityBlocks = ref<AvailabilityBlock[]>([])
@@ -237,15 +242,38 @@ const miniWeekdayAbbrevs = computed(() => [
 ])
 
 async function loadReferenceData() {
-  const [{ data: types }, { data: members }, { data: ovr }] = await Promise.all([
+  const [{ data: types }, { data: members }, { data: ovr }, { data: memberClinics }] = await Promise.all([
     supabase.from('appointment_types').select('id, name, duration_minutes, color, default_price_cents').order('name'),
-    supabase.from('team_members').select('id, full_name, color').order('full_name'),
+    supabase.from('team_members').select('id, full_name, color').is('deleted_at', null).order('full_name'),
     supabase.from('appointment_type_overrides').select('appointment_type_id, team_member_id, duration_minutes, price_cents'),
+    supabase.from('team_member_clinics').select('team_member_id, clinic_id'),
   ])
   appointmentTypes.value = types ?? []
   teamMembers.value = members ?? []
   overrides.value = ovr ?? []
+  teamMemberClinics.value = memberClinics ?? []
 }
+
+// Only practitioners assigned to the clinic currently in view -- same
+// scoping the public booking widget already uses -- so a multi-clinic
+// account doesn't clutter the tab bar with staff who don't work here.
+const clinicTeamMembers = computed(() =>
+  teamMembers.value.filter((m) => teamMemberClinics.value.some((tc) => tc.team_member_id === m.id && tc.clinic_id === store.currentClinicId)),
+)
+
+// Keeps practitionerFilter pointing at a real, visible tab -- restores the
+// last-used practitioner from localStorage when it's still valid for this
+// clinic, otherwise falls back to the first tab (e.g. right after switching
+// clinics, or on first load).
+function ensureValidPractitionerFilter() {
+  if (clinicTeamMembers.value.some((m) => m.id === practitionerFilter.value)) return
+  const stored = localStorage.getItem(CALENDAR_PRACTITIONER_KEY)
+  const restored = stored && clinicTeamMembers.value.some((m) => m.id === stored) ? stored : ''
+  practitionerFilter.value = restored || (clinicTeamMembers.value[0]?.id ?? '')
+}
+watch(practitionerFilter, (v) => {
+  if (v) localStorage.setItem(CALENDAR_PRACTITIONER_KEY, v)
+})
 
 async function loadRooms() {
   if (!store.currentClinicId) {
@@ -338,7 +366,7 @@ async function loadAvailabilityBlocks() {
 
   const { data } = await supabase
     .from('availability_blocks')
-    .select('id, room_id, starts_at, ends_at, note')
+    .select('id, room_id, practitioner_id, starts_at, ends_at, note')
     .eq('clinic_id', store.currentClinicId)
     .lt('starts_at', rangeEnd.toISOString())
     .gt('ends_at', rangeStart.toISOString())
@@ -398,12 +426,14 @@ function glancePct(count: number) {
 
 onMounted(async () => {
   await loadReferenceData()
+  ensureValidPractitionerFilter()
   await loadRooms()
   await loadAppointments()
   await loadAvailabilityBlocks()
   await loadTodayGlance()
 })
 watch(() => store.currentClinicId, async () => {
+  ensureValidPractitionerFilter()
   await loadRooms()
   await loadAppointments()
   await loadAvailabilityBlocks()
@@ -416,9 +446,18 @@ watch([viewMode, anchorDate, practitionerFilter], async () => {
 
 const dayColumns = computed(() => [...rooms.value, { id: '__none', name: t('Unassigned', 'Sin asignar') }])
 
+function blockLabel(block: AvailabilityBlock) {
+  if (block.note) return block.note
+  const who = block.practitioner_id ? teamMembers.value.find((m) => m.id === block.practitioner_id)?.full_name : null
+  if (who) return t(`Blocked for ${who}`, `Bloqueado para ${who}`)
+  return block.room_id === null ? t('Blocked (whole clinic)', 'Bloqueado (toda la clínica)') : t('Blocked', 'Bloqueado')
+}
+
 function blocksForRoom(roomId: string) {
   if (!settings.showAvailability) return []
-  return availabilityBlocks.value.filter((b) => b.room_id === roomId || b.room_id === null)
+  return availabilityBlocks.value.filter(
+    (b) => (b.room_id === roomId || b.room_id === null) && (b.practitioner_id === null || b.practitioner_id === practitionerFilter.value),
+  )
 }
 function openBlockCreateModal(roomId?: string) {
   blockPrefill.value = { date: toDateKey(anchorDate.value), time: '09:00', roomId: roomId ?? '' }
@@ -518,25 +557,30 @@ function closedSlotRects(forDate: Date, hourPx: number) {
   return rects
 }
 
-// The block palette collapses onto four visual states from the spec; a
-// pending or reschedule-requested confirmation on an otherwise-booked
-// appointment both read as "Unconfirmed" since the app has no separate 4th
-// status column to key off of.
-type VisualStatus = 'booked' | 'completed' | 'unconfirmed' | 'no_show' | 'cancelled'
+// The block palette collapses onto these visual states; a patient-confirmed
+// booking gets its own "Confirmed" state instead of falling back to plain
+// "Booked", and a reschedule request gets its own "Wants to reschedule"
+// state instead of collapsing into "Unconfirmed", so staff can see who's
+// actually replied -- and how -- without opening each appointment.
+type VisualStatus = 'booked' | 'confirmed' | 'completed' | 'unconfirmed' | 'reschedule_requested' | 'no_show' | 'cancelled'
 function appointmentVisualStatus(appt: AppointmentRow): VisualStatus {
   if (appt.status === 'completed') return 'completed'
   if (appt.status === 'no_show') return 'no_show'
   if (appt.status === 'cancelled') return 'cancelled'
-  if (appt.status === 'booked' && (appt.confirmation_status === 'pending' || appt.confirmation_status === 'reschedule_requested')) return 'unconfirmed'
+  if (appt.status === 'booked' && appt.confirmation_status === 'reschedule_requested') return 'reschedule_requested'
+  if (appt.status === 'booked' && appt.confirmation_status === 'pending') return 'unconfirmed'
+  if (appt.status === 'booked' && appt.confirmation_status === 'confirmed') return 'confirmed'
   return 'booked'
 }
 // Tailwind classes rather than inline hex -- these map 1:1 onto the
-// existing brand/success/warning/danger tokens in tailwind.config.ts, which
-// already carry the exact hex values from the redesign spec.
-const STATUS_STYLES: Record<VisualStatus, { dotClass: string; labelEn: string; labelEs: string; pillTone: 'brand' | 'success' | 'warning' | 'danger' | 'neutral' }> = {
+// existing brand/success/warning/info/danger tokens in tailwind.config.ts,
+// which already carry the exact hex values from the redesign spec.
+const STATUS_STYLES: Record<VisualStatus, { dotClass: string; labelEn: string; labelEs: string; pillTone: 'brand' | 'success' | 'warning' | 'info' | 'danger' | 'neutral' }> = {
   booked: { dotClass: 'bg-brand', labelEn: 'Booked', labelEs: 'Reservada', pillTone: 'brand' },
+  confirmed: { dotClass: 'bg-success-accent', labelEn: 'Confirmed', labelEs: 'Confirmada', pillTone: 'success' },
   completed: { dotClass: 'bg-success-accent', labelEn: 'Completed', labelEs: 'Completada', pillTone: 'success' },
   unconfirmed: { dotClass: 'bg-warning-accent', labelEn: 'Unconfirmed', labelEs: 'Sin confirmar', pillTone: 'warning' },
+  reschedule_requested: { dotClass: 'bg-info-accent', labelEn: 'Wants to reschedule', labelEs: 'Quiere cambiar la cita', pillTone: 'info' },
   no_show: { dotClass: 'bg-danger-text', labelEn: 'No-show', labelEs: 'No presentado', pillTone: 'danger' },
   cancelled: { dotClass: 'bg-ink-faint3', labelEn: 'Cancelled', labelEs: 'Cancelada', pillTone: 'neutral' },
 }
@@ -584,14 +628,20 @@ function appointmentColorStyle(appt: AppointmentRow) {
   }
 }
 
-// Cascade positioning for an overlapping block: each lane insets from the
-// left by a fixed pixel amount and sits above the previous lane, rather
-// than every lane getting an equal fraction of the column's width.
-function cascadeStyle(block: LayoutBlock, cascadePx: number) {
+// Equal-width column positioning for an overlapping block: each lane gets
+// an even fraction of the column's width (_totalCols-wide), at its natural
+// time-based top/height -- unlike a cascade, lanes never overlap each
+// other, so there's no need to crop height or stack z-index to keep a
+// block from hiding the one behind it.
+function columnStyle(block: LayoutBlock, top: number, height: number) {
+  const totalCols = Math.max(block._totalCols, 1)
+  const widthPct = 100 / totalCols
   return {
-    left: `calc(${block._col * cascadePx}px + 2px)`,
-    width: `calc(100% - ${block._col * cascadePx}px - 4px)`,
-    zIndex: String(10 + block._col),
+    left: `calc(${block._col * widthPct}% + 2px)`,
+    width: `calc(${widthPct}% - 4px)`,
+    top: `${top}px`,
+    height: `${height}px`,
+    zIndex: '10',
   }
 }
 
@@ -640,11 +690,11 @@ function isOverflowBlock(b: LayoutBlock): b is OverflowBlock {
 
 // Assigns each appointment in a pre-sorted (by start time) list a lane via
 // a greedy sweep (grouped into clusters of transitively overlapping
-// appointments). The lane index (_col) drives a cascading offset in the
-// template rather than an equal-width split, so overlapping appointments
-// stay near full width and readable instead of shrinking to initials. Past
-// maxLanes, the remaining appointments in that cluster collapse into a
-// single "+N more" marker in the last lane.
+// appointments). The lane index (_col) and cluster size (_totalCols) drive
+// an equal-width column split in the template, so every appointment in a
+// cluster stays fully visible instead of any of them being hidden behind
+// another. Past maxLanes, the remaining appointments in that cluster
+// collapse into a single "+N more" marker in the last lane.
 //
 // "Overlapping" is judged by each block's RENDERED end, not its real
 // ends_at: durationToPx enforces a minimum block height so short
@@ -732,7 +782,11 @@ function blocksForRoomOnDay(day: Date, roomId: string) {
   const dayStart = startOfDay(day).getTime()
   const dayEnd = addDays(startOfDay(day), 1).getTime()
   return availabilityBlocks.value.filter(
-    (b) => (b.room_id === roomId || b.room_id === null) && new Date(b.starts_at).getTime() < dayEnd && new Date(b.ends_at).getTime() > dayStart,
+    (b) =>
+      (b.room_id === roomId || b.room_id === null) &&
+      (b.practitioner_id === null || b.practitioner_id === practitionerFilter.value) &&
+      new Date(b.starts_at).getTime() < dayEnd &&
+      new Date(b.ends_at).getTime() > dayStart,
   )
 }
 function layoutForRoomOnDay(day: Date, roomId: string): LayoutBlock[] {
@@ -758,9 +812,9 @@ async function onSaved() {
 // Mutates the real appointment object in `appointments.value` live during
 // the drag rather than tracking a separate shadow position -- the existing
 // per-column layout functions (blocksForRoom/layoutForRoom/
-// layoutForRoomOnDay, timeToPx/durationToPx/cascadeStyle) already key off
+// layoutForRoomOnDay, timeToPx/durationToPx/columnStyle) already key off
 // an appointment's own starts_at/ends_at/room_id, so this gets a fully
-// WYSIWYG live preview (including realistic overlap-cascade behavior) for
+// WYSIWYG live preview (including realistic overlap-column behavior) for
 // free instead of a separate rendering path just for the dragged block.
 interface DragState {
   apptId: string
@@ -1007,8 +1061,12 @@ async function completeFlow(appt: AppointmentRow) {
 // disappearing first.
 const hoveredAppt = ref<AppointmentRow | null>(null)
 const hoverPos = ref({ x: 0, y: 0 })
+const hoverCardEl = ref<any>(null)
 let hoverShowTimer: ReturnType<typeof setTimeout> | null = null
 let hoverHideTimer: ReturnType<typeof setTimeout> | null = null
+let hoverAnchorRect: DOMRect | null = null
+let hoverX = 0
+let hoverResizeObserver: ResizeObserver | null = null
 
 // Hovercard is a fixed 300px wide (AppointmentHoverCard.vue) -- shown on
 // whichever side of the block actually has room, so on a block near the
@@ -1016,6 +1074,31 @@ let hoverHideTimer: ReturnType<typeof setTimeout> | null = null
 // over the block itself and blocking clicks on it.
 const HOVERCARD_WIDTH = 300
 const HOVERCARD_GAP = 10
+
+// The card's height isn't just unknown until first render -- it keeps
+// changing after that too (usePatientFinancialSummary's balance/package
+// fetch resolves async, "Recent activity" populates once loaded), so a
+// single post-mount measurement still clipped a card that grew taller
+// after that. A ResizeObserver re-clamps every time the real height
+// changes instead, however many times that happens.
+function updateHoverY() {
+  if (!hoverAnchorRect) return
+  const height = hoverCardEl.value?.$el?.offsetHeight ?? 380
+  hoverPos.value = { x: hoverX, y: Math.max(8, Math.min(hoverAnchorRect.top, window.innerHeight - height - 8)) }
+}
+
+watch(hoveredAppt, async (appt) => {
+  hoverResizeObserver?.disconnect()
+  hoverResizeObserver = null
+  if (!appt) return
+  await nextTick()
+  const el = hoverCardEl.value?.$el as HTMLElement | undefined
+  if (!el) return
+  hoverResizeObserver = new ResizeObserver(updateHoverY)
+  hoverResizeObserver.observe(el)
+  updateHoverY()
+})
+onUnmounted(() => hoverResizeObserver?.disconnect())
 
 function scheduleHoverCard(appt: AppointmentRow, event: MouseEvent) {
   if (hoverHideTimer) {
@@ -1028,13 +1111,13 @@ function scheduleHoverCard(appt: AppointmentRow, event: MouseEvent) {
     const spaceRight = window.innerWidth - rect.right
     const spaceLeft = rect.left
     const showRight = spaceRight >= HOVERCARD_WIDTH + HOVERCARD_GAP || spaceRight >= spaceLeft
-    const x = showRight
+    hoverX = showRight
       ? Math.min(rect.right + HOVERCARD_GAP, window.innerWidth - HOVERCARD_WIDTH - HOVERCARD_GAP)
       : Math.max(HOVERCARD_GAP, rect.left - HOVERCARD_WIDTH - HOVERCARD_GAP)
-    hoverPos.value = {
-      x,
-      y: Math.max(8, Math.min(rect.top, window.innerHeight - 380)),
-    }
+    hoverAnchorRect = rect
+    // Rough guess for the instant the card appears, before the resize
+    // observer above has attached and measured anything real yet.
+    hoverPos.value = { x: hoverX, y: Math.max(8, Math.min(rect.top, window.innerHeight - 380)) }
   }, 500)
 }
 function cancelHoverShow() {
@@ -1126,10 +1209,6 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
         <span class="text-[13.5px] font-[560] text-ink-700">{{ rangeLabel }}</span>
       </div>
       <div class="flex items-center gap-2">
-        <select v-model="practitionerFilter" class="h-[26px] rounded-ctlSm border border-line-control bg-surface px-2 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover focus:border-brand focus:outline-none">
-          <option value="">{{ t('All Practitioners', 'Todos los Profesionales') }}</option>
-          <option v-for="m in teamMembers" :key="m.id" :value="m.id">{{ m.full_name }}</option>
-        </select>
         <select v-model="viewMode" class="h-[26px] rounded-ctlSm border border-line-control bg-surface px-2 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover focus:border-brand focus:outline-none">
           <option value="day">{{ t('Day', 'Día') }}</option>
           <option value="workweek">{{ t('Work week', 'Semana laboral') }}</option>
@@ -1140,6 +1219,26 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
         <UiBtn variant="primary" size="sm" @click="openCreateModal()">{{ t('+ New Appointment', '+ Nueva Cita') }}</UiBtn>
       </div>
     </header>
+
+    <!-- One tab per practitioner, PracticeHub-style -- there is no merged
+         "all practitioners" view, since two practitioners double-booked into
+         the same room at overlapping times would otherwise render as an
+         unreadable stack of superimposed cards. -->
+    <div v-if="clinicTeamMembers.length > 0" class="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b border-line bg-surface px-6">
+      <button
+        v-for="m in clinicTeamMembers"
+        :key="m.id"
+        type="button"
+        class="h-[26px] shrink-0 rounded-ctlSm px-3 text-[12.5px] font-medium transition-colors"
+        :class="practitionerFilter === m.id ? 'bg-brand text-white' : 'text-ink-600 hover:bg-surface-subtle'"
+        @click="practitionerFilter = m.id"
+      >
+        {{ m.full_name }}
+      </button>
+    </div>
+    <div v-else class="flex h-9 shrink-0 items-center border-b border-line bg-surface px-6 text-[12.5px] text-ink-faint">
+      No practitioners are assigned to this clinic yet.
+    </div>
 
     <div class="flex flex-1 overflow-hidden">
       <!-- Left panel: mini month, glance stats, display toggles, status key -->
@@ -1294,7 +1393,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                   :style="{ top: `${timeToPx(block.starts_at, DAY_HOUR_PX)}px`, height: `${durationToPx(block.starts_at, block.ends_at, DAY_HOUR_PX, DAY_MIN_AVAILABILITY_PX)}px` }"
                   @click.stop="openBlockEditModal(block)"
                 >
-                  {{ block.note || (block.room_id === null ? t('Blocked (whole clinic)', 'Bloqueado (toda la clínica)') : t('Blocked', 'Bloqueado')) }}
+                  {{ blockLabel(block) }}
                 </div>
 
                 <template v-for="(appt, i) in layoutForRoom(col.id)" :key="isOverflowBlock(appt) ? `overflow-${col.id}-${i}` : appt.id">
@@ -1302,11 +1401,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                     v-if="isOverflowBlock(appt)"
                     class="absolute flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[10.5px] font-medium text-ink-muted2 shadow-card"
                     :title="`${appt.count} ${appt.count === 1 ? t('more appointment', 'cita más') : t('more appointments', 'citas más')} ${t('at this time', 'a esta hora')}`"
-                    :style="{
-                      ...cascadeStyle(appt, DAY_CASCADE_PX),
-                      top: `${timeToPx(appt.starts_at, DAY_HOUR_PX)}px`,
-                      height: `${OVERFLOW_CHIP_PX}px`,
-                    }"
+                    :style="columnStyle(appt, timeToPx(appt.starts_at, DAY_HOUR_PX), OVERFLOW_CHIP_PX)"
                   >
                     +{{ appt.count }} {{ t('more', 'más') }}
                   </div>
@@ -1316,9 +1411,11 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                     :class="appt.status === 'booked' ? 'cursor-grab active:cursor-grabbing' : ''"
                     :style="{
                       ...appointmentColorStyle(appt),
-                      ...cascadeStyle(appt, DAY_CASCADE_PX),
-                      top: `${timeToPx(appt.starts_at, DAY_HOUR_PX)}px`,
-                      height: `${Math.max(0, durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) - 3)}px`,
+                      ...columnStyle(
+                        appt,
+                        timeToPx(appt.starts_at, DAY_HOUR_PX),
+                        Math.max(0, durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) - 3),
+                      ),
                     }"
                     @pointerdown="startAppointmentDrag(appt, 'move', $event)"
                     @click.stop="handleAppointmentClick(appt)"
@@ -1455,11 +1552,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                       type="button"
                       class="absolute flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[10px] font-medium text-ink-muted2 shadow-card hover:border-line-controlHover"
                       :title="`${appt.count} ${appt.count === 1 ? t('more appointment', 'cita más') : t('more appointments', 'citas más')} ${t('at this time -- click to see them all in Day view', 'a esta hora -- haz clic para verlas todas en la vista Día')}`"
-                      :style="{
-                        ...cascadeStyle(appt, WEEK_CASCADE_PX),
-                        top: `${timeToPx(appt.starts_at, WEEK_HOUR_PX)}px`,
-                        height: `${OVERFLOW_CHIP_PX}px`,
-                      }"
+                      :style="columnStyle(appt, timeToPx(appt.starts_at, WEEK_HOUR_PX), OVERFLOW_CHIP_PX)"
                       @click.stop="showOverflowDay(day)"
                     >
                       +{{ appt.count }}
@@ -1470,9 +1563,11 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                       :class="appt.status === 'booked' ? 'cursor-grab active:cursor-grabbing' : ''"
                       :style="{
                         ...appointmentColorStyle(appt),
-                        ...cascadeStyle(appt, WEEK_CASCADE_PX),
-                        top: `${timeToPx(appt.starts_at, WEEK_HOUR_PX)}px`,
-                        height: `${Math.max(0, durationToPx(appt.starts_at, appt.ends_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX) - 2)}px`,
+                        ...columnStyle(
+                          appt,
+                          timeToPx(appt.starts_at, WEEK_HOUR_PX),
+                          Math.max(0, durationToPx(appt.starts_at, appt.ends_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX) - 2),
+                        ),
                       }"
                       @pointerdown="startAppointmentDrag(appt, 'move', $event)"
                       @click.stop="handleAppointmentClick(appt)"
@@ -1530,6 +1625,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
       :prefill-date="prefill?.date"
       :prefill-time="prefill?.time"
       :prefill-room-id="prefill?.roomId"
+      :prefill-practitioner-id="practitionerFilter"
       @close="modalOpen = false"
       @saved="onSaved"
     />
@@ -1563,10 +1659,12 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
     <CalendarAvailabilityBlockModal
       v-if="blockModalOpen"
       :rooms="rooms"
+      :team-members="clinicTeamMembers"
       :block="editingBlock ?? undefined"
       :prefill-date="blockPrefill?.date"
       :prefill-time="blockPrefill?.time"
       :prefill-room-id="blockPrefill?.roomId"
+      :prefill-practitioner-id="practitionerFilter"
       @close="blockModalOpen = false"
       @saved="onBlockSaved"
     />
@@ -1575,6 +1673,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
 
     <CalendarAppointmentHoverCard
       v-if="hoveredAppt"
+      ref="hoverCardEl"
       :appointment="hoveredAppt"
       :room-name="hoveredRoomName"
       :overrides="overrides"

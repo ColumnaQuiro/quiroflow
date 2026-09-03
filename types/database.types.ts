@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.17"
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
@@ -211,11 +211,14 @@ export type Database = {
           name: string
           new_patient_field_config: Json
           next_invoice_number: number | null
+          online_booking_background_color: string | null
           online_booking_gtm_id: string | null
           online_booking_hide_logo: boolean
           online_booking_max_days_ahead: number
           online_booking_notify_email: string | null
           online_booking_notify_whatsapp: string | null
+          online_booking_notify_whatsapp_template_language: string
+          online_booking_notify_whatsapp_template_name: string | null
           online_booking_practitioner_order: string
           online_booking_primary_color: string | null
           online_booking_referral_url: string | null
@@ -266,11 +269,14 @@ export type Database = {
           name: string
           new_patient_field_config?: Json
           next_invoice_number?: number | null
+          online_booking_background_color?: string | null
           online_booking_gtm_id?: string | null
           online_booking_hide_logo?: boolean
           online_booking_max_days_ahead?: number
           online_booking_notify_email?: string | null
           online_booking_notify_whatsapp?: string | null
+          online_booking_notify_whatsapp_template_language?: string
+          online_booking_notify_whatsapp_template_name?: string | null
           online_booking_practitioner_order?: string
           online_booking_primary_color?: string | null
           online_booking_referral_url?: string | null
@@ -321,11 +327,14 @@ export type Database = {
           name?: string
           new_patient_field_config?: Json
           next_invoice_number?: number | null
+          online_booking_background_color?: string | null
           online_booking_gtm_id?: string | null
           online_booking_hide_logo?: boolean
           online_booking_max_days_ahead?: number
           online_booking_notify_email?: string | null
           online_booking_notify_whatsapp?: string | null
+          online_booking_notify_whatsapp_template_language?: string
+          online_booking_notify_whatsapp_template_name?: string | null
           online_booking_practitioner_order?: string
           online_booking_primary_color?: string | null
           online_booking_referral_url?: string | null
@@ -852,6 +861,42 @@ export type Database = {
           },
         ]
       }
+      automation_rule_sends: {
+        Row: {
+          appointment_id: string
+          id: string
+          rule_id: string
+          sent_at: string
+        }
+        Insert: {
+          appointment_id: string
+          id?: string
+          rule_id: string
+          sent_at?: string
+        }
+        Update: {
+          appointment_id?: string
+          id?: string
+          rule_id?: string
+          sent_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "automation_rule_sends_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "automation_rule_sends_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "automation_rules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       automation_rules: {
         Row: {
           account_id: string
@@ -912,6 +957,7 @@ export type Database = {
           ends_at: string
           id: string
           note: string | null
+          practitioner_id: string | null
           room_id: string | null
           starts_at: string
         }
@@ -923,6 +969,7 @@ export type Database = {
           ends_at: string
           id?: string
           note?: string | null
+          practitioner_id?: string | null
           room_id?: string | null
           starts_at: string
         }
@@ -934,6 +981,7 @@ export type Database = {
           ends_at?: string
           id?: string
           note?: string | null
+          practitioner_id?: string | null
           room_id?: string | null
           starts_at?: string
         }
@@ -955,6 +1003,13 @@ export type Database = {
           {
             foreignKeyName: "availability_blocks_created_by_fkey"
             columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "availability_blocks_practitioner_id_fkey"
+            columns: ["practitioner_id"]
             isOneToOne: false
             referencedRelation: "team_members"
             referencedColumns: ["id"]
@@ -3009,11 +3064,13 @@ export type Database = {
           color: string
           created_at: string
           dashboard_layout: Json
+          deleted_at: string | null
           full_name: string
           id: string
           is_owner: boolean
           language_preference: string
           online_booking_enabled: boolean
+          photo_storage_path: string | null
           role: string
           role_id: string | null
           theme_preference: string
@@ -3025,11 +3082,13 @@ export type Database = {
           color?: string
           created_at?: string
           dashboard_layout?: Json
+          deleted_at?: string | null
           full_name: string
           id?: string
           is_owner?: boolean
           language_preference?: string
           online_booking_enabled?: boolean
+          photo_storage_path?: string | null
           role?: string
           role_id?: string | null
           theme_preference?: string
@@ -3041,11 +3100,13 @@ export type Database = {
           color?: string
           created_at?: string
           dashboard_layout?: Json
+          deleted_at?: string | null
           full_name?: string
           id?: string
           is_owner?: boolean
           language_preference?: string
           online_booking_enabled?: boolean
+          photo_storage_path?: string | null
           role?: string
           role_id?: string | null
           theme_preference?: string
@@ -3210,6 +3271,88 @@ export type Database = {
           },
         ]
       }
+      whatsapp_conversation_archives: {
+        Row: {
+          account_id: string
+          archived_at: string
+          conversation_key: string
+          team_member_id: string
+        }
+        Insert: {
+          account_id: string
+          archived_at?: string
+          conversation_key: string
+          team_member_id: string
+        }
+        Update: {
+          account_id?: string
+          archived_at?: string
+          conversation_key?: string
+          team_member_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_conversation_archives_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_conversation_archives_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_conversation_labels: {
+        Row: {
+          account_id: string
+          conversation_key: string
+          created_at: string
+          label_id: string
+          team_member_id: string
+        }
+        Insert: {
+          account_id: string
+          conversation_key: string
+          created_at?: string
+          label_id: string
+          team_member_id: string
+        }
+        Update: {
+          account_id?: string
+          conversation_key?: string
+          created_at?: string
+          label_id?: string
+          team_member_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_conversation_labels_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_conversation_labels_label_id_fkey"
+            columns: ["label_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_labels"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_conversation_labels_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       whatsapp_conversation_reads: {
         Row: {
           account_id: string
@@ -3232,6 +3375,48 @@ export type Database = {
             columns: ["account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_labels: {
+        Row: {
+          account_id: string
+          color: string
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+        }
+        Insert: {
+          account_id: string
+          color?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+        }
+        Update: {
+          account_id?: string
+          color?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_labels_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_labels_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
             referencedColumns: ["id"]
           },
         ]
@@ -3462,6 +3647,14 @@ export type Database = {
       generate_unique_account_slug: {
         Args: { base_name: string }
         Returns: string
+      }
+      get_booking_blocked_times: {
+        Args: { p_clinic_id: string; p_from: string; p_to: string }
+        Returns: {
+          ends_at: string
+          practitioner_id: string
+          starts_at: string
+        }[]
       }
       get_booking_busy_times: {
         Args: {

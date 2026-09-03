@@ -204,10 +204,11 @@ function formatDate(iso: string) {
 
       <div v-else-if="invoice" class="mx-auto max-w-[720px] space-y-4">
         <div class="overflow-hidden rounded-card border border-line bg-surface shadow-card">
-          <div v-if="invoiceClinic?.legal_name || invoiceClinic?.tax_id || invoiceClinicLogoUrl" class="flex items-start gap-3 border-b border-line-divider px-6 py-4">
+          <div v-if="invoiceClinic" class="flex items-start gap-3 border-b border-line-divider px-6 py-4">
             <img v-if="invoiceClinicLogoUrl" :src="invoiceClinicLogoUrl" class="h-12 w-12 shrink-0 rounded-ctlSm object-contain" alt="" />
             <div>
-              <p class="text-[13.5px] font-[620] text-ink-900">{{ invoiceClinic.legal_name || invoiceClinic.name }}</p>
+              <p class="text-[13.5px] font-[620] text-ink-900">{{ invoiceClinic.name }}</p>
+              <p v-if="invoiceClinic.legal_name" class="mt-0.5 text-[12px] text-ink-muted2">{{ invoiceClinic.legal_name }}</p>
               <p v-if="invoiceClinic.address" class="mt-0.5 text-[12px] text-ink-muted2">{{ invoiceClinic.address }}</p>
               <p v-if="invoiceClinic.tax_id" class="mt-0.5 text-[12px] text-ink-muted2">{{ t('Tax ID', 'NIF/CIF') }}: {{ invoiceClinic.tax_id }}</p>
             </div>

@@ -73,6 +73,13 @@ export default <Partial<Config>>{
           bg2: themeColor('--color-warning-bg2'),
           border: themeColor('--color-warning-border'),
         },
+        info: {
+          text: themeColor('--color-info-text'),
+          accent: themeColor('--color-info-accent'),
+          bg: themeColor('--color-info-bg'),
+          bg2: themeColor('--color-info-bg2'),
+          border: themeColor('--color-info-border'),
+        },
         danger: {
           text: themeColor('--color-danger-text'),
           bg: themeColor('--color-danger-bg'),

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Tables } from '~/types/database.types'
+import { sanitizeStorageFilename } from '~/utils/storageFilename'
 
 const props = defineProps<{ patientId: string }>()
 
@@ -63,7 +64,7 @@ async function uploadFiles(fileList: FileList) {
   error.value = ''
   uploading.value = true
   for (const file of Array.from(fileList)) {
-    const path = `${store.accountId}/${props.patientId}/${Date.now()}-${file.name}`
+    const path = `${store.accountId}/${props.patientId}/${Date.now()}-${sanitizeStorageFilename(file.name)}`
     const { error: uploadError } = await supabase.storage.from('patient-files').upload(path, file)
     if (uploadError) {
       error.value = uploadError.message

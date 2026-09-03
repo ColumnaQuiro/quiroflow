@@ -1,13 +1,16 @@
 <script setup lang="ts">
 interface RoomOption { id: string; name: string }
-interface EditingBlock { id: string; room_id: string | null; starts_at: string; ends_at: string; note: string | null }
+interface TeamMemberOption { id: string; full_name: string }
+interface EditingBlock { id: string; room_id: string | null; practitioner_id: string | null; starts_at: string; ends_at: string; note: string | null }
 
 const props = defineProps<{
   rooms: RoomOption[]
+  teamMembers: TeamMemberOption[]
   block?: EditingBlock
   prefillDate?: string
   prefillTime?: string
   prefillRoomId?: string
+  prefillPractitionerId?: string
 }>()
 
 const emit = defineEmits<{ close: []; saved: [] }>()
@@ -45,6 +48,7 @@ const inferredWholeDay = !!(
 )
 
 const roomId = ref(props.block?.room_id ?? props.prefillRoomId ?? '')
+const practitionerId = ref(props.block?.practitioner_id ?? props.prefillPractitionerId ?? '')
 const wholeDay = ref(inferredWholeDay)
 const startDate = ref(props.block ? toDateInput(props.block.starts_at) : (props.prefillDate ?? toDateInput(new Date().toISOString())))
 const endDate = ref(
@@ -74,6 +78,7 @@ async function save() {
     account_id: store.accountId!,
     clinic_id: store.currentClinicId!,
     room_id: roomId.value || null,
+    practitioner_id: practitionerId.value || null,
     starts_at: startsAt.toISOString(),
     ends_at: endsAt.toISOString(),
     note: note.value.trim() || null,
@@ -115,6 +120,13 @@ async function remove() {
       </div>
 
       <form class="mt-4 space-y-4" @submit.prevent="save">
+        <div>
+          <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Practitioner', 'Profesional') }}</label>
+          <select v-model="practitionerId" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
+            <option value="">{{ t('All practitioners', 'Todos los profesionales') }}</option>
+            <option v-for="m in teamMembers" :key="m.id" :value="m.id">{{ m.full_name }}</option>
+          </select>
+        </div>
         <div>
           <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Room', 'Sala') }}</label>
           <select v-model="roomId" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">

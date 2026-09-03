@@ -6,10 +6,11 @@ const store = useAccountStore()
 const config = useRuntimeConfig()
 const t = useT()
 
-const TAB_KEYS = ['general', 'entities', 'discounts', 'layout', 'language'] as const
+const TAB_KEYS = ['general', 'hours', 'entities', 'discounts', 'layout', 'language'] as const
 const activeTab = ref<(typeof TAB_KEYS)[number]>('general')
 const tabs = computed(() => [
   { key: 'general' as const, label: t('General', 'General') },
+  { key: 'hours' as const, label: t('Clinics & Hours', 'Clínicas y horarios') },
   { key: 'entities' as const, label: t('Bookable Entities', 'Entidades reservables') },
   { key: 'discounts' as const, label: t('Discount Codes', 'Códigos de descuento') },
   { key: 'layout' as const, label: t('Layout', 'Diseño') },
@@ -22,22 +23,23 @@ const gtmId = ref('')
 const referralUrl = ref('')
 const primaryColor = ref('')
 const secondaryColor = ref('')
+const backgroundColor = ref('')
 const hideLogo = ref(false)
 const practitionerOrder = ref<'default' | 'alphabetical'>('default')
 const textOverrides = ref<Record<string, string>>({})
 const notifyEmail = ref('')
 const notifyWhatsapp = ref('')
 
+const { showToast } = useToast()
 const loading = ref(true)
 const saving = ref(false)
-const saved = ref(false)
 
 async function loadAccountSettings() {
   loading.value = true
   const { data } = await supabase
     .from('accounts')
     .select(
-      'online_booking_max_days_ahead, online_booking_gtm_id, online_booking_referral_url, online_booking_primary_color, online_booking_secondary_color, online_booking_hide_logo, online_booking_practitioner_order, online_booking_text_overrides, online_booking_notify_email, online_booking_notify_whatsapp',
+      'online_booking_max_days_ahead, online_booking_gtm_id, online_booking_referral_url, online_booking_primary_color, online_booking_secondary_color, online_booking_background_color, online_booking_hide_logo, online_booking_practitioner_order, online_booking_text_overrides, online_booking_notify_email, online_booking_notify_whatsapp',
     )
     .eq('id', store.accountId!)
     .maybeSingle()
@@ -46,6 +48,7 @@ async function loadAccountSettings() {
   referralUrl.value = data?.online_booking_referral_url ?? ''
   primaryColor.value = data?.online_booking_primary_color ?? ''
   secondaryColor.value = data?.online_booking_secondary_color ?? ''
+  backgroundColor.value = data?.online_booking_background_color ?? ''
   hideLogo.value = data?.online_booking_hide_logo ?? false
   practitionerOrder.value = (data?.online_booking_practitioner_order as 'default' | 'alphabetical') ?? 'default'
   textOverrides.value = (data?.online_booking_text_overrides as Record<string, string>) ?? {}
@@ -57,22 +60,26 @@ onMounted(loadAccountSettings)
 
 async function saveAccountSettings() {
   saving.value = true
-  saved.value = false
   const update: TablesUpdate<'accounts'> = {
     online_booking_max_days_ahead: maxDaysAhead.value,
     online_booking_gtm_id: gtmId.value.trim() || null,
     online_booking_referral_url: referralUrl.value.trim() || null,
     online_booking_primary_color: primaryColor.value.trim() || null,
     online_booking_secondary_color: secondaryColor.value.trim() || null,
+    online_booking_background_color: backgroundColor.value.trim() || null,
     online_booking_hide_logo: hideLogo.value,
     online_booking_practitioner_order: practitionerOrder.value,
     online_booking_text_overrides: textOverrides.value,
     online_booking_notify_email: notifyEmail.value.trim() || null,
     online_booking_notify_whatsapp: notifyWhatsapp.value.trim() || null,
   }
-  await supabase.from('accounts').update(update).eq('id', store.accountId!)
+  const { error: updateError } = await supabase.from('accounts').update(update).eq('id', store.accountId!)
   saving.value = false
-  saved.value = true
+  if (updateError) {
+    showToast(updateError.message, 'error')
+    return
+  }
+  showToast('Saved')
 }
 
 function bookingUrl(slug: string) {
@@ -83,6 +90,64 @@ function bookingUrl(slug: string) {
 }
 function copy(text: string) {
   navigator.clipboard?.writeText(text)
+}
+
+// --- Clinics & Hours: per-clinic enable toggle + business hours ---
+// business_hours narrowed away from Supabase's recursive Json type here --
+// it blows up Vue's template type-checker (TS2589) when combined with v-for.
+type BookingClinic = Omit<Tables<'clinics'>, 'business_hours'> & { business_hours: Record<string, [string, string][]> }
+type Windows = [string, string][]
+const WEEKDAYS = computed(() => [
+  { key: 'mon', label: t('Mon', 'Lun') },
+  { key: 'tue', label: t('Tue', 'Mar') },
+  { key: 'wed', label: t('Wed', 'Mié') },
+  { key: 'thu', label: t('Thu', 'Jue') },
+  { key: 'fri', label: t('Fri', 'Vie') },
+  { key: 'sat', label: t('Sat', 'Sáb') },
+  { key: 'sun', label: t('Sun', 'Dom') },
+])
+
+const bookingClinics = ref<BookingClinic[]>([])
+const openClinicId = ref<string | null>(null)
+const editHours = ref<Record<string, Windows>>({})
+const editEnabled = ref(false)
+const savingHours = ref(false)
+const hoursError = ref('')
+
+async function loadBookingClinics() {
+  const { data } = await supabase.from('clinics').select('*').order('name')
+  bookingClinics.value = (data as unknown as BookingClinic[]) ?? []
+}
+onMounted(loadBookingClinics)
+
+function openBookingEditor(c: BookingClinic) {
+  openClinicId.value = openClinicId.value === c.id ? null : c.id
+  if (openClinicId.value === c.id) {
+    editEnabled.value = c.online_booking_enabled
+    const hours = (c.business_hours as Record<string, Windows>) ?? {}
+    editHours.value = Object.fromEntries(WEEKDAYS.value.map((d) => [d.key, hours[d.key] ? hours[d.key].map((w) => [...w] as [string, string]) : []]))
+  }
+}
+
+function addWindow(day: string) {
+  editHours.value[day].push(['09:00', '17:00'])
+}
+function removeWindow(day: string, i: number) {
+  editHours.value[day].splice(i, 1)
+}
+
+async function saveBooking(clinicId: string) {
+  savingHours.value = true
+  const { error: updateError } = await supabase
+    .from('clinics')
+    .update({ online_booking_enabled: editEnabled.value, business_hours: editHours.value })
+    .eq('id', clinicId)
+  savingHours.value = false
+  if (!updateError) {
+    await loadBookingClinics()
+  } else {
+    hoursError.value = updateError.message
+  }
 }
 
 // --- Bookable Entities: eligibility / bypass / max-days / deposit per type ---
@@ -180,9 +245,7 @@ const OVERRIDABLE_STRINGS = [
       <div class="flex gap-8 p-6">
         <SettingsNav />
         <div class="min-w-0 max-w-[720px] flex-1">
-          <p class="text-[13px] leading-relaxed text-ink-muted2">
-            {{ t('Configure how patients book appointments online. Per-clinic business hours and the enable/disable switch still live in', 'Configura cómo reservan cita los pacientes online. El horario por clínica y el interruptor de activar/desactivar siguen estando en') }} <NuxtLink to="/settings/clinics#online-booking" class="text-brand-text hover:underline">{{ t('Settings → Clinics → Online Booking Hours', 'Ajustes → Clínicas → Horario de reserva online') }}</NuxtLink>.
-          </p>
+          <p class="text-[13px] leading-relaxed text-ink-muted2">{{ t('Configure how patients book appointments online.', 'Configura cómo reservan cita los pacientes online.') }}</p>
 
           <div class="mt-4 flex gap-1 border-b border-line">
             <button
@@ -248,12 +311,57 @@ const OVERRIDABLE_STRINGS = [
                       class="mt-1 h-8 w-64 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none"
                     />
                     <p class="mt-1 text-[11.5px] text-ink-faint">
-                      {{ t("In E.164 format. WhatsApp only delivers a free-form message like this one within 24h of that number last messaging your clinic's WhatsApp number -- send it a message occasionally to keep notifications flowing.", 'En formato E.164. WhatsApp solo entrega un mensaje de texto libre como este dentro de las 24h posteriores a que ese número le escribiera por última vez al WhatsApp de tu clínica -- envíale un mensaje de vez en cuando para que sigan llegando las notificaciones.') }}
+                      {{
+                        t(
+                          "In E.164 format. WhatsApp only delivers a free-form message like this one within 24h of that number last messaging your clinic's WhatsApp number -- send it a message occasionally to keep notifications flowing, or set a staff notification template in Settings → WhatsApp to send outside that window too.",
+                          'En formato E.164. WhatsApp solo entrega un mensaje de texto libre como este dentro de las 24h posteriores a que ese número le escribiera por última vez al WhatsApp de tu clínica -- envíale un mensaje de vez en cuando para que sigan llegando las notificaciones, o configura una plantilla de aviso al personal en Ajustes → WhatsApp para enviarlas también fuera de esa ventana.',
+                        )
+                      }}
                     </p>
                   </div>
                 </div>
               </div>
             </template>
+          </div>
+
+          <!-- Clinics & Hours -->
+          <div v-else-if="activeTab === 'hours'" class="mt-4 space-y-2">
+            <div v-for="c in bookingClinics" :key="c.id" class="rounded-card border border-line bg-surface shadow-card">
+              <button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left" @click="openBookingEditor(c)">
+                <span class="text-[13.5px] font-[560] text-ink-700">{{ c.name }}</span>
+                <UiPill :tone="c.online_booking_enabled ? 'success' : 'neutral'">{{ c.online_booking_enabled ? t('Enabled', 'Activada') : t('Disabled', 'Desactivada') }}</UiPill>
+              </button>
+
+              <div v-if="openClinicId === c.id" class="border-t border-line-divider p-4">
+                <label class="flex items-center gap-2.5 text-[13px] text-ink-600">
+                  <SettingsToggle v-model="editEnabled" />
+                  {{ t('Enable online booking for this clinic', 'Activar la reserva online para esta clínica') }}
+                </label>
+
+                <div class="mt-4 space-y-2">
+                  <p class="text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">{{ t('Business hours', 'Horario comercial') }}</p>
+                  <div v-for="d in WEEKDAYS" :key="d.key" class="flex items-start gap-3 text-[13px]">
+                    <span class="w-10 pt-1.5 text-ink-muted2">{{ d.label }}</span>
+                    <div class="flex-1 space-y-1.5">
+                      <p v-if="editHours[d.key].length === 0" class="pt-1.5 text-ink-faint">{{ t('Closed', 'Cerrado') }}</p>
+                      <div v-for="(w, i) in editHours[d.key]" :key="i" class="flex items-center gap-2">
+                        <input v-model="w[0]" type="time" class="h-8 rounded-ctl border border-line-control bg-surface px-2 text-[13px]" />
+                        <span class="text-ink-faint">–</span>
+                        <input v-model="w[1]" type="time" class="h-8 rounded-ctl border border-line-control bg-surface px-2 text-[13px]" />
+                        <button type="button" class="text-ink-faint hover:text-danger-text" @click="removeWindow(d.key, i)">✕</button>
+                      </div>
+                      <button type="button" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover" @click="addWindow(d.key)">{{ t('+ Add hours', '+ Añadir horario') }}</button>
+                    </div>
+                  </div>
+                </div>
+
+                <UiBtn variant="primary" class="mt-4" :disabled="savingHours" @click="saveBooking(c.id)">
+                  {{ savingHours ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}
+                </UiBtn>
+              </div>
+            </div>
+            <p v-if="bookingClinics.length === 0" class="px-4 py-6 text-center text-[13px] text-ink-faint">{{ t('No clinics yet.', 'Todavía no hay clínicas.') }}</p>
+            <p v-if="hoursError" class="mt-2 text-[12.5px] text-danger-text">{{ hoursError }}</p>
           </div>
 
           <!-- Bookable Entities -->
@@ -384,6 +492,12 @@ const OVERRIDABLE_STRINGS = [
                 <input v-model="secondaryColor" type="text" placeholder="#EEF1FF" class="h-8 w-28 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none" />
               </div>
             </SettingsFieldRow>
+            <SettingsFieldRow label="Background color" helper="The page itself is always light -- it never follows a visitor's dark-mode setting. Use this to blend it with whatever site embeds it." align="top">
+              <div class="flex items-center gap-2">
+                <input v-model="backgroundColor" type="color" class="h-8 w-14 rounded-ctl border border-line-control" />
+                <input v-model="backgroundColor" type="text" placeholder="#F7F8FA" class="h-8 w-28 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none" />
+              </div>
+            </SettingsFieldRow>
           </div>
 
           <!-- Language Overrides -->
@@ -402,8 +516,6 @@ const OVERRIDABLE_STRINGS = [
               </div>
             </div>
           </div>
-
-          <p v-if="saved" class="mt-3 text-[12.5px] text-success-text">{{ t('Saved.', 'Guardado.') }}</p>
         </div>
       </div>
     </div>

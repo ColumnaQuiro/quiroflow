@@ -30,7 +30,7 @@ const roleName = computed(() => {
 async function load() {
   loading.value = true
   const [{ data: m }, { data: i }, { data: r }] = await Promise.all([
-    supabase.from('team_members').select('*').order('full_name'),
+    supabase.from('team_members').select('*').is('deleted_at', null).order('full_name'),
     supabase.from('account_invites').select('*').is('accepted_at', null).order('created_at', { ascending: false }),
     supabase.from('account_roles').select('id, name').order('is_system', { ascending: false }).order('name'),
   ])
@@ -55,6 +55,8 @@ async function createInvite() {
     error.value = t('Email is required.', 'El correo electrónico es obligatorio.')
     return
   }
+  const selectedRoleName = roles.value.find((r) => r.id === inviteRoleId.value)?.name
+  const legacyRole = selectedRoleName === 'Owner' ? 'owner' : selectedRoleName === 'Front Desk' ? 'front_desk' : 'practitioner'
   const { data, error: insertError } = await supabase
     .from('account_invites')
     .insert({
@@ -62,9 +64,10 @@ async function createInvite() {
       email,
       role_id: inviteRoleId.value,
       // Legacy column still has a check constraint (owner/practitioner/front_desk) and is
-      // no longer the source of truth for permissions — role_id above is. This is just a
-      // safe placeholder so the insert satisfies the constraint.
-      role: 'practitioner',
+      // no longer the source of truth for permissions — role_id above is. Derived from the
+      // selected role's name so it stays in sync with role_id (e.g. AppSidebar's role label
+      // still reads this column).
+      role: legacyRole,
     })
     .select('id, token')
     .single()
@@ -175,6 +178,10 @@ async function sendPasswordReset(member: Tables<'team_members'>) {
   }
 }
 
+function initialsOf(name: string) {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('') || '?'
+}
+
 function inviteLink(token: string) {
   return `${window.location.origin}/join?token=${token}`
 }
@@ -210,7 +217,17 @@ function copy(text: string) {
                 <template v-for="m in members" v-else :key="m.id">
                   <tr>
                     <td class="px-4 py-2.5 text-ink-700">
-                      <span class="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" :style="{ backgroundColor: m.color }"></span>
+                      <span class="mr-2 inline-flex align-middle">
+                        <SettingsTeamMemberPhotoUpload
+                          :account-id="m.account_id"
+                          :team-member-id="m.id"
+                          :photo-storage-path="m.photo_storage_path"
+                          :initials="initialsOf(m.full_name)"
+                          :color="m.color"
+                          :size="26"
+                          @uploaded="load"
+                        />
+                      </span>
                       <input
                         v-if="editingId === m.id"
                         v-model="editingName"

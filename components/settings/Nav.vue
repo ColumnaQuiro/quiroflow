@@ -15,10 +15,6 @@ interface NavGroup {
 
 const allGroups = computed<NavGroup[]>(() => [
   {
-    label: t('General', 'General'),
-    items: [{ label: t('Appearance', 'Apariencia'), to: '/settings/appearance' }],
-  },
-  {
     label: t('Clinic', 'Clínica'),
     items: [
       { label: t('Clinics', 'Clínicas'), to: '/settings/clinics', perm: 'clinic_config' },

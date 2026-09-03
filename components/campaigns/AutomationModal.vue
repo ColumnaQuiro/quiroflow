@@ -88,12 +88,50 @@ const isMarketing = ref(false)
 const actions = ref<ActionForm[]>([blankAction()])
 const docTemplates = ref<{ id: string; title: string }[]>([])
 const appointmentTypes = ref<{ id: string; name: string }[]>([])
+const practitioners = ref<{ id: string; full_name: string }[]>([])
+const membershipPlans = ref<{ id: string; name: string }[]>([])
 // Any of these types matches (OR) -- an appointment only ever has one type,
 // so e.g. "Primera visita" or "Oferta primera visita" both firing this rule
 // means picking both here, not a way to require both at once (AND).
 const filterAppointmentTypeIds = ref<string[]>([])
 const filterTotalVisits = ref('')
 const filterNoPriorAppointments = ref(false)
+
+// Extra, addable "Only when" conditions beyond the always-shown appointment
+// type/visit-count block above -- each block is a different field (AND
+// across blocks; a field can only be added once, so there's no need to
+// support multiple blocks of the same field). Field-specific value slots all
+// live on the one object rather than a discriminated union so the template
+// can v-model them directly regardless of which field is picked.
+type ConditionField = 'practitioner' | 'tag' | 'balance' | 'membership'
+interface ExtraCondition {
+  field: ConditionField
+  practitionerIds: string[]
+  tagContains: string
+  balance: 'debit' | 'credit'
+  membershipIds: string[]
+}
+function blankCondition(field: ConditionField): ExtraCondition {
+  return { field, practitionerIds: [], tagContains: '', balance: 'debit', membershipIds: [] }
+}
+const CONDITION_FIELD_LABELS: Record<ConditionField, () => string> = {
+  practitioner: () => t('Practitioner', 'Profesional'),
+  tag: () => t('Patient tag', 'Etiqueta de paciente'),
+  balance: () => t('Account balance', 'Saldo de cuenta'),
+  membership: () => t('Membership', 'Membresía'),
+}
+const extraConditions = ref<ExtraCondition[]>([])
+const availableConditionFields = computed<ConditionField[]>(() => {
+  const used = new Set(extraConditions.value.map((c) => c.field))
+  return (['practitioner', 'tag', 'balance', 'membership'] as ConditionField[]).filter((f) => !used.has(f))
+})
+function addCondition() {
+  const next = availableConditionFields.value[0]
+  if (next) extraConditions.value.push(blankCondition(next))
+}
+function removeCondition(index: number) {
+  extraConditions.value.splice(index, 1)
+}
 // Only meaningful for the appointment.hours_before trigger -- how long
 // before the appointment's start time this rule fires (e.g. 24 for a
 // day-before reminder, 72 for three days before). A clinic wanting both
@@ -120,6 +158,12 @@ onMounted(async () => {
 
   const { data: types } = await supabase.from('appointment_types').select('id, name').order('name')
   appointmentTypes.value = types ?? []
+
+  const { data: teamMembers } = await supabase.from('team_members').select('id, full_name').eq('is_practitioner', true).is('deleted_at', null).order('full_name')
+  practitioners.value = teamMembers ?? []
+
+  const { data: plans } = await supabase.from('memberships').select('id, name').order('name')
+  membershipPlans.value = plans ?? []
 
   try {
     const { templates: waList } = await useStaffFetch<{ templates: WhatsAppTemplate[] }>('/api/whatsapp/templates')
@@ -151,7 +195,39 @@ onMounted(async () => {
       filterNoPriorAppointments.value = filters.no_prior_appointments === true
       filterHoursBefore.value = typeof filters.hours_before === 'number' ? String(filters.hours_before) : '24'
       filterDaysAfter.value = typeof filters.days_after === 'number' ? String(filters.days_after) : '2'
-      const { appointment_type_id: _a, appointment_type_ids: _ai, total_visits: _t, no_prior_appointments: _n, hours_before: _h, days_after: _d, ...rest } = filters
+
+      const conditions: ExtraCondition[] = []
+      if (Array.isArray(filters.practitioner_ids) && filters.practitioner_ids.length > 0) {
+        conditions.push({ ...blankCondition('practitioner'), practitionerIds: filters.practitioner_ids.filter((id): id is string => typeof id === 'string') })
+      }
+      if (typeof filters.tag_contains === 'string' && filters.tag_contains) {
+        conditions.push({ ...blankCondition('tag'), tagContains: filters.tag_contains })
+      }
+      if (filters.balance === 'debit' || filters.balance === 'credit') {
+        conditions.push({ ...blankCondition('balance'), balance: filters.balance })
+      }
+      if (filters.membership_active === true || (Array.isArray(filters.membership_ids) && filters.membership_ids.length > 0)) {
+        conditions.push({
+          ...blankCondition('membership'),
+          membershipIds: Array.isArray(filters.membership_ids) ? filters.membership_ids.filter((id): id is string => typeof id === 'string') : [],
+        })
+      }
+      extraConditions.value = conditions
+
+      const {
+        appointment_type_id: _a,
+        appointment_type_ids: _ai,
+        total_visits: _t,
+        no_prior_appointments: _n,
+        hours_before: _h,
+        days_after: _d,
+        practitioner_ids: _p,
+        tag_contains: _tc,
+        balance: _b,
+        membership_active: _ma,
+        membership_ids: _mi,
+        ...rest
+      } = filters
       otherFilters = rest
     }
     if (existingActions && existingActions.length > 0) {
@@ -248,6 +324,15 @@ async function persist(): Promise<string | null> {
   if (filterAppointmentTypeIds.value.length > 0) filters.appointment_type_ids = filterAppointmentTypeIds.value
   if (filterTotalVisits.value !== '') filters.total_visits = Number(filterTotalVisits.value)
   if (filterNoPriorAppointments.value) filters.no_prior_appointments = true
+  for (const c of extraConditions.value) {
+    if (c.field === 'practitioner' && c.practitionerIds.length > 0) filters.practitioner_ids = c.practitionerIds
+    if (c.field === 'tag' && c.tagContains.trim()) filters.tag_contains = c.tagContains.trim()
+    if (c.field === 'balance') filters.balance = c.balance
+    if (c.field === 'membership') {
+      filters.membership_active = true
+      if (c.membershipIds.length > 0) filters.membership_ids = c.membershipIds
+    }
+  }
   if (triggerEvent.value === 'appointment.hours_before') {
     filters.hours_before = Math.max(1, Math.round(Number(filterHoursBefore.value) || 24))
   }
@@ -468,6 +553,68 @@ async function sendTestToMe() {
               <input v-model="filterNoPriorAppointments" type="checkbox" class="h-3.5 w-3.5 rounded border-line-control text-brand focus:ring-brand" />
               {{ t('Only for first-time patients (no other appointments at all, past or future)', 'Solo para pacientes nuevos (sin ninguna otra cita, ni pasada ni futura)') }}
             </label>
+
+            <div v-if="extraConditions.length > 0" class="mt-3 space-y-2.5 border-t border-line-divider pt-3">
+              <div v-for="(c, i) in extraConditions" :key="c.field" class="rounded-ctl border border-line-control bg-surface p-2.5">
+                <div class="flex items-center justify-between gap-2">
+                  <select
+                    v-model="c.field"
+                    class="h-8 rounded-ctl border border-line-control bg-surface px-2 text-[12.5px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                  >
+                    <option :value="c.field">{{ CONDITION_FIELD_LABELS[c.field]() }}</option>
+                    <option v-for="f in availableConditionFields" :key="f" :value="f">{{ CONDITION_FIELD_LABELS[f]() }}</option>
+                  </select>
+                  <button type="button" class="text-[12px] font-medium text-danger-text hover:underline" @click="removeCondition(i)">{{ t('Remove', 'Eliminar') }}</button>
+                </div>
+
+                <div v-if="c.field === 'practitioner'" class="mt-2 flex max-h-24 flex-col gap-1 overflow-y-auto">
+                  <label v-for="p in practitioners" :key="p.id" class="flex items-center gap-1.5 text-[12.5px] text-ink-700">
+                    <input v-model="c.practitionerIds" type="checkbox" :value="p.id" class="h-3.5 w-3.5 rounded border-line-control text-brand focus:ring-brand" />
+                    {{ p.full_name }}
+                  </label>
+                  <p v-if="practitioners.length === 0" class="text-[12px] text-ink-faint">{{ t('No practitioners found.', 'No se encontraron profesionales.') }}</p>
+                </div>
+
+                <input
+                  v-else-if="c.field === 'tag'"
+                  v-model="c.tagContains"
+                  type="text"
+                  :placeholder="t('Tag contains…', 'La etiqueta contiene…')"
+                  class="mt-2 h-8 w-full rounded-ctl border border-line-control px-2.5 text-[12.5px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                />
+
+                <select
+                  v-else-if="c.field === 'balance'"
+                  v-model="c.balance"
+                  class="mt-2 h-8 w-full rounded-ctl border border-line-control bg-surface px-2.5 text-[12.5px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                >
+                  <option value="debit">{{ t('Owing', 'Debe dinero') }}</option>
+                  <option value="credit">{{ t('In credit', 'Con saldo a favor') }}</option>
+                </select>
+
+                <div v-else-if="c.field === 'membership'" class="mt-2">
+                  <p class="text-[11px] text-ink-muted2">
+                    {{ c.membershipIds.length === 0 ? t('Any active membership', 'Cualquier membresía activa') : t('Active in any of these plans', 'Activa en cualquiera de estos planes') }}
+                  </p>
+                  <div class="mt-1 flex max-h-24 flex-col gap-1 overflow-y-auto">
+                    <label v-for="m in membershipPlans" :key="m.id" class="flex items-center gap-1.5 text-[12.5px] text-ink-700">
+                      <input v-model="c.membershipIds" type="checkbox" :value="m.id" class="h-3.5 w-3.5 rounded border-line-control text-brand focus:ring-brand" />
+                      {{ m.name }}
+                    </label>
+                    <p v-if="membershipPlans.length === 0" class="text-[12px] text-ink-faint">{{ t('No membership plans found.', 'No se encontraron planes de membresía.') }}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <button
+              v-if="availableConditionFields.length > 0"
+              type="button"
+              class="mt-2.5 text-[12.5px] font-medium text-brand-text hover:underline"
+              @click="addCondition"
+            >
+              + {{ t('Add condition', 'Añadir condición') }}
+            </button>
           </div>
 
           <div class="border-t border-line-divider pt-4">

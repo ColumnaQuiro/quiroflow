@@ -20,6 +20,9 @@ describe('Signup and onboarding', () => {
     cy.get('#clinic-name').type(clinicName)
     cy.contains('button', 'Create practice').click()
 
+    cy.contains('h1', "You're all set", { timeout: 15000 }).should('be.visible')
+    cy.contains('button', 'Get started').click()
+
     cy.location('pathname', { timeout: 15000 }).should('eq', '/dashboard')
     // Greeting is time-of-day dependent ("Good morning/afternoon/evening, {firstName}") -- match loosely.
     cy.contains(new RegExp(`Good (morning|afternoon|evening), ${ownerName.split(' ')[0]}`)).should('be.visible')

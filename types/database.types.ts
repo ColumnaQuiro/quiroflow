@@ -20,6 +20,7 @@ export type Database = {
           amount_cents: number
           created_at: string
           created_by: string | null
+          external_reference: string | null
           id: string
           invoice_id: string | null
           method: string | null
@@ -31,6 +32,7 @@ export type Database = {
           amount_cents: number
           created_at?: string
           created_by?: string | null
+          external_reference?: string | null
           id?: string
           invoice_id?: string | null
           method?: string | null
@@ -42,6 +44,7 @@ export type Database = {
           amount_cents?: number
           created_at?: string
           created_by?: string | null
+          external_reference?: string | null
           id?: string
           invoice_id?: string | null
           method?: string | null
@@ -1857,6 +1860,7 @@ export type Database = {
         Row: {
           account_id: string
           created_by: string | null
+          external_reference: string | null
           id: string
           invoice_id: string | null
           package_id: string | null
@@ -1870,6 +1874,7 @@ export type Database = {
         Insert: {
           account_id: string
           created_by?: string | null
+          external_reference?: string | null
           id?: string
           invoice_id?: string | null
           package_id?: string | null
@@ -1883,6 +1888,7 @@ export type Database = {
         Update: {
           account_id?: string
           created_by?: string | null
+          external_reference?: string | null
           id?: string
           invoice_id?: string | null
           package_id?: string | null

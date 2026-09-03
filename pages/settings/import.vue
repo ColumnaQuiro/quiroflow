@@ -13,12 +13,17 @@ interface Source {
 
 const t = useT()
 
+onMounted(() => {
+  loadSavedPracticeHubConnection()
+})
+
 const sources = computed<Source[]>(() => [
   {
     key: 'practicehub',
     label: 'PracticeHub',
     available: true,
     dataTypes: [
+      { key: 'general', label: t('General', 'General') },
       { key: 'patients', label: t('Patients', 'Pacientes') },
       { key: 'appointments', label: t('Appointments', 'Citas') },
       { key: 'appointment_types', label: t('Appointment Types (fix)', 'Tipos de cita (fix)') },
@@ -40,7 +45,7 @@ const sources = computed<Source[]>(() => [
 ])
 
 const sourceKey = ref('practicehub')
-const dataTypeKey = ref('patients')
+const dataTypeKey = ref('general')
 
 const activeSource = computed(() => sources.value.find((s) => s.key === sourceKey.value)!)
 
@@ -94,7 +99,8 @@ function selectSource(key: string) {
           </div>
 
           <div class="mt-6">
-            <ImportPracticeHubPatientsImporter v-if="sourceKey === 'practicehub' && dataTypeKey === 'patients'" />
+            <ImportPracticeHubGeneralSettings v-if="sourceKey === 'practicehub' && dataTypeKey === 'general'" />
+            <ImportPracticeHubPatientsImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'patients'" />
             <ImportPracticeHubAppointmentsImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'appointments'" />
             <ImportPracticeHubAppointmentTypesImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'appointment_types'" />
             <ImportPracticeHubPaymentsImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'payments'" />

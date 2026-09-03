@@ -2,14 +2,18 @@ describe('CSV patient import (PracticeHub)', () => {
   it('previews and imports patients from a CSV file', () => {
     cy.seedStaffAccount().then((account) => {
       cy.login(account.email, account.password)
+      // /settings/import now defaults to the PracticeHub "General" tab
+      // (saved-connection settings), not "Patients" -- the importer that
+      // fetches team_members and renders a file input only mounts once
+      // the "Patients" data-type pill is selected.
+      cy.intercept('GET', '**/rest/v1/team_members*').as('teamMembersFetch')
+      cy.visit('/settings/import')
+      cy.contains('button', 'Patients').click()
       // The importer's onMounted fetches team_members before it's ready to
       // handle a file drop; selecting a file before that resolves is a
       // silent no-op, so wait for the request rather than a blind delay.
-      cy.intercept('GET', '**/rest/v1/team_members*').as('teamMembersFetch')
-      cy.visit('/settings/import')
       cy.wait('@teamMembersFetch')
 
-      cy.contains('Patients').should('be.visible')
       cy.get('input[type=file]').selectFile('cypress/fixtures/practicehub-patients.csv', { force: true })
 
       cy.contains('Will import', { timeout: 15000 }).should('be.visible')

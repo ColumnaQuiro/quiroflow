@@ -46,6 +46,7 @@ mobile/android/local.properties
 mobile/android/capacitor-cordova-android-plugins
 mobile/ios/App/App/public
 mobile/android/app/src/main/assets/public
+mobile/ios/build
 
 # App Store Connect API private keys (never commit these)
 *.p8

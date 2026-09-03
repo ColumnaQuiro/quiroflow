@@ -2,9 +2,40 @@
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
 const store = useAccountStore()
+const { preference: themePreference, setPreference: setThemePreference } = useTheme()
+const { preference: langPreference, setPreference: setLangPreference } = useLang()
 const t = useT()
 
 const { showToast } = useToast()
+
+const themeOptions = computed(() => [
+  { value: 'light' as const, label: t('Light', 'Claro'), description: t('Always use the light theme.', 'Usar siempre el tema claro.') },
+  { value: 'dark' as const, label: t('Dark', 'Oscuro'), description: t('Always use the dark theme.', 'Usar siempre el tema oscuro.') },
+  { value: 'system' as const, label: t('System', 'Sistema'), description: t("Match this device's own light/dark setting.", 'Igualar el ajuste claro/oscuro de este dispositivo.') },
+])
+const languageOptions = [
+  { value: 'en' as const, label: 'English', description: 'Show QuiroFlow in English.' },
+  { value: 'es' as const, label: 'Español', description: 'Mostrar QuiroFlow en español.' },
+]
+
+const savingTheme = ref(false)
+const savingLang = ref(false)
+
+async function chooseTheme(value: 'light' | 'dark' | 'system') {
+  setThemePreference(value)
+  savingTheme.value = true
+  await supabase.from('team_members').update({ theme_preference: value }).eq('id', store.teamMember!.id)
+  if (store.teamMember) store.teamMember.theme_preference = value
+  savingTheme.value = false
+}
+
+async function chooseLanguage(value: 'en' | 'es') {
+  setLangPreference(value)
+  savingLang.value = true
+  await supabase.from('team_members').update({ language_preference: value }).eq('id', store.teamMember!.id)
+  if (store.teamMember) store.teamMember.language_preference = value
+  savingLang.value = false
+}
 
 const fullName = ref('')
 const color = ref('#4C6FEB')
@@ -118,6 +149,53 @@ async function deleteAccount() {
         </UiBtn>
       </div>
     </form>
+
+    <div class="mt-6 space-y-4 rounded-card border border-line bg-surface p-4 shadow-card">
+      <h2 class="text-sm font-semibold text-ink-900">{{ t('Appearance', 'Apariencia') }}</h2>
+      <p class="text-[12.5px] text-ink-muted2">{{ t("This is your own preference -- it doesn't affect what anyone else on your team sees.", 'Esta es tu propia preferencia -- no afecta lo que ve el resto de tu equipo.') }}</p>
+
+      <div class="space-y-2">
+        <button
+          v-for="opt in themeOptions"
+          :key="opt.value"
+          type="button"
+          class="flex w-full items-center justify-between rounded-ctl border p-3 text-left"
+          :class="themePreference === opt.value ? 'border-brand bg-brand-tint' : 'border-line hover:bg-surface-subtle'"
+          :disabled="savingTheme"
+          @click="chooseTheme(opt.value)"
+        >
+          <div>
+            <p class="text-[13px] font-medium text-ink-900">{{ opt.label }}</p>
+            <p class="mt-0.5 text-[12px] text-ink-muted2">{{ opt.description }}</p>
+          </div>
+          <div class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2" :class="themePreference === opt.value ? 'border-brand bg-brand' : 'border-line-control'">
+            <span v-if="themePreference === opt.value" class="h-2 w-2 rounded-full bg-white" />
+          </div>
+        </button>
+      </div>
+
+      <p class="pt-2 text-[13px] font-[560] text-ink-700">{{ t('Language', 'Idioma') }}</p>
+
+      <div class="space-y-2">
+        <button
+          v-for="opt in languageOptions"
+          :key="opt.value"
+          type="button"
+          class="flex w-full items-center justify-between rounded-ctl border p-3 text-left"
+          :class="langPreference === opt.value ? 'border-brand bg-brand-tint' : 'border-line hover:bg-surface-subtle'"
+          :disabled="savingLang"
+          @click="chooseLanguage(opt.value)"
+        >
+          <div>
+            <p class="text-[13px] font-medium text-ink-900">{{ opt.label }}</p>
+            <p class="mt-0.5 text-[12px] text-ink-muted2">{{ opt.description }}</p>
+          </div>
+          <div class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2" :class="langPreference === opt.value ? 'border-brand bg-brand' : 'border-line-control'">
+            <span v-if="langPreference === opt.value" class="h-2 w-2 rounded-full bg-white" />
+          </div>
+        </button>
+      </div>
+    </div>
 
     <form class="mt-6 space-y-4 rounded-card border border-line bg-surface p-4 shadow-card" @submit.prevent="changePassword">
       <h2 class="text-sm font-semibold text-ink-900">{{ t('Change Password', 'Cambiar Contraseña') }}</h2>

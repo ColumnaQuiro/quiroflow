@@ -186,14 +186,14 @@ function updateOverridePrice(typeId: string, teamMemberId: string, value: string
     <div class="flex-1 overflow-y-auto">
       <div class="flex gap-8 p-6">
         <SettingsNav />
-        <div class="min-w-0 max-w-[660px] flex-1">
+        <div class="min-w-0 max-w-[1100px] flex-1">
           <p class="text-[13px] text-ink-muted2">{{ t('Visit types, durations, colors, and default price.', 'Tipos de visita, duraciones, colores y precio por defecto.') }}</p>
 
           <div class="mt-4 overflow-x-auto rounded-card border border-line bg-surface shadow-card">
             <table class="w-full text-[13px]">
               <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted2">
                 <tr>
-                  <th class="px-4 py-2">{{ t('Name', 'Nombre') }}</th>
+                  <th class="w-[220px] px-4 py-2">{{ t('Name', 'Nombre') }}</th>
                   <th class="px-4 py-2">{{ t('Duration', 'Duración') }}</th>
                   <th class="px-4 py-2">{{ t('Default price', 'Precio por defecto') }}</th>
                   <th class="px-4 py-2">{{ t('Stage', 'Etapa') }}</th>
@@ -223,7 +223,7 @@ function updateOverridePrice(typeId: string, teamMemberId: string, value: string
                       <input
                         :value="at.name"
                         type="text"
-                        class="w-full min-w-0 rounded-ctlSm border border-transparent px-1.5 py-1 hover:border-line-control focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+                        class="w-full min-w-[140px] rounded-ctlSm border border-transparent px-1.5 py-1 hover:border-line-control focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
                         @change="updateName(at, ($event.target as HTMLInputElement).value)"
                       />
                     </div>

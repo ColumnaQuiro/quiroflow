@@ -114,10 +114,11 @@ async function deleteAccount() {
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Account Settings', 'Ajustes de la Cuenta')" />
     <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
-    <div class="max-w-lg">
+    <div class="max-w-4xl">
     <p class="text-sm text-ink-muted">{{ t('Your personal details and login.', 'Tus datos personales y de acceso.') }}</p>
 
-    <form class="mt-6 space-y-4 rounded-card border border-line bg-surface p-4 shadow-card" @submit.prevent="saveProfile">
+    <div class="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+    <form class="space-y-4 rounded-card border border-line bg-surface p-4 shadow-card" @submit.prevent="saveProfile">
       <h2 class="text-sm font-semibold text-ink-900">{{ t('Personal Details', 'Datos Personales') }}</h2>
       <div v-if="store.teamMember" class="flex items-center gap-3">
         <SettingsTeamMemberPhotoUpload
@@ -150,7 +151,7 @@ async function deleteAccount() {
       </div>
     </form>
 
-    <div class="mt-6 space-y-4 rounded-card border border-line bg-surface p-4 shadow-card">
+    <div class="space-y-4 rounded-card border border-line bg-surface p-4 shadow-card">
       <h2 class="text-sm font-semibold text-ink-900">{{ t('Appearance', 'Apariencia') }}</h2>
       <p class="text-[12.5px] text-ink-muted2">{{ t("This is your own preference -- it doesn't affect what anyone else on your team sees.", 'Esta es tu propia preferencia -- no afecta lo que ve el resto de tu equipo.') }}</p>
 
@@ -197,7 +198,7 @@ async function deleteAccount() {
       </div>
     </div>
 
-    <form class="mt-6 space-y-4 rounded-card border border-line bg-surface p-4 shadow-card" @submit.prevent="changePassword">
+    <form class="space-y-4 rounded-card border border-line bg-surface p-4 shadow-card" @submit.prevent="changePassword">
       <h2 class="text-sm font-semibold text-ink-900">{{ t('Change Password', 'Cambiar Contraseña') }}</h2>
       <div>
         <label class="block text-sm font-medium text-ink-700">{{ t('New Password', 'Nueva Contraseña') }}</label>
@@ -214,7 +215,7 @@ async function deleteAccount() {
       </div>
     </form>
 
-    <div class="mt-6 space-y-3 rounded-card border border-danger-border bg-danger-bg p-4">
+    <div class="space-y-3 rounded-card border border-danger-border bg-danger-bg p-4">
       <h2 class="text-sm font-semibold text-danger-text">Delete Account</h2>
       <p class="text-sm text-ink-muted">
         Removes your login from this clinic immediately. Your name stays attached to past appointments and records for
@@ -223,6 +224,7 @@ async function deleteAccount() {
       <UiBtn type="button" variant="secondary" class="border-danger-border text-danger-text" :disabled="deletingAccount" @click="deleteAccount">
         {{ deletingAccount ? 'Deleting…' : 'Delete Account' }}
       </UiBtn>
+    </div>
     </div>
     </div>
     </div>

@@ -103,6 +103,17 @@ async function toggleBookable(member: Tables<'team_members'>) {
   await supabase.from('team_members').update({ online_booking_enabled: next }).eq('id', member.id)
 }
 
+// Independent of role/role_id: role governs what a person can *do* in the
+// app (permissions), this governs whether they show up as a schedulable
+// resource (calendar tabs, online booking) -- an Owner can also be a
+// treating practitioner, and a Practitioner-role hire might not be seeing
+// patients yet.
+async function togglePractitioner(member: Tables<'team_members'>) {
+  const next = !member.is_practitioner
+  member.is_practitioner = next
+  await supabase.from('team_members').update({ is_practitioner: next }).eq('id', member.id)
+}
+
 // --- Per-practitioner schedule (mirrors pages/settings/clinics.vue's
 // business-hours editor) -- an empty day means "no override", not "closed":
 // the practitioner stays bookable across the clinic's own hours until they
@@ -205,13 +216,14 @@ function copy(text: string) {
                 <tr>
                   <th class="px-4 py-2">Name</th>
                   <th class="px-4 py-2">Role</th>
+                  <th class="px-4 py-2">Practitioner</th>
                   <th class="px-4 py-2">Online booking</th>
                   <th class="px-4 py-2"></th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-line-row">
                 <tr v-if="loading">
-                  <td colspan="4" class="px-4 py-6 text-center text-ink-faint">Loading…</td>
+                  <td colspan="5" class="px-4 py-6 text-center text-ink-faint">Loading…</td>
                 </tr>
                 <template v-for="m in members" v-else :key="m.id">
                   <tr>
@@ -246,6 +258,12 @@ function copy(text: string) {
                     </td>
                     <td class="px-4 py-2.5">
                       <label class="flex items-center gap-2.5 text-ink-600">
+                        <SettingsToggle :model-value="m.is_practitioner" @update:model-value="togglePractitioner(m)" />
+                        Practitioner
+                      </label>
+                    </td>
+                    <td class="px-4 py-2.5">
+                      <label class="flex items-center gap-2.5 text-ink-600">
                         <SettingsToggle :model-value="m.online_booking_enabled" @update:model-value="toggleBookable(m)" />
                         Bookable
                       </label>
@@ -261,7 +279,7 @@ function copy(text: string) {
                     </td>
                   </tr>
                   <tr v-if="openScheduleId === m.id">
-                    <td colspan="4" class="border-t border-line-divider bg-surface-subtle px-4 py-4">
+                    <td colspan="5" class="border-t border-line-divider bg-surface-subtle px-4 py-4">
                       <p class="text-[12px] text-ink-muted2">
                         Leave every day empty to keep {{ m.full_name }} bookable across the clinic's own hours. Set hours here to restrict online booking to a narrower schedule.
                       </p>

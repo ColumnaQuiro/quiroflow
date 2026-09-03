@@ -1559,7 +1559,9 @@ export type Database = {
           created_at: string
           id: string
           invoice_number: string
+          is_refund: boolean
           patient_id: string
+          refunds_invoice_id: string | null
           status: string
           total_cents: number
         }
@@ -1569,7 +1571,9 @@ export type Database = {
           created_at?: string
           id?: string
           invoice_number: string
+          is_refund?: boolean
           patient_id: string
+          refunds_invoice_id?: string | null
           status?: string
           total_cents?: number
         }
@@ -1579,7 +1583,9 @@ export type Database = {
           created_at?: string
           id?: string
           invoice_number?: string
+          is_refund?: boolean
           patient_id?: string
+          refunds_invoice_id?: string | null
           status?: string
           total_cents?: number
         }
@@ -1618,6 +1624,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "recall_candidates"
             referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "invoices_refunds_invoice_id_fkey"
+            columns: ["refunds_invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -3068,6 +3081,8 @@ export type Database = {
           full_name: string
           id: string
           is_owner: boolean
+          is_practitioner: boolean
+          language_preference: string
           online_booking_enabled: boolean
           photo_storage_path: string | null
           role: string
@@ -3085,6 +3100,8 @@ export type Database = {
           full_name: string
           id?: string
           is_owner?: boolean
+          is_practitioner?: boolean
+          language_preference?: string
           online_booking_enabled?: boolean
           photo_storage_path?: string | null
           role?: string
@@ -3102,6 +3119,8 @@ export type Database = {
           full_name?: string
           id?: string
           is_owner?: boolean
+          is_practitioner?: boolean
+          language_preference?: string
           online_booking_enabled?: boolean
           photo_storage_path?: string | null
           role?: string
@@ -3725,12 +3744,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3754,11 +3773,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3779,11 +3798,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3804,11 +3823,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3821,11 +3840,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }

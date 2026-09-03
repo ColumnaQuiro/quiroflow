@@ -12,7 +12,7 @@ export function useReportFilterOptions() {
 
   async function load() {
     const [{ data: tm }, { data: cl }] = await Promise.all([
-      supabase.from('team_members').select('id, full_name').order('full_name'),
+      supabase.from('team_members').select('id, full_name').eq('is_practitioner', true).order('full_name'),
       supabase.from('clinics').select('id, name').order('name'),
     ])
     practitioners.value = (tm ?? []).map((t) => ({ id: t.id, name: t.full_name }))

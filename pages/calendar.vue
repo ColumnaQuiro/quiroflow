@@ -234,7 +234,7 @@ function selectMiniDate(d: Date) {
 async function loadReferenceData() {
   const [{ data: types }, { data: members }, { data: ovr }, { data: memberClinics }] = await Promise.all([
     supabase.from('appointment_types').select('id, name, duration_minutes, color, default_price_cents').order('name'),
-    supabase.from('team_members').select('id, full_name, color').is('deleted_at', null).order('full_name'),
+    supabase.from('team_members').select('id, full_name, color').is('deleted_at', null).eq('is_practitioner', true).order('full_name'),
     supabase.from('appointment_type_overrides').select('appointment_type_id, team_member_id, duration_minutes, price_cents'),
     supabase.from('team_member_clinics').select('team_member_id, clinic_id'),
   ])
@@ -244,8 +244,9 @@ async function loadReferenceData() {
   teamMemberClinics.value = memberClinics ?? []
 }
 
-// Only practitioners assigned to the clinic currently in view -- same
-// scoping the public booking widget already uses -- so a multi-clinic
+// Only practitioners (is_practitioner, independent of the account_roles
+// permission a person holds -- an Owner can also be a treating
+// practitioner) assigned to the clinic currently in view, so a multi-clinic
 // account doesn't clutter the tab bar with staff who don't work here.
 const clinicTeamMembers = computed(() =>
   teamMembers.value.filter((m) => teamMemberClinics.value.some((tc) => tc.team_member_id === m.id && tc.clinic_id === store.currentClinicId)),

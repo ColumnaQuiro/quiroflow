@@ -1009,7 +1009,7 @@ onUnmounted(() => {
         <template v-for="(m, i) in thread" :key="m.id">
           <div
             v-if="i === 0 || relativeDay(m.created_at) !== relativeDay(thread[i - 1].created_at)"
-            class="sticky top-0 z-10 -mx-3 flex justify-center bg-surface-page py-1.5"
+            class="sticky top-0 z-10 -mx-3 flex justify-center py-1.5"
           >
             <span class="rounded-pill bg-chip-bg px-2.5 py-0.5 text-[11px] font-medium text-chip-text">{{ relativeDay(m.created_at) }}</span>
           </div>

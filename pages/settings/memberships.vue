@@ -42,12 +42,14 @@ async function addMembership() {
   name.value = ''
   price.value = 0
   await load()
+  useBillingTemplates().invalidate()
 }
 
 async function removeMembership(id: string) {
   if (!confirm(t('Delete this membership plan? Patients already on it are unaffected.', '¿Eliminar este plan de membresía? Los pacientes que ya lo tengan no se verán afectados.'))) return
   await supabase.from('memberships').delete().eq('id', id)
   await load()
+  useBillingTemplates().invalidate()
 }
 </script>
 

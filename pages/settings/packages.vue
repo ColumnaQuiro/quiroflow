@@ -46,12 +46,14 @@ async function addPackage() {
   sessionCount.value = 10
   price.value = 0
   await load()
+  useBillingTemplates().invalidate()
 }
 
 async function removePackage(id: string) {
   if (!confirm(t('Delete this package template? Existing purchases are unaffected.', '¿Eliminar esta plantilla de bono? Las compras ya existentes no se verán afectadas.'))) return
   await supabase.from('packages').delete().eq('id', id)
   await load()
+  useBillingTemplates().invalidate()
 }
 </script>
 

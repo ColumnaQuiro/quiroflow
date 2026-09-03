@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { DocField } from '~/utils/docFields'
+import type { Json } from '~/types/database.types'
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
@@ -126,7 +127,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
           account_id: store.accountId!,
           patient_id: patientId,
           title: r.form_name,
-          fields: (r.data ?? []).map(mapField),
+          fields: (r.data ?? []).map(mapField) as unknown as Json,
           completed_at: r.created,
           external_reference: ref,
           created_at: r.created,

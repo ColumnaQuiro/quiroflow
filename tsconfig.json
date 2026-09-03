@@ -1,4 +1,17 @@
 {
   // https://nuxt.com/docs/guide/concepts/typescript
-  "extends": "./.nuxt/tsconfig.json"
+  "extends": "./.nuxt/tsconfig.json",
+  // mobile/ is its own separate Nuxt project (own package.json, own
+  // Capacitor deps, own auto-imported composables -- see mobile/nuxt.config.ts)
+  // that this app's nuxt.config.ts already excludes from its own file-based
+  // scanning via `ignore: ['mobile/**']`. That setting doesn't reach the
+  // generated .nuxt/tsconfig.json's "include" (`../**/*`, i.e. everything
+  // under the repo root), so without this override every root typecheck
+  // also tried to check mobile/'s files against THIS project's dependencies
+  // and auto-imports, failing on missing @capacitor/* packages and
+  // composables that only exist in mobile's own project. Specifying
+  // "exclude" here replaces (rather than merges with) the base config's, so
+  // node_modules is re-listed explicitly -- TypeScript only excludes it
+  // implicitly when no "exclude" is set at all.
+  "exclude": ["mobile", "node_modules", "dist", ".output", ".netlify"]
 }

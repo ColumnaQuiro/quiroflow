@@ -96,7 +96,10 @@ async function load() {
     const { data: actionRows } = await supabase.from('automation_actions').select('rule_id, action_type, config').in('rule_id', ids).order('position')
     const grouped: Record<string, Action[]> = {}
     for (const a of actionRows ?? []) {
-      ;(grouped[a.rule_id] ??= []).push(a)
+      // config is stored as jsonb (typed Json, so structurally nullable) --
+      // in practice it's always a plain object for the 3 action types this
+      // app writes (whatsapp_template/email/webhook).
+      ;(grouped[a.rule_id] ??= []).push(a as Action)
     }
     actionsByRule.value = grouped
   } else {

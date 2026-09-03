@@ -10,7 +10,24 @@ interface RoleOption {
   name: string
 }
 
-const members = ref<Tables<'team_members'>[]>([])
+// Deliberately not `Tables<'team_members'>` -- that row type's
+// business_hours/dashboard_layout fields are both recursive Json, and using
+// it as this file's members[] element type blows past TypeScript's
+// instantiation-depth limit inside Vue's own v-for/event-binding template
+// type-checking. Only the fields actually read/written here are listed;
+// business_hours is cast to its real shape at each read site already.
+interface TeamMemberRow {
+  id: string
+  account_id: string
+  full_name: string
+  color: string
+  role_id: string | null
+  photo_storage_path: string | null
+  online_booking_enabled: boolean
+  business_hours: unknown
+}
+
+const members = ref<TeamMemberRow[]>([])
 const invites = ref<Tables<'account_invites'>[]>([])
 const roles = ref<RoleOption[]>([])
 const loading = ref(true)
@@ -98,7 +115,7 @@ async function revokeInvite(id: string) {
   await load()
 }
 
-async function toggleBookable(member: Tables<'team_members'>) {
+async function toggleBookable(member: TeamMemberRow) {
   const next = !member.online_booking_enabled
   member.online_booking_enabled = next
   await supabase.from('team_members').update({ online_booking_enabled: next }).eq('id', member.id)
@@ -122,7 +139,7 @@ const openScheduleId = ref<string | null>(null)
 const editHours = ref<Record<string, Windows>>({})
 const savingHours = ref(false)
 
-function openScheduleEditor(m: Tables<'team_members'>) {
+function openScheduleEditor(m: TeamMemberRow) {
   openScheduleId.value = openScheduleId.value === m.id ? null : m.id
   if (openScheduleId.value === m.id) {
     const hours = (m.business_hours as Record<string, Windows>) ?? {}
@@ -135,7 +152,7 @@ function addWindow(day: string) {
 function removeWindow(day: string, i: number) {
   editHours.value[day].splice(i, 1)
 }
-async function saveSchedule(member: Tables<'team_members'>) {
+async function saveSchedule(member: TeamMemberRow) {
   savingHours.value = true
   const { error: updateError } = await supabase.from('team_members').update({ business_hours: editHours.value }).eq('id', member.id)
   savingHours.value = false
@@ -145,18 +162,18 @@ async function saveSchedule(member: Tables<'team_members'>) {
   }
   member.business_hours = editHours.value
 }
-function hasScheduleOverride(m: Tables<'team_members'>) {
+function hasScheduleOverride(m: TeamMemberRow) {
   const hours = m.business_hours as Record<string, Windows> | null
   return !!hours && Object.values(hours).some((w) => w.length > 0)
 }
 
 const editingId = ref<string | null>(null)
 const editingName = ref('')
-function startEdit(member: Tables<'team_members'>) {
+function startEdit(member: TeamMemberRow) {
   editingId.value = member.id
   editingName.value = member.full_name
 }
-async function saveEdit(member: Tables<'team_members'>) {
+async function saveEdit(member: TeamMemberRow) {
   const name = editingName.value.trim()
   editingId.value = null
   if (!name || name === member.full_name) return
@@ -165,7 +182,7 @@ async function saveEdit(member: Tables<'team_members'>) {
 }
 
 const resettingId = ref<string | null>(null)
-async function sendPasswordReset(member: Tables<'team_members'>) {
+async function sendPasswordReset(member: TeamMemberRow) {
   if (!confirm(t(`Send a password reset email to ${member.full_name}?`, `¿Enviar un correo de restablecimiento de contraseña a ${member.full_name}?`))) return
   resettingId.value = member.id
   try {

@@ -1,10 +1,19 @@
 <script setup lang="ts">
 import { Bar, Line } from 'vue-chartjs'
-import type { Tables } from '~/types/database.types'
 import { computePresetRange, monthKeysInRange, rangeBounds, type DateRange } from '~/composables/useDateRangePresets'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
 
-type SavedReport = Tables<'custom_reports'>
+// Deliberately not `Tables<'custom_reports'>` -- that type's `config: Json`
+// field is recursive, and using it as this file's saved[] element type blows
+// past TypeScript's instantiation-depth limit inside both Array.prototype
+// methods and Vue's own v-for/event-binding template type-checking. Only
+// id/name/config (read as `any` below) are ever touched here, and a plain
+// object from Supabase structurally satisfies this narrower shape fine.
+interface SavedReport {
+  id: string
+  name: string
+  config: unknown
+}
 
 interface Source { key: string; label: string; groupings: { key: string; label: string }[]; metrics: { key: string; label: string }[] }
 

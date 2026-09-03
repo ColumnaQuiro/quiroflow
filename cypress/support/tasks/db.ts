@@ -14,9 +14,15 @@ const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
 })
 
-function unwrap<T>(result: { data: T; error: unknown }): T {
+// T is inferred from Supabase's actual response union (one branch has
+// `data: Row`, the other `data: null`), so T itself already resolves to
+// `Row | null` at the call site -- returning plain T would still carry the
+// null-ness through. NonNullable<T> strips it from the return type, backed
+// by a real runtime check right above the cast.
+function unwrap<T>(result: { data: T; error: unknown }): NonNullable<T> {
   if (result.error) throw result.error
-  return result.data
+  if (result.data == null) throw new Error('Expected a row but got null')
+  return result.data as NonNullable<T>
 }
 
 /** Creates a fresh auth user + account + clinic + default roles via the same RPC onboarding uses. */

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { Json } from '~/types/database.types'
+
 const props = defineProps<{ ruleId?: string | null }>()
 const emit = defineEmits<{ close: []; saved: [] }>()
 
@@ -255,7 +257,7 @@ async function persist(): Promise<string | null> {
       rule_id: ruleId,
       action_type: a.action_type,
       position: i,
-      config: configFor(a),
+      config: configFor(a) as Json,
     })),
   )
 

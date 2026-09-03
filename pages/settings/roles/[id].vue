@@ -10,8 +10,40 @@ interface Permissions {
   calendar_scope: 'all' | 'own' | 'none'
   patients_scope: 'all' | 'own' | 'none'
   calendar_read_only: boolean
-  [key: string]: boolean | string
+  settings_access: boolean
+  roles_admin: boolean
+  team_admin: boolean
+  clinic_config: boolean
+  billing_config: boolean
+  communication_config: boolean
+  data_admin: boolean
+  developers_access: boolean
+  billing_access: boolean
+  recalls_access: boolean
+  inbox_access: boolean
+  reports_access: boolean
+  reports_own_only: boolean
+  appointments_delete: boolean
+  patients_edit: boolean
+  patients_delete_merge: boolean
+  patients_tags_remove: boolean
+  financials_edit_all: boolean
+  financials_edit_same_day_only: boolean
+  payments_allocate: boolean
+  packages_edit: boolean
+  billing_history_view: boolean
+  patient_docs_delete: boolean
+  patient_files_delete: boolean
+  visit_notes_access: boolean
+  visit_notes_scope: 'all' | 'own'
+  visit_notes_edit: boolean
+  visit_notes_delete: boolean
 }
+
+// The keys above that SettingsToggle (a boolean-only control) actually
+// binds to via a dynamic `permissions[tg.key]` -- excludes the scope/mode
+// fields, which use a <select> bound to their own named property instead.
+type BooleanPermissionKey = { [K in keyof Permissions]: Permissions[K] extends boolean ? K : never }[keyof Permissions]
 
 const DEFAULTS: Permissions = {
   dashboard_scope: 'none',
@@ -25,8 +57,10 @@ const DEFAULTS: Permissions = {
   billing_config: false,
   communication_config: false,
   data_admin: false,
+  developers_access: false,
   billing_access: false,
   recalls_access: false,
+  inbox_access: false,
   reports_access: false,
   reports_own_only: false,
   appointments_delete: false,
@@ -77,7 +111,7 @@ const financialsEditMode = computed<'none' | 'same_day' | 'all'>({
   },
 })
 
-const generalToggles = computed<{ key: string; label: string; hint?: string }[]>(() => [
+const generalToggles = computed<{ key: BooleanPermissionKey; label: string; hint?: string }[]>(() => [
   { key: 'settings_access', label: t('Settings', 'Ajustes'), hint: t('Gates the whole Settings section — required for the sub-toggles below to have any effect', 'Bloquea toda la sección de Ajustes — necesario para que los interruptores de abajo tengan efecto') },
   { key: 'roles_admin', label: t('Roles & permission settings', 'Roles y permisos'), hint: t('Requires Settings', 'Requiere Ajustes') },
   { key: 'team_admin', label: t('Team member administration', 'Administración del equipo'), hint: t('Requires Settings', 'Requiere Ajustes') },
@@ -91,12 +125,12 @@ const generalToggles = computed<{ key: string; label: string; hint?: string }[]>
   { key: 'inbox_access', label: t('WhatsApp Inbox', 'Bandeja de WhatsApp'), hint: t('Read and reply to patient WhatsApp conversations', 'Leer y responder conversaciones de WhatsApp con pacientes') },
 ])
 
-const reportsToggles = computed<{ key: string; label: string; hint?: string }[]>(() => [
+const reportsToggles = computed<{ key: BooleanPermissionKey; label: string; hint?: string }[]>(() => [
   { key: 'reports_access', label: t('Allow access to reports', 'Permitir acceso a informes') },
   { key: 'reports_own_only', label: t('Only allow access to own reports', 'Permitir acceso solo a informes propios'), hint: t('Only meaningful when Calendar/Patients below are set to "Own only"', 'Solo relevante cuando Calendario/Pacientes abajo están configurados como "Solo propios"') },
 ])
 
-const patientToggles = computed<{ key: string; label: string; hint?: string }[]>(() => [
+const patientToggles = computed<{ key: BooleanPermissionKey; label: string; hint?: string }[]>(() => [
   { key: 'appointments_delete', label: t('Delete appointments', 'Eliminar citas') },
   { key: 'patients_edit', label: t('Edit patients', 'Editar pacientes') },
   { key: 'patients_delete_merge', label: t('Delete and merge patients', 'Eliminar y fusionar pacientes') },
@@ -108,7 +142,7 @@ const patientToggles = computed<{ key: string; label: string; hint?: string }[]>
   { key: 'patient_files_delete', label: t('Delete patient files', 'Eliminar archivos del paciente') },
 ])
 
-const clinicalToggles = computed<{ key: string; label: string; hint?: string }[]>(() => [
+const clinicalToggles = computed<{ key: BooleanPermissionKey; label: string; hint?: string }[]>(() => [
   { key: 'visit_notes_access', label: t('Access appointment notes', 'Acceder a las notas de la cita') },
   { key: 'visit_notes_edit', label: t('Edit appointment notes', 'Editar notas de la cita') },
   { key: 'visit_notes_delete', label: t('Delete appointment notes', 'Eliminar notas de la cita') },

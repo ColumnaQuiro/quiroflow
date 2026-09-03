@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computePresetRange, rangeBounds } from '~/composables/useDateRangePresets'
+import type { Database } from '~/types/database.types'
 
 interface ApptRow { id: string; patient_id: string; starts_at: string; appointment_type_id: string | null; practitioner_id: string | null; clinic_id: string | null }
 interface TypeRow { id: string; stage: string | null }
@@ -20,7 +21,7 @@ const payments = ref<PaymentRow[]>([])
 const invoices = ref<InvoiceRow[]>([])
 
 const PAGE_SIZE = 1000
-async function fetchAll<T>(table: string, select: string, filter?: (q: any) => any): Promise<T[]> {
+async function fetchAll<T>(table: keyof Database['public']['Tables'], select: string, filter?: (q: any) => any): Promise<T[]> {
   const rows: T[] = []
   for (let page = 0; ; page++) {
     let query = supabase.from(table).select(select).range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)

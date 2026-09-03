@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import Papa from 'papaparse'
 import { computePresetRange, STANDARD_PRESETS, type DateRange } from '~/composables/useDateRangePresets'
+import type { Database } from '~/types/database.types'
+
+type TableOrView = keyof Database['public']['Tables'] | keyof Database['public']['Views']
 
 interface PatientRow {
   id: string
@@ -58,11 +61,16 @@ const balanceByPatient = ref<Map<string, number>>(new Map())
 const balancesLoading = ref(false)
 const balancesLoaded = ref(false)
 
-async function fetchAllRows<T>(table: string, select: string, filter?: (q: any) => any): Promise<T[]> {
+async function fetchAllRows<T>(table: TableOrView, select: string, filter?: (q: any) => any): Promise<T[]> {
   const PAGE_SIZE = 1000
   const rows: T[] = []
   for (let page = 0; ; page++) {
-    let query = supabase.from(table).select(select).range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+    // Supabase's .from() overloads split cleanly into "tables" and "views"
+    // -- a variable that can be either (as this reusable helper's callers
+    // need) can't satisfy either overload as a whole, so this one spot casts
+    // through `any`; the generic <T> above is what actually keeps each call
+    // site's result shape honest.
+    let query = supabase.from(table as any).select(select).range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
     if (filter) query = filter(query)
     const { data } = await query
     rows.push(...((data as T[]) ?? []))

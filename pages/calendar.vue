@@ -1042,13 +1042,25 @@ async function toggleCheckedIn(appt: AppointmentRow | null) {
 // Flow Tracker: Arrived (checked_in_at, already tracked elsewhere) -> With
 // Practitioner -> Awaiting Checkout -> Complete (marks the appointment
 // completed). Scoped to whatever's currently loaded (today, for the
-// default Day view), same as the rest of the calendar.
-async function advanceFlow(appt: AppointmentRow, field: 'flow_with_practitioner_at' | 'flow_checkout_at') {
+// default Day view), same as the rest of the calendar. Parameter typed to
+// match CalendarFlowTracker's own (narrower) FlowAppointment emit shape --
+// the object passed at runtime is always the full AppointmentRow (Vue props
+// aren't cloned), but the component only declares needing these fields.
+interface FlowAppointment {
+  id: string
+  checked_in_at: string | null
+  flow_with_practitioner_at: string | null
+  flow_checkout_at: string | null
+  status: string
+  patients: { first_name: string; last_name: string | null } | null
+}
+async function advanceFlow(appt: FlowAppointment, field: 'flow_with_practitioner_at' | 'flow_checkout_at') {
   const now = new Date().toISOString()
   appt[field] = now
-  await supabase.from('appointments').update({ [field]: now }).eq('id', appt.id)
+  const update = field === 'flow_with_practitioner_at' ? { flow_with_practitioner_at: now } : { flow_checkout_at: now }
+  await supabase.from('appointments').update(update).eq('id', appt.id)
 }
-async function completeFlow(appt: AppointmentRow) {
+async function completeFlow(appt: FlowAppointment) {
   appt.status = 'completed'
   await supabase.from('appointments').update({ status: 'completed' }).eq('id', appt.id)
   await loadTodayGlance()

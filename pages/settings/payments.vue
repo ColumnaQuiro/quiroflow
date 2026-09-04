@@ -163,7 +163,7 @@ async function disconnect() {
                   v-model="secretKey"
                   type="password"
                   autocomplete="off"
-                  :placeholder="hasStoredSecretKey ? t('Leave blank to keep it', 'Déjalo en blanco para conservarla') : 'sk_test_…'"
+                  :placeholder="hasStoredSecretKey ? '••••••••••••••••••••' : 'sk_test_…'"
                   class="h-8 w-[230px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
                 />
               </SettingsFieldRow>
@@ -176,7 +176,7 @@ async function disconnect() {
                   v-model="webhookSecret"
                   type="password"
                   autocomplete="off"
-                  :placeholder="hasStoredWebhookSecret ? t('Leave blank to keep it', 'Déjalo en blanco para conservarlo') : 'whsec_…'"
+                  :placeholder="hasStoredWebhookSecret ? '••••••••••••••••••••' : 'whsec_…'"
                   class="h-8 w-[230px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
                 />
               </SettingsFieldRow>

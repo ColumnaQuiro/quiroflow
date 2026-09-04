@@ -18,7 +18,6 @@ interface Rule {
 
 // Checked in order, most specific first — the first matching rule wins.
 const rules: Rule[] = [
-  { test: (p) => p === '/billing/services', check: (s) => can(s, 'billing_config') },
   { test: (p) => p === '/settings/team' || p === '/settings/practitioners', check: (s) => can(s, 'settings_access') && can(s, 'team_admin') },
   { test: (p) => p === '/settings/roles' || p.startsWith('/settings/roles/'), check: (s) => can(s, 'settings_access') && can(s, 'roles_admin') },
   {
@@ -26,7 +25,7 @@ const rules: Rule[] = [
     check: (s) => can(s, 'settings_access') && can(s, 'clinic_config'),
   },
   {
-    test: (p) => ['/settings/packages', '/settings/memberships', '/settings/payments', '/settings/fiscal-data'].includes(p),
+    test: (p) => ['/settings/services', '/settings/packages', '/settings/memberships', '/settings/payments', '/settings/fiscal-data'].includes(p),
     check: (s) => can(s, 'settings_access') && can(s, 'billing_config'),
   },
   {

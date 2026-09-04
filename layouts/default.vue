@@ -48,6 +48,13 @@ const contactHref = 'mailto:hola@columnaquiro.com'
     <div class="flex flex-1 overflow-hidden">
       <AppSidebar />
       <div class="flex flex-1 flex-col overflow-hidden">
+        <!-- Persistent across every page (unlike each page's own PageHeader,
+        which not every page even has) so the account menu has one home
+        instead of living in the sidebar, where it permanently cost a row of
+        vertical space on every screen. -->
+        <div class="flex h-10 shrink-0 items-center justify-end border-b border-line bg-surface px-4">
+          <AppAccountMenu />
+        </div>
         <div v-if="showDenied" class="flex items-center justify-between bg-amber-50 px-6 py-2 text-sm text-amber-800">
           <span>You don't have access to that section.</span>
           <button type="button" class="font-medium underline" @click="dismissDenied">Dismiss</button>

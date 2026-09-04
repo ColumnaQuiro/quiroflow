@@ -194,8 +194,8 @@ function updateOverridePrice(typeId: string, teamMemberId: string, value: string
               <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted2">
                 <tr>
                   <th class="w-[220px] px-4 py-2">{{ t('Name', 'Nombre') }}</th>
-                  <th class="px-4 py-2">{{ t('Duration', 'Duración') }}</th>
-                  <th class="px-4 py-2">{{ t('Default price', 'Precio por defecto') }}</th>
+                  <th class="w-[90px] px-4 py-2">{{ t('Duration', 'Duración') }}</th>
+                  <th class="w-[100px] px-4 py-2">{{ t('Default price', 'Precio por defecto') }}</th>
                   <th class="px-4 py-2">{{ t('Stage', 'Etapa') }}</th>
                   <th class="px-4 py-2">{{ t('Online booking', 'Reserva online') }}</th>
                   <th class="px-4 py-2">{{ t('Online payment', 'Pago online') }}</th>
@@ -235,7 +235,7 @@ function updateOverridePrice(typeId: string, teamMemberId: string, value: string
                         type="number"
                         min="5"
                         step="5"
-                        class="w-16 rounded-ctlSm border border-transparent px-1.5 py-1 hover:border-line-control focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+                        class="w-11 rounded-ctlSm border border-transparent px-1.5 py-1 hover:border-line-control focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
                         @change="updateDuration(at, ($event.target as HTMLInputElement).value)"
                       />
                       {{ t('min', 'min') }}
@@ -249,7 +249,7 @@ function updateOverridePrice(typeId: string, teamMemberId: string, value: string
                         type="number"
                         min="0"
                         step="0.01"
-                        class="w-20 rounded-ctlSm border border-transparent px-1.5 py-1 hover:border-line-control focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+                        class="w-14 rounded-ctlSm border border-transparent px-1.5 py-1 hover:border-line-control focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
                         @change="updatePrice(at, ($event.target as HTMLInputElement).value)"
                       />
                     </div>
@@ -276,7 +276,12 @@ function updateOverridePrice(typeId: string, teamMemberId: string, value: string
                     </label>
                   </td>
                   <td class="px-4 py-2.5">
-                    <button type="button" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover" @click="toggleOverrides(at.id)">
+                    <button
+                      type="button"
+                      class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover"
+                      :title="t('Set a different duration or price for a specific practitioner doing this appointment type', 'Establece una duración o precio distintos para un profesional concreto en este tipo de cita')"
+                      @click="toggleOverrides(at.id)"
+                    >
                       {{ t('Overrides', 'Excepciones') }}
                     </button>
                   </td>

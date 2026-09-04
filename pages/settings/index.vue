@@ -54,7 +54,7 @@ const groups = computed(() => [
   {
     label: t('Billing', 'Facturación'),
     items: [
-      { to: '/billing/services', label: t('Services & Products', 'Servicios y productos'), description: t('What you bill for.', 'Lo que facturas.'), icon: ICONS.shoppingBag },
+      { to: '/settings/services', label: t('Services & Products', 'Servicios y productos'), description: t('What you bill for.', 'Lo que facturas.'), icon: ICONS.shoppingBag },
       { to: '/settings/packages', label: t('Packages / Bonos', 'Paquetes / Bonos'), description: t('Session bundle templates you can sell to patients.', 'Plantillas de bonos de sesiones que puedes vender a pacientes.'), icon: ICONS.gift },
       { to: '/settings/memberships', label: t('Memberships', 'Membresías'), description: t('Recurring plan templates for patients.', 'Plantillas de planes recurrentes para pacientes.'), icon: ICONS.badgeCheck },
       { to: '/settings/payments', label: t('Payments (Stripe)', 'Pagos (Stripe)'), description: t('Automate installments and renewals with a saved card.', 'Automatiza cuotas y renovaciones con una tarjeta guardada.'), icon: ICONS.creditCard },

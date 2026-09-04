@@ -10,9 +10,6 @@ const helpCentreUrl = computed(() => (langPreference.value === 'es' ? 'https://l
 const referFriendsOpen = ref(false)
 
 const paletteOpen = ref(false)
-const accountMenuOpen = ref(false)
-const accountMenuRef = ref<HTMLElement | null>(null)
-const cashShiftOpen = ref(false)
 const clinicMenuOpen = ref(false)
 const clinicMenuRef = ref<HTMLElement | null>(null)
 function selectClinic(id: string) {
@@ -133,25 +130,12 @@ function isActive(to: string) {
   return route.path === to || route.path.startsWith(`${to}/`)
 }
 
-const initials = computed(() => {
-  const name = store.teamMember?.full_name ?? ''
-  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('') || '?'
-})
-const photoUrl = computed(() => {
-  const path = store.teamMember?.photo_storage_path
-  if (!path) return null
-  return supabase.storage.from('team-member-photos').getPublicUrl(path).data.publicUrl
-})
 const clinicInitials = computed(() => {
   const name = store.currentClinic?.name ?? ''
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('') || 'CL'
 })
-const roleLine = computed(() => (store.teamMember?.is_owner ? t('Owner', 'Propietario') : store.teamMember?.role === 'front_desk' ? t('Front Desk', 'Recepción') : t('Practitioner', 'Profesional')))
 
 function onDocumentClick(e: MouseEvent) {
-  if (accountMenuOpen.value && accountMenuRef.value && !accountMenuRef.value.contains(e.target as Node)) {
-    accountMenuOpen.value = false
-  }
   if (clinicMenuOpen.value && clinicMenuRef.value && !clinicMenuRef.value.contains(e.target as Node)) {
     clinicMenuOpen.value = false
   }
@@ -170,16 +154,10 @@ onUnmounted(() => {
   document.removeEventListener('click', onDocumentClick)
   document.removeEventListener('keydown', onKeydown)
 })
-
-async function signOut() {
-  await supabase.auth.signOut()
-  store.reset()
-  await navigateTo('/login')
-}
 </script>
 
 <template>
-  <aside class="flex shrink-0 flex-col bg-surface-sidebar border-r border-line print:hidden" :class="collapsed ? 'w-[60px]' : 'w-[236px]'">
+  <aside class="relative flex shrink-0 flex-col bg-surface-sidebar border-r border-line print:hidden" :class="collapsed ? 'w-[60px]' : 'w-[236px]'">
     <div class="flex items-center gap-[9px] px-4 pb-3 pt-4" :class="{ 'justify-center px-0': collapsed }">
       <div class="flex h-6 w-6 items-center justify-center rounded-ctlSm bg-brand">
         <img src="/logo/quiroflow-mark-white.svg" alt="" class="h-3.5 w-3.5" />
@@ -278,22 +256,6 @@ async function signOut() {
     </nav>
 
     <div class="flex flex-col gap-0.5 border-t border-line px-3 py-2.5" :class="{ 'items-center px-1.5': collapsed }">
-      <button
-        type="button"
-        class="flex h-8 items-center gap-[9px] rounded-ctlSm text-[13px] text-ink-muted2 hover:bg-surface-subtle"
-        :class="collapsed ? 'w-8 justify-center' : 'w-full px-[9px]'"
-        :title="collapsed ? t('Expand sidebar', 'Expandir barra lateral') : undefined"
-        @click="toggleCollapsed"
-      >
-        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
-          <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
-          <path d="M6.2 2.5v11" />
-          <path v-if="collapsed" d="M9.5 6.2l2 1.8-2 1.8" stroke-linecap="round" stroke-linejoin="round" />
-          <path v-else d="M11.5 6.2l-2 1.8 2 1.8" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-        <span v-if="!collapsed" class="flex-1 text-left">{{ t('Collapse sidebar', 'Colapsar barra lateral') }}</span>
-      </button>
-
       <NuxtLink
         v-if="can('settings_access')"
         to="/settings"
@@ -304,55 +266,25 @@ async function signOut() {
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="5.3" /><circle cx="8" cy="8" r="1.9" /></svg>
         <span v-if="!collapsed" class="flex-1">{{ t('Settings', 'Ajustes') }}</span>
       </NuxtLink>
-
-      <div ref="accountMenuRef" class="relative w-full" :class="{ 'flex justify-center': collapsed }">
-        <button
-          type="button"
-          class="flex h-10 items-center gap-[9px] rounded-ctlSm text-left hover:bg-surface-subtle"
-          :class="collapsed ? 'w-8 justify-center' : 'w-full px-2'"
-          :title="collapsed ? (store.teamMember?.full_name ?? t('Account', 'Cuenta')) : undefined"
-          @click="accountMenuOpen = !accountMenuOpen"
-        >
-          <span class="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-brand text-[10px] font-bold text-white">
-            <img v-if="photoUrl" :src="photoUrl" class="h-full w-full object-cover" alt="" />
-            <template v-else>{{ initials }}</template>
-          </span>
-          <template v-if="!collapsed">
-            <span class="min-w-0 flex-1">
-              <span class="block truncate text-[12.5px] font-medium text-ink-700">{{ store.teamMember?.full_name }}</span>
-              <span class="block text-[11px] text-ink-muted2">{{ roleLine }}</span>
-            </span>
-            <svg width="10" height="10" viewBox="0 0 10 10" class="shrink-0 text-ink-faint"><path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" /></svg>
-          </template>
-        </button>
-        <div
-          v-if="accountMenuOpen"
-          class="absolute bottom-full z-20 mb-1 w-max min-w-[180px] rounded-ctl border border-line bg-surface py-1 shadow-popover"
-          :class="collapsed ? 'left-full ml-1' : 'left-0 w-full'"
-        >
-          <NuxtLink to="/account" class="block px-3 py-2 text-left text-[13px] text-ink-500 hover:bg-surface-subtle" @click="accountMenuOpen = false">
-            {{ t('Account Settings', 'Ajustes de la cuenta') }}
-          </NuxtLink>
-          <NuxtLink to="/subscription" class="block px-3 py-2 text-left text-[13px] text-ink-500 hover:bg-surface-subtle" @click="accountMenuOpen = false">
-            {{ t('Subscription', 'Suscripción') }}
-          </NuxtLink>
-          <button
-            v-if="can('payments_allocate')"
-            type="button"
-            class="block w-full px-3 py-2 text-left text-[13px] text-ink-500 hover:bg-surface-subtle"
-            @click="cashShiftOpen = true; accountMenuOpen = false"
-          >
-            {{ t('Cash Shift', 'Turno de caja') }}
-          </button>
-          <button type="button" class="block w-full px-3 py-2 text-left text-[13px] text-ink-500 hover:bg-surface-subtle" @click="signOut">
-            {{ t('Sign out', 'Cerrar sesión') }}
-          </button>
-        </div>
-      </div>
     </div>
 
+    <!-- Floating rather than a full-width row -- doesn't cost the sidebar
+    any of its own vertical space. Anchored to the aside's own edge (the
+    aside is `relative`), so it stays put in both expanded and collapsed
+    widths. -->
+    <button
+      type="button"
+      class="absolute -right-3 bottom-6 flex h-6 w-6 items-center justify-center rounded-full border border-line bg-surface text-ink-muted2 shadow-card hover:bg-surface-subtle hover:text-ink-700"
+      :title="collapsed ? t('Expand sidebar', 'Expandir barra lateral') : t('Collapse sidebar', 'Colapsar barra lateral')"
+      @click="toggleCollapsed"
+    >
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path v-if="collapsed" d="M6 4l4 4-4 4" stroke-linecap="round" stroke-linejoin="round" />
+        <path v-else d="M10 4l-4 4 4 4" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+    </button>
+
     <AppCommandPalette v-if="paletteOpen" @close="paletteOpen = false" />
-    <CashShiftModal v-if="cashShiftOpen" @close="cashShiftOpen = false" />
     <ReferFriendsModal v-if="referFriendsOpen" @close="referFriendsOpen = false" />
   </aside>
 </template>

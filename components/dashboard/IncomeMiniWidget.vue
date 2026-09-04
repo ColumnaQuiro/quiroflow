@@ -29,6 +29,14 @@ async function load() {
   loading.value = true
   const { from, to } = rangeBounds(props.dateRange)
   const { from: prevFrom, to: prevTo } = previousRange(props.dateRange)
+  // The appointments map only exists to resolve a practitioner/clinic
+  // filter (see apptMatchesFilter, which short-circuits without one). On an
+  // unfiltered dashboard -- how it renders by default -- fetching the whole
+  // appointments table meant paging thousands of rows that were never read.
+  // load() already re-runs when either filter prop changes, so this can just
+  // be skipped rather than lazy-loaded.
+  const needsAppointments = !!props.practitionerId || !!props.clinicId
+
   const [p, inv, appt, prevPayments] = await Promise.all([
     fetchAllRows<PaymentRow>((f, t) =>
       supabase.from('payments').select('amount_cents, paid_at, invoice_id').gte('paid_at', from.toISOString()).lte('paid_at', to.toISOString()).range(f, t),
@@ -36,7 +44,9 @@ async function load() {
     fetchAllRows<InvoiceRow>((f, t) =>
       supabase.from('invoices').select('id, total_cents, appointment_id').gte('created_at', from.toISOString()).lte('created_at', to.toISOString()).range(f, t),
     ),
-    fetchAllRows<AppointmentRow>((f, t) => supabase.from('appointments').select('id, practitioner_id, clinic_id').range(f, t)),
+    needsAppointments
+      ? fetchAllRows<AppointmentRow>((f, t) => supabase.from('appointments').select('id, practitioner_id, clinic_id').range(f, t))
+      : Promise.resolve([] as AppointmentRow[]),
     fetchAllRows<PaymentRow>((f, t) =>
       supabase
         .from('payments')

@@ -25,19 +25,45 @@ async function load() {
   loading.value = true
   const { from, to } = rangeBounds(range.value)
 
-  const [p, inv, appt, tm] = await Promise.all([
+  const [p, inv, tm] = await Promise.all([
     fetchAllRows<PaymentRow>((f, t) =>
       supabase.from('payments').select('amount_cents, paid_at, invoice_id').gte('paid_at', from.toISOString()).lte('paid_at', to.toISOString()).range(f, t),
     ),
     fetchAllRows<InvoiceRow>((f, t) => supabase.from('invoices').select('id, appointment_id').gte('created_at', from.toISOString()).lte('created_at', to.toISOString()).range(f, t)),
-    fetchAllRows<AppointmentRow>((f, t) => supabase.from('appointments').select('id, practitioner_id, clinic_id').range(f, t)),
     supabase.from('team_members').select('id, full_name, color').then((r) => r.data ?? []),
   ])
   payments.value = p
   invoices.value = inv
-  appointments.value = appt
   teamMembers.value = tm
+
+  // practitionerFor() resolves every payment through its invoice's
+  // appointment, so unlike the other reports this page always needs the
+  // appointment map -- but only for the invoices actually in range, not the
+  // entire appointments table.
+  await loadAppointmentsFor(inv)
   loading.value = false
+}
+
+async function loadAppointmentsFor(inRangeInvoices: InvoiceRow[]) {
+  const ids = [...new Set(inRangeInvoices.map((i) => i.appointment_id).filter((id): id is string => !!id))]
+  if (ids.length === 0) {
+    appointments.value = []
+    return
+  }
+  // Postgrest puts `in` lists in the URL, so long ranges get chunked.
+  const CHUNK = 300
+  const chunks: string[][] = []
+  for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK))
+  const results = await Promise.all(
+    chunks.map((chunk) =>
+      supabase
+        .from('appointments')
+        .select('id, practitioner_id, clinic_id')
+        .in('id', chunk)
+        .then((r) => (r.data ?? []) as AppointmentRow[]),
+    ),
+  )
+  appointments.value = results.flat()
 }
 onMounted(() => {
   load()

@@ -17,6 +17,13 @@ const invoices = ref<InvoiceRow[]>([])
 async function load() {
   loading.value = true
   const { from, to } = rangeBounds(props.dateRange)
+  // Invoices are only read to walk payment -> invoice -> appointment when a
+  // practitioner/clinic filter is set (filteredPayments short-circuits
+  // without one), so an unfiltered dashboard was paging the whole invoices
+  // table for nothing. The completed-appointments fetch below genuinely is
+  // all-time: retention compares against visits from before the range.
+  const needsInvoices = !!props.practitionerId || !!props.clinicId
+
   const [completed, p, inv] = await Promise.all([
     fetchAllRows<ApptRow>((f, t) =>
       supabase.from('appointments').select('id, patient_id, starts_at, practitioner_id, clinic_id').eq('status', 'completed').range(f, t),
@@ -24,7 +31,9 @@ async function load() {
     fetchAllRows<PaymentRow>((f, t) =>
       supabase.from('payments').select('amount_cents, invoice_id').gte('paid_at', from.toISOString()).lte('paid_at', to.toISOString()).range(f, t),
     ),
-    fetchAllRows<InvoiceRow>((f, t) => supabase.from('invoices').select('id, appointment_id').range(f, t)),
+    needsInvoices
+      ? fetchAllRows<InvoiceRow>((f, t) => supabase.from('invoices').select('id, appointment_id').range(f, t))
+      : Promise.resolve([] as InvoiceRow[]),
   ])
   allCompleted.value = completed
   payments.value = p

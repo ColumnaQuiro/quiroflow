@@ -29,35 +29,77 @@ function eur(cents: number) {
   return `€${(cents / 100).toFixed(2)}`
 }
 
+// Only `byService` reads line items, and only for invoices the in-range
+// payments point at -- fetching the whole table (every line item ever) to
+// then throw away all but a month's worth was the single biggest transfer
+// on this page. Payments can settle against an invoice raised outside the
+// range, so this scopes by the payments' invoice ids rather than by
+// invoice date. Postgrest puts `in` lists in the URL, hence the chunking.
+async function fetchLineItemsFor(invoiceIds: string[]): Promise<LineItemRow[]> {
+  if (invoiceIds.length === 0) return []
+  const CHUNK = 300
+  const chunks: string[][] = []
+  for (let i = 0; i < invoiceIds.length; i += CHUNK) chunks.push(invoiceIds.slice(i, i + CHUNK))
+  const results = await Promise.all(
+    chunks.map((ids) =>
+      supabase
+        .from('invoice_line_items')
+        .select('invoice_id, price_cents, quantity, service_id')
+        .in('invoice_id', ids)
+        .then((r) => (r.data ?? []) as LineItemRow[]),
+    ),
+  )
+  return results.flat()
+}
+
 async function load() {
   loading.value = true
   const { from, to } = rangeBounds(range.value)
 
-  const [p, inv, li, sv, appt, tm] = await Promise.all([
+  const [p, inv, sv, tm] = await Promise.all([
     fetchAllRows<PaymentRow>((f, t) =>
       supabase.from('payments').select('amount_cents, method, paid_at, invoice_id').gte('paid_at', from.toISOString()).lte('paid_at', to.toISOString()).range(f, t),
     ),
     fetchAllRows<InvoiceRow>((f, t) =>
       supabase.from('invoices').select('id, total_cents, status, appointment_id').gte('created_at', from.toISOString()).lte('created_at', to.toISOString()).range(f, t),
     ),
-    fetchAllRows<LineItemRow>((f, t) => supabase.from('invoice_line_items').select('invoice_id, price_cents, quantity, service_id').range(f, t)),
     supabase.from('services_products').select('id, name').then((r) => r.data ?? []),
-    fetchAllRows<AppointmentRow>((f, t) => supabase.from('appointments').select('id, practitioner_id, clinic_id').range(f, t)),
     supabase.from('team_members').select('id, full_name').then((r) => r.data ?? []),
   ])
   payments.value = p
   invoices.value = inv
-  lineItems.value = li
   services.value = sv
-  appointments.value = appt
   teamMembers.value = tm
+  lineItems.value = await fetchLineItemsFor([...new Set(p.map((row) => row.invoice_id))])
+
+  // Appointments are only consulted to resolve a practitioner/clinic filter
+  // (see apptMatchesFilter) -- with no filter set, which is how the page
+  // first renders, the whole table was fetched and never read.
+  if (practitionerFilter.value || clinicFilter.value) await loadAppointments()
   loading.value = false
 }
+
+const appointmentsLoaded = ref(false)
+async function loadAppointments() {
+  if (appointmentsLoaded.value) return
+  appointments.value = await fetchAllRows<AppointmentRow>((f, t) => supabase.from('appointments').select('id, practitioner_id, clinic_id').range(f, t))
+  appointmentsLoaded.value = true
+}
+
 onMounted(() => {
   load()
   loadFilterOptions()
 })
 watch(range, load)
+// Filtering is client-side against appointmentById, so the map has to exist
+// before the filtered totals mean anything -- hold the loading state until
+// it does rather than flashing an empty report.
+watch([practitionerFilter, clinicFilter], async () => {
+  if (appointmentsLoaded.value || (!practitionerFilter.value && !clinicFilter.value)) return
+  loading.value = true
+  await loadAppointments()
+  loading.value = false
+})
 
 const appointmentById = computed(() => new Map(appointments.value.map((a) => [a.id, a])))
 const invoiceById = computed(() => new Map(invoices.value.map((i) => [i.id, i])))

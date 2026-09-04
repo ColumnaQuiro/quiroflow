@@ -70,15 +70,25 @@ async function uploadFiles(fileList: FileList) {
       error.value = uploadError.message
       continue
     }
-    await supabase.from('patient_files').insert({
-      account_id: store.accountId!,
-      patient_id: props.patientId,
-      storage_path: path,
-      file_name: file.name,
-      file_type: file.type || null,
-      size_bytes: file.size,
-      uploaded_by: store.teamMember?.id ?? null,
-    })
+    const { data: inserted } = await supabase
+      .from('patient_files')
+      .insert({
+        account_id: store.accountId!,
+        patient_id: props.patientId,
+        storage_path: path,
+        file_name: file.name,
+        file_type: file.type || null,
+        size_bytes: file.size,
+        uploaded_by: store.teamMember?.id ?? null,
+      })
+      .select('id')
+      .single()
+    // Fire-and-forget: the upload itself already succeeded and is visible
+    // below, so there's no reason to make the user wait on a background
+    // optimization pass. A failure here (network hiccup, an unsupported
+    // format) just leaves the file at its original size -- never blocks or
+    // breaks the upload.
+    if (inserted) useStaffFetch('/api/patients/files/compress', { method: 'POST', body: { fileId: inserted.id } }).catch(() => {})
   }
   uploading.value = false
   if (fileInput.value) fileInput.value.value = ''

@@ -2225,6 +2225,7 @@ export type Database = {
       patient_files: {
         Row: {
           account_id: string
+          compressed_at: string | null
           created_at: string
           external_reference: string | null
           file_name: string
@@ -2238,6 +2239,7 @@ export type Database = {
         }
         Insert: {
           account_id: string
+          compressed_at?: string | null
           created_at?: string
           external_reference?: string | null
           file_name: string
@@ -2251,6 +2253,7 @@ export type Database = {
         }
         Update: {
           account_id?: string
+          compressed_at?: string | null
           created_at?: string
           external_reference?: string | null
           file_name?: string

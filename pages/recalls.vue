@@ -669,37 +669,15 @@ async function exportCsv() {
           </tbody>
         </table>
 
-        <div v-if="!loading && isPaginated && (page > 1 || recalls.length > 0)" class="flex items-center justify-between bg-surface-subtle2 px-5 py-2.5 text-[12.5px] text-ink-muted2">
-          <span>{{ recalls.length }} {{ t('shown', 'mostrados') }}</span>
-          <div class="flex items-center gap-1">
-            <button
-              type="button"
-              :disabled="page <= 1"
-              class="flex h-7 items-center rounded-ctlSm border border-line-control bg-surface px-2.5 text-[12.5px] text-ink-500 hover:border-line-controlHover disabled:cursor-not-allowed disabled:opacity-40"
-              @click="goToPage(page - 1)"
-            >
-              {{ t('Previous', 'Anterior') }}
-            </button>
-            <button
-              v-for="p in visiblePages"
-              :key="p"
-              type="button"
-              class="flex h-7 w-7 items-center justify-center rounded-ctlSm border text-[12.5px]"
-              :class="p === page ? 'border-brand-tintBorder bg-brand-tint font-semibold text-brand-text' : 'border-line-control bg-surface text-ink-500 hover:border-line-controlHover'"
-              @click="goToPage(p)"
-            >
-              {{ p }}
-            </button>
-            <button
-              type="button"
-              :disabled="!hasNextPage"
-              class="flex h-7 items-center rounded-ctlSm border border-line-control bg-surface px-2.5 text-[12.5px] text-ink-500 hover:border-line-controlHover disabled:cursor-not-allowed disabled:opacity-40"
-              @click="goToPage(page + 1)"
-            >
-              {{ t('Next', 'Siguiente') }}
-            </button>
-          </div>
-        </div>
+        <UiPaginationFooter
+          v-if="!loading && isPaginated && (page > 1 || recalls.length > 0)"
+          :page="page"
+          :visible-pages="visiblePages"
+          :has-prev="page > 1"
+          :has-next="hasNextPage"
+          :summary="`${recalls.length} ${t('shown', 'mostrados')}`"
+          @go-to-page="goToPage"
+        />
       </div>
     </div>
 

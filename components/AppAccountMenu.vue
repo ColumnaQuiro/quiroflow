@@ -52,7 +52,7 @@ async function signOut() {
       </span>
       <svg width="10" height="10" viewBox="0 0 10 10" class="shrink-0 text-ink-faint"><path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" /></svg>
     </button>
-    <div v-if="menuOpen" class="absolute right-0 top-full z-20 mt-1 w-max min-w-[180px] rounded-ctl border border-line bg-surface py-1 shadow-popover">
+    <div v-if="menuOpen" class="absolute right-0 top-full z-40 mt-1 w-max min-w-[180px] rounded-ctl border border-line bg-surface py-1 shadow-popover">
       <NuxtLink to="/account" class="block px-3 py-2 text-left text-[13px] text-ink-500 hover:bg-surface-subtle" @click="menuOpen = false">
         {{ t('Account Settings', 'Ajustes de la cuenta') }}
       </NuxtLink>

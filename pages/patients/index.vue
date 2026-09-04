@@ -54,6 +54,10 @@ onMounted(async () => {
 const page = ref(1)
 const totalCount = ref(0)
 const totalPages = computed(() => Math.max(1, Math.ceil(totalCount.value / PAGE_SIZE)))
+// Same 10-button cap as recalls.vue's own pager -- consistent visual limit
+// rather than a windowed/scrolling range, since recalls can't know its own
+// total ahead of time and just grows this list page by page.
+const visiblePages = computed(() => Array.from({ length: Math.min(totalPages.value, 10) }, (_, i) => i + 1))
 
 async function loadPatients() {
   loading.value = true
@@ -558,27 +562,15 @@ function tagClass(tag: string) {
           </div>
         </div>
 
-        <div v-if="!loading && totalCount > 0" class="flex items-center justify-between bg-surface-subtle2 px-5 py-2.5 text-[12.5px] text-ink-muted2">
-          <span>{{ t('Page', 'Página') }} {{ page }} {{ t('of', 'de') }} {{ totalPages }} · {{ totalCount }} {{ t('patients', 'pacientes') }}</span>
-          <div class="flex gap-2">
-            <button
-              type="button"
-              :disabled="page <= 1"
-              class="flex h-7 items-center rounded-ctlSm border border-line-control bg-surface px-2.5 text-[12.5px] text-ink-500 hover:border-line-controlHover disabled:cursor-not-allowed disabled:opacity-40"
-              @click="goToPage(page - 1)"
-            >
-              {{ t('Previous', 'Anterior') }}
-            </button>
-            <button
-              type="button"
-              :disabled="page >= totalPages"
-              class="flex h-7 items-center rounded-ctlSm border border-line-control bg-surface px-2.5 text-[12.5px] text-ink-500 hover:border-line-controlHover disabled:cursor-not-allowed disabled:opacity-40"
-              @click="goToPage(page + 1)"
-            >
-              {{ t('Next', 'Siguiente') }}
-            </button>
-          </div>
-        </div>
+        <UiPaginationFooter
+          v-if="!loading && totalCount > 0"
+          :page="page"
+          :visible-pages="visiblePages"
+          :has-prev="page > 1"
+          :has-next="page < totalPages"
+          :summary="`${t('Page', 'Página')} ${page} ${t('of', 'de')} ${totalPages} · ${totalCount} ${t('patients', 'pacientes')}`"
+          @go-to-page="goToPage"
+        />
       </div>
     </div>
   </div>

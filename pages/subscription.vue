@@ -192,10 +192,11 @@ async function choosePlan(plan: PlanRow) {
         <p v-if="subscription.status === 'past_due'" class="text-sm text-danger-text">Your last payment failed. Update your payment method to avoid losing access.</p>
         <p v-if="subscription.status === 'locked' || subscription.status === 'canceled'" class="text-sm text-danger-text">This account is locked pending payment.</p>
 
-        <div v-if="store.isOwner && subscription.stripe_customer_id" class="pt-2">
-          <UiBtn variant="secondary" :disabled="loadingPortal" @click="openPortal(contactHref)">
+        <div v-if="store.isOwner" class="pt-2">
+          <UiBtn v-if="subscription.stripe_customer_id" variant="secondary" :disabled="loadingPortal" @click="openPortal(contactHref)">
             {{ loadingPortal ? 'Opening…' : 'Manage payment method & invoices' }}
           </UiBtn>
+          <p v-else-if="subscription.comped" class="text-sm text-ink-muted">This account has complimentary access -- no billing to manage.</p>
         </div>
       </div>
 

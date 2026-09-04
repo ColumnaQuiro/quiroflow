@@ -16,6 +16,7 @@ const teamMembers = ref<TeamMember[]>([])
 const lastActionByPatient = ref<Record<string, ContactLogRow>>({})
 const actionCountByPatient = ref<Record<string, number>>({})
 const hasPhoneByPatient = ref<Record<string, boolean>>({})
+const balanceByPatient = ref<Record<string, number>>({})
 const loading = ref(true)
 
 const search = ref('')
@@ -69,16 +70,23 @@ async function loadContactContext() {
   if (ids.length === 0) {
     lastActionByPatient.value = {}
     hasPhoneByPatient.value = {}
+    balanceByPatient.value = {}
     return
   }
-  const [{ data: logs }, { data: phones }] = await Promise.all([
+  const [{ data: logs }, { data: phones }, { data: balances }] = await Promise.all([
     supabase
       .from('contact_log')
       .select('patient_id, action, created_at')
       .in('patient_id', ids)
       .order('created_at', { ascending: false }),
     supabase.from('patients').select('id, has_phone').in('id', ids),
+    // Balances for just this page, rather than for every candidate as a
+    // side effect of the list query -- see RECALL_COLUMNS.
+    supabase.from('patient_live_balances').select('patient_id, balance_cents').in('patient_id', ids),
   ])
+  const balanceMap: Record<string, number> = {}
+  for (const b of balances ?? []) balanceMap[b.patient_id!] = b.balance_cents ?? 0
+  balanceByPatient.value = balanceMap
   const map: Record<string, ContactLogRow> = {}
   const counts: Record<string, number> = {}
   for (const row of logs ?? []) {
@@ -100,8 +108,28 @@ async function loadTeamMembers() {
 // Shared by loadRecalls (one page, or the full fallback set) and exportCsv
 // (always every matching row, regardless of pagination) so the two never
 // drift out of sync on what "matches the current filters" means.
+// Every column except balance_cents. Naming them explicitly rather than
+// select('*') is what makes this page fast: balance_cents comes from a LEFT
+// JOIN to patient_live_balances, and Postgres drops that join entirely when
+// nothing references the column. Selecting it computed a balance for every
+// candidate (1,401 of them) just to display a page of 26 -- 363ms and
+// 31,075 buffers, versus 11.7ms and 8,338 without. Balances for the rows
+// actually on screen are fetched by id in loadContactContext instead.
+const RECALL_COLUMNS =
+  'patient_id, account_id, first_name, last_name, email, tags, recall_priority, default_practitioner_id, last_appointment_at, days_since_last_appointment, preferred_language'
+
 function buildFilteredQuery() {
-  let query = supabase.from('recall_candidates').select('*')
+  // The credit/debit filter is the one case that still has to pay for the
+  // join -- it narrows the result set server-side, so it can't be applied
+  // to a page's worth of ids after the fact.
+  // Cast for the same reason pages/patients/index.vue casts its own dynamic
+  // select: Supabase infers row types by parsing the select string as a
+  // literal, which a value chosen at runtime can't be.
+  let query = (
+    balanceFilter.value !== 'any'
+      ? supabase.from('recall_candidates').select(`${RECALL_COLUMNS}, balance_cents`)
+      : supabase.from('recall_candidates').select(RECALL_COLUMNS)
+  ) as any
 
   // Each word must match somewhere in first or last name -- same
   // chained-.or() AND-across-tokens trick patients/index.vue uses, so
@@ -374,6 +402,25 @@ function bulkSnooze() {
 function csvEscape(v: string) {
   return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
 }
+
+// patient_live_balances has no filter of its own to page against, so the id
+// list gets chunked to keep each request's URL a sane size -- same shape as
+// pages/patients/index.vue's balance lookup.
+async function fetchBalances(ids: string[]): Promise<Record<string, number>> {
+  if (ids.length === 0) return {}
+  const CHUNK = 300
+  const chunks: string[][] = []
+  for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK))
+  const results = await Promise.all(
+    chunks.map((chunk) => supabase.from('patient_live_balances').select('patient_id, balance_cents').in('patient_id', chunk)),
+  )
+  const out: Record<string, number> = {}
+  for (const { data } of results) {
+    for (const b of data ?? []) out[b.patient_id!] = b.balance_cents ?? 0
+  }
+  return out
+}
+
 const exporting = ref(false)
 async function exportCsv() {
   exporting.value = true
@@ -381,20 +428,22 @@ async function exportCsv() {
   // -- fetchAllRows pages past both Supabase's 1000-row select() cap and
   // this view's own pageSize.
   const allMatching = await fetchAllRows<Recall>((from, to) => buildFilteredQuery().range(from, to))
-  const rows = allMatching
-    .filter((r) => {
-      if (tagFilter.value && !(r.tags ?? []).some((tag) => tag.toLowerCase().includes(tagFilter.value.toLowerCase()))) return false
-      if (notContactedOnly.value && lastActionByPatient.value[r.patient_id!]) return false
-      return true
-    })
-    .map((r) => [
-      `${r.first_name ?? ''} ${r.last_name ?? ''}`.trim(),
-      r.last_appointment_at ? new Date(r.last_appointment_at).toLocaleDateString() : '',
-      String(r.days_since_last_appointment ?? ''),
-      practitionerName(r.default_practitioner_id),
-      balanceInfo(r.balance_cents).text,
-      lastActionText(r),
-    ])
+  const matched = allMatching.filter((r) => {
+    if (tagFilter.value && !(r.tags ?? []).some((tag) => tag.toLowerCase().includes(tagFilter.value.toLowerCase()))) return false
+    if (notContactedOnly.value && lastActionByPatient.value[r.patient_id!]) return false
+    return true
+  })
+  // The list query no longer carries balance_cents (see RECALL_COLUMNS), so
+  // the export fetches balances for exactly the rows being written out.
+  const exportBalances = await fetchBalances(matched.map((r) => r.patient_id!).filter(Boolean))
+  const rows = matched.map((r) => [
+    `${r.first_name ?? ''} ${r.last_name ?? ''}`.trim(),
+    r.last_appointment_at ? new Date(r.last_appointment_at).toLocaleDateString() : '',
+    String(r.days_since_last_appointment ?? ''),
+    practitionerName(r.default_practitioner_id),
+    balanceInfo(exportBalances[r.patient_id!] ?? null).text,
+    lastActionText(r),
+  ])
   const header = [
     t('Patient', 'Paciente'),
     t('Last visit', 'Última visita'),
@@ -638,7 +687,9 @@ async function exportCsv() {
                 </span>
               </td>
               <td class="px-4 py-2.5 text-ink-muted">{{ practitionerName(r.default_practitioner_id) }}</td>
-              <td class="px-4 py-2.5 text-right font-mono" :class="balanceInfo(r.balance_cents).class">{{ balanceInfo(r.balance_cents).text }}</td>
+              <td class="px-4 py-2.5 text-right font-mono" :class="balanceInfo(balanceByPatient[r.patient_id!] ?? null).class">
+                {{ balanceInfo(balanceByPatient[r.patient_id!] ?? null).text }}
+              </td>
               <td class="px-4 py-2.5 text-[12.5px]">
                 <button
                   v-if="actionCountByPatient[r.patient_id!]"

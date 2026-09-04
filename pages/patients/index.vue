@@ -212,8 +212,14 @@ function csvEscape(v: string) {
 async function fetchBalances(ids: string[]): Promise<Record<string, number>> {
   const result: Record<string, number> = {}
   const CHUNK = 300
-  for (let i = 0; i < ids.length; i += CHUNK) {
-    const { data } = await supabase.from('patient_live_balances').select('patient_id, balance_cents').in('patient_id', ids.slice(i, i + CHUNK))
+  const chunks: string[][] = []
+  for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK))
+  // The chunks are independent, so they go out together -- a full-export id
+  // list used to walk them one awaited request at a time.
+  const results = await Promise.all(
+    chunks.map((chunk) => supabase.from('patient_live_balances').select('patient_id, balance_cents').in('patient_id', chunk)),
+  )
+  for (const { data } of results) {
     for (const b of data ?? []) result[b.patient_id!] = b.balance_cents ?? 0
   }
   return result

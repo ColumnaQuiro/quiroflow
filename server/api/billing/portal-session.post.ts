@@ -29,7 +29,7 @@ export default defineEventHandler(async (event) => {
   const origin = getRequestURL(event).origin
   const session = await stripe.billingPortal.sessions.create({
     customer: subscription.stripe_customer_id,
-    return_url: `${origin}/account/subscription`,
+    return_url: `${origin}/subscription`,
   })
 
   return { url: session.url }

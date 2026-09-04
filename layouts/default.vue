@@ -1,8 +1,17 @@
 <script setup lang="ts">
+// Deliberately started but not awaited. A top-level await makes the whole
+// layout an async component, so Vue suspended it -- and every child -- on
+// each navigation.
+//
+// It can't be dropped entirely either: middleware/account.global.ts bails
+// early on `if (!user.value) return`, and immediately after login
+// useSupabaseUser() hasn't populated yet, so the middleware skips the load
+// on exactly the navigation that lands on the dashboard. Removing this left
+// the sidebar with no account name (caught by the login e2e spec). Kicking
+// it off without blocking keeps that safety net: the shell renders straight
+// away and the store's values fill in reactively when it resolves.
 const store = useAccountStore()
-if (!store.loaded) {
-  await store.load()
-}
+if (!store.loaded && !store.loading) store.load()
 
 const route = useRoute()
 const router = useRouter()

@@ -35,7 +35,48 @@ const campaignsActive = ref(false)
 const inboxUnreadCount = ref(0)
 
 async function loadBadges() {
-  // A fresh client boot can reach this mount before the account store's own
+  // Each badge assigns its own count as its own query returns. They used to
+  // share a Promise.all, so all four waited on the slowest and then appeared
+  // in one jump -- the recalls and inbox numbers landing together is exactly
+  // that, not a coincidence of timing.
+  supabase
+    .from('recall_candidates')
+    .select('patient_id', { count: 'exact', head: true })
+    .then(({ count }) => {
+      recallsCount.value = count ?? 0
+    })
+
+  supabase
+    .from('automation_rules')
+    .select('id')
+    .eq('enabled', true)
+    .limit(1)
+    .then(({ data }) => {
+      campaignsActive.value = (data ?? []).length > 0
+    })
+
+  supabase
+    .from('whatsapp_messages')
+    .select('patient_id, phone_number, direction, created_at')
+    .order('created_at', { ascending: false })
+    .limit(500)
+    .then(({ data }) => {
+      // A conversation counts as unread when the most recent message in it is
+      // inbound (the patient sent last, staff hasn't replied since) -- no
+      // separate read/unread tracking exists yet, so this is derived.
+      const seen = new Set<string>()
+      let unread = 0
+      for (const m of data ?? []) {
+        const key = m.patient_id ?? m.phone_number ?? ''
+        if (!key || seen.has(key)) continue
+        seen.add(key)
+        if (m.direction === 'inbound') unread++
+      }
+      inboxUnreadCount.value = unread
+    })
+
+  // Only "My Day" needs the team member id, so it's the only one that waits
+  // for the account store. A fresh client boot can reach this mount before
   // load() resolves store.teamMember -- an empty fallback here used to build
   // `practitioner_id=eq.` (no id at all), which Postgres rejects as a 400.
   if (!store.teamMember) {
@@ -43,35 +84,15 @@ async function loadBadges() {
       watch(() => store.teamMember, (v) => { if (v) resolve() }, { once: true })
     })
   }
-  const [{ count: recalls }, { count: myDay }, { data: campaigns }, { data: recentMessages }] = await Promise.all([
-    supabase.from('recall_candidates').select('patient_id', { count: 'exact', head: true }),
-    supabase
-      .from('appointments')
-      .select('id', { count: 'exact', head: true })
-      .eq('practitioner_id', store.teamMember!.id)
-      .neq('status', 'cancelled')
-      .is('deleted_at', null)
-      .gte('starts_at', new Date(new Date().setHours(0, 0, 0, 0)).toISOString())
-      .lt('starts_at', new Date(new Date().setHours(24, 0, 0, 0)).toISOString()),
-    supabase.from('automation_rules').select('id').eq('enabled', true).limit(1),
-    supabase.from('whatsapp_messages').select('patient_id, phone_number, direction, created_at').order('created_at', { ascending: false }).limit(500),
-  ])
-  recallsCount.value = recalls ?? 0
+  const { count: myDay } = await supabase
+    .from('appointments')
+    .select('id', { count: 'exact', head: true })
+    .eq('practitioner_id', store.teamMember!.id)
+    .neq('status', 'cancelled')
+    .is('deleted_at', null)
+    .gte('starts_at', new Date(new Date().setHours(0, 0, 0, 0)).toISOString())
+    .lt('starts_at', new Date(new Date().setHours(24, 0, 0, 0)).toISOString())
   myDayCount.value = myDay ?? 0
-  campaignsActive.value = (campaigns ?? []).length > 0
-
-  // A conversation counts as unread when the most recent message in it is
-  // inbound (the patient sent last, staff hasn't replied since) -- no
-  // separate read/unread tracking exists yet, so this is derived.
-  const seen = new Set<string>()
-  let unread = 0
-  for (const m of recentMessages ?? []) {
-    const key = m.patient_id ?? m.phone_number ?? ''
-    if (!key || seen.has(key)) continue
-    seen.add(key)
-    if (m.direction === 'inbound') unread++
-  }
-  inboxUnreadCount.value = unread
 }
 onMounted(loadBadges)
 

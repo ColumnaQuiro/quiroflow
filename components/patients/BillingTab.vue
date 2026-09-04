@@ -47,6 +47,8 @@ interface PaymentScheduleRow {
   status: string
 }
 interface StripeEventRow { id: string; payment_schedule_id: string; period_start: string; amount_cents: number; status: string }
+interface LedgerPaymentRow { id: string; invoice_id: string; amount_cents: number; method: string; paid_at: string }
+interface LedgerCreditRow { id: string; amount_cents: number; reason: string | null; method: string | null; invoice_id: string | null; created_at: string }
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
@@ -232,6 +234,8 @@ const autopayError = ref('')
 
 const invoices = ref<InvoiceRow[]>([])
 const lineItemDescriptions = ref<Record<string, string[]>>({})
+const ledgerPayments = ref<LedgerPaymentRow[]>([])
+const ledgerCredits = ref<LedgerCreditRow[]>([])
 // Three independent loading flags instead of one -- each card (Account
 // Ledger, Packages/bonos, Memberships) shows its own skeleton and swaps in
 // as soon as its own pair of queries resolves, rather than the whole tab
@@ -307,7 +311,13 @@ async function recordSalePayment(description: string, amountCents: number, metho
 // round-trip) -- that part of the original optimization is unchanged.
 async function loadLedger() {
   ledgerLoading.value = true
-  const [{ data: inv }, { data: lines }] = await Promise.all([
+  // payments and account_credits used to be fetched by AccountLedger.vue
+  // itself, only after this loader finished and swapped that component in --
+  // a second serial round trip on every single tab open, even for a patient
+  // with nothing to show. Both filter through the same embedded !inner join
+  // as invoice_line_items (payments has no patient_id of its own) so they
+  // can join this same parallel wave instead.
+  const [{ data: inv }, { data: lines }, { data: pays }, { data: creds }] = await Promise.all([
     supabase
       .from('invoices')
       .select('id, invoice_number, status, total_cents, created_at, is_refund, refunds_invoice_id')
@@ -317,6 +327,15 @@ async function loadLedger() {
       .from('invoice_line_items')
       .select('invoice_id, description, invoices!inner(patient_id)')
       .eq('invoices.patient_id', props.patientId),
+    supabase
+      .from('payments')
+      .select('id, invoice_id, amount_cents, method, paid_at, invoices!inner(patient_id)')
+      .eq('invoices.patient_id', props.patientId),
+    supabase
+      .from('account_credits')
+      .select('id, amount_cents, reason, method, invoice_id, created_at')
+      .eq('patient_id', props.patientId)
+      .order('created_at', { ascending: true }),
   ])
   invoices.value = inv ?? []
   const byInvoice: Record<string, string[]> = {}
@@ -324,6 +343,8 @@ async function loadLedger() {
     ;(byInvoice[l.invoice_id] ??= []).push(l.description)
   }
   lineItemDescriptions.value = byInvoice
+  ledgerPayments.value = (pays ?? []) as unknown as LedgerPaymentRow[]
+  ledgerCredits.value = creds ?? []
   ledgerLoading.value = false
 }
 
@@ -376,6 +397,14 @@ async function loadAll() {
   // it just fans out to independently-resolving loaders instead of one
   // Promise.all gating a single `loading` flag.
   await Promise.all([loadLedger(), loadPackages(), loadMemberships(), loadCard(), ensureBillingTemplatesLoaded()])
+}
+
+// AccountLedger's own transfer-credit action mutates account_credits
+// directly (it's not routed through any of this file's write functions),
+// so it needs both the summary strip and the ledger's payments/credits
+// refreshed afterward.
+async function onLedgerCreditsChanged() {
+  await Promise.all([refreshCreditSummary(), loadAll()])
 }
 onMounted(() => {
   loadAll()
@@ -873,6 +902,8 @@ function money(cents: number) {
       :patient-id="patientId"
       :invoices="invoices"
       :line-item-descriptions="lineItemDescriptions"
+      :payments="ledgerPayments"
+      :credits="ledgerCredits"
       :credit-ledger-cents="creditLedgerCents"
       :sending-invoice-id="sendingInvoiceId"
       :send-result-invoice-id="sendResultInvoiceId"
@@ -886,7 +917,7 @@ function money(cents: number) {
       @delete-invoice="(id: string) => { const inv = invoices.find((i) => i.id === id); if (inv) deleteInvoice(inv) }"
       @write-off-invoice="writeOffInvoice"
       @refund-invoice="(payload: { invoiceId: string; amountCents: number; reason: string }) => createRefund(payload.invoiceId, payload.amountCents, payload.reason)"
-      @credits-changed="refreshCreditSummary"
+      @credits-changed="onLedgerCreditsChanged"
     />
 
     <div class="grid grid-cols-2 gap-4">

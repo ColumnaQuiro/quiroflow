@@ -19,6 +19,7 @@ const ICONS = {
   documentText:
     'M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m6.75 12l-3-3m0 0l-3 3m3-3v6m-1.5-15H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z',
   arrowDownTray: 'M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3',
+  arrowsPointingIn: 'M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5M15 15l5.25 5.25',
   paperClip:
     'M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13',
   bolt: 'M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z',
@@ -77,6 +78,7 @@ const groups = computed(() => [
     items: [
       { to: '/settings/import', label: t('Import Patients (CSV)', 'Importar pacientes (CSV)'), description: t('Migrate patient records from another system.', 'Migra registros de pacientes desde otro sistema.'), icon: ICONS.arrowDownTray },
       { to: '/settings/migrate-attachments', label: t('Migrate Attachments', 'Migrar archivos adjuntos'), description: t('Pull the real file content over from PracticeHub.', 'Trae el contenido real de los archivos desde PracticeHub.'), icon: ICONS.paperClip },
+      { to: '/settings/compress-files', label: t('Compress Files', 'Comprimir archivos'), description: t('Shrink uploaded PDFs and images without losing visible quality.', 'Reduce el tamaño de los PDFs e imágenes subidos sin perder calidad visible.'), icon: ICONS.arrowsPointingIn },
       { to: '/settings/webhooks', label: t('Webhooks', 'Webhooks'), description: t('Subscribe an endpoint to patient, appointment, and invoice events.', 'Suscribe un endpoint a eventos de pacientes, citas y facturas.'), icon: ICONS.bolt },
     ],
   },

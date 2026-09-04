@@ -57,6 +57,7 @@ const allGroups = computed<NavGroup[]>(() => [
     items: [
       { label: t('Import Patients (CSV)', 'Importar pacientes (CSV)'), to: '/settings/import', perm: 'data_admin' },
       { label: t('Migrate Attachments', 'Migrar archivos adjuntos'), to: '/settings/migrate-attachments', perm: 'data_admin' },
+      { label: t('Compress Files', 'Comprimir archivos'), to: '/settings/compress-files', perm: 'data_admin' },
       { label: t('Webhooks', 'Webhooks'), to: '/settings/webhooks', perm: 'data_admin' },
     ],
   },

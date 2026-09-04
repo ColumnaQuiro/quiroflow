@@ -23,6 +23,7 @@ const STATIC_AUTHENTICATED_PAGES = [
   '/settings/import',
   '/settings/memberships',
   '/settings/migrate-attachments',
+  '/settings/compress-files',
   '/settings/packages',
   '/settings/payments',
   '/settings/practitioners',

@@ -34,7 +34,7 @@ const rules: Rule[] = [
   },
   { test: (p) => p.startsWith('/campaigns'), check: (s) => can(s, 'communication_config') },
   {
-    test: (p) => ['/settings/import', '/settings/migrate-attachments', '/settings/webhooks'].includes(p),
+    test: (p) => ['/settings/import', '/settings/migrate-attachments', '/settings/compress-files', '/settings/webhooks'].includes(p),
     check: (s) => can(s, 'settings_access') && can(s, 'data_admin'),
   },
   { test: (p) => p.startsWith('/settings'), check: (s) => can(s, 'settings_access') },

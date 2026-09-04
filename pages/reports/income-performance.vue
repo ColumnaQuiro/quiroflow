@@ -120,7 +120,10 @@ const totalsByPractitioner = computed(() => series.value.map((s) => ({ label: s.
         <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
       </div>
 
-      <div v-if="loading" class="mt-6 text-[13px] text-ink-faint2">{{ t('Loading…', 'Cargando…') }}</div>
+      <div v-if="loading" class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
+        <UiSkeleton class="h-4 w-56 rounded-ctlSm" />
+        <UiSkeleton class="mt-3 h-80 w-full rounded-ctl" />
+      </div>
       <div v-else-if="filteredPayments.length === 0" class="mt-6 rounded-card border border-dashed border-line-control bg-surface p-6 text-center text-[13px] text-ink-faint2">
         {{ t('No payments recorded yet — this fills in once invoices are being paid.', 'Todavía no hay pagos registrados — esto se completará en cuanto se paguen facturas.') }}
       </div>

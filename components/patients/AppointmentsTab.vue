@@ -131,7 +131,14 @@ const confirmationAutofill = computed<Record<string, string>>(() => {
         </div>
       </div>
 
-      <div v-if="loading" class="p-8 text-center text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+      <div v-if="loading" class="divide-y divide-line-row">
+        <div v-for="i in 4" :key="i" class="flex h-[46px] items-center gap-4 px-4">
+          <UiSkeleton class="h-3.5 w-32 rounded-ctlSm" />
+          <UiSkeleton class="h-3.5 w-24 rounded-ctlSm" />
+          <UiSkeleton class="h-3.5 w-28 rounded-ctlSm" />
+          <UiSkeleton class="h-5 w-16 rounded-pill" />
+        </div>
+      </div>
       <div v-else-if="appointments.length === 0" class="p-8 text-center text-[13px] text-ink-faint">{{ t('No appointments yet.', 'Aún no hay citas.') }}</div>
       <table v-else class="w-full text-[13px]">
         <thead class="border-b border-line-divider text-left text-[11px] font-medium uppercase tracking-wide text-ink-faint">

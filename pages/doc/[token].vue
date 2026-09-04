@@ -47,7 +47,12 @@ async function submit() {
 <template>
   <div class="min-h-screen bg-surface-page px-4 py-10">
     <div class="mx-auto max-w-2xl">
-      <div v-if="phase === 'loading'" class="py-24 text-center text-sm text-ink-faint">Loading…</div>
+      <div v-if="phase === 'loading'" class="mt-10 space-y-3 rounded-card border border-line bg-surface p-8">
+        <UiSkeleton class="h-5 w-1/2 rounded-ctlSm" />
+        <UiSkeleton class="h-3 w-full rounded-ctlSm" />
+        <UiSkeleton class="h-3 w-full rounded-ctlSm" />
+        <UiSkeleton class="h-3 w-2/3 rounded-ctlSm" />
+      </div>
 
       <div v-else-if="phase === 'not_found'" class="rounded-card border border-line bg-surface p-10 text-center">
         <p class="text-ink-muted">This link is no longer valid.</p>

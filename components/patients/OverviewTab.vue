@@ -674,7 +674,12 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
 
       <div class="rounded-card border border-line bg-surface p-5 shadow-card">
         <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Recent activity', 'Actividad reciente') }}</p>
-        <div v-if="activityLoading" class="mt-3 text-[12.5px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+        <div v-if="activityLoading" class="mt-3 space-y-2.5">
+          <div v-for="i in 3" :key="i" class="flex items-center gap-2.5">
+            <UiSkeleton class="h-[6px] w-[6px] shrink-0 rounded-full" />
+            <UiSkeleton class="h-3 w-40 rounded-ctlSm" />
+          </div>
+        </div>
         <p v-else-if="activity.length === 0" class="mt-3 text-[12.5px] text-ink-faint">{{ t('No recent activity.', 'Sin actividad reciente.') }}</p>
         <ul v-else class="mt-3 space-y-2.5">
           <li v-for="(item, i) in activity" :key="i" class="flex items-center gap-2.5">

@@ -104,7 +104,11 @@ async function removeTemplate(tmpl: Template) {
                 <h3 class="text-[13.5px] font-[560] text-ink-700">{{ t('Templates', 'Plantillas') }}</h3>
                 <UiBtn variant="primary" size="sm" @click="newTemplate">+ {{ t('New Template', 'Nueva plantilla') }}</UiBtn>
               </div>
-              <div v-if="loading" class="p-6 text-center text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+              <div v-if="loading" class="divide-y divide-line-row">
+                <div v-for="i in 3" :key="i" class="px-4 py-3">
+                  <UiSkeleton class="h-3.5 w-40 rounded-ctlSm" />
+                </div>
+              </div>
               <div v-else-if="templates.length === 0" class="p-8 text-center text-[13px] text-ink-faint">{{ t('No templates yet.', 'Todavía no hay plantillas.') }}</div>
               <ul v-else class="divide-y divide-line-row">
                 <li v-for="tpl in templates" :key="tpl.id" class="flex items-center justify-between px-4 py-3">

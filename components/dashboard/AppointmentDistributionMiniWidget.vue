@@ -42,7 +42,12 @@ const shiftStats = computed(() =>
 </script>
 
 <template>
-  <div v-if="loading" class="text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+  <div v-if="loading" class="space-y-2">
+    <div v-for="i in 3" :key="i" class="flex items-center justify-between py-1.5">
+      <UiSkeleton class="h-3 w-20 rounded-ctlSm" />
+      <UiSkeleton class="h-3 w-8 rounded-ctlSm" />
+    </div>
+  </div>
   <ul v-else class="divide-y divide-line-row2 text-[13px]">
     <li v-for="s in shiftStats" :key="s.key" class="flex items-center justify-between py-1.5">
       <span class="text-ink-700">{{ s.label }}</span>

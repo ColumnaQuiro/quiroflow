@@ -82,7 +82,16 @@ function titleFor(m: MessageRow) {
       {{ t('This patient is marked "do not contact" — new messages are disabled.', 'Este paciente está marcado como "no contactar": los nuevos mensajes están deshabilitados.') }}
     </p>
 
-    <div v-if="loading" class="p-8 text-center text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+    <div v-if="loading" class="divide-y divide-line-row">
+      <div v-for="i in 3" :key="i" class="flex items-center gap-3 px-4 py-3">
+        <UiSkeleton class="h-6 w-6 shrink-0 rounded-ctlSm" />
+        <div class="min-w-0 flex-1 space-y-1.5">
+          <UiSkeleton class="h-3.5 w-40 rounded-ctlSm" />
+          <UiSkeleton class="h-3 w-56 rounded-ctlSm" />
+        </div>
+        <UiSkeleton class="h-5 w-14 shrink-0 rounded-pill" />
+      </div>
+    </div>
     <p v-else-if="filteredMessages.length === 0" class="p-8 text-center text-[13px] text-ink-faint">{{ t('No WhatsApp messages sent to this patient yet.', 'Aún no se han enviado mensajes de WhatsApp a este paciente.') }}</p>
     <ul v-else class="divide-y divide-line-row">
       <li v-for="m in filteredMessages" :key="m.id" class="flex items-center gap-3 px-4 py-3">

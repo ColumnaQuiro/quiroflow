@@ -199,7 +199,13 @@ function formatDate(iso: string) {
     </div>
 
     <div class="flex-1 overflow-y-auto bg-surface-page p-6">
-      <div v-if="loading" class="text-center text-[13px] text-ink-muted2">{{ t('Loading…', 'Cargando…') }}</div>
+      <div v-if="loading" class="mx-auto max-w-[720px] space-y-4">
+        <div class="space-y-3 rounded-card border border-line bg-surface p-6 shadow-card">
+          <UiSkeleton class="h-4 w-40 rounded-ctlSm" />
+          <UiSkeleton class="h-3 w-56 rounded-ctlSm" />
+          <UiSkeleton class="h-3 w-32 rounded-ctlSm" />
+        </div>
+      </div>
       <div v-else-if="notFound" class="text-center text-[13px] text-ink-muted2">{{ t('Invoice not found.', 'Factura no encontrada.') }}</div>
 
       <div v-else-if="invoice" class="mx-auto max-w-[720px] space-y-4">

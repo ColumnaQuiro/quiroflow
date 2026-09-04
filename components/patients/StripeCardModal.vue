@@ -63,7 +63,7 @@ async function submit() {
         <button type="button" class="text-gray-400 hover:text-gray-600" @click="emit('close')">✕</button>
       </div>
 
-      <div v-if="loading" class="mt-6 text-sm text-gray-400">{{ t('Loading…', 'Cargando…') }}</div>
+      <UiSkeleton v-if="loading" class="mt-6 h-9 w-full rounded-md" />
       <form v-show="!loading" class="mt-4" @submit.prevent="submit">
         <div ref="mountEl"></div>
         <p v-if="error" class="mt-3 text-sm text-red-600">{{ error }}</p>

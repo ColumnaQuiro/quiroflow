@@ -50,7 +50,9 @@ async function removeNote(id: string) {
 
 <template>
   <div>
-    <p v-if="loading" class="text-sm text-gray-400">{{ t('Loading…', 'Cargando…') }}</p>
+    <div v-if="loading" class="space-y-2">
+      <UiSkeleton v-for="i in 2" :key="i" class="h-10 w-full rounded-md" />
+    </div>
     <ul v-else-if="notes.length > 0" class="space-y-2">
       <li v-for="note in notes" :key="note.id" class="group relative rounded-md bg-amber-50 p-2 pr-7 text-sm text-gray-800">
         <p class="whitespace-pre-wrap">{{ note.body }}</p>

@@ -84,7 +84,12 @@ const activeLast30Days = computed(() => {
             {{ t("Counts devices that have opened the app, not accounts -- one patient using two phones counts twice. Only counts app launches, not every time it's reopened from the background.", 'Cuenta dispositivos que han abierto la app, no cuentas -- un paciente que usa dos teléfonos cuenta dos veces. Solo cuenta los inicios de la app, no cada vez que se reabre desde segundo plano.') }}
           </p>
 
-          <div v-if="loading" class="mt-3 rounded-card border border-line bg-surface p-6 text-center text-[13px] text-ink-faint shadow-card">{{ t('Loading…', 'Cargando…') }}</div>
+          <div v-if="loading" class="mt-3 grid grid-cols-3 gap-3">
+            <div v-for="i in 3" :key="i" class="space-y-2 rounded-card border border-line bg-surface p-4 text-center shadow-card">
+              <UiSkeleton class="mx-auto h-[22px] w-12 rounded-ctlSm" />
+              <UiSkeleton class="mx-auto h-3 w-24 rounded-ctlSm" />
+            </div>
+          </div>
           <div v-else class="mt-3 grid grid-cols-3 gap-3">
             <div class="rounded-card border border-line bg-surface p-4 text-center shadow-card">
               <p class="text-[22px] font-[640] text-ink-900">{{ totalDevices }}</p>

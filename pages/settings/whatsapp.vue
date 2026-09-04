@@ -138,7 +138,12 @@ async function save() {
             {{ t("Connects directly to Meta's WhatsApp Business Cloud API. You'll need a Phone Number ID, a WhatsApp Business Account ID, and a permanent access token from your Meta Business account, plus at least one approved message template.", 'Se conecta directamente con la API de WhatsApp Business Cloud de Meta. Necesitarás un ID de número de teléfono, un ID de cuenta de WhatsApp Business y un token de acceso permanente de tu cuenta de Meta Business, además de al menos una plantilla de mensaje aprobada.') }}
           </p>
 
-          <div v-if="loading" class="mt-6 text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+          <div v-if="loading" class="mt-5 space-y-3">
+            <div v-for="i in 4" :key="i" class="space-y-1.5">
+              <UiSkeleton class="h-3 w-40 rounded-ctlSm" />
+              <UiSkeleton class="h-8 w-[230px] rounded-ctl" />
+            </div>
+          </div>
           <form v-else class="mt-5 space-y-3" @submit.prevent="save">
             <SettingsFieldRow :label="t('Phone Number ID', 'ID del número de teléfono')">
               <input v-model="phoneNumberId" type="text" class="h-8 w-[230px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20" />

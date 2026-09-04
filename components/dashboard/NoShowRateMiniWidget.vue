@@ -46,7 +46,10 @@ watch(() => [props.practitionerId, props.clinicId], load)
 </script>
 
 <template>
-  <div v-if="loading" class="text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+  <div v-if="loading" class="space-y-1.5">
+    <UiSkeleton class="h-[27px] w-16 rounded-ctlSm" />
+    <UiSkeleton class="h-3 w-40 rounded-ctlSm" />
+  </div>
   <div v-else>
     <p class="font-mono text-[27px] leading-none text-ink-900">{{ rate === null ? '—' : `${rate}%` }}</p>
     <p v-if="deltaPts !== null" class="mt-1.5 text-[12px] font-medium" :class="deltaPts > 0 ? 'text-danger-text' : 'text-success-text'">

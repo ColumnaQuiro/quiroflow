@@ -133,7 +133,12 @@ const curlFreeform = computed(() => `curl -X POST https://app.quiroflow.com/api/
             <div class="border-b border-line-divider p-4">
               <h3 class="text-[13.5px] font-[560] text-ink-700">{{ t('API Tokens', 'Tokens de API') }}</h3>
             </div>
-            <div v-if="loading" class="p-6 text-center text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+            <div v-if="loading" class="divide-y divide-line-row">
+              <div v-for="i in 3" :key="i" class="space-y-2 p-4">
+                <UiSkeleton class="h-3.5 w-32 rounded-ctlSm" />
+                <UiSkeleton class="h-3 w-48 rounded-ctlSm" />
+              </div>
+            </div>
             <div v-else-if="tokens.length === 0" class="p-8 text-center text-[13px] text-ink-faint">{{ t('No tokens yet.', 'Todavía no hay tokens.') }}</div>
             <ul v-else class="divide-y divide-line-row">
               <li v-for="tk in tokens" :key="tk.id" class="flex items-center justify-between gap-3 p-4">

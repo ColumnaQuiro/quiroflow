@@ -965,7 +965,15 @@ onUnmounted(() => {
           </div>
         </div>
         <div class="flex-1 overflow-y-auto">
-          <div v-if="loading" class="p-6 text-center text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+          <div v-if="loading">
+            <div v-for="i in 5" :key="i" class="flex items-center gap-2.5 border-b border-line-row px-3 py-2.5">
+              <UiSkeleton class="h-8 w-8 shrink-0 rounded-full" />
+              <div class="min-w-0 flex-1 space-y-1.5">
+                <UiSkeleton class="h-3.5 w-32 rounded-ctlSm" />
+                <UiSkeleton class="h-3 w-48 rounded-ctlSm" />
+              </div>
+            </div>
+          </div>
           <p v-else-if="filteredConversations.length === 0" class="p-6 text-center text-[13px] text-ink-faint">
             {{ view === 'archived' ? t('No archived conversations.', 'No hay conversaciones archivadas.') : t('No conversations yet.', 'Aún no hay conversaciones.') }}
           </p>

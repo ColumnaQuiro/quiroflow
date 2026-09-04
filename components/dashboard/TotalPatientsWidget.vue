@@ -19,6 +19,6 @@ watch(() => props.practitionerId, load)
 </script>
 
 <template>
-  <div v-if="loading" class="text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+  <UiSkeleton v-if="loading" class="h-[27px] w-16 rounded-ctlSm" />
   <p v-else class="font-mono text-[27px] leading-none text-ink-900">{{ total }}</p>
 </template>

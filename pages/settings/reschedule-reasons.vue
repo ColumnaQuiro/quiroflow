@@ -113,9 +113,12 @@ async function saveFees() {
                 </tr>
               </thead>
               <tbody class="divide-y divide-line-row">
-                <tr v-if="loading">
-                  <td colspan="2" class="px-4 py-6 text-center text-ink-faint">{{ t('Loading…', 'Cargando…') }}</td>
-                </tr>
+                <template v-if="loading">
+                  <tr v-for="i in 4" :key="i">
+                    <td class="px-4 py-2.5"><UiSkeleton class="h-3.5 w-48 rounded-ctlSm" /></td>
+                    <td class="px-4 py-2.5" />
+                  </tr>
+                </template>
                 <tr v-else-if="reasons.length === 0">
                   <td colspan="2" class="px-4 py-6 text-center text-ink-faint">{{ t('No reschedule reasons yet.', 'Aún no hay motivos de reprogramación.') }}</td>
                 </tr>

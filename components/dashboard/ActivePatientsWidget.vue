@@ -38,7 +38,10 @@ const pct = computed(() => (total.value === 0 ? 0 : Math.round((active.value / t
 </script>
 
 <template>
-  <div v-if="loading" class="text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+  <div v-if="loading" class="space-y-1.5">
+    <UiSkeleton class="h-[27px] w-20 rounded-ctlSm" />
+    <UiSkeleton class="h-3 w-32 rounded-ctlSm" />
+  </div>
   <div v-else>
     <p class="font-mono text-[27px] leading-none text-ink-900">
       {{ active }} <span class="font-sans text-[14px] font-medium text-ink-muted2">({{ pct }}%)</span>

@@ -120,7 +120,12 @@ async function toggleDeliveries(w: Webhook) {
             <div class="border-b border-line-divider p-4">
               <h3 class="text-[13.5px] font-[560] text-ink-700">{{ t('Endpoints', 'Endpoints') }}</h3>
             </div>
-            <div v-if="loading" class="p-6 text-center text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+            <div v-if="loading" class="divide-y divide-line-row">
+              <div v-for="i in 3" :key="i" class="space-y-2 p-4">
+                <UiSkeleton class="h-3.5 w-48 rounded-ctlSm" />
+                <UiSkeleton class="h-3 w-32 rounded-ctlSm" />
+              </div>
+            </div>
             <div v-else-if="webhooks.length === 0" class="p-8 text-center text-[13px] text-ink-faint">{{ t('No webhooks yet.', 'Aún no hay webhooks.') }}</div>
             <ul v-else class="divide-y divide-line-row">
               <li v-for="w in webhooks" :key="w.id" class="p-4">
@@ -152,7 +157,9 @@ async function toggleDeliveries(w: Webhook) {
                 </div>
 
                 <div v-if="expandedWebhook === w.id" class="mt-3 rounded-ctl border border-line-divider bg-surface-subtle p-3">
-                  <div v-if="loadingDeliveries" class="text-[12px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+                  <div v-if="loadingDeliveries" class="space-y-1.5">
+                    <UiSkeleton v-for="i in 3" :key="i" class="h-3 w-full max-w-xs rounded-ctlSm" />
+                  </div>
                   <div v-else-if="(deliveriesByWebhook[w.id]?.length ?? 0) === 0" class="text-[12px] text-ink-faint">
                     {{ t('No deliveries yet.', 'Aún no hay entregas.') }}
                   </div>

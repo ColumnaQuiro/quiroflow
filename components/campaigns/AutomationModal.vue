@@ -436,7 +436,12 @@ async function sendTestToMe() {
         <button type="button" class="flex h-7 w-7 items-center justify-center rounded-ctlSm text-ink-faint2 hover:bg-surface-subtle hover:text-ink-muted" @click="emit('close')">✕</button>
       </div>
 
-      <div v-if="loading" class="flex-1 p-6 text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+      <div v-if="loading" class="flex-1 space-y-5 overflow-y-auto px-6 py-5">
+        <div v-for="i in 4" :key="i" class="space-y-1.5">
+          <UiSkeleton class="h-3 w-24 rounded-ctlSm" />
+          <UiSkeleton class="h-8 w-full rounded-ctl" />
+        </div>
+      </div>
       <form v-else class="flex flex-1 flex-col overflow-hidden" @submit.prevent="save">
         <div class="flex-1 space-y-5 overflow-y-auto px-6 py-5">
           <div>

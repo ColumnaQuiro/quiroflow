@@ -86,7 +86,8 @@ function formatBytes(bytes: number) {
           <div class="mt-6 rounded-card border border-line bg-surface p-4 shadow-card">
             <div class="flex items-center justify-between">
               <h3 class="text-[13.5px] font-[560] text-ink-700">{{ t('Progress', 'Progreso') }}</h3>
-              <span class="text-[12.5px] text-ink-muted2">{{ loading ? t('Loading…', 'Cargando…') : `${doneFiles} / ${totalFiles}` }}</span>
+              <UiSkeleton v-if="loading" class="h-3 w-16 rounded-ctlSm" />
+              <span v-else class="text-[12.5px] text-ink-muted2">{{ `${doneFiles} / ${totalFiles}` }}</span>
             </div>
             <div class="mt-2 h-2 overflow-hidden rounded-pill bg-surface-subtle">
               <div class="h-full rounded-pill bg-brand transition-all" :style="{ width: `${progressPct}%` }"></div>

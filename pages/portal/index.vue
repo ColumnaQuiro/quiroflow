@@ -59,7 +59,18 @@ const statusClass: Record<string, string> = {
 </script>
 
 <template>
-  <div v-if="loading" class="text-sm text-ink-faint">Loading…</div>
+  <div v-if="loading">
+    <UiSkeleton class="h-6 w-40 rounded-ctlSm" />
+    <div class="mt-6 space-y-2">
+      <UiSkeleton class="h-4 w-48 rounded-ctlSm" />
+      <div class="overflow-hidden rounded-card border border-line bg-surface">
+        <div v-for="i in 2" :key="i" class="space-y-1.5 border-b border-line px-4 py-3 last:border-0">
+          <UiSkeleton class="h-3.5 w-40 rounded-ctlSm" />
+          <UiSkeleton class="h-3 w-24 rounded-ctlSm" />
+        </div>
+      </div>
+    </div>
+  </div>
   <div v-else-if="loadError" class="text-sm text-danger-text">{{ loadError }}</div>
   <div v-else-if="!patient" class="text-sm text-ink-faint">No patient record found.</div>
   <div v-else>

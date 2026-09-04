@@ -87,7 +87,15 @@ function copy(text: string) {
             {{ t("Migrated appointments sometimes only carry a practitioner's name, not a real account. Link each name to an existing team member, or invite them — the invite link works without an email, and once accepted it automatically re-links their past appointments.", 'Las citas migradas a veces solo llevan el nombre de un profesional, no una cuenta real. Vincula cada nombre a un miembro del equipo existente, o invítalo — el enlace de invitación funciona sin correo electrónico, y una vez aceptado vuelve a vincular automáticamente sus citas pasadas.') }}
           </p>
 
-          <div v-if="loading" class="mt-6 text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+          <div v-if="loading" class="mt-4 space-y-3">
+            <div v-for="i in 3" :key="i" class="flex items-center justify-between gap-3 rounded-card border border-line bg-surface p-4 shadow-card">
+              <div class="space-y-1.5">
+                <UiSkeleton class="h-3.5 w-32 rounded-ctlSm" />
+                <UiSkeleton class="h-3 w-20 rounded-ctlSm" />
+              </div>
+              <UiSkeleton class="h-8 w-40 rounded-ctl" />
+            </div>
+          </div>
           <div v-else-if="unlinked.length === 0" class="mt-6 rounded-card border border-dashed border-line-control bg-surface p-6 text-center text-[13px] text-ink-faint">
             {{ t('Nothing to link — every appointment already has a real practitioner or no name at all.', 'Nada que vincular — todas las citas ya tienen un profesional real o ningún nombre.') }}
           </div>

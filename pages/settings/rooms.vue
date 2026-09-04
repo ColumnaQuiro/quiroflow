@@ -73,9 +73,13 @@ async function removeRoom(id: string) {
                 </tr>
               </thead>
               <tbody class="divide-y divide-line-row">
-                <tr v-if="loading">
-                  <td colspan="3" class="px-4 py-6 text-center text-ink-faint">{{ t('Loading…', 'Cargando…') }}</td>
-                </tr>
+                <template v-if="loading">
+                  <tr v-for="i in 4" :key="i">
+                    <td class="px-4 py-2.5"><UiSkeleton class="h-3.5 w-24 rounded-ctlSm" /></td>
+                    <td class="px-4 py-2.5"><UiSkeleton class="h-3.5 w-28 rounded-ctlSm" /></td>
+                    <td class="px-4 py-2.5" />
+                  </tr>
+                </template>
                 <tr v-else-if="rooms.length === 0">
                   <td colspan="3" class="px-4 py-6 text-center text-ink-faint">{{ t('No rooms yet.', 'Aún no hay salas.') }}</td>
                 </tr>

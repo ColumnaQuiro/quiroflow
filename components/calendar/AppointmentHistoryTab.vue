@@ -35,7 +35,15 @@ const statusClass: Record<string, string> = {
 
 <template>
   <div class="text-sm">
-    <div v-if="loading" class="text-gray-400">{{ t('Loading…', 'Cargando…') }}</div>
+    <div v-if="loading" class="space-y-1.5">
+      <div v-for="i in 3" :key="i" class="flex items-center justify-between rounded-md border border-gray-200 px-3 py-2">
+        <div class="space-y-1.5">
+          <UiSkeleton class="h-3.5 w-32 rounded-ctlSm" />
+          <UiSkeleton class="h-3 w-24 rounded-ctlSm" />
+        </div>
+        <UiSkeleton class="h-4 w-14 rounded-ctlSm" />
+      </div>
+    </div>
     <p v-else-if="appointments.length === 0" class="text-gray-400">{{ t('No other appointments.', 'No hay otras citas.') }}</p>
     <ul v-else class="max-h-72 space-y-1.5 overflow-y-auto">
       <li v-for="appt in appointments" :key="appt.id" class="flex items-center justify-between rounded-md border border-gray-200 px-3 py-2">

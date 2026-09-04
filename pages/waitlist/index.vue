@@ -166,9 +166,16 @@ function formatDate(iso: string | null) {
             </tr>
           </thead>
           <tbody class="divide-y divide-line-divider">
-            <tr v-if="loading">
-              <td colspan="6" class="px-3 py-6 text-center text-ink-faint">{{ t('Loading…', 'Cargando…') }}</td>
-            </tr>
+            <template v-if="loading">
+              <tr v-for="i in 4" :key="i">
+                <td class="px-3 py-2.5"><UiSkeleton class="h-3.5 w-28 rounded-ctlSm" /></td>
+                <td class="px-3 py-2.5"><UiSkeleton class="h-3.5 w-24 rounded-ctlSm" /></td>
+                <td class="px-3 py-2.5"><UiSkeleton class="h-5 w-16 rounded-pill" /></td>
+                <td class="px-3 py-2.5"><UiSkeleton class="h-3.5 w-20 rounded-ctlSm" /></td>
+                <td class="px-3 py-2.5"><UiSkeleton class="h-3.5 w-16 rounded-ctlSm" /></td>
+                <td class="px-3 py-2.5" />
+              </tr>
+            </template>
             <tr v-else-if="rows.length === 0">
               <td colspan="6" class="px-3 py-6 text-center text-ink-faint">{{ t('No one on the waitlist.', 'Nadie en la lista de espera.') }}</td>
             </tr>

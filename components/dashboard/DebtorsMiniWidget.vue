@@ -52,7 +52,12 @@ function euros(cents: number) {
 </script>
 
 <template>
-  <div v-if="loading" class="text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+  <div v-if="loading" class="space-y-2">
+    <div v-for="i in 3" :key="i" class="flex items-center gap-2 py-1.5">
+      <UiSkeleton class="h-3 w-32 rounded-ctlSm" />
+      <UiSkeleton class="ml-auto h-3 w-12 rounded-ctlSm" />
+    </div>
+  </div>
   <div v-else>
     <p v-if="debtors.length === 0" class="text-[13px] text-ink-faint">{{ t('No outstanding balances.', 'No hay saldos pendientes.') }}</p>
     <template v-else>

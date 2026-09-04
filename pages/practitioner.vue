@@ -315,7 +315,12 @@ const headerMeta = computed(() => {
         </div>
       </div>
 
-      <div v-if="loading" class="p-10 text-center text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+      <div v-if="loading" class="flex flex-col gap-4 p-6">
+        <UiSkeleton class="h-16 w-full rounded-card" />
+        <div class="space-y-2">
+          <UiSkeleton v-for="i in 5" :key="i" class="h-12 w-full rounded-ctl" />
+        </div>
+      </div>
 
       <div v-else class="flex flex-col gap-4 p-6">
         <!-- Flow tracker: shared summary strip for both Day and Week views -->

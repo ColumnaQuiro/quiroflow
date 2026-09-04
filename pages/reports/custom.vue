@@ -296,7 +296,7 @@ async function removeSaved(r: SavedReport) {
       </div>
 
       <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
-        <div v-if="loading" class="py-12 text-center text-[13px] text-ink-faint2">{{ t('Loading…', 'Cargando…') }}</div>
+        <UiSkeleton v-if="loading" class="h-80 w-full rounded-ctl" />
         <div v-else-if="rows.length === 0" class="py-12 text-center text-[13px] text-ink-faint2">{{ t('No data for this combination yet.', 'Todavía no hay datos para esta combinación.') }}</div>
         <template v-else>
           <div v-if="chartType === 'bar'" class="h-80"><Bar :data="chartData" :options="chartOptions" /></div>

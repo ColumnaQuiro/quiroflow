@@ -71,7 +71,14 @@ const contactHref = computed(() => {
   <div class="mx-auto max-w-xl px-6 py-8">
     <h1 class="text-lg font-semibold text-ink-900">Subscription</h1>
 
-    <div v-if="loading" class="mt-4 text-sm text-ink-muted">Loading…</div>
+    <div v-if="loading" class="mt-4 space-y-4 rounded-card border border-line bg-surface p-4 shadow-card">
+      <div class="flex items-center justify-between">
+        <UiSkeleton class="h-4 w-24 rounded-ctlSm" />
+        <UiSkeleton class="h-6 w-20 rounded-full" />
+      </div>
+      <UiSkeleton class="h-3 w-full rounded-ctlSm" />
+      <UiSkeleton class="h-3 w-2/3 rounded-ctlSm" />
+    </div>
     <div v-else-if="!subscription" class="mt-4 text-sm text-ink-muted">No subscription found. Contact <a :href="contactHref" class="text-brand hover:text-brand-hover">hola@columnaquiro.com</a>.</div>
 
     <div v-else class="mt-4 space-y-4 rounded-card border border-line bg-surface p-4 shadow-card">

@@ -92,7 +92,12 @@ async function removeReply(r: SavedReply) {
                 <h3 class="text-[13.5px] font-[560] text-ink-700">{{ t('Replies', 'Respuestas') }}</h3>
                 <UiBtn variant="primary" size="sm" @click="newReply">{{ t('+ New Reply', '+ Nueva Respuesta') }}</UiBtn>
               </div>
-              <div v-if="loading" class="p-6 text-center text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+              <div v-if="loading" class="divide-y divide-line-row">
+                <div v-for="i in 3" :key="i" class="space-y-2 px-4 py-3">
+                  <UiSkeleton class="h-3.5 w-32 rounded-ctlSm" />
+                  <UiSkeleton class="h-3 w-56 rounded-ctlSm" />
+                </div>
+              </div>
               <div v-else-if="replies.length === 0" class="p-8 text-center text-[13px] text-ink-faint">{{ t('No saved replies yet.', 'Aún no hay respuestas guardadas.') }}</div>
               <ul v-else class="divide-y divide-line-row">
                 <li v-for="r in replies" :key="r.id" class="flex items-center justify-between gap-3 px-4 py-3">

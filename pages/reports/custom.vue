@@ -82,6 +82,25 @@ function monthKeys() {
 function monthKeyFor(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', year: '2-digit' })
 }
+
+// Postgrest puts `in` lists in the URL, so a wide date range's worth of
+// appointment ids gets chunked rather than sent as one oversized request.
+async function fetchAppointmentsByIds(ids: string[]): Promise<{ id: string; practitioner_id: string | null }[]> {
+  if (ids.length === 0) return []
+  const CHUNK = 300
+  const chunks: string[][] = []
+  for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK))
+  const results = await Promise.all(
+    chunks.map((chunk) =>
+      supabase
+        .from('appointments')
+        .select('id, practitioner_id')
+        .in('id', chunk)
+        .then((r) => (r.data ?? []) as { id: string; practitioner_id: string | null }[]),
+    ),
+  )
+  return results.flat()
+}
 const WEEKDAY_LABELS = computed(() => [
   t('Mon', 'lun'),
   t('Tue', 'mar'),
@@ -138,14 +157,20 @@ async function run() {
     }
     rows.value = [...totals.entries()].map(([label, value]) => ({ label, value }))
   } else if (sourceKey.value === 'payments') {
-    const [payments, invoices, appointments, { data: members }] = await Promise.all([
+    const [payments, invoices, { data: members }] = await Promise.all([
       fetchAllRows((f, t) =>
         supabase.from('payments').select('amount_cents, method, paid_at, invoice_id').gte('paid_at', from.toISOString()).lte('paid_at', to.toISOString()).range(f, t),
       ),
       fetchAllRows((f, t) => supabase.from('invoices').select('id, appointment_id').gte('created_at', from.toISOString()).lte('created_at', to.toISOString()).range(f, t)),
-      fetchAllRows((f, t) => supabase.from('appointments').select('id, practitioner_id').range(f, t)),
       supabase.from('team_members').select('id, full_name'),
     ])
+    // Only the practitioner grouping walks payment -> invoice -> appointment,
+    // and even then only for invoices in range -- this used to page the whole
+    // appointments table on every run regardless of grouping.
+    const appointments =
+      groupByKey.value === 'practitioner'
+        ? await fetchAppointmentsByIds([...new Set(invoices.map((i: any) => i.appointment_id).filter((id: any): id is string => !!id))])
+        : []
     const invoiceById = new Map(invoices.map((i) => [i.id, i]))
     const apptById = new Map(appointments.map((a) => [a.id, a]))
     const memberById = new Map((members ?? []).map((m) => [m.id, m.full_name]))

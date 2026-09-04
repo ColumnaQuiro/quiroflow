@@ -153,10 +153,11 @@ async function choosePlan(plan: PlanRow) {
 </script>
 
 <template>
-  <div class="mx-auto max-w-3xl px-6 py-8">
-    <h1 class="text-lg font-semibold text-ink-900">Subscription</h1>
-
-    <div v-if="loading" class="mt-4 space-y-4 rounded-card border border-line bg-surface p-4 shadow-card">
+  <div class="flex h-full flex-col">
+    <PageHeader title="Subscription" />
+    <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
+    <div class="max-w-3xl">
+    <div v-if="loading" class="space-y-4 rounded-card border border-line bg-surface p-4 shadow-card">
       <div class="flex items-center justify-between">
         <UiSkeleton class="h-4 w-24 rounded-ctlSm" />
         <UiSkeleton class="h-6 w-20 rounded-full" />
@@ -164,10 +165,10 @@ async function choosePlan(plan: PlanRow) {
       <UiSkeleton class="h-3 w-full rounded-ctlSm" />
       <UiSkeleton class="h-3 w-2/3 rounded-ctlSm" />
     </div>
-    <div v-else-if="!subscription" class="mt-4 text-sm text-ink-muted">No subscription found. Contact <a :href="contactHref" class="text-brand hover:text-brand-hover">hola@columnaquiro.com</a>.</div>
+    <div v-else-if="!subscription" class="text-sm text-ink-muted">No subscription found. Contact <a :href="contactHref" class="text-brand hover:text-brand-hover">hola@columnaquiro.com</a>.</div>
 
     <template v-else>
-      <p v-if="checkoutJustCompleted && !subscription.stripe_subscription_id" class="mt-4 rounded-card border border-line bg-brand-tint px-4 py-3 text-sm text-brand-text">
+      <p v-if="checkoutJustCompleted && !subscription.stripe_subscription_id" class="rounded-card border border-line bg-brand-tint px-4 py-3 text-sm text-brand-text">
         Payment received -- activating your subscription… this can take a few seconds.
       </p>
 
@@ -276,5 +277,7 @@ async function choosePlan(plan: PlanRow) {
         </div>
       </div>
     </template>
+    </div>
+    </div>
   </div>
 </template>

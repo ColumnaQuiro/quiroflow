@@ -118,17 +118,20 @@ const kpiLoading = ref(true)
 const visits12mo = ref(0)
 const attendancePct = ref<number | null>(null)
 const lastVisit = ref<string | null>(null)
-const lifetimeCents = ref(0)
+
+// The same shared summary the sidebar and Billing tab read -- "Lifetime
+// value" is the sum of the patient's payments, which that composable has
+// already computed for balanceCents. Deriving it here meant an invoices
+// query plus a *dependent* payments query, both duplicates, on the default
+// tab of every patient open.
+const { lifetimeCents, loading: financialSummaryLoading } = usePatientFinancialSummary(() => props.patient.id)
 
 async function loadKpis() {
   kpiLoading.value = true
   const oneYearAgo = new Date()
   oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
 
-  const [{ data: appts }, { data: invoices }] = await Promise.all([
-    supabase.from('appointments').select('status, starts_at').eq('patient_id', props.patient.id),
-    supabase.from('invoices').select('id').eq('patient_id', props.patient.id).neq('status', 'void'),
-  ])
+  const { data: appts } = await supabase.from('appointments').select('status, starts_at').eq('patient_id', props.patient.id)
 
   visits12mo.value = (appts ?? []).filter((a) => a.status === 'completed' && a.starts_at >= oneYearAgo.toISOString()).length
 
@@ -140,13 +143,6 @@ async function loadKpis() {
   const pastCompleted = completed.slice().sort((a, b) => b.starts_at.localeCompare(a.starts_at))
   lastVisit.value = pastCompleted[0]?.starts_at ?? null
 
-  const invoiceIds = (invoices ?? []).map((i) => i.id)
-  if (invoiceIds.length > 0) {
-    const { data: payments } = await supabase.from('payments').select('amount_cents').in('invoice_id', invoiceIds)
-    lifetimeCents.value = (payments ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
-  } else {
-    lifetimeCents.value = 0
-  }
   kpiLoading.value = false
 }
 onMounted(loadKpis)
@@ -357,7 +353,7 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
       </div>
       <div class="rounded-card border border-line bg-surface p-4 shadow-card">
         <p class="text-[11.5px] text-ink-muted2">{{ t('Lifetime value', 'Valor histórico') }}</p>
-        <p class="mt-1 font-mono text-[20px] font-semibold text-ink-900">{{ kpiLoading ? '—' : money(lifetimeCents) }}</p>
+        <p class="mt-1 font-mono text-[20px] font-semibold text-ink-900">{{ financialSummaryLoading ? '—' : money(lifetimeCents) }}</p>
       </div>
     </div>
 

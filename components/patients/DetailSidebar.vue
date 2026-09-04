@@ -19,27 +19,27 @@ const store = useAccountStore()
 const t = useT()
 
 const primaryNumber = ref<Tables<'patient_contact_numbers'> | null>(null)
-const lifetimeCents = ref(0)
 const hasCardOnFile = ref(false)
 const loading = ref(true)
 
+// "Lifetime" is the sum of everything the patient has paid, which
+// usePatientFinancialSummary already computes (it needs it for balanceCents
+// anyway) and shares across every call site for this patient. This used to
+// be re-derived here with an invoices query and then a *dependent* payments
+// query -- a second serial round-trip on every patient open, duplicating
+// two queries the summary had already run. Reading the shared value also
+// means it stays correct after a payment is recorded, instead of going
+// stale until the component remounted.
+const { lifetimeCents, loading: financialSummaryLoading } = usePatientFinancialSummary(() => props.patient.id)
+
 async function load() {
   loading.value = true
-  const [{ data: numbers }, { data: invoices }, { data: stripeCustomer }] = await Promise.all([
+  const [{ data: numbers }, { data: stripeCustomer }] = await Promise.all([
     supabase.from('patient_contact_numbers').select('*').eq('patient_id', props.patient.id).order('created_at').limit(1),
-    supabase.from('invoices').select('id').eq('patient_id', props.patient.id).neq('status', 'void'),
     supabase.from('patient_stripe_customers').select('default_payment_method_id').eq('patient_id', props.patient.id).maybeSingle(),
   ])
   primaryNumber.value = numbers?.[0] ?? null
   hasCardOnFile.value = !!stripeCustomer?.default_payment_method_id
-
-  const invoiceIds = (invoices ?? []).map((i) => i.id)
-  if (invoiceIds.length > 0) {
-    const { data: payments } = await supabase.from('payments').select('amount_cents').in('invoice_id', invoiceIds)
-    lifetimeCents.value = (payments ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
-  } else {
-    lifetimeCents.value = 0
-  }
   loading.value = false
 }
 onMounted(load)
@@ -130,7 +130,7 @@ function money(cents: number) {
         </div>
         <div>
           <dt class="text-ink-faint">{{ t('Lifetime', 'Total histórico') }}</dt>
-          <dd class="mt-0.5 font-mono text-[12.5px] text-ink-700">{{ loading ? '…' : money(lifetimeCents) }}</dd>
+          <dd class="mt-0.5 font-mono text-[12.5px] text-ink-700">{{ financialSummaryLoading ? '…' : money(lifetimeCents) }}</dd>
         </div>
         <div>
           <dt class="text-ink-faint">{{ t('Card on file', 'Tarjeta registrada') }}</dt>

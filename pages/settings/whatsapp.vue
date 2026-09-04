@@ -153,7 +153,7 @@ async function save() {
                 v-model="accessToken"
                 type="password"
                 autocomplete="off"
-                :placeholder="hasStoredToken ? t('Leave blank to keep it', 'Déjalo en blanco para conservarlo') : ''"
+                :placeholder="hasStoredToken ? '••••••••••••••••••••' : ''"
                 class="h-8 w-[230px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
               />
             </SettingsFieldRow>

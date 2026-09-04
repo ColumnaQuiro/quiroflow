@@ -232,7 +232,14 @@ const autopayError = ref('')
 
 const invoices = ref<InvoiceRow[]>([])
 const lineItemDescriptions = ref<Record<string, string[]>>({})
-const loading = ref(true)
+// Three independent loading flags instead of one -- each card (Account
+// Ledger, Packages/bonos, Memberships) shows its own skeleton and swaps in
+// as soon as its own pair of queries resolves, rather than the whole tab
+// waiting on whichever of the ~8 queries loadAll() used to fire together is
+// slowest before showing anything at all.
+const ledgerLoading = ref(true)
+const packagesLoading = ref(true)
+const membershipsLoading = ref(true)
 
 const purchases = ref<PackagePurchaseRow[]>([])
 const sellPackageId = ref('')
@@ -289,51 +296,48 @@ async function recordSalePayment(description: string, amountCents: number, metho
   }
 }
 
-async function loadAll() {
-  // Every query here is keyed directly off props.patientId (invoice_line_items
-  // and membership_payments filter through an embedded !inner join on their
-  // parent's patient_id rather than an .in(ids) collected from a first
-  // round-trip), so all seven run in a single parallel wave instead of the
-  // two-or-three sequential round-trips this used to take -- each extra
-  // wave was adding a full network round-trip to every patient's
-  // billing-tab load regardless of how little data came back.
-  const [{ data: inv }, , { data: pkgPurchases }, { data: patMemberships }, { data: lines }, { data: membershipPaymentRows }, { data: customer }, { data: sch }] = await Promise.all([
+// Each loader below is independent -- its own query pair, its own loading
+// flag -- so the three cards (Account Ledger, Packages/bonos, Memberships)
+// each show their own skeleton and swap in the moment their own data is
+// back, instead of the whole tab waiting on whichever query of the ~8 this
+// used to fire as one batch happened to be slowest. Within a loader, queries
+// keyed off the same patient_id still run in one parallel wave each
+// (invoice_line_items and membership_payments filter through an embedded
+// !inner join on their parent's patient_id rather than a separate .in(ids)
+// round-trip) -- that part of the original optimization is unchanged.
+async function loadLedger() {
+  ledgerLoading.value = true
+  const [{ data: inv }, { data: lines }] = await Promise.all([
     supabase
       .from('invoices')
       .select('id, invoice_number, status, total_cents, created_at, is_refund, refunds_invoice_id')
       .eq('patient_id', props.patientId)
       .order('created_at', { ascending: false }),
-    ensureBillingTemplatesLoaded(),
-    supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used, price_cents, purchased_at').eq('patient_id', props.patientId).order('purchased_at', { ascending: false }),
-    supabase.from('patient_memberships').select('id, membership_name, price_cents, status, started_at').eq('patient_id', props.patientId).order('started_at', { ascending: false }),
     supabase
       .from('invoice_line_items')
       .select('invoice_id, description, invoices!inner(patient_id)')
       .eq('invoices.patient_id', props.patientId),
-    supabase
-      .from('membership_payments')
-      .select('id, patient_membership_id, period_start, amount_cents, status, patient_memberships!inner(patient_id)')
-      .eq('patient_memberships.patient_id', props.patientId)
-      .order('period_start', { ascending: false }),
-    supabase.from('patient_stripe_customers').select('stripe_customer_id, default_payment_method_id').eq('patient_id', props.patientId).maybeSingle(),
-    supabase
-      .from('payment_schedules')
-      .select('id, package_purchase_id, patient_membership_id, interval, interval_count, installments_total, installments_paid, status')
-      .eq('patient_id', props.patientId),
   ])
   invoices.value = inv ?? []
-  purchases.value = pkgPurchases ?? []
-  patientMemberships.value = (patMemberships as PatientMembershipRow[]) ?? []
-
   const byInvoice: Record<string, string[]> = {}
   for (const l of (lines ?? []) as unknown as { invoice_id: string; description: string }[]) {
     ;(byInvoice[l.invoice_id] ??= []).push(l.description)
   }
   lineItemDescriptions.value = byInvoice
-  membershipPayments.value = (membershipPaymentRows ?? []) as unknown as MembershipPaymentRow[]
-  stripeCustomer.value = customer
-  schedules.value = sch ?? []
+  ledgerLoading.value = false
+}
 
+async function loadPackages() {
+  packagesLoading.value = true
+  const [{ data: pkgPurchases }, { data: sch }] = await Promise.all([
+    supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used, price_cents, purchased_at').eq('patient_id', props.patientId).order('purchased_at', { ascending: false }),
+    supabase
+      .from('payment_schedules')
+      .select('id, package_purchase_id, patient_membership_id, interval, interval_count, installments_total, installments_paid, status')
+      .eq('patient_id', props.patientId),
+  ])
+  purchases.value = pkgPurchases ?? []
+  schedules.value = sch ?? []
   if (schedules.value.length > 0) {
     const { data: events } = await supabase
       .from('stripe_payment_events')
@@ -342,8 +346,36 @@ async function loadAll() {
       .order('period_start', { ascending: false })
     stripeEvents.value = events ?? []
   }
+  packagesLoading.value = false
+}
 
-  loading.value = false
+async function loadMemberships() {
+  membershipsLoading.value = true
+  const [{ data: patMemberships }, { data: membershipPaymentRows }] = await Promise.all([
+    supabase.from('patient_memberships').select('id, membership_name, price_cents, status, started_at').eq('patient_id', props.patientId).order('started_at', { ascending: false }),
+    supabase
+      .from('membership_payments')
+      .select('id, patient_membership_id, period_start, amount_cents, status, patient_memberships!inner(patient_id)')
+      .eq('patient_memberships.patient_id', props.patientId)
+      .order('period_start', { ascending: false }),
+  ])
+  patientMemberships.value = (patMemberships as PatientMembershipRow[]) ?? []
+  membershipPayments.value = (membershipPaymentRows ?? []) as unknown as MembershipPaymentRow[]
+  membershipsLoading.value = false
+}
+
+async function loadCard() {
+  const { data: customer } = await supabase.from('patient_stripe_customers').select('stripe_customer_id, default_payment_method_id').eq('patient_id', props.patientId).maybeSingle()
+  stripeCustomer.value = customer
+}
+
+async function loadAll() {
+  // Callers that mutate data (recording a payment, selling a package,
+  // activating a membership...) still `await loadAll()` and expect
+  // everything back in sync afterward, so this stays a single entry point --
+  // it just fans out to independently-resolving loaders instead of one
+  // Promise.all gating a single `loading` flag.
+  await Promise.all([loadLedger(), loadPackages(), loadMemberships(), loadCard(), ensureBillingTemplatesLoaded()])
 }
 onMounted(() => {
   loadAll()
@@ -823,7 +855,19 @@ function money(cents: number) {
     </div>
 
     <!-- Account Ledger -->
-    <div v-if="loading" class="rounded-card border border-line bg-surface p-8 text-center text-[13px] text-ink-faint shadow-card">{{ t('Loading…', 'Cargando…') }}</div>
+    <div v-if="ledgerLoading" class="rounded-card border border-line bg-surface shadow-card">
+      <div class="flex items-center justify-between border-b border-line-divider px-4 py-3">
+        <UiSkeleton class="h-4 w-32 rounded" />
+        <UiSkeleton class="h-4 w-4 rounded" />
+      </div>
+      <div class="space-y-3 p-4">
+        <div v-for="i in 4" :key="i" class="flex items-center justify-between gap-4">
+          <UiSkeleton class="h-3.5 w-16 rounded" />
+          <UiSkeleton class="h-3.5 flex-1 rounded" />
+          <UiSkeleton class="h-3.5 w-20 rounded" />
+        </div>
+      </div>
+    </div>
     <PatientsAccountLedger
       v-else
       :patient-id="patientId"
@@ -845,10 +889,21 @@ function money(cents: number) {
       @credits-changed="refreshCreditSummary"
     />
 
-    <div v-if="!loading" class="grid grid-cols-2 gap-4">
+    <div class="grid grid-cols-2 gap-4">
       <!-- Packages / bonos -->
       <div class="rounded-card border border-line bg-surface p-4 shadow-card">
         <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Packages / bonos', 'Bonos') }}</p>
+        <div v-if="packagesLoading" class="mt-3 space-y-3">
+          <div v-for="i in 2" :key="i" class="rounded-ctl border border-line-divider p-3">
+            <div class="flex items-center justify-between gap-2">
+              <UiSkeleton class="h-3.5 w-32 rounded" />
+              <UiSkeleton class="h-3 w-14 rounded" />
+            </div>
+            <UiSkeleton class="mt-2 h-1 w-full rounded-full" />
+            <UiSkeleton class="mt-2 h-3 w-40 rounded" />
+          </div>
+        </div>
+        <template v-else>
         <div class="mt-3 space-y-3">
           <div v-for="p in purchases" :key="p.id" class="rounded-ctl border border-line-divider p-3">
             <div class="flex items-center justify-between gap-2">
@@ -964,11 +1019,22 @@ function money(cents: number) {
         <p v-if="sellPackageId && Number(sellAmountPaid) > 0 && packageTemplates.find((t) => t.id === sellPackageId) && Number(sellAmountPaid) * 100 < packageTemplates.find((t) => t.id === sellPackageId)!.price_cents" class="mt-1.5 text-[11px] text-ink-faint">
           {{ t('Remaining balance can be scheduled via Stripe autopay after the sale.', 'El saldo restante se puede programar mediante el pago automático de Stripe después de la venta.') }}
         </p>
+        </template>
       </div>
 
       <!-- Memberships -->
       <div class="rounded-card border border-line bg-surface p-4 shadow-card">
         <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Memberships', 'Membresías') }}</p>
+        <div v-if="membershipsLoading" class="mt-3 space-y-3">
+          <div v-for="i in 2" :key="i" class="rounded-ctl border border-line-divider p-3">
+            <div class="flex items-center justify-between gap-2">
+              <UiSkeleton class="h-3.5 w-32 rounded" />
+              <UiSkeleton class="h-4 w-14 rounded-pill" />
+            </div>
+            <UiSkeleton class="mt-2 h-3 w-44 rounded" />
+          </div>
+        </div>
+        <template v-else>
         <div v-if="patientMemberships.length === 0" class="mt-3 rounded-ctl border border-dashed border-line-control p-4 text-center text-[12.5px] text-ink-faint">
           {{ t('No active memberships for this patient.', 'Este paciente no tiene membresías activas.') }}
         </div>
@@ -1053,6 +1119,7 @@ function money(cents: number) {
           </div>
           <UiBtn size="sm" variant="secondary" :disabled="!activateMembershipId || activatingMembership" @click="activateMembership">{{ activatingMembership ? t('Activating…', 'Activando…') : t('Activate', 'Activar') }}</UiBtn>
         </form>
+        </template>
       </div>
     </div>
 

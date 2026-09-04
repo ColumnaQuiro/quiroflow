@@ -43,6 +43,14 @@ const pageSize = ref(100)
 // for the extra one answers "is there a next page" for the cost of the
 // page itself, no second query.
 const hasNextPage = ref(false)
+// Highest page number confirmed to exist so far -- grows as the user pages
+// forward (each load that comes back with hasNextPage true confirms the
+// next page too), reset to 1 whenever a filter changes the underlying set.
+// Caps the row of clickable page buttons at 10; Previous/Next still work
+// past that, there just isn't a numbered button for every page of an
+// unusually large result set.
+const maxKnownPage = ref(1)
+const visiblePages = computed(() => Array.from({ length: Math.min(maxKnownPage.value, 10) }, (_, i) => i + 1))
 // The common case (no tag filter, "not contacted" off -- the defaults) is
 // served as a real DB-paginated page: fast regardless of how many recall
 // candidates the account has. Tag matching and "not contacted" both depend
@@ -130,6 +138,7 @@ async function loadRecalls() {
   if (isPaginated.value) {
     hasNextPage.value = rows.length > pageSize.value
     recalls.value = rows.slice(0, pageSize.value)
+    maxKnownPage.value = Math.max(maxKnownPage.value, hasNextPage.value ? page.value + 1 : page.value)
   } else {
     hasNextPage.value = false
     recalls.value = rows
@@ -151,9 +160,15 @@ function goToPage(p: number) {
 let searchDebounce: ReturnType<typeof setTimeout> | undefined
 watch(search, () => {
   clearTimeout(searchDebounce)
-  searchDebounce = setTimeout(() => goToPage(1), 300)
+  searchDebounce = setTimeout(() => {
+    maxKnownPage.value = 1
+    goToPage(1)
+  }, 300)
 })
-watch([practitionerFilter, dateFrom, minWeeksOverdue, balanceFilter, tagFilter, notContactedOnly, pageSize], () => goToPage(1))
+watch([practitionerFilter, dateFrom, minWeeksOverdue, balanceFilter, tagFilter, notContactedOnly, pageSize], () => {
+  maxKnownPage.value = 1
+  goToPage(1)
+})
 
 // Tag substring matching and "not contacted" (see isPaginated above) still
 // need a client-side pass -- both over a server-narrowed set that's already
@@ -655,8 +670,8 @@ async function exportCsv() {
         </table>
 
         <div v-if="!loading && isPaginated && (page > 1 || recalls.length > 0)" class="flex items-center justify-between bg-surface-subtle2 px-5 py-2.5 text-[12.5px] text-ink-muted2">
-          <span>{{ t('Page', 'Página') }} {{ page }} · {{ recalls.length }} {{ t('shown', 'mostrados') }}</span>
-          <div class="flex gap-2">
+          <span>{{ recalls.length }} {{ t('shown', 'mostrados') }}</span>
+          <div class="flex items-center gap-1">
             <button
               type="button"
               :disabled="page <= 1"
@@ -664,6 +679,16 @@ async function exportCsv() {
               @click="goToPage(page - 1)"
             >
               {{ t('Previous', 'Anterior') }}
+            </button>
+            <button
+              v-for="p in visiblePages"
+              :key="p"
+              type="button"
+              class="flex h-7 w-7 items-center justify-center rounded-ctlSm border text-[12.5px]"
+              :class="p === page ? 'border-brand-tintBorder bg-brand-tint font-semibold text-brand-text' : 'border-line-control bg-surface text-ink-500 hover:border-line-controlHover'"
+              @click="goToPage(p)"
+            >
+              {{ p }}
             </button>
             <button
               type="button"

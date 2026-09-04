@@ -1,8 +1,12 @@
 <script setup lang="ts">
+// No `await store.load()` here. middleware/account.global.ts already awaits
+// it before this layout ever renders, so this only ever re-checked an
+// already-loaded store -- but a top-level await makes the whole layout an
+// async component, so Vue suspended it (and every child) for a microtask on
+// each navigation regardless. The routes the middleware skips (/portal,
+// /join, /book, /doc) all use a different layout or none, so none of them
+// reach this file.
 const store = useAccountStore()
-if (!store.loaded) {
-  await store.load()
-}
 
 const route = useRoute()
 const router = useRouter()

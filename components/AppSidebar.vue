@@ -250,31 +250,34 @@ async function signOut() {
           <span v-else-if="(item.badge === 'myday' && myDayCount > 0) || (item.badge === 'recalls' && recallsCount > 0) || (item.badge === 'campaigns' && campaignsActive) || (item.badge === 'inbox' && inboxUnreadCount > 0)" class="absolute right-1 top-1 h-[6px] w-[6px] rounded-full bg-danger-text" />
         </NuxtLink>
       </div>
+
+      <div class="flex flex-col gap-0.5" :class="{ 'items-center': collapsed }">
+        <div v-if="!collapsed" class="px-[9px] py-1 text-[10.5px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Help & Support', 'Ayuda y soporte') }}</div>
+        <a
+          :href="helpCentreUrl"
+          target="_blank"
+          rel="noopener"
+          class="flex h-8 items-center gap-[9px] rounded-ctlSm text-[13.5px] text-ink-600 hover:bg-surface-subtle"
+          :class="collapsed ? 'w-8 justify-center' : 'w-full px-[9px]'"
+          :title="collapsed ? t('Help Centre', 'Centro de ayuda') : undefined"
+        >
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="5.8" /><path d="M6.2 6.3a1.8 1.8 0 013.4.8c0 1.2-1.6 1.4-1.6 2.5" stroke-linecap="round" /><circle cx="8" cy="11.5" r="0.15" fill="currentColor" /></svg>
+          <span v-if="!collapsed" class="flex-1">{{ t('Help Centre', 'Centro de ayuda') }}</span>
+        </a>
+        <button
+          type="button"
+          class="flex h-8 items-center gap-[9px] rounded-ctlSm text-[13.5px] text-ink-600 hover:bg-surface-subtle"
+          :class="collapsed ? 'w-8 justify-center' : 'w-full px-[9px]'"
+          :title="collapsed ? t('Refer Your Friends!', '¡Recomienda a tus amigos!') : undefined"
+          @click="referFriendsOpen = true"
+        >
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="5.8" /><path d="M8 4.8v6.4M6 6.5c0-.9.9-1.5 2-1.5s2 .5 2 1.3c0 1.7-4 .9-4 2.7 0 .8.9 1.3 2 1.3s2-.6 2-1.5" stroke-linecap="round" /></svg>
+          <span v-if="!collapsed" class="flex-1 text-left">{{ t('Refer Your Friends!', '¡Recomienda a tus amigos!') }}</span>
+        </button>
+      </div>
     </nav>
 
     <div class="flex flex-col gap-0.5 border-t border-line px-3 py-2.5" :class="{ 'items-center px-1.5': collapsed }">
-      <div v-if="!collapsed" class="px-[9px] py-1 text-[10.5px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Help & Support', 'Ayuda y soporte') }}</div>
-      <a
-        :href="helpCentreUrl"
-        target="_blank"
-        rel="noopener"
-        class="flex h-8 items-center gap-[9px] rounded-ctlSm text-[13.5px] text-ink-600 hover:bg-surface-subtle"
-        :class="collapsed ? 'w-8 justify-center' : 'w-full px-[9px]'"
-        :title="collapsed ? t('Help Centre', 'Centro de ayuda') : undefined"
-      >
-        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="5.8" /><path d="M6.2 6.3a1.8 1.8 0 013.4.8c0 1.2-1.6 1.4-1.6 2.5" stroke-linecap="round" /><circle cx="8" cy="11.5" r="0.15" fill="currentColor" /></svg>
-        <span v-if="!collapsed" class="flex-1">{{ t('Help Centre', 'Centro de ayuda') }}</span>
-      </a>
-      <button
-        type="button"
-        class="flex h-8 items-center gap-[9px] rounded-ctlSm text-[13.5px] text-ink-600 hover:bg-surface-subtle"
-        :class="collapsed ? 'w-8 justify-center' : 'w-full px-[9px]'"
-        :title="collapsed ? t('Refer Your Friends!', '¡Recomienda a tus amigos!') : undefined"
-        @click="referFriendsOpen = true"
-      >
-        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="5.8" /><path d="M8 4.8v6.4M6 6.5c0-.9.9-1.5 2-1.5s2 .5 2 1.3c0 1.7-4 .9-4 2.7 0 .8.9 1.3 2 1.3s2-.6 2-1.5" stroke-linecap="round" /></svg>
-        <span v-if="!collapsed" class="flex-1 text-left">{{ t('Refer Your Friends!', '¡Recomienda a tus amigos!') }}</span>
-      </button>
       <button
         type="button"
         class="flex h-8 items-center gap-[9px] rounded-ctlSm text-[13px] text-ink-muted2 hover:bg-surface-subtle"

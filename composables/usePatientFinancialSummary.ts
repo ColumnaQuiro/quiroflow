@@ -16,6 +16,11 @@ interface FinancialState {
   loading: Ref<boolean>
   balanceCents: Ref<number>
   creditLedgerCents: Ref<number>
+  // Everything the patient has ever actually paid. Already summed here to
+  // get balanceCents -- exposed because DetailSidebar's "Lifetime" figure is
+  // exactly this number, and it was re-deriving it with its own invoices
+  // query followed by a dependent payments query.
+  lifetimeCents: Ref<number>
   activeMembership: Ref<ActiveMembership | null>
   activePackages: Ref<ActivePackage[]>
   // Tracks whether a load has ever completed (or is in flight) for this id --
@@ -45,6 +50,7 @@ function stateFor(id: string | null | undefined): FinancialState {
       loading: ref(true),
       balanceCents: ref(0),
       creditLedgerCents: ref(0),
+      lifetimeCents: ref(0),
       activeMembership: ref(null),
       activePackages: ref([]),
       loaded: false,
@@ -78,6 +84,7 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     ])
 
     const paidCents = (payments ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
+    state.lifetimeCents.value = paidCents
     const invoicedCents = (invoices ?? []).reduce((sum, i) => sum + i.total_cents, 0)
     state.creditLedgerCents.value = (credits ?? []).reduce((sum, c) => sum + c.amount_cents, 0)
     // Positive = clinic owes the patient (credit), negative = patient owes the clinic --
@@ -138,6 +145,7 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     loading: computed(() => stateFor(id.value).loading.value),
     balanceCents: computed(() => stateFor(id.value).balanceCents.value),
     creditLedgerCents: computed(() => stateFor(id.value).creditLedgerCents.value),
+    lifetimeCents: computed(() => stateFor(id.value).lifetimeCents.value),
     activeMembership: computed(() => stateFor(id.value).activeMembership.value),
     activePackages: computed(() => stateFor(id.value).activePackages.value),
     refresh,

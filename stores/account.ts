@@ -78,12 +78,23 @@ export const useAccountStore = defineStore('account', {
         return
       }
 
-      const { data: teamMember } = await supabase
-        .from('team_members')
-        .select('id, account_id, full_name, role, color, is_owner, theme_preference, language_preference, photo_storage_path')
-        .eq('user_id', user.value.sub)
-        .is('deleted_at', null)
-        .maybeSingle()
+      // One round-trip, not two. This used to fetch team_members, and only
+      // once that resolved (it carries the account_id everything else keys
+      // off) fetch account/clinics/permissions/subscription. Because
+      // middleware/account.global.ts blocks navigation on this, that second
+      // hop delayed *everything* -- page queries, sidebar badges, the
+      // Billing tab all sat idle until it finished, then started at once.
+      // get_my_bootstrap resolves the team member from auth.uid() server-side
+      // and returns all five together.
+      const { data: boot } = await supabase.rpc('get_my_bootstrap')
+      const bootstrap = (boot ?? {}) as unknown as {
+        team_member: TeamMember | null
+        account: { name: string; slug: string; whatsapp_confirmation_template_name: string | null; whatsapp_recall_template_name: string | null; scheduling_policy_fee_cents: number | null } | null
+        clinics: Clinic[]
+        permissions: Record<string, PermissionValue>
+        subscription: { status: string; trial_ends_at: string | null } | null
+      }
+      const teamMember = bootstrap.team_member
 
       if (!teamMember) {
         this.teamMember = null
@@ -92,26 +103,17 @@ export const useAccountStore = defineStore('account', {
         return
       }
 
-      this.teamMember = teamMember as TeamMember
+      this.teamMember = teamMember
       // The client plugin already applied whatever was cached in
       // localStorage before this resolved -- this reconciles it with the
       // user's real saved preference (e.g. first login on a new device).
       useTheme().setPreference(teamMember.theme_preference as 'light' | 'dark' | 'system')
       useLang().setPreference(teamMember.language_preference as 'en' | 'es')
 
-      const [{ data: account }, { data: clinics }, { data: permissions }, { data: subscription }] = await Promise.all([
-        supabase
-          .from('accounts')
-          .select('name, slug, whatsapp_confirmation_template_name, whatsapp_recall_template_name, scheduling_policy_fee_cents')
-          .eq('id', teamMember.account_id)
-          .maybeSingle(),
-        supabase
-          .from('clinics')
-          .select('id, account_id, name, address, slot_duration_minutes, business_hours, legal_name, tax_id, invoice_footer_text, logo_storage_path')
-          .eq('account_id', teamMember.account_id),
-        supabase.rpc('get_my_permissions', { target_account_id: teamMember.account_id }),
-        supabase.from('subscriptions').select('status, trial_ends_at').eq('account_id', teamMember.account_id).maybeSingle(),
-      ])
+      const account = bootstrap.account
+      const clinics = bootstrap.clinics
+      const permissions = bootstrap.permissions
+      const subscription = bootstrap.subscription
 
       this.accountName = account?.name ?? ''
       this.accountSlug = account?.slug ?? ''

@@ -38,6 +38,7 @@ async function signOut() {
   <div ref="menuRef" class="relative">
     <button
       type="button"
+      data-testid="account-menu-trigger"
       class="flex h-8 items-center gap-2 rounded-ctl pl-1 pr-2 text-left hover:bg-surface-subtle"
       @click="menuOpen = !menuOpen"
     >

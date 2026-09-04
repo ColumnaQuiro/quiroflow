@@ -17,11 +17,15 @@ interface InvoiceRow {
   is_refund: boolean
   refunds_invoice_id: string | null
 }
+interface PaymentRow { id: string; invoice_id: string; amount_cents: number; method: string; paid_at: string }
+interface CreditRow { id: string; amount_cents: number; reason: string | null; method: string | null; invoice_id: string | null; created_at: string }
 
 const props = defineProps<{
   patientId: string
   invoices: InvoiceRow[]
   lineItemDescriptions: Record<string, string[]>
+  payments: PaymentRow[]
+  credits: CreditRow[]
   creditLedgerCents: number
   sendingInvoiceId: string
   sendResultInvoiceId: string
@@ -44,38 +48,8 @@ const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
 
-interface PaymentRow { id: string; invoice_id: string; amount_cents: number; method: string; paid_at: string }
-interface CreditRow { id: string; amount_cents: number; reason: string | null; method: string | null; invoice_id: string | null; created_at: string }
-
-const payments = ref<PaymentRow[]>([])
-const credits = ref<CreditRow[]>([])
-const loading = ref(true)
 const expandedKey = ref<string | null>(null)
 const menuOpen = ref(false)
-
-// Re-fetches whenever the parent's invoices array is reassigned -- every
-// mutation site (take payment, add/apply credit, sell package, delete
-// invoice, etc.) already ends in the parent's loadAll(), which reassigns
-// `invoices.value` to a new array, so this piggybacks on that signal instead
-// of needing its own exposed refresh() wired up at every call site.
-async function refresh() {
-  loading.value = true
-  const invoiceIds = props.invoices.map((i) => i.id)
-  const [{ data: pays }, { data: creds }] = await Promise.all([
-    invoiceIds.length > 0
-      ? supabase.from('payments').select('id, invoice_id, amount_cents, method, paid_at').in('invoice_id', invoiceIds)
-      : Promise.resolve({ data: [] as PaymentRow[] }),
-    supabase
-      .from('account_credits')
-      .select('id, amount_cents, reason, method, invoice_id, created_at')
-      .eq('patient_id', props.patientId)
-      .order('created_at', { ascending: true }),
-  ])
-  payments.value = pays ?? []
-  credits.value = creds ?? []
-  loading.value = false
-}
-watch(() => props.invoices, refresh, { immediate: true })
 
 function money(cents: number) {
   const amount = (Math.abs(cents) / 100).toFixed(2)
@@ -105,7 +79,7 @@ interface LedgerRow {
 
 const rows = computed<LedgerRow[]>(() => {
   const invoiceRows: LedgerRow[] = props.invoices.map((inv) => {
-    const paidForInvoice = payments.value.filter((p) => p.invoice_id === inv.id).reduce((sum, p) => sum + p.amount_cents, 0)
+    const paidForInvoice = props.payments.filter((p) => p.invoice_id === inv.id).reduce((sum, p) => sum + p.amount_cents, 0)
     const openCents = inv.total_cents - paidForInvoice
     const items = props.lineItemDescriptions[inv.id] ?? []
 
@@ -156,7 +130,7 @@ const rows = computed<LedgerRow[]>(() => {
     }
   })
 
-  const paymentRows: LedgerRow[] = payments.value.map((p) => ({
+  const paymentRows: LedgerRow[] = props.payments.map((p) => ({
     key: `payment-${p.id}`,
     ref: '',
     date: p.paid_at,
@@ -177,7 +151,7 @@ const rows = computed<LedgerRow[]>(() => {
   // amount (we have no allocation table tracking which top-up funded which
   // later spend).
   let creditRunning = 0
-  const creditRows: LedgerRow[] = credits.value.map((c) => {
+  const creditRows: LedgerRow[] = props.credits.map((c) => {
     creditRunning += c.amount_cents
     return {
       key: `credit-${c.id}`,
@@ -327,7 +301,6 @@ async function submitTransferCredit() {
   })
   transferring.value = false
   transferModalOpen.value = false
-  await refresh()
   emit('creditsChanged')
 }
 
@@ -392,15 +365,7 @@ async function sendStatement() {
       </div>
     </div>
 
-    <div v-if="loading" class="divide-y divide-line-row">
-      <div v-for="i in 5" :key="i" class="flex h-[42px] items-center gap-3 px-2">
-        <UiSkeleton class="h-3.5 w-12 rounded-ctlSm" />
-        <UiSkeleton class="h-3.5 w-16 rounded-ctlSm" />
-        <UiSkeleton class="h-3.5 w-40 flex-1 rounded-ctlSm" />
-        <UiSkeleton class="h-3.5 w-16 rounded-ctlSm" />
-      </div>
-    </div>
-    <div v-else-if="rows.length === 0" class="p-8 text-center text-[13px] text-ink-faint">{{ t('No transactions yet.', 'Aún no hay transacciones.') }}</div>
+    <div v-if="rows.length === 0" class="p-8 text-center text-[13px] text-ink-faint">{{ t('No transactions yet.', 'Aún no hay transacciones.') }}</div>
     <div v-else class="max-h-[420px] overflow-y-auto">
       <table class="w-full text-[13px]">
         <thead class="sticky top-0 border-b border-line-divider bg-surface text-left text-[11px] font-medium uppercase tracking-wide text-ink-faint">

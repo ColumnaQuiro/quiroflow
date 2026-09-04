@@ -3996,6 +3996,7 @@ export type Database = {
           starts_at: string
         }[]
       }
+      get_my_bootstrap: { Args: never; Returns: Json }
       get_my_permissions: { Args: { target_account_id: string }; Returns: Json }
       get_patient_booking_info: { Args: never; Returns: Json }
       get_public_booking_info: { Args: { p_slug: string }; Returns: Json }

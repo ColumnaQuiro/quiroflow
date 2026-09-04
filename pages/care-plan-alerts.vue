@@ -88,9 +88,17 @@ const messagingRow = computed(() => rows.value.find((r) => r.patient_id === mess
             </tr>
           </thead>
           <tbody class="divide-y divide-line-divider">
-            <tr v-if="loading">
-              <td colspan="7" class="px-3 py-6 text-center text-ink-faint">{{ t('Loading…', 'Cargando…') }}</td>
-            </tr>
+            <template v-if="loading">
+              <tr v-for="i in 4" :key="i">
+                <td class="px-3 py-2.5"><UiSkeleton class="h-3.5 w-28 rounded-ctlSm" /></td>
+                <td class="px-3 py-2.5"><UiSkeleton class="h-3.5 w-24 rounded-ctlSm" /></td>
+                <td class="px-3 py-2.5"><UiSkeleton class="h-3.5 w-20 rounded-ctlSm" /></td>
+                <td class="px-3 py-2.5"><UiSkeleton class="h-3.5 w-16 rounded-ctlSm" /></td>
+                <td class="px-3 py-2.5"><UiSkeleton class="h-3.5 w-16 rounded-ctlSm" /></td>
+                <td class="px-3 py-2.5"><UiSkeleton class="h-3.5 w-16 rounded-ctlSm" /></td>
+                <td class="px-3 py-2.5" />
+              </tr>
+            </template>
             <tr v-else-if="rows.length === 0">
               <td colspan="7" class="px-3 py-6 text-center text-ink-faint">{{ t('No care plans behind schedule.', 'Ningún plan de tratamiento retrasado.') }}</td>
             </tr>

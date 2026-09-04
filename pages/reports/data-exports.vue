@@ -278,7 +278,11 @@ function redownload(exp: GeneratedExport) {
     </PageHeader>
 
     <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
-      <div v-if="loading" class="text-[13px] text-ink-faint2">{{ t('Loading…', 'Cargando…') }}</div>
+      <div v-if="loading" class="mx-auto max-w-3xl space-y-3 rounded-card border border-line bg-surface p-5 shadow-card">
+        <UiSkeleton class="h-4 w-48 rounded-ctlSm" />
+        <UiSkeleton class="h-3 w-64 rounded-ctlSm" />
+        <UiSkeleton class="h-9 w-full max-w-xs rounded-ctl" />
+      </div>
 
       <div v-else class="mx-auto max-w-3xl space-y-6">
         <div class="rounded-card border border-line bg-surface p-5 shadow-card">

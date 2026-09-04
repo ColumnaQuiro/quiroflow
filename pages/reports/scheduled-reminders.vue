@@ -103,7 +103,15 @@ function fmt(iso: string) {
         <ReportsDateRangeSelect v-model="range" />
       </div>
 
-      <div v-if="loading" class="mt-6 text-[13px] text-ink-faint2">{{ t('Loading…', 'Cargando…') }}</div>
+      <div v-if="loading" class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
+        <UiSkeleton class="h-4 w-48 rounded-ctlSm" />
+        <div class="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div v-for="i in 4" :key="i" class="space-y-2 rounded-ctl bg-surface-subtle p-3 text-center">
+            <UiSkeleton class="mx-auto h-[23px] w-10 rounded-ctlSm" />
+            <UiSkeleton class="mx-auto h-3 w-16 rounded-ctlSm" />
+          </div>
+        </div>
+      </div>
 
       <template v-else>
         <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">

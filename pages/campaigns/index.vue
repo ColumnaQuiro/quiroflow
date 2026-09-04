@@ -406,7 +406,12 @@ async function sendNow(patient: PatientOption) {
       </div>
 
       <div class="mt-5">
-        <div v-if="loading" class="rounded-card border border-line bg-surface p-6 text-center text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+        <div v-if="loading" class="space-y-2.5">
+          <div v-for="i in 3" :key="i" class="flex items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 shadow-card">
+            <UiSkeleton class="h-[30px] w-[30px] shrink-0 rounded-full" />
+            <UiSkeleton class="h-3.5 w-48 rounded-ctlSm" />
+          </div>
+        </div>
         <div v-else-if="rules.length === 0" class="rounded-card border border-line bg-surface p-10 text-center text-[13px] text-ink-faint">
           {{ t('No campaigns yet. Create one to automate a WhatsApp, email, or webhook send.', 'Aún no hay campañas. Crea una para automatizar un envío por WhatsApp, correo electrónico o webhook.') }}
         </div>

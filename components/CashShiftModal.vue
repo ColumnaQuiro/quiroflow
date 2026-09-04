@@ -200,7 +200,13 @@ async function addMovement() {
         <button type="button" class="text-gray-400 hover:text-gray-600" @click="emit('close')">✕</button>
       </div>
 
-      <div v-if="loading" class="mt-4 text-sm text-gray-400">{{ t('Loading…', 'Cargando…') }}</div>
+      <div v-if="loading" class="mt-4 space-y-3">
+        <UiSkeleton class="h-3 w-64 rounded-ctlSm" />
+        <div class="space-y-2 rounded-md bg-gray-50 p-3">
+          <UiSkeleton class="h-3.5 w-full rounded-ctlSm" />
+          <UiSkeleton class="h-3.5 w-full rounded-ctlSm" />
+        </div>
+      </div>
 
       <div v-else-if="!shift" class="mt-4">
         <p class="text-sm text-gray-500">{{ t("Couldn't open today's shift automatically.", 'No se ha podido abrir el turno de hoy automáticamente.') }}</p>

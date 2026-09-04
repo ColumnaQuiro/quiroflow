@@ -138,7 +138,12 @@ function formatDate(iso: string) {
         </div>
 
         <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
-          <div v-if="loading" class="px-4 py-10 text-center text-[13px] text-ink-muted2">{{ t('Loading…', 'Cargando…') }}</div>
+          <div v-if="loading" class="divide-y divide-line-row">
+            <div v-for="i in 4" :key="i" class="flex items-center justify-between gap-3 px-4 py-3">
+              <UiSkeleton class="h-3.5 w-40 rounded-ctlSm" />
+              <UiSkeleton class="h-3.5 w-16 rounded-ctlSm" />
+            </div>
+          </div>
           <div v-else-if="invoices.length === 0" class="px-4 py-10 text-center text-[13px] text-ink-muted2">{{ t('No invoices yet.', 'Todavía no hay facturas.') }}</div>
           <ul v-else class="divide-y divide-line-row">
             <li

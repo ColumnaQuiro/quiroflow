@@ -61,7 +61,14 @@ function lostHeightPx(i: number) {
 </script>
 
 <template>
-  <div v-if="loading" class="text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+  <div v-if="loading">
+    <div class="flex items-end" :style="{ height: `${CHART_HEIGHT_PX}px`, gap: '10px' }">
+      <UiSkeleton v-for="(h, i) in [55, 90, 70, 100, 65, 35, 45]" :key="i" class="w-full rounded-t-[2px]" :style="{ height: `${h}px` }" />
+    </div>
+    <div class="mt-1.5 flex" style="gap: 10px">
+      <UiSkeleton v-for="i in 7" :key="i" class="h-3 flex-1 rounded-ctlSm" />
+    </div>
+  </div>
   <div v-else>
     <div class="flex items-center gap-4 text-[11.5px] text-ink-muted2">
       <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-[2px] bg-brand" />{{ t('Visits', 'Visitas') }}</span>

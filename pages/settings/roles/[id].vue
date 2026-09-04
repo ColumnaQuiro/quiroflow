@@ -174,7 +174,10 @@ async function save() {
         <div class="min-w-0 max-w-[660px] flex-1">
           <NuxtLink to="/settings/roles" class="text-[12.5px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Roles', 'Roles') }}</NuxtLink>
 
-          <div v-if="loading" class="mt-4 text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+          <div v-if="loading" class="mt-3 space-y-3">
+            <UiSkeleton class="h-3 w-32 rounded-ctlSm" />
+            <UiSkeleton class="h-8 w-64 rounded-ctl" />
+          </div>
           <div v-else-if="notFound" class="mt-4 text-[13px] text-ink-faint">{{ t('Role not found.', 'Rol no encontrado.') }}</div>
           <form v-else class="mt-3 space-y-8" @submit.prevent="save">
             <SettingsFieldRow :label="t('Role name', 'Nombre del rol')">

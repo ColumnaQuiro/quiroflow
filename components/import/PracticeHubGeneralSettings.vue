@@ -89,7 +89,12 @@ async function disconnect() {
       }}
     </p>
 
-    <div v-if="loading" class="mt-4 text-sm text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+    <div v-if="loading" class="mt-4 space-y-4">
+      <div v-for="i in 3" :key="i" class="space-y-1.5">
+        <UiSkeleton class="h-3 w-32 rounded-ctlSm" />
+        <UiSkeleton class="h-9 w-full rounded-md" />
+      </div>
+    </div>
     <form v-else class="mt-4 space-y-4" @submit.prevent="save">
       <div>
         <label class="block text-sm font-medium text-ink-700">{{ t('PracticeHub URL', 'URL de PracticeHub') }}</label>

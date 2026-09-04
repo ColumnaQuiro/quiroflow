@@ -188,7 +188,15 @@ function metaFor(doc: Doc) {
           </div>
         </div>
       </div>
-      <div v-if="loading" class="p-8 text-center text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+      <div v-if="loading" class="divide-y divide-line-row">
+        <div v-for="i in 3" :key="i" class="flex items-center gap-3 px-4 py-3">
+          <UiSkeleton class="h-[26px] w-[26px] shrink-0 rounded-ctlSm" />
+          <div class="min-w-0 flex-1 space-y-1.5">
+            <UiSkeleton class="h-3.5 w-40 rounded-ctlSm" />
+            <UiSkeleton class="h-3 w-24 rounded-ctlSm" />
+          </div>
+        </div>
+      </div>
       <div v-else-if="docs.length === 0" class="p-8 text-center text-[13px] text-ink-faint">
         {{ t('No docs yet — e.g. a data protection consent record for this patient.', 'Aún no hay documentos — p. ej. un registro de consentimiento de protección de datos para este paciente.') }}
       </div>

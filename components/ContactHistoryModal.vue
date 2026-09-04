@@ -40,7 +40,12 @@ function fullDate(iso: string) {
         <button type="button" class="flex h-6 w-6 items-center justify-center rounded-ctlSm text-ink-faint2 hover:bg-surface-subtle" @click="emit('close')">✕</button>
       </div>
       <div class="flex-1 overflow-y-auto">
-        <div v-if="loading" class="p-6 text-center text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+        <div v-if="loading" class="divide-y divide-line-row">
+          <div v-for="i in 4" :key="i" class="space-y-1.5 px-4 py-2.5">
+            <UiSkeleton class="h-3.5 w-32 rounded-ctlSm" />
+            <UiSkeleton class="h-3 w-20 rounded-ctlSm" />
+          </div>
+        </div>
         <p v-else-if="rows.length === 0" class="p-6 text-center text-[13px] text-ink-faint">{{ t('No contact history yet.', 'Aún no hay historial de contacto.') }}</p>
         <ul v-else class="divide-y divide-line-row">
           <li v-for="row in rows" :key="row.id" class="px-4 py-2.5">

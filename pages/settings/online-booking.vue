@@ -262,7 +262,12 @@ const OVERRIDABLE_STRINGS = [
 
           <!-- General -->
           <div v-if="activeTab === 'general'" class="mt-4 space-y-3">
-            <div v-if="loading" class="text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+            <div v-if="loading" class="space-y-3">
+              <div v-for="i in 3" :key="i" class="space-y-1.5">
+                <UiSkeleton class="h-3 w-48 rounded-ctlSm" />
+                <UiSkeleton class="h-8 w-40 rounded-ctl" />
+              </div>
+            </div>
             <template v-else>
               <SettingsFieldRow :label="t('Maximum future booking time', 'Máxima antelación de reserva')" :helper="t('How far ahead patients can book online. Overridable per appointment type below.', 'Con cuánta antelación pueden reservar los pacientes online. Se puede anular por tipo de cita más abajo.')">
                 <div class="flex items-center gap-2">

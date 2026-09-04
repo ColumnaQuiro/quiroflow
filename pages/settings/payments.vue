@@ -113,7 +113,15 @@ async function disconnect() {
             {{ connectError }}
           </div>
 
-          <div v-if="loading" class="mt-6 text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+          <div v-if="loading" class="mt-6 rounded-card border border-line bg-surface p-4 shadow-card">
+            <div class="flex items-center justify-between">
+              <div class="space-y-1.5">
+                <UiSkeleton class="h-3.5 w-56 rounded-ctlSm" />
+                <UiSkeleton class="h-3 w-40 rounded-ctlSm" />
+              </div>
+              <UiSkeleton class="h-4 w-24 rounded-ctlSm" />
+            </div>
+          </div>
           <template v-else>
             <div v-if="connectAccountId" class="mt-6 rounded-card border border-line bg-surface p-4 shadow-card">
               <div class="flex items-center justify-between">

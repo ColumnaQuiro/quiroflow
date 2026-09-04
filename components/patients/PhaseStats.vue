@@ -74,7 +74,11 @@ async function onPlanSaved() {
 
 <template>
   <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-    <div v-if="loading" class="text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+    <div v-if="loading" class="space-y-2">
+      <UiSkeleton class="h-3.5 w-32 rounded-ctlSm" />
+      <UiSkeleton class="h-3 w-40 rounded-ctlSm" />
+      <UiSkeleton class="h-[6px] w-full rounded-full" />
+    </div>
     <template v-else>
       <div class="flex items-center justify-between gap-2">
         <p class="truncate text-[13.5px] font-semibold text-ink-700">{{ plan ? plan.name : t('No care plan', 'Sin plan de tratamiento') }}</p>

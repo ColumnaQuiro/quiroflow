@@ -78,7 +78,12 @@ function euros(cents: number) {
 </script>
 
 <template>
-  <div v-if="loading" class="text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+  <div v-if="loading" class="space-y-2">
+    <div v-for="i in 5" :key="i" class="flex items-center justify-between py-1.5">
+      <UiSkeleton class="h-3 w-28 rounded-ctlSm" />
+      <UiSkeleton class="h-3 w-10 rounded-ctlSm" />
+    </div>
+  </div>
   <div v-else>
     <ul class="divide-y divide-line-row2 text-[13px]">
       <li class="flex items-center justify-between py-1.5">

@@ -72,9 +72,14 @@ async function removeSource(id: string) {
                 </tr>
               </thead>
               <tbody class="divide-y divide-line-row">
-                <tr v-if="loading">
-                  <td colspan="4" class="px-4 py-6 text-center text-ink-faint">{{ t('Loading…', 'Cargando…') }}</td>
-                </tr>
+                <template v-if="loading">
+                  <tr v-for="i in 4" :key="i">
+                    <td class="px-4 py-2.5"><UiSkeleton class="h-3.5 w-32 rounded-ctlSm" /></td>
+                    <td class="px-4 py-2.5"><UiSkeleton class="h-5 w-16 rounded-pill" /></td>
+                    <td class="px-4 py-2.5"><UiSkeleton class="h-5 w-16 rounded-pill" /></td>
+                    <td class="px-4 py-2.5" />
+                  </tr>
+                </template>
                 <tr v-else-if="sources.length === 0">
                   <td colspan="4" class="px-4 py-6 text-center text-ink-faint">{{ t('No referral sources yet.', 'Aún no hay fuentes de referencia.') }}</td>
                 </tr>

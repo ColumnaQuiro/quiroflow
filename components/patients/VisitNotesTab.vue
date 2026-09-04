@@ -37,7 +37,16 @@ function practitionerLabel(note: VisitNoteRow) {
 
 <template>
   <div class="space-y-3">
-    <div v-if="loading" class="rounded-card border border-line bg-surface p-8 text-center text-[13px] text-ink-faint shadow-card">{{ t('Loading…', 'Cargando…') }}</div>
+    <div v-if="loading" class="space-y-3">
+      <div v-for="i in 3" :key="i" class="space-y-2 rounded-card border border-line bg-surface p-4 shadow-card">
+        <div class="flex items-baseline justify-between gap-2">
+          <UiSkeleton class="h-3.5 w-24 rounded-ctlSm" />
+          <UiSkeleton class="h-3 w-20 rounded-ctlSm" />
+        </div>
+        <UiSkeleton class="h-3 w-full rounded-ctlSm" />
+        <UiSkeleton class="h-3 w-2/3 rounded-ctlSm" />
+      </div>
+    </div>
     <div v-else-if="notes.length === 0" class="rounded-card border border-line bg-surface p-8 text-center text-[13px] text-ink-faint shadow-card">
       {{ t('No visit notes yet — these get added from an appointment.', 'Aún no hay notas de la visita — se añaden desde una cita.') }}
     </div>

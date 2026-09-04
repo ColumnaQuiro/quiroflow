@@ -78,7 +78,15 @@ function patientName(id: string) {
     <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
       <p class="text-[13px] text-ink-muted2">{{ t('Includes any Stripe autopay charge that failed.', 'Incluye cualquier cobro automático de Stripe que haya fallado.') }}</p>
 
-      <div v-if="loading" class="mt-6 text-[13px] text-ink-faint2">{{ t('Loading…', 'Cargando…') }}</div>
+      <div v-if="loading">
+        <div class="mt-4 space-y-1.5 rounded-card border border-line bg-surface p-4 shadow-card">
+          <UiSkeleton class="h-[23px] w-24 rounded-ctlSm" />
+          <UiSkeleton class="h-3 w-48 rounded-ctlSm" />
+        </div>
+        <div class="mt-4 space-y-3 overflow-hidden rounded-card border border-line bg-surface p-4 shadow-card">
+          <UiSkeleton v-for="i in 4" :key="i" class="h-3.5 w-full rounded-ctlSm" />
+        </div>
+      </div>
       <template v-else>
         <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
           <p class="font-mono text-[23px] font-semibold text-ink-900">€{{ (totalOwed / 100).toFixed(2) }}</p>

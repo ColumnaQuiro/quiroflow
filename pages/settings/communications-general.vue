@@ -86,7 +86,15 @@ async function save() {
             {{ t('Manage how appointment confirmations and reminders are sent to your patients. WhatsApp default templates are configured in', 'Gestiona cómo se envían a tus pacientes las confirmaciones y recordatorios de citas. Las plantillas predeterminadas de WhatsApp se configuran en') }} <NuxtLink to="/settings/whatsapp" class="text-brand-text hover:underline">{{ t('Settings → WhatsApp', 'Ajustes → WhatsApp') }}</NuxtLink>.
           </p>
 
-          <div v-if="loading" class="mt-6 text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+          <div v-if="loading" class="mt-5 space-y-4">
+            <div v-for="i in 3" :key="i" class="flex items-center justify-between rounded-card border border-line bg-surface p-4 shadow-card">
+              <div class="space-y-1.5">
+                <UiSkeleton class="h-3.5 w-48 rounded-ctlSm" />
+                <UiSkeleton class="h-3 w-64 rounded-ctlSm" />
+              </div>
+              <UiSkeleton class="h-5 w-9 shrink-0 rounded-pill" />
+            </div>
+          </div>
           <form v-else class="mt-5 space-y-4" @submit.prevent="save">
             <div class="rounded-card border border-line bg-surface p-4 shadow-card">
               <div class="flex items-center justify-between">

@@ -186,7 +186,12 @@ const unclassifiedTypes = computed(() => types.value.filter((t) => !t.stage).len
         <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
       </div>
 
-      <div v-if="loading" class="mt-6 text-[13px] text-ink-faint2">{{ t('Loading…', 'Cargando…') }}</div>
+      <div v-if="loading" class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div v-for="i in 4" :key="i" class="space-y-2 rounded-card border border-line bg-surface p-4 shadow-card">
+          <UiSkeleton class="h-[23px] w-12 rounded-ctlSm" />
+          <UiSkeleton class="h-3 w-24 rounded-ctlSm" />
+        </div>
+      </div>
 
       <template v-else>
         <div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">

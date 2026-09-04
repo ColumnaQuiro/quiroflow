@@ -154,7 +154,12 @@ const byService = computed(() => {
         <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
       </div>
 
-      <div v-if="loading" class="mt-6 text-[13px] text-ink-faint2">{{ t('Loading…', 'Cargando…') }}</div>
+      <div v-if="loading" class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div v-for="i in 3" :key="i" class="space-y-2 rounded-card border border-line bg-surface p-4 shadow-card">
+          <UiSkeleton class="h-3 w-24 rounded-ctlSm" />
+          <UiSkeleton class="h-[23px] w-20 rounded-ctlSm" />
+        </div>
+      </div>
 
       <template v-else>
         <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">

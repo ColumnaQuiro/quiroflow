@@ -392,7 +392,14 @@ async function sendStatement() {
       </div>
     </div>
 
-    <div v-if="loading" class="p-8 text-center text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+    <div v-if="loading" class="divide-y divide-line-row">
+      <div v-for="i in 5" :key="i" class="flex h-[42px] items-center gap-3 px-2">
+        <UiSkeleton class="h-3.5 w-12 rounded-ctlSm" />
+        <UiSkeleton class="h-3.5 w-16 rounded-ctlSm" />
+        <UiSkeleton class="h-3.5 w-40 flex-1 rounded-ctlSm" />
+        <UiSkeleton class="h-3.5 w-16 rounded-ctlSm" />
+      </div>
+    </div>
     <div v-else-if="rows.length === 0" class="p-8 text-center text-[13px] text-ink-faint">{{ t('No transactions yet.', 'Aún no hay transacciones.') }}</div>
     <div v-else class="max-h-[420px] overflow-y-auto">
       <table class="w-full text-[13px]">

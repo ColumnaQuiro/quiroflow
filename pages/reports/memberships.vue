@@ -97,7 +97,17 @@ function lastPayment(membershipId: string) {
     <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
       <p class="text-[13px] text-ink-muted2">{{ t('Manual and Stripe autopay combined.', 'Combina pagos manuales y cobro automático de Stripe.') }}</p>
 
-      <div v-if="loading" class="mt-6 text-[13px] text-ink-faint2">{{ t('Loading…', 'Cargando…') }}</div>
+      <div v-if="loading">
+        <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div v-for="i in 3" :key="i" class="space-y-2 rounded-card border border-line bg-surface p-4 shadow-card">
+            <UiSkeleton class="h-[23px] w-16 rounded-ctlSm" />
+            <UiSkeleton class="h-3 w-32 rounded-ctlSm" />
+          </div>
+        </div>
+        <div class="mt-4 space-y-3 overflow-hidden rounded-card border border-line bg-surface p-4 shadow-card">
+          <UiSkeleton v-for="i in 4" :key="i" class="h-3.5 w-full rounded-ctlSm" />
+        </div>
+      </div>
       <template v-else>
         <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div class="rounded-card border border-line bg-surface p-4 shadow-card">

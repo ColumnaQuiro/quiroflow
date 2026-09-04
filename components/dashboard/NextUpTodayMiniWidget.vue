@@ -47,7 +47,13 @@ function patientName(r: ApptRow) {
 </script>
 
 <template>
-  <div v-if="loading" class="text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+  <div v-if="loading" class="space-y-2">
+    <div v-for="i in 3" :key="i" class="flex items-center gap-2 py-1.5">
+      <UiSkeleton class="h-3 w-28 rounded-ctlSm" />
+      <UiSkeleton class="h-3 w-16 rounded-ctlSm" />
+      <UiSkeleton class="ml-auto h-3 w-10 rounded-ctlSm" />
+    </div>
+  </div>
   <p v-else-if="rows.length === 0" class="text-[13px] text-ink-faint">{{ t('Nothing left booked today.', 'No quedan citas reservadas hoy.') }}</p>
   <ul v-else class="divide-y divide-line-row2">
     <li v-for="r in rows" :key="r.id" class="flex items-center gap-2 py-1.5 text-[13px] first:pt-0 last:pb-0">

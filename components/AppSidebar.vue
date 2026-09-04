@@ -333,7 +333,7 @@ async function signOut() {
           <NuxtLink to="/account" class="block px-3 py-2 text-left text-[13px] text-ink-500 hover:bg-surface-subtle" @click="accountMenuOpen = false">
             {{ t('Account Settings', 'Ajustes de la cuenta') }}
           </NuxtLink>
-          <NuxtLink to="/account/subscription" class="block px-3 py-2 text-left text-[13px] text-ink-500 hover:bg-surface-subtle" @click="accountMenuOpen = false">
+          <NuxtLink to="/subscription" class="block px-3 py-2 text-left text-[13px] text-ink-500 hover:bg-surface-subtle" @click="accountMenuOpen = false">
             {{ t('Subscription', 'Suscripción') }}
           </NuxtLink>
           <button

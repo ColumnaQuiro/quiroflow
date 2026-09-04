@@ -86,6 +86,10 @@ Cypress.Commands.add('seedStaffAccount', (overrides: Partial<{
   return cy.task<StaffAccount>('db:createStaffAccount', payload)
 })
 
+Cypress.Commands.add('setSubscriptionStatus', (accountId: string, status: 'trialing' | 'active' | 'past_due' | 'locked' | 'canceled') => {
+  return cy.task('db:setSubscriptionStatus', { accountId, status })
+})
+
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Cypress {
@@ -103,6 +107,7 @@ declare global {
           ownerName: string
         }>,
       ): Chainable<StaffAccount>
+      setSubscriptionStatus(accountId: string, status: 'trialing' | 'active' | 'past_due' | 'locked' | 'canceled'): Chainable<void>
     }
   }
 }

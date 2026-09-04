@@ -142,6 +142,13 @@ async function setRolePermissions(opts: { accountId: string; roleName: string; p
   return { roleId: role.id as string, permissions: merged }
 }
 
+/** Directly sets a test account's billing status -- bypasses Stripe entirely, for exercising the banner/lock-screen UI. */
+async function setSubscriptionStatus(opts: { accountId: string; status: 'trialing' | 'active' | 'past_due' | 'locked' | 'canceled' }) {
+  const { accountId, status } = opts
+  assertOk(await admin.from('subscriptions').update({ status }).eq('account_id', accountId))
+  return { accountId, status }
+}
+
 async function createPatient(opts: {
   accountId: string
   clinicId: string
@@ -280,6 +287,7 @@ export const dbTasks = {
   'db:createStaffAccount': createStaffAccount,
   'db:createTeamMemberWithRole': createTeamMemberWithRole,
   'db:setRolePermissions': setRolePermissions,
+  'db:setSubscriptionStatus': setSubscriptionStatus,
   'db:createPatient': createPatient,
   'db:createAppointmentType': createAppointmentType,
   'db:createServiceProduct': createServiceProduct,

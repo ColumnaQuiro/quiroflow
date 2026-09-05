@@ -188,7 +188,9 @@ async function runWhatsAppAction(
 
   const { data: account } = await supabase
     .from('accounts')
-    .select('whatsapp_phone_number_id, whatsapp_access_token, whatsapp_business_account_id')
+    .select(
+      'whatsapp_phone_number_id, whatsapp_access_token, whatsapp_business_account_id, whatsapp_confirmation_template_name, whatsapp_reminder_template_name, whatsapp_recall_template_name',
+    )
     .eq('id', accountId)
     .maybeSingle()
   if (!account?.whatsapp_phone_number_id || !account?.whatsapp_access_token) return
@@ -312,17 +314,53 @@ async function runWhatsAppAction(
     errorMessage = e?.data?.error?.message ?? e?.message ?? 'Unknown error'
   }
 
+  // Does this template ask the patient to confirm? Both the account's
+  // confirmation and reminder templates carry the Confirmar/Cambiar/Cancelar
+  // reply buttons; everything else an automation might send (first-visit
+  // info, arrival tasks...) happens to be appointment-linked too but asks
+  // for nothing, so it must not touch confirmation state.
+  const asksForConfirmation =
+    templateName === account.whatsapp_confirmation_template_name || templateName === account.whatsapp_reminder_template_name
+
+  // NB purpose stays on the schema's existing confirmation/recall/other set.
+  // A reminder is really its own purpose, but 'reminder' isn't allowed by
+  // whatsapp_messages_purpose_check yet -- widening that is a schema change,
+  // tracked separately rather than smuggled into this fix.
+  const purpose =
+    templateName === account.whatsapp_confirmation_template_name
+      ? 'confirmation'
+      : templateName === account.whatsapp_recall_template_name
+        ? 'recall'
+        : 'other'
+
   await supabase.from('whatsapp_messages').insert({
     account_id: accountId,
     patient_id: patient.id,
     appointment_id: appointmentId ?? null,
     wamid,
-    purpose: 'other',
+    purpose,
     template_name: templateName,
     status: wamid ? 'sent' : 'failed',
     error_message: errorMessage,
     phone_number: to,
   })
+
+  // A confirmation/reminder template carries the Confirmar/Cambiar/Cancelar
+  // reply buttons, so the appointment has to be marked 'pending' before it
+  // goes out -- the webhook resolves "which appointment is this reply about"
+  // partly off that flag, and until this was set an automation-sent reminder
+  // (e.g. a "3 days before" rule, which fires well before the built-in 24h
+  // reminder has set it) left the appointment at NULL, so a genuine
+  // "Confirmar" reply silently no-opped. appointmentNotifications.ts already
+  // does this for the built-in sends; this is the same guard for the
+  // automation-rule path. Skip if the patient already confirmed, so a later
+  // reminder doesn't reset them back to unconfirmed.
+  if (wamid && appointmentId && asksForConfirmation) {
+    const { data: current } = await supabase.from('appointments').select('confirmation_status').eq('id', appointmentId).maybeSingle()
+    if (current?.confirmation_status !== 'confirmed') {
+      await supabase.from('appointments').update({ confirmation_status: 'pending' }).eq('id', appointmentId)
+    }
+  }
 }
 
 async function runEmailAction(patient: PatientForAction, config: Record<string, any>, context?: MergeContext) {

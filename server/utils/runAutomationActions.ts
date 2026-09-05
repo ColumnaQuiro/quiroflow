@@ -314,24 +314,25 @@ async function runWhatsAppAction(
     errorMessage = e?.data?.error?.message ?? e?.message ?? 'Unknown error'
   }
 
-  // Does this template ask the patient to confirm? Both the account's
-  // confirmation and reminder templates carry the Confirmar/Cambiar/Cancelar
-  // reply buttons; everything else an automation might send (first-visit
-  // info, arrival tasks...) happens to be appointment-linked too but asks
-  // for nothing, so it must not touch confirmation state.
-  const asksForConfirmation =
-    templateName === account.whatsapp_confirmation_template_name || templateName === account.whatsapp_reminder_template_name
-
-  // NB purpose stays on the schema's existing confirmation/recall/other set.
-  // A reminder is really its own purpose, but 'reminder' isn't allowed by
-  // whatsapp_messages_purpose_check yet -- widening that is a schema change,
-  // tracked separately rather than smuggled into this fix.
+  // Same template-name -> purpose mapping the manual staff send
+  // (api/whatsapp/send.post.ts) uses, instead of flatly recording every
+  // automation send as 'other' -- a rule that fires the account's own
+  // reminder template is a reminder, and the inbox and reporting reads on
+  // this column should be able to say so.
   const purpose =
     templateName === account.whatsapp_confirmation_template_name
       ? 'confirmation'
-      : templateName === account.whatsapp_recall_template_name
-        ? 'recall'
-        : 'other'
+      : templateName === account.whatsapp_reminder_template_name
+        ? 'reminder'
+        : templateName === account.whatsapp_recall_template_name
+          ? 'recall'
+          : 'other'
+
+  // Only the confirmation and reminder templates carry the Confirmar/
+  // Cambiar/Cancelar reply buttons. Everything else an automation might send
+  // (first-visit info, arrival tasks...) happens to be appointment-linked
+  // too but asks for nothing, so it must not touch confirmation state.
+  const asksForConfirmation = purpose === 'confirmation' || purpose === 'reminder'
 
   await supabase.from('whatsapp_messages').insert({
     account_id: accountId,

@@ -95,6 +95,7 @@ function money(cents: number) {
       </div>
     </div>
 
+    <PatientsStickyNotePanel :patient-id="patient.id" />
     <PatientsFlagsPanel :patient-id="patient.id" />
     <PatientsPhaseStats :patient-id="patient.id" />
 

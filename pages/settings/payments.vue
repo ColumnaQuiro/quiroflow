@@ -166,7 +166,7 @@ async function disconnect() {
                 />
               </SettingsFieldRow>
 
-              <SettingsFieldRow :label="t('Secret key', 'Clave secreta')" :helper="hasStoredSecretKey ? t('A key is already stored — leave blank to keep it.', 'Ya hay una clave guardada — déjalo en blanco para conservarla.') : undefined">
+              <SettingsFieldRow :label="t('Secret key', 'Clave secreta')">
                 <input
                   v-model="secretKey"
                   type="password"
@@ -178,7 +178,7 @@ async function disconnect() {
 
               <SettingsFieldRow
                 :label="t('Webhook signing secret', 'Secreto de firma del webhook')"
-                :helper="hasStoredWebhookSecret ? t('A secret is already stored — leave blank to keep it.', 'Ya hay un secreto guardado — déjalo en blanco para conservarlo.') : t('From the Stripe dashboard once you register the webhook URL below.', 'Desde el panel de Stripe una vez registres la URL del webhook de abajo.')"
+                :helper="t('From the Stripe dashboard once you register the webhook URL below.', 'Desde el panel de Stripe una vez registres la URL del webhook de abajo.')"
               >
                 <input
                   v-model="webhookSecret"

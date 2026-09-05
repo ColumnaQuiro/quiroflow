@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { fetchAllRows } from '~/composables/useFetchAllRows'
+
 interface InvoiceRow {
   id: string
   invoice_number: string
@@ -22,6 +24,16 @@ const outstandingCents = ref(0)
 const outstandingCount = ref(0)
 const statsLoaded = ref(false)
 
+// Same 25-per-page + 10-button cap as the Patients table. This list used to
+// have no .range() at all, which meant "Paid" and "All" pulled every invoice
+// the account has ever issued (3,278 on production) into one un-virtualised
+// <ul> -- and still silently lost everything past Supabase's 1000-row cap.
+const PAGE_SIZE = 25
+const page = ref(1)
+const totalCount = ref(0)
+const totalPages = computed(() => Math.max(1, Math.ceil(totalCount.value / PAGE_SIZE)))
+const visiblePages = computed(() => Array.from({ length: Math.min(totalPages.value, 10) }, (_, i) => i + 1))
+
 // Carried over from the invoice detail page's "Back to billing" link so the
 // row the user just came from keeps its selected treatment on return --
 // doesn't affect which rows are loaded, purely cosmetic.
@@ -44,33 +56,53 @@ async function load() {
   loading.value = true
   let query = supabase
     .from('invoices')
-    .select('id, invoice_number, status, total_cents, created_at, patients(first_name, last_name)')
+    .select('id, invoice_number, status, total_cents, created_at, patients(first_name, last_name)', { count: 'exact' })
     .order('created_at', { ascending: false })
   if (statusFilter.value !== 'all') query = query.eq('status', statusFilter.value)
-  const { data } = await query
+
+  const from = (page.value - 1) * PAGE_SIZE
+  const { data, count } = await query.range(from, from + PAGE_SIZE - 1)
   invoices.value = (data as unknown as InvoiceRow[]) ?? []
+  totalCount.value = count ?? 0
   loading.value = false
 }
 
+// One head-only count per bucket, rather than fetching every invoice's status
+// and tallying them in the browser. The old approach wasn't just slow, it was
+// wrong: an unpaginated select() is silently capped at 1000 rows, so any
+// account past that read "Paid · 1000 / All · 1000" no matter its real totals,
+// and a status with no row in the first 1000 showed 0. Production has 3,278
+// invoices, so the chips on screen were understating Paid by 2,258 and
+// reporting the one Void invoice as none. `head: true` returns the count in a
+// header with no row payload at all.
 async function loadCounts() {
-  const { data } = await supabase.from('invoices').select('status')
-  const next: Record<StatusFilter, number> = { all: 0, unpaid: 0, paid: 0, void: 0 }
-  for (const row of data ?? []) {
-    next.all++
-    if (row.status === 'unpaid' || row.status === 'paid' || row.status === 'void') next[row.status]++
-  }
+  const buckets: Exclude<StatusFilter, 'all'>[] = ['unpaid', 'paid', 'void']
+  const [all, ...rest] = await Promise.all([
+    supabase.from('invoices').select('id', { count: 'exact', head: true }),
+    ...buckets.map((status) => supabase.from('invoices').select('id', { count: 'exact', head: true }).eq('status', status)),
+  ])
+  const next: Record<StatusFilter, number> = { all: all.count ?? 0, unpaid: 0, paid: 0, void: 0 }
+  buckets.forEach((status, i) => {
+    next[status] = rest[i]?.count ?? 0
+  })
   counts.value = next
 }
 
 async function loadOutstanding() {
-  const { data: unpaid } = await supabase.from('invoices').select('id, total_cents').eq('status', 'unpaid')
-  const rows = unpaid ?? []
+  // fetchAllRows rather than a bare select() for that same 1000-row cap -- an
+  // account carrying more unpaid invoices than that silently under-reported
+  // what it is owed in the header.
+  const rows = await fetchAllRows<{ id: string; total_cents: number }>((from, to) =>
+    supabase.from('invoices').select('id, total_cents').eq('status', 'unpaid').range(from, to),
+  )
   const ids = rows.map((r) => r.id)
 
-  let paidByInvoice: Record<string, number> = {}
+  const paidByInvoice: Record<string, number> = {}
   if (ids.length > 0) {
-    const { data: pays } = await supabase.from('payments').select('invoice_id, amount_cents').in('invoice_id', ids)
-    for (const p of pays ?? []) paidByInvoice[p.invoice_id] = (paidByInvoice[p.invoice_id] ?? 0) + p.amount_cents
+    const pays = await fetchAllRows<{ invoice_id: string; amount_cents: number }>((from, to) =>
+      supabase.from('payments').select('invoice_id, amount_cents').in('invoice_id', ids).range(from, to),
+    )
+    for (const p of pays) paidByInvoice[p.invoice_id] = (paidByInvoice[p.invoice_id] ?? 0) + p.amount_cents
   }
 
   outstandingCents.value = rows.reduce((sum, r) => sum + Math.max(0, r.total_cents - (paidByInvoice[r.id] ?? 0)), 0)
@@ -84,8 +116,14 @@ onMounted(() => {
   loadOutstanding()
 })
 watch(statusFilter, () => {
+  page.value = 1
   load()
 })
+
+function goToPage(p: number) {
+  page.value = Math.min(Math.max(1, p), totalPages.value)
+  load()
+}
 
 const outstandingMeta = computed(() => {
   if (!statsLoaded.value) return undefined
@@ -176,6 +214,16 @@ function formatDate(iso: string) {
               </div>
             </li>
           </ul>
+
+          <UiPaginationFooter
+            v-if="!loading && totalPages > 1"
+            :page="page"
+            :visible-pages="visiblePages"
+            :has-prev="page > 1"
+            :has-next="page < totalPages"
+            :summary="`${t('Page', 'Página')} ${page} ${t('of', 'de')} ${totalPages} · ${totalCount} ${totalCount === 1 ? t('invoice', 'factura') : t('invoices', 'facturas')}`"
+            @go-to-page="goToPage"
+          />
         </div>
       </div>
     </div>

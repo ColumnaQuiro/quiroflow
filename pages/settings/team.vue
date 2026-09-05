@@ -226,18 +226,18 @@ function copy(text: string) {
     <div class="flex-1 overflow-y-auto">
       <div class="flex gap-8 p-6">
         <SettingsNav />
-        <div class="min-w-0 max-w-[660px] flex-1">
+        <div class="min-w-0 max-w-[900px] flex-1">
           <p class="text-[13px] text-ink-muted2">{{ t('Staff accounts, roles, and invites.', 'Cuentas del personal, roles e invitaciones.') }}</p>
 
           <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
             <table class="w-full text-[13px]">
               <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted2">
                 <tr>
-                  <th class="px-4 py-2">{{ t('Name', 'Nombre') }}</th>
-                  <th class="px-4 py-2">{{ t('Role', 'Rol') }}</th>
-                  <th class="px-4 py-2">{{ t('Practitioner', 'Profesional') }}</th>
-                  <th class="px-4 py-2">{{ t('Online booking', 'Reserva en línea') }}</th>
-                  <th class="px-4 py-2"></th>
+                  <th class="w-[30%] px-4 py-2">{{ t('Name', 'Nombre') }}</th>
+                  <th class="w-[16%] px-4 py-2">{{ t('Role', 'Rol') }}</th>
+                  <th class="w-[18%] px-4 py-2">{{ t('Practitioner', 'Profesional') }}</th>
+                  <th class="w-[18%] px-4 py-2">{{ t('Online booking', 'Reserva en línea') }}</th>
+                  <th class="w-[18%] px-4 py-2"></th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-line-row">
@@ -293,14 +293,15 @@ function copy(text: string) {
                         {{ t('Bookable', 'Reservable') }}
                       </label>
                     </td>
-                    <td class="px-4 py-2.5 text-right">
-                      <button type="button" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover" @click="openScheduleEditor(m)">
-                        {{ hasScheduleOverride(m) ? t('Schedule (custom)', 'Horario (personalizado)') : t('Schedule', 'Horario') }}
-                      </button>
-                      <span class="mx-2 text-line-control">·</span>
-                      <button type="button" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover" :disabled="resettingId === m.id" @click="sendPasswordReset(m)">
-                        {{ resettingId === m.id ? t('Sending…', 'Enviando…') : t('Reset password', 'Restablecer contraseña') }}
-                      </button>
+                    <td class="px-4 py-2.5">
+                      <div class="flex flex-col items-end gap-1.5">
+                        <button type="button" class="whitespace-nowrap text-[12.5px] font-medium text-brand-text hover:text-brand-hover" @click="openScheduleEditor(m)">
+                          {{ hasScheduleOverride(m) ? t('Working hours (custom)', 'Horario laboral (personalizado)') : t('Working hours', 'Horario laboral') }}
+                        </button>
+                        <button type="button" class="whitespace-nowrap text-[12.5px] font-medium text-brand-text hover:text-brand-hover" :disabled="resettingId === m.id" @click="sendPasswordReset(m)">
+                          {{ resettingId === m.id ? t('Sending…', 'Enviando…') : t('Reset password', 'Restablecer contraseña') }}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                   <tr v-if="openScheduleId === m.id">

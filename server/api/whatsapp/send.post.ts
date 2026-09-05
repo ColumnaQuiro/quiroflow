@@ -11,8 +11,9 @@ export default defineEventHandler(async (event) => {
     templateName: string
     templateLanguage: string
     variables: string[]
-    headerFormat?: 'IMAGE' | 'DOCUMENT' | 'VIDEO'
+    headerFormat?: 'IMAGE' | 'DOCUMENT' | 'VIDEO' | 'LOCATION'
     attachmentFileId?: string
+    location?: { latitude: number; longitude: number; name: string; address: string }
     appointmentId?: string
   }>(event)
 
@@ -54,7 +55,22 @@ export default defineEventHandler(async (event) => {
 
   const components: Record<string, unknown>[] = []
 
-  if (body.headerFormat && body.attachmentFileId) {
+  if (body.headerFormat === 'LOCATION' && body.location) {
+    components.push({
+      type: 'header',
+      parameters: [
+        {
+          type: 'location',
+          location: {
+            latitude: body.location.latitude,
+            longitude: body.location.longitude,
+            name: body.location.name,
+            address: body.location.address,
+          },
+        },
+      ],
+    })
+  } else if (body.headerFormat && body.attachmentFileId) {
     const { data: file } = await supabase
       .from('patient_files')
       .select('storage_path')

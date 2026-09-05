@@ -7,7 +7,7 @@ interface Template {
   category: string
   bodyText: string
   variableCount: number
-  mediaHeaderFormat: 'IMAGE' | 'DOCUMENT' | 'VIDEO' | null
+  mediaHeaderFormat: 'IMAGE' | 'DOCUMENT' | 'VIDEO' | 'LOCATION' | null
 }
 
 const props = withDefaults(
@@ -27,6 +27,7 @@ const emit = defineEmits<{ close: []; sent: [] }>()
 
 const supabase = useSupabaseClient()
 const t = useT()
+const accountStore = useAccountStore()
 const templates = ref<Template[]>([])
 const templatesError = ref('')
 const loadingTemplates = ref(true)
@@ -34,6 +35,13 @@ const selectedTemplateKey = ref('')
 const variables = ref<string[]>([])
 const files = ref<Tables<'patient_files'>[]>([])
 const attachmentFileId = ref('')
+// There's no stored clinic geocoding anywhere in the schema, so latitude/
+// longitude are always typed in by hand -- name/address are prefilled from
+// the clinic as an editable example, not a real coordinate source.
+const locationLatitude = ref('')
+const locationLongitude = ref('')
+const locationName = ref('')
+const locationAddress = ref('')
 const sending = ref(false)
 const error = ref('')
 
@@ -79,11 +87,22 @@ function selectTemplate(key: string) {
   const guesses = [props.patientFirstName ?? '', ...(props.autofill ? Object.values(props.autofill) : [])]
   variables.value = Array.from({ length: count }, (_, i) => guesses[i] ?? '')
   attachmentFileId.value = ''
+  locationLatitude.value = ''
+  locationLongitude.value = ''
+  locationName.value = accountStore.currentClinic?.name ?? ''
+  locationAddress.value = accountStore.currentClinic?.address ?? ''
 }
+
+const isLocationTemplate = computed(() => selectedTemplate.value?.mediaHeaderFormat === 'LOCATION')
+const canSend = computed(() => {
+  if (!selectedTemplate.value) return false
+  if (isLocationTemplate.value) return locationLatitude.value !== '' && locationLongitude.value !== ''
+  return true
+})
 
 async function send() {
   error.value = ''
-  if (!selectedTemplate.value) return
+  if (!selectedTemplate.value || !canSend.value) return
   sending.value = true
   try {
     await useStaffFetch('/api/whatsapp/send', {
@@ -94,7 +113,15 @@ async function send() {
         templateLanguage: selectedTemplate.value.language,
         variables: variables.value,
         headerFormat: selectedTemplate.value.mediaHeaderFormat ?? undefined,
-        attachmentFileId: attachmentFileId.value || undefined,
+        attachmentFileId: isLocationTemplate.value ? undefined : attachmentFileId.value || undefined,
+        location: isLocationTemplate.value
+          ? {
+              latitude: Number(locationLatitude.value),
+              longitude: Number(locationLongitude.value),
+              name: locationName.value,
+              address: locationAddress.value,
+            }
+          : undefined,
         appointmentId: props.appointmentId,
       },
     })
@@ -145,7 +172,38 @@ async function send() {
             </div>
           </div>
 
-          <div v-if="selectedTemplate.mediaHeaderFormat" class="mt-3">
+          <div v-if="isLocationTemplate" class="mt-3 space-y-2">
+            <label class="block text-xs font-medium text-ink-muted">{{ t('Location', 'Ubicación') }} {{ t('(required by template)', '(requerido por la plantilla)') }}</label>
+            <div class="grid grid-cols-2 gap-2">
+              <input
+                v-model="locationLatitude"
+                type="number"
+                step="any"
+                :placeholder="t('Latitude, e.g. 19.4326', 'Latitud, ej. 19.4326')"
+                class="rounded-ctl border border-line-control bg-surface px-3 py-1.5 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+              />
+              <input
+                v-model="locationLongitude"
+                type="number"
+                step="any"
+                :placeholder="t('Longitude, e.g. -99.1332', 'Longitud, ej. -99.1332')"
+                class="rounded-ctl border border-line-control bg-surface px-3 py-1.5 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+              />
+            </div>
+            <input
+              v-model="locationName"
+              type="text"
+              :placeholder="t('Location name, e.g. Main Clinic', 'Nombre del lugar, ej. Clínica Principal')"
+              class="w-full rounded-ctl border border-line-control bg-surface px-3 py-1.5 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+            />
+            <input
+              v-model="locationAddress"
+              type="text"
+              :placeholder="t('Address, e.g. 123 Main St', 'Dirección, ej. Calle Principal 123')"
+              class="w-full rounded-ctl border border-line-control bg-surface px-3 py-1.5 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+            />
+          </div>
+          <div v-else-if="selectedTemplate.mediaHeaderFormat" class="mt-3">
             <label class="block text-xs font-medium text-ink-muted">{{ t('Attach', 'Adjuntar') }} {{ selectedTemplate.mediaHeaderFormat.toLowerCase() }} {{ t('(required by template)', '(requerido por la plantilla)') }}</label>
             <select v-model="attachmentFileId" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-1.5 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20">
               <option value="">{{ t('No attachment', 'Sin adjunto') }}</option>
@@ -159,7 +217,7 @@ async function send() {
 
       <div class="mt-4 flex justify-end gap-2">
         <UiBtn type="button" variant="secondary" @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</UiBtn>
-        <UiBtn type="button" variant="primary" :disabled="sending || !selectedTemplate" @click="send">
+        <UiBtn type="button" variant="primary" :disabled="sending || !canSend" @click="send">
           {{ sending ? t('Sending…', 'Enviando…') : t('Send', 'Enviar') }}
         </UiBtn>
       </div>

@@ -15,7 +15,22 @@ export type PracticeHubPatientRecord = Record<string, unknown> & { patient_numbe
 // rather than hard-coding one key and silently importing nothing when it's
 // named something else, find it in the response itself -- exact matches
 // first, then anything containing "sticky".
+//
+// It turned out to be wrong a third time: the real API calls it plain `note`,
+// with nothing sticky-sounding anywhere in the response, so the importer
+// reported "No sticky note field found" and refused to guess. Checked against
+// the live API before adding it -- of 100 patients, 61 had a `note`, running
+// 21 to 594 characters (median 188), which is sticky-note length rather than
+// long-form clinical notes, and the content is what you'd expect on one
+// ("le toca pagar 40 euros...", posture/health percentage summaries). It
+// arrives as an HTML fragment, which stripHtml below already handles.
+//
+// `note` goes last on purpose. It is the most generic name here, so any
+// instance that does return a sticky-specific key still wins over it -- and
+// the preview names the field it settled on ("Reading from PracticeHub field:
+// note") so a wrong guess is visible before anything is written.
 const STICKY_CANDIDATES = ['sticky_note', 'sticky_notes', 'stickynote', 'sticky']
+const FALLBACK_CANDIDATES = ['note']
 
 export function collectFieldNames(records: PracticeHubPatientRecord[]): string[] {
   const keys = new Set<string>()
@@ -34,7 +49,15 @@ export function detectStickyField(records: PracticeHubPatientRecord[]): string |
     const exact = keys.find((key) => key.toLowerCase() === candidate)
     if (exact) return exact
   }
-  return keys.find((key) => key.toLowerCase().includes('sticky')) ?? null
+  const sticky = keys.find((key) => key.toLowerCase().includes('sticky'))
+  if (sticky) return sticky
+  // Only once nothing sticky-named exists at all: anything explicitly named
+  // "sticky" is a better answer than the generic `note` this falls back to.
+  for (const candidate of FALLBACK_CANDIDATES) {
+    const exact = keys.find((key) => key.toLowerCase() === candidate)
+    if (exact) return exact
+  }
+  return null
 }
 
 // PracticeHub stores several of its free-text fields as HTML fragments (the

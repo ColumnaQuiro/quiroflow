@@ -4,6 +4,7 @@ import type { Tables } from '~/types/database.types'
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+const { showToast } = useToast()
 
 interface RoleOption {
   id: string
@@ -169,10 +170,11 @@ async function saveSchedule(member: TeamMemberRow) {
   const { error: updateError } = await supabase.from('team_members').update({ business_hours: editHours.value }).eq('id', member.id)
   savingHours.value = false
   if (updateError) {
-    error.value = updateError.message
+    showToast(updateError.message, 'error')
     return
   }
   member.business_hours = editHours.value
+  showToast(t('Working hours saved', 'Horario laboral guardado'))
 }
 function hasScheduleOverride(m: TeamMemberRow) {
   const hours = m.business_hours as Record<string, Windows> | null

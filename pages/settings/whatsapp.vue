@@ -153,7 +153,7 @@ async function save() {
               <input v-model="businessAccountId" type="text" class="h-8 w-[230px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20" />
             </SettingsFieldRow>
 
-            <SettingsFieldRow :label="t('Access token', 'Token de acceso')" :helper="hasStoredToken ? t('A token is already stored — leave blank to keep it.', 'Ya hay un token guardado — déjalo en blanco para conservarlo.') : t('From your Meta Business account.', 'De tu cuenta de Meta Business.')">
+            <SettingsFieldRow :label="t('Access token', 'Token de acceso')" :helper="t('From your Meta Business account.', 'De tu cuenta de Meta Business.')">
               <input
                 v-model="accessToken"
                 type="password"

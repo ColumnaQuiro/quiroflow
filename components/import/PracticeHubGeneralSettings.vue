@@ -111,7 +111,7 @@ async function disconnect() {
           v-model="apiKey"
           type="password"
           autocomplete="off"
-          :placeholder="hasStoredKey ? t('A key is already saved — leave blank to keep it', 'Ya hay una clave guardada — déjala en blanco para conservarla') : t('From PracticeHub → Developers → API Keys', 'Desde PracticeHub → Developers → API Keys')"
+          :placeholder="hasStoredKey ? '••••••••••••••••••••' : t('From PracticeHub → Developers → API Keys', 'Desde PracticeHub → Developers → API Keys')"
           class="mt-1 w-full rounded-md border border-line-control bg-surface px-3 py-2 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
         />
       </div>

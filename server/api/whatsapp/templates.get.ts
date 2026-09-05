@@ -4,7 +4,7 @@ interface MetaTemplateButton {
 }
 interface MetaTemplateComponent {
   type: 'HEADER' | 'BODY' | 'FOOTER' | 'BUTTONS'
-  format?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT'
+  format?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | 'LOCATION'
   text?: string
   buttons?: MetaTemplateButton[]
 }

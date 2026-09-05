@@ -6,12 +6,13 @@ interface Template {
   category: string
   bodyText: string
   variableCount: number
-  mediaHeaderFormat: 'IMAGE' | 'DOCUMENT' | 'VIDEO' | null
+  mediaHeaderFormat: 'IMAGE' | 'DOCUMENT' | 'VIDEO' | 'LOCATION' | null
 }
 
 const props = defineProps<{ targets: Target[]; defaultTemplateName?: string }>()
 const emit = defineEmits<{ close: []; sent: [] }>()
 const t = useT()
+const accountStore = useAccountStore()
 
 const templates = ref<Template[]>([])
 const templatesError = ref('')
@@ -20,11 +21,23 @@ const selectedTemplateKey = ref('')
 // Variable 1 is always each recipient's own first name; any remaining
 // variables (e.g. an appointment date) are shared text applied to everyone.
 const sharedVariables = ref<string[]>([])
+// A LOCATION header is the clinic's own location, so unlike a file
+// attachment it's naturally the same for every recipient in the batch.
+const locationLatitude = ref('')
+const locationLongitude = ref('')
+const locationName = ref('')
+const locationAddress = ref('')
 
 function templateKey(t: Pick<Template, 'name' | 'language'>) {
   return `${t.name}::${t.language}`
 }
 const selectedTemplate = computed(() => templates.value.find((t) => templateKey(t) === selectedTemplateKey.value) ?? null)
+const isLocationTemplate = computed(() => selectedTemplate.value?.mediaHeaderFormat === 'LOCATION')
+const canSend = computed(() => {
+  if (!selectedTemplate.value) return false
+  if (isLocationTemplate.value) return locationLatitude.value !== '' && locationLongitude.value !== ''
+  return true
+})
 
 onMounted(async () => {
   try {
@@ -48,15 +61,27 @@ function selectTemplate(key: string) {
   const t = templates.value.find((tpl) => templateKey(tpl) === key)
   const count = t?.variableCount ?? 0
   sharedVariables.value = Array.from({ length: Math.max(count - 1, 0) }, () => '')
+  locationLatitude.value = ''
+  locationLongitude.value = ''
+  locationName.value = accountStore.currentClinic?.name ?? ''
+  locationAddress.value = accountStore.currentClinic?.address ?? ''
 }
 
 const sending = ref(false)
 const results = ref<{ name: string; ok: boolean; error?: string }[]>([])
 
 async function send() {
-  if (!selectedTemplate.value) return
+  if (!selectedTemplate.value || !canSend.value) return
   sending.value = true
   results.value = []
+  const location = isLocationTemplate.value
+    ? {
+        latitude: Number(locationLatitude.value),
+        longitude: Number(locationLongitude.value),
+        name: locationName.value,
+        address: locationAddress.value,
+      }
+    : undefined
   for (const target of props.targets) {
     const variables = [target.firstName, ...sharedVariables.value]
     try {
@@ -68,6 +93,7 @@ async function send() {
           templateLanguage: selectedTemplate.value.language,
           variables,
           headerFormat: selectedTemplate.value.mediaHeaderFormat ?? undefined,
+          location,
         },
       })
       results.value.push({ name: target.firstName, ok: true })
@@ -118,6 +144,38 @@ const failedCount = computed(() => results.value.filter((r) => !r.ok).length)
                 />
               </div>
             </div>
+
+            <div v-if="isLocationTemplate" class="mt-3 space-y-2">
+              <label class="block text-xs font-medium text-ink-muted">{{ t('Location', 'Ubicación') }} {{ t('(required by template)', '(requerido por la plantilla)') }}</label>
+              <div class="grid grid-cols-2 gap-2">
+                <input
+                  v-model="locationLatitude"
+                  type="number"
+                  step="any"
+                  :placeholder="t('Latitude, e.g. 19.4326', 'Latitud, ej. 19.4326')"
+                  class="rounded-ctl border border-line-control px-3 py-1.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand-tintBorder"
+                />
+                <input
+                  v-model="locationLongitude"
+                  type="number"
+                  step="any"
+                  :placeholder="t('Longitude, e.g. -99.1332', 'Longitud, ej. -99.1332')"
+                  class="rounded-ctl border border-line-control px-3 py-1.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand-tintBorder"
+                />
+              </div>
+              <input
+                v-model="locationName"
+                type="text"
+                :placeholder="t('Location name, e.g. Main Clinic', 'Nombre del lugar, ej. Clínica Principal')"
+                class="w-full rounded-ctl border border-line-control px-3 py-1.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand-tintBorder"
+              />
+              <input
+                v-model="locationAddress"
+                type="text"
+                :placeholder="t('Address, e.g. 123 Main St', 'Dirección, ej. Calle Principal 123')"
+                class="w-full rounded-ctl border border-line-control px-3 py-1.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand-tintBorder"
+              />
+            </div>
           </template>
         </template>
 
@@ -130,7 +188,7 @@ const failedCount = computed(() => results.value.filter((r) => !r.ok).length)
 
         <div class="mt-4 flex justify-end gap-2">
           <UiBtn variant="secondary" :disabled="sending" @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</UiBtn>
-          <UiBtn variant="primary" :disabled="sending || !selectedTemplate" @click="send">
+          <UiBtn variant="primary" :disabled="sending || !canSend" @click="send">
             {{ sending ? t('Sending…', 'Enviando…') : `${t('Send to', 'Enviar a')} ${targets.length}` }}
           </UiBtn>
         </div>

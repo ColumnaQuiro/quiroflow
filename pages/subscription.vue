@@ -28,6 +28,24 @@ interface PlanRow {
   sort_order: number
 }
 
+interface BillingInfo {
+  hasCustomer: boolean
+  country?: string | null
+  card?: { brand: string; last4: string } | null
+  nextPaymentDate?: string | null
+}
+
+interface PaymentRow {
+  saleId: string
+  date: string
+  product: string
+  transactionAmountCents: number
+  taxAmountCents: number
+  status: 'success' | 'failed' | 'pending'
+  method: { brand: string; last4: string } | null
+  invoiceUrl: string | null
+}
+
 const route = useRoute()
 const store = useAccountStore()
 const supabase = useSupabaseClient()
@@ -35,6 +53,7 @@ const { loading: loadingPortal, openPortal } = useBillingPortal()
 
 const subscription = ref<SubscriptionRow | null>(null)
 const plans = ref<PlanRow[]>([])
+const practitionerCount = ref(0)
 const loading = ref(true)
 
 async function loadSubscription() {
@@ -48,10 +67,39 @@ async function loadSubscription() {
   subscription.value = data as SubscriptionRow | null
 }
 
+async function loadPractitionerCount() {
+  const { count } = await supabase
+    .from('team_members')
+    .select('id', { count: 'exact', head: true })
+    .eq('account_id', store.accountId!)
+    .eq('is_practitioner', true)
+    .is('deleted_at', null)
+  practitionerCount.value = count ?? 0
+}
+
+// Billing info (country, card, next renewal date) is fetched eagerly on
+// mount, not lazily on tab-open, because the page header needs the renewal
+// date regardless of which tab is active.
+const billingInfo = ref<BillingInfo | null>(null)
+const loadingBillingInfo = ref(false)
+async function loadBillingInfo() {
+  if (!store.isOwner) return
+  loadingBillingInfo.value = true
+  try {
+    billingInfo.value = await $fetch<BillingInfo>('/api/billing/billing-info')
+  } catch {
+    billingInfo.value = { hasCustomer: false }
+  } finally {
+    loadingBillingInfo.value = false
+  }
+}
+
 onMounted(async () => {
   const [, { data: planRows }] = await Promise.all([
     loadSubscription(),
     supabase.from('plans').select('id, name, monthly_price_cents, annual_price_cents, included_professionals, included_clinics, extra_professional_price_cents, sort_order').order('sort_order'),
+    loadPractitionerCount(),
+    loadBillingInfo(),
   ])
   plans.value = planRows ?? []
   loading.value = false
@@ -66,11 +114,16 @@ onMounted(async () => {
       await loadSubscription()
       if (subscription.value?.stripe_subscription_id) break
     }
+    await loadBillingInfo()
   }
 })
 
 function eur(cents: number) {
   return (cents / 100).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })
+}
+
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -88,12 +141,35 @@ const STATUS_TONE: Record<string, string> = {
   canceled: 'bg-gray-100 text-gray-500',
 }
 
+const PAYMENT_STATUS_TONE: Record<PaymentRow['status'], string> = {
+  success: 'text-green-700',
+  failed: 'text-red-700',
+  pending: 'text-ink-muted',
+}
+
 const monthlyEquivalentCents = computed(() => {
   const sub = subscription.value
   if (!sub?.plans) return 0
   const base = sub.billing_interval === 'annual' ? sub.plans.annual_price_cents : sub.plans.monthly_price_cents
   const overage = sub.extra_professionals > 0 ? sub.extra_professionals * (sub.plans.extra_professional_price_cents ?? 0) : 0
   return base + overage
+})
+
+// The actual amount the next charge will be for -- distinct from the
+// monthly-equivalent shown in the plan card, since an annual plan's next
+// charge is the full annual price, not 1/12th of it.
+const nextChargeCents = computed(() => {
+  const sub = subscription.value
+  if (!sub?.plans) return 0
+  const base = sub.billing_interval === 'annual' ? sub.plans.annual_price_cents : sub.plans.monthly_price_cents
+  const overage = sub.extra_professionals > 0 ? sub.extra_professionals * (sub.plans.extra_professional_price_cents ?? 0) : 0
+  return base + overage
+})
+
+const professionalsLabel = computed(() => {
+  const included = subscription.value?.plans?.included_professionals
+  const total = included === null || included === undefined ? null : included + (subscription.value?.extra_professionals ?? 0)
+  return total === null ? `${practitionerCount.value} professional(s) -- unlimited included` : `${practitionerCount.value} of ${total} professional(s) included`
 })
 
 const contactHref = computed(() => {
@@ -144,19 +220,70 @@ async function choosePlan(plan: PlanRow) {
     // shortly and sync the real numbers; refetch after a short beat.
     await new Promise((resolve) => setTimeout(resolve, 1500))
     await loadSubscription()
+    await loadBillingInfo()
   } catch (err: any) {
     planError.value = err?.data?.statusMessage ?? 'Could not update your plan. Please try again.'
   } finally {
     changingPlanId.value = null
   }
 }
+
+// Tabs -----------------------------------------------------------------
+const activeTab = ref<'summary' | 'billing' | 'payments'>('summary')
+const tabs = [
+  { key: 'summary', label: 'Summary' },
+  { key: 'billing', label: 'Billing info' },
+  { key: 'payments', label: 'Payments' },
+] as const
+
+const payments = ref<PaymentRow[]>([])
+const loadingPayments = ref(false)
+const paymentsLoaded = ref(false)
+async function loadPayments() {
+  if (paymentsLoaded.value || !store.isOwner) return
+  loadingPayments.value = true
+  try {
+    const result = await $fetch<{ payments: PaymentRow[] }>('/api/billing/payments')
+    payments.value = result.payments
+    paymentsLoaded.value = true
+  } finally {
+    loadingPayments.value = false
+  }
+}
+
+watch(activeTab, (tab) => {
+  if (tab === 'payments') loadPayments()
+})
+
+const headerMeta = computed(() => {
+  if (!subscription.value || subscription.value.comped || !subscription.value.stripe_subscription_id) return undefined
+  const parts = [`Recurring: ${STATUS_LABEL[subscription.value.status] ?? subscription.value.status}`]
+  if (billingInfo.value?.nextPaymentDate) {
+    parts.unshift(`Next payment: ${formatDate(billingInfo.value.nextPaymentDate)} -- ${eur(nextChargeCents.value)}`)
+  }
+  return parts.join('     ')
+})
 </script>
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Subscription" />
+    <PageHeader title="Subscription info" :meta="headerMeta" />
     <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
     <div class="max-w-3xl">
+
+    <div class="mb-4 flex gap-1 border-b border-line">
+      <button
+        v-for="tab in tabs"
+        :key="tab.key"
+        type="button"
+        class="px-3 pb-2 text-sm"
+        :class="activeTab === tab.key ? 'border-b-2 border-brand font-semibold text-ink-900' : 'text-ink-muted hover:text-ink-700'"
+        @click="activeTab = tab.key"
+      >
+        {{ tab.label }}
+      </button>
+    </div>
+
     <div v-if="loading" class="space-y-4 rounded-card border border-line bg-surface p-4 shadow-card">
       <div class="flex items-center justify-between">
         <UiSkeleton class="h-4 w-24 rounded-ctlSm" />
@@ -168,114 +295,195 @@ async function choosePlan(plan: PlanRow) {
     <div v-else-if="!subscription" class="text-sm text-ink-muted">No subscription found. Contact <a :href="contactHref" class="text-brand hover:text-brand-hover">hola@columnaquiro.com</a>.</div>
 
     <template v-else>
-      <p v-if="checkoutJustCompleted && !subscription.stripe_subscription_id" class="rounded-card border border-line bg-brand-tint px-4 py-3 text-sm text-brand-text">
-        Payment received -- activating your subscription… this can take a few seconds.
-      </p>
-
-      <div class="mt-4 space-y-4 rounded-card border border-line bg-surface p-4 shadow-card">
-        <div class="flex items-center justify-between">
-          <p class="text-base font-semibold text-ink-900">{{ subscription.plans?.name ?? 'Plan' }}</p>
-          <span v-if="subscription.comped" class="rounded-full bg-brand-tint px-2.5 py-1 text-xs font-medium text-brand">Comped -- no charge</span>
-          <span v-else class="rounded-full px-2.5 py-1 text-xs font-medium" :class="STATUS_TONE[subscription.status] ?? 'bg-gray-100 text-gray-500'">
-            {{ STATUS_LABEL[subscription.status] ?? subscription.status }}
-          </span>
-        </div>
-
-        <p v-if="!subscription.comped" class="text-sm text-ink-700">
-          {{ eur(monthlyEquivalentCents) }}/mo
-          <span class="text-ink-muted">({{ subscription.billing_interval === 'annual' ? 'billed annually' : 'billed monthly' }})</span>
-          <span v-if="subscription.extra_professionals > 0" class="text-ink-muted"> -- includes {{ subscription.extra_professionals }} extra professional(s)</span>
+      <!-- Summary tab -->
+      <template v-if="activeTab === 'summary'">
+        <p v-if="checkoutJustCompleted && !subscription.stripe_subscription_id" class="rounded-card border border-line bg-brand-tint px-4 py-3 text-sm text-brand-text">
+          Payment received -- activating your subscription… this can take a few seconds.
         </p>
 
-        <p v-if="subscription.status === 'trialing' && store.trialDaysLeft !== null" class="text-sm text-ink-muted">
-          {{ store.trialDaysLeft === 0 ? 'Your trial ends today.' : `${store.trialDaysLeft} day(s) left in your free trial.` }}
-        </p>
-        <p v-if="subscription.status === 'past_due'" class="text-sm text-danger-text">Your last payment failed. Update your payment method to avoid losing access.</p>
-        <p v-if="subscription.status === 'locked' || subscription.status === 'canceled'" class="text-sm text-danger-text">This account is locked pending payment.</p>
+        <div class="mt-4 space-y-4 rounded-card border border-line bg-surface p-4 shadow-card">
+          <div class="flex items-center justify-between">
+            <p class="text-base font-semibold text-ink-900">{{ subscription.plans?.name ?? 'Plan' }}</p>
+            <span v-if="subscription.comped" class="rounded-full bg-brand-tint px-2.5 py-1 text-xs font-medium text-brand">Comped -- no charge</span>
+            <span v-else class="rounded-full px-2.5 py-1 text-xs font-medium" :class="STATUS_TONE[subscription.status] ?? 'bg-gray-100 text-gray-500'">
+              {{ STATUS_LABEL[subscription.status] ?? subscription.status }}
+            </span>
+          </div>
 
-        <div v-if="store.isOwner" class="pt-2">
-          <UiBtn v-if="subscription.stripe_customer_id" variant="secondary" :disabled="loadingPortal" @click="openPortal(contactHref)">
-            {{ loadingPortal ? 'Opening…' : 'Manage payment method & invoices' }}
-          </UiBtn>
-          <p v-else-if="subscription.comped" class="text-sm text-ink-muted">This account has complimentary access -- no billing to manage.</p>
-        </div>
-      </div>
+          <p v-if="!subscription.comped" class="text-sm text-ink-700">
+            {{ eur(monthlyEquivalentCents) }}/mo
+            <span class="text-ink-muted">({{ subscription.billing_interval === 'annual' ? 'billed annually' : 'billed monthly' }})</span>
+          </p>
+          <p class="text-sm text-ink-muted">{{ professionalsLabel }}</p>
 
-      <div v-if="store.isOwner && !subscription.comped" class="mt-8">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <h2 class="text-base font-semibold text-ink-900">Change plan</h2>
-          <div class="flex items-center gap-3">
-            <div class="flex items-center gap-1.5 text-sm">
-              <label class="flex items-center gap-1.5">
-                <span class="text-ink-muted">Extra professionals</span>
-                <input
-                  v-model.number="extraProfessionals"
-                  type="number"
-                  min="0"
-                  class="w-14 rounded-ctl border border-line-control px-2 py-1 text-center text-sm focus:border-brand focus:outline-none"
-                />
-              </label>
-            </div>
-            <div class="flex rounded-ctl border border-line-control p-0.5">
-              <button
-                type="button"
-                class="rounded-ctlSm px-3 py-1 text-xs font-medium"
-                :class="interval === 'monthly' ? 'bg-brand text-white' : 'text-ink-600'"
-                @click="interval = 'monthly'"
-              >
-                Monthly
-              </button>
-              <button
-                type="button"
-                class="rounded-ctlSm px-3 py-1 text-xs font-medium"
-                :class="interval === 'annual' ? 'bg-brand text-white' : 'text-ink-600'"
-                @click="interval = 'annual'"
-              >
-                Annual
-              </button>
-            </div>
+          <p v-if="subscription.status === 'trialing' && store.trialDaysLeft !== null" class="text-sm text-ink-muted">
+            {{ store.trialDaysLeft === 0 ? 'Your trial ends today.' : `${store.trialDaysLeft} day(s) left in your free trial.` }}
+          </p>
+          <p v-if="subscription.status === 'past_due'" class="text-sm text-danger-text">Your last payment failed. Update your payment method to avoid losing access.</p>
+          <p v-if="subscription.status === 'locked' || subscription.status === 'canceled'" class="text-sm text-danger-text">This account is locked pending payment.</p>
+
+          <div v-if="store.isOwner" class="pt-2">
+            <UiBtn v-if="subscription.stripe_customer_id" variant="secondary" :disabled="loadingPortal" @click="openPortal(contactHref)">
+              {{ loadingPortal ? 'Opening…' : 'Manage payment method & invoices' }}
+            </UiBtn>
+            <p v-else-if="subscription.comped" class="text-sm text-ink-muted">This account has complimentary access -- no billing to manage.</p>
           </div>
         </div>
 
-        <p v-if="planError" class="mt-3 text-sm text-danger-text">{{ planError }}</p>
-
-        <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div
-            v-for="plan in plans"
-            :key="plan.id"
-            class="flex flex-col gap-3 rounded-card border p-4"
-            :class="isCurrentPlan(plan) ? 'border-brand shadow-card' : 'border-line'"
-          >
-            <div>
-              <p class="text-sm font-semibold text-ink-900">{{ plan.name }}</p>
-              <p class="mt-1 text-xl font-semibold text-ink-900">
-                {{ eur(priceFor(plan)) }}<span class="text-sm font-normal text-ink-muted">/mo</span>
-              </p>
-              <p class="text-xs text-ink-muted">{{ interval === 'annual' ? 'billed annually' : 'billed monthly' }}</p>
+        <div v-if="store.isOwner && !subscription.comped" class="mt-8">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-base font-semibold text-ink-900">Change plan</h2>
+            <div class="flex items-center gap-3">
+              <div class="flex items-center gap-1.5 text-sm">
+                <label class="flex items-center gap-1.5">
+                  <span class="text-ink-muted">Extra professionals</span>
+                  <input
+                    v-model.number="extraProfessionals"
+                    type="number"
+                    min="0"
+                    class="w-14 rounded-ctl border border-line-control px-2 py-1 text-center text-sm focus:border-brand focus:outline-none"
+                  />
+                </label>
+              </div>
+              <div class="flex rounded-ctl border border-line-control p-0.5">
+                <button
+                  type="button"
+                  class="rounded-ctlSm px-3 py-1 text-xs font-medium"
+                  :class="interval === 'monthly' ? 'bg-brand text-white' : 'text-ink-600'"
+                  @click="interval = 'monthly'"
+                >
+                  Monthly
+                </button>
+                <button
+                  type="button"
+                  class="rounded-ctlSm px-3 py-1 text-xs font-medium"
+                  :class="interval === 'annual' ? 'bg-brand text-white' : 'text-ink-600'"
+                  @click="interval = 'annual'"
+                >
+                  Annual
+                </button>
+              </div>
             </div>
-            <ul class="flex-1 space-y-1 text-xs text-ink-muted">
-              <li>{{ plan.included_professionals ?? 'Unlimited' }} professional(s) included</li>
-              <li>{{ plan.included_clinics ?? 'Unlimited' }} clinic location(s)</li>
-              <li v-if="plan.extra_professional_price_cents">{{ eur(plan.extra_professional_price_cents) }}/mo per extra professional</li>
-            </ul>
-            <UiBtn
-              v-if="isCurrentPlan(plan)"
-              variant="secondary"
-              disabled
+          </div>
+
+          <p v-if="planError" class="mt-3 text-sm text-danger-text">{{ planError }}</p>
+
+          <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div
+              v-for="plan in plans"
+              :key="plan.id"
+              class="flex flex-col gap-3 rounded-card border p-4"
+              :class="isCurrentPlan(plan) ? 'border-brand shadow-card' : 'border-line'"
             >
-              Current plan
-            </UiBtn>
-            <UiBtn
-              v-else
-              variant="primary"
-              :disabled="changingPlanId !== null"
-              @click="choosePlan(plan)"
-            >
-              {{ changingPlanId === plan.id ? 'Please wait…' : subscription.stripe_subscription_id ? 'Switch to this plan' : 'Subscribe' }}
-            </UiBtn>
+              <div>
+                <p class="text-sm font-semibold text-ink-900">{{ plan.name }}</p>
+                <p class="mt-1 text-xl font-semibold text-ink-900">
+                  {{ eur(priceFor(plan)) }}<span class="text-sm font-normal text-ink-muted">/mo</span>
+                </p>
+                <p class="text-xs text-ink-muted">{{ interval === 'annual' ? 'billed annually' : 'billed monthly' }}</p>
+              </div>
+              <ul class="flex-1 space-y-1 text-xs text-ink-muted">
+                <li>{{ plan.included_professionals ?? 'Unlimited' }} professional(s) included</li>
+                <li>{{ plan.included_clinics ?? 'Unlimited' }} clinic location(s)</li>
+                <li v-if="plan.extra_professional_price_cents">{{ eur(plan.extra_professional_price_cents) }}/mo per extra professional</li>
+              </ul>
+              <UiBtn
+                v-if="isCurrentPlan(plan)"
+                variant="secondary"
+                disabled
+              >
+                Current plan
+              </UiBtn>
+              <UiBtn
+                v-else
+                variant="primary"
+                :disabled="changingPlanId !== null"
+                @click="choosePlan(plan)"
+              >
+                {{ changingPlanId === plan.id ? 'Please wait…' : subscription.stripe_subscription_id ? 'Switch to this plan' : 'Subscribe' }}
+              </UiBtn>
+            </div>
           </div>
         </div>
-      </div>
+      </template>
+
+      <!-- Billing info tab -->
+      <template v-else-if="activeTab === 'billing'">
+        <div v-if="!store.isOwner" class="rounded-card border border-line bg-surface p-4 text-sm text-ink-muted shadow-card">
+          Only the account owner can view billing details.
+        </div>
+        <div v-else-if="loadingBillingInfo" class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <UiSkeleton class="h-32 rounded-card" />
+          <UiSkeleton class="h-32 rounded-card" />
+        </div>
+        <div v-else-if="!billingInfo?.hasCustomer" class="rounded-card border border-line bg-surface p-4 text-sm text-ink-muted shadow-card">
+          No billing details yet -- start a subscription first.
+        </div>
+        <div v-else class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+            <div class="flex items-center justify-between">
+              <p class="text-sm font-semibold text-ink-900">Billing information</p>
+              <button type="button" class="text-xs font-medium text-brand-text hover:text-brand-hover" @click="openPortal(contactHref)">Edit</button>
+            </div>
+            <p class="mt-3 text-xs text-ink-muted">Changes to your billing information will take effect starting with the next scheduled payment.</p>
+            <p class="mt-4 text-sm text-ink-700"><span class="font-medium text-ink-900">Country:</span> {{ billingInfo?.country ?? '--' }}</p>
+          </div>
+          <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+            <div class="flex items-center justify-between">
+              <p class="text-sm font-semibold text-ink-900">Current card</p>
+              <button type="button" class="text-xs font-medium text-brand-text hover:text-brand-hover" @click="openPortal(contactHref)">Edit</button>
+            </div>
+            <div v-if="billingInfo?.card" class="mt-4 rounded-ctl bg-surface-page px-3 py-2 text-sm text-ink-700">
+              <span class="capitalize">{{ billingInfo.card.brand }}</span>
+              <span class="ml-2 text-ink-muted">•••• {{ billingInfo.card.last4 }}</span>
+            </div>
+            <p v-else class="mt-4 text-sm text-ink-muted">No card on file.</p>
+          </div>
+        </div>
+      </template>
+
+      <!-- Payments tab -->
+      <template v-else-if="activeTab === 'payments'">
+        <div v-if="!store.isOwner" class="rounded-card border border-line bg-surface p-4 text-sm text-ink-muted shadow-card">
+          Only the account owner can view billing details.
+        </div>
+        <div v-else class="overflow-hidden rounded-card border border-line bg-surface shadow-card">
+          <div v-if="loadingPayments" class="space-y-2 p-4">
+            <UiSkeleton class="h-8 w-full rounded-ctlSm" />
+            <UiSkeleton class="h-8 w-full rounded-ctlSm" />
+            <UiSkeleton class="h-8 w-full rounded-ctlSm" />
+          </div>
+          <p v-else-if="payments.length === 0" class="p-4 text-sm text-ink-muted">No payments yet.</p>
+          <table v-else class="w-full text-left text-sm">
+            <thead>
+              <tr class="border-b border-line text-xs text-ink-muted">
+                <th class="px-4 py-2 font-medium">Sale ID</th>
+                <th class="px-4 py-2 font-medium">Date</th>
+                <th class="px-4 py-2 font-medium">Product</th>
+                <th class="px-4 py-2 text-right font-medium">Transaction Amount</th>
+                <th class="px-4 py-2 text-right font-medium">Tax Amount</th>
+                <th class="px-4 py-2 font-medium">Status</th>
+                <th class="px-4 py-2 font-medium">Method</th>
+                <th class="px-4 py-2 font-medium">Invoice</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in payments" :key="row.saleId" class="border-b border-line last:border-0">
+                <td class="px-4 py-2 text-ink-700">{{ row.saleId }}</td>
+                <td class="px-4 py-2 text-ink-700">{{ new Date(row.date).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: '2-digit' }) }}</td>
+                <td class="px-4 py-2 text-ink-700">{{ row.product }}</td>
+                <td class="px-4 py-2 text-right text-ink-700">{{ eur(row.transactionAmountCents) }}</td>
+                <td class="px-4 py-2 text-right text-ink-700">{{ eur(row.taxAmountCents) }}</td>
+                <td class="px-4 py-2 font-medium" :class="PAYMENT_STATUS_TONE[row.status]">{{ row.status }}</td>
+                <td class="px-4 py-2 text-ink-700">{{ row.method ? `${row.method.brand} ${row.method.last4}` : '--' }}</td>
+                <td class="px-4 py-2">
+                  <a v-if="row.invoiceUrl" :href="row.invoiceUrl" target="_blank" rel="noopener" class="text-xs font-medium text-brand-text hover:text-brand-hover">View</a>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </template>
     </template>
     </div>
     </div>

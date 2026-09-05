@@ -25,7 +25,9 @@ export default defineEventHandler(async (event) => {
 
   const { data: account } = await supabase
     .from('accounts')
-    .select('whatsapp_phone_number_id, whatsapp_access_token, whatsapp_confirmation_template_name, whatsapp_recall_template_name')
+    .select(
+      'whatsapp_phone_number_id, whatsapp_access_token, whatsapp_confirmation_template_name, whatsapp_reminder_template_name, whatsapp_recall_template_name',
+    )
     .eq('id', teamMember.account_id)
     .maybeSingle()
   if (!account?.whatsapp_phone_number_id || !account?.whatsapp_access_token) {
@@ -115,9 +117,11 @@ export default defineEventHandler(async (event) => {
   const purpose =
     body.templateName === account.whatsapp_confirmation_template_name
       ? 'confirmation'
-      : body.templateName === account.whatsapp_recall_template_name
-        ? 'recall'
-        : 'other'
+      : body.templateName === account.whatsapp_reminder_template_name
+        ? 'reminder'
+        : body.templateName === account.whatsapp_recall_template_name
+          ? 'recall'
+          : 'other'
 
   await Promise.all([
     supabase.from('contact_log').insert({
@@ -140,8 +144,15 @@ export default defineEventHandler(async (event) => {
     }),
   ])
 
-  if (purpose === 'confirmation' && body.appointmentId) {
-    await supabase.from('appointments').update({ confirmation_status: 'pending' }).eq('id', body.appointmentId)
+  // Reminder counts the same as confirmation here: both templates carry the
+  // Confirmar/Cambiar/Cancelar buttons, so a hand-sent reminder has to mark
+  // the appointment too, or it shows as neither confirmed nor awaiting a
+  // reply. Skip if already confirmed so a nudge doesn't undo that.
+  if ((purpose === 'confirmation' || purpose === 'reminder') && body.appointmentId) {
+    const { data: current } = await supabase.from('appointments').select('confirmation_status').eq('id', body.appointmentId).maybeSingle()
+    if (current?.confirmation_status !== 'confirmed') {
+      await supabase.from('appointments').update({ confirmation_status: 'pending' }).eq('id', body.appointmentId)
+    }
   }
 
   return { success: true }

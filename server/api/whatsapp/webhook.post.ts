@@ -68,11 +68,10 @@ function classifyReply(text: string): 'confirmed' | 'reschedule_requested' | 'ca
 // across a few real patients) can leave more than one patient record
 // pointing at the same number. Most callers below just need any one of
 // them (a message can only be attributed to a single patient_id), but the
-// confirm/reschedule/cancel handler needs all of them: it identifies which
-// specific appointment a reply is about by whichever matching patient
-// actually has a pending confirmation, not by an arbitrary first match --
-// picking the wrong one silently no-ops the reply against a patient with
-// nothing pending.
+// confirm/reschedule/cancel handler needs all of them: it resolves which
+// specific appointment a reply is about across every patient sharing the
+// number (see resolveRepliedAppointment), rather than betting on an
+// arbitrary first match that may have nothing scheduled.
 async function findPatientIdsByPhone(supabase: ReturnType<typeof serverSupabaseServiceRole<Database>>, accountId: string, fromNumber: string): Promise<string[]> {
   const PAGE_SIZE = 1000
   const matches: string[] = []
@@ -87,6 +86,64 @@ async function findPatientIdsByPhone(supabase: ReturnType<typeof serverSupabaseS
     }
     if (!data || data.length < PAGE_SIZE) return matches
   }
+}
+
+// Which appointment is a Confirmar/Cambiar/Cancelar reply about?
+//
+// This used to be a single query for "the earliest-starting appointment with
+// confirmation_status = 'pending'", which had two problems. It silently
+// no-opped whenever nothing had set that flag yet -- an automation-rule
+// reminder sent days before the built-in one, for instance -- throwing away
+// a real confirmation the patient had just sent. And ordering every
+// appointment ever by starts_at ascending, with no lower bound and no
+// deleted/cancelled filter, meant one stale 'pending' row from months back
+// would soak up replies meant for next week's visit.
+//
+// So: anchor on the appointment the most recent outbound message to this
+// patient actually referenced, since that's literally what they're replying
+// to, and only fall back to scanning upcoming appointments if that message
+// carried no appointment (a free-text inbox reply, say).
+async function resolveRepliedAppointment(
+  supabase: ReturnType<typeof serverSupabaseServiceRole<Database>>,
+  patientIds: string[],
+): Promise<{ id: string; patient_id: string } | null> {
+  const { data: lastOutbound } = await supabase
+    .from('whatsapp_messages')
+    .select('appointment_id')
+    .in('patient_id', patientIds)
+    .eq('direction', 'outbound')
+    .not('appointment_id', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (lastOutbound?.appointment_id) {
+    const { data: anchored } = await supabase
+      .from('appointments')
+      .select('id, patient_id, status')
+      .eq('id', lastOutbound.appointment_id)
+      .is('deleted_at', null)
+      .maybeSingle()
+    // Only honour the anchor while the appointment is still live -- a reply
+    // to a reminder for something since cancelled shouldn't resurrect it.
+    if (anchored && anchored.status === 'booked') return { id: anchored.id, patient_id: anchored.patient_id }
+  }
+
+  // Fallback: the soonest appointment still ahead of them. A small grace
+  // window back from now keeps a reply sent just after the start time (or
+  // while the webhook was retrying) attached to that same visit.
+  const graceCutoff = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
+  const { data: upcoming } = await supabase
+    .from('appointments')
+    .select('id, patient_id')
+    .in('patient_id', patientIds)
+    .eq('status', 'booked')
+    .is('deleted_at', null)
+    .gte('starts_at', graceCutoff)
+    .order('starts_at', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+  return upcoming ?? null
 }
 
 export default defineEventHandler(async (event) => {
@@ -179,14 +236,7 @@ export default defineEventHandler(async (event) => {
 
         const intent = classifyReply(replyText(msg))
         if (intent && patientIds.length > 0) {
-          const { data: appt } = await supabase
-            .from('appointments')
-            .select('id, patient_id')
-            .in('patient_id', patientIds)
-            .eq('confirmation_status', 'pending')
-            .order('starts_at', { ascending: true })
-            .limit(1)
-            .maybeSingle()
+          const appt = await resolveRepliedAppointment(supabase, patientIds)
           if (appt) {
             if (intent === 'cancelled') {
               // 'cancelled' isn't a confirmation_status value (that column

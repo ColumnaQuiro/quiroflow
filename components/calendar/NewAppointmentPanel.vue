@@ -40,15 +40,14 @@ const time = ref(props.prefillTime ?? '09:00')
 const roomId = ref(props.prefillRoomId ?? '')
 const practitionerId = ref(props.prefillPractitionerId ?? '')
 
-// Working hours for the practitioner picked in this form, narrowed by the
-// clinic's -- matching how the calendar grid shades closed time. Checking the
-// clinic alone ignored a practitioner's own schedule (Settings -> Team).
+// Working hours for the practitioner picked in this form -- their own
+// schedule (Settings -> Team) is authoritative, with the clinic's standing in
+// only for someone who has never set any. Matches the calendar grid.
 function outsideWorkingHours(at: Date): boolean {
   const clinicHours = store.currentClinic?.business_hours as BusinessHours | null | undefined
   const practitionerHours = (props.teamMembers.find((m) => m.id === practitionerId.value)?.business_hours ?? null) as BusinessHours | null
   if (!hasBusinessHoursConfigured(clinicHours) && !hasBusinessHoursConfigured(practitionerHours)) return false
-  const clinicWindows = hasBusinessHoursConfigured(clinicHours) ? windowsForDay(at, clinicHours) : ([['00:00', '24:00']] as [string, string][])
-  const windows = practitionerWindowsForDay(clinicWindows, practitionerHours, dayKeyFor(at))
+  const windows = practitionerWindowsForDay(windowsForDay(at, clinicHours), practitionerHours, dayKeyFor(at))
   const mins = at.getHours() * 60 + at.getMinutes()
   return !windows.some(([s, e]) => {
     const [sh, sm] = s.split(':').map(Number)

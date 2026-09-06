@@ -538,10 +538,9 @@ const slotMarks = computed(() => {
 })
 
 // The grid is one tab per practitioner, so "working hours" here means the
-// hours of the practitioner whose tab is open, narrowed by the clinic's --
-// not the clinic's alone. Reading only the clinic meant a practitioner's own
-// schedule (Settings -> Team) had no effect on the calendar at all, even
-// though the public booking page has always honoured it.
+// hours of the practitioner whose tab is open -- their own schedule
+// (Settings -> Team), which is authoritative. The clinic's hours only stand
+// in for someone who has never set any.
 const selectedPractitionerHours = computed<BusinessHours | null>(
   () => clinicTeamMembers.value.find((m) => m.id === practitionerFilter.value)?.business_hours ?? null,
 )
@@ -550,13 +549,10 @@ const businessHoursConfigured = computed(
   () => hasBusinessHoursConfigured(store.currentClinic?.business_hours) || hasBusinessHoursConfigured(selectedPractitionerHours.value),
 )
 
-// Windows the selected practitioner actually works on a given day. A clinic
-// with no hours of its own is treated as open all day rather than closed, so
-// a practitioner schedule still shades correctly on its own.
+// Windows the selected practitioner actually works on a given day.
 function workingWindowsFor(date: Date): [string, string][] {
   const clinicHours = store.currentClinic?.business_hours as BusinessHours | null | undefined
-  const clinicWindows = hasBusinessHoursConfigured(clinicHours) ? windowsForDay(date, clinicHours) : ([['00:00', '24:00']] as [string, string][])
-  return practitionerWindowsForDay(clinicWindows, selectedPractitionerHours.value, dayKeyFor(date))
+  return practitionerWindowsForDay(windowsForDay(date, clinicHours), selectedPractitionerHours.value, dayKeyFor(date))
 }
 
 function isWorkingTime(date: Date): boolean {

@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { hasBusinessHoursConfigured, isWithinBusinessHours } from '~/utils/businessHours'
+import type { BusinessHours } from '~/utils/businessHours'
+import { dayKeyFor, hasBusinessHoursConfigured, practitionerWindowsForDay, windowsForDay } from '~/utils/businessHours'
 import { computeBonoStatus } from '~/utils/bonoStatus'
 import { effectiveDuration, effectivePriceCents, type AppointmentTypeOverride } from '~/utils/appointmentOverrides'
 import { normalizeSearchTerm } from '~/utils/searchText'
 
 interface RoomOption { id: string; name: string }
 interface AppointmentTypeOption { id: string; name: string; duration_minutes: number; color: string; default_price_cents: number }
-interface TeamMemberOption { id: string; full_name: string; color: string }
+interface TeamMemberOption { id: string; full_name: string; color: string; business_hours?: unknown }
 interface PatientOption { id: string; first_name: string; last_name: string | null }
 
 interface EditingAppointment {
@@ -64,6 +65,23 @@ const patientId = ref(props.appointment?.patient_id ?? '')
 const patientQuery = ref('')
 const roomId = ref(props.appointment?.room_id ?? props.prefillRoomId ?? props.rooms[0]?.id ?? '')
 const practitionerId = ref(props.appointment?.practitioner_id ?? '')
+
+// Working hours for the practitioner picked in this form, narrowed by the
+// clinic's -- matching how the calendar grid shades closed time. Checking the
+// clinic alone ignored a practitioner's own schedule (Settings -> Team).
+function outsideWorkingHours(at: Date): boolean {
+  const clinicHours = store.currentClinic?.business_hours as BusinessHours | null | undefined
+  const practitionerHours = (props.teamMembers.find((m) => m.id === practitionerId.value)?.business_hours ?? null) as BusinessHours | null
+  if (!hasBusinessHoursConfigured(clinicHours) && !hasBusinessHoursConfigured(practitionerHours)) return false
+  const clinicWindows = hasBusinessHoursConfigured(clinicHours) ? windowsForDay(at, clinicHours) : ([['00:00', '24:00']] as [string, string][])
+  const windows = practitionerWindowsForDay(clinicWindows, practitionerHours, dayKeyFor(at))
+  const mins = at.getHours() * 60 + at.getMinutes()
+  return !windows.some(([s, e]) => {
+    const [sh, sm] = s.split(':').map(Number)
+    const [eh, em] = e.split(':').map(Number)
+    return mins >= sh * 60 + sm && mins < eh * 60 + em
+  })
+}
 const appointmentTypeId = ref(props.appointment?.appointment_type_id ?? '')
 const date = ref(props.appointment ? toDateInput(props.appointment.starts_at) : (props.prefillDate ?? toDateInput(new Date().toISOString())))
 const time = ref(props.appointment ? toTimeInput(props.appointment.starts_at) : (props.prefillTime ?? '09:00'))
@@ -162,9 +180,8 @@ async function save() {
   const startsAt = new Date(`${date.value}T${time.value}`)
   const endsAt = new Date(startsAt.getTime() + duration.value * 60000)
 
-  const hours = store.currentClinic?.business_hours
-  if (hasBusinessHoursConfigured(hours) && (!isWithinBusinessHours(startsAt, hours) || !isWithinBusinessHours(new Date(endsAt.getTime() - 1), hours))) {
-    if (!confirm(t('This appointment falls outside the clinic\'s working hours. Book it anyway?', 'Esta cita está fuera del horario de atención de la clínica. ¿Reservarla de todos modos?'))) {
+  if (outsideWorkingHours(startsAt) || outsideWorkingHours(new Date(endsAt.getTime() - 1))) {
+    if (!confirm(t('This appointment falls outside working hours. Book it anyway?', 'Esta cita está fuera del horario de atención. ¿Reservarla de todos modos?'))) {
       saving.value = false
       return
     }

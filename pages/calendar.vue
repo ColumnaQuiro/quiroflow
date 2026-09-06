@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { hasBusinessHoursConfigured, isWithinBusinessHours } from '~/utils/businessHours'
+import type { BusinessHours } from '~/utils/businessHours'
+import { dayKeyFor, hasBusinessHoursConfigured, practitionerWindowsForDay, windowsForDay } from '~/utils/businessHours'
 import type { AppointmentTypeOverride } from '~/utils/appointmentOverrides'
 
 const START_HOUR = 8
@@ -61,7 +62,7 @@ const OVERFLOW_CHIP_PX = 20
 
 interface Room { id: string; name: string }
 interface AppointmentType { id: string; name: string; duration_minutes: number; color: string; default_price_cents: number }
-interface TeamMember { id: string; full_name: string; color: string }
+interface TeamMember { id: string; full_name: string; color: string; business_hours: BusinessHours | null }
 interface TeamMemberClinic { team_member_id: string; clinic_id: string }
 
 interface AvailabilityBlock { id: string; room_id: string | null; practitioner_id: string | null; starts_at: string; ends_at: string; note: string | null }
@@ -244,12 +245,15 @@ const miniWeekdayAbbrevs = computed(() => [
 async function loadReferenceData() {
   const [{ data: types }, { data: members }, { data: ovr }, { data: memberClinics }] = await Promise.all([
     supabase.from('appointment_types').select('id, name, duration_minutes, color, default_price_cents').order('name'),
-    supabase.from('team_members').select('id, full_name, color').is('deleted_at', null).eq('is_practitioner', true).order('full_name'),
+    supabase.from('team_members').select('id, full_name, color, business_hours').is('deleted_at', null).eq('is_practitioner', true).order('full_name'),
     supabase.from('appointment_type_overrides').select('appointment_type_id, team_member_id, duration_minutes, price_cents'),
     supabase.from('team_member_clinics').select('team_member_id, clinic_id'),
   ])
   appointmentTypes.value = types ?? []
-  teamMembers.value = members ?? []
+  // business_hours comes back as Supabase's recursive Json type, which never
+  // narrows to BusinessHours on its own -- cast at the read site, same as
+  // settings/team.vue and settings/online-booking.vue already do.
+  teamMembers.value = (members ?? []) as unknown as TeamMember[]
   overrides.value = ovr ?? []
   teamMemberClinics.value = memberClinics ?? []
 }
@@ -533,17 +537,46 @@ const slotMarks = computed(() => {
   return marks
 })
 
-const businessHoursConfigured = computed(() => hasBusinessHoursConfigured(store.currentClinic?.business_hours))
+// The grid is one tab per practitioner, so "working hours" here means the
+// hours of the practitioner whose tab is open, narrowed by the clinic's --
+// not the clinic's alone. Reading only the clinic meant a practitioner's own
+// schedule (Settings -> Team) had no effect on the calendar at all, even
+// though the public booking page has always honoured it.
+const selectedPractitionerHours = computed<BusinessHours | null>(
+  () => clinicTeamMembers.value.find((m) => m.id === practitionerFilter.value)?.business_hours ?? null,
+)
 
-// Slots outside the clinic's configured working hours are shaded in the
-// grid background; if the clinic never set hours (business_hours all
-// empty), nothing is shaded -- opt-in, not "closed every day" by default.
+const businessHoursConfigured = computed(
+  () => hasBusinessHoursConfigured(store.currentClinic?.business_hours) || hasBusinessHoursConfigured(selectedPractitionerHours.value),
+)
+
+// Windows the selected practitioner actually works on a given day. A clinic
+// with no hours of its own is treated as open all day rather than closed, so
+// a practitioner schedule still shades correctly on its own.
+function workingWindowsFor(date: Date): [string, string][] {
+  const clinicHours = store.currentClinic?.business_hours as BusinessHours | null | undefined
+  const clinicWindows = hasBusinessHoursConfigured(clinicHours) ? windowsForDay(date, clinicHours) : ([['00:00', '24:00']] as [string, string][])
+  return practitionerWindowsForDay(clinicWindows, selectedPractitionerHours.value, dayKeyFor(date))
+}
+
+function isWorkingTime(date: Date): boolean {
+  const mins = date.getHours() * 60 + date.getMinutes()
+  return workingWindowsFor(date).some(([start, end]) => {
+    const [sh, sm] = start.split(':').map(Number)
+    const [eh, em] = end.split(':').map(Number)
+    return mins >= sh * 60 + sm && mins < eh * 60 + em
+  })
+}
+
+// Slots outside those working hours are shaded in the grid background; if
+// neither the clinic nor the practitioner ever set hours, nothing is shaded
+// -- opt-in, not "closed every day" by default.
 function slotIsOpen(index: number, forDate: Date) {
   if (!businessHoursConfigured.value) return true
   const totalMin = index * SLOT_MIN.value
   const slotDate = new Date(forDate)
   slotDate.setHours(START_HOUR + Math.floor(totalMin / 60), totalMin % 60, 0, 0)
-  return isWithinBusinessHours(slotDate, store.currentClinic?.business_hours)
+  return isWorkingTime(slotDate)
 }
 // Closed-hours shading is still computed at the clinic's slot granularity
 // (so a lunch break that ends at :30 shades correctly) even though the
@@ -998,12 +1031,11 @@ function pickRescheduleSlot(day: Date, time: string, roomId: string | null) {
   const durationMs = new Date(src.endsAt).getTime() - new Date(src.startsAt).getTime()
   const newEndsAt = new Date(newStartsAt.getTime() + durationMs)
 
-  const hours = store.currentClinic?.business_hours
   if (
-    hasBusinessHoursConfigured(hours) &&
-    (!isWithinBusinessHours(newStartsAt, hours) || !isWithinBusinessHours(new Date(newEndsAt.getTime() - 1), hours))
+    businessHoursConfigured.value &&
+    (!isWorkingTime(newStartsAt) || !isWorkingTime(new Date(newEndsAt.getTime() - 1)))
   ) {
-    if (!confirm(t("This falls outside the clinic's working hours. Move it anyway?", 'Esto queda fuera del horario de atención de la clínica. ¿Moverla de todos modos?'))) return
+    if (!confirm(t('This falls outside working hours. Move it anyway?', 'Esto queda fuera del horario de atención. ¿Moverla de todos modos?'))) return
   }
 
   const live = appointments.value.find((a) => a.id === src.id)
@@ -1053,12 +1085,11 @@ async function onAppointmentDragEnd(e: PointerEvent) {
     appt!.room_id = orig.room_id
   }
 
-  const hours = store.currentClinic?.business_hours
   if (
-    hasBusinessHoursConfigured(hours) &&
-    (!isWithinBusinessHours(new Date(appt.starts_at), hours) || !isWithinBusinessHours(new Date(new Date(appt.ends_at).getTime() - 1), hours))
+    businessHoursConfigured.value &&
+    (!isWorkingTime(new Date(appt.starts_at)) || !isWorkingTime(new Date(new Date(appt.ends_at).getTime() - 1)))
   ) {
-    if (!confirm(t("This falls outside the clinic's working hours. Save it anyway?", 'Esto queda fuera del horario de atención de la clínica. ¿Guardarlo de todos modos?'))) {
+    if (!confirm(t('This falls outside working hours. Save it anyway?', 'Esto queda fuera del horario de atención. ¿Guardarlo de todos modos?'))) {
       revert()
       return
     }

@@ -89,6 +89,49 @@ Wildcard clinic subdomains need two things once, and one more per clinic:
    `NETLIFY_SITE_ID` (see `.env.example`). Without those set, it silently
    no-ops and the alias needs adding manually instead.
 
+## Mobile app password autofill
+
+The apps are Capacitor wrappers, so their WebView origin is
+`capacitor://localhost` (iOS) / `https://localhost` (Android), not
+`app.quiroflow.com`. Both platforms key saved passwords to a *domain*, so
+without an explicit association neither offers the password the user already
+saved on the website — autofill just silently does nothing in the app.
+
+Two files on `app.quiroflow.com` declare that association, both served from
+`public/.well-known/`:
+
+- `apple-app-site-association` — `webcredentials` for
+  `N5TP24Q7MW.com.quiroflow.app`, paired with the
+  `com.apple.developer.associated-domains` entitlement in
+  `mobile/ios/App/App/App.entitlements`. It has no file extension, so
+  `netlify.toml` forces `Content-Type: application/json` on it; iOS rejects
+  it as any other type. Signing is Automatic, so Xcode normally adds the
+  Associated Domains capability to the App ID itself — if a build fails to
+  sign, enable it for `com.quiroflow.app` in the Apple Developer portal.
+- `assetlinks.json` — `delegate_permission/common.get_login_creds` for
+  `com.quiroflow.app`.
+
+Neither declares `applinks` / `common.handle_all_urls`: those route
+`https://app.quiroflow.com` links into the app, which is a separate decision
+from autofill.
+
+**⚠️ After the first Play Store upload**, add a second fingerprint to
+`assetlinks.json`. The one committed is the *upload* key
+(`mobile/android/quiroflow-upload.keystore`). Play App Signing re-signs the
+app with Google's own key, so what ships to users has a different
+fingerprint and autofill won't match until it's listed. Copy it from Play
+Console → Setup → App signing → "App signing key certificate" (SHA-256) and
+append it to `sha256_cert_fingerprints` — the field is an array precisely so
+both keys can be listed, and keeping the upload key covers directly-signed
+builds.
+
+Verify either file is reachable with no redirect (both platforms require
+that):
+
+```bash
+curl -sI https://app.quiroflow.com/.well-known/assetlinks.json
+```
+
 ## Clinic onboarding checklist
 
 Once signed up (`/signup` creates the account + first clinic), everything

@@ -227,6 +227,7 @@ export type Database = {
           online_booking_primary_color: string | null
           online_booking_referral_url: string | null
           online_booking_secondary_color: string | null
+          online_booking_success_url: string | null
           online_booking_text_overrides: Json
           practicehub_api_key: string | null
           practicehub_base_url: string | null
@@ -290,6 +291,7 @@ export type Database = {
           online_booking_primary_color?: string | null
           online_booking_referral_url?: string | null
           online_booking_secondary_color?: string | null
+          online_booking_success_url?: string | null
           online_booking_text_overrides?: Json
           practicehub_api_key?: string | null
           practicehub_base_url?: string | null
@@ -353,6 +355,7 @@ export type Database = {
           online_booking_primary_color?: string | null
           online_booking_referral_url?: string | null
           online_booking_secondary_color?: string | null
+          online_booking_success_url?: string | null
           online_booking_text_overrides?: Json
           practicehub_api_key?: string | null
           practicehub_base_url?: string | null

@@ -40,6 +40,7 @@ interface BookingInfo {
     appointment_confirmation_channels: string[]
     online_booking_max_days_ahead: number
     online_booking_gtm_id: string | null
+    online_booking_success_url: string | null
     online_booking_primary_color: string | null
     online_booking_secondary_color: string | null
     online_booking_background_color: string | null
@@ -548,12 +549,36 @@ async function submitBooking() {
     paymentRequiredCents.value = result.payment_required_cents
     phase.value = 'payment'
   } else {
-    phase.value = 'success'
+    goToSuccess()
   }
 }
 
-function onPaymentSucceeded() {
+// The account can point completed bookings at a page of its own (Settings >
+// Online Booking > "Successful booking page") instead of the built-in
+// confirmation screen -- usually so a conversion tag fires on their own
+// thank-you page. Only http(s) is honoured: this value goes straight into
+// window.location, and a javascript: URL there would execute as script on
+// the public booking page. Anything unparseable falls back to the built-in
+// screen rather than stranding the patient on a blank page.
+function goToSuccess() {
+  const configured = info.value?.account.online_booking_success_url?.trim()
+  if (configured) {
+    let target: URL | null = null
+    try {
+      target = new URL(configured)
+    } catch {
+      target = null
+    }
+    if (target && (target.protocol === 'http:' || target.protocol === 'https:')) {
+      window.location.href = target.href
+      return
+    }
+  }
   phase.value = 'success'
+}
+
+function onPaymentSucceeded() {
+  goToSuccess()
 }
 
 function backToDatetime() {

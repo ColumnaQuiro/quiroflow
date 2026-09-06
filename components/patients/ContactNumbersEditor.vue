@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Tables } from '~/types/database.types'
+import { splitDialPrefix } from '~/utils/phone'
 
 const props = withDefaults(defineProps<{ patientId: string; editable?: boolean }>(), { editable: false })
 
@@ -30,11 +31,14 @@ onMounted(load)
 async function addNumber() {
   if (!newNumber.value.trim()) return
   adding.value = true
+  // A typed "+34 600…" wins over the dropdown, so the prefix isn't stored
+  // twice -- once in the number and again as the country code.
+  const { countryCode, number } = splitDialPrefix(newNumber.value, newCountry.value)
   await supabase.from('patient_contact_numbers').insert({
     account_id: store.accountId!,
     patient_id: props.patientId,
-    country_code: newCountry.value,
-    number: newNumber.value.trim(),
+    country_code: countryCode,
+    number,
     is_whatsapp: newIsWhatsapp.value,
   })
   newNumber.value = ''
@@ -94,7 +98,7 @@ async function updateNumber(n: Tables<'patient_contact_numbers'>, patch: Partial
           </button>
         </template>
         <span v-else class="rounded-ctl border border-line-control px-3 py-1.5 text-[13px] text-ink-700">
-          {{ countryByCode(n.country_code).flag }} {{ countryByCode(n.country_code).dial }} {{ n.number }}
+          {{ countryByCode(n.country_code).flag }} {{ formatPhoneDisplay(n.number, n.country_code) }}
           <UiPill v-if="n.is_whatsapp" tone="success" class="ml-1.5">WhatsApp</UiPill>
         </span>
       </li>

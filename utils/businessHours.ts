@@ -33,12 +33,14 @@ export function isWithinBusinessHours(date: Date, hours: BusinessHours | null | 
   return windows.some(([start, end]) => mins >= toMinutes(start) && mins < toMinutes(end))
 }
 
-// A practitioner without their own configured hours is bookable across the
-// clinic's full hours (opt-in override, same convention as
-// hasBusinessHoursConfigured) -- so an empty/undefined practitionerWindows
-// means "no restriction", not "no availability".
+// Pure intersection -- no windows on the practitioner's side means no
+// overlap, so no availability. The "this practitioner hasn't set any hours"
+// fallback deliberately does NOT live here: on a single day's windows it is
+// impossible to tell "never configured" from "configured, but not working
+// today", and conflating the two is what made practitioners bookable on
+// their days off. practitionerWindowsForDay below owns that decision.
 export function intersectWindows(clinicWindows: [string, string][], practitionerWindows: [string, string][] | undefined): [string, string][] {
-  if (!practitionerWindows || practitionerWindows.length === 0) return clinicWindows
+  if (!practitionerWindows || practitionerWindows.length === 0) return []
   const result: [string, string][] = []
   for (const [cStart, cEnd] of clinicWindows) {
     const cStartMin = toMinutes(cStart)
@@ -50,6 +52,26 @@ export function intersectWindows(clinicWindows: [string, string][], practitioner
     }
   }
   return result
+}
+
+// The windows a practitioner can actually be seen in on one day: the clinic's
+// hours narrowed by their own.
+//
+// The distinction that matters is per practitioner, not per day. Someone who
+// has never set hours works the clinic's full hours -- that keeps
+// per-practitioner scheduling opt-in, so an account that only fills in clinic
+// hours behaves as it always has. But once a practitioner HAS hours, a day
+// they left empty is a day off, not "no restriction". Reading it the other
+// way round is what put Jordana (mon/tue/wed/thu) and Natacha (tue/wed/thu)
+// on the booking page as available Monday-to-Friday, offering patients slots
+// on days nobody was in.
+export function practitionerWindowsForDay(
+  clinicWindows: [string, string][],
+  practitionerHours: BusinessHours | null | undefined,
+  dayKey: string,
+): [string, string][] {
+  if (!hasBusinessHoursConfigured(practitionerHours)) return clinicWindows
+  return intersectWindows(clinicWindows, practitionerHours?.[dayKey])
 }
 
 function minutesToHHMM(mins: number): string {

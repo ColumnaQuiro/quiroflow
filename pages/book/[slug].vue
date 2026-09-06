@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { COUNTRIES } from '~/utils/countries'
 import { effectiveDuration, effectivePriceCents, type AppointmentTypeOverride } from '~/utils/appointmentOverrides'
-import { intersectWindows } from '~/utils/businessHours'
+import { practitionerWindowsForDay } from '~/utils/businessHours'
 
 definePageMeta({ layout: false })
 
@@ -94,7 +94,7 @@ function practitionerAvailabilityLabel(member: BookingTeamMember) {
   const days: string[] = []
   for (let i = 0; i < 7; i++) {
     const clinicWindows = clinic.value?.business_hours?.[WEEKDAY_KEYS[i]] ?? []
-    if (intersectWindows(clinicWindows, member.business_hours?.[WEEKDAY_KEYS[i]]).length > 0) days.push(WEEKDAY_FULL[i])
+    if (practitionerWindowsForDay(clinicWindows, member.business_hours, WEEKDAY_KEYS[i]).length > 0) days.push(WEEKDAY_FULL[i])
   }
   if (days.length === 0) return 'Sin disponibilidad'
   if (days.length === 1) return `Disponible ${days[0]}`
@@ -340,9 +340,9 @@ function dayHasHours(date: Date) {
   if (!hours) return false
   const clinicWindows = hours[WEEKDAY_KEYS[date.getDay()]] ?? []
   if (anyPractitionerMode.value) {
-    return availablePractitioners.value.some((m) => intersectWindows(clinicWindows, m.business_hours?.[WEEKDAY_KEYS[date.getDay()]]).length > 0)
+    return availablePractitioners.value.some((m) => practitionerWindowsForDay(clinicWindows, m.business_hours, WEEKDAY_KEYS[date.getDay()]).length > 0)
   }
-  const windows = intersectWindows(clinicWindows, teamMember.value?.business_hours?.[WEEKDAY_KEYS[date.getDay()]])
+  const windows = practitionerWindowsForDay(clinicWindows, teamMember.value?.business_hours, WEEKDAY_KEYS[date.getDay()])
   return windows.length > 0
 }
 
@@ -405,7 +405,7 @@ function slotsForMember(
   memberBusinessHours: Record<string, [string, string][]> | null | undefined,
   busy: { starts_at: string; ends_at: string }[],
 ): Date[] {
-  const windows = intersectWindows(clinicWindows, memberBusinessHours?.[weekday])
+  const windows = practitionerWindowsForDay(clinicWindows, memberBusinessHours, weekday)
   const duration = effectiveDurationMinutes.value
   const now = new Date()
   const result: Date[] = []

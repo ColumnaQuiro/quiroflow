@@ -66,7 +66,7 @@ async function saveProfile() {
   }
   store.teamMember.full_name = fullName.value.trim()
   store.teamMember.color = color.value
-  showToast('Saved')
+  showToast(t('Saved', 'Guardado'))
 }
 
 const newPassword = ref('')

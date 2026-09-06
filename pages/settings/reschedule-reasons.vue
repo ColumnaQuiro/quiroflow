@@ -4,6 +4,7 @@ import type { Tables } from '~/types/database.types'
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+const { showToast } = useToast()
 
 const reasons = ref<Tables<'reschedule_reasons'>[]>([])
 const loading = ref(true)
@@ -62,7 +63,7 @@ async function removeReason(id: string) {
 
 async function saveFees() {
   feeSaving.value = true
-  await supabase
+  const { error: feeError } = await supabase
     .from('accounts')
     .update({
       scheduling_policy_fee_cents: toCents(rescheduleFeeAmount.value),
@@ -71,6 +72,11 @@ async function saveFees() {
     })
     .eq('id', store.accountId!)
   feeSaving.value = false
+  if (feeError) {
+    showToast(feeError.message, 'error')
+    return
+  }
+  showToast(t('Saved', 'Guardado'))
 }
 </script>
 

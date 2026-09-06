@@ -65,7 +65,7 @@ async function save() {
     showToast(updateError.message, 'error')
     return
   }
-  showToast('Saved')
+  showToast(t('Saved', 'Guardado'))
   if (secretKey.value.trim()) hasStoredSecretKey.value = true
   if (webhookSecret.value.trim()) hasStoredWebhookSecret.value = true
   secretKey.value = ''

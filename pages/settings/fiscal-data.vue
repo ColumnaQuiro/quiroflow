@@ -2,6 +2,7 @@
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+const { showToast } = useToast()
 
 const editingId = ref<string | null>(null)
 const legalName = ref('')
@@ -32,8 +33,10 @@ async function save() {
   saving.value = false
   if (updateError) {
     error.value = updateError.message
+    showToast(updateError.message, 'error')
     return
   }
+  showToast(t('Saved', 'Guardado'))
   editingId.value = null
   store.reset()
   await store.load()

@@ -4,6 +4,7 @@ const emit = defineEmits<{ connect: [conn: { baseUrl: string; apiKey: string; ap
 const t = useT()
 const user = useSupabaseUser()
 const sharedConn = usePracticeHubConnection()
+const { showToast } = useToast()
 
 const baseUrl = ref(sharedConn.value?.baseUrl ?? '')
 const apiKey = ref(sharedConn.value?.apiKey ?? '')
@@ -18,6 +19,7 @@ function submit() {
   }
   sharedConn.value = conn
   emit('connect', conn)
+  showToast(t('Connected to PracticeHub', 'Conectado a PracticeHub'))
 }
 </script>
 

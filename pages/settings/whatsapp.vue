@@ -118,7 +118,7 @@ async function save() {
     showToast(updateError.message, 'error')
     return
   }
-  showToast('Saved')
+  showToast(t('Saved', 'Guardado'))
   if (accessToken.value.trim()) hasStoredToken.value = true
   accessToken.value = ''
   if (hasStoredToken.value && businessAccountId.value) loadTemplates()

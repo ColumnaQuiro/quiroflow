@@ -7,6 +7,7 @@ type Template = Omit<Tables<'doc_templates'>, 'fields'> & { fields: DocField[] }
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+const { showToast } = useToast()
 
 const templates = ref<Template[]>([])
 const loading = ref(true)
@@ -76,7 +77,12 @@ async function save() {
     })
     .eq('id', activeTemplate.value.id)
   saving.value = false
-  if (!error) savedAt.value = new Date()
+  if (error) {
+    showToast(error.message, 'error')
+    return
+  }
+  savedAt.value = new Date()
+  showToast(t('Saved', 'Guardado'))
 }
 
 async function removeTemplate(tmpl: Template) {

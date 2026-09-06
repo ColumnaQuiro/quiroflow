@@ -69,7 +69,7 @@ async function save() {
     showToast(updateError.message, 'error')
     return
   }
-  showToast('Saved')
+  showToast(t('Saved', 'Guardado'))
 }
 </script>
 

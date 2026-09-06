@@ -79,7 +79,7 @@ async function saveAccountSettings() {
     showToast(updateError.message, 'error')
     return
   }
-  showToast('Saved')
+  showToast(t('Saved', 'Guardado'))
 }
 
 function bookingUrl(slug: string) {

@@ -2,6 +2,7 @@
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+const { showToast } = useToast()
 
 const loading = ref(true)
 const saving = ref(false)
@@ -50,7 +51,7 @@ onMounted(load)
 
 async function save() {
   saving.value = true
-  await supabase
+  const { error } = await supabase
     .from('accounts')
     .update({
       next_invoice_number: nextInvoiceNumber.value.trim() ? parseInt(nextInvoiceNumber.value, 10) : null,
@@ -69,6 +70,11 @@ async function save() {
     })
     .eq('id', store.accountId!)
   saving.value = false
+  if (error) {
+    showToast(error.message, 'error')
+    return
+  }
+  showToast(t('Saved', 'Guardado'))
 }
 </script>
 

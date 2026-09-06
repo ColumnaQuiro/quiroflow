@@ -127,16 +127,19 @@ export default defineNuxtConfig({
         ignored: ['**/mobile/**'],
       },
     },
-    // papaparse and @stripe/stripe-js are only ever imported lazily, by CSV
-    // importer and payment components nothing visits on a typical page.
+    // These are only ever imported lazily -- papaparse and @stripe/stripe-js
+    // by the CSV importer and payment components, vue-chartjs/chart.js by the
+    // report pages' charts, qrcode by Settings > App and the photo-upload QR.
     // Left off this list, Vite discovers each one mid-request the first
     // time one of those components mounts on a freshly started dev server
     // and force-reloads the page to re-bundle -- which lands mid-test in CI
     // (a cold `npm run dev` every run) and wipes out whatever UI state the
     // test had just set up. Pre-bundling them here makes that discovery
-    // happen at server boot instead of mid-test.
+    // happen at server boot instead of mid-test. vue-chartjs and qrcode were
+    // measurably costing the navigation smoke shard ~50s of its 58s runtime
+    // in two such mid-test reloads before they were added.
     optimizeDeps: {
-      include: ['papaparse', '@stripe/stripe-js'],
+      include: ['papaparse', '@stripe/stripe-js', 'vue-chartjs', 'chart.js', 'qrcode'],
     },
   },
 })

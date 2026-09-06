@@ -1,8 +1,13 @@
 const STATIC_AUTHENTICATED_PAGES = [
+  '/account',
   '/dashboard',
   '/calendar',
+  '/campaigns',
+  '/care-plan-alerts',
   '/patients',
+  '/practitioner',
   '/recalls',
+  '/waitlist',
   '/billing',
   '/billing/new',
   '/reports',
@@ -17,23 +22,58 @@ const STATIC_AUTHENTICATED_PAGES = [
   '/reports/statistics',
   '/reports/upcoming-visits',
   '/settings',
+  '/settings/app',
   '/settings/appointment-types',
   '/settings/clinics',
+  '/settings/communications-general',
+  '/settings/developers',
   '/settings/docs',
+  '/settings/fiscal-data',
   '/settings/import',
+  '/settings/invoice-settings',
   '/settings/memberships',
   '/settings/migrate-attachments',
+  '/settings/modalities',
   '/settings/compress-files',
+  '/settings/new-patient-fields',
+  '/settings/online-booking',
   '/settings/packages',
+  '/settings/payment-methods',
   '/settings/payments',
   '/settings/practitioners',
+  '/settings/referral-sources',
+  '/settings/reschedule-reasons',
   '/settings/roles',
   '/settings/rooms',
+  '/settings/saved-replies',
   '/settings/services',
   '/settings/team',
   '/settings/webhooks',
   '/settings/whatsapp',
 ]
+
+const UNAUTHENTICATED_PAGES = ['/login', '/signup', '/forgot-password']
+
+// Routes this spec deliberately doesn't sweep, each for a reason the guard
+// test below re-checks. Anything not here and not in one of the lists above
+// makes that test fail, so a newly added page can't quietly go uncovered
+// the way 17 of them already had.
+const NOT_SWEPT_HERE: Record<string, string> = {
+  '/': 'redirects to /login; asserted in the unauthenticated test',
+  '/inbox': 'covered by cypress/e2e/inbox/inbox.cy.ts',
+  '/subscription': 'covered by cypress/e2e/settings/subscription-billing.cy.ts',
+  '/onboarding': 'covered by cypress/e2e/auth/signup-and-onboarding.cy.ts',
+  '/confirm': 'reached only from an emailed appointment-confirmation link',
+  '/card-saved': 'Stripe redirect landing page, reached only after a real card setup',
+  '/join': 'needs a live invite token; the invite flow is covered by rbac-roles.cy.ts',
+  '/reset-password': 'needs a live password-recovery token from an email',
+  '/legal/privacy': 'static legal copy, no app behaviour',
+  '/legal/terms': 'static legal copy, no app behaviour',
+  '/portal': 'patient portal -- separate app with its own auth, not the staff sidebar',
+  '/portal/login': 'patient portal -- separate app with its own auth',
+  '/portal/signup': 'patient portal -- separate app with its own auth',
+  '/portal/not-found': 'patient portal -- separate app with its own auth',
+}
 
 describe('Every authenticated page renders for the account owner', () => {
   it('smoke-tests every static page plus dynamic patient/billing/role detail pages', () => {
@@ -78,9 +118,27 @@ describe('Every authenticated page renders for the account owner', () => {
     cy.visit('/')
     cy.location('pathname').should('eq', '/login')
 
-    for (const path of ['/login', '/signup', '/forgot-password']) {
+    for (const path of UNAUTHENTICATED_PAGES) {
       cy.visit(path)
       cy.location('pathname').should('eq', path)
     }
+  })
+
+  // Visits nothing -- it just compares pages/ against the lists above, so a
+  // page added without a decision about how it gets tested fails here
+  // instead of shipping untested. Dynamic routes are excluded: the
+  // authenticated sweep already visits the ones that matter with real
+  // fixtures ([id] for patients/billing/roles), and the token-based ones
+  // ([token], [slug]) can't be visited without a live token.
+  it('has every page in pages/ either swept here or explicitly accounted for', () => {
+    cy.task<string[]>('app:pageRoutes').then((routes) => {
+      const accountedFor = new Set([...STATIC_AUTHENTICATED_PAGES, ...UNAUTHENTICATED_PAGES, ...Object.keys(NOT_SWEPT_HERE)])
+      const unaccounted = routes.filter((route) => !route.includes('[') && !accountedFor.has(route))
+
+      expect(
+        unaccounted,
+        'pages with no e2e coverage -- add them to STATIC_AUTHENTICATED_PAGES, or to NOT_SWEPT_HERE with the reason',
+      ).to.deep.eq([])
+    })
   })
 })

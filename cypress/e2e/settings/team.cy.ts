@@ -81,11 +81,19 @@ describe('Settings > Team', () => {
       cy.contains('button', 'Create Invite Link').click()
       cy.wait('@sendInvite')
 
-      cy.contains('Pending invites').should('be.visible')
-      cy.contains('li', 'newcolleague@example.test').should('be.visible')
-      cy.contains('li', 'newcolleague@example.test').contains('button', 'Copy link').should('be.visible')
+      // scrollIntoView first (same as csv-import.cy.ts does): the settings
+      // pane is an overflow-y-auto column and the invite form sits below the
+      // pending list, so after submitting, the list it just grew is scrolled
+      // out of view -- which Cypress reports as clipped, not merely offscreen.
+      cy.contains('h2', 'Pending invites').scrollIntoView().should('be.visible')
+      cy.contains('li', 'newcolleague@example.test')
+        .scrollIntoView()
+        .should('be.visible')
+        .within(() => {
+          cy.contains('button', 'Copy link').should('be.visible')
+          cy.contains('button', 'Revoke').click()
+        })
 
-      cy.contains('li', 'newcolleague@example.test').contains('button', 'Revoke').click()
       cy.contains('li', 'newcolleague@example.test').should('not.exist')
     })
   })

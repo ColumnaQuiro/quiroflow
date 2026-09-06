@@ -86,15 +86,28 @@ describe('Settings > Team', () => {
       // pending list, so after submitting, the list it just grew is scrolled
       // out of view -- which Cypress reports as clipped, not merely offscreen.
       cy.contains('h2', 'Pending invites').scrollIntoView().should('be.visible')
-      cy.contains('li', 'newcolleague@example.test')
-        .scrollIntoView()
-        .should('be.visible')
+
+      // Asserted on the list's text rather than with cy.contains('li', email):
+      // the row renders "<email> · <role>", and the template falls back to
+      // "Any email" when an invite has no address, so a mismatch here prints
+      // what the row actually says instead of only "never found a matching li".
+      cy.contains('h2', 'Pending invites')
+        .parent()
+        .find('li')
+        .invoke('text')
+        .should('contain', 'newcolleague@example.test')
+
+      cy.contains('h2', 'Pending invites')
+        .parent()
+        .find('li')
+        .first()
         .within(() => {
-          cy.contains('button', 'Copy link').should('be.visible')
+          cy.contains('button', 'Copy link').should('exist')
           cy.contains('button', 'Revoke').click()
         })
 
-      cy.contains('li', 'newcolleague@example.test').should('not.exist')
+      // Revoking the only invite empties the list, so the whole section goes.
+      cy.contains('h2', 'Pending invites').should('not.exist')
     })
   })
 })

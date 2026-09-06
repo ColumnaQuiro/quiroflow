@@ -33,7 +33,10 @@ matched as (
   where length(wm_suffix) = 9 and pcn_suffix = wm_suffix
 ),
 unambiguous as (
-  select message_id, min(patient_id) as patient_id
+  -- min()/max() aren't defined for uuid -- array_agg()[1] picks an
+  -- arbitrary element instead, which is fine here since the having clause
+  -- already guarantees every row in the group shares the same patient_id.
+  select message_id, (array_agg(patient_id))[1] as patient_id
   from matched
   group by message_id
   having count(distinct patient_id) = 1

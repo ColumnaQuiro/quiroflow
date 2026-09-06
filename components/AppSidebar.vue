@@ -9,7 +9,6 @@ const { preference: langPreference } = useLang()
 const helpCentreUrl = computed(() => (langPreference.value === 'es' ? 'https://learn.quiroflow.com/es' : 'https://learn.quiroflow.com'))
 const referFriendsOpen = ref(false)
 
-const paletteOpen = ref(false)
 const clinicMenuOpen = ref(false)
 const clinicMenuRef = ref<HTMLElement | null>(null)
 function selectClinic(id: string) {
@@ -161,19 +160,11 @@ function onDocumentClick(e: MouseEvent) {
     clinicMenuOpen.value = false
   }
 }
-function onKeydown(e: KeyboardEvent) {
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-    e.preventDefault()
-    paletteOpen.value = true
-  }
-}
 onMounted(() => {
   document.addEventListener('click', onDocumentClick)
-  document.addEventListener('keydown', onKeydown)
 })
 onUnmounted(() => {
   document.removeEventListener('click', onDocumentClick)
-  document.removeEventListener('keydown', onKeydown)
 })
 </script>
 
@@ -186,8 +177,8 @@ onUnmounted(() => {
       <NuxtLink v-if="!collapsed" to="/dashboard" class="text-[14.5px] font-[640] tracking-tightTitle text-ink-900">QuiroFlow</NuxtLink>
     </div>
 
-    <div class="flex flex-col gap-1.5 px-3 pb-2.5" :class="{ 'items-center px-1.5': collapsed }">
-      <div v-if="store.clinics.length > 0 && !collapsed" ref="clinicMenuRef" class="relative">
+    <div v-if="store.clinics.length > 0 && !collapsed" class="flex flex-col gap-1.5 px-3 pb-2.5">
+      <div ref="clinicMenuRef" class="relative">
         <button
           type="button"
           class="flex h-[34px] w-full items-center gap-2 rounded-ctl border border-chip-border bg-surface px-2.5 text-left text-[13px] text-ink-700"
@@ -212,19 +203,6 @@ onUnmounted(() => {
           </button>
         </div>
       </div>
-      <button
-        type="button"
-        class="flex h-8 items-center gap-2 rounded-ctl bg-chip text-left text-[13px] text-ink-muted hover:bg-surface-subtle"
-        :class="collapsed ? 'w-8 justify-center' : 'w-full px-2.5'"
-        :title="collapsed ? t('Search or jump to (⌘K)', 'Buscar o ir a (⌘K)') : undefined"
-        @click="paletteOpen = true"
-      >
-        <svg width="13" height="13" viewBox="0 0 14 14" class="shrink-0"><circle cx="6" cy="6" r="4.2" stroke="currentColor" stroke-width="1.4" fill="none" /><line x1="9.2" y1="9.2" x2="12" y2="12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg>
-        <template v-if="!collapsed">
-          <span class="flex-1">{{ t('Search or jump to', 'Buscar o ir a') }}</span>
-          <span class="rounded border border-line-control bg-surface px-1 py-px font-mono text-[10.5px] text-ink-faint2">⌘K</span>
-        </template>
-      </button>
     </div>
 
     <nav class="flex flex-1 flex-col gap-3.5 overflow-y-auto px-3 pb-3 pt-0.5" :class="{ 'items-center px-1.5': collapsed }">
@@ -305,7 +283,6 @@ onUnmounted(() => {
       </svg>
     </button>
 
-    <AppCommandPalette v-if="paletteOpen" @close="paletteOpen = false" />
     <ReferFriendsModal v-if="referFriendsOpen" @close="referFriendsOpen = false" />
   </aside>
 </template>

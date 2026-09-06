@@ -13,9 +13,23 @@
 const store = useAccountStore()
 if (!store.loaded && !store.loading) store.load()
 
+const t = useT()
 const route = useRoute()
 const router = useRouter()
 const showDenied = ref(route.query.denied === '1')
+
+// Used to live in the sidebar, costing it a full row of width every screen
+// for a control that's really about the whole app, not sidebar navigation --
+// moved to this persistent top bar instead, alongside the account menu.
+const paletteOpen = ref(false)
+function onKeydown(e: KeyboardEvent) {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault()
+    paletteOpen.value = true
+  }
+}
+onMounted(() => document.addEventListener('keydown', onKeydown))
+onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 
 function dismissDenied() {
   showDenied.value = false
@@ -61,7 +75,17 @@ const contactHref = 'mailto:hola@columnaquiro.com'
         which not every page even has) so the account menu has one home
         instead of living in the sidebar, where it permanently cost a row of
         vertical space on every screen. -->
-        <div class="flex h-10 shrink-0 items-center justify-end border-b border-line bg-surface px-4">
+        <div class="flex h-10 shrink-0 items-center justify-between border-b border-line bg-surface px-4">
+          <button
+            type="button"
+            class="flex h-7 w-64 items-center gap-2 rounded-ctl border border-line-control bg-chip-bg px-2.5 text-left text-[13px] text-ink-muted hover:bg-surface-subtle"
+            :title="t('Search or jump to (⌘K)', 'Buscar o ir a (⌘K)')"
+            @click="paletteOpen = true"
+          >
+            <svg width="13" height="13" viewBox="0 0 14 14" class="shrink-0"><circle cx="6" cy="6" r="4.2" stroke="currentColor" stroke-width="1.4" fill="none" /><line x1="9.2" y1="9.2" x2="12" y2="12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg>
+            <span class="flex-1">{{ t('Search or jump to', 'Buscar o ir a') }}</span>
+            <span class="rounded border border-line-control bg-surface px-1 py-px font-mono text-[10.5px] text-ink-faint2">⌘K</span>
+          </button>
           <AppAccountMenu />
         </div>
         <div v-if="showDenied" class="flex items-center justify-between bg-amber-50 px-6 py-2 text-sm text-amber-800">
@@ -73,5 +97,6 @@ const contactHref = 'mailto:hola@columnaquiro.com'
         </main>
       </div>
     </div>
+    <AppCommandPalette v-if="paletteOpen" @close="paletteOpen = false" />
   </div>
 </template>

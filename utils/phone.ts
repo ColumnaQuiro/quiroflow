@@ -48,8 +48,13 @@ export function toE164(number: string, countryCode: string): string | null {
   const trimmed = number.trim()
   if (!trimmed) return null
 
-  if (trimmed.startsWith('+')) {
-    const digits = trimmed.slice(1).replace(/\D/g, '')
+  // "00" is the internationally-dialled equivalent of "+" outside a handful
+  // of countries (the US/Canada use "011" instead, but nobody here is
+  // typing that) -- treat it the same way rather than digit-stripping the
+  // "00" into the number and doubling up on a locally-prepended dial code.
+  if (trimmed.startsWith('+') || trimmed.startsWith('00')) {
+    const rest = trimmed.startsWith('+') ? trimmed.slice(1) : trimmed.slice(2)
+    const digits = rest.replace(/\D/g, '')
     return digits.length >= 8 ? digits : null
   }
 
@@ -58,4 +63,29 @@ export function toE164(number: string, countryCode: string): string | null {
 
   const dial = countryByCode(countryCode).dial.replace('+', '')
   return `${dial}${digits}`
+}
+
+// How many trailing digits are compared when toE164() can't be trusted to
+// agree exactly -- long enough to be a full mobile number in every country
+// COUNTRIES lists, short enough to still match if the country code (or the
+// "+"/"00" prefix) was wrong or missing when the number was stored.
+const SIGNIFICANT_DIGITS = 9
+
+function significantDigits(raw: string): string {
+  return raw.replace(/\D/g, '').slice(-SIGNIFICANT_DIGITS)
+}
+
+// Matches a stored contact number against an incoming WhatsApp message's
+// "from" number (already bare E.164 digits, no "+"). Falls back to comparing
+// only the last SIGNIFICANT_DIGITS when the exact E.164 reconstruction
+// doesn't match -- e.g. a `patient_contact_numbers.country_code` left at its
+// 'ES' default for a foreign number (see 0078_fix_public_booking_phone_dial_code.sql
+// for a prior instance of exactly this), or a number typed with a leading
+// "00" that toE164 didn't yet know to treat like "+". Without this, those
+// patients' WhatsApp replies never match and the inbox shows their bare
+// phone number instead of their name.
+export function phoneMatches(storedNumber: string, storedCountryCode: string, incomingE164: string): boolean {
+  if (toE164(storedNumber, storedCountryCode) === incomingE164) return true
+  const stored = significantDigits(storedNumber)
+  return stored.length === SIGNIFICANT_DIGITS && stored === significantDigits(incomingE164)
 }

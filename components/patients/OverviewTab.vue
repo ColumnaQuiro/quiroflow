@@ -8,6 +8,7 @@ const emit = defineEmits<{ updated: [] }>()
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+const { showToast } = useToast()
 
 interface TeamMemberOption { id: string; full_name: string }
 interface TutorOption { id: string; first_name: string; last_name: string | null }
@@ -317,8 +318,10 @@ async function save() {
   saving.value = false
   if (updateError) {
     error.value = updateError.message
+    showToast(updateError.message, 'error')
     return
   }
+  showToast(t('Patient saved', 'Paciente guardado'))
   // Fires for the REFERRER, not this patient -- only on the transition into
   // a newly-linked referrer, so re-saving the form without touching this
   // field (or clearing it) never re-fires the thank-you campaign.

@@ -2,6 +2,8 @@
 import { hasBusinessHoursConfigured, isWithinBusinessHours } from '~/utils/businessHours'
 import { effectivePriceCents, effectiveDuration, type AppointmentTypeOverride } from '~/utils/appointmentOverrides'
 import { normalizeSearchTerm, sanitizeSearchToken } from '~/utils/searchText'
+import { COUNTRIES } from '~/utils/countries'
+import { splitDialPrefix } from '~/utils/phone'
 
 interface RoomOption { id: string; name: string }
 interface AppointmentTypeOption { id: string; name: string; duration_minutes: number; color: string; default_price_cents: number }
@@ -154,6 +156,7 @@ const newPatientFirstName = ref('')
 const newPatientLastName = ref('')
 const newPatientEmail = ref('')
 const newPatientPhone = ref('')
+const newPatientPhoneCountry = ref('ES')
 
 // -- Collect Payment --------------------------------------------------
 const collectPayment = ref(false)
@@ -191,11 +194,15 @@ async function save() {
     }
     patientId = newPatient.id
     if (newPatientPhone.value.trim()) {
+      // Honour a dial prefix typed into the number itself over the dropdown's
+      // selection, so "+44 7700 900123" doesn't get filed as a UK number
+      // behind a Spanish country code (or vice versa).
+      const { countryCode, number } = splitDialPrefix(newPatientPhone.value, newPatientPhoneCountry.value)
       await supabase.from('patient_contact_numbers').insert({
         account_id: store.accountId!,
         patient_id: patientId,
-        country_code: 'ES',
-        number: newPatientPhone.value.trim(),
+        country_code: countryCode,
+        number,
       })
     }
   }
@@ -417,7 +424,15 @@ async function save() {
             <input v-model="newPatientFirstName" type="text" :placeholder="t('First name', 'Nombre')" required class="rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
             <input v-model="newPatientLastName" type="text" :placeholder="t('Last name', 'Apellidos')" class="rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
             <input v-model="newPatientEmail" type="email" :placeholder="t('Email', 'Email')" class="rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
-            <input v-model="newPatientPhone" type="tel" :placeholder="t('Phone', 'Teléfono')" class="rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
+            <div class="flex min-w-0 gap-2">
+              <select
+                v-model="newPatientPhoneCountry"
+                class="shrink-0 rounded-ctl border border-line-control bg-surface px-2 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none"
+              >
+                <option v-for="c in COUNTRIES" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }}</option>
+              </select>
+              <input v-model="newPatientPhone" type="tel" :placeholder="t('Phone', 'Teléfono')" class="min-w-0 flex-1 rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
+            </div>
           </div>
         </div>
 

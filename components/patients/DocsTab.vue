@@ -45,7 +45,10 @@ onMounted(async () => {
     .order('created_at')
     .limit(1)
     .maybeSingle()
-  if (data) patientPhoneDigits.value = `${countryByCode(data.country_code).dial}${data.number}`.replace(/\D/g, '')
+  // toE164 rather than dial+number: a number already stored with its own "+"
+  // prefix would otherwise be double-prefixed into a broken wa.me link
+  // ("+34" + "+34600123456" -> 3434600123456).
+  if (data) patientPhoneDigits.value = toE164(data.number, data.country_code) ?? ''
 })
 
 function docLink(doc: Doc) {

@@ -109,7 +109,7 @@ function money(cents: number) {
         <div>
           <dt class="text-ink-faint">{{ t('Phone', 'Teléfono') }}</dt>
           <dd class="mt-0.5 text-ink-600">
-            <span v-if="primaryNumber">{{ countryByCode(primaryNumber.country_code).flag }} {{ countryByCode(primaryNumber.country_code).dial }} {{ primaryNumber.number }}</span>
+            <span v-if="primaryNumber">{{ countryByCode(primaryNumber.country_code).flag }} {{ formatPhoneDisplay(primaryNumber.number, primaryNumber.country_code) }}</span>
             <span v-else>{{ t('N/A', 'N/D') }}</span>
           </dd>
         </div>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Tables } from '~/types/database.types'
+import { splitDialPrefix } from '~/utils/phone'
 
 const emit = defineEmits<{ close: []; created: [id: string] }>()
 
@@ -86,11 +87,14 @@ async function onSubmit() {
   }
 
   if (phoneNumber.value.trim()) {
+    // A typed "+34 600…" wins over the dropdown, so the prefix isn't stored
+    // twice -- once in the number and again as the country code.
+    const { countryCode, number } = splitDialPrefix(phoneNumber.value, phoneCountry.value)
     await supabase.from('patient_contact_numbers').insert({
       account_id: store.accountId!,
       patient_id: data.id,
-      country_code: phoneCountry.value,
-      number: phoneNumber.value.trim(),
+      country_code: countryCode,
+      number,
       is_whatsapp: phoneIsWhatsapp.value,
     })
   }

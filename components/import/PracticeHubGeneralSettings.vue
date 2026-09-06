@@ -42,7 +42,7 @@ async function save() {
     showToast(error.message, 'error')
     return
   }
-  showToast('Saved')
+  showToast(t('Saved', 'Guardado'))
   if (apiKey.value.trim()) hasStoredKey.value = true
   apiKey.value = ''
 

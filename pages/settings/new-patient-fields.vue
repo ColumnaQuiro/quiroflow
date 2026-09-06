@@ -4,6 +4,7 @@ import type { Database } from '~/types/database.types'
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+const { showToast } = useToast()
 
 interface FieldConfig { visible: boolean; required: boolean }
 
@@ -45,8 +46,16 @@ function setRequired(key: string, required: boolean) {
 
 async function save() {
   saving.value = true
-  await supabase.from('accounts').update({ new_patient_field_config: config.value as unknown as Database['public']['Tables']['accounts']['Update']['new_patient_field_config'] }).eq('id', store.accountId!)
+  const { error } = await supabase
+    .from('accounts')
+    .update({ new_patient_field_config: config.value as unknown as Database['public']['Tables']['accounts']['Update']['new_patient_field_config'] })
+    .eq('id', store.accountId!)
   saving.value = false
+  if (error) {
+    showToast(error.message, 'error')
+    return
+  }
+  showToast(t('Saved', 'Guardado'))
 }
 </script>
 

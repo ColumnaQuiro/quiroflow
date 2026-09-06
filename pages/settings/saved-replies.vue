@@ -6,6 +6,7 @@ type SavedReply = Tables<'saved_replies'>
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+const { showToast } = useToast()
 
 const replies = ref<SavedReply[]>([])
 const loading = ref(true)
@@ -64,7 +65,12 @@ async function save() {
     })
     .eq('id', activeReply.value.id)
   saving.value = false
-  if (!error) savedAt.value = new Date()
+  if (error) {
+    showToast(error.message, 'error')
+    return
+  }
+  savedAt.value = new Date()
+  showToast(t('Saved', 'Guardado'))
 }
 
 async function removeReply(r: SavedReply) {

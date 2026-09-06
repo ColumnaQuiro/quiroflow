@@ -33,49 +33,29 @@ export function isWithinBusinessHours(date: Date, hours: BusinessHours | null | 
   return windows.some(([start, end]) => mins >= toMinutes(start) && mins < toMinutes(end))
 }
 
-// Pure intersection -- no windows on the practitioner's side means no
-// overlap, so no availability. The "this practitioner hasn't set any hours"
-// fallback deliberately does NOT live here: on a single day's windows it is
-// impossible to tell "never configured" from "configured, but not working
-// today", and conflating the two is what made practitioners bookable on
-// their days off. practitionerWindowsForDay below owns that decision.
-export function intersectWindows(clinicWindows: [string, string][], practitionerWindows: [string, string][] | undefined): [string, string][] {
-  if (!practitionerWindows || practitionerWindows.length === 0) return []
-  const result: [string, string][] = []
-  for (const [cStart, cEnd] of clinicWindows) {
-    const cStartMin = toMinutes(cStart)
-    const cEndMin = toMinutes(cEnd)
-    for (const [pStart, pEnd] of practitionerWindows) {
-      const start = Math.max(cStartMin, toMinutes(pStart))
-      const end = Math.min(cEndMin, toMinutes(pEnd))
-      if (start < end) result.push([minutesToHHMM(start), minutesToHHMM(end)])
-    }
-  }
-  return result
-}
-
-// The windows a practitioner can actually be seen in on one day: the clinic's
-// hours narrowed by their own.
+// The hours a practitioner actually works on one day.
 //
-// The distinction that matters is per practitioner, not per day. Someone who
-// has never set hours works the clinic's full hours -- that keeps
-// per-practitioner scheduling opt-in, so an account that only fills in clinic
-// hours behaves as it always has. But once a practitioner HAS hours, a day
-// they left empty is a day off, not "no restriction". Reading it the other
-// way round is what put Jordana (mon/tue/wed/thu) and Natacha (tue/wed/thu)
-// on the booking page as available Monday-to-Friday, offering patients slots
-// on days nobody was in.
+// A practitioner's own schedule is authoritative -- it is NOT narrowed by the
+// clinic's hours. This mirrors PracticeHub, which has no global schedule at
+// all: each practitioner carries their own, and that is the only thing that
+// decides when they can be seen.
+//
+// Intersecting the two (which this used to do) meant a stale clinic record
+// silently clipped real schedules. Jordana works Monday 15:00-20:00, but the
+// clinic record claimed a 13:00-16:00 closure, so her Monday came out as
+// 16:00-20:00 and the first hour vanished. That closure was not real: 284
+// appointments in the previous 120 days fell inside it.
+//
+// clinicWindows stays as the fallback for a practitioner who has never set
+// hours -- an account that only fills in clinic hours keeps working, and the
+// "any practitioner" booking option still has something to offer. Once a
+// practitioner has hours of their own, the clinic's stop applying to them,
+// and a day they left empty is a day off rather than "no restriction".
 export function practitionerWindowsForDay(
   clinicWindows: [string, string][],
   practitionerHours: BusinessHours | null | undefined,
   dayKey: string,
 ): [string, string][] {
   if (!hasBusinessHoursConfigured(practitionerHours)) return clinicWindows
-  return intersectWindows(clinicWindows, practitionerHours?.[dayKey])
-}
-
-function minutesToHHMM(mins: number): string {
-  const h = Math.floor(mins / 60)
-  const m = mins % 60
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+  return practitionerHours?.[dayKey] ?? []
 }

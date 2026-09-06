@@ -50,6 +50,14 @@ export default defineNuxtConfig({
   },
   runtimeConfig: {
     resendApiKey: '',
+    // Powers the in-app help assistant (the floating widget), which answers
+    // from the help centre's own articles. Optional -- if unset, the widget
+    // skips straight to "message the QuiroFlow team" rather than failing,
+    // so a missing key degrades the feature instead of breaking it.
+    anthropicApiKey: '',
+    // Where the assistant reads the help articles from. Overridable mostly
+    // so a deploy preview can point at a preview of the help centre.
+    helpCorpusUrl: 'https://learn.quiroflow.com/corpus.json',
     // Used to auto-register a new clinic's booking subdomain as a Netlify
     // domain alias on sign-up. Optional -- if unset (e.g. local dev), the
     // registration call just no-ops and the subdomain can be added

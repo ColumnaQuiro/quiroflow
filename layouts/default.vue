@@ -98,5 +98,6 @@ const contactHref = 'mailto:hola@columnaquiro.com'
       </div>
     </div>
     <AppCommandPalette v-if="paletteOpen" @close="paletteOpen = false" />
+    <SupportHelpWidget />
   </div>
 </template>

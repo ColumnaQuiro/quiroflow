@@ -1,6 +1,7 @@
 import { defineConfig } from 'cypress'
 import dotenv from 'dotenv'
 import { dbTasks } from './cypress/support/tasks/db'
+import { routeTasks } from './cypress/support/tasks/routes'
 
 dotenv.config()
 
@@ -16,7 +17,7 @@ export default defineConfig({
     viewportWidth: 1440,
     viewportHeight: 900,
     setupNodeEvents(on, config) {
-      on('task', dbTasks)
+      on('task', { ...dbTasks, ...routeTasks })
       return config
     },
   },

@@ -48,8 +48,6 @@ jobs:
           node-version: 22
           cache: npm
 
-      - run: npm ci
-
       - uses: supabase/setup-cli@v1
         with:
           # Pinned instead of "latest" -- resolving "latest" queries GitHub's
@@ -60,7 +58,13 @@ jobs:
           # when there's a reason to (a CLI feature/fix this suite needs).
           version: 2.116.0
 
-      - name: Start local Supabase
+      - name: Start local Supabase (in the background)
+        # Backgrounded so it overlaps `npm ci` instead of queueing behind it:
+        # the two share no state and together were ~90s of dead serial time
+        # before any test ran. The wait step below is what actually gates on
+        # it, so a slow start still blocks Cypress -- it just no longer
+        # blocks dependency install too.
+        #
         # Excludes containers this suite never touches, cutting both image
         # pulls and startup/health-check time: no supabase/functions/ exists
         # (edge-runtime unused), no spec reads Mailpit's inbox and
@@ -68,13 +72,36 @@ jobs:
         # and studio/postgres-meta/logflare/vector only serve the local
         # Studio UI, never the app itself. Local dev (plain `supabase
         # start`, no -x) still gets the full stack -- this only trims CI.
-        run: supabase start -x studio,edge-runtime,logflare,vector,mailpit,postgres-meta
-
-      - name: Export Supabase env vars
         run: |
-          supabase status -o env \
-            | sed -n 's/^API_URL="\(.*\)"/NUXT_PUBLIC_SUPABASE_URL=\1/p;s/^ANON_KEY="\(.*\)"/NUXT_PUBLIC_SUPABASE_KEY=\1/p;s/^SERVICE_ROLE_KEY="\(.*\)"/NUXT_SUPABASE_SECRET_KEY=\1/p' \
-            >> "$GITHUB_ENV"
+          nohup supabase start -x studio,edge-runtime,logflare,vector,mailpit,postgres-meta \
+            > /tmp/supabase-start.log 2>&1 &
+          echo $! > /tmp/supabase-start.pid
+
+      - run: npm ci
+
+      - name: Wait for Supabase and export its env vars
+        run: |
+          pid="$(cat /tmp/supabase-start.pid)"
+          # Not `wait`: that only works on children of the current shell, and
+          # each workflow step runs in its own. Poll the pid, then let
+          # `supabase status` be the actual health check -- the backgrounded
+          # start's exit code isn't reachable from here either.
+          for _ in $(seq 1 300); do
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 1
+          done
+          cat /tmp/supabase-start.log
+          if kill -0 "$pid" 2>/dev/null; then
+            echo "::error::supabase start still running after 300s"
+            exit 1
+          fi
+          if ! supabase status -o env > /tmp/supabase-status.env 2>&1; then
+            echo "::error::supabase start did not bring up a healthy stack"
+            cat /tmp/supabase-status.env
+            exit 1
+          fi
+          sed -n 's/^API_URL="\(.*\)"/NUXT_PUBLIC_SUPABASE_URL=\1/p;s/^ANON_KEY="\(.*\)"/NUXT_PUBLIC_SUPABASE_KEY=\1/p;s/^SERVICE_ROLE_KEY="\(.*\)"/NUXT_SUPABASE_SECRET_KEY=\1/p' \
+            /tmp/supabase-status.env >> "$GITHUB_ENV"
 
       - name: Run Cypress (${{ matrix.shard.name }})
         run: npx start-server-and-test dev http://localhost:3000 "cypress run --spec '${{ matrix.shard.specs }}'"

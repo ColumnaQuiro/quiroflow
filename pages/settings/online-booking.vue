@@ -316,8 +316,8 @@ const OVERRIDABLE_STRINGS = [
                 :label="t('Successful booking page', 'Página de reserva completada')"
                 :helper="
                   t(
-                    'Send patients to your own page once a booking goes through, instead of the built-in confirmation screen. Useful for firing a conversion tag on a thank-you page. Leave blank to keep the built-in screen.',
-                    'Envía a los pacientes a tu propia página cuando se completa una reserva, en lugar de la pantalla de confirmación integrada. Útil para lanzar una etiqueta de conversión en una página de agradecimiento. Déjalo en blanco para mantener la pantalla integrada.',
+                    'Send patients to your own page once a booking goes through, instead of the built-in confirmation screen. Useful for firing a conversion tag on a thank-you page. The booking, type, value and currency are added to the address as query parameters so your tag can report the real amount. Leave blank to keep the built-in screen.',
+                    'Envía a los pacientes a tu propia página cuando se completa una reserva, en lugar de la pantalla de confirmación integrada. Útil para lanzar una etiqueta de conversión en una página de agradecimiento. La reserva, el tipo, el importe y la moneda se añaden a la dirección como parámetros para que tu etiqueta pueda informar del valor real. Déjalo en blanco para mantener la pantalla integrada.',
                   )
                 "
               >

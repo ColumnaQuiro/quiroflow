@@ -3183,6 +3183,112 @@ export type Database = {
           },
         ]
       }
+      support_conversations: {
+        Row: {
+          account_id: string
+          admin_unread: boolean
+          clinic_unread: boolean
+          created_at: string
+          id: string
+          last_message_at: string
+          opened_by_team_member_id: string | null
+          status: string
+          subject: string
+        }
+        Insert: {
+          account_id: string
+          admin_unread?: boolean
+          clinic_unread?: boolean
+          created_at?: string
+          id?: string
+          last_message_at?: string
+          opened_by_team_member_id?: string | null
+          status?: string
+          subject: string
+        }
+        Update: {
+          account_id?: string
+          admin_unread?: boolean
+          clinic_unread?: boolean
+          created_at?: string
+          id?: string
+          last_message_at?: string
+          opened_by_team_member_id?: string | null
+          status?: string
+          subject?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "support_conversations_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "support_conversations_opened_by_team_member_id_fkey"
+            columns: ["opened_by_team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      support_messages: {
+        Row: {
+          account_id: string
+          author_email: string | null
+          author_team_member_id: string | null
+          body: string
+          conversation_id: string
+          created_at: string
+          direction: string
+          id: string
+        }
+        Insert: {
+          account_id: string
+          author_email?: string | null
+          author_team_member_id?: string | null
+          body: string
+          conversation_id: string
+          created_at?: string
+          direction: string
+          id?: string
+        }
+        Update: {
+          account_id?: string
+          author_email?: string | null
+          author_team_member_id?: string | null
+          body?: string
+          conversation_id?: string
+          created_at?: string
+          direction?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "support_messages_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "support_messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "support_conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "support_messages_author_team_member_id_fkey"
+            columns: ["author_team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       team_member_clinics: {
         Row: {
           clinic_id: string

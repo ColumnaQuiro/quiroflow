@@ -4,5 +4,15 @@
 <dict>
 	<key>aps-environment</key>
 	<string>production</string>
+	<!-- Capacitor serves the app from capacitor://localhost, so iOS has no
+	     idea it is the same product as app.quiroflow.com and never offers the
+	     password saved there. Claiming the domain here (paired with the
+	     webcredentials entry in public/.well-known/apple-app-site-association
+	     on that domain) is what makes AutoFill treat them as one, so the
+	     saved login shows above the keyboard on the app's sign-in screen. -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>webcredentials:app.quiroflow.com</string>
+	</array>
 </dict>
 </plist>

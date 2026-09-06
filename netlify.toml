@@ -4,3 +4,13 @@
 
 [build.environment]
   NODE_VERSION = "22"
+
+# iOS refuses an apple-app-site-association that isn't served as JSON, and the
+# file is deliberately extension-less, so Netlify would otherwise guess at its
+# type. This is what lets iCloud Keychain (and 1Password et al) offer the
+# password saved for app.quiroflow.com inside the native app -- see
+# public/.well-known/apple-app-site-association.
+[[headers]]
+  for = "/.well-known/apple-app-site-association"
+  [headers.values]
+    Content-Type = "application/json"

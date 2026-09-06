@@ -43,7 +43,7 @@ async function onSubmit() {
               v-model="email"
               type="email"
               required
-              autocomplete="email"
+              autocomplete="username"
               class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
             />
           </div>

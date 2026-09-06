@@ -1,7 +1,7 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { H3Event } from 'h3'
 import type { Database } from '~/types/database.types'
-import { toE164 } from '~/utils/phone'
+import { phoneMatches } from '~/utils/phone'
 import { downloadMetaMedia, extensionForMimeType, type MediaKind } from '~/server/utils/whatsappSend'
 import { notifyInboxTeamMembers } from '~/server/utils/pushNotifications'
 import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
@@ -82,7 +82,7 @@ async function findPatientIdsByPhone(supabase: ReturnType<typeof serverSupabaseS
       .eq('account_id', accountId)
       .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
     for (const c of data ?? []) {
-      if (toE164(c.number, c.country_code) === fromNumber) matches.push(c.patient_id)
+      if (phoneMatches(c.number, c.country_code, fromNumber)) matches.push(c.patient_id)
     }
     if (!data || data.length < PAGE_SIZE) return matches
   }

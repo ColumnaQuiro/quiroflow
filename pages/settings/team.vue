@@ -128,10 +128,19 @@ async function toggleBookable(member: TeamMemberRow) {
 // resource (calendar tabs, online booking) -- an Owner can also be a
 // treating practitioner, and a Practitioner-role hire might not be seeing
 // patients yet.
+// Practitioners are the billable seat, so this toggle is the one place a plan
+// limit can bite (the database refuses it with a 402). The optimistic flip has
+// to be undone when that happens -- otherwise the switch sits in the "on"
+// position over a row the database never changed, and the person looks
+// schedulable when they aren't.
 async function togglePractitioner(member: TeamMemberRow) {
   const next = !member.is_practitioner
   member.is_practitioner = next
-  await supabase.from('team_members').update({ is_practitioner: next }).eq('id', member.id)
+  const { error } = await supabase.from('team_members').update({ is_practitioner: next }).eq('id', member.id)
+  if (error) {
+    member.is_practitioner = !next
+    showToast(error.message, 'error')
+  }
 }
 
 // --- Per-practitioner schedule (mirrors pages/settings/clinics.vue's

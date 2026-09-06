@@ -1,3 +1,5 @@
+const INVITE_EMAIL = 'newcolleague@example.test'
+
 // Settings > Team had no coverage beyond the navigation smoke test proving
 // the page renders -- none of what the page is actually for (per-person
 // working hours, the practitioner/bookable flags, invites) was exercised.
@@ -77,7 +79,18 @@ describe('Settings > Team', () => {
       cy.intercept('POST', '/api/invites/send', { statusCode: 200, body: { sent: true } }).as('sendInvite')
       cy.visit('/settings/team')
 
-      cy.get('input[type="email"]').type('newcolleague@example.test')
+      // Wait for a row the client-side load() put there before typing. Nuxt
+      // serves the form's HTML before Vue hydrates, and keystrokes that land
+      // in that window go into the raw input without v-model capturing them:
+      // typing the address immediately after visiting lost its first two
+      // characters, and the invite was created as "wcolleague@example.test".
+      // A rendered team row proves onMounted's fetch ran, so v-model is live.
+      cy.contains('tr', 'Test Owner').should('exist')
+
+      // Asserting the field's value keeps a repeat of that failing here,
+      // where the cause is obvious, rather than as a puzzling missing invite
+      // several commands later.
+      cy.get('input[type="email"]').type(INVITE_EMAIL).should('have.value', INVITE_EMAIL)
       cy.contains('button', 'Create Invite Link').click()
       cy.wait('@sendInvite')
 
@@ -95,7 +108,7 @@ describe('Settings > Team', () => {
         .parent()
         .find('li')
         .invoke('text')
-        .should('contain', 'newcolleague@example.test')
+        .should('contain', INVITE_EMAIL)
 
       cy.contains('h2', 'Pending invites')
         .parent()

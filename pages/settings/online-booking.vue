@@ -21,6 +21,7 @@ const tabs = computed(() => [
 const maxDaysAhead = ref(90)
 const gtmId = ref('')
 const referralUrl = ref('')
+const successUrl = ref('')
 const primaryColor = ref('')
 const secondaryColor = ref('')
 const backgroundColor = ref('')
@@ -39,13 +40,14 @@ async function loadAccountSettings() {
   const { data } = await supabase
     .from('accounts')
     .select(
-      'online_booking_max_days_ahead, online_booking_gtm_id, online_booking_referral_url, online_booking_primary_color, online_booking_secondary_color, online_booking_background_color, online_booking_hide_logo, online_booking_practitioner_order, online_booking_text_overrides, online_booking_notify_email, online_booking_notify_whatsapp',
+      'online_booking_max_days_ahead, online_booking_gtm_id, online_booking_referral_url, online_booking_success_url, online_booking_primary_color, online_booking_secondary_color, online_booking_background_color, online_booking_hide_logo, online_booking_practitioner_order, online_booking_text_overrides, online_booking_notify_email, online_booking_notify_whatsapp',
     )
     .eq('id', store.accountId!)
     .maybeSingle()
   maxDaysAhead.value = data?.online_booking_max_days_ahead ?? 90
   gtmId.value = data?.online_booking_gtm_id ?? ''
   referralUrl.value = data?.online_booking_referral_url ?? ''
+  successUrl.value = data?.online_booking_success_url ?? ''
   primaryColor.value = data?.online_booking_primary_color ?? ''
   secondaryColor.value = data?.online_booking_secondary_color ?? ''
   backgroundColor.value = data?.online_booking_background_color ?? ''
@@ -58,12 +60,38 @@ async function loadAccountSettings() {
 }
 onMounted(loadAccountSettings)
 
+// The booking page only follows this if it parses as an http(s) URL (a
+// javascript: one would run as script on a public page), so a bare
+// "mysite.com/gracias" would otherwise save happily and then silently do
+// nothing. Assume https when no scheme is given, and refuse anything that
+// still isn't a web address rather than storing a value that can't work.
+function normalizedSuccessUrl(): { ok: true; value: string | null } | { ok: false } {
+  const raw = successUrl.value.trim()
+  if (!raw) return { ok: true, value: null }
+  const withScheme = /^[a-z][a-z0-9+.-]*:/i.test(raw) ? raw : `https://${raw}`
+  try {
+    const parsed = new URL(withScheme)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return { ok: false }
+    return { ok: true, value: parsed.href }
+  } catch {
+    return { ok: false }
+  }
+}
+
 async function saveAccountSettings() {
+  const success = normalizedSuccessUrl()
+  if (!success.ok) {
+    showToast(t('The successful booking page must be a web address, e.g. https://mysite.com/gracias', 'La página de reserva completada debe ser una dirección web, p. ej. https://mysite.com/gracias'), 'error')
+    return
+  }
+  successUrl.value = success.value ?? ''
+
   saving.value = true
   const update: TablesUpdate<'accounts'> = {
     online_booking_max_days_ahead: maxDaysAhead.value,
     online_booking_gtm_id: gtmId.value.trim() || null,
     online_booking_referral_url: referralUrl.value.trim() || null,
+    online_booking_success_url: success.value,
     online_booking_primary_color: primaryColor.value.trim() || null,
     online_booking_secondary_color: secondaryColor.value.trim() || null,
     online_booking_background_color: backgroundColor.value.trim() || null,
@@ -282,6 +310,18 @@ const OVERRIDABLE_STRINGS = [
 
               <SettingsFieldRow :label="t('Patient referral URL', 'URL de referidos de paciente')" :helper="t('Where a referred-patient link redirects to, if you track referrals separately.', 'Adónde redirige el enlace de paciente referido, si haces un seguimiento de referidos por separado.')">
                 <input v-model="referralUrl" type="text" placeholder="https://mysite.com/referral" class="h-8 w-64 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none" />
+              </SettingsFieldRow>
+
+              <SettingsFieldRow
+                :label="t('Successful booking page', 'Página de reserva completada')"
+                :helper="
+                  t(
+                    'Send patients to your own page once a booking goes through, instead of the built-in confirmation screen. Useful for firing a conversion tag on a thank-you page. Leave blank to keep the built-in screen.',
+                    'Envía a los pacientes a tu propia página cuando se completa una reserva, en lugar de la pantalla de confirmación integrada. Útil para lanzar una etiqueta de conversión en una página de agradecimiento. Déjalo en blanco para mantener la pantalla integrada.',
+                  )
+                "
+              >
+                <input v-model="successUrl" type="text" placeholder="https://mysite.com/gracias" class="h-8 w-64 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none" />
               </SettingsFieldRow>
 
               <div v-if="store.accountSlug" class="rounded-card border border-line bg-surface p-4 shadow-card">

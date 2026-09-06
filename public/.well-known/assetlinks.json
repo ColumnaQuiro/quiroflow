@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.get_login_creds"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.quiroflow.app",
+      "sha256_cert_fingerprints": [
+        "2B:9C:CB:B6:FB:AA:5E:91:BA:96:22:2B:CD:60:5D:97:7F:2E:57:FA:12:BD:5C:3C:88:D3:E2:0A:1E:F9:BE:38"
+      ]
+    }
+  }
+]

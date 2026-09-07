@@ -7,7 +7,7 @@ describe('Platform billing: trial banner, subscription page, and lock screen', (
 
       cy.visit('/subscription')
       cy.contains('h1', 'Subscription').should('be.visible')
-      cy.contains('Starter').should('be.visible')
+      cy.contains('Solo').should('be.visible')
       cy.contains('Free trial').should('be.visible')
       cy.contains(/day\(s\) left in your free trial/).should('be.visible')
     })

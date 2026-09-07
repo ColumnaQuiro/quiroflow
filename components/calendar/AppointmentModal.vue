@@ -20,6 +20,7 @@ interface EditingAppointment {
   ends_at: string
   status: string
   source: string
+  confirmation_status: string | null
 }
 
 const props = defineProps<{
@@ -86,6 +87,13 @@ const date = ref(props.appointment ? toDateInput(props.appointment.starts_at) : 
 const time = ref(props.appointment ? toTimeInput(props.appointment.starts_at) : (props.prefillTime ?? '09:00'))
 const duration = ref(props.appointment ? minutesBetween(props.appointment.starts_at, props.appointment.ends_at) : 30)
 const status = ref(props.appointment?.status ?? 'booked')
+// '' stands in for null (no confirmation flow sent yet) -- same pattern as
+// roomId/practitionerId below, since a native <select> option value is
+// always a string. Manually editable here for a patient who confirmed or
+// asked to reschedule by phone/in person rather than replying to WhatsApp,
+// which is otherwise the only thing that ever sets this column (see
+// server/api/whatsapp/webhook.post.ts).
+const confirmationStatus = ref(props.appointment?.confirmation_status ?? '')
 const error = ref('')
 const saving = ref(false)
 
@@ -198,6 +206,7 @@ async function save() {
     starts_at: startsAt.toISOString(),
     ends_at: endsAt.toISOString(),
     status: status.value,
+    confirmation_status: confirmationStatus.value || null,
     ...(timeChanged ? { rescheduled: true } : {}),
   }
 
@@ -389,6 +398,16 @@ async function remove() {
             <option value="completed">{{ t('Completed', 'Completada') }}</option>
             <option value="cancelled">{{ t('Cancelled', 'Cancelada') }}</option>
             <option value="no_show">{{ t('No show', 'No presentado') }}</option>
+          </select>
+        </div>
+
+        <div v-if="mode === 'edit'">
+          <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Confirmation', 'Confirmación') }}</label>
+          <select v-model="confirmationStatus" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
+            <option value="">{{ t('Not requested', 'No solicitada') }}</option>
+            <option value="pending">{{ t('Pending', 'Pendiente') }}</option>
+            <option value="confirmed">{{ t('Confirmed', 'Confirmada') }}</option>
+            <option value="reschedule_requested">{{ t('Wants to reschedule', 'Quiere cambiar la cita') }}</option>
           </select>
         </div>
 

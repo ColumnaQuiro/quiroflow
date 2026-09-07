@@ -16,6 +16,7 @@ const STATIC_AUTHENTICATED_PAGES = [
   '/reports/appointment-distribution',
   '/reports/custom',
   '/reports/data-exports',
+  '/reports/daily-transactions',
   '/reports/debtors',
   '/reports/income-performance',
   '/reports/income',

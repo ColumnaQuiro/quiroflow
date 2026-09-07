@@ -22,6 +22,15 @@ interface PatientForAction {
   is_minor?: boolean
   do_not_contact?: boolean
   marketing_channels?: string[]
+  date_of_birth?: string | null
+  address?: string | null
+  city?: string | null
+  postal_code?: string | null
+  country?: string | null
+  national_id?: string | null
+  occupation?: string | null
+  gender?: string | null
+  emergency_contact?: string | null
 }
 interface ActionRow {
   id: string
@@ -163,6 +172,15 @@ async function generateDocLink(supabase: any, accountId: string, patient: Patien
     first_name: patient.first_name ?? '',
     last_name: patient.last_name ?? '',
     email: patient.email ?? '',
+    date_of_birth: patient.date_of_birth ?? '',
+    address: patient.address ?? '',
+    city: patient.city ?? '',
+    postal_code: patient.postal_code ?? '',
+    country: patient.country ?? '',
+    national_id: patient.national_id ?? '',
+    occupation: patient.occupation ?? '',
+    gender: patient.gender ?? '',
+    emergency_contact: patient.emergency_contact ?? '',
   })
   const { data: doc } = await supabase
     .from('patient_docs')

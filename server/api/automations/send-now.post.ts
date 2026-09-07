@@ -21,7 +21,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: patient } = await supabase
     .from('patients')
-    .select('id, first_name, last_name, email, is_minor, do_not_contact, marketing_channels')
+    .select('id, first_name, last_name, email, is_minor, do_not_contact, marketing_channels, date_of_birth, address, city, postal_code, country, national_id, occupation, gender, emergency_contact')
     .eq('id', body.patientId)
     .maybeSingle()
   if (!patient) throw createError({ statusCode: 404, statusMessage: 'Patient not found' })

@@ -106,7 +106,7 @@ async function newFromTemplate(template: Template) {
   showNewMenu.value = false
   const { data: patient } = await supabase
     .from('patients')
-    .select('first_name, last_name, date_of_birth, email')
+    .select('first_name, last_name, date_of_birth, email, address, city, postal_code, country, national_id, occupation, gender, emergency_contact')
     .eq('id', props.patientId)
     .maybeSingle()
   const rendered = renderTemplateFields(template.fields, {
@@ -114,6 +114,14 @@ async function newFromTemplate(template: Template) {
     last_name: patient?.last_name ?? '',
     date_of_birth: patient?.date_of_birth ?? '',
     email: patient?.email ?? '',
+    address: patient?.address ?? '',
+    city: patient?.city ?? '',
+    postal_code: patient?.postal_code ?? '',
+    country: patient?.country ?? '',
+    national_id: patient?.national_id ?? '',
+    occupation: patient?.occupation ?? '',
+    gender: patient?.gender ?? '',
+    emergency_contact: patient?.emergency_contact ?? '',
     clinic_name: store.accountName,
     today: new Date().toLocaleDateString(),
   })

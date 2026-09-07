@@ -113,13 +113,20 @@ const rows = computed<LedgerRow[]>(() => {
       .reduce((sum, r) => sum + Math.abs(r.total_cents), 0)
     const refundableCents = inv.status === 'void' ? 0 : Math.max(0, paidForInvoice - alreadyRefunded)
 
+    // A negative total_cents invoice that isn't flagged is_refund happens
+    // for imported data (e.g. a PracticeHub refund record) rather than one
+    // created through the app's own refund flow above -- same shape, just
+    // missing the flag. Split by sign the same way, or it falls through as
+    // a negative debitCents that the template hides (debitCents > 0 only).
+    const isUnflaggedRefund = inv.total_cents < 0
+
     return {
       key: `invoice-${inv.id}`,
       ref: inv.invoice_number,
       date: inv.created_at,
-      description: inv.status === 'void' ? t('Invoice (void)', 'Factura (anulada)') : t('Invoice', 'Factura'),
-      debitCents: inv.status === 'void' ? 0 : inv.total_cents,
-      creditCents: 0,
+      description: inv.status === 'void' ? t('Invoice (void)', 'Factura (anulada)') : isUnflaggedRefund ? t('Invoice (refund)', 'Factura (reembolso)') : t('Invoice', 'Factura'),
+      debitCents: inv.status === 'void' ? 0 : Math.max(inv.total_cents, 0),
+      creditCents: inv.status === 'void' ? 0 : Math.max(-inv.total_cents, 0),
       balanceText: inv.status === 'void' ? '—' : money(openCents),
       balanceTone: inv.status === 'void' ? 'neutral' : openCents > 0 ? 'danger' : 'neutral',
       voided: inv.status === 'void',

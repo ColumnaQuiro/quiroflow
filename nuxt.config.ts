@@ -45,7 +45,30 @@ export default defineNuxtConfig({
     redirectOptions: {
       login: '/login',
       callback: '/confirm',
-      exclude: ['/', '/login', '/signup', '/confirm', '/join', '/portal/**', '/book/**', '/doc/**', '/forgot-password', '/reset-password', '/legal/**'],
+      exclude: [
+        '/',
+        '/login',
+        '/signup',
+        '/confirm',
+        '/join',
+        '/portal/**',
+        '/book/**',
+        '/doc/**',
+        '/forgot-password',
+        '/reset-password',
+        '/legal/**',
+        // API routes authenticate themselves (bearer token for /api/public/**,
+        // service-role for webhooks, a Supabase session for the rest) and
+        // must never get this redirect-to-login treatment. Without this, any
+        // client whose Accept header merely mentions text/html -- which
+        // includes n8n's HTTP Request node in its default "Autodetect"
+        // response mode, not just browsers -- gets silently redirected to
+        // /login (302, HTML body) instead of reaching the route at all, with
+        // no indication anything went wrong short of inspecting the raw
+        // response. A logged-in browser calling its own /api/** routes never
+        // hits this exclusion in practice since it already carries a session.
+        '/api/**',
+      ],
     },
   },
   runtimeConfig: {

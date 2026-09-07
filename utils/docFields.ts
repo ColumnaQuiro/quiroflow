@@ -24,7 +24,7 @@ export interface DocField {
   // template prefills it from the patient's existing data (renderTemplateFields
   // below), and completing the public doc writes whatever the patient typed
   // back onto that column (see save_public_patient_doc in
-  // 0150_patient_doc_field_sync.sql, which re-declares this exact key list as
+  // 0151_patient_doc_field_sync.sql, which re-declares this exact key list as
   // a hardcoded allowlist -- it runs unauthenticated by public token, so it
   // can never resolve a column name from client input, only match against
   // one of these known keys). Keep the two lists in sync by hand.

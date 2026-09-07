@@ -166,11 +166,25 @@ const nextChargeCents = computed(() => {
   return base + overage
 })
 
-const professionalsLabel = computed(() => {
+// Only practitioners consume a seat -- front desk, practice managers and
+// bookkeepers are free and unlimited, so the count has to say "practitioner",
+// not "user", or an owner reads it as a cap on their whole team.
+const seatsIncluded = computed(() => {
   const included = subscription.value?.plans?.included_professionals
-  const total = included === null || included === undefined ? null : included + (subscription.value?.extra_professionals ?? 0)
-  return total === null ? `${practitionerCount.value} professional(s) -- unlimited included` : `${practitionerCount.value} of ${total} professional(s) included`
+  if (included === null || included === undefined) return null
+  return included + (subscription.value?.extra_professionals ?? 0)
 })
+
+const professionalsLabel = computed(() => {
+  const total = seatsIncluded.value
+  if (total === null) return `${practitionerCount.value} practitioner(s) -- unlimited included`
+  return `${practitionerCount.value} of ${total} practitioner seat(s) in use`
+})
+
+// Comped accounts have no ceiling at all, so never nag them about seats.
+const seatsFull = computed(
+  () => !subscription.value?.comped && seatsIncluded.value !== null && practitionerCount.value >= seatsIncluded.value,
+)
 
 const contactHref = computed(() => {
   const subject = encodeURIComponent(`Question about my QuiroFlow plan -- ${store.accountName}`)
@@ -314,7 +328,15 @@ const headerMeta = computed(() => {
             {{ eur(monthlyEquivalentCents) }}/mo
             <span class="text-ink-muted">({{ subscription.billing_interval === 'annual' ? 'billed annually' : 'billed monthly' }})</span>
           </p>
-          <p class="text-sm text-ink-muted">{{ professionalsLabel }}</p>
+          <p class="text-sm text-ink-muted">
+            {{ professionalsLabel }}
+            <span class="text-ink-faint2">&middot; admin users are free</span>
+          </p>
+          <p v-if="seatsFull" class="text-sm text-ink-muted">
+            Every practitioner seat on your plan is in use. Adding another practitioner needs an extra seat
+            <span v-if="subscription.plans?.extra_professional_price_cents">({{ eur(subscription.plans.extra_professional_price_cents) }}/mo)</span> —
+            add one below. Non-practitioner staff can still be added at no cost.
+          </p>
 
           <p v-if="subscription.status === 'trialing' && store.trialDaysLeft !== null" class="text-sm text-ink-muted">
             {{ store.trialDaysLeft === 0 ? 'Your trial ends today.' : `${store.trialDaysLeft} day(s) left in your free trial.` }}

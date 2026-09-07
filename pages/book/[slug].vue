@@ -492,6 +492,10 @@ const note = ref('')
 const submitting = ref(false)
 const submitError = ref('')
 const confirmation = ref<{ starts_at: string } | null>(null)
+// Kept separately from `confirmation` because the success redirect needs it
+// after the payment step too, where `goToSuccess` runs from a different call
+// site and no longer has the booking result in hand.
+const lastBooking = ref<{ appointmentId: string; typeName: string; valueEur: number } | null>(null)
 const invoiceId = ref('')
 const paymentRequiredCents = ref(0)
 
@@ -528,6 +532,11 @@ async function submitBooking() {
   // (Settings > Online Booking > General) -- the appointment already exists
   // at this point regardless of payment, so this fires once per real booking
   // rather than only after a successful online payment.
+  lastBooking.value = {
+    appointmentId: result.appointment_id,
+    typeName: appointmentType.value?.name ?? '',
+    valueEur: effectivePrice.value ? effectivePrice.value / 100 : 0,
+  }
   ;(window as any).dataLayer = (window as any).dataLayer || []
   ;(window as any).dataLayer.push({
     event: 'booking_completed',
@@ -560,21 +569,60 @@ async function submitBooking() {
 // window.location, and a javascript: URL there would execute as script on
 // the public booking page. Anything unparseable falls back to the built-in
 // screen rather than stranding the patient on a blank page.
-function goToSuccess() {
+// The booking is described in the query string -- appointment id, type name,
+// value -- so the account's thank-you page can report an exact conversion
+// value and deduplicate on the id, neither of which a static URL can do.
+// Nothing identifying the patient goes in there: the id is opaque and the
+// rest describes the booking, not the person.
+function successUrl(): URL | null {
   const configured = info.value?.account.online_booking_success_url?.trim()
-  if (configured) {
-    let target: URL | null = null
-    try {
-      target = new URL(configured)
-    } catch {
-      target = null
-    }
-    if (target && (target.protocol === 'http:' || target.protocol === 'https:')) {
-      window.location.href = target.href
-      return
-    }
+  if (!configured) return null
+  let target: URL
+  try {
+    target = new URL(configured)
+  } catch {
+    return null
   }
-  phase.value = 'success'
+  if (target.protocol !== 'http:' && target.protocol !== 'https:') return null
+  const booking = lastBooking.value
+  if (booking) {
+    target.searchParams.set('booking', booking.appointmentId)
+    target.searchParams.set('type', booking.typeName)
+    target.searchParams.set('value', booking.valueEur.toFixed(2))
+    target.searchParams.set('currency', 'EUR')
+  }
+  return target
+}
+
+// How long the host page gets to take the redirect over before the frame
+// navigates itself. Long enough for a message handler to run, short enough
+// that a host which isn't listening shows no perceptible delay.
+const HOST_REDIRECT_GRACE_MS = 150
+
+function goToSuccess() {
+  const target = successUrl()
+  if (!target) {
+    phase.value = 'success'
+    return
+  }
+  // Embedded in someone else's page: offer the redirect to the host first. It
+  // owns the top-level window, so it can navigate there directly. The frame
+  // cannot rely on doing that itself -- a cross-origin frame may only navigate
+  // its top window while it still holds user activation, and that can easily
+  // have expired across the booking round-trip, in which case the browser
+  // blocks it silently. A host that ignores the message still gets redirected
+  // by the frame navigation below, just inside the iframe.
+  if (window.self !== window.top) {
+    window.parent.postMessage(
+      { source: 'quiroflow-booking', event: 'booking_completed', url: target.href },
+      '*',
+    )
+    window.setTimeout(() => {
+      window.location.href = target.href
+    }, HOST_REDIRECT_GRACE_MS)
+    return
+  }
+  window.location.href = target.href
 }
 
 function onPaymentSucceeded() {

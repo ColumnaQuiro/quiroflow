@@ -94,8 +94,8 @@ async function loadArchivesAndLabels() {
 }
 onMounted(loadArchivesAndLabels)
 
-async function load(opts: { silent?: boolean } = {}) {
-  if (!opts.silent) loading.value = true
+async function load() {
+  loading.value = true
   const [{ data: waData }, { data: appData }] = await Promise.all([
     supabase
       .from('whatsapp_messages')
@@ -128,9 +128,9 @@ async function load(opts: { silent?: boolean } = {}) {
     for (const p of patients ?? []) names[p.id] = `${p.first_name} ${p.last_name ?? ''}`.trim()
     patientNames.value = names
   }
-  if (!opts.silent) loading.value = false
+  loading.value = false
 }
-onMounted(() => load())
+onMounted(load)
 
 const allMessages = computed<Message[]>(() =>
   [...messages.value, ...pendingMessages.value].sort((a, b) => b.created_at.localeCompare(a.created_at)),
@@ -756,16 +756,13 @@ function bubbleText(m: Message): string {
   return m.body_preview ?? ''
 }
 
-// Silent -- these can fire on every incoming message, and re-showing the
-// full "Loading…" list on each one was the same layout-jump the poll timer
-// below also caused; load() already merges into the same arrays either way.
 let channel: ReturnType<typeof supabase.channel> | null = null
 onMounted(() => {
   channel = supabase
     .channel('mobile-inbox-whatsapp-messages')
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'whatsapp_messages', filter: `account_id=eq.${props.accountId}` }, () => load({ silent: true }))
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'whatsapp_messages', filter: `account_id=eq.${props.accountId}` }, () => load({ silent: true }))
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'patient_app_messages', filter: `account_id=eq.${props.accountId}` }, () => load({ silent: true }))
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'whatsapp_messages', filter: `account_id=eq.${props.accountId}` }, () => load())
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'whatsapp_messages', filter: `account_id=eq.${props.accountId}` }, () => load())
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'patient_app_messages', filter: `account_id=eq.${props.accountId}` }, () => load())
     .subscribe()
 })
 onUnmounted(() => {
@@ -792,14 +789,11 @@ onUnmounted(() => {
 // bounds how stale the inbox can get even if realtime isn't delivering.
 let pollTimer: ReturnType<typeof setInterval> | null = null
 onMounted(() => {
-  pollTimer = setInterval(() => load({ silent: true }), 15000)
+  pollTimer = setInterval(load, 15000)
 })
 onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer)
 })
-
-const listEl = ref<HTMLElement | null>(null)
-const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouchMove, onTouchEnd } = usePullToRefresh(listEl, () => load({ silent: true }))
 </script>
 
 <template>
@@ -861,23 +855,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
           <button type="button" class="text-[13px] font-medium text-danger-text disabled:opacity-40" :disabled="selectedKeys.size === 0" @click="bulkDeleteSelected">Delete</button>
         </div>
       </div>
-      <div
-        ref="listEl"
-        class="flex-1 overflow-y-auto"
-        @touchstart="onTouchStart"
-        @touchmove="onTouchMove"
-        @touchend="onTouchEnd"
-      >
-        <div
-          v-if="pulling || pullRefreshing || pullDistance > 0"
-          class="flex items-center justify-center overflow-hidden transition-[height]"
-          :style="{ height: pullRefreshing ? '40px' : `${pullDistance}px` }"
-        >
-          <svg viewBox="0 0 24 24" class="h-4 w-4 text-brand" :class="{ 'animate-spin': pullRefreshing }" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-            <path d="M4 12a8 8 0 0 1 14.5-4.6M20 12a8 8 0 0 1-14.5 4.6" />
-            <path d="M17.5 3v5h-5M6.5 21v-5h5" />
-          </svg>
-        </div>
+      <div class="flex-1 overflow-y-auto">
         <div v-if="loading" class="p-6 text-center text-[13px] text-ink-faint">Loading…</div>
         <p v-else-if="filteredConversations.length === 0" class="p-6 text-center text-[13px] text-ink-faint">
           {{ view === 'archived' ? 'No archived conversations.' : 'No conversations yet.' }}

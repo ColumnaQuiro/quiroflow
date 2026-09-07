@@ -89,6 +89,38 @@ Wildcard clinic subdomains need two things once, and one more per clinic:
    `NETLIFY_SITE_ID` (see `.env.example`). Without those set, it silently
    no-ops and the alias needs adding manually instead.
 
+## Platform billing (QuiroFlow charging clinics)
+
+Separate from the Stripe Connect setup that charges a clinic's *patients* —
+different account, different keys, on purpose, so a bug in one can never
+reach the other's data. `stripeForPlatformBilling()` reads
+`NUXT_STRIPE_PLATFORM_BILLING_SECRET_KEY`; `stripeForPlatform()` reads
+`NUXT_STRIPE_SECRET_KEY`. Do not point them at the same account.
+
+To stand it up in a new Stripe account:
+
+1. `STRIPE_PLATFORM_BILLING_SECRET_KEY=sk_... node scripts/setup-platform-billing.mjs`
+   creates the three plan products, the extra-practitioner product and their
+   monthly/annual prices, then prints the SQL to point `plans` at them. It is
+   idempotent — a second run reuses every price and creates nothing. Add
+   `--dry-run` to see what it would do first.
+2. Run the SQL it prints against the database.
+3. Register the webhook: `https://app.quiroflow.com/api/stripe/platform-billing-webhook`,
+   subscribed to `customer.subscription.created`, `.updated` and `.deleted`
+   (nothing else — the endpoint deliberately ignores
+   `checkout.session.completed`, see its own comment). Put the signing secret
+   in `NUXT_STRIPE_PLATFORM_BILLING_WEBHOOK_SECRET`.
+4. Activate the Customer Portal (Stripe Dashboard → Settings → Billing →
+   Customer portal). Without it, "Manage payment method & invoices" on
+   `/subscription` returns an error rather than a portal link.
+
+Plan limits are enforced in the database, not the app: `plans` carries
+`included_professionals`, `included_whatsapp_conversations` and
+`included_storage_gb`, and a trigger on `team_members` refuses a practitioner
+past the seat allowance with SQLSTATE `PT402` (PostgREST turns that into a
+402). Only practitioners consume a seat — admin staff are free and unlimited.
+Comped accounts have no ceiling at all.
+
 ## Mobile app password autofill
 
 The apps are Capacitor wrappers, so their WebView origin is

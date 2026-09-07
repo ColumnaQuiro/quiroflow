@@ -29,15 +29,29 @@ jobs:
       # ci + supabase start cost, but in parallel with the others -- a
       # worthwhile trade once actual Cypress runtime dominates the fixed
       # per-job setup cost, as it does once there's more than a couple
-      # specs. Rebalance these groups if one shard consistently lags.
+      # specs.
+      #
+      # Balanced by folder, not by individual spec file: per-spec Cypress
+      # runtimes from PR #75's final green run (commit 1dea42e) were
+      # navigation 56s, settings 54s, inbox 22s, calendar 21s, auth 21s,
+      # patients 19s, public-booking 8s -- the previous grouping (by
+      # top-level folder, but grouped without ever looking at these numbers)
+      # put navigation+inbox+patients together at 98s against auth+calendar
+      # at 42s, the widest shard 56s slower than the narrowest. This grouping
+      # gets all three shards within 9s of each other (73/64/64) using the
+      # same folder-glob approach, which is what keeps a spec added to an
+      # existing folder auto-included in its shard -- no drift risk the way
+      # slicing at individual-file granularity would have. Durations will
+      # drift as specs are added; rebalance again once one shard consistently
+      # lags, same as before.
       matrix:
         shard:
-          - name: auth-and-calendar
-            specs: "cypress/e2e/auth/**,cypress/e2e/calendar/**"
-          - name: inbox-nav-patients
-            specs: "cypress/e2e/inbox/**,cypress/e2e/navigation/**,cypress/e2e/patients/**"
-          - name: booking-and-settings
-            specs: "cypress/e2e/public-booking/**,cypress/e2e/settings/**"
+          - name: settings-and-patients
+            specs: "cypress/e2e/settings/**,cypress/e2e/patients/**"
+          - name: navigation-and-booking
+            specs: "cypress/e2e/navigation/**,cypress/e2e/public-booking/**"
+          - name: auth-calendar-inbox
+            specs: "cypress/e2e/auth/**,cypress/e2e/calendar/**,cypress/e2e/inbox/**"
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

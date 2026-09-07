@@ -14,6 +14,8 @@ interface SubscriptionRow {
     annual_price_cents: number
     included_professionals: number | null
     extra_professional_price_cents: number | null
+    included_whatsapp_conversations: number | null
+    included_storage_gb: number | null
   } | null
 }
 
@@ -54,17 +56,29 @@ const { loading: loadingPortal, openPortal } = useBillingPortal()
 const subscription = ref<SubscriptionRow | null>(null)
 const plans = ref<PlanRow[]>([])
 const practitionerCount = ref(0)
+const usage = ref<{ whatsapp_conversations_mtd: number; storage_bytes: number } | null>(null)
 const loading = ref(true)
 
 async function loadSubscription() {
   const { data } = await supabase
     .from('subscriptions')
     .select(
-      'status, billing_interval, extra_professionals, trial_ends_at, comped, stripe_customer_id, stripe_subscription_id, plan_id, plans(name, monthly_price_cents, annual_price_cents, included_professionals, extra_professional_price_cents)',
+      'status, billing_interval, extra_professionals, trial_ends_at, comped, stripe_customer_id, stripe_subscription_id, plan_id, plans(name, monthly_price_cents, annual_price_cents, included_professionals, extra_professional_price_cents, included_whatsapp_conversations, included_storage_gb)',
     )
     .eq('account_id', store.accountId!)
     .maybeSingle()
   subscription.value = data as SubscriptionRow | null
+}
+
+// WhatsApp conversations and file storage are the only two things in the
+// product with a real marginal cost, so they are the only two the plans put a
+// ceiling on. Read through account_usage() rather than counting here: it is
+// SECURITY DEFINER, so the figure is the same account-level truth for every
+// team member, instead of being filtered down to whatever patients the reader
+// happens to have access to.
+async function loadUsage() {
+  const { data } = await supabase.rpc('account_usage', { target_account_id: store.accountId! })
+  usage.value = Array.isArray(data) ? (data[0] ?? null) : (data ?? null)
 }
 
 async function loadPractitionerCount() {
@@ -99,6 +113,7 @@ onMounted(async () => {
     loadSubscription(),
     supabase.from('plans').select('id, name, monthly_price_cents, annual_price_cents, included_professionals, included_clinics, extra_professional_price_cents, sort_order').order('sort_order'),
     loadPractitionerCount(),
+    loadUsage(),
     loadBillingInfo(),
   ])
   plans.value = planRows ?? []
@@ -179,6 +194,43 @@ const professionalsLabel = computed(() => {
   const total = seatsIncluded.value
   if (total === null) return `${practitionerCount.value} practitioner(s) -- unlimited included`
   return `${practitionerCount.value} of ${total} practitioner seat(s) in use`
+})
+
+// Both allowances are presented as headroom, not as a meter. They exist so a
+// clinic can see where it stands and so an overage conversation is possible --
+// nothing in the app blocks a send or an upload when they are passed, because
+// WhatsApp is how these clinics reach patients and cutting that off over a
+// billing threshold would be a worse product than absorbing the overage.
+const GB = 1024 ** 3
+
+const usageRows = computed(() => {
+  const plan = subscription.value?.plans
+  const u = usage.value
+  if (!plan || !u || subscription.value?.comped) return []
+  const rows: { label: string; used: string; allowance: string; pct: number | null; over: boolean }[] = []
+
+  if (plan.included_whatsapp_conversations) {
+    const pct = Math.min(100, Math.round((u.whatsapp_conversations_mtd / plan.included_whatsapp_conversations) * 100))
+    rows.push({
+      label: 'WhatsApp conversations this month',
+      used: u.whatsapp_conversations_mtd.toLocaleString('es-ES'),
+      allowance: plan.included_whatsapp_conversations.toLocaleString('es-ES'),
+      pct,
+      over: u.whatsapp_conversations_mtd > plan.included_whatsapp_conversations,
+    })
+  }
+  if (plan.included_storage_gb) {
+    const usedGb = u.storage_bytes / GB
+    const pct = Math.min(100, Math.round((usedGb / plan.included_storage_gb) * 100))
+    rows.push({
+      label: 'Patient file storage',
+      used: `${usedGb.toFixed(usedGb < 10 ? 2 : 1)} GB`,
+      allowance: `${plan.included_storage_gb} GB`,
+      pct,
+      over: usedGb > plan.included_storage_gb,
+    })
+  }
+  return rows
 })
 
 // Comped accounts have no ceiling at all, so never nag them about seats.
@@ -349,6 +401,30 @@ const headerMeta = computed(() => {
               {{ loadingPortal ? 'Opening…' : 'Manage payment method & invoices' }}
             </UiBtn>
             <p v-else-if="subscription.comped" class="text-sm text-ink-muted">This account has complimentary access -- no billing to manage.</p>
+          </div>
+        </div>
+
+        <div v-if="usageRows.length > 0" class="mt-4 space-y-4 rounded-card border border-line bg-surface p-4 shadow-card">
+          <div>
+            <h2 class="text-sm font-semibold text-ink-900">Included usage</h2>
+            <p class="mt-0.5 text-[12.5px] text-ink-muted2">
+              Generous limits rather than a meter -- going over never blocks messages or uploads, we just get in touch.
+            </p>
+          </div>
+          <div v-for="row in usageRows" :key="row.label" class="space-y-1.5">
+            <div class="flex items-baseline justify-between gap-3">
+              <span class="text-[13px] text-ink-700">{{ row.label }}</span>
+              <span class="font-mono text-[12.5px] tabular-nums" :class="row.over ? 'text-danger-text' : 'text-ink-muted'">
+                {{ row.used }} / {{ row.allowance }}
+              </span>
+            </div>
+            <div class="h-1.5 overflow-hidden rounded-full bg-surface-subtle">
+              <div
+                class="h-full rounded-full"
+                :class="row.over ? 'bg-danger-text' : 'bg-brand'"
+                :style="{ width: `${Math.max(row.pct ?? 0, 2)}%` }"
+              />
+            </div>
           </div>
         </div>
 

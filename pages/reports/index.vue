@@ -37,6 +37,7 @@ const groups = computed(() => [
     label: t('Financial', 'Financiero'),
     items: [
       { to: '/reports/income', label: t('Income & Payments', 'Ingresos y pagos'), description: t('Revenue by day/week/month/year, payment method, practitioner, visit type.', 'Ingresos por día/semana/mes/año, método de pago, profesional y tipo de visita.'), icon: ICONS.billing },
+      { to: '/reports/daily-transactions', label: t('Daily Transactions', 'Transacciones del día'), description: t('Every payment and refund on a given day, for end-of-day cash reconciliation.', 'Todos los pagos y reembolsos de un día, para el cuadre de caja.'), icon: ICONS.calendar },
       { to: '/reports/debtors', label: t('Debtors', 'Deudores'), description: t('Package/bono purchases with no paid invoice, and how much is outstanding.', 'Compras de bonos/paquetes sin factura pagada y cuánto queda pendiente.'), icon: ICONS.exclamationTriangle },
       { to: '/reports/memberships', label: t('Memberships', 'Membresías'), description: t('Active membership count, monthly revenue, and failed payments.', 'Número de membresías activas, ingresos mensuales y pagos fallidos.'), icon: ICONS.badgeCheck },
     ],

@@ -487,7 +487,7 @@ async function refundableCentsFor(invoiceId: string): Promise<number> {
   return Math.max(0, paidCents - alreadyRefunded)
 }
 
-async function createRefund(invoiceId: string, amountCents: number, reason: string) {
+async function createRefund(invoiceId: string, amountCents: number, reason: string, method: string) {
   const invoice = invoices.value.find((i) => i.id === invoiceId)
   if (!invoice || amountCents <= 0) return
   const maxRefundable = await refundableCentsFor(invoiceId)
@@ -517,6 +517,20 @@ async function createRefund(invoiceId: string, amountCents: number, reason: stri
     description: reason.trim() ? `Refund (${invoice.invoice_number}) — ${reason.trim()}` : `Refund — ${invoice.invoice_number}`,
     quantity: 1,
     price_cents: -amountCents,
+  })
+
+  // Without this, the refund never showed up as money leaving in
+  // usePatientFinancialSummary's balanceCents (paidCents - invoicedCents):
+  // invoicedCents drops by amountCents via the refund invoice above, but
+  // nothing dropped paidCents to match, leaving a phantom credit on the
+  // patient's balance for money that had already gone back to them. Same
+  // gap in reports/income.vue's Total paid/By payment method, which read
+  // only from `payments` and never saw a refund at all.
+  await supabase.from('payments').insert({
+    account_id: store.accountId!,
+    invoice_id: refund.id,
+    amount_cents: -amountCents,
+    method,
   })
 
   await Promise.all([loadAll(), refreshCreditSummary()])
@@ -916,7 +930,7 @@ function money(cents: number) {
       @send-invoice="sendInvoiceEmail"
       @delete-invoice="(id: string) => { const inv = invoices.find((i) => i.id === id); if (inv) deleteInvoice(inv) }"
       @write-off-invoice="writeOffInvoice"
-      @refund-invoice="(payload: { invoiceId: string; amountCents: number; reason: string }) => createRefund(payload.invoiceId, payload.amountCents, payload.reason)"
+      @refund-invoice="(payload: { invoiceId: string; amountCents: number; reason: string; method: string }) => createRefund(payload.invoiceId, payload.amountCents, payload.reason, payload.method)"
       @credits-changed="onLedgerCreditsChanged"
     />
 

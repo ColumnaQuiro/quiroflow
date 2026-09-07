@@ -7,6 +7,15 @@ const t = useT()
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const { preference: langPreference } = useLang()
+const route = useRoute()
+
+// The inbox's composer sits at the bottom of the screen with its own Send
+// button flush right -- on a narrow viewport that's the same corner this
+// widget's floating launcher occupies (fixed bottom-5 right-5), so it sits
+// on top of the Send button rather than beside it. Sidebar's "Help Centre"
+// link still reaches docs from there; the assistant stays one click away
+// on every other page.
+const hideOnRoute = computed(() => route.path === '/inbox')
 
 interface Turn {
   role: 'user' | 'assistant'
@@ -151,7 +160,7 @@ function articleTitle(url: string) {
 <template>
   <!-- Above page content but below modals (z-50) and toasts (z-[200]), so a
   dialog opened from behind it still covers it. -->
-  <div class="fixed bottom-5 right-5 z-40 print:hidden">
+  <div v-if="!hideOnRoute" class="fixed bottom-5 right-5 z-40 print:hidden">
     <div
       v-if="open"
       class="mb-2.5 flex h-[min(560px,calc(100vh-7rem))] w-[380px] max-w-[calc(100vw-2.5rem)] flex-col overflow-hidden rounded-card border border-line bg-surface shadow-popover"

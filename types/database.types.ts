@@ -2970,6 +2970,8 @@ export type Database = {
           id: string
           included_clinics: number | null
           included_professionals: number | null
+          included_storage_gb: number | null
+          included_whatsapp_conversations: number | null
           monthly_price_cents: number
           name: string
           sort_order: number
@@ -2985,6 +2987,8 @@ export type Database = {
           id: string
           included_clinics?: number | null
           included_professionals?: number | null
+          included_storage_gb?: number | null
+          included_whatsapp_conversations?: number | null
           monthly_price_cents: number
           name: string
           sort_order: number
@@ -3000,6 +3004,8 @@ export type Database = {
           id?: string
           included_clinics?: number | null
           included_professionals?: number | null
+          included_storage_gb?: number | null
+          included_whatsapp_conversations?: number | null
           monthly_price_cents?: number
           name?: string
           sort_order?: number
@@ -4110,6 +4116,13 @@ export type Database = {
         Args: { p_token: string }
         Returns: {
           account_id: string
+        }[]
+      }
+      account_usage: {
+        Args: { target_account_id: string }
+        Returns: {
+          storage_bytes: number
+          whatsapp_conversations_mtd: number
         }[]
       }
       can_access_patient: {

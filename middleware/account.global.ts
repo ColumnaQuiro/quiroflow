@@ -1,4 +1,21 @@
+import { DEV_PORTAL_SLUGS, isDevPortalHost } from '~/utils/devPortal'
+
 export default defineNuxtRouteMiddleware(async (to) => {
+  // The developer portal (developers.quiroflow.com, and the same pages under
+  // /developers on the app host) is public documentation -- it has to render
+  // for someone with no QuiroFlow account, so it's checked before anything
+  // that assumes a session. Its bare-slug aliases are listed too because on
+  // the docs subdomain those are the real URLs; see utils/devPortal.ts.
+  const isPortalPath = to.path.startsWith('/developers') || DEV_PORTAL_SLUGS.includes(to.path.slice(1))
+  if (isPortalPath) return
+
+  // The docs subdomain's root. It can't render the intro page in place --
+  // "/" already belongs to the app's sign-in entry point -- so it redirects
+  // to the first page instead, which is also the honest URL for it.
+  if (isDevPortalHost(useRequestURL().hostname)) {
+    return navigateTo('/introduction', { replace: true })
+  }
+
   // A clinic's booking subdomain (<slug>.<appDomain>) should only ever show
   // its booking page, regardless of what path was requested -- checked
   // first so it wins even for a staff user who happens to land here.

@@ -1,3 +1,5 @@
+import { DEV_PORTAL_SLUGS } from '../../../utils/devPortal'
+
 const STATIC_AUTHENTICATED_PAGES = [
   '/account',
   '/dashboard',
@@ -52,7 +54,13 @@ const STATIC_AUTHENTICATED_PAGES = [
   '/settings/whatsapp',
 ]
 
-const UNAUTHENTICATED_PAGES = ['/login', '/signup', '/forgot-password']
+// The developer portal (pages/developers/*) is public documentation, so it
+// sweeps unauthenticated. Derived from the same list that builds the portal's
+// sidebar and its prefix-free alias routes, so a page added there is covered
+// here automatically rather than tripping the guard test below.
+const DEV_PORTAL_PAGES = DEV_PORTAL_SLUGS.map((slug) => `/developers/${slug}`)
+
+const UNAUTHENTICATED_PAGES = ['/login', '/signup', '/forgot-password', ...DEV_PORTAL_PAGES]
 
 // Routes this spec deliberately doesn't sweep, each for a reason the guard
 // test below re-checks. Anything not here and not in one of the lists above
@@ -60,6 +68,7 @@ const UNAUTHENTICATED_PAGES = ['/login', '/signup', '/forgot-password']
 // the way 17 of them already had.
 const NOT_SWEPT_HERE: Record<string, string> = {
   '/': 'redirects to /login; asserted in the unauthenticated test',
+  '/developers': 'section root; redirects to /developers/introduction, asserted in the developer portal test',
   '/inbox': 'covered by cypress/e2e/inbox/inbox.cy.ts',
   '/subscription': 'covered by cypress/e2e/settings/subscription-billing.cy.ts',
   '/onboarding': 'covered by cypress/e2e/auth/signup-and-onboarding.cy.ts',
@@ -108,6 +117,28 @@ describe('Every authenticated page renders for the account owner', () => {
         })
       })
     })
+  })
+
+  it('smoke-tests the developer portal, at both of the URL shapes it is served at', () => {
+    cy.clearCookies()
+
+    // /developers is the section root and has no content of its own.
+    cy.visit('/developers')
+    cy.location('pathname').should('eq', '/developers/introduction')
+
+    for (const slug of DEV_PORTAL_SLUGS) {
+      cy.visit(`/developers/${slug}`)
+      cy.location('pathname').should('eq', `/developers/${slug}`)
+      cy.contains('a', 'Introduction').should('be.visible')
+
+      // The prefix-free alias, which is what developers.quiroflow.com serves.
+      // Registered by the pages:extend hook in nuxt.config.ts -- if that
+      // stops working the docs subdomain 404s, and nothing else would catch
+      // it because the app host keeps working either way.
+      cy.visit(`/${slug}`)
+      cy.location('pathname').should('eq', `/${slug}`)
+      cy.contains('a', 'Introduction').should('be.visible')
+    }
   })
 
   it('smoke-tests the unauthenticated pages', () => {

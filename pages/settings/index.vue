@@ -85,7 +85,7 @@ const groups = computed(() => [
   {
     label: t('Developers', 'Desarrolladores'),
     items: [
-      { to: '/settings/developers', label: t('API & Tokens', 'API y tokens'), description: t('Create access tokens and see API docs for sending WhatsApp from outside QuiroFlow (e.g. n8n).', 'Crea tokens de acceso y consulta la documentación de la API para enviar WhatsApp desde fuera de QuiroFlow (p. ej. n8n).'), icon: ICONS.codeBracket },
+      { to: '/settings/developers', label: t('API & Tokens', 'API y tokens'), description: t('Create scoped API tokens, see recent API activity, and read the developer documentation.', 'Crea tokens de API con permisos, consulta la actividad reciente de la API y lee la documentación para desarrolladores.'), icon: ICONS.codeBracket },
     ],
   },
 ])

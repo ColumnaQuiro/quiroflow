@@ -61,6 +61,10 @@ const allGroups = computed<NavGroup[]>(() => [
       { label: t('Webhooks', 'Webhooks'), to: '/settings/webhooks', perm: 'data_admin' },
     ],
   },
+  {
+    label: t('Developers', 'Desarrolladores'),
+    items: [{ label: t('API & Tokens', 'API y tokens'), to: '/settings/developers', perm: 'developers_access' }],
+  },
 ])
 
 const groups = computed(() =>

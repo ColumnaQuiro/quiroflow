@@ -30,6 +30,18 @@ const MERGE_FIELD_LABELS = computed<Record<string, string>>(() => ({
   clinic_name: t('Clinic name', 'Nombre de la clínica'),
   today: t("Today's date", 'Fecha de hoy'),
 }))
+const LINKABLE_FIELD_LABELS = computed<Record<string, string>>(() => ({
+  date_of_birth: t('Date of birth', 'Fecha de nacimiento'),
+  email: t('Email', 'Correo electrónico'),
+  address: t('Address', 'Dirección'),
+  city: t('City', 'Ciudad'),
+  postal_code: t('Postal code', 'Código postal'),
+  country: t('Country', 'País'),
+  national_id: t('National ID', 'DNI/NIE'),
+  occupation: t('Occupation', 'Ocupación'),
+  gender: t('Gender', 'Género'),
+  emergency_contact: t('Emergency contact', 'Contacto de emergencia'),
+}))
 
 function update(index: number, patch: Partial<DocField>) {
   const next = props.fields.map((f, i) => (i === index ? { ...f, ...patch } : f))
@@ -252,6 +264,17 @@ const showAddMenu = ref(false)
             <input type="checkbox" :checked="field.required" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" @change="update(i, { required: ($event.target as HTMLInputElement).checked })" />
             {{ t('Required', 'Obligatorio') }}
           </label>
+        </div>
+
+        <div v-if="LINKABLE_FIELD_TYPES.includes(field.type)" class="mt-2">
+          <select
+            :value="field.patientField ?? ''"
+            class="rounded border-gray-300 text-xs text-indigo-600"
+            @change="update(i, { patientField: ($event.target as HTMLSelectElement).value || undefined })"
+          >
+            <option value="">{{ t("Don't link to a patient field", 'No vincular a un campo del paciente') }}</option>
+            <option v-for="f in LINKABLE_PATIENT_FIELDS" :key="f.key" :value="f.key">{{ t('Link to', 'Vincular a') }}: {{ LINKABLE_FIELD_LABELS[f.key] }}</option>
+          </select>
         </div>
       </div>
 

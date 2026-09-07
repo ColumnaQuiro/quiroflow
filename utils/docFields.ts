@@ -20,7 +20,38 @@ export interface DocField {
   options?: string[]
   multiple?: boolean
   allowOther?: boolean
+  // Links this interactive field two ways to a patient column: rendering a
+  // template prefills it from the patient's existing data (renderTemplateFields
+  // below), and completing the public doc writes whatever the patient typed
+  // back onto that column (see save_public_patient_doc in
+  // 0151_patient_doc_field_sync.sql, which re-declares this exact key list as
+  // a hardcoded allowlist -- it runs unauthenticated by public token, so it
+  // can never resolve a column name from client input, only match against
+  // one of these known keys). Keep the two lists in sync by hand.
+  patientField?: string
 }
+
+// Only fields a plain text/date patient column can sensibly hold both ends
+// of -- deliberately excludes first_name/last_name (used for merge tokens,
+// not asked as a question) and phone (patient_contact_numbers is a separate
+// multi-row table with its own shape: country code, is_whatsapp, etc. --
+// not a single column this can write a bare string into).
+export const LINKABLE_PATIENT_FIELDS = [
+  { key: 'date_of_birth', label: 'Date of birth' },
+  { key: 'email', label: 'Email' },
+  { key: 'address', label: 'Address' },
+  { key: 'city', label: 'City' },
+  { key: 'postal_code', label: 'Postal code' },
+  { key: 'country', label: 'Country' },
+  { key: 'national_id', label: 'National ID' },
+  { key: 'occupation', label: 'Occupation' },
+  { key: 'gender', label: 'Gender' },
+  { key: 'emergency_contact', label: 'Emergency contact' },
+]
+
+// Field types a patient-column link makes sense for -- a plain text/date
+// answer, not a checkbox/choice/scale/rating/signature.
+export const LINKABLE_FIELD_TYPES: DocFieldType[] = ['short_text', 'long_text', 'date']
 
 export const FIELD_TYPES: { type: DocFieldType; label: string }[] = [
   { type: 'heading', label: 'Heading' },
@@ -71,13 +102,18 @@ export function newField(type: DocFieldType): DocField {
 }
 
 // Renders a template's fields for a specific patient: substitutes
-// {{field}} tokens in static block labels, and resets interactive
-// blocks to an empty value so the generated doc starts unfilled.
+// {{field}} tokens in static block labels, and resets interactive blocks to
+// an empty value -- except one linked to a patient field (see
+// DocField.patientField) whose data already exists, which starts prefilled
+// with it instead so the patient isn't asked for something already on file.
 export function renderTemplateFields(fields: unknown, vars: Record<string, string>): DocField[] {
   const list = Array.isArray(fields) ? (fields as DocField[]) : []
-  return list.map((f) => ({
-    ...f,
-    label: STATIC_BLOCK_TYPES.includes(f.type) ? f.label.replace(/\{\{(\w+)\}\}/g, (_, k: string) => vars[k] ?? '') : f.label,
-    value: emptyValue(f.type, f.multiple),
-  }))
+  return list.map((f) => {
+    const known = f.patientField ? vars[f.patientField] : undefined
+    return {
+      ...f,
+      label: STATIC_BLOCK_TYPES.includes(f.type) ? f.label.replace(/\{\{(\w+)\}\}/g, (_, k: string) => vars[k] ?? '') : f.label,
+      value: known ? known : emptyValue(f.type, f.multiple),
+    }
+  })
 }

@@ -94,8 +94,8 @@ async function loadArchivesAndLabels() {
 }
 onMounted(loadArchivesAndLabels)
 
-async function load() {
-  loading.value = true
+async function load(opts: { silent?: boolean } = {}) {
+  if (!opts.silent) loading.value = true
   const [{ data: waData }, { data: appData }] = await Promise.all([
     supabase
       .from('whatsapp_messages')
@@ -131,9 +131,9 @@ async function load() {
     for (const p of matchedPatients ?? []) names[p.id] = `${p.first_name} ${p.last_name ?? ''}`.trim()
     patientNames.value = names
   }
-  loading.value = false
+  if (!opts.silent) loading.value = false
 }
-onMounted(load)
+onMounted(() => load())
 // Bounded on purpose -- this only backs the "+ New" picker's empty-query
 // browse list. It used to fetch every patient unbounded, which PostgREST
 // silently caps well under most accounts' real patient counts, making
@@ -810,13 +810,16 @@ function bubbleText(m: Message): string {
 }
 
 // Live updates: new inbound/outbound messages land without a manual refresh.
+// All silent -- these can fire on every incoming message, and re-showing the
+// full skeleton list on each one was the layout-jump the poll timer below
+// also caused; load() already merges into the same arrays either way.
 let channel: ReturnType<typeof supabase.channel> | null = null
 onMounted(() => {
   channel = supabase
     .channel('inbox-whatsapp-messages')
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'whatsapp_messages', filter: `account_id=eq.${store.accountId}` }, () => load())
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'whatsapp_messages', filter: `account_id=eq.${store.accountId}` }, () => load())
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'patient_app_messages', filter: `account_id=eq.${store.accountId}` }, () => load())
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'whatsapp_messages', filter: `account_id=eq.${store.accountId}` }, () => load({ silent: true }))
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'whatsapp_messages', filter: `account_id=eq.${store.accountId}` }, () => load({ silent: true }))
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'patient_app_messages', filter: `account_id=eq.${store.accountId}` }, () => load({ silent: true }))
     .subscribe()
 })
 onUnmounted(() => {
@@ -848,11 +851,14 @@ onUnmounted(() => {
 // bounds how stale the inbox can get even if realtime isn't delivering.
 let pollTimer: ReturnType<typeof setInterval> | null = null
 onMounted(() => {
-  pollTimer = setInterval(load, 15000)
+  pollTimer = setInterval(() => load({ silent: true }), 15000)
 })
 onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer)
 })
+
+const listEl = ref<HTMLElement | null>(null)
+const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouchMove, onTouchEnd } = usePullToRefresh(listEl, () => load({ silent: true }))
 </script>
 
 <template>
@@ -964,7 +970,23 @@ onUnmounted(() => {
             <InboxLabelFilterPicker v-model="labelFilter" :labels="labels" />
           </div>
         </div>
-        <div class="flex-1 overflow-y-auto">
+        <div
+          ref="listEl"
+          class="flex-1 overflow-y-auto"
+          @touchstart="onTouchStart"
+          @touchmove="onTouchMove"
+          @touchend="onTouchEnd"
+        >
+          <div
+            v-if="pulling || pullRefreshing || pullDistance > 0"
+            class="flex items-center justify-center overflow-hidden transition-[height]"
+            :style="{ height: pullRefreshing ? '40px' : `${pullDistance}px` }"
+          >
+            <svg viewBox="0 0 24 24" class="h-4 w-4 text-brand" :class="{ 'animate-spin': pullRefreshing }" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+              <path d="M4 12a8 8 0 0 1 14.5-4.6M20 12a8 8 0 0 1-14.5 4.6" />
+              <path d="M17.5 3v5h-5M6.5 21v-5h5" />
+            </svg>
+          </div>
           <div v-if="loading">
             <div v-for="i in 5" :key="i" class="flex items-center gap-2.5 border-b border-line-row px-3 py-2.5">
               <UiSkeleton class="h-8 w-8 shrink-0 rounded-full" />

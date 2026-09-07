@@ -1,31 +1,35 @@
 import { toE164 } from '~/utils/phone'
-import { requireApiToken, requireScope } from '~/server/utils/apiTokens'
+import { ApiError, badRequest, defineApiHandler } from '~/server/utils/publicApi'
 import { isWithin24hWindow, sendWhatsAppTemplate, sendWhatsAppText } from '~/server/utils/whatsappSend'
 
-// Public, token-authenticated send endpoint -- documented in Settings >
-// Developers so an external tool (n8n etc.) can send a WhatsApp message as
-// the clinic without a Supabase session. Supports the same two message
-// kinds the app itself uses: a pre-approved template (works any time) or
-// free-form text (only within 24h of the recipient's last inbound
-// message -- a WhatsApp platform rule, not a QuiroFlow one).
-export default defineEventHandler(async (event) => {
-  const { supabase, accountId, scopes } = await requireApiToken(event)
-  requireScope(scopes, 'whatsapp:send')
+// Send a WhatsApp message as the clinic. Supports the same two message kinds
+// the app itself uses: a pre-approved template (works any time) or free-form
+// text (only within 24h of the recipient's last inbound message -- a
+// WhatsApp platform rule, not a QuiroFlow one).
+//
+// This endpoint predates the rest of the public API and shipped with
+// camelCase fields (patientId, templateName). The rest of v1 is snake_case,
+// so snake_case is what's documented -- but the camelCase spellings still
+// work and always will: they're live in clinics' n8n flows, and silently
+// breaking those to tidy up our own naming isn't a trade worth making.
+export default defineApiHandler({ scope: 'whatsapp:send' }, async ({ event, supabase, accountId }) => {
+  const raw = await readBody<Record<string, unknown>>(event)
+  if (!raw || typeof raw !== 'object') throw badRequest('Request body must be a JSON object.')
 
-  const body = await readBody<{
-    to?: string
-    patientId?: string
-    templateName?: string
-    templateLanguage?: string
-    variables?: string[]
-    text?: string
-  }>(event)
+  const body = {
+    to: pick<string>(raw, 'to'),
+    patientId: pick<string>(raw, 'patient_id', 'patientId'),
+    templateName: pick<string>(raw, 'template_name', 'templateName'),
+    templateLanguage: pick<string>(raw, 'template_language', 'templateLanguage'),
+    variables: pick<string[]>(raw, 'variables'),
+    text: pick<string>(raw, 'text'),
+  }
 
-  if (!body?.to && !body?.patientId) {
-    throw createError({ statusCode: 400, statusMessage: '"to" (E.164 phone number) or "patientId" is required' })
+  if (!body.to && !body.patientId) {
+    throw badRequest('Provide "to" (an E.164 phone number) or "patient_id".', 'to')
   }
   if (!body.templateName && !body.text) {
-    throw createError({ statusCode: 400, statusMessage: 'Provide either "templateName" (+ "templateLanguage") or "text"' })
+    throw badRequest('Provide either "template_name" (with optional "template_language") or "text".', 'template_name')
   }
 
   const { data: account } = await supabase
@@ -34,18 +38,22 @@ export default defineEventHandler(async (event) => {
     .eq('id', accountId)
     .maybeSingle()
   if (!account?.whatsapp_phone_number_id || !account?.whatsapp_access_token) {
-    throw createError({ statusCode: 400, statusMessage: 'WhatsApp is not configured for this account yet.' })
+    throw badRequest('WhatsApp is not configured for this account yet. Connect it in Settings → WhatsApp.')
   }
   const waAccount = { whatsapp_phone_number_id: account.whatsapp_phone_number_id, whatsapp_access_token: account.whatsapp_access_token }
 
   let patientId: string | null = body.patientId ?? null
   let to = body.to ?? ''
   if (!to && body.patientId) {
-    const { data: numbers } = await supabase.from('patient_contact_numbers').select('number, country_code, is_whatsapp').eq('patient_id', body.patientId)
+    const { data: numbers } = await supabase
+      .from('patient_contact_numbers')
+      .select('number, country_code, is_whatsapp')
+      .eq('account_id', accountId)
+      .eq('patient_id', body.patientId)
     const target = numbers?.find((n) => n.is_whatsapp) ?? numbers?.[0]
-    if (!target) throw createError({ statusCode: 400, statusMessage: 'This patient has no phone number on file' })
+    if (!target) throw badRequest('This patient has no phone number on file.', 'patient_id')
     const e164 = toE164(target.number, target.country_code)
-    if (!e164) throw createError({ statusCode: 400, statusMessage: "This patient's phone number could not be formatted for WhatsApp" })
+    if (!e164) throw badRequest("This patient's phone number could not be formatted for WhatsApp.", 'patient_id')
     to = e164
   }
   if (!patientId) {
@@ -56,9 +64,9 @@ export default defineEventHandler(async (event) => {
     patientId = numbers?.find((n) => toE164(n.number, n.country_code) === to)?.patient_id ?? null
   }
   if (patientId) {
-    const { data: patient } = await supabase.from('patients').select('is_minor, do_not_contact').eq('id', patientId).maybeSingle()
+    const { data: patient } = await supabase.from('patients').select('is_minor, do_not_contact').eq('id', patientId).eq('account_id', accountId).maybeSingle()
     if (patient?.is_minor || patient?.do_not_contact) {
-      throw createError({ statusCode: 400, statusMessage: 'This patient cannot be contacted (under age or marked do not contact).' })
+      throw badRequest('This patient cannot be contacted (under age, or marked do not contact).', 'patient_id')
     }
   }
 
@@ -89,18 +97,20 @@ export default defineEventHandler(async (event) => {
         .limit(1)
         .maybeSingle()
       if (!isWithin24hWindow(lastInbound?.created_at ?? null)) {
-        throw createError({
-          statusCode: 400,
-          statusMessage: 'More than 24h since this recipient last messaged the clinic -- use "templateName" instead of "text" (a WhatsApp platform rule).',
-        })
+        throw badRequest(
+          'More than 24h since this recipient last messaged the clinic — use "template_name" instead of "text". This is a WhatsApp platform rule, not a QuiroFlow one.',
+          'text',
+        )
       }
       wamid = await sendWhatsAppText(waAccount, to, body.text)
       insert.body_preview = body.text.slice(0, 2000)
     }
   } catch (err: any) {
-    if (err?.statusCode) throw err
+    if (err instanceof ApiError) throw err
     const metaMessage = err?.data?.error?.message
-    throw createError({ statusCode: 502, statusMessage: metaMessage ?? 'WhatsApp send failed' })
+    // Meta's own rejection reason is far more actionable than anything we
+    // could write, so it's passed straight through.
+    throw new ApiError('bad_gateway', metaMessage ?? 'WhatsApp rejected the send.')
   }
 
   insert.wamid = wamid
@@ -108,3 +118,10 @@ export default defineEventHandler(async (event) => {
 
   return { success: true, wamid }
 })
+
+function pick<T>(body: Record<string, unknown>, ...keys: string[]): T | undefined {
+  for (const key of keys) {
+    if (body[key] !== undefined && body[key] !== null && body[key] !== '') return body[key] as T
+  }
+  return undefined
+}

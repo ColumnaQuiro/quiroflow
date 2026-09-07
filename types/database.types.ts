@@ -391,11 +391,94 @@ export type Database = {
           },
         ]
       }
-      api_tokens: {
+      api_rate_limits: {
+        Row: {
+          request_count: number
+          token_id: string
+          window_started_at: string
+        }
+        Insert: {
+          request_count?: number
+          token_id: string
+          window_started_at?: string
+        }
+        Update: {
+          request_count?: number
+          token_id?: string
+          window_started_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "api_rate_limits_token_id_fkey"
+            columns: ["token_id"]
+            isOneToOne: true
+            referencedRelation: "api_tokens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      api_request_logs: {
         Row: {
           account_id: string
           created_at: string
+          duration_ms: number | null
+          error_message: string | null
+          id: string
+          method: string
+          path: string
+          request_id: string
+          status_code: number
+          token_id: string | null
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          id?: string
+          method: string
+          path: string
+          request_id: string
+          status_code: number
+          token_id?: string | null
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          id?: string
+          method?: string
+          path?: string
+          request_id?: string
+          status_code?: number
+          token_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "api_request_logs_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "api_request_logs_token_id_fkey"
+            columns: ["token_id"]
+            isOneToOne: false
+            referencedRelation: "api_tokens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      api_tokens: {
+        Row: {
+          account_id: string
+          app_contact: string | null
+          app_name: string | null
+          created_at: string
           created_by: string | null
+          expires_at: string | null
           id: string
           last_used_at: string | null
           name: string
@@ -406,8 +489,11 @@ export type Database = {
         }
         Insert: {
           account_id: string
+          app_contact?: string | null
+          app_name?: string | null
           created_at?: string
           created_by?: string | null
+          expires_at?: string | null
           id?: string
           last_used_at?: string | null
           name: string
@@ -418,8 +504,11 @@ export type Database = {
         }
         Update: {
           account_id?: string
+          app_contact?: string | null
+          app_name?: string | null
           created_at?: string
           created_by?: string | null
+          expires_at?: string | null
           id?: string
           last_used_at?: string | null
           name?: string
@@ -1287,6 +1376,7 @@ export type Database = {
           online_booking_enabled: boolean
           slot_duration_minutes: number
           tax_id: string | null
+          timezone: string
         }
         Insert: {
           account_id: string
@@ -1301,6 +1391,7 @@ export type Database = {
           online_booking_enabled?: boolean
           slot_duration_minutes?: number
           tax_id?: string | null
+          timezone?: string
         }
         Update: {
           account_id?: string
@@ -1315,6 +1406,7 @@ export type Database = {
           online_booking_enabled?: boolean
           slot_duration_minutes?: number
           tax_id?: string | null
+          timezone?: string
         }
         Relationships: [
           {
@@ -4050,6 +4142,10 @@ export type Database = {
               clinic_id: string
             }[]
           }
+      consume_api_rate_limit: {
+        Args: { p_limit: number; p_token_id: string; p_window_seconds: number }
+        Returns: { allowed: boolean; remaining: number; reset_at: string }[]
+      }
       create_patient_booking: {
         Args: {
           p_appointment_type_id: string

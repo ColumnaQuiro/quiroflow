@@ -89,6 +89,34 @@ Wildcard clinic subdomains need two things once, and one more per clinic:
    `NETLIFY_SITE_ID` (see `.env.example`). Without those set, it silently
    no-ops and the alias needs adding manually instead.
 
+### Developer portal subdomain
+
+The public API documentation lives at **https://developers.quiroflow.com**
+and is served by this same site — there is no second build. It needs one
+thing once:
+
+- `developers.quiroflow.com` added as a Netlify **domain alias** (Domain
+  management → Add domain alias), pointing at the same site, with a DNS
+  CNAME to the site's `<name>.netlify.app` default domain.
+
+No redirect rule is required. The pages live at `pages/developers/*`, and
+the `pages:extend` hook in `nuxt.config.ts` registers a prefix-free alias
+route for each of them, so `developers.quiroflow.com/authentication` and
+`app.quiroflow.com/developers/authentication` both resolve the same
+component — server-side and in the browser. A CDN rewrite would have broken
+the second of those: the server would render `/developers/authentication`
+while the browser's URL said `/authentication`, and the client-side router
+would fail to match it.
+
+The docs subdomain's root (`/`) is redirected to `/introduction` by
+`middleware/account.global.ts`, since `/` on the app host is the staff
+sign-in entry point and can't be two pages at once.
+
+Portal pages set `robots: index, follow` per-page, overriding the app-wide
+`noindex` in `nuxt.config.ts`, and canonicalise to
+`developers.quiroflow.com` so the `/developers/*` copies on the app host
+don't compete in search results.
+
 ## Mobile app password autofill
 
 The apps are Capacitor wrappers, so their WebView origin is

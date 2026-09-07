@@ -37,6 +37,10 @@ const rules: Rule[] = [
     test: (p) => ['/settings/import', '/settings/migrate-attachments', '/settings/compress-files', '/settings/webhooks'].includes(p),
     check: (s) => can(s, 'settings_access') && can(s, 'data_admin'),
   },
+  // Its own gate rather than the generic settings one: an active token can
+  // read patient data and book appointments as the clinic, which is a wider
+  // grant than "can open Settings".
+  { test: (p) => p === '/settings/developers', check: (s) => can(s, 'settings_access') && can(s, 'developers_access') },
   { test: (p) => p.startsWith('/settings'), check: (s) => can(s, 'settings_access') },
   { test: (p) => p.startsWith('/dashboard'), check: (s) => scopeNotNone(s, 'dashboard_scope') },
   { test: (p) => p.startsWith('/calendar'), check: (s) => scopeNotNone(s, 'calendar_scope') },

@@ -1,3 +1,5 @@
+import { DEV_PORTAL_SLUGS } from './utils/devPortal'
+
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
@@ -30,6 +32,24 @@ export default defineNuxtConfig({
   },
   nitro: {
     preset: 'netlify',
+  },
+  hooks: {
+    // The developer portal lives at pages/developers/* but is published at
+    // developers.quiroflow.com, where the URLs carry no /developers prefix.
+    // Registering a prefix-free alias for each page means both hosts resolve
+    // the same component -- on the server and in the browser -- without a CDN
+    // rewrite that the client router would then fail to match. See
+    // utils/devPortal.ts.
+    //
+    // The index page deliberately gets no alias: its bare path would be "/",
+    // which the app's own sign-in entry point already owns. The docs
+    // subdomain's root is handled by a redirect to /introduction instead.
+    'pages:extend'(pages) {
+      const aliases = pages
+        .filter((page) => DEV_PORTAL_SLUGS.some((slug) => page.path === `/developers/${slug}`))
+        .map((page) => ({ ...page, name: `${page.name}-alias`, path: page.path.replace('/developers', '') }))
+      pages.push(...aliases)
+    },
   },
   routeRules: {
     // The calendar's initial render depends on "today"/"now" (mini-calendar
@@ -68,6 +88,16 @@ export default defineNuxtConfig({
         // response. A logged-in browser calling its own /api/** routes never
         // hits this exclusion in practice since it already carries a session.
         '/api/**',
+        // The developer portal is public documentation -- it must render for
+        // someone evaluating the API who has no QuiroFlow login at all.
+        // Both URL shapes are listed because both are real routes; see the
+        // pages:extend hook above. '/developers' is listed separately from
+        // '/developers/**' because the glob matches the pages *under* the
+        // section, not the section root itself -- without it, the one URL
+        // people actually type redirects to the login page.
+        '/developers',
+        '/developers/**',
+        ...DEV_PORTAL_SLUGS.map((slug) => `/${slug}`),
       ],
     },
   },

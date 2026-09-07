@@ -53,7 +53,7 @@ async function createToken() {
     name: newTokenName.value.trim(),
     token_hash: hash,
     token_prefix: prefix,
-    scopes: ['whatsapp:send'],
+    scopes: ['whatsapp:send', 'patients:read'],
     created_by: store.teamMember?.id ?? null,
   })
 
@@ -107,6 +107,9 @@ const curlFreeform = computed(() => `curl -X POST https://app.quiroflow.com/api/
     "patientId": "6f2b1e2a-....",
     "text": "Gracias por tu mensaje, te confirmamos la cita."
   }'`)
+
+const curlLookup = computed(() => `curl "https://app.quiroflow.com/api/public/v1/patients/lookup?email=lead@example.com&phone=34612345678" \\
+  -H "Authorization: Bearer qf_live_..."`)
 </script>
 
 <template>
@@ -117,7 +120,7 @@ const curlFreeform = computed(() => `curl -X POST https://app.quiroflow.com/api/
         <SettingsNav />
         <div class="min-w-0 max-w-[720px] flex-1 space-y-6">
           <p class="text-[13px] leading-relaxed text-ink-muted2">
-            {{ t('Tokens authenticate external tools (n8n, a script, another system) to send WhatsApp messages as this clinic without a QuiroFlow login. Treat a token like a password — anyone with it can send messages on your behalf.', 'Los tokens autentican herramientas externas (n8n, un script, otro sistema) para enviar mensajes de WhatsApp en nombre de esta clínica sin iniciar sesión en QuiroFlow. Trata un token como una contraseña — cualquiera que lo tenga puede enviar mensajes en tu nombre.') }}
+            {{ t('Tokens authenticate external tools (n8n, a script, another system) to act as this clinic without a QuiroFlow login -- sending WhatsApp messages and looking up patients. Treat a token like a password — anyone with it can do both on your behalf.', 'Los tokens autentican herramientas externas (n8n, un script, otro sistema) para actuar en nombre de esta clínica sin iniciar sesión en QuiroFlow -- enviando mensajes de WhatsApp y consultando pacientes. Trata un token como una contraseña — cualquiera que lo tenga puede hacer ambas cosas en tu nombre.') }}
           </p>
 
           <div v-if="justCreatedToken" class="rounded-card border border-warning-border bg-warning-bg p-4">
@@ -175,7 +178,7 @@ const curlFreeform = computed(() => `curl -X POST https://app.quiroflow.com/api/
           <div class="rounded-card border border-line bg-surface p-5 shadow-card">
             <h3 class="text-[13.5px] font-[560] text-ink-700">{{ t('API Reference', 'Referencia de la API') }}</h3>
             <p class="mt-2 text-[13px] leading-relaxed text-ink-muted2">
-              {{ t('One endpoint for now: send a WhatsApp message. Auth via', 'Por ahora, un único endpoint: enviar un mensaje de WhatsApp. Autenticación mediante') }}
+              {{ t('Send a WhatsApp message, or check whether someone is already a patient. Auth via', 'Envía un mensaje de WhatsApp, o comprueba si alguien ya es paciente. Autenticación mediante') }}
               <code class="rounded-ctlSm bg-surface-subtle px-1 py-0.5 text-[12px]">Authorization: Bearer &lt;token&gt;</code>.
             </p>
 
@@ -229,6 +232,38 @@ const curlFreeform = computed(() => `curl -X POST https://app.quiroflow.com/api/
 
               <p class="mt-4 text-[12.5px] font-medium text-ink-700">{{ t('Response', 'Respuesta') }}</p>
               <pre class="mt-1.5 overflow-x-auto rounded-ctl bg-ink-900 p-3 text-[12px] text-white"><code>{{ '{ "success": true, "wamid": "wamid.HBg..." }' }}</code></pre>
+            </div>
+
+            <div class="mt-8 border-t border-line-divider pt-6">
+              <div class="flex items-center gap-2">
+                <UiPill tone="success">GET</UiPill>
+                <code class="text-[13px] text-ink-900">/api/public/v1/patients/lookup</code>
+              </div>
+              <p class="mt-2 text-[13px] leading-relaxed text-ink-muted2">
+                {{ t('Checks whether someone is already a QuiroFlow patient -- useful before creating a follow-up task for a new lead, to avoid treating an existing patient as brand new. Matches by email (exact) and/or phone (tolerant of formatting/country-code differences); either is enough.', 'Comprueba si alguien ya es paciente de QuiroFlow -- útil antes de crear una tarea de seguimiento para un lead nuevo, para no tratar como nuevo a un paciente ya existente. Coincide por email (exacto) y/o teléfono (tolerante a diferencias de formato/prefijo); con uno de los dos es suficiente.') }}
+              </p>
+
+              <p class="mt-3 text-[12.5px] font-medium text-ink-700">{{ t('Query parameters', 'Parámetros de consulta') }}</p>
+              <table class="mt-1.5 w-full text-[12.5px]">
+                <tbody class="divide-y divide-line-row">
+                  <tr>
+                    <td class="py-1.5 pr-3 font-mono text-ink-900">email</td>
+                    <td class="py-1.5 pr-3 text-ink-muted2">string</td>
+                    <td class="py-1.5 text-ink-muted2">{{ t('At least one of', 'Al menos uno de') }} <code>email</code> / <code>phone</code> {{ t('is required.', 'es obligatorio.') }}</td>
+                  </tr>
+                  <tr>
+                    <td class="py-1.5 pr-3 font-mono text-ink-900">phone</td>
+                    <td class="py-1.5 pr-3 text-ink-muted2">string</td>
+                    <td class="py-1.5 text-ink-muted2">{{ t('Any format -- digits are extracted automatically.', 'Cualquier formato -- los dígitos se extraen automáticamente.') }}</td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <p class="mt-4 text-[12.5px] font-medium text-ink-700">{{ t('Example', 'Ejemplo') }}</p>
+              <pre class="mt-1.5 overflow-x-auto rounded-ctl bg-ink-900 p-3 text-[12px] text-white"><code>{{ curlLookup }}</code></pre>
+
+              <p class="mt-4 text-[12.5px] font-medium text-ink-700">{{ t('Response', 'Respuesta') }}</p>
+              <pre class="mt-1.5 overflow-x-auto rounded-ctl bg-ink-900 p-3 text-[12px] text-white"><code>{{ '{ "converted": true, "patient": { "id": "6f2b1e2a-....", "firstName": "Maria", "lastName": "Lopez", "email": "lead@example.com" } }' }}</code></pre>
             </div>
           </div>
         </div>

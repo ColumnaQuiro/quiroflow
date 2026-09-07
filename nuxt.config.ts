@@ -79,6 +79,7 @@ export default defineNuxtConfig({
     // platform-billing webhook endpoint just rejects.
     stripePlatformBillingSecretKey: '',
     stripePlatformBillingWebhookSecret: '',
+    stripePlatformBillingTaxRateId: '',
     // Firebase service-account key (JSON, as a single-line string) for
     // sending mobile push notifications via FCM v1. Optional -- if unset,
     // server/utils/pushNotifications.ts just no-ops, same as WhatsApp

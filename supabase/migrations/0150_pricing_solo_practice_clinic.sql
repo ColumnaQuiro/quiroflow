@@ -73,9 +73,15 @@ where id = 'clinic';
 -- Trials go 14 -> 30 days, matching PracticeHub. Switching means importing
 -- years of patients, appointments, notes and files -- the migration runbook
 -- alone is a ten-step sequence -- and a trial that expires mid-migration
--- converts nobody. Re-`create or replace`s the function 0134 last defined,
--- changing only the interval.
-create or replace function public.create_account_with_owner(p_account_name text, p_clinic_name text, p_owner_name text default null::text)
+-- converts nobody. Re-`create or replace`s the function 0137 last defined
+-- (the 4-arg version with referral tracking -- not 0134's 3-arg one, which
+-- 0137 already dropped), changing only the interval.
+create or replace function public.create_account_with_owner(
+  p_account_name text,
+  p_clinic_name text,
+  p_owner_name text default null::text,
+  p_referred_by_slug text default null::text
+)
 returns table(account_id uuid, clinic_id uuid)
 language plpgsql
 security definer
@@ -87,6 +93,7 @@ declare
   v_team_member_id uuid;
   v_owner_role_id uuid;
   v_email text;
+  v_referred_by_account_id uuid;
 begin
   if auth.uid() is null then
     raise exception 'Not authenticated';
@@ -98,8 +105,15 @@ begin
 
   select email into v_email from auth.users where id = auth.uid();
 
-  insert into accounts (name, slug)
-    values (p_account_name, generate_unique_account_slug(p_account_name))
+  -- A stale or malformed referral slug from the signup URL must not break
+  -- account creation -- look it up and silently ignore if it doesn't
+  -- resolve to a real account, rather than failing the whole signup.
+  if p_referred_by_slug is not null then
+    select id into v_referred_by_account_id from accounts where slug = p_referred_by_slug;
+  end if;
+
+  insert into accounts (name, slug, referred_by_account_id)
+    values (p_account_name, generate_unique_account_slug(p_account_name), v_referred_by_account_id)
     returning id into v_account_id;
   insert into clinics (account_id, name) values (v_account_id, p_clinic_name) returning id into v_clinic_id;
   insert into calendar_resources (account_id, clinic_id, name)

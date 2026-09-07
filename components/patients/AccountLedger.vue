@@ -40,7 +40,7 @@ const emit = defineEmits<{
   sendInvoice: [invoiceId: string]
   deleteInvoice: [invoiceId: string]
   writeOffInvoice: [invoiceId: string]
-  refundInvoice: [payload: { invoiceId: string; amountCents: number; reason: string }]
+  refundInvoice: [payload: { invoiceId: string; amountCents: number; reason: string; method: string }]
   creditsChanged: []
 }>()
 
@@ -134,9 +134,14 @@ const rows = computed<LedgerRow[]>(() => {
     key: `payment-${p.id}`,
     ref: '',
     date: p.paid_at,
-    description: `${t('Payment', 'Pago')} — ${p.method}`,
-    debitCents: 0,
-    creditCents: p.amount_cents,
+    // Negative only for the payments row createRefund() inserts alongside a
+    // refund invoice, so this money goes back out belongs in Debit like any
+    // other outgoing entry -- a plain Credit column can't show a negative
+    // value at all (see the row.creditCents > 0 guard below), which is what
+    // made this row render with no amount before this handled the sign.
+    description: p.amount_cents < 0 ? `${t('Refund payment', 'Pago de reembolso')} — ${p.method}` : `${t('Payment', 'Pago')} — ${p.method}`,
+    debitCents: p.amount_cents < 0 ? -p.amount_cents : 0,
+    creditCents: p.amount_cents > 0 ? p.amount_cents : 0,
     balanceText: '—',
     balanceTone: 'neutral' as const,
     voided: false,
@@ -215,6 +220,14 @@ const refundModalInvoiceId = ref<string | null>(null)
 const refundAmount = ref('')
 const refundReason = ref('')
 const refundMaxCents = ref(0)
+// Which method the money physically went back through -- distinct from "this
+// doesn't move money itself" below, which is about this app never calling a
+// real refund API. Without this, the refund never showed up in the Income
+// report's "By payment method" breakdown or reduced "Total paid" there
+// (both read only from `payments`, which a refund never touched), which is
+// also what let a refunded, fully-paid invoice leave a phantom credit on the
+// patient's balance -- see createRefund's matching payments insert.
+const refundMethod = ref<'card' | 'cash' | 'other'>('card')
 
 function openRefundModal(invoiceId: string, maxCents: number) {
   menuOpen.value = false
@@ -222,12 +235,13 @@ function openRefundModal(invoiceId: string, maxCents: number) {
   refundMaxCents.value = maxCents
   refundAmount.value = (maxCents / 100).toFixed(2)
   refundReason.value = ''
+  refundMethod.value = 'card'
 }
 function submitRefund() {
   if (!refundModalInvoiceId.value) return
   const amountCents = Math.round((parseFloat(refundAmount.value) || 0) * 100)
   if (amountCents <= 0 || amountCents > refundMaxCents.value) return
-  emit('refundInvoice', { invoiceId: refundModalInvoiceId.value, amountCents, reason: refundReason.value })
+  emit('refundInvoice', { invoiceId: refundModalInvoiceId.value, amountCents, reason: refundReason.value, method: refundMethod.value })
   refundModalInvoiceId.value = null
 }
 
@@ -493,8 +507,8 @@ async function sendStatement() {
       <p class="mt-1 text-[12px] text-ink-faint">
         {{
           t(
-            "Records a refund against this invoice and reduces the patient's balance -- doesn't move any money itself, so process the actual refund (cash, Stripe, etc.) separately.",
-            'Registra un reembolso contra esta factura y reduce el saldo del paciente -- no mueve dinero por sí mismo, así que procesa el reembolso real (efectivo, Stripe, etc.) por separado.',
+            "Records a refund against this invoice and reduces the patient's balance -- doesn't call any real refund API, so process the actual refund (cash, Stripe, etc.) separately.",
+            'Registra un reembolso contra esta factura y reduce el saldo del paciente -- no llama a ninguna API de reembolso real, así que procesa el reembolso real (efectivo, Stripe, etc.) por separado.',
           )
         }}
       </p>
@@ -502,6 +516,14 @@ async function sendStatement() {
       <div class="mt-3">
         <label class="block text-[11px] text-ink-muted">{{ t('Amount (€)', 'Importe (€)') }} -- {{ t('up to', 'hasta') }} {{ money(refundMaxCents) }}</label>
         <input v-model="refundAmount" type="number" min="0" :max="refundMaxCents / 100" step="0.01" class="mt-0.5 w-32 rounded-ctlSm border border-line-control px-2 py-1.5 text-[13px]" />
+      </div>
+      <div class="mt-3">
+        <label class="block text-[11px] text-ink-muted">{{ t('Refunded via', 'Reembolsado vía') }}</label>
+        <select v-model="refundMethod" class="bg-surface mt-0.5 w-full rounded-ctlSm border border-line-control px-2 py-1.5 text-[13px]">
+          <option value="card">{{ t('Card', 'Tarjeta') }}</option>
+          <option value="cash">{{ t('Cash', 'Efectivo') }}</option>
+          <option value="other">{{ t('Other (e.g. bank transfer)', 'Otro (p. ej. transferencia)') }}</option>
+        </select>
       </div>
       <div class="mt-3">
         <label class="block text-[11px] text-ink-muted">{{ t('Reason (optional)', 'Motivo (opcional)') }}</label>

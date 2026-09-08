@@ -5,10 +5,10 @@
 export function useBillingPortal() {
   const loading = ref(false)
 
-  async function openPortal(fallbackHref: string) {
+  async function openPortal(fallbackHref: string, flow?: 'cancel') {
     loading.value = true
     try {
-      const { url } = await $fetch<{ url: string }>('/api/billing/portal-session', { method: 'POST' })
+      const { url } = await $fetch<{ url: string }>('/api/billing/portal-session', { method: 'POST', body: flow ? { flow } : undefined })
       window.location.href = url
     } catch {
       // Most likely: not the owner, or no Stripe customer yet -- email

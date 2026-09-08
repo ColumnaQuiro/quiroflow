@@ -279,8 +279,8 @@ async function enableEmailConfirmations(opts: { accountId: string }) {
   return null
 }
 
-async function createInvoice(opts: { accountId: string; patientId: string; invoiceNumber?: string }) {
-  const { accountId, patientId, invoiceNumber } = opts
+async function createInvoice(opts: { accountId: string; patientId: string; invoiceNumber?: string; totalCents?: number }) {
+  const { accountId, patientId, invoiceNumber, totalCents } = opts
   const row = unwrap(
     await admin
       .from('invoices')
@@ -288,6 +288,7 @@ async function createInvoice(opts: { accountId: string; patientId: string; invoi
         account_id: accountId,
         patient_id: patientId,
         invoice_number: invoiceNumber ?? `INV-${Date.now()}`,
+        ...(totalCents !== undefined ? { total_cents: totalCents } : {}),
       })
       .select('id, invoice_number')
       .single(),

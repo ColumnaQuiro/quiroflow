@@ -37,11 +37,12 @@ const hasFutureAppointment = ref(true)
 // deliberately bills them (e.g. the patient's own Billing tab).
 const appointmentIsUpcoming = ref(true)
 
-const paymentAmount = ref('')
 // 'credit' triggers a compound operation: a payments row (method: 'credit')
 // plus a negative account_credits row -- the same pattern the patient's main
-// Billing tab already uses for "Apply credit" (BillingTab.vue).
-const paymentMethod = ref<'card' | 'cash' | 'credit'>('cash')
+// Billing tab already uses for "Apply credit" (BillingTab.vue). Rows can
+// split one payment across methods (part cash, part card) -- see
+// useSplitPayment.
+const { rows: paymentRows, reset: resetPaymentRows, addRow: addPaymentRow, removeRow: removePaymentRow, centsOf: paymentRowCents, totalCents: paymentTotalCents, creditCents: paymentCreditCents } = useSplitPayment()
 const savingPayment = ref(false)
 const error = ref('')
 
@@ -143,7 +144,7 @@ async function loadInvoice() {
     ])
     lineItems.value = lines ?? []
     payments.value = pays ?? []
-    paymentAmount.value = (balanceDueCents.value / 100).toFixed(2)
+    resetPaymentRows((balanceDueCents.value / 100).toFixed(2))
   }
   loadingInvoice.value = false
 }
@@ -161,7 +162,7 @@ async function recalcInvoiceTotal() {
   const totalCents = lineItems.value.reduce((sum, l) => sum + l.price_cents * l.quantity, 0)
   await supabase.from('invoices').update({ total_cents: totalCents }).eq('id', invoice.value.id)
   invoice.value.total_cents = totalCents
-  paymentAmount.value = (balanceDueCents.value / 100).toFixed(2)
+  resetPaymentRows((balanceDueCents.value / 100).toFixed(2))
 }
 
 async function addLineItem() {
@@ -265,32 +266,40 @@ async function usePackageSession(pkg: { id: string; package_name: string; sessio
 async function recordPayment() {
   if (!invoice.value) return
   error.value = ''
-  const amountCents = Math.round((parseFloat(paymentAmount.value) || 0) * 100)
-  if (amountCents <= 0) return
-  if (paymentMethod.value === 'credit' && amountCents > balanceCents.value) {
+  const rows = paymentRows.value.filter((r) => paymentRowCents(r) > 0)
+  if (rows.length === 0) return
+  // balanceCents is negative when the patient owes money, so this must only
+  // run when a credit row actually exists -- otherwise 0 > a negative
+  // balance reads as "exceeded" and blocks a plain cash/card payment.
+  if (paymentCreditCents.value > 0 && paymentCreditCents.value > balanceCents.value) {
     error.value = t('Amount exceeds available credit.', 'El importe supera el crédito disponible.')
     return
   }
   savingPayment.value = true
 
-  await supabase.from('payments').insert({
-    account_id: store.accountId!,
-    invoice_id: invoice.value.id,
-    amount_cents: amountCents,
-    method: paymentMethod.value,
-  })
-  if (paymentMethod.value === 'credit') {
-    await supabase.from('account_credits').insert({
+  await supabase.from('payments').insert(
+    rows.map((r) => ({
       account_id: store.accountId!,
-      patient_id: props.patientId,
-      amount_cents: -amountCents,
-      reason: `Applied to invoice ${invoice.value.invoice_number}`,
-      invoice_id: invoice.value.id,
-      created_by: store.teamMember?.id ?? null,
-    })
+      invoice_id: invoice.value!.id,
+      amount_cents: paymentRowCents(r),
+      method: r.method,
+    })),
+  )
+  const creditRows = rows.filter((r) => r.method === 'credit')
+  if (creditRows.length > 0) {
+    await supabase.from('account_credits').insert(
+      creditRows.map((r) => ({
+        account_id: store.accountId!,
+        patient_id: props.patientId,
+        amount_cents: -paymentRowCents(r),
+        reason: `Applied to invoice ${invoice.value!.invoice_number}`,
+        invoice_id: invoice.value!.id,
+        created_by: store.teamMember?.id ?? null,
+      })),
+    )
   }
 
-  const newPaid = paidCents.value + amountCents
+  const newPaid = paidCents.value + paymentTotalCents.value
   if (newPaid >= invoice.value.total_cents) {
     await supabase.from('invoices').update({ status: 'paid' }).eq('id', invoice.value.id)
     // Recording full payment implies the visit happened -- mirrors PracticeHub's
@@ -407,24 +416,35 @@ async function recordPayment() {
 
       <form
         v-if="can('payments_allocate') && invoice.status !== 'void' && balanceDueCents > 0"
-        class="mt-3 flex items-end gap-2 border-t border-line-divider pt-3"
+        class="mt-3 space-y-2 border-t border-line-divider pt-3"
         @submit.prevent="recordPayment"
       >
-        <div>
-          <label class="block text-xs font-medium text-ink-700">{{ t('Amount (€)', 'Importe (€)') }}</label>
-          <input v-model="paymentAmount" type="number" step="0.01" min="0" class="mt-1 w-24 rounded-ctl border border-line-control bg-surface px-2 py-1.5 text-sm text-ink-700 focus:border-brand focus:outline-none" />
+        <div v-for="(row, i) in paymentRows" :key="i" class="flex items-end gap-2">
+          <div>
+            <label class="block text-xs font-medium text-ink-700">{{ t('Amount (€)', 'Importe (€)') }}</label>
+            <input v-model="row.amount" type="number" step="0.01" min="0" class="mt-1 w-24 rounded-ctl border border-line-control bg-surface px-2 py-1.5 text-sm text-ink-700 focus:border-brand focus:outline-none" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-ink-700">{{ t('Method', 'Método') }}</label>
+            <select v-model="row.method" class="mt-1 rounded-ctl border border-line-control bg-surface px-2 py-1.5 text-sm text-ink-700 focus:border-brand focus:outline-none">
+              <option value="cash">{{ t('Cash', 'Efectivo') }}</option>
+              <option value="card">{{ t('Card', 'Tarjeta') }}</option>
+              <option v-if="balanceCents > 0" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} (€{{ (balanceCents / 100).toFixed(2) }} {{ t('available', 'disponible') }})</option>
+            </select>
+          </div>
+          <button v-if="paymentRows.length > 1" type="button" class="mb-2 text-xs text-ink-faint hover:text-danger-text" @click="removePaymentRow(i)">
+            {{ t('Remove', 'Quitar') }}
+          </button>
         </div>
-        <div>
-          <label class="block text-xs font-medium text-ink-700">{{ t('Method', 'Método') }}</label>
-          <select v-model="paymentMethod" class="mt-1 rounded-ctl border border-line-control bg-surface px-2 py-1.5 text-sm text-ink-700 focus:border-brand focus:outline-none">
-            <option value="cash">{{ t('Cash', 'Efectivo') }}</option>
-            <option value="card">{{ t('Card', 'Tarjeta') }}</option>
-            <option v-if="balanceCents > 0" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} (€{{ (balanceCents / 100).toFixed(2) }} {{ t('available', 'disponible') }})</option>
-          </select>
+        <div class="flex flex-wrap items-center gap-3">
+          <button type="button" class="text-xs font-medium text-ink-muted hover:text-brand-text" @click="addPaymentRow">
+            + {{ t('Split into another method', 'Dividir en otro método') }}
+          </button>
+          <span v-if="paymentRows.length > 1" class="text-xs text-ink-faint">{{ t('Total:', 'Total:') }} €{{ (paymentTotalCents / 100).toFixed(2) }}</span>
+          <button type="submit" :disabled="savingPayment || paymentTotalCents <= 0" class="rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50">
+            {{ savingPayment ? t('Processing…', 'Procesando…') : t('Process', 'Procesar') }}
+          </button>
         </div>
-        <button type="submit" :disabled="savingPayment" class="rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50">
-          {{ savingPayment ? t('Processing…', 'Procesando…') : t('Process', 'Procesar') }}
-        </button>
       </form>
       <div
         v-if="can('billing_access') && invoice.status !== 'paid' && activePackages.length > 0"

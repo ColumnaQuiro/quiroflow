@@ -1,13 +1,18 @@
 <script setup lang="ts">
-// The one prominent "€X Credit" / "€X Due" badge shown near a patient's name,
-// matching PracticeHub's patient-header pill -- backed by the same balanceCents
-// usePatientFinancialSummary already computes (paid - invoiced + account credit),
-// just never surfaced this visibly before.
-const props = defineProps<{ balanceCents: number }>()
+// The one prominent pill shown near a patient's name. It reads the credit the
+// patient actually holds (account_credits), not the netted balance of
+// paid - invoiced + credit that it used to show.
+//
+// The netted figure was the confusing one at the front desk: a patient with
+// 200 EUR of credit and a 240 EUR bono instalment outstanding showed as
+// "40 Due", hiding both real numbers behind their difference. What reception
+// needs at a glance is what the patient can draw sessions against, which is
+// this; what they owe is on their invoices, where it can be collected.
+const props = defineProps<{ creditCents: number }>()
 
-const label = computed(() => `€${(Math.abs(props.balanceCents) / 100).toFixed(2)} ${props.balanceCents < 0 ? 'Due' : 'Credit'}`)
+const label = computed(() => `€${(props.creditCents / 100).toFixed(2)} Credit`)
 </script>
 
 <template>
-  <UiPill v-if="balanceCents !== 0" :tone="balanceCents < 0 ? 'danger' : 'success'">{{ label }}</UiPill>
+  <UiPill v-if="creditCents > 0" tone="success">{{ label }}</UiPill>
 </template>

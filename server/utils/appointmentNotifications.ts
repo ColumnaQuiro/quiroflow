@@ -294,7 +294,34 @@ async function sendForPurpose(supabase: any, appointmentId: string, purpose: 'co
   return sent
 }
 
+// One confirmation per patient per booking sitting, not one per appointment.
+// Reception books a patient's next block of visits while they stand at the
+// desk, and every one of those bookings fired its own template: Grace
+// Valencia was sent four in four minutes for four different dates, four
+// template fees, all telling her the same thing -- that she had just booked.
+//
+// Keyed off other appointments for the same patient rather than the booking
+// call, because those four came from four separate saves a minute apart, not
+// one batched loop, so nothing in the caller could have collapsed them.
+// Per-appointment reminders are unaffected: they run from their own crons on
+// their own schedule, close to the appointment itself, which is where a
+// patient with several visits booked actually wants one each.
+const CONFIRMATION_COOLDOWN_MINUTES = 10
+
 export async function sendAppointmentConfirmation(supabase: any, accountId: string, appointmentId: string): Promise<void> {
+  const { data: thisAppt } = await supabase.from('appointments').select('patient_id').eq('id', appointmentId).maybeSingle()
+  if (thisAppt?.patient_id) {
+    const since = new Date(Date.now() - CONFIRMATION_COOLDOWN_MINUTES * 60_000).toISOString()
+    const { data: justConfirmed } = await supabase
+      .from('appointments')
+      .select('id')
+      .eq('patient_id', thisAppt.patient_id)
+      .neq('id', appointmentId)
+      .gte('confirmation_sent_at', since)
+      .limit(1)
+    if (justConfirmed && justConfirmed.length > 0) return
+  }
+
   const { data: account } = await supabase
     .from('accounts')
     .select('appointment_confirmation_enabled, appointment_confirmation_channels, email_confirmation_subject, email_confirmation_body, whatsapp_confirmation_template_name, whatsapp_confirmation_template_language')

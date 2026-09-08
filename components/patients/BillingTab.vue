@@ -793,6 +793,26 @@ async function sellPackage() {
 // with no invoice behind it (every purchase migrated from PracticeHub, and
 // anything sold before the invoice link existed) -- those have no record of
 // what was charged, so claiming a debt would be inventing one.
+// PracticeHub lets a payment be linked to a bono, so the bono itself shows
+// what is left to pay on it. Here the bono already carries its own invoice
+// (package_purchases.invoice_id), so linking is collecting against that
+// invoice: this opens the existing take-payment panel already pointed at it
+// and prefilled with the outstanding amount, rather than making the front
+// desk find the right invoice in a dropdown of all of them.
+//
+// Paying it flows through takePayment(), which already deposits matching
+// credit for a payment landing on a bono invoice -- money towards sessions
+// has to become spendable credit, or the patient pays off the bono and still
+// has nothing to draw sessions against.
+function collectOnPackage(purchase: PackagePurchaseRow) {
+  const owed = packageOwedCents(purchase)
+  if (!purchase.invoice_id || owed <= 0) return
+  activePanel.value = 'payment'
+  paymentError.value = ''
+  paymentInvoiceId.value = purchase.invoice_id
+  resetPaymentRows((owed / 100).toFixed(2))
+}
+
 function packageOwedCents(purchase: PackagePurchaseRow): number {
   // The bono card and the ledger load independently -- reading payments
   // before that loader lands would flash the full price as unpaid.
@@ -1115,6 +1135,14 @@ function money(cents: number) {
             <div class="mt-1.5 flex items-center justify-between gap-2">
               <p class="text-[11.5px] text-ink-faint">{{ p.sessions_used }}/{{ p.sessions_total }} {{ t('used', 'usadas') }} &middot; {{ money(p.price_cents) }}</p>
               <div class="flex items-center gap-2">
+                <button
+                  v-if="packageOwedCents(p) > 0"
+                  type="button"
+                  class="text-[11.5px] font-medium text-danger-text hover:text-danger-text/80"
+                  @click="collectOnPackage(p)"
+                >
+                  {{ t('Take payment', 'Cobrar') }}…
+                </button>
                 <button type="button" class="text-[11.5px] font-medium text-ink-muted hover:text-brand-text" @click="toggleShares(p.id)">
                   {{ t('Share', 'Compartir') }}{{ shares[p.id]?.length ? ` (${shares[p.id].length})` : '' }}…
                 </button>

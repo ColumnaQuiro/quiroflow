@@ -149,6 +149,20 @@ async function setSubscriptionStatus(opts: { accountId: string; status: 'trialin
   return { accountId, status }
 }
 
+/**
+ * Directly sets a test account's extra-professional seat count -- bypasses
+ * Stripe entirely (the real path is the platform-billing webhook reacting to
+ * a Checkout/subscription-update event), for exercising
+ * practitioner_seat_allowance()'s `included_professionals + extra_professionals`
+ * math and the enforce_practitioner_seats trigger it feeds, without needing
+ * live Stripe credentials in CI.
+ */
+async function setExtraProfessionals(opts: { accountId: string; extraProfessionals: number }) {
+  const { accountId, extraProfessionals } = opts
+  assertOk(await admin.from('subscriptions').update({ extra_professionals: extraProfessionals }).eq('account_id', accountId))
+  return { accountId, extraProfessionals }
+}
+
 async function createPatient(opts: {
   accountId: string
   clinicId: string
@@ -288,6 +302,7 @@ export const dbTasks = {
   'db:createTeamMemberWithRole': createTeamMemberWithRole,
   'db:setRolePermissions': setRolePermissions,
   'db:setSubscriptionStatus': setSubscriptionStatus,
+  'db:setExtraProfessionals': setExtraProfessionals,
   'db:createPatient': createPatient,
   'db:createAppointmentType': createAppointmentType,
   'db:createServiceProduct': createServiceProduct,

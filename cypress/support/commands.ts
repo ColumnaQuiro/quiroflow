@@ -90,6 +90,10 @@ Cypress.Commands.add('setSubscriptionStatus', (accountId: string, status: 'trial
   return cy.task('db:setSubscriptionStatus', { accountId, status })
 })
 
+Cypress.Commands.add('setExtraProfessionals', (accountId: string, extraProfessionals: number) => {
+  return cy.task('db:setExtraProfessionals', { accountId, extraProfessionals })
+})
+
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Cypress {
@@ -108,6 +112,7 @@ declare global {
         }>,
       ): Chainable<StaffAccount>
       setSubscriptionStatus(accountId: string, status: 'trialing' | 'active' | 'past_due' | 'locked' | 'canceled'): Chainable<void>
+      setExtraProfessionals(accountId: string, extraProfessionals: number): Chainable<void>
     }
   }
 }

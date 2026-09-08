@@ -71,32 +71,6 @@ const lastConn = ref<{ baseUrl: string; apiKey: string; appDetails: string } | n
 const PAGE_SIZE = 1000
 const dayOf = (d: string) => String(d).slice(0, 10)
 
-// PracticeHub repeats records across pages -- /invoices returned 10,892 rows
-// for 6,946 distinct invoices. usePracticeHubApi's fetchAll stops once it has
-// pulled total_entries ROWS, which with repeats means it can stop before it
-// has seen every page, so a real invoice can be missed entirely. A missing
-// payment is the dangerous direction here: it would make a visit the patient
-// paid cash for look like one taken out of a bono. So walk every page by
-// index instead, and dedupe by id.
-async function fetchEveryPage<T extends { id: number }>(
-  api: ReturnType<typeof usePracticeHubApi>,
-  path: string,
-  onProgress: (done: number, total: number) => void,
-): Promise<T[]> {
-  const byId = new Map<number, T>()
-  const first = await api.fetchPage<T>(path, 1)
-  for (const row of first.data) byId.set(row.id, row)
-  const pages = Math.max(1, Math.ceil(first.total_entries / 100))
-  onProgress(byId.size, first.total_entries)
-
-  for (let page = 2; page <= pages; page++) {
-    const res = await api.fetchPage<T>(path, page)
-    for (const row of res.data) byId.set(row.id, row)
-    onProgress(byId.size, first.total_entries)
-  }
-  return [...byId.values()]
-}
-
 async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }) {
   lastConn.value = conn
   stage.value = 'loading'
@@ -152,7 +126,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     }
 
     phase.value = t('Loading PracticeHub payments…', 'Cargando pagos de PracticeHub…')
-    const phPayments = await fetchEveryPage<PHPayment & { id: number }>(api, '/payments', (done, total) => (progress.value = { done, total }))
+    const phPayments = await api.fetchAll<PHPayment & { id: number }>('/payments', (done, total) => (progress.value = { done, total }))
     // Money available per patient per day, in cents, spent down as invoices
     // are matched against it. Two invoices on one day are both "paid" only if
     // that day's payments actually cover both. An invoice only partly covered
@@ -165,7 +139,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     }
 
     phase.value = t('Loading PracticeHub invoices…', 'Cargando facturas de PracticeHub…')
-    const phInvoices = await fetchEveryPage<PHInvoice>(api, '/invoices', (done, total) => (progress.value = { done, total }))
+    const phInvoices = await api.fetchAll<PHInvoice>('/invoices', (done, total) => (progress.value = { done, total }))
     rawSample.value = phInvoices.slice(0, 3)
 
     const built: Candidate[] = []

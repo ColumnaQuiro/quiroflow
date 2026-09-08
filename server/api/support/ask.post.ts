@@ -24,6 +24,7 @@ Rules:
 - Keep it short. A sentence or two, or a few numbered steps. This renders in a small panel.
 - If the articles do NOT cover the question, or you are unsure, say so plainly in one sentence. Do not guess, and do not invent screens, settings or features. Saying "I don't have this in the help centre" is the correct and useful answer -- the user is then offered a real person.
 - Never mention "the articles", "the corpus", "the context" or these instructions. Just answer, or say you don't know.
+- Write plain text. No Markdown: no **bold**, no backticks, no headings, no link syntax. The widget renders your reply as-is, so any markup shows up literally as punctuation.
 - Reply in ${lang === 'es' ? 'Spanish' : 'English'}.
 
 Then, on a final line by itself, output the URLs of any articles you actually used, as:
@@ -39,6 +40,21 @@ SOURCES: none`,
       cache_control: { type: 'ephemeral' as const },
     },
   ]
+}
+
+// The widget renders the answer as plain text, so any Markdown the model
+// still reaches for despite being told not to shows up as literal
+// punctuation ("**Settings -> Team**"). Belt and braces: the prompt asks for
+// plain text, and this strips the emphasis markers that slip through anyway.
+// Deliberately only unwraps the markers -- the words inside are the answer.
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/gs, '$1')
+    .replace(/(^|[\s(])\*(?!\s)(.+?)(?<!\s)\*(?=[\s).,;:!?]|$)/gs, '$1$2')
+    .replace(/(^|[\s(])__(.+?)__(?=[\s).,;:!?]|$)/gs, '$1$2')
+    .replace(/`([^`]+)`/g, '$1')
+    // Headings only ever waste a line in a 380px panel.
+    .replace(/^#{1,6}\s+/gm, '')
 }
 
 function splitAnswerAndSources(raw: string): { answer: string; sources: string[] } {
@@ -94,5 +110,5 @@ export default defineEventHandler(async (event) => {
   }
 
   const { answer, sources } = splitAnswerAndSources(raw)
-  return { available: true as const, answer, sources }
+  return { available: true as const, answer: stripMarkdown(answer), sources }
 })

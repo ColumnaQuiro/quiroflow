@@ -335,14 +335,35 @@ function formatEuros(cents: number): string {
 
 <template>
   <div>
-    <p class="text-sm text-ink-muted2">
-      {{
-        t(
-          "Pulls every patient package directly from PracticeHub's API and compares it against QuiroFlow's package_purchases table. Shows a preview before writing anything -- review the raw balance/owing/package_balance columns against a patient you've already checked by hand before applying. Also repairs packages an older version of this tool imported with no credit attached: those show as \"Missing credit\" and add only the credit, leaving the purchase record alone. Check the \"Credit now\" column on those first -- a patient already fixed by hand would be credited twice. Safe to re-run: packages that are already imported and already credited (and same-day packages added by hand before this tool existed) are skipped.",
-          'Obtiene todos los bonos directamente de la API de PracticeHub y los compara con la tabla package_purchases de QuiroFlow. Muestra una vista previa antes de escribir nada -- revisa las columnas balance/owing/package_balance frente a un paciente que ya hayas comprobado a mano antes de aplicar. También repara los bonos que una versión anterior de esta herramienta importó sin saldo: aparecen como «Falta el saldo» y solo añaden el saldo, sin tocar el registro de compra. Revisa antes la columna «Saldo actual» en esos casos: a un paciente ya corregido a mano se le abonaría dos veces. Se puede volver a ejecutar sin riesgo: los bonos ya importados y ya abonados (y los añadidos a mano el mismo día antes de que existiera esta herramienta) se omiten.',
-        )
-      }}
+    <p class="text-[13px] text-ink-muted2">
+      {{ t('Copies bonos from PracticeHub, and adds the credit to ones imported earlier without it.', 'Copia los bonos desde PracticeHub y añade el saldo a los que se importaron antes sin él.') }}
     </p>
+
+    <div class="mt-3 space-y-2">
+      <div class="flex gap-2.5 rounded-ctl border border-line-divider bg-surface-subtle p-3">
+        <span class="mt-0.5 shrink-0 text-[13px]">👁</span>
+        <p class="text-[12.5px] leading-relaxed text-ink-600">
+          <span class="font-medium text-ink-700">{{ t('Nothing is written until you press Apply.', 'No se escribe nada hasta que pulses Aplicar.') }}</span>
+          {{ t('The preview shows PracticeHub\'s own price / balance / owing / package_balance columns so you can check them against a patient you already know before trusting the rest.', 'La vista previa muestra las columnas price / balance / owing / package_balance de PracticeHub para que las compruebes con un paciente que ya conozcas antes de fiarte del resto.') }}
+        </p>
+      </div>
+
+      <div class="flex gap-2.5 rounded-ctl border border-warning-border bg-warning-bg p-3">
+        <span class="mt-0.5 shrink-0 text-[13px]">⚠️</span>
+        <p class="text-[12.5px] leading-relaxed text-warning-text">
+          <span class="font-medium">{{ t('Check "Credit now" on every "Missing credit" row.', 'Revisa «Saldo actual» en cada fila «Falta el saldo».') }}</span>
+          {{ t('Those add credit to a bono that already exists here. If the patient was fixed by hand before, that credit lands on top of what they already have.', 'Esas añaden saldo a un bono que ya existe aquí. Si el paciente se corrigió a mano antes, ese saldo se suma al que ya tiene.') }}
+        </p>
+      </div>
+
+      <div class="flex gap-2.5 rounded-ctl border border-line-divider bg-surface-subtle p-3">
+        <span class="mt-0.5 shrink-0 text-[13px]">🔁</span>
+        <p class="text-[12.5px] leading-relaxed text-ink-600">
+          <span class="font-medium text-ink-700">{{ t('Safe to run again.', 'Se puede volver a ejecutar.') }}</span>
+          {{ t('Bonos that are already imported and already credited are skipped, as are ones matching a bono added by hand on the same day.', 'Se omiten los bonos ya importados y ya abonados, igual que los que coinciden con un bono añadido a mano el mismo día.') }}
+        </p>
+      </div>
+    </div>
 
     <div v-if="stage === 'connect'" class="mt-4 max-w-md">
       <ImportPracticeHubConnectForm @connect="run" />

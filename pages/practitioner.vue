@@ -89,7 +89,10 @@ const weekDays = computed(() => Array.from({ length: 7 }, (_, i) => addDays(star
 async function loadReferenceData() {
   const [{ data: types }, { data: members }] = await Promise.all([
     supabase.from('appointment_types').select('id, name, duration_minutes, color, default_price_cents').order('name'),
-    supabase.from('team_members').select('id, full_name, color').order('full_name'),
+    // Practitioners only, and not deactivated ones -- My Day is a treating
+    // worklist, so front desk and admin staff have no column here. Same
+    // filter the Calendar's own practitioner tabs already use.
+    supabase.from('team_members').select('id, full_name, color').is('deleted_at', null).eq('is_practitioner', true).order('full_name'),
   ])
   appointmentTypes.value = types ?? []
   teamMembers.value = members ?? []

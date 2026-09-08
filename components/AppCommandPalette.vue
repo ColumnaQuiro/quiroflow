@@ -43,8 +43,13 @@ watch(query, (q) => {
       .from('patients')
       .select('id, first_name, last_name')
       .ilike('search_name', `%${normalizeSearchTerm(q.trim())}%`)
+      // Ordered by surname first: a search for a common first name returned
+      // six rows ordered by that same first name, so which six you got was
+      // effectively arbitrary and the only way to find anyone was to type
+      // their surname. 15 patients match "laura" here, 82 match "maria".
+      .order('last_name')
       .order('first_name')
-      .limit(6)
+      .limit(25)
     patients.value = data ?? []
     searching.value = false
   }, 250)

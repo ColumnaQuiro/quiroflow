@@ -453,6 +453,41 @@ async function deleteInvoice(invoice: InvoiceRow) {
 // Settles an invoice's remaining balance without collecting money -- same
 // paidCents->status flip every other payment path already uses, just
 // tagged 'write_off' so the ledger can label it honestly.
+// -- Remove a payment recorded in error. Deletes the payment row and reopens
+// the invoice if it is no longer covered, so the visit can be billed again
+// (typically because it should have been drawn from a bono rather than taken
+// as cash). Bookkeeping only: no money moves, which is why this is a delete
+// rather than a refund -- a refund records that cash went back to the
+// patient, and here it never left in the first place.
+async function deletePayment(paymentId: string, invoiceId: string, amountCents: number) {
+  const invoice = invoices.value.find((i) => i.id === invoiceId)
+  if (
+    !confirm(
+      `${t('Remove this', 'Eliminar este')} ${money(amountCents)} ${t('payment', 'pago')}${invoice ? ` ${t('from', 'de')} ${invoice.invoice_number}` : ''}? ` +
+        t('The invoice reopens if it is no longer fully paid. This does not refund any money.', 'La factura se reabrirá si deja de estar pagada. Esto no reembolsa ningún importe.'),
+    )
+  )
+    return
+
+  const { error } = await supabase.from('payments').delete().eq('id', paymentId)
+  if (error) {
+    showToast(error.message, 'error')
+    return
+  }
+
+  // Recompute from what is actually left rather than subtracting the removed
+  // amount, so a stale local copy can't leave the status wrong.
+  if (invoice) {
+    const { data: remaining } = await supabase.from('payments').select('amount_cents').eq('invoice_id', invoiceId)
+    const paidCents = (remaining ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
+    if (invoice.status !== 'void') {
+      await supabase.from('invoices').update({ status: paidCents >= invoice.total_cents ? 'paid' : 'unpaid' }).eq('id', invoiceId)
+    }
+  }
+
+  await Promise.all([loadAll(), refreshCreditSummary()])
+}
+
 async function writeOffInvoice(invoiceId: string) {
   const invoice = invoices.value.find((i) => i.id === invoiceId)
   if (!invoice) return
@@ -923,6 +958,7 @@ function money(cents: number) {
       :send-result-invoice-id="sendResultInvoiceId"
       :send-result-message="sendResultMessage"
       :can-delete-invoices="can('financials_edit_all')"
+      :can-delete-payments="can('financials_edit_all') && can('payments_allocate')"
       :can-write-off="can('financials_edit_all')"
       :can-refund="can('financials_edit_all')"
       @add-credit="activePanel = 'credit'"
@@ -930,6 +966,7 @@ function money(cents: number) {
       @send-invoice="sendInvoiceEmail"
       @delete-invoice="(id: string) => { const inv = invoices.find((i) => i.id === id); if (inv) deleteInvoice(inv) }"
       @write-off-invoice="writeOffInvoice"
+      @delete-payment="(p: { paymentId: string; invoiceId: string; amountCents: number }) => deletePayment(p.paymentId, p.invoiceId, p.amountCents)"
       @refund-invoice="(payload: { invoiceId: string; amountCents: number; reason: string; method: string }) => createRefund(payload.invoiceId, payload.amountCents, payload.reason, payload.method)"
       @credits-changed="onLedgerCreditsChanged"
     />

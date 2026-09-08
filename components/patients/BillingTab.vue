@@ -129,49 +129,56 @@ async function applyCreditToInvoice() {
   await Promise.all([refreshCreditSummary(), loadAll()])
 }
 
-// -- Take a payment against an unpaid invoice (cash/card/credit) ----------
+// -- Take a payment against an unpaid invoice (cash/card/credit, optionally
+// split across several methods in one go -- e.g. part cash, part card) -----
 const paymentInvoiceId = ref('')
-const paymentAmount = ref('')
-const paymentMethod = ref<'card' | 'cash' | 'credit'>('cash')
 const takingPayment = ref(false)
 const paymentError = ref('')
+const { rows: paymentRows, reset: resetPaymentRows, addRow: addPaymentRow, removeRow: removePaymentRow, centsOf: paymentRowCents, totalCents: paymentTotalCents, creditCents: paymentCreditCents } = useSplitPayment()
 
 function openTakePayment() {
   activePanel.value = 'payment'
   paymentError.value = ''
   const firstUnpaid = unpaidInvoices.value[0]
   paymentInvoiceId.value = firstUnpaid?.id ?? ''
-  paymentAmount.value = firstUnpaid ? (firstUnpaid.total_cents / 100).toFixed(2) : ''
-  paymentMethod.value = 'cash'
+  resetPaymentRows(firstUnpaid ? (firstUnpaid.total_cents / 100).toFixed(2) : '')
 }
 
 async function takePayment() {
   const invoice = invoices.value.find((i) => i.id === paymentInvoiceId.value)
   if (!invoice) return
-  const amountCents = Math.round((parseFloat(paymentAmount.value) || 0) * 100)
-  if (amountCents <= 0) return
+  const rows = paymentRows.value.filter((r) => paymentRowCents(r) > 0)
+  if (rows.length === 0) return
   paymentError.value = ''
-  if (paymentMethod.value === 'credit' && amountCents > balanceCents.value) {
+  // balanceCents is negative when the patient owes money, so this must only
+  // run when a credit row actually exists -- otherwise 0 > a negative
+  // balance reads as "exceeded" and blocks a plain cash/card payment.
+  if (paymentCreditCents.value > 0 && paymentCreditCents.value > balanceCents.value) {
     paymentError.value = t('Amount exceeds available credit.', 'El importe supera el crédito disponible.')
     return
   }
   takingPayment.value = true
 
-  await supabase.from('payments').insert({
-    account_id: store.accountId!,
-    invoice_id: invoice.id,
-    amount_cents: amountCents,
-    method: paymentMethod.value,
-  })
-  if (paymentMethod.value === 'credit') {
-    await supabase.from('account_credits').insert({
+  await supabase.from('payments').insert(
+    rows.map((r) => ({
       account_id: store.accountId!,
-      patient_id: props.patientId,
-      amount_cents: -amountCents,
-      reason: `Applied to invoice ${invoice.invoice_number}`,
       invoice_id: invoice.id,
-      created_by: store.teamMember?.id ?? null,
-    })
+      amount_cents: paymentRowCents(r),
+      method: r.method,
+    })),
+  )
+  const creditRows = rows.filter((r) => r.method === 'credit')
+  if (creditRows.length > 0) {
+    await supabase.from('account_credits').insert(
+      creditRows.map((r) => ({
+        account_id: store.accountId!,
+        patient_id: props.patientId,
+        amount_cents: -paymentRowCents(r),
+        reason: `Applied to invoice ${invoice.invoice_number}`,
+        invoice_id: invoice.id,
+        created_by: store.teamMember?.id ?? null,
+      })),
+    )
   }
 
   const { data: paid } = await supabase.from('payments').select('amount_cents').eq('invoice_id', invoice.id)
@@ -920,28 +927,49 @@ function money(cents: number) {
       </div>
 
       <div v-if="activePanel === 'payment'" class="mt-4 border-t border-line-divider pt-4">
-        <form v-if="unpaidInvoices.length > 0" class="flex flex-wrap items-end gap-2" @submit.prevent="takePayment">
+        <form v-if="unpaidInvoices.length > 0" class="space-y-2" @submit.prevent="takePayment">
           <div>
             <label class="block text-[11px] text-ink-muted">{{ t('Invoice', 'Factura') }}</label>
             <select v-model="paymentInvoiceId" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
               <option v-for="inv in unpaidInvoices" :key="inv.id" :value="inv.id">{{ inv.invoice_number }} ({{ money(inv.total_cents) }})</option>
             </select>
           </div>
-          <div>
-            <label class="block text-[11px] text-ink-muted">{{ t('Amount (€)', 'Importe (€)') }}</label>
-            <input v-model="paymentAmount" type="number" min="0" step="0.01" class="mt-0.5 w-24 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]" />
+
+          <!-- One row per payment method -- usually just one, but "+ split
+               payment" adds another so a patient paying part cash, part card
+               only needs a single "Record payment" click. -->
+          <div v-for="(row, i) in paymentRows" :key="i" class="flex flex-wrap items-end gap-2">
+            <div>
+              <label class="block text-[11px] text-ink-muted">{{ t('Amount (€)', 'Importe (€)') }}</label>
+              <input v-model="row.amount" type="number" min="0" step="0.01" class="mt-0.5 w-24 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]" />
+            </div>
+            <div>
+              <label class="block text-[11px] text-ink-muted">{{ t('Method', 'Método') }}</label>
+              <select v-model="row.method" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
+                <option value="card">{{ t('Card', 'Tarjeta') }}</option>
+                <option value="cash">{{ t('Cash', 'Efectivo') }}</option>
+                <option v-if="balanceCents > 0" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} (€{{ (balanceCents / 100).toFixed(2) }} {{ t('available', 'disponible') }})</option>
+              </select>
+            </div>
+            <button
+              v-if="paymentRows.length > 1"
+              type="button"
+              class="mb-1 text-[11.5px] text-ink-faint hover:text-danger-text"
+              @click="removePaymentRow(i)"
+            >
+              {{ t('Remove', 'Quitar') }}
+            </button>
           </div>
-          <div>
-            <label class="block text-[11px] text-ink-muted">{{ t('Method', 'Método') }}</label>
-            <select v-model="paymentMethod" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
-              <option value="card">{{ t('Card', 'Tarjeta') }}</option>
-              <option value="cash">{{ t('Cash', 'Efectivo') }}</option>
-              <option v-if="balanceCents > 0" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} (€{{ (balanceCents / 100).toFixed(2) }} {{ t('available', 'disponible') }})</option>
-            </select>
+
+          <div class="flex flex-wrap items-center gap-3 pt-1">
+            <button type="button" class="text-[11.5px] font-medium text-ink-muted hover:text-brand-text" @click="addPaymentRow">
+              + {{ t('Split into another method', 'Dividir en otro método') }}
+            </button>
+            <span v-if="paymentRows.length > 1" class="text-[11.5px] text-ink-faint">{{ t('Total:', 'Total:') }} {{ money(paymentTotalCents) }}</span>
+            <UiBtn variant="primary" size="sm" :disabled="!paymentInvoiceId || paymentTotalCents <= 0 || takingPayment" @click="takePayment">
+              {{ takingPayment ? t('Recording…', 'Registrando…') : t('Record payment', 'Registrar pago') }}
+            </UiBtn>
           </div>
-          <UiBtn variant="primary" size="sm" :disabled="!paymentInvoiceId || !paymentAmount || takingPayment" @click="takePayment">
-            {{ takingPayment ? t('Recording…', 'Registrando…') : t('Record payment', 'Registrar pago') }}
-          </UiBtn>
         </form>
         <p v-else class="text-[12.5px] text-ink-faint">{{ t('No unpaid invoices to take a payment against.', 'No hay facturas pendientes contra las que registrar un pago.') }}</p>
         <p v-if="paymentError" class="mt-2 text-[12px] text-danger-text">{{ paymentError }}</p>

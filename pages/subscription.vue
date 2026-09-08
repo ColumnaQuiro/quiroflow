@@ -294,6 +294,58 @@ async function choosePlan(plan: PlanRow) {
   }
 }
 
+// A brand-new subscription (no stripe_subscription_id yet) has nothing to
+// preview -- the sticker price on the card already IS what Checkout will
+// charge, so that case skips straight to choosePlan(). An in-place switch
+// prorates against whatever's left of the current billing period, which the
+// card price can't show, so that case previews first and only calls
+// choosePlan() once the owner confirms the real amount.
+const previewingPlanId = ref<string | null>(null)
+const previewLoading = ref(false)
+const previewError = ref('')
+const previewResult = ref<{ amountDueCents: number; taxCents: number; currency: string } | null>(null)
+
+async function requestPlanChange(plan: PlanRow) {
+  if (!subscription.value?.stripe_subscription_id) {
+    await choosePlan(plan)
+    return
+  }
+  planError.value = ''
+  previewError.value = ''
+  previewResult.value = null
+  previewingPlanId.value = plan.id
+  previewLoading.value = true
+  try {
+    const result = await $fetch<{ previewable: boolean; amountDueCents?: number; taxCents?: number; currency?: string }>('/api/billing/preview', {
+      method: 'POST',
+      body: { planId: plan.id, interval: interval.value, extraProfessionals: plan.extra_professional_price_cents ? extraProfessionals.value : 0 },
+    })
+    if (!result.previewable || result.amountDueCents === undefined) {
+      // Shouldn't happen given the stripe_subscription_id check above, but
+      // fail open to the direct switch rather than leaving the owner stuck.
+      previewingPlanId.value = null
+      await choosePlan(plan)
+      return
+    }
+    previewResult.value = { amountDueCents: result.amountDueCents, taxCents: result.taxCents ?? 0, currency: result.currency ?? 'eur' }
+  } catch (err: any) {
+    previewError.value = err?.data?.statusMessage ?? 'Could not calculate the price for this change.'
+  } finally {
+    previewLoading.value = false
+  }
+}
+
+function cancelPreview() {
+  previewingPlanId.value = null
+  previewResult.value = null
+  previewError.value = ''
+}
+
+async function confirmPlanChange(plan: PlanRow) {
+  cancelPreview()
+  await choosePlan(plan)
+}
+
 // Tabs -----------------------------------------------------------------
 const activeTab = ref<'summary' | 'billing' | 'payments'>('summary')
 const tabs = [
@@ -501,13 +553,38 @@ const headerMeta = computed(() => {
               >
                 Current plan
               </UiBtn>
+
+              <!-- Previewing this specific card's proration before committing
+                   to it -- only reachable when there's a real subscription to
+                   prorate against (requestPlanChange() skips straight to
+                   choosePlan() otherwise). -->
+              <template v-else-if="previewingPlanId === plan.id">
+                <p v-if="previewLoading" class="text-xs text-ink-muted">Checking the price…</p>
+                <template v-else-if="previewResult">
+                  <p class="text-xs text-ink-700">
+                    You'll be charged <span class="font-semibold">{{ eur(previewResult.amountDueCents) }}</span> now
+                    <span class="text-ink-muted">(prorated{{ previewResult.taxCents > 0 ? ', incl. tax' : '' }})</span>.
+                  </p>
+                  <div class="flex gap-2">
+                    <UiBtn variant="primary" class="flex-1" :disabled="changingPlanId !== null" @click="confirmPlanChange(plan)">
+                      {{ changingPlanId === plan.id ? 'Please wait…' : 'Confirm switch' }}
+                    </UiBtn>
+                    <UiBtn variant="secondary" :disabled="changingPlanId !== null" @click="cancelPreview">Cancel</UiBtn>
+                  </div>
+                </template>
+                <template v-else-if="previewError">
+                  <p class="text-xs text-danger-text">{{ previewError }}</p>
+                  <UiBtn variant="secondary" @click="cancelPreview">Dismiss</UiBtn>
+                </template>
+              </template>
+
               <UiBtn
                 v-else
                 variant="primary"
-                :disabled="changingPlanId !== null"
-                @click="choosePlan(plan)"
+                :disabled="changingPlanId !== null || previewLoading"
+                @click="requestPlanChange(plan)"
               >
-                {{ changingPlanId === plan.id ? 'Please wait…' : subscription.stripe_subscription_id ? 'Switch to this plan' : 'Subscribe' }}
+                {{ subscription.stripe_subscription_id ? 'Switch to this plan' : 'Subscribe' }}
               </UiBtn>
             </div>
           </div>

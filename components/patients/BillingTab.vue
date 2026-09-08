@@ -20,6 +20,7 @@ interface PackagePurchaseRow {
   sessions_used: number
   price_cents: number
   purchased_at: string
+  invoice_id: string | null
 }
 interface PatientMembershipRow {
   id: string
@@ -181,6 +182,25 @@ async function takePayment() {
     )
   }
 
+  // An instalment on a bono is money towards sessions, so it has to become
+  // spendable credit the same way the money handed over at the sale did --
+  // otherwise a patient settling the rest of their bono pays it off on the
+  // invoice and still has nothing to draw sessions against.
+  const packageForInvoice = purchases.value.find((p) => p.invoice_id === invoice.id)
+  const topUpRows = rows.filter((r) => r.method !== 'credit')
+  if (packageForInvoice && topUpRows.length > 0) {
+    await supabase.from('account_credits').insert(
+      topUpRows.map((r) => ({
+        account_id: store.accountId!,
+        patient_id: props.patientId,
+        amount_cents: paymentRowCents(r),
+        reason: `Package purchase: ${packageForInvoice.package_name}`,
+        invoice_id: invoice.id,
+        created_by: store.teamMember?.id ?? null,
+      })),
+    )
+  }
+
   const { data: paid } = await supabase.from('payments').select('amount_cents').eq('invoice_id', invoice.id)
   const paidCents = (paid ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
   if (paidCents >= invoice.total_cents) {
@@ -311,6 +331,47 @@ async function recordSalePayment(description: string, amountCents: number, metho
   }
 }
 
+// A bono is invoiced for what it costs, not for whatever was handed over on
+// the day, so an instalment plan is just an invoice that isn't settled yet.
+// Returns the invoice id for package_purchases.invoice_id to point at.
+async function createPackageInvoice(description: string, priceCents: number, paidNowCents: number): Promise<string | null> {
+  const { count } = await supabase.from('invoices').select('id', { count: 'exact', head: true })
+  const invoiceNumber = `INV-${String((count ?? 0) + 1).padStart(4, '0')}`
+
+  const { data: invoice } = await supabase
+    .from('invoices')
+    .insert({
+      account_id: store.accountId!,
+      patient_id: props.patientId,
+      invoice_number: invoiceNumber,
+      status: paidNowCents >= priceCents ? 'paid' : 'unpaid',
+      total_cents: priceCents,
+    })
+    .select('id')
+    .single()
+  if (!invoice) return null
+
+  await supabase.from('invoice_line_items').insert({ account_id: store.accountId!, invoice_id: invoice.id, description, quantity: 1, price_cents: priceCents })
+  return invoice.id
+}
+
+// The payment side of a bono sale or instalment. Cash/card money paid
+// towards a bono becomes spendable credit (that is what sessions draw
+// down); paying with credit spends the credit the patient already holds
+// instead of topping it up.
+async function recordPackagePayment(invoiceId: string | null, amountCents: number, method: 'cash' | 'card' | 'credit', description: string) {
+  if (!invoiceId) return
+  await supabase.from('payments').insert({ account_id: store.accountId!, invoice_id: invoiceId, amount_cents: amountCents, method })
+  await supabase.from('account_credits').insert({
+    account_id: store.accountId!,
+    patient_id: props.patientId,
+    amount_cents: method === 'credit' ? -amountCents : amountCents,
+    reason: method === 'credit' ? `Applied to ${description}` : `Package purchase: ${description}`,
+    invoice_id: invoiceId,
+    created_by: store.teamMember?.id ?? null,
+  })
+}
+
 // Each loader below is independent -- its own query pair, its own loading
 // flag -- so the three cards (Account Ledger, Packages/bonos, Memberships)
 // each show their own skeleton and swap in the moment their own data is
@@ -374,7 +435,7 @@ async function loadLedger() {
 async function loadPackages() {
   packagesLoading.value = true
   const [{ data: pkgPurchases }, { data: sch }] = await Promise.all([
-    supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used, price_cents, purchased_at').eq('patient_id', props.patientId).order('purchased_at', { ascending: false }),
+    supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used, price_cents, purchased_at, invoice_id').eq('patient_id', props.patientId).order('purchased_at', { ascending: false }),
     supabase
       .from('payment_schedules')
       .select('id, package_purchase_id, patient_membership_id, interval, interval_count, installments_total, installments_paid, status')
@@ -698,6 +759,14 @@ async function sellPackage() {
     return
   }
   sellingPackage.value = true
+  // The bono is invoiced at its full price and the purchase points at that
+  // invoice, so paying for it in instalments works like any other partly
+  // paid invoice: what is still owed is the invoice's open balance, it
+  // shows in the patient's Outstanding, and Debtors picks it up (that
+  // report is already written against package_purchases.invoice_id).
+  // Invoicing only the amount handed over, as this did, left nothing
+  // anywhere recording that the rest of the bono was still unpaid.
+  const invoiceId = await createPackageInvoice(tpl.name, tpl.price_cents, amountCents)
   await supabase.from('package_purchases').insert({
     account_id: store.accountId!,
     patient_id: props.patientId,
@@ -705,33 +774,33 @@ async function sellPackage() {
     package_name: tpl.name,
     sessions_total: tpl.session_count,
     price_cents: tpl.price_cents,
+    invoice_id: invoiceId,
     created_by: store.teamMember?.id ?? null,
   })
   // Amount paid can be less than the package's full price -- the rest is
   // expected via the existing "Set up autopay" Stripe schedule below.
   if (amountCents > 0) {
-    await recordSalePayment(tpl.name, amountCents, sellMethod.value)
-    // recordSalePayment's invoice+payment pair nets to zero on balanceCents
-    // (paid == invoiced) -- it's the cash-up/Lifetime record of the sale,
-    // not spendable credit. Depositing the same amount as real account
-    // credit is what makes it usable against future sessions; paying with
-    // existing credit (method 'credit') already spent that credit inside
-    // recordSalePayment, so it doesn't get topped back up here.
-    if (sellMethod.value !== 'credit') {
-      await supabase.from('account_credits').insert({
-        account_id: store.accountId!,
-        patient_id: props.patientId,
-        amount_cents: amountCents,
-        reason: `Package purchase: ${tpl.name}`,
-        created_by: store.teamMember?.id ?? null,
-      })
-    }
+    await recordPackagePayment(invoiceId, amountCents, sellMethod.value, tpl.name)
   }
   sellingPackage.value = false
   sellPackageId.value = ''
   sellAmountPaid.value = ''
   sellMethod.value = 'cash'
   await Promise.all([loadAll(), refreshCreditSummary()])
+}
+
+// What is still unpaid on a bono, read off its own invoice. Zero for a bono
+// with no invoice behind it (every purchase migrated from PracticeHub, and
+// anything sold before the invoice link existed) -- those have no record of
+// what was charged, so claiming a debt would be inventing one.
+function packageOwedCents(purchase: PackagePurchaseRow): number {
+  // The bono card and the ledger load independently -- reading payments
+  // before that loader lands would flash the full price as unpaid.
+  if (ledgerLoading.value || !purchase.invoice_id) return 0
+  const invoice = invoices.value.find((i) => i.id === purchase.invoice_id)
+  if (!invoice || invoice.status === 'void') return 0
+  const paidCents = ledgerPayments.value.filter((p) => p.invoice_id === invoice.id).reduce((sum, p) => sum + p.amount_cents, 0)
+  return Math.max(0, invoice.total_cents - paidCents)
 }
 
 async function useSession(purchase: PackagePurchaseRow) {
@@ -1040,6 +1109,9 @@ function money(cents: number) {
             <div class="mt-1.5 h-[4px] w-full overflow-hidden rounded-full bg-line-faint">
               <div class="h-full rounded-full bg-brand" :style="{ width: `${Math.min(100, Math.round((p.sessions_used / p.sessions_total) * 100))}%` }" />
             </div>
+            <p v-if="packageOwedCents(p) > 0" class="mt-1.5 text-[11.5px] font-medium text-danger-text">
+              {{ money(p.price_cents - packageOwedCents(p)) }} {{ t('paid of', 'pagado de') }} {{ money(p.price_cents) }} &middot; {{ money(packageOwedCents(p)) }} {{ t('still owed', 'pendiente') }}
+            </p>
             <div class="mt-1.5 flex items-center justify-between gap-2">
               <p class="text-[11.5px] text-ink-faint">{{ p.sessions_used }}/{{ p.sessions_total }} {{ t('used', 'usadas') }} &middot; {{ money(p.price_cents) }}</p>
               <div class="flex items-center gap-2">

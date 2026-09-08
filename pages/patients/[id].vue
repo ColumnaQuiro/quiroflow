@@ -4,6 +4,8 @@ import type { Tables } from '~/types/database.types'
 const route = useRoute()
 const supabase = useSupabaseClient()
 const t = useT()
+const { can } = usePermission()
+const { showToast } = useToast()
 const patientId = route.params.id as string
 
 const patient = ref<Tables<'patients'> | null>(null)
@@ -56,6 +58,40 @@ const chargeRequested = ref(false)
 function handleCharge() {
   chargeRequested.value = true
   activeTab.value = 'billing'
+}
+
+// Deleting a patient cascades in the database -- appointments, invoices,
+// payments, docs, files, package purchases, everything keyed off patient_id
+// (see 0044_rbac_row_scope_appointments_patients.sql for the RLS policy
+// this button relies on; the FKs themselves are `on delete cascade` from
+// 0001_init_schema.sql onward). That's permanent and wipes financial/clinical
+// records a clinic may be legally required to retain, so the confirmation
+// names what's actually at stake rather than a generic "are you sure".
+const deleting = ref(false)
+async function deletePatient() {
+  if (!patient.value || deleting.value) return
+  deleting.value = true
+  try {
+    const [{ count: appointmentCount }, { count: invoiceCount }] = await Promise.all([
+      supabase.from('appointments').select('id', { count: 'exact', head: true }).eq('patient_id', patientId),
+      supabase.from('invoices').select('id', { count: 'exact', head: true }).eq('patient_id', patientId),
+    ])
+    const name = `${patient.value.first_name} ${patient.value.last_name ?? ''}`.trim()
+    const warning = t(
+      `Permanently delete ${name}? This also deletes ${appointmentCount ?? 0} appointment(s) and ${invoiceCount ?? 0} invoice(s), plus every document, file, and message tied to them. This can't be undone.`,
+      `¿Eliminar permanentemente a ${name}? Esto también elimina ${appointmentCount ?? 0} cita(s) y ${invoiceCount ?? 0} factura(s), además de todos los documentos, archivos y mensajes asociados. Esta acción no se puede deshacer.`,
+    )
+    if (!confirm(warning)) return
+
+    const { error } = await supabase.from('patients').delete().eq('id', patientId)
+    if (error) {
+      showToast(error.message, 'error')
+      return
+    }
+    await navigateTo('/patients')
+  } finally {
+    deleting.value = false
+  }
 }
 </script>
 
@@ -128,6 +164,16 @@ function handleCharge() {
         </div>
         <UiBtn v-if="canContact" variant="secondary" @click="whatsAppOpen = true">{{ t('Message', 'Mensaje') }}</UiBtn>
         <UiBtn variant="primary" @click="navigateTo('/calendar')">{{ t('Book visit', 'Reservar visita') }}</UiBtn>
+        <button
+          v-if="can('patients_delete_merge')"
+          type="button"
+          class="h-8 rounded-ctl border border-line-control px-2.5 text-[13px] font-medium text-danger-text hover:border-danger-border hover:bg-danger-bg disabled:opacity-50"
+          :disabled="deleting"
+          :title="t('Delete patient', 'Eliminar paciente')"
+          @click="deletePatient"
+        >
+          {{ deleting ? t('Deleting…', 'Eliminando…') : t('Delete', 'Eliminar') }}
+        </button>
       </div>
     </header>
 

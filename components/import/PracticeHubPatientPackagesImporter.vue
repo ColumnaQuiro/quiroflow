@@ -72,28 +72,50 @@ const skippedNoValue = ref(0)
 const rawSample = ref<unknown[]>([])
 const showRawSample = ref(false)
 
-// PracticeHub's own field naming is not documented beyond "apply filter
-// parms to the X column", so this mapping is a best guess until the first
-// real run: `package_balance` reads as the most literal match for "money
-// still sitting on this specific package," `price` as the package's total
-// list price. Cross-check the preview table's raw columns against a patient
-// already fixed by hand (e.g. David Poveda: price ~559, credit ~361, 1
-// session left of 14) before trusting "Apply" on the rest.
-// The remaining prepaid value of a package is `balance`, not
-// `package_balance`. Checked against all 545 records in the live PracticeHub
-// account: `balance` equals visits_left x (price / visits) for 519 of them,
-// the rest differing only by rounding or by the package being over-used.
-// `package_balance` is a different quantity and is frequently NEGATIVE where
-// balance is positive -- a Bono 12 with 4 visits left reads balance 176 and
-// package_balance -178. Preferring it, as this did, would have written a
-// -178 EUR credit against a patient who is owed 176 EUR: 84 of the 182 active
-// packages would have got a negative credit, -21,737 EUR in total.
+// Credit on account is money the patient has already handed over and not yet
+// consumed -- not the value of the sessions they are entitled to. A bono can
+// be sold half-paid: the patient may take all 12 sessions, but the unpaid
+// half is a receivable that shows on their invoice, never as credit they
+// hold. So:
 //
-// Clamped at zero because 8 packages are over-used and carry a negative
-// balance. A patient cannot hold negative prepaid credit -- if they owe for
-// extra visits that is an invoice, not a credit.
+//     credit = what they paid  -  what they have consumed
+//
+// PracticeHub gives both halves of that directly:
+//   `balance`          = visits_left x (price / visits), i.e. price MINUS
+//                        consumed. Verified against all 545 records in the
+//                        live account: it matches for 519, the rest differing
+//                        only by rounding or by the package being over-used.
+//   `package_balance`  = paid MINUS price, so it is 0 on a fully-paid bono
+//                        and NEGATIVE by exactly what is still owed.
+//   `owing`            = always blank on this account; unusable.
+//
+// Adding them telescopes the price away and leaves paid minus consumed:
+//
+//     balance + package_balance = (price - consumed) + (paid - price)
+//                               = paid - consumed
+//
+// Checked against real payment history: Antonio Guillem 440 + (-240) = 200
+// paid of a 480 bono with 1 of 12 taken; Mariana Arango 516 + (-301) = 215;
+// Jose Soler Gil 484 + (-264) = 220; Blanca Vidal, fully paid, 360 + 0 = 360.
+//
+// Using `balance` alone -- as this did -- credits the whole entitlement and
+// hands part-payers money they never paid: 440 instead of 200 for Antonio.
+// Using `package_balance` alone is worse still, since it is negative wherever
+// anything is owed.
+//
+// Clamped at zero: 8 packages are over-used and carry a negative balance, and
+// a patient cannot hold negative prepaid credit -- extra visits owed are an
+// invoice, not a credit.
+//
+// Caveat worth knowing before a big run: `package_balance` is only as good as
+// PracticeHub's own payment linking. Where their staff took a payment without
+// linking it to the bono (Aurelia Villalba: PH reports 602 outstanding, she
+// actually paid 301) PH under-reports what was paid, so this under-credits.
+// It never over-credits, which is the safer direction, and the reconciliation
+// report is where those show up.
 function creditCentsFor(pkg: PHPatientPackage): number {
-  return Math.max(0, Math.round((pkg.balance ?? 0) * 100))
+  const paidMinusConsumed = (pkg.balance ?? 0) + (pkg.package_balance ?? 0)
+  return Math.max(0, Math.round(paidMinusConsumed * 100))
 }
 
 async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }) {
@@ -345,6 +367,14 @@ function formatEuros(cents: number): string {
         <p class="text-[12.5px] leading-relaxed text-ink-600">
           <span class="font-medium text-ink-700">{{ t('Nothing is written until you press Apply.', 'No se escribe nada hasta que pulses Aplicar.') }}</span>
           {{ t('The preview shows PracticeHub\'s own price / balance / owing / package_balance columns so you can check them against a patient you already know before trusting the rest.', 'La vista previa muestra las columnas price / balance / owing / package_balance de PracticeHub para que las compruebes con un paciente que ya conozcas antes de fiarte del resto.') }}
+        </p>
+      </div>
+
+      <div class="flex gap-2.5 rounded-ctl border border-line-divider bg-surface-subtle p-3">
+        <span class="mt-0.5 shrink-0 text-[13px]">🧮</span>
+        <p class="text-[12.5px] leading-relaxed text-ink-600">
+          <span class="font-medium text-ink-700">{{ t('Credit is what they paid, minus what they used.', 'El saldo es lo que pagaron, menos lo que consumieron.') }}</span>
+          {{ t('It is not the value of the sessions they still have left. A half-paid bono can still be used in full \u2014 the unpaid part is money owed on the invoice, not credit on the account. The preview computes it as balance + package_balance.', 'No es el valor de las sesiones que les quedan. Un bono pagado a medias se puede usar entero: la parte no pagada es dinero pendiente en la factura, no saldo en la cuenta. La vista previa lo calcula como balance + package_balance.') }}
         </p>
       </div>
 

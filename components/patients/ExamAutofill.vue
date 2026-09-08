@@ -79,25 +79,29 @@ const findings = ref<string[]>([])
 const noteId = ref<string | null>(null)
 const saving = ref(false)
 const savedMessage = ref('')
+// Drives the Save button's enabled state. Typing marks the note dirty;
+// saving clears it, so the button reads as "nothing to save" once written.
+const dirty = ref(false)
 
 function pickCode(code: string) {
   const parts = [selectedSegment.value ? `${selectedSegment.value.level}${selectedSegment.value.side}` : null, selectedModifier.value, code].filter(Boolean)
   const line = parts.join(' ')
   findings.value = [...findings.value, line]
   objective.value = objective.value ? `${objective.value}\n${line}` : line
-  // Quick-add chips and the advanced code grid both land here without ever
-  // focusing the Objective textarea, so the blur-triggered autosave never
-  // fires on its own -- save explicitly so a finding isn't lost if the
-  // practitioner navigates away right after picking it.
-  save()
+  // Marks dirty rather than saving: a chip drops text into Objective that the
+  // practitioner usually wants to edit before it is committed, and saving on
+  // the click made that text land in the note as-is the moment it appeared.
+  dirty.value = true
 }
 
 function insertDatestamp() {
   const stamp = new Date().toLocaleString([], { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
   objective.value = objective.value ? `${objective.value}\n${stamp}` : stamp
+  dirty.value = true
 }
 function newLine() {
   objective.value += '\n'
+  dirty.value = true
 }
 function undoLast() {
   if (findings.value.length === 0) return
@@ -105,10 +109,12 @@ function undoLast() {
   const lines = objective.value.split('\n')
   lines.pop()
   objective.value = lines.join('\n')
+  dirty.value = true
 }
 function clearAll() {
   findings.value = []
   objective.value = ''
+  dirty.value = true
 }
 
 function compileBody() {
@@ -129,7 +135,25 @@ function parseBody(body: string) {
 // The 'saved' event only fires the first time a note is created for this
 // appointment -- that's the transition that flips the worklist's "Charted"
 // stage, so later autosaves don't need to trigger a list reload each time.
+// Serialises saves. Every field used to save on blur, and save() is async:
+// tabbing from Subjective to Objective fired a second save while the first
+// insert was still in flight, so noteId was still null and it inserted a
+// SECOND note for the same appointment. Five appointments in production ended
+// up with duplicate notes that way, one with eight rows. An in-flight promise
+// that later callers await is what makes noteId reliable.
+let inFlight: Promise<void> | null = null
+
 async function save() {
+  if (inFlight) await inFlight
+  inFlight = doSave()
+  try {
+    await inFlight
+  } finally {
+    inFlight = null
+  }
+}
+
+async function doSave() {
   saving.value = true
   const body = compileBody()
   const isFirstSave = !noteId.value
@@ -144,6 +168,7 @@ async function save() {
     noteId.value = data?.id ?? null
   }
   saving.value = false
+  dirty.value = false
   savedMessage.value = t('Saved', 'Guardado')
   setTimeout(() => (savedMessage.value = ''), 2000)
   if (isFirstSave && noteId.value) emit('saved')
@@ -179,7 +204,18 @@ defineExpose({ save, copyLastNote })
     <div class="border-b border-line-row px-5 py-3">
       <div class="flex items-center justify-between">
         <p class="text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">{{ t('Quick add', 'Añadir rápido') }}</p>
-        <span v-if="savedMessage" class="text-[11.5px] text-success-text">{{ savedMessage }}</span>
+        <div class="flex items-center gap-2.5">
+          <span v-if="savedMessage" class="text-[11.5px] text-success-text">{{ savedMessage }}</span>
+          <span v-else-if="dirty" class="text-[11.5px] text-ink-faint2">{{ t('Unsaved changes', 'Cambios sin guardar') }}</span>
+          <button
+            type="button"
+            class="rounded-ctlSm border border-line-control bg-surface px-2.5 py-1 text-[12px] font-semibold text-ink-700 hover:border-line-controlHover disabled:cursor-not-allowed disabled:opacity-40"
+            :disabled="saving || !dirty"
+            @click="save"
+          >
+            {{ saving ? t('Saving…', 'Guardando…') : t('Save note', 'Guardar nota') }}
+          </button>
+        </div>
       </div>
       <div class="mt-2 flex flex-wrap gap-1.5">
         <button
@@ -201,7 +237,7 @@ defineExpose({ save, copyLastNote })
         <textarea
           v-model="subjective"
           class="w-full min-h-[96px] rounded-[9px] border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-          @blur="save"
+          @input="dirty = true"
         ></textarea>
       </div>
       <div>
@@ -209,7 +245,7 @@ defineExpose({ save, copyLastNote })
         <textarea
           v-model="objective"
           class="w-full min-h-[96px] rounded-[9px] border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-          @blur="save"
+          @input="dirty = true"
         ></textarea>
       </div>
       <div>
@@ -217,7 +253,7 @@ defineExpose({ save, copyLastNote })
         <textarea
           v-model="action"
           class="w-full min-h-[76px] rounded-[9px] border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-          @blur="save"
+          @input="dirty = true"
         ></textarea>
       </div>
       <div>
@@ -225,7 +261,7 @@ defineExpose({ save, copyLastNote })
         <textarea
           v-model="plan"
           class="w-full min-h-[76px] rounded-[9px] border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-          @blur="save"
+          @input="dirty = true"
         ></textarea>
       </div>
     </div>

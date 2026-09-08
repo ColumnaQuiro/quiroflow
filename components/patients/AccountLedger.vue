@@ -31,6 +31,10 @@ const props = defineProps<{
   sendResultInvoiceId: string
   sendResultMessage: string
   canDeleteInvoices: boolean
+  // Removing a payment writes to `payments`, whose RLS requires
+  // payments_allocate -- gating this on the invoice permission alone would
+  // show the button to someone the database then refuses.
+  canDeletePayments: boolean
   canWriteOff: boolean
   canRefund: boolean
 }>()
@@ -39,6 +43,7 @@ const emit = defineEmits<{
   takePayment: []
   sendInvoice: [invoiceId: string]
   deleteInvoice: [invoiceId: string]
+  deletePayment: [payload: { paymentId: string; invoiceId: string; amountCents: number }]
   writeOffInvoice: [invoiceId: string]
   refundInvoice: [payload: { invoiceId: string; amountCents: number; reason: string; method: string }]
   creditsChanged: []
@@ -71,6 +76,9 @@ interface LedgerRow {
   balanceTone: 'success' | 'danger' | 'neutral'
   voided: boolean
   invoiceId?: string
+  paymentId?: string
+  paymentAmountCents?: number
+  paymentInvoiceId?: string
   invoiceOpenCents?: number
   refundableCents?: number
   isRefund?: boolean
@@ -140,6 +148,12 @@ const rows = computed<LedgerRow[]>(() => {
   const paymentRows: LedgerRow[] = props.payments.map((p) => ({
     key: `payment-${p.id}`,
     ref: '',
+    paymentId: p.id,
+    paymentAmountCents: p.amount_cents,
+    // Deliberately NOT `invoiceId`: that field gates the invoice action block
+    // below, and a payment row offering "Delete invoice" would delete the
+    // wrong thing entirely.
+    paymentInvoiceId: p.invoice_id,
     date: p.paid_at,
     // Negative only for the payments row createRefund() inserts alongside a
     // refund invoice, so this money goes back out belongs in Debit like any
@@ -423,6 +437,16 @@ async function sendStatement() {
                     <dd class="text-ink-muted2">{{ d.value }}</dd>
                   </template>
                 </dl>
+                <div v-if="row.paymentId && canDeletePayments" class="mt-2 flex items-center gap-3 border-t border-line-divider pt-2 text-[12px]">
+                  <button
+                    type="button"
+                    class="text-ink-faint hover:text-danger-text"
+                    @click="emit('deletePayment', { paymentId: row.paymentId!, invoiceId: row.paymentInvoiceId!, amountCents: row.paymentAmountCents ?? 0 })"
+                  >
+                    {{ t('Remove payment', 'Eliminar pago') }}
+                  </button>
+                  <span class="text-ink-faint2">{{ t('Reopens the invoice so it can be billed again', 'Reabre la factura para poder facturarla de nuevo') }}</span>
+                </div>
                 <div v-if="row.invoiceId" class="mt-2 flex items-center gap-3 border-t border-line-divider pt-2 text-[12px]">
                   <NuxtLink :to="`/billing/${row.invoiceId}`" class="font-medium text-brand-text hover:text-brand-hover">{{ t('Open invoice', 'Abrir factura') }}</NuxtLink>
                   <span v-if="sendResultInvoiceId === row.invoiceId" class="text-ink-faint">{{ sendResultMessage }}</span>

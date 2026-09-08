@@ -60,6 +60,29 @@ function handleCharge() {
   activeTab.value = 'billing'
 }
 
+// Archiving is the reversible alternative to Delete below -- just flips the
+// same status column the Overview tab's edit form already exposes (see
+// 0063_patient_status_minor_tutor_dnc.sql), as a one-click toggle instead of
+// opening that form. Gated by patients_edit since that's what the RLS update
+// policy on patients checks (0044_rbac_row_scope_appointments_patients.sql).
+const archiving = ref(false)
+async function toggleArchived() {
+  if (!patient.value || archiving.value) return
+  archiving.value = true
+  try {
+    const nextStatus = patient.value.status === 'active' ? 'inactive' : 'active'
+    const { error } = await supabase.from('patients').update({ status: nextStatus }).eq('id', patientId)
+    if (error) {
+      showToast(error.message, 'error')
+      return
+    }
+    patient.value.status = nextStatus
+    showToast(nextStatus === 'inactive' ? t('Patient archived', 'Paciente archivado') : t('Patient unarchived', 'Paciente desarchivado'))
+  } finally {
+    archiving.value = false
+  }
+}
+
 // Deleting a patient cascades in the database -- appointments, invoices,
 // payments, docs, files, package purchases, everything keyed off patient_id
 // (see 0044_rbac_row_scope_appointments_patients.sql for the RLS policy
@@ -164,6 +187,9 @@ async function deletePatient() {
         </div>
         <UiBtn v-if="canContact" variant="secondary" @click="whatsAppOpen = true">{{ t('Message', 'Mensaje') }}</UiBtn>
         <UiBtn variant="primary" @click="navigateTo('/calendar')">{{ t('Book visit', 'Reservar visita') }}</UiBtn>
+        <UiBtn v-if="can('patients_edit')" variant="secondary" :disabled="archiving" @click="toggleArchived">
+          {{ patient.status === 'active' ? t('Archive', 'Archivar') : t('Unarchive', 'Desarchivar') }}
+        </UiBtn>
         <button
           v-if="can('patients_delete_merge')"
           type="button"

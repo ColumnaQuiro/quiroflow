@@ -44,7 +44,12 @@ interface Candidate {
   sessionsUsed: number
   priceCents: number
   isActive: boolean
-  creditCents: number
+  // What this bono's credit should be: paid minus consumed.
+  targetCreditCents: number
+  // What it carries today, from the bono's own credit rows.
+  attributedCreditCents: number
+  // target - attributed. Negative takes back an over-credit.
+  creditDeltaCents: number
   // What the patient still owes on this bono, from PracticeHub's own
   // `package_balance`. Raised as an unpaid invoice so the debt shows in
   // reports instead of being implied by a PracticeHub column nobody reads.
@@ -59,7 +64,7 @@ interface Candidate {
   // The patient's whole credit balance today, shown so a package repaired
   // by hand earlier isn't credited a second time here.
   currentCreditCents: number
-  status: 'pending' | 'applied' | 'skipped-existing' | 'error'
+  status: 'pending' | 'applied' | 'error'
   errorMessage?: string
 }
 
@@ -166,22 +171,25 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       if (!data || data.length < PAGE_SIZE) break
     }
 
+    // Our own bono rows, indexed two ways. `external_reference` is the exact
+    // key for anything this importer created, but the 178 bonos backfilled by
+    // hand before it existed have none -- for those, same patient plus same
+    // purchase day is the key, and it resolves all 178 of them with nothing
+    // left over.
     phase.value = t('Checking for already-imported packages…', 'Comprobando bonos ya importados…')
-    const existingExternalRefs = new Set<string>()
-    // Keyed by external_reference so an already-imported bono can have the
-    // invoice this raises pointed at its existing purchase row.
-    const existingPurchaseById = new Map<string, string>()
+    const purchaseByRef = new Map<string, string>()
+    const purchaseByPatientDay = new Map<string, string>()
+    // A bono already pointing at an invoice is not billed again, whatever
+    // that invoice is numbered -- one raised by an earlier run, one from a
+    // sale through the app, or one created by hand during a repair.
+    const purchaseHasInvoice = new Set<string>()
     for (let page = 0; ; page++) {
-      const { data } = await supabase
-        .from('package_purchases')
-        .select('id, external_reference')
-        .not('external_reference', 'is', null)
-        .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
-      for (const row of data ?? [])
-        if (row.external_reference) {
-          existingExternalRefs.add(row.external_reference)
-          existingPurchaseById.set(row.external_reference, row.id)
-        }
+      const { data } = await supabase.from('package_purchases').select('id, patient_id, purchased_at, external_reference, invoice_id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+      for (const row of data ?? []) {
+        if (row.external_reference) purchaseByRef.set(row.external_reference, row.id)
+        purchaseByPatientDay.set(`${row.patient_id}|${String(row.purchased_at).slice(0, 10)}`, row.id)
+        if (row.invoice_id) purchaseHasInvoice.add(row.id)
+      }
       if (!data || data.length < PAGE_SIZE) break
     }
 
@@ -202,36 +210,33 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       if (!data || data.length < PAGE_SIZE) break
     }
 
-    // Which packages already carry their credit, and what each patient holds
-    // today. An earlier version of this importer read the credit from
-    // `package_balance`/`owing` and wrote nothing when those came back 0 --
-    // which is exactly what a fully paid-up bono reads -- so packages
-    // imported back then exist with no credit against them and are skipped
-    // on every re-run by the external_reference guard below. They are picked
-    // up as credit-only repairs instead.
+    // How much credit each bono is already carrying, so a re-run corrects it
+    // to the right figure instead of piling another deposit on top.
+    //
+    // Two ways in, matching the two ways a bono is identified above: credit
+    // this importer wrote carries the bono's reference, and credit from the
+    // hand backfill carries none but was backdated to the purchase day. Only
+    // positive rows are counted on the day key -- a negative row is a session
+    // drawn down later, which is real consumption and must survive the
+    // correction rather than be treated as credit that was never deposited.
     phase.value = t('Checking existing credit…', 'Comprobando el crédito existente…')
-    const creditedExternalRefs = new Set<string>()
+    const creditCentsByRef = new Map<string, number>()
+    const depositCentsByPatientDay = new Map<string, number>()
     const creditCentsByPatient = new Map<string, number>()
     for (let page = 0; ; page++) {
       const { data } = await supabase
         .from('account_credits')
-        .select('patient_id, amount_cents, external_reference')
+        .select('patient_id, amount_cents, external_reference, created_at')
         .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
       for (const row of data ?? []) {
-        if (row.external_reference) creditedExternalRefs.add(row.external_reference)
         creditCentsByPatient.set(row.patient_id, (creditCentsByPatient.get(row.patient_id) ?? 0) + row.amount_cents)
+        if (row.external_reference) {
+          creditCentsByRef.set(row.external_reference, (creditCentsByRef.get(row.external_reference) ?? 0) + row.amount_cents)
+        } else if (row.amount_cents > 0) {
+          const key = `${row.patient_id}|${String(row.created_at).slice(0, 10)}`
+          depositCentsByPatientDay.set(key, (depositCentsByPatientDay.get(key) ?? 0) + row.amount_cents)
+        }
       }
-      if (!data || data.length < PAGE_SIZE) break
-    }
-
-    // Package fixes made by hand before this importer existed (Melanie,
-    // David Poveda, Kenneth Davis, ...) have no external_reference to dedupe
-    // against -- fall back to same-patient-same-day as a second guard so a
-    // re-run doesn't double-credit someone already fixed manually.
-    const existingByPatientDay = new Set<string>()
-    for (let page = 0; ; page++) {
-      const { data } = await supabase.from('package_purchases').select('patient_id, purchased_at').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
-      for (const row of data ?? []) existingByPatientDay.add(`${row.patient_id}|${String(row.purchased_at).slice(0, 10)}`)
       if (!data || data.length < PAGE_SIZE) break
     }
 
@@ -243,8 +248,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     const built: Candidate[] = []
     for (const pkg of phPackages) {
       const externalRef = `PH-package-${pkg.id}`
-      const alreadyImported = existingExternalRefs.has(externalRef)
-      const alreadyCredited = creditedExternalRefs.has(externalRef)
+      const adjustmentRef = `${externalRef}-adjustment`
       const alreadyInvoiced = invoicedExternalRefs.has(externalRef)
 
       // Closed packages are imported too, as history. Skipping them is what
@@ -277,11 +281,11 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         continue
       }
 
+      // Resolve this PracticeHub bono to our own row: by reference where the
+      // importer created it, otherwise by the same-patient-same-day key that
+      // finds the hand-backfilled ones.
       const dayKey = `${ourPatient.id}|${pkg.created.slice(0, 10)}`
-      // The same-day guard exists to stop a re-run duplicating a hand-made
-      // purchase record. It must not apply to a repair, where the matching
-      // purchase row is precisely the one being credited.
-      const alreadyHasSameDayPurchase = !alreadyImported && existingByPatientDay.has(dayKey)
+      const existingPurchaseId = purchaseByRef.get(externalRef) ?? purchaseByPatientDay.get(dayKey) ?? null
 
       const visitsTotal = pkg.visits ?? pkg.visits_left ?? 0
       const visitsLeft = pkg.visits_left ?? visitsTotal
@@ -289,14 +293,29 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       // A deactivated package is closed: whatever visits it had left are no
       // longer claimable, so it carries no credit. Granting one would invent
       // money the clinic never owed.
-      const creditCents = isActive && !alreadyCredited ? creditCentsFor(pkg) : 0
+      const targetCreditCents = isActive ? creditCentsFor(pkg) : 0
       const owedCents = isActive ? owedCentsFor(pkg) : 0
-      const needsInvoice = owedCents > 0 && !alreadyInvoiced
+      const needsInvoice = owedCents > 0 && !alreadyInvoiced && !(existingPurchaseId !== null && purchaseHasInvoice.has(existingPurchaseId))
 
-      // Nothing left to do: the purchase row is there, its credit is there,
-      // and either it is settled or its debt is already on an invoice. A
-      // closed or spent package is correctly left uncredited and unbilled.
-      if (alreadyImported && creditCents === 0 && !needsInvoice) continue
+      // What this bono already carries. Credit written against the bono's own
+      // reference is exact; otherwise fall back to the deposits backdated to
+      // its purchase day, which is what the hand backfill left behind. Never
+      // both: a bono with its own reference has already been accounted for,
+      // and adding the day figure on top would double-count it.
+      const attributedCreditCents = creditCentsByRef.has(externalRef)
+        ? (creditCentsByRef.get(externalRef) ?? 0) + (creditCentsByRef.get(adjustmentRef) ?? 0)
+        : (existingPurchaseId ? depositCentsByPatientDay.get(dayKey) ?? 0 : 0)
+
+      // The correction. Positive tops a bono up to what was paid, negative
+      // takes back credit the old full-entitlement rule handed over: 178
+      // bonos were backfilled at the value of the sessions remaining rather
+      // than the money received, so every part-payer among them is holding
+      // credit for sessions nobody has paid for yet.
+      const creditDeltaCents = targetCreditCents - attributedCreditCents
+
+      // Nothing left to do: the credit is already right and either the bono
+      // is settled or its debt is on an invoice.
+      if (existingPurchaseId && creditDeltaCents === 0 && !needsInvoice) continue
 
       built.push({
         phPackageId: pkg.id,
@@ -314,13 +333,15 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         sessionsUsed,
         priceCents: Math.round((pkg.price ?? 0) * 100),
         isActive,
-        creditCents,
+        targetCreditCents,
+        attributedCreditCents,
+        creditDeltaCents,
         owedCents,
         needsInvoice,
-        creditOnly: alreadyImported,
-        existingPurchaseId: existingPurchaseById.get(externalRef) ?? null,
+        creditOnly: existingPurchaseId !== null,
+        existingPurchaseId,
         currentCreditCents: creditCentsByPatient.get(ourPatient.id) ?? 0,
-        status: alreadyHasSameDayPurchase ? 'skipped-existing' : 'pending',
+        status: 'pending',
       })
     }
 
@@ -368,14 +389,22 @@ async function applyFixes() {
       purchaseId = purchase.id
     }
 
-    if (c.creditCents > 0) {
+    if (c.creditDeltaCents !== 0) {
+      // A first deposit carries the bono's reference; a later correction
+      // carries `-adjustment` so the two can be told apart and so a re-run
+      // reads its own correction back rather than applying it twice. The
+      // original row is left untouched -- the ledger shows what was deposited
+      // and what was taken back, not a number quietly rewritten.
+      const isCorrection = c.attributedCreditCents !== 0
       const { error: creditError } = await supabase.from('account_credits').insert({
         account_id: store.accountId!,
         patient_id: c.patientId,
-        amount_cents: c.creditCents,
-        reason: `${c.packageName} (migrated from PracticeHub -- ${c.visitsLeft ?? '?'}/${c.visits ?? '?'} sessions remaining)`,
-        external_reference: externalRef,
-        created_at: c.created,
+        amount_cents: c.creditDeltaCents,
+        reason: isCorrection
+          ? `${c.packageName} (corrected to what was paid: €${formatEuros(c.targetCreditCents)}, was €${formatEuros(c.attributedCreditCents)})`
+          : `${c.packageName} (migrated from PracticeHub -- ${c.visitsLeft ?? '?'}/${c.visits ?? '?'} sessions remaining)`,
+        external_reference: isCorrection ? `${externalRef}-adjustment` : externalRef,
+        created_at: isCorrection ? new Date().toISOString() : c.created,
       })
       if (creditError) {
         c.status = 'error'
@@ -491,8 +520,8 @@ function formatEuros(cents: number): string {
       <div class="flex gap-2.5 rounded-ctl border border-warning-border bg-warning-bg p-3">
         <span class="mt-0.5 shrink-0 text-[13px]">⚠️</span>
         <p class="text-[12.5px] leading-relaxed text-warning-text">
-          <span class="font-medium">{{ t('Check "Credit now" on every "Missing credit" row.', 'Revisa «Saldo actual» en cada fila «Falta el saldo».') }}</span>
-          {{ t('Those add credit to a bono that already exists here. If the patient was fixed by hand before, that credit lands on top of what they already have.', 'Esas añaden saldo a un bono que ya existe aquí. Si el paciente se corrigió a mano antes, ese saldo se suma al que ya tiene.') }}
+          <span class="font-medium">{{ t('This corrects credit that is already wrong, up or down.', 'Esto corrige saldos que ya est\u00e1n mal, al alza o a la baja.') }}</span>
+          {{ t('178 bonos were credited with the value of the sessions remaining instead of the money received, so every part-payer among them holds credit for sessions nobody has paid for. Read the "Should be" column against "Credit now" before applying. Nothing is overwritten \u2014 a correction is added as its own ledger row.', 'Se abonaron 178 bonos con el valor de las sesiones restantes en lugar del dinero recibido, as\u00ed que quien pag\u00f3 a medias tiene saldo por sesiones que nadie ha pagado. Compara la columna \u00abDeber\u00eda ser\u00bb con \u00abSaldo actual\u00bb antes de aplicar. No se sobrescribe nada: la correcci\u00f3n se a\u00f1ade como su propia l\u00ednea del libro.') }}
         </p>
       </div>
 
@@ -528,8 +557,8 @@ function formatEuros(cents: number): string {
       <div class="rounded-lg border border-line bg-surface-subtle p-3 text-sm text-ink-muted2">
         {{
           t(
-            `Found ${candidates.filter((c) => c.status === 'pending' && !c.creditOnly).length} package(s) to add -- ${candidates.filter((c) => c.status === 'pending' && !c.creditOnly && c.isActive).length} still active (these carry credit), ${candidates.filter((c) => c.status === 'pending' && !c.creditOnly && !c.isActive).length} closed (history only, no credit). Plus ${candidates.filter((c) => c.status === 'pending' && c.creditOnly).length} already-imported package(s) missing the credit an older version of this tool failed to write -- those add the credit only, leaving the purchase record as it is. Total credit to be granted: €${formatEuros(candidates.filter((c) => c.status === 'pending').reduce((sum, c) => sum + c.creditCents, 0))}. Skipped: ${candidates.filter((c) => c.status === 'skipped-existing').length} already covered by a same-day manual entry, ${skippedUnmatched} unmatched patients, ${skippedNoValue} active packages with nothing left on them.`,
-            `Se encontraron ${candidates.filter((c) => c.status === 'pending' && !c.creditOnly).length} bono(s) para añadir -- ${candidates.filter((c) => c.status === 'pending' && !c.creditOnly && c.isActive).length} activos (con saldo), ${candidates.filter((c) => c.status === 'pending' && !c.creditOnly && !c.isActive).length} cerrados (solo histórico, sin saldo). Además ${candidates.filter((c) => c.status === 'pending' && c.creditOnly).length} bono(s) ya importados a los que falta el saldo que una versión anterior de esta herramienta no escribió -- en esos solo se añade el saldo, sin tocar el registro de compra. Saldo total a conceder: €${formatEuros(candidates.filter((c) => c.status === 'pending').reduce((sum, c) => sum + c.creditCents, 0))}. Omitidos: ${candidates.filter((c) => c.status === 'skipped-existing').length} ya cubiertos por una entrada manual del mismo día, ${skippedUnmatched} pacientes sin emparejar, ${skippedNoValue} bonos activos sin saldo restante.`,
+            `Found ${candidates.filter((c) => c.status === 'pending' && !c.creditOnly).length} new bono(s) to add and ${candidates.filter((c) => c.status === 'pending' && c.creditOnly).length} already here that need correcting. Credit going up on ${candidates.filter((c) => c.creditDeltaCents > 0).length}: +€${formatEuros(candidates.filter((c) => c.creditDeltaCents > 0).reduce((sum, c) => sum + c.creditDeltaCents, 0))}. Credit coming back on ${candidates.filter((c) => c.creditDeltaCents < 0).length} over-credited by the old full-entitlement rule: -€${formatEuros(-candidates.filter((c) => c.creditDeltaCents < 0).reduce((sum, c) => sum + c.creditDeltaCents, 0))}. Invoices for money still owed: ${candidates.filter((c) => c.needsInvoice).length}, €${formatEuros(candidates.filter((c) => c.needsInvoice).reduce((sum, c) => sum + c.owedCents, 0))}. Skipped: ${skippedUnmatched} unmatched patients, ${skippedNoValue} active bonos with nothing left on them.`,
+            `Se encontraron ${candidates.filter((c) => c.status === 'pending' && !c.creditOnly).length} bono(s) nuevos y ${candidates.filter((c) => c.status === 'pending' && c.creditOnly).length} ya existentes que hay que corregir. Sube el saldo en ${candidates.filter((c) => c.creditDeltaCents > 0).length}: +€${formatEuros(candidates.filter((c) => c.creditDeltaCents > 0).reduce((sum, c) => sum + c.creditDeltaCents, 0))}. Se retira saldo en ${candidates.filter((c) => c.creditDeltaCents < 0).length} con saldo de más por la regla antigua: -€${formatEuros(-candidates.filter((c) => c.creditDeltaCents < 0).reduce((sum, c) => sum + c.creditDeltaCents, 0))}. Facturas por lo que queda pendiente: ${candidates.filter((c) => c.needsInvoice).length}, €${formatEuros(candidates.filter((c) => c.needsInvoice).reduce((sum, c) => sum + c.owedCents, 0))}. Omitidos: ${skippedUnmatched} pacientes sin emparejar, ${skippedNoValue} bonos activos sin saldo restante.`,
           )
         }}
       </div>
@@ -554,6 +583,7 @@ function formatEuros(cents: number): string {
               <th class="px-3 py-2">owing</th>
               <th class="px-3 py-2">package_balance</th>
               <th class="px-3 py-2">{{ t('Credit now', 'Saldo actual') }}</th>
+              <th class="px-3 py-2">{{ t('Should be', 'Debería ser') }}</th>
               <th class="px-3 py-2">{{ t('Still owed', 'Pendiente de pago') }}</th>
               <th class="px-3 py-2">{{ t('Will insert', 'Se insertará') }}</th>
               <th class="px-3 py-2">{{ t('Status', 'Estado') }}</th>
@@ -568,21 +598,26 @@ function formatEuros(cents: number): string {
               <td class="px-3 py-2">{{ c.balance }}</td>
               <td class="px-3 py-2">{{ c.owing }}</td>
               <td class="px-3 py-2">{{ c.packageBalance }}</td>
-              <td class="px-3 py-2" :class="c.creditOnly && c.currentCreditCents > 0 ? 'font-medium text-warning-text' : ''">€{{ formatEuros(c.currentCreditCents) }}</td>
+              <td class="px-3 py-2">€{{ formatEuros(c.attributedCreditCents) }}</td>
+              <td class="px-3 py-2" :class="c.creditDeltaCents !== 0 ? 'font-medium text-warning-text' : 'text-ink-muted2'">€{{ formatEuros(c.targetCreditCents) }}</td>
               <td class="px-3 py-2" :class="c.owedCents > 0 ? 'font-medium text-warning-text' : 'text-ink-muted2'">
                 <template v-if="c.owedCents > 0">€{{ formatEuros(c.owedCents) }}</template>
                 <template v-else>—</template>
               </td>
               <td class="px-3 py-2">
-                <div v-if="c.creditOnly && c.creditCents > 0">€{{ formatEuros(c.creditCents) }} {{ t('credit only', 'solo crédito') }}</div>
-                <div v-else-if="!c.creditOnly">€{{ formatEuros(c.priceCents) }} / €{{ formatEuros(c.creditCents) }} {{ t('credit', 'crédito') }}</div>
+                <div v-if="!c.creditOnly">€{{ formatEuros(c.priceCents) }} {{ t('bono', 'bono') }}</div>
+                <div v-if="c.creditDeltaCents !== 0" :class="c.creditDeltaCents < 0 ? 'text-danger-text' : ''">
+                  {{ c.creditDeltaCents > 0 ? '+' : '' }}€{{ formatEuros(c.creditDeltaCents) }} {{ t('credit', 'crédito') }}
+                </div>
                 <div v-if="c.needsInvoice" class="text-warning-text">+ €{{ formatEuros(c.owedCents) }} {{ t('invoice', 'factura') }}</div>
               </td>
               <td class="px-3 py-2">
-                <span v-if="c.status === 'pending' && c.creditOnly && c.creditCents === 0" class="text-warning-text">{{ t('Missing invoice', 'Falta la factura') }}</span>
+                <span v-if="c.status === 'pending' && c.creditDeltaCents < 0" class="text-danger-text">{{ t('Over-credited', 'Saldo de más') }}</span>
+                <span v-else-if="c.status === 'pending' && c.creditOnly && c.creditDeltaCents === 0" class="text-warning-text">{{ t('Missing invoice', 'Falta la factura') }}</span>
                 <span v-else-if="c.status === 'pending' && c.creditOnly" class="text-warning-text">{{ t('Missing credit', 'Falta el saldo') }}</span>
                 <span v-else-if="c.status === 'pending'" class="text-ink-600">{{ t('Pending', 'Pendiente') }}</span>
-                <span v-else class="text-ink-muted2">{{ t('Already covered', 'Ya cubierto') }}</span>
+                <span v-else-if="c.status === 'applied'" class="text-ink-muted2">{{ t('Applied', 'Aplicado') }}</span>
+                <span v-else class="text-danger-text">{{ c.errorMessage || t('Error', 'Error') }}</span>
               </td>
             </tr>
           </tbody>

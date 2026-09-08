@@ -142,6 +142,32 @@ describe('Every authenticated page renders for the account owner', () => {
     }
   })
 
+  // robots.txt is host-dependent (server/routes/robots.txt.get.ts) and a
+  // regression here is invisible: the portal keeps rendering perfectly while
+  // quietly being uncrawlable, which is how it shipped the first time.
+  it('serves robots.txt and the sitemap per host', () => {
+    cy.request('/robots.txt').then((res) => {
+      expect(res.body, 'app host stays fully disallowed').to.contain('Disallow: /')
+      expect(res.body).not.to.contain('Allow: /')
+    })
+    cy.request({ url: '/sitemap.xml', failOnStatusCode: false }).its('status').should('eq', 404)
+
+    // The docs subdomain, faked with a Host header -- the app is host-aware,
+    // not port-aware, so this is the same code path developers.quiroflow.com hits.
+    cy.request({ url: '/robots.txt', headers: { Host: 'developers.localtest.me' } }).then((res) => {
+      expect(res.body, 'docs host must be crawlable').to.contain('Allow: /')
+      expect(res.body).not.to.contain('Disallow: /')
+      expect(res.body).to.contain('Sitemap: https://developers.quiroflow.com/sitemap.xml')
+    })
+
+    cy.request({ url: '/sitemap.xml', headers: { Host: 'developers.localtest.me' } }).then((res) => {
+      expect(res.status).to.eq(200)
+      for (const slug of DEV_PORTAL_SLUGS) {
+        expect(res.body, `sitemap lists /${slug}`).to.contain(`https://developers.quiroflow.com/${slug}<`)
+      }
+    })
+  })
+
   it('smoke-tests the unauthenticated pages', () => {
     cy.clearCookies()
 

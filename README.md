@@ -116,6 +116,14 @@ Portal pages set `robots: index, follow` per-page, overriding the app-wide
 `noindex` in `nuxt.config.ts`, and canonicalise to
 `developers.quiroflow.com` so the `/developers/*` copies on the app host
 don't compete in search results.
+
+`robots.txt` and `sitemap.xml` are **server routes** (`server/routes/`), not
+static files, because they have to differ per hostname: the app host
+disallows everything, the docs host allows everything and points at a
+sitemap built from `DEV_PORTAL_SLUGS`. A static `public/robots.txt` cannot
+express that — it said `Disallow: /` for the whole site, which silently
+blocked the portal too, since a disallowed URL is never fetched and so its
+`index, follow` meta tag is never read.
 ## Platform billing (QuiroFlow charging clinics)
 
 Separate from the Stripe Connect setup that charges a clinic's *patients* —

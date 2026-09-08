@@ -30,6 +30,12 @@ const services = ref<ServiceOption[]>([])
 const addServiceId = ref('')
 const loadingInvoice = ref(true)
 const hasFutureAppointment = ref(true)
+// Whether THIS appointment itself hasn't happened yet -- distinct from
+// hasFutureAppointment above, which checks the patient's OTHER appointments.
+// Opening this tab must not invoice a visit that hasn't occurred: a patient
+// owes nothing for a future booking until it actually happens or someone
+// deliberately bills them (e.g. the patient's own Billing tab).
+const appointmentIsUpcoming = ref(true)
 
 const paymentAmount = ref('')
 // 'credit' triggers a compound operation: a payments row (method: 'credit')
@@ -68,6 +74,16 @@ async function loadFutureAppointmentCheck() {
   hasFutureAppointment.value = (count ?? 0) > 0
 }
 
+async function loadAppointmentTiming() {
+  const { data } = await supabase.from('appointments').select('starts_at').eq('id', props.appointmentId).maybeSingle()
+  appointmentIsUpcoming.value = !!data && new Date(data.starts_at) > new Date()
+}
+
+// Creates the invoice on demand -- called only from an actual billing action
+// (recording a payment, adding a line item, spending a package session,
+// sending the invoice), never just from opening this tab. For an appointment
+// that hasn't happened yet, skip creating: there's nothing to bill until the
+// visit occurs, so this returns null and the calling action no-ops.
 async function ensureInvoice(): Promise<InvoiceRow | null> {
   const { data: existing } = await supabase
     .from('invoices')
@@ -77,6 +93,7 @@ async function ensureInvoice(): Promise<InvoiceRow | null> {
 
   if (existing) return existing
   if (!can('billing_access')) return null
+  if (appointmentIsUpcoming.value) return null
 
   const { count } = await supabase.from('invoices').select('id', { count: 'exact', head: true })
   const invoiceNumber = `INV-${String((count ?? 0) + 1).padStart(4, '0')}`
@@ -134,6 +151,7 @@ async function loadInvoice() {
 onMounted(async () => {
   const { data: svc } = await supabase.from('services_products').select('id, name, price_cents').order('name')
   services.value = svc ?? []
+  await loadAppointmentTiming()
   await loadFutureAppointmentCheck()
   await loadInvoice()
 })
@@ -328,6 +346,9 @@ async function recordPayment() {
     </div>
 
     <div v-if="loadingInvoice" class="text-ink-faint">{{ t('Loading invoice…', 'Cargando factura…') }}</div>
+    <p v-else-if="!invoice && appointmentIsUpcoming" class="text-ink-faint">
+      {{ t("This appointment hasn't happened yet — no invoice until it does.", 'Esta cita todavía no ha ocurrido: no habrá factura hasta entonces.') }}
+    </p>
     <p v-else-if="!invoice && !can('billing_access')" class="text-ink-faint">{{ t('No invoice for this appointment yet.', 'Todavía no hay factura para esta cita.') }}</p>
     <div v-else-if="invoice" class="rounded-card border border-line bg-surface p-3">
       <div class="flex items-center justify-between">

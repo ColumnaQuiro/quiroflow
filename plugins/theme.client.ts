@@ -15,6 +15,7 @@ export default defineNuxtPlugin(() => {
   const route = useRoute()
   if (PUBLIC_LIGHT_ONLY_PREFIXES.some((prefix) => route.path.startsWith(prefix))) {
     document.documentElement.setAttribute('data-theme', 'light')
+    applyThemeColor('light')
     return
   }
   const { initFromStorage } = useTheme()

@@ -274,12 +274,12 @@ const headerMeta = computed(() => {
 
 <template>
   <div class="flex h-full flex-col">
-    <header class="flex h-14 shrink-0 items-center justify-between border-b border-line bg-surface px-6">
+    <header class="flex shrink-0 flex-col gap-2.5 border-b border-line bg-surface px-4 py-3 sm:h-14 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-0">
       <div class="flex items-baseline gap-2.5">
         <h1 class="text-[18px] font-[640] tracking-tightTitle text-ink-900">{{ t('My Day', 'Mi Día') }}</h1>
         <p class="text-[12.5px] text-ink-muted2">{{ headerMeta }}</p>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2">
         <div v-if="canSeeAll" class="relative">
           <select
             v-model="practitionerId"
@@ -307,7 +307,7 @@ const headerMeta = computed(() => {
     </header>
 
     <div class="flex-1 overflow-y-auto bg-surface-page">
-      <div class="flex items-center gap-3 border-b border-line bg-surface px-6 py-2.5">
+      <div class="flex flex-wrap items-center gap-3 border-b border-line bg-surface px-4 py-2.5 sm:px-6">
         <button type="button" class="flex h-7 w-7 items-center justify-center rounded-ctlSm border border-line-control text-[13px] text-ink-500 hover:border-line-controlHover" @click="anchorDate = addDays(anchorDate, viewMode === 'day' ? -1 : -7)">‹</button>
         <button type="button" class="flex h-7 items-center rounded-ctlSm border border-line-control px-2.5 text-[12.5px] font-medium text-ink-500 hover:border-line-controlHover" @click="anchorDate = new Date()">{{ t('Today', 'Hoy') }}</button>
         <button type="button" class="flex h-7 w-7 items-center justify-center rounded-ctlSm border border-line-control text-[13px] text-ink-500 hover:border-line-controlHover" @click="anchorDate = addDays(anchorDate, viewMode === 'day' ? 1 : 7)">›</button>
@@ -319,14 +319,14 @@ const headerMeta = computed(() => {
         </div>
       </div>
 
-      <div v-if="loading" class="flex flex-col gap-4 p-6">
+      <div v-if="loading" class="flex flex-col gap-4 p-4 sm:p-6">
         <UiSkeleton class="h-16 w-full rounded-card" />
         <div class="space-y-2">
           <UiSkeleton v-for="i in 5" :key="i" class="h-12 w-full rounded-ctl" />
         </div>
       </div>
 
-      <div v-else class="flex flex-col gap-4 p-6">
+      <div v-else class="flex flex-col gap-4 p-4 sm:p-6">
         <!-- Flow tracker: shared summary strip for both Day and Week views -->
         <div class="w-full overflow-hidden rounded-card border border-line bg-surface-sidebar shadow-card">
           <div class="grid grid-cols-5 px-3 py-3">
@@ -338,9 +338,9 @@ const headerMeta = computed(() => {
           </div>
         </div>
 
-        <div class="flex items-start gap-4">
+        <div class="flex flex-col items-start gap-4 md:flex-row">
         <!-- Day view worklist -->
-        <div v-if="viewMode === 'day'" class="w-[404px] shrink-0 overflow-hidden rounded-card border border-line bg-surface-sidebar shadow-card">
+        <div v-if="viewMode === 'day'" class="w-full shrink-0 overflow-hidden rounded-card border border-line bg-surface-sidebar shadow-card md:w-[404px]">
           <div v-if="appointments.length === 0" class="p-8 text-center text-[13px] text-ink-faint">{{ t('No appointments for this day.', 'No hay citas para este día.') }}</div>
           <ul v-else class="flex flex-col gap-1 p-2">
             <li v-for="a in appointments" :key="a.id" class="group relative">
@@ -396,36 +396,40 @@ const headerMeta = computed(() => {
           </ul>
         </div>
 
-        <!-- Week view -->
-        <div v-else class="grid min-w-0 flex-1 grid-cols-7 gap-3">
-          <div v-for="day in weekDays" :key="toDateKey(day)" class="overflow-hidden rounded-card border border-line bg-surface shadow-card">
-            <div class="border-b border-line-row bg-surface-subtle2 px-2 py-1.5">
-              <span class="text-[12px] font-medium text-ink-700">{{ day.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' }) }}</span>
-            </div>
-            <div class="min-h-[120px] space-y-1 p-1.5">
-              <button
-                v-for="a in appointmentsForDay(day)"
-                :key="a.id"
-                type="button"
-                class="block w-full rounded-ctlSm border-l-[3px] px-1.5 py-1 text-left text-[11.5px]"
-                :class="a.status === 'completed' ? 'border-success-accent bg-success-bg2' : 'border-warning-accent bg-warning-bg2'"
-                @click="selectAppointment(a)"
-              >
-                <p class="truncate font-medium text-ink-700" :class="{ 'blur-sm select-none': privacyMode }">
-                  {{ formatTime(a.starts_at) }} {{ a.patients?.first_name }}
-                </p>
-                <p v-if="a.checked_in_at" class="truncate text-success-text">{{ t('Arrived', 'Llegada') }}</p>
-              </button>
-              <p v-if="appointmentsForDay(day).length === 0" class="px-1 py-2 text-center text-[11.5px] text-ink-faint">—</p>
+        <!-- Week view. 7 columns need more room than a phone has, so this
+        scrolls horizontally as a unit rather than squeezing each day
+        illegibly thin -- same trade-off as the Patients table. -->
+        <div v-else class="min-w-0 w-full flex-1 overflow-x-auto">
+          <div class="grid min-w-[840px] grid-cols-7 gap-3">
+            <div v-for="day in weekDays" :key="toDateKey(day)" class="overflow-hidden rounded-card border border-line bg-surface shadow-card">
+              <div class="border-b border-line-row bg-surface-subtle2 px-2 py-1.5">
+                <span class="text-[12px] font-medium text-ink-700">{{ day.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' }) }}</span>
+              </div>
+              <div class="min-h-[120px] space-y-1 p-1.5">
+                <button
+                  v-for="a in appointmentsForDay(day)"
+                  :key="a.id"
+                  type="button"
+                  class="block w-full rounded-ctlSm border-l-[3px] px-1.5 py-1 text-left text-[11.5px]"
+                  :class="a.status === 'completed' ? 'border-success-accent bg-success-bg2' : 'border-warning-accent bg-warning-bg2'"
+                  @click="selectAppointment(a)"
+                >
+                  <p class="truncate font-medium text-ink-700" :class="{ 'blur-sm select-none': privacyMode }">
+                    {{ formatTime(a.starts_at) }} {{ a.patients?.first_name }}
+                  </p>
+                  <p v-if="a.checked_in_at" class="truncate text-success-text">{{ t('Arrived', 'Llegada') }}</p>
+                </button>
+                <p v-if="appointmentsForDay(day).length === 0" class="px-1 py-2 text-center text-[11.5px] text-ink-faint">—</p>
+              </div>
             </div>
           </div>
         </div>
 
         <!-- My Day patient view -->
-        <div v-if="selectedAppointment" class="min-w-0 flex-1">
+        <div v-if="selectedAppointment" class="min-w-0 w-full flex-1">
           <PractitionerMyDayPatientView :appointment="selectedAppointment" :rooms="rooms" @charted="loadDay" />
         </div>
-        <div v-else class="flex min-w-0 flex-1 items-center justify-center rounded-card border border-dashed border-line-control p-10 text-[13px] text-ink-faint">
+        <div v-else class="flex min-w-0 w-full flex-1 items-center justify-center rounded-card border border-dashed border-line-control p-10 text-[13px] text-ink-faint">
           {{ t('Select a patient to chart their visit.', 'Selecciona un paciente para registrar su visita.') }}
         </div>
         </div>

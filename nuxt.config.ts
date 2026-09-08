@@ -17,7 +17,17 @@ export default defineNuxtConfig({
       // separate marketing site yet, so nothing here should be indexed.
       // robots.txt alone doesn't stop a page Google discovers via an
       // external link from being indexed; this tag is the actual guarantee.
-      meta: [{ name: 'robots', content: 'noindex, nofollow' }],
+      meta: [
+        { name: 'robots', content: 'noindex, nofollow' },
+        // Without this, iOS Safari paints the status-bar/toolbar areas its
+        // own neutral gray instead of matching the page -- these two cover
+        // the "system" theme case (most staff) for the very first paint,
+        // before useTheme()'s plugin can run; it keeps both in sync with a
+        // manually-picked Settings > Appearance preference afterwards (see
+        // apply() in composables/useTheme.ts).
+        { name: 'theme-color', content: '#F7F8FA', media: '(prefers-color-scheme: light)' },
+        { name: 'theme-color', content: '#0F1014', media: '(prefers-color-scheme: dark)' },
+      ],
       link: [
         { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
         { rel: 'alternate icon', href: '/favicon.ico' },

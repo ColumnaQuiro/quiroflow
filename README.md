@@ -182,15 +182,20 @@ Neither declares `applinks` / `common.handle_all_urls`: those route
 `https://app.quiroflow.com` links into the app, which is a separate decision
 from autofill.
 
-**⚠️ After the first Play Store upload**, add a second fingerprint to
-`assetlinks.json`. The one committed is the *upload* key
-(`mobile/android/quiroflow-upload.keystore`). Play App Signing re-signs the
-app with Google's own key, so what ships to users has a different
-fingerprint and autofill won't match until it's listed. Copy it from Play
-Console → Setup → App signing → "App signing key certificate" (SHA-256) and
-append it to `sha256_cert_fingerprints` — the field is an array precisely so
-both keys can be listed, and keeping the upload key covers directly-signed
-builds.
+`assetlinks.json` lists **two** fingerprints, and needs both. Play App
+Signing re-signs every upload with Google's own key, so the certificate that
+reaches users is not the one the AAB was built with:
+
+- `2D:41:CD:…:66:8A` — the **app signing key** Google re-signs with. This is
+  the one real installs present, so autofill matches on this. From Play
+  Console → Protegida con Play → App signing → "App signing key certificate".
+- `2B:9C:CB:…:BE:38` — the **upload key**
+  (`mobile/android/quiroflow-upload.keystore`), kept so directly-signed
+  builds (a locally built APK on a test device) match too.
+
+Both live under the QuiroFlow developer account on **hola@columnaquiro.com**
+(account ID 8114479705581398263) — not the personal Google account, which
+has an unrelated, terminated developer profile on it.
 
 Verify either file is reachable with no redirect (both platforms require
 that):

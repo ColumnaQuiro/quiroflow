@@ -55,9 +55,11 @@ export function widgetDef(type: string): WidgetDef | undefined {
 }
 
 // 12-column grid: sm = a third, md = two-thirds, lg = full width.
+// Every size stacks full-width below md -- a "third-width" widget on a
+// 12-col grid is unusably narrow on a phone regardless of what it's set to.
 export const SIZE_COL_SPAN: Record<WidgetSize, string> = {
-  sm: 'col-span-4',
-  md: 'col-span-8',
+  sm: 'col-span-12 md:col-span-4',
+  md: 'col-span-12 md:col-span-8',
   lg: 'col-span-12',
 }
 

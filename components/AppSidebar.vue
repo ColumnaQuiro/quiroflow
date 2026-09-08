@@ -1,4 +1,7 @@
 <script setup lang="ts">
+const props = defineProps<{ open?: boolean }>()
+const emit = defineEmits<{ close: [] }>()
+
 const route = useRoute()
 const { can, scope } = usePermission()
 const store = useAccountStore()
@@ -166,15 +169,34 @@ onMounted(() => {
 onUnmounted(() => {
   document.removeEventListener('click', onDocumentClick)
 })
+
+// Below the lg breakpoint the sidebar is an off-canvas drawer (opened via
+// the top bar's hamburger button) instead of a permanent column -- a phone
+// doesn't have the width to spare for it at any collapsed/expanded size.
+// Any navigation should dismiss it, same as clicking the backdrop.
+watch(() => route.fullPath, () => emit('close'))
 </script>
 
 <template>
-  <aside class="relative flex shrink-0 flex-col bg-surface-sidebar border-r border-line print:hidden" :class="collapsed ? 'w-[60px]' : 'w-[236px]'">
+  <div v-if="props.open" class="fixed inset-0 z-30 bg-black/40 lg:hidden" @click="emit('close')" />
+
+  <aside
+    class="fixed inset-y-0 left-0 z-40 flex w-[260px] shrink-0 flex-col bg-surface-sidebar border-r border-line transition-transform duration-200 print:hidden lg:static lg:z-auto lg:translate-x-0"
+    :class="[props.open ? 'translate-x-0' : '-translate-x-full', collapsed ? 'lg:w-[60px]' : 'lg:w-[236px]']"
+  >
     <div class="flex items-center gap-[9px] px-4 pb-3 pt-4" :class="{ 'justify-center px-0': collapsed }">
       <div class="flex h-6 w-6 items-center justify-center rounded-ctlSm bg-brand">
         <img src="/logo/quiroflow-mark-white.svg" alt="" class="h-3.5 w-3.5" />
       </div>
-      <NuxtLink v-if="!collapsed" to="/dashboard" class="text-[14.5px] font-[640] tracking-tightTitle text-ink-900">QuiroFlow</NuxtLink>
+      <NuxtLink v-if="!collapsed" to="/dashboard" class="flex-1 text-[14.5px] font-[640] tracking-tightTitle text-ink-900">QuiroFlow</NuxtLink>
+      <button
+        type="button"
+        class="flex h-6 w-6 items-center justify-center rounded-ctlSm text-ink-muted2 hover:bg-surface-subtle lg:hidden"
+        :title="t('Close menu', 'Cerrar menú')"
+        @click="emit('close')"
+      >
+        <svg width="13" height="13" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2 2l10 10M12 2L2 12" /></svg>
+      </button>
     </div>
 
     <div v-if="store.clinics.length > 0 && !collapsed" class="flex flex-col gap-1.5 px-3 pb-2.5">
@@ -269,11 +291,12 @@ onUnmounted(() => {
 
     <!-- Floating rather than a full-width row -- doesn't cost the sidebar
     any of its own vertical space. Anchored to the aside's own edge (the
-    aside is `relative`), so it stays put in both expanded and collapsed
-    widths. -->
+    aside is `fixed`, which is itself a containing block for `absolute`
+    descendants), so it stays put in both expanded and collapsed widths.
+    Desktop-only -- the mobile drawer doesn't have a collapsed state. -->
     <button
       type="button"
-      class="absolute -right-3 bottom-6 flex h-6 w-6 items-center justify-center rounded-full border border-line bg-surface text-ink-muted2 shadow-card hover:bg-surface-subtle hover:text-ink-700"
+      class="absolute -right-3 bottom-6 hidden h-6 w-6 items-center justify-center rounded-full border border-line bg-surface text-ink-muted2 shadow-card hover:bg-surface-subtle hover:text-ink-700 lg:flex"
       :title="collapsed ? t('Expand sidebar', 'Expandir barra lateral') : t('Collapse sidebar', 'Colapsar barra lateral')"
       @click="toggleCollapsed"
     >

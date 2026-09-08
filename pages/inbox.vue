@@ -864,7 +864,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
 <template>
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Inbox', 'Bandeja de entrada')" />
-    <div v-if="webPush.supported.value && webPush.permission.value === 'default' && !pushBannerDismissed" class="flex shrink-0 items-center justify-between gap-3 border-b border-line bg-brand-tint px-4 py-2">
+    <div v-if="webPush.supported.value && webPush.permission.value === 'default' && !pushBannerDismissed" class="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-line bg-brand-tint px-4 py-2">
       <p class="text-[12.5px] text-brand-text">{{ t('Get notified here when a patient messages you, even with the tab in the background.', 'Recibe avisos aquí cuando un paciente te escriba, incluso con la pestaña en segundo plano.') }}</p>
       <div class="flex shrink-0 items-center gap-3">
         <UiBtn variant="primary" size="sm" @click="webPush.register()">{{ t('Enable notifications', 'Activar notificaciones') }}</UiBtn>
@@ -872,8 +872,10 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
       </div>
     </div>
     <div class="flex flex-1 overflow-hidden">
-      <!-- Conversation list -->
-      <div class="flex w-[320px] shrink-0 flex-col border-r border-line bg-surface">
+      <!-- Conversation list. Full-width on mobile (there's no room for a
+      320px list alongside a thread), swapped for the thread panel once a
+      conversation is selected instead of splitting the screen between them. -->
+      <div class="w-full flex-col border-r border-line bg-surface md:flex md:w-[320px] md:shrink-0" :class="selected ? 'hidden md:flex' : 'flex'">
         <div class="border-b border-line-divider p-3">
           <div v-if="!selectionMode" class="flex items-center gap-2">
             <input
@@ -1053,11 +1055,19 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
       </div>
 
       <!-- Thread -->
-      <div v-if="!selected" class="flex flex-1 items-center justify-center text-[13px] text-ink-faint">
+      <div v-if="!selected" class="hidden flex-1 items-center justify-center text-[13px] text-ink-faint md:flex">
         {{ t('Select a conversation to view messages.', 'Selecciona una conversación para ver los mensajes.') }}
       </div>
       <div v-else class="flex min-w-0 flex-1 flex-col bg-surface-page">
         <div class="flex h-14 shrink-0 items-center gap-2.5 border-b border-line bg-surface px-4">
+          <button
+            type="button"
+            class="flex h-8 w-8 shrink-0 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle md:hidden"
+            :title="t('Back to conversations', 'Volver a conversaciones')"
+            @click="selectedKey = null"
+          >
+            <svg width="8" height="13" viewBox="0 0 8 13" fill="none"><path d="M7 1L1 6.5L7 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          </button>
           <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[11px] font-semibold text-brand-text">
             {{ selected.name.slice(0, 2).toUpperCase() }}
           </span>

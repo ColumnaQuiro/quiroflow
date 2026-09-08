@@ -43,6 +43,7 @@ interface Candidate {
   sessionsTotal: number
   sessionsUsed: number
   priceCents: number
+  isActive: boolean
   creditCents: number
   status: 'pending' | 'applied' | 'skipped-existing' | 'error'
   errorMessage?: string
@@ -71,9 +72,21 @@ const showRawSample = ref(false)
 // list price. Cross-check the preview table's raw columns against a patient
 // already fixed by hand (e.g. David Poveda: price ~559, credit ~361, 1
 // session left of 14) before trusting "Apply" on the rest.
+// The remaining prepaid value of a package is `balance`, not
+// `package_balance`. Checked against all 545 records in the live PracticeHub
+// account: `balance` equals visits_left x (price / visits) for 519 of them,
+// the rest differing only by rounding or by the package being over-used.
+// `package_balance` is a different quantity and is frequently NEGATIVE where
+// balance is positive -- a Bono 12 with 4 visits left reads balance 176 and
+// package_balance -178. Preferring it, as this did, would have written a
+// -178 EUR credit against a patient who is owed 176 EUR: 84 of the 182 active
+// packages would have got a negative credit, -21,737 EUR in total.
+//
+// Clamped at zero because 8 packages are over-used and carry a negative
+// balance. A patient cannot hold negative prepaid credit -- if they owe for
+// extra visits that is an invoice, not a credit.
 function creditCentsFor(pkg: PHPatientPackage): number {
-  const raw = pkg.package_balance ?? pkg.balance ?? pkg.owing ?? 0
-  return Math.round(raw * 100)
+  return Math.max(0, Math.round((pkg.balance ?? 0) * 100))
 }
 
 async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }) {
@@ -130,12 +143,23 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     for (const pkg of phPackages) {
       const externalRef = `PH-package-${pkg.id}`
       if (existingExternalRefs.has(externalRef)) continue
-      if (pkg.active !== 1) continue
 
-      const hasRemainingValue = (pkg.visits_left ?? 0) > 0 || (pkg.package_balance ?? 0) > 0 || (pkg.balance ?? 0) > 0
-      if (!hasRemainingValue) {
-        skippedNoValue.value++
-        continue
+      // Closed packages are imported too, as history. Skipping them is what
+      // left a patient's Billing tab showing a course of visits with nothing
+      // that paid for them: a spent bono is deactivated in PracticeHub, so
+      // every fully-used course was being dropped. They come in with no
+      // credit attached (see below), so they add the record without moving
+      // anyone's balance.
+      const isActive = pkg.active === 1
+
+      // Only meaningful for a live package -- a closed one having no value
+      // left is the normal case, not a reason to skip it.
+      if (isActive) {
+        const hasRemainingValue = (pkg.visits_left ?? 0) > 0 || (pkg.balance ?? 0) > 0
+        if (!hasRemainingValue) {
+          skippedNoValue.value++
+          continue
+        }
       }
 
       const phPatientId = patientIdOf(pkg)
@@ -168,7 +192,11 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         sessionsTotal: Math.max(visitsTotal, 1),
         sessionsUsed,
         priceCents: Math.round((pkg.price ?? 0) * 100),
-        creditCents: creditCentsFor(pkg),
+        isActive,
+        // A deactivated package is closed: whatever visits it had left are no
+        // longer claimable, so it carries no credit. Granting one would
+        // invent money the clinic never owed.
+        creditCents: isActive ? creditCentsFor(pkg) : 0,
         status: alreadyHasSameDayPurchase ? 'skipped-existing' : 'pending',
       })
     }
@@ -292,8 +320,8 @@ function formatEuros(cents: number): string {
       <div class="rounded-lg border border-line bg-surface-subtle p-3 text-sm text-ink-muted2">
         {{
           t(
-            `Found ${candidates.filter((c) => c.status === 'pending').length} package(s) to add, ${candidates.filter((c) => c.status === 'skipped-existing').length} already covered by a same-day manual entry, ${skippedUnmatched} unmatched patients, ${skippedNoValue} inactive/zero-value packages.`,
-            `Se encontraron ${candidates.filter((c) => c.status === 'pending').length} bono(s) para añadir, ${candidates.filter((c) => c.status === 'skipped-existing').length} ya cubiertos por una entrada manual del mismo día, ${skippedUnmatched} pacientes sin emparejar, ${skippedNoValue} bonos inactivos o sin valor.`,
+            `Found ${candidates.filter((c) => c.status === 'pending').length} package(s) to add -- ${candidates.filter((c) => c.status === 'pending' && c.isActive).length} still active (these carry credit), ${candidates.filter((c) => c.status === 'pending' && !c.isActive).length} closed (history only, no credit). Total credit to be granted: €${formatEuros(candidates.filter((c) => c.status === 'pending').reduce((sum, c) => sum + c.creditCents, 0))}. Skipped: ${candidates.filter((c) => c.status === 'skipped-existing').length} already covered by a same-day manual entry, ${skippedUnmatched} unmatched patients, ${skippedNoValue} active packages with nothing left on them.`,
+            `Se encontraron ${candidates.filter((c) => c.status === 'pending').length} bono(s) para añadir -- ${candidates.filter((c) => c.status === 'pending' && c.isActive).length} activos (con saldo), ${candidates.filter((c) => c.status === 'pending' && !c.isActive).length} cerrados (solo histórico, sin saldo). Saldo total a conceder: €${formatEuros(candidates.filter((c) => c.status === 'pending').reduce((sum, c) => sum + c.creditCents, 0))}. Omitidos: ${candidates.filter((c) => c.status === 'skipped-existing').length} ya cubiertos por una entrada manual del mismo día, ${skippedUnmatched} pacientes sin emparejar, ${skippedNoValue} bonos activos sin saldo restante.`,
           )
         }}
       </div>

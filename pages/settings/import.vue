@@ -29,6 +29,7 @@ const sources = computed<Source[]>(() => [
       { key: 'appointment_types', label: t('Appointment Types (fix)', 'Tipos de cita (fix)') },
       { key: 'payments', label: t('Payments', 'Pagos') },
       { key: 'patient_packages', label: t('Packages / Bonos', 'Bonos') },
+      { key: 'package_sessions', label: t('Package visits', 'Visitas de bono') },
       { key: 'patient_logs', label: t('Patient Logs', 'Registros de pacientes') },
       { key: 'sticky_notes', label: t('Sticky Notes', 'Notas adhesivas') },
       { key: 'treatment_notes', label: t('Treatment Notes', 'Notas de tratamiento') },
@@ -106,6 +107,7 @@ function selectSource(key: string) {
             <ImportPracticeHubAppointmentTypesImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'appointment_types'" />
             <ImportPracticeHubPaymentsImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'payments'" />
             <ImportPracticeHubPatientPackagesImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'patient_packages'" />
+            <ImportPracticeHubPackageSessionsImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'package_sessions'" />
             <ImportPracticeHubPatientLogsImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'patient_logs'" />
             <ImportPracticeHubStickyNotesImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'sticky_notes'" />
             <ImportPracticeHubClinicalNotesImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'treatment_notes'" />

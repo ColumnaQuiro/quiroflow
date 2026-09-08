@@ -1971,6 +1971,50 @@ export type Database = {
           },
         ]
       }
+      package_sessions: {
+        Row: {
+          account_id: string
+          amount_cents: number
+          appointment_id: string | null
+          created_at: string
+          external_reference: string | null
+          id: string
+          package_purchase_id: string | null
+          patient_id: string
+          used_at: string
+        }
+        Insert: {
+          account_id: string
+          amount_cents: number
+          appointment_id?: string | null
+          created_at?: string
+          external_reference?: string | null
+          id?: string
+          package_purchase_id?: string | null
+          patient_id: string
+          used_at: string
+        }
+        Update: {
+          account_id?: string
+          amount_cents?: number
+          appointment_id?: string | null
+          created_at?: string
+          external_reference?: string | null
+          id?: string
+          package_purchase_id?: string | null
+          patient_id?: string
+          used_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "package_sessions_package_purchase_id_fkey"
+            columns: ["package_purchase_id"]
+            isOneToOne: false
+            referencedRelation: "package_purchases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       package_purchases: {
         Row: {
           account_id: string

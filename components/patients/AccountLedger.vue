@@ -18,6 +18,10 @@ interface InvoiceRow {
   refunds_invoice_id: string | null
 }
 interface PaymentRow { id: string; invoice_id: string; amount_cents: number; method: string; paid_at: string }
+// A visit drawn from a package. Carries no debit or credit -- the money was
+// already accounted for when the package was bought -- so it appears in the
+// ledger purely so a visit is not silently absent from a patient's history.
+interface PackageSessionRow { id: string; amount_cents: number; used_at: string; package_name: string | null }
 interface CreditRow { id: string; amount_cents: number; reason: string | null; method: string | null; invoice_id: string | null; created_at: string }
 
 const props = defineProps<{
@@ -26,6 +30,7 @@ const props = defineProps<{
   lineItemDescriptions: Record<string, string[]>
   payments: PaymentRow[]
   credits: CreditRow[]
+  packageSessions: PackageSessionRow[]
   creditLedgerCents: number
   sendingInvoiceId: string
   sendResultInvoiceId: string
@@ -172,6 +177,28 @@ const rows = computed<LedgerRow[]>(() => {
     ],
   }))
 
+  const sessionRows: LedgerRow[] = props.packageSessions.map((ps) => ({
+    key: `pkgsession-${ps.id}`,
+    ref: '',
+    date: ps.used_at,
+    description: ps.package_name
+      ? `${t('Visit from', 'Visita del bono')} ${ps.package_name}`
+      : t('Visit from package', 'Visita de un bono'),
+    // Zero on both sides on purpose: this is a record of consumption, not a
+    // charge. Showing it as a debit would bill the patient twice for a visit
+    // their package already covered.
+    debitCents: 0,
+    creditCents: 0,
+    balanceText: `${money(ps.amount_cents)} ${t('from package', 'del bono')}`,
+    balanceTone: 'neutral' as const,
+    voided: false,
+    detail: [
+      { label: t('Package', 'Bono'), value: ps.package_name ?? '—' },
+      { label: t('Value used', 'Valor consumido'), value: money(ps.amount_cents) },
+      { label: t('Charged', 'Cobrado'), value: t('Nothing -- already covered by the package', 'Nada -- ya cubierto por el bono') },
+    ],
+  }))
+
   // Credit-ledger rows show a running balance of that sub-ledger only --
   // labeled precisely so it isn't mistaken for PH's per-event remaining
   // amount (we have no allocation table tracking which top-up funded which
@@ -204,7 +231,7 @@ const rows = computed<LedgerRow[]>(() => {
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
       .map((row, i) => ({ ...row, ref: `${prefix}-${i + 1}` }))
 
-  const allRows = [...invoiceRows, ...withSyntheticRefs(paymentRows, 'PAY'), ...withSyntheticRefs(creditRows, 'CR')]
+  const allRows = [...invoiceRows, ...withSyntheticRefs(paymentRows, 'PAY'), ...withSyntheticRefs(creditRows, 'CR'), ...withSyntheticRefs(sessionRows, 'PKG')]
   return allRows.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 })
 

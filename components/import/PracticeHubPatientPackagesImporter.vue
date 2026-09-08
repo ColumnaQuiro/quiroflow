@@ -363,14 +363,28 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       // its purchase day, which is what the hand backfill left behind. Never
       // both: a bono with its own reference has already been accounted for,
       // and adding the day figure on top would double-count it.
-      // Only the bono that claimed the day's row inherits the deposit
-      // backdated to that day -- and it consumes it, so a second bono on the
-      // same day starts from zero rather than taking back money a second time.
-      let attributedCreditCents = 0
-      if (creditCentsByRef.has(externalRef)) {
-        attributedCreditCents = (creditCentsByRef.get(externalRef) ?? 0) + (creditCentsByRef.get(adjustmentRef) ?? 0)
-      } else if (claimedTheDayRow) {
-        attributedCreditCents = depositCentsByPatientDay.get(dayKey) ?? 0
+      // Everything this bono already carries, added up -- never one source
+      // instead of another. These are three different rows that can all exist
+      // at once for the same bono, and reading only one of them is what stopped
+      // the tool converging: a corrected backfill bono has a `-adjustment` row
+      // but no row under its plain reference, so the `has(reference)` test that
+      // used to pick between the branches failed, the original deposit was read
+      // on its own, and the correction sitting next to it was ignored. Every
+      // re-run then proposed the same claw-back again. It never double-charged
+      // anyone -- the unique index on (account_id, external_reference) refuses
+      // the second write -- but the front desk was shown 117 fixes that were
+      // all already applied.
+      //
+      //   deposit  +360   backfilled, no reference, backdated to the purchase
+      //   adjust   -360   the correction this tool wrote
+      //   -------------
+      //   carries     0   which is the target, so there is nothing left to do
+      //
+      // The deposit is still consumed on read, so a second bono on the same day
+      // starts from zero instead of taking the same money back again.
+      let attributedCreditCents = (creditCentsByRef.get(externalRef) ?? 0) + (creditCentsByRef.get(adjustmentRef) ?? 0)
+      if (claimedTheDayRow) {
+        attributedCreditCents += depositCentsByPatientDay.get(dayKey) ?? 0
         depositCentsByPatientDay.set(dayKey, 0)
       }
 

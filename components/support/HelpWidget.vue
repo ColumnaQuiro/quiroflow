@@ -48,6 +48,22 @@ async function scrollToEnd() {
   if (scroller.value) scroller.value.scrollTop = scroller.value.scrollHeight
 }
 
+// --- assistant history ----------------------------------------------------
+const loadingHistory = ref(true)
+async function loadAssistantHistory() {
+  const { data } = await supabase
+    .from('help_assistant_messages')
+    .select('role, body, sources, offer_human')
+    .order('created_at')
+  turns.value = (data ?? []).map((m) => ({
+    role: m.role as 'user' | 'assistant',
+    text: m.body,
+    sources: m.sources ?? undefined,
+    offerHuman: m.offer_human,
+  }))
+  loadingHistory.value = false
+}
+
 async function ask() {
   const text = question.value.trim()
   if (!text || asking.value) return
@@ -102,7 +118,10 @@ async function loadThread() {
     .order('created_at')
   thread.value = messages ?? []
 }
-onMounted(loadThread)
+onMounted(() => {
+  loadThread()
+  loadAssistantHistory()
+})
 
 async function openHuman() {
   mode.value = 'human'
@@ -191,7 +210,7 @@ function articleTitle(url: string) {
 
       <div ref="scroller" class="flex-1 space-y-3 overflow-y-auto px-4 py-3">
         <template v-if="mode === 'assistant'">
-          <p v-if="turns.length === 0" class="text-[12.5px] leading-relaxed text-ink-muted2">
+          <p v-if="!loadingHistory && turns.length === 0" class="text-[12.5px] leading-relaxed text-ink-muted2">
             {{ t('Ask how to do something in QuiroFlow — booking, billing, reminders, settings.', 'Pregunta cómo hacer algo en QuiroFlow: reservas, facturación, recordatorios, ajustes.') }}
           </p>
 

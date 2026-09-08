@@ -281,7 +281,65 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     const runningCreditByPatient = new Map<string, number>()
     // Deterministic order: whichever bono PracticeHub created first claims
     // the local row that stands for it, so a re-run reaches the same answer.
-    for (const pkg of [...phPackages].sort((a, b) => (a.created < b.created ? -1 : a.created > b.created ? 1 : a.id - b.id))) {
+    const sortedPackages = [...phPackages].sort((a, b) => (a.created < b.created ? -1 : a.created > b.created ? 1 : a.id - b.id))
+
+    // Credit is reconciled per patient-day, not per bono.
+    //
+    // Several PracticeHub bonos can share one day, and the rows that pay for
+    // them do not divide cleanly between them: the hand backfill left ONE
+    // deposit for the day whichever way PracticeHub split it, and a correction
+    // written earlier was recorded against whichever bono happened to claim
+    // that deposit on that run. Reading each bono on its own then strands
+    // those rows -- Silvia Santori has one deposit of 322 EUR, a -322
+    // correction against bono 471 and a +92 row against bono 473, all correct
+    // together; read separately, 471 shows a bare -322 with nothing behind it
+    // and the tool offers to hand it back.
+    //
+    // Summed over the day the arithmetic closes and stays closed no matter
+    // which bono is read first:
+    //
+    //   deposit +322, correction -322, bono 473 +92  ->  carries  92
+    //   targets: bono 473 -> 92, bono 471 -> 0       ->  target   92
+    //                                                   delta      0
+    //
+    // The whole day's correction is written against the first bono of the day;
+    // the rest need no credit row of their own. For the single-bono days that
+    // are almost all of them, a group of one behaves exactly as before.
+    const groupTargetCents = new Map<string, number>()
+    const groupAttributedCents = new Map<string, number>()
+    const groupLeadPackageId = new Map<string, number>()
+    const groupFallbackLeadPackageId = new Map<string, number>()
+    for (const pkg of sortedPackages) {
+      const phId = patientIdOf(pkg)
+      const number = phId !== null ? patientNumberById.get(String(phId)) : undefined
+      const patient = number ? ourPatientByRef.get(number) : undefined
+      if (!patient) continue
+      const key = `${patient.id}|${pkg.created.slice(0, 10)}`
+      const ref = `PH-package-${pkg.id}`
+      groupTargetCents.set(key, (groupTargetCents.get(key) ?? 0) + (pkg.active === 1 ? creditCentsFor(pkg) : 0))
+      groupAttributedCents.set(
+        key,
+        (groupAttributedCents.get(key) ?? 0) + (creditCentsByRef.get(ref) ?? 0) + (creditCentsByRef.get(`${ref}-adjustment`) ?? 0),
+      )
+      // Prefer a lead the main loop will actually reach. A spent bono with
+      // nothing owed is skipped below, and a skipped lead would take its whole
+      // day's correction with it; the fallback covers a day where every bono
+      // is spent but a deposit is still sitting against it, which is an
+      // over-credit that has to be clawed back like any other.
+      const leadable = pkg.active !== 1 || (pkg.visits_left ?? 0) > 0 || (pkg.balance ?? 0) > 0 || owedCentsFor(pkg) > 0
+      if (leadable) {
+        if (!groupLeadPackageId.has(key)) groupLeadPackageId.set(key, pkg.id)
+      } else if (!groupFallbackLeadPackageId.has(key)) {
+        groupFallbackLeadPackageId.set(key, pkg.id)
+      }
+    }
+    for (const [key, id] of groupFallbackLeadPackageId) if (!groupLeadPackageId.has(key)) groupLeadPackageId.set(key, id)
+    // The day's backfilled deposit belongs to the day, so it is added once.
+    for (const key of groupTargetCents.keys()) {
+      groupAttributedCents.set(key, (groupAttributedCents.get(key) ?? 0) + (depositCentsByPatientDay.get(key) ?? 0))
+    }
+
+    for (const pkg of sortedPackages) {
       const externalRef = `PH-package-${pkg.id}`
       const adjustmentRef = `${externalRef}-adjustment`
       const alreadyInvoiced = invoicedExternalRefs.has(externalRef)
@@ -293,20 +351,6 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       // credit attached (see below), so they add the record without moving
       // anyone's balance.
       const isActive = pkg.active === 1
-
-      // Only meaningful for a live package -- a closed one having no value
-      // left is the normal case, not a reason to skip it.
-      if (isActive) {
-        // Owing money counts as something left to do even with no visits
-        // left: a bono used to the last session that was never paid off is
-        // exactly the debt this is meant to surface, and dropping it here
-        // would silently forgive it.
-        const hasRemainingValue = (pkg.visits_left ?? 0) > 0 || (pkg.balance ?? 0) > 0 || owedCentsFor(pkg) > 0
-        if (!hasRemainingValue) {
-          skippedNoValue.value++
-          continue
-        }
-      }
 
       const phPatientId = patientIdOf(pkg)
       const patientNumber = phPatientId !== null ? patientNumberById.get(String(phPatientId)) : undefined
@@ -337,16 +381,29 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       // is, with its own credit. Sharing one row between them is what caused
       // the same deposit to be taken back twice.
       const dayKey = `${ourPatient.id}|${pkg.created.slice(0, 10)}`
-      let existingPurchaseId = purchaseByRef.get(externalRef) ?? null
-      let claimedTheDayRow = false
-      if (existingPurchaseId === null) {
-        const unclaimed = purchasesByPatientDay.get(dayKey)
-        const claimed = unclaimed?.shift() ?? null
-        if (claimed !== null) {
-          existingPurchaseId = claimed
-          claimedTheDayRow = true
+
+      // Only meaningful for a live package -- a closed one having no value
+      // left is the normal case, not a reason to skip it. Owing money counts
+      // as something left to do even with no visits left: a bono used to the
+      // last session that was never paid off is exactly the debt this is meant
+      // to surface, and dropping it here would silently forgive it. Nor is a
+      // bono dropped while it is the one carrying its day's credit correction.
+      if (isActive) {
+        // Household members count as something left to record even on a bono
+        // with no visits and nothing owed: the share is how the rest of the
+        // family reaches it, and skipping the bono skips them with it.
+        const hasRemainingValue =
+          (pkg.visits_left ?? 0) > 0 || (pkg.balance ?? 0) > 0 || owedCentsFor(pkg) > 0 || sharedPatientIdsOf(pkg, phPatientId).length > 0
+        const carriesDayCorrection =
+          groupLeadPackageId.get(dayKey) === pkg.id && (groupTargetCents.get(dayKey) ?? 0) !== (groupAttributedCents.get(dayKey) ?? 0)
+        if (!hasRemainingValue && !carriesDayCorrection) {
+          skippedNoValue.value++
+          continue
         }
       }
+
+      let existingPurchaseId = purchaseByRef.get(externalRef) ?? null
+      if (existingPurchaseId === null) existingPurchaseId = purchasesByPatientDay.get(dayKey)?.shift() ?? null
 
       const visitsTotal = pkg.visits ?? pkg.visits_left ?? 0
       const visitsLeft = pkg.visits_left ?? visitsTotal
@@ -382,18 +439,17 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       //
       // The deposit is still consumed on read, so a second bono on the same day
       // starts from zero instead of taking the same money back again.
-      let attributedCreditCents = (creditCentsByRef.get(externalRef) ?? 0) + (creditCentsByRef.get(adjustmentRef) ?? 0)
-      if (claimedTheDayRow) {
-        attributedCreditCents += depositCentsByPatientDay.get(dayKey) ?? 0
-        depositCentsByPatientDay.set(dayKey, 0)
-      }
+      // The day's whole correction rides on its first bono; the others carry
+      // no credit row, so they show nothing to reconcile.
+      const isGroupLead = groupLeadPackageId.get(dayKey) === pkg.id
+      const attributedCreditCents = isGroupLead ? groupAttributedCents.get(dayKey) ?? 0 : 0
 
       // The correction. Positive tops a bono up to what was paid, negative
       // takes back credit the old full-entitlement rule handed over: 178
       // bonos were backfilled at the value of the sessions remaining rather
       // than the money received, so every part-payer among them is holding
       // credit for sessions nobody has paid for yet.
-      let creditDeltaCents = targetCreditCents - attributedCreditCents
+      let creditDeltaCents = isGroupLead ? (groupTargetCents.get(dayKey) ?? 0) - attributedCreditCents : 0
 
       // Backstop, independent of the matching above: a patient cannot hold
       // negative credit. Whatever they owe is an invoice, never a negative
@@ -731,7 +787,8 @@ function formatEuros(cents: number): string {
               </td>
               <td class="px-3 py-2">
                 <span v-if="c.status === 'pending' && c.creditDeltaCents < 0" class="text-danger-text">{{ t('Over-credited', 'Saldo de más') }}</span>
-                <span v-else-if="c.status === 'pending' && c.creditOnly && c.creditDeltaCents === 0" class="text-warning-text">{{ t('Missing invoice', 'Falta la factura') }}</span>
+                <span v-else-if="c.status === 'pending' && c.creditOnly && c.creditDeltaCents === 0 && c.needsInvoice" class="text-warning-text">{{ t('Missing invoice', 'Falta la factura') }}</span>
+                <span v-else-if="c.status === 'pending' && c.creditOnly && c.creditDeltaCents === 0" class="text-warning-text">{{ t('Missing shared patients', 'Faltan pacientes compartidos') }}</span>
                 <span v-else-if="c.status === 'pending' && c.creditOnly" class="text-warning-text">{{ t('Missing credit', 'Falta el saldo') }}</span>
                 <span v-else-if="c.status === 'pending'" class="text-ink-600">{{ t('Pending', 'Pendiente') }}</span>
                 <span v-else-if="c.status === 'applied'" class="text-ink-muted2">{{ t('Applied', 'Aplicado') }}</span>

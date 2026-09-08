@@ -45,6 +45,13 @@ interface Candidate {
   priceCents: number
   isActive: boolean
   creditCents: number
+  // True for a package already in package_purchases that never got its
+  // credit row -- applying it inserts only the missing account_credits
+  // entry, leaving the existing purchase record alone.
+  creditOnly: boolean
+  // The patient's whole credit balance today, shown so a package repaired
+  // by hand earlier isn't credited a second time here.
+  currentCreditCents: number
   status: 'pending' | 'applied' | 'skipped-existing' | 'error'
   errorMessage?: string
 }
@@ -123,6 +130,28 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       if (!data || data.length < PAGE_SIZE) break
     }
 
+    // Which packages already carry their credit, and what each patient holds
+    // today. An earlier version of this importer read the credit from
+    // `package_balance`/`owing` and wrote nothing when those came back 0 --
+    // which is exactly what a fully paid-up bono reads -- so packages
+    // imported back then exist with no credit against them and are skipped
+    // on every re-run by the external_reference guard below. They are picked
+    // up as credit-only repairs instead.
+    phase.value = t('Checking existing credit…', 'Comprobando el crédito existente…')
+    const creditedExternalRefs = new Set<string>()
+    const creditCentsByPatient = new Map<string, number>()
+    for (let page = 0; ; page++) {
+      const { data } = await supabase
+        .from('account_credits')
+        .select('patient_id, amount_cents, external_reference')
+        .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+      for (const row of data ?? []) {
+        if (row.external_reference) creditedExternalRefs.add(row.external_reference)
+        creditCentsByPatient.set(row.patient_id, (creditCentsByPatient.get(row.patient_id) ?? 0) + row.amount_cents)
+      }
+      if (!data || data.length < PAGE_SIZE) break
+    }
+
     // Package fixes made by hand before this importer existed (Melanie,
     // David Poveda, Kenneth Davis, ...) have no external_reference to dedupe
     // against -- fall back to same-patient-same-day as a second guard so a
@@ -142,7 +171,10 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     const built: Candidate[] = []
     for (const pkg of phPackages) {
       const externalRef = `PH-package-${pkg.id}`
-      if (existingExternalRefs.has(externalRef)) continue
+      const alreadyImported = existingExternalRefs.has(externalRef)
+      // Already imported and already credited: nothing left to do. Already
+      // imported with no credit row: fall through as a credit-only repair.
+      if (alreadyImported && creditedExternalRefs.has(externalRef)) continue
 
       // Closed packages are imported too, as history. Skipping them is what
       // left a patient's Billing tab showing a course of visits with nothing
@@ -171,11 +203,22 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       }
 
       const dayKey = `${ourPatient.id}|${pkg.created.slice(0, 10)}`
-      const alreadyHasSameDayPurchase = existingByPatientDay.has(dayKey)
+      // The same-day guard exists to stop a re-run duplicating a hand-made
+      // purchase record. It must not apply to a repair, where the matching
+      // purchase row is precisely the one being credited.
+      const alreadyHasSameDayPurchase = !alreadyImported && existingByPatientDay.has(dayKey)
 
       const visitsTotal = pkg.visits ?? pkg.visits_left ?? 0
       const visitsLeft = pkg.visits_left ?? visitsTotal
       const sessionsUsed = Math.max(0, visitsTotal - visitsLeft)
+      // A deactivated package is closed: whatever visits it had left are no
+      // longer claimable, so it carries no credit. Granting one would invent
+      // money the clinic never owed.
+      const creditCents = isActive ? creditCentsFor(pkg) : 0
+
+      // A repair with nothing to deposit is a no-op -- the purchase row is
+      // already there and a closed or spent package is correctly uncredited.
+      if (alreadyImported && creditCents === 0) continue
 
       built.push({
         phPackageId: pkg.id,
@@ -193,10 +236,9 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         sessionsUsed,
         priceCents: Math.round((pkg.price ?? 0) * 100),
         isActive,
-        // A deactivated package is closed: whatever visits it had left are no
-        // longer claimable, so it carries no credit. Granting one would
-        // invent money the clinic never owed.
-        creditCents: isActive ? creditCentsFor(pkg) : 0,
+        creditCents,
+        creditOnly: alreadyImported,
+        currentCreditCents: creditCentsByPatient.get(ourPatient.id) ?? 0,
         status: alreadyHasSameDayPurchase ? 'skipped-existing' : 'pending',
       })
     }
@@ -216,26 +258,31 @@ async function applyFixes() {
 
   for (const c of toApply) {
     const externalRef = `PH-package-${c.phPackageId}`
-    const { data: purchase, error: purchaseError } = await supabase
-      .from('package_purchases')
-      .insert({
-        account_id: store.accountId!,
-        patient_id: c.patientId,
-        package_name: c.packageName,
-        price_cents: c.priceCents,
-        sessions_total: c.sessionsTotal,
-        sessions_used: c.sessionsUsed,
-        purchased_at: c.created,
-        external_reference: externalRef,
-      })
-      .select('id')
-      .single()
 
-    if (purchaseError || !purchase) {
-      c.status = 'error'
-      c.errorMessage = purchaseError?.message
-      progress.value = { done: progress.value.done + 1, total: toApply.length }
-      continue
+    // A repair leaves the existing purchase row untouched and only adds the
+    // credit it never got.
+    if (!c.creditOnly) {
+      const { data: purchase, error: purchaseError } = await supabase
+        .from('package_purchases')
+        .insert({
+          account_id: store.accountId!,
+          patient_id: c.patientId,
+          package_name: c.packageName,
+          price_cents: c.priceCents,
+          sessions_total: c.sessionsTotal,
+          sessions_used: c.sessionsUsed,
+          purchased_at: c.created,
+          external_reference: externalRef,
+        })
+        .select('id')
+        .single()
+
+      if (purchaseError || !purchase) {
+        c.status = 'error'
+        c.errorMessage = purchaseError?.message
+        progress.value = { done: progress.value.done + 1, total: toApply.length }
+        continue
+      }
     }
 
     if (c.creditCents > 0) {
@@ -291,8 +338,8 @@ function formatEuros(cents: number): string {
     <p class="text-sm text-ink-muted2">
       {{
         t(
-          "Pulls every active patient package directly from PracticeHub's API and compares it against QuiroFlow's package_purchases table. Shows a preview before writing anything -- review the raw balance/owing/package_balance columns against a patient you've already checked by hand before applying. Safe to re-run: already-imported packages (and same-day packages added by hand before this tool existed) are skipped.",
-          'Obtiene todos los bonos activos directamente de la API de PracticeHub y los compara con la tabla package_purchases de QuiroFlow. Muestra una vista previa antes de escribir nada -- revisa las columnas balance/owing/package_balance frente a un paciente que ya hayas comprobado a mano antes de aplicar. Se puede volver a ejecutar sin riesgo: los bonos ya importados (y los añadidos a mano el mismo día antes de que existiera esta herramienta) se omiten.',
+          "Pulls every patient package directly from PracticeHub's API and compares it against QuiroFlow's package_purchases table. Shows a preview before writing anything -- review the raw balance/owing/package_balance columns against a patient you've already checked by hand before applying. Also repairs packages an older version of this tool imported with no credit attached: those show as \"Missing credit\" and add only the credit, leaving the purchase record alone. Check the \"Credit now\" column on those first -- a patient already fixed by hand would be credited twice. Safe to re-run: packages that are already imported and already credited (and same-day packages added by hand before this tool existed) are skipped.",
+          'Obtiene todos los bonos directamente de la API de PracticeHub y los compara con la tabla package_purchases de QuiroFlow. Muestra una vista previa antes de escribir nada -- revisa las columnas balance/owing/package_balance frente a un paciente que ya hayas comprobado a mano antes de aplicar. También repara los bonos que una versión anterior de esta herramienta importó sin saldo: aparecen como «Falta el saldo» y solo añaden el saldo, sin tocar el registro de compra. Revisa antes la columna «Saldo actual» en esos casos: a un paciente ya corregido a mano se le abonaría dos veces. Se puede volver a ejecutar sin riesgo: los bonos ya importados y ya abonados (y los añadidos a mano el mismo día antes de que existiera esta herramienta) se omiten.',
         )
       }}
     </p>
@@ -320,8 +367,8 @@ function formatEuros(cents: number): string {
       <div class="rounded-lg border border-line bg-surface-subtle p-3 text-sm text-ink-muted2">
         {{
           t(
-            `Found ${candidates.filter((c) => c.status === 'pending').length} package(s) to add -- ${candidates.filter((c) => c.status === 'pending' && c.isActive).length} still active (these carry credit), ${candidates.filter((c) => c.status === 'pending' && !c.isActive).length} closed (history only, no credit). Total credit to be granted: €${formatEuros(candidates.filter((c) => c.status === 'pending').reduce((sum, c) => sum + c.creditCents, 0))}. Skipped: ${candidates.filter((c) => c.status === 'skipped-existing').length} already covered by a same-day manual entry, ${skippedUnmatched} unmatched patients, ${skippedNoValue} active packages with nothing left on them.`,
-            `Se encontraron ${candidates.filter((c) => c.status === 'pending').length} bono(s) para añadir -- ${candidates.filter((c) => c.status === 'pending' && c.isActive).length} activos (con saldo), ${candidates.filter((c) => c.status === 'pending' && !c.isActive).length} cerrados (solo histórico, sin saldo). Saldo total a conceder: €${formatEuros(candidates.filter((c) => c.status === 'pending').reduce((sum, c) => sum + c.creditCents, 0))}. Omitidos: ${candidates.filter((c) => c.status === 'skipped-existing').length} ya cubiertos por una entrada manual del mismo día, ${skippedUnmatched} pacientes sin emparejar, ${skippedNoValue} bonos activos sin saldo restante.`,
+            `Found ${candidates.filter((c) => c.status === 'pending' && !c.creditOnly).length} package(s) to add -- ${candidates.filter((c) => c.status === 'pending' && !c.creditOnly && c.isActive).length} still active (these carry credit), ${candidates.filter((c) => c.status === 'pending' && !c.creditOnly && !c.isActive).length} closed (history only, no credit). Plus ${candidates.filter((c) => c.status === 'pending' && c.creditOnly).length} already-imported package(s) missing the credit an older version of this tool failed to write -- those add the credit only, leaving the purchase record as it is. Total credit to be granted: €${formatEuros(candidates.filter((c) => c.status === 'pending').reduce((sum, c) => sum + c.creditCents, 0))}. Skipped: ${candidates.filter((c) => c.status === 'skipped-existing').length} already covered by a same-day manual entry, ${skippedUnmatched} unmatched patients, ${skippedNoValue} active packages with nothing left on them.`,
+            `Se encontraron ${candidates.filter((c) => c.status === 'pending' && !c.creditOnly).length} bono(s) para añadir -- ${candidates.filter((c) => c.status === 'pending' && !c.creditOnly && c.isActive).length} activos (con saldo), ${candidates.filter((c) => c.status === 'pending' && !c.creditOnly && !c.isActive).length} cerrados (solo histórico, sin saldo). Además ${candidates.filter((c) => c.status === 'pending' && c.creditOnly).length} bono(s) ya importados a los que falta el saldo que una versión anterior de esta herramienta no escribió -- en esos solo se añade el saldo, sin tocar el registro de compra. Saldo total a conceder: €${formatEuros(candidates.filter((c) => c.status === 'pending').reduce((sum, c) => sum + c.creditCents, 0))}. Omitidos: ${candidates.filter((c) => c.status === 'skipped-existing').length} ya cubiertos por una entrada manual del mismo día, ${skippedUnmatched} pacientes sin emparejar, ${skippedNoValue} bonos activos sin saldo restante.`,
           )
         }}
       </div>
@@ -345,6 +392,7 @@ function formatEuros(cents: number): string {
               <th class="px-3 py-2">balance</th>
               <th class="px-3 py-2">owing</th>
               <th class="px-3 py-2">package_balance</th>
+              <th class="px-3 py-2">{{ t('Credit now', 'Saldo actual') }}</th>
               <th class="px-3 py-2">{{ t('Will insert', 'Se insertará') }}</th>
               <th class="px-3 py-2">{{ t('Status', 'Estado') }}</th>
             </tr>
@@ -358,9 +406,14 @@ function formatEuros(cents: number): string {
               <td class="px-3 py-2">{{ c.balance }}</td>
               <td class="px-3 py-2">{{ c.owing }}</td>
               <td class="px-3 py-2">{{ c.packageBalance }}</td>
-              <td class="px-3 py-2">€{{ formatEuros(c.priceCents) }} / €{{ formatEuros(c.creditCents) }} {{ t('credit', 'crédito') }}</td>
+              <td class="px-3 py-2" :class="c.creditOnly && c.currentCreditCents > 0 ? 'font-medium text-warning-text' : ''">€{{ formatEuros(c.currentCreditCents) }}</td>
               <td class="px-3 py-2">
-                <span v-if="c.status === 'pending'" class="text-ink-600">{{ t('Pending', 'Pendiente') }}</span>
+                <template v-if="c.creditOnly">€{{ formatEuros(c.creditCents) }} {{ t('credit only', 'solo crédito') }}</template>
+                <template v-else>€{{ formatEuros(c.priceCents) }} / €{{ formatEuros(c.creditCents) }} {{ t('credit', 'crédito') }}</template>
+              </td>
+              <td class="px-3 py-2">
+                <span v-if="c.status === 'pending' && c.creditOnly" class="text-warning-text">{{ t('Missing credit', 'Falta el saldo') }}</span>
+                <span v-else-if="c.status === 'pending'" class="text-ink-600">{{ t('Pending', 'Pendiente') }}</span>
                 <span v-else class="text-ink-muted2">{{ t('Already covered', 'Ya cubierto') }}</span>
               </td>
             </tr>

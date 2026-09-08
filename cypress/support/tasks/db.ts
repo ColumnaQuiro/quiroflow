@@ -163,6 +163,23 @@ async function setExtraProfessionals(opts: { accountId: string; extraProfessiona
   return { accountId, extraProfessionals }
 }
 
+/**
+ * Directly sets a test account's Stripe customer/subscription ids -- bypasses
+ * Stripe entirely, same as setSubscriptionStatus/setExtraProfessionals do,
+ * for exercising UI that only renders once a "real" (non-trial) subscription
+ * exists, without needing live Stripe credentials in CI.
+ */
+async function setSubscriptionStripeIds(opts: { accountId: string; stripeCustomerId: string; stripeSubscriptionId: string }) {
+  const { accountId, stripeCustomerId, stripeSubscriptionId } = opts
+  assertOk(
+    await admin
+      .from('subscriptions')
+      .update({ stripe_customer_id: stripeCustomerId, stripe_subscription_id: stripeSubscriptionId })
+      .eq('account_id', accountId),
+  )
+  return { accountId, stripeCustomerId, stripeSubscriptionId }
+}
+
 async function createPatient(opts: {
   accountId: string
   clinicId: string
@@ -303,6 +320,7 @@ export const dbTasks = {
   'db:setRolePermissions': setRolePermissions,
   'db:setSubscriptionStatus': setSubscriptionStatus,
   'db:setExtraProfessionals': setExtraProfessionals,
+  'db:setSubscriptionStripeIds': setSubscriptionStripeIds,
   'db:createPatient': createPatient,
   'db:createAppointmentType': createAppointmentType,
   'db:createServiceProduct': createServiceProduct,

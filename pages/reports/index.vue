@@ -56,7 +56,7 @@ const groups = computed(() => [
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Reports', 'Informes')" />
     <div class="flex-1 overflow-y-auto">
-      <div class="p-6">
+      <div class="p-4 sm:p-6">
         <p class="text-[13px] text-ink-muted2">{{ t('Metrics across patients, appointments, and billing. Each report below has its own filters and date range.', 'Métricas de pacientes, citas y facturación. Cada informe tiene sus propios filtros y periodo.') }}</p>
         <div class="mt-8 max-w-[960px]">
           <IconLinkGrid :groups="groups" />

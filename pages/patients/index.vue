@@ -363,9 +363,9 @@ function tagClass(tag: string) {
       @created="(id) => { showAddPatient = false; navigateTo(`/patients/${id}`) }"
     />
 
-    <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
+    <div class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6">
       <!-- Filter bar -->
-      <div class="flex h-8 flex-wrap items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2">
         <div class="relative w-[250px]">
           <svg width="13" height="13" viewBox="0 0 14 14" class="pointer-events-none absolute left-[10px] top-1/2 -translate-y-1/2 text-ink-faint">
             <circle cx="6" cy="6" r="4.2" stroke="currentColor" stroke-width="1.4" fill="none" />
@@ -454,8 +454,14 @@ function tagClass(tag: string) {
         <span v-if="!loading" class="text-[12.5px] text-ink-muted2">{{ totalCount }} {{ t('results', 'resultados') }}</span>
       </div>
 
-      <!-- Table card -->
+      <!-- Table card. Each row is a fixed-width flex layout (not a real
+      <table>), so on a narrow screen it scrolls horizontally as one unit
+      (min-w-[1000px] below) rather than squeezing every column unreadably
+      thin -- same trade-off a real table would force via its own overflow
+      wrapper. -->
       <div class="mt-3.5 overflow-hidden rounded-card border border-line bg-surface shadow-card">
+        <div class="overflow-x-auto">
+        <div class="min-w-[1000px]">
         <div class="flex items-center gap-4 border-b border-line-row bg-surface-subtle2 px-5 py-2.5 text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">
           <div class="min-w-0 flex-1">{{ t('Patient', 'Paciente') }}</div>
           <div class="w-[120px] shrink-0 text-right">{{ t('Balance', 'Saldo') }}</div>
@@ -566,6 +572,8 @@ function tagClass(tag: string) {
               </span>
             </div>
           </div>
+        </div>
+        </div>
         </div>
 
         <UiPaginationFooter

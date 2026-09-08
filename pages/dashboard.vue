@@ -113,19 +113,19 @@ function widgetMeta(type: string): string | undefined {
 
 <template>
   <div class="flex h-full flex-col">
-    <header class="flex h-14 shrink-0 items-center justify-between border-b border-line bg-surface px-6">
+    <header class="flex shrink-0 flex-col gap-2.5 border-b border-line bg-surface px-4 py-3 sm:h-14 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-0">
       <div>
         <h1 class="text-[18px] font-[640] tracking-tightTitle text-ink-900">{{ greeting }}, {{ firstName }}</h1>
         <p class="text-[12.5px] text-ink-muted2">{{ store.accountName }} · {{ todayLabel }}</p>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2">
         <ReportsDateRangeSelect v-model="range" />
         <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" :practitioners="practitioners" :clinics="[]" :show-clinic="false" />
         <UiBtn :variant="editing ? 'primary' : 'secondary'" @click="toggleEditing">{{ editing ? t('Done', 'Hecho') : t('Edit layout', 'Editar diseño') }}</UiBtn>
       </div>
     </header>
 
-    <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
+    <div class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6">
       <DashboardAddWidgetPicker v-if="editing" :existing-types="widgets.map((w) => w.type)" @add="onAddWidget" />
 
       <div v-if="!loaded" class="grid grid-cols-12 gap-3">
@@ -133,7 +133,7 @@ function widgetMeta(type: string): string | undefined {
              third-width ones) so the page doesn't visibly jump once real
              widgets replace these. -->
         <div
-          v-for="(span, i) in ['col-span-8', 'col-span-4', 'col-span-4', 'col-span-4', 'col-span-4', 'col-span-4', 'col-span-4', 'col-span-4']"
+          v-for="(span, i) in ['col-span-12 md:col-span-8', 'col-span-12 md:col-span-4', 'col-span-12 md:col-span-4', 'col-span-12 md:col-span-4', 'col-span-12 md:col-span-4', 'col-span-12 md:col-span-4', 'col-span-12 md:col-span-4', 'col-span-12 md:col-span-4']"
           :key="i"
           class="rounded-card border border-line bg-surface p-4 shadow-card"
           :class="span"

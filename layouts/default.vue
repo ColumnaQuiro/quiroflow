@@ -22,6 +22,7 @@ const showDenied = ref(route.query.denied === '1')
 // for a control that's really about the whole app, not sidebar navigation --
 // moved to this persistent top bar instead, alongside the account menu.
 const paletteOpen = ref(false)
+const mobileSidebarOpen = ref(false)
 function onKeydown(e: KeyboardEvent) {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault()
@@ -69,23 +70,35 @@ const contactHref = 'mailto:hola@columnaquiro.com'
   <div v-else class="flex h-screen flex-col bg-surface-page">
     <BillingBanner />
     <div class="flex flex-1 overflow-hidden">
-      <AppSidebar />
+      <AppSidebar :open="mobileSidebarOpen" @close="mobileSidebarOpen = false" />
       <div class="flex flex-1 flex-col overflow-hidden">
         <!-- Persistent across every page (unlike each page's own PageHeader,
         which not every page even has) so the account menu has one home
         instead of living in the sidebar, where it permanently cost a row of
         vertical space on every screen. -->
-        <div class="flex h-10 shrink-0 items-center justify-between border-b border-line bg-surface px-4">
-          <button
-            type="button"
-            class="flex h-7 w-64 items-center gap-2 rounded-ctl border border-line-control bg-chip-bg px-2.5 text-left text-[13px] text-ink-muted hover:bg-surface-subtle"
-            :title="t('Search or jump to (⌘K)', 'Buscar o ir a (⌘K)')"
-            @click="paletteOpen = true"
-          >
-            <svg width="13" height="13" viewBox="0 0 14 14" class="shrink-0"><circle cx="6" cy="6" r="4.2" stroke="currentColor" stroke-width="1.4" fill="none" /><line x1="9.2" y1="9.2" x2="12" y2="12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg>
-            <span class="flex-1">{{ t('Search or jump to', 'Buscar o ir a') }}</span>
-            <span class="rounded border border-line-control bg-surface px-1 py-px font-mono text-[10.5px] text-ink-faint2">⌘K</span>
-          </button>
+        <div class="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-line bg-surface px-4">
+          <div class="flex min-w-0 items-center gap-2">
+            <!-- The sidebar is an off-canvas drawer below lg (AppSidebar.vue),
+            so this is the only way to reach it on a phone or narrow tablet. -->
+            <button
+              type="button"
+              class="flex h-7 w-7 shrink-0 items-center justify-center rounded-ctl border border-line-control bg-chip-bg text-ink-muted hover:bg-surface-subtle lg:hidden"
+              :title="t('Open menu', 'Abrir menú')"
+              @click="mobileSidebarOpen = true"
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1.5 3.5h11M1.5 7h11M1.5 10.5h11" /></svg>
+            </button>
+            <button
+              type="button"
+              class="flex h-7 w-7 shrink-0 items-center justify-center rounded-ctl border border-line-control bg-chip-bg text-left text-[13px] text-ink-muted hover:bg-surface-subtle lg:w-64 lg:justify-start lg:gap-2 lg:px-2.5"
+              :title="t('Search or jump to (⌘K)', 'Buscar o ir a (⌘K)')"
+              @click="paletteOpen = true"
+            >
+              <svg width="13" height="13" viewBox="0 0 14 14" class="shrink-0"><circle cx="6" cy="6" r="4.2" stroke="currentColor" stroke-width="1.4" fill="none" /><line x1="9.2" y1="9.2" x2="12" y2="12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg>
+              <span class="hidden flex-1 lg:inline">{{ t('Search or jump to', 'Buscar o ir a') }}</span>
+              <span class="hidden rounded border border-line-control bg-surface px-1 py-px font-mono text-[10.5px] text-ink-faint2 lg:inline">⌘K</span>
+            </button>
+          </div>
           <AppAccountMenu />
         </div>
         <div v-if="showDenied" class="flex items-center justify-between bg-amber-50 px-6 py-2 text-sm text-amber-800">

@@ -100,6 +100,7 @@ const SLOT_MIN = computed(() => store.currentClinic?.slot_duration_minutes ?? 30
 // surfacing it directly on the calendar too, where staff actually work
 // through the day, matches PracticeHub's placement.
 const cashShiftOpen = ref(false)
+const mobileInfoOpen = ref(false)
 
 // Defaults to 'workweek', but this is really just the fallback for a
 // browser that's never opened the calendar before -- the real value is
@@ -1359,7 +1360,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
 
 <template>
   <div class="flex h-full flex-col">
-    <header class="flex h-14 shrink-0 items-center justify-between border-b border-line bg-surface px-6">
+    <header class="flex shrink-0 flex-col gap-2.5 border-b border-line bg-surface px-4 py-2.5 lg:h-14 lg:flex-row lg:items-center lg:justify-between lg:px-6 lg:py-0">
       <div class="flex items-center gap-4">
         <h1 class="text-[18px] font-[640] tracking-tightTitle text-ink-900">{{ t('Calendar', 'Calendario') }}</h1>
         <div class="flex items-center gap-1">
@@ -1373,7 +1374,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
         </div>
         <span class="text-[13.5px] font-[560] text-ink-700">{{ rangeLabel }}</span>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2">
         <select v-model="viewMode" class="h-[26px] rounded-ctlSm border border-line-control bg-surface px-2 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover focus:border-brand focus:outline-none">
           <option value="day">{{ t('Day', 'Día') }}</option>
           <option value="workweek">{{ t('Work week', 'Semana laboral') }}</option>
@@ -1382,6 +1383,18 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
         <UiBtn v-if="can('payments_allocate')" variant="secondary" size="sm" @click="cashShiftOpen = true">{{ t('Cash Shift', 'Turno de Caja') }}</UiBtn>
         <UiBtn variant="secondary" size="sm" @click="openBlockCreateModal()">{{ t('Block time', 'Bloquear horario') }}</UiBtn>
         <UiBtn variant="primary" size="sm" @click="openCreateModal()">{{ t('+ New Appointment', '+ Nueva Cita') }}</UiBtn>
+        <!-- The mini-calendar/stats/legend panel is a fixed 238px column at
+        lg+ (below), but that plus the optional flow-tracker column would eat
+        most of a phone's width -- so below lg it's an off-canvas drawer
+        instead, reached from here. -->
+        <button
+          type="button"
+          class="flex h-[26px] items-center gap-1 rounded-ctlSm border border-line-control px-2.5 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover hover:bg-surface-subtle lg:hidden"
+          @click="mobileInfoOpen = true"
+        >
+          <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="7" cy="7" r="5.3" /><path d="M7 6.3v3.4M7 4.3v.15" stroke-linecap="round" /></svg>
+          {{ t('Info', 'Info') }}
+        </button>
       </div>
     </header>
 
@@ -1417,8 +1430,21 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
     </div>
 
     <div class="flex flex-1 overflow-hidden">
-      <!-- Left panel: mini month, glance stats, display toggles, status key -->
-      <aside class="w-[238px] shrink-0 overflow-y-auto border-r border-line bg-surface-sidebar">
+      <div v-if="mobileInfoOpen" class="fixed inset-0 z-30 bg-black/40 lg:hidden" @click="mobileInfoOpen = false" />
+
+      <!-- Left panel: mini month, glance stats, display toggles, status key.
+      Off-canvas below lg (see the Info button above); a permanent column
+      at lg+. -->
+      <aside
+        class="fixed inset-y-0 left-0 z-40 w-[280px] shrink-0 overflow-y-auto border-r border-line bg-surface-sidebar transition-transform duration-200 lg:static lg:z-auto lg:w-[238px] lg:translate-x-0"
+        :class="mobileInfoOpen ? 'translate-x-0' : '-translate-x-full'"
+      >
+        <div class="flex items-center justify-between px-3 pt-3 lg:hidden">
+          <span class="text-[12.5px] font-[640] text-ink-900">{{ t('Calendar info', 'Info del calendario') }}</span>
+          <button type="button" class="flex h-6 w-6 items-center justify-center rounded-ctlSm text-ink-muted2 hover:bg-surface-subtle" @click="mobileInfoOpen = false">
+            <svg width="13" height="13" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2 2l10 10M12 2L2 12" /></svg>
+          </button>
+        </div>
         <div class="m-3 rounded-card border border-line bg-surface p-3">
           <div class="flex items-center justify-between">
             <button type="button" class="rounded-ctlSm p-1 text-ink-faint hover:bg-surface-subtle hover:text-ink-600" @click="miniBase = addMonths(miniBase, -1)">‹</button>
@@ -1499,7 +1525,10 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
         </div>
       </aside>
 
-      <aside v-if="settings.flowTracker" class="w-[220px] shrink-0 overflow-y-auto border-r border-line bg-surface-sidebar p-3">
+      <!-- Hidden below lg -- a phone doesn't have the width to spare for a
+      third column alongside the info panel and the grid itself; the
+      Display toggle to turn this on lives in the info panel above. -->
+      <aside v-if="settings.flowTracker" class="hidden w-[220px] shrink-0 overflow-y-auto border-r border-line bg-surface-sidebar p-3 lg:block">
         <CalendarFlowTracker :appointments="appointments" :privacy-mode="settings.privacyMode" @advance="advanceFlow" @complete="completeFlow" />
       </aside>
 

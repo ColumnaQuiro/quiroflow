@@ -42,19 +42,46 @@ export function usePracticeHubApi(conn: PracticeHubConnection) {
     }
   }
 
+  // Walks every page rather than stopping once total_entries ROWS have been
+  // collected. PracticeHub repeats records across pages -- /invoices returns
+  // 10,892 rows for 6,946 distinct invoices on the live account -- so a
+  // row-counting loop reaches total_entries while pages are still unread and
+  // stops there, silently dropping real records with no error to notice. Every
+  // importer reads through here, so that under-fetch was invisible in all of
+  // them: a missing payment reads as a visit taken out of a bono, a missing
+  // patient drops their whole history.
+  //
+  // Rows are keyed by id where the endpoint returns one (all of them do so
+  // far); anything without an id is kept as-is rather than guessed at, which
+  // at worst leaves the duplicates that were there before.
   async function fetchAll<T>(path: string, onProgress?: (fetched: number, total: number) => void): Promise<T[]> {
-    const all: T[] = []
-    let page = 1
-    let total = Infinity
-    while (all.length < total) {
-      const res = await fetchPage<T>(path, page)
-      all.push(...res.data)
-      total = res.total_entries
-      onProgress?.(all.length, total)
-      if (res.data.length === 0) break
-      page++
+    const byId = new Map<unknown, T>()
+    const withoutId: T[] = []
+
+    const collect = (rows: T[]) => {
+      for (const row of rows) {
+        const id = (row as { id?: unknown })?.id
+        if (id === undefined || id === null) withoutId.push(row)
+        else byId.set(id, row)
+      }
     }
-    return all
+
+    const first = await fetchPage<T>(path, 1)
+    collect(first.data)
+    const total = first.total_entries
+    onProgress?.(byId.size + withoutId.length, total)
+
+    if (first.data.length > 0) {
+      const pages = Math.max(1, Math.ceil(total / first.data.length))
+      for (let page = 2; page <= pages; page++) {
+        const res = await fetchPage<T>(path, page)
+        if (res.data.length === 0) break
+        collect(res.data)
+        onProgress?.(byId.size + withoutId.length, total)
+      }
+    }
+
+    return [...byId.values(), ...withoutId]
   }
 
   return { fetchPage, fetchAll }

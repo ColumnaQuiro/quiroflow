@@ -92,8 +92,9 @@ async function createTeamMemberWithRole(opts: {
   email: string
   password: string
   fullName?: string
+  isPractitioner?: boolean
 }) {
-  const { accountId, clinicId, roleName, email, password, fullName } = opts
+  const { accountId, clinicId, roleName, email, password, fullName, isPractitioner } = opts
 
   const { data: userData, error: userErr } = await admin.auth.admin.createUser({
     email,
@@ -117,6 +118,11 @@ async function createTeamMemberWithRole(opts: {
         role: 'practitioner',
         role_id: role.id,
         is_owner: false,
+        // Still passes through enforce_practitioner_seats (0150) like any
+        // other insert -- callers relying on this to seed practitioners past
+        // an allowance need to raise it (e.g. db:setExtraProfessionals)
+        // first, same as a real client would have to.
+        is_practitioner: isPractitioner ?? false,
       })
       .select('id')
       .single(),

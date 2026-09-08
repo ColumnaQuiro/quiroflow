@@ -11,6 +11,8 @@
 // reports facts rather than guesses:
 //   patients          patients.external_reference        = PH patient_number
 //   payments          invoices.invoice_number            = PH-{payment id}
+//                     (PH-package-{id} invoices are receivables raised by
+//                      the bonos importer, not payments -- excluded below)
 //   packages/bonos    package_purchases.external_reference = PH-package-{id}
 //
 // Two failure directions, both worth knowing about:
@@ -114,7 +116,14 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     const phPaymentRefs = new Set(phPayments.map((p) => `PH-${p.id}`))
     const phPaymentCents = phPayments.reduce((sum, p) => sum + Math.round(Number(p.amount ?? 0) * 100), 0)
 
-    const hereInvoices = await readAll<{ id: string; invoice_number: string }>('invoices', 'id, invoice_number', (q) => q.like('invoice_number', 'PH-%'))
+    // `PH-package-{id}` invoices are excluded: those are the outstanding
+    // balances the bonos importer raises as receivables, not migrated
+    // PracticeHub payments. They match the `PH-%` prefix but have no payment
+    // on the PracticeHub side to pair with, so counting them here would
+    // report every one of them as an extra invoice and skew the money delta.
+    const hereInvoices = await readAll<{ id: string; invoice_number: string }>('invoices', 'id, invoice_number', (q) =>
+      q.like('invoice_number', 'PH-%').not('invoice_number', 'like', 'PH-package-%'),
+    )
     const hereInvoiceRefs = new Set(hereInvoices.map((i) => i.invoice_number))
     const hereInvoiceIds = new Set(hereInvoices.map((i) => i.id))
     const herePayments = await readAll<{ invoice_id: string; amount_cents: number }>('payments', 'invoice_id, amount_cents')

@@ -45,10 +45,17 @@ interface Candidate {
   priceCents: number
   isActive: boolean
   creditCents: number
-  // True for a package already in package_purchases that never got its
-  // credit row -- applying it inserts only the missing account_credits
-  // entry, leaving the existing purchase record alone.
+  // What the patient still owes on this bono, from PracticeHub's own
+  // `package_balance`. Raised as an unpaid invoice so the debt shows in
+  // reports instead of being implied by a PracticeHub column nobody reads.
+  owedCents: number
+  needsInvoice: boolean
+  // True for a package already in package_purchases: applying it adds only
+  // the missing credit and/or invoice, leaving the purchase record alone.
   creditOnly: boolean
+  // Set for an already-imported package so its purchase row can be pointed
+  // at the invoice this creates.
+  existingPurchaseId: string | null
   // The patient's whole credit balance today, shown so a package repaired
   // by hand earlier isn't credited a second time here.
   currentCreditCents: number
@@ -118,6 +125,25 @@ function creditCentsFor(pkg: PHPatientPackage): number {
   return Math.max(0, Math.round(paidMinusConsumed * 100))
 }
 
+// What is still owed on a bono. `package_balance` is paid minus price, so it
+// is negative by exactly the outstanding amount and zero once settled.
+//
+// This is raised as an invoice for the OUTSTANDING amount only, not for the
+// bono's full price. The paid half is already in QuiroFlow as its own
+// invoice and payment, brought over by the payments importer -- billing the
+// full price again and re-recording the payment would double the clinic's
+// takings. What migration is actually missing is the receivable, so that is
+// what gets created: an unpaid invoice, no payment rows, money-in untouched.
+//
+// Only ever raised for an ACTIVE bono. A bono PracticeHub deactivated years
+// ago that still reads as unpaid is far more likely to be their staff never
+// having linked the payment (see the caveat on creditCentsFor) than a debt
+// this clinic is still owed, and inventing receivables against old patients
+// is the one mistake here that reaches the outside world.
+function owedCentsFor(pkg: PHPatientPackage): number {
+  return Math.max(0, Math.round(-(pkg.package_balance ?? 0) * 100))
+}
+
 async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }) {
   lastConn.value = conn
   stage.value = 'loading'
@@ -142,13 +168,37 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
 
     phase.value = t('Checking for already-imported packages…', 'Comprobando bonos ya importados…')
     const existingExternalRefs = new Set<string>()
+    // Keyed by external_reference so an already-imported bono can have the
+    // invoice this raises pointed at its existing purchase row.
+    const existingPurchaseById = new Map<string, string>()
     for (let page = 0; ; page++) {
       const { data } = await supabase
         .from('package_purchases')
-        .select('external_reference')
+        .select('id, external_reference')
         .not('external_reference', 'is', null)
         .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
-      for (const row of data ?? []) if (row.external_reference) existingExternalRefs.add(row.external_reference)
+      for (const row of data ?? [])
+        if (row.external_reference) {
+          existingExternalRefs.add(row.external_reference)
+          existingPurchaseById.set(row.external_reference, row.id)
+        }
+      if (!data || data.length < PAGE_SIZE) break
+    }
+
+    // Invoices this importer raised on an earlier run. `invoices` has no
+    // external_reference column, so the bono's own reference is used as the
+    // invoice number -- distinct from the payments importer's `PH-{payment}`
+    // numbering, and enough to keep a re-run from billing the same debt twice
+    // even if a previous run died between the insert and the purchase link.
+    phase.value = t('Checking existing bono invoices…', 'Comprobando facturas de bonos existentes…')
+    const invoicedExternalRefs = new Set<string>()
+    for (let page = 0; ; page++) {
+      const { data } = await supabase
+        .from('invoices')
+        .select('invoice_number')
+        .like('invoice_number', 'PH-package-%')
+        .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+      for (const row of data ?? []) if (row.invoice_number) invoicedExternalRefs.add(row.invoice_number)
       if (!data || data.length < PAGE_SIZE) break
     }
 
@@ -194,9 +244,8 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     for (const pkg of phPackages) {
       const externalRef = `PH-package-${pkg.id}`
       const alreadyImported = existingExternalRefs.has(externalRef)
-      // Already imported and already credited: nothing left to do. Already
-      // imported with no credit row: fall through as a credit-only repair.
-      if (alreadyImported && creditedExternalRefs.has(externalRef)) continue
+      const alreadyCredited = creditedExternalRefs.has(externalRef)
+      const alreadyInvoiced = invoicedExternalRefs.has(externalRef)
 
       // Closed packages are imported too, as history. Skipping them is what
       // left a patient's Billing tab showing a course of visits with nothing
@@ -209,7 +258,11 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       // Only meaningful for a live package -- a closed one having no value
       // left is the normal case, not a reason to skip it.
       if (isActive) {
-        const hasRemainingValue = (pkg.visits_left ?? 0) > 0 || (pkg.balance ?? 0) > 0
+        // Owing money counts as something left to do even with no visits
+        // left: a bono used to the last session that was never paid off is
+        // exactly the debt this is meant to surface, and dropping it here
+        // would silently forgive it.
+        const hasRemainingValue = (pkg.visits_left ?? 0) > 0 || (pkg.balance ?? 0) > 0 || owedCentsFor(pkg) > 0
         if (!hasRemainingValue) {
           skippedNoValue.value++
           continue
@@ -236,11 +289,14 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       // A deactivated package is closed: whatever visits it had left are no
       // longer claimable, so it carries no credit. Granting one would invent
       // money the clinic never owed.
-      const creditCents = isActive ? creditCentsFor(pkg) : 0
+      const creditCents = isActive && !alreadyCredited ? creditCentsFor(pkg) : 0
+      const owedCents = isActive ? owedCentsFor(pkg) : 0
+      const needsInvoice = owedCents > 0 && !alreadyInvoiced
 
-      // A repair with nothing to deposit is a no-op -- the purchase row is
-      // already there and a closed or spent package is correctly uncredited.
-      if (alreadyImported && creditCents === 0) continue
+      // Nothing left to do: the purchase row is there, its credit is there,
+      // and either it is settled or its debt is already on an invoice. A
+      // closed or spent package is correctly left uncredited and unbilled.
+      if (alreadyImported && creditCents === 0 && !needsInvoice) continue
 
       built.push({
         phPackageId: pkg.id,
@@ -259,7 +315,10 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         priceCents: Math.round((pkg.price ?? 0) * 100),
         isActive,
         creditCents,
+        owedCents,
+        needsInvoice,
         creditOnly: alreadyImported,
+        existingPurchaseId: existingPurchaseById.get(externalRef) ?? null,
         currentCreditCents: creditCentsByPatient.get(ourPatient.id) ?? 0,
         status: alreadyHasSameDayPurchase ? 'skipped-existing' : 'pending',
       })
@@ -280,9 +339,10 @@ async function applyFixes() {
 
   for (const c of toApply) {
     const externalRef = `PH-package-${c.phPackageId}`
+    let purchaseId = c.existingPurchaseId
 
     // A repair leaves the existing purchase row untouched and only adds the
-    // credit it never got.
+    // credit and invoice it never got.
     if (!c.creditOnly) {
       const { data: purchase, error: purchaseError } = await supabase
         .from('package_purchases')
@@ -305,6 +365,7 @@ async function applyFixes() {
         progress.value = { done: progress.value.done + 1, total: toApply.length }
         continue
       }
+      purchaseId = purchase.id
     }
 
     if (c.creditCents > 0) {
@@ -322,6 +383,47 @@ async function applyFixes() {
         progress.value = { done: progress.value.done + 1, total: toApply.length }
         continue
       }
+    }
+
+    // The outstanding half of a part-paid bono, raised as an unpaid invoice
+    // so it reads as money owed rather than living only in a PracticeHub
+    // column. No payment row is written: what was already paid came over
+    // with the payments importer and is counted there.
+    if (c.needsInvoice) {
+      const { data: invoice, error: invoiceError } = await supabase
+        .from('invoices')
+        .insert({
+          account_id: store.accountId!,
+          patient_id: c.patientId,
+          invoice_number: externalRef,
+          status: 'unpaid',
+          total_cents: c.owedCents,
+          created_at: c.created,
+        })
+        .select('id')
+        .single()
+
+      if (invoiceError || !invoice) {
+        c.status = 'error'
+        c.errorMessage = invoiceError?.message
+        progress.value = { done: progress.value.done + 1, total: toApply.length }
+        continue
+      }
+
+      const paidCents = Math.max(0, c.priceCents - c.owedCents)
+      await supabase.from('invoice_line_items').insert({
+        account_id: store.accountId!,
+        invoice_id: invoice.id,
+        description: `${c.packageName} -- outstanding balance from PracticeHub (€${formatEuros(paidCents)} of €${formatEuros(c.priceCents)} already paid)`,
+        quantity: 1,
+        price_cents: c.owedCents,
+      })
+
+      // Pointing the purchase at the invoice is what makes the Billing tab's
+      // owed figure light up for this bono. `is('invoice_id', null)` so a
+      // bono already linked to an invoice -- one sold through the app, or
+      // relinked by hand -- keeps the link it has.
+      if (purchaseId) await supabase.from('package_purchases').update({ invoice_id: invoice.id }).eq('id', purchaseId).is('invoice_id', null)
     }
 
     c.status = 'applied'
@@ -358,7 +460,7 @@ function formatEuros(cents: number): string {
 <template>
   <div>
     <p class="text-[13px] text-ink-muted2">
-      {{ t('Copies bonos from PracticeHub, and adds the credit to ones imported earlier without it.', 'Copia los bonos desde PracticeHub y añade el saldo a los que se importaron antes sin él.') }}
+      {{ t('Copies bonos from PracticeHub, and repairs ones imported earlier: the credit they never got, and an invoice for whatever is still owed on them.', 'Copia los bonos desde PracticeHub y repara los importados antes: el saldo que nunca recibieron y una factura por lo que queda pendiente de pago.') }}
     </p>
 
     <div class="mt-3 space-y-2">
@@ -378,6 +480,14 @@ function formatEuros(cents: number): string {
         </p>
       </div>
 
+      <div class="flex gap-2.5 rounded-ctl border border-line-divider bg-surface-subtle p-3">
+        <span class="mt-0.5 shrink-0 text-[13px]">🧾</span>
+        <p class="text-[12.5px] leading-relaxed text-ink-600">
+          <span class="font-medium text-ink-700">{{ t('What is still owed becomes an unpaid invoice.', 'Lo que queda por pagar se convierte en una factura pendiente.') }}</span>
+          {{ t('Only the outstanding part is billed \u2014 the half already paid came over with the payments importer, so invoicing the full price again would double the clinic\u0027s takings. No payment is recorded here, and only active bonos are billed.', 'Sólo se factura la parte pendiente: la parte ya pagada vino con el importador de pagos, así que volver a facturar el precio completo duplicaría los ingresos de la clínica. Aquí no se registra ningún pago, y sólo se facturan los bonos activos.') }}
+        </p>
+      </div>
+
       <div class="flex gap-2.5 rounded-ctl border border-warning-border bg-warning-bg p-3">
         <span class="mt-0.5 shrink-0 text-[13px]">⚠️</span>
         <p class="text-[12.5px] leading-relaxed text-warning-text">
@@ -390,7 +500,7 @@ function formatEuros(cents: number): string {
         <span class="mt-0.5 shrink-0 text-[13px]">🔁</span>
         <p class="text-[12.5px] leading-relaxed text-ink-600">
           <span class="font-medium text-ink-700">{{ t('Safe to run again.', 'Se puede volver a ejecutar.') }}</span>
-          {{ t('Bonos that are already imported and already credited are skipped, as are ones matching a bono added by hand on the same day.', 'Se omiten los bonos ya importados y ya abonados, igual que los que coinciden con un bono añadido a mano el mismo día.') }}
+          {{ t('Bonos that are already imported, already credited and already invoiced are skipped, as are ones matching a bono added by hand on the same day. The invoice is numbered after the bono, so a debt is never billed twice.', 'Se omiten los bonos ya importados, ya abonados y ya facturados, igual que los que coinciden con un bono a\u00f1adido a mano el mismo d\u00eda. La factura lleva el n\u00famero del bono, as\u00ed que una deuda nunca se factura dos veces.') }}
         </p>
       </div>
     </div>
@@ -444,6 +554,7 @@ function formatEuros(cents: number): string {
               <th class="px-3 py-2">owing</th>
               <th class="px-3 py-2">package_balance</th>
               <th class="px-3 py-2">{{ t('Credit now', 'Saldo actual') }}</th>
+              <th class="px-3 py-2">{{ t('Still owed', 'Pendiente de pago') }}</th>
               <th class="px-3 py-2">{{ t('Will insert', 'Se insertará') }}</th>
               <th class="px-3 py-2">{{ t('Status', 'Estado') }}</th>
             </tr>
@@ -458,12 +569,18 @@ function formatEuros(cents: number): string {
               <td class="px-3 py-2">{{ c.owing }}</td>
               <td class="px-3 py-2">{{ c.packageBalance }}</td>
               <td class="px-3 py-2" :class="c.creditOnly && c.currentCreditCents > 0 ? 'font-medium text-warning-text' : ''">€{{ formatEuros(c.currentCreditCents) }}</td>
-              <td class="px-3 py-2">
-                <template v-if="c.creditOnly">€{{ formatEuros(c.creditCents) }} {{ t('credit only', 'solo crédito') }}</template>
-                <template v-else>€{{ formatEuros(c.priceCents) }} / €{{ formatEuros(c.creditCents) }} {{ t('credit', 'crédito') }}</template>
+              <td class="px-3 py-2" :class="c.owedCents > 0 ? 'font-medium text-warning-text' : 'text-ink-muted2'">
+                <template v-if="c.owedCents > 0">€{{ formatEuros(c.owedCents) }}</template>
+                <template v-else>—</template>
               </td>
               <td class="px-3 py-2">
-                <span v-if="c.status === 'pending' && c.creditOnly" class="text-warning-text">{{ t('Missing credit', 'Falta el saldo') }}</span>
+                <div v-if="c.creditOnly && c.creditCents > 0">€{{ formatEuros(c.creditCents) }} {{ t('credit only', 'solo crédito') }}</div>
+                <div v-else-if="!c.creditOnly">€{{ formatEuros(c.priceCents) }} / €{{ formatEuros(c.creditCents) }} {{ t('credit', 'crédito') }}</div>
+                <div v-if="c.needsInvoice" class="text-warning-text">+ €{{ formatEuros(c.owedCents) }} {{ t('invoice', 'factura') }}</div>
+              </td>
+              <td class="px-3 py-2">
+                <span v-if="c.status === 'pending' && c.creditOnly && c.creditCents === 0" class="text-warning-text">{{ t('Missing invoice', 'Falta la factura') }}</span>
+                <span v-else-if="c.status === 'pending' && c.creditOnly" class="text-warning-text">{{ t('Missing credit', 'Falta el saldo') }}</span>
                 <span v-else-if="c.status === 'pending'" class="text-ink-600">{{ t('Pending', 'Pendiente') }}</span>
                 <span v-else class="text-ink-muted2">{{ t('Already covered', 'Ya cubierto') }}</span>
               </td>

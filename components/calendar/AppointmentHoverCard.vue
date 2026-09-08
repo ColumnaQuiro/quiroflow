@@ -24,7 +24,7 @@ const props = defineProps<{ appointment: HoverAppointment; roomName?: string | n
 const emit = defineEmits<{ noteSaved: []; checkIn: []; reschedule: [] }>()
 
 const supabase = useSupabaseClient()
-const { loading: billingLoading, balanceCents, activePackages } = usePatientFinancialSummary(() => props.appointment.patient_id)
+const { loading: billingLoading, balanceCents, creditLedgerCents, activePackages } = usePatientFinancialSummary(() => props.appointment.patient_id)
 const t = useT()
 
 const bonoStatus = computed(() => {
@@ -180,7 +180,7 @@ function visitOrdinal(n: number) {
       <span class="truncate text-right text-ink-700">{{ practitionerName }}</span>
       <span class="text-ink-muted2">{{ t('Balance', 'Saldo') }}</span>
       <span class="flex justify-end">
-        <UiBalancePill v-if="balanceCents !== 0" :balance-cents="balanceCents" />
+        <UiBalancePill v-if="creditLedgerCents > 0" :credit-cents="creditLedgerCents" />
         <span v-else class="text-ink-muted2">{{ t('No balance due', 'Sin saldo pendiente') }}</span>
       </span>
     </div>

@@ -28,6 +28,15 @@ function patientIdOf(pkg: PHPatientPackage): number | null {
   return pkg.patient_id ?? pkg.subscribed_patients?.[0]?.patient_id ?? null
 }
 
+// A PracticeHub bono can be subscribed to several patients -- a family bono
+// the household shares. Only the first was ever read, so the bono landed
+// against one member and the rest had no way to draw a session from it.
+// Everyone after the owner becomes a package_purchase_shares row.
+function sharedPatientIdsOf(pkg: PHPatientPackage, ownerPhId: number | null): number[] {
+  const ids = (pkg.subscribed_patients ?? []).map((sp) => sp.patient_id)
+  return [...new Set(ids)].filter((id) => id !== ownerPhId)
+}
+
 interface Candidate {
   phPackageId: number
   patientId: string
@@ -61,6 +70,9 @@ interface Candidate {
   // Set for an already-imported package so its purchase row can be pointed
   // at the invoice this creates.
   existingPurchaseId: string | null
+  // The other patients PracticeHub has subscribed to this bono -- a family
+  // bono the whole household draws sessions from. Owner excluded.
+  sharedWith: { id: string; name: string }[]
   // The patient's whole credit balance today, shown so a package repaired
   // by hand earlier isn't credited a second time here.
   currentCreditCents: number
@@ -178,18 +190,36 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     // left over.
     phase.value = t('Checking for already-imported packages…', 'Comprobando bonos ya importados…')
     const purchaseByRef = new Map<string, string>()
-    const purchaseByPatientDay = new Map<string, string>()
+    // A LIST per day, not a single id. Two PracticeHub bonos created on the
+    // same day for the same patient used to both resolve to the same local
+    // row, and each then took back the same deposit: Oscar Inga's two bonos
+    // both claimed his one 360 EUR row and clawed it back twice, leaving him
+    // at -280 EUR. Each local row is now claimed by at most one bono, and a
+    // bono that finds nothing left to claim is a genuinely new one to insert.
+    const purchasesByPatientDay = new Map<string, string[]>()
     // A bono already pointing at an invoice is not billed again, whatever
     // that invoice is numbered -- one raised by an earlier run, one from a
     // sale through the app, or one created by hand during a repair.
     const purchaseHasInvoice = new Set<string>()
+    // Bonos that already have their household members attached, so a re-run
+    // does not add the same person to the same bono twice.
+    const purchaseHasShares = new Set<string>()
     for (let page = 0; ; page++) {
       const { data } = await supabase.from('package_purchases').select('id, patient_id, purchased_at, external_reference, invoice_id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
       for (const row of data ?? []) {
         if (row.external_reference) purchaseByRef.set(row.external_reference, row.id)
-        purchaseByPatientDay.set(`${row.patient_id}|${String(row.purchased_at).slice(0, 10)}`, row.id)
+        const dayKey = `${row.patient_id}|${String(row.purchased_at).slice(0, 10)}`
+        const sameDay = purchasesByPatientDay.get(dayKey)
+        if (sameDay) sameDay.push(row.id)
+        else purchasesByPatientDay.set(dayKey, [row.id])
         if (row.invoice_id) purchaseHasInvoice.add(row.id)
       }
+      if (!data || data.length < PAGE_SIZE) break
+    }
+
+    for (let page = 0; ; page++) {
+      const { data } = await supabase.from('package_purchase_shares').select('package_purchase_id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+      for (const row of data ?? []) purchaseHasShares.add(row.package_purchase_id)
       if (!data || data.length < PAGE_SIZE) break
     }
 
@@ -246,7 +276,12 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     rawSample.value = phPackages.slice(0, 3)
 
     const built: Candidate[] = []
-    for (const pkg of phPackages) {
+    // Credit each patient will hold as the preview is built up, so a second
+    // bono for the same patient corrects against the first one's effect.
+    const runningCreditByPatient = new Map<string, number>()
+    // Deterministic order: whichever bono PracticeHub created first claims
+    // the local row that stands for it, so a re-run reaches the same answer.
+    for (const pkg of [...phPackages].sort((a, b) => (a.created < b.created ? -1 : a.created > b.created ? 1 : a.id - b.id))) {
       const externalRef = `PH-package-${pkg.id}`
       const adjustmentRef = `${externalRef}-adjustment`
       const alreadyInvoiced = invoicedExternalRefs.has(externalRef)
@@ -281,11 +316,37 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         continue
       }
 
+      // Resolve the household members sharing this bono to our own patients.
+      // Anyone PracticeHub knows and we do not is counted as unmatched rather
+      // than silently dropped.
+      const sharedWith: { id: string; name: string }[] = []
+      for (const sharedPhId of sharedPatientIdsOf(pkg, phPatientId)) {
+        const sharedNumber = patientNumberById.get(String(sharedPhId))
+        const sharedPatient = sharedNumber ? ourPatientByRef.get(sharedNumber) : undefined
+        if (sharedPatient) sharedWith.push(sharedPatient)
+        else skippedUnmatched.value++
+      }
+
       // Resolve this PracticeHub bono to our own row: by reference where the
-      // importer created it, otherwise by the same-patient-same-day key that
-      // finds the hand-backfilled ones.
+      // importer created it, otherwise by claiming an unclaimed row from the
+      // same patient and day, which is what finds the hand-backfilled ones.
+      //
+      // Claiming removes the row from the pool. Two bonos created on the same
+      // day are two bonos: the first takes the local row that stands for it,
+      // and the second finds none left and is inserted as the new record it
+      // is, with its own credit. Sharing one row between them is what caused
+      // the same deposit to be taken back twice.
       const dayKey = `${ourPatient.id}|${pkg.created.slice(0, 10)}`
-      const existingPurchaseId = purchaseByRef.get(externalRef) ?? purchaseByPatientDay.get(dayKey) ?? null
+      let existingPurchaseId = purchaseByRef.get(externalRef) ?? null
+      let claimedTheDayRow = false
+      if (existingPurchaseId === null) {
+        const unclaimed = purchasesByPatientDay.get(dayKey)
+        const claimed = unclaimed?.shift() ?? null
+        if (claimed !== null) {
+          existingPurchaseId = claimed
+          claimedTheDayRow = true
+        }
+      }
 
       const visitsTotal = pkg.visits ?? pkg.visits_left ?? 0
       const visitsLeft = pkg.visits_left ?? visitsTotal
@@ -302,20 +363,39 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       // its purchase day, which is what the hand backfill left behind. Never
       // both: a bono with its own reference has already been accounted for,
       // and adding the day figure on top would double-count it.
-      const attributedCreditCents = creditCentsByRef.has(externalRef)
-        ? (creditCentsByRef.get(externalRef) ?? 0) + (creditCentsByRef.get(adjustmentRef) ?? 0)
-        : (existingPurchaseId ? depositCentsByPatientDay.get(dayKey) ?? 0 : 0)
+      // Only the bono that claimed the day's row inherits the deposit
+      // backdated to that day -- and it consumes it, so a second bono on the
+      // same day starts from zero rather than taking back money a second time.
+      let attributedCreditCents = 0
+      if (creditCentsByRef.has(externalRef)) {
+        attributedCreditCents = (creditCentsByRef.get(externalRef) ?? 0) + (creditCentsByRef.get(adjustmentRef) ?? 0)
+      } else if (claimedTheDayRow) {
+        attributedCreditCents = depositCentsByPatientDay.get(dayKey) ?? 0
+        depositCentsByPatientDay.set(dayKey, 0)
+      }
 
       // The correction. Positive tops a bono up to what was paid, negative
       // takes back credit the old full-entitlement rule handed over: 178
       // bonos were backfilled at the value of the sessions remaining rather
       // than the money received, so every part-payer among them is holding
       // credit for sessions nobody has paid for yet.
-      const creditDeltaCents = targetCreditCents - attributedCreditCents
+      let creditDeltaCents = targetCreditCents - attributedCreditCents
+
+      // Backstop, independent of the matching above: a patient cannot hold
+      // negative credit. Whatever they owe is an invoice, never a negative
+      // balance, so a claw-back is capped at what they actually hold. If the
+      // matching is ever wrong again this bounds the damage to "no credit"
+      // instead of a debt invented in the ledger, and running per patient
+      // means two bonos correcting the same patient in one pass see each
+      // other's effect rather than both measuring from the starting figure.
+      const patientCreditNow = runningCreditByPatient.get(ourPatient.id) ?? creditCentsByPatient.get(ourPatient.id) ?? 0
+      if (creditDeltaCents < 0 && patientCreditNow + creditDeltaCents < 0) creditDeltaCents = -patientCreditNow
+      runningCreditByPatient.set(ourPatient.id, patientCreditNow + creditDeltaCents)
 
       // Nothing left to do: the credit is already right and either the bono
       // is settled or its debt is on an invoice.
-      if (existingPurchaseId && creditDeltaCents === 0 && !needsInvoice) continue
+      const needsShares = sharedWith.length > 0 && !(existingPurchaseId !== null && purchaseHasShares.has(existingPurchaseId))
+      if (existingPurchaseId && creditDeltaCents === 0 && !needsInvoice && !needsShares) continue
 
       built.push({
         phPackageId: pkg.id,
@@ -340,6 +420,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         needsInvoice,
         creditOnly: existingPurchaseId !== null,
         existingPurchaseId,
+        sharedWith,
         currentCreditCents: creditCentsByPatient.get(ourPatient.id) ?? 0,
         status: 'pending',
       })
@@ -409,6 +490,24 @@ async function applyFixes() {
       if (creditError) {
         c.status = 'error'
         c.errorMessage = creditError.message
+        progress.value = { done: progress.value.done + 1, total: toApply.length }
+        continue
+      }
+    }
+
+    // The household members sharing this bono. Written after the purchase
+    // exists so a newly inserted bono gets its members in the same pass.
+    if (c.sharedWith.length > 0 && purchaseId) {
+      const { error: shareError } = await supabase.from('package_purchase_shares').insert(
+        c.sharedWith.map((m) => ({
+          account_id: store.accountId!,
+          package_purchase_id: purchaseId as string,
+          patient_id: m.id,
+        })),
+      )
+      if (shareError) {
+        c.status = 'error'
+        c.errorMessage = shareError.message
         progress.value = { done: progress.value.done + 1, total: toApply.length }
         continue
       }
@@ -585,6 +684,7 @@ function formatEuros(cents: number): string {
               <th class="px-3 py-2">{{ t('Credit now', 'Saldo actual') }}</th>
               <th class="px-3 py-2">{{ t('Should be', 'Debería ser') }}</th>
               <th class="px-3 py-2">{{ t('Still owed', 'Pendiente de pago') }}</th>
+              <th class="px-3 py-2">{{ t('Shared with', 'Compartido con') }}</th>
               <th class="px-3 py-2">{{ t('Will insert', 'Se insertará') }}</th>
               <th class="px-3 py-2">{{ t('Status', 'Estado') }}</th>
             </tr>
@@ -602,6 +702,10 @@ function formatEuros(cents: number): string {
               <td class="px-3 py-2" :class="c.creditDeltaCents !== 0 ? 'font-medium text-warning-text' : 'text-ink-muted2'">€{{ formatEuros(c.targetCreditCents) }}</td>
               <td class="px-3 py-2" :class="c.owedCents > 0 ? 'font-medium text-warning-text' : 'text-ink-muted2'">
                 <template v-if="c.owedCents > 0">€{{ formatEuros(c.owedCents) }}</template>
+                <template v-else>—</template>
+              </td>
+              <td class="px-3 py-2 text-ink-muted2">
+                <template v-if="c.sharedWith.length > 0">{{ c.sharedWith.map((m) => m.name).join(', ') }}</template>
                 <template v-else>—</template>
               </td>
               <td class="px-3 py-2">

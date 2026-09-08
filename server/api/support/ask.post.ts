@@ -73,19 +73,44 @@ function splitAnswerAndSources(raw: string): { answer: string; sources: string[]
 }
 
 export default defineEventHandler(async (event) => {
-  await requireTeamMember(event)
+  const { supabase, teamMember } = await requireTeamMember(event)
 
   const body = await readBody<{ question?: string; language?: string }>(event)
   const question = (body?.question ?? '').trim()
   if (!question) throw createError({ statusCode: 400, statusMessage: 'A question is required' })
   if (question.length > 2000) throw createError({ statusCode: 400, statusMessage: 'That question is too long' })
 
+  const lang = body?.language === 'es' ? 'es' : 'en'
+  // Mirrors the widget's own fallback copy (HelpWidget.vue) -- persisted
+  // server-side, in the caller's language, so history read back later shows
+  // the same message the widget showed live rather than nothing at all.
+  const unavailableText =
+    lang === 'es' ? 'Ahora mismo no puedo responder preguntas, pero el equipo de QuiroFlow sí.' : "I can't answer questions right now, but the QuiroFlow team can."
+
+  // The question is persisted alongside whatever answer this call resolves
+  // to below, one insert per role -- not client-side, so a reply the client
+  // never got to see (tab closed mid-request) still lands next to the
+  // question that prompted it.
+  async function persist(role: 'user' | 'assistant', text: string, sources: string[] = [], offerHuman = false) {
+    await supabase.from('help_assistant_messages').insert({
+      account_id: teamMember.account_id,
+      team_member_id: teamMember.id,
+      role,
+      body: text,
+      sources,
+      offer_human: offerHuman,
+    })
+  }
+  await persist('user', question)
+
   const apiKey = useRuntimeConfig().anthropicApiKey
   // Not configured is a normal state, not an error: the widget reads this
   // and goes straight to offering a human instead of showing a failure.
-  if (!apiKey) return { available: false as const, answer: '', sources: [] }
+  if (!apiKey) {
+    await persist('assistant', unavailableText, [], true)
+    return { available: false as const, answer: '', sources: [] }
+  }
 
-  const lang = body?.language === 'es' ? 'es' : 'en'
   const articles = await loadHelpArticles(lang)
 
   const client = new Anthropic({ apiKey })
@@ -106,9 +131,12 @@ export default defineEventHandler(async (event) => {
     // real person, so a failed answer should route there rather than
     // dead-ending the user on an error.
     console.error('[support/ask] Anthropic request failed:', err?.message ?? err)
+    await persist('assistant', unavailableText, [], true)
     return { available: false as const, answer: '', sources: [] }
   }
 
   const { answer, sources } = splitAnswerAndSources(raw)
-  return { available: true as const, answer: stripMarkdown(answer), sources }
+  const cleanAnswer = stripMarkdown(answer)
+  await persist('assistant', cleanAnswer, sources, sources.length === 0)
+  return { available: true as const, answer: cleanAnswer, sources }
 })

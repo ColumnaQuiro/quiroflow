@@ -236,6 +236,10 @@ const invoices = ref<InvoiceRow[]>([])
 const lineItemDescriptions = ref<Record<string, string[]>>({})
 const ledgerPayments = ref<LedgerPaymentRow[]>([])
 const ledgerCredits = ref<LedgerCreditRow[]>([])
+// Visits drawn from a package. Read alongside the ledger rather than with the
+// packages panel: the panel answers "how many left", this answers "which
+// visits went through it", which is what the ledger is for.
+const ledgerPackageSessions = ref<{ id: string; amount_cents: number; used_at: string; package_name: string | null }[]>([])
 // Three independent loading flags instead of one -- each card (Account
 // Ledger, Packages/bonos, Memberships) shows its own skeleton and swaps in
 // as soon as its own pair of queries resolves, rather than the whole tab
@@ -345,6 +349,18 @@ async function loadLedger() {
   lineItemDescriptions.value = byInvoice
   ledgerPayments.value = (pays ?? []) as unknown as LedgerPaymentRow[]
   ledgerCredits.value = creds ?? []
+
+  const { data: sessions } = await supabase
+    .from('package_sessions')
+    .select('id, amount_cents, used_at, package_purchases(package_name)')
+    .eq('patient_id', props.patientId)
+    .order('used_at', { ascending: true })
+  ledgerPackageSessions.value = ((sessions ?? []) as unknown as { id: string; amount_cents: number; used_at: string; package_purchases: { package_name: string } | null }[]).map((r) => ({
+    id: r.id,
+    amount_cents: r.amount_cents,
+    used_at: r.used_at,
+    package_name: r.package_purchases?.package_name ?? null,
+  }))
   ledgerLoading.value = false
 }
 
@@ -953,6 +969,7 @@ function money(cents: number) {
       :line-item-descriptions="lineItemDescriptions"
       :payments="ledgerPayments"
       :credits="ledgerCredits"
+      :package-sessions="ledgerPackageSessions"
       :credit-ledger-cents="creditLedgerCents"
       :sending-invoice-id="sendingInvoiceId"
       :send-result-invoice-id="sendResultInvoiceId"

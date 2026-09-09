@@ -14,14 +14,18 @@
 // imported here into package_sessions -- display-only rows, no debit, no
 // credit, no effect on any balance.
 //
-// Identifying them: a PracticeHub invoice with no payment against that
-// patient on that day was covered by something other than money changing
-// hands, which for this clinic means a bono. Checked against the live
-// account: of 6,946 invoices, 3,535 have no same-day payment, and their
-// amounts cluster exactly on per-session bono rates -- 894 at 44 EUR, 808 at
-// 46, 731 at 40, 699 at 43. Invoices that DO have a same-day payment are
-// already represented in QuiroFlow as a payment-derived invoice and are
-// skipped.
+// Identifying them takes two tests, not one. A PracticeHub invoice with no
+// payment against that patient on that day was covered by something other
+// than money changing hands that day -- but that alone is not enough, because
+// a patient who prepaid a block in April takes visits through May with no
+// payment on any of those days. So the invoice must ALSO be billed at a price
+// one of that patient's bonos actually charges per session. Checked against
+// the live account: of 6,946 invoices, 3,535 have no same-day payment, and
+// their amounts cluster on per-session bono rates -- 894 at 44 EUR, 808 at
+// 46, 731 at 40, 699 at 43 -- but the ones off that cluster, at 50 and 55,
+// are ordinary consultations and were being swept in with the rest.
+// Invoices that DO have a same-day payment are already represented in
+// QuiroFlow as a payment-derived invoice and are skipped.
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
@@ -63,6 +67,9 @@ const runError = ref('')
 const candidates = ref<Candidate[]>([])
 const skippedPaid = ref(0)
 const skippedUnmatched = ref(0)
+// Invoices no bono of the patient's could have paid for at that price -- an
+// ordinary consultation, not a session drawn off a bono.
+const skippedNoBonoAtThisRate = ref(0)
 const appliedCount = ref(0)
 const rawSample = ref<unknown[]>([])
 const showRawSample = ref(false)
@@ -77,6 +84,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
   runError.value = ''
   skippedPaid.value = 0
   skippedUnmatched.value = 0
+  skippedNoBonoAtThisRate.value = 0
   const api = usePracticeHubApi(conn)
 
   try {
@@ -200,20 +208,30 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         continue
       }
 
-      // Attribute to the most recent package bought on or before the visit.
-      // Where that is ambiguous the value is still recorded and the package
-      // left unset, rather than guessed.
-      // Most recent first, but a bono whose per-session rate equals what this
-      // visit was billed wins over one that merely came later. A patient
-      // holding a Bono 12 (44 a session) and a Bono 10 (46) would otherwise
-      // have every visit filed under whichever they bought last: 117 visits
-      // on this account are attributed to a bono whose rate does not match
-      // the amount, which is how that shows up. Where nothing matches the
-      // value, the most recent still wins -- same answer as before.
-      const candidates = (purchasesByPatient.get(ourPatient.id) ?? [])
-        .filter((p) => dayOf(p.purchasedAt) <= dayOf(inv.created))
+      // A visit is only a bono visit if a bono the patient held could actually
+      // have paid for it -- one whose per-session rate is exactly what this
+      // invoice was billed. A 528 EUR / 12 bono is 44 a session and
+      // PracticeHub bills exactly that, so the amount is the evidence.
+      //
+      // Without that test, "no payment the same day" was the only evidence,
+      // and it is not enough. Ruth Sobrino paid 264 EUR on 22 April against a
+      // 2X3 promo and took 50 EUR adjustments through May; each of those
+      // invoices had no payment on its own day, so all five were recorded as
+      // bono visits and attached to a Bono 12 she does not have -- and then
+      // stood as evidence that the phantom bono had been used. Six patients
+      // were in that state, their visits billed at 50 or 55 against bono
+      // rates of 44 and 48.
+      //
+      // Skipping is the safe direction: a bono visit not recorded is a line
+      // missing from a Billing tab, while one recorded against the wrong bono
+      // misstates how much of that bono is left.
+      const held = (purchasesByPatient.get(ourPatient.id) ?? [])
+        .filter((p) => dayOf(p.purchasedAt) <= dayOf(inv.created) && p.rateCents === totalCents)
         .sort((a, b) => b.purchasedAt.localeCompare(a.purchasedAt))
-      const held = candidates.filter((p) => p.rateCents === totalCents).concat(candidates.filter((p) => p.rateCents !== totalCents))
+      if (held.length === 0) {
+        skippedNoBonoAtThisRate.value++
+        continue
+      }
       built.push({
         phInvoiceId: inv.id,
         patientId: ourPatient.id,
@@ -315,8 +333,8 @@ const withAppointment = computed(() => candidates.value.filter((c) => c.appointm
       <div class="rounded-lg border border-line bg-surface-subtle p-3 text-sm text-ink-muted2">
         {{
           t(
-            `${candidates.length} package visit(s) to add, worth €${formatEuros(totalValueCents)} of consumed bono value. ${withPackage} matched to a specific bono, ${withAppointment} linked to an appointment. Skipped: ${skippedPaid} invoices already covered by a payment that day, ${skippedUnmatched} invoices for patients with no matching record here.`,
-            `${candidates.length} visita(s) de bono para añadir, por valor de €${formatEuros(totalValueCents)} de bono consumido. ${withPackage} asociadas a un bono concreto, ${withAppointment} vinculadas a una cita. Omitidas: ${skippedPaid} facturas ya cubiertas por un pago ese día, ${skippedUnmatched} facturas de pacientes sin registro aquí.`,
+            `${candidates.length} package visit(s) to add, worth €${formatEuros(totalValueCents)} of consumed bono value. ${withPackage} matched to a specific bono, ${withAppointment} linked to an appointment. Skipped: ${skippedPaid} invoices already covered by a payment that day, ${skippedNoBonoAtThisRate} billed at a price no bono of theirs charges, ${skippedUnmatched} invoices for patients with no matching record here.`,
+            `${candidates.length} visita(s) de bono para añadir, por valor de €${formatEuros(totalValueCents)} de bono consumido. ${withPackage} asociadas a un bono concreto, ${withAppointment} vinculadas a una cita. Omitidas: ${skippedPaid} facturas ya cubiertas por un pago ese día, ${skippedNoBonoAtThisRate} con un importe que ningún bono suyo cobra, ${skippedUnmatched} facturas de pacientes sin registro aquí.`,
           )
         }}
       </div>

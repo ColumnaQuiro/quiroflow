@@ -25,6 +25,7 @@ const sources = computed<Source[]>(() => [
     dataTypes: [
       { key: 'general', label: t('General', 'General') },
       { key: 'reconciliation', label: t('Check migration', 'Comprobar migración') },
+      { key: 'patient_check', label: t('Check a patient', 'Comprobar un paciente') },
       { key: 'patients', label: t('Patients', 'Pacientes') },
       { key: 'appointments', label: t('Appointments', 'Citas') },
       { key: 'appointment_types', label: t('Appointment Types (fix)', 'Tipos de cita (fix)') },
@@ -104,6 +105,7 @@ function selectSource(key: string) {
           <div class="mt-6">
             <ImportPracticeHubGeneralSettings v-if="sourceKey === 'practicehub' && dataTypeKey === 'general'" />
             <ImportPracticeHubReconciliation v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'reconciliation'" />
+            <ImportPracticeHubPatientCheck v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'patient_check'" />
             <ImportPracticeHubPatientsImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'patients'" />
             <ImportPracticeHubAppointmentsImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'appointments'" />
             <ImportPracticeHubAppointmentTypesImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'appointment_types'" />

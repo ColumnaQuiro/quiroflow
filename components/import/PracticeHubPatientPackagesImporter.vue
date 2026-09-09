@@ -7,7 +7,7 @@ const { showToast } = useToast()
 // first_name/last_name are optional because nothing else here needs them and
 // PracticeHub's docs do not promise them -- they are used only to put a name
 // next to an unmatched patient number, and the number alone still works.
-interface PHPatient { id: number; patient_number: string; first_name?: string | null; last_name?: string | null }
+interface PHPatient { id: number; patient_number: string; email?: string | null; first_name?: string | null; last_name?: string | null }
 interface PHPatientPackage {
   id: number
   // PracticeHub's docs example shows a top-level patient_id, but real
@@ -256,6 +256,14 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     phase.value = t('Matching patients…', 'Emparejando pacientes…')
     const phPatients = await api.fetchAll<PHPatient>('/patients', (done, total) => (progress.value = { done, total }))
     const patientNumberById = new Map(phPatients.map((p) => [String(p.id), p.patient_number]))
+    const phPatientById = new Map(phPatients.map((p) => [String(p.id), p]))
+    // How many PracticeHub patients share each address, so the fallback below
+    // only ever fires on an address that identifies exactly one person there.
+    const phEmailCount = new Map<string, number>()
+    for (const p of phPatients) {
+      const email = p.email?.trim().toLowerCase()
+      if (email) phEmailCount.set(email, (phEmailCount.get(email) ?? 0) + 1)
+    }
     const patientNameById = new Map(
       phPatients.map((p) => [String(p.id), [p.first_name, p.last_name].filter(Boolean).join(' ').trim()]),
     )
@@ -279,14 +287,43 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     // patient goes in here, reference or not -- an unreferenced one is
     // exactly the case where naming them matters.
     const ourPatientNameById = new Map<string, string>()
+    // Patients whose external_reference is not their PracticeHub number are
+    // matched on email instead. 49 records here hold something else in that
+    // field -- a DNI, an address, an old code -- left by the original CSV
+    // import, and the Patients import cannot repair them because it only
+    // fills a reference that is blank. Without this their bonos are dropped
+    // by every run, which is what the "no matching record here" list was.
+    const ourEmailCount = new Map<string, number>()
+    const ourPatientByEmail = new Map<string, { id: string; name: string }>()
     for (let page = 0; ; page++) {
-      const { data } = await supabase.from('patients').select('id, external_reference, first_name, last_name').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+      const { data } = await supabase.from('patients').select('id, external_reference, email, first_name, last_name').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
       for (const p of data ?? []) {
         const name = `${p.first_name} ${p.last_name ?? ''}`.trim()
         ourPatientNameById.set(p.id, name)
         if (p.external_reference) ourPatientByRef.set(p.external_reference, { id: p.id, name })
+        const email = p.email?.trim().toLowerCase()
+        if (email) {
+          ourEmailCount.set(email, (ourEmailCount.get(email) ?? 0) + 1)
+          ourPatientByEmail.set(email, { id: p.id, name })
+        }
       }
       if (!data || data.length < PAGE_SIZE) break
+    }
+
+    // The PracticeHub number first, since that is exact. Email only as a
+    // fallback, and only when it belongs to exactly one patient on BOTH
+    // sides: 57 records here share an address with another patient, usually
+    // a family on one inbox, and crediting a bono to the wrong member of a
+    // household is worse than not importing it.
+    function ourPatientForPh(phId: number | null): { id: string; name: string } | undefined {
+      if (phId === null) return undefined
+      const ph = phPatientById.get(String(phId))
+      if (!ph) return undefined
+      const byRef = ph.patient_number ? ourPatientByRef.get(ph.patient_number) : undefined
+      if (byRef) return byRef
+      const email = ph.email?.trim().toLowerCase()
+      if (!email || phEmailCount.get(email) !== 1 || ourEmailCount.get(email) !== 1) return undefined
+      return ourPatientByEmail.get(email)
     }
 
     // Our own bono rows, indexed two ways. `external_reference` is the exact
@@ -516,8 +553,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     }
     for (const pkg of sortedPackages) {
       const phId = patientIdOf(pkg)
-      const number = phId !== null ? patientNumberById.get(String(phId)) : undefined
-      const patient = number ? ourPatientByRef.get(number) : undefined
+      const patient = ourPatientForPh(phId)
       if (!patient) continue
       const shapeKey = shapeKeyOf(patient.id, pkg)
       phShapeTotalCount.set(shapeKey, (phShapeTotalCount.get(shapeKey) ?? 0) + 1)
@@ -545,8 +581,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     const groupFallbackLeadPackageId = new Map<string, number>()
     for (const pkg of sortedPackages) {
       const phId = patientIdOf(pkg)
-      const number = phId !== null ? patientNumberById.get(String(phId)) : undefined
-      const patient = number ? ourPatientByRef.get(number) : undefined
+      const patient = ourPatientForPh(phId)
       if (!patient) continue
       const key = `${patient.id}|${pkg.created.slice(0, 10)}`
       const ref = `PH-package-${pkg.id}`
@@ -592,8 +627,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       const isActive = pkg.active === 1
 
       const phPatientId = patientIdOf(pkg)
-      const patientNumber = phPatientId !== null ? patientNumberById.get(String(phPatientId)) : undefined
-      const ourPatient = patientNumber ? ourPatientByRef.get(patientNumber) : undefined
+      const ourPatient = ourPatientForPh(phPatientId)
       if (!ourPatient) {
         noteUnmatched(phPatientId, pkg.name || pkg.package_type || 'Package')
         continue
@@ -604,8 +638,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       // than silently dropped.
       const sharedWith: { id: string; name: string }[] = []
       for (const sharedPhId of sharedPatientIdsOf(pkg, phPatientId)) {
-        const sharedNumber = patientNumberById.get(String(sharedPhId))
-        const sharedPatient = sharedNumber ? ourPatientByRef.get(sharedNumber) : undefined
+        const sharedPatient = ourPatientForPh(sharedPhId)
         if (sharedPatient) sharedWith.push(sharedPatient)
         else noteUnmatched(sharedPhId, pkg.name || pkg.package_type || 'Package')
       }

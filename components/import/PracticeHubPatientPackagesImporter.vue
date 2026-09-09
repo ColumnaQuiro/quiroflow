@@ -73,6 +73,10 @@ interface Candidate {
   // Set for an already-imported package so its purchase row can be pointed
   // at the invoice this creates.
   existingPurchaseId: string | null
+  // True for a bono matched by patient and day that carries no PracticeHub
+  // reference yet -- applying it writes the reference so the match stops
+  // depending on the date.
+  needsReferenceStamp: boolean
   // The other patients PracticeHub has subscribed to this bono -- a family
   // bono the whole household draws sessions from. Owner excluded.
   sharedWith: { id: string; name: string }[]
@@ -228,6 +232,12 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     // that invoice is numbered -- one raised by an earlier run, one from a
     // sale through the app, or one created by hand during a repair.
     const purchaseHasInvoice = new Set<string>()
+    // Rows carrying no PracticeHub reference: the bonos the hand backfill
+    // created. The importer recognises them by patient and day, but never
+    // wrote the reference onto them, so nothing downstream can see they are
+    // the same bono -- the migration check counts by reference and reported
+    // 188 of them as missing from a set that is entirely present.
+    const purchaseNeedsReference = new Set<string>()
     // Bonos that already have their household members attached, so a re-run
     // does not add the same person to the same bono twice.
     const purchaseHasShares = new Set<string>()
@@ -240,6 +250,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         if (sameDay) sameDay.push(row.id)
         else purchasesByPatientDay.set(dayKey, [row.id])
         if (row.invoice_id) purchaseHasInvoice.add(row.id)
+        if (!row.external_reference) purchaseNeedsReference.add(row.id)
       }
       if (!data || data.length < PAGE_SIZE) break
     }
@@ -492,7 +503,8 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       // Nothing left to do: the credit is already right and either the bono
       // is settled or its debt is on an invoice.
       const needsShares = sharedWith.length > 0 && !(existingPurchaseId !== null && purchaseHasShares.has(existingPurchaseId))
-      if (existingPurchaseId && creditDeltaCents === 0 && !needsInvoice && !needsShares) continue
+      const needsReferenceStamp = existingPurchaseId !== null && purchaseNeedsReference.has(existingPurchaseId)
+      if (existingPurchaseId && creditDeltaCents === 0 && !needsInvoice && !needsShares && !needsReferenceStamp) continue
 
       built.push({
         phPackageId: pkg.id,
@@ -517,6 +529,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         needsInvoice,
         creditOnly: existingPurchaseId !== null,
         existingPurchaseId,
+        needsReferenceStamp,
         sharedWith,
         currentCreditCents: creditCentsByPatient.get(ourPatient.id) ?? 0,
         status: 'pending',
@@ -587,6 +600,25 @@ async function applyFixes() {
       if (creditError) {
         c.status = 'error'
         c.errorMessage = creditError.message
+        progress.value = { done: progress.value.done + 1, total: toApply.length }
+        continue
+      }
+    }
+
+    // Label a bono the hand backfill left unlabelled with its PracticeHub
+    // reference, so it stops being matched by date. `is('external_reference',
+    // null)` so a reference already there is never overwritten, and the unique
+    // index on (account_id, external_reference) refuses a second bono claiming
+    // the same PracticeHub id if the day matching ever goes wrong.
+    if (c.needsReferenceStamp && purchaseId) {
+      const { error: stampError } = await supabase
+        .from('package_purchases')
+        .update({ external_reference: externalRef })
+        .eq('id', purchaseId)
+        .is('external_reference', null)
+      if (stampError) {
+        c.status = 'error'
+        c.errorMessage = stampError.message
         progress.value = { done: progress.value.done + 1, total: toApply.length }
         continue
       }
@@ -827,11 +859,13 @@ function formatEuros(cents: number): string {
                   {{ c.creditDeltaCents > 0 ? '+' : '' }}€{{ formatEuros(c.creditDeltaCents) }} {{ t('credit', 'crédito') }}
                 </div>
                 <div v-if="c.needsInvoice" class="text-warning-text">+ €{{ formatEuros(c.owedCents) }} {{ t('invoice', 'factura') }}</div>
+                <div v-if="c.needsReferenceStamp" class="text-ink-muted2">{{ t('+ PracticeHub reference', '+ referencia de PracticeHub') }}</div>
               </td>
               <td class="px-3 py-2">
                 <span v-if="c.status === 'pending' && c.creditDeltaCents < 0" class="text-danger-text">{{ t('Over-credited', 'Saldo de más') }}</span>
                 <span v-else-if="c.status === 'pending' && c.creditOnly && c.creditDeltaCents === 0 && c.needsInvoice" class="text-warning-text">{{ t('Missing invoice', 'Falta la factura') }}</span>
-                <span v-else-if="c.status === 'pending' && c.creditOnly && c.creditDeltaCents === 0" class="text-warning-text">{{ t('Missing shared patients', 'Faltan pacientes compartidos') }}</span>
+                <span v-else-if="c.status === 'pending' && c.creditOnly && c.creditDeltaCents === 0 && c.sharedWith.length > 0" class="text-warning-text">{{ t('Missing shared patients', 'Faltan pacientes compartidos') }}</span>
+                <span v-else-if="c.status === 'pending' && c.creditOnly && c.creditDeltaCents === 0" class="text-ink-muted2">{{ t('Missing reference', 'Falta la referencia') }}</span>
                 <span v-else-if="c.status === 'pending' && c.creditOnly" class="text-warning-text">{{ t('Missing credit', 'Falta el saldo') }}</span>
                 <span v-else-if="c.status === 'pending'" class="text-ink-600">{{ t('Pending', 'Pendiente') }}</span>
                 <span v-else-if="c.status === 'applied'" class="text-ink-muted2">{{ t('Applied', 'Aplicado') }}</span>

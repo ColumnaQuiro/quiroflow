@@ -74,11 +74,49 @@ const groups = computed(() =>
 function isActive(to: string) {
   return route.path === to
 }
+
+const currentLabel = computed(() => {
+  for (const group of groups.value) {
+    const match = group.items.find((item) => isActive(item.to))
+    if (match) return match.label
+  }
+  return t('Sections', 'Secciones')
+})
+
+// This component is embedded identically at the top of ~29 settings pages
+// (see the `flex-1` sibling right after <SettingsNav /> in each one), none
+// of which have their own place to host a menu button -- fixed positioning
+// means the mobile trigger/drawer don't depend on whatever flex/grid
+// context the page around them happens to use, so this is a one-file fix
+// rather than 29 page edits. Closes on navigation, same as AppSidebar's
+// own mobile drawer.
+const mobileOpen = ref(false)
+watch(() => route.fullPath, () => (mobileOpen.value = false))
 </script>
 
 <template>
-  <nav class="w-[220px] shrink-0 space-y-5 bg-surface-sidebar p-3 print:hidden">
-    <NuxtLink to="/settings" class="block px-2 text-[13px] font-semibold text-ink-900 hover:text-brand"> {{ t('Settings', 'Ajustes') }} </NuxtLink>
+  <button
+    v-if="!mobileOpen"
+    type="button"
+    class="fixed bottom-6 left-4 z-30 flex h-11 items-center gap-2 rounded-pill border border-line bg-surface px-4 text-[13px] font-medium text-ink-700 shadow-card lg:hidden"
+    @click="mobileOpen = true"
+  >
+    <svg width="14" height="14" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1.5 3.5h11M1.5 7h11M1.5 10.5h11" /></svg>
+    {{ currentLabel }}
+  </button>
+
+  <div v-if="mobileOpen" class="fixed inset-0 z-40 bg-black/40 lg:hidden" @click="mobileOpen = false" />
+
+  <nav
+    class="fixed inset-y-0 left-0 z-50 w-[280px] space-y-5 overflow-y-auto bg-surface-sidebar p-3 transition-transform duration-200 print:hidden lg:static lg:z-auto lg:w-[220px] lg:shrink-0 lg:translate-x-0"
+    :class="mobileOpen ? 'translate-x-0' : '-translate-x-full'"
+  >
+    <div class="flex items-center justify-between lg:block">
+      <NuxtLink to="/settings" class="block px-2 text-[13px] font-semibold text-ink-900 hover:text-brand"> {{ t('Settings', 'Ajustes') }} </NuxtLink>
+      <button type="button" class="flex h-6 w-6 items-center justify-center rounded-ctlSm text-ink-muted2 hover:bg-surface-subtle lg:hidden" @click="mobileOpen = false">
+        <svg width="13" height="13" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2 2l10 10M12 2L2 12" /></svg>
+      </button>
+    </div>
     <div v-for="group in groups" :key="group.label">
       <p class="px-2 text-[10.5px] font-[640] uppercase tracking-[.06em] text-ink-faint">{{ group.label }}</p>
       <div class="mt-1 space-y-0.5">

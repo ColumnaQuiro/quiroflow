@@ -339,7 +339,7 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
 <template>
   <div class="space-y-4">
     <!-- KPI strip -->
-    <div class="grid grid-cols-4 gap-3">
+    <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
       <div class="rounded-card border border-line bg-surface p-4 shadow-card">
         <p class="text-[11.5px] text-ink-muted2">{{ t('Visits, 12 mo', 'Visitas, 12 meses') }}</p>
         <p class="mt-1 font-mono text-[20px] font-semibold text-ink-900">{{ kpiLoading ? '—' : visits12mo }}</p>

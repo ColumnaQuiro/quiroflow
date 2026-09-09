@@ -430,7 +430,7 @@ async function sendTestToMe() {
 
 <template>
   <div class="fixed inset-0 z-30 flex justify-end bg-ink-900/40" @click.self="emit('close')">
-    <div class="flex h-full w-[560px] flex-col bg-surface shadow-drawer">
+    <div class="flex h-full w-full max-w-xl flex-col bg-surface shadow-drawer">
       <div class="flex h-14 shrink-0 items-center justify-between border-b border-line px-6">
         <h2 class="text-[15px] font-semibold text-ink-900">{{ savedRuleId ? t('Edit campaign', 'Editar campaña') : t('New campaign', 'Nueva campaña') }}</h2>
         <button type="button" class="flex h-7 w-7 items-center justify-center rounded-ctlSm text-ink-faint2 hover:bg-surface-subtle hover:text-ink-muted" @click="emit('close')">✕</button>

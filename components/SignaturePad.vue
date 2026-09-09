@@ -11,6 +11,33 @@ function context() {
   return canvasRef.value?.getContext('2d') ?? null
 }
 
+// A canvas's width/height attributes set its drawing-buffer resolution,
+// separate from whatever size CSS renders it at -- and unlike img/video,
+// Tailwind's preflight doesn't constrain canvas to its container width. A
+// hardcoded width="400" used to render at a fixed 400px regardless of
+// screen size, wider than the ~280-330px available on most Android phones
+// once page/card padding is subtracted, forcing the whole page to scroll
+// horizontally mid-signature -- which is what made this hard to sign at
+// all rather than just cramped. Sizing the buffer to match the element's
+// actual rendered box keeps pointerPos()'s coordinates (computed from that
+// same box below) aligned with where ink actually lands, at any width.
+function sizeToContainer() {
+  const canvas = canvasRef.value
+  if (!canvas) return
+  const rect = canvas.getBoundingClientRect()
+  if (rect.width === 0 || rect.height === 0) return
+  canvas.width = rect.width
+  canvas.height = rect.height
+}
+
+let resizeObserver: ResizeObserver | undefined
+onMounted(() => {
+  sizeToContainer()
+  resizeObserver = new ResizeObserver(sizeToContainer)
+  if (canvasRef.value) resizeObserver.observe(canvasRef.value)
+})
+onUnmounted(() => resizeObserver?.disconnect())
+
 function pointerPos(e: PointerEvent) {
   const rect = canvasRef.value!.getBoundingClientRect()
   return { x: e.clientX - rect.left, y: e.clientY - rect.top }
@@ -64,7 +91,7 @@ function clear() {
       ref="canvasRef"
       width="400"
       height="120"
-      class="touch-none rounded-md border border-gray-300 bg-white"
+      class="h-[120px] w-full touch-none rounded-md border border-gray-300 bg-white"
       @pointerdown="start"
       @pointermove="move"
       @pointerup="end"

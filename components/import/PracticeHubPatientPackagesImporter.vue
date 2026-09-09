@@ -4,7 +4,10 @@ const store = useAccountStore()
 const t = useT()
 const { showToast } = useToast()
 
-interface PHPatient { id: number; patient_number: string }
+// first_name/last_name are optional because nothing else here needs them and
+// PracticeHub's docs do not promise them -- they are used only to put a name
+// next to an unmatched patient number, and the number alone still works.
+interface PHPatient { id: number; patient_number: string; first_name?: string | null; last_name?: string | null }
 interface PHPatientPackage {
   id: number
   // PracticeHub's docs example shows a top-level patient_id, but real
@@ -87,7 +90,15 @@ const runError = ref('')
 const lastConn = ref<{ baseUrl: string; apiKey: string; appDetails: string } | null>(null)
 
 const candidates = ref<Candidate[]>([])
-const skippedUnmatched = ref(0)
+// Who was skipped, not just how many. This used to be a bare counter, and it
+// counted per bono rather than per person: someone on three bonos was three
+// "unmatched patients". Worse, the count named nobody, so a real gap -- a
+// patient PracticeHub knows and we do not, whose bonos and shares are silently
+// dropped by every importer -- was a number on a screen with no way to act on
+// it. Keyed by PracticeHub patient id, so each person appears once, with the
+// bonos they were skipped on.
+const unmatchedPatients = ref(new Map<string, { number: string; name: string; bonos: string[] }>())
+const skippedUnmatched = computed(() => unmatchedPatients.value.size)
 const skippedNoValue = ref(0)
 // Raw, untouched sample of what PracticeHub actually returns -- the field
 // mapping above is a guess reverse-engineered from the docs' example
@@ -166,7 +177,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
   stage.value = 'loading'
   runError.value = ''
   candidates.value = []
-  skippedUnmatched.value = 0
+  unmatchedPatients.value = new Map()
   skippedNoValue.value = 0
   const api = usePracticeHubApi(conn)
 
@@ -174,6 +185,22 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     phase.value = t('Matching patients…', 'Emparejando pacientes…')
     const phPatients = await api.fetchAll<PHPatient>('/patients', (done, total) => (progress.value = { done, total }))
     const patientNumberById = new Map(phPatients.map((p) => [String(p.id), p.patient_number]))
+    const patientNameById = new Map(
+      phPatients.map((p) => [String(p.id), [p.first_name, p.last_name].filter(Boolean).join(' ').trim()]),
+    )
+
+    // Records a PracticeHub patient we hold no match for, against the bono it
+    // was skipped on. Same person on several bonos is one entry.
+    const noteUnmatched = (phId: number | null, bonoName: string) => {
+      const key = phId === null ? 'unknown' : String(phId)
+      const entry = unmatchedPatients.value.get(key) ?? {
+        number: (phId !== null ? patientNumberById.get(String(phId)) : null) ?? '(no patient number)',
+        name: (phId !== null ? patientNameById.get(String(phId)) : '') || '',
+        bonos: [],
+      }
+      if (!entry.bonos.includes(bonoName)) entry.bonos.push(bonoName)
+      unmatchedPatients.value.set(key, entry)
+    }
 
     const PAGE_SIZE = 1000
     const ourPatientByRef = new Map<string, { id: string; name: string }>()
@@ -356,7 +383,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       const patientNumber = phPatientId !== null ? patientNumberById.get(String(phPatientId)) : undefined
       const ourPatient = patientNumber ? ourPatientByRef.get(patientNumber) : undefined
       if (!ourPatient) {
-        skippedUnmatched.value++
+        noteUnmatched(phPatientId, pkg.name || pkg.package_type || 'Package')
         continue
       }
 
@@ -368,7 +395,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         const sharedNumber = patientNumberById.get(String(sharedPhId))
         const sharedPatient = sharedNumber ? ourPatientByRef.get(sharedNumber) : undefined
         if (sharedPatient) sharedWith.push(sharedPatient)
-        else skippedUnmatched.value++
+        else noteUnmatched(sharedPhId, pkg.name || pkg.package_type || 'Package')
       }
 
       // Resolve this PracticeHub bono to our own row: by reference where the
@@ -645,7 +672,7 @@ function retryRun() {
 function reset() {
   stage.value = 'connect'
   candidates.value = []
-  skippedUnmatched.value = 0
+  unmatchedPatients.value = new Map()
   skippedNoValue.value = 0
   progress.value = { done: 0, total: 0 }
 }
@@ -730,6 +757,22 @@ function formatEuros(cents: number): string {
             `Se encontraron ${candidates.filter((c) => c.status === 'pending' && !c.creditOnly).length} bono(s) nuevos y ${candidates.filter((c) => c.status === 'pending' && c.creditOnly).length} ya existentes que hay que corregir. Sube el saldo en ${candidates.filter((c) => c.creditDeltaCents > 0).length}: +€${formatEuros(candidates.filter((c) => c.creditDeltaCents > 0).reduce((sum, c) => sum + c.creditDeltaCents, 0))}. Se retira saldo en ${candidates.filter((c) => c.creditDeltaCents < 0).length} con saldo de más por la regla antigua: -€${formatEuros(-candidates.filter((c) => c.creditDeltaCents < 0).reduce((sum, c) => sum + c.creditDeltaCents, 0))}. Facturas por lo que queda pendiente: ${candidates.filter((c) => c.needsInvoice).length}, €${formatEuros(candidates.filter((c) => c.needsInvoice).reduce((sum, c) => sum + c.owedCents, 0))}. Omitidos: ${skippedUnmatched} pacientes sin emparejar, ${skippedNoValue} bonos activos sin saldo restante.`,
           )
         }}
+      </div>
+
+      <div v-if="skippedUnmatched > 0" class="rounded-ctl border border-warning-border bg-warning-bg p-3">
+        <p class="text-[12.5px] font-medium text-warning-text">
+          {{ t(`${skippedUnmatched} patient(s) in PracticeHub have no matching record here`, `${skippedUnmatched} paciente(s) de PracticeHub no tienen registro aqu\u00ed`) }}
+        </p>
+        <p class="mt-1 text-[12.5px] leading-relaxed text-warning-text">
+          {{ t('Their bonos are skipped, and where they share a family bono they cannot draw a session from it. Match them by running the Patients import, then run this again. A patient number showing here and nothing in QuiroFlow usually means their reference was never stored, not that the patient is missing.', 'Sus bonos se omiten, y si comparten un bono familiar no pueden usar sesiones de \u00e9l. Emparéjalos ejecutando la importaci\u00f3n de Pacientes y vuelve a ejecutar esto. Un n\u00famero de paciente aqu\u00ed sin nada en QuiroFlow suele significar que su referencia nunca se guard\u00f3, no que falte el paciente.') }}
+        </p>
+        <ul class="mt-2 space-y-0.5 text-[12px] text-warning-text">
+          <li v-for="[key, u] in [...unmatchedPatients]" :key="key">
+            <span class="font-mono">{{ u.number }}</span>
+            <template v-if="u.name"> &middot; {{ u.name }}</template>
+            <span class="text-warning-text/70"> &middot; {{ u.bonos.join(', ') }}</span>
+          </li>
+        </ul>
       </div>
 
       <div v-if="skippedUnmatched > 0 || candidates.filter((c) => c.status === 'pending').length === 0" class="rounded-lg border border-line">

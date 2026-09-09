@@ -24,10 +24,23 @@ export interface AutomationFilters {
   // (e.g. "1x10|No contactar") rather than a clean tag taxonomy an exact
   // multi-select could work against.
   tag_contains?: string
-  // Mirrors recalls.vue's "Any balance / Owing / In credit" filter exactly --
-  // 'debit' means the patient owes money (balance_cents < 0), 'credit' means
-  // they're in credit (balance_cents > 0). Reads patients.balance_cents
-  // directly rather than recomputing paid/invoiced/credit-ledger sums here.
+  // Mirrors recalls.vue's "Any balance / Owing / In credit" filter -- 'debit'
+  // means the patient owes money (balance_cents < 0), 'credit' means they're
+  // in credit (balance_cents > 0).
+  //
+  // Read from patient_live_balances, the same view recalls.vue filters on, not
+  // from patients.balance_cents. That column is written once at PracticeHub
+  // import time and never kept in sync, so it drifts the moment a patient has
+  // any invoice, payment or credit activity of their own -- which is what 0094
+  // created the view to fix. It corrected every UI surface and missed this one,
+  // so the filter claiming to mirror recalls.vue was reading different numbers
+  // from it and quietly disagreeing.
+  //
+  // It matters more here than on a screen: a stale figure on the patients list
+  // is a wrong number someone can see, but a stale figure here decides who an
+  // automation contacts. Carmen Berbel is settled at 0 and the import wanted to
+  // write -16 EUR against her, which is "owes money" by this convention and
+  // enough to put her in a chasing automation for a debt she does not have.
   balance?: 'debit' | 'credit'
   // true alone means "has any active membership"; paired with membership_ids
   // it means "has an active membership in one of these specific plans".
@@ -85,18 +98,18 @@ export async function ruleFiltersMatch(
     if (hasFuture !== filters.has_future_appointment) return false
   }
 
-  if (filters.tag_contains || filters.balance) {
-    const { data: patient } = await supabase.from('patients').select('tags, balance_cents').eq('id', patientId).maybeSingle()
-    if (filters.tag_contains) {
-      const needle = filters.tag_contains.toLowerCase()
-      const tags: string[] = patient?.tags ?? []
-      if (!tags.some((tag) => tag.toLowerCase().includes(needle))) return false
-    }
-    if (filters.balance) {
-      const balanceCents = patient?.balance_cents ?? 0
-      if (filters.balance === 'debit' && !(balanceCents < 0)) return false
-      if (filters.balance === 'credit' && !(balanceCents > 0)) return false
-    }
+  if (filters.tag_contains) {
+    const { data: patient } = await supabase.from('patients').select('tags').eq('id', patientId).maybeSingle()
+    const needle = filters.tag_contains.toLowerCase()
+    const tags: string[] = patient?.tags ?? []
+    if (!tags.some((tag) => tag.toLowerCase().includes(needle))) return false
+  }
+
+  if (filters.balance) {
+    const { data: live } = await supabase.from('patient_live_balances').select('balance_cents').eq('patient_id', patientId).maybeSingle()
+    const balanceCents = live?.balance_cents ?? 0
+    if (filters.balance === 'debit' && !(balanceCents < 0)) return false
+    if (filters.balance === 'credit' && !(balanceCents > 0)) return false
   }
 
   if (filters.membership_active || filters.membership_ids?.length) {

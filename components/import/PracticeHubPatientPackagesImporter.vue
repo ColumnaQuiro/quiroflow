@@ -87,6 +87,21 @@ interface Candidate {
   errorMessage?: string
 }
 
+// A bono row as it exists here, carried through matching so a PracticeHub
+// bono can claim the row that actually corresponds to it rather than
+// whichever one happens to be first.
+interface LocalBono {
+  id: string
+  patientId: string
+  packageName: string
+  priceCents: number
+  sessionsUsed: number
+  purchasedAt: string
+  hasReference: boolean
+  visitRows: number
+  hasInvoice: boolean
+}
+
 const stage = ref<'connect' | 'loading' | 'preview' | 'applying' | 'done' | 'error'>('connect')
 const phase = ref('')
 const progress = ref({ done: 0, total: 0 })
@@ -104,6 +119,13 @@ const candidates = ref<Candidate[]>([])
 const unmatchedPatients = ref(new Map<string, { number: string; name: string; bonos: string[] }>())
 const skippedUnmatched = computed(() => unmatchedPatients.value.size)
 const skippedNoValue = ref(0)
+// Bonos that exist here but that no PracticeHub bono claimed. Before this
+// existed the importer could hand one local row to the first bono of a
+// same-day pair and insert a fresh row for the second, leaving a duplicate
+// nothing ever mentioned -- six patients ended up with two rows for one
+// bono, and only a hand-written SQL query found them. Anything left over
+// after matching is now reported instead of ignored.
+const unmatchedLocalBonos = ref<{ patientName: string; bono: LocalBono }[]>([])
 // Raw, untouched sample of what PracticeHub actually returns -- the field
 // mapping above is a guess reverse-engineered from the docs' example
 // response, which has already been wrong twice. Showing this directly
@@ -182,6 +204,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
   runError.value = ''
   candidates.value = []
   unmatchedPatients.value = new Map()
+  unmatchedLocalBonos.value = []
   skippedNoValue.value = 0
   const api = usePracticeHubApi(conn)
 
@@ -208,9 +231,17 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
 
     const PAGE_SIZE = 1000
     const ourPatientByRef = new Map<string, { id: string; name: string }>()
+    // Also by id, so a bono left over after matching can be named. Every
+    // patient goes in here, reference or not -- an unreferenced one is
+    // exactly the case where naming them matters.
+    const ourPatientNameById = new Map<string, string>()
     for (let page = 0; ; page++) {
       const { data } = await supabase.from('patients').select('id, external_reference, first_name, last_name').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
-      for (const p of data ?? []) if (p.external_reference) ourPatientByRef.set(p.external_reference, { id: p.id, name: `${p.first_name} ${p.last_name}` })
+      for (const p of data ?? []) {
+        const name = `${p.first_name} ${p.last_name ?? ''}`.trim()
+        ourPatientNameById.set(p.id, name)
+        if (p.external_reference) ourPatientByRef.set(p.external_reference, { id: p.id, name })
+      }
       if (!data || data.length < PAGE_SIZE) break
     }
 
@@ -221,13 +252,14 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     // left over.
     phase.value = t('Checking for already-imported packages…', 'Comprobando bonos ya importados…')
     const purchaseByRef = new Map<string, string>()
+    const localBonoById = new Map<string, LocalBono>()
     // A LIST per day, not a single id. Two PracticeHub bonos created on the
     // same day for the same patient used to both resolve to the same local
     // row, and each then took back the same deposit: Oscar Inga's two bonos
     // both claimed his one 360 EUR row and clawed it back twice, leaving him
     // at -280 EUR. Each local row is now claimed by at most one bono, and a
     // bono that finds nothing left to claim is a genuinely new one to insert.
-    const purchasesByPatientDay = new Map<string, string[]>()
+    const purchasesByPatientDay = new Map<string, LocalBono[]>()
     // A bono already pointing at an invoice is not billed again, whatever
     // that invoice is numbered -- one raised by an earlier run, one from a
     // sale through the app, or one created by hand during a repair.
@@ -242,15 +274,42 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     // does not add the same person to the same bono twice.
     const purchaseHasShares = new Set<string>()
     for (let page = 0; ; page++) {
-      const { data } = await supabase.from('package_purchases').select('id, patient_id, purchased_at, external_reference, invoice_id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+      const { data } = await supabase
+        .from('package_purchases')
+        .select('id, patient_id, purchased_at, external_reference, invoice_id, package_name, price_cents, sessions_used')
+        .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
       for (const row of data ?? []) {
         if (row.external_reference) purchaseByRef.set(row.external_reference, row.id)
         const dayKey = `${row.patient_id}|${String(row.purchased_at).slice(0, 10)}`
+        const local: LocalBono = {
+          id: row.id,
+          patientId: row.patient_id,
+          packageName: row.package_name ?? '',
+          priceCents: row.price_cents ?? 0,
+          sessionsUsed: row.sessions_used ?? 0,
+          purchasedAt: String(row.purchased_at),
+          hasReference: !!row.external_reference,
+          visitRows: 0,
+          hasInvoice: !!row.invoice_id,
+        }
+        localBonoById.set(row.id, local)
         const sameDay = purchasesByPatientDay.get(dayKey)
-        if (sameDay) sameDay.push(row.id)
-        else purchasesByPatientDay.set(dayKey, [row.id])
+        if (sameDay) sameDay.push(local)
+        else purchasesByPatientDay.set(dayKey, [local])
         if (row.invoice_id) purchaseHasInvoice.add(row.id)
         if (!row.external_reference) purchaseNeedsReference.add(row.id)
+      }
+      if (!data || data.length < PAGE_SIZE) break
+    }
+
+    // Visits recorded against each bono. A leftover row carrying visits is
+    // the one the clinic has actually been drawing sessions from, which is
+    // what makes it safe to say which of a duplicated pair is the live one.
+    for (let page = 0; ; page++) {
+      const { data } = await supabase.from('package_sessions').select('package_purchase_id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+      for (const row of data ?? []) {
+        const local = row.package_purchase_id ? localBonoById.get(row.package_purchase_id) : undefined
+        if (local) local.visitRows++
       }
       if (!data || data.length < PAGE_SIZE) break
     }
@@ -314,6 +373,42 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     rawSample.value = phPackages.slice(0, 3)
 
     const built: Candidate[] = []
+    // Which local rows a PracticeHub bono has taken, so what is left over at
+    // the end can be reported rather than quietly duplicated.
+    const claimedPurchaseIds = new Set<string>()
+
+    // Pick the local row that actually stands for this PracticeHub bono,
+    // rather than whichever one came first. The old code took the head of
+    // the day's list with `.shift()`, so when PracticeHub held two bonos for
+    // one patient on one day the first bono took the only local row and the
+    // second inserted a brand new one -- a duplicate that showed as extra
+    // sessions on the patient and split their credit across two rows. Six
+    // patients here are in exactly that state.
+    //
+    // A row that already carries a PracticeHub reference is never claimed
+    // this way: it belongs to a specific bono, and if that bono is not in
+    // this run (deleted in PracticeHub, say) letting a different one take it
+    // would rewrite the wrong record. Among the unreferenced rows the best
+    // match wins -- same price and same sessions used first, then price
+    // alone -- and ties fall back to the earliest, so a re-run is stable.
+    function claimPurchaseForDay(dayKey: string, priceCents: number, sessionsUsed: number): string | null {
+      const sameDay = purchasesByPatientDay.get(dayKey)
+      if (!sameDay) return null
+      let best: LocalBono | null = null
+      let bestScore = -1
+      for (const local of sameDay) {
+        if (local.hasReference || claimedPurchaseIds.has(local.id)) continue
+        const score = (local.priceCents === priceCents ? 2 : 0) + (local.sessionsUsed === sessionsUsed ? 1 : 0)
+        if (score > bestScore) {
+          best = local
+          bestScore = score
+        }
+      }
+      if (!best) return null
+      claimedPurchaseIds.add(best.id)
+      return best.id
+    }
+
     // Credit each patient will hold as the preview is built up, so a second
     // bono for the same patient corrects against the first one's effect.
     const runningCreditByPatient = new Map<string, number>()
@@ -440,12 +535,12 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         }
       }
 
-      let existingPurchaseId = purchaseByRef.get(externalRef) ?? null
-      if (existingPurchaseId === null) existingPurchaseId = purchasesByPatientDay.get(dayKey)?.shift() ?? null
-
       const visitsTotal = pkg.visits ?? pkg.visits_left ?? 0
       const visitsLeft = pkg.visits_left ?? visitsTotal
       const sessionsUsed = Math.max(0, visitsTotal - visitsLeft)
+
+      let existingPurchaseId = purchaseByRef.get(externalRef) ?? null
+      if (existingPurchaseId === null) existingPurchaseId = claimPurchaseForDay(dayKey, Math.round((pkg.price ?? 0) * 100), sessionsUsed)
       // A deactivated package is closed: whatever visits it had left are no
       // longer claimable, so it carries no credit. Granting one would invent
       // money the clinic never owed.
@@ -535,6 +630,18 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         status: 'pending',
       })
     }
+
+    // Anything here that no PracticeHub bono claimed. A bono sold through
+    // QuiroFlow since the migration legitimately lands here too, which is why
+    // the purchase time is shown: the migration wrote every row it created at
+    // exactly midnight, so a row with a real time of day was sold here.
+    const leftovers: { patientName: string; bono: LocalBono }[] = []
+    for (const local of localBonoById.values()) {
+      if (local.hasReference || claimedPurchaseIds.has(local.id)) continue
+      leftovers.push({ patientName: ourPatientNameById.get(local.patientId) ?? local.patientId, bono: local })
+    }
+    leftovers.sort((a, b) => a.patientName.localeCompare(b.patientName))
+    unmatchedLocalBonos.value = leftovers
 
     candidates.value = built
     stage.value = 'preview'
@@ -705,6 +812,7 @@ function reset() {
   stage.value = 'connect'
   candidates.value = []
   unmatchedPatients.value = new Map()
+  unmatchedLocalBonos.value = []
   skippedNoValue.value = 0
   progress.value = { done: 0, total: 0 }
 }
@@ -805,6 +913,44 @@ function formatEuros(cents: number): string {
             <span class="text-warning-text/70"> &middot; {{ u.bonos.join(', ') }}</span>
           </li>
         </ul>
+      </div>
+
+      <div v-if="unmatchedLocalBonos.length > 0" class="rounded-ctl border border-warning-border bg-warning-bg p-3">
+        <p class="text-[12.5px] font-medium text-warning-text">
+          {{ t(`${unmatchedLocalBonos.length} bono(s) here that no PracticeHub bono matches`, `${unmatchedLocalBonos.length} bono(s) aquí sin bono equivalente en PracticeHub`) }}
+        </p>
+        <p class="mt-1 text-[12.5px] leading-relaxed text-warning-text">
+          {{
+            t(
+              'Nothing is done to these — they are listed so you can see them. A bono sold through QuiroFlow since the migration belongs here and is fine. One bought at exactly 00:00 came from the migration, and if the same patient also has a PracticeHub-referenced bono of the same size on the same day, the two are the same bono recorded twice: the sessions column tells you which one the clinic has actually been using.',
+              'No se hace nada con estos: se listan para que puedas verlos. Un bono vendido en QuiroFlow después de la migración aparece aquí y es correcto. Uno comprado exactamente a las 00:00 viene de la migración, y si el mismo paciente tiene además un bono con referencia de PracticeHub del mismo tamaño y el mismo día, son el mismo bono registrado dos veces: la columna de sesiones indica cuál ha estado usando la clínica.',
+            )
+          }}
+        </p>
+        <div class="mt-2 overflow-x-auto">
+          <table class="w-full text-[12px] text-warning-text">
+            <thead class="text-left text-warning-text/70">
+              <tr>
+                <th class="py-1 pr-3 font-medium">{{ t('Patient', 'Paciente') }}</th>
+                <th class="py-1 pr-3 font-medium">{{ t('Bono', 'Bono') }}</th>
+                <th class="py-1 pr-3 font-medium">{{ t('Price', 'Precio') }}</th>
+                <th class="py-1 pr-3 font-medium">{{ t('Sessions used', 'Sesiones usadas') }}</th>
+                <th class="py-1 pr-3 font-medium">{{ t('Visits recorded', 'Visitas registradas') }}</th>
+                <th class="py-1 font-medium">{{ t('Bought', 'Comprado') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in unmatchedLocalBonos" :key="row.bono.id">
+                <td class="py-1 pr-3">{{ row.patientName }}</td>
+                <td class="py-1 pr-3">{{ row.bono.packageName }}</td>
+                <td class="py-1 pr-3">&euro;{{ formatEuros(row.bono.priceCents) }}</td>
+                <td class="py-1 pr-3">{{ row.bono.sessionsUsed }}</td>
+                <td class="py-1 pr-3">{{ row.bono.visitRows }}</td>
+                <td class="py-1 whitespace-nowrap">{{ row.bono.purchasedAt.slice(0, 16).replace('T', ' ') }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div v-if="skippedUnmatched > 0 || candidates.filter((c) => c.status === 'pending').length === 0" class="rounded-lg border border-line">

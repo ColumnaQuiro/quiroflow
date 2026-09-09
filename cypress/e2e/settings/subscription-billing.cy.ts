@@ -36,6 +36,31 @@ describe('Platform billing: trial banner, subscription page, and lock screen', (
     })
   })
 
+  it('shows a comped account the full plan design, read-only', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.setComped(account.accountId, true)
+      cy.login(account.email, account.password)
+      cy.visit('/subscription')
+
+      // Everything a paying clinic sees renders...
+      cy.contains('Comped -- no charge').should('be.visible')
+      cy.contains('Included usage').should('be.visible')
+      cy.contains('h2', 'Plans').should('be.visible')
+      cy.contains('Solo').should('be.visible')
+      cy.contains('Practice').should('be.visible')
+      cy.contains('Clinic').should('be.visible')
+      cy.contains('button', 'Your plan').should('be.disabled')
+
+      // ...but there is no way to start charging an account we agreed not to
+      // charge, and no seat ceiling is claimed that the trigger would not
+      // enforce (practitioner_seat_allowance returns null when comped).
+      cy.contains('button', 'Subscribe').should('not.exist')
+      cy.contains('button', 'Switch to this plan').should('not.exist')
+      cy.contains('h2', 'Change plan').should('not.exist')
+      cy.contains('unlimited included').should('be.visible')
+    })
+  })
+
   it('lets a locked owner through to the subscription page to pay', () => {
     cy.seedStaffAccount().then((account) => {
       cy.setSubscriptionStatus(account.accountId, 'locked')

@@ -185,6 +185,10 @@ const nextChargeCents = computed(() => {
 // bookkeepers are free and unlimited, so the count has to say "practitioner",
 // not "user", or an owner reads it as a cap on their whole team.
 const seatsIncluded = computed(() => {
+  // Comped accounts genuinely have no ceiling -- practitioner_seat_allowance()
+  // (0150) returns null for them, so the trigger would never refuse a seat.
+  // Printing "3 of 1 seat(s) in use" here claimed a limit that does not exist.
+  if (subscription.value?.comped) return null
   const included = subscription.value?.plans?.included_professionals
   if (included === null || included === undefined) return null
   return included + (subscription.value?.extra_professionals ?? 0)
@@ -206,7 +210,7 @@ const GB = 1024 ** 3
 const usageRows = computed(() => {
   const plan = subscription.value?.plans
   const u = usage.value
-  if (!plan || !u || subscription.value?.comped) return []
+  if (!plan || !u) return []
   const rows: { label: string; used: string; allowance: string; pct: number | null; over: boolean }[] = []
 
   if (plan.included_whatsapp_conversations) {
@@ -428,9 +432,10 @@ const headerMeta = computed(() => {
             </span>
           </div>
 
-          <p v-if="!subscription.comped" class="text-sm text-ink-700">
+          <p class="text-sm text-ink-700">
             {{ eur(monthlyEquivalentCents) }}/mo
             <span class="text-ink-muted">({{ subscription.billing_interval === 'annual' ? 'billed annually' : 'billed monthly' }})</span>
+            <span v-if="subscription.comped" class="text-ink-faint2">&middot; not charged</span>
           </p>
           <p class="text-sm text-ink-muted">
             {{ professionalsLabel }}
@@ -489,9 +494,9 @@ const headerMeta = computed(() => {
           </div>
         </div>
 
-        <div v-if="store.isOwner && !subscription.comped" class="mt-8">
+        <div v-if="store.isOwner" class="mt-8">
           <div class="flex flex-wrap items-center justify-between gap-3">
-            <h2 class="text-base font-semibold text-ink-900">Change plan</h2>
+            <h2 class="text-base font-semibold text-ink-900">{{ subscription.comped ? 'Plans' : 'Change plan' }}</h2>
             <div class="flex items-center gap-3">
               <div class="flex items-center gap-1.5 text-sm">
                 <label class="flex items-center gap-1.5">
@@ -546,8 +551,18 @@ const headerMeta = computed(() => {
                 <li>{{ plan.included_clinics ?? 'Unlimited' }} clinic location(s)</li>
                 <li v-if="plan.extra_professional_price_cents">{{ eur(plan.extra_professional_price_cents) }}/mo per extra professional</li>
               </ul>
+              <!-- Comped accounts see the same cards a paying clinic sees --
+                   the point is the design, not a purchase path -- but nothing
+                   here is actionable. Complimentary access is granted from the
+                   admin panel, so a Checkout button would let an account we
+                   agreed not to charge start charging itself. -->
+              <template v-if="subscription.comped">
+                <UiBtn v-if="plan.id === subscription.plan_id" variant="secondary" disabled>Your plan</UiBtn>
+                <a v-else :href="contactHref" class="py-2 text-center text-xs text-ink-muted underline decoration-dotted hover:text-brand-text">Contact us to change</a>
+              </template>
+
               <UiBtn
-                v-if="isCurrentPlan(plan)"
+                v-else-if="isCurrentPlan(plan)"
                 variant="secondary"
                 disabled
               >

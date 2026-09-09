@@ -349,6 +349,13 @@ async function recordPayment() {
             class="inline-flex items-center gap-1.5 rounded-ctlSm bg-brand-tint px-1.5 py-0.5 text-xs font-medium text-brand-text"
           >
             {{ p.package_name }}: {{ p.sessions_total - p.sessions_used }} {{ t('left', 'restantes') }}
+            <span
+              v-if="p.shared"
+              class="rounded-ctlSm bg-info-bg px-1 py-0.5 text-[10px] font-semibold text-info-text"
+              :title="p.ownerName ? t(`Shared by ${p.ownerName}`, `Compartido por ${p.ownerName}`) : t('Shared', 'Compartido')"
+            >
+              {{ t('Shared', 'Compartido') }}
+            </span>
           </span>
         </div>
       </div>
@@ -459,6 +466,9 @@ async function recordPayment() {
           @click="usePackageSession(p)"
         >
           {{ p.package_name }} ({{ p.sessions_total - p.sessions_used }} {{ t('left', 'restantes') }})
+          <span v-if="p.shared" class="ml-1 rounded-ctlSm bg-info-bg px-1 py-0.5 text-[10px] font-semibold text-info-text">
+            {{ p.ownerName ? t(`Shared by ${p.ownerName}`, `Compartido por ${p.ownerName}`) : t('Shared', 'Compartido') }}
+          </span>
         </button>
       </div>
       <ul v-if="payments.length > 0" class="mt-2 space-y-0.5 text-xs text-ink-muted2">

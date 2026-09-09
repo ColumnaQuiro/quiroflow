@@ -786,6 +786,17 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       else localByShape.set(shapeKey, [local])
     }
 
+    // References belonging to a bono this run refuses to import. A local row
+    // can be carrying one of these -- which of a PracticeHub pair got written
+    // here depended on which one won the old first-come matching -- and that
+    // reference must NOT be moved onto the row that survives. Doing so labels
+    // the patient's real bono with the phantom's id: the real bono then finds
+    // no row under its own reference on the next run, cannot claim a row that
+    // now carries someone else's, and inserts a duplicate all over again.
+    // Dropping it with the row is right; the real bono stamps its own
+    // reference on the survivor in this same pass.
+    const skippedPhantomRefs = new Set(phDuplicateBonos.value.map((d) => `PH-package-${d.phPackageId}`))
+
     const merges: typeof duplicateMerges.value = []
     for (const [shapeKey, rows] of localByShape) {
       const phCount = phBonoCountByShape.get(shapeKey) ?? 0
@@ -816,7 +827,10 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         survivorId: survivor.id,
         survivorVisits: survivor.visitRows,
         discardId: discard.id,
-        referenceToMove: survivor.reference === null ? discard.reference : null,
+        referenceToMove:
+          survivor.reference === null && discard.reference !== null && !skippedPhantomRefs.has(discard.reference)
+            ? discard.reference
+            : null,
       })
     }
     duplicateMerges.value = merges

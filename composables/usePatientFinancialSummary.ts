@@ -10,6 +10,10 @@ interface ActivePackage {
   sessions_used: number
   price_cents: number
   shared?: boolean
+  // Set only on a shared package (shared: true) -- whose bono this actually
+  // is, so a beneficiary's own billing view can say "shared by X" instead of
+  // looking like a package this patient bought themselves.
+  ownerName?: string
 }
 
 interface FinancialState {
@@ -79,7 +83,10 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
       supabase.from('patient_memberships').select('id, membership_name, status').eq('patient_id', currentId).eq('status', 'active'),
       supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used, price_cents').eq('patient_id', currentId).order('purchased_at', { ascending: false }),
       supabase.from('account_credits').select('amount_cents').eq('patient_id', currentId),
-      supabase.from('package_purchase_shares').select('package_purchases(id, package_name, sessions_total, sessions_used, price_cents)').eq('patient_id', currentId),
+      supabase
+        .from('package_purchase_shares')
+        .select('package_purchases(id, package_name, sessions_total, sessions_used, price_cents, patients(first_name, last_name))')
+        .eq('patient_id', currentId),
       supabase.from('payments').select('amount_cents, invoices!inner(patient_id)').eq('invoices.patient_id', currentId),
     ])
 
@@ -105,7 +112,11 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     const sharedPackages = (shares ?? [])
       .map((s) => s.package_purchases)
       .filter((p): p is NonNullable<typeof p> => p !== null)
-      .map((p) => ({ ...p, shared: true }))
+      .map(({ patients: owner, ...p }) => ({
+        ...p,
+        shared: true,
+        ownerName: owner ? `${owner.first_name} ${owner.last_name ?? ''}`.trim() : undefined,
+      }))
     state.activePackages.value = [...(packages ?? []), ...sharedPackages].filter((p) => p.sessions_used < p.sessions_total)
 
     state.loading.value = false

@@ -156,6 +156,17 @@ async function setSubscriptionStatus(opts: { accountId: string; status: 'trialin
 }
 
 /**
+ * Marks a test account as comped -- complimentary access, priced at 0, the
+ * shape QuiroFlow's own account has. Bypasses the admin panel that normally
+ * grants it, for exercising the read-only plan view a comped account sees.
+ */
+async function setComped(opts: { accountId: string; comped: boolean }) {
+  const { accountId, comped } = opts
+  assertOk(await admin.from('subscriptions').update({ comped }).eq('account_id', accountId))
+  return { accountId, comped }
+}
+
+/**
  * Directly sets a test account's extra-professional seat count -- bypasses
  * Stripe entirely (the real path is the platform-billing webhook reacting to
  * a Checkout/subscription-update event), for exercising
@@ -326,6 +337,7 @@ export const dbTasks = {
   'db:createTeamMemberWithRole': createTeamMemberWithRole,
   'db:setRolePermissions': setRolePermissions,
   'db:setSubscriptionStatus': setSubscriptionStatus,
+  'db:setComped': setComped,
   'db:setExtraProfessionals': setExtraProfessionals,
   'db:setSubscriptionStripeIds': setSubscriptionStripeIds,
   'db:createPatient': createPatient,

@@ -31,8 +31,48 @@ describe('Platform billing: trial banner, subscription page, and lock screen', (
       cy.contains('h1', 'Account locked').should('be.visible')
       // The owner gets an escape hatch to reactivate; the rest of the app
       // (sidebar, dashboard content) never renders at all.
-      cy.contains('button', 'Manage billing').should('be.visible')
+      cy.contains('a', 'Choose a plan').should('be.visible')
       cy.get('aside').should('not.exist')
+    })
+  })
+
+  it('shows a comped account the full plan design, read-only', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.setComped(account.accountId, true)
+      cy.login(account.email, account.password)
+      cy.visit('/subscription')
+
+      // Everything a paying clinic sees renders...
+      cy.contains('Comped -- no charge').should('be.visible')
+      cy.contains('Included usage').should('be.visible')
+      cy.contains('h2', 'Plans').should('be.visible')
+      cy.contains('Solo').should('be.visible')
+      cy.contains('Practice').should('be.visible')
+      cy.contains('Clinic').should('be.visible')
+      cy.contains('button', 'Your plan').should('be.disabled')
+
+      // ...but there is no way to start charging an account we agreed not to
+      // charge, and no seat ceiling is claimed that the trigger would not
+      // enforce (practitioner_seat_allowance returns null when comped).
+      cy.contains('button', 'Subscribe').should('not.exist')
+      cy.contains('button', 'Switch to this plan').should('not.exist')
+      cy.contains('h2', 'Change plan').should('not.exist')
+      cy.contains('unlimited included').should('be.visible')
+    })
+  })
+
+  it('lets a locked owner through to the subscription page to pay', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.setSubscriptionStatus(account.accountId, 'locked')
+      cy.login(account.email, account.password)
+      cy.visit('/dashboard')
+      cy.contains('a', 'Choose a plan').click()
+      // /subscription is the one page exempt from the lock -- without it a
+      // trial that expired without ever subscribing has no way to pay us.
+      cy.location('pathname').should('eq', '/subscription')
+      cy.contains('h1', 'Subscription').should('be.visible')
+      cy.contains('Account locked').should('not.exist')
+      cy.contains('Solo').should('be.visible')
     })
   })
 })

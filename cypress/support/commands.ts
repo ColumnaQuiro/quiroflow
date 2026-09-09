@@ -86,6 +86,10 @@ Cypress.Commands.add('seedStaffAccount', (overrides: Partial<{
   return cy.task<StaffAccount>('db:createStaffAccount', payload)
 })
 
+Cypress.Commands.add('setComped', (accountId: string, comped: boolean) => {
+  return cy.task('db:setComped', { accountId, comped })
+})
+
 Cypress.Commands.add('setSubscriptionStatus', (accountId: string, status: 'trialing' | 'active' | 'past_due' | 'locked' | 'canceled') => {
   return cy.task('db:setSubscriptionStatus', { accountId, status })
 })
@@ -112,6 +116,7 @@ declare global {
         }>,
       ): Chainable<StaffAccount>
       setSubscriptionStatus(accountId: string, status: 'trialing' | 'active' | 'past_due' | 'locked' | 'canceled'): Chainable<void>
+      setComped(accountId: string, comped: boolean): Chainable<void>
       setExtraProfessionals(accountId: string, extraProfessionals: number): Chainable<void>
     }
   }

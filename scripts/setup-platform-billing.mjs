@@ -72,8 +72,13 @@ const CATALOGUE = [
     planId: null,
     name: 'QuiroFlow extra practitioner',
     description: 'One additional practitioner seat beyond those included in the plan.',
+    // Deliberately the same 29 EUR either way, unlike the plans themselves --
+    // `plans.extra_professional_price_cents` is a single column that
+    // pages/subscription.vue reads for BOTH intervals, so an annual seat
+    // priced any lower would be quoted at 29 EUR in the picker and billed at
+    // less than that. The earlier 25 EUR annual price did exactly that.
     monthly: 2900,
-    annual: 2500,
+    annual: 2900,
   },
 ]
 

@@ -1121,46 +1121,6 @@ function money(cents: number) {
       </div>
     </div>
 
-    <!-- Account Ledger -->
-    <div v-if="ledgerLoading" class="rounded-card border border-line bg-surface shadow-card">
-      <div class="flex items-center justify-between border-b border-line-divider px-4 py-3">
-        <UiSkeleton class="h-4 w-32 rounded" />
-        <UiSkeleton class="h-4 w-4 rounded" />
-      </div>
-      <div class="space-y-3 p-4">
-        <div v-for="i in 4" :key="i" class="flex items-center justify-between gap-4">
-          <UiSkeleton class="h-3.5 w-16 rounded" />
-          <UiSkeleton class="h-3.5 flex-1 rounded" />
-          <UiSkeleton class="h-3.5 w-20 rounded" />
-        </div>
-      </div>
-    </div>
-    <PatientsAccountLedger
-      v-else
-      :patient-id="patientId"
-      :invoices="invoices"
-      :line-item-descriptions="lineItemDescriptions"
-      :payments="ledgerPayments"
-      :credits="ledgerCredits"
-      :package-sessions="ledgerPackageSessions"
-      :credit-ledger-cents="creditLedgerCents"
-      :sending-invoice-id="sendingInvoiceId"
-      :send-result-invoice-id="sendResultInvoiceId"
-      :send-result-message="sendResultMessage"
-      :can-delete-invoices="can('financials_edit_all')"
-      :can-delete-payments="can('financials_edit_all') && can('payments_allocate')"
-      :can-write-off="can('financials_edit_all')"
-      :can-refund="can('financials_edit_all')"
-      @add-credit="activePanel = 'credit'"
-      @take-payment="activePanel === 'payment' ? (activePanel = null) : openTakePayment()"
-      @send-invoice="sendInvoiceEmail"
-      @delete-invoice="(id: string) => { const inv = invoices.find((i) => i.id === id); if (inv) deleteInvoice(inv) }"
-      @write-off-invoice="writeOffInvoice"
-      @delete-payment="(p: { paymentId: string; invoiceId: string; amountCents: number }) => deletePayment(p.paymentId, p.invoiceId, p.amountCents)"
-      @refund-invoice="(payload: { invoiceId: string; amountCents: number; reason: string; method: string }) => createRefund(payload.invoiceId, payload.amountCents, payload.reason, payload.method)"
-      @credits-changed="onLedgerCreditsChanged"
-    />
-
     <!-- Stacked rather than side by side: each card carries a progress bar, a
     money breakdown and a row of actions, none of which fit legibly in half
     the width (and the old grid-cols-2 had no mobile fallback either). -->
@@ -1453,6 +1413,46 @@ function money(cents: number) {
         </template>
       </div>
     </div>
+
+    <!-- Account Ledger -->
+    <div v-if="ledgerLoading" class="rounded-card border border-line bg-surface shadow-card">
+      <div class="flex items-center justify-between border-b border-line-divider px-4 py-3">
+        <UiSkeleton class="h-4 w-32 rounded" />
+        <UiSkeleton class="h-4 w-4 rounded" />
+      </div>
+      <div class="space-y-3 p-4">
+        <div v-for="i in 4" :key="i" class="flex items-center justify-between gap-4">
+          <UiSkeleton class="h-3.5 w-16 rounded" />
+          <UiSkeleton class="h-3.5 flex-1 rounded" />
+          <UiSkeleton class="h-3.5 w-20 rounded" />
+        </div>
+      </div>
+    </div>
+    <PatientsAccountLedger
+      v-else
+      :patient-id="patientId"
+      :invoices="invoices"
+      :line-item-descriptions="lineItemDescriptions"
+      :payments="ledgerPayments"
+      :credits="ledgerCredits"
+      :package-sessions="ledgerPackageSessions"
+      :credit-ledger-cents="creditLedgerCents"
+      :sending-invoice-id="sendingInvoiceId"
+      :send-result-invoice-id="sendResultInvoiceId"
+      :send-result-message="sendResultMessage"
+      :can-delete-invoices="can('financials_edit_all')"
+      :can-delete-payments="can('financials_edit_all') && can('payments_allocate')"
+      :can-write-off="can('financials_edit_all')"
+      :can-refund="can('financials_edit_all')"
+      @add-credit="activePanel = 'credit'"
+      @take-payment="activePanel === 'payment' ? (activePanel = null) : openTakePayment()"
+      @send-invoice="sendInvoiceEmail"
+      @delete-invoice="(id: string) => { const inv = invoices.find((i) => i.id === id); if (inv) deleteInvoice(inv) }"
+      @write-off-invoice="writeOffInvoice"
+      @delete-payment="(p: { paymentId: string; invoiceId: string; amountCents: number }) => deletePayment(p.paymentId, p.invoiceId, p.amountCents)"
+      @refund-invoice="(payload: { invoiceId: string; amountCents: number; reason: string; method: string }) => createRefund(payload.invoiceId, payload.amountCents, payload.reason, payload.method)"
+      @credits-changed="onLedgerCreditsChanged"
+    />
 
     <PatientsStripeCardModal
       v-if="showCardModal"

@@ -77,7 +77,7 @@ function money(cents: number) {
 </script>
 
 <template>
-  <aside class="w-[296px] shrink-0 space-y-4">
+  <aside class="w-full shrink-0 space-y-4 lg:w-[296px]">
     <div class="rounded-card border border-line bg-surface p-4 shadow-card">
       <div class="flex items-center gap-3">
         <PatientsPhotoUpload :patient-id="patient.id" :photo-storage-path="patient.photo_storage_path" :initials="initials()" @uploaded="emit('photoUpdated')" />

@@ -347,7 +347,7 @@ async function sendNow(patient: PatientOption) {
       <UiBtn variant="primary" @click="openCreate">{{ t('New campaign', 'Nueva campaña') }}</UiBtn>
     </PageHeader>
 
-    <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
+    <div class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6">
       <div v-if="sendNowPanelOpen" class="mb-4 rounded-card border border-line bg-surface p-4 shadow-card">
         <div class="flex items-center justify-between">
           <h2 class="text-[13px] font-semibold text-ink-900">{{ t('Send a campaign now', 'Enviar una campaña ahora') }}</h2>
@@ -386,7 +386,7 @@ async function sendNow(patient: PatientOption) {
         </div>
       </div>
 
-      <div class="grid grid-cols-4 gap-3">
+      <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div class="rounded-card border border-line bg-surface p-4 shadow-card">
           <p class="text-[11.5px] font-medium text-ink-muted2">{{ t('Sent 30 d', 'Enviados 30 d') }}</p>
           <p class="mt-1.5 font-mono text-[22px] font-semibold text-ink-900">{{ globalStats.sent }}</p>
@@ -467,7 +467,7 @@ async function sendNow(patient: PatientOption) {
             </div>
 
             <div v-if="expandedId === rule.id" class="border-t border-line-divider bg-surface-subtle2 px-4 py-4">
-              <div class="grid grid-cols-[1fr_2fr_180px] gap-3">
+              <div class="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_2fr_180px]">
                 <div class="rounded-card border border-line bg-surface p-3">
                   <h3 class="text-[12px] font-semibold text-ink-700">{{ t('Trigger', 'Disparador') }}</h3>
                   <p class="mt-1.5 text-[12.5px] font-medium text-ink-800">{{ triggerLabel(rule.trigger_event) }}</p>
@@ -494,7 +494,7 @@ async function sendNow(patient: PatientOption) {
                   </div>
                 </div>
 
-                <div class="w-[180px] shrink-0 rounded-card border border-line bg-surface p-3">
+                <div class="w-full shrink-0 rounded-card border border-line bg-surface p-3 lg:w-[180px]">
                   <h3 class="text-[12px] font-semibold text-ink-700">{{ t('Last 30 days', 'Últimos 30 días') }}</h3>
                   <dl class="mt-2 space-y-1.5 text-[12px]">
                     <div class="flex items-center justify-between"><dt class="text-ink-muted2">{{ t('Sent', 'Enviados') }}</dt><dd class="font-mono text-ink-800">{{ ruleStatsMap[rule.id]?.sent ?? 0 }}</dd></div>

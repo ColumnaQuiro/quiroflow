@@ -1597,6 +1597,7 @@ export type Database = {
           category: string | null
           created_at: string
           created_by: string | null
+          external_reference: string | null
           fields: Json
           id: string
           title: string
@@ -1608,6 +1609,7 @@ export type Database = {
           category?: string | null
           created_at?: string
           created_by?: string | null
+          external_reference?: string | null
           fields?: Json
           id?: string
           title?: string
@@ -1619,6 +1621,7 @@ export type Database = {
           category?: string | null
           created_at?: string
           created_by?: string | null
+          external_reference?: string | null
           fields?: Json
           id?: string
           title?: string

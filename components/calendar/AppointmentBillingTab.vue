@@ -254,6 +254,27 @@ async function usePackageSession(pkg: { id: string; package_name: string; sessio
     invoice.value.total_cents = totalCents
   }
 
+  // The visit itself, on the bono's own history. Without this a session taken
+  // here counts against sessions_used and spends the credit but leaves no
+  // line anywhere: the Billing tab renders a bono's visits out of
+  // package_sessions, so a patient reads "4 of 12 used" above a list of three.
+  // The whole point of importing PracticeHub's visits was to give a migrated
+  // bono that history, and QuiroFlow was not writing it for its own.
+  //
+  // patient_id is the person in the chair, not the bono's owner: on a family
+  // bono the visit belongs to whoever took it, even though the credit comes
+  // off the owner's account above. used_at is the appointment's own time, so
+  // a session logged late still lands on the day of the visit.
+  const { data: appt } = await supabase.from('appointments').select('starts_at').eq('id', props.appointmentId).maybeSingle()
+  await supabase.from('package_sessions').insert({
+    account_id: store.accountId!,
+    patient_id: props.patientId,
+    package_purchase_id: bono.id,
+    appointment_id: props.appointmentId,
+    amount_cents: perSessionCents,
+    used_at: appt?.starts_at ?? new Date().toISOString(),
+  })
+
   // A package session spends real credit -- a payment (method 'credit')
   // plus a matching negative account_credits row, same compound pattern as
   // "Credit on account" below. Previously this just flipped the invoice to

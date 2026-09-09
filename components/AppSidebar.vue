@@ -191,7 +191,7 @@ watch(() => route.fullPath, () => emit('close'))
       <NuxtLink v-if="!collapsed" to="/dashboard" class="flex-1 text-[14.5px] font-[640] tracking-tightTitle text-ink-900">QuiroFlow</NuxtLink>
       <button
         type="button"
-        class="flex h-6 w-6 items-center justify-center rounded-ctlSm text-ink-muted2 hover:bg-surface-subtle lg:hidden"
+        class="flex h-6 w-6 items-center justify-center rounded-ctlSm text-ink-muted2 hover:bg-surface-sidebarHover lg:hidden"
         :title="t('Close menu', 'Cerrar menú')"
         @click="emit('close')"
       >
@@ -235,7 +235,7 @@ watch(() => route.fullPath, () => emit('close'))
           :key="item.to"
           :to="item.to"
           class="relative flex h-8 items-center gap-[9px] rounded-ctlSm text-[13.5px]"
-          :class="[collapsed ? 'w-8 justify-center' : 'w-full px-[9px]', isActive(item.to) ? 'bg-brand-tint text-brand-text font-semibold' : 'text-ink-600 hover:bg-surface-subtle']"
+          :class="[collapsed ? 'w-8 justify-center' : 'w-full px-[9px]', isActive(item.to) ? 'bg-brand-tint text-brand-text font-semibold' : 'text-ink-600 hover:bg-surface-sidebarHover']"
           :title="collapsed ? item.label : undefined"
         >
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path :d="item.icon" /></svg>
@@ -256,7 +256,7 @@ watch(() => route.fullPath, () => emit('close'))
           :href="helpCentreUrl"
           target="_blank"
           rel="noopener"
-          class="flex h-8 items-center gap-[9px] rounded-ctlSm text-[13.5px] text-ink-600 hover:bg-surface-subtle"
+          class="flex h-8 items-center gap-[9px] rounded-ctlSm text-[13.5px] text-ink-600 hover:bg-surface-sidebarHover"
           :class="collapsed ? 'w-8 justify-center' : 'w-full px-[9px]'"
           :title="collapsed ? t('Help Centre', 'Centro de ayuda') : undefined"
         >
@@ -265,7 +265,7 @@ watch(() => route.fullPath, () => emit('close'))
         </a>
         <button
           type="button"
-          class="flex h-8 items-center gap-[9px] rounded-ctlSm text-[13.5px] text-ink-600 hover:bg-surface-subtle"
+          class="flex h-8 items-center gap-[9px] rounded-ctlSm text-[13.5px] text-ink-600 hover:bg-surface-sidebarHover"
           :class="collapsed ? 'w-8 justify-center' : 'w-full px-[9px]'"
           :title="collapsed ? t('Refer Your Friends!', '¡Recomienda a tus amigos!') : undefined"
           @click="referFriendsOpen = true"
@@ -281,7 +281,7 @@ watch(() => route.fullPath, () => emit('close'))
         v-if="can('settings_access')"
         to="/settings"
         class="flex h-8 items-center gap-[9px] rounded-ctlSm text-[13.5px]"
-        :class="[collapsed ? 'w-8 justify-center' : 'w-full px-[9px]', isActive('/settings') ? 'bg-brand-tint text-brand-text font-semibold' : 'text-ink-600 hover:bg-surface-subtle']"
+        :class="[collapsed ? 'w-8 justify-center' : 'w-full px-[9px]', isActive('/settings') ? 'bg-brand-tint text-brand-text font-semibold' : 'text-ink-600 hover:bg-surface-sidebarHover']"
         :title="collapsed ? t('Settings', 'Ajustes') : undefined"
       >
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="5.3" /><circle cx="8" cy="8" r="1.9" /></svg>

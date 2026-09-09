@@ -48,7 +48,7 @@ interface PaymentScheduleRow {
   status: string
 }
 interface StripeEventRow { id: string; payment_schedule_id: string; period_start: string; amount_cents: number; status: string }
-interface LedgerPaymentRow { id: string; invoice_id: string; amount_cents: number; method: string; paid_at: string }
+interface LedgerPaymentRow { id: string; invoice_id: string; amount_cents: number; method: string; paid_at: string; package_purchase_id: string | null }
 interface LedgerCreditRow { id: string; amount_cents: number; reason: string | null; method: string | null; invoice_id: string | null; created_at: string }
 
 const supabase = useSupabaseClient()
@@ -401,7 +401,7 @@ async function loadLedger() {
       .eq('invoices.patient_id', props.patientId),
     supabase
       .from('payments')
-      .select('id, invoice_id, amount_cents, method, paid_at, invoices!inner(patient_id)')
+      .select('id, invoice_id, amount_cents, method, paid_at, package_purchase_id, invoices!inner(patient_id)')
       .eq('invoices.patient_id', props.patientId),
     supabase
       .from('account_credits')
@@ -789,21 +789,45 @@ async function sellPackage() {
   await Promise.all([loadAll(), refreshCreditSummary()])
 }
 
-// What is still unpaid on a bono, read off its own invoice. Zero for a bono
-// with no invoice behind it (every purchase migrated from PracticeHub, and
-// anything sold before the invoice link existed) -- those have no record of
-// what was charged, so claiming a debt would be inventing one.
-// PracticeHub lets a payment be linked to a bono, so the bono itself shows
-// what is left to pay on it. Here the bono already carries its own invoice
-// (package_purchases.invoice_id), so linking is collecting against that
-// invoice: this opens the existing take-payment panel already pointed at it
-// and prefilled with the outstanding amount, rather than making the front
-// desk find the right invoice in a dropdown of all of them.
+// What is still unpaid on a bono: payments landing on its own invoice
+// (package_purchases.invoice_id) count automatically, and so does any
+// payment a staff member has explicitly linked via linkPaymentToPackage
+// below -- for a payment that was taken against a different invoice
+// entirely (an imported PracticeHub payment, one taken against the wrong
+// invoice by mistake) or a bono with no invoice of its own (every purchase
+// migrated from PracticeHub pre-dates this app's invoice-per-bono flow).
 //
-// Paying it flows through takePayment(), which already deposits matching
-// credit for a payment landing on a bono invoice -- money towards sessions
-// has to become spendable credit, or the patient pays off the bono and still
-// has nothing to draw sessions against.
+// A bono with no invoice AND nothing manually linked yet is the one case
+// still reported as zero owed rather than the full price: there's no record
+// of what was actually charged for it, so claiming a debt would be
+// inventing one. The moment any payment gets linked (however partial),
+// price_cents becomes a reliable total to measure it against.
+function packageOwedCents(purchase: PackagePurchaseRow): number {
+  // The bono card and the ledger load independently -- reading payments
+  // before that loader lands would flash the full price as unpaid.
+  if (ledgerLoading.value) return 0
+  const invoice = purchase.invoice_id ? invoices.value.find((i) => i.id === purchase.invoice_id) : undefined
+  const invoiceIsValid = !!invoice && invoice.status !== 'void'
+  let paidCents = 0
+  let hasAnyLinkedPayment = false
+  for (const p of ledgerPayments.value) {
+    if ((invoiceIsValid && p.invoice_id === purchase.invoice_id) || p.package_purchase_id === purchase.id) {
+      paidCents += p.amount_cents
+      hasAnyLinkedPayment = true
+    }
+  }
+  if (!invoiceIsValid && !hasAnyLinkedPayment) return 0
+  return Math.max(0, purchase.price_cents - paidCents)
+}
+
+// Collecting a NEW payment still only makes sense when the bono has its own
+// invoice to take it against -- this opens the existing take-payment panel
+// already pointed at it and prefilled with the outstanding amount, rather
+// than making the front desk find the right invoice in a dropdown of all of
+// them. Paying it flows through takePayment(), which already deposits
+// matching credit for a payment landing on a bono invoice -- money towards
+// sessions has to become spendable credit, or the patient pays off the bono
+// and still has nothing to draw sessions against.
 function collectOnPackage(purchase: PackagePurchaseRow) {
   const owed = packageOwedCents(purchase)
   if (!purchase.invoice_id || owed <= 0) return
@@ -813,14 +837,46 @@ function collectOnPackage(purchase: PackagePurchaseRow) {
   resetPaymentRows((owed / 100).toFixed(2))
 }
 
-function packageOwedCents(purchase: PackagePurchaseRow): number {
-  // The bono card and the ledger load independently -- reading payments
-  // before that loader lands would flash the full price as unpaid.
-  if (ledgerLoading.value || !purchase.invoice_id) return 0
-  const invoice = invoices.value.find((i) => i.id === purchase.invoice_id)
-  if (!invoice || invoice.status === 'void') return 0
-  const paidCents = ledgerPayments.value.filter((p) => p.invoice_id === invoice.id).reduce((sum, p) => sum + p.amount_cents, 0)
-  return Math.max(0, invoice.total_cents - paidCents)
+// --- Linking an EXISTING payment to a bono -- for the cases packageOwedCents
+// above can't infer automatically (an imported payment, one taken against
+// the wrong invoice, or a bono with no invoice at all).
+const openLinkPaymentId = ref<string | null>(null)
+const linkPaymentSelection = ref('')
+const linkingPayment = ref(false)
+
+// Payments already counted via the bono's own invoice don't need linking,
+// and a payment already linked to some other bono shouldn't be offered here
+// (linking is meant to be exclusive -- moving it would silently change what
+// that OTHER bono's own owed/paid figures mean).
+function candidatePaymentsFor(purchase: PackagePurchaseRow) {
+  return ledgerPayments.value.filter((p) => !p.package_purchase_id && p.invoice_id !== purchase.invoice_id)
+}
+
+function linkedPaymentsFor(purchase: PackagePurchaseRow) {
+  return ledgerPayments.value.filter((p) => p.package_purchase_id === purchase.id)
+}
+
+function invoiceNumberFor(invoiceId: string): string {
+  return invoices.value.find((i) => i.id === invoiceId)?.invoice_number ?? invoiceId
+}
+
+function toggleLinkPayment(packageId: string) {
+  openLinkPaymentId.value = openLinkPaymentId.value === packageId ? null : packageId
+  linkPaymentSelection.value = ''
+}
+
+async function linkPaymentToPackage(purchase: PackagePurchaseRow) {
+  if (!linkPaymentSelection.value) return
+  linkingPayment.value = true
+  await supabase.from('payments').update({ package_purchase_id: purchase.id }).eq('id', linkPaymentSelection.value)
+  linkPaymentSelection.value = ''
+  linkingPayment.value = false
+  await loadAll()
+}
+
+async function unlinkPayment(paymentId: string) {
+  await supabase.from('payments').update({ package_purchase_id: null }).eq('id', paymentId)
+  await loadAll()
 }
 
 async function useSession(purchase: PackagePurchaseRow) {
@@ -1143,6 +1199,9 @@ function money(cents: number) {
                 >
                   {{ t('Take payment', 'Cobrar') }}…
                 </button>
+                <button type="button" class="text-[11.5px] font-medium text-ink-muted hover:text-brand-text" @click="toggleLinkPayment(p.id)">
+                  {{ t('Link payment', 'Vincular pago') }}{{ linkedPaymentsFor(p).length ? ` (${linkedPaymentsFor(p).length})` : '' }}…
+                </button>
                 <button type="button" class="text-[11.5px] font-medium text-ink-muted hover:text-brand-text" @click="toggleShares(p.id)">
                   {{ t('Share', 'Compartir') }}{{ shares[p.id]?.length ? ` (${shares[p.id].length})` : '' }}…
                 </button>
@@ -1185,6 +1244,34 @@ function money(cents: number) {
                   </li>
                 </ul>
               </div>
+            </div>
+
+            <div v-if="openLinkPaymentId === p.id" class="mt-2 rounded-ctlSm bg-surface-subtle p-2">
+              <ul v-if="linkedPaymentsFor(p).length" class="space-y-1">
+                <li v-for="pay in linkedPaymentsFor(p)" :key="pay.id" class="flex items-center justify-between text-[11.5px] text-ink-600">
+                  <span>{{ money(pay.amount_cents) }} &middot; {{ pay.method }} &middot; {{ new Date(pay.paid_at).toLocaleDateString() }}</span>
+                  <button type="button" class="text-ink-faint hover:text-danger-text" @click="unlinkPayment(pay.id)">✕</button>
+                </li>
+              </ul>
+              <div v-if="candidatePaymentsFor(p).length" class="mt-1.5 flex items-center gap-1.5">
+                <select v-model="linkPaymentSelection" class="w-full rounded border border-line-control bg-surface px-2 py-1 text-[11.5px]">
+                  <option value="" disabled>{{ t('-- Select a payment --', '-- Selecciona un pago --') }}</option>
+                  <option v-for="pay in candidatePaymentsFor(p)" :key="pay.id" :value="pay.id">
+                    {{ money(pay.amount_cents) }} &middot; {{ pay.method }} &middot; {{ new Date(pay.paid_at).toLocaleDateString() }} &middot; {{ invoiceNumberFor(pay.invoice_id) }}
+                  </option>
+                </select>
+                <button
+                  type="button"
+                  :disabled="!linkPaymentSelection || linkingPayment"
+                  class="shrink-0 rounded-ctlSm bg-brand px-2 py-1 text-[11.5px] font-medium text-white hover:bg-brand-hover disabled:opacity-50"
+                  @click="linkPaymentToPackage(p)"
+                >
+                  {{ t('Link', 'Vincular') }}
+                </button>
+              </div>
+              <p v-else-if="!linkedPaymentsFor(p).length" class="mt-1.5 text-[11.5px] text-ink-faint">
+                {{ t('No unlinked payments to link.', 'No hay pagos sin vincular.') }}
+              </p>
             </div>
 
             <div v-if="scheduleForPackage(p.id)" class="mt-2 flex items-center justify-between rounded-ctlSm bg-surface-subtle px-2 py-1.5">

@@ -3120,6 +3120,7 @@ export type Database = {
           id: string
           invoice_id: string
           method: string
+          package_purchase_id: string | null
           paid_at: string
           stripe_payment_intent_id: string | null
         }
@@ -3129,6 +3130,7 @@ export type Database = {
           id?: string
           invoice_id: string
           method?: string
+          package_purchase_id?: string | null
           paid_at?: string
           stripe_payment_intent_id?: string | null
         }
@@ -3138,6 +3140,7 @@ export type Database = {
           id?: string
           invoice_id?: string
           method?: string
+          package_purchase_id?: string | null
           paid_at?: string
           stripe_payment_intent_id?: string | null
         }
@@ -3154,6 +3157,13 @@ export type Database = {
             columns: ["invoice_id"]
             isOneToOne: false
             referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payments_package_purchase_id_fkey"
+            columns: ["package_purchase_id"]
+            isOneToOne: false
+            referencedRelation: "package_purchases"
             referencedColumns: ["id"]
           },
         ]

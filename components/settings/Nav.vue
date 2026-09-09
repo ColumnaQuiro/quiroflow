@@ -75,14 +75,6 @@ function isActive(to: string) {
   return route.path === to
 }
 
-const currentLabel = computed(() => {
-  for (const group of groups.value) {
-    const match = group.items.find((item) => isActive(item.to))
-    if (match) return match.label
-  }
-  return t('Sections', 'Secciones')
-})
-
 // This component is embedded identically at the top of ~29 settings pages
 // (see the `flex-1` sibling right after <SettingsNav /> in each one), none
 // of which have their own place to host a menu button -- fixed positioning
@@ -102,7 +94,7 @@ watch(() => route.fullPath, () => (mobileOpen.value = false))
     @click="mobileOpen = true"
   >
     <svg width="14" height="14" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1.5 3.5h11M1.5 7h11M1.5 10.5h11" /></svg>
-    {{ currentLabel }}
+    {{ t('Sections', 'Secciones') }}
   </button>
 
   <div v-if="mobileOpen" class="fixed inset-0 z-40 bg-black/40 lg:hidden" @click="mobileOpen = false" />

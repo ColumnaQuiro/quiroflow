@@ -198,7 +198,41 @@ async function usePackageSession(pkg: { id: string; package_name: string; sessio
   if (pkg.sessions_used >= pkg.sessions_total || !invoice.value) return
   savingPayment.value = true
 
-  await supabase.from('package_purchases').update({ sessions_used: pkg.sessions_used + 1 }).eq('id', pkg.id)
+  // Re-read the bono rather than trusting the copy this component loaded.
+  // `activePackages` includes bonos SHARED from another patient (a family
+  // bono), and a shared bono is being drawn on from several patients' screens
+  // at once, so the copy in hand goes stale the moment a relative uses a
+  // session. Krista Lozada's Bono Familiar was drawn on twice within ten
+  // seconds -- once by her, once by Grace Valencia -- and both writes computed
+  // 0 + 1, so the bono recorded one session while paying for two.
+  const { data: bono } = await supabase
+    .from('package_purchases')
+    .select('id, patient_id, package_name, sessions_used, sessions_total, price_cents')
+    .eq('id', pkg.id)
+    .maybeSingle()
+  if (!bono || bono.sessions_used >= bono.sessions_total) {
+    error.value = t('That bono has no sessions left.', 'Ese bono no tiene sesiones restantes.')
+    savingPayment.value = false
+    await refreshSummary()
+    return
+  }
+
+  // Compare-and-set on the count we just read: if a relative took a session in
+  // between, this matches nothing and the visit is not silently charged to a
+  // session the bono never gave up.
+  const { data: claimed } = await supabase
+    .from('package_purchases')
+    .update({ sessions_used: bono.sessions_used + 1 })
+    .eq('id', bono.id)
+    .eq('sessions_used', bono.sessions_used)
+    .select('id')
+    .maybeSingle()
+  if (!claimed) {
+    error.value = t('Someone just used a session from this bono. Try again.', 'Alguien acaba de usar una sesión de este bono. Inténtalo de nuevo.')
+    savingPayment.value = false
+    await refreshSummary()
+    return
+  }
 
   // A package-covered visit is worth the bono's own per-session value
   // (total price ÷ total sessions) -- what the patient actually paid per
@@ -210,7 +244,7 @@ async function usePackageSession(pkg: { id: string; package_name: string; sessio
   // rate too. Only the auto-created visit line item is repriced -- any
   // separately added services/products (the ones with a service_id) are
   // real extra charges on top of the package and keep their own price.
-  const perSessionCents = Math.round(pkg.price_cents / pkg.sessions_total)
+  const perSessionCents = Math.round(bono.price_cents / bono.sessions_total)
   const baseLine = lineItems.value.find((l) => !l.service_id)
   if (baseLine && baseLine.price_cents !== perSessionCents) {
     await supabase.from('invoice_line_items').update({ price_cents: perSessionCents }).eq('id', baseLine.id)
@@ -234,11 +268,17 @@ async function usePackageSession(pkg: { id: string; package_name: string; sessio
       amount_cents: remainingCents,
       method: 'credit',
     })
+    // The credit comes off the bono OWNER's account, not the patient in the
+    // chair. On a family bono those are different people: the money was paid
+    // once by whoever bought it, and a relative drawing a session spends that,
+    // not credit of their own. Charging the visitor put Grace Valencia at
+    // -40 EUR -- a debt invented out of a session her family had already paid
+    // for -- while the bono owner's credit was never drawn down.
     await supabase.from('account_credits').insert({
       account_id: store.accountId!,
-      patient_id: props.patientId,
+      patient_id: bono.patient_id,
       amount_cents: -remainingCents,
-      reason: `Package session: ${pkg.package_name}`,
+      reason: `Package session: ${bono.package_name}`,
       invoice_id: invoice.value.id,
       created_by: store.teamMember?.id ?? null,
     })

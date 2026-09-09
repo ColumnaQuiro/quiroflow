@@ -104,15 +104,38 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       if (data.length < PAGE_SIZE) break
     }
 
-    // Every package a patient held, so a visit can be attributed to one.
-    const purchasesByPatient = new Map<string, { id: string; name: string; purchasedAt: string }[]>()
+    // Every package a patient can draw from, so a visit can be attributed to
+    // one. That is not only the packages they bought: a family bono is owned
+    // by one member and drawn on by the whole household, so the other members
+    // own nothing and their visits would be recorded with no bono at all --
+    // Richard Klima's fourteen 40 EUR visits against Marlene's 1200 EUR / 30
+    // Bono Familiar, which is 40 EUR a session. Already-imported invoices are
+    // skipped on a re-run, so a visit stored without its bono stays that way;
+    // the share has to be resolved on the first pass or not at all.
+    type HeldPackage = { id: string; name: string; purchasedAt: string }
+    const purchasesByPatient = new Map<string, HeldPackage[]>()
+    const packageById = new Map<string, HeldPackage>()
+    const addHeld = (patientId: string, pkg: HeldPackage) => {
+      const list = purchasesByPatient.get(patientId) ?? []
+      list.push(pkg)
+      purchasesByPatient.set(patientId, list)
+    }
     for (let page = 0; ; page++) {
       const { data } = await supabase.from('package_purchases').select('id, patient_id, package_name, purchased_at').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
       if (!data || data.length === 0) break
       for (const p of data) {
-        const list = purchasesByPatient.get(p.patient_id) ?? []
-        list.push({ id: p.id, name: p.package_name, purchasedAt: String(p.purchased_at) })
-        purchasesByPatient.set(p.patient_id, list)
+        const pkg: HeldPackage = { id: p.id, name: p.package_name, purchasedAt: String(p.purchased_at) }
+        packageById.set(p.id, pkg)
+        addHeld(p.patient_id, pkg)
+      }
+      if (data.length < PAGE_SIZE) break
+    }
+    for (let page = 0; ; page++) {
+      const { data } = await supabase.from('package_purchase_shares').select('package_purchase_id, patient_id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+      if (!data || data.length === 0) break
+      for (const share of data) {
+        const pkg = share.package_purchase_id ? packageById.get(share.package_purchase_id) : undefined
+        if (pkg && share.patient_id) addHeld(share.patient_id, pkg)
       }
       if (data.length < PAGE_SIZE) break
     }
@@ -274,8 +297,8 @@ const withAppointment = computed(() => candidates.value.filter((c) => c.appointm
       <div class="rounded-lg border border-line bg-surface-subtle p-3 text-sm text-ink-muted2">
         {{
           t(
-            `${candidates.length} package visit(s) to add, worth €${formatEuros(totalValueCents)} of consumed bono value. ${withPackage} matched to a specific bono, ${withAppointment} linked to an appointment. Skipped: ${skippedPaid} invoices already covered by a payment that day, ${skippedUnmatched} unmatched patients.`,
-            `${candidates.length} visita(s) de bono para añadir, por valor de €${formatEuros(totalValueCents)} de bono consumido. ${withPackage} asociadas a un bono concreto, ${withAppointment} vinculadas a una cita. Omitidas: ${skippedPaid} facturas ya cubiertas por un pago ese día, ${skippedUnmatched} pacientes sin emparejar.`,
+            `${candidates.length} package visit(s) to add, worth €${formatEuros(totalValueCents)} of consumed bono value. ${withPackage} matched to a specific bono, ${withAppointment} linked to an appointment. Skipped: ${skippedPaid} invoices already covered by a payment that day, ${skippedUnmatched} invoices for patients with no matching record here.`,
+            `${candidates.length} visita(s) de bono para añadir, por valor de €${formatEuros(totalValueCents)} de bono consumido. ${withPackage} asociadas a un bono concreto, ${withAppointment} vinculadas a una cita. Omitidas: ${skippedPaid} facturas ya cubiertas por un pago ese día, ${skippedUnmatched} facturas de pacientes sin registro aquí.`,
           )
         }}
       </div>

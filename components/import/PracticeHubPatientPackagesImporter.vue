@@ -167,7 +167,13 @@ const duplicateMerges = ref<
 // PH-package-12, PH-package-12-adjustment, PH-package-12-adjustment-2 all
 // belong to bono 12. Reading them as one sum is what stops a correction being
 // counted twice or missed.
-const PACKAGE_CREDIT_REF = /^(PH-package-\d+)(?:-.*)?$/
+// Anchored on the exact forms this importer writes -- PH-package-12,
+// PH-package-12-adjustment, PH-package-12-adjustment-2 -- and nothing else. A
+// looser "starts with PH-package-12" swallowed a hand-written repair
+// (PH-package-479-duplicate-record-adjustment, correcting a duplicate on a
+// different patient record entirely) into bono 479's total, which then read
+// -264 and had the importer offering to hand 440 EUR back.
+const PACKAGE_CREDIT_REF = /^(PH-package-\d+)(?:-adjustment(?:-\d+)?)?$/
 // Raw, untouched sample of what PracticeHub actually returns -- the field
 // mapping above is a guess reverse-engineered from the docs' example
 // response, which has already been wrong twice. Showing this directly
@@ -679,19 +685,24 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         continue
       }
 
-      // A record of nothing: never used, no value left on it, nothing owed,
-      // nobody sharing it. PracticeHub keeps these -- Pablo Girelli has two
-      // Bono 12s dated 22 July ten minutes apart, and PracticeHub's own
-      // billing screen for him shows a single 70 EUR first visit, no bonos at
-      // all -- and importing them hands a patient 24 sessions they never
-      // bought. A bono that was genuinely spent has sessions used against it,
-      // and one bought and untouched still carries its balance, so neither is
-      // caught here. This is deliberately not gated on the active flag: what
-      // makes the record empty is that nothing ever happened on it.
+      // A cancelled record: PracticeHub deactivated it and not one session was
+      // ever drawn on it. Pablo Girelli has two Bono 12s dated 22 July ten
+      // minutes apart -- 12/12 remaining, price 528, balance 528,
+      // package_balance -528, deactivated -- while PracticeHub's own billing
+      // screen for him shows a single 70 EUR first visit and no bonos at all.
+      // Importing them hands a patient 24 sessions they never bought.
+      //
+      // The discriminator is deactivated AND untouched. A bono that was
+      // genuinely spent is deactivated too, but has sessions used against it.
+      // One bought and not yet started is still active. And a cancelled bono
+      // the patient had already PAID for carries credit they are owed
+      // (balance + package_balance > 0), so requiring zero credit keeps their
+      // money on the account instead of quietly dropping it -- Pablo's two
+      // net to zero, 528 + -528, because nothing was ever paid on them.
       const neverUsedAndEmpty =
+        !isActive &&
         sessionsUsedOfPkg === 0 &&
-        (pkg.balance ?? 0) <= 0 &&
-        owedCentsFor(pkg) === 0 &&
+        creditCentsFor(pkg) === 0 &&
         sharedPatientIdsOf(pkg, phPatientId).length === 0
       if (neverUsedAndEmpty) {
         voidBonos.value.push({ patientName: ourPatient.name, packageName, priceCents, phPackageId: pkg.id })

@@ -30,6 +30,7 @@ export default <Partial<Config>>{
         surface: {
           page: themeColor('--color-surface-page'),
           sidebar: themeColor('--color-surface-sidebar'),
+          sidebarHover: themeColor('--color-surface-sidebarHover'),
           DEFAULT: themeColor('--color-surface'),
           subtle: themeColor('--color-surface-subtle'),
           subtle2: themeColor('--color-surface-subtle2'),

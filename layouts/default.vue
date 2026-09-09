@@ -103,7 +103,10 @@ const contactHref = 'mailto:hola@columnaquiro.com'
               <span class="hidden rounded border border-line-control bg-surface px-1 py-px font-mono text-[10.5px] text-ink-faint2 lg:inline">⌘K</span>
             </button>
           </div>
-          <AppAccountMenu />
+          <div class="flex shrink-0 items-center gap-2">
+            <AppThemeToggle />
+            <AppAccountMenu />
+          </div>
         </div>
         <div v-if="showDenied" class="flex items-center justify-between bg-amber-50 px-6 py-2 text-sm text-amber-800">
           <span>You don't have access to that section.</span>

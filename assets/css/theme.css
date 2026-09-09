@@ -19,6 +19,11 @@
   --color-surface: 255 255 255;
   --color-surface-subtle: 250 250 251;
   --color-surface-subtle2: 252 252 253;
+  /* surface-subtle is calibrated against surface (255 255 255) -- a 5-unit
+     step that reads fine there but is nearly invisible against the
+     sidebar's own near-white background just 1 unit off from it. This is
+     the sidebar's own hover step instead, sized the way chip-bg is. */
+  --color-surface-sidebarHover: 240 240 243;
 
   --color-line: 232 233 237;
   --color-line-control: 225 227 234;
@@ -93,6 +98,7 @@
   --color-surface: 24 25 31;
   --color-surface-subtle: 28 29 36;
   --color-surface-subtle2: 30 31 38;
+  --color-surface-sidebarHover: 34 36 44;
 
   --color-line: 42 44 54;
   --color-line-control: 48 50 61;

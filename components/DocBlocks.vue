@@ -396,12 +396,10 @@ const showAddMenu = ref(false)
             class="mt-1 w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             @input="update(i, { value: ($event.target as HTMLTextAreaElement).value })"
           ></textarea>
-          <input
+          <DocDateInput
             v-else-if="field.type === 'date'"
-            type="date"
-            :value="field.value as string"
-            class="mt-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            @input="update(i, { value: ($event.target as HTMLInputElement).value })"
+            :model-value="field.value as string | null"
+            @update:model-value="(v) => update(i, { value: v })"
           />
           <SignaturePad
             v-else-if="field.type === 'signature'"

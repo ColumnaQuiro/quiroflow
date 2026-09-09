@@ -1161,77 +1161,91 @@ function money(cents: number) {
       @credits-changed="onLedgerCreditsChanged"
     />
 
-    <div class="grid grid-cols-2 gap-4">
+    <!-- Stacked rather than side by side: each card carries a progress bar, a
+    money breakdown and a row of actions, none of which fit legibly in half
+    the width (and the old grid-cols-2 had no mobile fallback either). -->
+    <div class="space-y-4">
       <!-- Packages / bonos -->
       <div class="rounded-card border border-line bg-surface p-4 shadow-card">
         <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Packages / bonos', 'Bonos') }}</p>
         <div v-if="packagesLoading" class="mt-3 space-y-3">
-          <div v-for="i in 2" :key="i" class="rounded-ctl border border-line-divider p-3">
+          <div v-for="i in 2" :key="i" class="rounded-ctl border border-line-divider p-3.5">
             <div class="flex items-center justify-between gap-2">
               <UiSkeleton class="h-3.5 w-32 rounded" />
-              <UiSkeleton class="h-3 w-14 rounded" />
+              <UiSkeleton class="h-3 w-20 rounded" />
             </div>
-            <UiSkeleton class="mt-2 h-1 w-full rounded-full" />
+            <UiSkeleton class="mt-2.5 h-[6px] w-full rounded-full" />
             <UiSkeleton class="mt-2 h-3 w-40 rounded" />
+            <div class="mt-3 flex gap-1.5 border-t border-line-divider pt-3">
+              <UiSkeleton class="h-[26px] w-24 rounded-ctl" />
+              <UiSkeleton class="h-[26px] w-24 rounded-ctl" />
+            </div>
           </div>
         </div>
         <template v-else>
         <div class="mt-3 space-y-3">
-          <div v-for="p in purchases" :key="p.id" class="rounded-ctl border border-line-divider p-3">
-            <div class="flex items-center justify-between gap-2">
-              <p class="truncate text-[13px] font-medium text-ink-700">{{ p.package_name }}</p>
-              <p class="shrink-0 text-[11.5px] text-ink-muted2">{{ p.sessions_total - p.sessions_used }} {{ t('left', 'restantes') }}</p>
-            </div>
-            <div class="mt-1.5 h-[4px] w-full overflow-hidden rounded-full bg-line-faint">
-              <div class="h-full rounded-full bg-brand" :style="{ width: `${Math.min(100, Math.round((p.sessions_used / p.sessions_total) * 100))}%` }" />
-            </div>
-            <p v-if="packageOwedCents(p) > 0" class="mt-1.5 text-[11.5px] font-medium text-danger-text">
-              {{ money(p.price_cents - packageOwedCents(p)) }} {{ t('paid of', 'pagado de') }} {{ money(p.price_cents) }} &middot; {{ money(packageOwedCents(p)) }} {{ t('still owed', 'pendiente') }}
-            </p>
-            <div class="mt-1.5 flex items-center justify-between gap-2">
-              <p class="text-[11.5px] text-ink-faint">{{ p.sessions_used }}/{{ p.sessions_total }} {{ t('used', 'usadas') }} &middot; {{ money(p.price_cents) }}</p>
-              <div class="flex items-center gap-2">
-                <button
-                  v-if="packageOwedCents(p) > 0"
-                  type="button"
-                  class="text-[11.5px] font-medium text-danger-text hover:text-danger-text/80"
-                  @click="collectOnPackage(p)"
-                >
-                  {{ t('Take payment', 'Cobrar') }}…
-                </button>
-                <button type="button" class="text-[11.5px] font-medium text-ink-muted hover:text-brand-text" @click="toggleLinkPayment(p.id)">
-                  {{ t('Link payment', 'Vincular pago') }}{{ linkedPaymentsFor(p).length ? ` (${linkedPaymentsFor(p).length})` : '' }}…
-                </button>
-                <button type="button" class="text-[11.5px] font-medium text-ink-muted hover:text-brand-text" @click="toggleShares(p.id)">
-                  {{ t('Share', 'Compartir') }}{{ shares[p.id]?.length ? ` (${shares[p.id].length})` : '' }}…
-                </button>
-                <button
-                  type="button"
-                  :disabled="p.sessions_used >= p.sessions_total"
-                  class="text-[11.5px] font-medium text-brand-text hover:text-brand-hover disabled:opacity-40"
-                  @click="useSession(p)"
-                >
-                  {{ t('Log session', 'Registrar sesión') }}
-                </button>
-                <button v-if="can('billing_config')" type="button" class="text-[11.5px] font-medium text-danger-text hover:text-danger-text/80" @click="deletePackagePurchase(p)">
-                  {{ t('Delete', 'Eliminar') }}
-                </button>
+          <div v-for="p in purchases" :key="p.id" class="rounded-ctl border border-line-divider p-3.5">
+            <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+              <div class="flex min-w-0 items-center gap-2">
+                <p class="truncate text-[13.5px] font-semibold text-ink-800">{{ p.package_name }}</p>
+                <UiPill v-if="packageOwedCents(p) > 0" tone="danger">{{ money(packageOwedCents(p)) }} {{ t('owed', 'pendiente') }}</UiPill>
+                <UiPill v-else tone="success">{{ t('Paid', 'Pagado') }}</UiPill>
               </div>
+              <p class="shrink-0 text-[12px] text-ink-muted2">
+                <span class="font-semibold text-ink-700">{{ p.sessions_total - p.sessions_used }}</span>
+                {{ t('of', 'de') }} {{ p.sessions_total }} {{ t('left', 'restantes') }}
+              </p>
             </div>
 
-            <div v-if="openSharesPackageId === p.id" class="mt-2 rounded-ctlSm bg-surface-subtle p-2">
+            <div class="mt-2.5 h-[6px] w-full overflow-hidden rounded-full bg-line-faint">
+              <div class="h-full rounded-full bg-brand" :style="{ width: `${Math.min(100, Math.round((p.sessions_used / p.sessions_total) * 100))}%` }" />
+            </div>
+
+            <p class="mt-2 text-[11.5px] text-ink-muted2">
+              {{ p.sessions_used }}/{{ p.sessions_total }} {{ t('used', 'usadas') }}
+              <span class="px-1 text-ink-faint3">&middot;</span>
+              <template v-if="packageOwedCents(p) > 0">
+                {{ money(p.price_cents - packageOwedCents(p)) }} {{ t('paid of', 'pagado de') }} {{ money(p.price_cents) }}
+              </template>
+              <template v-else>{{ money(p.price_cents) }}</template>
+            </p>
+
+            <!-- One button row with a real hierarchy: the everyday action
+            filled, the money action outlined, the rest quiet, destructive
+            pushed to the far end. The old row was five bare text links in
+            four different colors, which read as decoration rather than
+            controls. -->
+            <div class="mt-3 flex flex-wrap items-center gap-1.5 border-t border-line-divider pt-3">
+              <UiBtn size="sm" variant="primary" :disabled="p.sessions_used >= p.sessions_total" @click="useSession(p)">
+                {{ t('Log session', 'Registrar sesión') }}
+              </UiBtn>
+              <UiBtn v-if="packageOwedCents(p) > 0" size="sm" variant="secondary" @click="collectOnPackage(p)">
+                {{ t('Take payment', 'Cobrar') }}…
+              </UiBtn>
+              <UiBtn size="sm" variant="secondary" @click="toggleLinkPayment(p.id)">
+                {{ t('Link payment', 'Vincular pago') }}{{ linkedPaymentsFor(p).length ? ` (${linkedPaymentsFor(p).length})` : '' }}…
+              </UiBtn>
+              <UiBtn size="sm" variant="secondary" @click="toggleShares(p.id)">
+                {{ t('Share', 'Compartir') }}{{ shares[p.id]?.length ? ` (${shares[p.id].length})` : '' }}…
+              </UiBtn>
+              <UiBtn v-if="can('billing_config')" size="sm" variant="ghost" class="ml-auto hover:text-danger-text" @click="deletePackagePurchase(p)">
+                {{ t('Delete', 'Eliminar') }}
+              </UiBtn>
+            </div>
+
+            <div v-if="openSharesPackageId === p.id" class="mt-2.5 rounded-ctl border border-line-divider bg-surface-subtle p-2.5">
               <ul v-if="shares[p.id]?.length" class="space-y-1">
                 <li v-for="sp in shares[p.id]" :key="sp.id" class="flex items-center justify-between text-[11.5px] text-ink-600">
                   <span>{{ sp.first_name }} {{ sp.last_name }}</span>
                   <button type="button" class="text-ink-faint hover:text-danger-text" @click="removeShare(p.id, sp.id)">✕</button>
                 </li>
               </ul>
-              <div class="relative mt-1.5">
+              <div class="relative mt-1.5 max-w-sm">
                 <input
                   v-model="shareSearch"
                   type="text"
                   :placeholder="t('Search a patient to share with…', 'Buscar un paciente con quien compartir…')"
-                  class="w-full rounded border border-line-control bg-surface px-2 py-1 text-[11.5px]"
+                  class="w-full rounded-ctlSm border border-line-control bg-surface px-2.5 py-1.5 text-[12px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
                 />
                 <ul v-if="shareResults.length" class="absolute z-10 mt-1 w-full rounded-ctlSm border border-line bg-surface shadow-popover">
                   <li
@@ -1246,73 +1260,70 @@ function money(cents: number) {
               </div>
             </div>
 
-            <div v-if="openLinkPaymentId === p.id" class="mt-2 rounded-ctlSm bg-surface-subtle p-2">
+            <div v-if="openLinkPaymentId === p.id" class="mt-2.5 rounded-ctl border border-line-divider bg-surface-subtle p-2.5">
               <ul v-if="linkedPaymentsFor(p).length" class="space-y-1">
                 <li v-for="pay in linkedPaymentsFor(p)" :key="pay.id" class="flex items-center justify-between text-[11.5px] text-ink-600">
                   <span>{{ money(pay.amount_cents) }} &middot; {{ pay.method }} &middot; {{ new Date(pay.paid_at).toLocaleDateString() }}</span>
                   <button type="button" class="text-ink-faint hover:text-danger-text" @click="unlinkPayment(pay.id)">✕</button>
                 </li>
               </ul>
-              <div v-if="candidatePaymentsFor(p).length" class="mt-1.5 flex items-center gap-1.5">
-                <select v-model="linkPaymentSelection" class="w-full rounded border border-line-control bg-surface px-2 py-1 text-[11.5px]">
+              <div v-if="candidatePaymentsFor(p).length" class="mt-1.5 flex flex-wrap items-center gap-1.5">
+                <select v-model="linkPaymentSelection" class="w-full max-w-sm rounded-ctlSm border border-line-control bg-surface px-2.5 py-1.5 text-[12px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
                   <option value="" disabled>{{ t('-- Select a payment --', '-- Selecciona un pago --') }}</option>
                   <option v-for="pay in candidatePaymentsFor(p)" :key="pay.id" :value="pay.id">
                     {{ money(pay.amount_cents) }} &middot; {{ pay.method }} &middot; {{ new Date(pay.paid_at).toLocaleDateString() }} &middot; {{ invoiceNumberFor(pay.invoice_id) }}
                   </option>
                 </select>
-                <button
-                  type="button"
-                  :disabled="!linkPaymentSelection || linkingPayment"
-                  class="shrink-0 rounded-ctlSm bg-brand px-2 py-1 text-[11.5px] font-medium text-white hover:bg-brand-hover disabled:opacity-50"
-                  @click="linkPaymentToPackage(p)"
-                >
+                <UiBtn size="sm" variant="primary" :disabled="!linkPaymentSelection || linkingPayment" @click="linkPaymentToPackage(p)">
                   {{ t('Link', 'Vincular') }}
-                </button>
+                </UiBtn>
               </div>
               <p v-else-if="!linkedPaymentsFor(p).length" class="mt-1.5 text-[11.5px] text-ink-faint">
                 {{ t('No unlinked payments to link.', 'No hay pagos sin vincular.') }}
               </p>
             </div>
 
-            <div v-if="scheduleForPackage(p.id)" class="mt-2 flex items-center justify-between rounded-ctlSm bg-surface-subtle px-2 py-1.5">
-              <span class="text-[11.5px] text-ink-600">
+            <div v-if="scheduleForPackage(p.id)" class="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-ctl border border-line-divider bg-surface-subtle px-3 py-2">
+              <span class="flex items-center gap-1.5 text-[11.5px] text-ink-600">
                 {{ t('Autopay', 'Pago automático') }} <UiPill :tone="scheduleTone[scheduleForPackage(p.id)!.status] ?? 'neutral'">{{ scheduleForPackage(p.id)!.status }}</UiPill>
                 {{ scheduleForPackage(p.id)!.installments_paid }}/{{ scheduleForPackage(p.id)!.installments_total }}
               </span>
-              <button v-if="scheduleForPackage(p.id)!.status === 'active'" type="button" class="text-[11px] text-danger-text hover:underline" @click="cancelAutopay(scheduleForPackage(p.id)!.id)">
+              <UiBtn v-if="scheduleForPackage(p.id)!.status === 'active'" size="sm" variant="ghost" class="hover:text-danger-text" @click="cancelAutopay(scheduleForPackage(p.id)!.id)">
                 {{ t('Cancel', 'Cancelar') }}
-              </button>
+              </UiBtn>
             </div>
-            <div v-else-if="hasCard" class="mt-2">
-              <button v-if="autopayFormFor !== p.id" type="button" class="text-[11.5px] font-medium text-brand-text hover:text-brand-hover" @click="openAutopayForm(p.id)">
+            <div v-else-if="hasCard" class="mt-2.5">
+              <UiBtn v-if="autopayFormFor !== p.id" size="sm" variant="ghost" @click="openAutopayForm(p.id)">
                 {{ t('Set up autopay', 'Configurar pago automático') }}
-              </button>
-              <form v-else class="mt-1 flex flex-wrap items-end gap-1.5 rounded-ctlSm bg-surface-subtle p-2" @submit.prevent="setUpPackageAutopay(p)">
-                <input v-model.number="autopayInstallments" type="number" min="1" :title="t('Installments', 'Plazos')" class="w-14 rounded border border-line-control px-1.5 py-1 text-[11.5px]" />
-                <input v-model.number="autopayIntervalCount" type="number" min="1" :title="t('Every', 'Cada')" class="w-12 rounded border border-line-control px-1.5 py-1 text-[11.5px]" />
-                <select v-model="autopayInterval" class="bg-surface rounded border border-line-control px-1.5 py-1 text-[11.5px]">
+              </UiBtn>
+              <form v-else class="flex flex-wrap items-end gap-1.5 rounded-ctl border border-line-divider bg-surface-subtle p-2.5" @submit.prevent="setUpPackageAutopay(p)">
+                <input v-model.number="autopayInstallments" type="number" min="1" :title="t('Installments', 'Plazos')" class="h-[26px] w-14 rounded-ctlSm border border-line-control bg-surface px-1.5 text-[12px]" />
+                <input v-model.number="autopayIntervalCount" type="number" min="1" :title="t('Every', 'Cada')" class="h-[26px] w-12 rounded-ctlSm border border-line-control bg-surface px-1.5 text-[12px]" />
+                <select v-model="autopayInterval" class="h-[26px] rounded-ctlSm border border-line-control bg-surface px-1.5 text-[12px]">
                   <option value="day">{{ t('day(s)', 'día(s)') }}</option>
                   <option value="week">{{ t('week(s)', 'semana(s)') }}</option>
                   <option value="month">{{ t('month(s)', 'mes(es)') }}</option>
                   <option value="year">{{ t('year(s)', 'año(s)') }}</option>
                 </select>
-                <input v-model.number="autopayAlreadyPaid" type="number" min="0" :title="t('Already paid', 'Ya pagado')" class="w-14 rounded border border-line-control px-1.5 py-1 text-[11.5px]" />
-                <button type="submit" :disabled="settingUpAutopay" class="rounded-ctlSm bg-brand px-2 py-1 text-[11.5px] font-medium text-white hover:bg-brand-hover disabled:opacity-50">
+                <input v-model.number="autopayAlreadyPaid" type="number" min="0" :title="t('Already paid', 'Ya pagado')" class="h-[26px] w-14 rounded-ctlSm border border-line-control bg-surface px-1.5 text-[12px]" />
+                <UiBtn type="submit" size="sm" variant="primary" :disabled="settingUpAutopay">
                   {{ settingUpAutopay ? '…' : t('Start', 'Iniciar') }}
-                </button>
-                <button type="button" class="text-[11px] text-ink-muted2 hover:underline" @click="autopayFormFor = null">{{ t('Cancel', 'Cancelar') }}</button>
+                </UiBtn>
+                <UiBtn size="sm" variant="ghost" @click="autopayFormFor = null">{{ t('Cancel', 'Cancelar') }}</UiBtn>
                 <p v-if="autopayError" class="w-full text-[11px] text-danger-text">{{ autopayError }}</p>
               </form>
             </div>
-            <div v-else class="mt-2 flex items-center justify-between rounded-ctlSm bg-surface-subtle px-2 py-1.5">
+            <div v-else class="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-ctl border border-line-divider bg-surface-subtle px-3 py-2">
               <span class="text-[11.5px] text-ink-muted2">{{ t("No card on file -- add one to enable autopay for the remaining balance.", 'No hay tarjeta registrada; añade una para habilitar el pago automático del saldo restante.') }}</span>
-              <button type="button" class="text-[11.5px] font-medium text-brand-text hover:text-brand-hover" @click="showCardModal = true">{{ t('Add card', 'Añadir tarjeta') }}</button>
+              <UiBtn size="sm" variant="secondary" @click="showCardModal = true">{{ t('Add card', 'Añadir tarjeta') }}</UiBtn>
             </div>
           </div>
-          <p v-if="purchases.length === 0" class="text-[12.5px] text-ink-faint">{{ t('No packages purchased.', 'No se ha comprado ningún bono.') }}</p>
+          <p v-if="purchases.length === 0" class="rounded-ctl border border-dashed border-line-control p-4 text-center text-[12.5px] text-ink-faint">
+            {{ t('No packages purchased.', 'No se ha comprado ningún bono.') }}
+          </p>
         </div>
         <form class="mt-3 flex flex-wrap items-end gap-2 border-t border-line-divider pt-3" @submit.prevent="sellPackage">
-          <select v-model="sellPackageId" class="bg-surface flex-1 rounded-ctl border border-line-control px-2.5 py-1.5 text-[12.5px]">
+          <select v-model="sellPackageId" class="bg-surface w-full flex-1 rounded-ctl border border-line-control px-2.5 py-1.5 text-[12.5px] sm:max-w-xs">
             <option value="" disabled>{{ t('Sell a package…', 'Vender un bono…') }}</option>
             <option v-for="t in packageTemplates" :key="t.id" :value="t.id">{{ t.name }} ({{ t.session_count }}, {{ money(t.price_cents) }})</option>
           </select>
@@ -1353,18 +1364,24 @@ function money(cents: number) {
           {{ t('No active memberships for this patient.', 'Este paciente no tiene membresías activas.') }}
         </div>
         <div v-else class="mt-3 space-y-3">
-          <div v-for="m in patientMemberships" :key="m.id" class="rounded-ctl border border-line-divider p-3">
-            <div class="flex items-center justify-between gap-2">
-              <p class="truncate text-[13px] font-medium text-ink-700">{{ m.membership_name }}</p>
-              <UiPill :tone="statusTone[m.status] ?? 'neutral'">{{ m.status }}</UiPill>
+          <div v-for="m in patientMemberships" :key="m.id" class="rounded-ctl border border-line-divider p-3.5">
+            <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+              <div class="flex min-w-0 items-center gap-2">
+                <p class="truncate text-[13.5px] font-semibold text-ink-800">{{ m.membership_name }}</p>
+                <UiPill :tone="statusTone[m.status] ?? 'neutral'">{{ m.status }}</UiPill>
+              </div>
+              <p class="shrink-0 text-[11.5px] text-ink-muted2">
+                <span class="font-semibold text-ink-700">{{ money(m.price_cents) }}</span>/{{ t('period', 'periodo') }}
+                <span class="px-1 text-ink-faint3">&middot;</span>
+                {{ t('started', 'iniciada el') }} {{ new Date(m.started_at).toLocaleDateString() }}
+              </p>
             </div>
-            <p class="mt-1 text-[11.5px] text-ink-faint">{{ money(m.price_cents) }}/{{ t('period', 'periodo') }} &middot; {{ t('started', 'iniciada el') }} {{ new Date(m.started_at).toLocaleDateString() }}</p>
-            <div class="mt-1.5 flex items-center gap-2">
-              <button type="button" class="text-[11.5px] font-medium text-ink-muted hover:text-ink-700" @click="logPayment(m, 'paid')">{{ t('Log payment', 'Registrar pago') }}</button>
-              <button type="button" class="text-[11.5px] font-medium text-danger-text hover:text-danger-text/80" @click="logPayment(m, 'failed')">{{ t('Log failed', 'Registrar fallo') }}</button>
+            <div class="mt-3 flex flex-wrap items-center gap-1.5 border-t border-line-divider pt-3">
+              <UiBtn size="sm" variant="secondary" @click="logPayment(m, 'paid')">{{ t('Log payment', 'Registrar pago') }}</UiBtn>
+              <UiBtn size="sm" variant="secondary" class="hover:border-danger-border hover:text-danger-text" @click="logPayment(m, 'failed')">{{ t('Log failed', 'Registrar fallo') }}</UiBtn>
               <select
                 :value="m.status"
-                class="ml-auto rounded-ctlSm border border-line-control bg-surface px-1.5 py-0.5 text-[11.5px]"
+                class="ml-auto h-[26px] rounded-ctl border border-line-control bg-surface px-2 text-[12.5px] text-ink-500 hover:border-line-controlHover focus:border-brand focus:outline-none"
                 @change="setMembershipStatus(m, ($event.target as HTMLSelectElement).value)"
               >
                 <option value="active">{{ t('active', 'activa') }}</option>
@@ -1379,43 +1396,43 @@ function money(cents: number) {
               </UiPill>
             </div>
 
-            <div v-if="scheduleForMembership(m.id)" class="mt-2 flex items-center justify-between rounded-ctlSm bg-surface-subtle px-2 py-1.5">
-              <span class="text-[11.5px] text-ink-600">
+            <div v-if="scheduleForMembership(m.id)" class="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-ctl border border-line-divider bg-surface-subtle px-3 py-2">
+              <span class="flex flex-wrap items-center gap-1.5 text-[11.5px] text-ink-600">
                 {{ t('Autopay', 'Pago automático') }} <UiPill :tone="scheduleTone[scheduleForMembership(m.id)!.status] ?? 'neutral'">{{ scheduleForMembership(m.id)!.status }}</UiPill>
                 {{ t('every', 'cada') }} {{ scheduleForMembership(m.id)!.interval_count }} {{ scheduleForMembership(m.id)!.interval }}(s) &middot;
                 {{ eventsForSchedule(scheduleForMembership(m.id)!.id).length }} {{ t('charge(s)', 'cobro(s)') }}
               </span>
-              <button v-if="scheduleForMembership(m.id)!.status === 'active'" type="button" class="text-[11px] text-danger-text hover:underline" @click="cancelAutopay(scheduleForMembership(m.id)!.id)">
+              <UiBtn v-if="scheduleForMembership(m.id)!.status === 'active'" size="sm" variant="ghost" class="hover:text-danger-text" @click="cancelAutopay(scheduleForMembership(m.id)!.id)">
                 {{ t('Cancel', 'Cancelar') }}
-              </button>
+              </UiBtn>
             </div>
-            <div v-else-if="hasCard" class="mt-2">
-              <button v-if="autopayFormFor !== m.id" type="button" class="text-[11.5px] font-medium text-brand-text hover:text-brand-hover" @click="openAutopayForm(m.id)">
+            <div v-else-if="hasCard" class="mt-2.5">
+              <UiBtn v-if="autopayFormFor !== m.id" size="sm" variant="ghost" @click="openAutopayForm(m.id)">
                 {{ t('Set up autopay', 'Configurar pago automático') }}
-              </button>
-              <form v-else class="mt-1 flex flex-wrap items-end gap-1.5 rounded-ctlSm bg-surface-subtle p-2" @submit.prevent="setUpMembershipAutopay(m)">
-                <input v-model.number="autopayIntervalCount" type="number" min="1" :title="t('Every', 'Cada')" class="w-12 rounded border border-line-control px-1.5 py-1 text-[11.5px]" />
-                <select v-model="autopayInterval" class="bg-surface rounded border border-line-control px-1.5 py-1 text-[11.5px]">
+              </UiBtn>
+              <form v-else class="flex flex-wrap items-end gap-1.5 rounded-ctl border border-line-divider bg-surface-subtle p-2.5" @submit.prevent="setUpMembershipAutopay(m)">
+                <input v-model.number="autopayIntervalCount" type="number" min="1" :title="t('Every', 'Cada')" class="h-[26px] w-12 rounded-ctlSm border border-line-control bg-surface px-1.5 text-[12px]" />
+                <select v-model="autopayInterval" class="h-[26px] rounded-ctlSm border border-line-control bg-surface px-1.5 text-[12px]">
                   <option value="day">{{ t('day(s)', 'día(s)') }}</option>
                   <option value="week">{{ t('week(s)', 'semana(s)') }}</option>
                   <option value="month">{{ t('month(s)', 'mes(es)') }}</option>
                   <option value="year">{{ t('year(s)', 'año(s)') }}</option>
                 </select>
-                <button type="submit" :disabled="settingUpAutopay" class="rounded-ctlSm bg-brand px-2 py-1 text-[11.5px] font-medium text-white hover:bg-brand-hover disabled:opacity-50">
+                <UiBtn type="submit" size="sm" variant="primary" :disabled="settingUpAutopay">
                   {{ settingUpAutopay ? '…' : t('Start', 'Iniciar') }}
-                </button>
-                <button type="button" class="text-[11px] text-ink-muted2 hover:underline" @click="autopayFormFor = null">{{ t('Cancel', 'Cancelar') }}</button>
+                </UiBtn>
+                <UiBtn size="sm" variant="ghost" @click="autopayFormFor = null">{{ t('Cancel', 'Cancelar') }}</UiBtn>
                 <p v-if="autopayError" class="w-full text-[11px] text-danger-text">{{ autopayError }}</p>
               </form>
             </div>
-            <div v-else class="mt-2 flex items-center justify-between rounded-ctlSm bg-surface-subtle px-2 py-1.5">
+            <div v-else class="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-ctl border border-line-divider bg-surface-subtle px-3 py-2">
               <span class="text-[11.5px] text-ink-muted2">{{ t("No card on file -- add one to enable autopay for this membership.", 'No hay tarjeta registrada; añade una para habilitar el pago automático de esta membresía.') }}</span>
-              <button type="button" class="text-[11.5px] font-medium text-brand-text hover:text-brand-hover" @click="showCardModal = true">{{ t('Add card', 'Añadir tarjeta') }}</button>
+              <UiBtn size="sm" variant="secondary" @click="showCardModal = true">{{ t('Add card', 'Añadir tarjeta') }}</UiBtn>
             </div>
           </div>
         </div>
         <form class="mt-3 flex flex-wrap items-end gap-2 border-t border-line-divider pt-3" @submit.prevent="activateMembership">
-          <select v-model="activateMembershipId" class="bg-surface flex-1 rounded-ctl border border-line-control px-2.5 py-1.5 text-[12.5px]">
+          <select v-model="activateMembershipId" class="bg-surface w-full flex-1 rounded-ctl border border-line-control px-2.5 py-1.5 text-[12.5px] sm:max-w-xs">
             <option value="" disabled>{{ t('Activate a membership…', 'Activar una membresía…') }}</option>
             <option v-for="t in membershipTemplates" :key="t.id" :value="t.id">{{ t.name }} ({{ money(t.price_cents) }})</option>
           </select>

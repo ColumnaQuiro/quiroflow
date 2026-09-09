@@ -879,10 +879,104 @@ async function unlinkPayment(paymentId: string) {
   await loadAll()
 }
 
+// Logging a session records the visit it represents, the same way completing
+// an appointment against a bono does (AppointmentBillingTab.usePackageSession):
+// a completed appointment, an invoice at the bono's per-session rate, a
+// payment with method 'credit' and a matching negative account_credits row.
+//
+// It used to only bump sessions_used. That left the money behind: buying a
+// bono deposits credit (see recordSalePayment/collectOnPackage -- prepaid
+// sessions have to become spendable credit), and every other way of spending
+// a session draws that credit back down. A counter-only "Log session" spent
+// the session but not the credit, so a patient's balance drifted up by the
+// per-session rate every time it was used, and the visit itself existed
+// nowhere -- no appointment, no invoice, nothing in the ledger.
+const loggingSessionFor = ref<string | null>(null)
+
 async function useSession(purchase: PackagePurchaseRow) {
-  if (purchase.sessions_used >= purchase.sessions_total) return
-  await supabase.from('package_purchases').update({ sessions_used: purchase.sessions_used + 1 }).eq('id', purchase.id)
-  await loadAll()
+  if (purchase.sessions_used >= purchase.sessions_total || loggingSessionFor.value) return
+  if (!store.accountId || !store.currentClinicId) return
+
+  // What the patient actually paid per visit when they bought the bono, not
+  // whatever an appointment type charges walk-ins -- same rate
+  // usePackageSession() reprices a package-covered visit to.
+  const perSessionCents = Math.round(purchase.price_cents / purchase.sessions_total)
+  const description = `${t('Package session', 'Sesión de bono')}: ${purchase.package_name}`
+  if (!confirm(`${t('Log a session for', 'Registrar una sesión de')} ${money(perSessionCents)} ${t('against', 'contra')} "${purchase.package_name}"? ${t('This records a completed visit today and bills it to the bono.', 'Esto registra una visita completada hoy y la factura al bono.')}`)) return
+
+  loggingSessionFor.value = purchase.id
+  try {
+    // Compare-and-set on the count we were rendered with, mirroring
+    // usePackageSession: a shared bono can be drawn on from another patient's
+    // screen at the same time, and both writes computing used + 1 would give
+    // up one session while billing for two.
+    const { data: claimed } = await supabase
+      .from('package_purchases')
+      .update({ sessions_used: purchase.sessions_used + 1 })
+      .eq('id', purchase.id)
+      .eq('sessions_used', purchase.sessions_used)
+      .select('id')
+      .maybeSingle()
+    if (!claimed) {
+      alert(t('Someone just used a session from this bono. Try again.', 'Alguien acaba de usar una sesión de este bono. Inténtalo de nuevo.'))
+      await loadAll()
+      return
+    }
+
+    const now = new Date()
+    // No appointment type to take a duration from (this is logged off the
+    // bono, not off the calendar), so the schema's own default stands in.
+    const ends = new Date(now.getTime() + 30 * 60000)
+    const { data: appointment } = await supabase
+      .from('appointments')
+      .insert({
+        account_id: store.accountId,
+        clinic_id: store.currentClinicId,
+        patient_id: props.patientId,
+        practitioner_id: store.teamMember?.id ?? null,
+        starts_at: now.toISOString(),
+        ends_at: ends.toISOString(),
+        status: 'completed',
+      })
+      .select('id')
+      .single()
+
+    const { count } = await supabase.from('invoices').select('id', { count: 'exact', head: true })
+    const invoiceNumber = `INV-${String((count ?? 0) + 1).padStart(4, '0')}`
+    const { data: invoice } = await supabase
+      .from('invoices')
+      .insert({
+        account_id: store.accountId,
+        patient_id: props.patientId,
+        appointment_id: appointment?.id ?? null,
+        invoice_number: invoiceNumber,
+        status: 'paid',
+        total_cents: perSessionCents,
+      })
+      .select('id')
+      .single()
+
+    if (invoice) {
+      await supabase.from('invoice_line_items').insert({ account_id: store.accountId, invoice_id: invoice.id, description, quantity: 1, price_cents: perSessionCents })
+      await supabase.from('payments').insert({ account_id: store.accountId, invoice_id: invoice.id, amount_cents: perSessionCents, method: 'credit' })
+      await supabase.from('account_credits').insert({
+        account_id: store.accountId,
+        patient_id: props.patientId,
+        amount_cents: -perSessionCents,
+        reason: description,
+        invoice_id: invoice.id,
+        created_by: store.teamMember?.id ?? null,
+      })
+    }
+
+    // Deliberately fires no appointment.completed/invoice.paid automation:
+    // this is a back-office correction for a visit that already happened, and
+    // the campaigns hanging off those events (review requests, confirmations)
+    // would message the patient about it days late.
+    await loadAll()
+  } finally {
+    loggingSessionFor.value = null
+  }
 }
 
 async function deletePackagePurchase(purchase: PackagePurchaseRow) {
@@ -1176,8 +1270,8 @@ function money(cents: number) {
             four different colors, which read as decoration rather than
             controls. -->
             <div class="mt-3 flex flex-wrap items-center gap-1.5 border-t border-line-divider pt-3">
-              <UiBtn size="sm" variant="primary" :disabled="p.sessions_used >= p.sessions_total" @click="useSession(p)">
-                {{ t('Log session', 'Registrar sesión') }}
+              <UiBtn size="sm" variant="primary" :disabled="p.sessions_used >= p.sessions_total || loggingSessionFor !== null" @click="useSession(p)">
+                {{ loggingSessionFor === p.id ? t('Logging…', 'Registrando…') : t('Log session', 'Registrar sesión') }}
               </UiBtn>
               <UiBtn v-if="packageOwedCents(p) > 0" size="sm" variant="secondary" @click="collectOnPackage(p)">
                 {{ t('Take payment', 'Cobrar') }}…

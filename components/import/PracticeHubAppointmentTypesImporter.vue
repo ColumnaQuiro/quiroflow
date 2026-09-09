@@ -20,24 +20,64 @@ const STAGE_BY_NAME: Record<string, string> = {
   'mantenimiento quiropractico': 'maintenance',
 }
 
-const stage = ref<'connect' | 'importing' | 'done' | 'error'>('connect')
+interface TypeCandidate {
+  phTypeId: number
+  name: string
+  /** Set when a type of the same name is already here; null means it gets created. */
+  ourTypeId: string | null
+  funnelStage: string | null
+  appointmentRefs: string[]
+}
+
+const stage = ref<'connect' | 'scanning' | 'preview' | 'importing' | 'done' | 'error'>('connect')
 const phase = ref('')
 const progress = ref({ done: 0, total: 0 })
 const runError = ref('')
 const lastConn = ref<{ baseUrl: string; apiKey: string; appDetails: string } | null>(null)
 
+const candidates = ref<TypeCandidate[]>([])
+const skippedNoMatch = ref(0)
+
 const typesCreated = ref(0)
 const appointmentsUpdated = ref(0)
-const skippedNoMatch = ref(0)
 const importErrors = ref<string[]>([])
+
+const newTypeCount = computed(() => candidates.value.filter((c) => !c.ourTypeId).length)
+const appointmentsToRelink = computed(() => candidates.value.reduce((sum, c) => sum + c.appointmentRefs.length, 0))
+
+const previewColumns = computed(() => [
+  { key: 'name', label: t('Appointment type', 'Tipo de cita') },
+  { key: 'status', label: t('Status', 'Estado') },
+  { key: 'funnelStage', label: t('Funnel stage', 'Etapa del embudo') },
+  { key: 'appointments', label: t('Appointments', 'Citas') },
+])
+
+const previewRows = computed(() =>
+  [...candidates.value]
+    .sort((a, b) => b.appointmentRefs.length - a.appointmentRefs.length)
+    .map((c) => ({
+      name: c.name,
+      status: c.ourTypeId ? t('Already here', 'Ya existe') : t('Will be created', 'Se creará'),
+      funnelStage: c.funnelStage ?? t('—', '—'),
+      appointments: String(c.appointmentRefs.length),
+    })),
+)
+
+const previewStats = computed(() => [
+  { label: t('New types', 'Tipos nuevos'), value: newTypeCount.value, tone: 'good' as const },
+  { label: t('Appointments to relink', 'Citas a revincular'), value: appointmentsToRelink.value, tone: 'good' as const },
+  { label: t('Types already here', 'Tipos ya existentes'), value: candidates.value.length - newTypeCount.value },
+  { label: t('No type in PracticeHub', 'Sin tipo en PracticeHub'), value: skippedNoMatch.value },
+])
 
 async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }) {
   lastConn.value = conn
-  stage.value = 'importing'
+  stage.value = 'scanning'
   runError.value = ''
+  candidates.value = []
+  skippedNoMatch.value = 0
   typesCreated.value = 0
   appointmentsUpdated.value = 0
-  skippedNoMatch.value = 0
   importErrors.value = []
   const api = usePracticeHubApi(conn)
 
@@ -47,87 +87,105 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
 
     phase.value = t('Matching to existing types…', 'Emparejando con los tipos existentes…')
     const { data: existing } = await supabase.from('appointment_types').select('id, name')
-    const existingByName = new Map((existing ?? []).map((t) => [t.name.trim().toLowerCase(), t.id]))
-
-    const phIdToOurId = new Map<number, string>()
-    for (const phType of phTypes) {
-      const key = phType.name.trim().toLowerCase()
-      let ourId = existingByName.get(key)
-      if (!ourId) {
-        const { data: created, error } = await supabase
-          .from('appointment_types')
-          .insert({
-            account_id: store.accountId!,
-            name: phType.name,
-            stage: STAGE_BY_NAME[key] ?? null,
-          })
-          .select('id')
-          .single()
-        if (error || !created) {
-          importErrors.value.push(
-            t(`Creating type "${phType.name}": ${error?.message}`, `Creando tipo "${phType.name}": ${error?.message}`),
-          )
-          continue
-        }
-        ourId = created.id
-        existingByName.set(key, ourId)
-        typesCreated.value++
-      }
-      phIdToOurId.set(phType.id, ourId)
-    }
+    const existingByName = new Map((existing ?? []).map((row) => [row.name.trim().toLowerCase(), row.id]))
 
     phase.value = t('Fetching appointments…', 'Obteniendo citas…')
     progress.value = { done: 0, total: 0 }
     const phAppointments = await api.fetchAll<PHAppointment>('/appointments', (done, total) => (progress.value = { done, total }))
 
-    phase.value = t('Updating…', 'Actualizando…')
-    progress.value = { done: 0, total: phAppointments.length }
-
-    // Group by target type so each chunk is one bulk update instead of one
-    // request per appointment -- 8000+ individual updates would be far too slow.
-    const refsByOurTypeId = new Map<string, string[]>()
+    const refsByPhTypeId = new Map<number, string[]>()
+    const knownPhTypeIds = new Set(phTypes.map((phType) => phType.id))
     for (const appt of phAppointments) {
-      const ourTypeId = appt.appointment_type_id ? phIdToOurId.get(appt.appointment_type_id) : undefined
-      if (!ourTypeId) {
+      if (!appt.appointment_type_id || !knownPhTypeIds.has(appt.appointment_type_id)) {
         skippedNoMatch.value++
         continue
       }
-      const list = refsByOurTypeId.get(ourTypeId) ?? []
+      const list = refsByPhTypeId.get(appt.appointment_type_id) ?? []
       list.push(String(appt.id))
-      refsByOurTypeId.set(ourTypeId, list)
+      refsByPhTypeId.set(appt.appointment_type_id, list)
     }
 
+    candidates.value = phTypes.map((phType) => {
+      const key = phType.name.trim().toLowerCase()
+      return {
+        phTypeId: phType.id,
+        name: phType.name,
+        ourTypeId: existingByName.get(key) ?? null,
+        funnelStage: STAGE_BY_NAME[key] ?? null,
+        appointmentRefs: refsByPhTypeId.get(phType.id) ?? [],
+      }
+    })
+    stage.value = 'preview'
+  } catch (err) {
+    runError.value = err instanceof Error ? err.message : String(err)
+    stage.value = 'error'
+  }
+}
+
+async function apply() {
+  stage.value = 'importing'
+  typesCreated.value = 0
+  appointmentsUpdated.value = 0
+  importErrors.value = []
+  progress.value = { done: 0, total: appointmentsToRelink.value }
+
+  try {
+    phase.value = t('Creating appointment types…', 'Creando tipos de cita…')
+    const ourTypeIdByPhTypeId = new Map<number, string>()
+    for (const c of candidates.value) {
+      if (c.ourTypeId) {
+        ourTypeIdByPhTypeId.set(c.phTypeId, c.ourTypeId)
+        continue
+      }
+      const { data: created, error } = await supabase
+        .from('appointment_types')
+        .insert({ account_id: store.accountId!, name: c.name, stage: c.funnelStage })
+        .select('id')
+        .single()
+      if (error || !created) {
+        importErrors.value.push(t(`Creating type "${c.name}": ${error?.message}`, `Creando tipo "${c.name}": ${error?.message}`))
+        continue
+      }
+      ourTypeIdByPhTypeId.set(c.phTypeId, created.id)
+      typesCreated.value++
+    }
+
+    // Group by target type so each chunk is one bulk update instead of one
+    // request per appointment -- 8000+ individual updates would be far too slow.
+    phase.value = t('Relinking appointments…', 'Revinculando citas…')
     const CHUNK_SIZE = 200
     let done = 0
-    for (const [ourTypeId, refs] of refsByOurTypeId) {
-      for (let i = 0; i < refs.length; i += CHUNK_SIZE) {
-        const chunk = refs.slice(i, i + CHUNK_SIZE)
-        const { error } = await supabase
-          .from('appointments')
-          .update({ appointment_type_id: ourTypeId })
-          .in('external_reference', chunk)
+    for (const c of candidates.value) {
+      const ourTypeId = ourTypeIdByPhTypeId.get(c.phTypeId)
+      if (!ourTypeId) continue
+      for (let i = 0; i < c.appointmentRefs.length; i += CHUNK_SIZE) {
+        const chunk = c.appointmentRefs.slice(i, i + CHUNK_SIZE)
+        const { error } = await supabase.from('appointments').update({ appointment_type_id: ourTypeId }).in('external_reference', chunk)
         if (error)
           importErrors.value.push(
             t(`Updating batch near ref ${chunk[0]}: ${error.message}`, `Actualizando lote cerca de la referencia ${chunk[0]}: ${error.message}`),
           )
         else appointmentsUpdated.value += chunk.length
         done += chunk.length
-        progress.value = { done, total: phAppointments.length }
+        progress.value = { done, total: appointmentsToRelink.value }
       }
     }
-
-    stage.value = 'done'
-    showToast(
-      t(
-        `Created ${typesCreated.value} new appointment type(s), updated ${appointmentsUpdated.value} appointments. Skipped ${skippedNoMatch.value} with no type in PracticeHub.`,
-        `Se crearon ${typesCreated.value} tipo(s) de cita nuevos, se actualizaron ${appointmentsUpdated.value} citas. Se omitieron ${skippedNoMatch.value} sin tipo en PracticeHub.`,
-      ),
-      importErrors.value.length > 0 ? 'error' : 'success',
-    )
   } catch (err) {
+    // Re-running is safe -- types match by name and the appointment updates
+    // are idempotent -- so surfacing the error beats a stuck "Importing…".
     runError.value = err instanceof Error ? err.message : String(err)
     stage.value = 'error'
+    return
   }
+
+  stage.value = 'done'
+  showToast(
+    t(
+      `Created ${typesCreated.value} new appointment type(s), updated ${appointmentsUpdated.value} appointments. Skipped ${skippedNoMatch.value} with no type in PracticeHub.`,
+      `Se crearon ${typesCreated.value} tipo(s) de cita nuevos, se actualizaron ${appointmentsUpdated.value} citas. Se omitieron ${skippedNoMatch.value} sin tipo en PracticeHub.`,
+    ),
+    importErrors.value.length > 0 ? 'error' : 'success',
+  )
 }
 
 function retryRun() {
@@ -136,6 +194,7 @@ function retryRun() {
 
 function reset() {
   stage.value = 'connect'
+  candidates.value = []
   typesCreated.value = 0
   appointmentsUpdated.value = 0
   skippedNoMatch.value = 0
@@ -149,8 +208,8 @@ function reset() {
     <p class="text-sm text-ink-muted2">
       {{
         t(
-          "Pulls the real appointment types directly from PracticeHub's API and re-links every appointment to its actual type (matched by the internal appointment ID) — fixes reports like Statistics when the original CSV import only captured one type or none. Safe to re-run.",
-          'Obtiene los tipos de cita reales directamente de la API de PracticeHub y vuelve a vincular cada cita con su tipo real (emparejado por el ID interno de la cita); esto corrige informes como Estadísticas cuando la importación original de CSV solo capturó un tipo o ninguno. Se puede volver a ejecutar sin riesgo.',
+          "Pulls the real appointment types directly from PracticeHub's API and re-links every appointment to its actual type (matched by the internal appointment ID) — fixes reports like Statistics when the original CSV import only captured one type or none. Nothing is written until you review the summary and confirm. Safe to re-run.",
+          'Obtiene los tipos de cita reales directamente de la API de PracticeHub y vuelve a vincular cada cita con su tipo real (emparejado por el ID interno de la cita); esto corrige informes como Estadísticas cuando la importación original de CSV solo capturó un tipo o ninguno. No se escribe nada hasta que revises el resumen y confirmes. Se puede volver a ejecutar sin riesgo.',
         )
       }}
     </p>
@@ -159,18 +218,47 @@ function reset() {
       <ImportPracticeHubConnectForm @connect="run" />
     </div>
 
-    <div v-else-if="stage === 'importing'" class="mt-4 rounded-lg border border-line bg-surface p-8 text-center">
+    <div v-else-if="stage === 'scanning' || stage === 'importing'" class="mt-4 rounded-lg border border-line bg-surface p-8 text-center">
       <p class="text-sm text-ink-600">{{ phase }}</p>
       <p v-if="progress.total > 0" class="mt-1 text-xs text-ink-faint">{{ progress.done }} / {{ progress.total }}</p>
     </div>
 
+    <ImportPreviewPanel
+      v-else-if="stage === 'preview'"
+      class="mt-4"
+      :stats="previewStats"
+      :columns="previewColumns"
+      :rows="previewRows"
+      :sample-limit="20"
+      :apply-label="
+        t(
+          `Create ${newTypeCount} type(s) and relink ${appointmentsToRelink} appointment(s)`,
+          `Crear ${newTypeCount} tipo(s) y revincular ${appointmentsToRelink} cita(s)`,
+        )
+      "
+      :more-label="t('more types', 'tipos más')"
+      @apply="apply"
+      @cancel="reset"
+    >
+      <template #note>
+        <p class="text-xs text-ink-faint">
+          {{
+            t(
+              'Types already here are matched by name and reused — only the ones marked "Will be created" are new. Relinking overwrites whatever type an appointment currently has here, treating PracticeHub as the source of truth.',
+              'Los tipos que ya existen aquí se emparejan por nombre y se reutilizan: solo son nuevos los marcados como «Se creará». La revinculación sobrescribe el tipo que la cita tenga ahora aquí, tratando a PracticeHub como fuente de verdad.',
+            )
+          }}
+        </p>
+      </template>
+    </ImportPreviewPanel>
+
     <div v-else-if="stage === 'error'" class="mt-4 space-y-4">
       <div class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
-        <p class="font-medium">Import failed:</p>
+        <p class="font-medium">{{ t('Import failed:', 'Error al importar:') }}</p>
         <p class="mt-1">{{ runError }}</p>
       </div>
       <button type="button" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover" @click="retryRun">
-        Retry
+        {{ t('Retry', 'Reintentar') }}
       </button>
     </div>
 

@@ -17,15 +17,34 @@ interface PHFormResponse {
   created: string
 }
 
-const stage = ref<'connect' | 'importing' | 'done' | 'error'>('connect')
+interface FormCandidate {
+  response: PHFormResponse
+  patientId: string
+  patientLabel: string
+  externalRef: string
+}
+
+interface TemplateCandidate {
+  formId: string
+  formName: string
+  fields: DocField[]
+}
+
+const stage = ref<'connect' | 'scanning' | 'preview' | 'importing' | 'done' | 'error'>('connect')
 const phase = ref('')
 const progress = ref({ done: 0, total: 0 })
 const runError = ref('')
 const lastConn = ref<{ baseUrl: string; apiKey: string; appDetails: string } | null>(null)
 
-const importedCount = ref(0)
+const candidates = ref<FormCandidate[]>([])
+const newTemplates = ref<TemplateCandidate[]>([])
+// Templates that already exist here, keyed by PracticeHub form_id -- filled
+// during the scan and topped up with the ones apply() creates.
+const existingTemplateIdByFormId = ref(new Map<string, string>())
 const skippedDuplicate = ref(0)
 const skippedUnmatched = ref(0)
+
+const importedCount = ref(0)
 const templatesCreated = ref(0)
 const importErrors = ref<string[]>([])
 
@@ -78,13 +97,44 @@ function buildTemplateFields(data: PHFormField[]): DocField[] {
   return (data ?? []).map((f) => mapField(f, true))
 }
 
+function formatDate(value: string): string {
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? value : d.toLocaleDateString()
+}
+
+const previewColumns = computed(() => [
+  { key: 'date', label: t('Date', 'Fecha') },
+  { key: 'patient', label: t('Patient', 'Paciente') },
+  { key: 'form', label: t('Form', 'Formulario') },
+  { key: 'answers', label: t('Answers', 'Respuestas') },
+])
+
+const previewRows = computed(() =>
+  candidates.value.map((c) => ({
+    date: formatDate(c.response.created),
+    patient: c.patientLabel,
+    form: c.response.form_name,
+    answers: String((c.response.data ?? []).length),
+  })),
+)
+
+const previewStats = computed(() => [
+  { label: t('Will import', 'Se importarán'), value: candidates.value.length, tone: 'good' as const },
+  { label: t('New templates', 'Plantillas nuevas'), value: newTemplates.value.length },
+  { label: t('Already imported', 'Ya importados'), value: skippedDuplicate.value },
+  { label: t('No matching patient', 'Sin paciente coincidente'), value: skippedUnmatched.value },
+])
+
 async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }) {
   lastConn.value = conn
-  stage.value = 'importing'
+  stage.value = 'scanning'
   runError.value = ''
-  importedCount.value = 0
+  candidates.value = []
+  newTemplates.value = []
+  existingTemplateIdByFormId.value = new Map()
   skippedDuplicate.value = 0
   skippedUnmatched.value = 0
+  importedCount.value = 0
   templatesCreated.value = 0
   importErrors.value = []
   const api = usePracticeHubApi(conn)
@@ -95,10 +145,15 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     const patientNumberById = new Map(phPatients.map((p) => [String(p.id), p.patient_number]))
 
     const PAGE_SIZE = 1000
-    const ourPatientByRef = new Map<string, string>()
+    const ourPatientByRef = new Map<string, { id: string; label: string }>()
     for (let page = 0; ; page++) {
-      const { data } = await supabase.from('patients').select('id, external_reference').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
-      for (const p of data ?? []) if (p.external_reference) ourPatientByRef.set(p.external_reference, p.id)
+      const { data } = await supabase
+        .from('patients')
+        .select('id, external_reference, first_name, last_name')
+        .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+      for (const p of data ?? [])
+        if (p.external_reference)
+          ourPatientByRef.set(p.external_reference, { id: p.id, label: `${p.first_name} ${p.last_name ?? ''}`.trim() })
       if (!data || data.length < PAGE_SIZE) break
     }
 
@@ -114,7 +169,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       if (!data || data.length < PAGE_SIZE) break
     }
 
-    phase.value = 'Fetching form responses…'
+    phase.value = t('Fetching form responses…', 'Obteniendo respuestas de formularios…')
     progress.value = { done: 0, total: 0 }
     const responses = await api.fetchAll<PHFormResponse>('/custom_form_responses', (done, total) => (progress.value = { done, total }))
 
@@ -128,95 +183,110 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     // it, fixes that -- external_reference makes re-running this importer
     // safe instead of creating a duplicate template every time.
     phase.value = t('Checking for already-imported templates…', 'Comprobando plantillas ya importadas…')
-    const templateIdByFormId = new Map<string, string>()
-    {
-      const { data: existingTemplates } = await supabase.from('doc_templates').select('id, external_reference').not('external_reference', 'is', null)
-      const templateIdByRef = new Map((existingTemplates ?? []).map((tpl) => [tpl.external_reference as string, tpl.id]))
-      const firstResponseByFormId = new Map<string, PHFormResponse>()
-      for (const r of responses) if (!firstResponseByFormId.has(r.form_id)) firstResponseByFormId.set(r.form_id, r)
+    const { data: existingTemplates } = await supabase.from('doc_templates').select('id, external_reference').not('external_reference', 'is', null)
+    const templateIdByRef = new Map((existingTemplates ?? []).map((tpl) => [tpl.external_reference as string, tpl.id]))
+    const firstResponseByFormId = new Map<string, PHFormResponse>()
+    for (const r of responses) if (!firstResponseByFormId.has(r.form_id)) firstResponseByFormId.set(r.form_id, r)
 
-      phase.value = t('Creating form templates…', 'Creando plantillas de formulario…')
-      for (const [formId, sample] of firstResponseByFormId) {
-        const templateRef = `PH-form-template-${formId}`
-        const existingId = templateIdByRef.get(templateRef)
-        if (existingId) {
-          templateIdByFormId.set(formId, existingId)
-          continue
-        }
-        const { data: newTemplate, error } = await supabase
-          .from('doc_templates')
-          .insert({
-            account_id: store.accountId!,
-            title: sample.form_name,
-            fields: buildTemplateFields(sample.data) as unknown as Json,
-            external_reference: templateRef,
-          })
-          .select('id')
-          .single()
-        if (error) {
-          importErrors.value.push(`Template "${sample.form_name}": ${error.message}`)
-          continue
-        }
-        templatesCreated.value++
-        templateIdByFormId.set(formId, newTemplate.id)
-      }
+    const plannedTemplates: TemplateCandidate[] = []
+    for (const [formId, sample] of firstResponseByFormId) {
+      const existingId = templateIdByRef.get(`PH-form-template-${formId}`)
+      if (existingId) existingTemplateIdByFormId.value.set(formId, existingId)
+      else plannedTemplates.push({ formId, formName: sample.form_name, fields: buildTemplateFields(sample.data) })
     }
 
-    phase.value = 'Importing…'
-    progress.value = { done: 0, total: responses.length }
-
-    const CHUNK_SIZE = 100
-    for (let i = 0; i < responses.length; i += CHUNK_SIZE) {
-      const chunk = responses.slice(i, i + CHUNK_SIZE)
-      const rows = []
-      for (const r of chunk) {
-        const ref = `PH-form-${r.id}`
-        if (existingRefs.has(ref)) {
-          skippedDuplicate.value++
-          continue
-        }
-        const patientNumber = patientNumberById.get(r.patient_id)
-        const patientId = patientNumber ? ourPatientByRef.get(patientNumber) : undefined
-        if (!patientId) {
-          skippedUnmatched.value++
-          continue
-        }
-        rows.push({
-          account_id: store.accountId!,
-          patient_id: patientId,
-          template_id: templateIdByFormId.get(r.form_id) ?? null,
-          title: r.form_name,
-          fields: (r.data ?? []).map((f) => mapField(f)) as unknown as Json,
-          completed_at: r.created,
-          external_reference: ref,
-          created_at: r.created,
-        })
+    const planned: FormCandidate[] = []
+    for (const r of responses) {
+      const ref = `PH-form-${r.id}`
+      if (existingRefs.has(ref)) {
+        skippedDuplicate.value++
+        continue
       }
-
-      if (rows.length > 0) {
-        const { error } = await supabase.from('patient_docs').insert(rows)
-        if (error) {
-          importErrors.value.push(`Forms near row ${i}: ${error.message}`)
-        } else {
-          importedCount.value += rows.length
-        }
+      const patientNumber = patientNumberById.get(r.patient_id)
+      const patient = patientNumber ? ourPatientByRef.get(patientNumber) : undefined
+      if (!patient) {
+        skippedUnmatched.value++
+        continue
       }
-
-      progress.value = { done: Math.min(i + CHUNK_SIZE, responses.length), total: responses.length }
+      planned.push({ response: r, patientId: patient.id, patientLabel: patient.label, externalRef: ref })
     }
 
-    stage.value = 'done'
-    showToast(
-      t(
-        `Imported ${importedCount.value} forms (${templatesCreated.value} new templates). Skipped ${skippedDuplicate.value} already-imported, ${skippedUnmatched.value} with no matching patient.`,
-        `Se importaron ${importedCount.value} formularios (${templatesCreated.value} plantillas nuevas). Se omitieron ${skippedDuplicate.value} ya importados, ${skippedUnmatched.value} sin paciente coincidente.`,
-      ),
-      importErrors.value.length > 0 ? 'error' : 'success',
-    )
+    newTemplates.value = plannedTemplates
+    candidates.value = planned
+    stage.value = 'preview'
   } catch (err) {
     runError.value = err instanceof Error ? err.message : String(err)
     stage.value = 'error'
   }
+}
+
+async function apply() {
+  stage.value = 'importing'
+  importedCount.value = 0
+  templatesCreated.value = 0
+  importErrors.value = []
+  progress.value = { done: 0, total: candidates.value.length }
+
+  try {
+    const templateIdByFormId = new Map(existingTemplateIdByFormId.value)
+
+    phase.value = t('Creating form templates…', 'Creando plantillas de formulario…')
+    for (const tpl of newTemplates.value) {
+      const { data: newTemplate, error } = await supabase
+        .from('doc_templates')
+        .insert({
+          account_id: store.accountId!,
+          title: tpl.formName,
+          fields: tpl.fields as unknown as Json,
+          external_reference: `PH-form-template-${tpl.formId}`,
+        })
+        .select('id')
+        .single()
+      if (error) {
+        importErrors.value.push(`Template "${tpl.formName}": ${error.message}`)
+        continue
+      }
+      templatesCreated.value++
+      templateIdByFormId.set(tpl.formId, newTemplate.id)
+    }
+
+    phase.value = t('Importing…', 'Importando…')
+    const CHUNK_SIZE = 100
+    for (let i = 0; i < candidates.value.length; i += CHUNK_SIZE) {
+      const rows = candidates.value.slice(i, i + CHUNK_SIZE).map((c) => ({
+        account_id: store.accountId!,
+        patient_id: c.patientId,
+        template_id: templateIdByFormId.get(c.response.form_id) ?? null,
+        title: c.response.form_name,
+        fields: (c.response.data ?? []).map((f) => mapField(f)) as unknown as Json,
+        completed_at: c.response.created,
+        external_reference: c.externalRef,
+        created_at: c.response.created,
+      }))
+
+      const { error } = await supabase.from('patient_docs').insert(rows)
+      if (error) importErrors.value.push(`Forms near row ${i}: ${error.message}`)
+      else importedCount.value += rows.length
+
+      progress.value = { done: Math.min(i + CHUNK_SIZE, candidates.value.length), total: candidates.value.length }
+    }
+  } catch (err) {
+    // Re-running is safe: forms and templates already written are skipped as
+    // duplicates on the next scan, so surfacing the error beats a stuck
+    // "Importing…".
+    runError.value = err instanceof Error ? err.message : String(err)
+    stage.value = 'error'
+    return
+  }
+
+  stage.value = 'done'
+  showToast(
+    t(
+      `Imported ${importedCount.value} forms (${templatesCreated.value} new templates). Skipped ${skippedDuplicate.value} already-imported, ${skippedUnmatched.value} with no matching patient.`,
+      `Se importaron ${importedCount.value} formularios (${templatesCreated.value} plantillas nuevas). Se omitieron ${skippedDuplicate.value} ya importados, ${skippedUnmatched.value} sin paciente coincidente.`,
+    ),
+    importErrors.value.length > 0 ? 'error' : 'success',
+  )
 }
 
 function retryRun() {
@@ -225,6 +295,9 @@ function retryRun() {
 
 function reset() {
   stage.value = 'connect'
+  candidates.value = []
+  newTemplates.value = []
+  existingTemplateIdByFormId.value = new Map()
   importedCount.value = 0
   skippedDuplicate.value = 0
   skippedUnmatched.value = 0
@@ -239,8 +312,8 @@ function reset() {
     <p class="text-sm text-ink-muted2">
       {{
         t(
-          "Pulls submitted custom forms (consent forms, health questionnaires, signed documents) directly from PracticeHub's API into each patient's Docs tab here, and creates a reusable template in Settings > Docs the first time it sees each distinct form — so it's ready to send to new patients too, not just imported history. Safe to re-run — already-imported forms and templates are skipped.",
-          'Obtiene los formularios personalizados enviados (formularios de consentimiento, cuestionarios de salud, documentos firmados) directamente de la API de PracticeHub y los añade a la pestaña de documentos de cada paciente, y crea una plantilla reutilizable en Ajustes > Documentos la primera vez que ve cada formulario distinto, lista para enviar también a pacientes nuevos, no solo como historial importado. Se puede volver a ejecutar sin riesgo: los formularios y plantillas ya importados se omiten.',
+          "Pulls submitted custom forms (consent forms, health questionnaires, signed documents) directly from PracticeHub's API into each patient's Docs tab here, and creates a reusable template in Settings > Docs the first time it sees each distinct form — so it's ready to send to new patients too, not just imported history. Nothing is written until you review the summary and confirm. Safe to re-run — already-imported forms and templates are skipped.",
+          'Obtiene los formularios personalizados enviados (formularios de consentimiento, cuestionarios de salud, documentos firmados) directamente de la API de PracticeHub y los añade a la pestaña de documentos de cada paciente, y crea una plantilla reutilizable en Ajustes > Documentos la primera vez que ve cada formulario distinto, lista para enviar también a pacientes nuevos, no solo como historial importado. No se escribe nada hasta que revises el resumen y confirmes. Se puede volver a ejecutar sin riesgo: los formularios y plantillas ya importados se omiten.',
         )
       }}
     </p>
@@ -249,18 +322,44 @@ function reset() {
       <ImportPracticeHubConnectForm @connect="run" />
     </div>
 
-    <div v-else-if="stage === 'importing'" class="mt-4 rounded-lg border border-line bg-surface p-8 text-center">
-      <p class="text-sm text-ink-600">{{ phase }}</p>
+    <div v-else-if="stage === 'scanning' || stage === 'importing'" class="mt-4 rounded-lg border border-line bg-surface p-8 text-center">
+      <p class="text-sm text-ink-600">{{ stage === 'importing' ? phase || t('Importing…', 'Importando…') : phase }}</p>
       <p v-if="progress.total > 0" class="mt-1 text-xs text-ink-faint">{{ progress.done }} / {{ progress.total }}</p>
     </div>
 
+    <ImportPreviewPanel
+      v-else-if="stage === 'preview'"
+      class="mt-4"
+      :stats="previewStats"
+      :columns="previewColumns"
+      :rows="previewRows"
+      :allow-empty-apply="newTemplates.length > 0"
+      :apply-label="t(`Import ${candidates.length} form(s)`, `Importar ${candidates.length} formulario(s)`)"
+      :more-label="t('more forms', 'formularios más')"
+      @apply="apply"
+      @cancel="reset"
+    >
+      <template v-if="newTemplates.length > 0" #summary-footer>
+        <div class="mt-3 border-t border-line-divider pt-2">
+          <p class="text-xs font-medium uppercase tracking-wide text-ink-muted2">
+            {{ t('Templates that will be created in Settings > Docs', 'Plantillas que se crearán en Ajustes > Documentos') }}
+          </p>
+          <div class="mt-2 flex flex-wrap gap-1.5">
+            <span v-for="tpl in newTemplates" :key="tpl.formId" class="rounded-pill bg-surface-subtle px-2 py-0.5 text-[11px] text-ink-700">
+              {{ tpl.formName }}
+            </span>
+          </div>
+        </div>
+      </template>
+    </ImportPreviewPanel>
+
     <div v-else-if="stage === 'error'" class="mt-4 space-y-4">
       <div class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
-        <p class="font-medium">Import failed:</p>
+        <p class="font-medium">{{ t('Import failed:', 'Error al importar:') }}</p>
         <p class="mt-1">{{ runError }}</p>
       </div>
       <button type="button" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover" @click="retryRun">
-        Retry
+        {{ t('Retry', 'Reintentar') }}
       </button>
     </div>
 

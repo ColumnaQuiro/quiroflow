@@ -21,6 +21,6 @@ const upgradeHref = computed(() => {
   <div v-else-if="daysLeft !== null" class="flex items-center justify-center gap-2 bg-amber-500 px-4 py-2 text-sm font-medium text-white">
     <span>{{ daysLeft === 0 ? 'Trial ends today' : daysLeft === 1 ? '1 day left in your trial' : `${daysLeft} days left in your trial` }}</span>
     <span class="opacity-60">|</span>
-    <a :href="upgradeHref" class="underline underline-offset-2 hover:opacity-90">Upgrade now</a>
+    <NuxtLink to="/subscription" class="underline underline-offset-2 hover:opacity-90">Upgrade now</NuxtLink>
   </div>
 </template>

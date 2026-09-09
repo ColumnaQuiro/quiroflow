@@ -31,8 +31,23 @@ describe('Platform billing: trial banner, subscription page, and lock screen', (
       cy.contains('h1', 'Account locked').should('be.visible')
       // The owner gets an escape hatch to reactivate; the rest of the app
       // (sidebar, dashboard content) never renders at all.
-      cy.contains('button', 'Manage billing').should('be.visible')
+      cy.contains('a', 'Choose a plan').should('be.visible')
       cy.get('aside').should('not.exist')
+    })
+  })
+
+  it('lets a locked owner through to the subscription page to pay', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.setSubscriptionStatus(account.accountId, 'locked')
+      cy.login(account.email, account.password)
+      cy.visit('/dashboard')
+      cy.contains('a', 'Choose a plan').click()
+      // /subscription is the one page exempt from the lock -- without it a
+      // trial that expired without ever subscribing has no way to pay us.
+      cy.location('pathname').should('eq', '/subscription')
+      cy.contains('h1', 'Subscription').should('be.visible')
+      cy.contains('Account locked').should('not.exist')
+      cy.contains('Solo').should('be.visible')
     })
   })
 })

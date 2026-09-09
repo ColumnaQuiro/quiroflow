@@ -39,7 +39,6 @@ function dismissDenied() {
   router.replace({ query })
 }
 
-const { loading: loadingPortal, openPortal } = useBillingPortal()
 const contactHref = 'mailto:hola@columnaquiro.com'
 </script>
 
@@ -47,22 +46,27 @@ const contactHref = 'mailto:hola@columnaquiro.com'
   <!-- Only the staff app (this layout) locks -- public booking, the patient
   portal, and shared docs use their own layouts and keep working regardless,
   so a clinic's unpaid bill never blocks their own patients. -->
-  <div v-if="store.isBillingLocked" class="flex h-screen items-center justify-center bg-surface-page px-6">
+  <!-- /subscription is exempt so the escape hatch below has somewhere to go.
+  It used to open Stripe's hosted portal directly, which is a dead end for the
+  case that matters most: a trial that expired without ever subscribing has no
+  Stripe customer, so portal-session.post.ts 400s and useBillingPortal quietly
+  redirects to a mailto -- an account that wants to pay us could not. The
+  subscription page carries both routes out (Checkout for a first
+  subscription, the portal for a lapsed one), and every API it calls is gated
+  on requireTeamMember rather than requireActiveAccount, so all of them keep
+  working while the account is locked. -->
+  <div v-if="store.isBillingLocked && route.path !== '/subscription'" class="flex h-screen items-center justify-center bg-surface-page px-6">
     <div class="max-w-sm text-center">
       <h1 class="text-lg font-semibold text-gray-900">Account locked</h1>
       <p class="mt-2 text-sm text-gray-600">This QuiroFlow account is locked pending payment.</p>
-      <!-- portal-session.post.ts deliberately doesn't gate on subscription
-      status (only requireTeamMember, not requireActiveAccount) -- this is
-      the one action a locked account can still take to unlock itself. -->
-      <button
+      <NuxtLink
         v-if="store.isOwner"
-        type="button"
-        class="mt-4 block w-full rounded-ctl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
-        :disabled="loadingPortal"
-        @click="openPortal(contactHref)"
+        to="/subscription"
+        class="mt-4 block w-full rounded-ctl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
       >
-        {{ loadingPortal ? 'Opening…' : 'Manage billing' }}
-      </button>
+        Choose a plan
+      </NuxtLink>
+      <p v-else class="mt-4 text-sm text-gray-600">Ask the account owner to renew the subscription.</p>
       <p class="mt-3 text-sm text-gray-600">Or contact us directly:</p>
       <a :href="contactHref" class="mt-1 inline-block text-sm font-medium text-indigo-600 hover:text-indigo-800">hola@columnaquiro.com</a>
     </div>

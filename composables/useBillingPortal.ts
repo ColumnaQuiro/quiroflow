@@ -1,7 +1,9 @@
 // Opens Stripe's hosted Customer Portal so an owner can update their payment
-// method or pay an outstanding invoice -- used from both the persistent
-// banner (past_due) and the full-screen lock (locked/canceled), since a
-// locked account can't reach any other page to fix itself.
+// method or pay an outstanding invoice -- used from the persistent past_due
+// banner and from /subscription. Deliberately NOT the lock screen's action:
+// the portal only exists once there's a Stripe customer, so an expired trial
+// that never subscribed would fall through to the mailto and have no way to
+// pay. That case needs Checkout, which /subscription offers.
 export function useBillingPortal() {
   const loading = ref(false)
 

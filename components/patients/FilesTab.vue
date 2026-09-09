@@ -120,7 +120,7 @@ async function remove(file: Tables<'patient_files'>) {
     </div>
     <p v-if="error" class="px-4 pt-3 text-[13px] text-danger-text">{{ error }}</p>
 
-    <div v-if="loading" class="grid grid-cols-4 gap-4 p-4">
+    <div v-if="loading" class="grid grid-cols-2 gap-4 p-4 sm:grid-cols-4">
       <div v-for="i in 4" :key="i" class="overflow-hidden rounded-ctl border border-line-divider bg-surface">
         <UiSkeleton class="h-[104px] w-full rounded-none" />
         <div class="space-y-1.5 p-2.5">
@@ -130,7 +130,7 @@ async function remove(file: Tables<'patient_files'>) {
       </div>
     </div>
     <div v-else-if="files.length === 0" class="p-8 text-center text-[13px] text-ink-faint">{{ t('No files uploaded yet.', 'Aún no se han subido archivos.') }}</div>
-    <div v-else class="grid grid-cols-4 gap-4 p-4">
+    <div v-else class="grid grid-cols-2 gap-4 p-4 sm:grid-cols-4">
       <div v-for="file in files" :key="file.id" class="group overflow-hidden rounded-ctl border border-line-divider bg-surface">
         <div
           class="relative flex h-[104px] w-full items-center justify-center"

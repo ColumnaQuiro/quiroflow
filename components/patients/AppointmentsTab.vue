@@ -96,7 +96,7 @@ const confirmationAutofill = computed<Record<string, string>>(() => {
 
 <template>
   <div class="space-y-4">
-    <div class="grid grid-cols-4 gap-3">
+    <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
       <div class="rounded-card border border-line bg-surface p-4 shadow-card">
         <p class="text-[11.5px] text-ink-muted2">{{ t('Completed', 'Completadas') }}</p>
         <p class="mt-1 font-mono text-[20px] font-semibold text-success-text">{{ loading ? '—' : counts.completed }}</p>

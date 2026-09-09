@@ -120,19 +120,19 @@ async function deletePatient() {
 
 <template>
   <div v-if="loading" class="flex h-full flex-col">
-    <header class="flex h-14 shrink-0 items-center gap-2.5 border-b border-line bg-surface px-6">
+    <header class="flex h-14 shrink-0 items-center gap-2.5 border-b border-line bg-surface px-4 sm:px-6">
       <UiSkeleton class="h-[15px] w-40 rounded" />
     </header>
     <div class="flex-1 overflow-y-auto bg-surface-page">
-      <div class="flex items-start gap-6 px-6 py-6">
-        <div class="w-[280px] shrink-0 rounded-card border border-line bg-surface p-4">
+      <div class="flex flex-col items-start gap-6 px-4 py-6 sm:px-6 lg:flex-row">
+        <div class="w-full shrink-0 rounded-card border border-line bg-surface p-4 lg:w-[280px]">
           <UiSkeleton class="mx-auto h-16 w-16 rounded-full" />
           <UiSkeleton class="mx-auto mt-3 h-4 w-32 rounded" />
           <div class="mt-5 space-y-3">
             <UiSkeleton v-for="i in 5" :key="i" class="h-3.5 w-full rounded" />
           </div>
         </div>
-        <div class="min-w-0 flex-1">
+        <div class="min-w-0 w-full flex-1">
           <div class="flex gap-4 border-b border-chip-border pb-3">
             <UiSkeleton v-for="i in 5" :key="i" class="h-4 w-16 rounded" />
           </div>
@@ -145,7 +145,7 @@ async function deletePatient() {
   </div>
   <div v-else-if="notFound" class="flex h-full items-center justify-center text-[13px] text-ink-faint">{{ t('Patient not found.', 'Paciente no encontrado.') }}</div>
   <div v-else-if="patient" class="flex h-full flex-col">
-    <header class="flex h-14 shrink-0 items-center justify-between border-b border-line bg-surface px-6">
+    <header class="flex shrink-0 flex-col gap-2.5 border-b border-line bg-surface px-4 py-2.5 lg:h-14 lg:flex-row lg:items-center lg:justify-between lg:px-6 lg:py-0">
       <div class="flex min-w-0 items-center gap-2.5">
         <NuxtLink
           to="/patients"
@@ -156,9 +156,9 @@ async function deletePatient() {
             <path d="M10 3.5L5 8l5 4.5" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
         </NuxtLink>
-        <NuxtLink to="/patients" class="shrink-0 text-[13px] text-ink-muted2 hover:text-ink-700">{{ t('Patients /', 'Pacientes /') }}</NuxtLink>
+        <NuxtLink to="/patients" class="hidden shrink-0 text-[13px] text-ink-muted2 hover:text-ink-700 sm:inline">{{ t('Patients /', 'Pacientes /') }}</NuxtLink>
         <h1 class="truncate text-[14.5px] font-[620] text-ink-900">{{ patient.first_name }} {{ patient.last_name }}</h1>
-        <div class="flex shrink-0 items-center gap-1.5">
+        <div class="flex shrink-0 flex-wrap items-center gap-1.5">
           <UiPill v-if="isVip" tone="brand" :dot="true">{{ t('VIP', 'VIP') }}</UiPill>
           <UiPill v-if="amountDue > 0" tone="danger">€{{ (amountDue / 100).toFixed(2) }} {{ t('due', 'pendiente') }}</UiPill>
           <UiPill v-if="patient.is_minor" tone="brand">{{ t('Minor', 'Menor') }}</UiPill>
@@ -166,7 +166,7 @@ async function deletePatient() {
         </div>
       </div>
 
-      <div class="flex shrink-0 items-center gap-2">
+      <div class="flex shrink-0 flex-wrap items-center gap-2">
         <div class="flex items-center rounded-ctl border border-line-control p-0.5" :title="t('Layout: rail (only variant available)', 'Diseño: carril (única variante disponible)')">
           <button
             type="button"
@@ -204,21 +204,21 @@ async function deletePatient() {
     </header>
 
     <div class="flex-1 overflow-y-auto bg-surface-page">
-      <div class="flex items-start gap-6 px-6 py-6">
+      <div class="flex flex-col items-start gap-6 px-4 py-6 sm:px-6 lg:flex-row">
         <PatientsDetailSidebar
           :patient="patient"
           :balance-cents="balanceCents"
           :credit-cents="creditLedgerCents"
           :active-packages="activePackages"
           :financial-loading="financialLoading"
-          class="sticky top-6"
+          class="lg:sticky lg:top-6"
           @message="whatsAppOpen = true"
           @charge="handleCharge"
           @photo-updated="loadPatient"
         />
 
-        <div class="min-w-0 flex-1">
-          <nav class="sticky top-0 z-10 flex gap-1 border-b border-chip-border bg-surface-page">
+        <div class="min-w-0 w-full flex-1">
+          <nav class="sticky top-0 z-10 flex gap-1 overflow-x-auto border-b border-chip-border bg-surface-page">
             <button
               v-for="tab in tabs"
               :key="tab.key"

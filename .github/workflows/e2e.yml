@@ -133,3 +133,29 @@ jobs:
       - name: Stop Supabase
         if: always()
         run: supabase stop
+
+  # One stable check for branch protection to require.
+  #
+  # The matrix jobs above are named after their shard parameters --
+  # "cypress (settings-and-patients, cypress/e2e/settings/**,...)" -- so
+  # requiring them by name breaks the moment a shard is renamed or
+  # rebalanced: the old name stays required, never reports again, and every
+  # pull request is blocked until someone edits the protection rule. This
+  # job's name never changes, and `needs` keeps it honest -- adding a job to
+  # this workflow means adding it here, not editing repository settings.
+  ci:
+    name: ci
+    # always(), or a failed dependency would skip this job rather than fail
+    # it, and a skipped required check reads as "not failed" to some tooling.
+    if: always()
+    needs: [typecheck, cypress]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report whether every job passed
+        run: |
+          echo "typecheck: ${{ needs.typecheck.result }}"
+          echo "cypress:   ${{ needs.cypress.result }}"
+          if [ "${{ needs.typecheck.result }}" != "success" ] || [ "${{ needs.cypress.result }}" != "success" ]; then
+            echo "::error::CI did not pass"
+            exit 1
+          fi

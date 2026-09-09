@@ -112,7 +112,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     // Bono Familiar, which is 40 EUR a session. Already-imported invoices are
     // skipped on a re-run, so a visit stored without its bono stays that way;
     // the share has to be resolved on the first pass or not at all.
-    type HeldPackage = { id: string; name: string; purchasedAt: string }
+    type HeldPackage = { id: string; name: string; purchasedAt: string; rateCents: number | null }
     const purchasesByPatient = new Map<string, HeldPackage[]>()
     const packageById = new Map<string, HeldPackage>()
     const addHeld = (patientId: string, pkg: HeldPackage) => {
@@ -121,10 +121,18 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       purchasesByPatient.set(patientId, list)
     }
     for (let page = 0; ; page++) {
-      const { data } = await supabase.from('package_purchases').select('id, patient_id, package_name, purchased_at').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+      const { data } = await supabase.from('package_purchases').select('id, patient_id, package_name, purchased_at, price_cents, sessions_total').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
       if (!data || data.length === 0) break
       for (const p of data) {
-        const pkg: HeldPackage = { id: p.id, name: p.package_name, purchasedAt: String(p.purchased_at) }
+        const pkg: HeldPackage = {
+          id: p.id,
+          name: p.package_name,
+          purchasedAt: String(p.purchased_at),
+          // What one session off this bono costs. A 528 EUR / 12 bono is 44 a
+          // session, and PracticeHub bills exactly that per visit, so the
+          // invoice value identifies which bono the visit came out of.
+          rateCents: p.sessions_total ? Math.round(p.price_cents / p.sessions_total) : null,
+        }
         packageById.set(p.id, pkg)
         addHeld(p.patient_id, pkg)
       }
@@ -195,7 +203,17 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       // Attribute to the most recent package bought on or before the visit.
       // Where that is ambiguous the value is still recorded and the package
       // left unset, rather than guessed.
-      const held = (purchasesByPatient.get(ourPatient.id) ?? []).filter((p) => dayOf(p.purchasedAt) <= dayOf(inv.created)).sort((a, b) => b.purchasedAt.localeCompare(a.purchasedAt))
+      // Most recent first, but a bono whose per-session rate equals what this
+      // visit was billed wins over one that merely came later. A patient
+      // holding a Bono 12 (44 a session) and a Bono 10 (46) would otherwise
+      // have every visit filed under whichever they bought last: 117 visits
+      // on this account are attributed to a bono whose rate does not match
+      // the amount, which is how that shows up. Where nothing matches the
+      // value, the most recent still wins -- same answer as before.
+      const candidates = (purchasesByPatient.get(ourPatient.id) ?? [])
+        .filter((p) => dayOf(p.purchasedAt) <= dayOf(inv.created))
+        .sort((a, b) => b.purchasedAt.localeCompare(a.purchasedAt))
+      const held = candidates.filter((p) => p.rateCents === totalCents).concat(candidates.filter((p) => p.rateCents !== totalCents))
       built.push({
         phInvoiceId: inv.id,
         patientId: ourPatient.id,

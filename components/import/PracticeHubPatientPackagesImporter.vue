@@ -144,6 +144,9 @@ const usedCreditRefs = ref(new Set<string>())
 // bought, and where PracticeHub also reports it as unpaid it would raise an
 // invoice for money nobody owes.
 const phDuplicateBonos = ref<{ patientName: string; packageName: string; priceCents: number; phPackageId: number; owedCents: number }[]>([])
+// Bonos PracticeHub still lists but on which nothing ever happened: no
+// session used, no balance, nothing owed, nobody sharing them.
+const voidBonos = ref<{ patientName: string; packageName: string; priceCents: number; phPackageId: number }[]>([])
 const mergesApplied = ref(0)
 const mergeError = ref('')
 const duplicateMerges = ref<
@@ -247,6 +250,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
   usedCreditRefs.value = new Set()
   duplicateMerges.value = []
   phDuplicateBonos.value = []
+  voidBonos.value = []
   mergesApplied.value = 0
   mergeError.value = ''
   skippedNoValue.value = 0
@@ -663,6 +667,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       // real second purchase, it can still be brought in later.
       const priceCents = Math.round((pkg.price ?? 0) * 100)
       const packageName = pkg.name || pkg.package_type || 'Package'
+      const sessionsUsedOfPkg = sessionsUsedOf(pkg)
       if (isPhDuplicate(ourPatient.id, pkg)) {
         phDuplicateBonos.value.push({
           patientName: ourPatient.name,
@@ -671,6 +676,25 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
           phPackageId: pkg.id,
           owedCents: isActive ? owedCentsFor(pkg) : 0,
         })
+        continue
+      }
+
+      // A record of nothing: never used, no value left on it, nothing owed,
+      // nobody sharing it. PracticeHub keeps these -- Pablo Girelli has two
+      // Bono 12s dated 22 July ten minutes apart, and PracticeHub's own
+      // billing screen for him shows a single 70 EUR first visit, no bonos at
+      // all -- and importing them hands a patient 24 sessions they never
+      // bought. A bono that was genuinely spent has sessions used against it,
+      // and one bought and untouched still carries its balance, so neither is
+      // caught here. This is deliberately not gated on the active flag: what
+      // makes the record empty is that nothing ever happened on it.
+      const neverUsedAndEmpty =
+        sessionsUsedOfPkg === 0 &&
+        (pkg.balance ?? 0) <= 0 &&
+        owedCentsFor(pkg) === 0 &&
+        sharedPatientIdsOf(pkg, phPatientId).length === 0
+      if (neverUsedAndEmpty) {
+        voidBonos.value.push({ patientName: ourPatient.name, packageName, priceCents, phPackageId: pkg.id })
         continue
       }
 
@@ -1103,6 +1127,7 @@ function reset() {
   usedCreditRefs.value = new Set()
   duplicateMerges.value = []
   phDuplicateBonos.value = []
+  voidBonos.value = []
   mergesApplied.value = 0
   mergeError.value = ''
   skippedNoValue.value = 0
@@ -1203,6 +1228,26 @@ function formatEuros(cents: number): string {
             <span class="font-mono">{{ u.number }}</span>
             <template v-if="u.name"> &middot; {{ u.name }}</template>
             <span class="text-warning-text/70"> &middot; {{ u.bonos.join(', ') }}</span>
+          </li>
+        </ul>
+      </div>
+
+      <div v-if="voidBonos.length > 0" class="rounded-ctl border border-warning-border bg-warning-bg p-3">
+        <p class="text-[12.5px] font-medium text-warning-text">
+          {{ t(`${voidBonos.length} empty bono(s) in PracticeHub — not imported`, `${voidBonos.length} bono(s) vacíos en PracticeHub: no se importan`) }}
+        </p>
+        <p class="mt-1 text-[12.5px] leading-relaxed text-warning-text">
+          {{
+            t(
+              'Nothing ever happened on these: no session used, no balance left, nothing owed, nobody sharing them. Importing one hands the patient a bono of sessions they never bought. A bono that was genuinely used up has sessions against it, and one bought and untouched still carries its balance, so neither is affected.',
+              'En estos nunca pasó nada: ninguna sesión usada, sin saldo, sin nada pendiente y sin pacientes compartidos. Importar uno daría al paciente un bono de sesiones que nunca compró. Un bono realmente consumido tiene sesiones usadas, y uno comprado y sin usar conserva su saldo, así que ninguno de los dos se ve afectado.',
+            )
+          }}
+        </p>
+        <ul class="mt-2 space-y-0.5 text-[12px] text-warning-text">
+          <li v-for="v in voidBonos" :key="v.phPackageId">
+            {{ v.patientName }} &middot; {{ v.packageName }} &middot; &euro;{{ formatEuros(v.priceCents) }}
+            <span class="font-mono text-warning-text/70">#{{ v.phPackageId }}</span>
           </li>
         </ul>
       </div>

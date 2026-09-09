@@ -97,7 +97,7 @@ interface LocalBono {
   priceCents: number
   sessionsUsed: number
   purchasedAt: string
-  hasReference: boolean
+  reference: string | null
   visitRows: number
   hasInvoice: boolean
 }
@@ -126,6 +126,45 @@ const skippedNoValue = ref(0)
 // bono, and only a hand-written SQL query found them. Anything left over
 // after matching is now reported instead of ignored.
 const unmatchedLocalBonos = ref<{ patientName: string; bono: LocalBono }[]>([])
+// Every account_credits reference already in the ledger. A correction used to
+// be inserted at a fixed `-adjustment` reference, which the unique index on
+// (account_id, external_reference) allows exactly once: the first correction
+// for a bono went in, and any later one -- after the clinic changed the bono
+// in PracticeHub, say -- failed on the duplicate key and the same fix was
+// offered on every run forever. Corrections now take the next free slot.
+const usedCreditRefs = ref(new Set<string>())
+// Bono rows here that stand for the same PracticeHub bono as another row.
+// Decided by counting: when this patient has more rows of a given bono on a
+// given day than PracticeHub has bonos, the surplus is ours, not theirs.
+// Bonos PracticeHub itself holds twice. Nine patients here already carry the
+// result: two rows of the same name, price and day, the earlier id completely
+// untouched and the later one holding all the usage. That is PracticeHub's
+// shape, not ours -- consecutive ids, the first never used. Importing the
+// empty one gives the patient a whole extra bono of sessions they never
+// bought, and where PracticeHub also reports it as unpaid it would raise an
+// invoice for money nobody owes.
+const phDuplicateBonos = ref<{ patientName: string; packageName: string; priceCents: number; phPackageId: number; owedCents: number }[]>([])
+const mergesApplied = ref(0)
+const mergeError = ref('')
+const duplicateMerges = ref<
+  {
+    patientName: string
+    packageName: string
+    priceCents: number
+    survivorId: string
+    survivorVisits: number
+    discardId: string
+    // Moved onto the survivor when the row being removed is the one carrying
+    // the PracticeHub reference, so its credit history stays attached.
+    referenceToMove: string | null
+  }[]
+>([])
+
+// The bono a credit reference belongs to, whatever suffix it carries:
+// PH-package-12, PH-package-12-adjustment, PH-package-12-adjustment-2 all
+// belong to bono 12. Reading them as one sum is what stops a correction being
+// counted twice or missed.
+const PACKAGE_CREDIT_REF = /^(PH-package-\d+)(?:-.*)?$/
 // Raw, untouched sample of what PracticeHub actually returns -- the field
 // mapping above is a guess reverse-engineered from the docs' example
 // response, which has already been wrong twice. Showing this directly
@@ -205,6 +244,11 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
   candidates.value = []
   unmatchedPatients.value = new Map()
   unmatchedLocalBonos.value = []
+  usedCreditRefs.value = new Set()
+  duplicateMerges.value = []
+  phDuplicateBonos.value = []
+  mergesApplied.value = 0
+  mergeError.value = ''
   skippedNoValue.value = 0
   const api = usePracticeHubApi(conn)
 
@@ -273,6 +317,12 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     // Bonos that already have their household members attached, so a re-run
     // does not add the same person to the same bono twice.
     const purchaseHasShares = new Set<string>()
+    // Same rows, keyed by bono alone -- used to refuse to remove a bono that
+    // a household is attached to.
+    const sharedPurchaseIds = new Set<string>()
+    // Instalment plans. payment_schedules cascades on delete, so a bono
+    // carrying one is never a candidate for removal however empty it looks.
+    const scheduledPurchaseIds = new Set<string>()
     for (let page = 0; ; page++) {
       const { data } = await supabase
         .from('package_purchases')
@@ -288,7 +338,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
           priceCents: row.price_cents ?? 0,
           sessionsUsed: row.sessions_used ?? 0,
           purchasedAt: String(row.purchased_at),
-          hasReference: !!row.external_reference,
+          reference: row.external_reference ?? null,
           visitRows: 0,
           hasInvoice: !!row.invoice_id,
         }
@@ -315,8 +365,20 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     }
 
     for (let page = 0; ; page++) {
-      const { data } = await supabase.from('package_purchase_shares').select('package_purchase_id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
-      for (const row of data ?? []) purchaseHasShares.add(row.package_purchase_id)
+      const { data } = await supabase.from('package_purchase_shares').select('package_purchase_id, patient_id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+      // Per member, not per bono. Testing only "does this bono have any
+      // shares" meant a bono someone was added to already could never gain
+      // the rest of the household: the first member made it look done.
+      for (const row of data ?? []) {
+        purchaseHasShares.add(`${row.package_purchase_id}|${row.patient_id}`)
+        sharedPurchaseIds.add(row.package_purchase_id)
+      }
+      if (!data || data.length < PAGE_SIZE) break
+    }
+
+    for (let page = 0; ; page++) {
+      const { data } = await supabase.from('payment_schedules').select('package_purchase_id').not('package_purchase_id', 'is', null).range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+      for (const row of data ?? []) if (row.package_purchase_id) scheduledPurchaseIds.add(row.package_purchase_id)
       if (!data || data.length < PAGE_SIZE) break
     }
 
@@ -347,7 +409,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     // drawn down later, which is real consumption and must survive the
     // correction rather than be treated as credit that was never deposited.
     phase.value = t('Checking existing credit…', 'Comprobando el crédito existente…')
-    const creditCentsByRef = new Map<string, number>()
+    const creditCentsByPackageRef = new Map<string, number>()
     const depositCentsByPatientDay = new Map<string, number>()
     const creditCentsByPatient = new Map<string, number>()
     for (let page = 0; ; page++) {
@@ -358,7 +420,9 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       for (const row of data ?? []) {
         creditCentsByPatient.set(row.patient_id, (creditCentsByPatient.get(row.patient_id) ?? 0) + row.amount_cents)
         if (row.external_reference) {
-          creditCentsByRef.set(row.external_reference, (creditCentsByRef.get(row.external_reference) ?? 0) + row.amount_cents)
+          usedCreditRefs.value.add(row.external_reference)
+          const base = PACKAGE_CREDIT_REF.exec(row.external_reference)?.[1]
+          if (base) creditCentsByPackageRef.set(base, (creditCentsByPackageRef.get(base) ?? 0) + row.amount_cents)
         } else if (row.amount_cents > 0) {
           const key = `${row.patient_id}|${String(row.created_at).slice(0, 10)}`
           depositCentsByPatientDay.set(key, (depositCentsByPatientDay.get(key) ?? 0) + row.amount_cents)
@@ -397,7 +461,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       let best: LocalBono | null = null
       let bestScore = -1
       for (const local of sameDay) {
-        if (local.hasReference || claimedPurchaseIds.has(local.id)) continue
+        if (local.reference !== null || claimedPurchaseIds.has(local.id)) continue
         const score = (local.priceCents === priceCents ? 2 : 0) + (local.sessionsUsed === sessionsUsed ? 1 : 0)
         if (score > bestScore) {
           best = local
@@ -438,6 +502,43 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     // The whole day's correction is written against the first bono of the day;
     // the rest need no credit row of their own. For the single-bono days that
     // are almost all of them, a group of one behaves exactly as before.
+    // Pass A -- survey PracticeHub's own shape of the data, so the passes that
+    // follow can all agree on which bonos are real. A shape is one patient,
+    // one day, one package name, one price.
+    const phShapeHasUsedBono = new Set<string>()
+    const phShapeTotalCount = new Map<string, number>()
+    const phShapeUsedCount = new Map<string, number>()
+    const shapeKeyOf = (patientId: string, pkg: PHPatientPackage) =>
+      `${patientId}|${pkg.created.slice(0, 10)}|${Math.round((pkg.price ?? 0) * 100)}|${pkg.name || pkg.package_type || 'Package'}`
+    const sessionsUsedOf = (pkg: PHPatientPackage) => {
+      const total = pkg.visits ?? pkg.visits_left ?? 0
+      return Math.max(0, total - (pkg.visits_left ?? total))
+    }
+    for (const pkg of sortedPackages) {
+      const phId = patientIdOf(pkg)
+      const number = phId !== null ? patientNumberById.get(String(phId)) : undefined
+      const patient = number ? ourPatientByRef.get(number) : undefined
+      if (!patient) continue
+      const shapeKey = shapeKeyOf(patient.id, pkg)
+      phShapeTotalCount.set(shapeKey, (phShapeTotalCount.get(shapeKey) ?? 0) + 1)
+      if (sessionsUsedOf(pkg) > 0) {
+        phShapeHasUsedBono.add(shapeKey)
+        phShapeUsedCount.set(shapeKey, (phShapeUsedCount.get(shapeKey) ?? 0) + 1)
+      }
+    }
+    // An untouched bono sitting beside a used one of the same shape is
+    // PracticeHub's duplicate, and is left out of everything below -- the
+    // credit target, the day's lead, the import itself -- so every pass counts
+    // the same bonos.
+    const isPhDuplicate = (patientId: string, pkg: PHPatientPackage) =>
+      sessionsUsedOf(pkg) === 0 && phShapeHasUsedBono.has(shapeKeyOf(patientId, pkg))
+    // How many bonos of a shape actually get imported, which is the yardstick
+    // for deciding whether a row here is a surplus copy of another row here.
+    const phBonoCountByShape = new Map<string, number>()
+    for (const [shapeKey, total] of phShapeTotalCount) {
+      phBonoCountByShape.set(shapeKey, phShapeHasUsedBono.has(shapeKey) ? phShapeUsedCount.get(shapeKey) ?? 0 : total)
+    }
+
     const groupTargetCents = new Map<string, number>()
     const groupAttributedCents = new Map<string, number>()
     const groupLeadPackageId = new Map<string, number>()
@@ -449,11 +550,16 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       if (!patient) continue
       const key = `${patient.id}|${pkg.created.slice(0, 10)}`
       const ref = `PH-package-${pkg.id}`
+      // Credit counts whether or not the bono is imported. A duplicate that
+      // an earlier run did import has real rows in the ledger -- a deposit, a
+      // correction, or both -- and they are still moving this patient's
+      // balance. Leaving them out of the sum would have the next run "correct"
+      // a claw-back that already happened and take the same money twice.
+      groupAttributedCents.set(key, (groupAttributedCents.get(key) ?? 0) + (creditCentsByPackageRef.get(ref) ?? 0))
+      // The target is what the patient should hold, so it counts only the
+      // bonos actually being imported.
+      if (isPhDuplicate(patient.id, pkg)) continue
       groupTargetCents.set(key, (groupTargetCents.get(key) ?? 0) + (pkg.active === 1 ? creditCentsFor(pkg) : 0))
-      groupAttributedCents.set(
-        key,
-        (groupAttributedCents.get(key) ?? 0) + (creditCentsByRef.get(ref) ?? 0) + (creditCentsByRef.get(`${ref}-adjustment`) ?? 0),
-      )
       // Prefer a lead the main loop will actually reach. A spent bono with
       // nothing owed is skipped below, and a skipped lead would take its whole
       // day's correction with it; the fallback covers a day where every bono
@@ -515,6 +621,26 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       // the same deposit to be taken back twice.
       const dayKey = `${ourPatient.id}|${pkg.created.slice(0, 10)}`
 
+      // PracticeHub's own duplicate: this bono has never been touched and
+      // PracticeHub holds another of the same name, price and day that has
+      // been. Importing it would hand the patient a second bono's worth of
+      // sessions and, where PracticeHub reports it unpaid, invoice them for a
+      // bono that was never sold. It is listed rather than imported, and
+      // nothing is written for it -- so if one of these turns out to be a
+      // real second purchase, it can still be brought in later.
+      const priceCents = Math.round((pkg.price ?? 0) * 100)
+      const packageName = pkg.name || pkg.package_type || 'Package'
+      if (isPhDuplicate(ourPatient.id, pkg)) {
+        phDuplicateBonos.value.push({
+          patientName: ourPatient.name,
+          packageName,
+          priceCents,
+          phPackageId: pkg.id,
+          owedCents: isActive ? owedCentsFor(pkg) : 0,
+        })
+        continue
+      }
+
       // Only meaningful for a live package -- a closed one having no value
       // left is the normal case, not a reason to skip it. Owing money counts
       // as something left to do even with no visits left: a bono used to the
@@ -540,7 +666,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       const sessionsUsed = Math.max(0, visitsTotal - visitsLeft)
 
       let existingPurchaseId = purchaseByRef.get(externalRef) ?? null
-      if (existingPurchaseId === null) existingPurchaseId = claimPurchaseForDay(dayKey, Math.round((pkg.price ?? 0) * 100), sessionsUsed)
+      if (existingPurchaseId === null) existingPurchaseId = claimPurchaseForDay(dayKey, priceCents, sessionsUsed)
       // A deactivated package is closed: whatever visits it had left are no
       // longer claimable, so it carries no credit. Granting one would invent
       // money the clinic never owed.
@@ -597,7 +723,11 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
 
       // Nothing left to do: the credit is already right and either the bono
       // is settled or its debt is on an invoice.
-      const needsShares = sharedWith.length > 0 && !(existingPurchaseId !== null && purchaseHasShares.has(existingPurchaseId))
+      // Only the members not already attached. A bono whose whole household
+      // is recorded needs nothing; one missing a member needs just that member.
+      const missingShares =
+        existingPurchaseId === null ? sharedWith : sharedWith.filter((m) => !purchaseHasShares.has(`${existingPurchaseId}|${m.id}`))
+      const needsShares = missingShares.length > 0
       const needsReferenceStamp = existingPurchaseId !== null && purchaseNeedsReference.has(existingPurchaseId)
       if (existingPurchaseId && creditDeltaCents === 0 && !needsInvoice && !needsShares && !needsReferenceStamp) continue
 
@@ -605,7 +735,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         phPackageId: pkg.id,
         patientId: ourPatient.id,
         patientName: ourPatient.name,
-        packageName: pkg.name || pkg.package_type || 'Package',
+        packageName,
         visits: pkg.visits,
         visitsLeft: pkg.visits_left,
         price: pkg.price,
@@ -615,7 +745,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         created: pkg.created,
         sessionsTotal: Math.max(visitsTotal, 1),
         sessionsUsed,
-        priceCents: Math.round((pkg.price ?? 0) * 100),
+        priceCents,
         isActive,
         targetCreditCents,
         attributedCreditCents,
@@ -625,19 +755,80 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         creditOnly: existingPurchaseId !== null,
         existingPurchaseId,
         needsReferenceStamp,
-        sharedWith,
+        sharedWith: missingShares,
         currentCreditCents: creditCentsByPatient.get(ourPatient.id) ?? 0,
         status: 'pending',
       })
     }
 
+    // Rows here that stand for a bono PracticeHub only has once. Two bonos of
+    // the same name and price for one patient on one day is the shape the old
+    // `.shift()` matching produced: it handed the single local row to the
+    // first PracticeHub bono and inserted a second row for the next one. Six
+    // patients here are in that state, each with one row carrying every
+    // recorded visit and one carrying none.
+    //
+    // The test is a count, not a guess: PracticeHub is asked how many bonos of
+    // that shape it holds that day, and only a surplus over that number is
+    // treated as ours to remove. If PracticeHub really does hold two, the
+    // counts match, nothing is proposed, and both rows stay.
+    //
+    // The row that survives is the one the clinic has been using -- the one
+    // with visits recorded against it. The row removed must have no visits, no
+    // household members and no invoice, so nothing is lost with it; where it
+    // is the row carrying the PracticeHub reference, that reference moves onto
+    // the survivor and takes its credit history along.
+    const localByShape = new Map<string, LocalBono[]>()
+    for (const local of localBonoById.values()) {
+      const shapeKey = `${local.patientId}|${local.purchasedAt.slice(0, 10)}|${local.priceCents}|${local.packageName}`
+      const list = localByShape.get(shapeKey)
+      if (list) list.push(local)
+      else localByShape.set(shapeKey, [local])
+    }
+
+    const merges: typeof duplicateMerges.value = []
+    for (const [shapeKey, rows] of localByShape) {
+      const phCount = phBonoCountByShape.get(shapeKey) ?? 0
+      if (phCount < 1 || rows.length !== phCount + 1) continue
+
+      const removable = rows.filter(
+        (r) => r.visitRows === 0 && !r.hasInvoice && !sharedPurchaseIds.has(r.id) && !scheduledPurchaseIds.has(r.id),
+      )
+      if (removable.length !== 1) continue
+      const discard = removable[0]
+      const survivor = [...rows]
+        .filter((r) => r.id !== discard.id)
+        .sort((a, b) => b.visitRows - a.visitRows || (a.purchasedAt < b.purchasedAt ? -1 : 1))[0]
+      if (!survivor || survivor.visitRows === 0) continue
+      // A reference can only move onto a row that has none. If both rows carry
+      // one, the row being removed may only go if nothing in the ledger points
+      // at it -- otherwise its credit would be stranded, so the pair is left
+      // alone and shows up in the unmatched list instead. An empty duplicate
+      // never had credit written against it, which is what lets the nine
+      // PracticeHub-paired rows here be cleaned up.
+      const discardCarriesCredit = discard.reference !== null && (creditCentsByPackageRef.get(discard.reference) ?? 0) !== 0
+      if (discard.reference !== null && survivor.reference !== null && discardCarriesCredit) continue
+
+      merges.push({
+        patientName: ourPatientNameById.get(discard.patientId) ?? discard.patientId,
+        packageName: discard.packageName,
+        priceCents: discard.priceCents,
+        survivorId: survivor.id,
+        survivorVisits: survivor.visitRows,
+        discardId: discard.id,
+        referenceToMove: survivor.reference === null ? discard.reference : null,
+      })
+    }
+    duplicateMerges.value = merges
+
     // Anything here that no PracticeHub bono claimed. A bono sold through
     // QuiroFlow since the migration legitimately lands here too, which is why
     // the purchase time is shown: the migration wrote every row it created at
     // exactly midnight, so a row with a real time of day was sold here.
+    const mergingAway = new Set(merges.map((m) => m.discardId))
     const leftovers: { patientName: string; bono: LocalBono }[] = []
     for (const local of localBonoById.values()) {
-      if (local.hasReference || claimedPurchaseIds.has(local.id)) continue
+      if (local.reference !== null || claimedPurchaseIds.has(local.id) || mergingAway.has(local.id)) continue
       leftovers.push({ patientName: ourPatientNameById.get(local.patientId) ?? local.patientId, bono: local })
     }
     leftovers.sort((a, b) => a.patientName.localeCompare(b.patientName))
@@ -651,10 +842,54 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
   }
 }
 
+// The first correction slot this bono has not used. Reading sums every
+// reference belonging to the bono whatever its suffix, so a numbered
+// correction is read back exactly like the first one -- and unlike a fixed
+// `-adjustment`, it can always be written.
+function nextAdjustmentRef(externalRef: string): string {
+  const first = `${externalRef}-adjustment`
+  if (!usedCreditRefs.value.has(first)) return first
+  for (let n = 2; ; n++) {
+    const ref = `${first}-${n}`
+    if (!usedCreditRefs.value.has(ref)) return ref
+  }
+}
+
 async function applyFixes() {
   stage.value = 'applying'
   const toApply = candidates.value.filter((c) => c.status === 'pending')
   progress.value = { done: 0, total: toApply.length }
+
+  // Duplicates first, so the rest of the pass writes against the row that
+  // survives. A candidate pointing at the row being removed is repointed at
+  // the survivor rather than resurrecting it.
+  mergeError.value = ''
+  mergesApplied.value = 0
+  for (const m of duplicateMerges.value) {
+    // Delete first, then move the reference: (account_id, external_reference)
+    // is unique, so the two rows cannot hold it at once. If the move fails
+    // after the delete, the next run repairs it rather than leaving a hole --
+    // one PracticeHub bono against one unreferenced row here matches on the
+    // day and stamps the reference back on.
+    const { error: deleteError } = await supabase.from('package_purchases').delete().eq('id', m.discardId)
+    if (deleteError) {
+      mergeError.value = `${m.patientName}: ${deleteError.message}`
+      break
+    }
+    if (m.referenceToMove) {
+      const { error: moveError } = await supabase
+        .from('package_purchases')
+        .update({ external_reference: m.referenceToMove })
+        .eq('id', m.survivorId)
+        .is('external_reference', null)
+      if (moveError) {
+        mergeError.value = `${m.patientName}: ${moveError.message}`
+        break
+      }
+    }
+    for (const c of toApply) if (c.existingPurchaseId === m.discardId) c.existingPurchaseId = m.survivorId
+    mergesApplied.value++
+  }
 
   for (const c of toApply) {
     const externalRef = `PH-package-${c.phPackageId}`
@@ -689,11 +924,12 @@ async function applyFixes() {
 
     if (c.creditDeltaCents !== 0) {
       // A first deposit carries the bono's reference; a later correction
-      // carries `-adjustment` so the two can be told apart and so a re-run
-      // reads its own correction back rather than applying it twice. The
-      // original row is left untouched -- the ledger shows what was deposited
-      // and what was taken back, not a number quietly rewritten.
+      // carries an `-adjustment` suffix so the two can be told apart and so a
+      // re-run reads its own correction back rather than applying it twice.
+      // The original row is left untouched -- the ledger shows what was
+      // deposited and what was taken back, not a number quietly rewritten.
       const isCorrection = c.attributedCreditCents !== 0
+      const creditRef = isCorrection ? nextAdjustmentRef(externalRef) : externalRef
       const { error: creditError } = await supabase.from('account_credits').insert({
         account_id: store.accountId!,
         patient_id: c.patientId,
@@ -701,7 +937,7 @@ async function applyFixes() {
         reason: isCorrection
           ? `${c.packageName} (corrected to what was paid: €${formatEuros(c.targetCreditCents)}, was €${formatEuros(c.attributedCreditCents)})`
           : `${c.packageName} (migrated from PracticeHub -- ${c.visitsLeft ?? '?'}/${c.visits ?? '?'} sessions remaining)`,
-        external_reference: isCorrection ? `${externalRef}-adjustment` : externalRef,
+        external_reference: creditRef,
         created_at: isCorrection ? new Date().toISOString() : c.created,
       })
       if (creditError) {
@@ -710,6 +946,9 @@ async function applyFixes() {
         progress.value = { done: progress.value.done + 1, total: toApply.length }
         continue
       }
+      // Claim the slot so a second correction in this same pass takes the next
+      // one instead of colliding with it.
+      usedCreditRefs.value.add(creditRef)
     }
 
     // Label a bono the hand backfill left unlabelled with its PracticeHub
@@ -795,12 +1034,13 @@ async function applyFixes() {
   }
 
   stage.value = 'done'
+  const mergeNote = mergesApplied.value > 0 ? ` ${t(`Merged ${mergesApplied.value} duplicate bono(s).`, `Se fusionaron ${mergesApplied.value} bono(s) duplicados.`)}` : ''
   showToast(
     t(
-      `Applied ${candidates.value.filter((c) => c.status === 'applied').length} fix(es).`,
-      `Se aplicaron ${candidates.value.filter((c) => c.status === 'applied').length} corrección(es).`,
+      `Applied ${candidates.value.filter((c) => c.status === 'applied').length} fix(es).${mergeNote}`,
+      `Se aplicaron ${candidates.value.filter((c) => c.status === 'applied').length} corrección(es).${mergeNote}`,
     ),
-    candidates.value.some((c) => c.status === 'error') ? 'error' : 'success',
+    candidates.value.some((c) => c.status === 'error') || mergeError.value ? 'error' : 'success',
   )
 }
 
@@ -813,6 +1053,11 @@ function reset() {
   candidates.value = []
   unmatchedPatients.value = new Map()
   unmatchedLocalBonos.value = []
+  usedCreditRefs.value = new Set()
+  duplicateMerges.value = []
+  phDuplicateBonos.value = []
+  mergesApplied.value = 0
+  mergeError.value = ''
   skippedNoValue.value = 0
   progress.value = { done: 0, total: 0 }
 }
@@ -913,6 +1158,81 @@ function formatEuros(cents: number): string {
             <span class="text-warning-text/70"> &middot; {{ u.bonos.join(', ') }}</span>
           </li>
         </ul>
+      </div>
+
+      <div v-if="phDuplicateBonos.length > 0" class="rounded-ctl border border-warning-border bg-warning-bg p-3">
+        <p class="text-[12.5px] font-medium text-warning-text">
+          {{ t(`${phDuplicateBonos.length} bono(s) PracticeHub lists twice — not imported`, `${phDuplicateBonos.length} bono(s) que PracticeHub lista dos veces: no se importan`) }}
+        </p>
+        <p class="mt-1 text-[12.5px] leading-relaxed text-warning-text">
+          {{
+            t(
+              'For each of these, PracticeHub holds a second bono of the same name, price and day that has actually been used, while this one has never been touched. Importing it would give the patient a second bono of sessions they never bought, and where PracticeHub reports it unpaid it would raise an invoice for money nobody owes. Nothing is written for them. If one of these is a real second purchase, say so and it can be brought in.',
+              'Para cada uno de estos, PracticeHub tiene un segundo bono del mismo nombre, precio y día que sí se ha usado, mientras que este no se ha tocado nunca. Importarlo daría al paciente un segundo bono de sesiones que nunca compró, y si PracticeHub lo marca como impagado generaría una factura por dinero que nadie debe. No se escribe nada para ellos. Si alguno es una segunda compra real, dilo y se puede importar.',
+            )
+          }}
+        </p>
+        <div class="mt-2 overflow-x-auto">
+          <table class="w-full text-[12px] text-warning-text">
+            <thead class="text-left text-warning-text/70">
+              <tr>
+                <th class="py-1 pr-3 font-medium">{{ t('Patient', 'Paciente') }}</th>
+                <th class="py-1 pr-3 font-medium">{{ t('Bono', 'Bono') }}</th>
+                <th class="py-1 pr-3 font-medium">{{ t('Price', 'Precio') }}</th>
+                <th class="py-1 pr-3 font-medium">{{ t('PracticeHub id', 'Id de PracticeHub') }}</th>
+                <th class="py-1 font-medium">{{ t('Invoice avoided', 'Factura evitada') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="d in phDuplicateBonos" :key="d.phPackageId">
+                <td class="py-1 pr-3">{{ d.patientName }}</td>
+                <td class="py-1 pr-3">{{ d.packageName }}</td>
+                <td class="py-1 pr-3">&euro;{{ formatEuros(d.priceCents) }}</td>
+                <td class="py-1 pr-3 font-mono">{{ d.phPackageId }}</td>
+                <td class="py-1" :class="d.owedCents > 0 ? 'font-medium' : 'text-warning-text/70'">
+                  <template v-if="d.owedCents > 0">&euro;{{ formatEuros(d.owedCents) }}</template>
+                  <template v-else>&mdash;</template>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div v-if="duplicateMerges.length > 0" class="rounded-ctl border border-warning-border bg-warning-bg p-3">
+        <p class="text-[12.5px] font-medium text-warning-text">
+          {{ t(`${duplicateMerges.length} bono(s) recorded twice here — one row will be removed from each`, `${duplicateMerges.length} bono(s) registrados dos veces aquí: se eliminará una fila de cada uno`) }}
+        </p>
+        <p class="mt-1 text-[12.5px] leading-relaxed text-warning-text">
+          {{
+            t(
+              'PracticeHub holds one bono of this shape for this patient on this day, and there are two here. The row kept is the one the clinic has been using — the one with visits recorded against it — and the row removed has no visits, no household members, no invoice and no instalment plan, so nothing is lost with it. Where the removed row is the one carrying the PracticeHub reference, that reference moves onto the row that stays and takes its credit history along.',
+              'PracticeHub tiene un bono de esta forma para este paciente ese día, y aquí hay dos. Se conserva la fila que la clínica ha estado usando (la que tiene visitas registradas) y la que se elimina no tiene visitas, ni pacientes compartidos, ni factura, ni plan de pago, así que no se pierde nada. Si la fila eliminada es la que lleva la referencia de PracticeHub, esa referencia pasa a la fila que se conserva junto con su historial de crédito.',
+            )
+          }}
+        </p>
+        <div class="mt-2 overflow-x-auto">
+          <table class="w-full text-[12px] text-warning-text">
+            <thead class="text-left text-warning-text/70">
+              <tr>
+                <th class="py-1 pr-3 font-medium">{{ t('Patient', 'Paciente') }}</th>
+                <th class="py-1 pr-3 font-medium">{{ t('Bono', 'Bono') }}</th>
+                <th class="py-1 pr-3 font-medium">{{ t('Price', 'Precio') }}</th>
+                <th class="py-1 pr-3 font-medium">{{ t('Row kept', 'Fila conservada') }}</th>
+                <th class="py-1 font-medium">{{ t('Reference moved', 'Referencia movida') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="m in duplicateMerges" :key="m.discardId">
+                <td class="py-1 pr-3">{{ m.patientName }}</td>
+                <td class="py-1 pr-3">{{ m.packageName }}</td>
+                <td class="py-1 pr-3">&euro;{{ formatEuros(m.priceCents) }}</td>
+                <td class="py-1 pr-3">{{ t(`${m.survivorVisits} visit(s) recorded`, `${m.survivorVisits} visita(s) registradas`) }}</td>
+                <td class="py-1 font-mono">{{ m.referenceToMove ?? t('—', '—') }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div v-if="unmatchedLocalBonos.length > 0" class="rounded-ctl border border-warning-border bg-warning-bg p-3">
@@ -1026,10 +1346,20 @@ function formatEuros(cents: number): string {
         <button
           type="button"
           class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50"
-          :disabled="candidates.filter((c) => c.status === 'pending').length === 0"
+          :disabled="candidates.filter((c) => c.status === 'pending').length === 0 && duplicateMerges.length === 0"
           @click="applyFixes"
         >
-          {{ t(`Apply ${candidates.filter((c) => c.status === 'pending').length} fix(es)`, `Aplicar ${candidates.filter((c) => c.status === 'pending').length} corrección(es)`) }}
+          <template v-if="duplicateMerges.length > 0">
+            {{
+              t(
+                `Apply ${candidates.filter((c) => c.status === 'pending').length} fix(es) and merge ${duplicateMerges.length} duplicate(s)`,
+                `Aplicar ${candidates.filter((c) => c.status === 'pending').length} corrección(es) y fusionar ${duplicateMerges.length} duplicado(s)`,
+              )
+            }}
+          </template>
+          <template v-else>
+            {{ t(`Apply ${candidates.filter((c) => c.status === 'pending').length} fix(es)`, `Aplicar ${candidates.filter((c) => c.status === 'pending').length} corrección(es)`) }}
+          </template>
         </button>
         <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-ink-600 hover:bg-surface-subtle" @click="reset">
           {{ t('Cancel', 'Cancelar') }}
@@ -1043,6 +1373,13 @@ function formatEuros(cents: number): string {
     </div>
 
     <div v-else-if="stage === 'done'" class="mt-4 space-y-4">
+      <div v-if="mergeError" class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
+        <p class="font-medium">{{ t('Merging duplicates stopped:', 'La fusión de duplicados se detuvo:') }}</p>
+        <p class="mt-1">{{ mergeError }}</p>
+        <p class="mt-1">
+          {{ t('The remaining duplicates were left alone. Run this again to retry them.', 'Los duplicados restantes no se tocaron. Vuelve a ejecutar esto para reintentarlos.') }}
+        </p>
+      </div>
       <div v-if="candidates.some((c) => c.status === 'error')" class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
         <p class="font-medium">{{ t('Some rows failed:', 'Algunas filas fallaron:') }}</p>
         <ul class="mt-1 list-disc pl-5">

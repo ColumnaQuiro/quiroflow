@@ -70,6 +70,7 @@ const skippedUnmatched = ref(0)
 // Invoices no bono of the patient's could have paid for at that price -- an
 // ordinary consultation, not a session drawn off a bono.
 const skippedNoBonoAtThisRate = ref(0)
+const skippedBonosFull = ref(0)
 const appliedCount = ref(0)
 const rawSample = ref<unknown[]>([])
 const showRawSample = ref(false)
@@ -85,6 +86,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
   skippedPaid.value = 0
   skippedUnmatched.value = 0
   skippedNoBonoAtThisRate.value = 0
+  skippedBonosFull.value = 0
   const api = usePracticeHubApi(conn)
 
   try {
@@ -120,7 +122,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     // Bono Familiar, which is 40 EUR a session. Already-imported invoices are
     // skipped on a re-run, so a visit stored without its bono stays that way;
     // the share has to be resolved on the first pass or not at all.
-    type HeldPackage = { id: string; name: string; purchasedAt: string; rateCents: number | null }
+    type HeldPackage = { id: string; name: string; purchasedAt: string; rateCents: number | null; sessionsUsed: number }
     const purchasesByPatient = new Map<string, HeldPackage[]>()
     const packageById = new Map<string, HeldPackage>()
     const addHeld = (patientId: string, pkg: HeldPackage) => {
@@ -129,7 +131,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       purchasesByPatient.set(patientId, list)
     }
     for (let page = 0; ; page++) {
-      const { data } = await supabase.from('package_purchases').select('id, patient_id, package_name, purchased_at, price_cents, sessions_total').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+      const { data } = await supabase.from('package_purchases').select('id, patient_id, package_name, purchased_at, price_cents, sessions_total, sessions_used').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
       if (!data || data.length === 0) break
       for (const p of data) {
         const pkg: HeldPackage = {
@@ -140,6 +142,10 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
           // session, and PracticeHub bills exactly that per visit, so the
           // invoice value identifies which bono the visit came out of.
           rateCents: p.sessions_total ? Math.round(p.price_cents / p.sessions_total) : null,
+          // How many sessions PracticeHub says came off this bono. That is the
+          // number its own balance is computed from, so it caps how many visit
+          // rows the bono can legitimately hold.
+          sessionsUsed: p.sessions_used ?? 0,
         }
         packageById.set(p.id, pkg)
         addHeld(p.patient_id, pkg)
@@ -157,10 +163,17 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     }
 
     const existingRefs = new Set<string>()
+    // How many visit rows each bono already carries, from every source -- this
+    // importer's earlier runs, the QuiroFlow billing flow, hand repairs. A
+    // bono that is already full must not take another, whichever wrote them.
+    const rowsOnPackage = new Map<string, number>()
     for (let page = 0; ; page++) {
-      const { data } = await supabase.from('package_sessions').select('external_reference').not('external_reference', 'is', null).range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+      const { data } = await supabase.from('package_sessions').select('external_reference, package_purchase_id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
       if (!data || data.length === 0) break
-      for (const r of data) if (r.external_reference) existingRefs.add(r.external_reference)
+      for (const r of data) {
+        if (r.external_reference) existingRefs.add(r.external_reference)
+        if (r.package_purchase_id) rowsOnPackage.set(r.package_purchase_id, (rowsOnPackage.get(r.package_purchase_id) ?? 0) + 1)
+      }
       if (data.length < PAGE_SIZE) break
     }
 
@@ -227,11 +240,29 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       // misstates how much of that bono is left.
       const held = (purchasesByPatient.get(ourPatient.id) ?? [])
         .filter((p) => dayOf(p.purchasedAt) <= dayOf(inv.created) && p.rateCents === totalCents)
-        .sort((a, b) => b.purchasedAt.localeCompare(a.purchasedAt))
+        // Oldest first. A prepaid block is drawn down in the order it was
+        // bought, so a visit belongs to the bono the patient was working
+        // through at the time, not to whichever they bought most recently.
+        // Sorting newest-first -- as this did -- pushed May's visits onto an
+        // August bono whenever a patient held two at the same rate.
+        .sort((a, b) => a.purchasedAt.localeCompare(b.purchasedAt))
       if (held.length === 0) {
         skippedNoBonoAtThisRate.value++
         continue
       }
+
+      // A bono can hold no more visit rows than PracticeHub says came off it.
+      // Nothing enforced that before, so once the rate matched, every visit a
+      // patient ever took piled onto one bono: 58 bonos ended up carrying 254
+      // rows more than their own counter, 44 of them bonos PracticeHub reports
+      // as never touched at all. Those rows are what made a phantom bono look
+      // used, which is why they mattered beyond display.
+      const target = held.find((p) => (rowsOnPackage.get(p.id) ?? 0) < p.sessionsUsed)
+      if (!target) {
+        skippedBonosFull.value++
+        continue
+      }
+      rowsOnPackage.set(target.id, (rowsOnPackage.get(target.id) ?? 0) + 1)
       built.push({
         phInvoiceId: inv.id,
         patientId: ourPatient.id,
@@ -239,8 +270,8 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         amountCents: totalCents,
         usedAt: inv.created,
         appointmentId: (inv.appointment_id !== null && inv.appointment_id !== undefined ? ourApptByRef.get(String(inv.appointment_id)) : undefined) ?? null,
-        packagePurchaseId: held[0]?.id ?? null,
-        packageName: held[0]?.name ?? null,
+        packagePurchaseId: target.id,
+        packageName: target.name,
       })
     }
 
@@ -333,8 +364,8 @@ const withAppointment = computed(() => candidates.value.filter((c) => c.appointm
       <div class="rounded-lg border border-line bg-surface-subtle p-3 text-sm text-ink-muted2">
         {{
           t(
-            `${candidates.length} package visit(s) to add, worth €${formatEuros(totalValueCents)} of consumed bono value. ${withPackage} matched to a specific bono, ${withAppointment} linked to an appointment. Skipped: ${skippedPaid} invoices already covered by a payment that day, ${skippedNoBonoAtThisRate} billed at a price no bono of theirs charges, ${skippedUnmatched} invoices for patients with no matching record here.`,
-            `${candidates.length} visita(s) de bono para añadir, por valor de €${formatEuros(totalValueCents)} de bono consumido. ${withPackage} asociadas a un bono concreto, ${withAppointment} vinculadas a una cita. Omitidas: ${skippedPaid} facturas ya cubiertas por un pago ese día, ${skippedNoBonoAtThisRate} con un importe que ningún bono suyo cobra, ${skippedUnmatched} facturas de pacientes sin registro aquí.`,
+            `${candidates.length} package visit(s) to add, worth €${formatEuros(totalValueCents)} of consumed bono value. ${withPackage} matched to a specific bono, ${withAppointment} linked to an appointment. Skipped: ${skippedPaid} invoices already covered by a payment that day, ${skippedNoBonoAtThisRate} billed at a price no bono of theirs charges, ${skippedBonosFull} where every bono at that price already holds all the visits PracticeHub says came off it, ${skippedUnmatched} invoices for patients with no matching record here.`,
+            `${candidates.length} visita(s) de bono para añadir, por valor de €${formatEuros(totalValueCents)} de bono consumido. ${withPackage} asociadas a un bono concreto, ${withAppointment} vinculadas a una cita. Omitidas: ${skippedPaid} facturas ya cubiertas por un pago ese día, ${skippedNoBonoAtThisRate} con un importe que ningún bono suyo cobra, ${skippedBonosFull} en las que todos los bonos a ese precio ya tienen todas las visitas que PracticeHub dice que se consumieron, ${skippedUnmatched} facturas de pacientes sin registro aquí.`,
           )
         }}
       </div>

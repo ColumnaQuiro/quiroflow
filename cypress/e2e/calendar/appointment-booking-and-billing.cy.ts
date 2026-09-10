@@ -1,3 +1,18 @@
+// Books yesterday rather than taking the panel's default of 09:00 today.
+// AppointmentBillingTab only raises an invoice once the visit has actually
+// happened (loadAppointmentTiming: starts_at > now => "This appointment
+// hasn't happened yet"), so a 09:00-today appointment has no invoice, no
+// service picker and no billing UI on any CI run that starts before 09:00
+// UTC -- which is what turned this spec red every morning while passing all
+// afternoon. Yesterday is in the past whatever the clock says, and 09:00
+// still sits inside the day grid's 08:00-20:00 window so the appointment is
+// visible to click once the calendar is stepped back a day.
+function yesterdayInputValue() {
+  const d = new Date()
+  d.setDate(d.getDate() - 1)
+  return d.toISOString().slice(0, 10)
+}
+
 describe('Appointment booking and billing checkout', () => {
   it('books an appointment, then records a payment that completes it', () => {
     cy.seedStaffAccount().then((account) => {
@@ -27,6 +42,7 @@ describe('Appointment booking and billing checkout', () => {
             // Practitioner selects come after it). Its label includes the
             // effective duration, so this must match the option's exact text.
             cy.get('select').eq(0).should('contain.text', 'Consultation').select('Consultation (30 min)')
+            cy.get('input[type="date"]').clear().type(yesterdayInputValue())
             // Exact match -- a substring match on 'Create' hits the
             // "Create Appointment" tab label (also a button, earlier in the
             // DOM) before ever reaching this actual submit button, silently
@@ -39,6 +55,10 @@ describe('Appointment booking and billing checkout', () => {
           // picked, so it would falsely read "gone" even with the panel
           // still open.
           cy.get('.fixed.inset-0.z-50').should('not.exist')
+
+          // The calendar is still on today; the appointment was booked for
+          // yesterday, so step back a day to bring it into the grid.
+          cy.get('[aria-label="Previous"]').click()
           cy.contains('Alice Anderson').should('be.visible')
 
           // The default-time appointment can land far enough down the day grid that

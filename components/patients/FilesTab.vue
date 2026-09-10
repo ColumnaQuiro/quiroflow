@@ -40,6 +40,11 @@ async function load() {
   thumbUrls.value = urls
 }
 onMounted(load)
+// Defense-in-depth alongside practitioner.vue's :key on the charting pane:
+// if this component is ever reused for a different patientId without being
+// remounted, the file grid should follow rather than silently keep
+// displaying the previous patient's files next to the new patient's name.
+watch(() => props.patientId, load)
 
 async function updateVisibility(file: PatientFile) {
   await supabase.from('patient_files').update({ visibility: file.visibility }).eq('id', file.id)
@@ -63,8 +68,15 @@ function kindLabel(file: PatientFile) {
 async function uploadFiles(fileList: FileList) {
   error.value = ''
   uploading.value = true
+  // Snapshotted once, up front: this component instance can outlive the
+  // upload (My Day keeps a single charting pane mounted across patients --
+  // see practitioner.vue). Reading props.patientId again after the storage
+  // upload's await, instead of this const, would file the upload under
+  // whichever patient happens to be selected by the time it resolves, not
+  // whoever it was actually uploaded for.
+  const patientId = props.patientId
   for (const file of Array.from(fileList)) {
-    const path = `${store.accountId}/${props.patientId}/${Date.now()}-${sanitizeStorageFilename(file.name)}`
+    const path = `${store.accountId}/${patientId}/${Date.now()}-${sanitizeStorageFilename(file.name)}`
     const { error: uploadError } = await supabase.storage.from('patient-files').upload(path, file)
     if (uploadError) {
       error.value = uploadError.message
@@ -74,7 +86,7 @@ async function uploadFiles(fileList: FileList) {
       .from('patient_files')
       .insert({
         account_id: store.accountId!,
-        patient_id: props.patientId,
+        patient_id: patientId,
         storage_path: path,
         file_name: file.name,
         file_type: file.type || null,

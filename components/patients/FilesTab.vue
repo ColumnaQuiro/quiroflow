@@ -29,15 +29,27 @@ async function load() {
   files.value = (data as unknown as PatientFile[]) ?? []
   loading.value = false
 
-  const images = files.value.filter((f) => f.file_type?.startsWith('image/') && f.storage_path)
+  // PDFs get a signed URL too, not just images. A scanned report or an MRI
+  // write-up is the common case here and a diagonal-stripe placeholder with
+  // "PDF" on it tells the practitioner nothing -- they end up opening every
+  // one to find the right document. The browser's own PDF viewer renders
+  // the first page in the card below, so this needs no rendering library.
+  const previewable = files.value.filter((f) => f.storage_path && (f.file_type?.startsWith('image/') || isPdf(f)))
   const urls: Record<string, string> = {}
   await Promise.all(
-    images.map(async (f) => {
+    previewable.map(async (f) => {
       const { data: signed } = await supabase.storage.from('patient-files').createSignedUrl(f.storage_path!, 60 * 10)
       if (signed?.signedUrl) urls[f.id] = signed.signedUrl
     }),
   )
   thumbUrls.value = urls
+}
+
+function isPdf(file: PatientFile) {
+  return file.file_type === 'application/pdf' || /\.pdf$/i.test(file.file_name)
+}
+function isImage(file: PatientFile) {
+  return !!file.file_type?.startsWith('image/')
 }
 onMounted(load)
 // Defense-in-depth alongside practitioner.vue's :key on the charting pane:
@@ -145,15 +157,38 @@ async function remove(file: Tables<'patient_files'>) {
     <div v-else class="grid grid-cols-2 gap-4 p-4 sm:grid-cols-4">
       <div v-for="file in files" :key="file.id" class="group overflow-hidden rounded-ctl border border-line-divider bg-surface">
         <div
-          class="relative flex h-[104px] w-full items-center justify-center"
+          class="relative flex h-[104px] w-full items-center justify-center overflow-hidden bg-surface-subtle"
           :style="
-            thumbUrls[file.id]
+            thumbUrls[file.id] && isImage(file)
               ? { backgroundImage: `url(${thumbUrls[file.id]})`, backgroundSize: 'cover', backgroundPosition: 'center' }
-              : { backgroundImage: 'repeating-linear-gradient(135deg, #F4F5F8 0px, #F4F5F8 6px, #EDEEF2 6px, #EDEEF2 12px)' }
+              : thumbUrls[file.id] && isPdf(file)
+                ? {}
+                : { backgroundImage: 'repeating-linear-gradient(135deg, #F4F5F8 0px, #F4F5F8 6px, #EDEEF2 6px, #EDEEF2 12px)' }
           "
         >
-          <span v-if="!thumbUrls[file.id]" class="rounded-ctlSm bg-surface/90 px-1.5 py-0.5 font-mono text-[10.5px] font-medium text-ink-muted2">
+          <!-- The browser's built-in viewer renders page one. pointer-events
+          are off so the whole tile stays a plain card -- the iframe must not
+          swallow clicks or scroll -- and the chrome is hidden so it reads as
+          a thumbnail rather than an embedded reader. -->
+          <iframe
+            v-if="thumbUrls[file.id] && isPdf(file)"
+            :src="`${thumbUrls[file.id]}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`"
+            class="pointer-events-none absolute inset-0 h-full w-full border-0"
+            loading="lazy"
+            tabindex="-1"
+            aria-hidden="true"
+          ></iframe>
+          <span
+            v-if="!thumbUrls[file.id]"
+            class="rounded-ctlSm bg-surface/90 px-1.5 py-0.5 font-mono text-[10.5px] font-medium text-ink-muted2"
+          >
             {{ kindLabel(file) }}
+          </span>
+          <span
+            v-else-if="isPdf(file)"
+            class="absolute bottom-1.5 left-1.5 rounded-ctlSm bg-surface/90 px-1.5 py-0.5 font-mono text-[10px] font-medium text-ink-muted2"
+          >
+            PDF
           </span>
           <span v-if="!file.storage_path" class="absolute right-1.5 top-1.5 rounded-pill bg-warning-bg px-1.5 py-0.5 text-[10px] font-medium text-warning-text">
             {{ t('Not migrated', 'No migrado') }}

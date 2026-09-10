@@ -85,6 +85,23 @@ async function loadAppointmentTiming() {
 // sending the invoice), never just from opening this tab. For an appointment
 // that hasn't happened yet, skip creating: there's nothing to bill until the
 // visit occurs, so this returns null and the calling action no-ops.
+
+// Set when this visit has already been drawn from a bono. Doubles as the
+// "don't raise an invoice" flag for ensureInvoice() and as what the panel
+// shows in place of invoice lines -- otherwise a covered visit renders an
+// empty billing panel, since there is no invoice left to display.
+const packageCoverage = ref<{ packageName: string; amountCents: number } | null>(null)
+
+async function loadPackageCoverage() {
+  const { data } = await supabase
+    .from('package_sessions')
+    .select('amount_cents, package_purchases(package_name)')
+    .eq('appointment_id', props.appointmentId)
+    .maybeSingle()
+  const row = data as unknown as { amount_cents: number; package_purchases: { package_name: string } | null } | null
+  packageCoverage.value = row ? { packageName: row.package_purchases?.package_name ?? '', amountCents: row.amount_cents } : null
+}
+
 async function ensureInvoice(): Promise<InvoiceRow | null> {
   const { data: existing } = await supabase
     .from('invoices')
@@ -95,6 +112,14 @@ async function ensureInvoice(): Promise<InvoiceRow | null> {
   if (existing) return existing
   if (!can('billing_access')) return null
   if (appointmentIsUpcoming.value) return null
+
+  // A visit already drawn from a bono is not a billing event -- the patient
+  // paid for it when they bought the bono. Without this, usePackageSession()
+  // deleting the auto-raised invoice would achieve nothing: its own trailing
+  // loadInvoice(), or simply reopening this tab tomorrow, would raise a fresh
+  // unpaid one at the standalone price. loadPackageCoverage() runs first, so
+  // this reads an already-fetched value rather than querying again.
+  if (packageCoverage.value) return null
 
   const { count } = await supabase.from('invoices').select('id', { count: 'exact', head: true })
   const invoiceNumber = `INV-${String((count ?? 0) + 1).padStart(4, '0')}`
@@ -134,6 +159,7 @@ async function loadInvoice() {
   loadingInvoice.value = true
   error.value = ''
 
+  await loadPackageCoverage()
   const inv = await ensureInvoice()
 
   invoice.value = inv
@@ -246,37 +272,25 @@ async function usePackageSession(pkg: { id: string; package_name: string; sessio
     return
   }
 
-  // A package-covered visit is worth the bono's own per-session value
-  // (total price ÷ total sessions) -- what the patient actually paid per
-  // visit when they bought the bono -- not whatever this appointment
-  // type's standalone/drop-in price happens to be. ensureInvoice() stamps
-  // every new invoice at the standalone price by default (it doesn't yet
-  // know a package will cover the visit); correct the visit's own line
-  // item here, before totalling, so the invoice itself reads the bono
-  // rate too. Only the auto-created visit line item is repriced -- any
-  // separately added services/products (the ones with a service_id) are
-  // real extra charges on top of the package and keep their own price.
+  // What this visit was worth against the bono: the bono's own per-session
+  // value (total price ÷ total sessions), which is what the patient actually
+  // paid per visit when they bought it -- not this appointment type's
+  // standalone/drop-in price. Recorded on the session row for history; it is
+  // not billed, because the patient already paid it at the sale.
   const perSessionCents = Math.round(bono.price_cents / bono.sessions_total)
-  const baseLine = lineItems.value.find((l) => !l.service_id)
-  if (baseLine && baseLine.price_cents !== perSessionCents) {
-    await supabase.from('invoice_line_items').update({ price_cents: perSessionCents }).eq('id', baseLine.id)
-    baseLine.price_cents = perSessionCents
-    const totalCents = lineItems.value.reduce((sum, l) => sum + l.price_cents * l.quantity, 0)
-    await supabase.from('invoices').update({ total_cents: totalCents }).eq('id', invoice.value.id)
-    invoice.value.total_cents = totalCents
-  }
 
-  // The visit itself, on the bono's own history. Without this a session taken
-  // here counts against sessions_used and spends the credit but leaves no
-  // line anywhere: the Billing tab renders a bono's visits out of
-  // package_sessions, so a patient reads "4 of 12 used" above a list of three.
-  // The whole point of importing PracticeHub's visits was to give a migrated
-  // bono that history, and QuiroFlow was not writing it for its own.
+  // The visit itself, on the bono's own history -- and, since this release,
+  // its ONLY record. A bono visit is not a billing event: the money came in
+  // when the bono was bought, so raising a second invoice here and settling it
+  // from a credit balance counted the same money twice (once at the sale, once
+  // per visit), which inflated both revenue reports and the patient's own
+  // balance. See 0155_package_sessions.sql, which said this table is where a
+  // covered visit belongs, and 0161, which retired the parallel credit.
   //
   // patient_id is the person in the chair, not the bono's owner: on a family
-  // bono the visit belongs to whoever took it, even though the credit comes
-  // off the owner's account above. used_at is the appointment's own time, so
-  // a session logged late still lands on the day of the visit.
+  // bono the visit belongs to whoever took it, even though the sessions come
+  // off the owner's bono. used_at is the appointment's own time, so a session
+  // logged late still lands on the day of the visit.
   const { data: appt } = await supabase.from('appointments').select('starts_at').eq('id', props.appointmentId).maybeSingle()
   await supabase.from('package_sessions').insert({
     account_id: store.accountId!,
@@ -287,48 +301,42 @@ async function usePackageSession(pkg: { id: string; package_name: string; sessio
     used_at: appt?.starts_at ?? new Date().toISOString(),
   })
 
-  // A package session spends real credit -- a payment (method 'credit')
-  // plus a matching negative account_credits row, same compound pattern as
-  // "Credit on account" below. Previously this just flipped the invoice to
-  // 'paid' with no payment behind it at all, which silently broke
-  // balanceCents (paid never caught up to invoiced) for every
-  // package-covered visit.
-  const remainingCents = invoice.value.total_cents - paidCents.value
-  if (remainingCents > 0) {
-    await supabase.from('payments').insert({
-      account_id: store.accountId!,
-      invoice_id: invoice.value.id,
-      amount_cents: remainingCents,
-      method: 'credit',
-    })
-    // The credit comes off the bono OWNER's account, not the patient in the
-    // chair. On a family bono those are different people: the money was paid
-    // once by whoever bought it, and a relative drawing a session spends that,
-    // not credit of their own. Charging the visitor put Grace Valencia at
-    // -40 EUR -- a debt invented out of a session her family had already paid
-    // for -- while the bono owner's credit was never drawn down.
-    await supabase.from('account_credits').insert({
-      account_id: store.accountId!,
-      patient_id: bono.patient_id,
-      amount_cents: -remainingCents,
-      reason: `Package session: ${bono.package_name}`,
-      invoice_id: invoice.value.id,
-      created_by: store.teamMember?.id ?? null,
-    })
+  // Now dispose of the invoice ensureInvoice() already raised. It is created
+  // eagerly the moment this tab opens -- before anyone has said how the visit
+  // will be paid -- so by the time the bono is chosen it exists and is wrong.
+  //
+  // Extras (a product, an added service: the lines carrying a service_id) are
+  // real money owed on top of the bono, so those keep their invoice. Only the
+  // auto-created visit line goes, since the bono covers the visit itself.
+  const extraLines = lineItems.value.filter((l) => l.service_id)
+  const baseLine = lineItems.value.find((l) => !l.service_id)
+
+  if (extraLines.length === 0 && payments.value.length === 0) {
+    // Nothing chargeable and nothing collected: the invoice should never have
+    // existed. Deleting is safe here precisely because there are no payments --
+    // payments cascade on invoice delete, so this branch must stay guarded on
+    // payments being empty or it would destroy real money records.
+    await supabase.from('invoices').delete().eq('id', invoice.value.id)
+    invoice.value = null
+    lineItems.value = []
+  } else {
+    // Something stays billable. Drop the covered visit line and reprice, so
+    // the patient is charged for the extras only.
+    if (baseLine) {
+      await supabase.from('invoice_line_items').delete().eq('id', baseLine.id)
+      lineItems.value = lineItems.value.filter((l) => l.id !== baseLine.id)
+    }
+    const totalCents = lineItems.value.reduce((sum, l) => sum + l.price_cents * l.quantity, 0)
+    await supabase.from('invoices').update({ total_cents: totalCents }).eq('id', invoice.value.id)
+    invoice.value.total_cents = totalCents
   }
-  await supabase.from('invoices').update({ status: 'paid' }).eq('id', invoice.value.id)
-  // Mirrors recordPayment()'s full-payment side effect: a package session
-  // covers the visit, so completing it works the same as taking cash/card --
-  // including the same auto-send-if-enabled behavior below.
+
+  // Completing the visit is unchanged -- it happened, whatever paid for it.
+  // No 'invoice.paid' event and no auto-send: with the visit covered by the
+  // bono there is either no invoice at all, or one still open for the extras.
   await supabase.from('appointments').update({ status: 'completed' }).eq('id', props.appointmentId)
   emit('completed')
-  fire('invoice.paid', { patientId: props.patientId, appointmentId: props.appointmentId, invoiceId: invoice.value.id })
   fire('appointment.completed', { patientId: props.patientId, appointmentId: props.appointmentId })
-
-  const { data: patientForSend } = await supabase.from('patients').select('invoice_email_enabled, email').eq('id', props.patientId).maybeSingle()
-  if (patientForSend?.invoice_email_enabled && patientForSend.email) {
-    useStaffFetch(`/api/invoices/${invoice.value.id}/send`, { method: 'POST' }).catch(() => {})
-  }
 
   savingPayment.value = false
   await loadInvoice()
@@ -439,6 +447,17 @@ async function recordPayment() {
       {{ t("This appointment hasn't happened yet — no invoice until it does.", 'Esta cita todavía no ha ocurrido: no habrá factura hasta entonces.') }}
     </p>
     <p v-else-if="!invoice && !can('billing_access')" class="text-ink-faint">{{ t('No invoice for this appointment yet.', 'Todavía no hay factura para esta cita.') }}</p>
+    <!-- Covered by a bono and nothing extra was added, so there is no invoice
+    to show. Say so explicitly: an empty panel reads as something failing. -->
+    <div v-else-if="!invoice && packageCoverage" class="rounded-card border border-line bg-surface p-3">
+      <p class="text-[13px] font-medium text-ink-700">
+        {{ t('Covered by', 'Cubierta por') }} {{ packageCoverage.packageName || t('a bono', 'un bono') }}
+      </p>
+      <p class="mt-0.5 text-[12.5px] text-ink-muted2">
+        {{ t('Worth', 'Valor') }} €{{ (packageCoverage.amountCents / 100).toFixed(2) }} —
+        {{ t('already paid when the bono was bought, so there is no invoice for this visit.', 'ya pagada al comprar el bono, por lo que no hay factura para esta visita.') }}
+      </p>
+    </div>
     <div v-else-if="invoice" class="rounded-card border border-line bg-surface p-3">
       <div class="flex items-center justify-between">
         <NuxtLink :to="`/billing/${invoice.id}`" class="font-medium text-brand-text hover:text-brand-hover">{{ invoice.invoice_number }}</NuxtLink>

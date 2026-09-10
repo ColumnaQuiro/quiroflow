@@ -342,11 +342,14 @@ async function packageSessionEffects(opts: { patientId: string; packagePurchaseI
   const appointments = unwrap(await admin.from('appointments').select('id, status').eq('patient_id', patientId))
   const invoices = unwrap(await admin.from('invoices').select('id, status, total_cents, appointment_id').eq('patient_id', patientId))
   const credits = unwrap(await admin.from('account_credits').select('amount_cents, reason').eq('patient_id', patientId))
+  const sessions = unwrap(
+    await admin.from('package_sessions').select('amount_cents, appointment_id, package_purchase_id').eq('patient_id', patientId),
+  )
   const invoiceIds = (invoices as { id: string }[]).map((i) => i.id)
   const payments = invoiceIds.length
     ? unwrap(await admin.from('payments').select('amount_cents, method, invoice_id').in('invoice_id', invoiceIds))
     : []
-  return { purchase, appointments, invoices, credits, payments }
+  return { purchase, appointments, invoices, credits, payments, sessions }
 }
 
 async function createWhatsappMessage(opts: {

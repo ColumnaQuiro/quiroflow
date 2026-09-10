@@ -1,9 +1,9 @@
 describe('Logging a bono session', () => {
-  it('records a completed visit billed at the bono rate, and draws the credit down', () => {
+  it('records a completed visit against the bono, and bills nothing for it', () => {
     cy.seedStaffAccount().then((account) => {
       cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Bruno', lastName: 'Bonos' }).then((patient: any) => {
-        // 12 sessions at €528 => €44 a session, the rate the visit should be
-        // billed at (not any appointment type's walk-in price).
+        // 12 sessions at €528 => €44 a session. That is what the visit is
+        // WORTH against the bono -- it is recorded, not charged.
         cy.task('db:createPackagePurchase', {
           accountId: account.accountId,
           patientId: patient.id,
@@ -25,26 +25,25 @@ describe('Logging a bono session', () => {
           // The counter is the visible half of the change...
           cy.contains('1/12 used', { timeout: 15000 }).should('be.visible')
 
-          // ...and this is the half that used to be missing entirely: a
-          // completed visit, an invoice at the per-session rate, a payment
-          // against it, and the matching credit debit.
+          // ...and this is the rest of it: the visit exists as a completed
+          // appointment and a package_sessions row, and NOTHING is billed.
+          // The patient paid for this visit when they bought the bono, so an
+          // invoice here would charge them a second time for it -- which is
+          // exactly what this used to do.
           cy.task('db:packageSessionEffects', { patientId: patient.id, packagePurchaseId: purchase.id }).then((eff: any) => {
             expect(eff.purchase.sessions_used, 'sessions used').to.eq(1)
 
             expect(eff.appointments, 'one appointment created').to.have.length(1)
             expect(eff.appointments[0].status, 'appointment status').to.eq('completed')
 
-            expect(eff.invoices, 'one invoice created').to.have.length(1)
-            expect(eff.invoices[0].total_cents, 'invoiced at the bono rate').to.eq(4400)
-            expect(eff.invoices[0].status, 'invoice status').to.eq('paid')
-            expect(eff.invoices[0].appointment_id, 'invoice linked to the visit').to.eq(eff.appointments[0].id)
+            expect(eff.sessions, 'the visit recorded on the bono').to.have.length(1)
+            expect(eff.sessions[0].amount_cents, 'worth the bono rate').to.eq(4400)
+            expect(eff.sessions[0].package_purchase_id, 'against this bono').to.eq(purchase.id)
+            expect(eff.sessions[0].appointment_id, 'linked to the visit').to.eq(eff.appointments[0].id)
 
-            expect(eff.payments, 'one payment recorded').to.have.length(1)
-            expect(eff.payments[0].amount_cents, 'payment amount').to.eq(4400)
-            expect(eff.payments[0].method, 'paid from credit').to.eq('credit')
-
-            const sessionDebits = eff.credits.filter((c: any) => c.amount_cents === -4400)
-            expect(sessionDebits, 'credit drawn down by the session').to.have.length(1)
+            expect(eff.invoices, 'no invoice raised for a covered visit').to.have.length(0)
+            expect(eff.payments, 'no payment recorded').to.have.length(0)
+            expect(eff.credits, 'no account credit written either way').to.have.length(0)
           })
         })
       })

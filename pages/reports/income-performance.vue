@@ -27,9 +27,15 @@ async function load() {
 
   const [p, inv, tm] = await Promise.all([
     fetchAllRows<PaymentRow>((f, t) =>
-      supabase.from('payments').select('amount_cents, paid_at, invoice_id').gte('paid_at', from.toISOString()).lte('paid_at', to.toISOString()).range(f, t),
+      supabase
+        .from('payments')
+        .select('amount_cents, paid_at, invoice_id, invoices!inner(status)')
+        .neq('invoices.status', 'void')
+        .gte('paid_at', from.toISOString())
+        .lte('paid_at', to.toISOString())
+        .range(f, t),
     ),
-    fetchAllRows<InvoiceRow>((f, t) => supabase.from('invoices').select('id, appointment_id').gte('created_at', from.toISOString()).lte('created_at', to.toISOString()).range(f, t)),
+    fetchAllRows<InvoiceRow>((f, t) => supabase.from('invoices').select('id, appointment_id').neq('status', 'void').gte('created_at', from.toISOString()).lte('created_at', to.toISOString()).range(f, t)),
     supabase.from('team_members').select('id, full_name, color').then((r) => r.data ?? []),
   ])
   payments.value = p

@@ -47,7 +47,8 @@ async function load() {
 
   const { data: p } = await supabase
     .from('payments')
-    .select('id, amount_cents, method, paid_at, invoice_id')
+    .select('id, amount_cents, method, paid_at, invoice_id, invoices!inner(status)')
+    .neq('invoices.status', 'void')
     .gte('paid_at', from.toISOString())
     .lte('paid_at', to.toISOString())
     .order('paid_at')

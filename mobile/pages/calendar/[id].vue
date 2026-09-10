@@ -111,16 +111,52 @@ async function openBilling() {
 
 async function usePackageSession(pkg: { id: string; package_name: string; sessions_used: number; sessions_total: number; price_cents: number }) {
   if (pkg.sessions_used >= pkg.sessions_total || !invoice.value || !context.value || !appointment.value) return
+  // This visit is already settled -- front desk may have billed it from the
+  // web Billing tab while this page was still open. Spending a session here
+  // too would burn a real session from the bono for a visit that isn't
+  // taking one: the invoice is already paid, so there is nothing left to
+  // charge, and this used to increment sessions_used anyway with no payment,
+  // no credit, and no package_sessions row behind it -- a session vanishing
+  // with no trace.
+  if (invoice.value.status === 'paid') {
+    error.value = 'This visit has already been billed.'
+    return
+  }
   error.value = ''
   saving.value = true
   try {
-    await supabase.from('package_purchases').update({ sessions_used: pkg.sessions_used + 1 } as never).eq('id', pkg.id)
+    // Re-read the bono and claim the session with a compare-and-set, the
+    // same protection AppointmentBillingTab.usePackageSession() uses: two
+    // devices billing the same visit (front desk on web, practitioner here)
+    // must not both succeed.
+    const { data: bono } = await supabase
+      .from('package_purchases')
+      .select('id, package_name, sessions_used, sessions_total, price_cents')
+      .eq('id', pkg.id)
+      .maybeSingle()
+    if (!bono || bono.sessions_used >= bono.sessions_total) {
+      error.value = 'That bono has no sessions left.'
+      saving.value = false
+      return
+    }
+    const { data: claimed } = await supabase
+      .from('package_purchases')
+      .update({ sessions_used: bono.sessions_used + 1 } as never)
+      .eq('id', bono.id)
+      .eq('sessions_used', bono.sessions_used)
+      .select('id')
+      .maybeSingle()
+    if (!claimed) {
+      error.value = 'Someone just used a session from this bono. Try again.'
+      saving.value = false
+      return
+    }
 
     // Same rule as the desktop Billing tab: a package-covered visit is
     // worth the bono's own per-session value, not this appointment type's
     // standalone price -- correct the auto-created visit line item (not
     // any separately added services) before totalling.
-    const perSessionCents = Math.round(pkg.price_cents / pkg.sessions_total)
+    const perSessionCents = Math.round(bono.price_cents / bono.sessions_total)
     const baseLine = lineItems.value.find((l) => !l.service_id)
     if (baseLine && baseLine.price_cents !== perSessionCents) {
       await supabase.from('invoice_line_items').update({ price_cents: perSessionCents } as never).eq('id', baseLine.id)
@@ -129,6 +165,18 @@ async function usePackageSession(pkg: { id: string; package_name: string; sessio
       await supabase.from('invoices').update({ total_cents: totalCents } as never).eq('id', invoice.value.id)
       invoice.value.total_cents = totalCents
     }
+
+    // The visit itself, on the bono's own history -- same as the desktop
+    // AppointmentBillingTab, so a session spent from here shows up in the
+    // Billing tab's package history too, not just as a silent counter bump.
+    await supabase.from('package_sessions').insert({
+      account_id: context.value.accountId,
+      patient_id: appointment.value.patient_id,
+      package_purchase_id: bono.id,
+      appointment_id: appointmentId,
+      amount_cents: perSessionCents,
+      used_at: appointment.value.starts_at,
+    } as never)
 
     const remainingCents = invoice.value.total_cents - paidCents.value
     if (remainingCents > 0) {
@@ -142,15 +190,16 @@ async function usePackageSession(pkg: { id: string; package_name: string; sessio
         account_id: context.value.accountId,
         patient_id: appointment.value.patient_id,
         amount_cents: -remainingCents,
-        reason: `Package session: ${pkg.package_name}`,
+        reason: `Package session: ${bono.package_name}`,
         invoice_id: invoice.value.id,
       } as never)
     }
 
+    const wasCompleted = appointment.value.status === 'completed'
     await supabase.from('invoices').update({ status: 'paid' } as never).eq('id', invoice.value.id)
     await supabase.from('appointments').update({ status: 'completed' } as never).eq('id', appointmentId)
     fire('invoice.paid', { patientId: appointment.value.patient_id, appointmentId, invoiceId: invoice.value.id })
-    fire('appointment.completed', { patientId: appointment.value.patient_id, appointmentId })
+    if (!wasCompleted) fire('appointment.completed', { patientId: appointment.value.patient_id, appointmentId })
     await loadAppointment()
 
     const { data: pays } = await supabase.from('payments').select('id, amount_cents, method, paid_at').eq('invoice_id', invoice.value.id).order('paid_at', { ascending: false })

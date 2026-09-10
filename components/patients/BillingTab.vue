@@ -21,6 +21,12 @@ interface PackagePurchaseRow {
   price_cents: number
   purchased_at: string
   invoice_id: string | null
+  // Set only for a bono shared TO this patient (they're a beneficiary, not
+  // the owner) -- see loadPackages(). Owner-only actions (Share, Delete,
+  // collecting payment against the owner's own invoice) are hidden for
+  // these; only using a session is something a beneficiary can do too.
+  shared?: boolean
+  ownerName?: string
 }
 interface PatientMembershipRow {
   id: string
@@ -434,14 +440,34 @@ async function loadLedger() {
 
 async function loadPackages() {
   packagesLoading.value = true
-  const [{ data: pkgPurchases }, { data: sch }] = await Promise.all([
+  // A patient's own "Packages / bonos" card previously only ever showed
+  // bonos THEY bought -- a bono shared to them (package_purchase_shares)
+  // never appeared here at all, even though this same card is exactly
+  // where a front-desk staff member would look to use a session from it.
+  // Mirrors usePatientFinancialSummary's own shares query/merge, kept
+  // separate here since this card additionally needs invoice_id (for
+  // "Take payment") and purchased_at (for sort order), neither of which
+  // that composable's activePackages carries.
+  const [{ data: pkgPurchases }, { data: sch }, { data: shares }] = await Promise.all([
     supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used, price_cents, purchased_at, invoice_id').eq('patient_id', props.patientId).order('purchased_at', { ascending: false }),
     supabase
       .from('payment_schedules')
       .select('id, package_purchase_id, patient_membership_id, interval, interval_count, installments_total, installments_paid, status')
       .eq('patient_id', props.patientId),
+    supabase
+      .from('package_purchase_shares')
+      .select('package_purchases(id, package_name, sessions_total, sessions_used, price_cents, purchased_at, invoice_id, patients(first_name, last_name))')
+      .eq('patient_id', props.patientId),
   ])
-  purchases.value = pkgPurchases ?? []
+  const sharedPurchases = (shares ?? [])
+    .map((s) => s.package_purchases)
+    .filter((p): p is NonNullable<typeof p> => p !== null)
+    .map(({ patients: owner, ...p }) => ({
+      ...p,
+      shared: true,
+      ownerName: owner ? `${owner.first_name} ${owner.last_name ?? ''}`.trim() : undefined,
+    }))
+  purchases.value = [...(pkgPurchases ?? []), ...sharedPurchases]
   schedules.value = sch ?? []
   if (schedules.value.length > 0) {
     const { data: events } = await supabase
@@ -1270,7 +1296,8 @@ function money(cents: number) {
             <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
               <div class="flex min-w-0 items-center gap-2">
                 <p class="truncate text-[13.5px] font-semibold text-ink-800">{{ p.package_name }}</p>
-                <UiPill v-if="packageOwedCents(p) > 0" tone="danger">{{ money(packageOwedCents(p)) }} {{ t('owed', 'pendiente') }}</UiPill>
+                <UiPill v-if="p.shared" tone="info">{{ p.ownerName ? t(`Shared by ${p.ownerName}`, `Compartido por ${p.ownerName}`) : t('Shared', 'Compartido') }}</UiPill>
+                <UiPill v-else-if="packageOwedCents(p) > 0" tone="danger">{{ money(packageOwedCents(p)) }} {{ t('owed', 'pendiente') }}</UiPill>
                 <UiPill v-else tone="success">{{ t('Paid', 'Pagado') }}</UiPill>
               </div>
               <p class="shrink-0 text-[12px] text-ink-muted2">
@@ -1285,11 +1312,13 @@ function money(cents: number) {
 
             <p class="mt-2 text-[11.5px] text-ink-muted2">
               {{ p.sessions_used }}/{{ p.sessions_total }} {{ t('used', 'usadas') }}
-              <span class="px-1 text-ink-faint3">&middot;</span>
-              <template v-if="packageOwedCents(p) > 0">
-                {{ money(p.price_cents - packageOwedCents(p)) }} {{ t('paid of', 'pagado de') }} {{ money(p.price_cents) }}
+              <template v-if="!p.shared">
+                <span class="px-1 text-ink-faint3">&middot;</span>
+                <template v-if="packageOwedCents(p) > 0">
+                  {{ money(p.price_cents - packageOwedCents(p)) }} {{ t('paid of', 'pagado de') }} {{ money(p.price_cents) }}
+                </template>
+                <template v-else>{{ money(p.price_cents) }}</template>
               </template>
-              <template v-else>{{ money(p.price_cents) }}</template>
             </p>
 
             <!-- One button row with a real hierarchy: the everyday action
@@ -1301,18 +1330,25 @@ function money(cents: number) {
               <UiBtn size="sm" variant="primary" :disabled="p.sessions_used >= p.sessions_total || loggingSessionFor !== null" @click="useSession(p)">
                 {{ loggingSessionFor === p.id ? t('Logging…', 'Registrando…') : t('Log session', 'Registrar sesión') }}
               </UiBtn>
-              <UiBtn v-if="packageOwedCents(p) > 0" size="sm" variant="secondary" @click="collectOnPackage(p)">
-                {{ t('Take payment', 'Cobrar') }}…
-              </UiBtn>
-              <UiBtn size="sm" variant="secondary" @click="toggleLinkPayment(p.id)">
-                {{ t('Link payment', 'Vincular pago') }}{{ linkedPaymentsFor(p).length ? ` (${linkedPaymentsFor(p).length})` : '' }}…
-              </UiBtn>
-              <UiBtn size="sm" variant="secondary" @click="toggleShares(p.id)">
-                {{ t('Share', 'Compartir') }}{{ shares[p.id]?.length ? ` (${shares[p.id].length})` : '' }}…
-              </UiBtn>
-              <UiBtn v-if="can('billing_config')" size="sm" variant="ghost" class="ml-auto hover:text-danger-text" @click="deletePackagePurchase(p)">
-                {{ t('Delete', 'Eliminar') }}
-              </UiBtn>
+              <!-- Everything below manages the PURCHASE itself (its invoice,
+              who it's shared with, deleting it) -- only the owner's own card
+              shows these. A beneficiary viewing a bono shared to them can
+              draw a session from it, same as the owner, but shouldn't see
+              actions that imply they bought or control it. -->
+              <template v-if="!p.shared">
+                <UiBtn v-if="packageOwedCents(p) > 0" size="sm" variant="secondary" @click="collectOnPackage(p)">
+                  {{ t('Take payment', 'Cobrar') }}…
+                </UiBtn>
+                <UiBtn size="sm" variant="secondary" @click="toggleLinkPayment(p.id)">
+                  {{ t('Link payment', 'Vincular pago') }}{{ linkedPaymentsFor(p).length ? ` (${linkedPaymentsFor(p).length})` : '' }}…
+                </UiBtn>
+                <UiBtn size="sm" variant="secondary" @click="toggleShares(p.id)">
+                  {{ t('Share', 'Compartir') }}{{ shares[p.id]?.length ? ` (${shares[p.id].length})` : '' }}…
+                </UiBtn>
+                <UiBtn v-if="can('billing_config')" size="sm" variant="ghost" class="ml-auto hover:text-danger-text" @click="deletePackagePurchase(p)">
+                  {{ t('Delete', 'Eliminar') }}
+                </UiBtn>
+              </template>
             </div>
 
             <div v-if="openSharesPackageId === p.id" class="mt-2.5 rounded-ctl border border-line-divider bg-surface-subtle p-2.5">
@@ -1365,6 +1401,11 @@ function money(cents: number) {
               </p>
             </div>
 
+            <!-- Autopay charges the CURRENT patient's own card to pay off
+            this purchase -- meaningless from a beneficiary's view of a bono
+            they didn't buy, so the whole block (including the "add a card"
+            prompt) is owner-only, same as the button row above. -->
+            <template v-if="!p.shared">
             <div v-if="scheduleForPackage(p.id)" class="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-ctl border border-line-divider bg-surface-subtle px-3 py-2">
               <span class="flex items-center gap-1.5 text-[11.5px] text-ink-600">
                 {{ t('Autopay', 'Pago automático') }} <UiPill :tone="scheduleTone[scheduleForPackage(p.id)!.status] ?? 'neutral'">{{ scheduleForPackage(p.id)!.status }}</UiPill>
@@ -1399,6 +1440,7 @@ function money(cents: number) {
               <span class="text-[11.5px] text-ink-muted2">{{ t("No card on file -- add one to enable autopay for the remaining balance.", 'No hay tarjeta registrada; añade una para habilitar el pago automático del saldo restante.') }}</span>
               <UiBtn size="sm" variant="secondary" @click="showCardModal = true">{{ t('Add card', 'Añadir tarjeta') }}</UiBtn>
             </div>
+            </template>
           </div>
           <p v-if="purchases.length === 0" class="rounded-ctl border border-dashed border-line-control p-4 text-center text-[12.5px] text-ink-faint">
             {{ t('No packages purchased.', 'No se ha comprado ningún bono.') }}

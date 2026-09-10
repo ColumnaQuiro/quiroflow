@@ -802,12 +802,20 @@ async function sellPackage() {
 // of what was actually charged for it, so claiming a debt would be
 // inventing one. The moment any payment gets linked (however partial),
 // price_cents becomes a reliable total to measure it against.
+// Whether the bono's own invoice is the thing carrying its payments. A void
+// invoice isn't: its payments stop counting towards the bono below, so they
+// have to become linkable instead (see candidatePaymentsFor) -- excluding
+// them from both left them stranded, neither counted nor fixable from the UI.
+function packageInvoiceIsValid(purchase: PackagePurchaseRow): boolean {
+  const invoice = purchase.invoice_id ? invoices.value.find((i) => i.id === purchase.invoice_id) : undefined
+  return !!invoice && invoice.status !== 'void'
+}
+
 function packageOwedCents(purchase: PackagePurchaseRow): number {
   // The bono card and the ledger load independently -- reading payments
   // before that loader lands would flash the full price as unpaid.
   if (ledgerLoading.value) return 0
-  const invoice = purchase.invoice_id ? invoices.value.find((i) => i.id === purchase.invoice_id) : undefined
-  const invoiceIsValid = !!invoice && invoice.status !== 'void'
+  const invoiceIsValid = packageInvoiceIsValid(purchase)
   let paidCents = 0
   let hasAnyLinkedPayment = false
   for (const p of ledgerPayments.value) {
@@ -848,8 +856,14 @@ const linkingPayment = ref(false)
 // and a payment already linked to some other bono shouldn't be offered here
 // (linking is meant to be exclusive -- moving it would silently change what
 // that OTHER bono's own owed/paid figures mean).
+//
+// "Already counted" has to mean the same thing here as in packageOwedCents:
+// once the bono's invoice is void that function stops counting its payments,
+// so hiding them here too left them stranded -- not counted towards the bono
+// and not offerable to link, with no way to attach them from the UI at all.
 function candidatePaymentsFor(purchase: PackagePurchaseRow) {
-  return ledgerPayments.value.filter((p) => !p.package_purchase_id && p.invoice_id !== purchase.invoice_id)
+  const countedViaInvoice = packageInvoiceIsValid(purchase)
+  return ledgerPayments.value.filter((p) => !p.package_purchase_id && !(countedViaInvoice && p.invoice_id === purchase.invoice_id))
 }
 
 function linkedPaymentsFor(purchase: PackagePurchaseRow) {

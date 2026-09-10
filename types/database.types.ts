@@ -4533,6 +4533,10 @@ export type Database = {
         Args: { target_account_id: string }
         Returns: boolean
       }
+      merge_patients: {
+        Args: { p_duplicate_id: string; p_survivor_id: string }
+        Returns: Json
+      }
       my_accessible_invoice_ids: { Args: never; Returns: string[] }
       my_all_calendar_scope_accounts: { Args: never; Returns: string[] }
       my_all_patient_scope_accounts: { Args: never; Returns: string[] }

@@ -49,7 +49,8 @@ async function load() {
 
   const { data: payments } = await supabase
     .from('payments')
-    .select('amount_cents')
+    .select('amount_cents, invoices!inner(status)')
+    .neq('invoices.status', 'void')
     .gte('paid_at', fromDate.toISOString())
     .lte('paid_at', toDate.toISOString())
   paymentsCents.value = (payments ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
@@ -57,6 +58,7 @@ async function load() {
   const { data: invoicesThisWeek } = await supabase
     .from('invoices')
     .select('id')
+    .neq('status', 'void')
     .gte('created_at', fromDate.toISOString())
     .lte('created_at', toDate.toISOString())
   const invoiceIds = (invoicesThisWeek ?? []).map((i) => i.id)

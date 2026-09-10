@@ -806,8 +806,12 @@ async function sellPackage() {
 // invoice isn't: its payments stop counting towards the bono below, so they
 // have to become linkable instead (see candidatePaymentsFor) -- excluding
 // them from both left them stranded, neither counted nor fixable from the UI.
+function packageInvoice(purchase: PackagePurchaseRow) {
+  return purchase.invoice_id ? invoices.value.find((i) => i.id === purchase.invoice_id) : undefined
+}
+
 function packageInvoiceIsValid(purchase: PackagePurchaseRow): boolean {
-  const invoice = purchase.invoice_id ? invoices.value.find((i) => i.id === purchase.invoice_id) : undefined
+  const invoice = packageInvoice(purchase)
   return !!invoice && invoice.status !== 'void'
 }
 
@@ -815,7 +819,8 @@ function packageOwedCents(purchase: PackagePurchaseRow): number {
   // The bono card and the ledger load independently -- reading payments
   // before that loader lands would flash the full price as unpaid.
   if (ledgerLoading.value) return 0
-  const invoiceIsValid = packageInvoiceIsValid(purchase)
+  const invoice = packageInvoice(purchase)
+  const invoiceIsValid = !!invoice && invoice.status !== 'void'
   let paidCents = 0
   let hasAnyLinkedPayment = false
   for (const p of ledgerPayments.value) {
@@ -833,7 +838,7 @@ function packageOwedCents(purchase: PackagePurchaseRow): number {
   // against price_cents claimed the whole price was outstanding -- David
   // Poveda's Bono 14 read "559,00 owed / 0,00 paid of 559,00" against a
   // 301,00 invoice -- and overstated the debt on 84 bonos by 18.647,00.
-  const chargedCents = invoiceIsValid ? invoice!.total_cents : purchase.price_cents
+  const chargedCents = invoice && invoiceIsValid ? invoice.total_cents : purchase.price_cents
   return Math.max(0, chargedCents - paidCents)
 }
 

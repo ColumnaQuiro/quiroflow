@@ -150,7 +150,32 @@ async function markAsPaid() {
   await recordPayment()
 }
 
+// Voiding only flips status -- it deliberately does NOT touch payments, and
+// that asymmetry is why an invoice with money on it must not be voidable.
+// Every total that reads a patient's finances drops a void invoice's debit
+// (usePatientFinancialSummary's .neq('status', 'void'), AccountLedger's
+// debitCents, statementData) but still counts its payments, so voiding a paid
+// invoice leaves the money in with nothing billed against it and inflates the
+// patient's balance by exactly that amount -- silently, forever. Carmen Sanchez
+// Abad read 528 EUR of credit instead of 264 EUR for a month from one such row.
+//
+// Excluding those payments from the totals instead would be the wrong fix: if
+// money really was collected and the charge then cancelled, the clinic really
+// does owe it back and the credit is honest. So the state itself is what has to
+// be unreachable -- refund the payment (which records the money going back out)
+// and void the empty invoice, rather than voiding around the payment.
+const hasPayments = computed(() => payments.value.length > 0)
+
 async function voidInvoice() {
+  if (hasPayments.value) {
+    alert(
+      t(
+        'This invoice has payments recorded against it and cannot be voided. Refund or remove the payments first, then void it.',
+        'Esta factura tiene pagos registrados y no se puede anular. Reembolsa o elimina primero los pagos y después anúlala.',
+      ),
+    )
+    return
+  }
   if (!confirm(t('Void this invoice?', '¿Anular esta factura?'))) return
   await supabase.from('invoices').update({ status: 'void' }).eq('id', invoiceId)
   await load()
@@ -192,7 +217,19 @@ function formatDate(iso: string) {
     <div class="print:hidden">
       <PageHeader :title="invoice ? invoice.invoice_number : t('Invoice', 'Factura')" :meta="invoice ? `${invoice.patients?.first_name ?? ''} ${invoice.patients?.last_name ?? ''}`.trim() : undefined">
         <template v-if="invoice">
-          <UiBtn v-if="invoice.status !== 'void'" variant="ghost" size="sm" @click="voidInvoice">{{ t('Void invoice', 'Anular factura') }}</UiBtn>
+          <!-- Disabled rather than hidden when the invoice has payments: the
+          action still needs to be findable, and the tooltip is what tells
+          staff to refund instead. voidInvoice() re-checks anyway. -->
+          <UiBtn
+            v-if="invoice.status !== 'void'"
+            variant="ghost"
+            size="sm"
+            :disabled="hasPayments"
+            :title="hasPayments ? t('Refund or remove the payments on this invoice before voiding it', 'Reembolsa o elimina los pagos de esta factura antes de anularla') : undefined"
+            @click="voidInvoice"
+          >
+            {{ t('Void invoice', 'Anular factura') }}
+          </UiBtn>
           <UiBtn variant="secondary" @click="backToBilling">&larr; {{ t('Back to billing', 'Volver a facturación') }}</UiBtn>
         </template>
       </PageHeader>

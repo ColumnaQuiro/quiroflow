@@ -56,20 +56,14 @@ interface Candidate {
   sessionsUsed: number
   priceCents: number
   isActive: boolean
-  // What this bono's credit should be: paid minus consumed.
-  targetCreditCents: number
-  // What it carries today, from the bono's own credit rows.
-  attributedCreditCents: number
-  // target - attributed. Negative takes back an over-credit.
-  creditDeltaCents: number
   // What the patient still owes on this bono, from PracticeHub's own
   // `package_balance`. Raised as an unpaid invoice so the debt shows in
   // reports instead of being implied by a PracticeHub column nobody reads.
   owedCents: number
   needsInvoice: boolean
   // True for a package already in package_purchases: applying it adds only
-  // the missing credit and/or invoice, leaving the purchase record alone.
-  creditOnly: boolean
+  // the missing invoice, reference and shares, leaving the purchase alone.
+  repairOnly: boolean
   // Set for an already-imported package so its purchase row can be pointed
   // at the invoice this creates.
   existingPurchaseId: string | null
@@ -80,9 +74,6 @@ interface Candidate {
   // The other patients PracticeHub has subscribed to this bono -- a family
   // bono the whole household draws sessions from. Owner excluded.
   sharedWith: { id: string; name: string }[]
-  // The patient's whole credit balance today, shown so a package repaired
-  // by hand earlier isn't credited a second time here.
-  currentCreditCents: number
   status: 'pending' | 'applied' | 'error'
   errorMessage?: string
 }
@@ -126,13 +117,6 @@ const skippedNoValue = ref(0)
 // bono, and only a hand-written SQL query found them. Anything left over
 // after matching is now reported instead of ignored.
 const unmatchedLocalBonos = ref<{ patientName: string; bono: LocalBono }[]>([])
-// Every account_credits reference already in the ledger. A correction used to
-// be inserted at a fixed `-adjustment` reference, which the unique index on
-// (account_id, external_reference) allows exactly once: the first correction
-// for a bono went in, and any later one -- after the clinic changed the bono
-// in PracticeHub, say -- failed on the duplicate key and the same fix was
-// offered on every run forever. Corrections now take the next free slot.
-const usedCreditRefs = ref(new Set<string>())
 // Bono rows here that stand for the same PracticeHub bono as another row.
 // Decided by counting: when this patient has more rows of a given bono on a
 // given day than PracticeHub has bonos, the surplus is ours, not theirs.
@@ -163,17 +147,6 @@ const duplicateMerges = ref<
   }[]
 >([])
 
-// The bono a credit reference belongs to, whatever suffix it carries:
-// PH-package-12, PH-package-12-adjustment, PH-package-12-adjustment-2 all
-// belong to bono 12. Reading them as one sum is what stops a correction being
-// counted twice or missed.
-// Anchored on the exact forms this importer writes -- PH-package-12,
-// PH-package-12-adjustment, PH-package-12-adjustment-2 -- and nothing else. A
-// looser "starts with PH-package-12" swallowed a hand-written repair
-// (PH-package-479-duplicate-record-adjustment, correcting a duplicate on a
-// different patient record entirely) into bono 479's total, which then read
-// -264 and had the importer offering to hand 440 EUR back.
-const PACKAGE_CREDIT_REF = /^(PH-package-\d+)(?:-adjustment(?:-\d+)?)?$/
 // Raw, untouched sample of what PracticeHub actually returns -- the field
 // mapping above is a guess reverse-engineered from the docs' example
 // response, which has already been wrong twice. Showing this directly
@@ -219,10 +192,14 @@ const showRawSample = ref(false)
 // Caveat worth knowing before a big run: `package_balance` is only as good as
 // PracticeHub's own payment linking. Where their staff took a payment without
 // linking it to the bono (Aurelia Villalba: PH reports 602 outstanding, she
-// actually paid 301) PH under-reports what was paid, so this under-credits.
-// It never over-credits, which is the safer direction, and the reconciliation
+// actually paid 301) PH under-reports what was paid, so this under-reads.
+// It never over-reads, which is the safer direction, and the reconciliation
 // report is where those show up.
-function creditCentsFor(pkg: PHPatientPackage): number {
+//
+// This no longer drives any write. A bono's remaining value lives on the
+// sessions counter alone (0161), so the only thing left to ask of this figure
+// is whether a cancelled bono was ever paid for -- see neverUsedAndEmpty.
+function paidNotConsumedCentsFor(pkg: PHPatientPackage): number {
   const paidMinusConsumed = (pkg.balance ?? 0) + (pkg.package_balance ?? 0)
   return Math.max(0, Math.round(paidMinusConsumed * 100))
 }
@@ -239,7 +216,7 @@ function creditCentsFor(pkg: PHPatientPackage): number {
 //
 // Only ever raised for an ACTIVE bono. A bono PracticeHub deactivated years
 // ago that still reads as unpaid is far more likely to be their staff never
-// having linked the payment (see the caveat on creditCentsFor) than a debt
+// having linked the payment (see the caveat on paidNotConsumedCentsFor) than a debt
 // this clinic is still owed, and inventing receivables against old patients
 // is the one mistake here that reaches the outside world.
 function owedCentsFor(pkg: PHPatientPackage): number {
@@ -253,7 +230,6 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
   candidates.value = []
   unmatchedPatients.value = new Map()
   unmatchedLocalBonos.value = []
-  usedCreditRefs.value = new Set()
   duplicateMerges.value = []
   phDuplicateBonos.value = []
   voidBonos.value = []
@@ -446,34 +422,29 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       if (!data || data.length < PAGE_SIZE) break
     }
 
-    // How much credit each bono is already carrying, so a re-run corrects it
-    // to the right figure instead of piling another deposit on top.
+    // Which bonos have credit rows pointing at them. Nothing here writes credit
+    // any more, but the duplicate merge below DELETES a redundant bono row, and
+    // deleting one the ledger still references would strand that credit. 0161
+    // offsets the retired bono credit rather than deleting it, so those rows
+    // are still there to be stranded and this guard still has work to do.
     //
-    // Two ways in, matching the two ways a bono is identified above: credit
-    // this importer wrote carries the bono's reference, and credit from the
-    // hand backfill carries none but was backdated to the purchase day. Only
-    // positive rows are counted on the day key -- a negative row is a session
-    // drawn down later, which is real consumption and must survive the
-    // correction rather than be treated as credit that was never deposited.
+    // Anchored on the exact forms this importer used to write -- PH-package-12,
+    // PH-package-12-adjustment, PH-package-12-adjustment-2 -- and nothing else.
+    // A looser "starts with PH-package-12" once swallowed a hand-written repair
+    // (PH-package-479-duplicate-record-adjustment, correcting a duplicate on a
+    // different patient record entirely) into bono 479's total.
+    const PACKAGE_CREDIT_REF = /^(PH-package-\d+)(?:-adjustment(?:-\d+)?)?$/
     phase.value = t('Checking existing credit…', 'Comprobando el crédito existente…')
     const creditCentsByPackageRef = new Map<string, number>()
-    const depositCentsByPatientDay = new Map<string, number>()
-    const creditCentsByPatient = new Map<string, number>()
     for (let page = 0; ; page++) {
       const { data } = await supabase
         .from('account_credits')
-        .select('patient_id, amount_cents, external_reference, created_at')
+        .select('amount_cents, external_reference')
+        .not('external_reference', 'is', null)
         .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
       for (const row of data ?? []) {
-        creditCentsByPatient.set(row.patient_id, (creditCentsByPatient.get(row.patient_id) ?? 0) + row.amount_cents)
-        if (row.external_reference) {
-          usedCreditRefs.value.add(row.external_reference)
-          const base = PACKAGE_CREDIT_REF.exec(row.external_reference)?.[1]
-          if (base) creditCentsByPackageRef.set(base, (creditCentsByPackageRef.get(base) ?? 0) + row.amount_cents)
-        } else if (row.amount_cents > 0) {
-          const key = `${row.patient_id}|${String(row.created_at).slice(0, 10)}`
-          depositCentsByPatientDay.set(key, (depositCentsByPatientDay.get(key) ?? 0) + row.amount_cents)
-        }
+        const base = row.external_reference ? PACKAGE_CREDIT_REF.exec(row.external_reference)?.[1] : undefined
+        if (base) creditCentsByPackageRef.set(base, (creditCentsByPackageRef.get(base) ?? 0) + row.amount_cents)
       }
       if (!data || data.length < PAGE_SIZE) break
     }
@@ -520,9 +491,6 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       return best.id
     }
 
-    // Credit each patient will hold as the preview is built up, so a second
-    // bono for the same patient corrects against the first one's effect.
-    const runningCreditByPatient = new Map<string, number>()
     // Deterministic order: whichever bono PracticeHub created first claims
     // the local row that stands for it, so a re-run reaches the same answer.
     const sortedPackages = [...phPackages].sort((a, b) => (a.created < b.created ? -1 : a.created > b.created ? 1 : a.id - b.id))
@@ -585,47 +553,8 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       phBonoCountByShape.set(shapeKey, phShapeHasUsedBono.has(shapeKey) ? phShapeUsedCount.get(shapeKey) ?? 0 : total)
     }
 
-    const groupTargetCents = new Map<string, number>()
-    const groupAttributedCents = new Map<string, number>()
-    const groupLeadPackageId = new Map<string, number>()
-    const groupFallbackLeadPackageId = new Map<string, number>()
-    for (const pkg of sortedPackages) {
-      const phId = patientIdOf(pkg)
-      const patient = ourPatientForPh(phId)
-      if (!patient) continue
-      const key = `${patient.id}|${pkg.created.slice(0, 10)}`
-      const ref = `PH-package-${pkg.id}`
-      // Credit counts whether or not the bono is imported. A duplicate that
-      // an earlier run did import has real rows in the ledger -- a deposit, a
-      // correction, or both -- and they are still moving this patient's
-      // balance. Leaving them out of the sum would have the next run "correct"
-      // a claw-back that already happened and take the same money twice.
-      groupAttributedCents.set(key, (groupAttributedCents.get(key) ?? 0) + (creditCentsByPackageRef.get(ref) ?? 0))
-      // The target is what the patient should hold, so it counts only the
-      // bonos actually being imported.
-      if (isPhDuplicate(patient.id, pkg)) continue
-      groupTargetCents.set(key, (groupTargetCents.get(key) ?? 0) + (pkg.active === 1 ? creditCentsFor(pkg) : 0))
-      // Prefer a lead the main loop will actually reach. A spent bono with
-      // nothing owed is skipped below, and a skipped lead would take its whole
-      // day's correction with it; the fallback covers a day where every bono
-      // is spent but a deposit is still sitting against it, which is an
-      // over-credit that has to be clawed back like any other.
-      const leadable = pkg.active !== 1 || (pkg.visits_left ?? 0) > 0 || (pkg.balance ?? 0) > 0 || owedCentsFor(pkg) > 0
-      if (leadable) {
-        if (!groupLeadPackageId.has(key)) groupLeadPackageId.set(key, pkg.id)
-      } else if (!groupFallbackLeadPackageId.has(key)) {
-        groupFallbackLeadPackageId.set(key, pkg.id)
-      }
-    }
-    for (const [key, id] of groupFallbackLeadPackageId) if (!groupLeadPackageId.has(key)) groupLeadPackageId.set(key, id)
-    // The day's backfilled deposit belongs to the day, so it is added once.
-    for (const key of groupTargetCents.keys()) {
-      groupAttributedCents.set(key, (groupAttributedCents.get(key) ?? 0) + (depositCentsByPatientDay.get(key) ?? 0))
-    }
-
     for (const pkg of sortedPackages) {
       const externalRef = `PH-package-${pkg.id}`
-      const adjustmentRef = `${externalRef}-adjustment`
       const alreadyInvoiced = invoicedExternalRefs.has(externalRef)
 
       // Closed packages are imported too, as history. Skipping them is what
@@ -695,14 +624,16 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       // The discriminator is deactivated AND untouched. A bono that was
       // genuinely spent is deactivated too, but has sessions used against it.
       // One bought and not yet started is still active. And a cancelled bono
-      // the patient had already PAID for carries credit they are owed
-      // (balance + package_balance > 0), so requiring zero credit keeps their
-      // money on the account instead of quietly dropping it -- Pablo's two
-      // net to zero, 528 + -528, because nothing was ever paid on them.
+      // the patient had already PAID for is money they are owed
+      // (balance + package_balance > 0), so requiring zero there keeps it
+      // visible instead of quietly dropping it -- Pablo's two net to zero,
+      // 528 + -528, because nothing was ever paid on them. That case wants a
+      // refund or a goodwill balance decided by a human, which is why it is
+      // surfaced rather than resolved here.
       const neverUsedAndEmpty =
         !isActive &&
         sessionsUsedOfPkg === 0 &&
-        creditCentsFor(pkg) === 0 &&
+        paidNotConsumedCentsFor(pkg) === 0 &&
         sharedPatientIdsOf(pkg, phPatientId).length === 0
       if (neverUsedAndEmpty) {
         voidBonos.value.push({ patientName: ourPatient.name, packageName, priceCents, phPackageId: pkg.id })
@@ -713,17 +644,14 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       // left is the normal case, not a reason to skip it. Owing money counts
       // as something left to do even with no visits left: a bono used to the
       // last session that was never paid off is exactly the debt this is meant
-      // to surface, and dropping it here would silently forgive it. Nor is a
-      // bono dropped while it is the one carrying its day's credit correction.
+      // to surface, and dropping it here would silently forgive it.
       if (isActive) {
         // Household members count as something left to record even on a bono
         // with no visits and nothing owed: the share is how the rest of the
         // family reaches it, and skipping the bono skips them with it.
         const hasRemainingValue =
           (pkg.visits_left ?? 0) > 0 || (pkg.balance ?? 0) > 0 || owedCentsFor(pkg) > 0 || sharedPatientIdsOf(pkg, phPatientId).length > 0
-        const carriesDayCorrection =
-          groupLeadPackageId.get(dayKey) === pkg.id && (groupTargetCents.get(dayKey) ?? 0) !== (groupAttributedCents.get(dayKey) ?? 0)
-        if (!hasRemainingValue && !carriesDayCorrection) {
+        if (!hasRemainingValue) {
           skippedNoValue.value++
           continue
         }
@@ -735,69 +663,18 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
 
       let existingPurchaseId = purchaseByRef.get(externalRef) ?? null
       if (existingPurchaseId === null) existingPurchaseId = claimPurchaseForDay(dayKey, priceCents, sessionsUsed)
-      // A deactivated package is closed: whatever visits it had left are no
-      // longer claimable, so it carries no credit. Granting one would invent
-      // money the clinic never owed.
-      const targetCreditCents = isActive ? creditCentsFor(pkg) : 0
       const owedCents = isActive ? owedCentsFor(pkg) : 0
       const needsInvoice = owedCents > 0 && !alreadyInvoiced && !(existingPurchaseId !== null && purchaseHasInvoice.has(existingPurchaseId))
 
-      // What this bono already carries. Credit written against the bono's own
-      // reference is exact; otherwise fall back to the deposits backdated to
-      // its purchase day, which is what the hand backfill left behind. Never
-      // both: a bono with its own reference has already been accounted for,
-      // and adding the day figure on top would double-count it.
-      // Everything this bono already carries, added up -- never one source
-      // instead of another. These are three different rows that can all exist
-      // at once for the same bono, and reading only one of them is what stopped
-      // the tool converging: a corrected backfill bono has a `-adjustment` row
-      // but no row under its plain reference, so the `has(reference)` test that
-      // used to pick between the branches failed, the original deposit was read
-      // on its own, and the correction sitting next to it was ignored. Every
-      // re-run then proposed the same claw-back again. It never double-charged
-      // anyone -- the unique index on (account_id, external_reference) refuses
-      // the second write -- but the front desk was shown 117 fixes that were
-      // all already applied.
-      //
-      //   deposit  +360   backfilled, no reference, backdated to the purchase
-      //   adjust   -360   the correction this tool wrote
-      //   -------------
-      //   carries     0   which is the target, so there is nothing left to do
-      //
-      // The deposit is still consumed on read, so a second bono on the same day
-      // starts from zero instead of taking the same money back again.
-      // The day's whole correction rides on its first bono; the others carry
-      // no credit row, so they show nothing to reconcile.
-      const isGroupLead = groupLeadPackageId.get(dayKey) === pkg.id
-      const attributedCreditCents = isGroupLead ? groupAttributedCents.get(dayKey) ?? 0 : 0
-
-      // The correction. Positive tops a bono up to what was paid, negative
-      // takes back credit the old full-entitlement rule handed over: 178
-      // bonos were backfilled at the value of the sessions remaining rather
-      // than the money received, so every part-payer among them is holding
-      // credit for sessions nobody has paid for yet.
-      let creditDeltaCents = isGroupLead ? (groupTargetCents.get(dayKey) ?? 0) - attributedCreditCents : 0
-
-      // Backstop, independent of the matching above: a patient cannot hold
-      // negative credit. Whatever they owe is an invoice, never a negative
-      // balance, so a claw-back is capped at what they actually hold. If the
-      // matching is ever wrong again this bounds the damage to "no credit"
-      // instead of a debt invented in the ledger, and running per patient
-      // means two bonos correcting the same patient in one pass see each
-      // other's effect rather than both measuring from the starting figure.
-      const patientCreditNow = runningCreditByPatient.get(ourPatient.id) ?? creditCentsByPatient.get(ourPatient.id) ?? 0
-      if (creditDeltaCents < 0 && patientCreditNow + creditDeltaCents < 0) creditDeltaCents = -patientCreditNow
-      runningCreditByPatient.set(ourPatient.id, patientCreditNow + creditDeltaCents)
-
-      // Nothing left to do: the credit is already right and either the bono
-      // is settled or its debt is on an invoice.
       // Only the members not already attached. A bono whose whole household
       // is recorded needs nothing; one missing a member needs just that member.
       const missingShares =
         existingPurchaseId === null ? sharedWith : sharedWith.filter((m) => !purchaseHasShares.has(`${existingPurchaseId}|${m.id}`))
       const needsShares = missingShares.length > 0
       const needsReferenceStamp = existingPurchaseId !== null && purchaseNeedsReference.has(existingPurchaseId)
-      if (existingPurchaseId && creditDeltaCents === 0 && !needsInvoice && !needsShares && !needsReferenceStamp) continue
+      // Nothing left to do: the bono is here, and either it is settled or its
+      // debt is already on an invoice.
+      if (existingPurchaseId && !needsInvoice && !needsShares && !needsReferenceStamp) continue
 
       built.push({
         phPackageId: pkg.id,
@@ -815,16 +692,12 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         sessionsUsed,
         priceCents,
         isActive,
-        targetCreditCents,
-        attributedCreditCents,
-        creditDeltaCents,
         owedCents,
         needsInvoice,
-        creditOnly: existingPurchaseId !== null,
+        repairOnly: existingPurchaseId !== null,
         existingPurchaseId,
         needsReferenceStamp,
         sharedWith: missingShares,
-        currentCreditCents: creditCentsByPatient.get(ourPatient.id) ?? 0,
         status: 'pending',
       })
     }
@@ -924,19 +797,6 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
   }
 }
 
-// The first correction slot this bono has not used. Reading sums every
-// reference belonging to the bono whatever its suffix, so a numbered
-// correction is read back exactly like the first one -- and unlike a fixed
-// `-adjustment`, it can always be written.
-function nextAdjustmentRef(externalRef: string): string {
-  const first = `${externalRef}-adjustment`
-  if (!usedCreditRefs.value.has(first)) return first
-  for (let n = 2; ; n++) {
-    const ref = `${first}-${n}`
-    if (!usedCreditRefs.value.has(ref)) return ref
-  }
-}
-
 async function applyFixes() {
   stage.value = 'applying'
   const toApply = candidates.value.filter((c) => c.status === 'pending')
@@ -978,8 +838,8 @@ async function applyFixes() {
     let purchaseId = c.existingPurchaseId
 
     // A repair leaves the existing purchase row untouched and only adds the
-    // credit and invoice it never got.
-    if (!c.creditOnly) {
+    // invoice, reference and shares it never got.
+    if (!c.repairOnly) {
       const { data: purchase, error: purchaseError } = await supabase
         .from('package_purchases')
         .insert({
@@ -1004,34 +864,18 @@ async function applyFixes() {
       purchaseId = purchase.id
     }
 
-    if (c.creditDeltaCents !== 0) {
-      // A first deposit carries the bono's reference; a later correction
-      // carries an `-adjustment` suffix so the two can be told apart and so a
-      // re-run reads its own correction back rather than applying it twice.
-      // The original row is left untouched -- the ledger shows what was
-      // deposited and what was taken back, not a number quietly rewritten.
-      const isCorrection = c.attributedCreditCents !== 0
-      const creditRef = isCorrection ? nextAdjustmentRef(externalRef) : externalRef
-      const { error: creditError } = await supabase.from('account_credits').insert({
-        account_id: store.accountId!,
-        patient_id: c.patientId,
-        amount_cents: c.creditDeltaCents,
-        reason: isCorrection
-          ? `${c.packageName} (corrected to what was paid: €${formatEuros(c.targetCreditCents)}, was €${formatEuros(c.attributedCreditCents)})`
-          : `${c.packageName} (migrated from PracticeHub -- ${c.visitsLeft ?? '?'}/${c.visits ?? '?'} sessions remaining)`,
-        external_reference: creditRef,
-        created_at: isCorrection ? new Date().toISOString() : c.created,
-      })
-      if (creditError) {
-        c.status = 'error'
-        c.errorMessage = creditError.message
-        progress.value = { done: progress.value.done + 1, total: toApply.length }
-        continue
-      }
-      // Claim the slot so a second correction in this same pass takes the next
-      // one instead of colliding with it.
-      usedCreditRefs.value.add(creditRef)
-    }
+    // No account_credits row is written here, for a bono or a correction.
+    // A bono's remaining value is the sessions counter and nothing else since
+    // 0161 retired the parallel credit, so depositing it again would put back
+    // exactly what that migration removed -- and re-open the hole it closed,
+    // where a patient holds spendable money AND the sessions it stands for.
+    //
+    // The corrections this used to propose were wrong on their own terms too:
+    // measured against credit attributed to the bono rather than the patient's
+    // real balance, they double-removed every session already drawn down here.
+    // On the live account 27 of 40 proposed fixes were for patients whose
+    // balance was already exactly right, and applying them would have taken
+    // 658 EUR off people who owed nothing.
 
     // Label a bono the hand backfill left unlabelled with its PracticeHub
     // reference, so it stops being matched by date. `is('external_reference',
@@ -1135,7 +979,6 @@ function reset() {
   candidates.value = []
   unmatchedPatients.value = new Map()
   unmatchedLocalBonos.value = []
-  usedCreditRefs.value = new Set()
   duplicateMerges.value = []
   phDuplicateBonos.value = []
   voidBonos.value = []
@@ -1168,8 +1011,8 @@ function formatEuros(cents: number): string {
       <div class="flex gap-2.5 rounded-ctl border border-line-divider bg-surface-subtle p-3">
         <span class="mt-0.5 shrink-0 text-[13px]">🧮</span>
         <p class="text-[12.5px] leading-relaxed text-ink-600">
-          <span class="font-medium text-ink-700">{{ t('Credit is what they paid, minus what they used.', 'El saldo es lo que pagaron, menos lo que consumieron.') }}</span>
-          {{ t('It is not the value of the sessions they still have left. A half-paid bono can still be used in full \u2014 the unpaid part is money owed on the invoice, not credit on the account. The preview computes it as balance + package_balance.', 'No es el valor de las sesiones que les quedan. Un bono pagado a medias se puede usar entero: la parte no pagada es dinero pendiente en la factura, no saldo en la cuenta. La vista previa lo calcula como balance + package_balance.') }}
+          <span class="font-medium text-ink-700">{{ t('A bono is sessions, not account credit.', 'Un bono son sesiones, no saldo en la cuenta.') }}</span>
+          {{ t('What is left on a bono is the sessions counter, and this importer no longer writes any account credit for one. PracticeHub reads it the same way \u2014 its balance column is sessions left x the per-session rate.', 'Lo que queda de un bono es el contador de sesiones, y este importador ya no escribe ning\u00fan saldo por un bono. PracticeHub lo lee igual: su columna balance son las sesiones restantes por el precio de cada sesi\u00f3n.') }}
         </p>
       </div>
 
@@ -1181,21 +1024,6 @@ function formatEuros(cents: number): string {
         </p>
       </div>
 
-      <div class="flex gap-2.5 rounded-ctl border border-warning-border bg-warning-bg p-3">
-        <span class="mt-0.5 shrink-0 text-[13px]">⚠️</span>
-        <p class="text-[12.5px] leading-relaxed text-warning-text">
-          <span class="font-medium">{{ t('This corrects credit that is already wrong, up or down.', 'Esto corrige saldos que ya est\u00e1n mal, al alza o a la baja.') }}</span>
-          {{ t('178 bonos were credited with the value of the sessions remaining instead of the money received, so every part-payer among them holds credit for sessions nobody has paid for. Read the "Should be" column against "Credit now" before applying. Nothing is overwritten \u2014 a correction is added as its own ledger row.', 'Se abonaron 178 bonos con el valor de las sesiones restantes en lugar del dinero recibido, as\u00ed que quien pag\u00f3 a medias tiene saldo por sesiones que nadie ha pagado. Compara la columna \u00abDeber\u00eda ser\u00bb con \u00abSaldo actual\u00bb antes de aplicar. No se sobrescribe nada: la correcci\u00f3n se a\u00f1ade como su propia l\u00ednea del libro.') }}
-        </p>
-      </div>
-
-      <div class="flex gap-2.5 rounded-ctl border border-line-divider bg-surface-subtle p-3">
-        <span class="mt-0.5 shrink-0 text-[13px]">🔁</span>
-        <p class="text-[12.5px] leading-relaxed text-ink-600">
-          <span class="font-medium text-ink-700">{{ t('Safe to run again.', 'Se puede volver a ejecutar.') }}</span>
-          {{ t('Bonos that are already imported, already credited and already invoiced are skipped, as are ones matching a bono added by hand on the same day. The invoice is numbered after the bono, so a debt is never billed twice.', 'Se omiten los bonos ya importados, ya abonados y ya facturados, igual que los que coinciden con un bono a\u00f1adido a mano el mismo d\u00eda. La factura lleva el n\u00famero del bono, as\u00ed que una deuda nunca se factura dos veces.') }}
-        </p>
-      </div>
     </div>
 
     <div v-if="stage === 'connect'" class="mt-4 max-w-md">
@@ -1221,8 +1049,8 @@ function formatEuros(cents: number): string {
       <div class="rounded-lg border border-line bg-surface-subtle p-3 text-sm text-ink-muted2">
         {{
           t(
-            `Found ${candidates.filter((c) => c.status === 'pending' && !c.creditOnly).length} new bono(s) to add and ${candidates.filter((c) => c.status === 'pending' && c.creditOnly).length} already here that need correcting. Credit going up on ${candidates.filter((c) => c.creditDeltaCents > 0).length}: +€${formatEuros(candidates.filter((c) => c.creditDeltaCents > 0).reduce((sum, c) => sum + c.creditDeltaCents, 0))}. Credit coming back on ${candidates.filter((c) => c.creditDeltaCents < 0).length} over-credited by the old full-entitlement rule: -€${formatEuros(-candidates.filter((c) => c.creditDeltaCents < 0).reduce((sum, c) => sum + c.creditDeltaCents, 0))}. Invoices for money still owed: ${candidates.filter((c) => c.needsInvoice).length}, €${formatEuros(candidates.filter((c) => c.needsInvoice).reduce((sum, c) => sum + c.owedCents, 0))}. Skipped: ${skippedUnmatched} unmatched patients, ${skippedNoValue} active bonos with nothing left on them.`,
-            `Se encontraron ${candidates.filter((c) => c.status === 'pending' && !c.creditOnly).length} bono(s) nuevos y ${candidates.filter((c) => c.status === 'pending' && c.creditOnly).length} ya existentes que hay que corregir. Sube el saldo en ${candidates.filter((c) => c.creditDeltaCents > 0).length}: +€${formatEuros(candidates.filter((c) => c.creditDeltaCents > 0).reduce((sum, c) => sum + c.creditDeltaCents, 0))}. Se retira saldo en ${candidates.filter((c) => c.creditDeltaCents < 0).length} con saldo de más por la regla antigua: -€${formatEuros(-candidates.filter((c) => c.creditDeltaCents < 0).reduce((sum, c) => sum + c.creditDeltaCents, 0))}. Facturas por lo que queda pendiente: ${candidates.filter((c) => c.needsInvoice).length}, €${formatEuros(candidates.filter((c) => c.needsInvoice).reduce((sum, c) => sum + c.owedCents, 0))}. Omitidos: ${skippedUnmatched} pacientes sin emparejar, ${skippedNoValue} bonos activos sin saldo restante.`,
+            `Found ${candidates.filter((c) => c.status === 'pending' && !c.repairOnly).length} new bono(s) to add and ${candidates.filter((c) => c.status === 'pending' && c.repairOnly).length} already here that are missing an invoice, a reference or a shared patient. Invoices for money still owed: ${candidates.filter((c) => c.needsInvoice).length}, €${formatEuros(candidates.filter((c) => c.needsInvoice).reduce((sum, c) => sum + c.owedCents, 0))}. Skipped: ${skippedUnmatched} unmatched patients, ${skippedNoValue} active bonos with nothing left on them.`,
+            `Se encontraron ${candidates.filter((c) => c.status === 'pending' && !c.repairOnly).length} bono(s) nuevos y ${candidates.filter((c) => c.status === 'pending' && c.repairOnly).length} ya existentes a los que les falta una factura, una referencia o un paciente compartido. Facturas por lo que queda pendiente: ${candidates.filter((c) => c.needsInvoice).length}, €${formatEuros(candidates.filter((c) => c.needsInvoice).reduce((sum, c) => sum + c.owedCents, 0))}. Omitidos: ${skippedUnmatched} pacientes sin emparejar, ${skippedNoValue} bonos activos sin saldo restante.`,
           )
         }}
       </div>
@@ -1395,8 +1223,6 @@ function formatEuros(cents: number): string {
               <th class="px-3 py-2">balance</th>
               <th class="px-3 py-2">owing</th>
               <th class="px-3 py-2">package_balance</th>
-              <th class="px-3 py-2">{{ t('Credit now', 'Saldo actual') }}</th>
-              <th class="px-3 py-2">{{ t('Should be', 'Debería ser') }}</th>
               <th class="px-3 py-2">{{ t('Still owed', 'Pendiente de pago') }}</th>
               <th class="px-3 py-2">{{ t('Shared with', 'Compartido con') }}</th>
               <th class="px-3 py-2">{{ t('Will insert', 'Se insertará') }}</th>
@@ -1412,8 +1238,6 @@ function formatEuros(cents: number): string {
               <td class="px-3 py-2">{{ c.balance }}</td>
               <td class="px-3 py-2">{{ c.owing }}</td>
               <td class="px-3 py-2">{{ c.packageBalance }}</td>
-              <td class="px-3 py-2">€{{ formatEuros(c.attributedCreditCents) }}</td>
-              <td class="px-3 py-2" :class="c.creditDeltaCents !== 0 ? 'font-medium text-warning-text' : 'text-ink-muted2'">€{{ formatEuros(c.targetCreditCents) }}</td>
               <td class="px-3 py-2" :class="c.owedCents > 0 ? 'font-medium text-warning-text' : 'text-ink-muted2'">
                 <template v-if="c.owedCents > 0">€{{ formatEuros(c.owedCents) }}</template>
                 <template v-else>—</template>
@@ -1423,19 +1247,14 @@ function formatEuros(cents: number): string {
                 <template v-else>—</template>
               </td>
               <td class="px-3 py-2">
-                <div v-if="!c.creditOnly">€{{ formatEuros(c.priceCents) }} {{ t('bono', 'bono') }}</div>
-                <div v-if="c.creditDeltaCents !== 0" :class="c.creditDeltaCents < 0 ? 'text-danger-text' : ''">
-                  {{ c.creditDeltaCents > 0 ? '+' : '' }}€{{ formatEuros(c.creditDeltaCents) }} {{ t('credit', 'crédito') }}
-                </div>
+                <div v-if="!c.repairOnly">€{{ formatEuros(c.priceCents) }} {{ t('bono', 'bono') }}</div>
                 <div v-if="c.needsInvoice" class="text-warning-text">+ €{{ formatEuros(c.owedCents) }} {{ t('invoice', 'factura') }}</div>
                 <div v-if="c.needsReferenceStamp" class="text-ink-muted2">{{ t('+ PracticeHub reference', '+ referencia de PracticeHub') }}</div>
               </td>
               <td class="px-3 py-2">
-                <span v-if="c.status === 'pending' && c.creditDeltaCents < 0" class="text-danger-text">{{ t('Over-credited', 'Saldo de más') }}</span>
-                <span v-else-if="c.status === 'pending' && c.creditOnly && c.creditDeltaCents === 0 && c.needsInvoice" class="text-warning-text">{{ t('Missing invoice', 'Falta la factura') }}</span>
-                <span v-else-if="c.status === 'pending' && c.creditOnly && c.creditDeltaCents === 0 && c.sharedWith.length > 0" class="text-warning-text">{{ t('Missing shared patients', 'Faltan pacientes compartidos') }}</span>
-                <span v-else-if="c.status === 'pending' && c.creditOnly && c.creditDeltaCents === 0" class="text-ink-muted2">{{ t('Missing reference', 'Falta la referencia') }}</span>
-                <span v-else-if="c.status === 'pending' && c.creditOnly" class="text-warning-text">{{ t('Missing credit', 'Falta el saldo') }}</span>
+                <span v-if="c.status === 'pending' && c.repairOnly && c.needsInvoice" class="text-warning-text">{{ t('Missing invoice', 'Falta la factura') }}</span>
+                <span v-else-if="c.status === 'pending' && c.repairOnly && c.sharedWith.length > 0" class="text-warning-text">{{ t('Missing shared patients', 'Faltan pacientes compartidos') }}</span>
+                <span v-else-if="c.status === 'pending' && c.repairOnly" class="text-ink-muted2">{{ t('Missing reference', 'Falta la referencia') }}</span>
                 <span v-else-if="c.status === 'pending'" class="text-ink-600">{{ t('Pending', 'Pendiente') }}</span>
                 <span v-else-if="c.status === 'applied'" class="text-ink-muted2">{{ t('Applied', 'Aplicado') }}</span>
                 <span v-else class="text-danger-text">{{ c.errorMessage || t('Error', 'Error') }}</span>

@@ -427,7 +427,16 @@ const headerMeta = computed(() => {
 
         <!-- My Day patient view -->
         <div v-if="selectedAppointment" class="min-w-0 w-full flex-1">
-          <PractitionerMyDayPatientView :appointment="selectedAppointment" :rooms="rooms" @charted="loadDay" />
+          <!-- :key forces a full teardown/recreate on every patient switch --
+          without it, Vue patches the same instance (and everything it
+          mounts: ExamAutofill, FilesTab, VisitNotesTab, NotesPanel) with new
+          props instead of remounting, leaving stale component-local state
+          (a previous patient's noteId, an in-flight upload's captured
+          patientId) to silently attach the next patient's write to the
+          last one's record. See ExamAutofill.vue and FilesTab.vue for the
+          matching defense-in-depth fixes; this key is what makes those the
+          belt to this component's suspenders, not the only guard. -->
+          <PractitionerMyDayPatientView :key="selectedAppointment.id" :appointment="selectedAppointment" :rooms="rooms" @charted="loadDay" />
         </div>
         <div v-else class="flex min-w-0 w-full flex-1 items-center justify-center rounded-card border border-dashed border-line-control p-10 text-[13px] text-ink-faint">
           {{ t('Select a patient to chart their visit.', 'Selecciona un paciente para registrar su visita.') }}

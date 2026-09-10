@@ -195,6 +195,29 @@ async function copyLastNote() {
   plan.value = sections.Plan ?? ''
 }
 
+// Defense-in-depth alongside practitioner.vue's :key on the charting pane
+// (which is what actually protects My Day today, by destroying and
+// recreating this component per appointment switch): if this component is
+// ever reused for a different appointment without being remounted, noteId
+// must not carry over -- a stale noteId here is exactly what turned a save
+// for one patient into an UPDATE against a different patient's note. See
+// the account of that incident above doSave().
+watch(
+  () => props.appointmentId,
+  () => {
+    noteId.value = null
+    subjective.value = ''
+    objective.value = ''
+    action.value = ''
+    plan.value = ''
+    findings.value = []
+    dirty.value = false
+    savedMessage.value = ''
+    selectedSegment.value = null
+    selectedModifier.value = null
+  },
+)
+
 defineExpose({ save, copyLastNote })
 </script>
 

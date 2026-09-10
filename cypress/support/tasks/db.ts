@@ -307,6 +307,48 @@ async function createInvoice(opts: { accountId: string; patientId: string; invoi
   return row as { id: string; invoice_number: string }
 }
 
+async function createPackagePurchase(opts: {
+  accountId: string
+  patientId: string
+  packageName?: string
+  sessionsTotal?: number
+  sessionsUsed?: number
+  priceCents?: number
+}) {
+  const { accountId, patientId, packageName, sessionsTotal, sessionsUsed, priceCents } = opts
+  const row = unwrap(
+    await admin
+      .from('package_purchases')
+      .insert({
+        account_id: accountId,
+        patient_id: patientId,
+        package_name: packageName ?? 'Bono 12',
+        sessions_total: sessionsTotal ?? 12,
+        sessions_used: sessionsUsed ?? 0,
+        price_cents: priceCents ?? 52800,
+        purchased_at: new Date().toISOString(),
+      })
+      .select('id, package_name, sessions_total, sessions_used, price_cents')
+      .single(),
+  )
+  return row as { id: string; package_name: string; sessions_total: number; sessions_used: number; price_cents: number }
+}
+
+// Reads back what "Log session" wrote, so the spec can assert the money side
+// (invoice, payment, credit debit) and not just the on-screen counter.
+async function packageSessionEffects(opts: { patientId: string; packagePurchaseId: string }) {
+  const { patientId, packagePurchaseId } = opts
+  const purchase = unwrap(await admin.from('package_purchases').select('sessions_used').eq('id', packagePurchaseId).single())
+  const appointments = unwrap(await admin.from('appointments').select('id, status').eq('patient_id', patientId))
+  const invoices = unwrap(await admin.from('invoices').select('id, status, total_cents, appointment_id').eq('patient_id', patientId))
+  const credits = unwrap(await admin.from('account_credits').select('amount_cents, reason').eq('patient_id', patientId))
+  const invoiceIds = (invoices as { id: string }[]).map((i) => i.id)
+  const payments = invoiceIds.length
+    ? unwrap(await admin.from('payments').select('amount_cents, method, invoice_id').in('invoice_id', invoiceIds))
+    : []
+  return { purchase, appointments, invoices, credits, payments }
+}
+
 async function createWhatsappMessage(opts: {
   accountId: string
   patientId?: string
@@ -346,5 +388,7 @@ export const dbTasks = {
   'db:enableOnlineBooking': enableOnlineBooking,
   'db:enableEmailConfirmations': enableEmailConfirmations,
   'db:createInvoice': createInvoice,
+  'db:createPackagePurchase': createPackagePurchase,
+  'db:packageSessionEffects': packageSessionEffects,
   'db:createWhatsappMessage': createWhatsappMessage,
 }

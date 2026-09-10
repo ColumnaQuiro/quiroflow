@@ -34,14 +34,19 @@ function pickFromComputer() {
 async function uploadFile(file: File) {
   uploading.value = true
   error.value = ''
-  const path = `${useAccountStore().accountId}/${props.patientId}/${Date.now()}-${sanitizeStorageFilename(file.name)}`
+  // Snapshotted once, up front: reading props.patientId again after the
+  // storage upload's await, instead of this const, would risk writing the
+  // photo onto whichever patient this component instance happens to be
+  // showing by the time the upload resolves, not whoever it was picked for.
+  const patientId = props.patientId
+  const path = `${useAccountStore().accountId}/${patientId}/${Date.now()}-${sanitizeStorageFilename(file.name)}`
   const { error: uploadError } = await supabase.storage.from('patient-photos').upload(path, file)
   if (uploadError) {
     error.value = uploadError.message
     uploading.value = false
     return
   }
-  await supabase.from('patients').update({ photo_storage_path: path }).eq('id', props.patientId)
+  await supabase.from('patients').update({ photo_storage_path: path }).eq('id', patientId)
   uploading.value = false
   emit('uploaded')
 }

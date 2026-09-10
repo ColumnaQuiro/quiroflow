@@ -188,24 +188,12 @@ async function takePayment() {
     )
   }
 
-  // An instalment on a bono is money towards sessions, so it has to become
-  // spendable credit the same way the money handed over at the sale did --
-  // otherwise a patient settling the rest of their bono pays it off on the
-  // invoice and still has nothing to draw sessions against.
-  const packageForInvoice = purchases.value.find((p) => p.invoice_id === invoice.id)
-  const topUpRows = rows.filter((r) => r.method !== 'credit')
-  if (packageForInvoice && topUpRows.length > 0) {
-    await supabase.from('account_credits').insert(
-      topUpRows.map((r) => ({
-        account_id: store.accountId!,
-        patient_id: props.patientId,
-        amount_cents: paymentRowCents(r),
-        reason: `Package purchase: ${packageForInvoice.package_name}`,
-        invoice_id: invoice.id,
-        created_by: store.teamMember?.id ?? null,
-      })),
-    )
-  }
+  // An instalment on a bono used to be banked as spendable account credit,
+  // because a visit then spent that credit back down. Visits no longer do: a
+  // bono visit is a package_sessions row and is not billed at all, so the
+  // remaining value lives in the sessions counter. Banking it as credit too
+  // would represent the same prepaid money in two places -- which is what
+  // 0161 retired for the bonos that were already sold.
 
   const { data: paid } = await supabase.from('payments').select('amount_cents').eq('invoice_id', invoice.id)
   const paidCents = (paid ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
@@ -361,21 +349,26 @@ async function createPackageInvoice(description: string, priceCents: number, pai
   return invoice.id
 }
 
-// The payment side of a bono sale or instalment. Cash/card money paid
-// towards a bono becomes spendable credit (that is what sessions draw
-// down); paying with credit spends the credit the patient already holds
-// instead of topping it up.
+// The payment side of a bono sale or instalment. Cash/card money settles the
+// bono's invoice and nothing more -- the sessions counter is what carries the
+// prepaid value from here on, so banking it as account credit as well would
+// hold the same money in two places (see 0161).
+//
+// Paying WITH credit still writes its negative row: that is a patient spending
+// credit they genuinely hold, and it has to come off their balance.
 async function recordPackagePayment(invoiceId: string | null, amountCents: number, method: 'cash' | 'card' | 'credit', description: string) {
   if (!invoiceId) return
   await supabase.from('payments').insert({ account_id: store.accountId!, invoice_id: invoiceId, amount_cents: amountCents, method })
-  await supabase.from('account_credits').insert({
-    account_id: store.accountId!,
-    patient_id: props.patientId,
-    amount_cents: method === 'credit' ? -amountCents : amountCents,
-    reason: method === 'credit' ? `Applied to ${description}` : `Package purchase: ${description}`,
-    invoice_id: invoiceId,
-    created_by: store.teamMember?.id ?? null,
-  })
+  if (method === 'credit') {
+    await supabase.from('account_credits').insert({
+      account_id: store.accountId!,
+      patient_id: props.patientId,
+      amount_cents: -amountCents,
+      reason: `Applied to ${description}`,
+      invoice_id: invoiceId,
+      created_by: store.teamMember?.id ?? null,
+    })
+  }
 }
 
 // Each loader below is independent -- its own query pair, its own loading
@@ -935,16 +928,13 @@ async function unlinkPayment(paymentId: string) {
 
 // Logging a session records the visit it represents, the same way completing
 // an appointment against a bono does (AppointmentBillingTab.usePackageSession):
-// a completed appointment, an invoice at the bono's per-session rate, a
-// payment with method 'credit' and a matching negative account_credits row.
+// a completed appointment plus a package_sessions row at the bono's own
+// per-session rate.
 //
-// It used to only bump sessions_used. That left the money behind: buying a
-// bono deposits credit (see recordSalePayment/collectOnPackage -- prepaid
-// sessions have to become spendable credit), and every other way of spending
-// a session draws that credit back down. A counter-only "Log session" spent
-// the session but not the credit, so a patient's balance drifted up by the
-// per-session rate every time it was used, and the visit itself existed
-// nowhere -- no appointment, no invoice, nothing in the ledger.
+// It used to only bump sessions_used, leaving the visit itself nowhere. It
+// then briefly raised an invoice and spent account credit too -- that went too
+// far the other way and billed the patient a second time for a visit their
+// bono had already paid for; see 0161 for the ledger side of undoing it.
 const loggingSessionFor = ref<string | null>(null)
 
 async function useSession(purchase: PackagePurchaseRow) {
@@ -955,8 +945,7 @@ async function useSession(purchase: PackagePurchaseRow) {
   // whatever an appointment type charges walk-ins -- same rate
   // usePackageSession() reprices a package-covered visit to.
   const perSessionCents = Math.round(purchase.price_cents / purchase.sessions_total)
-  const description = `${t('Package session', 'Sesión de bono')}: ${purchase.package_name}`
-  if (!confirm(`${t('Log a session for', 'Registrar una sesión de')} ${money(perSessionCents)} ${t('against', 'contra')} "${purchase.package_name}"? ${t('This records a completed visit today and bills it to the bono.', 'Esto registra una visita completada hoy y la factura al bono.')}`)) return
+  if (!confirm(`${t('Log a session for', 'Registrar una sesión de')} ${money(perSessionCents)} ${t('against', 'contra')} "${purchase.package_name}"? ${t('This records a completed visit today and uses one session. Nothing is charged — the bono already covers it.', 'Esto registra una visita completada hoy y consume una sesión. No se cobra nada: el bono ya la cubre.')}`)) return
 
   loggingSessionFor.value = purchase.id
   try {
@@ -995,33 +984,17 @@ async function useSession(purchase: PackagePurchaseRow) {
       .select('id')
       .single()
 
-    const { count } = await supabase.from('invoices').select('id', { count: 'exact', head: true })
-    const invoiceNumber = `INV-${String((count ?? 0) + 1).padStart(4, '0')}`
-    const { data: invoice } = await supabase
-      .from('invoices')
-      .insert({
-        account_id: store.accountId,
-        patient_id: props.patientId,
-        appointment_id: appointment?.id ?? null,
-        invoice_number: invoiceNumber,
-        status: 'paid',
-        total_cents: perSessionCents,
-      })
-      .select('id')
-      .single()
-
-    if (invoice) {
-      await supabase.from('invoice_line_items').insert({ account_id: store.accountId, invoice_id: invoice.id, description, quantity: 1, price_cents: perSessionCents })
-      await supabase.from('payments').insert({ account_id: store.accountId, invoice_id: invoice.id, amount_cents: perSessionCents, method: 'credit' })
-      await supabase.from('account_credits').insert({
-        account_id: store.accountId,
-        patient_id: props.patientId,
-        amount_cents: -perSessionCents,
-        reason: description,
-        invoice_id: invoice.id,
-        created_by: store.teamMember?.id ?? null,
-      })
-    }
+    // The visit on the bono's own history, and nothing else. No invoice, no
+    // payment, no credit row: the patient paid for this visit when they bought
+    // the bono, so billing it again counts the same money twice.
+    await supabase.from('package_sessions').insert({
+      account_id: store.accountId,
+      patient_id: props.patientId,
+      package_purchase_id: purchase.id,
+      appointment_id: appointment?.id ?? null,
+      amount_cents: perSessionCents,
+      used_at: now.toISOString(),
+    })
 
     // Deliberately fires no appointment.completed/invoice.paid automation:
     // this is a back-office correction for a visit that already happened, and

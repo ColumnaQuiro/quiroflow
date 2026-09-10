@@ -817,7 +817,16 @@ function packageOwedCents(purchase: PackagePurchaseRow): number {
     }
   }
   if (!invoiceIsValid && !hasAnyLinkedPayment) return 0
-  return Math.max(0, purchase.price_cents - paidCents)
+  // Measure the debt against what was actually invoiced, not the bono's
+  // price. A bono sold here is invoiced at its full price, so the two agree.
+  // A bono migrated from PracticeHub is not: the importer raises an invoice
+  // for the part still owed at migration, because the rest was already paid
+  // over there and no payment row for it exists on this side. Measuring
+  // against price_cents claimed the whole price was outstanding -- David
+  // Poveda's Bono 14 read "559,00 owed / 0,00 paid of 559,00" against a
+  // 301,00 invoice -- and overstated the debt on 84 bonos by 18.647,00.
+  const chargedCents = invoiceIsValid ? invoice!.total_cents : purchase.price_cents
+  return Math.max(0, chargedCents - paidCents)
 }
 
 // Collecting a NEW payment still only makes sense when the bono has its own

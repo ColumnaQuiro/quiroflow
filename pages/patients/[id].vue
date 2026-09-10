@@ -52,6 +52,23 @@ const layoutVariant = ref<'rail' | 'summary'>('rail')
 
 const whatsAppOpen = ref(false)
 
+// Merging is the answer to the duplicate records the PracticeHub migration
+// left behind, and to the ones a front desk creates by booking the same person
+// twice. Deleting one of a pair is not the same thing: every FK into patients
+// cascades, so the "empty" duplicate takes its bonos and credit with it. See
+// 0160_merge_patients.sql.
+const mergeOpen = ref(false)
+async function onMerged(survivorId: string) {
+  mergeOpen.value = false
+  if (survivorId === patientId) {
+    await loadPatient()
+    return
+  }
+  // The record being viewed is the one that was absorbed, so there is nothing
+  // left at this URL.
+  await navigateTo(`/patients/${survivorId}`)
+}
+
 // Charge (sidebar) should always land on Billing's "Take payment" panel --
 // switching tabs alone is a no-op when Billing is already the active tab.
 const chargeRequested = ref(false)
@@ -190,6 +207,7 @@ async function deletePatient() {
         <UiBtn v-if="can('patients_edit')" variant="secondary" :disabled="archiving" @click="toggleArchived">
           {{ patient.status === 'active' ? t('Archive', 'Archivar') : t('Unarchive', 'Desarchivar') }}
         </UiBtn>
+        <UiBtn v-if="can('patients_delete_merge')" variant="secondary" @click="mergeOpen = true">{{ t('Merge', 'Fusionar') }}</UiBtn>
         <button
           v-if="can('patients_delete_merge')"
           type="button"
@@ -273,5 +291,7 @@ async function deletePatient() {
       @close="whatsAppOpen = false"
       @sent="whatsAppOpen = false"
     />
+
+    <PatientsMergePatientModal v-if="mergeOpen" :patient="patient" @close="mergeOpen = false" @merged="onMerged" />
   </div>
 </template>

@@ -834,6 +834,24 @@ function packageInvoiceIsValid(purchase: PackagePurchaseRow): boolean {
   return !!invoice && invoice.status !== 'void'
 }
 
+// What the sessions still on the counter are worth. Since a bono visit stopped
+// being a billing event (0161), the counter is the only record of remaining
+// value -- there is no parallel credit balance to read it off any more. Staff
+// still need the figure as money, because that is how PracticeHub shows it and
+// how a patient asks for it ("how much do I have left?").
+//
+// sessions_left x the bono's own per-session rate, the same rounding useSession
+// bills a visit at, so this and the session it pays for never disagree by a
+// cent. PracticeHub computes its `balance` column exactly this way -- checked
+// against five patients on the live account (Jorge Portillo 3 x 44 = 132,
+// Krista Lozada 4 x 40 = 160) -- so the two systems read the same number.
+// Anything still owed on the bono is separate and already has its own pill.
+function packageRemainingValueCents(purchase: PackagePurchaseRow): number {
+  if (!purchase.sessions_total) return 0
+  const perSessionCents = Math.round(purchase.price_cents / purchase.sessions_total)
+  return perSessionCents * Math.max(0, purchase.sessions_total - purchase.sessions_used)
+}
+
 function packageOwedCents(purchase: PackagePurchaseRow): number {
   // The bono card and the ledger load independently -- reading payments
   // before that loader lands would flash the full price as unpaid.
@@ -1276,6 +1294,10 @@ function money(cents: number) {
               <p class="shrink-0 text-[12px] text-ink-muted2">
                 <span class="font-semibold text-ink-700">{{ p.sessions_total - p.sessions_used }}</span>
                 {{ t('of', 'de') }} {{ p.sessions_total }} {{ t('left', 'restantes') }}
+                <template v-if="!p.shared">
+                  <span class="px-1 text-ink-faint3">&middot;</span>
+                  <span class="font-semibold text-ink-700">{{ money(packageRemainingValueCents(p)) }}</span>
+                </template>
               </p>
             </div>
 

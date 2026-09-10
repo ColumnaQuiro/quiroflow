@@ -1172,9 +1172,6 @@ function money(cents: number) {
         <div>
           <p class="text-[11.5px] text-ink-muted2">{{ t('Available', 'Disponible') }}</p>
           <p class="mt-0.5 font-mono text-[16px] font-semibold text-ink-700">{{ money(availableCents) }}</p>
-          <p v-if="bonoValueCents > 0" class="text-[11px] text-ink-faint">
-            {{ money(bonoValueCents) }} {{ t('in bonos', 'en bonos') }}<template v-if="creditLedgerCents !== 0"> &middot; {{ money(creditLedgerCents) }} {{ t('credit', 'crédito') }}</template>
-          </p>
         </div>
         <div>
           <p class="text-[11.5px] text-ink-muted2">{{ t('Card on file', 'Tarjeta registrada') }}</p>

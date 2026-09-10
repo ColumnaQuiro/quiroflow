@@ -105,13 +105,37 @@ const matches = computed(() => {
 
 const selected = computed(() => phPatients.value.find((p) => p.id === selectedPhId.value) ?? null)
 
+// Why the importer would or would not bring a bono across, using the same
+// two rules it uses. Without this the panel counts PracticeHub's bonos raw
+// and warns whenever the sides differ -- which they are supposed to, for
+// every patient with a PracticeHub duplicate or an empty record. A warning
+// that fires on correct data is worse than none: it trains you to ignore it.
+function skipReason(pkg: PHPackage, all: PHPackage[]): string | null {
+  const used = Math.max(0, (pkg.visits ?? pkg.visits_left ?? 0) - (pkg.visits_left ?? pkg.visits ?? 0))
+  const shape = (p: PHPackage) =>
+    `${String(p.created).slice(0, 10)}|${Math.round((p.price ?? 0) * 100)}|${p.name || p.package_type || ''}`
+  const usedOf = (p: PHPackage) => Math.max(0, (p.visits ?? p.visits_left ?? 0) - (p.visits_left ?? p.visits ?? 0))
+
+  if (used === 0 && all.some((p) => p.id !== pkg.id && shape(p) === shape(pkg) && usedOf(p) > 0)) {
+    return t('PracticeHub lists this twice', 'PracticeHub lo lista dos veces')
+  }
+  const creditCents = Math.round(((pkg.balance ?? 0) + (pkg.package_balance ?? 0)) * 100)
+  if (pkg.active !== 1 && used === 0 && creditCents === 0 && (pkg.subscribed_patients ?? []).length === 0) {
+    return t('cancelled, never used', 'cancelado, nunca usado')
+  }
+  return null
+}
+
 const phBonos = computed(() => {
   const id = selectedPhId.value
   if (id === null) return []
-  return phPackages.value
+  const mine = phPackages.value
     .filter((pkg) => ownerAndSharers(pkg).includes(id))
     .sort((a, b) => String(a.created).localeCompare(String(b.created)))
+  return mine.map((pkg) => ({ pkg, skipped: skipReason(pkg, mine) }))
 })
+
+const phImportable = computed(() => phBonos.value.filter((b) => b.skipped === null).length)
 
 const phLedger = computed(() => {
   const id = selectedPhId.value
@@ -193,7 +217,7 @@ function select(p: PHPatient) {
 
 // The headline: PracticeHub and QuiroFlow disagreeing on how many bonos this
 // patient has is the shape every problem in this migration took.
-const bonoCountsDiffer = computed(() => ours.value !== null && phBonos.value.length !== ours.value.bonos.length)
+const bonoCountsDiffer = computed(() => ours.value !== null && phImportable.value !== ours.value.bonos.length)
 </script>
 
 <template>
@@ -247,8 +271,8 @@ const bonoCountsDiffer = computed(() => ours.value !== null && phBonos.value.len
         >
           {{
             t(
-              `PracticeHub has ${phBonos.length} bono(s) for this patient, QuiroFlow has ${ours?.bonos.length}.`,
-              `PracticeHub tiene ${phBonos.length} bono(s) para este paciente, QuiroFlow tiene ${ours?.bonos.length}.`,
+              `PracticeHub has ${phImportable} bono(s) to import for this patient, QuiroFlow has ${ours?.bonos.length}.`,
+              `PracticeHub tiene ${phImportable} bono(s) que importar para este paciente, QuiroFlow tiene ${ours?.bonos.length}.`,
             )
           }}
         </div>
@@ -267,21 +291,25 @@ const bonoCountsDiffer = computed(() => ours.value !== null && phBonos.value.len
                   <th class="px-3 py-2">{{ t('Price', 'Precio') }}</th>
                   <th class="px-3 py-2">{{ t('Balance', 'Saldo') }}</th>
                   <th class="px-3 py-2">{{ t('Owed', 'Debe') }}</th>
-                  <th class="px-3 py-2">{{ t('Active', 'Activo') }}</th>
+                  <th class="px-3 py-2">{{ t('Imported', 'Importado') }}</th>
                   <th class="px-3 py-2">id</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-line-divider">
-                <tr v-for="b in phBonos" :key="b.id">
-                  <td class="px-3 py-2">{{ b.name || b.package_type }}</td>
-                  <td class="px-3 py-2">{{ b.visits_left }}/{{ b.visits }}</td>
-                  <td class="px-3 py-2">{{ eur(b.price) }}</td>
-                  <td class="px-3 py-2">{{ eur(b.balance) }}</td>
-                  <td class="px-3 py-2">{{ eur(-(b.package_balance ?? 0)) }}</td>
-                  <td class="px-3 py-2" :class="b.active === 1 ? 'text-ink-900' : 'text-warning-text'">
-                    {{ b.active === 1 ? t('yes', 'sí') : t('deactivated', 'desactivado') }}
+                <tr v-for="b in phBonos" :key="b.pkg.id" :class="b.skipped ? 'text-ink-muted2' : ''">
+                  <td class="px-3 py-2">
+                    {{ b.pkg.name || b.pkg.package_type }}
+                    <span v-if="b.pkg.active !== 1" class="ml-1 text-[11px] text-warning-text">{{ t('deactivated', 'desactivado') }}</span>
                   </td>
-                  <td class="px-3 py-2 font-mono text-xs text-ink-muted2">{{ b.id }}</td>
+                  <td class="px-3 py-2">{{ b.pkg.visits_left }}/{{ b.pkg.visits }}</td>
+                  <td class="px-3 py-2">{{ eur(b.pkg.price) }}</td>
+                  <td class="px-3 py-2">{{ eur(b.pkg.balance) }}</td>
+                  <td class="px-3 py-2">{{ eur(-(b.pkg.package_balance ?? 0)) }}</td>
+                  <td class="px-3 py-2">
+                    <span v-if="!b.skipped" class="text-success-text">{{ t('yes', 'sí') }}</span>
+                    <span v-else class="text-warning-text">{{ t('no', 'no') }} &middot; {{ b.skipped }}</span>
+                  </td>
+                  <td class="px-3 py-2 font-mono text-xs text-ink-muted2">{{ b.pkg.id }}</td>
                 </tr>
               </tbody>
             </table>

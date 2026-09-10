@@ -196,6 +196,18 @@ async function removeLineItem(item: LineItemRow) {
 
 async function usePackageSession(pkg: { id: string; package_name: string; sessions_used: number; sessions_total: number; price_cents: number }) {
   if (pkg.sessions_used >= pkg.sessions_total || !invoice.value) return
+  // This visit is already settled -- e.g. billed from the mobile app while
+  // this tab was still open on another screen. Spending a session here too
+  // would burn a real session for a visit that isn't taking one: the invoice
+  // is already paid, so there is nothing left to charge, and the session
+  // would vanish with no payment, no credit, and (before this check) no
+  // package_sessions row behind it either. Janina Ron's newly-bought
+  // "maintenance" bono lost a session this way when it, not the bono actually
+  // being visited, was tapped on an appointment already paid from the web tab.
+  if (invoice.value.status === 'paid') {
+    error.value = t('This visit has already been billed.', 'Esta visita ya ha sido facturada.')
+    return
+  }
   savingPayment.value = true
 
   // Re-read the bono rather than trusting the copy this component loaded.

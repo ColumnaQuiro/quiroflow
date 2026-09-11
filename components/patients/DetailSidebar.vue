@@ -7,6 +7,7 @@ const props = defineProps<{
   patient: Tables<'patients'>
   balanceCents: number
   creditCents: number
+  bonoValueCents: number
   activePackages: ActivePackage[]
   financialLoading: boolean
 }>()
@@ -87,7 +88,7 @@ function money(cents: number) {
         </div>
       </div>
 
-      <UiBalancePill v-if="!financialLoading" class="mt-2.5" :credit-cents="creditCents" />
+      <UiBalancePill v-if="!financialLoading" class="mt-2.5" :credit-cents="creditCents" :bono-value-cents="bonoValueCents" />
 
       <div class="mt-3.5 grid gap-2" :class="canContact ? 'grid-cols-2' : 'grid-cols-1'">
         <UiBtn v-if="canContact" size="sm" variant="secondary" class="w-full justify-center" @click="emit('message')">WhatsApp</UiBtn>
@@ -124,6 +125,13 @@ function money(cents: number) {
           <dd class="mt-0.5 font-mono text-[12.5px]" :class="financialLoading ? 'text-ink-faint' : balanceCents < 0 ? 'text-danger-text' : 'text-ink-700'">
             {{ financialLoading ? '…' : money(balanceCents) }}
           </dd>
+        </div>
+        <div>
+          <!-- Bono money is the figure staff actually reach for, and the one
+          PracticeHub shows, so it gets its own line rather than being folded
+          into Credit -- those are different pots and spend differently. -->
+          <dt class="text-ink-faint">{{ t('In bonos', 'En bonos') }}</dt>
+          <dd class="mt-0.5 font-mono text-[12.5px] text-ink-700">{{ financialLoading ? '…' : money(bonoValueCents) }}</dd>
         </div>
         <div>
           <dt class="text-ink-faint">{{ t('Credit', 'Crédito') }}</dt>

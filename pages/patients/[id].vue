@@ -21,7 +21,7 @@ async function loadPatient() {
 }
 onMounted(loadPatient)
 
-const { balanceCents, creditLedgerCents, activePackages, loading: financialLoading } = usePatientFinancialSummary(patientId)
+const { balanceCents, creditLedgerCents, bonoValueCents, activePackages, loading: financialLoading } = usePatientFinancialSummary(patientId)
 
 const isVip = computed(() => !!patient.value?.tags.some((t) => t.toUpperCase() === 'VIP'))
 const amountDue = computed(() => (balanceCents.value < 0 ? -balanceCents.value : 0))
@@ -225,6 +225,7 @@ async function deletePatient() {
           :patient="patient"
           :balance-cents="balanceCents"
           :credit-cents="creditLedgerCents"
+          :bono-value-cents="bonoValueCents"
           :active-packages="activePackages"
           :financial-loading="financialLoading"
           class="lg:sticky lg:top-6"

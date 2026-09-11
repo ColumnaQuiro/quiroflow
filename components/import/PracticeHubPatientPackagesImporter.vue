@@ -1059,40 +1059,47 @@ function reset() {
 function formatEuros(cents: number): string {
   return (cents / 100).toFixed(2)
 }
+const introLead = computed(() =>
+  t(
+    'Brings bonos across from PracticeHub, and brings ones imported earlier back in line with what PracticeHub says about them now.',
+    'Trae los bonos desde PracticeHub y pone al día los que se importaron antes con lo que PracticeHub dice ahora de ellos.',
+  ),
+)
+const introNotes = computed(() => [
+  {
+    title: t('A bono is sessions, not account credit.', 'Un bono son sesiones, no saldo en la cuenta.'),
+    body: t(
+      'What is left on a bono is the sessions counter, and this importer writes no account credit for one. PracticeHub reads it the same way -- its balance column is sessions left x the per-session rate.',
+      'Lo que queda de un bono es el contador de sesiones, y este importador no escribe saldo por un bono. PracticeHub lo lee igual: su columna balance son las sesiones restantes por el precio de cada sesión.',
+    ),
+  },
+  {
+    title: t('It corrects bonos PracticeHub has since changed.', 'Corrige los bonos que PracticeHub ha cambiado desde entonces.'),
+    body: t(
+      'Sessions, total and price are brought back in line. Sessions used only ever rises: PracticeHub knowing about a visit we do not is normal, but lowering the count would hand a patient back sessions they already took, so that case is reported instead of written.',
+      'Sesiones, total y precio se ponen al día. Las sesiones usadas solo suben: que PracticeHub sepa de una visita que aquí no consta es normal, pero bajar el contador devolvería al paciente sesiones ya consumidas, así que ese caso solo se informa.',
+    ),
+  },
+  {
+    title: t('What is still owed becomes an unpaid invoice.', 'Lo que queda por pagar se convierte en una factura pendiente.'),
+    body: t(
+      'Only the outstanding part is billed, and only on an active bono -- the half already paid came over with the payments importer, so invoicing the full price again would double the clinic takings.',
+      'Solo se factura la parte pendiente, y solo en un bono activo: la parte ya pagada vino con el importador de pagos, así que volver a facturar el precio completo duplicaría los ingresos.',
+    ),
+  },
+  {
+    title: t('Nothing is written until you press Apply.', 'No se escribe nada hasta que pulses Aplicar.'),
+    body: t(
+      "The preview shows PracticeHub's own price, balance, owing and package_balance columns, so you can check them against a patient you already know. Safe to run again: bonos already correct are skipped.",
+      'La vista previa muestra las columnas price, balance, owing y package_balance de PracticeHub, para que las compruebes con un paciente que ya conozcas. Se puede volver a ejecutar: los bonos ya correctos se omiten.',
+    ),
+  },
+])
 </script>
 
 <template>
   <div>
-    <p class="text-[13px] text-ink-muted2">
-      {{ t('Copies bonos from PracticeHub, and repairs ones imported earlier: the credit they never got, and an invoice for whatever is still owed on them.', 'Copia los bonos desde PracticeHub y repara los importados antes: el saldo que nunca recibieron y una factura por lo que queda pendiente de pago.') }}
-    </p>
-
-    <div class="mt-3 space-y-2">
-      <div class="flex gap-2.5 rounded-ctl border border-line-divider bg-surface-subtle p-3">
-        <span class="mt-0.5 shrink-0 text-[13px]">👁</span>
-        <p class="text-[12.5px] leading-relaxed text-ink-600">
-          <span class="font-medium text-ink-700">{{ t('Nothing is written until you press Apply.', 'No se escribe nada hasta que pulses Aplicar.') }}</span>
-          {{ t('The preview shows PracticeHub\'s own price / balance / owing / package_balance columns so you can check them against a patient you already know before trusting the rest.', 'La vista previa muestra las columnas price / balance / owing / package_balance de PracticeHub para que las compruebes con un paciente que ya conozcas antes de fiarte del resto.') }}
-        </p>
-      </div>
-
-      <div class="flex gap-2.5 rounded-ctl border border-line-divider bg-surface-subtle p-3">
-        <span class="mt-0.5 shrink-0 text-[13px]">🧮</span>
-        <p class="text-[12.5px] leading-relaxed text-ink-600">
-          <span class="font-medium text-ink-700">{{ t('A bono is sessions, not account credit.', 'Un bono son sesiones, no saldo en la cuenta.') }}</span>
-          {{ t('What is left on a bono is the sessions counter, and this importer no longer writes any account credit for one. PracticeHub reads it the same way \u2014 its balance column is sessions left x the per-session rate.', 'Lo que queda de un bono es el contador de sesiones, y este importador ya no escribe ning\u00fan saldo por un bono. PracticeHub lo lee igual: su columna balance son las sesiones restantes por el precio de cada sesi\u00f3n.') }}
-        </p>
-      </div>
-
-      <div class="flex gap-2.5 rounded-ctl border border-line-divider bg-surface-subtle p-3">
-        <span class="mt-0.5 shrink-0 text-[13px]">🧾</span>
-        <p class="text-[12.5px] leading-relaxed text-ink-600">
-          <span class="font-medium text-ink-700">{{ t('What is still owed becomes an unpaid invoice.', 'Lo que queda por pagar se convierte en una factura pendiente.') }}</span>
-          {{ t('Only the outstanding part is billed \u2014 the half already paid came over with the payments importer, so invoicing the full price again would double the clinic\u0027s takings. No payment is recorded here, and only active bonos are billed.', 'Sólo se factura la parte pendiente: la parte ya pagada vino con el importador de pagos, así que volver a facturar el precio completo duplicaría los ingresos de la clínica. Aquí no se registra ningún pago, y sólo se facturan los bonos activos.') }}
-        </p>
-      </div>
-
-    </div>
+    <ImportIntro :lead="introLead" :notes="introNotes" />
 
     <div v-if="stage === 'connect'" class="mt-4 max-w-md">
       <ImportPracticeHubConnectForm @connect="run" />

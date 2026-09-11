@@ -53,8 +53,26 @@ const cutoverDate = ref('')
 
 const dayOf = (value: string) => String(value).slice(0, 10)
 
+// Payments already recorded in QuiroFlow, keyed patient|day|amount. After
+// go-live the clinic records the same takings in both systems, and a date
+// cutoff alone throws the baby out with the bathwater: it skips everything
+// after that day, including a payment PracticeHub genuinely has and we do
+// not. Checked on the live account -- of the payments offered after go-live,
+// all but one already existed here, and that one (a 40 EUR card payment) is
+// exactly the kind the blunt rule would have hidden forever.
+//
+// So the cutoff marks where to START value-matching, not where to stop
+// looking: before go-live PracticeHub is the only source and nothing here can
+// match; after it, a payment is skipped only if the same patient paid the
+// same amount on the same day.
+const nativePaymentKeys = ref(new Set<string>())
+const valueKey = (patientId: string, created: string, amountCents: number) => `${patientId}|${dayOf(created)}|${amountCents}`
+
 const candidates = computed(() =>
-  cutoverDate.value ? scanned.value.filter((c) => dayOf(c.payment.created) < cutoverDate.value) : scanned.value,
+  scanned.value.filter((c) => {
+    if (!cutoverDate.value || dayOf(c.payment.created) < cutoverDate.value) return true
+    return !nativePaymentKeys.value.has(valueKey(c.patientId, c.payment.created, c.amountCents))
+  }),
 )
 const skippedAfterCutover = computed(() => scanned.value.length - candidates.value.length)
 
@@ -173,6 +191,20 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         .limit(1)
       const firstPaidAt = (firstNative as unknown as { paid_at: string }[] | null)?.[0]?.paid_at
       if (firstPaidAt) cutoverDate.value = dayOf(firstPaidAt)
+    }
+
+    phase.value = t('Checking payments taken here…', 'Comprobando pagos cobrados aquí…')
+    nativePaymentKeys.value = new Set()
+    for (let page = 0; ; page++) {
+      const { data } = await supabase
+        .from('payments')
+        .select('amount_cents, paid_at, invoices!inner(patient_id)')
+        .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+      const rows = (data ?? []) as unknown as { amount_cents: number; paid_at: string; invoices: { patient_id: string } | null }[]
+      for (const row of rows) {
+        if (row.invoices?.patient_id) nativePaymentKeys.value.add(valueKey(row.invoices.patient_id, row.paid_at, row.amount_cents))
+      }
+      if (rows.length < PAGE_SIZE) break
     }
 
     phase.value = t('Fetching payments…', 'Obteniendo pagos…')
@@ -310,18 +342,17 @@ function reset() {
   importErrors.value = []
   progress.value = { done: 0, total: 0 }
 }
+const introLead = computed(() => t("Brings every payment across from PracticeHub's API. Each one becomes a paid invoice here, because PracticeHub's API does not say which invoice a payment was put against.", 'Trae todos los pagos desde la API de PracticeHub. Cada uno se convierte aquí en una factura pagada, porque la API de PracticeHub no dice a qué factura se asignó un pago.'))
+const introNotes = computed(() => [
+  { title: t('Money the clinic already took here is skipped.', 'Se omite el dinero que la clínica ya cobró aquí.'), body: t('From the go-live date onward, a payment is skipped when the same patient paid the same amount on the same day -- otherwise a clinic recording in both systems would be billed twice.', 'Desde la fecha de puesta en marcha, un pago se omite si el mismo paciente pagó el mismo importe el mismo día; si no, una clínica que registra en los dos sistemas cobraría dos veces.') },
+  { title: t('Nothing is written until you press Apply.', 'No se escribe nada hasta que pulses Aplicar.'), body: t('The preview lists every payment it will create so you can check it first.', 'La vista previa muestra cada pago que creará para que lo compruebes antes.') },
+  { title: t('Safe to run again.', 'Se puede volver a ejecutar.'), body: t('Payments already imported are skipped.', 'Los pagos ya importados se omiten.') },
+])
 </script>
 
 <template>
   <div>
-    <p class="text-sm text-ink-muted2">
-      {{
-        t(
-          "Pulls directly from PracticeHub's API (Payments, matched to patients) — no CSV needed. Each payment becomes a paid invoice + line item + payment record here, since PracticeHub's API doesn't expose which invoice a payment was allocated to. Nothing is written until you review the summary and confirm. Safe to re-run — already-imported payments are skipped.",
-          'Obtiene los datos directamente de la API de PracticeHub (Payments, emparejados con pacientes); no se necesita CSV. Cada pago se convierte aquí en una factura pagada + un concepto + un registro de pago, ya que la API de PracticeHub no expone a qué factura se asignó un pago. No se escribe nada hasta que revises el resumen y confirmes. Se puede volver a ejecutar sin riesgo: los pagos ya importados se omiten.',
-        )
-      }}
-    </p>
+    <ImportIntro :lead="introLead" :notes="introNotes" />
 
     <div v-if="stage === 'connect'" class="mt-4 max-w-md">
       <ImportPracticeHubConnectForm @connect="run" />

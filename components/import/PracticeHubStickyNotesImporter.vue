@@ -152,18 +152,17 @@ function truncate(value: string | null): string {
   if (!value) return t('(blank)', '(vacío)')
   return value.length > 80 ? `${value.slice(0, 80)}…` : value
 }
+const introLead = computed(() => t("Brings each patient's sticky note across from PracticeHub's API — the one that shows on the calendar when you hover an appointment.", 'Trae la nota adhesiva de cada paciente desde la API de PracticeHub: la que aparece en el calendario al pasar el ratón por una cita.'))
+const introNotes = computed(() => [
+        { title: t('Only patients already here.', 'Solo pacientes que ya están aquí.'), body: t('It updates existing patients and never creates one, so run Patients first.', 'Actualiza pacientes existentes y nunca crea ninguno, así que ejecuta Pacientes primero.') },
+        { title: t('Nothing is written until you press Apply.', 'No se escribe nada hasta que pulses Aplicar.'), body: t('The preview lists every note it will set so you can check it first.', 'La vista previa muestra cada nota que va a escribir para que la compruebes antes.') },
+        { title: t('Safe to run again.', 'Se puede volver a ejecutar.'), body: t('Notes that already match are skipped.', 'Las notas que ya coinciden se omiten.') },
+])
 </script>
 
 <template>
   <div>
-    <p class="text-sm text-ink-muted2">
-      {{
-        t(
-          "Pulls each patient's sticky note from PracticeHub's API into the patient note here — the one that shows on the calendar when you hover an appointment. Only updates patients already imported, and is safe to re-run: notes that already match are skipped.",
-          'Obtiene la nota adhesiva de cada paciente desde la API de PracticeHub y la guarda como nota del paciente aquí: la que aparece en el calendario al pasar el ratón por una cita. Solo actualiza pacientes ya importados y se puede volver a ejecutar sin riesgo: las notas que ya coinciden se omiten.',
-        )
-      }}
-    </p>
+    <ImportIntro :lead="introLead" :notes="introNotes" />
 
     <div v-if="stage === 'connect'" class="mt-4 max-w-md">
       <ImportPracticeHubConnectForm @connect="run" />

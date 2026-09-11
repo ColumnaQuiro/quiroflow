@@ -17,7 +17,20 @@ jobs:
           node-version: 22
           cache: npm
 
+      # setup-node's `cache: npm` only restores npm's download cache -- the
+      # install itself still unpacks 1102 packages, measured at 28s on every
+      # job of every run. Caching the installed tree instead turns that into
+      # a ~5s restore, and the key is the lockfile, so any dependency change
+      # falls through to a real `npm ci`.
+      - name: Restore node_modules
+        id: modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
+
       - run: npm ci
+        if: steps.modules.outputs.cache-hit != 'true'
 
       - run: npm run preflight
 
@@ -31,25 +44,35 @@ jobs:
       # per-job setup cost, as it does once there's more than a couple
       # specs.
       #
-      # Balanced by folder, not by individual spec file: per-spec Cypress
-      # runtimes from PR #75's final green run (commit 1dea42e) were
-      # navigation 56s, settings 54s, inbox 22s, calendar 21s, auth 21s,
-      # patients 19s, public-booking 8s -- the previous grouping (by
-      # top-level folder, but grouped without ever looking at these numbers)
-      # put navigation+inbox+patients together at 98s against auth+calendar
-      # at 42s, the widest shard 56s slower than the narrowest. This grouping
-      # gets all three shards within 9s of each other (73/64/64) using the
-      # same folder-glob approach, which is what keeps a spec added to an
-      # existing folder auto-included in its shard -- no drift risk the way
-      # slicing at individual-file granularity would have. Durations will
-      # drift as specs are added; rebalance again once one shard consistently
-      # lags, same as before.
+      # Balanced by folder, not by individual spec file, so a spec added to
+      # an existing folder is auto-included in its shard -- slicing at
+      # file granularity would silently drop a new spec from every shard.
+      #
+      # Measured on the run for commit 445fc01 (2026-09-10), Cypress time
+      # only, excluding the ~2.5 min of fixed setup every shard pays:
+      # settings 91s, navigation 90s (all of it one spec), auth+calendar+inbox
+      # 64s, patients 46s, public-booking 4s. The three shards were 144/95/64s
+      # -- the widest 80s wider than the narrowest, and the job it sat in was
+      # the one that decided how long CI took.
+      #
+      # Four shards now, and the 90s navigation spec has been split into four
+      # (two authenticated sweeps under navigation/, the public and developer
+      # portal ones under public/). That split matters more than the extra
+      # runner: a single spec cannot be divided, so while one ran for 90s no
+      # amount of sharding could take CI below it.
+      #
+      # Expected Cypress time per shard: settings 91s, navigation ~80s,
+      # patients+public ~75s, auth+calendar+inbox 64s. Rebalance again once
+      # one shard consistently lags -- read the real per-spec numbers out of
+      # the "All specs passed" table in its log rather than guessing.
       matrix:
         shard:
-          - name: settings-and-patients
-            specs: "cypress/e2e/settings/**,cypress/e2e/patients/**"
-          - name: navigation-and-booking
-            specs: "cypress/e2e/navigation/**,cypress/e2e/public-booking/**"
+          - name: settings
+            specs: "cypress/e2e/settings/**"
+          - name: navigation
+            specs: "cypress/e2e/navigation/**"
+          - name: patients-and-public
+            specs: "cypress/e2e/patients/**,cypress/e2e/public/**,cypress/e2e/public-booking/**"
           - name: auth-calendar-inbox
             specs: "cypress/e2e/auth/**,cypress/e2e/calendar/**,cypress/e2e/inbox/**"
     runs-on: ubuntu-latest
@@ -91,7 +114,55 @@ jobs:
             > /tmp/supabase-start.log 2>&1 &
           echo $! > /tmp/supabase-start.pid
 
+      - name: Restore node_modules
+        id: modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
+
+      # The Cypress binary lives in ~/.cache/Cypress, not node_modules, and is
+      # fetched by Cypress's postinstall -- which never runs when the
+      # node_modules cache hits. Cached separately so neither half can be
+      # restored without the other, and installed explicitly in the one case
+      # where the tree is cached but the binary isn't.
+      - name: Restore the Cypress binary
+        id: cypress-binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/Cypress
+          key: cypress-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
       - run: npm ci
+        if: steps.modules.outputs.cache-hit != 'true'
+
+      - name: Install the Cypress binary
+        if: steps.modules.outputs.cache-hit == 'true' && steps.cypress-binary.outputs.cache-hit != 'true'
+        run: npx cypress install
+
+      # `cache: npm` on setup-node caches npm's own package cache, not the
+      # Cypress binary, which lives outside node_modules in ~/.cache/Cypress.
+      # When the npm cache hits, `npm ci` treats cypress as already installed
+      # and skips the postinstall that downloads the binary -- so the job dies
+      # with "the Cypress binary is missing" before a single test runs. That
+      # is what took out the navigation-and-booking shard on PR #163 while the
+      # other two shards passed: a cache-state coincidence, not a test failure.
+      #
+      # Keyed on the resolved Cypress version so a version bump misses the
+      # cache and re-downloads rather than restoring a stale binary.
+      - name: Read the Cypress version
+        id: cypress-version
+        run: echo "version=$(node -p "require('cypress/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/Cypress
+          key: cypress-${{ runner.os }}-${{ steps.cypress-version.outputs.version }}
+
+      # Idempotent: a no-op costing under a second when the cache restored the
+      # binary, and the thing that makes a cache miss recoverable instead of
+      # fatal.
+      - run: npx cypress install
 
       - name: Wait for Supabase and export its env vars
         run: |
@@ -130,9 +201,9 @@ jobs:
           path: cypress/screenshots
           if-no-files-found: ignore
 
-      - name: Stop Supabase
-        if: always()
-        run: supabase stop
+      # No "supabase stop" step: the runner is ephemeral and is torn down with
+      # its containers seconds later, so stopping them by hand bought nothing
+      # and cost a measured 11s at the end of every shard.
 
   # One stable check for branch protection to require.
   #

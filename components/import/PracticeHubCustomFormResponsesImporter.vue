@@ -305,18 +305,17 @@ function reset() {
   importErrors.value = []
   progress.value = { done: 0, total: 0 }
 }
+const introLead = computed(() => t("Brings submitted forms across from PracticeHub's API -- consent forms, health questionnaires, signed documents -- into each patient's Docs tab here.", 'Trae los formularios enviados desde la API de PracticeHub (consentimientos, cuestionarios de salud, documentos firmados) a la pestaña de documentos de cada paciente.'))
+const introNotes = computed(() => [
+  { title: t('It also creates a reusable template.', 'También crea una plantilla reutilizable.'), body: t('The first time it sees each distinct form it adds one under Settings > Docs, so the form can be sent to new patients too, not just kept as history.', 'La primera vez que ve cada formulario distinto añade una en Ajustes > Documentos, para poder enviarlo también a pacientes nuevos, no solo guardarlo como historial.') },
+  { title: t('Nothing is written until you press Apply.', 'No se escribe nada hasta que pulses Aplicar.'), body: t('The preview lists every form and template it will add so you can check it first.', 'La vista previa muestra cada formulario y plantilla que añadirá para que lo compruebes antes.') },
+  { title: t('Safe to run again.', 'Se puede volver a ejecutar.'), body: t('Forms and templates already imported are skipped.', 'Los formularios y plantillas ya importados se omiten.') },
+])
 </script>
 
 <template>
   <div>
-    <p class="text-sm text-ink-muted2">
-      {{
-        t(
-          "Pulls submitted custom forms (consent forms, health questionnaires, signed documents) directly from PracticeHub's API into each patient's Docs tab here, and creates a reusable template in Settings > Docs the first time it sees each distinct form — so it's ready to send to new patients too, not just imported history. Nothing is written until you review the summary and confirm. Safe to re-run — already-imported forms and templates are skipped.",
-          'Obtiene los formularios personalizados enviados (formularios de consentimiento, cuestionarios de salud, documentos firmados) directamente de la API de PracticeHub y los añade a la pestaña de documentos de cada paciente, y crea una plantilla reutilizable en Ajustes > Documentos la primera vez que ve cada formulario distinto, lista para enviar también a pacientes nuevos, no solo como historial importado. No se escribe nada hasta que revises el resumen y confirmes. Se puede volver a ejecutar sin riesgo: los formularios y plantillas ya importados se omiten.',
-        )
-      }}
-    </p>
+    <ImportIntro :lead="introLead" :notes="introNotes" />
 
     <div v-if="stage === 'connect'" class="mt-4 max-w-md">
       <ImportPracticeHubConnectForm @connect="run" />

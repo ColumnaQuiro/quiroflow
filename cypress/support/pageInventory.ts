@@ -42,6 +42,7 @@ export const SETTINGS_PAGES = [
   '/settings/services',
   '/settings/team',
   '/settings/webhooks',
+  '/settings/whatsapp',
 ]
 
 export const APP_PAGES = [

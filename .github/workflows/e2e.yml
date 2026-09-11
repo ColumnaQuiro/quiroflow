@@ -140,6 +140,30 @@ jobs:
         if: steps.modules.outputs.cache-hit == 'true' && steps.cypress-binary.outputs.cache-hit != 'true'
         run: npx cypress install
 
+      # `cache: npm` on setup-node caches npm's own package cache, not the
+      # Cypress binary, which lives outside node_modules in ~/.cache/Cypress.
+      # When the npm cache hits, `npm ci` treats cypress as already installed
+      # and skips the postinstall that downloads the binary -- so the job dies
+      # with "the Cypress binary is missing" before a single test runs. That
+      # is what took out the navigation-and-booking shard on PR #163 while the
+      # other two shards passed: a cache-state coincidence, not a test failure.
+      #
+      # Keyed on the resolved Cypress version so a version bump misses the
+      # cache and re-downloads rather than restoring a stale binary.
+      - name: Read the Cypress version
+        id: cypress-version
+        run: echo "version=$(node -p "require('cypress/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/Cypress
+          key: cypress-${{ runner.os }}-${{ steps.cypress-version.outputs.version }}
+
+      # Idempotent: a no-op costing under a second when the cache restored the
+      # binary, and the thing that makes a cache miss recoverable instead of
+      # fatal.
+      - run: npx cypress install
+
       - name: Wait for Supabase and export its env vars
         run: |
           pid="$(cat /tmp/supabase-start.pid)"

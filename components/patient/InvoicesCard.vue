@@ -2,53 +2,23 @@
 // The patient's invoices. Was web-portal-only; the mobile app showed a
 // balance with nothing behind it, so a patient could see they owed money
 // and not what for.
+//
+// The query and the status vocabulary live in usePatientInvoices, shared
+// with the portal's billing page (which also offers the PDF).
 const props = defineProps<{ patientId: string }>()
 
-const supabase = useSupabaseClient()
 const t = useT()
+const { invoices, loading } = usePatientInvoices(() => props.patientId)
 
-interface InvoiceRow {
-  id: string
-  invoice_number: string | null
-  total_cents: number
-  status: string
-  created_at: string
-}
-
-const invoices = ref<InvoiceRow[]>([])
-const loading = ref(true)
 const showAll = ref(false)
 
 // Enough to cover a year of visits without pulling a decade of history onto
 // a phone; "show all" lifts it.
 const PREVIEW = 8
-
-async function load() {
-  loading.value = true
-  const { data } = await supabase
-    .from('invoices')
-    .select('id, invoice_number, total_cents, status, created_at')
-    .eq('patient_id', props.patientId)
-    .order('created_at', { ascending: false })
-    .limit(200)
-  invoices.value = data ?? []
-  loading.value = false
-}
-onMounted(load)
-watch(() => props.patientId, load)
-
 const visible = computed(() => (showAll.value ? invoices.value : invoices.value.slice(0, PREVIEW)))
 
-const statusChip: Record<string, string> = {
-  paid: 'bg-success-bg text-success-text',
-  unpaid: 'bg-danger-bg text-danger-text',
-  void: 'bg-chip-bg text-chip-text',
-}
-const statusLabel: Record<string, [string, string]> = {
-  paid: ['Paid', 'Pagada'],
-  unpaid: ['Unpaid', 'Pendiente'],
-  void: ['Void', 'Anulada'],
-}
+const statusChip = Object.fromEntries(Object.entries(PATIENT_INVOICE_STATUS).map(([k, v]) => [k, v.chip]))
+const statusLabel = Object.fromEntries(Object.entries(PATIENT_INVOICE_STATUS).map(([k, v]) => [k, v.label]))
 </script>
 
 <template>

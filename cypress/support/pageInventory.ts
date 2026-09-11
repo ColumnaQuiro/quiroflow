@@ -101,6 +101,10 @@ export const NOT_SWEPT_HERE: Record<string, string> = {
   '/portal/login': 'patient portal -- separate app with its own auth',
   '/portal/signup': 'patient portal -- separate app with its own auth',
   '/portal/not-found': 'patient portal -- separate app with its own auth',
+  '/portal/appointments': 'patient portal -- separate app with its own auth',
+  '/portal/billing': 'patient portal -- separate app with its own auth',
+  '/portal/documents': 'patient portal -- separate app with its own auth',
+  '/portal/messages': 'patient portal -- separate app with its own auth',
 }
 
 // Every authenticated sweep asserts the same three things per page: it landed

@@ -43,14 +43,16 @@ describe('Taking a visit from a bono in the calendar', () => {
 
           cy.get('.fixed.inset-0.z-50').within(() => {
             cy.contains('button', 'billing').click()
-            // Opening the tab raises an invoice eagerly, before anyone has
-            // said how the visit will be paid. That is the one this flow has
-            // to clean up.
-            cy.contains('INV-').should('be.visible')
+            // Opening the tab used to raise an invoice eagerly, before anyone
+            // had said how the visit would be paid -- which is how bono visits
+            // ended up carrying a phantom debt. Nothing is billed until a
+            // person chooses, so there is no invoice to clean up here.
+            cy.contains('Not billed yet').should('be.visible')
+            cy.contains('INV-').should('not.exist')
 
             cy.contains('button', 'Bono 12').click()
 
-            // The invoice is gone, replaced by an explicit statement of why.
+            // Replaced by an explicit statement of why there is no invoice.
             cy.contains('Covered by Bono 12', { timeout: 15000 }).should('be.visible')
             cy.contains('INV-').should('not.exist')
           })

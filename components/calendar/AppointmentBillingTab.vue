@@ -80,11 +80,40 @@ async function loadAppointmentTiming() {
   appointmentIsUpcoming.value = !!data && new Date(data.starts_at) > new Date()
 }
 
-// Creates the invoice on demand -- called only from an actual billing action
-// (recording a payment, adding a line item, spending a package session,
-// sending the invoice), never just from opening this tab. For an appointment
-// that hasn't happened yet, skip creating: there's nothing to bill until the
-// visit occurs, so this returns null and the calling action no-ops.
+// Reads the invoice for this appointment, if someone has raised one. Opening
+// this tab is a read -- see ensureInvoice() for why it must never write.
+async function findInvoice(): Promise<InvoiceRow | null> {
+  const { data } = await supabase
+    .from('invoices')
+    .select('id, invoice_number, status, total_cents')
+    .eq('appointment_id', props.appointmentId)
+    .maybeSingle()
+  return data ?? null
+}
+
+// Creates the invoice on demand. Called only from an actual billing action --
+// today that is chargeVisit(), reached by pressing "Charge" on a visit nobody
+// has billed yet -- and never from opening this tab.
+//
+// It used to run from loadInvoice(), so merely looking at a past appointment's
+// Billing tab raised an unpaid invoice at the appointment type's list price,
+// before anyone had said how the visit would be paid. Three things then
+// compounded:
+//
+//   - a visit the patient settled with their bono still got an invoice, and
+//     usePackageSession()'s cleanup below only deletes it when nothing was
+//     added and nothing was collected -- so any other case left a phantom
+//     debt standing against the patient;
+//   - loadInvoice() pre-filled the payment row with the full balance, and
+//     useSplitPayment defaults the method to cash, so the panel opened one
+//     click away from recording a full-price cash payment nobody had made.
+//     Ten such payments (EUR 560, nine exactly at list price) were recorded
+//     this way since go-live;
+//   - every visit anyone glanced at consumed an invoice number.
+//
+// Nothing is written now until someone chooses how the visit is paid: charge
+// it, or spend a bono session. For an appointment that hasn't happened yet
+// there is nothing to bill at all, so this returns null and the caller no-ops.
 
 // Set when this visit has already been drawn from a bono. Doubles as the
 // "don't raise an invoice" flag for ensureInvoice() and as what the panel
@@ -103,22 +132,18 @@ async function loadPackageCoverage() {
 }
 
 async function ensureInvoice(): Promise<InvoiceRow | null> {
-  const { data: existing } = await supabase
-    .from('invoices')
-    .select('id, invoice_number, status, total_cents')
-    .eq('appointment_id', props.appointmentId)
-    .maybeSingle()
+  const existing = await findInvoice()
 
   if (existing) return existing
   if (!can('billing_access')) return null
   if (appointmentIsUpcoming.value) return null
 
   // A visit already drawn from a bono is not a billing event -- the patient
-  // paid for it when they bought the bono. Without this, usePackageSession()
-  // deleting the auto-raised invoice would achieve nothing: its own trailing
-  // loadInvoice(), or simply reopening this tab tomorrow, would raise a fresh
-  // unpaid one at the standalone price. loadPackageCoverage() runs first, so
-  // this reads an already-fetched value rather than querying again.
+  // paid for it when they bought the bono. The panel hides the Charge button
+  // once a session has been spent, so this is the backstop for a tab that was
+  // already open when the bono was used somewhere else.
+  // loadPackageCoverage() runs first, so this reads an already-fetched value
+  // rather than querying again.
   if (packageCoverage.value) return null
 
   const { count } = await supabase.from('invoices').select('id', { count: 'exact', head: true })
@@ -160,9 +185,11 @@ async function loadInvoice() {
   error.value = ''
 
   await loadPackageCoverage()
-  const inv = await ensureInvoice()
+  const inv = await findInvoice()
 
   invoice.value = inv
+  lineItems.value = []
+  payments.value = []
   if (inv) {
     const [{ data: lines }, { data: pays }] = await Promise.all([
       supabase.from('invoice_line_items').select('id, description, quantity, price_cents, service_id').eq('invoice_id', inv.id),
@@ -189,6 +216,27 @@ async function recalcInvoiceTotal() {
   await supabase.from('invoices').update({ total_cents: totalCents }).eq('id', invoice.value.id)
   invoice.value.total_cents = totalCents
   resetPaymentRows((balanceDueCents.value / 100).toFixed(2))
+}
+
+const visitPriceCents = computed(() => props.appointmentTypePriceCents ?? 0)
+// An appointment type with no price of its own (the visit is billed from the
+// services added to it) would otherwise offer "Charge €0.00".
+const chargeLabel = computed(() =>
+  visitPriceCents.value > 0
+    ? `${t('Charge', 'Cobrar')} €${(visitPriceCents.value / 100).toFixed(2)}`
+    : t('Bill this visit', 'Facturar esta visita'),
+)
+
+// "Charge" on an unbilled visit: raise the invoice at the appointment type's
+// price, which is exactly what opening this tab used to do by itself. The
+// difference is that a person now says so.
+async function chargeVisit() {
+  if (invoice.value || savingPayment.value) return
+  savingPayment.value = true
+  error.value = ''
+  const inv = await ensureInvoice()
+  savingPayment.value = false
+  if (inv) await loadInvoice()
 }
 
 async function addLineItem() {
@@ -221,7 +269,9 @@ async function removeLineItem(item: LineItemRow) {
 }
 
 async function usePackageSession(pkg: { id: string; package_name: string; sessions_used: number; sessions_total: number; price_cents: number }) {
-  if (pkg.sessions_used >= pkg.sessions_total || !invoice.value) return
+  // No invoice required: a bono visit is normally billed straight from the
+  // unbilled panel, with nothing raised against it at all.
+  if (pkg.sessions_used >= pkg.sessions_total) return
   // This visit is already settled -- e.g. billed from the mobile app while
   // this tab was still open on another screen. Spending a session here too
   // would burn a real session for a visit that isn't taking one: the invoice
@@ -230,7 +280,7 @@ async function usePackageSession(pkg: { id: string; package_name: string; sessio
   // package_sessions row behind it either. Janina Ron's newly-bought
   // "maintenance" bono lost a session this way when it, not the bono actually
   // being visited, was tapped on an appointment already paid from the web tab.
-  if (invoice.value.status === 'paid') {
+  if (invoice.value?.status === 'paid') {
     error.value = t('This visit has already been billed.', 'Esta visita ya ha sido facturada.')
     return
   }
@@ -301,34 +351,37 @@ async function usePackageSession(pkg: { id: string; package_name: string; sessio
     used_at: appt?.starts_at ?? new Date().toISOString(),
   })
 
-  // Now dispose of the invoice ensureInvoice() already raised. It is created
-  // eagerly the moment this tab opens -- before anyone has said how the visit
-  // will be paid -- so by the time the bono is chosen it exists and is wrong.
+  // Dispose of an invoice this visit already carries. Since ensureInvoice()
+  // stopped firing on open there is usually none -- but there are two ways to
+  // get here with one: an appointment invoiced before that change, and a visit
+  // deliberately charged and then settled with the bono after all.
   //
   // Extras (a product, an added service: the lines carrying a service_id) are
   // real money owed on top of the bono, so those keep their invoice. Only the
-  // auto-created visit line goes, since the bono covers the visit itself.
-  const extraLines = lineItems.value.filter((l) => l.service_id)
-  const baseLine = lineItems.value.find((l) => !l.service_id)
+  // visit line goes, since the bono covers the visit itself.
+  if (invoice.value) {
+    const extraLines = lineItems.value.filter((l) => l.service_id)
+    const baseLine = lineItems.value.find((l) => !l.service_id)
 
-  if (extraLines.length === 0 && payments.value.length === 0) {
-    // Nothing chargeable and nothing collected: the invoice should never have
-    // existed. Deleting is safe here precisely because there are no payments --
-    // payments cascade on invoice delete, so this branch must stay guarded on
-    // payments being empty or it would destroy real money records.
-    await supabase.from('invoices').delete().eq('id', invoice.value.id)
-    invoice.value = null
-    lineItems.value = []
-  } else {
-    // Something stays billable. Drop the covered visit line and reprice, so
-    // the patient is charged for the extras only.
-    if (baseLine) {
-      await supabase.from('invoice_line_items').delete().eq('id', baseLine.id)
-      lineItems.value = lineItems.value.filter((l) => l.id !== baseLine.id)
+    if (extraLines.length === 0 && payments.value.length === 0) {
+      // Nothing chargeable and nothing collected: the invoice should never have
+      // existed. Deleting is safe here precisely because there are no payments --
+      // payments cascade on invoice delete, so this branch must stay guarded on
+      // payments being empty or it would destroy real money records.
+      await supabase.from('invoices').delete().eq('id', invoice.value.id)
+      invoice.value = null
+      lineItems.value = []
+    } else {
+      // Something stays billable. Drop the covered visit line and reprice, so
+      // the patient is charged for the extras only.
+      if (baseLine) {
+        await supabase.from('invoice_line_items').delete().eq('id', baseLine.id)
+        lineItems.value = lineItems.value.filter((l) => l.id !== baseLine.id)
+      }
+      const totalCents = lineItems.value.reduce((sum, l) => sum + l.price_cents * l.quantity, 0)
+      await supabase.from('invoices').update({ total_cents: totalCents }).eq('id', invoice.value.id)
+      invoice.value.total_cents = totalCents
     }
-    const totalCents = lineItems.value.reduce((sum, l) => sum + l.price_cents * l.quantity, 0)
-    await supabase.from('invoices').update({ total_cents: totalCents }).eq('id', invoice.value.id)
-    invoice.value.total_cents = totalCents
   }
 
   // Completing the visit is unchanged -- it happened, whatever paid for it.
@@ -456,6 +509,45 @@ async function recordPayment() {
       <p class="mt-0.5 text-[12.5px] text-ink-muted2">
         {{ t('Worth', 'Valor') }} €{{ (packageCoverage.amountCents / 100).toFixed(2) }} —
         {{ t('already paid when the bono was bought, so there is no invoice for this visit.', 'ya pagada al comprar el bono, por lo que no hay factura para esta visita.') }}
+      </p>
+    </div>
+    <!-- Past visit, nothing billed against it yet. This is the choice that
+    used to be made for reception by ensureInvoice() running on open: charge
+    the visit, or spend a bono session. Until one is pressed, no invoice
+    exists and nothing is owed. -->
+    <div v-else-if="!invoice" class="rounded-card border border-line bg-surface p-3">
+      <p class="text-[13px] font-medium text-ink-700">{{ t('Not billed yet', 'Sin facturar') }}</p>
+      <p class="mt-0.5 text-[12.5px] text-ink-muted2">
+        {{ appointmentTypeName || t('Appointment', 'Cita') }}<span v-if="visitPriceCents > 0"> — €{{ (visitPriceCents / 100).toFixed(2) }}</span>
+      </p>
+      <div class="mt-2 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          :disabled="savingPayment"
+          class="rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50"
+          @click="chargeVisit"
+        >
+          {{ savingPayment ? t('Working…', 'Procesando…') : chargeLabel }}
+        </button>
+      </div>
+      <div v-if="activePackages.length > 0" class="mt-2 flex flex-wrap items-center gap-2 border-t border-line-divider pt-2">
+        <span class="text-xs text-ink-muted2">{{ t('Or use a package session:', 'O usar una sesión de bono:') }}</span>
+        <button
+          v-for="p in activePackages"
+          :key="p.id"
+          type="button"
+          :disabled="savingPayment"
+          class="rounded-ctl border border-brand-tintBorder bg-brand-tint px-2 py-1 text-xs font-medium text-brand-text hover:brightness-95 disabled:opacity-50"
+          @click="usePackageSession(p)"
+        >
+          {{ p.package_name }} ({{ p.sessions_total - p.sessions_used }} {{ t('left', 'restantes') }})
+          <span v-if="p.shared" class="ml-1 rounded-ctlSm bg-info-bg px-1 py-0.5 text-[10px] font-semibold text-info-text">
+            {{ p.ownerName ? t(`Shared by ${p.ownerName}`, `Compartido por ${p.ownerName}`) : t('Shared', 'Compartido') }}
+          </span>
+        </button>
+      </div>
+      <p v-if="!hasFutureAppointment" class="mt-3 border-t border-line-divider pt-3 text-sm font-medium text-danger-text">
+        {{ t('No future appointment — this patient will show up in Recalls automatically.', 'Sin próxima cita: este paciente aparecerá automáticamente en Recordatorios.') }}
       </p>
     </div>
     <div v-else-if="invoice" class="rounded-card border border-line bg-surface p-3">

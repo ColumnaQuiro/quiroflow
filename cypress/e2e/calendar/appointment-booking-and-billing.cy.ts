@@ -70,6 +70,12 @@ describe('Appointment booking and billing checkout', () => {
 
           cy.get('.fixed.inset-0.z-50').within(() => {
             cy.contains('button', 'billing').click()
+            // Nothing is invoiced until someone says how the visit is paid --
+            // see ensureInvoice(). "Bill this visit" is that decision (the
+            // appointment type carries no price of its own here, so it isn't
+            // labelled with an amount).
+            cy.contains('Not billed yet').should('be.visible')
+            cy.contains('button', 'Bill this visit').click()
             cy.contains('-- Add Service/Product --').should('be.visible')
             cy.get('select').eq(0).should('contain.text', 'Adjustment').select('Adjustment (€50.00)')
 

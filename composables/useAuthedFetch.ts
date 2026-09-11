@@ -12,6 +12,13 @@
 // to the deployed app instead; server/middleware/cors.ts is the matching
 // server-side fix that lets a capacitor://localhost origin actually read
 // the response.
+//
+// Lives in the root app rather than mobile/ because both front ends now
+// render the same patient components (mobile/nuxt.config.ts points its
+// `imports.dirs` here), and those components have to be able to call the
+// API from either. In the web app there is no apiBase and no bearer token
+// to attach -- the URL stays relative and the cookie does the work, which
+// is exactly what $fetch already did there.
 export function useAuthedFetch() {
   const supabase = useSupabaseClient()
   const config = useRuntimeConfig()
@@ -19,7 +26,8 @@ export function useAuthedFetch() {
   return async function authedFetch<T>(url: string, opts: Parameters<typeof $fetch>[1] = {}) {
     const { data } = await supabase.auth.getSession()
     const token = data.session?.access_token
-    const absoluteUrl = /^https?:\/\//.test(url) ? url : `${config.public.apiBase}${url}`
+    const apiBase = (config.public as { apiBase?: string }).apiBase ?? ''
+    const absoluteUrl = /^https?:\/\//.test(url) ? url : `${apiBase}${url}`
     return $fetch<T>(absoluteUrl, {
       ...opts,
       headers: { ...(opts?.headers as Record<string, string> | undefined), ...(token ? { Authorization: `Bearer ${token}` } : {}) },

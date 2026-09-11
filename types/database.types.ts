@@ -235,6 +235,10 @@ export type Database = {
           online_booking_referral_url: string | null
           online_booking_secondary_color: string | null
           online_booking_success_url: string | null
+          patient_app_booking_enabled: boolean
+          patient_app_cancel_enabled: boolean
+          patient_app_reschedule_enabled: boolean
+          patient_app_change_notice_hours: number
           online_booking_text_overrides: Json
           practicehub_api_key: string | null
           practicehub_base_url: string | null
@@ -299,6 +303,10 @@ export type Database = {
           online_booking_referral_url?: string | null
           online_booking_secondary_color?: string | null
           online_booking_success_url?: string | null
+          patient_app_booking_enabled?: boolean
+          patient_app_cancel_enabled?: boolean
+          patient_app_reschedule_enabled?: boolean
+          patient_app_change_notice_hours?: number
           online_booking_text_overrides?: Json
           practicehub_api_key?: string | null
           practicehub_base_url?: string | null
@@ -363,6 +371,10 @@ export type Database = {
           online_booking_referral_url?: string | null
           online_booking_secondary_color?: string | null
           online_booking_success_url?: string | null
+          patient_app_booking_enabled?: boolean
+          patient_app_cancel_enabled?: boolean
+          patient_app_reschedule_enabled?: boolean
+          patient_app_change_notice_hours?: number
           online_booking_text_overrides?: Json
           practicehub_api_key?: string | null
           practicehub_base_url?: string | null
@@ -2761,6 +2773,57 @@ export type Database = {
           },
         ]
       }
+      patient_push_broadcasts: {
+        Row: {
+          account_id: string
+          body: string
+          created_at: string
+          delivered_count: number
+          id: string
+          patient_ids: string[] | null
+          recipients_count: number
+          sent_by: string | null
+          title: string
+        }
+        Insert: {
+          account_id: string
+          body: string
+          created_at?: string
+          delivered_count?: number
+          id?: string
+          patient_ids?: string[] | null
+          recipients_count?: number
+          sent_by?: string | null
+          title: string
+        }
+        Update: {
+          account_id?: string
+          body?: string
+          created_at?: string
+          delivered_count?: number
+          id?: string
+          patient_ids?: string[] | null
+          recipients_count?: number
+          sent_by?: string | null
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_push_broadcasts_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_push_broadcasts_sent_by_fkey"
+            columns: ["sent_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       patients: {
         Row: {
           account_id: string
@@ -2776,6 +2839,7 @@ export type Database = {
           default_practitioner_id: string | null
           diagnosis: string | null
           do_not_contact: boolean
+          app_push_opted_out: boolean
           email: string | null
           emergency_contact: string | null
           external_reference: string | null
@@ -2822,6 +2886,7 @@ export type Database = {
           default_practitioner_id?: string | null
           diagnosis?: string | null
           do_not_contact?: boolean
+          app_push_opted_out?: boolean
           email?: string | null
           emergency_contact?: string | null
           external_reference?: string | null
@@ -2868,6 +2933,7 @@ export type Database = {
           default_practitioner_id?: string | null
           diagnosis?: string | null
           do_not_contact?: boolean
+          app_push_opted_out?: boolean
           email?: string | null
           emergency_contact?: string | null
           external_reference?: string | null
@@ -4515,6 +4581,8 @@ export type Database = {
       get_my_bootstrap: { Args: never; Returns: Json }
       get_my_permissions: { Args: { target_account_id: string }; Returns: Json }
       get_patient_booking_info: { Args: never; Returns: Json }
+      cancel_patient_appointment: { Args: { p_appointment_id: string }; Returns: Json }
+      reschedule_patient_appointment: { Args: { p_appointment_id: string; p_starts_at: string }; Returns: Json }
       get_public_booking_info: { Args: { p_slug: string }; Returns: Json }
       get_public_patient_doc: { Args: { p_token: string }; Returns: Json }
       has_permission: {

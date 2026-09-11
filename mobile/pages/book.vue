@@ -191,10 +191,33 @@ const submitting = ref(false)
 const submitError = ref('')
 const confirmation = ref<{ starts_at: string } | null>(null)
 
+// Reached as /book?reschedule=<id> from the appointments card. The slot
+// picker is identical either way -- only the RPC at the end differs -- so
+// this reuses the whole flow rather than duplicating an availability
+// calendar somewhere else.
+const route = useRoute()
+const rescheduleId = computed(() => (typeof route.query.reschedule === 'string' ? route.query.reschedule : null))
+
 async function submitBooking() {
   if (!selectedSlot.value) return
   submitError.value = ''
   submitting.value = true
+
+  if (rescheduleId.value) {
+    const { data, error } = await supabase.rpc('reschedule_patient_appointment', {
+      p_appointment_id: rescheduleId.value,
+      p_starts_at: selectedSlot.value.toISOString(),
+    })
+    submitting.value = false
+    if (error) {
+      submitError.value = error.message
+      return
+    }
+    confirmation.value = data as unknown as { starts_at: string }
+    phase.value = 'success'
+    return
+  }
+
   const { data, error } = await supabase.rpc('create_patient_booking', {
     p_clinic_id: clinicId.value,
     p_team_member_id: teamMemberId.value,
@@ -296,10 +319,13 @@ async function submitBooking() {
         <p class="mt-1 text-[12.5px] text-ink-muted">{{ selectedSlot?.toLocaleString([], { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) }}</p>
         <p v-if="appointmentType" class="mt-1 text-[12.5px] text-ink-muted">{{ formatPrice(effectivePrice) }}</p>
       </div>
-      <div>
+      <!-- The reschedule RPC moves the existing appointment and takes no
+           note, so asking for one here would quietly discard it. -->
+      <div v-if="!rescheduleId">
         <label class="block text-[12.5px] font-medium text-ink-700">Note (optional)</label>
         <textarea v-model="note" rows="3" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-[13.5px]" />
       </div>
+      <p v-else class="text-[12.5px] text-ink-muted">This will move your existing appointment to the time above.</p>
       <p v-if="submitError" class="text-[12.5px] text-danger-text">{{ submitError }}</p>
       <UiBtn variant="primary" class="w-full" :disabled="submitting" @click="submitBooking">{{ submitting ? 'Booking…' : 'Confirm booking' }}</UiBtn>
       <button type="button" class="w-full text-center text-[12.5px] text-ink-muted" @click="phase = 'datetime'">&larr; Choose a different time</button>

@@ -1,6 +1,5 @@
 import { createSign } from 'node:crypto'
 import { serverSupabaseServiceRole } from '#supabase/server'
-import type { H3Event } from 'h3'
 import type { Database } from '~/types/database.types'
 
 // Push notification for a new inbound message (WhatsApp or in-app), to
@@ -11,7 +10,6 @@ import type { Database } from '~/types/database.types'
 // "who should be notified about a new Inbox message" is one policy
 // regardless of which channel it arrived on.
 export async function notifyInboxTeamMembers(
-  event: H3Event,
   supabase: ReturnType<typeof serverSupabaseServiceRole<Database>>,
   accountId: string,
   senderName: string,
@@ -29,7 +27,7 @@ export async function notifyInboxTeamMembers(
     .filter((m) => m.is_owner || (m.account_roles as { permissions: Record<string, unknown> } | null)?.permissions?.inbox_access === true)
     .map((m) => m.user_id as string)
 
-  await sendPushToUsers(event, userIds, { title: senderName, body: preview, data })
+  await sendPushToUsers(supabase, userIds, { title: senderName, body: preview, data })
 }
 
 // FCM v1 needs an OAuth access token minted from the Firebase service
@@ -83,14 +81,24 @@ async function getAccessToken(account: ServiceAccount): Promise<string> {
  * No-ops quietly if FCM isn't configured (fcmServiceAccountJson unset) --
  * same "optional, skip cleanly" convention as WhatsApp delivery tracking.
  */
-export async function sendPushToUsers(event: H3Event, userIds: string[], notification: { title: string; body: string; data?: Record<string, string> }) {
-  if (userIds.length === 0) return
+export interface PushSendResult {
+  /** Devices we tried. 0 means nobody had the app installed. */
+  attempted: number
+  delivered: number
+}
+
+export async function sendPushToUsers(
+  supabase: ReturnType<typeof serverSupabaseServiceRole<Database>>,
+  userIds: string[],
+  notification: { title: string; body: string; data?: Record<string, string> },
+): Promise<PushSendResult> {
+  if (userIds.length === 0) return { attempted: 0, delivered: 0 }
 
   const config = useRuntimeConfig()
   const raw = config.fcmServiceAccountJson
   if (!raw) {
     console.error('[push] fcmServiceAccountJson is not configured -- skipping push send')
-    return
+    return { attempted: 0, delivered: 0 }
   }
 
   // Nitro's env-to-runtimeConfig override auto-parses any env var value
@@ -107,15 +115,14 @@ export async function sendPushToUsers(event: H3Event, userIds: string[], notific
       account = JSON.parse(raw)
     } catch (err) {
       console.error('[push] fcmServiceAccountJson is not valid JSON', err)
-      return
+      return { attempted: 0, delivered: 0 }
     }
   } else {
     account = raw as unknown as ServiceAccount
   }
 
-  const supabase = serverSupabaseServiceRole<Database>(event)
   const { data: tokens } = await supabase.from('device_push_tokens').select('fcm_token').in('user_id', userIds)
-  if (!tokens || tokens.length === 0) return
+  if (!tokens || tokens.length === 0) return { attempted: 0, delivered: 0 }
 
   let accessToken: string
   try {
@@ -126,7 +133,7 @@ export async function sendPushToUsers(event: H3Event, userIds: string[], notific
     // whatever caller triggered it (a WhatsApp webhook, a message send),
     // with nothing logged to explain why push silently never worked.
     console.error('[push] failed to obtain an FCM access token', err)
-    return
+    return { attempted: 0, delivered: 0 }
   }
 
   const results = await Promise.all(
@@ -156,4 +163,49 @@ export async function sendPushToUsers(event: H3Event, userIds: string[], notific
   // logging as "[Object]" with no way to tell why a send failed. Stringify
   // explicitly so the real reason survives into the log.
   if (failed.length > 0) console.error(`[push] send failed for ${failed.length} of ${tokens.length} device(s)`, JSON.stringify(failed, null, 2))
+  return { attempted: tokens.length, delivered: tokens.length - failed.length }
+}
+
+/**
+ * Pushes to patients of one account -- the clinic-to-patient direction,
+ * which until now had no sender at all (the only push in the app went the
+ * other way, to staff, via notifyInboxTeamMembers).
+ *
+ * Pass patientIds to target specific people, or null for everyone. Either
+ * way the same two suppressions apply, because they are the patient's
+ * decision and not the caller's to skip:
+ *
+ *   do_not_contact      -- already gates WhatsApp and email in
+ *                          appointmentNotifications.ts; a patient who has
+ *                          asked not to be contacted means by any channel,
+ *                          and a new channel does not get to reset that.
+ *   app_push_opted_out  -- the same request made about push specifically.
+ *
+ * Only patients who have actually signed in (user_id set) can be reached,
+ * and only from devices they registered, so the reachable set is always a
+ * subset of the clinic's patient list -- `attempted: 0` normally means
+ * nobody has the app, not that something failed.
+ */
+export async function sendPushToPatients(
+  supabase: ReturnType<typeof serverSupabaseServiceRole<Database>>,
+  accountId: string,
+  patientIds: string[] | null,
+  notification: { title: string; body: string; data?: Record<string, string> },
+): Promise<PushSendResult & { recipients: number }> {
+  let query = supabase
+    .from('patients')
+    .select('user_id')
+    .eq('account_id', accountId)
+    .not('user_id', 'is', null)
+    .eq('do_not_contact', false)
+    .eq('app_push_opted_out', false)
+  if (patientIds !== null) {
+    if (patientIds.length === 0) return { attempted: 0, delivered: 0, recipients: 0 }
+    query = query.in('id', patientIds)
+  }
+
+  const { data: recipients } = await query
+  const userIds = [...new Set((recipients ?? []).map((r) => r.user_id as string))]
+  const result = await sendPushToUsers(supabase, userIds, notification)
+  return { ...result, recipients: userIds.length }
 }

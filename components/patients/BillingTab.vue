@@ -971,6 +971,55 @@ async function unlinkPayment(paymentId: string) {
 // bono had already paid for; see 0161 for the ledger side of undoing it.
 const loggingSessionFor = ref<string | null>(null)
 
+interface UncoveredVisit {
+  id: string
+  starts_at: string
+  typeName: string | null
+  unpaidInvoice: { id: string; invoice_number: string | null; total_cents: number } | null
+}
+
+// The visit this session most likely belongs to: a completed appointment
+// today that no bono session covers yet.
+//
+// Without this the flow always invented an appointment, even when the real
+// one was sitting on the calendar. That is how a patient ended up billed
+// twice for one visit -- his Informe Quiropractico was invoiced at its EUR 60
+// list price, and 53 seconds later a session was logged here against a
+// brand-new typeless placeholder, so he owed EUR 60 AND was down a session
+// for a visit that never happened.
+async function findUncoveredVisitToday(): Promise<UncoveredVisit | null> {
+  const dayStart = new Date()
+  dayStart.setHours(0, 0, 0, 0)
+
+  const { data: appts } = await supabase
+    .from('appointments')
+    .select('id, starts_at, appointment_types(name)')
+    .eq('patient_id', props.patientId)
+    .eq('status', 'completed')
+    .is('deleted_at', null)
+    .gte('starts_at', dayStart.toISOString())
+    .order('starts_at', { ascending: false })
+  if (!appts || appts.length === 0) return null
+
+  const ids = appts.map((a) => a.id)
+  const [{ data: covered }, { data: invoices }] = await Promise.all([
+    supabase.from('package_sessions').select('appointment_id').in('appointment_id', ids),
+    supabase.from('invoices').select('id, invoice_number, total_cents, status, appointment_id').in('appointment_id', ids).eq('status', 'unpaid'),
+  ])
+  const coveredIds = new Set((covered ?? []).map((c) => c.appointment_id))
+
+  const match = appts.find((a) => !coveredIds.has(a.id))
+  if (!match) return null
+
+  const invoice = (invoices ?? []).find((i) => i.appointment_id === match.id) ?? null
+  return {
+    id: match.id,
+    starts_at: match.starts_at,
+    typeName: (match.appointment_types as { name: string } | null)?.name ?? null,
+    unpaidInvoice: invoice ? { id: invoice.id, invoice_number: invoice.invoice_number, total_cents: invoice.total_cents } : null,
+  }
+}
+
 async function useSession(purchase: PackagePurchaseRow) {
   if (purchase.sessions_used >= purchase.sessions_total || loggingSessionFor.value) return
   if (!store.accountId || !store.currentClinicId) return
@@ -979,7 +1028,31 @@ async function useSession(purchase: PackagePurchaseRow) {
   // whatever an appointment type charges walk-ins -- same rate
   // usePackageSession() reprices a package-covered visit to.
   const perSessionCents = Math.round(purchase.price_cents / purchase.sessions_total)
-  if (!confirm(`${t('Log a session for', 'Registrar una sesión de')} ${money(perSessionCents)} ${t('against', 'contra')} "${purchase.package_name}"? ${t('This records a completed visit today and uses one session. Nothing is charged — the bono already covers it.', 'Esto registra una visita completada hoy y consume una sesión. No se cobra nada: el bono ya la cubre.')}`)) return
+
+  const visit = await findUncoveredVisitToday()
+  const visitLabel = visit
+    ? `${visit.typeName ?? t('Visit', 'Visita')} · ${new Date(visit.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+    : null
+  // Voiding is offered here rather than left for someone to notice later:
+  // the invoice and the session are two records of one visit, and whoever is
+  // standing at the desk is the only person who knows they are the same one.
+  const voidNote = visit?.unpaidInvoice
+    ? ` ${t(
+        `${visit.unpaidInvoice.invoice_number ?? 'The unpaid invoice'} for ${money(visit.unpaidInvoice.total_cents)} on that visit will be voided, since the bono covers it.`,
+        `Se anulará ${visit.unpaidInvoice.invoice_number ?? 'la factura pendiente'} de ${money(visit.unpaidInvoice.total_cents)} de esa visita, ya que el bono la cubre.`,
+      )}`
+    : ''
+  const body = visit
+    ? t(
+        `This uses one session against that visit. Nothing is charged — the bono already covers it.${voidNote}`,
+        `Esto consume una sesión de esa visita. No se cobra nada: el bono ya la cubre.${voidNote}`,
+      )
+    : t(
+        'No completed visit today has this bono against it, so a visit will be recorded now. Nothing is charged — the bono already covers it.',
+        'Ninguna visita completada de hoy tiene este bono asociado, así que se registrará una visita ahora. No se cobra nada: el bono ya la cubre.',
+      )
+  const target = visitLabel ? ` ${t('against', 'contra')} ${visitLabel}` : ''
+  if (!confirm(`${t('Log a session for', 'Registrar una sesión de')} ${money(perSessionCents)}${target} ${t('from', 'de')} "${purchase.package_name}"? ${body}`)) return
 
   loggingSessionFor.value = purchase.id
   try {
@@ -1001,22 +1074,37 @@ async function useSession(purchase: PackagePurchaseRow) {
     }
 
     const now = new Date()
-    // No appointment type to take a duration from (this is logged off the
-    // bono, not off the calendar), so the schema's own default stands in.
-    const ends = new Date(now.getTime() + 30 * 60000)
-    const { data: appointment } = await supabase
-      .from('appointments')
-      .insert({
-        account_id: store.accountId,
-        clinic_id: store.currentClinicId,
-        patient_id: props.patientId,
-        practitioner_id: store.teamMember?.id ?? null,
-        starts_at: now.toISOString(),
-        ends_at: ends.toISOString(),
-        status: 'completed',
-      })
-      .select('id')
-      .single()
+    let appointmentId = visit?.id ?? null
+    let usedAt = visit?.starts_at ?? now.toISOString()
+
+    if (!appointmentId) {
+      // Genuinely off-calendar: a visit that happened without ever being
+      // booked. Only then is one invented -- no appointment type to take a
+      // duration from, so the schema's own default stands in.
+      const ends = new Date(now.getTime() + 30 * 60000)
+      const { data: appointment } = await supabase
+        .from('appointments')
+        .insert({
+          account_id: store.accountId,
+          clinic_id: store.currentClinicId,
+          patient_id: props.patientId,
+          practitioner_id: store.teamMember?.id ?? null,
+          starts_at: now.toISOString(),
+          ends_at: ends.toISOString(),
+          status: 'completed',
+        })
+        .select('id')
+        .single()
+      appointmentId = appointment?.id ?? null
+      usedAt = now.toISOString()
+    } else if (visit?.unpaidInvoice) {
+      // One visit, one charge. The bono paid for it, so the invoice raised
+      // against it goes -- void rather than deleted, keeping the number in
+      // the books. Safe to void unconditionally: findUncoveredVisitToday
+      // only returns an unpaid one, and 'void invoice keeps payments'
+      // (#169) is about invoices that have some.
+      await supabase.from('invoices').update({ status: 'void' }).eq('id', visit.unpaidInvoice.id)
+    }
 
     // The visit on the bono's own history, and nothing else. No invoice, no
     // payment, no credit row: the patient paid for this visit when they bought
@@ -1025,9 +1113,9 @@ async function useSession(purchase: PackagePurchaseRow) {
       account_id: store.accountId,
       patient_id: props.patientId,
       package_purchase_id: purchase.id,
-      appointment_id: appointment?.id ?? null,
+      appointment_id: appointmentId,
       amount_cents: perSessionCents,
-      used_at: now.toISOString(),
+      used_at: usedAt,
     })
 
     // Deliberately fires no appointment.completed/invoice.paid automation:

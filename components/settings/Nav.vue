@@ -50,6 +50,7 @@ const allGroups = computed<NavGroup[]>(() => [
       { label: t('WhatsApp', 'WhatsApp'), to: '/settings/whatsapp', perm: 'communication_config' },
       { label: t('Saved Replies', 'Respuestas guardadas'), to: '/settings/saved-replies', perm: 'communication_config' },
       { label: t('Docs', 'Documentos'), to: '/settings/docs', perm: 'communication_config' },
+      { label: t('Patient App', 'App del paciente'), to: '/settings/patient-app', perm: 'communication_config' },
     ],
   },
   {

@@ -127,6 +127,19 @@ async function save() {
                     />
                     {{ t('Email', 'Correo electrónico') }}
                   </label>
+                  <!-- Reaches only patients who have the app and have signed
+                       in, so it adds to WhatsApp/email rather than replacing
+                       them -- ticking this alone would silently stop
+                       reminding everyone else. -->
+                  <label class="flex items-center gap-1.5">
+                    <input
+                      type="checkbox"
+                      :checked="confirmationChannels.includes('push')"
+                      class="h-4 w-4 rounded border-line-control text-brand focus:ring-brand"
+                      @change="confirmationChannels = ($event.target as HTMLInputElement).checked ? [...confirmationChannels, 'push'] : confirmationChannels.filter((c) => c !== 'push')"
+                    />
+                    {{ t('Patient app', 'App del paciente') }}
+                  </label>
                 </div>
 
                 <div v-if="confirmationChannels.includes('email')" class="mt-3 space-y-2">
@@ -187,6 +200,19 @@ async function save() {
                       @change="reminderChannels = ($event.target as HTMLInputElement).checked ? [...reminderChannels, 'email'] : reminderChannels.filter((c) => c !== 'email')"
                     />
                     {{ t('Email', 'Correo electrónico') }}
+                  </label>
+                  <!-- Reaches only patients who have the app and have signed
+                       in, so it adds to WhatsApp/email rather than replacing
+                       them -- ticking this alone would silently stop
+                       reminding everyone else. -->
+                  <label class="flex items-center gap-1.5">
+                    <input
+                      type="checkbox"
+                      :checked="reminderChannels.includes('push')"
+                      class="h-4 w-4 rounded border-line-control text-brand focus:ring-brand"
+                      @change="reminderChannels = ($event.target as HTMLInputElement).checked ? [...reminderChannels, 'push'] : reminderChannels.filter((c) => c !== 'push')"
+                    />
+                    {{ t('Patient app', 'App del paciente') }}
                   </label>
                 </div>
 

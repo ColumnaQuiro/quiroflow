@@ -46,6 +46,10 @@ const rules: Rule[] = [
   { test: (p) => p.startsWith('/calendar'), check: (s) => scopeNotNone(s, 'calendar_scope') },
   { test: (p) => p.startsWith('/practitioner'), check: (s) => scopeNotNone(s, 'calendar_scope') },
   { test: (p) => p.startsWith('/patients'), check: (s) => scopeNotNone(s, 'patients_scope') },
+  // The sidebar already hides this link without inbox_access, but hiding a
+  // link is not a guard: /inbox was still reachable by typing the URL, by a
+  // bookmark, or from the command palette, and it loaded real conversations.
+  { test: (p) => p.startsWith('/inbox'), check: (s) => can(s, 'inbox_access') },
   { test: (p) => p.startsWith('/recalls'), check: (s) => can(s, 'recalls_access') },
   { test: (p) => p.startsWith('/billing'), check: (s) => can(s, 'billing_access') },
   { test: (p) => p.startsWith('/reports'), check: (s) => can(s, 'reports_access') },

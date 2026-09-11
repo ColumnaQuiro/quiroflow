@@ -9,6 +9,7 @@ const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
 const { showToast } = useToast()
+const { can } = usePermission()
 
 interface TeamMemberOption { id: string; full_name: string }
 interface TutorOption { id: string; first_name: string; last_name: string | null }
@@ -168,7 +169,13 @@ async function loadActivity() {
       .order('starts_at', { ascending: false })
       .limit(3),
     supabase.from('invoices').select('created_at, invoice_number, status').eq('patient_id', props.patient.id).order('created_at', { ascending: false }).limit(2),
-    supabase.from('whatsapp_messages').select('created_at, direction, status').eq('patient_id', props.patient.id).order('created_at', { ascending: false }).limit(2),
+    // 0164 gates message reads on inbox_access. Asking anyway would return
+    // an empty list indistinguishable from "this patient has never been
+    // contacted", so the activity feed simply omits the channel instead of
+    // quietly reporting silence.
+    can('inbox_access')
+      ? supabase.from('whatsapp_messages').select('created_at, direction, status').eq('patient_id', props.patient.id).order('created_at', { ascending: false }).limit(2)
+      : Promise.resolve({ data: [] as { created_at: string; direction: string; status: string }[] }),
   ])
 
   const items: ActivityItem[] = []

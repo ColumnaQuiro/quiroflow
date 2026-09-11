@@ -111,8 +111,8 @@ async function removeNote(id: string) {
             touch-heavy screen (a practitioner charting mid-visit, often on a
             tablet), and a hover-only control is unreachable there. -->
             <div class="flex shrink-0 items-center gap-1.5">
-              <UiBtn size="sm" variant="ghost" @click="startEdit(note)">{{ t('Edit', 'Editar') }}</UiBtn>
-              <UiBtn size="sm" variant="ghost" class="hover:text-danger-text" @click="removeNote(note.id)">{{ t('Delete', 'Eliminar') }}</UiBtn>
+              <UiIconBtn icon="pencil" :label="t('Edit', 'Editar')" @click="startEdit(note)" />
+              <UiIconBtn icon="trash" tone="danger" :label="t('Delete', 'Eliminar')" @click="removeNote(note.id)" />
             </div>
           </div>
         </template>

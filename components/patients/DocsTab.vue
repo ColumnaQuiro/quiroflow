@@ -7,6 +7,7 @@ const props = defineProps<{ patientId: string }>()
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+const { showToast } = useToast()
 
 // `public_token` isn't in the generated Supabase types yet -- merge it in
 // locally rather than editing the generated file by hand.
@@ -20,7 +21,6 @@ const activeDoc = ref<Doc | null>(null)
 const title = ref('')
 const fields = ref<DocField[]>([])
 const saving = ref(false)
-const savedAt = ref<Date | null>(null)
 const showNewMenu = ref(false)
 const patientPhoneDigits = ref<string | null>(null)
 const copiedId = ref<string | null>(null)
@@ -74,7 +74,6 @@ function openDoc(doc: Doc) {
   activeDoc.value = doc
   title.value = doc.title
   fields.value = Array.isArray(doc.fields) ? [...doc.fields] : []
-  savedAt.value = null
 }
 
 async function createDoc(initialTitle: string, initialFields: DocField[], templateId: string | null = null) {
@@ -141,7 +140,9 @@ async function save() {
     .update({ title: title.value.trim() || t('Untitled', 'Sin título'), fields: fields.value as any, updated_by: store.teamMember?.id ?? null })
     .eq('id', activeDoc.value.id)
   saving.value = false
-  if (!error) savedAt.value = new Date()
+  // The error was previously dropped on the floor: a failed save left the
+  // page looking unchanged and said nothing at all.
+  showToast(error ? error.message : t('Saved', 'Guardado'), error ? 'error' : 'success')
 }
 
 async function toggleComplete() {
@@ -238,7 +239,7 @@ function metaFor(doc: Doc) {
             >
               WhatsApp
             </button>
-            <button type="button" class="text-[11.5px] text-danger-text hover:text-danger-text/80" @click="removeDoc(doc)">{{ t('Delete', 'Eliminar') }}</button>
+            <UiIconBtn icon="trash" tone="danger" :label="t('Delete', 'Eliminar')" @click="removeDoc(doc)" />
           </div>
         </li>
       </ul>
@@ -248,7 +249,6 @@ function metaFor(doc: Doc) {
       <div class="flex items-center justify-between border-b border-line-divider px-4 py-3">
         <button type="button" class="text-[13px] text-ink-muted hover:text-ink-700" @click="backToList">&larr; {{ t('Docs', 'Documentos') }}</button>
         <div class="flex items-center gap-3">
-          <span v-if="savedAt" class="text-[12px] text-success-text">{{ t('Saved', 'Guardado') }}</span>
           <UiBtn :variant="activeDoc?.completed_at ? 'primary' : 'secondary'" size="sm" @click="toggleComplete">
             {{ activeDoc?.completed_at ? t('✓ Completed', '✓ Completado') : t('Mark as completed', 'Marcar como completado') }}
           </UiBtn>

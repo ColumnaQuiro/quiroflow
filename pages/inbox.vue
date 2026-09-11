@@ -940,7 +940,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
                 {{ view === 'archived' ? t('Unarchive', 'Desarchivar') : t('Archive', 'Archivar') }}
               </button>
               <button type="button" class="text-[12.5px] text-brand-text hover:underline disabled:opacity-40" :disabled="selectedKeys.size === 0" @click="bulkMarkUnreadSelected">{{ t('Mark unread', 'Marcar como no leído') }}</button>
-              <button type="button" class="text-[12.5px] text-danger-text hover:underline disabled:opacity-40" :disabled="selectedKeys.size === 0" @click="bulkDeleteSelected">{{ t('Delete', 'Eliminar') }}</button>
+              <UiIconBtn icon="trash" tone="danger" :label="t('Delete selected', 'Eliminar seleccionados')" :disabled="selectedKeys.size === 0" @click="bulkDeleteSelected" />
               <button type="button" class="text-[12.5px] text-ink-faint hover:text-ink-muted" @click="exitSelectionMode">{{ t('Cancel', 'Cancelar') }}</button>
             </div>
           </div>

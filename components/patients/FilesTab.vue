@@ -209,7 +209,7 @@ async function remove(file: Tables<'patient_files'>) {
             </select>
             <div class="flex shrink-0 items-center gap-2">
               <button v-if="file.storage_path" type="button" class="text-[11px] font-medium text-brand-text hover:text-brand-hover" @click="view(file)">{{ t('View', 'Ver') }}</button>
-              <button type="button" class="text-[11px] font-medium text-danger-text hover:text-danger-text/80" @click="remove(file)">{{ t('Delete', 'Eliminar') }}</button>
+              <UiIconBtn icon="trash" tone="danger" :label="t('Delete', 'Eliminar')" @click="remove(file)" />
             </div>
           </div>
         </div>

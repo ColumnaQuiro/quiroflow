@@ -486,7 +486,7 @@ async function sendStatement() {
                   >
                     {{ sendingInvoiceId === row.invoiceId ? t('Sending…', 'Enviando…') : t('Email invoice', 'Enviar factura por correo') }}
                   </button>
-                  <button v-if="canDeleteInvoices" type="button" class="text-ink-faint hover:text-danger-text" @click="emit('deleteInvoice', row.invoiceId)">{{ t('Delete', 'Eliminar') }}</button>
+                  <UiIconBtn v-if="canDeleteInvoices" icon="trash" tone="danger" :label="t('Delete', 'Eliminar')" @click="emit('deleteInvoice', row.invoiceId)" />
                   <button
                     v-if="canWriteOff && !row.voided && (row.invoiceOpenCents ?? 0) > 0"
                     type="button"

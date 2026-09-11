@@ -569,7 +569,7 @@ async function sendTestToMe() {
                     <option :value="c.field">{{ CONDITION_FIELD_LABELS[c.field]() }}</option>
                     <option v-for="f in availableConditionFields" :key="f" :value="f">{{ CONDITION_FIELD_LABELS[f]() }}</option>
                   </select>
-                  <button type="button" class="text-[12px] font-medium text-danger-text hover:underline" @click="removeCondition(i)">{{ t('Remove', 'Eliminar') }}</button>
+                  <UiIconBtn icon="trash" tone="danger" :label="t('Remove condition', 'Eliminar condición')" @click="removeCondition(i)" />
                 </div>
 
                 <div v-if="c.field === 'practitioner'" class="mt-2 flex max-h-24 flex-col gap-1 overflow-y-auto">
@@ -640,7 +640,7 @@ async function sendTestToMe() {
                     <option value="email">{{ t('Email', 'Correo electrónico') }}</option>
                     <option value="webhook">{{ t('Webhook', 'Webhook') }}</option>
                   </select>
-                  <button v-if="actions.length > 1" type="button" class="text-[12px] font-medium text-danger-text hover:underline" @click="removeAction(i)">{{ t('Remove', 'Eliminar') }}</button>
+                  <UiIconBtn v-if="actions.length > 1" icon="trash" tone="danger" :label="t('Remove action', 'Eliminar acción')" @click="removeAction(i)" />
                 </div>
 
                 <div v-if="a.action_type === 'whatsapp_template'" class="mt-3 space-y-2.5">

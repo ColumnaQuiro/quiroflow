@@ -32,11 +32,20 @@ export interface DocField {
 }
 
 // Only fields a plain text/date patient column can sensibly hold both ends
-// of -- deliberately excludes first_name/last_name (used for merge tokens,
-// not asked as a question) and phone (patient_contact_numbers is a separate
-// multi-row table with its own shape: country code, is_whatsapp, etc. --
-// not a single column this can write a bare string into).
+// of. Still excludes phone: patient_contact_numbers is a separate multi-row
+// table with its own shape (country code, is_whatsapp), not a single column
+// this can write a bare string into.
+//
+// first_name/last_name were excluded on the grounds that they are merge
+// tokens rather than questions. That was wrong for the case this feature
+// exists for -- an intake form where the patient fills in their own details
+// asks for the name first, and a form that collects a name and cannot store
+// it leaves reception retyping it. They are merge tokens AND questions; the
+// two lists are separate (DOC_MERGE_FIELDS below) and nothing stops a key
+// appearing in both.
 export const LINKABLE_PATIENT_FIELDS = [
+  { key: 'first_name', label: 'First name' },
+  { key: 'last_name', label: 'Last name' },
   { key: 'date_of_birth', label: 'Date of birth' },
   { key: 'email', label: 'Email' },
   { key: 'address', label: 'Address' },

@@ -78,7 +78,7 @@ async function save() {
                     <NuxtLink v-else to="/settings/clinics" class="text-brand-text hover:text-brand-hover">{{ t('Missing — add in Clinics', 'Falta — añádela en Clínicas') }}</NuxtLink>
                   </td>
                   <td class="px-4 py-2.5 text-right">
-                    <button type="button" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover" @click="openEditor(c.id)">{{ t('Edit', 'Editar') }}</button>
+                    <UiIconBtn icon="pencil" :label="t('Edit', 'Editar')" @click="openEditor(c.id)" />
                   </td>
                 </tr>
               </tbody>

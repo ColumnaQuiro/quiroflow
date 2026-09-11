@@ -14,7 +14,6 @@ const activeReply = ref<SavedReply | null>(null)
 const title = ref('')
 const body = ref('')
 const saving = ref(false)
-const savedAt = ref<Date | null>(null)
 
 async function load() {
   loading.value = true
@@ -28,7 +27,6 @@ function openReply(r: SavedReply) {
   activeReply.value = r
   title.value = r.title
   body.value = r.body
-  savedAt.value = null
 }
 
 async function newReply() {
@@ -69,7 +67,6 @@ async function save() {
     showToast(error.message, 'error')
     return
   }
-  savedAt.value = new Date()
   showToast(t('Saved', 'Guardado'))
 }
 
@@ -111,7 +108,7 @@ async function removeReply(r: SavedReply) {
                     <p class="text-[13.5px] font-[560] text-ink-700 hover:text-brand-text">{{ r.title }}</p>
                     <p class="truncate text-[12.5px] text-ink-muted2">{{ r.body || t('Empty', 'Vacío') }}</p>
                   </button>
-                  <button type="button" class="shrink-0 text-[12.5px] text-danger-text hover:text-danger-text/80" @click="removeReply(r)">{{ t('Delete', 'Eliminar') }}</button>
+                  <UiIconBtn icon="trash" tone="danger" :label="t('Delete', 'Eliminar')" @click="removeReply(r)" />
                 </li>
               </ul>
             </template>
@@ -120,7 +117,6 @@ async function removeReply(r: SavedReply) {
               <div class="flex items-center justify-between border-b border-line-divider p-4">
                 <button type="button" class="text-[13px] text-ink-muted2 hover:text-ink-600" @click="backToList">&larr; {{ t('Replies', 'Respuestas') }}</button>
                 <div class="flex items-center gap-3">
-                  <span v-if="savedAt" class="text-[12.5px] text-success-text">{{ t('Saved', 'Guardado') }}</span>
                   <UiBtn variant="primary" size="sm" :disabled="saving" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}</UiBtn>
                 </div>
               </div>

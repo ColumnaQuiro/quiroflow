@@ -4,6 +4,16 @@
 
 [build.environment]
   NODE_VERSION = "22"
+  # Netlify's enhanced secrets scanning flags any string shaped like a Google
+  # API key ("AIza..."). Both hits are the Firebase *Web* config, which is
+  # public by design -- it identifies the Firebase project to the browser the
+  # same way the Supabase anon key does, and Firebase's own docs say to ship
+  # it in client code. Access is controlled by Firebase security rules and by
+  # the key's own HTTP-referrer restrictions, not by keeping it hidden.
+  #
+  # Scoped to these two paths rather than disabling the scan, so a real
+  # secret committed anywhere else still fails the build.
+  SECRETS_SCAN_OMIT_PATHS = "nuxt.config.ts,public/firebase-messaging-sw.js"
 
 # iOS refuses an apple-app-site-association that isn't served as JSON, and the
 # file is deliberately extension-less, so Netlify would otherwise guess at its

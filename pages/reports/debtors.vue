@@ -20,6 +20,7 @@ const purchases = ref<PurchaseRow[]>([])
 const invoicesById = ref<Map<string, InvoiceRow>>(new Map())
 const patientsById = ref<Map<string, PatientRow>>(new Map())
 const schedulesByPurchase = ref<Map<string, ScheduleRow>>(new Map())
+const paidByInvoice = ref<Map<string, number>>(new Map())
 
 onMounted(async () => {
   const { data: p } = await supabase
@@ -31,7 +32,7 @@ onMounted(async () => {
   const invoiceIds = purchases.value.map((x) => x.invoice_id).filter((x): x is string => !!x)
   const patientIds = [...new Set(purchases.value.map((x) => x.patient_id))]
 
-  const [{ data: invoices }, { data: patients }, { data: schedules }] = await Promise.all([
+  const [{ data: invoices }, { data: patients }, { data: schedules }, { data: payments }] = await Promise.all([
     invoiceIds.length > 0
       ? supabase.from('invoices').select('id, status, total_cents').in('id', invoiceIds)
       : Promise.resolve({ data: [] as InvoiceRow[] }),
@@ -39,33 +40,52 @@ onMounted(async () => {
       ? supabase.from('patients').select('id, first_name, last_name').in('id', patientIds)
       : Promise.resolve({ data: [] as PatientRow[] }),
     supabase.from('payment_schedules').select('package_purchase_id, status').not('package_purchase_id', 'is', null),
+    invoiceIds.length > 0
+      ? supabase.from('payments').select('invoice_id, amount_cents').in('invoice_id', invoiceIds)
+      : Promise.resolve({ data: [] as { invoice_id: string; amount_cents: number }[] }),
   ])
   invoicesById.value = new Map((invoices ?? []).map((i) => [i.id, i as InvoiceRow]))
   patientsById.value = new Map((patients ?? []).map((p2) => [p2.id, p2 as PatientRow]))
   schedulesByPurchase.value = new Map((schedules ?? []).map((s) => [s.package_purchase_id as string, s as ScheduleRow]))
+  const byInvoice = new Map<string, number>()
+  for (const row of payments ?? []) byInvoice.set(row.invoice_id, (byInvoice.get(row.invoice_id) ?? 0) + row.amount_cents)
+  paidByInvoice.value = byInvoice
 
   loading.value = false
 })
 
-// A purchase is unpaid if it has no linked invoice at all and no Stripe
-// autopay schedule keeping up with it, or the linked invoice isn't marked
-// paid -- either way the clinic is owed the money. An active/completed
-// Stripe schedule means it's being (or was) collected automatically; a
-// past_due one means a scheduled charge actually failed, which IS a debt.
+// A debt needs an invoice that is actually unpaid. An active/completed Stripe
+// schedule means it is being (or was) collected automatically; a past_due one
+// means a scheduled charge failed, which IS a debt.
+//
+// No invoice is NOT a debt. It used to be -- `!inv` counted the bono's whole
+// price as owed -- and on the live account that was 427 migrated bonos and
+// 210,147 EUR of money nobody owed. Those were paid in PracticeHub, whose
+// payments came across as their own PH-{id} invoices and were never linked
+// back to the bono, so the bono simply has no billing record here. "We have no
+// invoice" and "they have not paid" are different things. Where a migrated
+// bono genuinely does owe something, the bonos importer raises an invoice for
+// it, which is what puts it back on this list.
+//
+// A voided invoice is a cancelled charge, so nothing is owed on it either.
+function owedCentsFor(p: PurchaseRow): number {
+  const inv = p.invoice_id ? invoicesById.value.get(p.invoice_id) : null
+  if (!inv || inv.status === 'paid' || inv.status === 'void') return 0
+  return Math.max(0, inv.total_cents - (paidByInvoice.value.get(inv.id) ?? 0))
+}
+
 const debtors = computed(() =>
   purchases.value.filter((p) => {
     const schedule = schedulesByPurchase.value.get(p.id)
-    if (schedule) return schedule.status === 'past_due'
-    const inv = p.invoice_id ? invoicesById.value.get(p.invoice_id) : null
-    // A voided invoice is a cancelled charge, so nothing is owed on it.
-    // Without this it reads as simply not-paid and the bono keeps showing as
-    // a debt for its full price -- which is where the 50 voided
-    // bono-consumption invoices would have landed.
-    return !inv || (inv.status !== 'paid' && inv.status !== 'void')
+    if (schedule) return schedule.status === 'past_due' && owedCentsFor(p) > 0
+    return owedCentsFor(p) > 0
   }),
 )
 
-const totalOwed = computed(() => debtors.value.reduce((sum, p) => sum + p.price_cents, 0))
+// What is left on the invoice, not the bono's price. The importer bills only
+// the outstanding part of a part-paid bono, so the price overstates the debt --
+// 44,318 EUR of bono prices against 22,854 EUR actually outstanding.
+const totalOwed = computed(() => debtors.value.reduce((sum, p) => sum + owedCentsFor(p), 0))
 
 function patientName(id: string) {
   const p = patientsById.value.get(id)
@@ -118,7 +138,7 @@ function patientName(id: string) {
                 </td>
                 <td class="px-4 py-2.5 text-ink-muted2">{{ p.package_name }}</td>
                 <td class="px-4 py-2.5 text-ink-muted2">{{ new Date(p.purchased_at).toLocaleDateString() }}</td>
-                <td class="px-4 py-2.5 font-mono text-ink-900">€{{ (p.price_cents / 100).toFixed(2) }}</td>
+                <td class="px-4 py-2.5 font-mono text-ink-900">€{{ (owedCentsFor(p) / 100).toFixed(2) }}</td>
                 <td class="px-4 py-2.5">
                   <span v-if="schedulesByPurchase.get(p.id)" class="rounded-pill bg-danger-bg px-1.5 py-0.5 text-[11px] font-medium text-danger-text">{{ t('stripe charge failed', 'cobro de stripe fallido') }}</span>
                   <span v-else class="rounded-pill px-1.5 py-0.5 text-[11px] font-medium" :class="p.invoice_id ? 'bg-danger-bg text-danger-text' : 'bg-chip-bg text-chip-text'">

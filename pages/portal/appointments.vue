@@ -29,12 +29,12 @@ function timeOnly(iso: string) {
 
 <template>
   <div>
-    <PortalPageHead
+    <PatientPageHead
       :title="t('Appointments', 'Citas')"
       :lead="t('Your upcoming visits and the ones you have already had.', 'Tus próximas visitas y las que ya has tenido.')"
     />
 
-    <PortalCard :title="t('Upcoming', 'Próximas')" flush>
+    <PatientCard :title="t('Upcoming', 'Próximas')" flush>
       <div v-if="loading" class="space-y-3 p-4">
         <UiSkeleton class="h-12 w-full rounded-ctl" />
         <UiSkeleton class="h-12 w-full rounded-ctl" />
@@ -79,11 +79,11 @@ function timeOnly(iso: string) {
           </div>
         </li>
       </ul>
-      <PortalEmpty v-else :text="t('No upcoming appointments.', 'No tienes citas próximas.')" />
-    </PortalCard>
+      <PatientEmpty v-else :text="t('No upcoming appointments.', 'No tienes citas próximas.')" />
+    </PatientCard>
 
     <div class="mt-4">
-      <PortalCard :title="t('Past visits', 'Visitas anteriores')" flush>
+      <PatientCard :title="t('Past visits', 'Visitas anteriores')" flush>
         <ul v-if="past.length > 0" class="divide-y divide-line-divider">
           <li v-for="appt in past" :key="appt.id" class="flex items-center justify-between gap-3 px-4 py-3">
             <div class="min-w-0">
@@ -95,8 +95,8 @@ function timeOnly(iso: string) {
             </span>
           </li>
         </ul>
-        <PortalEmpty v-else :text="t('Nothing here yet.', 'Todavía no hay nada aquí.')" />
-      </PortalCard>
+        <PatientEmpty v-else :text="t('Nothing here yet.', 'Todavía no hay nada aquí.')" />
+      </PatientCard>
     </div>
   </div>
 </template>

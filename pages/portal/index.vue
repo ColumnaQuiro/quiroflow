@@ -42,7 +42,7 @@ function eur(cents: number) {
     <p v-else-if="!patient" class="text-sm text-ink-faint">{{ t('No patient record found.', 'No se encontró tu ficha de paciente.') }}</p>
 
     <template v-else>
-      <PortalPageHead :title="t(`Hi, ${patient.first_name}`, `Hola, ${patient.first_name}`)" />
+      <PatientPageHead :title="t(`Hi, ${patient.first_name}`, `Hola, ${patient.first_name}`)" />
 
       <!-- The next visit is the headline, not a row in a list. -->
       <section class="rounded-card border border-line bg-surface p-5 shadow-card">

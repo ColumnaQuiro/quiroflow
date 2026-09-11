@@ -52,6 +52,16 @@ async function onSubmit() {
         <UiBtn type="submit" variant="primary" class="w-full" :disabled="loading">
           {{ loading ? 'Signing in…' : 'Sign in' }}
         </UiBtn>
+        <!-- The reset pages existed but nothing on the portal linked to them,
+        so a patient who forgot their password had no way forward from here.
+        ?portal=1 is what sends them back to this screen afterwards rather
+        than to the staff sign-in. -->
+        <NuxtLink
+          to="/forgot-password?portal=1"
+          class="block text-center text-sm text-ink-muted hover:text-ink-500"
+        >
+          Forgot your password?
+        </NuxtLink>
       </form>
       <p class="mt-4 text-center text-sm text-ink-muted">
         First time here?

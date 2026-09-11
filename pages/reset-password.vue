@@ -3,6 +3,28 @@ definePageMeta({ layout: false })
 
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
+const route = useRoute()
+
+// Where a successful reset sends them. This used to be a hardcoded
+// '/dashboard', which is the STAFF dashboard -- a patient resetting their
+// password was dropped somewhere they have no access to.
+//
+// Identity is the authority, not the ?portal=1 hint: useIdentity() resolves
+// the same patient/team_member split the portal middleware and the mobile app
+// already go through (and claims an unlinked patient profile on the way, which
+// a freshly reset patient account may still need). Both can be set -- a
+// practitioner who is also a patient of their own clinic -- and staff wins
+// there, since the dashboard is their working screen. The hint only decides it
+// when neither resolves, e.g. a link opened before the profile could be
+// claimed.
+const { patient, teamMember } = useIdentity()
+const destination = computed(() => {
+  if (teamMember.value) return '/dashboard'
+  if (patient.value) return '/portal'
+  return route.query.portal ? '/portal' : '/dashboard'
+})
+const destinationLabel = computed(() => (destination.value === '/portal' ? 'your portal' : 'your dashboard'))
+
 const password = ref('')
 const confirmPassword = ref('')
 const error = ref('')
@@ -27,7 +49,7 @@ async function onSubmit() {
     return
   }
   done.value = true
-  setTimeout(() => navigateTo('/dashboard'), 1500)
+  setTimeout(() => navigateTo(destination.value), 1500)
 }
 </script>
 
@@ -36,11 +58,11 @@ async function onSubmit() {
     <div class="w-full max-w-sm rounded-card border border-line bg-surface p-8 shadow-card">
       <h1 class="text-xl font-semibold text-ink-900">Set a new password</h1>
 
-      <div v-if="done" class="mt-6 text-sm text-success-text">Password updated. Taking you to your dashboard…</div>
+      <div v-if="done" class="mt-6 text-sm text-success-text">Password updated. Taking you to {{ destinationLabel }}…</div>
 
       <div v-else-if="!user" class="mt-6 text-sm text-ink-muted">
         This link is invalid or has expired.
-        <NuxtLink to="/forgot-password" class="font-medium text-brand hover:text-brand-hover">Request a new one</NuxtLink>.
+        <NuxtLink :to="route.query.portal ? '/forgot-password?portal=1' : '/forgot-password'" class="font-medium text-brand hover:text-brand-hover">Request a new one</NuxtLink>.
       </div>
 
       <form v-else class="mt-6 space-y-4" @submit.prevent="onSubmit">

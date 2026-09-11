@@ -2,16 +2,25 @@
 definePageMeta({ layout: false })
 
 const supabase = useSupabaseClient()
+const route = useRoute()
 const email = ref('')
 const error = ref('')
 const loading = ref(false)
 const sent = ref(false)
 
+// This page is shared by staff and patients, and the two have different sign-in
+// screens to go back to. The portal's "Forgot your password?" link carries
+// ?portal=1 so both the back-links here and the redirect the emailed link lands
+// on stay on the patient side -- otherwise a patient resetting their password
+// is handed the staff login, which they can't use.
+const isPortal = computed(() => !!route.query.portal)
+const signInPath = computed(() => (isPortal.value ? '/portal/login' : '/login'))
+
 async function onSubmit() {
   error.value = ''
   loading.value = true
   const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.value, {
-    redirectTo: `${window.location.origin}/reset-password`,
+    redirectTo: `${window.location.origin}/reset-password${isPortal.value ? '?portal=1' : ''}`,
   })
   loading.value = false
   if (resetError) {
@@ -32,7 +41,7 @@ async function onSubmit() {
           If an account exists for <strong>{{ email }}</strong>, we've sent a link to reset your password. Check your
           inbox.
         </p>
-        <NuxtLink to="/login" class="mt-4 block text-center text-sm font-medium text-brand hover:text-brand-hover">
+        <NuxtLink :to="signInPath" class="mt-4 block text-center text-sm font-medium text-brand hover:text-brand-hover">
           &larr; Back to sign in
         </NuxtLink>
       </div>
@@ -52,7 +61,7 @@ async function onSubmit() {
         <UiBtn type="submit" variant="primary" class="w-full" :disabled="loading">
           {{ loading ? 'Sending…' : 'Send reset link' }}
         </UiBtn>
-        <NuxtLink to="/login" class="block text-center text-sm text-ink-muted hover:text-ink-500">&larr; Back to sign in</NuxtLink>
+        <NuxtLink :to="signInPath" class="block text-center text-sm text-ink-muted hover:text-ink-500">&larr; Back to sign in</NuxtLink>
       </form>
     </div>
   </div>

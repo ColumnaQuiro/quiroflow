@@ -87,10 +87,27 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
         .from('package_purchase_shares')
         .select('package_purchases(id, package_name, sessions_total, sessions_used, price_cents, patients(first_name, last_name))')
         .eq('patient_id', currentId),
-      supabase.from('payments').select('amount_cents, invoices!inner(patient_id)').eq('invoices.patient_id', currentId),
+      supabase.from('payments').select('amount_cents, method, invoices!inner(patient_id, status)').eq('invoices.patient_id', currentId),
     ])
 
-    const paidCents = (payments ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
+    // A 'credit' payment against a VOIDED invoice is not money and never was:
+    // it recorded a patient spending account credit, and the charge it settled
+    // has since been cancelled. Counting it while the void invoice's debit is
+    // dropped just above (.neq('status', 'void')) inflates the balance by the
+    // payment amount -- 2,338.33 EUR across 44 patients when the historical
+    // bono-session invoices were voided in bulk.
+    //
+    // Cash and card payments on a void invoice are deliberately still counted.
+    // There the money really was collected and the charge really was cancelled,
+    // so the clinic really does owe it back and the resulting credit is honest
+    // -- that is the case pages/billing/[id].vue now refuses to create, and
+    // hiding it here would bury real over-collection instead of surfacing it.
+    const countablePayments = (payments ?? []).filter((p) => {
+      const status = (p as unknown as { invoices: { status: string } | null }).invoices?.status
+      return !(p.method === 'credit' && status === 'void')
+    })
+
+    const paidCents = countablePayments.reduce((sum, p) => sum + p.amount_cents, 0)
     state.lifetimeCents.value = paidCents
     const invoicedCents = (invoices ?? []).reduce((sum, i) => sum + i.total_cents, 0)
     state.creditLedgerCents.value = (credits ?? []).reduce((sum, c) => sum + c.amount_cents, 0)

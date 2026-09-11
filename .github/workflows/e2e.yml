@@ -48,31 +48,42 @@ jobs:
       # an existing folder is auto-included in its shard -- slicing at
       # file granularity would silently drop a new spec from every shard.
       #
-      # Measured on the run for commit 445fc01 (2026-09-10), Cypress time
-      # only, excluding the ~2.5 min of fixed setup every shard pays:
-      # settings 91s, navigation 90s (all of it one spec), auth+calendar+inbox
-      # 64s, patients 46s, public-booking 4s. The three shards were 144/95/64s
-      # -- the widest 80s wider than the narrowest, and the job it sat in was
-      # the one that decided how long CI took.
+      # Measured on the run for commit 71ecdfd (2026-09-11), Cypress time
+      # only, excluding the ~2min 20s of fixed setup every shard pays:
+      # settings 115s, patients+public 83s, auth+calendar+inbox ~65s,
+      # navigation 59s. Settings was nearly double the narrowest and its job
+      # was the one that decided how long CI took, so its four subscription
+      # specs move to their own folder and their own shard.
       #
-      # Four shards now, and the 90s navigation spec has been split into four
-      # (two authenticated sweeps under navigation/, the public and developer
-      # portal ones under public/). That split matters more than the extra
-      # runner: a single spec cannot be divided, so while one ran for 90s no
-      # amount of sharding could take CI below it.
+      # They move FOLDER rather than being picked out by filename glob: a
+      # shard is a folder glob so that a spec added to an existing folder is
+      # auto-included, and there is no way to express "settings except
+      # subscription-*" that keeps that property -- a new settings spec would
+      # have landed in no shard at all.
       #
-      # Expected Cypress time per shard: settings 91s, navigation ~80s,
-      # patients+public ~75s, auth+calendar+inbox 64s. Rebalance again once
-      # one shard consistently lags -- read the real per-spec numbers out of
-      # the "All specs passed" table in its log rather than guessing.
+      # public/** rides with subscription/** purely for balance (74s together
+      # against 62s for settings). That is only ~8s better than leaving it
+      # with patients, which is inside the run-to-run variance seen on these
+      # specs, so it is not worth defending if a later regrouping wants it
+      # back.
+      #
+      # Expected Cypress time per shard: subscription+public 74s, auth+
+      # calendar+inbox ~65s, settings 62s, navigation 59s, patients+booking
+      # 57s. Rebalance again once one shard consistently lags -- read the real
+      # per-spec numbers out of the "All specs passed" table in its log rather
+      # than guessing, which is how settings came to be mis-sized before: the
+      # estimate summed a stale table and missed a spec whose name the table
+      # had truncated.
       matrix:
         shard:
           - name: settings
             specs: "cypress/e2e/settings/**"
+          - name: subscription-and-public
+            specs: "cypress/e2e/subscription/**,cypress/e2e/public/**"
           - name: navigation
             specs: "cypress/e2e/navigation/**"
-          - name: patients-and-public
-            specs: "cypress/e2e/patients/**,cypress/e2e/public/**,cypress/e2e/public-booking/**"
+          - name: patients-and-booking
+            specs: "cypress/e2e/patients/**,cypress/e2e/public-booking/**"
           - name: auth-calendar-inbox
             specs: "cypress/e2e/auth/**,cypress/e2e/calendar/**,cypress/e2e/inbox/**"
     runs-on: ubuntu-latest

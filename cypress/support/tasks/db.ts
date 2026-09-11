@@ -290,8 +290,14 @@ async function enableEmailConfirmations(opts: { accountId: string }) {
   return null
 }
 
-async function createInvoice(opts: { accountId: string; patientId: string; invoiceNumber?: string; totalCents?: number }) {
-  const { accountId, patientId, invoiceNumber, totalCents } = opts
+async function createInvoice(opts: {
+  accountId: string
+  patientId: string
+  invoiceNumber?: string
+  totalCents?: number
+  status?: string
+}) {
+  const { accountId, patientId, invoiceNumber, totalCents, status } = opts
   const row = unwrap(
     await admin
       .from('invoices')
@@ -300,11 +306,24 @@ async function createInvoice(opts: { accountId: string; patientId: string; invoi
         patient_id: patientId,
         invoice_number: invoiceNumber ?? `INV-${Date.now()}`,
         ...(totalCents !== undefined ? { total_cents: totalCents } : {}),
+        ...(status !== undefined ? { status } : {}),
       })
       .select('id, invoice_number')
       .single(),
   )
   return row as { id: string; invoice_number: string }
+}
+
+async function createPayment(opts: { accountId: string; invoiceId: string; amountCents: number; method: string }) {
+  const { accountId, invoiceId, amountCents, method } = opts
+  const row = unwrap(
+    await admin
+      .from('payments')
+      .insert({ account_id: accountId, invoice_id: invoiceId, amount_cents: amountCents, method })
+      .select('id')
+      .single(),
+  )
+  return row as { id: string }
 }
 
 async function createPackagePurchase(opts: {
@@ -391,6 +410,7 @@ export const dbTasks = {
   'db:enableOnlineBooking': enableOnlineBooking,
   'db:enableEmailConfirmations': enableEmailConfirmations,
   'db:createInvoice': createInvoice,
+  'db:createPayment': createPayment,
   'db:createPackagePurchase': createPackagePurchase,
   'db:packageSessionEffects': packageSessionEffects,
   'db:createWhatsappMessage': createWhatsappMessage,

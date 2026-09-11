@@ -16,14 +16,14 @@ describe('Logging a bono session', () => {
           cy.visit(`/patients/${patient.id}?tab=billing`)
 
           cy.contains('Bono 12').should('be.visible')
-          cy.contains('0/12 used').should('be.visible')
+          cy.contains('12/12 left').should('be.visible')
 
           // Logging a session now writes real records, so it asks first.
           cy.on('window:confirm', () => true)
           cy.contains('button', 'Log session').click()
 
           // The counter is the visible half of the change...
-          cy.contains('1/12 used', { timeout: 15000 }).should('be.visible')
+          cy.contains('11/12 left', { timeout: 15000 }).should('be.visible')
 
           // ...and this is the rest of it: the visit exists as a completed
           // appointment and a package_sessions row, and NOTHING is billed.
@@ -64,7 +64,7 @@ describe('Logging a bono session', () => {
           cy.login(account.email, account.password)
           cy.visit(`/patients/${patient.id}?tab=billing`)
 
-          cy.contains('5/5 used').should('be.visible')
+          cy.contains('0/5 left').should('be.visible')
           cy.contains('button', 'Log session').should('be.disabled')
         })
       })

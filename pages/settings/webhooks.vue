@@ -152,7 +152,7 @@ async function toggleDeliveries(w: Webhook) {
                     <button type="button" class="font-medium text-ink-muted2 hover:text-ink-600" @click="toggleDeliveries(w)">
                       {{ expandedWebhook === w.id ? t('Hide log', 'Ocultar registro') : t('View log', 'Ver registro') }}
                     </button>
-                    <button type="button" class="font-medium text-danger-text hover:text-danger-text/80" @click="removeWebhook(w)">{{ t('Delete', 'Eliminar') }}</button>
+                    <UiIconBtn icon="trash" tone="danger" :label="t('Delete', 'Eliminar')" @click="removeWebhook(w)" />
                   </div>
                 </div>
 

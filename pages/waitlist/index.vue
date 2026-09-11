@@ -197,9 +197,7 @@ function formatDate(iso: string | null) {
               </td>
               <td class="px-3 py-2 text-ink-muted2">{{ formatDate(row.created_at) }}</td>
               <td class="px-3 py-2 text-right">
-                <button v-if="row.status === 'waiting'" type="button" class="text-[12px] font-medium text-danger-text hover:underline" @click="cancelEntry(row)">
-                  {{ t('Remove', 'Quitar') }}
-                </button>
+                <UiIconBtn v-if="row.status === 'waiting'" icon="trash" tone="danger" :label="t('Remove from waitlist', 'Quitar de la lista de espera')" @click="cancelEntry(row)" />
               </td>
             </tr>
           </tbody>

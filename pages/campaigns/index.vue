@@ -64,6 +64,7 @@ const ACTION_TONE: Record<string, 'success' | 'brand' | 'neutral'> = {
 
 const supabase = useSupabaseClient()
 const t = useT()
+const { can } = usePermission()
 
 function triggerLabel(event: string): string {
   const pair = TRIGGER_LABEL_DEFS[event]
@@ -128,7 +129,13 @@ async function load() {
 const globalStats = ref<{ sent: number; deliveredPct: number | null; failed: number; replies: number }>({ sent: 0, deliveredPct: null, failed: 0, replies: 0 })
 const templateStats = ref<Record<string, TemplateStat>>({})
 
+// 0164 gates message reads on inbox_access. Every figure below is derived
+// from whatsapp_messages, so without it they would all read 0 -- reported
+// as fact rather than as "not visible to you".
+const canReadMessageStats = computed(() => can('inbox_access'))
+
 async function loadStats() {
+  if (!canReadMessageStats.value) return
   const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
   const { data } = await supabase
     .from('whatsapp_messages')
@@ -387,6 +394,9 @@ async function sendNow(patient: PatientOption) {
       </div>
 
       <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <p v-if="!canReadMessageStats" class="mb-3 rounded-ctl border border-line bg-surface-subtle px-3 py-2 text-[12.5px] text-ink-muted">
+          {{ t('Delivery stats need Inbox access — ask an owner to enable it for your role.', 'Las estadísticas de envío requieren acceso a la Bandeja de entrada — pide a un propietario que lo active para tu rol.') }}
+        </p>
         <div class="rounded-card border border-line bg-surface p-4 shadow-card">
           <p class="text-[11.5px] font-medium text-ink-muted2">{{ t('Sent 30 d', 'Enviados 30 d') }}</p>
           <p class="mt-1.5 font-mono text-[22px] font-semibold text-ink-900">{{ globalStats.sent }}</p>

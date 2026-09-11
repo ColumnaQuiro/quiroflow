@@ -678,6 +678,22 @@ const hasCard = computed(() => !!stripeCustomer.value?.default_payment_method_id
 const unpaidInvoices = computed(() => invoices.value.filter((i) => i.status === 'unpaid'))
 const outstandingCents = computed(() => (balanceCents.value < 0 ? -balanceCents.value : 0))
 
+// What the patient can still draw on, in one number, for the front desk: loose
+// account credit PLUS what their unused bono sessions are worth. The question
+// it answers is "do I need to ask this person for money?", and answering it
+// meant reading the credit box and then counting sessions across every bono
+// card underneath it.
+//
+// This is a summary, not a second balance. Nothing spends from it -- a bono
+// session still comes off its own counter and credit still comes off the
+// ledger -- so the value cannot be spent twice by showing it here. Bonos
+// shared FROM someone else are left out: those sessions are the owner's money,
+// and they already carry a "Shared by" pill saying so.
+const bonoValueCents = computed(() =>
+  purchases.value.filter((p) => !p.shared).reduce((sum, p) => sum + packageRemainingValueCents(p), 0),
+)
+const availableCents = computed(() => creditLedgerCents.value + bonoValueCents.value)
+
 function scheduleForPackage(purchaseId: string) {
   return schedules.value.find((s) => s.package_purchase_id === purchaseId)
 }
@@ -1154,8 +1170,8 @@ function money(cents: number) {
           <p class="mt-0.5 font-mono text-[16px] font-semibold" :class="outstandingCents > 0 ? 'text-danger-text' : 'text-ink-700'">{{ money(outstandingCents) }}</p>
         </div>
         <div>
-          <p class="text-[11.5px] text-ink-muted2">{{ t('Account credit', 'Crédito en cuenta') }}</p>
-          <p class="mt-0.5 font-mono text-[16px] font-semibold text-ink-700">{{ money(creditLedgerCents) }}</p>
+          <p class="text-[11.5px] text-ink-muted2">{{ t('Available', 'Disponible') }}</p>
+          <p class="mt-0.5 font-mono text-[16px] font-semibold text-ink-700">{{ money(availableCents) }}</p>
         </div>
         <div>
           <p class="text-[11.5px] text-ink-muted2">{{ t('Card on file', 'Tarjeta registrada') }}</p>

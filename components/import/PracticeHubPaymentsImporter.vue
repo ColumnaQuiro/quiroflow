@@ -30,9 +30,33 @@ const progress = ref({ done: 0, total: 0 })
 const runError = ref('')
 const lastConn = ref<{ baseUrl: string; apiKey: string; appDetails: string } | null>(null)
 
-const candidates = ref<PaymentCandidate[]>([])
+// Everything matched and not already imported, BEFORE the go-live cutoff is
+// applied. Kept separate so changing the date re-filters instantly instead of
+// re-fetching PracticeHub's whole payment history.
+const scanned = ref<PaymentCandidate[]>([])
 const skippedDuplicate = ref(0)
 const skippedUnmatched = ref(0)
+
+// The day this clinic started taking money in QuiroFlow. PracticeHub payments
+// from that day onward are the clinic recording the SAME takings in both
+// systems while they finish the move, so importing them bills the money twice.
+//
+// This is not hypothetical: on the live account 9 of the 10 payments this
+// preview offered were already here, taken natively and mirrored into
+// PracticeHub the same day. Without a cutoff every clinic hits it, and it
+// grows for as long as they dual-run.
+//
+// Defaulted below to the first payment taken here, which is exactly go-live.
+// Left blank it imports everything, which is right for a clinic that has not
+// taken a payment in QuiroFlow yet.
+const cutoverDate = ref('')
+
+const dayOf = (value: string) => String(value).slice(0, 10)
+
+const candidates = computed(() =>
+  cutoverDate.value ? scanned.value.filter((c) => dayOf(c.payment.created) < cutoverDate.value) : scanned.value,
+)
+const skippedAfterCutover = computed(() => scanned.value.length - candidates.value.length)
 
 const importedCount = ref(0)
 const importErrors = ref<string[]>([])
@@ -70,6 +94,7 @@ const previewStats = computed(() => [
   { label: t('Will import', 'Se importarán'), value: candidates.value.length, tone: 'good' as const },
   { label: t('Total', 'Total'), value: `€${formatEuros(totalCents.value)}` },
   { label: t('Already imported', 'Ya importados'), value: skippedDuplicate.value },
+  { label: t('Taken in QuiroFlow', 'Cobrados en QuiroFlow'), value: skippedAfterCutover.value },
   { label: t('No matching patient', 'Sin paciente coincidente'), value: skippedUnmatched.value },
 ])
 
@@ -77,7 +102,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
   lastConn.value = conn
   stage.value = 'scanning'
   runError.value = ''
-  candidates.value = []
+  scanned.value = []
   skippedDuplicate.value = 0
   skippedUnmatched.value = 0
   importedCount.value = 0
@@ -134,6 +159,22 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       if (!data || data.length < PAGE_SIZE) break
     }
 
+    // Go-live: the first payment taken in QuiroFlow itself. Anything the
+    // payments importer created carries a PH- invoice number, so excluding
+    // those leaves only money actually collected here. Only read when the
+    // clinic has not already chosen a date, so a hand-set one survives a
+    // re-scan.
+    if (!cutoverDate.value) {
+      const { data: firstNative } = await supabase
+        .from('payments')
+        .select('paid_at, invoices!inner(invoice_number)')
+        .not('invoices.invoice_number', 'like', 'PH-%')
+        .order('paid_at', { ascending: true })
+        .limit(1)
+      const firstPaidAt = (firstNative as unknown as { paid_at: string }[] | null)?.[0]?.paid_at
+      if (firstPaidAt) cutoverDate.value = dayOf(firstPaidAt)
+    }
+
     phase.value = t('Fetching payments…', 'Obteniendo pagos…')
     progress.value = { done: 0, total: 0 }
     const payments = await api.fetchAll<PHPayment>('/payments', (done, total) => (progress.value = { done, total }))
@@ -159,7 +200,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       })
     }
 
-    candidates.value = planned
+    scanned.value = planned
     stage.value = 'preview'
   } catch (err) {
     runError.value = err instanceof Error ? err.message : String(err)
@@ -262,7 +303,7 @@ function retryRun() {
 
 function reset() {
   stage.value = 'connect'
-  candidates.value = []
+  scanned.value = []
   importedCount.value = 0
   skippedDuplicate.value = 0
   skippedUnmatched.value = 0
@@ -291,9 +332,27 @@ function reset() {
       <p v-if="progress.total > 0" class="mt-1 text-xs text-ink-faint">{{ progress.done }} / {{ progress.total }}</p>
     </div>
 
+    <div v-else-if="stage === 'preview'" class="mt-4 space-y-4">
+      <div class="flex flex-wrap items-center gap-3 rounded-ctl border border-line-divider bg-surface-subtle p-3">
+        <label class="text-[12.5px] font-medium text-ink-700" for="ph-cutover">{{ t('Went live in QuiroFlow on', 'Puesta en marcha en QuiroFlow el') }}</label>
+        <input
+          id="ph-cutover"
+          v-model="cutoverDate"
+          type="date"
+          class="rounded-ctl border border-line-control bg-surface px-2.5 py-1.5 text-[12.5px]"
+        />
+        <p class="text-[12px] text-ink-muted2">
+          {{
+            t(
+              'PracticeHub payments from this day onward are skipped: once the clinic is taking money here, the same payment is usually recorded in both systems, and importing it bills it twice.',
+              'Los pagos de PracticeHub desde este día se omiten: cuando la clínica ya cobra aquí, el mismo pago suele registrarse en los dos sistemas, e importarlo lo cobraría dos veces.',
+            )
+          }}
+        </p>
+      </div>
+
     <ImportPreviewPanel
-      v-else-if="stage === 'preview'"
-      class="mt-4"
+      class="mt-0"
       :stats="previewStats"
       :columns="previewColumns"
       :rows="previewRows"
@@ -302,6 +361,7 @@ function reset() {
       @apply="apply"
       @cancel="reset"
     />
+    </div>
 
     <div v-else-if="stage === 'error'" class="mt-4 space-y-4">
       <div class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">

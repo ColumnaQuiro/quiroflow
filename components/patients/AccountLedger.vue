@@ -150,7 +150,17 @@ const rows = computed<LedgerRow[]>(() => {
     }
   })
 
-  const paymentRows: LedgerRow[] = props.payments.map((p) => ({
+  // Same rule as usePatientFinancialSummary: a 'credit' payment against a
+  // voided invoice is not money. Its invoice contributes no debit (see
+  // debitCents above), so leaving the payment in the Credit column shows a
+  // credit line with nothing facing it and a running balance that disagrees
+  // with the summary strip. Cash/card on a void invoice still shows -- that is
+  // real money collected against a cancelled charge, and it should be visible.
+  const countablePayments = props.payments.filter(
+    (p) => !(p.method === 'credit' && props.invoices.find((i) => i.id === p.invoice_id)?.status === 'void'),
+  )
+
+  const paymentRows: LedgerRow[] = countablePayments.map((p) => ({
     key: `payment-${p.id}`,
     ref: '',
     paymentId: p.id,

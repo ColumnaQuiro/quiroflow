@@ -36,19 +36,19 @@ export function usePatientInvoices(patientId: () => string) {
     loading.value = false
   }
 
-  // Fetched as a blob and handed to the browser, rather than opening the
-  // endpoint in a new tab: the PDF route authenticates by bearer token, and
-  // a plain window.open sends no Authorization header at all.
+  // Opened as a URL, not fetched as a blob: the patient app is a
+  // WKWebView, where a download attribute does nothing and a blob URL in a
+  // new tab goes nowhere. The server hands back a short-lived signed link
+  // and the system viewer takes it -- the same path a clinic-shared file
+  // already takes (see usePatientDocuments).
   async function download(invoice: PatientInvoiceRow) {
     busyId.value = invoice.id
     try {
-      const blob = await authedFetch<Blob>(`/api/patient-invoices/pdf?id=${invoice.id}`, { responseType: 'blob' })
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `${invoice.invoice_number ?? 'invoice'}.pdf`
-      link.click()
-      URL.revokeObjectURL(url)
+      const { url } = await authedFetch<{ url: string }>('/api/patient-invoices/pdf-link', {
+        method: 'POST',
+        body: { invoiceId: invoice.id },
+      })
+      window.open(url, '_blank')
     } catch {
       showToast(t('Could not download that invoice.', 'No se pudo descargar la factura.'), 'error')
     } finally {

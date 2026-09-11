@@ -1,23 +1,20 @@
 <script setup lang="ts">
 // Documents the clinic shared with this patient.
-definePageMeta({ layout: 'portal' })
+definePageMeta({ layout: 'patient' })
+
+const user = useSupabaseUser()
+watch(user, (u) => { if (!u) navigateTo('/login') }, { immediate: true })
 
 const t = useT()
-const { patient } = usePortalPatient()
+const { patient } = useIdentity()
 const patientId = computed(() => patient.value?.id ?? '')
 const { documents, loading, busyId, open } = usePatientDocuments(() => patientId.value)
 </script>
 
 <template>
-  <div>
-    <PatientPageHead
-      :title="t('Documents', 'Documentos')"
-      :lead="t('Reports, consent forms and anything else your clinic has shared with you.', 'Informes, consentimientos y cualquier otro documento que tu clínica haya compartido contigo.')"
-    />
-
+  <PatientScreen :title="t('Documents', 'Documentos')">
     <PatientCard flush>
       <div v-if="loading" class="space-y-3 p-4">
-        <UiSkeleton class="h-10 w-full rounded-ctl" />
         <UiSkeleton class="h-10 w-full rounded-ctl" />
       </div>
       <ul v-else-if="documents.length > 0" class="divide-y divide-line-divider">
@@ -34,7 +31,7 @@ const { documents, loading, busyId, open } = usePatientDocuments(() => patientId
           </div>
           <button
             type="button"
-            class="shrink-0 rounded-ctlSm border border-line-control px-2.5 py-1 text-[12px] font-medium text-ink-600 hover:border-line-controlHover hover:text-ink-900 disabled:opacity-50"
+            class="shrink-0 rounded-ctlSm border border-line-control px-2.5 py-1.5 text-[12px] font-medium text-ink-600 disabled:opacity-50"
             :disabled="busyId === file.id"
             @click="open(file)"
           >
@@ -44,5 +41,5 @@ const { documents, loading, busyId, open } = usePatientDocuments(() => patientId
       </ul>
       <PatientEmpty v-else :text="t('Your clinic has not shared any documents with you yet.', 'Tu clínica todavía no ha compartido ningún documento contigo.')" />
     </PatientCard>
-  </div>
+  </PatientScreen>
 </template>

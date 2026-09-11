@@ -414,7 +414,7 @@ async function recordPayment() {
         <p class="flex items-center gap-1.5">
           <span class="text-ink-muted2">{{ t('Balance:', 'Saldo:') }}</span>
           <UiBalancePill :credit-cents="creditLedgerCents" :bono-value-cents="bonoValueCents" />
-          <span v-else class="font-medium text-ink-700">€0.00</span>
+          <span v-if="creditLedgerCents + bonoValueCents <= 0" class="font-medium text-ink-700">€0.00</span>
         </p>
         <p v-if="activeMembership">
           <span class="text-ink-muted2">{{ t('Membership:', 'Membresía:') }}</span>

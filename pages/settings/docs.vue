@@ -15,7 +15,6 @@ const activeTemplate = ref<Template | null>(null)
 const title = ref('')
 const fields = ref<DocField[]>([])
 const saving = ref(false)
-const savedAt = ref<Date | null>(null)
 
 async function load() {
   loading.value = true
@@ -32,7 +31,6 @@ function openTemplate(t: Template) {
   title.value = t.title
   fields.value = Array.isArray(t.fields) ? [...t.fields] : []
   category.value = t.category ?? ''
-  savedAt.value = null
 }
 
 function categoryLabel(c: string | null) {
@@ -81,7 +79,6 @@ async function save() {
     showToast(error.message, 'error')
     return
   }
-  savedAt.value = new Date()
   showToast(t('Saved', 'Guardado'))
 }
 
@@ -124,7 +121,7 @@ async function removeTemplate(tmpl: Template) {
                   </button>
                   <div class="flex items-center gap-3">
                     <span class="text-[12px] text-ink-faint">{{ new Date(tpl.updated_at).toLocaleString() }}</span>
-                    <button type="button" class="text-[12.5px] text-danger-text hover:text-danger-text/80" @click="removeTemplate(tpl)">{{ t('Delete', 'Eliminar') }}</button>
+                    <UiIconBtn icon="trash" tone="danger" :label="t('Delete', 'Eliminar')" @click="removeTemplate(tpl)" />
                   </div>
                 </li>
               </ul>
@@ -134,7 +131,6 @@ async function removeTemplate(tmpl: Template) {
               <div class="flex items-center justify-between border-b border-line-divider p-4">
                 <button type="button" class="text-[13px] text-ink-muted2 hover:text-ink-600" @click="backToList">&larr; {{ t('Templates', 'Plantillas') }}</button>
                 <div class="flex items-center gap-3">
-                  <span v-if="savedAt" class="text-[12.5px] text-success-text">{{ t('Saved', 'Guardado') }}</span>
                   <UiBtn variant="primary" size="sm" :disabled="saving" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}</UiBtn>
                 </div>
               </div>

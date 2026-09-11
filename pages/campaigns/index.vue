@@ -479,7 +479,7 @@ async function sendNow(patient: PatientOption) {
                     <h3 class="text-[12px] font-semibold text-ink-700">{{ t('Actions', 'Acciones') }}</h3>
                     <div class="flex items-center gap-3">
                       <button type="button" class="text-[12px] font-medium text-brand-text hover:text-brand-hover" @click.stop="openEdit(rule)">{{ t('Edit chain', 'Editar cadena') }}</button>
-                      <button type="button" class="text-[12px] font-medium text-danger-text hover:underline" @click.stop="removeRule(rule)">{{ t('Delete', 'Eliminar') }}</button>
+                      <UiIconBtn icon="trash" tone="danger" :label="t('Delete', 'Eliminar')" @click.stop="removeRule(rule)" />
                     </div>
                   </div>
                   <div class="mt-2 space-y-1.5">

@@ -30,7 +30,12 @@ const MERGE_FIELD_LABELS = computed<Record<string, string>>(() => ({
   clinic_name: t('Clinic name', 'Nombre de la clínica'),
   today: t("Today's date", 'Fecha de hoy'),
 }))
+// Keyed by LINKABLE_PATIENT_FIELDS -- a key missing here renders as a bare
+// "Link to:" with nothing after it, which is how the two name fields first
+// appeared when they were added to that list alone.
 const LINKABLE_FIELD_LABELS = computed<Record<string, string>>(() => ({
+  first_name: t('First name', 'Nombre'),
+  last_name: t('Last name', 'Apellidos'),
   date_of_birth: t('Date of birth', 'Fecha de nacimiento'),
   email: t('Email', 'Correo electrónico'),
   address: t('Address', 'Dirección'),
@@ -75,7 +80,23 @@ function onDragEnd() {
   draggedIndex.value = null
 }
 
+// A new id, or Vue's :key would collide and the two blocks would share
+// state -- typing in one would type in the other.
+function duplicate(index: number) {
+  const source = props.fields[index]
+  const copy: DocField = { ...source, id: crypto.randomUUID(), options: source.options ? [...source.options] : undefined }
+  const next = [...props.fields]
+  next.splice(index + 1, 0, copy)
+  emit('update:fields', next)
+}
+
 function remove(index: number) {
+  // Only asks once the block has something in it. Confirming the removal of
+  // an empty block someone just added by mistake is noise; losing a written
+  // question with its options to a mis-click is not.
+  const field = props.fields[index]
+  const hasContent = field.label.trim() !== '' || (field.options ?? []).length > 0
+  if (hasContent && !confirm(t('Remove this block?', '¿Eliminar este bloque?'))) return
   emit(
     'update:fields',
     props.fields.filter((_, i) => i !== index),
@@ -171,7 +192,7 @@ const showAddMenu = ref(false)
       <!-- Build mode: configure the block -->
       <div
         v-if="mode === 'build'"
-        class="rounded-md border border-gray-200 p-3"
+        class="rounded-md border border-line p-3"
         :class="{ 'opacity-40': draggedIndex === i }"
         @dragover.prevent="onDragOver(i)"
         @drop.prevent
@@ -180,20 +201,46 @@ const showAddMenu = ref(false)
           <div class="flex items-center gap-2">
             <span
               draggable="true"
-              class="cursor-grab select-none text-gray-300 hover:text-gray-500 active:cursor-grabbing"
+              class="cursor-grab select-none text-ink-faint hover:text-ink-muted active:cursor-grabbing"
               :title="t('Drag to reorder', 'Arrastrar para reordenar')"
               @dragstart="onDragStart(i)"
               @dragend="onDragEnd"
               >⠿</span
             >
-            <span class="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-500">
+            <span class="rounded bg-chip-bg px-1.5 py-0.5 text-xs font-medium text-ink-muted">
               {{ FIELD_TYPE_LABELS[field.type] }}
             </span>
           </div>
-          <div class="flex items-center gap-2 text-xs text-gray-400">
-            <button type="button" class="hover:text-gray-700" :disabled="i === 0" @click="move(i, -1)">&uarr;</button>
-            <button type="button" class="hover:text-gray-700" :disabled="i === fields.length - 1" @click="move(i, 1)">&darr;</button>
-            <button type="button" class="text-red-500 hover:text-red-700" @click="remove(i)">{{ t('Remove', 'Eliminar') }}</button>
+          <div class="flex items-center gap-1 text-xs text-ink-faint">
+            <button
+              type="button"
+              class="flex h-7 w-7 items-center justify-center rounded-ctlSm hover:bg-surface-subtle hover:text-ink-700 disabled:opacity-25 disabled:hover:bg-transparent"
+              :disabled="i === 0"
+              :title="t('Move up', 'Subir')"
+              :aria-label="t('Move up', 'Subir')"
+              @click="move(i, -1)"
+            >
+              &uarr;
+            </button>
+            <button
+              type="button"
+              class="flex h-7 w-7 items-center justify-center rounded-ctlSm hover:bg-surface-subtle hover:text-ink-700 disabled:opacity-25 disabled:hover:bg-transparent"
+              :disabled="i === fields.length - 1"
+              :title="t('Move down', 'Bajar')"
+              :aria-label="t('Move down', 'Bajar')"
+              @click="move(i, 1)"
+            >
+              &darr;
+            </button>
+            <button
+              type="button"
+              class="flex h-7 items-center justify-center rounded-ctlSm px-1.5 text-[11px] font-medium hover:bg-surface-subtle hover:text-ink-700"
+              :title="t('Duplicate block', 'Duplicar bloque')"
+              @click="duplicate(i)"
+            >
+              {{ t('Duplicate', 'Duplicar') }}
+            </button>
+            <UiIconBtn icon="trash" tone="danger" :label="t('Remove block', 'Eliminar bloque')" @click="remove(i)" />
           </div>
         </div>
 
@@ -202,7 +249,7 @@ const showAddMenu = ref(false)
           :value="field.label"
           rows="2"
           :placeholder="t('Text content…', 'Contenido de texto…')"
-          class="mt-2 w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          class="mt-2 w-full rounded-md border border-line-control px-3 py-1.5 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           @input="update(i, { label: ($event.target as HTMLTextAreaElement).value })"
         ></textarea>
         <input
@@ -210,7 +257,7 @@ const showAddMenu = ref(false)
           :value="field.label"
           type="text"
           :placeholder="field.type === 'heading' ? t('Heading text…', 'Texto del título…') : t('Question / label…', 'Pregunta / etiqueta…')"
-          class="mt-2 w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          class="mt-2 w-full rounded-md border border-line-control px-3 py-1.5 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           @input="update(i, { label: ($event.target as HTMLInputElement).value })"
         />
 
@@ -219,26 +266,26 @@ const showAddMenu = ref(false)
             <input
               :value="opt"
               type="text"
-              class="w-full rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              class="w-full rounded-md border border-line-control px-2 py-1 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
               @input="updateOption(i, oi, ($event.target as HTMLInputElement).value)"
             />
-            <button type="button" class="text-xs text-gray-400 hover:text-red-600" @click="removeOption(i, oi)">✕</button>
+            <button type="button" class="text-xs text-ink-faint hover:text-danger-text" @click="removeOption(i, oi)">✕</button>
           </div>
-          <button type="button" class="text-xs font-medium text-indigo-600 hover:text-indigo-700" @click="addOption(i)">+ {{ t('Add option', 'Añadir opción') }}</button>
-          <label class="flex items-center gap-1.5 text-xs text-gray-500">
+          <button type="button" class="text-xs font-medium text-brand-text hover:text-brand-hover" @click="addOption(i)">+ {{ t('Add option', 'Añadir opción') }}</button>
+          <label class="flex items-center gap-1.5 text-xs text-ink-muted">
             <input
               type="checkbox"
               :checked="field.multiple"
-              class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              class="rounded border-line-control text-brand-text focus:ring-brand"
               @change="update(i, { multiple: ($event.target as HTMLInputElement).checked, value: ($event.target as HTMLInputElement).checked ? [] : null })"
             />
             {{ t('Allow multiple selections', 'Permitir varias selecciones') }}
           </label>
-          <label class="flex items-center gap-1.5 text-xs text-gray-500">
+          <label class="flex items-center gap-1.5 text-xs text-ink-muted">
             <input
               type="checkbox"
               :checked="field.allowOther"
-              class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              class="rounded border-line-control text-brand-text focus:ring-brand"
               @change="update(i, { allowOther: ($event.target as HTMLInputElement).checked })"
             />
             {{ t('Allow "Other" (free text)', 'Permitir "Otro" (texto libre)') }}
@@ -248,7 +295,7 @@ const showAddMenu = ref(false)
         <div class="mt-2 flex items-center gap-3">
           <select
             v-if="STATIC_BLOCK_TYPES.includes(field.type)"
-            class="rounded border-gray-300 text-xs text-indigo-600"
+            class="rounded border-line-control text-xs text-brand-text"
             @change="
               (e) => {
                 const v = (e.target as HTMLSelectElement).value
@@ -260,8 +307,8 @@ const showAddMenu = ref(false)
             <option value="">+ {{ t('Insert field', 'Insertar campo') }}</option>
             <option v-for="f in DOC_MERGE_FIELDS" :key="f.key" :value="f.key">{{ MERGE_FIELD_LABELS[f.key] }}</option>
           </select>
-          <label v-else class="flex items-center gap-1.5 text-xs text-gray-500">
-            <input type="checkbox" :checked="field.required" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" @change="update(i, { required: ($event.target as HTMLInputElement).checked })" />
+          <label v-else class="flex items-center gap-1.5 text-xs text-ink-muted">
+            <input type="checkbox" :checked="field.required" class="rounded border-line-control text-brand-text focus:ring-brand" @change="update(i, { required: ($event.target as HTMLInputElement).checked })" />
             {{ t('Required', 'Obligatorio') }}
           </label>
         </div>
@@ -269,7 +316,8 @@ const showAddMenu = ref(false)
         <div v-if="LINKABLE_FIELD_TYPES.includes(field.type)" class="mt-2">
           <select
             :value="field.patientField ?? ''"
-            class="rounded border-gray-300 text-xs text-indigo-600"
+            class="rounded border-line-control bg-surface text-xs"
+            :class="field.patientField ? 'text-brand-text' : 'text-ink-muted'"
             @change="update(i, { patientField: ($event.target as HTMLSelectElement).value || undefined })"
           >
             <option value="">{{ t("Don't link to a patient field", 'No vincular a un campo del paciente') }}</option>
@@ -280,32 +328,32 @@ const showAddMenu = ref(false)
 
       <!-- Fill mode: answer the block -->
       <div v-else>
-        <h2 v-if="field.type === 'heading'" class="text-lg font-semibold text-gray-900">{{ field.label }}</h2>
-        <p v-else-if="field.type === 'text'" class="whitespace-pre-wrap text-sm text-gray-700">{{ field.label }}</p>
+        <h2 v-if="field.type === 'heading'" class="text-lg font-semibold text-ink-900">{{ field.label }}</h2>
+        <p v-else-if="field.type === 'text'" class="whitespace-pre-wrap text-sm text-ink-700">{{ field.label }}</p>
 
         <div v-else-if="field.type === 'checkbox'">
-          <label class="flex items-start gap-2 text-sm text-gray-800">
+          <label class="flex items-start gap-2 text-sm text-ink-700">
             <input
               type="checkbox"
               :checked="!!field.value"
-              class="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              class="mt-0.5 rounded border-line-control text-brand-text focus:ring-brand"
               @change="update(i, { value: ($event.target as HTMLInputElement).checked })"
             />
-            {{ field.label }}<span v-if="field.required" class="text-red-500">*</span>
+            {{ field.label }}<span v-if="field.required" class="text-danger-text">*</span>
           </label>
         </div>
 
         <div v-else-if="field.type === 'choice'">
-          <label class="block text-sm font-medium text-gray-700">
-            {{ field.label }}<span v-if="field.required" class="text-red-500">*</span>
+          <label class="block text-sm font-medium text-ink-700">
+            {{ field.label }}<span v-if="field.required" class="text-danger-text">*</span>
           </label>
           <div class="mt-1.5 space-y-1.5">
-            <label v-for="(opt, oi) in field.options ?? []" :key="oi" class="flex items-center gap-2 text-sm text-gray-800">
+            <label v-for="(opt, oi) in field.options ?? []" :key="oi" class="flex items-center gap-2 text-sm text-ink-700">
               <input
                 v-if="field.multiple"
                 type="checkbox"
                 :checked="Array.isArray(field.value) && (field.value as string[]).includes(opt)"
-                class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                class="rounded border-line-control text-brand-text focus:ring-brand"
                 @change="toggleChoiceOption(i, opt)"
               />
               <input
@@ -313,18 +361,18 @@ const showAddMenu = ref(false)
                 type="radio"
                 :name="field.id"
                 :checked="field.value === opt"
-                class="border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                class="border-line-control text-brand-text focus:ring-brand"
                 @change="selectChoice(i, opt)"
               />
               {{ opt }}
             </label>
             <div v-if="field.allowOther">
-              <label class="flex items-center gap-2 text-sm text-gray-800">
+              <label class="flex items-center gap-2 text-sm text-ink-700">
                 <input
                   v-if="field.multiple"
                   type="checkbox"
                   :checked="isOtherActive(field)"
-                  class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  class="rounded border-line-control text-brand-text focus:ring-brand"
                   @change="toggleOther(i)"
                 />
                 <input
@@ -332,7 +380,7 @@ const showAddMenu = ref(false)
                   type="radio"
                   :name="field.id"
                   :checked="isOtherActive(field)"
-                  class="border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  class="border-line-control text-brand-text focus:ring-brand"
                   @change="toggleOther(i)"
                 />
                 {{ t('Other', 'Otro') }}
@@ -342,7 +390,7 @@ const showAddMenu = ref(false)
                 type="text"
                 :value="otherText(field)"
                 :placeholder="t('Please specify…', 'Por favor, especifica…')"
-                class="mt-1 w-full rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                class="mt-1 w-full rounded-md border border-line-control px-2 py-1 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
                 @input="updateOtherText(i, ($event.target as HTMLInputElement).value)"
               />
             </div>
@@ -350,8 +398,8 @@ const showAddMenu = ref(false)
         </div>
 
         <div v-else-if="field.type === 'scale'">
-          <label class="block text-sm font-medium text-gray-700">
-            {{ field.label }}<span v-if="field.required" class="text-red-500">*</span>
+          <label class="block text-sm font-medium text-ink-700">
+            {{ field.label }}<span v-if="field.required" class="text-danger-text">*</span>
           </label>
           <div class="mt-1.5 flex flex-wrap gap-1.5">
             <button
@@ -359,7 +407,7 @@ const showAddMenu = ref(false)
               :key="n"
               type="button"
               class="h-8 w-8 rounded-md border text-sm font-medium"
-              :class="field.value === n - 1 ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-gray-300 text-gray-700 hover:border-indigo-400'"
+              :class="field.value === n - 1 ? 'border-brand bg-brand text-white' : 'border-line-control text-ink-700 hover:border-brand'"
               @click="update(i, { value: n - 1 })"
             >
               {{ n - 1 }}
@@ -368,8 +416,8 @@ const showAddMenu = ref(false)
         </div>
 
         <div v-else-if="field.type === 'rating'">
-          <label class="block text-sm font-medium text-gray-700">
-            {{ field.label }}<span v-if="field.required" class="text-red-500">*</span>
+          <label class="block text-sm font-medium text-ink-700">
+            {{ field.label }}<span v-if="field.required" class="text-danger-text">*</span>
           </label>
           <div class="mt-1.5 flex gap-1">
             <button
@@ -377,7 +425,7 @@ const showAddMenu = ref(false)
               :key="n"
               type="button"
               class="text-2xl leading-none"
-              :class="typeof field.value === 'number' && field.value >= n ? 'text-amber-400' : 'text-gray-300 hover:text-amber-300'"
+              :class="typeof field.value === 'number' && field.value >= n ? 'text-amber-400' : 'text-ink-faint hover:text-amber-300'"
               @click="update(i, { value: n })"
             >
               ★
@@ -386,14 +434,14 @@ const showAddMenu = ref(false)
         </div>
 
         <div v-else>
-          <label class="block text-sm font-medium text-gray-700">
-            {{ field.label }}<span v-if="field.required" class="text-red-500">*</span>
+          <label class="block text-sm font-medium text-ink-700">
+            {{ field.label }}<span v-if="field.required" class="text-danger-text">*</span>
           </label>
           <textarea
             v-if="field.type === 'long_text'"
             :value="field.value as string"
             rows="3"
-            class="mt-1 w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            class="mt-1 w-full rounded-md border border-line-control px-3 py-1.5 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
             @input="update(i, { value: ($event.target as HTMLTextAreaElement).value })"
           ></textarea>
           <DocDateInput
@@ -411,7 +459,7 @@ const showAddMenu = ref(false)
             v-else
             type="text"
             :value="field.value as string"
-            class="mt-1 w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            class="mt-1 w-full rounded-md border border-line-control px-3 py-1.5 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
             @input="update(i, { value: ($event.target as HTMLInputElement).value })"
           />
         </div>
@@ -419,15 +467,15 @@ const showAddMenu = ref(false)
     </div>
 
     <div v-if="mode === 'build'" class="relative">
-      <button type="button" class="rounded-md border border-dashed border-gray-300 px-3 py-1.5 text-sm text-gray-500 hover:border-indigo-400 hover:text-indigo-600" @click="showAddMenu = !showAddMenu">
+      <button type="button" class="rounded-md border border-dashed border-line-control px-3 py-1.5 text-sm text-ink-muted hover:border-brand hover:text-brand-text" @click="showAddMenu = !showAddMenu">
         + {{ t('Add block', 'Añadir bloque') }}
       </button>
-      <div v-if="showAddMenu" class="absolute left-0 z-10 mt-1 w-40 rounded-md border border-gray-200 bg-white py-1 shadow-lg">
+      <div v-if="showAddMenu" class="absolute left-0 z-10 mt-1 w-40 rounded-md border border-line bg-surface py-1 shadow-lg">
         <button
           v-for="ft in FIELD_TYPES"
           :key="ft.type"
           type="button"
-          class="block w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+          class="block w-full px-3 py-1.5 text-left text-sm text-ink-700 hover:bg-surface-subtle"
           @click="addBlock(ft.type); showAddMenu = false"
         >
           {{ FIELD_TYPE_LABELS[ft.type] }}
@@ -435,6 +483,6 @@ const showAddMenu = ref(false)
       </div>
     </div>
 
-    <p v-if="mode === 'build' && fields.length === 0" class="text-sm text-gray-400">{{ t('No blocks yet — add one below.', 'Aún no hay bloques — añade uno abajo.') }}</p>
+    <p v-if="mode === 'build' && fields.length === 0" class="text-sm text-ink-faint">{{ t('No blocks yet — add one below.', 'Aún no hay bloques — añade uno abajo.') }}</p>
   </div>
 </template>

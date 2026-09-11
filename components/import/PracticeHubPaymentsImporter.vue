@@ -53,8 +53,26 @@ const cutoverDate = ref('')
 
 const dayOf = (value: string) => String(value).slice(0, 10)
 
+// Payments already recorded in QuiroFlow, keyed patient|day|amount. After
+// go-live the clinic records the same takings in both systems, and a date
+// cutoff alone throws the baby out with the bathwater: it skips everything
+// after that day, including a payment PracticeHub genuinely has and we do
+// not. Checked on the live account -- of the payments offered after go-live,
+// all but one already existed here, and that one (a 40 EUR card payment) is
+// exactly the kind the blunt rule would have hidden forever.
+//
+// So the cutoff marks where to START value-matching, not where to stop
+// looking: before go-live PracticeHub is the only source and nothing here can
+// match; after it, a payment is skipped only if the same patient paid the
+// same amount on the same day.
+const nativePaymentKeys = ref(new Set<string>())
+const valueKey = (patientId: string, created: string, amountCents: number) => `${patientId}|${dayOf(created)}|${amountCents}`
+
 const candidates = computed(() =>
-  cutoverDate.value ? scanned.value.filter((c) => dayOf(c.payment.created) < cutoverDate.value) : scanned.value,
+  scanned.value.filter((c) => {
+    if (!cutoverDate.value || dayOf(c.payment.created) < cutoverDate.value) return true
+    return !nativePaymentKeys.value.has(valueKey(c.patientId, c.payment.created, c.amountCents))
+  }),
 )
 const skippedAfterCutover = computed(() => scanned.value.length - candidates.value.length)
 
@@ -173,6 +191,20 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         .limit(1)
       const firstPaidAt = (firstNative as unknown as { paid_at: string }[] | null)?.[0]?.paid_at
       if (firstPaidAt) cutoverDate.value = dayOf(firstPaidAt)
+    }
+
+    phase.value = t('Checking payments taken here…', 'Comprobando pagos cobrados aquí…')
+    nativePaymentKeys.value = new Set()
+    for (let page = 0; ; page++) {
+      const { data } = await supabase
+        .from('payments')
+        .select('amount_cents, paid_at, invoices!inner(patient_id)')
+        .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+      const rows = (data ?? []) as unknown as { amount_cents: number; paid_at: string; invoices: { patient_id: string } | null }[]
+      for (const row of rows) {
+        if (row.invoices?.patient_id) nativePaymentKeys.value.add(valueKey(row.invoices.patient_id, row.paid_at, row.amount_cents))
+      }
+      if (rows.length < PAGE_SIZE) break
     }
 
     phase.value = t('Fetching payments…', 'Obteniendo pagos…')

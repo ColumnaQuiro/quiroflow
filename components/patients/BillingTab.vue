@@ -1356,9 +1356,7 @@ function money(cents: number) {
                 <UiBtn size="sm" variant="secondary" @click="toggleShares(p.id)">
                   {{ t('Share', 'Compartir') }}{{ shares[p.id]?.length ? ` (${shares[p.id].length})` : '' }}…
                 </UiBtn>
-                <UiBtn v-if="can('billing_config')" size="sm" variant="ghost" class="ml-auto hover:text-danger-text" @click="deletePackagePurchase(p)">
-                  {{ t('Delete', 'Eliminar') }}
-                </UiBtn>
+                <UiIconBtn v-if="can('billing_config')" icon="trash" tone="danger" class="ml-auto" :label="t('Delete', 'Eliminar')" @click="deletePackagePurchase(p)" />
               </template>
             </div>
 

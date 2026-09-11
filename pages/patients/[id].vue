@@ -208,16 +208,14 @@ async function deletePatient() {
           {{ patient.status === 'active' ? t('Archive', 'Archivar') : t('Unarchive', 'Desarchivar') }}
         </UiBtn>
         <UiBtn v-if="can('patients_delete_merge')" variant="secondary" @click="mergeOpen = true">{{ t('Merge', 'Fusionar') }}</UiBtn>
-        <button
+        <UiIconBtn
           v-if="can('patients_delete_merge')"
-          type="button"
-          class="h-8 rounded-ctl border border-line-control px-2.5 text-[13px] font-medium text-danger-text hover:border-danger-border hover:bg-danger-bg disabled:opacity-50"
+          icon="trash"
+          tone="danger"
           :disabled="deleting"
-          :title="t('Delete patient', 'Eliminar paciente')"
+          :label="deleting ? t('Deleting…', 'Eliminando…') : t('Delete patient', 'Eliminar paciente')"
           @click="deletePatient"
-        >
-          {{ deleting ? t('Deleting…', 'Eliminando…') : t('Delete', 'Eliminar') }}
-        </button>
+        />
       </div>
     </header>
 

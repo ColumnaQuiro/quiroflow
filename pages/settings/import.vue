@@ -2,73 +2,142 @@
 interface DataType {
   key: string
   label: string
+  hint: string
+}
+
+interface DataGroup {
+  key: string
+  label: string
+  note?: string
+  types: DataType[]
 }
 
 interface Source {
   key: string
   label: string
   available: boolean
-  dataTypes: DataType[]
+  groups: DataGroup[]
 }
 
 const t = useT()
+const route = useRoute()
+const router = useRouter()
 
 onMounted(() => {
   loadSavedPracticeHubConnection()
 })
 
+// Grouped rather than one flat row of fifteen chips, and ordered the way a
+// migration actually runs. Everything downstream matches a record to its
+// patient by external_reference, so Patients genuinely has to go first --
+// Maximiliano Mosciaro's bono sat unimportable because his patient reference
+// had never been stored, and nothing in the UI said that was the dependency.
+// The groups make the order visible instead of leaving it to be discovered.
 const sources = computed<Source[]>(() => [
   {
     key: 'practicehub',
     label: 'PracticeHub',
     available: true,
-    dataTypes: [
-      { key: 'general', label: t('General', 'General') },
-      { key: 'reconciliation', label: t('Check migration', 'Comprobar migración') },
-      { key: 'patient_check', label: t('Check a patient', 'Comprobar un paciente') },
-      { key: 'patients', label: t('Patients', 'Pacientes') },
-      { key: 'appointments', label: t('Appointments', 'Citas') },
-      { key: 'appointment_types', label: t('Appointment Types (fix)', 'Tipos de cita (fix)') },
-      { key: 'payments', label: t('Payments', 'Pagos') },
-      { key: 'patient_packages', label: t('Packages / Bonos', 'Bonos') },
-      { key: 'package_sessions', label: t('Package visits', 'Visitas de bono') },
-      { key: 'patient_logs', label: t('Patient Logs', 'Registros de pacientes') },
-      { key: 'sticky_notes', label: t('Sticky Notes', 'Notas adhesivas') },
-      { key: 'treatment_notes', label: t('Treatment Notes', 'Notas de tratamiento') },
-      { key: 'care_plans', label: t('Care Plans', 'Planes de tratamiento') },
-      { key: 'custom_form_responses', label: t('Custom Form Responses', 'Respuestas de formularios personalizados') },
-      { key: 'file_attachments', label: t('File Attachments', 'Archivos adjuntos') },
+    groups: [
+      {
+        key: 'setup',
+        label: t('Set up', 'Configurar'),
+        types: [{ key: 'general', label: t('Connection', 'Conexión'), hint: t('API key and clinic URL, saved once for every step', 'Clave API y URL de la clínica, guardadas una vez para todos los pasos') }],
+      },
+      {
+        key: 'records',
+        label: t('1 · Records', '1 · Registros'),
+        note: t('Start here — everything else is matched to a patient.', 'Empieza aquí: todo lo demás se empareja con un paciente.'),
+        types: [
+          { key: 'patients', label: t('Patients', 'Pacientes'), hint: t('Must run first — everything else matches on the patient reference', 'Debe ir primero: todo lo demás se empareja por la referencia del paciente') },
+          { key: 'appointment_types', label: t('Appointment types', 'Tipos de cita'), hint: t('Repairs visits attached to the wrong type', 'Corrige visitas asociadas al tipo equivocado') },
+          { key: 'appointments', label: t('Appointments', 'Citas'), hint: t('Past and upcoming visits', 'Visitas pasadas y futuras') },
+        ],
+      },
+      {
+        key: 'money',
+        label: t('2 · Money', '2 · Dinero'),
+        note: t('Payments first, so a bono knows what is still owed on it.', 'Primero los pagos, para que el bono sepa lo que queda pendiente.'),
+        types: [
+          { key: 'payments', label: t('Payments', 'Pagos'), hint: t('One paid invoice per payment', 'Una factura pagada por cada pago') },
+          { key: 'patient_packages', label: t('Packages / bonos', 'Bonos'), hint: t('Sessions, price, and an invoice for what is owed', 'Sesiones, precio y factura por lo pendiente') },
+          { key: 'package_sessions', label: t('Bono visits', 'Visitas de bono'), hint: t('The visits a bono paid for', 'Las visitas que pagó un bono') },
+        ],
+      },
+      {
+        key: 'clinical',
+        label: t('3 · Clinical', '3 · Clínico'),
+        types: [
+          { key: 'treatment_notes', label: t('Treatment notes', 'Notas de tratamiento'), hint: t('Notes written at a visit', 'Notas escritas en la visita') },
+          { key: 'care_plans', label: t('Care plans', 'Planes de tratamiento'), hint: t('Course of treatment', 'Plan de tratamiento') },
+          { key: 'patient_logs', label: t('Patient logs', 'Registros de pacientes'), hint: t('History entries', 'Entradas del historial') },
+          { key: 'sticky_notes', label: t('Sticky notes', 'Notas adhesivas'), hint: t('Front-desk reminders', 'Recordatorios de recepción') },
+          { key: 'custom_form_responses', label: t('Form responses', 'Respuestas de formularios'), hint: t('Also creates a reusable document template per form', 'También crea una plantilla de documento por formulario') },
+          { key: 'file_attachments', label: t('Files', 'Archivos'), hint: t('Scans, photos and PDFs', 'Escaneos, fotos y PDF') },
+        ],
+      },
+      {
+        key: 'verify',
+        label: t('Check', 'Comprobar'),
+        note: t('Read-only. Nothing here changes a record.', 'Solo lectura. Aquí no se modifica ningún registro.'),
+        types: [
+          { key: 'reconciliation', label: t('Check migration', 'Comprobar migración'), hint: t('What arrived and what did not', 'Qué llegó y qué no') },
+          { key: 'patient_check', label: t('Check a patient', 'Comprobar un paciente'), hint: t('One patient, both systems side by side', 'Un paciente, los dos sistemas lado a lado') },
+        ],
+      },
     ],
   },
   {
     key: 'other',
     label: t('Other system', 'Otro sistema'),
     available: true,
-    dataTypes: [{ key: 'patients', label: t('Patients', 'Pacientes') }],
+    groups: [
+      {
+        key: 'records',
+        label: t('Records', 'Registros'),
+        types: [{ key: 'patients', label: t('Patients', 'Pacientes'), hint: t('From a CSV file', 'Desde un archivo CSV') }],
+      },
+    ],
   },
 ])
 
-const sourceKey = ref('practicehub')
-const dataTypeKey = ref('general')
+// Kept in the URL so a reload, a bookmark, or a link sent to whoever is running
+// the migration lands on the same step. Before this, every refresh dropped you
+// back on the connection form and you re-navigated by hand.
+const sourceKey = ref(typeof route.query.source === 'string' ? route.query.source : 'practicehub')
+const dataTypeKey = ref(typeof route.query.type === 'string' ? route.query.type : 'general')
 
-const activeSource = computed(() => sources.value.find((s) => s.key === sourceKey.value)!)
+const activeSource = computed(() => sources.value.find((s) => s.key === sourceKey.value) ?? sources.value[0]!)
+const allTypes = computed(() => activeSource.value.groups.flatMap((g) => g.types))
+const activeType = computed(() => allTypes.value.find((d) => d.key === dataTypeKey.value))
+
+watch([sourceKey, dataTypeKey], ([source, type]) => {
+  router.replace({ query: { ...route.query, source, type } })
+})
 
 function selectSource(key: string) {
   const source = sources.value.find((s) => s.key === key)
   if (!source?.available) return
   sourceKey.value = key
-  dataTypeKey.value = source.dataTypes[0]?.key ?? ''
+  dataTypeKey.value = source.groups[0]?.types[0]?.key ?? ''
 }
 </script>
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader :title="t('Import Patients (CSV)', 'Importar pacientes (CSV)')" />
+    <PageHeader :title="t('Import from another system', 'Importar desde otro sistema')" />
     <div class="flex-1 overflow-y-auto">
       <div class="flex gap-8 p-6">
         <SettingsNav />
-        <div class="min-w-0 max-w-[660px] flex-1">
-          <p class="text-[13px] text-ink-muted2">{{ t('Migrate records from another practice management system.', 'Migra registros desde otro sistema de gestión de clínicas.') }}</p>
+        <div class="min-w-0 max-w-[760px] flex-1">
+          <p class="text-[13px] text-ink-muted2">
+            {{
+              t(
+                'Bring records across from the system this clinic is moving off. Every step shows a preview first — nothing is written until you confirm it.',
+                'Trae los registros del sistema del que se está mudando la clínica. Cada paso muestra primero una vista previa: no se escribe nada hasta que lo confirmes.',
+              )
+            }}
+          </p>
 
           <div class="mt-4 border-b border-line">
             <nav class="-mb-px flex gap-6">
@@ -89,20 +158,32 @@ function selectSource(key: string) {
             </nav>
           </div>
 
-          <div v-if="activeSource.dataTypes.length > 0" class="mt-4 flex flex-wrap gap-2">
-            <button
-              v-for="dt in activeSource.dataTypes"
-              :key="dt.key"
-              type="button"
-              class="rounded-pill px-3 py-1 text-[12.5px] font-medium"
-              :class="dataTypeKey === dt.key ? 'bg-brand text-white' : 'bg-chip-bg text-chip-text hover:bg-line-row2'"
-              @click="dataTypeKey = dt.key"
-            >
-              {{ dt.label }}
-            </button>
+          <div class="mt-4 space-y-3.5">
+            <div v-for="group in activeSource.groups" :key="group.key" class="flex flex-wrap gap-x-3 gap-y-1.5">
+              <p class="mt-1 w-[76px] shrink-0 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">{{ group.label }}</p>
+              <div class="flex min-w-0 flex-1 flex-wrap gap-2">
+                <button
+                  v-for="dt in group.types"
+                  :key="dt.key"
+                  type="button"
+                  :title="dt.hint"
+                  class="rounded-pill px-3 py-1 text-[12.5px] font-medium"
+                  :class="dataTypeKey === dt.key ? 'bg-brand text-white' : 'bg-chip-bg text-chip-text hover:bg-line-row2'"
+                  @click="dataTypeKey = dt.key"
+                >
+                  {{ dt.label }}
+                </button>
+                <p v-if="group.note" class="w-full text-[11.5px] text-ink-faint">{{ group.note }}</p>
+              </div>
+            </div>
           </div>
 
-          <div class="mt-6">
+          <p v-if="activeType" class="mt-5 border-t border-line-divider pt-4 text-[12.5px] text-ink-muted2">
+            <span class="font-semibold text-ink-700">{{ activeType.label }}</span>
+            <span class="px-1.5 text-ink-faint3">&middot;</span>{{ activeType.hint }}
+          </p>
+
+          <div class="mt-4">
             <ImportPracticeHubGeneralSettings v-if="sourceKey === 'practicehub' && dataTypeKey === 'general'" />
             <ImportPracticeHubReconciliation v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'reconciliation'" />
             <ImportPracticeHubPatientCheck v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'patient_check'" />
@@ -119,7 +200,7 @@ function selectSource(key: string) {
             <ImportPracticeHubCustomFormResponsesImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'custom_form_responses'" />
             <ImportPracticeHubFileAttachmentsImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'file_attachments'" />
             <ImportGenericCsvPatientsImporter v-else-if="sourceKey === 'other' && dataTypeKey === 'patients'" />
-            <ImportComingSoon v-else :label="activeSource.dataTypes.find((d) => d.key === dataTypeKey)?.label ?? ''" />
+            <ImportComingSoon v-else :label="activeType?.label ?? ''" />
           </div>
         </div>
       </div>

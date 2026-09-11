@@ -34,6 +34,22 @@ export LC_ALL=en_US.UTF-8
 # it, regardless of what's committed or already on TestFlight, so this
 # never needs a manual bump again. Runs before `cd mobile` -- agvtool
 # operates on the Xcode project in the current directory.
+#
+# MARKETING_VERSION is deliberately NOT touched here. It is the version
+# users see, so which number comes next (1.0.1 or 1.1) is a product
+# decision, not something a build script should invent. But it does have
+# to move: once a marketing version is approved on the App Store, that
+# "train" closes, and every later upload carrying it is rejected --
+# ITMS-90186 "the train version is closed for new build submissions"
+# plus ITMS-90062 "must contain a higher version than that of the
+# previously approved version". The build still archives and uploads
+# fine, so this surfaces as an Apple rejection email rather than a red
+# build, which is how 1.0 sat closed for a while before anyone noticed.
+#
+# So: after each App Store release, bump MARKETING_VERSION in
+# project.pbxproj by hand (and mobile/android/app/build.gradle's
+# versionName alongside it, to keep the two platforms showing the same
+# version).
 cd "$CI_PRIMARY_REPOSITORY_PATH/mobile/ios/App"
 agvtool new-version -all "$(date -u +%Y%m%d%H%M)"
 

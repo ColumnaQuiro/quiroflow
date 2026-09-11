@@ -62,8 +62,15 @@ interface Candidate {
   owedCents: number
   needsInvoice: boolean
   // True for a package already in package_purchases: applying it adds only
-  // the missing invoice, reference and shares, leaving the purchase alone.
+  // the missing invoice, reference, shares and counter sync, leaving the rest
+  // of the purchase alone.
   repairOnly: boolean
+  // What PracticeHub now says this bono is, where that differs from the row
+  // here. Null when they already agree. See syncFor().
+  counterSync: { sessionsTotal?: number; sessionsUsed?: number; priceCents?: number } | null
+  // PracticeHub reports FEWER sessions used than are recorded here. Never
+  // applied automatically -- see syncFor() -- but surfaced so it can be seen.
+  usedAheadOfPracticeHub: boolean
   // Set for an already-imported package so its purchase row can be pointed
   // at the invoice this creates.
   existingPurchaseId: string | null
@@ -87,6 +94,7 @@ interface LocalBono {
   packageName: string
   priceCents: number
   sessionsUsed: number
+  sessionsTotal: number
   purchasedAt: string
   reference: string | null
   visitRows: number
@@ -223,6 +231,36 @@ function owedCentsFor(pkg: PHPatientPackage): number {
   return Math.max(0, Math.round(-(pkg.package_balance ?? 0) * 100))
 }
 
+// What to change on a bono already here so it reads what PracticeHub reads.
+//
+// A bono is imported once and then never looked at again, so whatever
+// PracticeHub said that day is frozen here forever. That is fine until the
+// clinic corrects PracticeHub -- which is exactly what onboarding is: the
+// source data gets cleaned while the migration is already running. Adrian
+// Hernandez's bono came over as 11 sessions at 440 EUR because that is what
+// PracticeHub said at the time; it now says 12 at 480 with 2 consumed, and
+// nothing here could ever pick that up.
+//
+// sessions_total and price_cents are properties of the purchase: PracticeHub
+// owns them and they are taken as given.
+//
+// sessions_used only ever RISES. PracticeHub knowing about consumption we do
+// not is the normal case and must be applied. The reverse -- fewer used there
+// than here -- means sessions were drawn in QuiroFlow since the import, and
+// lowering the count would hand those back as free visits. That direction is
+// reported (usedAheadOfPracticeHub) rather than written, because giving a
+// patient sessions they already had is the one error here nobody notices.
+function syncFor(local: LocalBono, phSessionsTotal: number, phSessionsUsed: number, phPriceCents: number) {
+  const sync: { sessionsTotal?: number; sessionsUsed?: number; priceCents?: number } = {}
+  if (phSessionsTotal > 0 && local.sessionsTotal !== phSessionsTotal) sync.sessionsTotal = phSessionsTotal
+  if (phPriceCents > 0 && local.priceCents !== phPriceCents) sync.priceCents = phPriceCents
+  if (phSessionsUsed > local.sessionsUsed) sync.sessionsUsed = phSessionsUsed
+  return {
+    counterSync: Object.keys(sync).length > 0 ? sync : null,
+    usedAheadOfPracticeHub: phSessionsUsed < local.sessionsUsed,
+  }
+}
+
 async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }) {
   lastConn.value = conn
   stage.value = 'loading'
@@ -349,7 +387,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     for (let page = 0; ; page++) {
       const { data } = await supabase
         .from('package_purchases')
-        .select('id, patient_id, purchased_at, external_reference, invoice_id, package_name, price_cents, sessions_used')
+        .select('id, patient_id, purchased_at, external_reference, invoice_id, package_name, price_cents, sessions_used, sessions_total')
         .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
       for (const row of data ?? []) {
         if (row.external_reference) purchaseByRef.set(row.external_reference, row.id)
@@ -360,6 +398,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
           packageName: row.package_name ?? '',
           priceCents: row.price_cents ?? 0,
           sessionsUsed: row.sessions_used ?? 0,
+          sessionsTotal: row.sessions_total ?? 0,
           purchasedAt: String(row.purchased_at),
           reference: row.external_reference ?? null,
           visitRows: 0,
@@ -672,9 +711,16 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         existingPurchaseId === null ? sharedWith : sharedWith.filter((m) => !purchaseHasShares.has(`${existingPurchaseId}|${m.id}`))
       const needsShares = missingShares.length > 0
       const needsReferenceStamp = existingPurchaseId !== null && purchaseNeedsReference.has(existingPurchaseId)
+
+      // What PracticeHub says this bono is now, against what we stored the day
+      // it was imported.
+      const existingLocal = existingPurchaseId !== null ? localBonoById.get(existingPurchaseId) : undefined
+      const { counterSync, usedAheadOfPracticeHub } = existingLocal
+        ? syncFor(existingLocal, Math.max(visitsTotal, 1), sessionsUsed, priceCents)
+        : { counterSync: null, usedAheadOfPracticeHub: false }
       // Nothing left to do: the bono is here, and either it is settled or its
       // debt is already on an invoice.
-      if (existingPurchaseId && !needsInvoice && !needsShares && !needsReferenceStamp) continue
+      if (existingPurchaseId && !needsInvoice && !needsShares && !needsReferenceStamp && !counterSync) continue
 
       built.push({
         phPackageId: pkg.id,
@@ -695,6 +741,8 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         owedCents,
         needsInvoice,
         repairOnly: existingPurchaseId !== null,
+        counterSync,
+        usedAheadOfPracticeHub,
         existingPurchaseId,
         needsReferenceStamp,
         sharedWith: missingShares,
@@ -862,6 +910,26 @@ async function applyFixes() {
         continue
       }
       purchaseId = purchase.id
+    }
+
+    // Bring an already-imported bono up to what PracticeHub says now. Only the
+    // fields that actually differ are sent, so a re-run touches nothing it does
+    // not have to. See syncFor() for why sessions_used only ever rises.
+    if (c.counterSync && purchaseId) {
+      const { error: syncError } = await supabase
+        .from('package_purchases')
+        .update({
+          ...(c.counterSync.sessionsTotal !== undefined ? { sessions_total: c.counterSync.sessionsTotal } : {}),
+          ...(c.counterSync.sessionsUsed !== undefined ? { sessions_used: c.counterSync.sessionsUsed } : {}),
+          ...(c.counterSync.priceCents !== undefined ? { price_cents: c.counterSync.priceCents } : {}),
+        })
+        .eq('id', purchaseId)
+      if (syncError) {
+        c.status = 'error'
+        c.errorMessage = syncError.message
+        progress.value = { done: progress.value.done + 1, total: toApply.length }
+        continue
+      }
     }
 
     // No account_credits row is written here, for a bono or a correction.
@@ -1049,8 +1117,8 @@ function formatEuros(cents: number): string {
       <div class="rounded-lg border border-line bg-surface-subtle p-3 text-sm text-ink-muted2">
         {{
           t(
-            `Found ${candidates.filter((c) => c.status === 'pending' && !c.repairOnly).length} new bono(s) to add and ${candidates.filter((c) => c.status === 'pending' && c.repairOnly).length} already here that are missing an invoice, a reference or a shared patient. Invoices for money still owed: ${candidates.filter((c) => c.needsInvoice).length}, €${formatEuros(candidates.filter((c) => c.needsInvoice).reduce((sum, c) => sum + c.owedCents, 0))}. Skipped: ${skippedUnmatched} unmatched patients, ${skippedNoValue} active bonos with nothing left on them.`,
-            `Se encontraron ${candidates.filter((c) => c.status === 'pending' && !c.repairOnly).length} bono(s) nuevos y ${candidates.filter((c) => c.status === 'pending' && c.repairOnly).length} ya existentes a los que les falta una factura, una referencia o un paciente compartido. Facturas por lo que queda pendiente: ${candidates.filter((c) => c.needsInvoice).length}, €${formatEuros(candidates.filter((c) => c.needsInvoice).reduce((sum, c) => sum + c.owedCents, 0))}. Omitidos: ${skippedUnmatched} pacientes sin emparejar, ${skippedNoValue} bonos activos sin saldo restante.`,
+            `Found ${candidates.filter((c) => c.status === 'pending' && !c.repairOnly).length} new bono(s) to add and ${candidates.filter((c) => c.status === 'pending' && c.repairOnly).length} already here that need updating. Bonos PracticeHub has since changed: ${candidates.filter((c) => c.counterSync).length}. Invoices for money still owed: ${candidates.filter((c) => c.needsInvoice).length}, €${formatEuros(candidates.filter((c) => c.needsInvoice).reduce((sum, c) => sum + c.owedCents, 0))}. Skipped: ${skippedUnmatched} unmatched patients, ${skippedNoValue} active bonos with nothing left on them.`,
+            `Se encontraron ${candidates.filter((c) => c.status === 'pending' && !c.repairOnly).length} bono(s) nuevos y ${candidates.filter((c) => c.status === 'pending' && c.repairOnly).length} ya existentes que hay que actualizar. Bonos que PracticeHub ha cambiado desde entonces: ${candidates.filter((c) => c.counterSync).length}. Facturas por lo que queda pendiente: ${candidates.filter((c) => c.needsInvoice).length}, €${formatEuros(candidates.filter((c) => c.needsInvoice).reduce((sum, c) => sum + c.owedCents, 0))}. Omitidos: ${skippedUnmatched} pacientes sin emparejar, ${skippedNoValue} bonos activos sin saldo restante.`,
           )
         }}
       </div>
@@ -1248,11 +1316,18 @@ function formatEuros(cents: number): string {
               </td>
               <td class="px-3 py-2">
                 <div v-if="!c.repairOnly">€{{ formatEuros(c.priceCents) }} {{ t('bono', 'bono') }}</div>
+                <div v-if="c.counterSync" class="text-warning-text">
+                  <template v-if="c.counterSync.sessionsUsed !== undefined">{{ t('used', 'usadas') }} &rarr; {{ c.counterSync.sessionsUsed }}<br /></template>
+                  <template v-if="c.counterSync.sessionsTotal !== undefined">{{ t('of', 'de') }} &rarr; {{ c.counterSync.sessionsTotal }}<br /></template>
+                  <template v-if="c.counterSync.priceCents !== undefined">€{{ formatEuros(c.counterSync.priceCents) }} {{ t('price', 'precio') }}</template>
+                </div>
+                <div v-if="c.usedAheadOfPracticeHub" class="text-ink-muted2">{{ t('more used here than in PracticeHub -- not changed', 'más usadas aquí que en PracticeHub: sin cambios') }}</div>
                 <div v-if="c.needsInvoice" class="text-warning-text">+ €{{ formatEuros(c.owedCents) }} {{ t('invoice', 'factura') }}</div>
                 <div v-if="c.needsReferenceStamp" class="text-ink-muted2">{{ t('+ PracticeHub reference', '+ referencia de PracticeHub') }}</div>
               </td>
               <td class="px-3 py-2">
-                <span v-if="c.status === 'pending' && c.repairOnly && c.needsInvoice" class="text-warning-text">{{ t('Missing invoice', 'Falta la factura') }}</span>
+                <span v-if="c.status === 'pending' && c.repairOnly && c.counterSync" class="text-warning-text">{{ t('Out of date', 'Desactualizado') }}</span>
+                <span v-else-if="c.status === 'pending' && c.repairOnly && c.needsInvoice" class="text-warning-text">{{ t('Missing invoice', 'Falta la factura') }}</span>
                 <span v-else-if="c.status === 'pending' && c.repairOnly && c.sharedWith.length > 0" class="text-warning-text">{{ t('Missing shared patients', 'Faltan pacientes compartidos') }}</span>
                 <span v-else-if="c.status === 'pending' && c.repairOnly" class="text-ink-muted2">{{ t('Missing reference', 'Falta la referencia') }}</span>
                 <span v-else-if="c.status === 'pending'" class="text-ink-600">{{ t('Pending', 'Pendiente') }}</span>

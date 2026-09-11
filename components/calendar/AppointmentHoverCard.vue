@@ -24,7 +24,7 @@ const props = defineProps<{ appointment: HoverAppointment; roomName?: string | n
 const emit = defineEmits<{ noteSaved: []; checkIn: []; reschedule: [] }>()
 
 const supabase = useSupabaseClient()
-const { loading: billingLoading, balanceCents, creditLedgerCents, activePackages } = usePatientFinancialSummary(() => props.appointment.patient_id)
+const { loading: billingLoading, balanceCents, creditLedgerCents, bonoValueCents, activePackages } = usePatientFinancialSummary(() => props.appointment.patient_id)
 const t = useT()
 
 const bonoStatus = computed(() => {
@@ -180,8 +180,8 @@ function visitOrdinal(n: number) {
       <span class="truncate text-right text-ink-700">{{ practitionerName }}</span>
       <span class="text-ink-muted2">{{ t('Balance', 'Saldo') }}</span>
       <span class="flex justify-end">
-        <UiBalancePill v-if="creditLedgerCents > 0" :credit-cents="creditLedgerCents" />
-        <span v-else class="text-ink-muted2">{{ t('No balance due', 'Sin saldo pendiente') }}</span>
+        <UiBalancePill :credit-cents="creditLedgerCents" :bono-value-cents="bonoValueCents" />
+        <span v-if="creditLedgerCents + bonoValueCents <= 0" class="text-ink-muted2">{{ t('No balance due', 'Sin saldo pendiente') }}</span>
       </span>
     </div>
     <p v-if="visitNumber" class="mt-1.5 text-[11px] text-ink-faint">
@@ -189,7 +189,8 @@ function visitOrdinal(n: number) {
       <span v-if="nextVisit">&middot; {{ t('Next:', 'Próxima:') }} {{ new Date(nextVisit).toLocaleDateString([], { day: 'numeric', month: 'short' }) }}</span>
     </p>
     <p v-if="!billingLoading && activePackages.length > 0" class="mt-1 truncate text-[11px] text-ink-faint">
-      {{ activePackages[0].package_name }} ({{ activePackages[0].sessions_used }}/{{ activePackages[0].sessions_total }})
+      {{ activePackages[0].package_name }}
+      ({{ activePackages[0].sessions_total - activePackages[0].sessions_used }}/{{ activePackages[0].sessions_total }} {{ t('left', 'restantes') }})
     </p>
 
     <BonoStatusBadge v-if="!billingLoading" class="mt-2.5" :tone="bonoStatus.tone" :label="bonoStatus.label" />

@@ -1410,7 +1410,7 @@ function money(cents: number) {
             </div>
 
             <p class="mt-2 text-[11.5px] text-ink-muted2">
-              {{ p.sessions_used }}/{{ p.sessions_total }} {{ t('used', 'usadas') }}
+              {{ p.sessions_total - p.sessions_used }}/{{ p.sessions_total }} {{ t('left', 'restantes') }}
               <template v-if="!p.shared">
                 <span class="px-1 text-ink-faint3">&middot;</span>
                 <template v-if="packageOwedCents(p) > 0">

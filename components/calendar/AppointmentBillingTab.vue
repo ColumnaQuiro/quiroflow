@@ -14,7 +14,7 @@ const { can } = usePermission()
 const { fire } = useAutomations()
 const t = useT()
 
-const { loading: summaryLoading, balanceCents, creditLedgerCents, activeMembership, activePackages, refresh: refreshSummary } = usePatientFinancialSummary(
+const { loading: summaryLoading, balanceCents, creditLedgerCents, bonoValueCents, activeMembership, activePackages, refresh: refreshSummary } = usePatientFinancialSummary(
   () => props.patientId,
 )
 
@@ -413,7 +413,7 @@ async function recordPayment() {
       <div v-else class="space-y-1.5">
         <p class="flex items-center gap-1.5">
           <span class="text-ink-muted2">{{ t('Balance:', 'Saldo:') }}</span>
-          <UiBalancePill v-if="creditLedgerCents > 0" :credit-cents="creditLedgerCents" />
+          <UiBalancePill :credit-cents="creditLedgerCents" :bono-value-cents="bonoValueCents" />
           <span v-else class="font-medium text-ink-700">€0.00</span>
         </p>
         <p v-if="activeMembership">

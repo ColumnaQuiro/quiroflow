@@ -215,18 +215,17 @@ function reset() {
   importErrors.value = []
   progress.value = { done: 0, total: 0 }
 }
+const introLead = computed(() => t("Brings the notes written at each visit across from PracticeHub's API onto the matching appointment here.", 'Trae las notas escritas en cada visita desde la API de PracticeHub a la cita correspondiente de aquí.'))
+const introNotes = computed(() => [
+        { title: t('Run Patients and Appointments first.', 'Ejecuta Pacientes y Citas primero.'), body: t('A note is attached to its visit, so the visit has to exist here already.', 'La nota se adjunta a su visita, así que la visita ya tiene que existir aquí.') },
+        { title: t('Nothing is written until you press Apply.', 'No se escribe nada hasta que pulses Aplicar.'), body: t('The preview lists every note it will add so you can check it first.', 'La vista previa muestra cada nota que añadirá para que la compruebes antes.') },
+        { title: t('Safe to run again.', 'Se puede volver a ejecutar.'), body: t('Notes already imported are skipped.', 'Las notas ya importadas se omiten.') },
+])
 </script>
 
 <template>
   <div>
-    <p class="text-sm text-ink-muted2">
-      {{
-        t(
-          "Pulls clinical/SOAP notes directly from PracticeHub's API into each patient's contact log here. Nothing is written until you review the summary and confirm. Safe to re-run — already-imported notes are skipped.",
-          'Obtiene las notas clínicas/SOAP directamente de la API de PracticeHub y las añade al registro de contacto de cada paciente. No se escribe nada hasta que revises el resumen y confirmes. Se puede volver a ejecutar sin riesgo: las notas ya importadas se omiten.',
-        )
-      }}
-    </p>
+    <ImportIntro :lead="introLead" :notes="introNotes" />
 
     <div v-if="stage === 'connect'" class="mt-4 max-w-md">
       <ImportPracticeHubConnectForm @connect="run" />

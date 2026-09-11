@@ -252,18 +252,16 @@ function reset() {
   importedCount.value = 0
   importErrors.value = []
 }
+const introLead = computed(() => t("Brings each patient's scans, photos and PDFs across from PracticeHub's API into their files here.", 'Trae los escaneos, fotos y PDF de cada paciente desde la API de PracticeHub a sus archivos de aquí.'))
+const introNotes = computed(() => [
+        { title: t('Nothing is written until you press Apply.', 'No se escribe nada hasta que pulses Aplicar.'), body: t('The preview lists every file it will copy so you can check it first.', 'La vista previa muestra cada archivo que copiará para que lo compruebes antes.') },
+        { title: t('Safe to run again.', 'Se puede volver a ejecutar.'), body: t('Files already imported are skipped.', 'Los archivos ya importados se omiten.') },
+])
 </script>
 
 <template>
   <div>
-    <p class="text-sm text-ink-muted2">
-      {{
-        t(
-          "Export \"File Attachments - List\" as CSV from PracticeHub (Reports → Data Exports), then drop it here. Patients must already be imported first, since files are matched by PracticeHub's patient ID. PracticeHub's export only lists file metadata (name, size, type) — it doesn't include the actual file content, so these import as placeholder records; the real files need to be attached per patient afterward from their Files tab.",
-          'Exporta "File Attachments - List" como CSV desde PracticeHub (Reports → Data Exports) y luego suéltalo aquí. Los pacientes deben haberse importado ya, puesto que los archivos se emparejan por el ID de paciente de PracticeHub. La exportación de PracticeHub solo incluye los metadatos del archivo (nombre, tamaño, tipo); no incluye el contenido real del archivo, así que se importan como registros de marcador de posición; los archivos reales deberán adjuntarse por paciente después desde su pestaña de archivos.',
-        )
-      }}
-    </p>
+    <ImportIntro :lead="introLead" :notes="introNotes" />
 
     <div v-if="stage === 'pick'" class="mt-4">
       <div

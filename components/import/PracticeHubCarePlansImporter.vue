@@ -194,18 +194,16 @@ function reset() {
   importErrors.value = []
   progress.value = { done: 0, total: 0 }
 }
+const introLead = computed(() => t("Brings each patient's course of treatment across from PracticeHub's API into their contact log here.", 'Trae el plan de tratamiento de cada paciente desde la API de PracticeHub al registro de contacto de aquí.'))
+const introNotes = computed(() => [
+        { title: t('Nothing is written until you press Apply.', 'No se escribe nada hasta que pulses Aplicar.'), body: t('The preview lists every plan it will add so you can check it first.', 'La vista previa muestra cada plan que añadirá para que lo compruebes antes.') },
+        { title: t('Safe to run again.', 'Se puede volver a ejecutar.'), body: t('Plans already imported are skipped.', 'Los planes ya importados se omiten.') },
+])
 </script>
 
 <template>
   <div>
-    <p class="text-sm text-ink-muted2">
-      {{
-        t(
-          "Pulls care plans directly from PracticeHub's API into each patient's contact log here. Nothing is written until you review the summary and confirm. Safe to re-run — already-imported plans are skipped.",
-          'Obtiene los planes de cuidado directamente de la API de PracticeHub y los añade al registro de contacto de cada paciente. No se escribe nada hasta que revises el resumen y confirmes. Se puede volver a ejecutar sin riesgo: los planes ya importados se omiten.',
-        )
-      }}
-    </p>
+    <ImportIntro :lead="introLead" :notes="introNotes" />
 
     <div v-if="stage === 'connect'" class="mt-4 max-w-md">
       <ImportPracticeHubConnectForm @connect="run" />

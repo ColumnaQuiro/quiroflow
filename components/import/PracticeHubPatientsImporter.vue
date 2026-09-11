@@ -492,18 +492,17 @@ function reset() {
   updatedCount.value = 0
   importErrors.value = []
 }
+const introLead = computed(() => t('Brings patients across from a PracticeHub CSV export. Every other step matches its records to a patient by the reference stored here, so this one has to run first.', 'Trae los pacientes desde una exportación CSV de PracticeHub. Todos los demás pasos emparejan sus registros con un paciente por la referencia que se guarda aquí, así que este debe ir primero.'))
+const introNotes = computed(() => [
+        { title: t('Where the file comes from.', 'De dónde sale el archivo.'), body: t('Export "Patients" as CSV from PracticeHub under Settings -> Data Exports, then drop it here.', 'Exporta "Patients" como CSV desde PracticeHub en Settings -> Data Exports y suéltalo aquí.') },
+        { title: t('Nothing is written until you press Apply.', 'No se escribe nada hasta que pulses Aplicar.'), body: t('The preview lists what will be created or updated so you can check it first.', 'La vista previa muestra qué se creará o actualizará para que lo compruebes antes.') },
+        { title: t('Safe to run again.', 'Se puede volver a ejecutar.'), body: t('A patient already carrying their PracticeHub reference is matched and updated, never duplicated.', 'Un paciente que ya tiene su referencia de PracticeHub se empareja y se actualiza, nunca se duplica.') },
+])
 </script>
 
 <template>
   <div>
-    <p class="text-sm text-ink-muted2">
-      {{
-        t(
-          'Export "Patients" as CSV from PracticeHub (Settings → Data Exports), then drop it here.',
-          'Exporta "Patients" como CSV desde PracticeHub (Settings → Data Exports) y luego suéltalo aquí.',
-        )
-      }}
-    </p>
+    <ImportIntro :lead="introLead" :notes="introNotes" />
 
     <div v-if="stage === 'pick'" class="mt-4">
       <div

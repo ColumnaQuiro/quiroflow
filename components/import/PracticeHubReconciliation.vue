@@ -175,18 +175,16 @@ function reset() {
 }
 
 const allClear = computed(() => rows.value.length > 0 && rows.value.every((r) => r.missing.length === 0 && r.extra.length === 0 && (r.phTotalCents === null || r.phTotalCents === r.hereTotalCents)))
+const introLead = computed(() => t('Compares what PracticeHub holds right now against what was imported here, and names anything that does not line up.', 'Compara lo que PracticeHub tiene ahora mismo con lo que se importó aquí, y señala todo lo que no cuadra.'))
+const introNotes = computed(() => [
+  { title: t('Read-only.', 'Solo lectura.'), body: t('It writes nothing and changes nothing.', 'No escribe ni cambia nada.') },
+  { title: t('Run it after every import.', 'Ejecútalo después de cada importación.'), body: t('It is the only place that tells you whether the copy is actually complete, in both directions -- missing here, or here but gone from PracticeHub.', 'Es el único sitio que dice si la copia está realmente completa, en los dos sentidos: lo que falta aquí, o lo que está aquí pero ya no en PracticeHub.') },
+])
 </script>
 
 <template>
   <div>
-    <p class="text-sm text-ink-muted2">
-      {{
-        t(
-          "Compares what PracticeHub holds right now against what was imported here, and names anything that doesn't line up. Reads only -- it writes nothing and changes nothing. Run it after a migration, and again after any re-run, to see whether the copy is complete.",
-          'Compara lo que PracticeHub tiene ahora mismo con lo que se importó aquí, y señala todo lo que no cuadra. Solo lectura: no escribe ni cambia nada. Ejecútalo después de una migración, y de nuevo tras cualquier reejecución, para ver si la copia está completa.',
-        )
-      }}
-    </p>
+    <ImportIntro :lead="introLead" :notes="introNotes" />
 
     <div v-if="stage === 'connect'" class="mt-4 max-w-md">
       <ImportPracticeHubConnectForm @connect="run" />

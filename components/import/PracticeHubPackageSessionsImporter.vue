@@ -327,19 +327,17 @@ function formatEuros(cents: number): string {
 const totalValueCents = computed(() => candidates.value.reduce((sum, c) => sum + c.amountCents, 0))
 const withPackage = computed(() => candidates.value.filter((c) => c.packagePurchaseId).length)
 const withAppointment = computed(() => candidates.value.filter((c) => c.appointmentId).length)
+const introLead = computed(() => t('Brings across the visits patients took out of a bono while they were still on PracticeHub, so a Billing tab does not show a bono purchase followed by months of silence.', 'Trae las visitas que los pacientes consumieron de un bono mientras aún estaban en PracticeHub, para que la pestaña de facturación no muestre la compra del bono y luego meses en blanco.'))
+const introNotes = computed(() => [
+  { title: t('These lines carry no money.', 'Estas líneas no mueven dinero.'), body: t("No invoice, no charge, and no effect on any balance -- they exist so a bono's history reads correctly.", 'Sin factura, sin cargo y sin efecto en ningún saldo: existen para que el historial de un bono se lea bien.') },
+  { title: t('Visits made in QuiroFlow are not touched.', 'Las visitas hechas en QuiroFlow no se tocan.'), body: t('Only the pre-migration ones are brought across.', 'Solo se traen las anteriores a la migración.') },
+  { title: t('Safe to run again.', 'Se puede volver a ejecutar.'), body: t('Visits already imported are skipped.', 'Las visitas ya importadas se omiten.') },
+])
 </script>
 
 <template>
   <div>
-    <h2 class="text-base font-semibold text-ink-900">{{ t('Package visits (bonos)', 'Visitas de bono') }}</h2>
-    <p class="mt-1 max-w-3xl text-[13px] text-ink-muted">
-      {{
-        t(
-          "Brings across the visits patients took out of a bono while still on PracticeHub. QuiroFlow bills one invoice per payment, so those visits currently appear nowhere -- a patient's Billing tab shows the bono purchase and then nothing for the months they were using it. These are display-only lines: no invoice, no charge, and no effect on any balance. Visits made in QuiroFlow are already recorded and are not touched.",
-          'Trae las visitas que los pacientes consumieron de un bono mientras aún estaban en PracticeHub. QuiroFlow emite una factura por pago, así que esas visitas no aparecen en ningún sitio -- la pestaña de facturación muestra la compra del bono y luego nada durante los meses en que se usó. Son líneas informativas: sin factura, sin cargo y sin efecto en ningún saldo. Las visitas hechas en QuiroFlow ya están registradas y no se tocan.',
-        )
-      }}
-    </p>
+    <ImportIntro :lead="introLead" :notes="introNotes" />
 
     <div v-if="stage === 'connect'" class="mt-4 max-w-md">
       <ImportPracticeHubConnectForm @connect="run" />

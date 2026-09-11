@@ -112,7 +112,12 @@ onUnmounted(() => {
 
     <div class="shrink-0 border-t border-line bg-surface p-3">
       <p v-if="sendError" class="mb-2 text-[12.5px] text-danger-text">{{ sendError }}</p>
-      <div class="flex items-end gap-2">
+      <!-- Centred, not bottom-aligned: the textarea never grows (rows=1,
+           fixed height, it scrolls internally), so "align to the bottom"
+           only ever meant Send sat below the middle of the field. Send
+           matches the field's 44px because this is the control a thumb
+           aims at most in the app, and 44px is the minimum iOS asks for. -->
+      <div class="flex items-center gap-2">
         <textarea
           v-model="composerText"
           rows="1"
@@ -120,7 +125,7 @@ onUnmounted(() => {
           class="max-h-24 min-h-11 flex-1 resize-none rounded-ctl border border-line-control bg-surface px-3 py-2.5 text-[14px] text-ink-700 focus:border-brand focus:outline-none"
           @keydown.enter.exact.prevent="sendText"
         />
-        <UiBtn variant="primary" :disabled="sending || !composerText.trim()" @click="sendText">
+        <UiBtn variant="primary" size="lg" :disabled="sending || !composerText.trim()" @click="sendText">
           {{ sending ? '…' : t('Send', 'Enviar') }}
         </UiBtn>
       </div>

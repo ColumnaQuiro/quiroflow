@@ -12,7 +12,7 @@ const { patient, loading } = usePortalPatient()
 
 <template>
   <div>
-    <PortalPageHead
+    <PatientPageHead
       :title="t('Messages', 'Mensajes')"
       :lead="t('Write to your clinic and see their replies here.', 'Escribe a tu clínica y lee sus respuestas aquí.')"
     />

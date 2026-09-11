@@ -1,6 +1,11 @@
 <script setup lang="ts">
 // Chrome only -- the thread itself is PatientMessagesPanel, shared with the
 // web portal (components/patient/MessagesPanel.vue).
+//
+// A tab now, not a screen pushed from Home, so it keeps the tab bar and
+// drops the back arrow that used to be the only way out of it.
+definePageMeta({ layout: 'patient' })
+
 const user = useSupabaseUser()
 watch(user, (u) => { if (!u) navigateTo('/login') }, { immediate: true })
 
@@ -9,9 +14,8 @@ const t = useT()
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col" style="padding-bottom: env(safe-area-inset-bottom); padding-top: env(safe-area-inset-top)">
-    <div class="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
-      <NuxtLink to="/" class="flex h-11 w-11 shrink-0 items-center justify-center text-[15px] text-brand-text">&larr;</NuxtLink>
+  <div class="flex h-full min-h-0 flex-col">
+    <div class="flex h-14 shrink-0 items-center border-b border-line bg-surface px-4">
       <p class="text-[15px] font-[600] text-ink-900">{{ t('Messages', 'Mensajes') }}</p>
     </div>
 

@@ -1,10 +1,12 @@
 <script setup lang="ts">
 // The patient's own appointments, with whatever control the clinic has
-// granted. Rendered identically by the web portal and the mobile app.
+// granted. Rendered identically by the web portal's mobile app and the
+// mobile app itself.
 //
-// Every button here is a suggestion: the RPCs (0162) re-check the clinic's
-// switch and the notice window server-side, so hiding a button is a
-// courtesy, not the enforcement.
+// The query, the notice-window rule and the cancel call now live in
+// usePatientAppointments -- the portal's own appointments page needs the
+// same three, and a second copy of the notice rule is what would let a
+// button appear for something the RPC then refuses.
 const props = defineProps<{
   patientId: string
   settings: PatientAppSettings
@@ -12,78 +14,24 @@ const props = defineProps<{
   bookHref?: string
 }>()
 
-interface AppointmentRow {
-  id: string
-  starts_at: string
-  ends_at: string
-  status: string
-  appointment_types: { name: string } | null
-  team_members: { full_name: string } | null
-}
-
-const supabase = useSupabaseClient()
 const t = useT()
-const { showToast } = useToast()
 
-const appointments = ref<AppointmentRow[]>([])
-const past = ref<AppointmentRow[]>([])
-const loading = ref(true)
-const showPast = ref(false)
-const busyId = ref<string | null>(null)
-
-const SELECT = 'id, starts_at, ends_at, status, appointment_types(name), team_members(full_name)'
-
-async function load() {
-  loading.value = true
-  const nowIso = new Date().toISOString()
-  const [{ data: upcoming }, { data: history }] = await Promise.all([
-    supabase.from('appointments').select(SELECT).eq('patient_id', props.patientId).gte('starts_at', nowIso).neq('status', 'cancelled').order('starts_at'),
-    supabase.from('appointments').select(SELECT).eq('patient_id', props.patientId).lt('starts_at', nowIso).order('starts_at', { ascending: false }).limit(20),
-  ])
-  appointments.value = (upcoming as unknown as AppointmentRow[]) ?? []
-  past.value = (history as unknown as AppointmentRow[]) ?? []
-  loading.value = false
-}
-onMounted(load)
-watch(() => props.patientId, load)
-
-// The same rule the RPC enforces, so the button disappears at the moment it
-// would start being refused rather than failing on click.
-function withinNotice(appt: AppointmentRow): boolean {
-  return new Date(appt.starts_at).getTime() < Date.now() + props.settings.changeNoticeHours * 3600_000
-}
-function canChange(appt: AppointmentRow): boolean {
-  return appt.status === 'booked' && !withinNotice(appt)
-}
-
-async function cancel(appt: AppointmentRow) {
-  const when = formatWhen(appt.starts_at)
-  if (!confirm(t(`Cancel your appointment on ${when}?`, `¿Cancelar tu cita del ${when}?`))) return
-  busyId.value = appt.id
-  const { error } = await supabase.rpc('cancel_patient_appointment', { p_appointment_id: appt.id })
-  busyId.value = null
-  if (error) {
-    showToast(error.message, 'error')
-    return
-  }
-  showToast(t('Appointment cancelled.', 'Cita cancelada.'))
-  await load()
-}
+const { upcoming: appointments, past, loading, busyId, canChange, cancel } = usePatientAppointments(
+  () => props.patientId,
+  () => props.settings,
+)
 
 // Rescheduling needs a slot picker, which is the booking flow's job -- this
 // hands off to it rather than growing a second availability calendar here.
 const emit = defineEmits<{ reschedule: [appointmentId: string] }>()
 
+const showPast = ref(false)
+
 function formatWhen(iso: string) {
   return new Date(iso).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 
-const statusLabel: Record<string, [string, string]> = {
-  booked: ['Booked', 'Reservada'],
-  completed: ['Attended', 'Asistida'],
-  cancelled: ['Cancelled', 'Cancelada'],
-  no_show: ['Missed', 'No asistida'],
-}
+const statusLabel = PATIENT_APPOINTMENT_STATUS
 </script>
 
 <template>
@@ -121,7 +69,7 @@ const statusLabel: Record<string, [string, string]> = {
                 type="button"
                 class="text-[12.5px] font-medium text-danger-text"
                 :disabled="busyId === appt.id"
-                @click="cancel(appt)"
+                @click="cancel(appt, formatWhen(appt.starts_at))"
               >
                 {{ busyId === appt.id ? t('Cancelling…', 'Cancelando…') : t('Cancel', 'Cancelar') }}
               </button>

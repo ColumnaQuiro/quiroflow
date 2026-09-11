@@ -201,18 +201,16 @@ function reset() {
   importErrors.value = []
   progress.value = { done: 0, total: 0 }
 }
+const introLead = computed(() => t('Repairs visits that came across attached to the wrong appointment type, matching each one back to what PracticeHub says it was.', 'Corrige las visitas que llegaron con el tipo de cita equivocado, emparejando cada una con lo que dice PracticeHub.'))
+const introNotes = computed(() => [
+        { title: t('Nothing is written until you press Apply.', 'No se escribe nada hasta que pulses Aplicar.'), body: t('The preview lists every visit it will re-point so you can check it first.', 'La vista previa muestra cada visita que reasignará para que la compruebes antes.') },
+        { title: t('Safe to run again.', 'Se puede volver a ejecutar.'), body: t('Visits already on the right type are skipped.', 'Las visitas que ya tienen el tipo correcto se omiten.') },
+])
 </script>
 
 <template>
   <div>
-    <p class="text-sm text-ink-muted2">
-      {{
-        t(
-          "Pulls the real appointment types directly from PracticeHub's API and re-links every appointment to its actual type (matched by the internal appointment ID) — fixes reports like Statistics when the original CSV import only captured one type or none. Nothing is written until you review the summary and confirm. Safe to re-run.",
-          'Obtiene los tipos de cita reales directamente de la API de PracticeHub y vuelve a vincular cada cita con su tipo real (emparejado por el ID interno de la cita); esto corrige informes como Estadísticas cuando la importación original de CSV solo capturó un tipo o ninguno. No se escribe nada hasta que revises el resumen y confirmes. Se puede volver a ejecutar sin riesgo.',
-        )
-      }}
-    </p>
+    <ImportIntro :lead="introLead" :notes="introNotes" />
 
     <div v-if="stage === 'connect'" class="mt-4 max-w-md">
       <ImportPracticeHubConnectForm @connect="run" />

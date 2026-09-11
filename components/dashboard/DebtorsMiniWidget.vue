@@ -37,7 +37,11 @@ const debtors = computed(() =>
       const schedule = schedulesByPurchase.value.get(p.id)
       if (schedule) return schedule.status === 'past_due'
       const inv = p.invoice_id ? invoicesById.value.get(p.invoice_id) : null
-      return !inv || inv.status !== 'paid'
+      // A voided invoice is a cancelled charge, so nothing is owed on it.
+    // Without this it reads as simply not-paid and the bono keeps showing as
+    // a debt for its full price -- which is where the 50 voided
+    // bono-consumption invoices would have landed.
+    return !inv || (inv.status !== 'paid' && inv.status !== 'void')
     })
     .sort((a, b) => b.price_cents - a.price_cents),
 )

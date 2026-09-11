@@ -218,18 +218,16 @@ function select(p: PHPatient) {
 // The headline: PracticeHub and QuiroFlow disagreeing on how many bonos this
 // patient has is the shape every problem in this migration took.
 const bonoCountsDiffer = computed(() => ours.value !== null && phImportable.value !== ours.value.bonos.length)
+const introLead = computed(() => t('Opens one patient side by side: what PracticeHub holds for them against what QuiroFlow holds -- bonos, credit, visits and the ledger totals.', 'Abre un paciente en paralelo: lo que tiene PracticeHub frente a lo que tiene QuiroFlow: bonos, saldo, visitas y totales del libro mayor.'))
+const introNotes = computed(() => [
+  { title: t('Read-only.', 'Solo lectura.'), body: t('Nothing here changes any record.', 'Aquí no se modifica ningún registro.') },
+  { title: t('Use it whenever a number looks wrong.', 'Úsalo cuando un número parezca incorrecto.'), body: t('It answers in one click what otherwise means logging into PracticeHub and comparing by eye.', 'Responde en un clic lo que si no obliga a entrar en PracticeHub y comparar a ojo.') },
+])
 </script>
 
 <template>
   <div>
-    <p class="text-sm text-ink-muted2">
-      {{
-        t(
-          "Opens one patient side by side: what PracticeHub holds for them against what QuiroFlow holds. Bonos, credit, visits and the ledger totals. Read-only — nothing here changes any record. Use it whenever a number looks wrong: it answers in one click what otherwise means logging into PracticeHub and comparing by eye.",
-          'Abre un paciente en paralelo: lo que tiene PracticeHub frente a lo que tiene QuiroFlow. Bonos, saldo, visitas y totales del libro mayor. Solo lectura: aquí no se modifica ningún registro. Úsalo cuando un número parezca incorrecto: responde en un clic lo que si no obliga a entrar en PracticeHub y comparar a ojo.',
-        )
-      }}
-    </p>
+    <ImportIntro :lead="introLead" :notes="introNotes" />
 
     <div v-if="stage === 'connect'" class="mt-4 max-w-md">
       <ImportPracticeHubConnectForm @connect="run" />

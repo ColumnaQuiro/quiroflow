@@ -342,18 +342,17 @@ function reset() {
   importErrors.value = []
   progress.value = { done: 0, total: 0 }
 }
+const introLead = computed(() => t("Brings every payment across from PracticeHub's API. Each one becomes a paid invoice here, because PracticeHub's API does not say which invoice a payment was put against.", 'Trae todos los pagos desde la API de PracticeHub. Cada uno se convierte aquí en una factura pagada, porque la API de PracticeHub no dice a qué factura se asignó un pago.'))
+const introNotes = computed(() => [
+  { title: t('Money the clinic already took here is skipped.', 'Se omite el dinero que la clínica ya cobró aquí.'), body: t('From the go-live date onward, a payment is skipped when the same patient paid the same amount on the same day -- otherwise a clinic recording in both systems would be billed twice.', 'Desde la fecha de puesta en marcha, un pago se omite si el mismo paciente pagó el mismo importe el mismo día; si no, una clínica que registra en los dos sistemas cobraría dos veces.') },
+  { title: t('Nothing is written until you press Apply.', 'No se escribe nada hasta que pulses Aplicar.'), body: t('The preview lists every payment it will create so you can check it first.', 'La vista previa muestra cada pago que creará para que lo compruebes antes.') },
+  { title: t('Safe to run again.', 'Se puede volver a ejecutar.'), body: t('Payments already imported are skipped.', 'Los pagos ya importados se omiten.') },
+])
 </script>
 
 <template>
   <div>
-    <p class="text-sm text-ink-muted2">
-      {{
-        t(
-          "Pulls directly from PracticeHub's API (Payments, matched to patients) — no CSV needed. Each payment becomes a paid invoice + line item + payment record here, since PracticeHub's API doesn't expose which invoice a payment was allocated to. Nothing is written until you review the summary and confirm. Safe to re-run — already-imported payments are skipped.",
-          'Obtiene los datos directamente de la API de PracticeHub (Payments, emparejados con pacientes); no se necesita CSV. Cada pago se convierte aquí en una factura pagada + un concepto + un registro de pago, ya que la API de PracticeHub no expone a qué factura se asignó un pago. No se escribe nada hasta que revises el resumen y confirmes. Se puede volver a ejecutar sin riesgo: los pagos ya importados se omiten.',
-        )
-      }}
-    </p>
+    <ImportIntro :lead="introLead" :notes="introNotes" />
 
     <div v-if="stage === 'connect'" class="mt-4 max-w-md">
       <ImportPracticeHubConnectForm @connect="run" />

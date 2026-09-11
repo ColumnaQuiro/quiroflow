@@ -364,7 +364,7 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
     <div class="rounded-card border border-line bg-surface p-5 shadow-card">
       <div class="flex items-center justify-between">
         <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Patient details', 'Datos del paciente') }}</p>
-        <UiBtn v-if="!editing" variant="secondary" size="sm" @click="startEditing">{{ t('Edit', 'Editar') }}</UiBtn>
+        <UiIconBtn v-if="!editing" icon="pencil" :label="t('Edit', 'Editar')" @click="startEditing" />
       </div>
 
       <!-- Phone numbers are a separate one-to-many table (patient_contact_numbers),

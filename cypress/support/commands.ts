@@ -32,11 +32,14 @@ Cypress.Commands.add('login', (email: string, password: string) => {
   )
 })
 
-Cypress.Commands.add('portalLogin', (email: string, password: string) => {
+Cypress.Commands.add('portalLogin', (email: string, password: string, clinicCode: string) => {
   cy.session(
-    ['portal', email, password],
+    ['portal', email, password, clinicCode],
     () => {
       cy.visit('/portal/login')
+      // The clinic code is what scopes claim_patient_profile() to one
+      // practice -- see composables/useClinicCode.ts.
+      cy.get('#clinic-code').type(clinicCode)
       cy.get('#email').type(email)
       cy.get('#password').type(password)
       cy.contains('button', 'Sign in').click()
@@ -103,7 +106,7 @@ declare global {
   namespace Cypress {
     interface Chainable {
       login(email: string, password: string): Chainable<void>
-      portalLogin(email: string, password: string): Chainable<void>
+      portalLogin(email: string, password: string, clinicCode: string): Chainable<void>
       logout(): Chainable<void>
       clickUntil(clickSelector: string, untilSelector: string, attempt?: number): Chainable<void>
       seedStaffAccount(

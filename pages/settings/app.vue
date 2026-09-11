@@ -60,7 +60,7 @@ const activeLast30Days = computed(() => {
 
           <h2 class="mt-8 text-[15px] font-[620] text-ink-900">{{ t('Join code', 'Código de acceso') }}</h2>
           <p class="mt-1 text-[13px] text-ink-muted2">
-            {{ t('New patients download the QuiroFlow app, tap "Join your clinic," and enter this code once. Share it however you\'d like -- a printed QR by the front desk, in a welcome email, on a receipt.', 'Los nuevos pacientes descargan la app QuiroFlow, tocan "Unirse a tu clínica" e introducen este código una vez. Compártelo como prefieras -- un QR impreso en recepción, en un correo de bienvenida, en un recibo.') }}
+            {{ t('New patients download the QuiroFlow app, tap "Join your clinic," and enter this code once. The same code is asked for on the web portal\'s sign-in page. Share it however you\'d like -- a printed QR by the front desk, in a welcome email, on a receipt.', 'Los nuevos pacientes descargan la app QuiroFlow, tocan "Unirse a tu clínica" e introducen este código una vez. El mismo código se pide en la página de acceso del portal web. Compártelo como prefieras -- un QR impreso en recepción, en un correo de bienvenida, en un recibo.') }}
           </p>
 
           <div class="mt-3 rounded-card border border-line bg-surface p-4 shadow-card">
@@ -76,7 +76,7 @@ const activeLast30Days = computed(() => {
               </button>
             </div>
             <img v-if="qrDataUrl" :src="qrDataUrl" class="mx-auto mt-4 h-[180px] w-[180px]" :alt="t('QR code encoding the clinic join code', 'Código QR que codifica el código de acceso de la clínica')" />
-            <p class="mt-2 text-center text-[11.5px] text-ink-faint">{{ t('Scan or type this in the app\'s "Join your clinic" screen.', 'Escanéalo o escríbelo en la pantalla "Unirse a tu clínica" de la app.') }}</p>
+            <p class="mt-2 text-center text-[11.5px] text-ink-faint">{{ t('Scan or type this in the app\'s "Join your clinic" screen, or in the Clinic code field on the web portal.', 'Escanéalo o escríbelo en la pantalla "Unirse a tu clínica" de la app, o en el campo Código de la clínica del portal web.') }}</p>
           </div>
 
           <h2 class="mt-8 text-[15px] font-[620] text-ink-900">{{ t('App usage', 'Uso de la app') }}</h2>

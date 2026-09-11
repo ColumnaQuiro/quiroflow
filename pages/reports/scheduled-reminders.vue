@@ -2,6 +2,9 @@
 import { computePresetRange, rangeBounds } from '~/composables/useDateRangePresets'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
 
+const { can } = usePermission()
+const canReadMessages = computed(() => can('inbox_access'))
+
 interface WhatsappMessageRow {
   id: string
   patient_id: string | null
@@ -30,6 +33,13 @@ const appointments = ref<AppointmentRow[]>([])
 const patients = ref<PatientRow[]>([])
 
 async function load() {
+  // Every row of this report comes from whatsapp_messages, which 0164 gates
+  // on inbox_access -- so without it the report is not "no reminders were
+  // sent", it is "you cannot see them".
+  if (!canReadMessages.value) {
+    loading.value = false
+    return
+  }
   loading.value = true
   const { from, to } = rangeBounds(range.value)
 
@@ -99,7 +109,11 @@ function fmt(iso: string) {
     <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
       <p class="text-[13px] text-ink-muted2">{{ t('Did every WhatsApp actually send, and who has confirmed, is pending, or asked to reschedule.', 'Si todos los WhatsApp se enviaron realmente, y quién ha confirmado, está pendiente o ha pedido reprogramar.') }}</p>
 
-      <div class="mt-4">
+      <p v-if="!canReadMessages" class="mt-4 rounded-ctl border border-line bg-surface-subtle px-3 py-2 text-[13px] text-ink-muted">
+        {{ t('This report needs Inbox access — ask an owner to enable it for your role.', 'Este informe requiere acceso a la Bandeja de entrada — pide a un propietario que lo active para tu rol.') }}
+      </p>
+
+      <div v-else class="mt-4">
         <ReportsDateRangeSelect v-model="range" />
       </div>
 

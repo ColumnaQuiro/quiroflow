@@ -57,25 +57,32 @@ async function loadBadges() {
       campaignsActive.value = (data ?? []).length > 0
     })
 
-  supabase
-    .from('whatsapp_messages')
-    .select('patient_id, phone_number, direction, created_at')
-    .order('created_at', { ascending: false })
-    .limit(500)
-    .then(({ data }) => {
-      // A conversation counts as unread when the most recent message in it is
-      // inbound (the patient sent last, staff hasn't replied since) -- no
-      // separate read/unread tracking exists yet, so this is derived.
-      const seen = new Set<string>()
-      let unread = 0
-      for (const m of data ?? []) {
-        const key = m.patient_id ?? m.phone_number ?? ''
-        if (!key || seen.has(key)) continue
-        seen.add(key)
-        if (m.direction === 'inbound') unread++
-      }
-      inboxUnreadCount.value = unread
-    })
+  // Only for someone who can open the Inbox. This ran for every team member
+  // regardless, so a practitioner whose role has inbox_access off -- who
+  // cannot see the nav item and now cannot reach the page -- was still
+  // pulling 500 patient messages into their browser on every page load to
+  // compute a badge they never see.
+  if (can('inbox_access')) {
+    supabase
+      .from('whatsapp_messages')
+      .select('patient_id, phone_number, direction, created_at')
+      .order('created_at', { ascending: false })
+      .limit(500)
+      .then(({ data }) => {
+        // A conversation counts as unread when the most recent message in it
+        // is inbound (the patient sent last, staff hasn't replied since) --
+        // no separate read/unread tracking exists yet, so this is derived.
+        const seen = new Set<string>()
+        let unread = 0
+        for (const m of data ?? []) {
+          const key = m.patient_id ?? m.phone_number ?? ''
+          if (!key || seen.has(key)) continue
+          seen.add(key)
+          if (m.direction === 'inbound') unread++
+        }
+        inboxUnreadCount.value = unread
+      })
+  }
 
   // Only "My Day" needs the team member id, so it's the only one that waits
   // for the account store. A fresh client boot can reach this mount before

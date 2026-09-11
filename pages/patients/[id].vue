@@ -36,7 +36,10 @@ const tabs = computed(() => [
   { key: 'appointments', label: t('Appointments', 'Citas') },
   { key: 'visit-notes', label: t('Visit notes', 'Notas de visita') },
   { key: 'billing', label: t('Billing', 'Facturación') },
-  ...(patient.value?.is_minor ? [] : [{ key: 'communications', label: t('Communications', 'Comunicaciones') }]),
+  // Also hidden without inbox_access: 0164 stops those roles reading
+  // messages at all, so the tab would render an empty thread that reads as
+  // "this patient has never been contacted" -- worse than not offering it.
+  ...(patient.value?.is_minor || !can('inbox_access') ? [] : [{ key: 'communications', label: t('Communications', 'Comunicaciones') }]),
   { key: 'docs', label: t('Docs', 'Documentos') },
   { key: 'files', label: t('Files', 'Archivos') },
 ])

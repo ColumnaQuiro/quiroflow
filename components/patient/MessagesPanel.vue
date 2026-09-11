@@ -112,7 +112,11 @@ onUnmounted(() => {
 
     <div class="shrink-0 border-t border-line bg-surface p-3">
       <p v-if="sendError" class="mb-2 text-[12.5px] text-danger-text">{{ sendError }}</p>
-      <div class="flex items-end gap-2">
+      <!-- Centred, not bottom-aligned: the textarea never grows (rows=1,
+           fixed height, it scrolls internally), so "align to the bottom"
+           only ever meant the 32px Send button sat 6px below the middle of
+           the 44px field. -->
+      <div class="flex items-center gap-2">
         <textarea
           v-model="composerText"
           rows="1"

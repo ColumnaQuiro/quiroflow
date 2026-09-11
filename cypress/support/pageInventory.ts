@@ -89,7 +89,7 @@ export const NOT_SWEPT_HERE: Record<string, string> = {
   '/': 'redirects to /login; asserted in the unauthenticated test',
   '/developers': 'section root; redirects to /developers/introduction, asserted in the developer portal test',
   '/inbox': 'covered by cypress/e2e/inbox/inbox.cy.ts',
-  '/subscription': 'covered by cypress/e2e/settings/subscription-billing.cy.ts',
+  '/subscription': 'covered by cypress/e2e/subscription/billing.cy.ts',
   '/onboarding': 'covered by cypress/e2e/auth/signup-and-onboarding.cy.ts',
   '/confirm': 'reached only from an emailed appointment-confirmation link',
   '/card-saved': 'Stripe redirect landing page, reached only after a real card setup',

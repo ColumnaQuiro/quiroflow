@@ -25,6 +25,18 @@ interface FinancialState {
   // exactly this number, and it was re-deriving it with its own invoices
   // query followed by a dependent payments query.
   lifetimeCents: Ref<number>
+  // What the patient's unused bono sessions are worth, as money. Since a bono
+  // visit stopped being a billing event (0161), the sessions counter is the
+  // only record of remaining value -- there is no parallel credit balance to
+  // read it off any more. Staff still need the figure in euros, because that
+  // is how PracticeHub shows it (its `balance` column is computed exactly this
+  // way) and how a patient asks for it: "how much do I have left?".
+  bonoValueCents: Ref<number>
+  // Loose account credit PLUS bono value: everything the patient can draw on.
+  // A summary, not a second balance -- nothing spends from this figure, a
+  // session still comes off its own counter and credit still off the ledger,
+  // so showing it here cannot let the same value be spent twice.
+  availableCents: Ref<number>
   activeMembership: Ref<ActiveMembership | null>
   activePackages: Ref<ActivePackage[]>
   // Tracks whether a load has ever completed (or is in flight) for this id --
@@ -55,6 +67,8 @@ function stateFor(id: string | null | undefined): FinancialState {
       balanceCents: ref(0),
       creditLedgerCents: ref(0),
       lifetimeCents: ref(0),
+      bonoValueCents: ref(0),
+      availableCents: ref(0),
       activeMembership: ref(null),
       activePackages: ref([]),
       loaded: false,
@@ -136,6 +150,22 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
       }))
     state.activePackages.value = [...(packages ?? []), ...sharedPackages].filter((p) => p.sessions_used < p.sessions_total)
 
+    // sessions_left x the bono's own per-session rate, with the same rounding
+    // useSession() bills a visit at, so this figure and the session it pays for
+    // can never disagree by a cent. Mirrors BillingTab.packageRemainingValueCents.
+    //
+    // Bonos shared FROM someone else are excluded: those sessions are the
+    // owner's money, already labelled "Shared by" wherever they appear, and
+    // counting them here would show the same euros on two patients at once.
+    state.bonoValueCents.value = state.activePackages.value
+      .filter((p) => !p.shared)
+      .reduce((sum, p) => {
+        if (!p.sessions_total) return sum
+        const perSessionCents = Math.round(p.price_cents / p.sessions_total)
+        return sum + perSessionCents * Math.max(0, p.sessions_total - p.sessions_used)
+      }, 0)
+    state.availableCents.value = state.creditLedgerCents.value + state.bonoValueCents.value
+
     state.loading.value = false
     state.loaded = true
   }
@@ -174,6 +204,8 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     balanceCents: computed(() => stateFor(id.value).balanceCents.value),
     creditLedgerCents: computed(() => stateFor(id.value).creditLedgerCents.value),
     lifetimeCents: computed(() => stateFor(id.value).lifetimeCents.value),
+    bonoValueCents: computed(() => stateFor(id.value).bonoValueCents.value),
+    availableCents: computed(() => stateFor(id.value).availableCents.value),
     activeMembership: computed(() => stateFor(id.value).activeMembership.value),
     activePackages: computed(() => stateFor(id.value).activePackages.value),
     refresh,

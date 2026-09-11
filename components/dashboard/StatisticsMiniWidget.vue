@@ -29,7 +29,13 @@ async function load() {
       supabase.from('appointments').select('id, patient_id, starts_at, practitioner_id, clinic_id').eq('status', 'completed').range(f, t),
     ),
     fetchAllRows<PaymentRow>((f, t) =>
-      supabase.from('payments').select('amount_cents, invoice_id').gte('paid_at', from.toISOString()).lte('paid_at', to.toISOString()).range(f, t),
+      supabase
+        .from('payments')
+        .select('amount_cents, invoice_id, invoices!inner(status)')
+        .neq('invoices.status', 'void')
+        .gte('paid_at', from.toISOString())
+        .lte('paid_at', to.toISOString())
+        .range(f, t),
     ),
     needsInvoices
       ? fetchAllRows<InvoiceRow>((f, t) => supabase.from('invoices').select('id, appointment_id').range(f, t))

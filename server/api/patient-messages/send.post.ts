@@ -1,6 +1,6 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
-import { notifyInboxTeamMembers } from '~/server/utils/pushNotifications'
+import { notifyInboxTeamMembers, sendPushToPatients } from '~/server/utils/pushNotifications'
 
 // The in-app messaging channel: a signed-in patient messaging the clinic
 // directly (mobile app today), and staff replying from the Inbox -- both
@@ -32,10 +32,25 @@ export default defineEventHandler(async (event) => {
   const { error } = await supabase.from('patient_app_messages').insert({ account_id: patient.account_id, patient_id: patient.id, direction, body: text } as never)
   if (error) throw createError({ statusCode: 403, statusMessage: 'Not authorized to message this patient' })
 
+  const serviceSupabase = serverSupabaseServiceRole<Database>(event)
   if (direction === 'inbound') {
-    const serviceSupabase = serverSupabaseServiceRole<Database>(event)
     const senderName = `${patient.first_name} ${patient.last_name ?? ''}`.trim()
-    await notifyInboxTeamMembers(event, serviceSupabase, patient.account_id, senderName, text, { type: 'patient_app_message', key: patient.id })
+    await notifyInboxTeamMembers(serviceSupabase, patient.account_id, senderName, text, { type: 'patient_app_message', key: patient.id })
+  } else {
+    // The other half of the conversation. Without this a clinic could reply
+    // and the patient would only find out by opening the app on their own
+    // initiative, which is not how anyone treats a message thread -- the
+    // staff side has been getting a push since 0070.
+    //
+    // The clinic's name, not the replying staff member's: patients know
+    // they are talking to the practice, and the individual who happened to
+    // pick up the thread is internal detail.
+    const { data: account } = await serviceSupabase.from('accounts').select('name').eq('id', patient.account_id).maybeSingle()
+    await sendPushToPatients(serviceSupabase, patient.account_id, [patient.id], {
+      title: account?.name ?? 'Your clinic',
+      body: text,
+      data: { type: 'patient_app_message' },
+    })
   }
 
   return { success: true }

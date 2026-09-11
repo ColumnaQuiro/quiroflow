@@ -1,6 +1,7 @@
 import { toE164 } from '~/utils/phone'
 import { sendResendEmail } from './resend'
 import { sendWhatsAppTemplate, sendWhatsAppText } from './whatsappSend'
+import { sendPushToPatients } from './pushNotifications'
 
 // The server runs in UTC, so formatting a UTC Date with toLocaleString and no
 // timeZone renders the UTC wall-clock time, not the clinic's -- a booking at
@@ -287,6 +288,30 @@ async function sendForPurpose(supabase: any, appointmentId: string, purpose: 'co
     try {
       await sendEmail(ctx, settings.emailSubject, settings.emailBody)
       sent = true
+    } catch {
+      // Best-effort, same as above.
+    }
+  }
+  // Push reaches only patients who have the app and have signed in, so it
+  // is an addition to whatsapp/email rather than a replacement -- a clinic
+  // that ticks push alone would silently stop reminding everyone else.
+  //
+  // The body is built here rather than from a template because there is no
+  // template to honour: unlike WhatsApp (Meta-approved templates) and email
+  // (a subject/body the clinic writes), push has no per-clinic copy yet, so
+  // it reuses the same merge fields the email body would have had.
+  if (settings.channels.includes('push')) {
+    try {
+      const when = new Date(ctx.startsAt).toLocaleString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })
+      const result = await sendPushToPatients(supabase, ctx.accountId, [ctx.patientId], {
+        title: purpose === 'reminder' ? 'Recordatorio de cita' : 'Cita confirmada',
+        body: `${ctx.appointmentTypeName} · ${when}${ctx.practitionerName ? ` · ${ctx.practitionerName}` : ''}`,
+        data: { type: `appointment_${purpose}`, key: ctx.id },
+      })
+      // Only counts as sent if it actually reached a device. Otherwise a
+      // patient without the app would have their reminder marked delivered
+      // and the WhatsApp/email cron would not retry.
+      if (result.delivered > 0) sent = true
     } catch {
       // Best-effort, same as above.
     }

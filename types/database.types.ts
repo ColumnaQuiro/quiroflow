@@ -4584,6 +4584,7 @@ export type Database = {
       cancel_patient_appointment: { Args: { p_appointment_id: string }; Returns: Json }
       reschedule_patient_appointment: { Args: { p_appointment_id: string; p_starts_at: string }; Returns: Json }
       get_public_booking_info: { Args: { p_slug: string }; Returns: Json }
+      get_clinic_by_code: { Args: { p_slug: string }; Returns: Json }
       get_public_patient_doc: { Args: { p_token: string }; Returns: Json }
       has_permission: {
         Args: { perm_key: string; target_account_id: string }

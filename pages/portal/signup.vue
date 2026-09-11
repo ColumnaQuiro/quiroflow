@@ -2,15 +2,42 @@
 definePageMeta({ layout: false })
 
 const supabase = useSupabaseClient()
+const { code, clinicName, prefill, resolve, remember } = useClinicCode()
 const email = ref('')
 const password = ref('')
 const error = ref('')
 const loading = ref(false)
 const checkEmail = ref(false)
 
+onMounted(prefill)
+
+async function onCodeBlur() {
+  clinicName.value = ''
+  if (!code.value.trim()) return
+  try {
+    await resolve()
+  } catch {
+    /* reported on submit instead */
+  }
+}
+
 async function onSubmit() {
   error.value = ''
   loading.value = true
+  // Stored before the account is created, not after: sign-up usually ends
+  // at "check your email", and the profile only gets claimed once the
+  // patient follows that link back -- by which point this form is long
+  // gone and the slug in localStorage is the only record of which clinic
+  // they were signing up to.
+  let slug: string
+  try {
+    slug = await resolve()
+  } catch {
+    loading.value = false
+    error.value = "Clinic code not found -- check the code your clinic gave you."
+    return
+  }
+  remember(slug)
   localStorage.setItem('signup_intent', 'portal')
   const { data, error: signUpError } = await supabase.auth.signUp({
     email: email.value,
@@ -34,8 +61,26 @@ async function onSubmit() {
     <div class="w-full max-w-sm rounded-card border border-line bg-surface p-8 shadow-card">
       <template v-if="!checkEmail">
         <h1 class="text-xl font-semibold text-ink-900">Create your patient account</h1>
-        <p class="mt-1 text-sm text-ink-muted">Use the same email your clinic has on file for you.</p>
+        <p class="mt-1 text-sm text-ink-muted">
+          Enter the code your clinic gave you, and the same email your clinic has on file for you -- both have to match.
+        </p>
         <form class="mt-6 space-y-4" @submit.prevent="onSubmit">
+          <div>
+            <label class="block text-sm font-medium text-ink-700" for="clinic-code">Clinic code</label>
+            <input
+              id="clinic-code"
+              v-model="code"
+              type="text"
+              required
+              autocapitalize="none"
+              autocorrect="off"
+              spellcheck="false"
+              autocomplete="organization"
+              class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              @blur="onCodeBlur"
+            />
+            <p v-if="clinicName" class="mt-1 text-sm text-ink-muted">{{ clinicName }}</p>
+          </div>
           <div>
             <label class="block text-sm font-medium text-ink-700" for="email">Email</label>
             <input

@@ -14,8 +14,8 @@ async function signOut() {
     <div class="w-full max-w-sm rounded-card border border-line bg-surface p-8 text-center">
       <h1 class="text-lg font-semibold text-ink-900">We couldn't find your record</h1>
       <p class="mt-2 text-sm text-ink-500">
-        Your account email doesn't match a patient record at this practice yet. Contact your clinic to be added, then
-        try signing in again.
+        Your account email doesn't match a patient record at the clinic whose code you entered. Check that both the
+        code and the email are the ones your clinic has for you, or contact them to be added, then try again.
       </p>
       <button type="button" class="mt-4 text-sm font-medium text-brand hover:text-brand-hover" @click="signOut">
         Sign out

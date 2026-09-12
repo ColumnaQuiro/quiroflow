@@ -57,8 +57,8 @@ export async function handleStripeEvent(supabase: SupabaseClient<Database>, acco
     const { data: membership } = await supabase.from('patient_memberships').select('membership_name').eq('id', membershipId).maybeSingle()
     const periodLabel = new Date(periodStart).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
 
-    const { count } = await supabase.from('invoices').select('id', { count: 'exact', head: true })
-    const invoiceNumber = `INV-${String((count ?? 0) + 1).padStart(4, '0')}`
+    const { data: invoiceNumber } = await supabase.rpc('next_invoice_number', { p_account_id: accountId })
+    if (!invoiceNumber) return
 
     const { data: invoice } = await supabase
       .from('invoices')
@@ -87,8 +87,8 @@ export async function handleStripeEvent(supabase: SupabaseClient<Database>, acco
   async function recordPackageCharge(patientId: string, packagePurchaseId: string, amountCents: number, paymentIntentId: string | null) {
     const { data: purchase } = await supabase.from('package_purchases').select('package_name').eq('id', packagePurchaseId).maybeSingle()
 
-    const { count } = await supabase.from('invoices').select('id', { count: 'exact', head: true })
-    const invoiceNumber = `INV-${String((count ?? 0) + 1).padStart(4, '0')}`
+    const { data: invoiceNumber } = await supabase.rpc('next_invoice_number', { p_account_id: accountId })
+    if (!invoiceNumber) return
 
     const { data: invoice } = await supabase
       .from('invoices')

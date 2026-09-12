@@ -1137,21 +1137,23 @@ async function confirmReschedule(payload: { reasonId: string | null; note: strin
   })
 
   if (payload.applyFee && store.schedulingPolicyFeeCents) {
-    const { count } = await supabase.from('invoices').select('id', { count: 'exact', head: true })
-    const invoiceNumber = `INV-${String((count ?? 0) + 1).padStart(4, '0')}`
-    const { data: feeInvoice } = await supabase
-      .from('invoices')
-      .insert({ account_id: store.accountId!, patient_id: pending.patientId, invoice_number: invoiceNumber, status: 'unpaid', total_cents: store.schedulingPolicyFeeCents })
-      .select('id')
-      .single()
-    if (feeInvoice) {
-      await supabase.from('invoice_line_items').insert({
-        account_id: store.accountId!,
-        invoice_id: feeInvoice.id,
-        description: 'Scheduling policy fee',
-        quantity: 1,
-        price_cents: store.schedulingPolicyFeeCents,
-      })
+    // No number, no invoice: an unnumbered fee is worse than an uncharged one.
+    const { data: invoiceNumber } = await supabase.rpc('next_invoice_number', { p_account_id: store.accountId! })
+    if (invoiceNumber) {
+      const { data: feeInvoice } = await supabase
+        .from('invoices')
+        .insert({ account_id: store.accountId!, patient_id: pending.patientId, invoice_number: invoiceNumber, status: 'unpaid', total_cents: store.schedulingPolicyFeeCents })
+        .select('id')
+        .single()
+      if (feeInvoice) {
+        await supabase.from('invoice_line_items').insert({
+          account_id: store.accountId!,
+          invoice_id: feeInvoice.id,
+          description: 'Scheduling policy fee',
+          quantity: 1,
+          price_cents: store.schedulingPolicyFeeCents,
+        })
+      }
     }
   }
 

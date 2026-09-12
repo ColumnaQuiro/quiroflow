@@ -314,6 +314,22 @@ async function createInvoice(opts: {
   return row as { id: string; invoice_number: string }
 }
 
+async function nextInvoiceNumber(opts: { accountId: string; prefix?: string }) {
+  const { accountId, prefix } = opts
+  const { data, error } = await admin.rpc('next_invoice_number', {
+    p_account_id: accountId,
+    ...(prefix ? { p_prefix: prefix } : {}),
+  })
+  if (error) throw error
+  return data as string
+}
+
+async function deleteInvoice(opts: { invoiceId: string }) {
+  const { error } = await admin.from('invoices').delete().eq('id', opts.invoiceId)
+  if (error) throw error
+  return null
+}
+
 async function createPayment(opts: { accountId: string; invoiceId: string; amountCents: number; method: string }) {
   const { accountId, invoiceId, amountCents, method } = opts
   const row = unwrap(
@@ -411,6 +427,8 @@ export const dbTasks = {
   'db:enableEmailConfirmations': enableEmailConfirmations,
   'db:createInvoice': createInvoice,
   'db:createPayment': createPayment,
+  'db:nextInvoiceNumber': nextInvoiceNumber,
+  'db:deleteInvoice': deleteInvoice,
   'db:createPackagePurchase': createPackagePurchase,
   'db:packageSessionEffects': packageSessionEffects,
   'db:createWhatsappMessage': createWhatsappMessage,

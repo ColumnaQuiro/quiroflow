@@ -9,6 +9,10 @@ name: Deploy to Netlify
 on:
   push:
     branches: [main]
+  # Lets a deploy be retried (e.g. after fixing a bad NETLIFY_AUTH_TOKEN)
+  # without needing a throwaway commit to main just to re-trigger the push
+  # event.
+  workflow_dispatch:
 
 concurrency:
   # A second push landing mid-deploy queues behind the first rather than
@@ -53,8 +57,12 @@ jobs:
       # `netlify deploy --dir=dist` would upload the static half and
       # silently drop the function, taking down the whole server side.
       # `--build` is what packages both correctly.
+      # Pinned rather than left to resolve "latest" -- the first run here
+      # silently picked up 27.5.2 with no way to tell whether a future
+      # failure comes from this workflow or a netlify-cli release. Bump by
+      # hand when there's a reason to (a CLI fix/feature this needs).
       - name: Build and deploy to Netlify
-        run: npx netlify-cli deploy --build --prod
+        run: npx netlify-cli@27.5.2 deploy --build --prod
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           # Not a secret -- a site's API ID is not sensitive information,

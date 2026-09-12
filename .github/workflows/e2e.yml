@@ -46,6 +46,20 @@ jobs:
 
       - run: npm run preflight
 
+      # `nuxi typecheck` does NOT compile templates, so it passes on a tree
+      # that cannot build. A stray `v-else` whose sibling `v-if` had been
+      # edited away reached main that way: preflight reported clean, every
+      # route then 500'd on "v-else/v-else-if has no adjacent v-if or
+      # v-else-if", and CI only noticed via three Cypress shards failing on
+      # pages unrelated to the change -- by which point production was
+      # already serving it.
+      #
+      # Measured at 59s against ~47s for preflight, in a job that finishes
+      # minutes inside the Cypress shards it runs alongside, so this costs
+      # nothing in wall-clock time and turns that class of break into a
+      # named error in the job that exists to catch it.
+      - run: npm run build
+
   cypress:
     strategy:
       fail-fast: false

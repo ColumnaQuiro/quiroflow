@@ -74,9 +74,23 @@ export async function handleStripeEvent(supabase: SupabaseClient<Database>, acco
       quantity: 1,
       price_cents: amountCents,
     })
-    await supabase
+    const { data: payment } = await supabase
       .from('payments')
-      .insert({ account_id: accountId, patient_id: patientId, invoice_id: invoice.id, amount_cents: amountCents, method: 'card', stripe_payment_intent_id: paymentIntentId })
+      .insert({ account_id: accountId, patient_id: patientId, invoice_id: invoice.id, amount_cents: amountCents, method: 'card', stripe_payment_intent_id: paymentIntentId, purpose: 'membership' })
+      .select('id')
+      .single()
+
+    // Money arriving with nobody at a screen still needs its document.
+    if (payment) {
+      await issueFacturaServer(supabase, {
+        accountId,
+        patientId,
+        paymentId: payment.id,
+        amountCents,
+        purpose: 'membership',
+        serviceName: `${membership?.membership_name ?? 'Membership'} — ${periodLabel}`,
+      })
+    }
   }
 
   // Mirrors recordMembershipCharge, plus one extra step: a package
@@ -104,9 +118,32 @@ export async function handleStripeEvent(supabase: SupabaseClient<Database>, acco
       quantity: 1,
       price_cents: amountCents,
     })
-    await supabase
+    const { data: payment } = await supabase
       .from('payments')
-      .insert({ account_id: accountId, patient_id: patientId, invoice_id: invoice.id, amount_cents: amountCents, method: 'card', stripe_payment_intent_id: paymentIntentId })
+      .insert({ account_id: accountId, patient_id: patientId, invoice_id: invoice.id, amount_cents: amountCents, method: 'card', stripe_payment_intent_id: paymentIntentId, purpose: 'bono' })
+      .select('id')
+      .single()
+
+    // An autopay instalment describes the share of the bono it buys, exactly
+    // as one taken at the desk does.
+    if (payment) {
+      const { data: pkg } = await supabase
+        .from('package_purchases')
+        .select('package_name, price_cents, sessions_total')
+        .eq('id', packagePurchaseId)
+        .maybeSingle()
+      await issueFacturaServer(supabase, {
+        accountId,
+        patientId,
+        paymentId: payment.id,
+        amountCents,
+        purpose: 'bono',
+        bono: pkg
+          ? { packageName: pkg.package_name, priceCents: pkg.price_cents, sessionsTotal: pkg.sessions_total }
+          : undefined,
+        serviceName: purchase?.package_name ?? 'Package',
+      })
+    }
     await supabase.from('account_credits').insert({
       account_id: accountId,
       patient_id: patientId,
@@ -209,14 +246,28 @@ export async function handleStripeEvent(supabase: SupabaseClient<Database>, acco
         const { data: invoice } = await supabase.from('invoices').select('total_cents, patient_id').eq('id', invoiceId).maybeSingle()
         if (!invoice) return
 
-        await supabase.from('payments').insert({
-          account_id: accountId,
-          patient_id: invoice.patient_id,
-          invoice_id: invoiceId,
-          amount_cents: intent.amount_received,
-          method: 'card',
-          stripe_payment_intent_id: intent.id,
-        })
+        const { data: payment } = await supabase
+          .from('payments')
+          .insert({
+            account_id: accountId,
+            patient_id: invoice.patient_id,
+            invoice_id: invoiceId,
+            amount_cents: intent.amount_received,
+            method: 'card',
+            stripe_payment_intent_id: intent.id,
+            purpose: 'visit',
+          })
+          .select('id')
+          .single()
+        if (payment) {
+          await issueFacturaServer(supabase, {
+            accountId,
+            patientId: invoice.patient_id,
+            paymentId: payment.id,
+            amountCents: intent.amount_received,
+            purpose: 'visit',
+          })
+        }
         const { data: payments } = await supabase.from('payments').select('amount_cents').eq('invoice_id', invoiceId)
         const paidCents = (payments ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
         if (paidCents >= invoice.total_cents) {

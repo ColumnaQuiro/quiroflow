@@ -11,6 +11,10 @@ const { loading: moneyLoading, balanceCents, creditLedgerCents, activePackages, 
   () => patientId.value,
 )
 const { invoices, loading: invoicesLoading, busyId, download } = usePatientInvoices(() => patientId.value)
+// Facturas are the documents; the invoices below are the charges that make up
+// the balance. Two lists on purpose -- a patient asking "what did I pay?" and
+// a patient asking "what am I being charged for?" are asking different things.
+const { facturas, loading: facturasLoading, busyId: facturaBusyId, download: downloadFactura } = usePatientFacturas(() => patientId.value)
 
 const amountDueCents = computed(() => (balanceCents.value < 0 ? -balanceCents.value : 0))
 
@@ -68,7 +72,33 @@ function eur(cents: number) {
     </div>
 
     <div class="mt-4">
-      <PatientCard :title="t('Invoices', 'Facturas')" flush>
+      <PatientCard :title="t('Your facturas', 'Tus facturas')" flush>
+        <div v-if="facturasLoading" class="space-y-3 p-4">
+          <UiSkeleton class="h-8 w-full rounded-ctl" />
+        </div>
+        <ul v-else-if="facturas.length > 0" class="divide-y divide-line-divider">
+          <li v-for="f in facturas" :key="f.id" class="flex items-center gap-3 px-4 py-3">
+            <div class="min-w-0 flex-1">
+              <p class="text-[13.5px] font-medium text-ink-900">{{ eur(f.amount_cents) }}</p>
+              <p class="truncate text-[12px] text-ink-muted">{{ f.description }}</p>
+              <p class="text-[12px] text-ink-faint">{{ new Date(f.issued_at).toLocaleDateString() }} &middot; {{ f.number }}</p>
+            </div>
+            <button
+              type="button"
+              class="shrink-0 rounded-ctlSm border border-line-control px-2 py-1 text-[12px] font-medium text-ink-600 hover:border-line-controlHover hover:text-ink-900 disabled:opacity-50"
+              :disabled="facturaBusyId === f.id"
+              @click="downloadFactura(f)"
+            >
+              {{ facturaBusyId === f.id ? t('…', '…') : t('PDF', 'PDF') }}
+            </button>
+          </li>
+        </ul>
+        <PatientEmpty v-else :text="t('No facturas yet.', 'Todavía no hay facturas.')" />
+      </PatientCard>
+    </div>
+
+    <div class="mt-4">
+      <PatientCard :title="t('Charges', 'Cargos')" flush>
         <div v-if="invoicesLoading" class="space-y-3 p-4">
           <UiSkeleton class="h-8 w-full rounded-ctl" />
           <UiSkeleton class="h-8 w-full rounded-ctl" />
@@ -98,7 +128,7 @@ function eur(cents: number) {
             </button>
           </li>
         </ul>
-        <PatientEmpty v-else :text="t('No invoices yet.', 'Todavía no hay facturas.')" />
+        <PatientEmpty v-else :text="t('No charges yet.', 'Todavía no hay cargos.')" />
         <div v-if="!showAll && invoices.length > PREVIEW" class="border-t border-line-divider px-4 py-2.5">
           <button type="button" class="text-[12.5px] font-medium text-ink-muted hover:text-ink-700" @click="showAll = true">
             {{ t(`Show all ${invoices.length}`, `Ver las ${invoices.length}`) }}

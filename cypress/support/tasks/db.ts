@@ -423,6 +423,39 @@ async function createImportedPayment(opts: {
   return row as { id: string }
 }
 
+async function createFactura(opts: {
+  accountId: string
+  patientId: string
+  paymentId: string
+  number: string
+  kind?: string
+  description: string
+  amountCents: number
+}) {
+  const row = unwrap(
+    await admin
+      .from('facturas')
+      .insert({
+        account_id: opts.accountId,
+        patient_id: opts.patientId,
+        payment_id: opts.paymentId,
+        number: opts.number,
+        kind: opts.kind ?? 'simplified',
+        description: opts.description,
+        amount_cents: opts.amountCents,
+      })
+      .select('id')
+      .single(),
+  )
+  return row as { id: string }
+}
+
+async function setPatientNif(opts: { patientId: string; nationalId: string | null }) {
+  const { error } = await admin.from('patients').update({ national_id: opts.nationalId }).eq('id', opts.patientId)
+  if (error) throw error
+  return null
+}
+
 async function createPackageTemplate(opts: { accountId: string; name: string; sessionCount: number; priceCents: number }) {
   const row = unwrap(
     await admin
@@ -560,6 +593,8 @@ export const dbTasks = {
   'db:deleteInvoice': deleteInvoice,
   'db:paymentById': paymentById,
   'db:createPackageTemplate': createPackageTemplate,
+  'db:createFactura': createFactura,
+  'db:setPatientNif': setPatientNif,
   'db:createAccountCredit': createAccountCredit,
   'db:facturasFor': facturasFor,
   'db:nextFacturaNumber': nextFacturaNumber,

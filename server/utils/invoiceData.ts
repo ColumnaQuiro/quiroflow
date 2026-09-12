@@ -26,6 +26,16 @@ export interface InvoiceDocumentData {
   logoBuffer: Buffer | null
   nextAppointmentDate: string | null
   hideNextVisit: boolean
+  // A factura reuses this whole layout -- same clinic header, same logo, same
+  // footer -- and differs in two words and one line, so it sets these rather
+  // than the PDF being written twice and drifting.
+  //
+  // documentTitle: "Factura F-2026-0001" instead of "Invoice INV-0001".
+  // showTotalsBreakdown: a factura IS the payment, so "Paid" and "Balance due"
+  // are noise at best and, on a document that says what someone handed over,
+  // actively confusing.
+  documentTitle?: string
+  showTotalsBreakdown?: boolean
 }
 
 // "123 Main St" + "28001 Madrid" + "Spain" on their own lines, skipping any
@@ -164,7 +174,7 @@ export function generateInvoicePdf(data: InvoiceDocumentData): Promise<Buffer> {
     if (data.logoBuffer && doc.y < 115) doc.y = 115
 
     doc.x = 50
-    doc.fillColor('#000').fontSize(18).font('Helvetica-Bold').text(`Invoice ${data.invoiceNumber}`, 50)
+    doc.fillColor('#000').fontSize(18).font('Helvetica-Bold').text(data.documentTitle ?? `Invoice ${data.invoiceNumber}`, 50)
     doc
       .fontSize(10)
       .font('Helvetica')
@@ -210,15 +220,24 @@ export function generateInvoicePdf(data: InvoiceDocumentData): Promise<Buffer> {
 
     let totalsY = y + 14
     doc.font('Helvetica').fontSize(10).fillColor('#555')
-    doc.text(`Subtotal: €${(data.totalCents / 100).toFixed(2)}`, col.price, totalsY, { width: 145, align: 'right' })
-    totalsY += 15
-    doc.text(`Paid: €${(data.paidCents / 100).toFixed(2)}`, col.price, totalsY, { width: 145, align: 'right' })
-    totalsY += 18
-    doc
-      .font('Helvetica-Bold')
-      .fontSize(11)
-      .fillColor('#000')
-      .text(`Balance due: €${(data.balanceDueCents / 100).toFixed(2)}`, col.price, totalsY, { width: 145, align: 'right' })
+    if (data.showTotalsBreakdown === false) {
+      // A factura states one figure: what was paid.
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(11)
+        .fillColor('#000')
+        .text(`Total: €${(data.totalCents / 100).toFixed(2)}`, col.price, totalsY, { width: 145, align: 'right' })
+    } else {
+      doc.text(`Subtotal: €${(data.totalCents / 100).toFixed(2)}`, col.price, totalsY, { width: 145, align: 'right' })
+      totalsY += 15
+      doc.text(`Paid: €${(data.paidCents / 100).toFixed(2)}`, col.price, totalsY, { width: 145, align: 'right' })
+      totalsY += 18
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(11)
+        .fillColor('#000')
+        .text(`Balance due: €${(data.balanceDueCents / 100).toFixed(2)}`, col.price, totalsY, { width: 145, align: 'right' })
+    }
 
     let footerY = totalsY + 40
     if (data.clinic?.footerText) {

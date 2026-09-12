@@ -65,6 +65,55 @@ const t = useT()
 
 const { balanceCents, creditLedgerCents, refresh: refreshCreditSummary } = usePatientFinancialSummary(() => props.patientId)
 const { issueFactura } = useFacturas()
+
+// The documents the patient has actually been given, as opposed to the charges
+// that drive their balance. Kept as its own list rather than mixed into the
+// ledger: one is a fiscal record and the other is arithmetic, and the whole
+// point of separating them was that conflating the two is what caused the
+// confusion in the first place.
+interface FacturaRow {
+  id: string
+  number: string
+  kind: string
+  description: string
+  amount_cents: number
+  issued_at: string
+  recipient_nif: string | null
+}
+const facturas = ref<FacturaRow[]>([])
+const sendingFacturaId = ref('')
+const facturaSendResult = ref<Record<string, string>>({})
+
+async function loadFacturas() {
+  const { data: patientRow } = await supabase.from('patients').select('national_id').eq('id', props.patientId).maybeSingle()
+  patientNationalId.value = patientRow?.national_id ?? null
+  const { data } = await supabase
+    .from('facturas')
+    .select('id, number, kind, description, amount_cents, issued_at, recipient_nif')
+    .eq('patient_id', props.patientId)
+    .order('issued_at', { ascending: false })
+  facturas.value = data ?? []
+}
+
+async function sendFactura(id: string) {
+  sendingFacturaId.value = id
+  try {
+    await useStaffFetch(`/api/facturas/${id}/send`, { method: 'POST' })
+    facturaSendResult.value = { ...facturaSendResult.value, [id]: t('Sent', 'Enviada') }
+  } catch (e: any) {
+    facturaSendResult.value = { ...facturaSendResult.value, [id]: e?.data?.statusMessage ?? t('Failed', 'Error') }
+  }
+  sendingFacturaId.value = ''
+}
+
+// A full invoice needs a NIF. It is deliberately not collected at the counter
+// -- nothing should stop a payment being taken -- so this is where reception
+// is told it is still missing, and the document picks it up the moment it is
+// added to the patient record.
+const patientNationalId = ref<string | null>(null)
+const facturasMissingNif = computed(() =>
+  patientNationalId.value ? [] : facturas.value.filter((f) => f.kind === 'full' && !f.recipient_nif),
+)
 const { packageTemplates, membershipTemplates, ensureLoaded: ensureBillingTemplatesLoaded } = useBillingTemplates()
 const addCreditAmount = ref('')
 const addCreditReason = ref('')
@@ -583,6 +632,7 @@ async function onLedgerCreditsChanged() {
 }
 onMounted(() => {
   loadAll()
+  loadFacturas()
   maybeOpenPaymentFromTrigger()
 })
 // The sidebar's "Charge" button sets this to jump straight to the "Take
@@ -622,7 +672,7 @@ async function sendInvoiceEmail(invoiceId: string) {
 async function deleteInvoice(invoice: InvoiceRow) {
   if (!confirm(`${t('Delete invoice', 'Eliminar factura')} ${invoice.invoice_number} (${money(invoice.total_cents)})? ${t("This also removes any payments recorded against it. This can't be undone.", 'Esto también elimina los pagos registrados contra ella. Esta acción no se puede deshacer.')}`)) return
   await supabase.from('invoices').delete().eq('id', invoice.id)
-  await Promise.all([loadAll(), refreshCreditSummary()])
+  await Promise.all([loadAll(), refreshCreditSummary(), loadFacturas()])
 }
 
 // Settles an invoice's remaining balance without collecting money -- same
@@ -660,7 +710,7 @@ async function deletePayment(paymentId: string, invoiceId: string | null, amount
     }
   }
 
-  await Promise.all([loadAll(), refreshCreditSummary()])
+  await Promise.all([loadAll(), refreshCreditSummary(), loadFacturas()])
 }
 
 async function writeOffInvoice(invoiceId: string) {
@@ -673,7 +723,7 @@ async function writeOffInvoice(invoiceId: string) {
   if (!confirm(`${t('Write off', 'Condonar')} ${money(openCents)} ${t('remaining on', 'restantes de')} ${invoice.invoice_number}? ${t('This settles the invoice without collecting payment.', 'Esto salda la factura sin cobrar el pago.')}`)) return
   await supabase.from('payments').insert({ account_id: store.accountId!, patient_id: props.patientId, invoice_id: invoiceId, amount_cents: openCents, method: 'write_off' })
   await supabase.from('invoices').update({ status: 'paid' }).eq('id', invoiceId)
-  await Promise.all([loadAll(), refreshCreditSummary()])
+  await Promise.all([loadAll(), refreshCreditSummary(), loadFacturas()])
 }
 
 // -- Refund: a new invoice with a negative total, linked back to the one it
@@ -745,7 +795,7 @@ async function createRefund(invoiceId: string, amountCents: number, reason: stri
     method,
   })
 
-  await Promise.all([loadAll(), refreshCreditSummary()])
+  await Promise.all([loadAll(), refreshCreditSummary(), loadFacturas()])
 }
 
 const hasCard = computed(() => !!stripeCustomer.value?.default_payment_method_id)
@@ -895,7 +945,7 @@ async function sellPackage() {
   sellPackageId.value = ''
   sellAmountPaid.value = ''
   sellMethod.value = 'cash'
-  await Promise.all([loadAll(), refreshCreditSummary()])
+  await Promise.all([loadAll(), refreshCreditSummary(), loadFacturas()])
 }
 
 // What is still unpaid on a bono: payments landing on its own invoice
@@ -1319,7 +1369,7 @@ async function activateMembership() {
   activateMembershipId.value = ''
   activateAmountPaid.value = ''
   activateMethod.value = 'cash'
-  await Promise.all([loadAll(), refreshCreditSummary()])
+  await Promise.all([loadAll(), refreshCreditSummary(), loadFacturas()])
 }
 
 async function setMembershipStatus(m: PatientMembershipRow, status: string) {
@@ -1470,6 +1520,63 @@ function money(cents: number) {
     money breakdown and a row of actions, none of which fit legibly in half
     the width (and the old grid-cols-2 had no mobile fallback either). -->
     <div class="space-y-4">
+      <!-- Facturas: what the patient has been given, as opposed to what they
+      have been charged. Above the bonos because it is the fiscal record. -->
+      <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+        <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Facturas', 'Facturas') }}</p>
+        <p class="mt-0.5 text-[12px] text-ink-muted2">
+          {{ t('One per payment received. The charges above are what drives the balance.', 'Una por cada pago recibido. Los cargos de arriba son lo que mueve el saldo.') }}
+        </p>
+
+        <p v-if="facturasMissingNif.length > 0" class="mt-2 rounded-ctl border border-amber-border bg-amber-bg px-2.5 py-1.5 text-[12px] text-amber-text">
+          {{
+            t(
+              `${facturasMissingNif.length} of these need the patient's NIF. Add it on the Overview tab and they will pick it up.`,
+              `${facturasMissingNif.length} de estas necesitan el NIF del paciente. Añádelo en la pestaña Resumen y se actualizarán solas.`,
+            )
+          }}
+        </p>
+
+        <p v-if="facturas.length === 0" class="mt-3 text-[12.5px] text-ink-faint">
+          {{ t('None yet — the next payment will issue one.', 'Ninguna todavía: el próximo pago generará una.') }}
+        </p>
+        <ul v-else class="mt-3 space-y-2">
+          <li v-for="f in facturas" :key="f.id" class="flex flex-wrap items-baseline justify-between gap-2 rounded-ctl border border-line-divider p-3">
+            <div class="min-w-0">
+              <p class="font-mono text-[12.5px] font-medium text-ink-900">
+                {{ f.number }}
+                <span v-if="f.kind === 'simplified'" class="ml-1 rounded-ctlSm bg-chip-bg px-1.5 py-0.5 font-sans text-[10.5px] text-chip-text">
+                  {{ t('simplified', 'simplificada') }}
+                </span>
+              </p>
+              <p class="truncate text-[12.5px] text-ink-muted2">{{ f.description }}</p>
+              <p class="text-[11.5px] text-ink-faint">{{ new Date(f.issued_at).toLocaleDateString() }}</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="font-mono text-[13px] text-ink-900">{{ money(f.amount_cents) }}</span>
+              <a
+                :href="`/api/facturas/${f.id}/pdf`"
+                target="_blank"
+                rel="noopener"
+                class="text-[12px] font-medium text-brand-text hover:text-brand-hover"
+              >
+                {{ t('PDF', 'PDF') }}
+              </a>
+              <span v-if="facturaSendResult[f.id]" class="text-[12px] text-ink-faint">{{ facturaSendResult[f.id] }}</span>
+              <button
+                v-else
+                type="button"
+                class="text-[12px] font-medium text-brand-text hover:text-brand-hover disabled:opacity-50"
+                :disabled="sendingFacturaId === f.id"
+                @click="sendFactura(f.id)"
+              >
+                {{ sendingFacturaId === f.id ? t('Sending…', 'Enviando…') : t('Send', 'Enviar') }}
+              </button>
+            </div>
+          </li>
+        </ul>
+      </div>
+
       <!-- Packages / bonos -->
       <div class="rounded-card border border-line bg-surface p-4 shadow-card">
         <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Packages / bonos', 'Bonos') }}</p>

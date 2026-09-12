@@ -6,7 +6,8 @@ interface PaymentRow {
   amount_cents: number
   method: string
   paid_at: string
-  invoice_id: string
+  invoice_id: string | null
+  invoices?: { status: string } | null
 }
 interface InvoiceRow { id: string; invoice_number: string; patient_id: string; is_refund: boolean; appointment_id: string | null }
 interface PatientRow { id: string; first_name: string; last_name: string | null }
@@ -47,14 +48,15 @@ async function load() {
 
   const { data: p } = await supabase
     .from('payments')
-    .select('id, amount_cents, method, paid_at, invoice_id, invoices!inner(status)')
-    .neq('invoices.status', 'void')
+    .select('id, amount_cents, method, paid_at, invoice_id, invoices(status)')
     .gte('paid_at', from.toISOString())
     .lte('paid_at', to.toISOString())
     .order('paid_at')
-  payments.value = p ?? []
+  // The void rule moved out of the query when the join went from inner to
+  // left: a payment with no invoice has nothing to void and must survive it.
+  payments.value = (p ?? []).filter((row) => row.invoices?.status !== 'void')
 
-  const invoiceIds = [...new Set(payments.value.map((row) => row.invoice_id))]
+  const invoiceIds = [...new Set(payments.value.map((row) => row.invoice_id).filter((id): id is string => !!id))]
   const { data: inv } = invoiceIds.length > 0
     ? await supabase.from('invoices').select('id, invoice_number, patient_id, is_refund, appointment_id').in('id', invoiceIds)
     : { data: [] as InvoiceRow[] }
@@ -93,8 +95,14 @@ const patientById = computed(() => new Map(patients.value.map((row) => [row.id, 
 const appointmentById = computed(() => new Map(appointments.value.map((row) => [row.id, row])))
 const memberById = computed(() => new Map(teamMembers.value.map((row) => [row.id, row.full_name])))
 
+// A payment settling no particular charge has no invoice to name, and shows
+// a dash in the Invoice column rather than a broken lookup.
+function invoiceFor(payment: PaymentRow) {
+  return payment.invoice_id ? invoiceById.value.get(payment.invoice_id) : undefined
+}
+
 function apptFor(payment: PaymentRow) {
-  const invoice = invoiceById.value.get(payment.invoice_id)
+  const invoice = payment.invoice_id ? invoiceById.value.get(payment.invoice_id) : undefined
   return invoice?.appointment_id ? appointmentById.value.get(invoice.appointment_id) : undefined
 }
 const filteredPayments = computed(() =>
@@ -186,13 +194,13 @@ const byMethod = computed(() => {
               <tr v-for="row in filteredPayments" :key="row.id">
                 <td class="px-4 py-2.5 text-ink-muted2">{{ time(row.paid_at) }}</td>
                 <td class="px-4 py-2.5 text-ink-900">
-                  <NuxtLink :to="`/patients/${invoiceById.get(row.invoice_id)?.patient_id}`" class="hover:text-brand-text">
-                    {{ patientName(invoiceById.get(row.invoice_id)?.patient_id ?? '') }}
+                  <NuxtLink :to="`/patients/${invoiceFor(row)?.patient_id}`" class="hover:text-brand-text">
+                    {{ patientName(invoiceFor(row)?.patient_id ?? '') }}
                   </NuxtLink>
                 </td>
                 <td class="px-4 py-2.5 text-ink-muted2">
-                  <span>{{ invoiceById.get(row.invoice_id)?.invoice_number ?? '—' }}</span>
-                  <span v-if="invoiceById.get(row.invoice_id)?.is_refund" class="ml-1.5 rounded-pill bg-danger-bg px-1.5 py-0.5 text-[11px] font-medium text-danger-text">{{ t('refund', 'reembolso') }}</span>
+                  <span>{{ invoiceFor(row)?.invoice_number ?? '—' }}</span>
+                  <span v-if="invoiceFor(row)?.is_refund" class="ml-1.5 rounded-pill bg-danger-bg px-1.5 py-0.5 text-[11px] font-medium text-danger-text">{{ t('refund', 'reembolso') }}</span>
                 </td>
                 <td class="px-4 py-2.5 text-ink-muted2">{{ practitionerName(row) }}</td>
                 <td class="px-4 py-2.5 text-ink-muted2">{{ row.method }}</td>

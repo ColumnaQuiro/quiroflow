@@ -3,7 +3,7 @@ import type { DateRange } from '~/composables/useDateRangePresets'
 
 const props = defineProps<{ dateRange: DateRange; practitionerId?: string; clinicId?: string }>()
 
-interface PaymentRow { amount_cents: number; paid_at: string; invoice_id: string }
+interface PaymentRow { amount_cents: number; paid_at: string; invoice_id: string | null; invoices?: { status: string } | null }
 interface InvoiceRow { id: string; total_cents: number; appointment_id: string | null }
 interface AppointmentRow { id: string; practitioner_id: string | null; clinic_id: string | null }
 
@@ -41,8 +41,7 @@ async function load() {
     fetchAllRows<PaymentRow>((f, t) =>
       supabase
         .from('payments')
-        .select('amount_cents, paid_at, invoice_id, invoices!inner(status)')
-        .neq('invoices.status', 'void')
+        .select('amount_cents, paid_at, invoice_id, invoices(status)')
         .gte('paid_at', from.toISOString())
         .lte('paid_at', to.toISOString())
         .range(f, t),
@@ -68,7 +67,10 @@ async function load() {
         .range(f, t),
     ),
   ])
-  payments.value = p
+  // The void rule moved out of the query when the join went from inner to
+  // left: a payment with no invoice has nothing to void and must survive it.
+  const notVoid = (row: PaymentRow) => row.invoices?.status !== 'void'
+  payments.value = p.filter(notVoid)
   invoices.value = inv
   appointments.value = appt
   prevPaidCents.value = prevPayments.reduce((sum, row) => sum + row.amount_cents, 0)
@@ -88,7 +90,7 @@ function apptMatchesFilter(appointmentId: string | null): boolean {
   if (props.clinicId && appt.clinic_id !== props.clinicId) return false
   return true
 }
-const filteredPayments = computed(() => payments.value.filter((p) => apptMatchesFilter(invoiceById.value.get(p.invoice_id)?.appointment_id ?? null)))
+const filteredPayments = computed(() => payments.value.filter((p) => apptMatchesFilter((p.invoice_id ? invoiceById.value.get(p.invoice_id) : undefined)?.appointment_id ?? null)))
 const filteredInvoices = computed(() => invoices.value.filter((i) => apptMatchesFilter(i.appointment_id)))
 
 const totalPaid = computed(() => filteredPayments.value.reduce((sum, p) => sum + p.amount_cents, 0))

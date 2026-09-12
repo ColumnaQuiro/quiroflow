@@ -54,7 +54,7 @@ interface PaymentScheduleRow {
   status: string
 }
 interface StripeEventRow { id: string; payment_schedule_id: string; period_start: string; amount_cents: number; status: string }
-interface LedgerPaymentRow { id: string; invoice_id: string; amount_cents: number; method: string; paid_at: string; package_purchase_id: string | null }
+interface LedgerPaymentRow { id: string; invoice_id: string | null; amount_cents: number; method: string; paid_at: string; package_purchase_id: string | null }
 interface LedgerCreditRow { id: string; amount_cents: number; reason: string | null; method: string | null; invoice_id: string | null; created_at: string }
 
 const supabase = useSupabaseClient()
@@ -111,6 +111,7 @@ async function applyCreditToInvoice() {
 
   await supabase.from('payments').insert({
     account_id: store.accountId!,
+    patient_id: props.patientId,
     invoice_id: invoice.id,
     amount_cents: amountCents,
     method: 'credit',
@@ -169,6 +170,7 @@ async function takePayment() {
   await supabase.from('payments').insert(
     rows.map((r) => ({
       account_id: store.accountId!,
+      patient_id: props.patientId,
       invoice_id: invoice.id,
       amount_cents: paymentRowCents(r),
       method: r.method,
@@ -311,7 +313,7 @@ async function recordSalePayment(description: string, amountCents: number, metho
   await supabase.from('invoice_line_items').insert({ account_id: store.accountId!, invoice_id: invoice.id, description, quantity: 1, price_cents: amountCents })
 
   if (method === 'credit') {
-    await supabase.from('payments').insert({ account_id: store.accountId!, invoice_id: invoice.id, amount_cents: amountCents, method: 'credit' })
+    await supabase.from('payments').insert({ account_id: store.accountId!, patient_id: props.patientId, invoice_id: invoice.id, amount_cents: amountCents, method: 'credit' })
     await supabase.from('account_credits').insert({
       account_id: store.accountId!,
       patient_id: props.patientId,
@@ -321,7 +323,7 @@ async function recordSalePayment(description: string, amountCents: number, metho
       created_by: store.teamMember?.id ?? null,
     })
   } else {
-    await supabase.from('payments').insert({ account_id: store.accountId!, invoice_id: invoice.id, amount_cents: amountCents, method })
+    await supabase.from('payments').insert({ account_id: store.accountId!, patient_id: props.patientId, invoice_id: invoice.id, amount_cents: amountCents, method })
   }
 }
 
@@ -358,7 +360,7 @@ async function createPackageInvoice(description: string, priceCents: number, pai
 // credit they genuinely hold, and it has to come off their balance.
 async function recordPackagePayment(invoiceId: string | null, amountCents: number, method: 'cash' | 'card' | 'credit', description: string) {
   if (!invoiceId) return
-  await supabase.from('payments').insert({ account_id: store.accountId!, invoice_id: invoiceId, amount_cents: amountCents, method })
+  await supabase.from('payments').insert({ account_id: store.accountId!, patient_id: props.patientId, invoice_id: invoiceId, amount_cents: amountCents, method })
   if (method === 'credit') {
     await supabase.from('account_credits').insert({
       account_id: store.accountId!,
@@ -398,10 +400,15 @@ async function loadLedger() {
       .from('invoice_line_items')
       .select('invoice_id, description, invoices!inner(patient_id)')
       .eq('invoices.patient_id', props.patientId),
+    // By patient, not through their invoices -- an inner join to invoices
+    // would hide every payment with no invoice_id, and money on account has
+    // none. invoice_id is still selected: it is how the ledger below matches
+    // a payment to the charge it settled, and it is simply null when it
+    // settled nothing in particular.
     supabase
       .from('payments')
-      .select('id, invoice_id, amount_cents, method, paid_at, package_purchase_id, invoices!inner(patient_id)')
-      .eq('invoices.patient_id', props.patientId),
+      .select('id, invoice_id, amount_cents, method, paid_at, package_purchase_id')
+      .eq('patient_id', props.patientId),
     supabase
       .from('account_credits')
       .select('id, amount_cents, reason, method, invoice_id, created_at')
@@ -562,7 +569,7 @@ async function deleteInvoice(invoice: InvoiceRow) {
 // as cash). Bookkeeping only: no money moves, which is why this is a delete
 // rather than a refund -- a refund records that cash went back to the
 // patient, and here it never left in the first place.
-async function deletePayment(paymentId: string, invoiceId: string, amountCents: number) {
+async function deletePayment(paymentId: string, invoiceId: string | null, amountCents: number) {
   const invoice = invoices.value.find((i) => i.id === invoiceId)
   if (
     !confirm(
@@ -580,7 +587,7 @@ async function deletePayment(paymentId: string, invoiceId: string, amountCents: 
 
   // Recompute from what is actually left rather than subtracting the removed
   // amount, so a stale local copy can't leave the status wrong.
-  if (invoice) {
+  if (invoice && invoiceId) {
     const { data: remaining } = await supabase.from('payments').select('amount_cents').eq('invoice_id', invoiceId)
     const paidCents = (remaining ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
     if (invoice.status !== 'void') {
@@ -599,7 +606,7 @@ async function writeOffInvoice(invoiceId: string) {
   const openCents = invoice.total_cents - paidCents
   if (openCents <= 0) return
   if (!confirm(`${t('Write off', 'Condonar')} ${money(openCents)} ${t('remaining on', 'restantes de')} ${invoice.invoice_number}? ${t('This settles the invoice without collecting payment.', 'Esto salda la factura sin cobrar el pago.')}`)) return
-  await supabase.from('payments').insert({ account_id: store.accountId!, invoice_id: invoiceId, amount_cents: openCents, method: 'write_off' })
+  await supabase.from('payments').insert({ account_id: store.accountId!, patient_id: props.patientId, invoice_id: invoiceId, amount_cents: openCents, method: 'write_off' })
   await supabase.from('invoices').update({ status: 'paid' }).eq('id', invoiceId)
   await Promise.all([loadAll(), refreshCreditSummary()])
 }
@@ -667,6 +674,7 @@ async function createRefund(invoiceId: string, amountCents: number, reason: stri
   // only from `payments` and never saw a refund at all.
   await supabase.from('payments').insert({
     account_id: store.accountId!,
+    patient_id: props.patientId,
     invoice_id: refund.id,
     amount_cents: -amountCents,
     method,
@@ -938,7 +946,8 @@ function linkedPaymentsFor(purchase: PackagePurchaseRow) {
   return ledgerPayments.value.filter((p) => p.package_purchase_id === purchase.id)
 }
 
-function invoiceNumberFor(invoiceId: string): string {
+function invoiceNumberFor(invoiceId: string | null): string {
+  if (!invoiceId) return t('on account', 'a cuenta')
   return invoices.value.find((i) => i.id === invoiceId)?.invoice_number ?? invoiceId
 }
 
@@ -1711,7 +1720,7 @@ function money(cents: number) {
       @send-invoice="sendInvoiceEmail"
       @delete-invoice="(id: string) => { const inv = invoices.find((i) => i.id === id); if (inv) deleteInvoice(inv) }"
       @write-off-invoice="writeOffInvoice"
-      @delete-payment="(p: { paymentId: string; invoiceId: string; amountCents: number }) => deletePayment(p.paymentId, p.invoiceId, p.amountCents)"
+      @delete-payment="(p: { paymentId: string; invoiceId: string | null; amountCents: number }) => deletePayment(p.paymentId, p.invoiceId, p.amountCents)"
       @refund-invoice="(payload: { invoiceId: string; amountCents: number; reason: string; method: string }) => createRefund(payload.invoiceId, payload.amountCents, payload.reason, payload.method)"
       @credits-changed="onLedgerCreditsChanged"
     />

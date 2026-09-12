@@ -282,6 +282,7 @@ async function apply() {
         }))
         const paymentRows = chunk.map((c, idx) => ({
           account_id: store.accountId!,
+          patient_id: c.patientId,
           invoice_id: invoiceRows[idx].id,
           amount_cents: c.amountCents,
           method: c.method,

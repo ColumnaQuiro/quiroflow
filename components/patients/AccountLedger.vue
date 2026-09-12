@@ -3,9 +3,11 @@
 // (credit) merged into one chronological table, replacing the old separate
 // "Invoices" table + "creditHistory" list. See the plan notes on why a
 // payment row's own "Balance" is always "—" rather than a PH-style
-// per-event remaining amount: unlike PH, payments.invoice_id here is
-// permanently 1:1 at insert time (not null), so there's no "still
-// unallocated" state for an individual payment to show.
+// per-event remaining amount: a payment taken at the desk is allocated to the
+// charge it settles as it is entered, so it has no remaining amount to show.
+// Since 0170 invoice_id can be null -- money on account, which is how
+// PracticeHub records most of a bono patient's payments -- and such a row
+// simply matches no invoice here.
 import { normalizeSearchTerm } from '~/utils/searchText'
 
 interface InvoiceRow {
@@ -17,7 +19,7 @@ interface InvoiceRow {
   is_refund: boolean
   refunds_invoice_id: string | null
 }
-interface PaymentRow { id: string; invoice_id: string; amount_cents: number; method: string; paid_at: string }
+interface PaymentRow { id: string; invoice_id: string | null; amount_cents: number; method: string; paid_at: string }
 // A visit drawn from a package. Carries no debit or credit -- the money was
 // already accounted for when the package was bought -- so it appears in the
 // ledger purely so a visit is not silently absent from a patient's history.
@@ -48,7 +50,7 @@ const emit = defineEmits<{
   takePayment: []
   sendInvoice: [invoiceId: string]
   deleteInvoice: [invoiceId: string]
-  deletePayment: [payload: { paymentId: string; invoiceId: string; amountCents: number }]
+  deletePayment: [payload: { paymentId: string; invoiceId: string | null; amountCents: number }]
   writeOffInvoice: [invoiceId: string]
   refundInvoice: [payload: { invoiceId: string; amountCents: number; reason: string; method: string }]
   creditsChanged: []
@@ -83,7 +85,7 @@ interface LedgerRow {
   invoiceId?: string
   paymentId?: string
   paymentAmountCents?: number
-  paymentInvoiceId?: string
+  paymentInvoiceId?: string | null
   invoiceOpenCents?: number
   refundableCents?: number
   isRefund?: boolean
@@ -478,7 +480,7 @@ async function sendStatement() {
                   <button
                     type="button"
                     class="text-ink-faint hover:text-danger-text"
-                    @click="emit('deletePayment', { paymentId: row.paymentId!, invoiceId: row.paymentInvoiceId!, amountCents: row.paymentAmountCents ?? 0 })"
+                    @click="emit('deletePayment', { paymentId: row.paymentId!, invoiceId: row.paymentInvoiceId ?? null, amountCents: row.paymentAmountCents ?? 0 })"
                   >
                     {{ t('Remove payment', 'Eliminar pago') }}
                   </button>

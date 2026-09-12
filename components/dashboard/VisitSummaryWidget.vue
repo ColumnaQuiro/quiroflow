@@ -47,13 +47,17 @@ async function load() {
   estimated.value = estimatedCount
   cancellations.value = cancelledCount
 
+  // Left-joined, not inner: a payment with no invoice (money on account,
+  // possible since 0170) is still money taken this week, and an inner join
+  // would drop it. No invoice means nothing to void.
   const { data: payments } = await supabase
     .from('payments')
-    .select('amount_cents, invoices!inner(status)')
-    .neq('invoices.status', 'void')
+    .select('amount_cents, invoices(status)')
     .gte('paid_at', fromDate.toISOString())
     .lte('paid_at', toDate.toISOString())
-  paymentsCents.value = (payments ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
+  paymentsCents.value = (payments ?? [])
+    .filter((p) => (p as unknown as { invoices: { status: string } | null }).invoices?.status !== 'void')
+    .reduce((sum, p) => sum + p.amount_cents, 0)
 
   const { data: invoicesThisWeek } = await supabase
     .from('invoices')

@@ -180,7 +180,7 @@ function visitOrdinal(n: number) {
       <span class="truncate text-right text-ink-700">{{ practitionerName }}</span>
       <span class="text-ink-muted2">{{ t('Balance', 'Saldo') }}</span>
       <span class="flex justify-end">
-        <UiBalancePill :credit-cents="creditLedgerCents" :bono-value-cents="bonoValueCents" />
+        <UiBalancePill :balance-cents="balanceCents" />
         <span v-if="creditLedgerCents + bonoValueCents <= 0" class="text-ink-muted2">{{ t('No balance due', 'Sin saldo pendiente') }}</span>
       </span>
     </div>

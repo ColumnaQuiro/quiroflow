@@ -1,46 +1,33 @@
 <script setup lang="ts">
-// The one prominent pill shown near a patient's name: what this patient can
-// draw on, in money. Reception's actual question is "how much do they have
-// left?", and a patient asks it the same way -- in euros, never in rows of a
-// ledger.
+// The one prominent figure shown near a patient's name: their balance, the way
+// PracticeHub states it -- one number, positive when the clinic holds their
+// money, negative when they owe.
 //
-// It is NOT the netted balance of paid - invoiced + credit it once showed.
-// That hid both real numbers behind their difference: 200 EUR of credit with a
-// 240 EUR bono instalment outstanding rendered as "40 Due". What is owed lives
-// on the invoices, where it can actually be collected.
+// It has been three things. It began as this. It then became credit only, and
+// then credit plus the euro value of unused bono sessions, labelled "in
+// bonos". That last shape existed to paper over a mismatch: QuiroFlow kept a
+// bono's value on its session counter while PracticeHub kept it in the
+// balance, so reception comparing the two screens saw QuiroFlow claim zero
+// where PracticeHub said 264 EUR, and the pill was where the missing money got
+// put back.
 //
-// Nor is it account_credits alone, which is what it read until now. Since a
-// bono visit stopped being a billing event (0161), a bono's remaining value
-// lives on its sessions counter and NOT as credit -- so a patient with ten
-// prepaid sessions left showed "no credit", and the pill went blank for
-// essentially every bono holder in the account. PracticeHub, which the clinic
-// is still dual-running against, shows that same money in its `balance`
-// column, so reception comparing the two screens saw QuiroFlow claim zero
-// where PracticeHub said 264 EUR.
+// The re-migration removed the mismatch itself. Charges are now one per visit,
+// as PracticeHub records them, so prepaid bono money sits in the balance and
+// each visit draws it down -- pay 264, take a 44 EUR visit, the balance reads
+// 220. There is nothing left for a second figure to explain.
 //
-// availableCents is loose credit + bono value. A summary, not a second
-// balance: nothing spends from it (a session comes off its own counter, credit
-// off the ledger), so surfacing it cannot let the same euros be spent twice.
-const props = defineProps<{
-  creditCents: number
-  bonoValueCents?: number
-}>()
+// What it must NOT be read as is spendable credit. A balance is arithmetic
+// over charges and payments; loose credit a patient can actually direct at an
+// invoice is its own ledger, and that is what the "Credit on account" option
+// is capped by -- not this.
+const props = defineProps<{ balanceCents: number }>()
 
-const totalCents = computed(() => props.creditCents + (props.bonoValueCents ?? 0))
-
-// Split when both halves exist, so the number is traceable to where it lives
-// rather than being one figure staff cannot reconcile against anything.
 const label = computed(() => {
-  const total = `€${(totalCents.value / 100).toFixed(2)}`
-  const bono = props.bonoValueCents ?? 0
-  if (bono > 0 && props.creditCents > 0) {
-    return `${total} available (€${(bono / 100).toFixed(2)} in bonos)`
-  }
-  if (bono > 0) return `${total} in bonos`
-  return `${total} Credit`
+  const amount = `€${(Math.abs(props.balanceCents) / 100).toFixed(2)}`
+  return props.balanceCents > 0 ? `${amount} credit` : `${amount} due`
 })
 </script>
 
 <template>
-  <UiPill v-if="totalCents > 0" tone="success">{{ label }}</UiPill>
+  <UiPill v-if="props.balanceCents !== 0" :tone="props.balanceCents > 0 ? 'success' : 'danger'">{{ label }}</UiPill>
 </template>

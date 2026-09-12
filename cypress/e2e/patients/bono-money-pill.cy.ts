@@ -1,18 +1,24 @@
-// A bono's remaining value lives on its sessions counter, not in
-// account_credits (0161). The pill by the patient's name read account_credits
-// alone, so a patient with ten prepaid sessions in hand showed nothing at all
-// -- and it went blank for essentially every bono holder in the account the
-// day that migration ran.
+// The pill by the patient's name is the balance, the way PracticeHub states
+// it: one number, positive when the clinic holds their money, negative when
+// they owe.
 //
-// It has to read as money because that is the question reception is asked
-// ("how much do I have left?") and because PracticeHub, which the clinic is
-// still dual-running against, shows the same figure in its `balance` column.
-describe('The credit pill', () => {
-  it('shows what the unused bono sessions are worth', () => {
+// It has been three shapes. Credit only, which went blank for every bono
+// holder once 0161 moved a bono's value onto its session counter. Then credit
+// plus the euro value of unused sessions, labelled "in bonos", which existed
+// to paper over that gap. The re-migration removed the gap itself: a visit is
+// charged at the bono rate, so prepaid money sits in the balance and each
+// visit draws it down. There is nothing left for a second figure to explain.
+describe('The balance pill', () => {
+  it('shows prepaid bono money as credit, drawn down by the visits taken', () => {
     cy.seedStaffAccount().then((account) => {
       cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Bruna', lastName: 'Bonovalue' }).then((patient: any) => {
-        // 12 sessions at €528 => €44 each; 6 taken leaves 6 x €44 = €264,
-        // the same number PracticeHub derives for this bono.
+        // She paid €528 for a Bono 12 and has taken 6 visits, charged at the
+        // bono's own rate of €44. €528 − €264 leaves €264 of her money with
+        // the clinic — the same figure PracticeHub derives for this bono.
+        cy.task('db:createPayment', { accountId: account.accountId, patientId: patient.id, amountCents: 52800, method: 'card' })
+        for (let i = 0; i < 6; i++) {
+          cy.task('db:createInvoice', { accountId: account.accountId, patientId: patient.id, totalCents: 4400, status: 'paid' })
+        }
         cy.task('db:createPackagePurchase', {
           accountId: account.accountId,
           patientId: patient.id,
@@ -25,30 +31,36 @@ describe('The credit pill', () => {
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}`)
 
-        cy.contains('€264.00 in bonos').should('be.visible')
+        cy.contains('€264.00 credit').should('be.visible')
+        // The sessions counter still says what is left in visits, which is
+        // the other half of the picture and not money.
         cy.contains('dt', 'In bonos').parent().should('contain', '€264.00')
       })
     })
   })
 
-  it('does not count a fully-used bono, and stays hidden when there is nothing', () => {
+  it('reads as due when the patient owes, and shows nothing when square', () => {
     cy.seedStaffAccount().then((account) => {
-      cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Spent', lastName: 'Allup' }).then((patient: any) => {
-        cy.task('db:createPackagePurchase', {
-          accountId: account.accountId,
-          patientId: patient.id,
-          packageName: 'Bono 12',
-          sessionsTotal: 12,
-          sessionsUsed: 12,
-          priceCents: 52800,
+      cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Otto', lastName: 'Owing' }).then((owing: any) => {
+        // Charged €55, paid nothing.
+        cy.task('db:createInvoice', { accountId: account.accountId, patientId: owing.id, totalCents: 5500, status: 'unpaid' })
+
+        cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Sara', lastName: 'Square' }).then((square: any) => {
+          cy.task('db:createInvoice', { accountId: account.accountId, patientId: square.id, totalCents: 5500, status: 'paid' }).then((inv: any) => {
+            cy.task('db:createPayment', { accountId: account.accountId, invoiceId: inv.id, amountCents: 5500, method: 'cash' })
+
+            cy.login(account.email, account.password)
+
+            cy.visit(`/patients/${owing.id}`)
+            cy.contains('€55.00 due').should('be.visible')
+
+            // Nothing owed and nothing held: no pill at all, rather than a
+            // zero that reads as a figure someone should act on.
+            cy.visit(`/patients/${square.id}`)
+            cy.contains('due').should('not.exist')
+            cy.contains('credit').should('not.exist')
+          })
         })
-
-        cy.login(account.email, account.password)
-        cy.visit(`/patients/${patient.id}`)
-
-        cy.contains('dt', 'In bonos').parent().should('contain', '€0.00')
-        cy.contains('in bonos').should('not.exist')
-        cy.contains('Credit').should('exist')
       })
     })
   })

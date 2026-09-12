@@ -37,7 +37,7 @@ const billingOpen = ref(false)
 const packageCovered = ref(false)
 const paymentAmount = ref('')
 const paymentMethod = ref<'card' | 'cash' | 'credit'>('cash')
-const { balanceCents, activePackages } = usePatientFinancialSummary(() => appointment.value?.patient_id ?? '')
+const { balanceCents, creditLedgerCents, activePackages } = usePatientFinancialSummary(() => appointment.value?.patient_id ?? '')
 const saving = ref(false)
 const error = ref('')
 
@@ -172,10 +172,9 @@ async function usePackageSession(pkg: { id: string; package_name: string; sessio
     // billed, because the patient paid it when they bought the bono.
     const perSessionCents = Math.round(bono.price_cents / bono.sessions_total)
 
-    // The visit itself, on the bono's own history -- and its only record. A
-    // bono visit is not a billing event: raising an invoice here and settling
-    // it from a credit balance counted the same money twice, once at the sale
-    // and again per visit. Same change as the desktop AppointmentBillingTab.
+    // The visit on the bono's own history. Not its only record any more: it is
+    // also charged below, at the bono's per-session rate, which is what draws
+    // the prepayment down. Same change as the desktop AppointmentBillingTab.
     await supabase.from('package_sessions').insert({
       account_id: context.value.accountId,
       patient_id: appointment.value.patient_id,
@@ -209,8 +208,36 @@ async function usePackageSession(pkg: { id: string; package_name: string; sessio
       paymentAmount.value = (balanceDueCents.value / 100).toFixed(2)
     }
 
-    // No 'invoice.paid': with the visit covered there is either no invoice at
-    // all or one still open for the extras. The visit still completed.
+    // The visit's charge, at the bono rate. Marked paid where the balance
+    // already covers it -- for a prepaid bono it does -- matching the rule the
+    // imported history was settled with.
+    const { data: chargeNumber } = await supabase.rpc('next_invoice_number', { p_account_id: context.value.accountId } as never)
+    if (chargeNumber) {
+      const { data: charge } = await supabase
+        .from('invoices')
+        .insert({
+          account_id: context.value.accountId,
+          patient_id: appointment.value.patient_id,
+          appointment_id: appointmentId,
+          invoice_number: chargeNumber,
+          status: balanceCents.value >= perSessionCents ? 'paid' : 'unpaid',
+          total_cents: perSessionCents,
+        } as never)
+        .select('id')
+        .single()
+      if (charge) {
+        await supabase.from('invoice_line_items').insert({
+          account_id: context.value.accountId,
+          invoice_id: (charge as { id: string }).id,
+          description: `${bono.package_name} — session`,
+          quantity: 1,
+          price_cents: perSessionCents,
+        } as never)
+      }
+    }
+
+    // No 'invoice.paid': the charge is settled by money already on the
+    // account, not by a payment taken now. The visit still completed.
     const wasCompleted = appointment.value.status === 'completed'
     await supabase.from('appointments').update({ status: 'completed' } as never).eq('id', appointmentId)
     if (!wasCompleted) fire('appointment.completed', { patientId: appointment.value.patient_id, appointmentId })
@@ -225,7 +252,10 @@ async function recordPayment() {
   error.value = ''
   const amountCents = Math.round((parseFloat(paymentAmount.value) || 0) * 100)
   if (amountCents <= 0) return
-  if (paymentMethod.value === 'credit' && amountCents > balanceCents.value) {
+  // Credit ledger, not balance: a balance now carries prepaid bono money,
+  // which buys sessions and must not also be spendable here. See the web
+  // Billing tab for the full reasoning.
+  if (paymentMethod.value === 'credit' && amountCents > creditLedgerCents.value) {
     error.value = 'Amount exceeds available credit.'
     return
   }
@@ -338,7 +368,7 @@ function euros(cents: number) {
               <select v-model="paymentMethod" class="flex-1 rounded-ctl border border-line-control px-2.5 py-2 text-[14px]">
                 <option value="cash">Cash</option>
                 <option value="card">Card</option>
-                <option v-if="balanceCents > 0" value="credit">Credit on account (€{{ (balanceCents / 100).toFixed(2) }} available)</option>
+                <option v-if="creditLedgerCents > 0" value="credit">Credit on account (€{{ (creditLedgerCents / 100).toFixed(2) }} available)</option>
               </select>
             </div>
             <UiBtn variant="primary" class="w-full" :disabled="saving" @click="recordPayment">{{ saving ? 'Saving…' : `Record ${euros(Math.round((parseFloat(paymentAmount) || 0) * 100))}` }}</UiBtn>

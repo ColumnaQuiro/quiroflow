@@ -34,7 +34,7 @@ const error = ref('')
 const sending = ref(false)
 const sendMessage = ref('')
 
-const { balanceCents, refresh: refreshCreditSummary } = usePatientFinancialSummary(() => invoice.value?.patient_id ?? '')
+const { balanceCents, creditLedgerCents, refresh: refreshCreditSummary } = usePatientFinancialSummary(() => invoice.value?.patient_id ?? '')
 const { nextAppointmentDate } = useNextAppointment(() => invoice.value?.patient_id ?? '')
 const hideNextVisit = ref(false)
 
@@ -110,7 +110,9 @@ async function recordPayment() {
   error.value = ''
   const amountCents = Math.round((parseFloat(paymentAmount.value) || 0) * 100)
   if (amountCents <= 0) return
-  if (paymentMethod.value === 'credit' && amountCents > balanceCents.value) {
+  // Credit ledger, not balance -- a balance carries prepaid bono money that
+  // buys sessions, and must not be spendable here as well. See BillingTab.
+  if (paymentMethod.value === 'credit' && amountCents > creditLedgerCents.value) {
     error.value = t('Amount exceeds available credit.', 'El importe supera el crédito disponible.')
     return
   }
@@ -366,7 +368,7 @@ function formatDate(iso: string) {
               <select v-model="paymentMethod" class="mt-1 rounded-ctl border border-line-control px-3 py-1.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
                 <option value="card">{{ t('Card', 'Tarjeta') }}</option>
                 <option value="cash">{{ t('Cash', 'Efectivo') }}</option>
-                <option v-if="balanceCents > 0" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} (€{{ (balanceCents / 100).toFixed(2) }} {{ t('available', 'disponible') }})</option>
+                <option v-if="creditLedgerCents > 0" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} (€{{ (creditLedgerCents / 100).toFixed(2) }} {{ t('available', 'disponible') }})</option>
               </select>
             </div>
             <button

@@ -1,0 +1,62 @@
+name: Deploy to Netlify
+
+# Netlify's own git-integration continuous deployment -- the thing that used
+# to build and publish this site automatically on every push -- isn't
+# available for a private repo without a paid Netlify plan. This replaces it:
+# GitHub Actions builds the project and pushes the result to Netlify itself
+# via the Netlify CLI, using a personal access token instead of Netlify's
+# repo access. Works the same whether the repo is public or private.
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  # A second push landing mid-deploy queues behind the first rather than
+  # racing it -- two overlapping `netlify deploy --prod` runs could publish
+  # out of order and leave main pointing at an older build.
+  group: netlify-deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Same cache as e2e.yml's jobs -- keyed on the lockfile, so this only
+      # pays for a real `npm ci` when dependencies actually changed.
+      - name: Restore node_modules
+        id: modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
+
+      - run: npm ci
+        if: steps.modules.outputs.cache-hit != 'true'
+
+      # `--build` hands the build to Netlify's own build system
+      # (@netlify/build), reading `command`/`publish` from netlify.toml --
+      # the same path a git-integration-triggered build took. That matters
+      # specifically because of Nitro's `netlify` preset (nuxt.config.ts):
+      # its output is a static `dist/` *plus* a serverless function
+      # (`.netlify/functions-internal`) that handles every SSR page and
+      # `/api/*` route. A bare `npm run build` followed by
+      # `netlify deploy --dir=dist` would upload the static half and
+      # silently drop the function, taking down the whole server side.
+      # `--build` is what packages both correctly.
+      - name: Build and deploy to Netlify
+        run: npx netlify-cli deploy --build --prod
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          # Not a secret -- a site's API ID is not sensitive information,
+          # only its auth token is. app.quiroflow.com's Netlify site.
+          NETLIFY_SITE_ID: 8a81ed5a-0561-4e1d-891a-163a223d99f8

@@ -261,8 +261,8 @@ async function maybeApplyStatusFee(newStatus: string) {
   const feeAmountStr = (feeCents / 100).toFixed(2)
   if (!confirm(t(`Apply the €${feeAmountStr} ${label} fee to this patient's account?`, `¿Aplicar el cargo ${labelEs} de €${feeAmountStr} a la cuenta de este paciente?`))) return
 
-  const { count } = await supabase.from('invoices').select('id', { count: 'exact', head: true })
-  const invoiceNumber = `INV-${String((count ?? 0) + 1).padStart(4, '0')}`
+  const { data: invoiceNumber } = await supabase.rpc('next_invoice_number', { p_account_id: store.accountId! })
+  if (!invoiceNumber) return
   const { data: invoice } = await supabase
     .from('invoices')
     .insert({ account_id: store.accountId!, patient_id: patientId.value, invoice_number: invoiceNumber, status: 'unpaid', total_cents: feeCents })

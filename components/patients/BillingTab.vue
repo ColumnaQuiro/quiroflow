@@ -298,8 +298,8 @@ watch(activateMembershipId, (id) => {
 // "already paid" concept for exactly this). Same compound cash/card/other/
 // credit handling as recordPayment's credit branch and applyCreditToInvoice.
 async function recordSalePayment(description: string, amountCents: number, method: 'cash' | 'card' | 'credit') {
-  const { count } = await supabase.from('invoices').select('id', { count: 'exact', head: true })
-  const invoiceNumber = `INV-${String((count ?? 0) + 1).padStart(4, '0')}`
+  const { data: invoiceNumber } = await supabase.rpc('next_invoice_number', { p_account_id: store.accountId! })
+  if (!invoiceNumber) return
 
   const { data: invoice } = await supabase
     .from('invoices')
@@ -329,8 +329,8 @@ async function recordSalePayment(description: string, amountCents: number, metho
 // the day, so an instalment plan is just an invoice that isn't settled yet.
 // Returns the invoice id for package_purchases.invoice_id to point at.
 async function createPackageInvoice(description: string, priceCents: number, paidNowCents: number): Promise<string | null> {
-  const { count } = await supabase.from('invoices').select('id', { count: 'exact', head: true })
-  const invoiceNumber = `INV-${String((count ?? 0) + 1).padStart(4, '0')}`
+  const { data: invoiceNumber } = await supabase.rpc('next_invoice_number', { p_account_id: store.accountId! })
+  if (!invoiceNumber) return null
 
   const { data: invoice } = await supabase
     .from('invoices')
@@ -631,8 +631,9 @@ async function createRefund(invoiceId: string, amountCents: number, reason: stri
   const maxRefundable = await refundableCentsFor(invoiceId)
   if (amountCents > maxRefundable) return
 
-  const { count } = await supabase.from('invoices').select('id', { count: 'exact', head: true })
-  const invoiceNumber = `REF-${String((count ?? 0) + 1).padStart(4, '0')}`
+  // Its own series, so a refund no longer consumes an invoice number.
+  const { data: invoiceNumber } = await supabase.rpc('next_invoice_number', { p_account_id: store.accountId!, p_prefix: 'REF-' })
+  if (!invoiceNumber) return
 
   const { data: refund } = await supabase
     .from('invoices')

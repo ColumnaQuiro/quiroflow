@@ -84,8 +84,12 @@ async function save() {
   }
   saving.value = true
 
-  const { count } = await supabase.from('invoices').select('id', { count: 'exact', head: true })
-  const invoiceNumber = `INV-${String((count ?? 0) + 1).padStart(4, '0')}`
+  const { data: invoiceNumber, error: numberError } = await supabase.rpc('next_invoice_number', { p_account_id: store.accountId! })
+  if (numberError || !invoiceNumber) {
+    saving.value = false
+    error.value = numberError?.message ?? t('Could not allocate an invoice number.', 'No se ha podido asignar un número de factura.')
+    return
+  }
 
   const { data: invoice, error: invoiceError } = await supabase
     .from('invoices')

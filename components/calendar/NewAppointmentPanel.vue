@@ -281,9 +281,11 @@ async function save() {
 
   if (collectPayment.value && firstAppointmentId) {
     const amountCents = Math.round((parseFloat(paymentAmount.value) || 0) * 100)
-    if (amountCents > 0) {
-      const { count } = await supabase.from('invoices').select('id', { count: 'exact', head: true })
-      const invoiceNumber = `INV-${String((count ?? 0) + 1).padStart(4, '0')}`
+    // Only draw a number when there is actually something to invoice --
+    // next_invoice_number() consumes one on every call, by design.
+    const { data: invoiceNumber } =
+      amountCents > 0 ? await supabase.rpc('next_invoice_number', { p_account_id: store.accountId! }) : { data: null }
+    if (invoiceNumber) {
       const { data: invoice } = await supabase
         .from('invoices')
         .insert({

@@ -1764,6 +1764,35 @@ export type Database = {
           },
         ]
       }
+      invoice_number_sequences: {
+        Row: {
+          account_id: string
+          next_number: number
+          prefix: string
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          next_number: number
+          prefix: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          next_number?: number
+          prefix?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoice_number_sequences_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: true
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       invoices: {
         Row: {
           account_id: string
@@ -4582,6 +4611,10 @@ export type Database = {
       get_my_permissions: { Args: { target_account_id: string }; Returns: Json }
       get_patient_booking_info: { Args: never; Returns: Json }
       cancel_patient_appointment: { Args: { p_appointment_id: string }; Returns: Json }
+      next_invoice_number: {
+        Args: { p_account_id: string; p_prefix?: string }
+        Returns: string
+      }
       reschedule_patient_appointment: { Args: { p_appointment_id: string; p_starts_at: string }; Returns: Json }
       get_public_booking_info: { Args: { p_slug: string }; Returns: Json }
       get_clinic_by_code: { Args: { p_slug: string }; Returns: Json }

@@ -194,7 +194,19 @@ async function save() {
     }
   }
 
-  const timeChanged = props.mode === 'edit' && (startsAt.toISOString() !== props.appointment!.starts_at || endsAt.toISOString() !== props.appointment!.ends_at)
+  // Compare instants, not the strings spelling them. Postgres hands these
+  // back as '2026-09-14T13:00:00+00:00' and toISOString() writes
+  // '2026-09-14T13:00:00.000Z' -- the same moment, never the same string, so
+  // this read as "moved" on EVERY edit of an existing appointment. Changing
+  // only the appointment type stamped rescheduled = true (the calendar then
+  // shows the visit as moved when nobody moved it) and fired
+  // appointment.rescheduled, which today has no rule behind it but would
+  // message patients about a change that never happened the day one exists.
+  const sameInstant = (a: string, b: string) => new Date(a).getTime() === new Date(b).getTime()
+  const timeChanged =
+    props.mode === 'edit' &&
+    (!sameInstant(startsAt.toISOString(), props.appointment!.starts_at) ||
+      !sameInstant(endsAt.toISOString(), props.appointment!.ends_at))
 
   const payload = {
     account_id: store.accountId!,

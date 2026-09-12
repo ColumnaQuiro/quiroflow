@@ -503,6 +503,88 @@ async function createWhatsappMessage(opts: {
   return row as { id: string; channel: string }
 }
 
+// Sets up the exact shape a Meta reply webhook arrives into: an account
+// reachable by phone_number_id, a patient whose contact number matches the
+// sender, a booked appointment, and the outbound reminder that anchors a
+// reply to it. Returns the appointment so a spec can assert what the reply
+// did to its confirmation_status.
+async function seedWhatsappReplyScenario(opts: {
+  accountId: string
+  clinicId: string
+  patientId: string
+  phoneNumberId: string
+  phone: string
+  confirmationStatus?: 'pending' | 'confirmed' | 'reschedule_requested' | null
+}) {
+  const { accountId, clinicId, patientId, phoneNumberId, phone, confirmationStatus } = opts
+
+  unwrap(await admin.from('accounts').update({ whatsapp_phone_number_id: phoneNumberId }).eq('id', accountId).select('id').single())
+
+  unwrap(
+    await admin
+      .from('patient_contact_numbers')
+      .insert({ account_id: accountId, patient_id: patientId, country_code: 'ES', number: phone, is_whatsapp: true })
+      .select('id')
+      .single(),
+  )
+
+  const startsAt = new Date(Date.now() + 24 * 60 * 60 * 1000)
+  const endsAt = new Date(startsAt.getTime() + 30 * 60 * 1000)
+  const appointment = unwrap(
+    await admin
+      .from('appointments')
+      .insert({
+        account_id: accountId,
+        clinic_id: clinicId,
+        patient_id: patientId,
+        starts_at: startsAt.toISOString(),
+        ends_at: endsAt.toISOString(),
+        status: 'booked',
+        confirmation_status: confirmationStatus ?? null,
+      })
+      .select('id')
+      .single(),
+  )
+
+  // The anchor: resolveRepliedAppointment follows the most recent outbound
+  // message carrying an appointment_id, which is what a reminder looks like.
+  unwrap(
+    await admin
+      .from('whatsapp_messages')
+      .insert({
+        account_id: accountId,
+        patient_id: patientId,
+        appointment_id: (appointment as { id: string }).id,
+        phone_number: phone,
+        direction: 'outbound',
+        purpose: 'confirmation',
+        status: 'delivered',
+      })
+      .select('id')
+      .single(),
+  )
+
+  return appointment as { id: string }
+}
+
+// Proof that the webhook actually reached this account and processed the
+// message -- every inbound message is stored before any intent is applied.
+// A test asserting a status STAYED put passes just as happily when the
+// endpoint silently no-opped, so the negative cases check this too.
+async function inboundMessages(opts: { patientId: string }) {
+  const rows = unwrap(
+    await admin.from('whatsapp_messages').select('id, body_preview').eq('patient_id', opts.patientId).eq('direction', 'inbound'),
+  )
+  return rows as { id: string; body_preview: string | null }[]
+}
+
+async function appointmentById(opts: { appointmentId: string }) {
+  const row = unwrap(
+    await admin.from('appointments').select('id, status, confirmation_status, rescheduled').eq('id', opts.appointmentId).single(),
+  )
+  return row as { id: string; status: string; confirmation_status: string | null; rescheduled: boolean }
+}
+
 export const dbTasks = {
   'db:createStaffAccount': createStaffAccount,
   'db:createTeamMemberWithRole': createTeamMemberWithRole,
@@ -528,4 +610,7 @@ export const dbTasks = {
   'db:createPackagePurchase': createPackagePurchase,
   'db:packageSessionEffects': packageSessionEffects,
   'db:createWhatsappMessage': createWhatsappMessage,
+  'db:seedWhatsappReplyScenario': seedWhatsappReplyScenario,
+  'db:appointmentById': appointmentById,
+  'db:inboundMessages': inboundMessages,
 }

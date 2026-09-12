@@ -35,6 +35,7 @@ const sending = ref(false)
 const sendMessage = ref('')
 
 const { balanceCents, creditLedgerCents, refresh: refreshCreditSummary } = usePatientFinancialSummary(() => invoice.value?.patient_id ?? '')
+const { issueFactura } = useFacturas()
 const { nextAppointmentDate } = useNextAppointment(() => invoice.value?.patient_id ?? '')
 const hideNextVisit = ref(false)
 
@@ -118,13 +119,30 @@ async function recordPayment() {
   }
   savingPayment.value = true
 
-  await supabase.from('payments').insert({
-    account_id: store.accountId!,
-    patient_id: invoice.value!.patient_id,
-    invoice_id: invoiceId,
-    amount_cents: amountCents,
-    method: paymentMethod.value,
-  })
+  const { data: payment } = await supabase
+    .from('payments')
+    .insert({
+      account_id: store.accountId!,
+      patient_id: invoice.value!.patient_id,
+      invoice_id: invoiceId,
+      amount_cents: amountCents,
+      method: paymentMethod.value,
+      purpose: 'visit',
+    })
+    .select('id')
+    .single()
+
+  // No factura for a credit payment: that money was documented when it was
+  // paid in, and issuing a second one would double it in the series.
+  if (payment && paymentMethod.value !== 'credit') {
+    await issueFactura({
+      accountId: store.accountId!,
+      patientId: invoice.value!.patient_id,
+      paymentId: payment.id,
+      amountCents,
+      purpose: 'visit',
+    })
+  }
   if (paymentMethod.value === 'credit') {
     await supabase.from('account_credits').insert({
       account_id: store.accountId!,

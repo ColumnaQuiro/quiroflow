@@ -423,6 +423,44 @@ async function createImportedPayment(opts: {
   return row as { id: string }
 }
 
+async function createPackageTemplate(opts: { accountId: string; name: string; sessionCount: number; priceCents: number }) {
+  const row = unwrap(
+    await admin
+      .from('packages')
+      .insert({ account_id: opts.accountId, name: opts.name, session_count: opts.sessionCount, price_cents: opts.priceCents })
+      .select('id')
+      .single(),
+  )
+  return row as { id: string }
+}
+
+async function createAccountCredit(opts: { accountId: string; patientId: string; amountCents: number; reason?: string }) {
+  const row = unwrap(
+    await admin
+      .from('account_credits')
+      .insert({ account_id: opts.accountId, patient_id: opts.patientId, amount_cents: opts.amountCents, reason: opts.reason ?? null })
+      .select('id')
+      .single(),
+  )
+  return row as { id: string }
+}
+
+async function facturasFor(opts: { patientId: string }) {
+  const { data, error } = await admin
+    .from('facturas')
+    .select('number, kind, description, amount_cents, recipient_nif, payment_id')
+    .eq('patient_id', opts.patientId)
+    .order('issued_at')
+  if (error) throw error
+  return data
+}
+
+async function nextFacturaNumber(opts: { accountId: string }) {
+  const { data, error } = await admin.rpc('next_factura_number', { p_account_id: opts.accountId })
+  if (error) throw error
+  return data as string
+}
+
 async function paymentById(opts: { paymentId: string }) {
   const { data, error } = await admin
     .from('payments')
@@ -521,6 +559,10 @@ export const dbTasks = {
   'db:nextInvoiceNumber': nextInvoiceNumber,
   'db:deleteInvoice': deleteInvoice,
   'db:paymentById': paymentById,
+  'db:createPackageTemplate': createPackageTemplate,
+  'db:createAccountCredit': createAccountCredit,
+  'db:facturasFor': facturasFor,
+  'db:nextFacturaNumber': nextFacturaNumber,
   'db:settleImportedInvoices': settleImportedInvoices,
   'db:invoiceStatusByRef': invoiceStatusByRef,
   'db:createImportedInvoice': createImportedInvoice,

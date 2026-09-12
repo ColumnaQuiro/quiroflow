@@ -12,6 +12,7 @@ const supabase = useSupabaseClient()
 const store = useAccountStore()
 const { can } = usePermission()
 const { fire } = useAutomations()
+const { issueFactura } = useFacturas()
 const t = useT()
 
 const { loading: summaryLoading, balanceCents, creditLedgerCents, bonoValueCents, activeMembership, activePackages, refresh: refreshSummary } = usePatientFinancialSummary(
@@ -467,15 +468,35 @@ async function recordPayment() {
   }
   savingPayment.value = true
 
-  await supabase.from('payments').insert(
-    rows.map((r) => ({
-      account_id: store.accountId!,
-      patient_id: props.patientId,
-      invoice_id: invoice.value!.id,
-      amount_cents: paymentRowCents(r),
-      method: r.method,
-    })),
-  )
+  const { data: insertedPayments } = await supabase
+    .from('payments')
+    .insert(
+      rows.map((r) => ({
+        account_id: store.accountId!,
+        patient_id: props.patientId,
+        invoice_id: invoice.value!.id,
+        amount_cents: paymentRowCents(r),
+        method: r.method,
+        purpose: 'visit' as const,
+      })),
+    )
+    .select('id, amount_cents, method')
+
+  // A factura for the money that actually came in. 'credit' rows are excluded:
+  // spending account credit moves no money and was already documented when
+  // that credit was paid in, so issuing a second document would count one
+  // payment twice in the fiscal series.
+  for (const p of insertedPayments ?? []) {
+    if (p.method === 'credit') continue
+    await issueFactura({
+      accountId: store.accountId!,
+      patientId: props.patientId,
+      paymentId: p.id,
+      amountCents: p.amount_cents,
+      purpose: 'visit',
+      serviceName: props.appointmentTypeName,
+    })
+  }
   const creditRows = rows.filter((r) => r.method === 'credit')
   if (creditRows.length > 0) {
     await supabase.from('account_credits').insert(

@@ -64,6 +64,7 @@ const { fire } = useAutomations()
 const t = useT()
 
 const { balanceCents, creditLedgerCents, refresh: refreshCreditSummary } = usePatientFinancialSummary(() => props.patientId)
+const { issueFactura } = useFacturas()
 const { packageTemplates, membershipTemplates, ensureLoaded: ensureBillingTemplatesLoaded } = useBillingTemplates()
 const addCreditAmount = ref('')
 const addCreditReason = ref('')
@@ -173,15 +174,34 @@ async function takePayment() {
   }
   takingPayment.value = true
 
-  await supabase.from('payments').insert(
-    rows.map((r) => ({
-      account_id: store.accountId!,
-      patient_id: props.patientId,
-      invoice_id: invoice.id,
-      amount_cents: paymentRowCents(r),
-      method: r.method,
-    })),
-  )
+  const { data: insertedPayments } = await supabase
+    .from('payments')
+    .insert(
+      rows.map((r) => ({
+        account_id: store.accountId!,
+        patient_id: props.patientId,
+        invoice_id: invoice.id,
+        amount_cents: paymentRowCents(r),
+        method: r.method,
+        purpose: 'visit' as const,
+      })),
+    )
+    .select('id, amount_cents, method')
+
+  // A factura for the money that actually came in. 'credit' rows are excluded:
+  // spending account credit moves no money and was already documented when
+  // that credit was paid in, so issuing a second document would count one
+  // payment twice in the fiscal series.
+  for (const p of insertedPayments ?? []) {
+    if (p.method === 'credit') continue
+    await issueFactura({
+      accountId: store.accountId!,
+      patientId: props.patientId,
+      paymentId: p.id,
+      amountCents: p.amount_cents,
+      purpose: 'visit',
+    })
+  }
   const creditRows = rows.filter((r) => r.method === 'credit')
   if (creditRows.length > 0) {
     await supabase.from('account_credits').insert(
@@ -329,7 +349,21 @@ async function recordSalePayment(description: string, amountCents: number, metho
       created_by: store.teamMember?.id ?? null,
     })
   } else {
-    await supabase.from('payments').insert({ account_id: store.accountId!, patient_id: props.patientId, invoice_id: invoice.id, amount_cents: amountCents, method })
+    const { data: payment } = await supabase
+      .from('payments')
+      .insert({ account_id: store.accountId!, patient_id: props.patientId, invoice_id: invoice.id, amount_cents: amountCents, method, purpose: 'membership' })
+      .select('id')
+      .single()
+    if (payment) {
+      await issueFactura({
+        accountId: store.accountId!,
+        patientId: props.patientId,
+        paymentId: payment.id,
+        amountCents,
+        purpose: 'membership',
+        serviceName: description,
+      })
+    }
   }
 }
 
@@ -364,9 +398,34 @@ async function createPackageInvoice(description: string, priceCents: number, pai
 //
 // Paying WITH credit still writes its negative row: that is a patient spending
 // credit they genuinely hold, and it has to come off their balance.
-async function recordPackagePayment(invoiceId: string | null, amountCents: number, method: 'cash' | 'card' | 'credit', description: string) {
+async function recordPackagePayment(
+    invoiceId: string | null,
+    amountCents: number,
+    method: 'cash' | 'card' | 'credit',
+    description: string,
+    bono?: { priceCents: number; sessionsTotal: number },
+  ) {
   if (!invoiceId) return
-  await supabase.from('payments').insert({ account_id: store.accountId!, patient_id: props.patientId, invoice_id: invoiceId, amount_cents: amountCents, method })
+  const { data: payment } = await supabase
+    .from('payments')
+    .insert({ account_id: store.accountId!, patient_id: props.patientId, invoice_id: invoiceId, amount_cents: amountCents, method, purpose: 'bono' })
+    .select('id')
+    .single()
+
+  // A bono's factura says how much of it this money bought -- "264.00 EUR of
+  // 528.00 EUR (6 of 12 sessions)" -- because that is what the patient is
+  // actually purchasing when they pay an instalment. Not issued for a credit
+  // payment: that money was documented when it was paid in.
+  if (payment && method !== 'credit' && bono) {
+    await issueFactura({
+      accountId: store.accountId!,
+      patientId: props.patientId,
+      paymentId: payment.id,
+      amountCents,
+      purpose: 'bono',
+      bono: { packageName: description, priceCents: bono.priceCents, sessionsTotal: bono.sessionsTotal },
+    })
+  }
   if (method === 'credit') {
     await supabase.from('account_credits').insert({
       account_id: store.accountId!,
@@ -830,7 +889,7 @@ async function sellPackage() {
   // Amount paid can be less than the package's full price -- the rest is
   // expected via the existing "Set up autopay" Stripe schedule below.
   if (amountCents > 0) {
-    await recordPackagePayment(invoiceId, amountCents, sellMethod.value, tpl.name)
+    await recordPackagePayment(invoiceId, amountCents, sellMethod.value, tpl.name, { priceCents: tpl.price_cents, sessionsTotal: tpl.session_count })
   }
   sellingPackage.value = false
   sellPackageId.value = ''

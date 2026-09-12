@@ -26,6 +26,7 @@ const emit = defineEmits<{ close: []; saved: [] }>()
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const { fire } = useAutomations()
+const { issueFactura } = useFacturas()
 const t = useT()
 
 const activeTab = ref<'create' | 'availability'>('create')
@@ -317,7 +318,21 @@ async function save() {
             created_by: store.teamMember?.id ?? null,
           })
         } else {
-          await supabase.from('payments').insert({ account_id: store.accountId!, patient_id: patientId, invoice_id: invoice.id, amount_cents: amountCents, method: paymentMethod.value })
+          const { data: payment } = await supabase
+            .from('payments')
+            .insert({ account_id: store.accountId!, patient_id: patientId, invoice_id: invoice.id, amount_cents: amountCents, method: paymentMethod.value, purpose: 'visit' })
+            .select('id')
+            .single()
+          if (payment) {
+            await issueFactura({
+              accountId: store.accountId!,
+              patientId,
+              paymentId: payment.id,
+              amountCents,
+              purpose: 'visit',
+              serviceName: selectedAppointmentType.value?.name,
+            })
+          }
         }
       }
     }

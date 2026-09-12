@@ -567,6 +567,17 @@ async function seedWhatsappReplyScenario(opts: {
   return appointment as { id: string }
 }
 
+// Proof that the webhook actually reached this account and processed the
+// message -- every inbound message is stored before any intent is applied.
+// A test asserting a status STAYED put passes just as happily when the
+// endpoint silently no-opped, so the negative cases check this too.
+async function inboundMessages(opts: { patientId: string }) {
+  const rows = unwrap(
+    await admin.from('whatsapp_messages').select('id, body_preview').eq('patient_id', opts.patientId).eq('direction', 'inbound'),
+  )
+  return rows as { id: string; body_preview: string | null }[]
+}
+
 async function appointmentById(opts: { appointmentId: string }) {
   const row = unwrap(
     await admin.from('appointments').select('id, status, confirmation_status, rescheduled').eq('id', opts.appointmentId).single(),
@@ -601,4 +612,5 @@ export const dbTasks = {
   'db:createWhatsappMessage': createWhatsappMessage,
   'db:seedWhatsappReplyScenario': seedWhatsappReplyScenario,
   'db:appointmentById': appointmentById,
+  'db:inboundMessages': inboundMessages,
 }

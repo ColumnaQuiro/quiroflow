@@ -3,8 +3,15 @@
 // they thank reception, ask about their email address, take back a mis-tap --
 // and every one of those messages runs through the same classifier.
 
-const PHONE_NUMBER_ID = '1234567890'
-const PHONE = '600111222'
+// Fresh per test, and that matters more than it looks: the webhook finds the
+// account with .maybeSingle() on whatsapp_phone_number_id, so two accounts
+// sharing one id match two rows, resolve to none, and the endpoint quietly
+// does nothing. Specs seed a new account each time and the database is not
+// reset between them, so a shared constant here made every test after the
+// first assert against a webhook that had silently no-opped -- including two
+// that "passed" because they expect a status to stay where it was.
+let phoneNumberId = ''
+let phone = ''
 
 function deliver(message: Record<string, unknown>) {
   return cy.request('POST', '/api/whatsapp/webhook', {
@@ -13,8 +20,8 @@ function deliver(message: Record<string, unknown>) {
         changes: [
           {
             value: {
-              metadata: { phone_number_id: PHONE_NUMBER_ID },
-              messages: [{ id: `wamid.${Date.now()}${Math.random()}`, from: `34${PHONE}`, ...message }],
+              metadata: { phone_number_id: phoneNumberId },
+              messages: [{ id: `wamid.${Date.now()}${Math.random()}`, from: `34${phone}`, ...message }],
             },
           },
         ],
@@ -32,7 +39,17 @@ function statusOf(appointmentId: string) {
   return cy.task('db:appointmentById', { appointmentId }).its('confirmation_status')
 }
 
-function seed(confirmationStatus: 'pending' | 'confirmed' | null, then: (appointmentId: string) => void) {
+// For the cases that assert a status did NOT move: the webhook has to have
+// seen the message and declined to act on it, which is a different thing
+// from the webhook never running. It stores every inbound message before it
+// looks at intent, so the row is the evidence.
+function assertWebhookProcessed(patientId: string, count: number) {
+  cy.task('db:inboundMessages', { patientId }).should('have.length', count)
+}
+
+function seed(confirmationStatus: 'pending' | 'confirmed' | null, then: (appointmentId: string, patientId: string) => void) {
+  phoneNumberId = `pnid-${Date.now()}-${Math.floor(Math.random() * 1e9)}`
+  phone = `6${String(Math.floor(Math.random() * 1e8)).padStart(8, '0')}`
   cy.seedStaffAccount().then((account) => {
     cy.task('db:createPatient', {
       accountId: account.accountId,
@@ -44,10 +61,10 @@ function seed(confirmationStatus: 'pending' | 'confirmed' | null, then: (appoint
         accountId: account.accountId,
         clinicId: account.clinicId,
         patientId: patient.id,
-        phoneNumberId: PHONE_NUMBER_ID,
-        phone: PHONE,
+        phoneNumberId,
+        phone,
         confirmationStatus,
-      }).then((appt: any) => then(appt.id))
+      }).then((appt: any) => then(appt.id, patient.id))
     })
   })
 }
@@ -65,8 +82,9 @@ describe('What a WhatsApp reply does to an appointment', () => {
     // Confirmar, it asked to change an EMAIL ADDRESS -- but "cambiar" matched
     // on its own, so the calendar showed a patient who had just confirmed as
     // wanting to reschedule.
-    seed(null, (appointmentId) => {
+    seed(null, (appointmentId, patientId) => {
       deliverText('Me gustaría cambiar el Mail que tenéis registrado con mi ficha a: nuevo@example.com')
+      assertWebhookProcessed(patientId, 1)
       statusOf(appointmentId).should('be.null')
     })
   })
@@ -82,20 +100,22 @@ describe('What a WhatsApp reply does to an appointment', () => {
   })
 
   it('lets someone take back a mis-tap instead of re-triggering it', () => {
-    seed(null, (appointmentId) => {
+    seed(null, (appointmentId, patientId) => {
       deliverButton('Cambiar cita')
       statusOf(appointmentId).should('eq', 'reschedule_requested')
 
       // "Sorry!! I pressed change appointment by accident." This used to
       // re-flag the appointment, so no wording could undo an accidental tap.
       deliverText('Perdon!! Le di a cambiar cita sin querer')
+      assertWebhookProcessed(patientId, 2)
       statusOf(appointmentId).should('eq', 'reschedule_requested')
     })
   })
 
   it('does not let a passing sentence overturn an answer the patient already gave', () => {
-    seed('confirmed', (appointmentId) => {
+    seed('confirmed', (appointmentId, patientId) => {
       deliverText('Cambiar de tema, muchas gracias por todo')
+      assertWebhookProcessed(patientId, 1)
       statusOf(appointmentId).should('eq', 'confirmed')
     })
   })

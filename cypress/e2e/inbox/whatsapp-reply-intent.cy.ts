@@ -127,9 +127,14 @@ describe('What a WhatsApp reply does to an appointment', () => {
     })
   })
 
+  // No comma after "Confirmar" on purpose. The confirm branch counts a
+  // keyword only when a space or "!" follows it, and that narrowness is worth
+  // keeping: accepting a comma would read "Sí, entiendo perfectamente...
+  // necesito hacer esta pausa" -- a patient stopping treatment -- as
+  // confirming their next appointment.
   it('still takes a typed answer while the question is open', () => {
     seed('pending', (appointmentId) => {
-      deliverText('Confirmar, nos vemos el lunes')
+      deliverText('Confirmar nos vemos el lunes')
       statusOf(appointmentId).should('eq', 'confirmed')
     })
   })

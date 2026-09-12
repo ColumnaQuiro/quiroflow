@@ -1,9 +1,21 @@
 name: CI
 
+# Pull requests only, deliberately. This used to also run on push to main,
+# which cost a second full ~28 minutes of runner time per merge and bought
+# nothing: by then the merge has already happened, so a failure can't block
+# it, and deploy.yml runs on the same event rather than after this one, so
+# a failure can't stop the deploy either -- production was live ~2.5
+# minutes before this finished. That run was pure cost, and it isn't free
+# any more now the repo is private (Actions minutes are metered on the
+# org's Free plan; public repos get them unlimited).
+#
+# What still protects main: GitHub runs these checks against the simulated
+# merge result on every PR, so what CI tests is what main becomes. Branch
+# protection can't enforce "green before merge" here -- that needs GitHub
+# Pro or a public repo -- so it stays a convention, the same one CLAUDE.md
+# already describes.
 on:
   pull_request:
-  push:
-    branches: [main]
 
 jobs:
   typecheck:

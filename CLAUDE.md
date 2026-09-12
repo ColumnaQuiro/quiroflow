@@ -10,9 +10,10 @@ of that:
 - **Never commit or push directly to `main`.** Always create a new branch
   (from the latest `main`) for any change, however small.
 - **Open a pull request** for every change and let CI run on it. CI
-  (`.github/workflows/e2e.yml`) runs a `typecheck` job and five sharded
-  `cypress` e2e jobs, and runs **on pull requests only** — nothing
-  re-checks the code after a merge, so the PR is the only gate there is.
+  (`.github/workflows/e2e.yml`) runs a `typecheck` job (which also builds)
+  and five sharded `cypress` e2e jobs, and runs **on pull requests only** —
+  nothing re-checks the code after a merge, so the PR is the only gate
+  there is.
 - **Only merge once CI is green.** Don't merge a PR with a failing or
   still-running check, and don't skip/disable a failing test to force it
   green — fix the real cause.
@@ -22,8 +23,13 @@ of that:
   advanced, that result no longer describes what the merge will actually
   produce, and nothing runs afterwards to catch it. Re-sync, let CI run
   again, then merge.
-- Before opening a PR, run `npm run preflight` (typecheck) locally so CI
-  isn't the first place a type error shows up.
+- Before opening a PR, run `npm run preflight` **and `npm run build`**
+  locally so CI isn't the first place a problem shows up. Both, because
+  `preflight` is `nuxi typecheck` and typechecking does not compile
+  templates: it exits 0 on a tree that cannot build. That is how a stray
+  `v-else` shipped — preflight clean, every route 500ing, and the only
+  signal was three Cypress shards failing on pages unrelated to the
+  change. `npm run build` names it outright in about a minute.
 - Merges are manual (no auto-merge configured) — CI green is a
   precondition for merging, not a signal to merge automatically.
 - This applies the same way whether the change was requested by a person

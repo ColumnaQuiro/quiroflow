@@ -1798,6 +1798,7 @@ export type Database = {
           account_id: string
           appointment_id: string | null
           created_at: string
+          external_reference: string | null
           id: string
           invoice_number: string
           is_refund: boolean
@@ -1810,6 +1811,7 @@ export type Database = {
           account_id: string
           appointment_id?: string | null
           created_at?: string
+          external_reference?: string | null
           id?: string
           invoice_number: string
           is_refund?: boolean
@@ -1822,6 +1824,7 @@ export type Database = {
           account_id?: string
           appointment_id?: string | null
           created_at?: string
+          external_reference?: string | null
           id?: string
           invoice_number?: string
           is_refund?: boolean
@@ -3212,6 +3215,7 @@ export type Database = {
         Row: {
           account_id: string
           amount_cents: number
+          external_reference: string | null
           id: string
           invoice_id: string | null
           method: string
@@ -3223,6 +3227,7 @@ export type Database = {
         Insert: {
           account_id: string
           amount_cents: number
+          external_reference?: string | null
           id?: string
           invoice_id?: string | null
           method?: string
@@ -3234,6 +3239,7 @@ export type Database = {
         Update: {
           account_id?: string
           amount_cents?: number
+          external_reference?: string | null
           id?: string
           invoice_id?: string | null
           method?: string
@@ -4697,6 +4703,7 @@ export type Database = {
         Args: { target_account_id: string }
         Returns: string
       }
+      settle_imported_invoices: { Args: { p_account_id: string }; Returns: number }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
       slugify: { Args: { input: string }; Returns: string }

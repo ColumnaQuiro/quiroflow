@@ -59,7 +59,12 @@ const sources = computed<Source[]>(() => [
         label: t('2 · Money', '2 · Dinero'),
         note: t('Payments first, so a bono knows what is still owed on it.', 'Primero los pagos, para que el bono sepa lo que queda pendiente.'),
         types: [
-          { key: 'payments', label: t('Payments', 'Pagos'), hint: t('One paid invoice per payment', 'Una factura pagada por cada pago') },
+          {
+            key: 'ledger',
+            label: t('Ledger (invoices + payments)', 'Libro mayor (facturas + pagos)'),
+            hint: t('PracticeHub’s own invoices and payments, as it holds them', 'Las facturas y pagos propios de PracticeHub, tal y como los tiene'),
+          },
+          { key: 'payments', label: t('Payments (old)', 'Pagos (antiguo)'), hint: t('Superseded by Ledger — one invoice per payment', 'Sustituido por Libro mayor: una factura por cada pago') },
           { key: 'patient_packages', label: t('Packages / bonos', 'Bonos'), hint: t('Sessions, price, and an invoice for what is owed', 'Sesiones, precio y factura por lo pendiente') },
           { key: 'package_sessions', label: t('Bono visits', 'Visitas de bono'), hint: t('The visits a bono paid for', 'Las visitas que pagó un bono') },
         ],
@@ -190,6 +195,7 @@ function selectSource(key: string) {
             <ImportPracticeHubPatientsImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'patients'" />
             <ImportPracticeHubAppointmentsImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'appointments'" />
             <ImportPracticeHubAppointmentTypesImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'appointment_types'" />
+            <ImportPracticeHubLedgerImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'ledger'" />
             <ImportPracticeHubPaymentsImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'payments'" />
             <ImportPracticeHubPatientPackagesImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'patient_packages'" />
             <ImportPracticeHubPackageSessionsImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'package_sessions'" />

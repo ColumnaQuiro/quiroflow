@@ -356,6 +356,73 @@ async function createPayment(opts: {
   return row as { id: string }
 }
 
+async function settleImportedInvoices(opts: { accountId: string }) {
+  const { data, error } = await admin.rpc('settle_imported_invoices', { p_account_id: opts.accountId })
+  if (error) throw error
+  return data as number
+}
+
+async function invoiceStatusByRef(opts: { accountId: string; externalReference: string }) {
+  const { data, error } = await admin
+    .from('invoices')
+    .select('status')
+    .eq('account_id', opts.accountId)
+    .eq('external_reference', opts.externalReference)
+    .maybeSingle()
+  if (error) throw error
+  return (data as { status: string } | null)?.status ?? null
+}
+
+async function createImportedInvoice(opts: {
+  accountId: string
+  patientId: string
+  totalCents: number
+  createdAt: string
+  externalReference: string
+}) {
+  const row = unwrap(
+    await admin
+      .from('invoices')
+      .insert({
+        account_id: opts.accountId,
+        patient_id: opts.patientId,
+        invoice_number: `PHI-${opts.externalReference}`,
+        status: 'unpaid',
+        total_cents: opts.totalCents,
+        created_at: opts.createdAt,
+        external_reference: opts.externalReference,
+      })
+      .select('id')
+      .single(),
+  )
+  return row as { id: string }
+}
+
+async function createImportedPayment(opts: {
+  accountId: string
+  patientId: string
+  amountCents: number
+  paidAt: string
+  externalReference: string
+}) {
+  const row = unwrap(
+    await admin
+      .from('payments')
+      .insert({
+        account_id: opts.accountId,
+        patient_id: opts.patientId,
+        invoice_id: null,
+        amount_cents: opts.amountCents,
+        method: 'cash',
+        paid_at: opts.paidAt,
+        external_reference: opts.externalReference,
+      })
+      .select('id')
+      .single(),
+  )
+  return row as { id: string }
+}
+
 async function paymentById(opts: { paymentId: string }) {
   const { data, error } = await admin
     .from('payments')
@@ -454,6 +521,10 @@ export const dbTasks = {
   'db:nextInvoiceNumber': nextInvoiceNumber,
   'db:deleteInvoice': deleteInvoice,
   'db:paymentById': paymentById,
+  'db:settleImportedInvoices': settleImportedInvoices,
+  'db:invoiceStatusByRef': invoiceStatusByRef,
+  'db:createImportedInvoice': createImportedInvoice,
+  'db:createImportedPayment': createImportedPayment,
   'db:createPackagePurchase': createPackagePurchase,
   'db:packageSessionEffects': packageSessionEffects,
   'db:createWhatsappMessage': createWhatsappMessage,

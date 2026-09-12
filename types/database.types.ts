@@ -3213,29 +3213,32 @@ export type Database = {
           account_id: string
           amount_cents: number
           id: string
-          invoice_id: string
+          invoice_id: string | null
           method: string
           package_purchase_id: string | null
           paid_at: string
+          patient_id: string
           stripe_payment_intent_id: string | null
         }
         Insert: {
           account_id: string
           amount_cents: number
           id?: string
-          invoice_id: string
+          invoice_id?: string | null
           method?: string
           package_purchase_id?: string | null
           paid_at?: string
+          patient_id: string
           stripe_payment_intent_id?: string | null
         }
         Update: {
           account_id?: string
           amount_cents?: number
           id?: string
-          invoice_id?: string
+          invoice_id?: string | null
           method?: string
           package_purchase_id?: string | null
+          patient_id?: string
           paid_at?: string
           stripe_payment_intent_id?: string | null
         }
@@ -3259,6 +3262,13 @@ export type Database = {
             columns: ["package_purchase_id"]
             isOneToOne: false
             referencedRelation: "package_purchases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payments_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
             referencedColumns: ["id"]
           },
         ]

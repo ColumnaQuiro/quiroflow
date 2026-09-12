@@ -30,12 +30,11 @@ export async function loadStatementDocumentData(supabase: SupabaseClient<Databas
     .select('id, invoice_number, status, total_cents, created_at')
     .eq('patient_id', patientId)
     .order('created_at')
-  const invoiceIds = (invoices ?? []).map((i) => i.id)
 
   const [{ data: payments }, { data: credits }, { data: clinicRow }] = await Promise.all([
-    invoiceIds.length > 0
-      ? supabase.from('payments').select('id, amount_cents, method, paid_at').in('invoice_id', invoiceIds)
-      : Promise.resolve({ data: [] as { id: string; amount_cents: number; method: string; paid_at: string }[] }),
+    // By patient, not by their invoices: a statement that listed only payments
+    // attached to an invoice would omit money on account and stop adding up.
+    supabase.from('payments').select('id, amount_cents, method, paid_at').eq('patient_id', patientId),
     supabase.from('account_credits').select('id, amount_cents, reason, created_at').eq('patient_id', patientId).order('created_at'),
     supabase.from('clinics').select('name, legal_name, address, tax_id, invoice_footer_text').eq('account_id', patient.account_id).order('created_at').limit(1).maybeSingle(),
   ])

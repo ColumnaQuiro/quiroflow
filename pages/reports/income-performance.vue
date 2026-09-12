@@ -3,7 +3,7 @@ import { Line } from 'vue-chartjs'
 import { computePresetRange, monthKeysInRange, rangeBounds } from '~/composables/useDateRangePresets'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
 
-interface PaymentRow { amount_cents: number; paid_at: string; invoice_id: string }
+interface PaymentRow { amount_cents: number; paid_at: string; invoice_id: string | null; invoices?: { status: string } | null }
 interface InvoiceRow { id: string; appointment_id: string | null }
 interface AppointmentRow { id: string; practitioner_id: string | null; clinic_id: string | null }
 interface TeamMemberRow { id: string; full_name: string; color: string }
@@ -29,8 +29,7 @@ async function load() {
     fetchAllRows<PaymentRow>((f, t) =>
       supabase
         .from('payments')
-        .select('amount_cents, paid_at, invoice_id, invoices!inner(status)')
-        .neq('invoices.status', 'void')
+        .select('amount_cents, paid_at, invoice_id, invoices(status)')
         .gte('paid_at', from.toISOString())
         .lte('paid_at', to.toISOString())
         .range(f, t),
@@ -38,7 +37,10 @@ async function load() {
     fetchAllRows<InvoiceRow>((f, t) => supabase.from('invoices').select('id, appointment_id').neq('status', 'void').gte('created_at', from.toISOString()).lte('created_at', to.toISOString()).range(f, t)),
     supabase.from('team_members').select('id, full_name, color').then((r) => r.data ?? []),
   ])
-  payments.value = p
+  // The void rule moved out of the query when the join went from inner to
+  // left: a payment with no invoice has nothing to void and must survive it.
+  const notVoid = (row: PaymentRow) => row.invoices?.status !== 'void'
+  payments.value = p.filter(notVoid)
   invoices.value = inv
   teamMembers.value = tm
 
@@ -88,7 +90,7 @@ function apptMatchesFilter(appointmentId: string | null): boolean {
   if (clinicFilter.value && appt.clinic_id !== clinicFilter.value) return false
   return true
 }
-const filteredPayments = computed(() => payments.value.filter((p) => apptMatchesFilter(invoiceById.value.get(p.invoice_id)?.appointment_id ?? null)))
+const filteredPayments = computed(() => payments.value.filter((p) => apptMatchesFilter((p.invoice_id ? invoiceById.value.get(p.invoice_id) : undefined)?.appointment_id ?? null)))
 
 function monthKey(iso: string) {
   const d = new Date(iso)
@@ -101,7 +103,7 @@ function monthLabel(key: string) {
 const monthKeys = computed(() => monthKeysInRange(range.value))
 
 function practitionerFor(payment: PaymentRow): string {
-  const invoice = invoiceById.value.get(payment.invoice_id)
+  const invoice = payment.invoice_id ? invoiceById.value.get(payment.invoice_id) : undefined
   const appt = invoice?.appointment_id ? appointmentById.value.get(invoice.appointment_id) : undefined
   return appt?.practitioner_id ?? '__unassigned'
 }

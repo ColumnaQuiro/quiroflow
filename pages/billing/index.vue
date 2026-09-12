@@ -99,10 +99,10 @@ async function loadOutstanding() {
 
   const paidByInvoice: Record<string, number> = {}
   if (ids.length > 0) {
-    const pays = await fetchAllRows<{ invoice_id: string; amount_cents: number }>((from, to) =>
+    const pays = await fetchAllRows<{ invoice_id: string | null; amount_cents: number }>((from, to) =>
       supabase.from('payments').select('invoice_id, amount_cents').in('invoice_id', ids).range(from, to),
     )
-    for (const p of pays) paidByInvoice[p.invoice_id] = (paidByInvoice[p.invoice_id] ?? 0) + p.amount_cents
+    for (const p of pays) if (p.invoice_id) paidByInvoice[p.invoice_id] = (paidByInvoice[p.invoice_id] ?? 0) + p.amount_cents
   }
 
   outstandingCents.value = rows.reduce((sum, r) => sum + Math.max(0, r.total_cents - (paidByInvoice[r.id] ?? 0)), 0)

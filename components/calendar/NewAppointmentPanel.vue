@@ -307,7 +307,7 @@ async function save() {
           price_cents: amountCents,
         })
         if (paymentMethod.value === 'credit') {
-          await supabase.from('payments').insert({ account_id: store.accountId!, invoice_id: invoice.id, amount_cents: amountCents, method: 'credit' })
+          await supabase.from('payments').insert({ account_id: store.accountId!, patient_id: patientId, invoice_id: invoice.id, amount_cents: amountCents, method: 'credit' })
           await supabase.from('account_credits').insert({
             account_id: store.accountId!,
             patient_id: patientId,
@@ -317,7 +317,7 @@ async function save() {
             created_by: store.teamMember?.id ?? null,
           })
         } else {
-          await supabase.from('payments').insert({ account_id: store.accountId!, invoice_id: invoice.id, amount_cents: amountCents, method: paymentMethod.value })
+          await supabase.from('payments').insert({ account_id: store.accountId!, patient_id: patientId, invoice_id: invoice.id, amount_cents: amountCents, method: paymentMethod.value })
         }
       }
     }

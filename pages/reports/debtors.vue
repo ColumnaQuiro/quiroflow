@@ -42,13 +42,13 @@ onMounted(async () => {
     supabase.from('payment_schedules').select('package_purchase_id, status').not('package_purchase_id', 'is', null),
     invoiceIds.length > 0
       ? supabase.from('payments').select('invoice_id, amount_cents').in('invoice_id', invoiceIds)
-      : Promise.resolve({ data: [] as { invoice_id: string; amount_cents: number }[] }),
+      : Promise.resolve({ data: [] as { invoice_id: string | null; amount_cents: number }[] }),
   ])
   invoicesById.value = new Map((invoices ?? []).map((i) => [i.id, i as InvoiceRow]))
   patientsById.value = new Map((patients ?? []).map((p2) => [p2.id, p2 as PatientRow]))
   schedulesByPurchase.value = new Map((schedules ?? []).map((s) => [s.package_purchase_id as string, s as ScheduleRow]))
   const byInvoice = new Map<string, number>()
-  for (const row of payments ?? []) byInvoice.set(row.invoice_id, (byInvoice.get(row.invoice_id) ?? 0) + row.amount_cents)
+  for (const row of payments ?? []) if (row.invoice_id) byInvoice.set(row.invoice_id, (byInvoice.get(row.invoice_id) ?? 0) + row.amount_cents)
   paidByInvoice.value = byInvoice
 
   loading.value = false

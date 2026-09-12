@@ -87,11 +87,13 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     const state = stateFor(currentId)
     state.loading.value = true
 
-    // payments has no patient_id of its own -- joined through invoices the
-    // same way BillingTab's loadAll() already joins invoice_line_items and
-    // membership_payments, instead of a first round-trip for invoice ids
-    // and a second `in()` query for their payments. That second hop was a
-    // guaranteed extra network round-trip on every single load.
+    // payments carries its own patient_id since 0170, so this reads the
+    // patient's money directly instead of joining through invoices. That is
+    // not just tidier: an inner join to invoices drops every payment with no
+    // invoice_id, and money on account -- which is most of what PracticeHub
+    // holds for a bono patient -- has none. The invoice is still joined, but
+    // only for the status the credit-on-void rule below needs, and left outer
+    // so an unallocated payment survives it.
     const [{ data: invoices }, { data: memberships }, { data: packages }, { data: credits }, { data: shares }, { data: payments }] = await Promise.all([
       supabase.from('invoices').select('id, total_cents').eq('patient_id', currentId).neq('status', 'void'),
       supabase.from('patient_memberships').select('id, membership_name, status').eq('patient_id', currentId).eq('status', 'active'),
@@ -101,7 +103,7 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
         .from('package_purchase_shares')
         .select('package_purchases(id, package_name, sessions_total, sessions_used, price_cents, patients(first_name, last_name))')
         .eq('patient_id', currentId),
-      supabase.from('payments').select('amount_cents, method, invoices!inner(patient_id, status)').eq('invoices.patient_id', currentId),
+      supabase.from('payments').select('amount_cents, method, invoices(status)').eq('patient_id', currentId),
     ])
 
     // A 'credit' payment against a VOIDED invoice is not money and never was:

@@ -188,7 +188,7 @@ async function run() {
       for (const p of list) bump(p.method, p.amount_cents)
     } else if (groupByKey.value === 'practitioner') {
       for (const p of list) {
-        const invoice = invoiceById.get(p.invoice_id)
+        const invoice = p.invoice_id ? invoiceById.get(p.invoice_id) : undefined
         const appt = invoice?.appointment_id ? apptById.get(invoice.appointment_id) : undefined
         const label = appt?.practitioner_id ? (memberById.get(appt.practitioner_id) ?? t('Unknown', 'Desconocido')) : t('Unassigned', 'Sin asignar')
         bump(label, p.amount_cents)

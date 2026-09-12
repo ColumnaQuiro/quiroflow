@@ -76,7 +76,7 @@ export async function handleStripeEvent(supabase: SupabaseClient<Database>, acco
     })
     await supabase
       .from('payments')
-      .insert({ account_id: accountId, invoice_id: invoice.id, amount_cents: amountCents, method: 'card', stripe_payment_intent_id: paymentIntentId })
+      .insert({ account_id: accountId, patient_id: patientId, invoice_id: invoice.id, amount_cents: amountCents, method: 'card', stripe_payment_intent_id: paymentIntentId })
   }
 
   // Mirrors recordMembershipCharge, plus one extra step: a package
@@ -106,7 +106,7 @@ export async function handleStripeEvent(supabase: SupabaseClient<Database>, acco
     })
     await supabase
       .from('payments')
-      .insert({ account_id: accountId, invoice_id: invoice.id, amount_cents: amountCents, method: 'card', stripe_payment_intent_id: paymentIntentId })
+      .insert({ account_id: accountId, patient_id: patientId, invoice_id: invoice.id, amount_cents: amountCents, method: 'card', stripe_payment_intent_id: paymentIntentId })
     await supabase.from('account_credits').insert({
       account_id: accountId,
       patient_id: patientId,
@@ -204,21 +204,23 @@ export async function handleStripeEvent(supabase: SupabaseClient<Database>, acco
         .eq('stripe_payment_intent_id', intent.id)
         .maybeSingle()
       if (!existingPayment) {
+        // Read the invoice BEFORE inserting: a payment names its own patient
+        // since 0170, and this branch starts from nothing but an invoice id.
+        const { data: invoice } = await supabase.from('invoices').select('total_cents, patient_id').eq('id', invoiceId).maybeSingle()
+        if (!invoice) return
+
         await supabase.from('payments').insert({
           account_id: accountId,
+          patient_id: invoice.patient_id,
           invoice_id: invoiceId,
           amount_cents: intent.amount_received,
           method: 'card',
           stripe_payment_intent_id: intent.id,
         })
-
-        const { data: invoice } = await supabase.from('invoices').select('total_cents').eq('id', invoiceId).maybeSingle()
-        if (invoice) {
-          const { data: payments } = await supabase.from('payments').select('amount_cents').eq('invoice_id', invoiceId)
-          const paidCents = (payments ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
-          if (paidCents >= invoice.total_cents) {
-            await supabase.from('invoices').update({ status: 'paid' }).eq('id', invoiceId)
-          }
+        const { data: payments } = await supabase.from('payments').select('amount_cents').eq('invoice_id', invoiceId)
+        const paidCents = (payments ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
+        if (paidCents >= invoice.total_cents) {
+          await supabase.from('invoices').update({ status: 'paid' }).eq('id', invoiceId)
         }
       }
     }

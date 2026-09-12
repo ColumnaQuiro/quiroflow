@@ -330,16 +330,40 @@ async function deleteInvoice(opts: { invoiceId: string }) {
   return null
 }
 
-async function createPayment(opts: { accountId: string; invoiceId: string; amountCents: number; method: string }) {
+async function createPayment(opts: {
+  accountId: string
+  amountCents: number
+  method: string
+  // A payment names its own patient since 0170. invoiceId stays optional so a
+  // spec can seed money on account -- a payment settling no particular charge.
+  patientId?: string
+  invoiceId?: string
+}) {
   const { accountId, invoiceId, amountCents, method } = opts
+  let patientId = opts.patientId
+  if (!patientId) {
+    if (!invoiceId) throw new Error('createPayment needs patientId or invoiceId')
+    const inv = unwrap(await admin.from('invoices').select('patient_id').eq('id', invoiceId).single())
+    patientId = (inv as { patient_id: string }).patient_id
+  }
   const row = unwrap(
     await admin
       .from('payments')
-      .insert({ account_id: accountId, invoice_id: invoiceId, amount_cents: amountCents, method })
+      .insert({ account_id: accountId, patient_id: patientId, invoice_id: invoiceId ?? null, amount_cents: amountCents, method })
       .select('id')
       .single(),
   )
   return row as { id: string }
+}
+
+async function paymentById(opts: { paymentId: string }) {
+  const { data, error } = await admin
+    .from('payments')
+    .select('id, patient_id, invoice_id, amount_cents, method')
+    .eq('id', opts.paymentId)
+    .maybeSingle()
+  if (error) throw error
+  return data
 }
 
 async function createPackagePurchase(opts: {
@@ -429,6 +453,7 @@ export const dbTasks = {
   'db:createPayment': createPayment,
   'db:nextInvoiceNumber': nextInvoiceNumber,
   'db:deleteInvoice': deleteInvoice,
+  'db:paymentById': paymentById,
   'db:createPackagePurchase': createPackagePurchase,
   'db:packageSessionEffects': packageSessionEffects,
   'db:createWhatsappMessage': createWhatsappMessage,

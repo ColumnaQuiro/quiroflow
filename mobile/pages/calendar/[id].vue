@@ -233,6 +233,7 @@ async function recordPayment() {
   try {
     await supabase.from('payments').insert({
       account_id: context.value.accountId,
+      patient_id: appointment.value.patient_id,
       invoice_id: invoice.value.id,
       amount_cents: amountCents,
       method: paymentMethod.value,

@@ -417,6 +417,7 @@ async function recordPayment() {
   await supabase.from('payments').insert(
     rows.map((r) => ({
       account_id: store.accountId!,
+      patient_id: props.patientId,
       invoice_id: invoice.value!.id,
       amount_cents: paymentRowCents(r),
       method: r.method,

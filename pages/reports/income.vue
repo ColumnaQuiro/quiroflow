@@ -3,7 +3,7 @@ import { Line, Bar } from 'vue-chartjs'
 import { computePresetRange, monthKeysInRange, rangeBounds } from '~/composables/useDateRangePresets'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
 
-interface PaymentRow { amount_cents: number; method: string; paid_at: string; invoice_id: string }
+interface PaymentRow { amount_cents: number; method: string; paid_at: string; invoice_id: string | null; invoices?: { status: string } | null }
 interface InvoiceRow { id: string; total_cents: number; status: string; appointment_id: string | null }
 interface LineItemRow { invoice_id: string; price_cents: number; quantity: number; service_id: string | null }
 interface ServiceRow { id: string; name: string }
@@ -60,8 +60,7 @@ async function load() {
     fetchAllRows<PaymentRow>((f, t) =>
       supabase
         .from('payments')
-        .select('amount_cents, method, paid_at, invoice_id, invoices!inner(status)')
-        .neq('invoices.status', 'void')
+        .select('amount_cents, method, paid_at, invoice_id, invoices(status)')
         .gte('paid_at', from.toISOString())
         .lte('paid_at', to.toISOString())
         .range(f, t),
@@ -78,11 +77,14 @@ async function load() {
     supabase.from('services_products').select('id, name').then((r) => r.data ?? []),
     supabase.from('team_members').select('id, full_name').then((r) => r.data ?? []),
   ])
-  payments.value = p
+  // The void rule moved out of the query when the join went from inner to
+  // left: a payment with no invoice has nothing to void and must survive it.
+  const notVoid = (row: PaymentRow) => row.invoices?.status !== 'void'
+  payments.value = p.filter(notVoid)
   invoices.value = inv
   services.value = sv
   teamMembers.value = tm
-  lineItems.value = await fetchLineItemsFor([...new Set(p.map((row) => row.invoice_id))])
+  lineItems.value = await fetchLineItemsFor([...new Set(payments.value.map((row) => row.invoice_id).filter((id): id is string => !!id))])
 
   // Appointments are only consulted to resolve a practitioner/clinic filter
   // (see apptMatchesFilter) -- with no filter set, which is how the page
@@ -126,7 +128,7 @@ function apptMatchesFilter(appointmentId: string | null): boolean {
   if (clinicFilter.value && appt.clinic_id !== clinicFilter.value) return false
   return true
 }
-const filteredPayments = computed(() => payments.value.filter((p) => apptMatchesFilter(invoiceById.value.get(p.invoice_id)?.appointment_id ?? null)))
+const filteredPayments = computed(() => payments.value.filter((p) => apptMatchesFilter((p.invoice_id ? invoiceById.value.get(p.invoice_id) : undefined)?.appointment_id ?? null)))
 const filteredInvoices = computed(() => invoices.value.filter((i) => apptMatchesFilter(i.appointment_id)))
 
 const totalPaid = computed(() => filteredPayments.value.reduce((sum, p) => sum + p.amount_cents, 0))
@@ -174,7 +176,7 @@ const memberById = computed(() => new Map(teamMembers.value.map((m) => [m.id, m.
 const byPractitioner = computed(() => {
   const totals = new Map<string, number>()
   for (const p of filteredPayments.value) {
-    const invoice = invoiceById.value.get(p.invoice_id)
+    const invoice = p.invoice_id ? invoiceById.value.get(p.invoice_id) : undefined
     const appt = invoice?.appointment_id ? appointmentById.value.get(invoice.appointment_id) : undefined
     const practitionerId = appt?.practitioner_id ?? null
     const label = practitionerId ? (memberById.value.get(practitionerId) ?? t('Unknown', 'Desconocido')) : t('Unassigned', 'Sin asignar')

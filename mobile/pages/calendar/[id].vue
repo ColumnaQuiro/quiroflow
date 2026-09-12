@@ -261,13 +261,35 @@ async function recordPayment() {
   }
   saving.value = true
   try {
-    await supabase.from('payments').insert({
-      account_id: context.value.accountId,
-      patient_id: appointment.value.patient_id,
-      invoice_id: invoice.value.id,
-      amount_cents: amountCents,
-      method: paymentMethod.value,
-    } as never)
+    const { data: payment } = await supabase
+      .from('payments')
+      .insert({
+        account_id: context.value.accountId,
+        patient_id: appointment.value.patient_id,
+        invoice_id: invoice.value.id,
+        amount_cents: amountCents,
+        method: paymentMethod.value,
+        purpose: 'visit',
+      } as never)
+      .select('id')
+      .single()
+
+    // Same rule as the desktop: a factura for money that came in, none for a
+    // credit payment, which was documented when the credit was paid.
+    if (payment && paymentMethod.value !== 'credit') {
+      await supabase.rpc('next_factura_number', { p_account_id: context.value.accountId } as never).then(async ({ data: number }) => {
+        if (!number) return
+        await supabase.from('facturas').insert({
+          account_id: context.value!.accountId,
+          patient_id: appointment.value!.patient_id,
+          payment_id: (payment as { id: string }).id,
+          number,
+          kind: amountCents > 40000 ? 'full' : 'simplified',
+          description: appointment.value!.appointment_types?.name ?? 'Consulta',
+          amount_cents: amountCents,
+        } as never)
+      })
+    }
     if (paymentMethod.value === 'credit') {
       await supabase.from('account_credits').insert({
         account_id: context.value.accountId,

@@ -1664,6 +1664,105 @@ export type Database = {
           },
         ]
       }
+      factura_number_sequences: {
+        Row: {
+          account_id: string
+          next_number: number
+          updated_at: string
+          year: number
+        }
+        Insert: {
+          account_id: string
+          next_number?: number
+          updated_at?: string
+          year: number
+        }
+        Update: {
+          account_id?: string
+          next_number?: number
+          updated_at?: string
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "factura_number_sequences_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      facturas: {
+        Row: {
+          account_id: string
+          amount_cents: number
+          created_at: string
+          description: string
+          id: string
+          issued_at: string
+          kind: string
+          number: string
+          patient_id: string
+          payment_id: string
+          recipient_address: string | null
+          recipient_name: string | null
+          recipient_nif: string | null
+        }
+        Insert: {
+          account_id: string
+          amount_cents: number
+          created_at?: string
+          description: string
+          id?: string
+          issued_at?: string
+          kind?: string
+          number: string
+          patient_id: string
+          payment_id: string
+          recipient_address?: string | null
+          recipient_name?: string | null
+          recipient_nif?: string | null
+        }
+        Update: {
+          account_id?: string
+          amount_cents?: number
+          created_at?: string
+          description?: string
+          id?: string
+          issued_at?: string
+          kind?: string
+          number?: string
+          patient_id?: string
+          payment_id?: string
+          recipient_address?: string | null
+          recipient_name?: string | null
+          recipient_nif?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "facturas_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "facturas_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "facturas_payment_id_fkey"
+            columns: ["payment_id"]
+            isOneToOne: true
+            referencedRelation: "payments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       help_assistant_messages: {
         Row: {
           account_id: string
@@ -3222,6 +3321,7 @@ export type Database = {
           package_purchase_id: string | null
           paid_at: string
           patient_id: string
+          purpose: string | null
           stripe_payment_intent_id: string | null
         }
         Insert: {
@@ -3234,6 +3334,7 @@ export type Database = {
           package_purchase_id?: string | null
           paid_at?: string
           patient_id: string
+          purpose?: string | null
           stripe_payment_intent_id?: string | null
         }
         Update: {
@@ -3244,8 +3345,9 @@ export type Database = {
           invoice_id?: string | null
           method?: string
           package_purchase_id?: string | null
-          patient_id?: string
           paid_at?: string
+          patient_id?: string
+          purpose?: string | null
           stripe_payment_intent_id?: string | null
         }
         Relationships: [
@@ -4627,6 +4729,7 @@ export type Database = {
       get_my_permissions: { Args: { target_account_id: string }; Returns: Json }
       get_patient_booking_info: { Args: never; Returns: Json }
       cancel_patient_appointment: { Args: { p_appointment_id: string }; Returns: Json }
+      next_factura_number: { Args: { p_account_id: string }; Returns: string }
       next_invoice_number: {
         Args: { p_account_id: string; p_prefix?: string }
         Returns: string

@@ -54,13 +54,43 @@ function replyText(msg: MetaMessage): string {
   return msg.button?.text ?? msg.interactive?.button_reply?.title ?? msg.interactive?.list_reply?.title ?? msg.text?.body ?? ''
 }
 
+// Things a patient asks to change that are NOT their appointment. "Me
+// gustaría cambiar el Mail que tenéis registrado con mi ficha" is the
+// message that started this: it matched on "cambiar" alone and recorded a
+// patient who had tapped Confirmar fourteen minutes earlier as wanting to
+// move his visit.
+//
+// Excluding by the OBJECT of the verb rather than by where the verb sits in
+// the sentence, because position turns out not to separate the two cases at
+// all -- "La tengo que cambiar", "Me la puedes cambiar por la tarde", "Queria
+// reprogramarla a la semana que viene" are all real requests that name the
+// appointment only as "la", leaning on the reminder they are replying to.
+// Anchoring the match to the start of the message would have thrown those
+// away to catch this one.
+const CHANGE_OF_SOMETHING_ELSE =
+  /(cambiar|cambio|cambiarme|modificar)\s+(el\s+|la\s+|mi\s+|mis\s+)?(mail|email|correo|tel[eé]fono|movil|m[oó]vil|n[uú]mero|direcci[oó]n|nombre|apellido|dni|datos|ficha|contrase[nñ]a)/
+
 function classifyReply(text: string): 'confirmed' | 'reschedule_requested' | 'cancelled' | null {
   const t = text.trim().toLowerCase()
   if (!t) return null
-  if (CANCEL_WORDS.some((w) => t === w || t.startsWith(w + ' ') || t.startsWith(w + '!'))) return 'cancelled'
-  if (CONFIRM_WORDS.some((w) => t === w || t.startsWith(w + ' ') || t.startsWith(w + '!'))) return 'confirmed'
-  if (RESCHEDULE_WORDS.some((w) => t.includes(w))) return 'reschedule_requested'
+  const opensWith = (words: string[]) => words.some((w) => t === w || t.startsWith(w + ' ') || t.startsWith(w + '!'))
+  if (opensWith(CANCEL_WORDS)) return 'cancelled'
+  if (opensWith(CONFIRM_WORDS)) return 'confirmed'
+  if (RESCHEDULE_WORDS.some((w) => t.includes(w)) && !CHANGE_OF_SOMETHING_ELSE.test(t)) return 'reschedule_requested'
   return null
+}
+
+// Did the patient ANSWER the question, or just write a sentence we read an
+// intent out of? A tap on the reminder's own buttons is the answer itself --
+// Meta sends it back as a button/list reply carrying that button's title.
+// Free text is an inference, and a weaker claim: it settles a question still
+// open, but it does not overturn an answer the patient already gave (see the
+// update below). That is what saves the two people who tried to TAKE BACK an
+// accidental tap: "Perdon!! Le di a cambiar cita sin querer" and "Me he
+// confundido al cambiar" both re-flagged the very thing they apologised for,
+// leaving no wording that could undo it.
+function isButtonReply(msg: MetaMessage): boolean {
+  return Boolean(msg.button?.text || msg.interactive?.button_reply?.title || msg.interactive?.list_reply?.title)
 }
 
 // Returns every patient whose contact number resolves to this phone --
@@ -106,7 +136,7 @@ async function findPatientIdsByPhone(supabase: ReturnType<typeof serverSupabaseS
 async function resolveRepliedAppointment(
   supabase: ReturnType<typeof serverSupabaseServiceRole<Database>>,
   patientIds: string[],
-): Promise<{ id: string; patient_id: string } | null> {
+): Promise<{ id: string; patient_id: string; confirmation_status: string | null } | null> {
   const { data: lastOutbound } = await supabase
     .from('whatsapp_messages')
     .select('appointment_id')
@@ -120,13 +150,15 @@ async function resolveRepliedAppointment(
   if (lastOutbound?.appointment_id) {
     const { data: anchored } = await supabase
       .from('appointments')
-      .select('id, patient_id, status')
+      .select('id, patient_id, status, confirmation_status')
       .eq('id', lastOutbound.appointment_id)
       .is('deleted_at', null)
       .maybeSingle()
     // Only honour the anchor while the appointment is still live -- a reply
     // to a reminder for something since cancelled shouldn't resurrect it.
-    if (anchored && anchored.status === 'booked') return { id: anchored.id, patient_id: anchored.patient_id }
+    if (anchored && anchored.status === 'booked') {
+      return { id: anchored.id, patient_id: anchored.patient_id, confirmation_status: anchored.confirmation_status }
+    }
   }
 
   // Fallback: the soonest appointment still ahead of them. A small grace
@@ -135,7 +167,7 @@ async function resolveRepliedAppointment(
   const graceCutoff = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
   const { data: upcoming } = await supabase
     .from('appointments')
-    .select('id, patient_id')
+    .select('id, patient_id, confirmation_status')
     .in('patient_id', patientIds)
     .eq('status', 'booked')
     .is('deleted_at', null)
@@ -237,7 +269,17 @@ export default defineEventHandler(async (event) => {
         const intent = classifyReply(replyText(msg))
         if (intent && patientIds.length > 0) {
           const appt = await resolveRepliedAppointment(supabase, patientIds)
-          if (appt) {
+          // An answer already on record is only overturned by another
+          // deliberate tap, never by a later sentence we merely read an
+          // intent out of. Patients carry on writing after they answer --
+          // about their email address, to thank reception, to take back a
+          // mis-tap -- and any of that outranking their own Confirmar is
+          // how a confirmed appointment silently became "wants to
+          // reschedule" on the calendar. Staff see every inbound message in
+          // the inbox regardless, so nothing is lost by leaving the flag
+          // alone and letting a person decide.
+          const alreadyAnswered = appt?.confirmation_status === 'confirmed' || appt?.confirmation_status === 'reschedule_requested'
+          if (appt && (!alreadyAnswered || isButtonReply(msg))) {
             if (intent === 'cancelled') {
               // 'cancelled' isn't a confirmation_status value (that column
               // only tracks pending/confirmed/reschedule_requested) -- a

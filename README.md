@@ -66,6 +66,23 @@ changes needed.
 
 ## 5. Deploying (Netlify)
 
+Deploys run through **`.github/workflows/deploy.yml`**, not Netlify's own
+git integration. Netlify gates git-based continuous deployment for a
+private, organization-owned repo behind its Pro plan, and this repo is
+private — so GitHub Actions builds on every push to `main` and ships the
+result with `netlify-cli deploy --prod`. It needs a `NETLIFY_AUTH_TOKEN`
+**repository** secret (an org-level one silently resolves to empty in a
+private repo on a Free-plan org) and carries the site id inline, which
+isn't sensitive.
+
+Two site settings can break this in ways the error messages don't explain:
+Netlify's "Enforce deployment methods" must not be restricted to Git-based
+production branches (it blocks CLI deploys to production while still
+allowing drafts, surfacing only as `JSONHTTPError: Forbidden`), and
+`netlify.toml`'s `publish` must match what the build actually writes —
+a dashboard setting silently overrides this file on Netlify's own builds,
+so a wrong value here stays invisible until something deploys via the CLI.
+
 `nuxt.config.ts` sets Nitro's `netlify` preset; `netlify.toml` pins
 `NODE_VERSION = "22"` (Netlify's build image otherwise may not satisfy
 oxc-parser's engine requirement) and points `publish` at `dist` — Nitro's

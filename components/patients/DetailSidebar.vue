@@ -88,7 +88,7 @@ function money(cents: number) {
         </div>
       </div>
 
-      <UiBalancePill v-if="!financialLoading" class="mt-2.5" :credit-cents="creditCents" :bono-value-cents="bonoValueCents" />
+      <UiBalancePill v-if="!financialLoading" class="mt-2.5" :balance-cents="balanceCents" />
 
       <div class="mt-3.5 grid gap-2" :class="canContact ? 'grid-cols-2' : 'grid-cols-1'">
         <UiBtn v-if="canContact" size="sm" variant="secondary" class="w-full justify-center" @click="emit('message')">WhatsApp</UiBtn>

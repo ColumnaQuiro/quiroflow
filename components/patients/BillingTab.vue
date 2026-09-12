@@ -161,7 +161,13 @@ async function takePayment() {
   // balanceCents is negative when the patient owes money, so this must only
   // run when a credit row actually exists -- otherwise 0 > a negative
   // balance reads as "exceeded" and blocks a plain cash/card payment.
-  if (paymentCreditCents.value > 0 && paymentCreditCents.value > balanceCents.value) {
+  // Capped by the credit LEDGER, not the balance. Since the re-migration a
+  // balance carries prepaid bono money -- pay 264 for a bono and the balance
+  // reads 264 until visits draw it down -- and that money is not spendable
+  // twice: it buys the sessions. Offering it here as "credit on account" would
+  // let it be spent again while the counter still holds the visits, which is
+  // exactly the double-count migration 0161 removed.
+  if (paymentCreditCents.value > 0 && paymentCreditCents.value > creditLedgerCents.value) {
     paymentError.value = t('Amount exceeds available credit.', 'El importe supera el crédito disponible.')
     return
   }
@@ -1054,12 +1060,12 @@ async function useSession(purchase: PackagePurchaseRow) {
     : ''
   const body = visit
     ? t(
-        `This uses one session against that visit. Nothing is charged — the bono already covers it.${voidNote}`,
-        `Esto consume una sesión de esa visita. No se cobra nada: el bono ya la cubre.${voidNote}`,
+        `This uses one session against that visit and charges ${money(perSessionCents)} against the bono the patient already paid for.${voidNote}`,
+        `Esto consume una sesión de esa visita y carga ${money(perSessionCents)} contra el bono que el paciente ya pagó.${voidNote}`,
       )
     : t(
-        'No completed visit today has this bono against it, so a visit will be recorded now. Nothing is charged — the bono already covers it.',
-        'Ninguna visita completada de hoy tiene este bono asociado, así que se registrará una visita ahora. No se cobra nada: el bono ya la cubre.',
+        'No completed visit today has this bono against it, so a visit will be recorded now, charged against the bono the patient already paid for.',
+        'Ninguna visita completada de hoy tiene este bono asociado, así que se registrará una visita ahora, cargada contra el bono que el paciente ya pagó.',
       )
   const target = visitLabel ? ` ${t('against', 'contra')} ${visitLabel}` : ''
   if (!confirm(`${t('Log a session for', 'Registrar una sesión de')} ${money(perSessionCents)}${target} ${t('from', 'de')} "${purchase.package_name}"? ${body}`)) return
@@ -1116,9 +1122,7 @@ async function useSession(purchase: PackagePurchaseRow) {
       await supabase.from('invoices').update({ status: 'void' }).eq('id', visit.unpaidInvoice.id)
     }
 
-    // The visit on the bono's own history, and nothing else. No invoice, no
-    // payment, no credit row: the patient paid for this visit when they bought
-    // the bono, so billing it again counts the same money twice.
+    // The visit on the bono's own history.
     await supabase.from('package_sessions').insert({
       account_id: store.accountId,
       patient_id: props.patientId,
@@ -1127,6 +1131,35 @@ async function useSession(purchase: PackagePurchaseRow) {
       amount_cents: perSessionCents,
       used_at: usedAt,
     })
+
+    // And its charge, at the bono's per-session rate. This is what draws the
+    // prepayment down: the money went into the balance when the bono was
+    // bought, and each visit takes its share back out. Marked paid where the
+    // balance already covers it, the same rule the imported history follows.
+    const { data: chargeNumber } = await supabase.rpc('next_invoice_number', { p_account_id: store.accountId! })
+    if (chargeNumber) {
+      const { data: charge } = await supabase
+        .from('invoices')
+        .insert({
+          account_id: store.accountId!,
+          patient_id: props.patientId,
+          appointment_id: appointmentId,
+          invoice_number: chargeNumber,
+          status: balanceCents.value >= perSessionCents ? 'paid' : 'unpaid',
+          total_cents: perSessionCents,
+        })
+        .select('id')
+        .single()
+      if (charge) {
+        await supabase.from('invoice_line_items').insert({
+          account_id: store.accountId!,
+          invoice_id: charge.id,
+          description: `${purchase.package_name} — ${t('session', 'sesión')}`,
+          quantity: 1,
+          price_cents: perSessionCents,
+        })
+      }
+    }
 
     // Deliberately fires no appointment.completed/invoice.paid automation:
     // this is a back-office correction for a visit that already happened, and
@@ -1346,7 +1379,7 @@ function money(cents: number) {
               <select v-model="row.method" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
                 <option value="card">{{ t('Card', 'Tarjeta') }}</option>
                 <option value="cash">{{ t('Cash', 'Efectivo') }}</option>
-                <option v-if="balanceCents > 0" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} (€{{ (balanceCents / 100).toFixed(2) }} {{ t('available', 'disponible') }})</option>
+                <option v-if="creditLedgerCents > 0" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} (€{{ (creditLedgerCents / 100).toFixed(2) }} {{ t('available', 'disponible') }})</option>
               </select>
             </div>
             <button

@@ -1,5 +1,5 @@
 describe('Logging a bono session', () => {
-  it('records a completed visit against the bono, and bills nothing for it', () => {
+  it('records a completed visit against the bono, charged at the bono rate', () => {
     cy.seedStaffAccount().then((account) => {
       cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Bruno', lastName: 'Bonos' }).then((patient: any) => {
         // 12 sessions at €528 => €44 a session. That is what the visit is
@@ -27,9 +27,10 @@ describe('Logging a bono session', () => {
 
           // ...and this is the rest of it: the visit exists as a completed
           // appointment and a package_sessions row, and NOTHING is billed.
-          // The patient paid for this visit when they bought the bono, so an
-          // invoice here would charge them a second time for it -- which is
-          // exactly what this used to do.
+          // A covered visit IS charged now, at the bono's per-session rate --
+          // that is what draws down the money the patient put in when they
+          // bought it. What must not happen is a second PAYMENT: nothing new
+          // crosses the counter, the charge is settled by the prepayment.
           cy.task('db:packageSessionEffects', { patientId: patient.id, packagePurchaseId: purchase.id }).then((eff: any) => {
             expect(eff.purchase.sessions_used, 'sessions used').to.eq(1)
 
@@ -41,8 +42,9 @@ describe('Logging a bono session', () => {
             expect(eff.sessions[0].package_purchase_id, 'against this bono').to.eq(purchase.id)
             expect(eff.sessions[0].appointment_id, 'linked to the visit').to.eq(eff.appointments[0].id)
 
-            expect(eff.invoices, 'no invoice raised for a covered visit').to.have.length(0)
-            expect(eff.payments, 'no payment recorded').to.have.length(0)
+            expect(eff.invoices, 'the visit is charged').to.have.length(1)
+            expect(eff.invoices[0].total_cents, 'at the bono rate, not the walk-in price').to.eq(4400)
+            expect(eff.payments, 'but nothing new was collected').to.have.length(0)
             expect(eff.credits, 'no account credit written either way').to.have.length(0)
           })
         })

@@ -333,12 +333,17 @@ async function usePackageSession(pkg: { id: string; package_name: string; sessio
   const perSessionCents = Math.round(bono.price_cents / bono.sessions_total)
 
   // The visit itself, on the bono's own history -- and, since this release,
-  // its ONLY record. A bono visit is not a billing event: the money came in
-  // when the bono was bought, so raising a second invoice here and settling it
-  // from a credit balance counted the same money twice (once at the sale, once
-  // per visit), which inflated both revenue reports and the patient's own
-  // balance. See 0155_package_sessions.sql, which said this table is where a
-  // covered visit belongs, and 0161, which retired the parallel credit.
+  // the bono's own history. It is no longer the visit's only record: since the
+  // PracticeHub re-migration a visit is also CHARGED, at the bono's
+  // per-session rate, because that is what draws the prepayment down.
+  //
+  // 0161 removed the charge for the opposite reason -- back then a bono's
+  // value lived on a spendable credit ledger AND on the counter, so charging
+  // per visit and settling from that credit spent the same money twice. The
+  // credit ledger no longer holds it: the money is in the balance, once, and
+  // the charge below is what consumes it. Pay 264 for a bono, take a 44 EUR
+  // visit, the balance reads 220 -- which is what PracticeHub shows and what
+  // all 7,018 imported visits already look like.
   //
   // patient_id is the person in the chair, not the bono's owner: on a family
   // bono the visit belongs to whoever took it, even though the sessions come
@@ -354,14 +359,54 @@ async function usePackageSession(pkg: { id: string; package_name: string; sessio
     used_at: appt?.starts_at ?? new Date().toISOString(),
   })
 
-  // Dispose of an invoice this visit already carries. Since ensureInvoice()
-  // stopped firing on open there is usually none -- but there are two ways to
-  // get here with one: an appointment invoiced before that change, and a visit
-  // deliberately charged and then settled with the bono after all.
+  // The visit's charge, at the bono's per-session rate rather than the
+  // appointment type's walk-in price -- that rate is what the patient actually
+  // paid per visit when they bought the bono.
+  //
+  // Marked paid when the patient's balance already covers it, which for a
+  // prepaid bono it does. That is the same rule settle_imported_invoices()
+  // applied to the imported history, so a visit taken today is recorded the
+  // way every visit before it was.
+  // Captured out here: TypeScript loses the null-narrowing on `bono` inside a
+  // closure, and the name is all the charge needs.
+  const bonoName = bono.package_name
+  async function chargeTheVisit(): Promise<void> {
+    const { data: chargeNumber } = await supabase.rpc('next_invoice_number', { p_account_id: store.accountId! })
+    if (!chargeNumber) {
+      error.value = t('Could not allocate an invoice number.', 'No se ha podido asignar un número de factura.')
+      return
+    }
+    const { data: created } = await supabase
+      .from('invoices')
+      .insert({
+        account_id: store.accountId!,
+        patient_id: props.patientId,
+        appointment_id: props.appointmentId,
+        invoice_number: chargeNumber,
+        status: balanceCents.value >= perSessionCents ? 'paid' : 'unpaid',
+        total_cents: perSessionCents,
+      })
+      .select('id')
+      .single()
+    if (created) {
+      await supabase.from('invoice_line_items').insert({
+        account_id: store.accountId!,
+        invoice_id: created.id,
+        description: `${bonoName} — ${t('session', 'sesión')}`,
+        quantity: 1,
+        price_cents: perSessionCents,
+      })
+    }
+  }
+
+  // An invoice this visit already carries. Since ensureInvoice() stopped
+  // firing on open there is usually none -- but there are two ways to get here
+  // with one: an appointment invoiced before that change, and a visit
+  // deliberately charged at the walk-in price and then settled with the bono
+  // after all. Either way the walk-in price is the wrong number now.
   //
   // Extras (a product, an added service: the lines carrying a service_id) are
-  // real money owed on top of the bono, so those keep their invoice. Only the
-  // visit line goes, since the bono covers the visit itself.
+  // real money owed on top of the bono, so those keep their invoice.
   if (invoice.value) {
     const extraLines = lineItems.value.filter((l) => l.service_id)
     const baseLine = lineItems.value.find((l) => !l.service_id)
@@ -387,6 +432,8 @@ async function usePackageSession(pkg: { id: string; package_name: string; sessio
     }
   }
 
+  await chargeTheVisit()
+
   // Completing the visit is unchanged -- it happened, whatever paid for it.
   // No 'invoice.paid' event and no auto-send: with the visit covered by the
   // bono there is either no invoice at all, or one still open for the extras.
@@ -408,7 +455,13 @@ async function recordPayment() {
   // balanceCents is negative when the patient owes money, so this must only
   // run when a credit row actually exists -- otherwise 0 > a negative
   // balance reads as "exceeded" and blocks a plain cash/card payment.
-  if (paymentCreditCents.value > 0 && paymentCreditCents.value > balanceCents.value) {
+  // Capped by the credit LEDGER, not the balance. Since the re-migration a
+  // balance carries prepaid bono money -- pay 264 for a bono and the balance
+  // reads 264 until visits draw it down -- and that money is not spendable
+  // twice: it buys the sessions. Offering it here as "credit on account" would
+  // let it be spent again while the counter still holds the visits, which is
+  // exactly the double-count migration 0161 removed.
+  if (paymentCreditCents.value > 0 && paymentCreditCents.value > creditLedgerCents.value) {
     error.value = t('Amount exceeds available credit.', 'El importe supera el crédito disponible.')
     return
   }
@@ -470,8 +523,8 @@ async function recordPayment() {
       <div v-else class="space-y-1.5">
         <p class="flex items-center gap-1.5">
           <span class="text-ink-muted2">{{ t('Balance:', 'Saldo:') }}</span>
-          <UiBalancePill :credit-cents="creditLedgerCents" :bono-value-cents="bonoValueCents" />
-          <span v-if="creditLedgerCents + bonoValueCents <= 0" class="font-medium text-ink-700">€0.00</span>
+          <UiBalancePill :balance-cents="balanceCents" />
+          <span v-if="balanceCents === 0" class="font-medium text-ink-700">€0.00</span>
         </p>
         <p v-if="activeMembership">
           <span class="text-ink-muted2">{{ t('Membership:', 'Membresía:') }}</span>
@@ -512,7 +565,7 @@ async function recordPayment() {
       </p>
       <p class="mt-0.5 text-[12.5px] text-ink-muted2">
         {{ t('Worth', 'Valor') }} €{{ (packageCoverage.amountCents / 100).toFixed(2) }} —
-        {{ t('already paid when the bono was bought, so there is no invoice for this visit.', 'ya pagada al comprar el bono, por lo que no hay factura para esta visita.') }}
+        {{ t('paid when the bono was bought.', 'pagada al comprar el bono.') }}
       </p>
     </div>
     <!-- Past visit, nothing billed against it yet. This is the choice that
@@ -555,6 +608,11 @@ async function recordPayment() {
       </p>
     </div>
     <div v-else-if="invoice" class="rounded-card border border-line bg-surface p-3">
+      <p v-if="packageCoverage" class="mb-2 border-b border-line-divider pb-2 text-[12.5px] text-ink-muted2">
+        {{ t('Covered by', 'Cubierta por') }}
+        <span class="font-medium text-ink-700">{{ packageCoverage.packageName || t('a bono', 'un bono') }}</span>
+        — {{ t('charged at the bono rate against money already paid.', 'cargada a la tarifa del bono contra dinero ya pagado.') }}
+      </p>
       <div class="flex items-center justify-between">
         <NuxtLink :to="`/billing/${invoice.id}`" class="font-medium text-brand-text hover:text-brand-hover">{{ invoice.invoice_number }}</NuxtLink>
         <div class="flex items-center gap-2">
@@ -624,7 +682,7 @@ async function recordPayment() {
             <select v-model="row.method" class="mt-1 rounded-ctl border border-line-control bg-surface px-2 py-1.5 text-sm text-ink-700 focus:border-brand focus:outline-none">
               <option value="cash">{{ t('Cash', 'Efectivo') }}</option>
               <option value="card">{{ t('Card', 'Tarjeta') }}</option>
-              <option v-if="balanceCents > 0" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} (€{{ (balanceCents / 100).toFixed(2) }} {{ t('available', 'disponible') }})</option>
+              <option v-if="creditLedgerCents > 0" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} (€{{ (creditLedgerCents / 100).toFixed(2) }} {{ t('available', 'disponible') }})</option>
             </select>
           </div>
           <button v-if="paymentRows.length > 1" type="button" class="mb-2 text-xs text-ink-faint hover:text-danger-text" @click="removePaymentRow(i)">

@@ -98,7 +98,7 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
       supabase.from('invoices').select('id, total_cents').eq('patient_id', currentId).neq('status', 'void'),
       supabase.from('patient_memberships').select('id, membership_name, status').eq('patient_id', currentId).eq('status', 'active'),
       supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used, price_cents').eq('patient_id', currentId).order('purchased_at', { ascending: false }),
-      supabase.from('account_credits').select('amount_cents').eq('patient_id', currentId),
+      supabase.from('account_credits').select('amount_cents, external_reference').eq('patient_id', currentId),
       supabase
         .from('package_purchase_shares')
         .select('package_purchases(id, package_name, sessions_total, sessions_used, price_cents, patients(first_name, last_name))')
@@ -126,12 +126,28 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     const paidCents = countablePayments.reduce((sum, p) => sum + p.amount_cents, 0)
     state.lifetimeCents.value = paidCents
     const invoicedCents = (invoices ?? []).reduce((sum, i) => sum + i.total_cents, 0)
-    state.creditLedgerCents.value = (credits ?? []).reduce((sum, c) => sum + c.amount_cents, 0)
+    // The PracticeHub cutover wrote one negative entry per patient holding an
+    // unused bono, to take that value off the balance -- PracticeHub carries a
+    // bono as money on account, QuiroFlow carries it on the sessions counter,
+    // and without the entry the same value would be counted in both places.
+    //
+    // It is a balance adjustment, not a reduction of spendable credit, and the
+    // two are different things here: creditLedgerCents is what the patient can
+    // actually draw on, and the balance pill adds it to the bono's value. Left
+    // in, the entry cancelled most of the bono it was accounting for -- Esther
+    // Tarancon's 473 EUR of sessions rendered as "17.00 in bonos", and 99 of
+    // 197 bono holders showed no pill at all.
+    const cutoverAdjustmentCents = (credits ?? [])
+      .filter((c) => (c as { external_reference: string | null }).external_reference?.startsWith('bono-cutover-'))
+      .reduce((sum, c) => sum + c.amount_cents, 0)
+    state.creditLedgerCents.value = (credits ?? [])
+      .filter((c) => !(c as { external_reference: string | null }).external_reference?.startsWith('bono-cutover-'))
+      .reduce((sum, c) => sum + c.amount_cents, 0)
     // Positive = clinic owes the patient (credit), negative = patient owes the clinic --
     // matches the sign convention already used for patients.balance_cents elsewhere,
     // but computed live from invoices/payments rather than trusting that column, which
     // is only ever written at import time and never kept in sync afterward.
-    state.balanceCents.value = paidCents - invoicedCents + state.creditLedgerCents.value
+    state.balanceCents.value = paidCents - invoicedCents + state.creditLedgerCents.value + cutoverAdjustmentCents
 
     state.activeMembership.value = memberships?.[0] ?? null
     // Packages are pure session-count tracking (name, sessions left) -- the

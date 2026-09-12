@@ -10,7 +10,7 @@ function yesterdayInputValue() {
 }
 
 describe('Taking a visit from a bono in the calendar', () => {
-  it('records the session and leaves no invoice behind for the covered visit', () => {
+  it('records the session and charges the visit at the bono rate', () => {
     cy.seedStaffAccount().then((account) => {
       cy.task('db:createAppointmentType', { accountId: account.accountId, name: 'Consultation', durationMinutes: 30 })
       cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Bea', lastName: 'Bonocover' }).then((patient: any) => {
@@ -52,9 +52,12 @@ describe('Taking a visit from a bono in the calendar', () => {
 
             cy.contains('button', 'Bono 12').click()
 
-            // Replaced by an explicit statement of why there is no invoice.
-            cy.contains('Covered by Bono 12', { timeout: 15000 }).should('be.visible')
-            cy.contains('INV-').should('not.exist')
+            // The visit is charged at the bono rate, and the panel says which
+            // bono it came off -- a EUR 44 charge with nothing explaining it
+            // would read as a second bill.
+            cy.contains('Covered by', { timeout: 15000 }).should('be.visible')
+            cy.contains('Bono 12').should('be.visible')
+            cy.contains('Total: €44.00').should('be.visible')
           })
 
           cy.task('db:packageSessionEffects', { patientId: patient.id, packagePurchaseId: purchase.id }).then((eff: any) => {
@@ -66,7 +69,10 @@ describe('Taking a visit from a bono in the calendar', () => {
             // The whole point: the bono was paid for once, at the sale. A
             // covered visit must not raise a second charge, nor spend an
             // account-credit balance standing in for the same money.
-            expect(eff.invoices, 'no invoice survives for a covered visit').to.have.length(0)
+            // Charged at the bono's own rate, which is what consumes the
+            // money the patient paid up front -- and nothing collected today.
+            expect(eff.invoices, 'the visit is charged').to.have.length(1)
+            expect(eff.invoices[0].total_cents, 'at the bono rate').to.eq(4400)
             expect(eff.payments, 'nothing collected for it').to.have.length(0)
             expect(eff.credits, 'no credit written either way').to.have.length(0)
 

@@ -166,6 +166,32 @@ const effectivePrice = computed(() =>
 // Only loads once a patient is actually selected -- usePatientFinancialSummary
 // no-ops on an empty id, and re-fetches automatically as patientId changes.
 const { loading: bonoLoading, balanceCents, activePackages } = usePatientFinancialSummary(patientId)
+
+// Whether this patient has any OTHER future booking. It used to sit at the
+// bottom of the Billing tab, which is where nobody looking at a booking would
+// think to check: it says nothing about money, only that this person is about
+// to fall out of the schedule. Null while unknown, so nothing flashes before
+// the count lands.
+const hasFutureAppointment = ref<boolean | null>(null)
+async function loadFutureAppointmentCheck() {
+  const id = patientId.value
+  if (!id) {
+    hasFutureAppointment.value = null
+    return
+  }
+  let query = supabase
+    .from('appointments')
+    .select('id', { count: 'exact', head: true })
+    .eq('patient_id', id)
+    .neq('status', 'cancelled')
+    .gt('starts_at', new Date().toISOString())
+  // Editing an existing booking: its own future date must not count as the
+  // "next" one, or a patient with nothing after today looks covered.
+  if (props.appointment?.id) query = query.neq('id', props.appointment.id)
+  const { count } = await query
+  hasFutureAppointment.value = (count ?? 0) > 0
+}
+watch(patientId, loadFutureAppointmentCheck, { immediate: true })
 const bonoStatus = computed(() =>
   computeBonoStatus({
     balanceCents: balanceCents.value,
@@ -361,6 +387,9 @@ async function remove() {
             <UiBalancePill :balance-cents="balanceCents" />
             <BonoStatusBadge :tone="bonoStatus.tone" :label="bonoStatus.label" />
           </div>
+          <p v-if="patientId && hasFutureAppointment === false" class="mt-2 text-[12.5px] font-medium text-danger-text">
+            {{ t('No future appointment — this patient will show up in Recalls automatically.', 'Sin próxima cita: este paciente aparecerá automáticamente en Recordatorios.') }}
+          </p>
         </div>
 
         <div class="grid grid-cols-2 gap-4">

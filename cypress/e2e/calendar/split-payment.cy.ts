@@ -47,7 +47,7 @@ describe('Splitting an appointment payment across methods', () => {
             cy.contains('button', 'billing').click()
             // The visit isn't invoiced until someone says so -- see
             // ensureInvoice(); this is that decision.
-            cy.contains('button', 'Bill this visit').click()
+            cy.contains('button', 'Charge this visit').click()
             cy.get('select').eq(0).should('contain.text', 'Adjustment').select('Adjustment (€50.00)')
             cy.contains('Balance due: €50.00').should('be.visible')
 

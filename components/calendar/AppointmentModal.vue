@@ -172,7 +172,6 @@ const bonoStatus = computed(() =>
     activePackage: activePackages.value[0]
       ? { sessionsTotal: activePackages.value[0].sessions_total, sessionsUsed: activePackages.value[0].sessions_used, priceCents: activePackages.value[0].price_cents }
       : null,
-    appointmentPriceCents: effectivePrice.value,
   }),
 )
 
@@ -358,7 +357,10 @@ async function remove() {
             {{ t('Selected:', 'Seleccionado:') }} <span class="font-medium text-ink-900">{{ selectedPatientLabel }}</span>
             <NuxtLink :to="`/patients/${patientId}`" target="_blank" class="ml-2 text-brand-text hover:text-brand-hover">{{ t('View patient →', 'Ver paciente →') }}</NuxtLink>
           </p>
-          <BonoStatusBadge v-if="patientId && !bonoLoading" class="mt-2" :tone="bonoStatus.tone" :label="bonoStatus.label" />
+          <div v-if="patientId && !bonoLoading" class="mt-2 flex flex-wrap items-center gap-2">
+            <UiBalancePill :balance-cents="balanceCents" />
+            <BonoStatusBadge :tone="bonoStatus.tone" :label="bonoStatus.label" />
+          </div>
         </div>
 
         <div class="grid grid-cols-2 gap-4">

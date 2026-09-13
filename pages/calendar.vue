@@ -1884,7 +1884,6 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
       ref="hoverCardEl"
       :appointment="hoveredAppt"
       :room-name="hoveredRoomName"
-      :overrides="overrides"
       class="fixed z-30"
       :style="{ left: `${hoverPos.x}px`, top: `${hoverPos.y}px` }"
       @mouseenter="keepHoverCard"

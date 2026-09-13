@@ -27,7 +27,7 @@ describe('Voiding an invoice that has payments', () => {
 
           // Nothing paid yet: voiding is the right action and stays available.
           cy.contains('No payments recorded.').should('be.visible')
-          cy.contains('button', 'Void invoice').should('not.be.disabled')
+          cy.contains('button', 'Void receipt').should('not.be.disabled')
 
           cy.contains('button', 'Record payment').parents('form').as('paymentForm')
           cy.get('@paymentForm').find('input[type="number"]').clear().type('50')
@@ -37,7 +37,7 @@ describe('Voiding an invoice that has payments', () => {
           cy.contains('li', 'cash').should('contain', '€50.00')
 
           // Money is on the invoice now -- the way out is a refund, not a void.
-          cy.contains('button', 'Void invoice')
+          cy.contains('button', 'Void receipt')
             .should('be.disabled')
             .should('have.attr', 'title')
             .and('contain', 'Refund or remove the payments')

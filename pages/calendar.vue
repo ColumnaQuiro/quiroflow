@@ -119,6 +119,14 @@ watch(viewMode, (v) => localStorage.setItem(CALENDAR_VIEW_MODE_KEY, v))
 // unreadable pile. One practitioner tab at a time, like PH, sidesteps that
 // entirely instead of trying to render overlaps nicely.
 const CALENDAR_PRACTITIONER_KEY = 'quiroflow-calendar-practitioner'
+// An appointment can end up with no practitioner at all -- a PracticeHub
+// import whose practitioner name matched nobody, a public-API booking that
+// omitted one, a form saved as "Unassigned". With one tab per practitioner
+// and nothing else, those rows match no tab and simply never render, while
+// still being counted in "Today at a glance" -- so the grid disagrees with
+// the number above it and the appointment looks lost. This filter value is
+// the tab that shows them.
+const UNASSIGNED_PRACTITIONER = '__unassigned'
 const practitionerFilter = ref('')
 const anchorDate = ref(new Date())
 const rooms = ref<Room[]>([])
@@ -272,14 +280,25 @@ const clinicTeamMembers = computed(() =>
 // clinic, otherwise falls back to the first tab (e.g. right after switching
 // clinics, or on first load).
 function ensureValidPractitionerFilter() {
+  // The unassigned tab is only offered alongside real practitioner tabs
+  // (below), so it counts as valid only while there is a tab bar to leave it
+  // from -- otherwise switching to a clinic with no practitioners would strand
+  // the calendar on a filter nothing can clear.
+  const unassignedSelectable = clinicTeamMembers.value.length > 0
+  if (practitionerFilter.value === UNASSIGNED_PRACTITIONER && unassignedSelectable) return
   if (clinicTeamMembers.value.some((m) => m.id === practitionerFilter.value)) return
-  const stored = localStorage.getItem(CALENDAR_PRACTITIONER_KEY)
-  const restored = stored && clinicTeamMembers.value.some((m) => m.id === stored) ? stored : ''
-  practitionerFilter.value = restored || (clinicTeamMembers.value[0]?.id ?? '')
+  const stored = localStorage.getItem(CALENDAR_PRACTITIONER_KEY) ?? ''
+  const restorable = (stored === UNASSIGNED_PRACTITIONER && unassignedSelectable) || clinicTeamMembers.value.some((m) => m.id === stored)
+  practitionerFilter.value = (restorable ? stored : '') || (clinicTeamMembers.value[0]?.id ?? '')
 }
 watch(practitionerFilter, (v) => {
   if (v) localStorage.setItem(CALENDAR_PRACTITIONER_KEY, v)
 })
+
+// What the create forms should prefill their Practitioner select with. The
+// unassigned tab is a filter, not a team member, so it prefills as no choice
+// rather than as an id that matches no option (and no row in team_members).
+const prefillPractitionerId = computed(() => (practitionerFilter.value === UNASSIGNED_PRACTITIONER ? '' : practitionerFilter.value))
 
 async function loadRooms() {
   if (!store.currentClinicId) {
@@ -312,7 +331,8 @@ async function loadAppointments() {
     .gte('starts_at', rangeStart.toISOString())
     .lt('starts_at', rangeEnd.toISOString())
     .order('starts_at')
-  if (practitionerFilter.value) query = query.eq('practitioner_id', practitionerFilter.value)
+  if (practitionerFilter.value === UNASSIGNED_PRACTITIONER) query = query.is('practitioner_id', null)
+  else if (practitionerFilter.value) query = query.eq('practitioner_id', practitionerFilter.value)
   const { data } = await query
 
   appointments.value = (data as unknown as AppointmentRow[]) ?? []
@@ -1409,11 +1429,21 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
         v-for="m in clinicTeamMembers"
         :key="m.id"
         type="button"
+        data-testid="practitioner-tab"
         class="h-[26px] shrink-0 rounded-ctlSm px-3 text-[12.5px] font-medium transition-colors"
         :class="practitionerFilter === m.id ? 'bg-brand text-white' : 'text-ink-600 hover:bg-surface-subtle'"
         @click="practitionerFilter = m.id"
       >
         {{ m.full_name }}
+      </button>
+      <button
+        type="button"
+        data-testid="practitioner-tab-unassigned"
+        class="h-[26px] shrink-0 rounded-ctlSm px-3 text-[12.5px] font-medium transition-colors"
+        :class="practitionerFilter === UNASSIGNED_PRACTITIONER ? 'bg-brand text-white' : 'text-ink-faint hover:bg-surface-subtle'"
+        @click="practitionerFilter = UNASSIGNED_PRACTITIONER"
+      >
+        {{ t('No practitioner', 'Sin profesional') }}
       </button>
     </div>
     <div v-else class="flex h-9 shrink-0 items-center border-b border-line bg-surface px-6 text-[12.5px] text-ink-faint">
@@ -1832,7 +1862,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
       :prefill-date="prefill?.date"
       :prefill-time="prefill?.time"
       :prefill-room-id="prefill?.roomId"
-      :prefill-practitioner-id="practitionerFilter"
+      :prefill-practitioner-id="prefillPractitionerId"
       @close="modalOpen = false"
       @saved="onSaved"
     />
@@ -1872,7 +1902,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
       :prefill-date="blockPrefill?.date"
       :prefill-time="blockPrefill?.time"
       :prefill-room-id="blockPrefill?.roomId"
-      :prefill-practitioner-id="practitionerFilter"
+      :prefill-practitioner-id="prefillPractitionerId"
       @close="blockModalOpen = false"
       @saved="onBlockSaved"
     />

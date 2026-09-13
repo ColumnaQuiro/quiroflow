@@ -713,6 +713,43 @@ async function appointmentById(opts: { appointmentId: string }) {
   return row as { id: string; status: string; confirmation_status: string | null; rescheduled: boolean }
 }
 
+/**
+ * Books an appointment straight into the table, skipping the UI entirely.
+ * `practitionerId` is deliberately optional: an appointment with none at all
+ * is a state the product really produces -- a PracticeHub import whose
+ * "Practitioner" column matched no team member, or a public-API booking that
+ * omitted one -- and there is no way to seed it through the calendar's own
+ * form now that the form adopts the open tab's practitioner.
+ */
+async function createAppointment(opts: {
+  accountId: string
+  clinicId: string
+  patientId: string
+  startsAt: string
+  durationMinutes?: number
+  practitionerId?: string | null
+  status?: string
+}) {
+  const startsAt = new Date(opts.startsAt)
+  const endsAt = new Date(startsAt.getTime() + (opts.durationMinutes ?? 30) * 60000)
+  const appointment = unwrap(
+    await admin
+      .from('appointments')
+      .insert({
+        account_id: opts.accountId,
+        clinic_id: opts.clinicId,
+        patient_id: opts.patientId,
+        practitioner_id: opts.practitionerId ?? null,
+        starts_at: startsAt.toISOString(),
+        ends_at: endsAt.toISOString(),
+        status: opts.status ?? 'booked',
+      })
+      .select('id, practitioner_id')
+      .single(),
+  )
+  return appointment as { id: string; practitioner_id: string | null }
+}
+
 export const dbTasks = {
   'db:createStaffAccount': createStaffAccount,
   'db:createTeamMemberWithRole': createTeamMemberWithRole,
@@ -745,6 +782,7 @@ export const dbTasks = {
   'db:packageSessionEffects': packageSessionEffects,
   'db:createWhatsappMessage': createWhatsappMessage,
   'db:seedWhatsappReplyScenario': seedWhatsappReplyScenario,
+  'db:createAppointment': createAppointment,
   'db:appointmentById': appointmentById,
   'db:inboundMessages': inboundMessages,
   'db:setWhatsappAppSecret': setWhatsappAppSecret,

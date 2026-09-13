@@ -180,7 +180,33 @@ async function resolveRepliedAppointment(
 
 export default defineEventHandler(async (event) => {
   const supabase = serverSupabaseServiceRole<Database>(event)
-  const body = await readBody<{ entry?: { changes?: { value?: MetaChangeValue }[] }[] }>(event)
+
+  // Raw bytes, not readBody(): Meta's signature is an HMAC over exactly what
+  // was sent, so parsing and re-encoding first would invalidate it. Everything
+  // below works from this same Buffer.
+  const rawBody = await readRawBody(event, false)
+  if (!rawBody) {
+    throw createError({ statusCode: 400, statusMessage: 'Empty request body.' })
+  }
+
+  // Who is this? Established before a byte of the payload is believed. Until
+  // this change there was no answer -- anyone who knew a clinic's
+  // whatsapp_phone_number_id could cancel a patient's appointment here.
+  const auth = await resolveWebhookAuth(event)
+  if (!auth) {
+    throw createError({
+      statusCode: 401,
+      statusMessage:
+        'Unauthenticated. Either let Meta post directly (it signs with X-Hub-Signature-256, and Settings > WhatsApp needs your Meta App Secret), or have your forwarder send an API token with the whatsapp:webhook scope.',
+    })
+  }
+
+  let body: { entry?: { changes?: { value?: MetaChangeValue }[] }[] }
+  try {
+    body = JSON.parse(rawBody.toString('utf8'))
+  } catch {
+    throw createError({ statusCode: 400, statusMessage: 'Body is not valid JSON.' })
+  }
 
   for (const entry of body?.entry ?? []) {
     for (const change of entry.changes ?? []) {
@@ -194,6 +220,20 @@ export default defineEventHandler(async (event) => {
         .eq('whatsapp_phone_number_id', phoneNumberId)
         .maybeSingle()
       if (!account) continue
+
+      // The authorisation decision, and on the signature path the verification
+      // itself -- it needs the account to know which secret to check against.
+      // Locating the account from the body is not trusting the body: nothing
+      // below this line runs unless the proof holds for this specific clinic.
+      // A silent skip rather than an error, so a forged phone_number_id learns
+      // nothing about which ones exist.
+      if (!(await webhookMayActOnAccount(auth, account.id, rawBody, supabase))) {
+        console.error(
+          `[whatsapp] rejected an unverified webhook for account ${account.id} (${auth.kind} auth). ` +
+            'On the signature path this usually means no Meta App Secret is stored in Settings > WhatsApp.',
+        )
+        continue
+      }
 
       for (const status of value?.statuses ?? []) {
         // error_data.details carries the actual reason behind a generic

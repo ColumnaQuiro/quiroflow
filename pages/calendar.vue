@@ -1404,7 +1404,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
          "all practitioners" view, since two practitioners double-booked into
          the same room at overlapping times would otherwise render as an
          unreadable stack of superimposed cards. -->
-    <div v-if="clinicTeamMembers.length > 0" class="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b border-line bg-surface px-6">
+    <div v-if="clinicTeamMembers.length > 0" data-testid="practitioner-tabs" class="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b border-line bg-surface px-6">
       <button
         v-for="m in clinicTeamMembers"
         :key="m.id"

@@ -10,8 +10,9 @@
 // Matching is by the external reference each importer writes, so this
 // reports facts rather than guesses:
 //   patients          patients.external_reference        = PH patient_number
-//   payments          invoices.invoice_number            = PH-{payment id}
-//                     (PH-package-{id} invoices are receivables raised by
+//   payments          payments.external_reference        = phpay-{payment id}
+//   invoices          invoices.external_reference        = phinv-{invoice id}
+//                     (PH-package-{id} invoices were receivables raised by
 //                      the bonos importer, not payments -- excluded below)
 //   packages/bonos    package_purchases.external_reference = PH-package-{id}
 //
@@ -22,7 +23,10 @@
 const supabase = useSupabaseClient()
 const t = useT()
 
-interface PHPatient { id: number; patient_number: string | null }
+const misreferenced = ref<MisreferencedPatient[]>([])
+
+interface PHPatient { id: number; patient_number: string | null; custom_reference?: string | null; first_name?: string | null; last_name?: string | null }
+
 interface PHPayment { id: number; amount: string | number | null; patient_id: string | number | null }
 interface PHPackage { id: number; name: string | null; package_type: string | null }
 
@@ -107,36 +111,76 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       hereTotalCents: null,
     })
 
+    // Patients stored under their custom_reference instead of their patient
+    // number. See utils/practicehubReferences.ts for why this compares against
+    // PracticeHub's own custom_reference rather than trying to spot a DNI by
+    // its shape -- two of Columnaquiro's 44 were all digits.
+    const herePatientRows = await readAll<{ external_reference: string | null; first_name: string; last_name: string | null }>(
+      'patients',
+      'external_reference, first_name, last_name',
+      (q) => q.not('external_reference', 'is', null),
+    )
+    misreferenced.value = findMisreferencedPatients(phPatients, herePatientRows)
+
     // --- Payments -------------------------------------------------------
-    // Each PracticeHub payment became one invoice here, numbered PH-{id},
-    // so the money either adds up or it doesn't.
+    // A payment is a payment now, keyed by the PracticeHub id it came from.
+    //
+    // This used to look for invoices numbered PH-{payment id}, because the old
+    // importer raised one invoice per payment. The Ledger importer does not:
+    // payments arrive as payments, carrying external_reference = phpay-{id}.
+    // Left as it was, this check reported every payment as missing on any
+    // clinic imported the new way -- the verification step failing loudest
+    // exactly when the import had gone right.
     phase.value = t('Reconciling payments…', 'Cotejando pagos…')
     progress.value = { done: 0, total: 0 }
     const phPayments = await api.fetchAll<PHPayment>('/payments', (done, total) => (progress.value = { done, total }))
-    const phPaymentRefs = new Set(phPayments.map((p) => `PH-${p.id}`))
+    const phPaymentRefs = new Set(phPayments.map((p) => `phpay-${p.id}`))
     const phPaymentCents = phPayments.reduce((sum, p) => sum + Math.round(Number(p.amount ?? 0) * 100), 0)
 
-    // `PH-package-{id}` invoices are excluded: those are the outstanding
-    // balances the bonos importer raises as receivables, not migrated
-    // PracticeHub payments. They match the `PH-%` prefix but have no payment
-    // on the PracticeHub side to pair with, so counting them here would
-    // report every one of them as an extra invoice and skew the money delta.
-    const hereInvoices = await readAll<{ id: string; invoice_number: string }>('invoices', 'id, invoice_number', (q) =>
-      q.like('invoice_number', 'PH-%').not('invoice_number', 'like', 'PH-package-%'),
+    const herePaymentRows = await readAll<{ external_reference: string | null; amount_cents: number }>(
+      'payments',
+      'external_reference, amount_cents',
+      (q) => q.like('external_reference', 'phpay-%'),
     )
-    const hereInvoiceRefs = new Set(hereInvoices.map((i) => i.invoice_number))
-    const hereInvoiceIds = new Set(hereInvoices.map((i) => i.id))
-    const herePayments = await readAll<{ invoice_id: string; amount_cents: number }>('payments', 'invoice_id, amount_cents')
-    const herePaymentCents = herePayments.filter((p) => hereInvoiceIds.has(p.invoice_id)).reduce((sum, p) => sum + p.amount_cents, 0)
+    const herePaymentRefs = new Set(herePaymentRows.map((p) => String(p.external_reference)))
+    const herePaymentCents = herePaymentRows.reduce((sum, p) => sum + p.amount_cents, 0)
 
     built.push({
       key: 'payments',
       label: t('Payments', 'Pagos'),
       phCount: phPaymentRefs.size,
-      hereCount: hereInvoiceRefs.size,
-      ...diff(phPaymentRefs, hereInvoiceRefs),
+      hereCount: herePaymentRefs.size,
+      ...diff(phPaymentRefs, herePaymentRefs),
       phTotalCents: phPaymentCents,
       hereTotalCents: herePaymentCents,
+    })
+
+    // --- Invoices ---------------------------------------------------------
+    // PracticeHub's own invoices, one per visit. Nothing checked these before,
+    // because nothing imported them -- the old importer reconstructed invoices
+    // from payments instead, so there was no per-visit record to compare.
+    phase.value = t('Reconciling invoices…', 'Cotejando facturas…')
+    progress.value = { done: 0, total: 0 }
+    const phInvoices = await api.fetchAll<{ id: number; total: string }>('/invoices', (done, total) => (progress.value = { done, total }))
+    const phInvoiceRefs = new Set(phInvoices.map((i) => `phinv-${i.id}`))
+    const phInvoiceCents = phInvoices.reduce((sum, i) => sum + Math.round(Number(i.total ?? 0) * 100), 0)
+
+    const hereInvoiceRows = await readAll<{ external_reference: string | null; total_cents: number }>(
+      'invoices',
+      'external_reference, total_cents',
+      (q) => q.like('external_reference', 'phinv-%'),
+    )
+    const hereInvoiceRefs = new Set(hereInvoiceRows.map((i) => String(i.external_reference)))
+    const hereInvoiceCents = hereInvoiceRows.reduce((sum, i) => sum + i.total_cents, 0)
+
+    built.push({
+      key: 'invoices',
+      label: t('Invoices (one per visit)', 'Facturas (una por visita)'),
+      phCount: phInvoiceRefs.size,
+      hereCount: hereInvoiceRefs.size,
+      ...diff(phInvoiceRefs, hereInvoiceRefs),
+      phTotalCents: phInvoiceCents,
+      hereTotalCents: hereInvoiceCents,
     })
 
     // --- Packages / bonos ------------------------------------------------
@@ -206,7 +250,31 @@ const introNotes = computed(() => [
     </div>
 
     <div v-else-if="stage === 'report'" class="mt-4 space-y-4">
-      <div v-if="allClear" class="rounded-lg border border-success-border bg-success-bg p-3 text-sm text-success-text">
+      <div v-if="misreferenced.length > 0" class="rounded-lg border border-danger-border bg-danger-bg p-3 text-sm text-danger-text">
+        <p class="font-medium">
+          {{
+            t(
+              `${misreferenced.length} patient(s) are stored under the wrong reference.`,
+              `${misreferenced.length} paciente(s) están guardados con la referencia equivocada.`,
+            )
+          }}
+        </p>
+        <p class="mt-1 text-[12.5px]">
+          {{
+            t(
+              'PracticeHub’s CSV puts a patient’s custom reference (DNI/NIE/passport) in the "Patient Number" column when they have one, and that is what was imported. Every other importer matches on this reference, so these patients’ invoices, payments and bonos will silently skip until it is corrected.',
+              'El CSV de PracticeHub pone la referencia personalizada (DNI/NIE/pasaporte) en la columna "Patient Number" cuando el paciente tiene una, y eso es lo que se importó. Los demás importadores emparejan por esta referencia, así que las facturas, pagos y bonos de estos pacientes se omitirán en silencio hasta corregirlo.',
+            )
+          }}
+        </p>
+        <ul class="mt-2 space-y-0.5 font-mono text-[12px]">
+          <li v-for="m in misreferenced" :key="m.stored">
+            {{ m.name }}: {{ m.stored }} &rarr; {{ m.shouldBe }}
+          </li>
+        </ul>
+      </div>
+
+      <div v-if="allClear && misreferenced.length === 0" class="rounded-lg border border-success-border bg-success-bg p-3 text-sm text-success-text">
         {{ t('Everything matches. Every PracticeHub record is here, and nothing here references a record PracticeHub no longer has.', 'Todo cuadra. Todos los registros de PracticeHub están aquí, y nada de aquí hace referencia a un registro que PracticeHub ya no tiene.') }}
       </div>
 

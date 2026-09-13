@@ -39,7 +39,7 @@ const allGroups = computed<NavGroup[]>(() => [
       { label: t('Memberships', 'Membresías'), to: '/settings/memberships', perm: 'billing_config' },
       { label: t('Payments (Stripe)', 'Pagos (Stripe)'), to: '/settings/payments', perm: 'billing_config' },
       { label: t('Payment Methods', 'Métodos de pago'), to: '/settings/payment-methods', perm: 'billing_config' },
-      { label: t('Invoice Settings', 'Configuración de facturas'), to: '/settings/invoice-settings', perm: 'billing_config' },
+      { label: t('Receipt Settings', 'Configuración de recibos'), to: '/settings/invoice-settings', perm: 'billing_config' },
       { label: t('Fiscal Data', 'Datos fiscales'), to: '/settings/fiscal-data', perm: 'billing_config' },
     ],
   },

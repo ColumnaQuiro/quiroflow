@@ -60,8 +60,8 @@ const groups = computed(() => [
       { to: '/settings/memberships', label: t('Memberships', 'Membresías'), description: t('Recurring plan templates for patients.', 'Plantillas de planes recurrentes para pacientes.'), icon: ICONS.badgeCheck },
       { to: '/settings/payments', label: t('Payments (Stripe)', 'Pagos (Stripe)'), description: t('Automate installments and renewals with a saved card.', 'Automatiza cuotas y renovaciones con una tarjeta guardada.'), icon: ICONS.creditCard },
       { to: '/settings/payment-methods', label: t('Payment Methods', 'Métodos de pago'), description: t('The methods staff can record a payment against.', 'Los métodos con los que el personal puede registrar un pago.'), icon: ICONS.creditCard },
-      { to: '/settings/invoice-settings', label: t('Invoice Settings', 'Configuración de facturas'), description: t('Numbering, display options, and email templates for invoices.', 'Numeración, opciones de visualización y plantillas de email para facturas.'), icon: ICONS.documentText },
-      { to: '/settings/fiscal-data', label: t('Fiscal Data', 'Datos fiscales'), description: t('Legal name and tax ID shown on invoices.', 'Razón social y NIF/CIF que aparecen en las facturas.'), icon: ICONS.documentText },
+      { to: '/settings/invoice-settings', label: t('Receipt Settings', 'Configuración de recibos'), description: t('Numbering, display options, and email templates for visit receipts.', 'Numeración, opciones de visualización y plantillas de email para los recibos de visita.'), icon: ICONS.documentText },
+      { to: '/settings/fiscal-data', label: t('Fiscal Data', 'Datos fiscales'), description: t('Legal name and tax ID shown on facturas and receipts.', 'Razón social y NIF/CIF que aparecen en facturas y recibos.'), icon: ICONS.documentText },
     ],
   },
   {

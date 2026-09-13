@@ -120,7 +120,7 @@ const generalToggles = computed<{ key: BooleanPermissionKey; label: string; hint
   { key: 'communication_config', label: t('Communication configuration', 'Configuración de comunicación'), hint: t('WhatsApp, document templates — requires Settings', 'WhatsApp, plantillas de documentos — requiere Ajustes') },
   { key: 'data_admin', label: t('Data administration', 'Administración de datos'), hint: t('Import, migrations, webhooks — requires Settings', 'Importación, migraciones, webhooks — requiere Ajustes') },
   { key: 'developers_access', label: t('Developer API & tokens', 'API para desarrolladores y tokens'), hint: t('Create/revoke API tokens that can send WhatsApp as this clinic — requires Settings', 'Crear/revocar tokens de API que pueden enviar WhatsApp en nombre de esta clínica — requiere Ajustes') },
-  { key: 'billing_access', label: t('Billing', 'Facturación'), hint: t('View/create invoices', 'Ver/crear facturas') },
+  { key: 'billing_access', label: t('Billing', 'Facturación'), hint: t('View/create receipts', 'Ver/crear recibos') },
   { key: 'recalls_access', label: t('Recalls & patient messaging', 'Recordatorios y mensajería a pacientes') },
   { key: 'inbox_access', label: t('WhatsApp Inbox', 'Bandeja de WhatsApp'), hint: t('Read and reply to patient WhatsApp conversations', 'Leer y responder conversaciones de WhatsApp con pacientes') },
 ])

@@ -234,7 +234,7 @@ const byService = computed(() => {
         </div>
 
         <div v-if="filteredPayments.length === 0" class="mt-4 rounded-card border border-dashed border-line-control bg-surface p-6 text-center text-[13px] text-ink-faint2">
-          {{ t('No payments recorded yet in this range — charts will fill in as invoices get paid.', 'Todavía no hay pagos registrados en este periodo — los gráficos se completarán a medida que se paguen facturas.') }}
+          {{ t('No payments recorded yet in this range — charts will fill in as receipts get paid.', 'Todavía no hay pagos registrados en este periodo — los gráficos se completarán a medida que se paguen recibos.') }}
         </div>
 
         <template v-else>

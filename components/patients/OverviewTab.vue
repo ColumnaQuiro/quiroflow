@@ -640,7 +640,7 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
 
           <label class="mt-3 flex items-center gap-1.5 text-[13px] text-ink-600">
             <input v-model="invoiceEmailEnabled" type="checkbox" class="rounded border-line-control text-brand focus:ring-brand" />
-            {{ t('Email invoice when an appointment is processed', 'Enviar factura por correo al procesar una cita') }}
+            {{ t('Email receipt when an appointment is processed', 'Enviar recibo por correo al procesar una cita') }}
           </label>
         </div>
 
@@ -665,7 +665,7 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
             <UiPill tone="neutral">{{ channelLabel(patient.confirmation_channel) }}</UiPill>
           </div>
           <div class="flex items-center justify-between gap-3">
-            <span class="text-[12.5px] text-ink-muted">{{ t('Invoice email', 'Factura por correo') }}</span>
+            <span class="text-[12.5px] text-ink-muted">{{ t('Receipt email', 'Recibo por correo') }}</span>
             <UiPill :tone="patient.invoice_email_enabled ? 'success' : 'neutral'">{{ patient.invoice_email_enabled ? t('Enabled', 'Activado') : t('Disabled', 'Desactivado') }}</UiPill>
           </div>
           <div class="flex items-start justify-between gap-3">

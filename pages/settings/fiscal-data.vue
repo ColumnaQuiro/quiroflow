@@ -51,7 +51,7 @@ async function save() {
         <SettingsNav />
         <div class="min-w-0 max-w-[660px] flex-1">
           <p class="text-[13px] text-ink-muted2">
-            {{ t('Legal name, tax ID, and address shown on invoices, plus a footer note printed at the bottom of every invoice. Required for invoices to be fiscally valid.', 'Nombre legal, NIF/CIF y dirección que aparecen en las facturas, además de una nota de pie impresa al final de cada factura. Necesarios para que las facturas sean fiscalmente válidas.') }}
+            {{ t('Legal name, tax ID, and address shown on facturas and receipts, plus a footer note printed at the bottom of both. Required for a factura to be fiscally valid.', 'Nombre legal, NIF/CIF y dirección que aparecen en facturas y recibos, además de una nota de pie impresa al final de ambos. Necesarios para que una factura sea fiscalmente válida.') }}
           </p>
 
           <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
@@ -110,8 +110,8 @@ async function save() {
               {{ t('Address is edited in', 'La dirección se edita en') }} <NuxtLink to="/settings/clinics" class="text-brand-text hover:text-brand-hover">{{ t('Settings → Clinics', 'Ajustes → Clínicas') }}</NuxtLink> {{ t('and reused here automatically.', 'y se reutiliza aquí automáticamente.') }}
             </p>
             <div>
-              <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Invoice footer text', 'Texto de pie de factura') }}</label>
-              <p class="text-[11.5px] text-ink-faint">{{ t('Printed at the bottom of every invoice for this clinic (payment terms, thank-you note, etc.).', 'Se imprime al final de cada factura de esta clínica (condiciones de pago, nota de agradecimiento, etc.).') }}</p>
+              <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Document footer text', 'Texto de pie de documento') }}</label>
+              <p class="text-[11.5px] text-ink-faint">{{ t('Printed at the bottom of every factura and receipt for this clinic (payment terms, thank-you note, etc.).', 'Se imprime al final de cada factura y recibo de esta clínica (condiciones de pago, nota de agradecimiento, etc.).') }}</p>
               <textarea
                 v-model="footerText"
                 rows="3"

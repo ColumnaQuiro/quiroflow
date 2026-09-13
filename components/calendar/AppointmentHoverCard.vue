@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computeBonoStatus } from '~/utils/bonoStatus'
-import { effectivePriceCents, type AppointmentTypeOverride } from '~/utils/appointmentOverrides'
 
 interface HoverAppointment {
   id: string
@@ -20,26 +19,21 @@ interface HoverAppointment {
   team_members: { full_name: string } | null
 }
 
-const props = defineProps<{ appointment: HoverAppointment; roomName?: string | null; overrides?: AppointmentTypeOverride[] }>()
+const props = defineProps<{ appointment: HoverAppointment; roomName?: string | null }>()
 const emit = defineEmits<{ noteSaved: []; checkIn: []; reschedule: [] }>()
 
 const supabase = useSupabaseClient()
 const { loading: billingLoading, balanceCents, creditLedgerCents, bonoValueCents, activePackages } = usePatientFinancialSummary(() => props.appointment.patient_id)
 const t = useT()
 
-const bonoStatus = computed(() => {
-  const defaultPriceCents = props.appointment.appointment_types?.default_price_cents ?? 0
-  const appointmentPriceCents = props.appointment.appointment_type_id
-    ? effectivePriceCents(defaultPriceCents, props.appointment.appointment_type_id, props.appointment.practitioner_id, props.overrides ?? [])
-    : defaultPriceCents
-  return computeBonoStatus({
+const bonoStatus = computed(() =>
+  computeBonoStatus({
     balanceCents: balanceCents.value,
     activePackage: activePackages.value[0]
       ? { sessionsTotal: activePackages.value[0].sessions_total, sessionsUsed: activePackages.value[0].sessions_used, priceCents: activePackages.value[0].price_cents }
       : null,
-    appointmentPriceCents,
-  })
-})
+  }),
+)
 
 const visitNumber = ref<number | null>(null)
 const nextVisit = ref<string | null>(null)

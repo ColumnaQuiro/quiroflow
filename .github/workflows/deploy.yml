@@ -6,24 +6,45 @@ name: Deploy to Netlify
 # GitHub Actions builds the project and pushes the result to Netlify itself
 # via the Netlify CLI, using a personal access token instead of Netlify's
 # repo access. Works the same whether the repo is public or private.
+#
+# Releases, not every merge. Merging a PR no longer ships anything: a deploy
+# happens when a GitHub release is published, so several merges batch into one
+# deploy chosen deliberately.
+#
+# The reason is arithmetic: a production deploy costs 15 Netlify credits, and
+# it is charged per deploy regardless of how small the change was. One deploy
+# per merge spends that on every typo fix. Three merges on 13 Sep cost 45
+# credits between them and exhausted the allowance, at which point deploys are
+# refused with a bare `JSONHTTPError: Forbidden` from the CLI -- the same error
+# the "Enforce deployment methods" setting gives, which makes it easy to chase
+# the wrong cause.
+#
+# The cost of that: `main` and production are no longer the same thing. What is
+# merged is not live until someone cuts a release, which applies to a security
+# fix exactly as much as to a feature. Check what production is actually
+# running before concluding a merged fix is in effect.
 on:
-  push:
-    branches: [main]
-  # Lets a deploy be retried (e.g. after fixing a bad NETLIFY_AUTH_TOKEN)
-  # without needing a throwaway commit to main just to re-trigger the push
-  # event, and lets a draft (non-production) deploy be requested for
-  # verification -- see the `prod` input below.
+  release:
+    types: [published]
+  # Lets a deploy be retried (e.g. after fixing a bad NETLIFY_AUTH_TOKEN, or
+  # once a usage allowance resets) without cutting a throwaway release just to
+  # re-trigger the event, and lets a draft (non-production) deploy be requested
+  # for verification -- see the `prod` input below.
   workflow_dispatch:
     inputs:
       prod:
         description: "Publish to production (unchecked = draft preview deploy only, safe to test with)"
         type: boolean
         default: false
+      ref:
+        description: "Tag, branch or SHA to build (blank = the branch this run was started from)"
+        type: string
+        required: false
 
 concurrency:
-  # A second push landing mid-deploy queues behind the first rather than
+  # A second release published mid-deploy queues behind the first rather than
   # racing it -- two overlapping production deploys could publish out of
-  # order and leave main pointing at an older build. Draft deploys triggered
+  # order and leave the site on an older build. Draft deploys triggered
   # by hand don't touch production, so they're left free to run alongside.
   group: netlify-deploy-production
   cancel-in-progress: false
@@ -35,7 +56,14 @@ jobs:
     permissions:
       contents: read
     steps:
+      # The release's own tag, not whatever main happens to be at now. A
+      # release names a specific commit; building main instead would ship
+      # anything merged in the minutes since, which is exactly the surprise
+      # this change exists to avoid. Falls back to the run's own ref for a
+      # manual dispatch.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.ref || github.ref }}
 
       - uses: actions/setup-node@v4
         with:
@@ -75,11 +103,11 @@ jobs:
       # `prod` defaults to false so a manual run is a draft deploy (its own
       # throwaway preview URL, printed in this step's log) -- safe to use to
       # confirm the API routes/SSR actually work before ever publishing to
-      # production. A push to main always deploys for real; that's the
+      # production. Publishing a release always deploys for real; that's the
       # whole point of this workflow.
       - name: Deploy to Netlify
         run: |
-          if [ "${{ github.event_name }}" = "push" ] || [ "${{ inputs.prod }}" = "true" ]; then
+          if [ "${{ github.event_name }}" = "release" ] || [ "${{ inputs.prod }}" = "true" ]; then
             npx netlify-cli@27.5.2 deploy --prod
           else
             npx netlify-cli@27.5.2 deploy

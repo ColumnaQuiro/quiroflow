@@ -2,10 +2,10 @@
 
 ## Git workflow — always branch + PR, never push straight to `main`
 
-`main` deploys continuously to production (**https://app.quiroflow.com** via
-Netlify) on every push — see README "Production". A direct push to `main`
-ships untested code to real clinics with no review and no CI gate. Because
-of that:
+`main` is the trunk everything merges into, and a **published GitHub release**
+is what ships it to production (**https://app.quiroflow.com** via Netlify).
+A direct push to `main` puts unreviewed code in the next release with no CI
+gate behind it. Because of that:
 
 - **Never commit or push directly to `main`.** Always create a new branch
   (from the latest `main`) for any change, however small.
@@ -88,13 +88,36 @@ Two things keep it from happening again:
 Existing hand-numbered migrations stay as they are — renaming an applied
 migration changes its version and would re-run it.
 
-## Deploying — GitHub Actions, not Netlify's git integration
+## Deploying — a published release, via GitHub Actions
 
-`main` still deploys to production on every push, but **Netlify's own
-continuous deployment is not what does it any more**. Netlify gates
-git-based CD for a private, organization-owned repo behind its Pro plan,
-so `.github/workflows/deploy.yml` does the job instead: it builds with
-`npm run build` and ships the result with `netlify-cli deploy --prod`.
+**Merging does not deploy.** `.github/workflows/deploy.yml` runs when a
+GitHub release is **published**, builds with `npm run build`, and ships the
+result with `netlify-cli deploy --prod`. Netlify's own git-based CD is not
+what does it: that is gated behind its Pro plan for a private,
+organization-owned repo.
+
+It used to run on every push to `main`. It no longer does, because **a
+production deploy costs 15 Netlify credits**, charged per deploy however
+small the change. One deploy per merge spends that on every typo fix — three
+merges on 13 Sep cost 45 credits between them and exhausted the allowance.
+Once it is exhausted, deploys are refused with a bare
+`JSONHTTPError: Forbidden` and no other explanation, which is the *same*
+error the "Enforce deployment methods" setting produces — so check usage
+before assuming a setting changed. Batching merges into deliberate releases
+is what keeps that spend down.
+
+**So `main` and production are different things now.** Whatever is merged is
+not live until someone publishes a release, and that applies to a security
+fix exactly as much as to a feature. Before concluding a merged fix is in
+effect, check what production is actually running — the live deploy is
+listed under the Netlify project, and its `published_at` tells you which
+merge it predates.
+
+The workflow checks out **the release's tag**, not `main`, so a release
+ships the commit it names rather than anything merged since. A manual
+`workflow_dispatch` run takes an optional `ref` to build, and defaults to a
+draft (non-production) deploy unless `prod` is ticked — which is the safe
+way to verify SSR and the API routes without publishing.
 
 Two things about that setup cost hours to work out, and neither is
 guessable from the code:

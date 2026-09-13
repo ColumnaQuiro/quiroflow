@@ -1,13 +1,14 @@
+import { SEEDED_PRACTITIONER, assertDayGridShows, dateInputValue, openNewAppointmentPanel, yesterday } from '../../support/calendar'
+
 // Books yesterday rather than the panel's default of 09:00 today --
 // AppointmentBillingTab raises no invoice for a visit that hasn't happened
 // yet, so a 09:00-today appointment leaves this spec with no billing UI on
 // any CI run starting before 09:00 UTC. See the same note in
 // appointment-booking-and-billing.cy.ts.
-function yesterdayInputValue() {
-  const d = new Date()
-  d.setDate(d.getDate() - 1)
-  return d.toISOString().slice(0, 10)
-}
+//
+// Yesterday, not a fixed weekday -- see yesterday() for why the weekday
+// makes no difference to this grid.
+const bookedDay = yesterday()
 
 describe('Splitting an appointment payment across methods', () => {
   it('takes part cash, part card in one submit and completes the visit', () => {
@@ -19,18 +20,25 @@ describe('Splitting an appointment payment across methods', () => {
           cy.login(account.email, account.password)
           cy.visit('/calendar')
           cy.contains('select', 'Work week').select('day')
-          cy.clickUntil('button:contains("New Appointment")', 'input[placeholder="Search by name, phone, or email…"]')
+          openNewAppointmentPanel()
 
           cy.get('.fixed.inset-0.z-50').within(() => {
             cy.get('input[placeholder="Search by name, phone, or email…"]').type('Priya')
             cy.contains('li', 'Priya Partpay').click()
             cy.get('select').eq(0).should('contain.text', 'Consultation').select('Consultation (30 min)')
-            cy.get('input[type="date"]').clear().type(yesterdayInputValue())
+            // Named explicitly rather than left to the panel's prefill. An
+            // appointment with no practitioner is filtered out of every
+            // practitioner tab by loadAppointments() and so never reaches
+            // the grid -- see openNewAppointmentPanel().
+            cy.contains('label', 'Practitioner').parent().find('select').select(SEEDED_PRACTITIONER)
+            cy.get('input[type="date"]').clear().type(dateInputValue(bookedDay))
             cy.contains('button', /^Create$/).click()
           })
           cy.get('.fixed.inset-0.z-50').should('not.exist')
-          // Booked for yesterday, so step the calendar back a day to see it.
+          // Booked for yesterday, so step the calendar back a day to see
+          // it -- and check the grid actually got there before reading it.
           cy.get('[aria-label="Previous"]').click()
+          assertDayGridShows(bookedDay)
           cy.contains('Priya Partpay').should('be.visible')
           cy.contains('Priya Partpay').click({ force: true })
           cy.contains('h2', 'Edit Appointment').should('be.visible')

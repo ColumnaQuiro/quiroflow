@@ -49,6 +49,19 @@ const inferredWholeDay = !!(
 
 const roomId = ref(props.block?.room_id ?? props.prefillRoomId ?? '')
 const practitionerId = ref(props.block?.practitioner_id ?? props.prefillPractitionerId ?? '')
+// Same late-prefill race as NewAppointmentPanel: the calendar only knows its
+// practitioners after mount, so a modal opened before that is handed '' --
+// which here reads as "All practitioners", quietly widening a block the user
+// meant for the practitioner whose tab they were looking at. Adopt the
+// prefill when it arrives, unless they've already picked (choosing "All
+// practitioners" is also '') or we're editing a block that has its own.
+const practitionerChosen = ref(false)
+watch(
+  () => props.prefillPractitionerId,
+  (id) => {
+    if (id && !practitionerChosen.value && !props.block) practitionerId.value = id
+  },
+)
 const wholeDay = ref(inferredWholeDay)
 const startDate = ref(props.block ? toDateInput(props.block.starts_at) : (props.prefillDate ?? toDateInput(new Date().toISOString())))
 const endDate = ref(
@@ -122,7 +135,7 @@ async function remove() {
       <form class="mt-4 space-y-4" @submit.prevent="save">
         <div>
           <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Practitioner', 'Profesional') }}</label>
-          <select v-model="practitionerId" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
+          <select v-model="practitionerId" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" @change="practitionerChosen = true">
             <option value="">{{ t('All practitioners', 'Todos los profesionales') }}</option>
             <option v-for="m in teamMembers" :key="m.id" :value="m.id">{{ m.full_name }}</option>
           </select>

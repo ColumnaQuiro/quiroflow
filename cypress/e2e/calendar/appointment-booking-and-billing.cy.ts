@@ -1,3 +1,5 @@
+import { SEEDED_PRACTITIONER, assertDayGridShows, dateInputValue, openNewAppointmentPanel, yesterday } from '../../support/calendar'
+
 // Books yesterday rather than taking the panel's default of 09:00 today.
 // AppointmentBillingTab only raises an invoice once the visit has actually
 // happened (loadAppointmentTiming: starts_at > now => "This appointment
@@ -7,11 +9,10 @@
 // afternoon. Yesterday is in the past whatever the clock says, and 09:00
 // still sits inside the day grid's 08:00-20:00 window so the appointment is
 // visible to click once the calendar is stepped back a day.
-function yesterdayInputValue() {
-  const d = new Date()
-  d.setDate(d.getDate() - 1)
-  return d.toISOString().slice(0, 10)
-}
+//
+// Yesterday, not a fixed weekday -- see yesterday() for why the weekday
+// makes no difference to this grid.
+const bookedDay = yesterday()
 
 describe('Appointment booking and billing checkout', () => {
   it('books an appointment, then records a payment that completes it', () => {
@@ -31,8 +32,7 @@ describe('Appointment booking and billing checkout', () => {
           // Day view guarantees a single, always-visible column instead.
           cy.contains('select', 'Work week').select('day')
 
-          // First click after a fresh visit can race Vue hydration (see commands.ts clickUntil).
-          cy.clickUntil('button:contains("New Appointment")', 'input[placeholder="Search by name, phone, or email…"]')
+          openNewAppointmentPanel()
 
           cy.get('.fixed.inset-0.z-50').within(() => {
             cy.get('input[placeholder="Search by name, phone, or email…"]').type('Alice')
@@ -42,7 +42,14 @@ describe('Appointment booking and billing checkout', () => {
             // Practitioner selects come after it). Its label includes the
             // effective duration, so this must match the option's exact text.
             cy.get('select').eq(0).should('contain.text', 'Consultation').select('Consultation (30 min)')
-            cy.get('input[type="date"]').clear().type(yesterdayInputValue())
+            // Named explicitly rather than left to the panel's prefill. An
+            // appointment with no practitioner is filtered out of every
+            // practitioner tab by loadAppointments() and so never reaches
+            // the grid -- see openNewAppointmentPanel(). The prefill is now
+            // correct by the time the panel mounts; choosing the
+            // practitioner here means this spec no longer depends on that.
+            cy.contains('label', 'Practitioner').parent().find('select').select(SEEDED_PRACTITIONER)
+            cy.get('input[type="date"]').clear().type(dateInputValue(bookedDay))
             // Exact match -- a substring match on 'Create' hits the
             // "Create Appointment" tab label (also a button, earlier in the
             // DOM) before ever reaching this actual submit button, silently
@@ -57,8 +64,10 @@ describe('Appointment booking and billing checkout', () => {
           cy.get('.fixed.inset-0.z-50').should('not.exist')
 
           // The calendar is still on today; the appointment was booked for
-          // yesterday, so step back a day to bring it into the grid.
+          // yesterday, so step back a day to bring it into the grid, and
+          // check the grid actually got there before reading it.
           cy.get('[aria-label="Previous"]').click()
+          assertDayGridShows(bookedDay)
           cy.contains('Alice Anderson').should('be.visible')
 
           // The default-time appointment can land far enough down the day grid that

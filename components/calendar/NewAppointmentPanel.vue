@@ -40,6 +40,19 @@ const date = ref(props.prefillDate ?? toDateInput(new Date().toISOString()))
 const time = ref(props.prefillTime ?? '09:00')
 const roomId = ref(props.prefillRoomId ?? '')
 const practitionerId = ref(props.prefillPractitionerId ?? '')
+// The calendar only learns who its practitioners are after mount, so a panel
+// opened in that window is handed '' -- and left alone would book an
+// appointment with no practitioner at all, which no calendar tab can show,
+// since the tabs *are* the practitioners. Adopt the prefill when it lands,
+// unless the user has already answered this themselves. "Unassigned" is a
+// deliberate answer too and is also '', so only a flag tells the two apart.
+const practitionerChosen = ref(false)
+watch(
+  () => props.prefillPractitionerId,
+  (id) => {
+    if (id && !practitionerChosen.value) practitionerId.value = id
+  },
+)
 
 // Working hours for the practitioner picked in this form -- their own
 // schedule (Settings -> Team) is authoritative, with the clinic's standing in
@@ -403,7 +416,7 @@ async function save() {
           </div>
           <div>
             <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Practitioner', 'Profesional') }}</label>
-            <select v-model="practitionerId" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
+            <select v-model="practitionerId" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" @change="practitionerChosen = true">
               <option value="">{{ t('Unassigned', 'Sin asignar') }}</option>
               <option v-for="m in teamMembers" :key="m.id" :value="m.id">{{ m.full_name }}</option>
             </select>

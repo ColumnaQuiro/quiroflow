@@ -1,3 +1,5 @@
+import { SEEDED_PRACTITIONER, openNewAppointmentPanel } from '../../support/calendar'
+
 describe('Reschedule mode (cross-week move)', () => {
   it('moves an appointment to a different week via Reschedule button + slot click, not drag', () => {
     cy.seedStaffAccount().then((account) => {
@@ -11,12 +13,17 @@ describe('Reschedule mode (cross-week move)', () => {
         // booking/billing spec.
         cy.contains('select', 'Work week').select('day')
 
-        cy.clickUntil('button:contains("New Appointment")', 'input[placeholder="Search by name, phone, or email…"]')
+        openNewAppointmentPanel()
 
         cy.get('.fixed.inset-0.z-50').within(() => {
           cy.get('input[placeholder="Search by name, phone, or email…"]').type('Alice')
           cy.contains('li', 'Alice Anderson').click()
           cy.get('select').eq(0).should('contain.text', 'Consultation').select('Consultation (30 min)')
+          // Named explicitly rather than left to the panel's prefill. An
+          // appointment with no practitioner is filtered out of every
+          // practitioner tab by loadAppointments() and so never reaches the
+          // grid -- see openNewAppointmentPanel().
+          cy.contains('label', 'Practitioner').parent().find('select').select(SEEDED_PRACTITIONER)
           cy.contains('button', /^Create$/).click()
         })
         cy.get('.fixed.inset-0.z-50').should('not.exist')

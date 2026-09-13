@@ -149,7 +149,7 @@ async function ensureInvoice(): Promise<InvoiceRow | null> {
 
   const { data: invoiceNumber, error: numberError } = await supabase.rpc('next_invoice_number', { p_account_id: store.accountId! })
   if (numberError || !invoiceNumber) {
-    error.value = numberError?.message ?? t('Could not allocate an invoice number.', 'No se ha podido asignar un número de factura.')
+    error.value = numberError?.message ?? t('Could not allocate a receipt number.', 'No se ha podido asignar un número de recibo.')
     return null
   }
   const priceCents = props.appointmentTypePriceCents ?? 0
@@ -374,7 +374,7 @@ async function usePackageSession(pkg: { id: string; package_name: string; sessio
   async function chargeTheVisit(): Promise<void> {
     const { data: chargeNumber } = await supabase.rpc('next_invoice_number', { p_account_id: store.accountId! })
     if (!chargeNumber) {
-      error.value = t('Could not allocate an invoice number.', 'No se ha podido asignar un número de factura.')
+      error.value = t('Could not allocate a receipt number.', 'No se ha podido asignar un número de recibo.')
       return
     }
     const { data: created } = await supabase
@@ -573,11 +573,11 @@ async function recordPayment() {
       </div>
     </div>
 
-    <div v-if="loadingInvoice" class="text-ink-faint">{{ t('Loading invoice…', 'Cargando factura…') }}</div>
+    <div v-if="loadingInvoice" class="text-ink-faint">{{ t('Loading receipt…', 'Cargando recibo…') }}</div>
     <p v-else-if="!invoice && appointmentIsUpcoming" class="text-ink-faint">
-      {{ t("This appointment hasn't happened yet — no invoice until it does.", 'Esta cita todavía no ha ocurrido: no habrá factura hasta entonces.') }}
+      {{ t("This appointment hasn't happened yet — no receipt until it does.", 'Esta cita todavía no ha ocurrido: no habrá recibo hasta entonces.') }}
     </p>
-    <p v-else-if="!invoice && !can('billing_access')" class="text-ink-faint">{{ t('No invoice for this appointment yet.', 'Todavía no hay factura para esta cita.') }}</p>
+    <p v-else-if="!invoice && !can('billing_access')" class="text-ink-faint">{{ t('No receipt for this appointment yet.', 'Todavía no hay recibo para esta cita.') }}</p>
     <!-- Covered by a bono and nothing extra was added, so there is no invoice
     to show. Say so explicitly: an empty panel reads as something failing. -->
     <div v-else-if="!invoice && packageCoverage" class="rounded-card border border-line bg-surface p-3">
@@ -651,7 +651,7 @@ async function recordPayment() {
             :disabled="sendingInvoice"
             @click="sendInvoiceEmail"
           >
-            {{ sendingInvoice ? t('Sending…', 'Enviando…') : t('Send invoice', 'Enviar factura') }}
+            {{ sendingInvoice ? t('Sending…', 'Enviando…') : t('Send receipt', 'Enviar recibo') }}
           </button>
         </div>
       </div>

@@ -31,7 +31,7 @@ function eur(cents: number) {
   <div>
     <PatientPageHead
       :title="t('Billing', 'Facturación')"
-      :lead="t('Your packages, your balance and every invoice.', 'Tus bonos, tu saldo y todas tus facturas.')"
+      :lead="t('Your packages, your balance, your facturas and every receipt.', 'Tus bonos, tu saldo, tus facturas y todos tus recibos.')"
     />
 
     <div class="grid grid-cols-2 gap-3">

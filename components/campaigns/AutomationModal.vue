@@ -18,7 +18,7 @@ const TRIGGER_OPTIONS = computed(() => [
   { value: 'appointment.same_day', label: t('Day of appointment (morning send)', 'Día de la cita (envío por la mañana)') },
   { value: 'appointment.hours_before', label: t('X hours before appointment', 'X horas antes de la cita') },
   { value: 'appointment.review_request', label: t('X days after a completed visit (review request)', 'X días después de una visita completada (solicitud de reseña)') },
-  { value: 'invoice.paid', label: t('Invoice paid', 'Factura pagada') },
+  { value: 'invoice.paid', label: t('Receipt paid', 'Recibo pagado') },
   { value: 'patient.birthday', label: t("Patient's birthday (daily check)", 'Cumpleaños del paciente (comprobación diaria)') },
   { value: 'patient.referred', label: t('Patient referred someone (thank the referrer)', 'El paciente refirió a alguien (agradecer a quien refirió)') },
   { value: 'membership.new_member', label: t('New membership started', 'Nueva membresía iniciada') },

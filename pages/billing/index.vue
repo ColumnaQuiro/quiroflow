@@ -128,7 +128,7 @@ function goToPage(p: number) {
 const outstandingMeta = computed(() => {
   if (!statsLoaded.value) return undefined
   const amount = Math.round(outstandingCents.value / 100).toLocaleString('en-US')
-  const noun = outstandingCount.value === 1 ? t('invoice', 'factura') : t('invoices', 'facturas')
+  const noun = outstandingCount.value === 1 ? t('receipt', 'recibo') : t('receipts', 'recibos')
   return t(
     `€${amount} outstanding across ${outstandingCount.value} ${noun}`,
     `€${amount} pendiente en ${outstandingCount.value} ${noun}`,
@@ -150,7 +150,7 @@ function formatDate(iso: string) {
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Billing', 'Facturación')" :meta="outstandingMeta">
       <UiBtn variant="secondary" @click="navigateTo('/settings/services')">{{ t('Services & products', 'Servicios y productos') }}</UiBtn>
-      <UiBtn variant="primary" @click="navigateTo('/billing/new')">+ {{ t('Quick invoice', 'Factura rápida') }}</UiBtn>
+      <UiBtn variant="primary" @click="navigateTo('/billing/new')">+ {{ t('Quick receipt', 'Recibo rápido') }}</UiBtn>
     </PageHeader>
 
     <div class="flex-1 overflow-y-auto bg-surface-page p-6">
@@ -182,7 +182,7 @@ function formatDate(iso: string) {
               <UiSkeleton class="h-3.5 w-16 rounded-ctlSm" />
             </div>
           </div>
-          <div v-else-if="invoices.length === 0" class="px-4 py-10 text-center text-[13px] text-ink-muted2">{{ t('No invoices yet.', 'Todavía no hay facturas.') }}</div>
+          <div v-else-if="invoices.length === 0" class="px-4 py-10 text-center text-[13px] text-ink-muted2">{{ t('No receipts yet.', 'Todavía no hay recibos.') }}</div>
           <ul v-else class="divide-y divide-line-row">
             <li
               v-for="invoice in invoices"
@@ -221,7 +221,7 @@ function formatDate(iso: string) {
             :visible-pages="visiblePages"
             :has-prev="page > 1"
             :has-next="page < totalPages"
-            :summary="`${t('Page', 'Página')} ${page} ${t('of', 'de')} ${totalPages} · ${totalCount} ${totalCount === 1 ? t('invoice', 'factura') : t('invoices', 'facturas')}`"
+            :summary="`${t('Page', 'Página')} ${page} ${t('of', 'de')} ${totalPages} · ${totalCount} ${totalCount === 1 ? t('receipt', 'recibo') : t('receipts', 'recibos')}`"
             @go-to-page="goToPage"
           />
         </div>

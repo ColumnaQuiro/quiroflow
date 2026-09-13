@@ -98,6 +98,10 @@ interface LocalBono {
   reference: string | null
   visitRows: number
   hasInvoice: boolean
+  // What is stored as outstanding, so a re-run can tell whether PracticeHub
+  // has moved since. Null on a bono imported before 0174 -- which is all of
+  // them on this account, and why the first re-run backfills every one.
+  owedCents: number | null
 }
 
 const stage = ref<'connect' | 'loading' | 'preview' | 'applying' | 'done' | 'error'>('connect')
@@ -226,6 +230,9 @@ function paidNotConsumedCentsFor(pkg: PHPatientPackage): number {
 // having linked the payment (see the caveat on paidNotConsumedCentsFor) than a debt
 // this clinic is still owed, and inventing receivables against old patients
 // is the one mistake here that reaches the outside world.
+// What PracticeHub says is still owed on this bono. Stored on the purchase
+// since 0174 and shown on the card -- it used to be turned into an invoice,
+// which was a charge PracticeHub does not have and distorted the balance.
 function owedCentsFor(pkg: PHPatientPackage): number {
   return Math.max(0, Math.round(-(pkg.package_balance ?? 0) * 100))
 }
@@ -382,7 +389,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     for (let page = 0; ; page++) {
       const { data } = await supabase
         .from('package_purchases')
-        .select('id, patient_id, purchased_at, external_reference, invoice_id, package_name, price_cents, sessions_used, sessions_total')
+        .select('id, patient_id, purchased_at, external_reference, invoice_id, package_name, price_cents, sessions_used, sessions_total, owed_cents')
         .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
       for (const row of data ?? []) {
         if (row.external_reference) purchaseByRef.set(row.external_reference, row.id)
@@ -394,6 +401,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
           priceCents: row.price_cents ?? 0,
           sessionsUsed: row.sessions_used ?? 0,
           sessionsTotal: row.sessions_total ?? 0,
+          owedCents: row.owed_cents,
           purchasedAt: String(row.purchased_at),
           reference: row.external_reference ?? null,
           visitRows: 0,
@@ -694,10 +702,15 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       const { counterSync, usedAheadOfPracticeHub } = existingLocal
         ? syncFor(existingLocal, Math.max(visitsTotal, 1), sessionsUsed, priceCents)
         : { counterSync: null, usedAheadOfPracticeHub: false }
-      // Nothing left to do: the bono is here, its household is attached and
-      // its counters match PracticeHub. Money still owed on it is not work --
-      // it is a fact about the bono, not something this importer writes.
-      if (existingPurchaseId && !needsShares && !needsReferenceStamp && !counterSync) continue
+      // What PracticeHub says is outstanding, against what is stored. On this
+      // account that is the whole backfill: 520 bonos were imported before
+      // there was a column to put it in.
+      const storedOwed = existingLocal?.owedCents ?? null
+      const needsOwedStamp = existingPurchaseId !== null && storedOwed !== owedCents
+
+      // Nothing left to do: the bono is here, its household is attached, its
+      // counters match PracticeHub and so does its outstanding figure.
+      if (existingPurchaseId && !needsShares && !needsReferenceStamp && !counterSync && !needsOwedStamp) continue
 
       built.push({
         phPackageId: pkg.id,
@@ -875,6 +888,7 @@ async function applyFixes() {
           sessions_used: c.sessionsUsed,
           purchased_at: c.created,
           external_reference: externalRef,
+          owed_cents: c.owedCents,
         })
         .select('id')
         .single()
@@ -888,6 +902,12 @@ async function applyFixes() {
       purchaseId = purchase.id
     }
 
+    // The outstanding figure on its own, for a bono that needs nothing else.
+    // counterSync above already carries it when there is other work to do.
+    if (c.repairOnly && !c.counterSync && purchaseId) {
+      await supabase.from('package_purchases').update({ owed_cents: c.owedCents }).eq('id', purchaseId)
+    }
+
     // Bring an already-imported bono up to what PracticeHub says now. Only the
     // fields that actually differ are sent, so a re-run touches nothing it does
     // not have to. See syncFor() for why sessions_used only ever rises.
@@ -898,6 +918,7 @@ async function applyFixes() {
           ...(c.counterSync.sessionsTotal !== undefined ? { sessions_total: c.counterSync.sessionsTotal } : {}),
           ...(c.counterSync.sessionsUsed !== undefined ? { sessions_used: c.counterSync.sessionsUsed } : {}),
           ...(c.counterSync.priceCents !== undefined ? { price_cents: c.counterSync.priceCents } : {}),
+          owed_cents: c.owedCents,
         })
         .eq('id', purchaseId)
       if (syncError) {

@@ -1,9 +1,10 @@
 // A patient's invoices, and the PDF behind each one.
 //
-// Extracted from components/patient/InvoicesCard.vue when the portal grew
-// a billing page: the query and the status vocabulary are the same on both
-// front ends, and "void" meaning "this was cancelled, you owe nothing" is
-// worth stating once.
+// Extracted from the patient invoices card when the portal grew a billing
+// page: the query and the status vocabulary are the same on both front
+// ends, and "void" meaning "this was cancelled, you owe nothing" is worth
+// stating once. That card is gone -- pages/portal/billing.vue and
+// mobile/pages/billing.vue are the two callers now.
 export interface PatientInvoiceRow {
   id: string
   invoice_number: string | null
@@ -50,7 +51,7 @@ export function usePatientInvoices(patientId: () => string) {
       })
       window.open(url, '_blank')
     } catch {
-      showToast(t('Could not download that invoice.', 'No se pudo descargar la factura.'), 'error')
+      showToast(t('Could not download that receipt.', 'No se pudo descargar el recibo.'), 'error')
     } finally {
       busyId.value = null
     }

@@ -21,9 +21,10 @@ export default defineEventHandler(async (event) => {
 
   const html = `
     <div style="font-family:sans-serif">
-      <h2>Invoice ${data.invoiceNumber}</h2>
+      <h2>Recibo ${data.invoiceNumber}</h2>
       <p>Hi ${data.patient.firstName},</p>
-      <p>Here is your invoice -- the full PDF is attached.</p>
+      <p>Here is the receipt for your visit -- the full PDF is attached. The
+      invoice (factura) for what you paid is issued separately.</p>
       <table style="border-collapse:collapse;width:100%">
         <thead><tr><th align="left">Description</th><th align="right">Qty</th><th align="right">Total</th></tr></thead>
         <tbody>${rows}</tbody>
@@ -34,7 +35,7 @@ export default defineEventHandler(async (event) => {
 
   await sendResendEmail({
     to: data.patient.email,
-    subject: `Invoice ${data.invoiceNumber}`,
+    subject: `Recibo ${data.invoiceNumber}`,
     html,
     attachments: [{ filename: `${data.invoiceNumber}.pdf`, content: pdf.toString('base64') }],
   })

@@ -674,7 +674,7 @@ async function sendInvoiceEmail(invoiceId: string) {
 // payment by deleting the wrong invoice outright and redoing it correctly,
 // rather than trying to edit amounts in place after the fact.
 async function deleteInvoice(invoice: InvoiceRow) {
-  if (!confirm(`${t('Delete invoice', 'Eliminar factura')} ${invoice.invoice_number} (${money(invoice.total_cents)})? ${t("This also removes any payments recorded against it. This can't be undone.", 'Esto también elimina los pagos registrados contra ella. Esta acción no se puede deshacer.')}`)) return
+  if (!confirm(`${t('Delete receipt', 'Eliminar recibo')} ${invoice.invoice_number} (${money(invoice.total_cents)})? ${t("This also removes any payments recorded against it. This can't be undone.", 'Esto también elimina los pagos registrados contra ella. Esta acción no se puede deshacer.')}`)) return
   await supabase.from('invoices').delete().eq('id', invoice.id)
   await Promise.all([loadAll(), refreshCreditSummary(), loadFacturas()])
 }
@@ -693,7 +693,7 @@ async function deletePayment(paymentId: string, invoiceId: string | null, amount
   if (
     !confirm(
       `${t('Remove this', 'Eliminar este')} ${money(amountCents)} ${t('payment', 'pago')}${invoice ? ` ${t('from', 'de')} ${invoice.invoice_number}` : ''}? ` +
-        t('The invoice reopens if it is no longer fully paid. This does not refund any money.', 'La factura se reabrirá si deja de estar pagada. Esto no reembolsa ningún importe.'),
+        t('The receipt reopens if it is no longer fully paid. This does not refund any money.', 'El recibo se reabrirá si deja de estar pagado. Esto no reembolsa ningún importe.'),
     )
   )
     return
@@ -724,7 +724,7 @@ async function writeOffInvoice(invoiceId: string) {
   const paidCents = (paid ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
   const openCents = invoice.total_cents - paidCents
   if (openCents <= 0) return
-  if (!confirm(`${t('Write off', 'Condonar')} ${money(openCents)} ${t('remaining on', 'restantes de')} ${invoice.invoice_number}? ${t('This settles the invoice without collecting payment.', 'Esto salda la factura sin cobrar el pago.')}`)) return
+  if (!confirm(`${t('Write off', 'Condonar')} ${money(openCents)} ${t('remaining on', 'restantes de')} ${invoice.invoice_number}? ${t('This settles the receipt without collecting payment.', 'Esto salda el recibo sin cobrar el pago.')}`)) return
   await supabase.from('payments').insert({ account_id: store.accountId!, patient_id: props.patientId, invoice_id: invoiceId, amount_cents: openCents, method: 'write_off' })
   await supabase.from('invoices').update({ status: 'paid' }).eq('id', invoiceId)
   await Promise.all([loadAll(), refreshCreditSummary(), loadFacturas()])
@@ -1490,9 +1490,9 @@ function money(cents: number) {
 
         <form v-if="creditLedgerCents > 0 && unpaidInvoices.length > 0" class="mt-3 flex flex-wrap items-end gap-2 border-t border-line-divider pt-3" @submit.prevent="applyCreditToInvoice">
           <div>
-            <label class="block text-[11px] text-ink-muted">{{ t('Apply to invoice', 'Aplicar a factura') }}</label>
+            <label class="block text-[11px] text-ink-muted">{{ t('Apply to receipt', 'Aplicar a recibo') }}</label>
             <select v-model="applyCreditInvoiceId" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
-              <option value="" disabled>{{ t('Select invoice…', 'Seleccionar factura…') }}</option>
+              <option value="" disabled>{{ t('Select receipt…', 'Seleccionar recibo…') }}</option>
               <option v-for="inv in unpaidInvoices" :key="inv.id" :value="inv.id">{{ inv.invoice_number }} ({{ money(inv.total_cents) }})</option>
             </select>
           </div>
@@ -1511,7 +1511,7 @@ function money(cents: number) {
       <div v-if="activePanel === 'payment'" class="mt-4 border-t border-line-divider pt-4">
         <form v-if="unpaidInvoices.length > 0" class="space-y-2" @submit.prevent="takePayment">
           <div>
-            <label class="block text-[11px] text-ink-muted">{{ t('Invoice', 'Factura') }}</label>
+            <label class="block text-[11px] text-ink-muted">{{ t('Receipt', 'Recibo') }}</label>
             <select v-model="paymentInvoiceId" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
               <option v-for="inv in unpaidInvoices" :key="inv.id" :value="inv.id">{{ inv.invoice_number }} ({{ money(inv.total_cents) }})</option>
             </select>
@@ -1553,7 +1553,7 @@ function money(cents: number) {
             </UiBtn>
           </div>
         </form>
-        <p v-else class="text-[12.5px] text-ink-faint">{{ t('No unpaid invoices to take a payment against.', 'No hay facturas pendientes contra las que registrar un pago.') }}</p>
+        <p v-else class="text-[12.5px] text-ink-faint">{{ t('No unpaid receipts to take a payment against.', 'No hay recibos pendientes contra los que registrar un pago.') }}</p>
         <p v-if="paymentError" class="mt-2 text-[12px] text-danger-text">{{ paymentError }}</p>
       </div>
     </div>

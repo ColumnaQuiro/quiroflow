@@ -159,7 +159,7 @@ const totalsByPractitioner = computed(() => series.value.map((s) => ({ label: s.
         <UiSkeleton class="mt-3 h-80 w-full rounded-ctl" />
       </div>
       <div v-else-if="filteredPayments.length === 0" class="mt-6 rounded-card border border-dashed border-line-control bg-surface p-6 text-center text-[13px] text-ink-faint2">
-        {{ t('No payments recorded yet — this fills in once invoices are being paid.', 'Todavía no hay pagos registrados — esto se completará en cuanto se paguen facturas.') }}
+        {{ t('No payments recorded yet — this fills in once receipts are being paid.', 'Todavía no hay pagos registrados — esto se completará en cuanto se paguen recibos.') }}
       </div>
       <template v-else>
         <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">

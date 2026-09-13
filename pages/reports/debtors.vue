@@ -95,7 +95,7 @@ function patientName(id: string) {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader :title="t('Debtors', 'Deudores')" :meta="t('Package/bono purchases with no paid invoice', 'Compras de bonos/paquetes sin factura pagada')">
+    <PageHeader :title="t('Debtors', 'Deudores')" :meta="t('Package/bono purchases with no paid receipt', 'Compras de bonos/paquetes sin recibo pagado')">
       <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
     </PageHeader>
 
@@ -142,7 +142,7 @@ function patientName(id: string) {
                 <td class="px-4 py-2.5">
                   <span v-if="schedulesByPurchase.get(p.id)" class="rounded-pill bg-danger-bg px-1.5 py-0.5 text-[11px] font-medium text-danger-text">{{ t('stripe charge failed', 'cobro de stripe fallido') }}</span>
                   <span v-else class="rounded-pill px-1.5 py-0.5 text-[11px] font-medium" :class="p.invoice_id ? 'bg-danger-bg text-danger-text' : 'bg-chip-bg text-chip-text'">
-                    {{ p.invoice_id ? (invoicesById.get(p.invoice_id)?.status ?? t('unknown', 'desconocido')) : t('no invoice', 'sin factura') }}
+                    {{ p.invoice_id ? (invoicesById.get(p.invoice_id)?.status ?? t('unknown', 'desconocido')) : t('no receipt', 'sin recibo') }}
                   </span>
                 </td>
               </tr>

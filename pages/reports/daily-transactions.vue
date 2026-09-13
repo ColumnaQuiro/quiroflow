@@ -181,7 +181,7 @@ const byMethod = computed(() => {
               <tr>
                 <th class="px-4 py-2">{{ t('Time', 'Hora') }}</th>
                 <th class="px-4 py-2">{{ t('Patient', 'Paciente') }}</th>
-                <th class="px-4 py-2">{{ t('Invoice', 'Factura') }}</th>
+                <th class="px-4 py-2">{{ t('Receipt', 'Recibo') }}</th>
                 <th class="px-4 py-2">{{ t('Practitioner', 'Profesional') }}</th>
                 <th class="px-4 py-2">{{ t('Method', 'Método') }}</th>
                 <th class="px-4 py-2 text-right">{{ t('Amount', 'Importe') }}</th>

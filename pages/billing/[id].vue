@@ -197,7 +197,7 @@ async function voidInvoice() {
     )
     return
   }
-  if (!confirm(t('Void this invoice?', '¿Anular esta factura?'))) return
+  if (!confirm(t('Void this receipt?', '¿Anular este recibo?'))) return
   await supabase.from('invoices').update({ status: 'void' }).eq('id', invoiceId)
   await load()
 }
@@ -207,7 +207,7 @@ async function sendEmail() {
   sending.value = true
   try {
     await useStaffFetch(`/api/invoices/${invoiceId}/send`, { method: 'POST' })
-    sendMessage.value = t('Invoice emailed.', 'Factura enviada por correo.')
+    sendMessage.value = t('Receipt emailed.', 'Recibo enviado por correo.')
   } catch (e: any) {
     sendMessage.value = e?.data?.message ?? t('Failed to send email.', 'No se pudo enviar el correo.')
   }
@@ -236,7 +236,7 @@ function formatDate(iso: string) {
 <template>
   <div class="flex h-full flex-col">
     <div class="print:hidden">
-      <PageHeader :title="invoice ? invoice.invoice_number : t('Invoice', 'Factura')" :meta="invoice ? `${invoice.patients?.first_name ?? ''} ${invoice.patients?.last_name ?? ''}`.trim() : undefined">
+      <PageHeader :title="invoice ? invoice.invoice_number : t('Receipt', 'Recibo')" :meta="invoice ? `${invoice.patients?.first_name ?? ''} ${invoice.patients?.last_name ?? ''}`.trim() : undefined">
         <template v-if="invoice">
           <!-- Disabled rather than hidden when the invoice has payments: the
           action still needs to be findable, and the tooltip is what tells
@@ -246,10 +246,10 @@ function formatDate(iso: string) {
             variant="ghost"
             size="sm"
             :disabled="hasPayments"
-            :title="hasPayments ? t('Refund or remove the payments on this invoice before voiding it', 'Reembolsa o elimina los pagos de esta factura antes de anularla') : undefined"
+            :title="hasPayments ? t('Refund or remove the payments on this receipt before voiding it', 'Reembolsa o elimina los pagos de este recibo antes de anularlo') : undefined"
             @click="voidInvoice"
           >
-            {{ t('Void invoice', 'Anular factura') }}
+            {{ t('Void receipt', 'Anular recibo') }}
           </UiBtn>
           <UiBtn variant="secondary" @click="backToBilling">&larr; {{ t('Back to billing', 'Volver a facturación') }}</UiBtn>
         </template>
@@ -264,7 +264,7 @@ function formatDate(iso: string) {
           <UiSkeleton class="h-3 w-32 rounded-ctlSm" />
         </div>
       </div>
-      <div v-else-if="notFound" class="text-center text-[13px] text-ink-muted2">{{ t('Invoice not found.', 'Factura no encontrada.') }}</div>
+      <div v-else-if="notFound" class="text-center text-[13px] text-ink-muted2">{{ t('Receipt not found.', 'Recibo no encontrado.') }}</div>
 
       <div v-else-if="invoice" class="mx-auto max-w-[720px] space-y-4">
         <div class="overflow-hidden rounded-card border border-line bg-surface shadow-card">

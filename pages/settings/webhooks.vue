@@ -16,7 +16,7 @@ const EVENT_OPTIONS = computed(() => [
   { value: 'appointment.updated', label: t('Appointment updated', 'Cita actualizada') },
   { value: 'appointment.deleted', label: t('Appointment deleted', 'Cita eliminada') },
   { value: 'appointment.checked_in', label: t('Appointment checked in', 'Cita registrada (check-in)') },
-  { value: 'invoice.paid', label: t('Invoice paid', 'Factura pagada') },
+  { value: 'invoice.paid', label: t('Receipt paid', 'Recibo pagado') },
 ])
 
 const webhooks = ref<Webhook[]>([])

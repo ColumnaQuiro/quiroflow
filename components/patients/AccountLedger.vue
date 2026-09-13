@@ -107,7 +107,7 @@ const rows = computed<LedgerRow[]>(() => {
         key: `invoice-${inv.id}`,
         ref: inv.invoice_number,
         date: inv.created_at,
-        description: `${t('Refund', 'Reembolso')} — ${invoiceRefFor(inv.refunds_invoice_id) ?? t('deleted invoice', 'factura eliminada')}`,
+        description: `${t('Refund', 'Reembolso')} — ${invoiceRefFor(inv.refunds_invoice_id) ?? t('deleted receipt', 'recibo eliminado')}`,
         debitCents: 0,
         creditCents: refundedCents,
         balanceText: '—',
@@ -139,7 +139,7 @@ const rows = computed<LedgerRow[]>(() => {
       key: `invoice-${inv.id}`,
       ref: inv.invoice_number,
       date: inv.created_at,
-      description: inv.status === 'void' ? t('Invoice (void)', 'Factura (anulada)') : isUnflaggedRefund ? t('Invoice (refund)', 'Factura (reembolso)') : t('Invoice', 'Factura'),
+      description: inv.status === 'void' ? t('Receipt (void)', 'Recibo (anulado)') : isUnflaggedRefund ? t('Receipt (refund)', 'Recibo (reembolso)') : t('Receipt', 'Recibo'),
       debitCents: inv.status === 'void' ? 0 : Math.max(inv.total_cents, 0),
       creditCents: inv.status === 'void' ? 0 : Math.max(-inv.total_cents, 0),
       balanceText: inv.status === 'void' ? '—' : money(openCents),
@@ -230,7 +230,7 @@ const rows = computed<LedgerRow[]>(() => {
       voided: false,
       detail: [
         ...(c.method ? [{ label: t('Method', 'Método'), value: c.method }] : []),
-        ...(c.invoice_id ? [{ label: t('Linked invoice', 'Factura vinculada'), value: invoiceRefFor(c.invoice_id) ?? '—' }] : []),
+        ...(c.invoice_id ? [{ label: t('Linked receipt', 'Recibo vinculado'), value: invoiceRefFor(c.invoice_id) ?? '—' }] : []),
       ],
     }
   })
@@ -418,7 +418,7 @@ async function sendStatement() {
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>
           </button>
           <div v-if="menuOpen" class="absolute right-0 z-10 mt-1 w-44 rounded-ctl border border-line bg-surface py-1 shadow-popover">
-            <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="newInvoice">{{ t('New Invoice', 'Nueva factura') }}</button>
+            <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="newInvoice">{{ t('New receipt', 'Nuevo recibo') }}</button>
             <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="takePayment">{{ t('New Payment', 'Nuevo pago') }}</button>
             <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="addCredit">{{ t('Add Credit', 'Añadir crédito') }}</button>
             <button v-if="creditLedgerCents > 0" type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="openTransferCredit">
@@ -484,10 +484,10 @@ async function sendStatement() {
                   >
                     {{ t('Remove payment', 'Eliminar pago') }}
                   </button>
-                  <span class="text-ink-faint2">{{ t('Reopens the invoice so it can be billed again', 'Reabre la factura para poder facturarla de nuevo') }}</span>
+                  <span class="text-ink-faint2">{{ t('Reopens the receipt so it can be billed again', 'Reabre el recibo para poder facturarlo de nuevo') }}</span>
                 </div>
                 <div v-if="row.invoiceId" class="mt-2 flex items-center gap-3 border-t border-line-divider pt-2 text-[12px]">
-                  <NuxtLink :to="`/billing/${row.invoiceId}`" class="font-medium text-brand-text hover:text-brand-hover">{{ t('Open invoice', 'Abrir factura') }}</NuxtLink>
+                  <NuxtLink :to="`/billing/${row.invoiceId}`" class="font-medium text-brand-text hover:text-brand-hover">{{ t('Open receipt', 'Abrir recibo') }}</NuxtLink>
                   <span v-if="sendResultInvoiceId === row.invoiceId" class="text-ink-faint">{{ sendResultMessage }}</span>
                   <button
                     v-else
@@ -496,7 +496,7 @@ async function sendStatement() {
                     :disabled="sendingInvoiceId === row.invoiceId"
                     @click="emit('sendInvoice', row.invoiceId)"
                   >
-                    {{ sendingInvoiceId === row.invoiceId ? t('Sending…', 'Enviando…') : t('Email invoice', 'Enviar factura por correo') }}
+                    {{ sendingInvoiceId === row.invoiceId ? t('Sending…', 'Enviando…') : t('Email receipt', 'Enviar recibo por correo') }}
                   </button>
                   <UiIconBtn v-if="canDeleteInvoices" icon="trash" tone="danger" :label="t('Delete', 'Eliminar')" @click="emit('deleteInvoice', row.invoiceId)" />
                   <button

@@ -30,7 +30,8 @@ export interface InvoiceDocumentData {
   // footer -- and differs in two words and one line, so it sets these rather
   // than the PDF being written twice and drifting.
   //
-  // documentTitle: "Factura F-2026-0001" instead of "Invoice INV-0001".
+  // documentTitle: "Factura F-2026-0001" instead of the visit document's own
+  // "Recibo INV-0001".
   // showTotalsBreakdown: a factura IS the payment, so "Paid" and "Balance due"
   // are noise at best and, on a document that says what someone handed over,
   // actively confusing.
@@ -174,12 +175,23 @@ export function generateInvoicePdf(data: InvoiceDocumentData): Promise<Buffer> {
     if (data.logoBuffer && doc.y < 115) doc.y = 115
 
     doc.x = 50
-    doc.fillColor('#000').fontSize(18).font('Helvetica-Bold').text(data.documentTitle ?? `Invoice ${data.invoiceNumber}`, 50)
+    // A visit charge is a RECIBO, not a factura. Fiscally the invoice follows
+  // the payment -- that is the facturas series (F-2026-0001), issued when the
+  // patient actually hands money over. This document says what was done and
+  // what it cost; calling it an "Invoice" put a second, parallel numbered
+  // series in front of the patient for the same money.
+  const isFactura = data.documentTitle !== undefined
+  doc.fillColor('#000').fontSize(18).font('Helvetica-Bold').text(data.documentTitle ?? `Recibo ${data.invoiceNumber}`, 50)
     doc
       .fontSize(10)
       .font('Helvetica')
       .fillColor('#555')
       .text(`Issued ${new Date(data.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`, 50)
+    // Said outright, so nobody -- patient, gestor or inspector -- mistakes a
+    // recibo for the fiscal document. The factura is the one for the payment.
+    if (!isFactura) {
+      doc.fontSize(9).fillColor('#777').text('Justificante de visita. No es una factura: la factura se emite con el pago.', 50)
+    }
     doc.moveDown(1)
 
     doc.fillColor('#000').fontSize(12).font('Helvetica-Bold').text(`${data.patient.firstName} ${data.patient.lastName ?? ''}`.trim(), 50)

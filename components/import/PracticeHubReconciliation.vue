@@ -10,8 +10,9 @@
 // Matching is by the external reference each importer writes, so this
 // reports facts rather than guesses:
 //   patients          patients.external_reference        = PH patient_number
-//   payments          invoices.invoice_number            = PH-{payment id}
-//                     (PH-package-{id} invoices are receivables raised by
+//   payments          payments.external_reference        = phpay-{payment id}
+//   invoices          invoices.external_reference        = phinv-{invoice id}
+//                     (PH-package-{id} invoices were receivables raised by
 //                      the bonos importer, not payments -- excluded below)
 //   packages/bonos    package_purchases.external_reference = PH-package-{id}
 //
@@ -108,35 +109,64 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     })
 
     // --- Payments -------------------------------------------------------
-    // Each PracticeHub payment became one invoice here, numbered PH-{id},
-    // so the money either adds up or it doesn't.
+    // A payment is a payment now, keyed by the PracticeHub id it came from.
+    //
+    // This used to look for invoices numbered PH-{payment id}, because the old
+    // importer raised one invoice per payment. The Ledger importer does not:
+    // payments arrive as payments, carrying external_reference = phpay-{id}.
+    // Left as it was, this check reported every payment as missing on any
+    // clinic imported the new way -- the verification step failing loudest
+    // exactly when the import had gone right.
     phase.value = t('Reconciling payments…', 'Cotejando pagos…')
     progress.value = { done: 0, total: 0 }
     const phPayments = await api.fetchAll<PHPayment>('/payments', (done, total) => (progress.value = { done, total }))
-    const phPaymentRefs = new Set(phPayments.map((p) => `PH-${p.id}`))
+    const phPaymentRefs = new Set(phPayments.map((p) => `phpay-${p.id}`))
     const phPaymentCents = phPayments.reduce((sum, p) => sum + Math.round(Number(p.amount ?? 0) * 100), 0)
 
-    // `PH-package-{id}` invoices are excluded: those are the outstanding
-    // balances the bonos importer raises as receivables, not migrated
-    // PracticeHub payments. They match the `PH-%` prefix but have no payment
-    // on the PracticeHub side to pair with, so counting them here would
-    // report every one of them as an extra invoice and skew the money delta.
-    const hereInvoices = await readAll<{ id: string; invoice_number: string }>('invoices', 'id, invoice_number', (q) =>
-      q.like('invoice_number', 'PH-%').not('invoice_number', 'like', 'PH-package-%'),
+    const herePaymentRows = await readAll<{ external_reference: string | null; amount_cents: number }>(
+      'payments',
+      'external_reference, amount_cents',
+      (q) => q.like('external_reference', 'phpay-%'),
     )
-    const hereInvoiceRefs = new Set(hereInvoices.map((i) => i.invoice_number))
-    const hereInvoiceIds = new Set(hereInvoices.map((i) => i.id))
-    const herePayments = await readAll<{ invoice_id: string; amount_cents: number }>('payments', 'invoice_id, amount_cents')
-    const herePaymentCents = herePayments.filter((p) => hereInvoiceIds.has(p.invoice_id)).reduce((sum, p) => sum + p.amount_cents, 0)
+    const herePaymentRefs = new Set(herePaymentRows.map((p) => String(p.external_reference)))
+    const herePaymentCents = herePaymentRows.reduce((sum, p) => sum + p.amount_cents, 0)
 
     built.push({
       key: 'payments',
       label: t('Payments', 'Pagos'),
       phCount: phPaymentRefs.size,
-      hereCount: hereInvoiceRefs.size,
-      ...diff(phPaymentRefs, hereInvoiceRefs),
+      hereCount: herePaymentRefs.size,
+      ...diff(phPaymentRefs, herePaymentRefs),
       phTotalCents: phPaymentCents,
       hereTotalCents: herePaymentCents,
+    })
+
+    // --- Invoices ---------------------------------------------------------
+    // PracticeHub's own invoices, one per visit. Nothing checked these before,
+    // because nothing imported them -- the old importer reconstructed invoices
+    // from payments instead, so there was no per-visit record to compare.
+    phase.value = t('Reconciling invoices…', 'Cotejando facturas…')
+    progress.value = { done: 0, total: 0 }
+    const phInvoices = await api.fetchAll<{ id: number; total: string }>('/invoices', (done, total) => (progress.value = { done, total }))
+    const phInvoiceRefs = new Set(phInvoices.map((i) => `phinv-${i.id}`))
+    const phInvoiceCents = phInvoices.reduce((sum, i) => sum + Math.round(Number(i.total ?? 0) * 100), 0)
+
+    const hereInvoiceRows = await readAll<{ external_reference: string | null; total_cents: number }>(
+      'invoices',
+      'external_reference, total_cents',
+      (q) => q.like('external_reference', 'phinv-%'),
+    )
+    const hereInvoiceRefs = new Set(hereInvoiceRows.map((i) => String(i.external_reference)))
+    const hereInvoiceCents = hereInvoiceRows.reduce((sum, i) => sum + i.total_cents, 0)
+
+    built.push({
+      key: 'invoices',
+      label: t('Invoices (one per visit)', 'Facturas (una por visita)'),
+      phCount: phInvoiceRefs.size,
+      hereCount: hereInvoiceRefs.size,
+      ...diff(phInvoiceRefs, hereInvoiceRefs),
+      phTotalCents: phInvoiceCents,
+      hereTotalCents: hereInvoiceCents,
     })
 
     // --- Packages / bonos ------------------------------------------------

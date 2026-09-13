@@ -80,3 +80,47 @@ already emits everything Netlify needs from a plain `npm run build` —
 `dist/` plus the `.netlify/functions-internal/server` function that serves
 every SSR page and `/api/*` route — so building here and uploading the
 result is both sufficient and simpler.
+
+## Releasing the mobile app to the stores
+
+The two store accounts are not where you would guess, and two of the build
+steps fail on this machine without an environment override. Both cost a
+round trip to work out, neither is discoverable from the code.
+
+- **Google Play lives under `hola@columnaquiro.com`**, not the personal
+  Google account. `raulcatalanluis@gmail.com` is signed in to Play Console
+  too, but it only has the unrelated *Fidmi* developer account, so the
+  console shows "choose a developer account" with no QuiroFlow in it and
+  looks like a permissions problem. Switch accounts.
+- **App Store Connect: Xcode Cloud owns the build number.**
+  `CURRENT_PROJECT_VERSION` in project.pbxproj is not what reaches Apple --
+  `ci_scripts/ci_post_clone.sh` overwrites it on every cloud build, and
+  those builds have run on every push to `main` for a while (they were in
+  the 60s while git still said 15). Only bump `MARKETING_VERSION` by hand,
+  and only after a version is approved: see that script's comment for why
+  a closed train silently rejects uploads by email rather than failing the
+  build.
+- **Both stores are Spain-only** as of 2026-09-13, deliberately -- more
+  countries later. On Apple, "Make this app available in new territories"
+  is still ticked and the API refuses to change it (`appAvailabilities`
+  allows CREATE and GET only); the checkbox only appears inside the Manage
+  Availability wizard's second step, which needs a pending country change
+  to reach. Untick it next time you add a country there.
+- **The Android release build needs JDK 21.** The default JDK here is 17
+  and `capacitor-android` compiles at source level 21, so `./gradlew
+  bundleRelease` dies with "invalid source release: 21". Run it as
+  `JAVA_HOME=/usr/local/opt/openjdk@21 ./gradlew bundleRelease`. Signing
+  picks itself up from `android/keystore.properties` (gitignored, with
+  `quiroflow-upload.keystore` beside it).
+- **`npx cap sync` fails at `pod install` without a UTF-8 locale.** It
+  copies the web assets to both platforms first, so the failure looks
+  worse than it is -- rerun just the pods with
+  `LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 pod install` in `mobile/ios/App`.
+- **Uploading to App Store Connect from the CLI** works with
+  `xcrun altool --upload-app -f App.ipa -t ios --apiKey J2TYK23YXQ
+  --apiIssuer ac176fde-0772-4646-9e45-a7a2e4f65569`. The issuer is an
+  account identifier, not a credential -- it is useless without the
+  private key, which stays at
+  `~/.appstoreconnect/private_keys/AuthKey_J2TYK23YXQ.p8` and must never
+  be committed. Validate first with `--validate-app`; it catches the same
+  problems minutes earlier than the upload does.

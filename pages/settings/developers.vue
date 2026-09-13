@@ -269,7 +269,7 @@ const curlExample = `curl "${API_BASE_URL}/appointments?starts_at=gte:2026-03-01
             <div>
               <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Scopes', 'Permisos') }}</label>
               <p class="mt-0.5 text-[11.5px] leading-relaxed text-ink-faint">
-                {{ t('Grant only what the integration needs. A token that cannot read invoices cannot leak them.', 'Concede solo lo que la integración necesite. Un token que no puede leer facturas no puede filtrarlas.') }}
+                {{ t('Grant only what the integration needs. A token that cannot read receipts cannot leak them.', 'Concede solo lo que la integración necesite. Un token que no puede leer recibos no puede filtrarlos.') }}
               </p>
               <div class="mt-2 space-y-3">
                 <div v-for="[group, scopes] in scopeGroups" :key="group">

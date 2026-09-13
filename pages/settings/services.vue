@@ -57,7 +57,7 @@ async function removeService(id: string) {
       <div class="flex gap-8 p-6">
         <SettingsNav />
         <div class="min-w-0 max-w-2xl flex-1">
-          <p class="text-[13px] text-ink-muted2">{{ t('Catalog used by quick invoices and appointment billing.', 'Catálogo usado en facturas rápidas y facturación de citas.') }}</p>
+          <p class="text-[13px] text-ink-muted2">{{ t('Catalog used by quick receipts and appointment billing.', 'Catálogo usado en recibos rápidos y facturación de citas.') }}</p>
 
           <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
             <table class="w-full text-[13px]">

@@ -51,6 +51,9 @@ export const APP_PAGES = [
   '/calendar',
   '/campaigns',
   '/care-plan-alerts',
+  // The sweep sees the locked/upgrade state, which is what an account
+  // without the tier gets. Both states are asserted in growth/growth.cy.ts.
+  '/growth',
   '/patients',
   '/practitioner',
   '/recalls',

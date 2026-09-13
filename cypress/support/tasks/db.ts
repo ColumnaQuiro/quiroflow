@@ -1,3 +1,4 @@
+import { createHash, createHmac, randomUUID } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 
 // Fixed local-dev defaults from `supabase start` — safe to keep here since
@@ -649,6 +650,54 @@ async function inboundMessages(opts: { patientId: string }) {
   return rows as { id: string; body_preview: string | null }[]
 }
 
+// Stores an app secret for the signature path, and mints an api_token for the
+// forwarder path, so a spec can exercise both ways a webhook proves itself.
+async function setWhatsappAppSecret(opts: { accountId: string; appSecret: string }) {
+  unwrap(
+    await admin
+      .from('whatsapp_app_secrets')
+      .upsert({ account_id: opts.accountId, app_secret: opts.appSecret }, { onConflict: 'account_id' })
+      .select('account_id')
+      .single(),
+  )
+  return { configured: true }
+}
+
+async function createApiToken(opts: { accountId: string; scopes: string[] }) {
+  // Same hash the server re-derives on every request (sha256 of the raw
+  // token), so the spec can hold the raw value and the database only the hash.
+  const raw = `qf_live_${randomUUID().replace(/-/g, '')}`
+  const tokenHash = createHash('sha256').update(raw).digest('hex')
+  const row = unwrap(
+    await admin
+      .from('api_tokens')
+      .insert({
+        account_id: opts.accountId,
+        name: 'cypress',
+        token_hash: tokenHash,
+        // Shown in the developer portal so a token is recognisable without
+        // storing it; not null, so the insert needs it.
+        token_prefix: raw.slice(0, 16),
+        scopes: opts.scopes,
+      })
+      .select('id')
+      .single(),
+  )
+  return { id: (row as { id: string }).id, token: raw }
+}
+
+// Meta's signature over the exact bytes a spec is about to send. Done here in
+// Node rather than in the browser so the spec can post a pre-serialised string
+// and know the digest covers precisely those bytes.
+async function clearWhatsappAppSecret(opts: { accountId: string }) {
+  assertOk(await admin.from('whatsapp_app_secrets').delete().eq('account_id', opts.accountId))
+  return { configured: false }
+}
+
+async function signWhatsappBody(opts: { body: string; appSecret: string }) {
+  return { signature: `sha256=${createHmac('sha256', opts.appSecret).update(Buffer.from(opts.body, 'utf8')).digest('hex')}` }
+}
+
 async function appointmentById(opts: { appointmentId: string }) {
   const row = unwrap(
     await admin.from('appointments').select('id, status, confirmation_status, rescheduled').eq('id', opts.appointmentId).single(),
@@ -690,4 +739,8 @@ export const dbTasks = {
   'db:seedWhatsappReplyScenario': seedWhatsappReplyScenario,
   'db:appointmentById': appointmentById,
   'db:inboundMessages': inboundMessages,
+  'db:setWhatsappAppSecret': setWhatsappAppSecret,
+  'db:createApiToken': createApiToken,
+  'db:signWhatsappBody': signWhatsappBody,
+  'db:clearWhatsappAppSecret': clearWhatsappAppSecret,
 }

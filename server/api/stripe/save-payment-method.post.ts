@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: account } = await supabase
     .from('accounts')
-    .select('stripe_connect_account_id, stripe_secret_key')
+    .select('stripe_connect_account_id')
     .eq('id', teamMember.account_id)
     .maybeSingle()
   if (!account) {
@@ -29,7 +29,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'No Stripe customer on file for this patient yet' })
   }
 
-  const { stripe, options } = stripeClientFor(account)
+  const { stripe, options } = await stripeClientFor(event, teamMember.account_id, account)
   await stripe.customers.update(customerRow.stripe_customer_id, { invoice_settings: { default_payment_method: body.paymentMethodId } }, options)
 
   await supabase

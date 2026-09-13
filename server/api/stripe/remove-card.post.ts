@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: account } = await supabase
     .from('accounts')
-    .select('stripe_connect_account_id, stripe_secret_key')
+    .select('stripe_connect_account_id')
     .eq('id', teamMember.account_id)
     .maybeSingle()
   if (!account) {
@@ -29,7 +29,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'This patient has no saved card' })
   }
 
-  const { stripe, options } = stripeClientFor(account)
+  const { stripe, options } = await stripeClientFor(event, teamMember.account_id, account)
   await stripe.paymentMethods.detach(customerRow.default_payment_method_id, {}, options)
 
   await supabase.from('patient_stripe_customers').update({ default_payment_method_id: null }).eq('patient_id', body.patientId)

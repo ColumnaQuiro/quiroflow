@@ -1,4 +1,7 @@
 import Stripe from 'stripe'
+import { serverSupabaseServiceRole } from '#supabase/server'
+import type { H3Event } from 'h3'
+import type { Database } from '~/types/database.types'
 
 const API_VERSION = '2026-07-29.dahlia'
 
@@ -21,7 +24,6 @@ export function stripeForAccount(secretKey: string): Stripe {
 
 interface StripeAccountRow {
   stripe_connect_account_id: string | null
-  stripe_secret_key: string | null
 }
 
 // Every Stripe call site needs both a client and the per-request options --
@@ -29,12 +31,27 @@ interface StripeAccountRow {
 // accounts use their own key with no extra options. Centralized here so a
 // call site can't accidentally use the platform key without `stripeAccount`
 // (which would hit the platform's own Stripe account, not the clinic's).
-export function stripeClientFor(account: StripeAccountRow): { stripe: Stripe; options: Stripe.RequestOptions } {
+//
+// Takes the event and builds its own service-role client rather than accepting
+// one, because the legacy key now lives in account_secrets, which denies
+// `authenticated` outright. Most callers hold the RLS-scoped client from
+// requirePermission; handed that, the lookup would return null and every
+// legacy clinic would read as "Stripe is not configured". Sourcing the client
+// here makes that mistake unavailable rather than merely documented.
+export async function stripeClientFor(
+  event: H3Event,
+  accountId: string,
+  account: StripeAccountRow,
+): Promise<{ stripe: Stripe; options: Stripe.RequestOptions }> {
   if (account.stripe_connect_account_id) {
     return { stripe: stripeForPlatform(), options: { stripeAccount: account.stripe_connect_account_id } }
   }
-  if (account.stripe_secret_key) {
-    return { stripe: stripeForAccount(account.stripe_secret_key), options: {} }
+
+  const admin = serverSupabaseServiceRole<Database>(event)
+  const secretKey = await getAccountSecret(admin, accountId, 'stripe_secret_key')
+  if (secretKey) {
+    return { stripe: stripeForAccount(secretKey), options: {} }
   }
+
   throw createError({ statusCode: 400, statusMessage: 'Stripe is not configured. Set it up in Settings > Payments.' })
 }

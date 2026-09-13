@@ -157,6 +157,38 @@ export type Database = {
           },
         ]
       }
+      account_secrets: {
+        Row: {
+          account_id: string
+          created_at: string
+          name: string
+          updated_at: string
+          value: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          name: string
+          updated_at?: string
+          value: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          name?: string
+          updated_at?: string
+          value?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "account_secrets_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       account_roles: {
         Row: {
           account_id: string

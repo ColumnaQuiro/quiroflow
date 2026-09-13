@@ -2214,6 +2214,7 @@ export type Database = {
           external_reference: string | null
           id: string
           invoice_id: string | null
+          owed_cents: number | null
           package_id: string | null
           package_name: string
           patient_id: string
@@ -2228,6 +2229,7 @@ export type Database = {
           external_reference?: string | null
           id?: string
           invoice_id?: string | null
+          owed_cents?: number | null
           package_id?: string | null
           package_name: string
           patient_id: string
@@ -2242,6 +2244,7 @@ export type Database = {
           external_reference?: string | null
           id?: string
           invoice_id?: string | null
+          owed_cents?: number | null
           package_id?: string | null
           package_name?: string
           patient_id?: string

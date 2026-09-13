@@ -514,8 +514,11 @@ async function createPackagePurchase(opts: {
   // The invoice the bono is billed on. Set it to test a part-paid bono: the
   // card reads what is owed off this invoice's payments.
   invoiceId?: string
+  // What PracticeHub said was outstanding, for a migrated bono -- which has
+  // no invoice at all, so this is the only record of the debt.
+  owedCents?: number
 }) {
-  const { accountId, patientId, packageName, sessionsTotal, sessionsUsed, priceCents, invoiceId } = opts
+  const { accountId, patientId, packageName, sessionsTotal, sessionsUsed, priceCents, invoiceId, owedCents } = opts
   const row = unwrap(
     await admin
       .from('package_purchases')
@@ -528,6 +531,7 @@ async function createPackagePurchase(opts: {
         price_cents: priceCents ?? 52800,
         purchased_at: new Date().toISOString(),
         ...(invoiceId ? { invoice_id: invoiceId } : {}),
+        ...(owedCents === undefined ? {} : { owed_cents: owedCents }),
       })
       .select('id, package_name, sessions_total, sessions_used, price_cents')
       .single(),

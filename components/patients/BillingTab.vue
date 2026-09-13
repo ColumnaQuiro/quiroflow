@@ -1604,11 +1604,16 @@ function money(cents: number) {
                 <UiPill v-else-if="packageOwedCents(p) > 0" tone="danger">{{ money(packageOwedCents(p)) }} {{ t('owed', 'pendiente') }}</UiPill>
                 <UiPill v-else tone="success">{{ t('Paid', 'Pagado') }}</UiPill>
               </div>
+              <!-- Sessions left, and what they are worth. The line under the
+              bar says what the bono COST, which is a different number -- both
+              used to read "11/12 left" followed by an unlabelled euro figure,
+              so the two were indistinguishable without reading this file. -->
               <p class="shrink-0 text-[12px] text-ink-muted2">
                 <span class="font-semibold text-ink-700">{{ p.sessions_total - p.sessions_used }}</span>
-                {{ t('of', 'de') }} {{ p.sessions_total }} {{ t('left', 'restantes') }}
+                {{ t('of', 'de') }} {{ p.sessions_total }} {{ t('sessions left', 'sesiones restantes') }}
                 <template v-if="!p.shared">
                   <span class="px-1 text-ink-faint3">&middot;</span>
+                  {{ t('worth', 'valor') }}
                   <span class="font-semibold text-ink-700">{{ money(packageRemainingValueCents(p)) }}</span>
                 </template>
               </p>
@@ -1618,15 +1623,18 @@ function money(cents: number) {
               <div class="h-full rounded-full bg-brand" :style="{ width: `${Math.min(100, Math.round((p.sessions_used / p.sessions_total) * 100))}%` }" />
             </div>
 
-            <p class="mt-2 text-[11.5px] text-ink-muted2">
-              {{ p.sessions_total - p.sessions_used }}/{{ p.sessions_total }} {{ t('left', 'restantes') }}
-              <template v-if="!p.shared">
-                <span class="px-1 text-ink-faint3">&middot;</span>
-                <template v-if="packageOwedCents(p) > 0">
-                  {{ money(p.price_cents - packageOwedCents(p)) }} {{ t('paid of', 'pagado de') }} {{ money(p.price_cents) }}
-                </template>
-                <template v-else>{{ money(p.price_cents) }}</template>
+            <!-- What the bono cost and how much of it has been paid. The
+            session count is not repeated here: it is already stated above the
+            bar, and printing it twice with a different amount beside it each
+            time is what made this card unreadable. -->
+            <p v-if="!p.shared" class="mt-2 text-[11.5px] text-ink-muted2">
+              <template v-if="packageOwedCents(p) > 0">
+                {{ money(p.price_cents - packageOwedCents(p)) }} {{ t('paid of', 'pagado de') }} {{ money(p.price_cents) }}
               </template>
+              <template v-else>{{ money(p.price_cents) }} {{ t('paid in full', 'pagado en su totalidad') }}</template>
+            </p>
+            <p v-else class="mt-2 text-[11.5px] text-ink-muted2">
+              {{ p.sessions_used }} {{ t('of', 'de') }} {{ p.sessions_total }} {{ t('used', 'usadas') }}
             </p>
 
             <!-- One button row with a real hierarchy: the everyday action

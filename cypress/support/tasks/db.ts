@@ -512,8 +512,11 @@ async function createPackagePurchase(opts: {
   sessionsTotal?: number
   sessionsUsed?: number
   priceCents?: number
+  // The invoice the bono is billed on. Set it to test a part-paid bono: the
+  // card reads what is owed off this invoice's payments.
+  invoiceId?: string
 }) {
-  const { accountId, patientId, packageName, sessionsTotal, sessionsUsed, priceCents } = opts
+  const { accountId, patientId, packageName, sessionsTotal, sessionsUsed, priceCents, invoiceId } = opts
   const row = unwrap(
     await admin
       .from('package_purchases')
@@ -525,6 +528,7 @@ async function createPackagePurchase(opts: {
         sessions_used: sessionsUsed ?? 0,
         price_cents: priceCents ?? 52800,
         purchased_at: new Date().toISOString(),
+        ...(invoiceId ? { invoice_id: invoiceId } : {}),
       })
       .select('id, package_name, sessions_total, sessions_used, price_cents')
       .single(),

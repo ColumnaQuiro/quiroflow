@@ -697,6 +697,32 @@ async function createApiToken(opts: { accountId: string; scopes: string[] }) {
 // Meta's signature over the exact bytes a spec is about to send. Done here in
 // Node rather than in the browser so the spec can post a pre-serialised string
 // and know the digest covers precisely those bytes.
+// Stores a secret the way the server does, so a spec can then try to read it
+// back the way a staff member would.
+async function setAccountSecret(opts: { accountId: string; name: string; value: string }) {
+  unwrap(
+    await admin
+      .from('account_secrets')
+      .upsert({ account_id: opts.accountId, name: opts.name, value: opts.value }, { onConflict: 'account_id,name' })
+      .select('account_id')
+      .single(),
+  )
+  return { stored: true }
+}
+
+// What a signed-in staff member can actually read, using the same anon key and
+// session the browser holds. This is the real attack rather than a proxy for
+// it: `accounts` RLS is row-level, so before this change the same call
+// returned the clinic's live Stripe secret key to any member of any role.
+async function readAsStaff(opts: { email: string; password: string; table: string; columns?: string }) {
+  const userClient = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+  const { error: signInErr } = await userClient.auth.signInWithPassword({ email: opts.email, password: opts.password })
+  if (signInErr) throw signInErr
+
+  const { data, error } = await userClient.from(opts.table as never).select(opts.columns ?? '*')
+  return { rows: (data as unknown[] | null)?.length ?? 0, error: error ? error.message : null }
+}
+
 async function clearWhatsappAppSecret(opts: { accountId: string }) {
   assertOk(await admin.from('whatsapp_app_secrets').delete().eq('account_id', opts.accountId))
   return { configured: false }
@@ -751,4 +777,6 @@ export const dbTasks = {
   'db:createApiToken': createApiToken,
   'db:signWhatsappBody': signWhatsappBody,
   'db:clearWhatsappAppSecret': clearWhatsappAppSecret,
+  'db:setAccountSecret': setAccountSecret,
+  'db:readAsStaff': readAsStaff,
 }

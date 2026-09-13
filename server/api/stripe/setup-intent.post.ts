@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: account } = await supabase
     .from('accounts')
-    .select('stripe_connect_account_id, stripe_secret_key, stripe_publishable_key')
+    .select('stripe_connect_account_id, stripe_publishable_key')
     .eq('id', teamMember.account_id)
     .maybeSingle()
   if (!account?.stripe_publishable_key) {
@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'Patient not found' })
   }
 
-  const { stripe, options } = stripeClientFor(account)
+  const { stripe, options } = await stripeClientFor(event, teamMember.account_id, account)
 
   const { data: existing } = await supabase
     .from('patient_stripe_customers')

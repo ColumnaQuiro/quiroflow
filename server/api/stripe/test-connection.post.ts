@@ -5,7 +5,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: account } = await supabase
     .from('accounts')
-    .select('stripe_connect_account_id, stripe_secret_key')
+    .select('stripe_connect_account_id')
     .eq('id', teamMember.account_id)
     .maybeSingle()
   if (!account) {
@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    const { stripe, options } = stripeClientFor(account)
+    const { stripe, options } = await stripeClientFor(event, teamMember.account_id, account)
     const balance = await stripe.balance.retrieve({}, options)
     return { success: true, livemode: balance.livemode }
   } catch (err: any) {

@@ -12,12 +12,15 @@ export default defineEventHandler(async (event) => {
   if (!accountId) throw createError({ statusCode: 400, statusMessage: 'Missing account id' })
 
   const supabase = serverSupabaseServiceRole<Database>(event)
-  const { data: account } = await supabase
-    .from('accounts')
-    .select('id, stripe_secret_key, stripe_webhook_secret')
-    .eq('id', accountId)
-    .maybeSingle()
-  if (!account?.stripe_secret_key || !account?.stripe_webhook_secret) {
+  const { data: account } = await supabase.from('accounts').select('id').eq('id', accountId).maybeSingle()
+  if (!account) {
+    throw createError({ statusCode: 400, statusMessage: 'Stripe is not configured for this account' })
+  }
+
+  // Both now live in account_secrets, which only the service role can read --
+  // this route already uses it, since Stripe posts here with no session.
+  const { secretKey, webhookSecret } = await getStripeSecrets(supabase, account.id)
+  if (!secretKey || !webhookSecret) {
     throw createError({ statusCode: 400, statusMessage: 'Stripe is not configured for this account' })
   }
 
@@ -27,10 +30,10 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Missing signature or body' })
   }
 
-  const stripe = stripeForAccount(account.stripe_secret_key)
+  const stripe = stripeForAccount(secretKey)
   let stripeEvent: Stripe.Event
   try {
-    stripeEvent = stripe.webhooks.constructEvent(rawBody, signature, account.stripe_webhook_secret)
+    stripeEvent = stripe.webhooks.constructEvent(rawBody, signature, webhookSecret)
   } catch (err: any) {
     throw createError({ statusCode: 400, statusMessage: `Invalid signature: ${err?.message}` })
   }

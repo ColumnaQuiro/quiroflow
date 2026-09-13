@@ -35,7 +35,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: account } = await supabase
     .from('accounts')
-    .select('stripe_connect_account_id, stripe_secret_key')
+    .select('stripe_connect_account_id')
     .eq('id', teamMember.account_id)
     .maybeSingle()
   if (!account) {
@@ -60,7 +60,7 @@ export default defineEventHandler(async (event) => {
   const unitAmount = body.installments ? Math.round(body.totalAmountCents / body.installments) : body.totalAmountCents
   const startDate = skip > 0 ? Math.floor(addInterval(new Date(), body.interval, skip * body.intervalCount).getTime() / 1000) : 'now'
 
-  const { stripe, options } = stripeClientFor(account)
+  const { stripe, options } = await stripeClientFor(event, teamMember.account_id, account)
   let schedule: Stripe.SubscriptionSchedule
   try {
     // Subscription Schedule phases need a real Product id in price_data --

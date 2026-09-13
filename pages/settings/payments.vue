@@ -39,13 +39,22 @@ async function load() {
   loading.value = true
   const { data } = await supabase
     .from('accounts')
-    .select('stripe_connect_account_id, stripe_publishable_key, stripe_secret_key, stripe_webhook_secret')
+    .select('stripe_connect_account_id, stripe_publishable_key')
     .eq('id', store.accountId!)
     .maybeSingle()
   connectAccountId.value = data?.stripe_connect_account_id ?? null
   publishableKey.value = data?.stripe_publishable_key ?? ''
-  hasStoredSecretKey.value = !!data?.stripe_secret_key
-  hasStoredWebhookSecret.value = !!data?.stripe_webhook_secret
+  // The secrets are not selectable from here any more -- account_secrets
+  // grants nothing to the browser. This endpoint reports only whether each is
+  // set, which is all the form ever displayed.
+  try {
+    const status = await useStaffFetch<{ stripeSecretKey: boolean; stripeWebhookSecret: boolean }>('/api/stripe/secrets')
+    hasStoredSecretKey.value = status.stripeSecretKey
+    hasStoredWebhookSecret.value = status.stripeWebhookSecret
+  } catch {
+    hasStoredSecretKey.value = false
+    hasStoredWebhookSecret.value = false
+  }
   showLegacyForm.value = !connectAccountId.value && hasStoredSecretKey.value
   loading.value = false
 }
@@ -56,15 +65,30 @@ async function save() {
   const update: TablesUpdate<'accounts'> = {
     stripe_publishable_key: publishableKey.value.trim() || null,
   }
-  if (secretKey.value.trim()) update.stripe_secret_key = secretKey.value.trim()
-  if (webhookSecret.value.trim()) update.stripe_webhook_secret = webhookSecret.value.trim()
 
   const { error: updateError } = await supabase.from('accounts').update(update).eq('id', store.accountId!)
-  saving.value = false
   if (updateError) {
+    saving.value = false
     showToast(updateError.message, 'error')
     return
   }
+
+  // Separate endpoint, not part of the accounts update above, because the
+  // browser cannot write these columns at all any more.
+  if (secretKey.value.trim() || webhookSecret.value.trim()) {
+    try {
+      await useStaffFetch('/api/stripe/secrets', {
+        method: 'POST',
+        body: { secretKey: secretKey.value.trim(), webhookSecret: webhookSecret.value.trim() },
+      })
+    } catch (e: any) {
+      saving.value = false
+      showToast(e?.data?.statusMessage ?? e?.statusMessage ?? t('Could not save the Stripe keys', 'No se pudieron guardar las claves de Stripe'), 'error')
+      return
+    }
+  }
+
+  saving.value = false
   showToast(t('Saved', 'Guardado'))
   if (secretKey.value.trim()) hasStoredSecretKey.value = true
   if (webhookSecret.value.trim()) hasStoredWebhookSecret.value = true

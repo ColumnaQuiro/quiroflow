@@ -9,14 +9,14 @@ export default defineEventHandler(async (event) => {
   const { supabase, teamMember } = await requirePermission(event, 'billing_config')
 
   const [{ data: account }, { data: schedule }] = await Promise.all([
-    supabase.from('accounts').select('stripe_connect_account_id, stripe_secret_key').eq('id', teamMember.account_id).maybeSingle(),
+    supabase.from('accounts').select('stripe_connect_account_id').eq('id', teamMember.account_id).maybeSingle(),
     supabase.from('payment_schedules').select('id, stripe_subscription_schedule_id').eq('id', body.paymentScheduleId).maybeSingle(),
   ])
   if (!account || !schedule) {
     throw createError({ statusCode: 400, statusMessage: 'Schedule not found or Stripe not configured' })
   }
 
-  const { stripe, options } = stripeClientFor(account)
+  const { stripe, options } = await stripeClientFor(event, teamMember.account_id, account)
   try {
     await stripe.subscriptionSchedules.cancel(schedule.stripe_subscription_schedule_id, {}, options)
   } catch (err: any) {

@@ -226,7 +226,7 @@ async function addMovement() {
         </p>
 
         <div class="mt-4 rounded-md bg-gray-50 p-3 text-sm">
-          <div class="flex justify-between text-gray-500"><span>{{ t('Invoiced this shift', 'Facturado en este turno') }}</span><span>{{ fmt(invoicedCents) }}</span></div>
+          <div class="flex justify-between text-gray-500"><span>{{ t('Charged this shift', 'Cargado en este turno') }}</span><span>{{ fmt(invoicedCents) }}</span></div>
           <div class="mt-1.5 flex justify-between border-t border-gray-200 pt-1.5 font-semibold text-gray-900"><span>{{ t('Total collected', 'Total cobrado') }}</span><span>{{ fmt(totalPaidCents) }}</span></div>
         </div>
 
@@ -238,7 +238,7 @@ async function addMovement() {
         </div>
 
         <div v-if="unprocessed.length > 0" class="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-          <p class="font-medium">{{ unprocessed.length }} {{ unprocessed.length === 1 ? t('completed appointment not fully invoiced this shift:', 'cita completada sin facturar en este turno:') : t('completed appointments not fully invoiced this shift:', 'citas completadas sin facturar en este turno:') }}</p>
+          <p class="font-medium">{{ unprocessed.length }} {{ unprocessed.length === 1 ? t('completed appointment with no charge recorded this shift:', 'cita completada sin registrar el cargo en este turno:') : t('completed appointments with no charge recorded this shift:', 'citas completadas sin registrar el cargo en este turno:') }}</p>
           <ul class="mt-1.5 space-y-1">
             <li v-for="a in unprocessed" :key="a.appointmentId">
               <NuxtLink :to="`/patients/${a.patientId}?tab=billing`" class="underline hover:text-amber-900" @click="emit('close')">

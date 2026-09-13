@@ -55,7 +55,7 @@ describe('Taking a visit from a bono in the calendar', () => {
             // had said how the visit would be paid -- which is how bono visits
             // ended up carrying a phantom debt. Nothing is billed until a
             // person chooses, so there is no invoice to clean up here.
-            cy.contains('Not billed yet').should('be.visible')
+            cy.contains('Not charged yet').should('be.visible')
             cy.contains('INV-').should('not.exist')
 
             cy.contains('button', 'Bono 12').click()

@@ -30,9 +30,9 @@ const payments = ref<PaymentRow[]>([])
 const services = ref<ServiceOption[]>([])
 const addServiceId = ref('')
 const loadingInvoice = ref(true)
-const hasFutureAppointment = ref(true)
-// Whether THIS appointment itself hasn't happened yet -- distinct from
-// hasFutureAppointment above, which checks the patient's OTHER appointments.
+// Whether THIS appointment itself hasn't happened yet. (Whether the patient
+// has any OTHER future appointment is the Recalls warning, and lives on the
+// Details tab now -- it is a fact about the booking, not about money.)
 // Opening this tab must not invoice a visit that hasn't occurred: a patient
 // owes nothing for a future booking until it actually happens or someone
 // deliberately bills them (e.g. the patient's own Billing tab).
@@ -64,17 +64,6 @@ async function sendInvoiceEmail() {
 
 const paidCents = computed(() => payments.value.reduce((sum, p) => sum + p.amount_cents, 0))
 const balanceDueCents = computed(() => (invoice.value?.total_cents ?? 0) - paidCents.value)
-
-async function loadFutureAppointmentCheck() {
-  const { count } = await supabase
-    .from('appointments')
-    .select('id', { count: 'exact', head: true })
-    .eq('patient_id', props.patientId)
-    .neq('id', props.appointmentId)
-    .neq('status', 'cancelled')
-    .gt('starts_at', new Date().toISOString())
-  hasFutureAppointment.value = (count ?? 0) > 0
-}
 
 async function loadAppointmentTiming() {
   const { data } = await supabase.from('appointments').select('starts_at').eq('id', props.appointmentId).maybeSingle()
@@ -210,7 +199,6 @@ onMounted(async () => {
   const { data: svc } = await supabase.from('services_products').select('id, name, price_cents').order('name')
   services.value = svc ?? []
   await loadAppointmentTiming()
-  await loadFutureAppointmentCheck()
   await loadInvoice()
 })
 
@@ -225,10 +213,17 @@ async function recalcInvoiceTotal() {
 const visitPriceCents = computed(() => props.appointmentTypePriceCents ?? 0)
 // An appointment type with no price of its own (the visit is billed from the
 // services added to it) would otherwise offer "Charge €0.00".
+// The rate a bono button quotes, rounded the way usePackageSession rounds
+// what it actually bills, so the button and the charge cannot disagree.
+function perSessionLabel(p: { price_cents: number; sessions_total: number }): string {
+  if (!p.sessions_total) return '—'
+  return `€${(Math.round(p.price_cents / p.sessions_total) / 100).toFixed(2)}`
+}
+
 const chargeLabel = computed(() =>
   visitPriceCents.value > 0
     ? `${t('Charge', 'Cobrar')} €${(visitPriceCents.value / 100).toFixed(2)}`
-    : t('Bill this visit', 'Facturar esta visita'),
+    : t('Charge this visit', 'Cobrar esta visita'),
 )
 
 // "Charge" on an unbilled visit: raise the invoice at the appointment type's
@@ -445,7 +440,6 @@ async function usePackageSession(pkg: { id: string; package_name: string; sessio
   savingPayment.value = false
   await loadInvoice()
   await refreshSummary()
-  await loadFutureAppointmentCheck()
 }
 
 async function recordPayment() {
@@ -533,7 +527,6 @@ async function recordPayment() {
   savingPayment.value = false
   await loadInvoice()
   await refreshSummary()
-  await loadFutureAppointmentCheck()
 }
 </script>
 
@@ -594,39 +587,47 @@ async function recordPayment() {
     the visit, or spend a bono session. Until one is pressed, no invoice
     exists and nothing is owed. -->
     <div v-else-if="!invoice" class="rounded-card border border-line bg-surface p-3">
-      <p class="text-[13px] font-medium text-ink-700">{{ t('Not billed yet', 'Sin facturar') }}</p>
+      <p class="text-[13px] font-medium text-ink-700">{{ t('Not charged yet', 'Sin cobrar') }}</p>
       <p class="mt-0.5 text-[12.5px] text-ink-muted2">
         {{ appointmentTypeName || t('Appointment', 'Cita') }}<span v-if="visitPriceCents > 0"> — €{{ (visitPriceCents / 100).toFixed(2) }}</span>
       </p>
-      <div class="mt-2 flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          :disabled="savingPayment"
-          class="rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50"
-          @click="chargeVisit"
-        >
-          {{ savingPayment ? t('Working…', 'Procesando…') : chargeLabel }}
-        </button>
-      </div>
-      <div v-if="activePackages.length > 0" class="mt-2 flex flex-wrap items-center gap-2 border-t border-line-divider pt-2">
-        <span class="text-xs text-ink-muted2">{{ t('Or use a package session:', 'O usar una sesión de bono:') }}</span>
+      <!-- A patient holding a bono has already paid for this visit, so that
+      is the action rather than the footnote it used to be: the filled button
+      was "Charge EUR 55.00" and the bono a small "Or use a package session:"
+      line beneath it, so the obvious click charged a bono patient the walk-in
+      price on top of the bono they had already bought. Each button states the
+      rate it will charge -- the bono's -- so the two can be compared before
+      either is pressed. -->
+      <div v-if="activePackages.length > 0" class="mt-2 flex flex-wrap items-center gap-2">
         <button
           v-for="p in activePackages"
           :key="p.id"
           type="button"
           :disabled="savingPayment"
-          class="rounded-ctl border border-brand-tintBorder bg-brand-tint px-2 py-1 text-xs font-medium text-brand-text hover:brightness-95 disabled:opacity-50"
+          class="rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50"
           @click="usePackageSession(p)"
         >
-          {{ p.package_name }} ({{ p.sessions_total - p.sessions_used }} {{ t('left', 'restantes') }})
+          {{ savingPayment ? t('Working…', 'Procesando…') : `${t('Use', 'Usar')} ${p.package_name} — ${perSessionLabel(p)}` }}
+          <span class="font-normal opacity-80">({{ p.sessions_total - p.sessions_used }} {{ t('left', 'restantes') }})</span>
           <span v-if="p.shared" class="ml-1 rounded-ctlSm bg-info-bg px-1 py-0.5 text-[10px] font-semibold text-info-text">
             {{ p.ownerName ? t(`Shared by ${p.ownerName}`, `Compartido por ${p.ownerName}`) : t('Shared', 'Compartido') }}
           </span>
         </button>
       </div>
-      <p v-if="!hasFutureAppointment" class="mt-3 border-t border-line-divider pt-3 text-sm font-medium text-danger-text">
-        {{ t('No future appointment — this patient will show up in Recalls automatically.', 'Sin próxima cita: este paciente aparecerá automáticamente en Recordatorios.') }}
-      </p>
+      <div class="mt-2 flex flex-wrap items-center gap-2" :class="activePackages.length > 0 ? 'border-t border-line-divider pt-2' : ''">
+        <button
+          type="button"
+          :disabled="savingPayment"
+          :class="
+            activePackages.length > 0
+              ? 'rounded-ctl border border-line-control px-3 py-1.5 text-sm font-medium text-ink-700 hover:border-line-controlHover hover:text-ink-900 disabled:opacity-50'
+              : 'rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50'
+          "
+          @click="chargeVisit"
+        >
+          {{ savingPayment ? t('Working…', 'Procesando…') : activePackages.length > 0 ? `${chargeLabel} ${t('instead', 'en su lugar')}` : chargeLabel }}
+        </button>
+      </div>
     </div>
     <div v-else-if="invoice" class="rounded-card border border-line bg-surface p-3">
       <p v-if="packageCoverage" class="mb-2 border-b border-line-divider pb-2 text-[12.5px] text-ink-muted2">
@@ -742,9 +743,6 @@ async function recordPayment() {
         <li v-for="p in payments" :key="p.id">{{ new Date(p.paid_at).toLocaleDateString() }} &middot; {{ p.method }} &middot; €{{ (p.amount_cents / 100).toFixed(2) }}</li>
       </ul>
 
-      <p v-if="!hasFutureAppointment" class="mt-3 border-t border-line-divider pt-3 text-sm font-medium text-danger-text">
-        {{ t('No future appointment — this patient will show up in Recalls automatically.', 'Sin próxima cita: este paciente aparecerá automáticamente en Recordatorios.') }}
-      </p>
     </div>
     <p v-if="error" class="text-danger-text">{{ error }}</p>
   </div>

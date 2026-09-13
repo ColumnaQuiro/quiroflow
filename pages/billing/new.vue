@@ -87,7 +87,7 @@ async function save() {
   const { data: invoiceNumber, error: numberError } = await supabase.rpc('next_invoice_number', { p_account_id: store.accountId! })
   if (numberError || !invoiceNumber) {
     saving.value = false
-    error.value = numberError?.message ?? t('Could not allocate an invoice number.', 'No se ha podido asignar un número de factura.')
+    error.value = numberError?.message ?? t('Could not allocate a receipt number.', 'No se ha podido asignar un número de recibo.')
     return
   }
 
@@ -131,9 +131,9 @@ async function save() {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader :title="t('Quick invoice', 'Factura rápida')">
+    <PageHeader :title="t('Quick receipt', 'Recibo rápido')">
       <UiBtn variant="secondary" @click="navigateTo('/billing')">{{ t('Cancel', 'Cancelar') }}</UiBtn>
-      <UiBtn variant="primary" :disabled="saving" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Create invoice', 'Crear factura') }}</UiBtn>
+      <UiBtn variant="primary" :disabled="saving" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Create receipt', 'Crear recibo') }}</UiBtn>
     </PageHeader>
 
     <div class="flex-1 overflow-y-auto bg-surface-page p-6">

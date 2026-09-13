@@ -50,7 +50,7 @@ export function usePatientInvoices(patientId: () => string) {
       })
       window.open(url, '_blank')
     } catch {
-      showToast(t('Could not download that invoice.', 'No se pudo descargar la factura.'), 'error')
+      showToast(t('Could not download that receipt.', 'No se pudo descargar el recibo.'), 'error')
     } finally {
       busyId.value = null
     }

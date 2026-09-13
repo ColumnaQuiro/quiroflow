@@ -21,6 +21,10 @@ interface PackagePurchaseRow {
   price_cents: number
   purchased_at: string
   invoice_id: string | null
+  // What PracticeHub said was still outstanding on this bono when it was
+  // imported (0174). Null on a bono created here, where the invoice is the
+  // record of what is owed.
+  owed_cents: number | null
   // Set only for a bono shared TO this patient (they're a beneficiary, not
   // the owner) -- see loadPackages(). Owner-only actions (Share, Delete,
   // collecting payment against the owner's own invoice) are hidden for
@@ -54,7 +58,7 @@ interface PaymentScheduleRow {
   status: string
 }
 interface StripeEventRow { id: string; payment_schedule_id: string; period_start: string; amount_cents: number; status: string }
-interface LedgerPaymentRow { id: string; invoice_id: string | null; amount_cents: number; method: string; paid_at: string; package_purchase_id: string | null }
+interface LedgerPaymentRow { id: string; invoice_id: string | null; amount_cents: number; method: string; paid_at: string; package_purchase_id: string | null; external_reference: string | null }
 interface LedgerCreditRow { id: string; amount_cents: number; reason: string | null; method: string | null; invoice_id: string | null; created_at: string }
 
 const supabase = useSupabaseClient()
@@ -521,7 +525,7 @@ async function loadLedger() {
     // settled nothing in particular.
     supabase
       .from('payments')
-      .select('id, invoice_id, amount_cents, method, paid_at, package_purchase_id')
+      .select('id, invoice_id, amount_cents, method, paid_at, package_purchase_id, external_reference')
       .eq('patient_id', props.patientId),
     supabase
       .from('account_credits')
@@ -563,14 +567,14 @@ async function loadPackages() {
   // "Take payment") and purchased_at (for sort order), neither of which
   // that composable's activePackages carries.
   const [{ data: pkgPurchases }, { data: sch }, { data: shares }] = await Promise.all([
-    supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used, price_cents, purchased_at, invoice_id').eq('patient_id', props.patientId).order('purchased_at', { ascending: false }),
+    supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used, price_cents, purchased_at, invoice_id, owed_cents').eq('patient_id', props.patientId).order('purchased_at', { ascending: false }),
     supabase
       .from('payment_schedules')
       .select('id, package_purchase_id, patient_membership_id, interval, interval_count, installments_total, installments_paid, status')
       .eq('patient_id', props.patientId),
     supabase
       .from('package_purchase_shares')
-      .select('package_purchases(id, package_name, sessions_total, sessions_used, price_cents, purchased_at, invoice_id, patients(first_name, last_name))')
+      .select('package_purchases(id, package_name, sessions_total, sessions_used, price_cents, purchased_at, invoice_id, owed_cents, patients(first_name, last_name))')
       .eq('patient_id', props.patientId),
   ])
   const sharedPurchases = (shares ?? [])
@@ -992,6 +996,13 @@ function packageRemainingValueCents(purchase: PackagePurchaseRow): number {
   return perSessionCents * Math.max(0, purchase.sessions_total - purchase.sessions_used)
 }
 
+// A payment that came over from PracticeHub, rather than one taken here.
+// The import stamps every one of them (0171); a payment recorded in
+// QuiroFlow has no external_reference at all.
+function wasImportedFromPracticeHub(payment: LedgerPaymentRow): boolean {
+  return !!payment.external_reference?.startsWith('phpay-')
+}
+
 function packageOwedCents(purchase: PackagePurchaseRow): number {
   // The bono card and the ledger load independently -- reading payments
   // before that loader lands would flash the full price as unpaid.
@@ -999,12 +1010,27 @@ function packageOwedCents(purchase: PackagePurchaseRow): number {
   const invoice = packageInvoice(purchase)
   const invoiceIsValid = !!invoice && invoice.status !== 'void'
   let paidCents = 0
+  let paidSinceImportCents = 0
   let hasAnyLinkedPayment = false
   for (const p of ledgerPayments.value) {
     if ((invoiceIsValid && p.invoice_id === purchase.invoice_id) || p.package_purchase_id === purchase.id) {
       paidCents += p.amount_cents
       hasAnyLinkedPayment = true
+      if (!wasImportedFromPracticeHub(p)) paidSinceImportCents += p.amount_cents
     }
+  }
+  // A migrated bono has neither an invoice nor a linked payment: phase 5
+  // deleted the invoices, and PracticeHub allocates payments to nothing, so
+  // no payment row points at the bono either. 520 of 521 bonos are in that
+  // state, and this returned 0 for every one of them -- July Pedraza's bono
+  // read "Paid" while PracticeHub said she still owed 264 of the 528.
+  //
+  // owed_cents is PracticeHub's own outstanding figure, stamped at import
+  // (0174). It is already NET of everything paid over there, which is why
+  // only payments taken on this side come off it: her 264 is in this ledger
+  // too (phpay-3452), and subtracting it as well would clear a real debt.
+  if (purchase.owed_cents !== null && purchase.owed_cents !== undefined) {
+    return Math.max(0, purchase.owed_cents - paidSinceImportCents)
   }
   if (!invoiceIsValid && !hasAnyLinkedPayment) return 0
   // Measure the debt against what was actually invoiced, not the bono's
@@ -1027,12 +1053,28 @@ function packageOwedCents(purchase: PackagePurchaseRow): number {
 // matching credit for a payment landing on a bono invoice -- money towards
 // sessions has to become spendable credit, or the patient pays off the bono
 // and still has nothing to draw sessions against.
-function collectOnPackage(purchase: PackagePurchaseRow) {
+//
+// A bono migrated from PracticeHub has no invoice -- phase 5 deleted them all
+// -- so there was nothing to take the payment against and this button did
+// nothing at all on the 200 bonos still running. It now raises the invoice
+// on the spot, for the amount PracticeHub says is outstanding. Raising it
+// here rather than at import is deliberate: an invoice is a charge, it lands
+// in the patient's Outstanding and in Debtors, and issuing 200 of them for
+// debts the clinic may never chase would be inventing charges. owed_cents
+// stays the record until someone actually collects.
+async function collectOnPackage(purchase: PackagePurchaseRow) {
   const owed = packageOwedCents(purchase)
-  if (!purchase.invoice_id || owed <= 0) return
+  if (owed <= 0) return
+  let invoiceId = purchase.invoice_id
+  if (!invoiceId) {
+    invoiceId = await createPackageInvoice(purchase.package_name, owed, 0)
+    if (!invoiceId) return
+    await supabase.from('package_purchases').update({ invoice_id: invoiceId }).eq('id', purchase.id)
+    await loadAll()
+  }
   activePanel.value = 'payment'
   paymentError.value = ''
-  paymentInvoiceId.value = purchase.invoice_id
+  paymentInvoiceId.value = invoiceId
   resetPaymentRows((owed / 100).toFixed(2))
 }
 

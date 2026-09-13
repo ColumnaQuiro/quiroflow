@@ -60,7 +60,6 @@ interface Candidate {
   // `package_balance`. Raised as an unpaid invoice so the debt shows in
   // reports instead of being implied by a PracticeHub column nobody reads.
   owedCents: number
-  needsInvoice: boolean
   // True for a package already in package_purchases: applying it adds only
   // the missing invoice, reference, shares and counter sync, leaving the rest
   // of the purchase alone.
@@ -365,10 +364,6 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     // at -280 EUR. Each local row is now claimed by at most one bono, and a
     // bono that finds nothing left to claim is a genuinely new one to insert.
     const purchasesByPatientDay = new Map<string, LocalBono[]>()
-    // A bono already pointing at an invoice is not billed again, whatever
-    // that invoice is numbered -- one raised by an earlier run, one from a
-    // sale through the app, or one created by hand during a repair.
-    const purchaseHasInvoice = new Set<string>()
     // Rows carrying no PracticeHub reference: the bonos the hand backfill
     // created. The importer recognises them by patient and day, but never
     // wrote the reference onto them, so nothing downstream can see they are
@@ -408,7 +403,6 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         const sameDay = purchasesByPatientDay.get(dayKey)
         if (sameDay) sameDay.push(local)
         else purchasesByPatientDay.set(dayKey, [local])
-        if (row.invoice_id) purchaseHasInvoice.add(row.id)
         if (!row.external_reference) purchaseNeedsReference.add(row.id)
       }
       if (!data || data.length < PAGE_SIZE) break
@@ -444,22 +438,6 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       if (!data || data.length < PAGE_SIZE) break
     }
 
-    // Invoices this importer raised on an earlier run. `invoices` has no
-    // external_reference column, so the bono's own reference is used as the
-    // invoice number -- distinct from the payments importer's `PH-{payment}`
-    // numbering, and enough to keep a re-run from billing the same debt twice
-    // even if a previous run died between the insert and the purchase link.
-    phase.value = t('Checking existing bono invoices…', 'Comprobando facturas de bonos existentes…')
-    const invoicedExternalRefs = new Set<string>()
-    for (let page = 0; ; page++) {
-      const { data } = await supabase
-        .from('invoices')
-        .select('invoice_number')
-        .like('invoice_number', 'PH-package-%')
-        .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
-      for (const row of data ?? []) if (row.invoice_number) invoicedExternalRefs.add(row.invoice_number)
-      if (!data || data.length < PAGE_SIZE) break
-    }
 
     // Which bonos have credit rows pointing at them. Nothing here writes credit
     // any more, but the duplicate merge below DELETES a redundant bono row, and
@@ -594,7 +572,6 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
 
     for (const pkg of sortedPackages) {
       const externalRef = `PH-package-${pkg.id}`
-      const alreadyInvoiced = invoicedExternalRefs.has(externalRef)
 
       // Closed packages are imported too, as history. Skipping them is what
       // left a patient's Billing tab showing a course of visits with nothing
@@ -703,7 +680,6 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       let existingPurchaseId = purchaseByRef.get(externalRef) ?? null
       if (existingPurchaseId === null) existingPurchaseId = claimPurchaseForDay(dayKey, priceCents, sessionsUsed)
       const owedCents = isActive ? owedCentsFor(pkg) : 0
-      const needsInvoice = owedCents > 0 && !alreadyInvoiced && !(existingPurchaseId !== null && purchaseHasInvoice.has(existingPurchaseId))
 
       // Only the members not already attached. A bono whose whole household
       // is recorded needs nothing; one missing a member needs just that member.
@@ -718,9 +694,10 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       const { counterSync, usedAheadOfPracticeHub } = existingLocal
         ? syncFor(existingLocal, Math.max(visitsTotal, 1), sessionsUsed, priceCents)
         : { counterSync: null, usedAheadOfPracticeHub: false }
-      // Nothing left to do: the bono is here, and either it is settled or its
-      // debt is already on an invoice.
-      if (existingPurchaseId && !needsInvoice && !needsShares && !needsReferenceStamp && !counterSync) continue
+      // Nothing left to do: the bono is here, its household is attached and
+      // its counters match PracticeHub. Money still owed on it is not work --
+      // it is a fact about the bono, not something this importer writes.
+      if (existingPurchaseId && !needsShares && !needsReferenceStamp && !counterSync) continue
 
       built.push({
         phPackageId: pkg.id,
@@ -739,7 +716,6 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         priceCents,
         isActive,
         owedCents,
-        needsInvoice,
         repairOnly: existingPurchaseId !== null,
         counterSync,
         usedAheadOfPracticeHub,
@@ -982,46 +958,17 @@ async function applyFixes() {
       }
     }
 
-    // The outstanding half of a part-paid bono, raised as an unpaid invoice
-    // so it reads as money owed rather than living only in a PracticeHub
-    // column. No payment row is written: what was already paid came over
-    // with the payments importer and is counted there.
-    if (c.needsInvoice) {
-      const { data: invoice, error: invoiceError } = await supabase
-        .from('invoices')
-        .insert({
-          account_id: store.accountId!,
-          patient_id: c.patientId,
-          invoice_number: externalRef,
-          status: 'unpaid',
-          total_cents: c.owedCents,
-          created_at: c.created,
-        })
-        .select('id')
-        .single()
-
-      if (invoiceError || !invoice) {
-        c.status = 'error'
-        c.errorMessage = invoiceError?.message
-        progress.value = { done: progress.value.done + 1, total: toApply.length }
-        continue
-      }
-
-      const paidCents = Math.max(0, c.priceCents - c.owedCents)
-      await supabase.from('invoice_line_items').insert({
-        account_id: store.accountId!,
-        invoice_id: invoice.id,
-        description: `${c.packageName} -- outstanding balance from PracticeHub (€${formatEuros(paidCents)} of €${formatEuros(c.priceCents)} already paid)`,
-        quantity: 1,
-        price_cents: c.owedCents,
-      })
-
-      // Pointing the purchase at the invoice is what makes the Billing tab's
-      // owed figure light up for this bono. `is('invoice_id', null)` so a
-      // bono already linked to an invoice -- one sold through the app, or
-      // relinked by hand -- keeps the link it has.
-      if (purchaseId) await supabase.from('package_purchases').update({ invoice_id: invoice.id }).eq('id', purchaseId).is('invoice_id', null)
-    }
+    // The outstanding half of a part-paid bono used to be raised here as an
+    // unpaid invoice, so that it read as money owed rather than living only in
+    // a PracticeHub column.
+    //
+    // It is not any more. Charges come from the Ledger importer now, one per
+    // visit, exactly as PracticeHub records them -- and PracticeHub holds no
+    // charge for the unfinished part of a bono. A patient owes for the visits
+    // they take; raising an invoice here would invent a debt the source system
+    // never asserted, which is the whole class of thing the re-migration
+    // removed. What is still owed on a bono remains visible as the difference
+    // between its price and what has been paid toward it.
 
     c.status = 'applied'
     progress.value = { done: progress.value.done + 1, total: toApply.length }
@@ -1124,8 +1071,8 @@ const introNotes = computed(() => [
       <div class="rounded-lg border border-line bg-surface-subtle p-3 text-sm text-ink-muted2">
         {{
           t(
-            `Found ${candidates.filter((c) => c.status === 'pending' && !c.repairOnly).length} new bono(s) to add and ${candidates.filter((c) => c.status === 'pending' && c.repairOnly).length} already here that need updating. Bonos PracticeHub has since changed: ${candidates.filter((c) => c.counterSync).length}. Invoices for money still owed: ${candidates.filter((c) => c.needsInvoice).length}, €${formatEuros(candidates.filter((c) => c.needsInvoice).reduce((sum, c) => sum + c.owedCents, 0))}. Skipped: ${skippedUnmatched} unmatched patients, ${skippedNoValue} active bonos with nothing left on them.`,
-            `Se encontraron ${candidates.filter((c) => c.status === 'pending' && !c.repairOnly).length} bono(s) nuevos y ${candidates.filter((c) => c.status === 'pending' && c.repairOnly).length} ya existentes que hay que actualizar. Bonos que PracticeHub ha cambiado desde entonces: ${candidates.filter((c) => c.counterSync).length}. Facturas por lo que queda pendiente: ${candidates.filter((c) => c.needsInvoice).length}, €${formatEuros(candidates.filter((c) => c.needsInvoice).reduce((sum, c) => sum + c.owedCents, 0))}. Omitidos: ${skippedUnmatched} pacientes sin emparejar, ${skippedNoValue} bonos activos sin saldo restante.`,
+            `Found ${candidates.filter((c) => c.status === 'pending' && !c.repairOnly).length} new bono(s) to add and ${candidates.filter((c) => c.status === 'pending' && c.repairOnly).length} already here that need updating. Bonos PracticeHub has since changed: ${candidates.filter((c) => c.counterSync).length}. Still owed across these bonos: €${formatEuros(candidates.reduce((sum, c) => sum + c.owedCents, 0))} (not charged -- PracticeHub holds no invoice for it). Skipped: ${skippedUnmatched} unmatched patients, ${skippedNoValue} active bonos with nothing left on them.`,
+            `Se encontraron ${candidates.filter((c) => c.status === 'pending' && !c.repairOnly).length} bono(s) nuevos y ${candidates.filter((c) => c.status === 'pending' && c.repairOnly).length} ya existentes que hay que actualizar. Bonos que PracticeHub ha cambiado desde entonces: ${candidates.filter((c) => c.counterSync).length}. Pendiente en estos bonos: €${formatEuros(candidates.reduce((sum, c) => sum + c.owedCents, 0))} (no se factura: PracticeHub no tiene ninguna factura por ello). Omitidos: ${skippedUnmatched} pacientes sin emparejar, ${skippedNoValue} bonos activos sin saldo restante.`,
           )
         }}
       </div>
@@ -1329,12 +1276,11 @@ const introNotes = computed(() => [
                   <template v-if="c.counterSync.priceCents !== undefined">€{{ formatEuros(c.counterSync.priceCents) }} {{ t('price', 'precio') }}</template>
                 </div>
                 <div v-if="c.usedAheadOfPracticeHub" class="text-ink-muted2">{{ t('more used here than in PracticeHub -- not changed', 'más usadas aquí que en PracticeHub: sin cambios') }}</div>
-                <div v-if="c.needsInvoice" class="text-warning-text">+ €{{ formatEuros(c.owedCents) }} {{ t('invoice', 'factura') }}</div>
+                <div v-if="c.owedCents > 0" class="text-ink-muted2">€{{ formatEuros(c.owedCents) }} {{ t('still owed on it', 'pendiente en el bono') }}</div>
                 <div v-if="c.needsReferenceStamp" class="text-ink-muted2">{{ t('+ PracticeHub reference', '+ referencia de PracticeHub') }}</div>
               </td>
               <td class="px-3 py-2">
                 <span v-if="c.status === 'pending' && c.repairOnly && c.counterSync" class="text-warning-text">{{ t('Out of date', 'Desactualizado') }}</span>
-                <span v-else-if="c.status === 'pending' && c.repairOnly && c.needsInvoice" class="text-warning-text">{{ t('Missing invoice', 'Falta la factura') }}</span>
                 <span v-else-if="c.status === 'pending' && c.repairOnly && c.sharedWith.length > 0" class="text-warning-text">{{ t('Missing shared patients', 'Faltan pacientes compartidos') }}</span>
                 <span v-else-if="c.status === 'pending' && c.repairOnly" class="text-ink-muted2">{{ t('Missing reference', 'Falta la referencia') }}</span>
                 <span v-else-if="c.status === 'pending'" class="text-ink-600">{{ t('Pending', 'Pendiente') }}</span>

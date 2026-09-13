@@ -49,6 +49,45 @@ the sync-before-merge rule above has to be followed by hand. Measured over
 the last 13 merges, 11 were up to date and 2 went in 2–3 commits stale;
 neither broke anything, but nothing would have caught it if they had.
 
+## Migrations — timestamped filenames, never the next free number
+
+New migrations get a **timestamped** filename, which is what
+`supabase migration new <name>` generates:
+
+```
+supabase/migrations/20260913104512_whatsapp_webhook_authentication.sql
+```
+
+Not `0175_…`. Hand-numbering is what the older files use, and it breaks as
+soon as two branches are open at once: both read main, both see `0174` as the
+next free number, and both take it. Git reports no conflict, because the
+filenames differ, and GitHub calls the PR cleanly mergeable. The break only
+appears when someone builds a database:
+
+```
+Applying migration 0174_bono_outstanding_from_practicehub.sql...
+Applying migration 0174_whatsapp_webhook_authentication.sql...
+ERROR: duplicate key value violates unique constraint "schema_migrations_pkey"
+Key (version)=(0174) already exists.
+```
+
+`supabase db reset` never finishes, so every Cypress shard fails and no fresh
+environment can be built at all. That happened between #201 and #202; the gaps
+at `0126` and `0169` are older numbers claimed and then abandoned.
+
+Two things keep it from happening again:
+
+- **Timestamps can't collide.** They also sort after every existing
+  four-digit file, so ordering is unaffected.
+- **`npm run check:migrations`** fails on two files sharing a version, and on
+  a filename that starts with no version at all. It runs as part of
+  `npm run preflight`, so it fires locally and in CI. CI builds each PR from a
+  merge commit against *current* main, which is what makes it catch a
+  collision introduced by someone else's merge without needing a rebase first.
+
+Existing hand-numbered migrations stay as they are — renaming an applied
+migration changes its version and would re-run it.
+
 ## Deploying — GitHub Actions, not Netlify's git integration
 
 `main` still deploys to production on every push, but **Netlify's own

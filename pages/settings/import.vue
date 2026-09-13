@@ -62,7 +62,10 @@ const sources = computed<Source[]>(() => [
           {
             key: 'ledger',
             label: t('Ledger (invoices + payments)', 'Libro mayor (facturas + pagos)'),
-            hint: t('Run first — PracticeHub’s own invoices and payments, as it holds them', 'Ejecutar primero: las facturas y pagos propios de PracticeHub, tal y como los tiene'),
+            hint: t(
+              'PracticeHub’s own invoices and payments, as it holds them — needs Patients and Appointments first',
+              'Las facturas y pagos propios de PracticeHub, tal y como los tiene: requiere Pacientes y Citas antes',
+            ),
           },
           { key: 'patient_packages', label: t('Packages / bonos', 'Bonos'), hint: t('Sessions, price, family sharing and autopay', 'Sesiones, precio, bonos compartidos y cobro automático') },
         ],

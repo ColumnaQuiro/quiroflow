@@ -29,6 +29,11 @@ export const API_SCOPES = [
   { key: 'catalog:read', group: 'Catalog', en: 'Read clinics, practitioners, appointment types and services', es: 'Leer clínicas, profesionales, tipos de cita y servicios' },
   { key: 'billing:read', group: 'Billing', en: 'Read invoices and payments', es: 'Leer facturas y pagos' },
   { key: 'whatsapp:send', group: 'Messaging', en: 'Send WhatsApp messages as the clinic', es: 'Enviar mensajes de WhatsApp en nombre de la clínica' },
+  // For a forwarder (n8n, Zapier, your own backend) that relays Meta's webhook
+  // on to /api/whatsapp/webhook. Meta's own signature cannot survive that hop
+  // -- it is an HMAC over the exact bytes, and re-serialising the JSON breaks
+  // it -- so the forwarder proves who it is with a token instead.
+  { key: 'whatsapp:webhook', group: 'Messaging', en: 'Forward incoming WhatsApp webhooks to this clinic', es: 'Reenviar webhooks entrantes de WhatsApp a esta clínica' },
 ] as const
 
 export type ApiScope = (typeof API_SCOPES)[number]['key']

@@ -8,6 +8,12 @@ const t = useT()
 const phoneNumberId = ref('')
 const businessAccountId = ref('')
 const accessToken = ref('')
+// Write-only, same shape as the access token above: the value is never read
+// back, only whether one is stored. It lives in a service-role-only table, so
+// unlike the other integration secrets on `accounts` no staff member can pull
+// it out through the REST API.
+const appSecret = ref('')
+const hasStoredAppSecret = ref(false)
 const hasStoredToken = ref(false)
 const confirmationTemplateName = ref('')
 const confirmationTemplateLanguage = ref('es')
@@ -52,6 +58,14 @@ async function load() {
   phoneNumberId.value = data?.whatsapp_phone_number_id ?? ''
   businessAccountId.value = data?.whatsapp_business_account_id ?? ''
   hasStoredToken.value = !!data?.whatsapp_access_token
+  try {
+    const status = await useStaffFetch<{ configured: boolean }>('/api/whatsapp/app-secret')
+    hasStoredAppSecret.value = status.configured
+  } catch {
+    // Non-fatal: the rest of the page is still usable, and the field just
+    // renders as "not configured" rather than blocking the whole form.
+    hasStoredAppSecret.value = false
+  }
   confirmationTemplateName.value = data?.whatsapp_confirmation_template_name ?? ''
   confirmationTemplateLanguage.value = data?.whatsapp_confirmation_template_language ?? 'es'
   recallTemplateName.value = data?.whatsapp_recall_template_name ?? ''
@@ -118,6 +132,19 @@ async function save() {
     showToast(updateError.message, 'error')
     return
   }
+  // Its own endpoint, not part of the accounts update above, because the
+  // column it writes is not reachable from the browser at all.
+  if (appSecret.value.trim()) {
+    try {
+      await useStaffFetch('/api/whatsapp/app-secret', { method: 'POST', body: { appSecret: appSecret.value.trim() } })
+      hasStoredAppSecret.value = true
+      appSecret.value = ''
+    } catch (e: any) {
+      showToast(e?.data?.statusMessage ?? e?.statusMessage ?? t('Could not save the app secret', 'No se pudo guardar el secreto de la app'), 'error')
+      return
+    }
+  }
+
   showToast(t('Saved', 'Guardado'))
   if (accessToken.value.trim()) hasStoredToken.value = true
   accessToken.value = ''
@@ -161,6 +188,23 @@ async function save() {
                 :placeholder="hasStoredToken ? '••••••••••••••••••••' : ''"
                 class="h-8 w-[230px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
               />
+            </SettingsFieldRow>
+
+            <SettingsFieldRow
+              :label="t('Meta App Secret', 'Secreto de la app de Meta')"
+              :helper="t('Meta App dashboard → Settings → Basic → App Secret. Required so incoming webhooks can be verified as genuinely from Meta — without it, replies and delivery status are ignored.', 'Panel de Meta App → Configuración → Básica → Secreto de la app. Necesario para verificar que los webhooks entrantes vienen realmente de Meta — sin él, las respuestas y el estado de entrega se ignoran.')"
+            >
+              <div class="flex items-center gap-2">
+                <input
+                  v-model="appSecret"
+                  type="password"
+                  autocomplete="off"
+                  :placeholder="hasStoredAppSecret ? '••••••••••••••••••••' : ''"
+                  class="h-8 w-[230px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+                />
+                <UiPill v-if="hasStoredAppSecret" tone="success">{{ t('Stored', 'Guardado') }}</UiPill>
+                <UiPill v-else tone="warning">{{ t('Not set', 'Sin configurar') }}</UiPill>
+              </div>
             </SettingsFieldRow>
 
             <SettingsFieldRow
@@ -290,6 +334,18 @@ async function save() {
                 <strong>{{ t('Already forwarding to n8n or something else?', '¿Ya reenvías a n8n o a otra cosa?') }}</strong> {{ t("Add one more step to that existing flow — an HTTP request node that forwards the same incoming payload, unmodified, to the URL above. QuiroFlow doesn't need to be Meta's registered endpoint, just a second place the payload also lands.", 'Añade un paso más a ese flujo existente — un nodo de solicitud HTTP que reenvíe el mismo payload entrante, sin modificar, a la URL de arriba. QuiroFlow no necesita ser el endpoint registrado de Meta, solo un segundo lugar donde también llegue el payload.') }}
               </li>
             </ol>
+            <p class="mt-3 rounded-ctl border border-line bg-surface-subtle p-3 text-[12px] leading-relaxed text-ink-600">
+              <strong>{{ t('Each option authenticates differently, and one of the two is now required.', 'Cada opción se autentica de forma distinta, y ahora una de las dos es obligatoria.') }}</strong>
+              {{ t('Incoming webhooks used to be accepted from anyone; they are now ignored unless they can be proven genuine.', 'Antes se aceptaban webhooks entrantes de cualquiera; ahora se ignoran salvo que se pueda probar que son auténticos.') }}
+              <br /><br />
+              <strong>{{ t('Option 1', 'Opción 1') }}</strong> — {{ t('Meta signs every request, so fill in the', 'Meta firma cada solicitud, así que rellena el') }}
+              <strong>{{ t('Meta App Secret', 'Secreto de la app de Meta') }}</strong> {{ t('field above and nothing else is needed.', 'de arriba y no hace falta nada más.') }}
+              <br /><br />
+              <strong>{{ t('Option 2', 'Opción 2') }}</strong> — {{ t("Meta's signature cannot survive the forwarding hop: it covers the exact bytes, and n8n re-encodes the JSON on the way through, so the signature no longer matches. Instead, create a token in", 'La firma de Meta no sobrevive al reenvío: cubre los bytes exactos, y n8n vuelve a codificar el JSON al pasar, así que la firma deja de coincidir. En su lugar, crea un token en') }}
+              <strong>{{ t('Settings → Developers', 'Configuración → Desarrolladores') }}</strong> {{ t('with the', 'con el permiso') }}
+              <code class="rounded-ctlSm bg-surface px-1 py-0.5">whatsapp:webhook</code> {{ t('scope, and have your HTTP Request node send it as a header:', 'y haz que tu nodo de solicitud HTTP lo envíe como cabecera:') }}
+              <code class="mt-1.5 block overflow-x-auto rounded-ctlSm bg-surface px-2 py-1 text-[12px]">Authorization: Bearer qf_live_…</code>
+            </p>
             <p class="mt-3 text-[12px] text-ink-muted2">
               {{ t("Either way it needs a verify token — set", 'De cualquier forma necesita un token de verificación — configura') }}
               <code class="rounded-ctlSm bg-surface-subtle px-1 py-0.5">WHATSAPP_WEBHOOK_VERIFY_TOKEN</code>

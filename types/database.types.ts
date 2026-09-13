@@ -4271,6 +4271,35 @@ export type Database = {
           },
         ]
       }
+      whatsapp_app_secrets: {
+        Row: {
+          account_id: string
+          app_secret: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          app_secret: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          app_secret?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_app_secrets_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: true
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       whatsapp_conversation_archives: {
         Row: {
           account_id: string

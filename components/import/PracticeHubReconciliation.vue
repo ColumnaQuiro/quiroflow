@@ -23,7 +23,10 @@
 const supabase = useSupabaseClient()
 const t = useT()
 
-interface PHPatient { id: number; patient_number: string | null }
+const misreferenced = ref<MisreferencedPatient[]>([])
+
+interface PHPatient { id: number; patient_number: string | null; custom_reference?: string | null; first_name?: string | null; last_name?: string | null }
+
 interface PHPayment { id: number; amount: string | number | null; patient_id: string | number | null }
 interface PHPackage { id: number; name: string | null; package_type: string | null }
 
@@ -107,6 +110,17 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       phTotalCents: null,
       hereTotalCents: null,
     })
+
+    // Patients stored under their custom_reference instead of their patient
+    // number. See utils/practicehubReferences.ts for why this compares against
+    // PracticeHub's own custom_reference rather than trying to spot a DNI by
+    // its shape -- two of Columnaquiro's 44 were all digits.
+    const herePatientRows = await readAll<{ external_reference: string | null; first_name: string; last_name: string | null }>(
+      'patients',
+      'external_reference, first_name, last_name',
+      (q) => q.not('external_reference', 'is', null),
+    )
+    misreferenced.value = findMisreferencedPatients(phPatients, herePatientRows)
 
     // --- Payments -------------------------------------------------------
     // A payment is a payment now, keyed by the PracticeHub id it came from.
@@ -236,7 +250,31 @@ const introNotes = computed(() => [
     </div>
 
     <div v-else-if="stage === 'report'" class="mt-4 space-y-4">
-      <div v-if="allClear" class="rounded-lg border border-success-border bg-success-bg p-3 text-sm text-success-text">
+      <div v-if="misreferenced.length > 0" class="rounded-lg border border-danger-border bg-danger-bg p-3 text-sm text-danger-text">
+        <p class="font-medium">
+          {{
+            t(
+              `${misreferenced.length} patient(s) are stored under the wrong reference.`,
+              `${misreferenced.length} paciente(s) están guardados con la referencia equivocada.`,
+            )
+          }}
+        </p>
+        <p class="mt-1 text-[12.5px]">
+          {{
+            t(
+              'PracticeHub’s CSV puts a patient’s custom reference (DNI/NIE/passport) in the "Patient Number" column when they have one, and that is what was imported. Every other importer matches on this reference, so these patients’ invoices, payments and bonos will silently skip until it is corrected.',
+              'El CSV de PracticeHub pone la referencia personalizada (DNI/NIE/pasaporte) en la columna "Patient Number" cuando el paciente tiene una, y eso es lo que se importó. Los demás importadores emparejan por esta referencia, así que las facturas, pagos y bonos de estos pacientes se omitirán en silencio hasta corregirlo.',
+            )
+          }}
+        </p>
+        <ul class="mt-2 space-y-0.5 font-mono text-[12px]">
+          <li v-for="m in misreferenced" :key="m.stored">
+            {{ m.name }}: {{ m.stored }} &rarr; {{ m.shouldBe }}
+          </li>
+        </ul>
+      </div>
+
+      <div v-if="allClear && misreferenced.length === 0" class="rounded-lg border border-success-border bg-success-bg p-3 text-sm text-success-text">
         {{ t('Everything matches. Every PracticeHub record is here, and nothing here references a record PracticeHub no longer has.', 'Todo cuadra. Todos los registros de PracticeHub están aquí, y nada de aquí hace referencia a un registro que PracticeHub ya no tiene.') }}
       </div>
 

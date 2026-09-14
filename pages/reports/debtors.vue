@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { bonoOwedCents, type BonoOwedPayment } from '~/utils/bonoOwed'
 interface PurchaseRow {
   id: string
   patient_id: string
@@ -8,6 +9,8 @@ interface PurchaseRow {
   price_cents: number
   purchased_at: string
   invoice_id: string | null
+  owed_cents: number | null
+  external_reference: string | null
 }
 interface InvoiceRow { id: string; status: string; total_cents: number }
 interface PatientRow { id: string; first_name: string; last_name: string }
@@ -20,12 +23,12 @@ const purchases = ref<PurchaseRow[]>([])
 const invoicesById = ref<Map<string, InvoiceRow>>(new Map())
 const patientsById = ref<Map<string, PatientRow>>(new Map())
 const schedulesByPurchase = ref<Map<string, ScheduleRow>>(new Map())
-const paidByInvoice = ref<Map<string, number>>(new Map())
+const allPayments = ref<BonoOwedPayment[]>([])
 
 onMounted(async () => {
   const { data: p } = await supabase
     .from('package_purchases')
-    .select('id, patient_id, package_name, sessions_total, sessions_used, price_cents, purchased_at, invoice_id')
+    .select('id, patient_id, package_name, sessions_total, sessions_used, price_cents, purchased_at, invoice_id, owed_cents, external_reference')
     .order('purchased_at', { ascending: false })
   purchases.value = p ?? []
 
@@ -40,38 +43,41 @@ onMounted(async () => {
       ? supabase.from('patients').select('id, first_name, last_name').in('id', patientIds)
       : Promise.resolve({ data: [] as PatientRow[] }),
     supabase.from('payment_schedules').select('package_purchase_id, status').not('package_purchase_id', 'is', null),
-    invoiceIds.length > 0
-      ? supabase.from('payments').select('invoice_id, amount_cents').in('invoice_id', invoiceIds)
-      : Promise.resolve({ data: [] as { invoice_id: string | null; amount_cents: number }[] }),
+    // Every bono payment, not just those on a sale invoice. A bono sold here
+    // has no invoice at all now, and a migrated one never did -- its payments
+    // are tied to the purchase directly.
+    supabase.from('payments').select('invoice_id, amount_cents, package_purchase_id, external_reference'),
   ])
   invoicesById.value = new Map((invoices ?? []).map((i) => [i.id, i as InvoiceRow]))
   patientsById.value = new Map((patients ?? []).map((p2) => [p2.id, p2 as PatientRow]))
   schedulesByPurchase.value = new Map((schedules ?? []).map((s) => [s.package_purchase_id as string, s as ScheduleRow]))
-  const byInvoice = new Map<string, number>()
-  for (const row of payments ?? []) if (row.invoice_id) byInvoice.set(row.invoice_id, (byInvoice.get(row.invoice_id) ?? 0) + row.amount_cents)
-  paidByInvoice.value = byInvoice
+  allPayments.value = (payments ?? []) as BonoOwedPayment[]
 
   loading.value = false
 })
 
-// A debt needs an invoice that is actually unpaid. An active/completed Stripe
-// schedule means it is being (or was) collected automatically; a past_due one
-// means a scheduled charge failed, which IS a debt.
+// A debt needs an invoice that is actually unpaid, OR an outstanding figure on
+// the bono itself. An active/completed Stripe schedule means it is being (or
+// was) collected automatically; a past_due one means a scheduled charge
+// failed, which IS a debt.
 //
-// No invoice is NOT a debt. It used to be -- `!inv` counted the bono's whole
-// price as owed -- and on the live account that was 427 migrated bonos and
-// 210,147 EUR of money nobody owed. Those were paid in PracticeHub, whose
-// payments came across as their own PH-{id} invoices and were never linked
-// back to the bono, so the bono simply has no billing record here. "We have no
-// invoice" and "they have not paid" are different things. Where a migrated
-// bono genuinely does owe something, the bonos importer raises an invoice for
-// it, which is what puts it back on this list.
+// This used to read the sale invoice and nothing else, which was right when a
+// bono's debt was an invoice. It is not any more: a migrated bono never had
+// one, and a bono sold here no longer raises one, so 518 of 522 bonos were
+// invisible on this report while 21,930 EUR sat outstanding on them.
 //
-// A voided invoice is a cancelled charge, so nothing is owed on it either.
+// utils/bonoOwed is the single answer, shared with the patient's Billing tab
+// and the dashboard widget -- all three used to compute this differently.
 function owedCentsFor(p: PurchaseRow): number {
   const inv = p.invoice_id ? invoicesById.value.get(p.invoice_id) : null
-  if (!inv || inv.status === 'paid' || inv.status === 'void') return 0
-  return Math.max(0, inv.total_cents - (paidByInvoice.value.get(inv.id) ?? 0))
+  return bonoOwedCents({
+    purchaseId: p.id,
+    invoiceId: p.invoice_id,
+    priceCents: p.price_cents,
+    owedCents: p.owed_cents,
+    invoice: inv ? { status: inv.status, total_cents: inv.total_cents } : null,
+    payments: allPayments.value,
+  })
 }
 
 const debtors = computed(() =>
@@ -82,9 +88,9 @@ const debtors = computed(() =>
   }),
 )
 
-// What is left on the invoice, not the bono's price. The importer bills only
-// the outstanding part of a part-paid bono, so the price overstates the debt --
-// 44,318 EUR of bono prices against 22,854 EUR actually outstanding.
+// What is actually outstanding, never the bono's price: a part-paid bono's
+// price overstates the debt -- 44,318 EUR of prices against 22,854 EUR really
+// owed.
 const totalOwed = computed(() => debtors.value.reduce((sum, p) => sum + owedCentsFor(p), 0))
 
 function patientName(id: string) {

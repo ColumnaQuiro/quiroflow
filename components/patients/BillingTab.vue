@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { normalizeSearchTerm } from '~/utils/searchText'
+import { bonoOwedCents } from '~/utils/bonoOwed'
 
 const props = defineProps<{ patientId: string; openPaymentTrigger?: boolean }>()
 const emit = defineEmits<{ paymentTriggerConsumed: [] }>()
@@ -136,6 +137,28 @@ async function addCredit() {
   if (amountCents <= 0) return
   creditError.value = ''
   addingCredit.value = true
+  // Money in is a payment, and a payment gets a factura -- whatever the
+  // method, whatever the reason. This used to write the credit row alone, so
+  // cash handed over here reached no payments ledger and no fiscal document:
+  // Adrian Oropeza's 150 EUR came in this way and had neither. The gap then
+  // compounded, because spending that credit issues no factura either, on the
+  // stated grounds that the money "was already documented when it was paid
+  // in" -- which only becomes true now.
+  //
+  // The credit row is still what the patient can draw on; the payment is the
+  // record that the money arrived.
+  const { data: creditPayment } = await supabase
+    .from('payments')
+    .insert({
+      account_id: store.accountId!,
+      patient_id: props.patientId,
+      invoice_id: null,
+      amount_cents: amountCents,
+      method: addCreditMethod.value,
+      purpose: 'on_account' as const,
+    })
+    .select('id')
+    .single()
   await supabase.from('account_credits').insert({
     account_id: store.accountId!,
     patient_id: props.patientId,
@@ -144,12 +167,21 @@ async function addCredit() {
     method: addCreditMethod.value,
     created_by: store.teamMember?.id ?? null,
   })
+  if (creditPayment) {
+    await issueFactura({
+      accountId: store.accountId!,
+      patientId: props.patientId,
+      paymentId: creditPayment.id,
+      amountCents,
+      purpose: 'on_account',
+    })
+  }
   addCreditAmount.value = ''
   addCreditReason.value = ''
   addCreditMethod.value = 'cash'
   addingCredit.value = false
   activePanel.value = null
-  await refreshCreditSummary()
+  await Promise.all([loadAll(), refreshCreditSummary(), loadFacturas()])
 }
 
 async function applyCreditToInvoice() {
@@ -420,30 +452,6 @@ async function recordSalePayment(description: string, amountCents: number, metho
   }
 }
 
-// A bono is invoiced for what it costs, not for whatever was handed over on
-// the day, so an instalment plan is just an invoice that isn't settled yet.
-// Returns the invoice id for package_purchases.invoice_id to point at.
-async function createPackageInvoice(description: string, priceCents: number, paidNowCents: number): Promise<string | null> {
-  const { data: invoiceNumber } = await supabase.rpc('next_invoice_number', { p_account_id: store.accountId! })
-  if (!invoiceNumber) return null
-
-  const { data: invoice } = await supabase
-    .from('invoices')
-    .insert({
-      account_id: store.accountId!,
-      patient_id: props.patientId,
-      invoice_number: invoiceNumber,
-      status: paidNowCents >= priceCents ? 'paid' : 'unpaid',
-      total_cents: priceCents,
-    })
-    .select('id')
-    .single()
-  if (!invoice) return null
-
-  await supabase.from('invoice_line_items').insert({ account_id: store.accountId!, invoice_id: invoice.id, description, quantity: 1, price_cents: priceCents })
-  return invoice.id
-}
-
 // The payment side of a bono sale or instalment. Cash/card money settles the
 // bono's invoice and nothing more -- the sessions counter is what carries the
 // prepaid value from here on, so banking it as account credit as well would
@@ -452,16 +460,35 @@ async function createPackageInvoice(description: string, priceCents: number, pai
 // Paying WITH credit still writes its negative row: that is a patient spending
 // credit they genuinely hold, and it has to come off their balance.
 async function recordPackagePayment(
-    invoiceId: string | null,
+    packagePurchaseId: string | null,
     amountCents: number,
     method: 'cash' | 'card' | 'credit',
     description: string,
     bono?: { priceCents: number; sessionsTotal: number },
   ) {
-  if (!invoiceId) return
+  if (!packagePurchaseId) return
+  // Attached to the bono, not to an invoice. Selling a bono used to raise an
+  // invoice for its full price and hang the payments off that -- which
+  // charged the patient twice, because every visit drawn from the bono raises
+  // its own charge as well. Adrian Oropeza was invoiced 528 for the bono and
+  // 44 for the visit he took from it; run the bono out and that is 1,056
+  // charged for 528 of sessions.
+  //
+  // The 518 bonos migrated from PracticeHub never had a sale invoice -- phase
+  // 5 removed them -- and they have been correct all along: the money sits on
+  // the account and each visit's charge draws it down. This makes a bono sold
+  // here behave the same way, so there is one model rather than two.
   const { data: payment } = await supabase
     .from('payments')
-    .insert({ account_id: store.accountId!, patient_id: props.patientId, invoice_id: invoiceId, amount_cents: amountCents, method, purpose: 'bono' })
+    .insert({
+      account_id: store.accountId!,
+      patient_id: props.patientId,
+      invoice_id: null,
+      package_purchase_id: packagePurchaseId,
+      amount_cents: amountCents,
+      method,
+      purpose: 'bono',
+    })
     .select('id')
     .single()
 
@@ -485,7 +512,7 @@ async function recordPackagePayment(
       patient_id: props.patientId,
       amount_cents: -amountCents,
       reason: `Applied to ${description}`,
-      invoice_id: invoiceId,
+      invoice_id: null,
       created_by: store.teamMember?.id ?? null,
     })
   }
@@ -922,28 +949,29 @@ async function sellPackage() {
     return
   }
   sellingPackage.value = true
-  // The bono is invoiced at its full price and the purchase points at that
-  // invoice, so paying for it in instalments works like any other partly
-  // paid invoice: what is still owed is the invoice's open balance, it
-  // shows in the patient's Outstanding, and Debtors picks it up (that
-  // report is already written against package_purchases.invoice_id).
-  // Invoicing only the amount handed over, as this did, left nothing
-  // anywhere recording that the rest of the bono was still unpaid.
-  const invoiceId = await createPackageInvoice(tpl.name, tpl.price_cents, amountCents)
-  await supabase.from('package_purchases').insert({
-    account_id: store.accountId!,
-    patient_id: props.patientId,
-    package_id: tpl.id,
-    package_name: tpl.name,
-    sessions_total: tpl.session_count,
-    price_cents: tpl.price_cents,
-    invoice_id: invoiceId,
-    created_by: store.teamMember?.id ?? null,
-  })
+  // No invoice for the sale. What the bono costs is recorded as owed_cents on
+  // the purchase, and every payment against it comes off that -- see
+  // packageOwedCents. Raising an invoice here as well as charging each visit
+  // billed the same sessions twice.
+  const { data: purchase } = await supabase
+    .from('package_purchases')
+    .insert({
+      account_id: store.accountId!,
+      patient_id: props.patientId,
+      package_id: tpl.id,
+      package_name: tpl.name,
+      sessions_total: tpl.session_count,
+      price_cents: tpl.price_cents,
+      invoice_id: null,
+      owed_cents: tpl.price_cents,
+      created_by: store.teamMember?.id ?? null,
+    })
+    .select('id')
+    .single()
   // Amount paid can be less than the package's full price -- the rest is
   // expected via the existing "Set up autopay" Stripe schedule below.
-  if (amountCents > 0) {
-    await recordPackagePayment(invoiceId, amountCents, sellMethod.value, tpl.name, { priceCents: tpl.price_cents, sessionsTotal: tpl.session_count })
+  if (purchase && amountCents > 0) {
+    await recordPackagePayment(purchase.id, amountCents, sellMethod.value, tpl.name, { priceCents: tpl.price_cents, sessionsTotal: tpl.session_count })
   }
   sellingPackage.value = false
   sellPackageId.value = ''
@@ -996,86 +1024,62 @@ function packageRemainingValueCents(purchase: PackagePurchaseRow): number {
   return perSessionCents * Math.max(0, purchase.sessions_total - purchase.sessions_used)
 }
 
-// A payment that came over from PracticeHub, rather than one taken here.
-// The import stamps every one of them (0171); a payment recorded in
-// QuiroFlow has no external_reference at all.
-function wasImportedFromPracticeHub(payment: LedgerPaymentRow): boolean {
-  return !!payment.external_reference?.startsWith('phpay-')
-}
-
+// Delegates to utils/bonoOwed, which the Debtors report and its dashboard
+// widget now share -- they each had their own answer, and with 518 of 522
+// bonos carrying no sale invoice the other two were reporting almost nothing.
 function packageOwedCents(purchase: PackagePurchaseRow): number {
   // The bono card and the ledger load independently -- reading payments
   // before that loader lands would flash the full price as unpaid.
   if (ledgerLoading.value) return 0
-  const invoice = packageInvoice(purchase)
-  const invoiceIsValid = !!invoice && invoice.status !== 'void'
-  let paidCents = 0
-  let paidSinceImportCents = 0
-  let hasAnyLinkedPayment = false
-  for (const p of ledgerPayments.value) {
-    if ((invoiceIsValid && p.invoice_id === purchase.invoice_id) || p.package_purchase_id === purchase.id) {
-      paidCents += p.amount_cents
-      hasAnyLinkedPayment = true
-      if (!wasImportedFromPracticeHub(p)) paidSinceImportCents += p.amount_cents
-    }
-  }
-  // A migrated bono has neither an invoice nor a linked payment: phase 5
-  // deleted the invoices, and PracticeHub allocates payments to nothing, so
-  // no payment row points at the bono either. 520 of 521 bonos are in that
-  // state, and this returned 0 for every one of them -- July Pedraza's bono
-  // read "Paid" while PracticeHub said she still owed 264 of the 528.
-  //
-  // owed_cents is PracticeHub's own outstanding figure, stamped at import
-  // (0174). It is already NET of everything paid over there, which is why
-  // only payments taken on this side come off it: her 264 is in this ledger
-  // too (phpay-3452), and subtracting it as well would clear a real debt.
-  if (purchase.owed_cents !== null && purchase.owed_cents !== undefined) {
-    return Math.max(0, purchase.owed_cents - paidSinceImportCents)
-  }
-  if (!invoiceIsValid && !hasAnyLinkedPayment) return 0
-  // Measure the debt against what was actually invoiced, not the bono's
-  // price. A bono sold here is invoiced at its full price, so the two agree.
-  // A bono migrated from PracticeHub is not: the importer raises an invoice
-  // for the part still owed at migration, because the rest was already paid
-  // over there and no payment row for it exists on this side. Measuring
-  // against price_cents claimed the whole price was outstanding -- David
-  // Poveda's Bono 14 read "559,00 owed / 0,00 paid of 559,00" against a
-  // 301,00 invoice -- and overstated the debt on 84 bonos by 18.647,00.
-  const chargedCents = invoice && invoiceIsValid ? invoice.total_cents : purchase.price_cents
-  return Math.max(0, chargedCents - paidCents)
+  return bonoOwedCents({
+    purchaseId: purchase.id,
+    invoiceId: purchase.invoice_id,
+    priceCents: purchase.price_cents,
+    owedCents: purchase.owed_cents,
+    invoice: packageInvoice(purchase) ?? null,
+    payments: ledgerPayments.value,
+  })
 }
 
-// Collecting a NEW payment still only makes sense when the bono has its own
-// invoice to take it against -- this opens the existing take-payment panel
-// already pointed at it and prefilled with the outstanding amount, rather
-// than making the front desk find the right invoice in a dropdown of all of
-// them. Paying it flows through takePayment(), which already deposits
-// matching credit for a payment landing on a bono invoice -- money towards
-// sessions has to become spendable credit, or the patient pays off the bono
-// and still has nothing to draw sessions against.
-//
-// A bono migrated from PracticeHub has no invoice -- phase 5 deleted them all
-// -- so there was nothing to take the payment against and this button did
-// nothing at all on the 200 bonos still running. It now raises the invoice
-// on the spot, for the amount PracticeHub says is outstanding. Raising it
-// here rather than at import is deliberate: an invoice is a charge, it lands
-// in the patient's Outstanding and in Debtors, and issuing 200 of them for
-// debts the clinic may never chase would be inventing charges. owed_cents
-// stays the record until someone actually collects.
-async function collectOnPackage(purchase: PackagePurchaseRow) {
+// Collecting the rest of a bono. It used to raise an invoice for the
+// outstanding amount and send the front desk to the account-level payment
+// panel -- necessary back when a bono's debt WAS an invoice. It isn't: the
+// debt is owed_cents, payments come off it directly, and an invoice raised
+// here would be a second charge for sessions already being charged per visit.
+const collectOnPackageId = ref<string | null>(null)
+const collectAmount = ref('')
+const collectMethod = ref<'cash' | 'card' | 'credit'>('cash')
+const collectError = ref('')
+const collectingPayment = ref(false)
+
+function collectOnPackage(purchase: PackagePurchaseRow) {
   const owed = packageOwedCents(purchase)
   if (owed <= 0) return
-  let invoiceId = purchase.invoice_id
-  if (!invoiceId) {
-    invoiceId = await createPackageInvoice(purchase.package_name, owed, 0)
-    if (!invoiceId) return
-    await supabase.from('package_purchases').update({ invoice_id: invoiceId }).eq('id', purchase.id)
-    await loadAll()
+  collectError.value = ''
+  collectAmount.value = (owed / 100).toFixed(2)
+  collectMethod.value = 'cash'
+  collectOnPackageId.value = collectOnPackageId.value === purchase.id ? null : purchase.id
+}
+
+async function submitPackageCollection(purchase: PackagePurchaseRow) {
+  const amountCents = Math.round((parseFloat(collectAmount.value) || 0) * 100)
+  if (amountCents <= 0) return
+  // Same cap the sale panel applies: credit can only spend credit the patient
+  // actually holds, never the value of the bono they are paying for.
+  if (collectMethod.value === 'credit' && amountCents > creditLedgerCents.value) {
+    collectError.value = t('Amount exceeds available credit.', 'El importe supera el crédito disponible.')
+    return
   }
-  activePanel.value = 'payment'
-  paymentError.value = ''
-  paymentInvoiceId.value = invoiceId
-  resetPaymentRows((owed / 100).toFixed(2))
+  collectError.value = ''
+  collectingPayment.value = true
+  await recordPackagePayment(purchase.id, amountCents, collectMethod.value, purchase.package_name, {
+    priceCents: purchase.price_cents,
+    sessionsTotal: purchase.sessions_total,
+  })
+  collectingPayment.value = false
+  collectOnPackageId.value = null
+  collectAmount.value = ''
+  await Promise.all([loadAll(), refreshCreditSummary(), loadFacturas()])
 }
 
 // --- Linking an EXISTING payment to a bono -- for the cases packageOwedCents
@@ -1732,6 +1736,32 @@ function money(cents: number) {
                   </li>
                 </ul>
               </div>
+            </div>
+
+            <div v-if="collectOnPackageId === p.id" class="mt-2.5 rounded-ctl border border-line-divider bg-surface-subtle p-2.5">
+              <div class="flex flex-wrap items-end gap-2">
+                <div>
+                  <label class="block text-[11px] text-ink-muted">{{ t('Amount', 'Importe') }}</label>
+                  <input v-model="collectAmount" type="number" step="0.01" min="0" class="bg-surface mt-0.5 w-28 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]" />
+                </div>
+                <div>
+                  <label class="block text-[11px] text-ink-muted">{{ t('Method', 'Método') }}</label>
+                  <select v-model="collectMethod" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
+                    <option value="cash">{{ t('Cash', 'Efectivo') }}</option>
+                    <option value="card">{{ t('Card', 'Tarjeta') }}</option>
+                    <option v-if="creditLedgerCents > 0" value="credit">
+                      {{ t('Credit on account', 'Crédito en cuenta') }} ({{ money(creditLedgerCents) }} {{ t('available', 'disponible') }})
+                    </option>
+                  </select>
+                </div>
+                <UiBtn size="sm" variant="primary" :disabled="collectingPayment" @click="submitPackageCollection(p)">
+                  {{ collectingPayment ? t('Recording…', 'Registrando…') : t('Record payment', 'Registrar pago') }}
+                </UiBtn>
+              </div>
+              <p v-if="collectError" class="mt-1.5 text-[11.5px] text-danger-text">{{ collectError }}</p>
+              <p class="mt-1.5 text-[11.5px] text-ink-faint">
+                {{ t('Goes straight onto the bono — a factura is issued for it.', 'Va directamente al bono: se emite una factura por el importe.') }}
+              </p>
             </div>
 
             <div v-if="openLinkPaymentId === p.id" class="mt-2.5 rounded-ctl border border-line-divider bg-surface-subtle p-2.5">

@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import { bonoOwedCents, type BonoOwedPayment } from '~/utils/bonoOwed'
 defineProps<{ dateRange?: unknown; practitionerId?: string; clinicId?: string }>()
 
 interface PurchaseRow {
   id: string
   price_cents: number
   invoice_id: string | null
+  owed_cents: number | null
+  external_reference: string | null
   patients: { first_name: string; last_name: string | null } | null
 }
 interface InvoiceRow { id: string; status: string; total_cents: number }
@@ -16,35 +19,40 @@ const loading = ref(true)
 const purchases = ref<PurchaseRow[]>([])
 const invoicesById = ref<Map<string, InvoiceRow>>(new Map())
 const schedulesByPurchase = ref<Map<string, ScheduleRow>>(new Map())
-const paidByInvoice = ref<Map<string, number>>(new Map())
+const allPayments = ref<BonoOwedPayment[]>([])
 
 onMounted(async () => {
-  const { data: p } = await supabase.from('package_purchases').select('id, price_cents, invoice_id, patients(first_name, last_name)')
+  const { data: p } = await supabase.from('package_purchases').select('id, price_cents, invoice_id, owed_cents, external_reference, patients(first_name, last_name)')
   purchases.value = (p as unknown as PurchaseRow[]) ?? []
   const invoiceIds = purchases.value.map((x) => x.invoice_id).filter((x): x is string => !!x)
 
   const [{ data: invoices }, { data: schedules }, { data: payments }] = await Promise.all([
     invoiceIds.length > 0 ? supabase.from('invoices').select('id, status, total_cents').in('id', invoiceIds) : Promise.resolve({ data: [] as InvoiceRow[] }),
     supabase.from('payment_schedules').select('package_purchase_id, status').not('package_purchase_id', 'is', null),
-    invoiceIds.length > 0
-      ? supabase.from('payments').select('invoice_id, amount_cents').in('invoice_id', invoiceIds)
-      : Promise.resolve({ data: [] as { invoice_id: string | null; amount_cents: number }[] }),
+    // All of them: a bono sold here has no invoice now, and a migrated one
+    // never had -- its payments hang off the purchase.
+    supabase.from('payments').select('invoice_id, amount_cents, package_purchase_id, external_reference'),
   ])
   invoicesById.value = new Map((invoices ?? []).map((i) => [i.id, i as InvoiceRow]))
   schedulesByPurchase.value = new Map((schedules ?? []).map((s) => [s.package_purchase_id as string, s as ScheduleRow]))
-  const byInvoice = new Map<string, number>()
-  for (const row of payments ?? []) if (row.invoice_id) byInvoice.set(row.invoice_id, (byInvoice.get(row.invoice_id) ?? 0) + row.amount_cents)
-  paidByInvoice.value = byInvoice
+  allPayments.value = (payments ?? []) as BonoOwedPayment[]
   loading.value = false
 })
 
-// What is actually still owed on the bono's invoice. Mirrors the debtors
-// report -- see the reasoning there for why having no invoice is not a debt,
-// and why this is the invoice's remaining balance rather than the bono price.
+// Same answer as the Debtors report and the patient's Billing tab, because
+// it is literally the same function now -- see utils/bonoOwed for why a bono
+// sold here and a bono migrated from PracticeHub record their debt
+// differently, and why all three used to disagree.
 function owedCentsFor(p: PurchaseRow): number {
   const inv = p.invoice_id ? invoicesById.value.get(p.invoice_id) : null
-  if (!inv || inv.status === 'paid' || inv.status === 'void') return 0
-  return Math.max(0, inv.total_cents - (paidByInvoice.value.get(inv.id) ?? 0))
+  return bonoOwedCents({
+    purchaseId: p.id,
+    invoiceId: p.invoice_id,
+    priceCents: p.price_cents,
+    owedCents: p.owed_cents,
+    invoice: inv ? { status: inv.status, total_cents: inv.total_cents } : null,
+    payments: allPayments.value,
+  })
 }
 
 const debtors = computed(() =>

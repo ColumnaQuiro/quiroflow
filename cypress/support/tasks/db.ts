@@ -952,12 +952,83 @@ async function setChannelSpend(opts: { accountId: string; channel: string; amoun
   return { channel: opts.channel, month }
 }
 
+/** Seeds a review, as a platform importer or a hand-entry would. */
+async function createReview(opts: {
+  accountId: string
+  authorName: string
+  rating: number
+  body?: string
+  platform?: string
+  postedAt?: string
+  draftBody?: string
+  repliedAt?: string
+  replyBody?: string
+  replyWasAiDrafted?: boolean
+}) {
+  return unwrap(
+    await admin
+      .from('reviews')
+      .insert({
+        account_id: opts.accountId,
+        platform: opts.platform ?? 'google',
+        author_name: opts.authorName,
+        rating: opts.rating,
+        body: opts.body ?? null,
+        posted_at: opts.postedAt ?? new Date().toISOString(),
+        draft_body: opts.draftBody ?? null,
+        draft_created_at: opts.draftBody ? new Date().toISOString() : null,
+        replied_at: opts.repliedAt ?? null,
+        reply_body: opts.replyBody ?? null,
+        reply_was_ai_drafted: opts.replyWasAiDrafted ?? false,
+      })
+      .select('id')
+      .single(),
+  )
+}
+
+/** Seeds a review request, optionally already opened or already attributed. */
+async function createReviewRequest(opts: { accountId: string; token: string; openedAt?: string; reviewId?: string }) {
+  return unwrap(
+    await admin
+      .from('review_requests')
+      .insert({
+        account_id: opts.accountId,
+        token: opts.token,
+        opened_at: opts.openedAt ?? null,
+        review_id: opts.reviewId ?? null,
+      })
+      .select('id, token')
+      .single(),
+  )
+}
+
+/** Reads a review back, to check what an approval actually wrote. */
+async function reviewById(opts: { id: string }) {
+  return unwrap(await admin.from('reviews').select('*').eq('id', opts.id).single())
+}
+
+/** Reads a request back, to check the redirect recorded the open. */
+async function reviewRequestByToken(opts: { token: string }) {
+  return unwrap(await admin.from('review_requests').select('*').eq('token', opts.token).single())
+}
+
+/** Points the account's review link somewhere, as the settings screen will. */
+async function setGoogleReviewUrl(opts: { accountId: string; url: string | null }) {
+  assertOk(await admin.from('accounts').update({ google_review_url: opts.url }).eq('id', opts.accountId))
+  return { url: opts.url }
+}
+
 export const dbTasks = {
   'db:createStaffAccount': createStaffAccount,
   'db:createLead': createLead,
   'db:createLeadMessage': createLeadMessage,
   'db:leadAiState': leadAiState,
   'db:setChannelSpend': setChannelSpend,
+  'db:createReview': createReview,
+  'db:createReviewRequest': createReviewRequest,
+  'db:reviewById': reviewById,
+  'db:reviewRequestByToken': reviewRequestByToken,
+  'db:setGoogleReviewUrl': setGoogleReviewUrl,
   'db:patientWithContacts': patientWithContacts,
   'db:patientCount': patientCount,
   'db:leadById': leadById,

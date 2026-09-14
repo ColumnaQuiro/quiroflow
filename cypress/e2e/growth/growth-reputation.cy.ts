@@ -1,4 +1,10 @@
-// Reputation, plus the dark-theme pass across the whole tier.
+// Reputation against real rows, plus the dark-theme pass across the tier.
+//
+// The thing worth pinning down here is the boundary between what this app
+// knows and what only Google knows. An account with no reviews must not be
+// shown a rating, and a funnel with nothing attributed must not be shown a
+// "0% left a review" -- both would be inventions, and both are one careless
+// `?? 0` away from appearing. The tests below assert the absence.
 //
 // The dark case gets its own test rather than a note in a PR because it is
 // the claim the design made -- "design one artboard in dark to prove the
@@ -8,79 +14,234 @@
 
 const GROWTH_PAGES = ['/growth', '/growth/leads', '/growth/receptionist', '/growth/automations', '/growth/reputation']
 
+interface SeededAccount {
+  email: string
+  password: string
+  accountId: string
+  clinicId: string
+}
+
+// Tokens are unique across every account, deliberately -- one is a public
+// URL, not an account-scoped id. So a literal here would pass once and then
+// collide forever against a database that was not reset in between.
+function token(label: string) {
+  return `tok-${label}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+function monthsAgo(n: number) {
+  const d = new Date()
+  d.setUTCMonth(d.getUTCMonth() - n, 15)
+  return d.toISOString()
+}
+
 describe('Growth reputation', () => {
-  before(() => {
-    cy.seedStaffAccount().then((account) => {
-      Cypress.env('repAccount', account)
-    })
-  })
+  let account: SeededAccount
 
   beforeEach(() => {
-    const account = Cypress.env('repAccount')
-    cy.login(account.email, account.password)
-  })
-
-  it('summarises the rating, its spread and where it is heading', () => {
-    cy.visit('/growth/reputation?growth=1')
-
-    cy.contains('4.8').should('be.visible')
-    cy.contains('412 reviews · +38 this year').should('be.visible')
-    cy.contains('12-month trend').should('be.visible')
-    cy.contains('4.5 → 4.8').should('be.visible')
-
-    // Stars are drawn from the number, so they carry a real label rather than
-    // being a string of glyphs a screen reader has to guess at.
-    cy.get('[role="img"][aria-label="4.8 out of 5"]').should('exist')
-  })
-
-  it('holds an AI reply back for approval, and says what happens if nobody acts', () => {
-    cy.visit('/growth/reputation?growth=1')
-
-    cy.get('[data-test="pending-reply"]').within(() => {
-      cy.contains('AI drafted a reply · needs approval').should('be.visible')
-      cy.contains('Jordi Puigdemont').should('be.visible')
-      cy.contains('Mixed sentiment').should('be.visible')
-
-      // The draft answers both halves of a mixed review, which is the point
-      // of showing the review above it.
-      cy.contains('La espera de 25 minutos no es aceptable').should('be.visible')
-
-      // Doing nothing is itself a decision here, and the card says so.
-      cy.contains('Auto-posts in 22 h unless you edit it').should('be.visible')
+    cy.seedStaffAccount().then((seeded) => {
+      account = seeded as SeededAccount
+      cy.login(account.email, account.password)
     })
   })
 
-  it('confirms what happened when the draft is approved or discarded', () => {
+  it('says it has no reviews rather than reporting a rating of zero', () => {
     cy.visit('/growth/reputation?growth=1')
 
-    cy.get('[data-test="discard-reply"]').click()
-    cy.get('[data-test="pending-reply"]').within(() => {
-      cy.contains('Discarded. Nothing was posted.').should('be.visible')
-      cy.contains('Auto-posts in 22 h').should('not.exist')
-    })
+    cy.get('[data-test="no-reviews"]').should('contain', 'is not built yet')
+    cy.get('[data-test="rating"]').should('not.exist')
+    cy.get('[data-test="review-card"]').should('not.exist')
 
-    cy.reload()
-    cy.get('[data-test="approve-reply"]').click()
-    cy.get('[data-test="pending-reply"]').contains('Approved and posted.').should('be.visible')
+    // 0.0 out of 5 is the single most misleading thing this screen could
+    // say, so it is asserted against by name.
+    cy.contains('0.0').should('not.exist')
+
+    // The half we do own is still counted, and still explains itself.
+    cy.get('[data-test="request-funnel"]').should('be.visible')
+    cy.get('[data-test="funnel-caveat"]').should('contain', 'only known once a platform is connected')
   })
 
-  it('shows the reviews and where the requests come from', () => {
+  it('averages the rating, spreads it by stars and tracks where it is heading', () => {
+    for (const [rating, months] of [[5, 6], [4, 6], [5, 1], [3, 1]] as const) {
+      cy.task('db:createReview', {
+        accountId: account.accountId,
+        authorName: `Reviewer ${rating}-${months}`,
+        rating,
+        body: 'Seeded review body.',
+        postedAt: monthsAgo(months),
+      })
+    }
+
     cy.visit('/growth/reputation?growth=1')
 
-    cy.get('[data-test="review-card"]').should('have.length', 5)
-    cy.contains('Daniel Okonkwo').scrollIntoView().should('be.visible')
-    cy.contains('Replied by AI · approved by Marta Ferrer').scrollIntoView().should('be.visible')
+    // (5 + 4 + 5 + 3) / 4 = 4.25, rounded for display.
+    cy.get('[data-test="rating"]').should('have.text', '4.3')
+    cy.contains('4 reviews').should('be.visible')
 
-    cy.contains('Review request funnel').scrollIntoView().should('be.visible')
-    cy.contains('Requests sent').should('be.visible')
-    cy.contains('Left a review').should('be.visible')
+    // Two months, each averaging its own reviews: 4.5 six months ago, 4.0
+    // this month. A downward trend has to be allowed to show as one.
+    cy.contains('4.5 → 4.0').should('be.visible')
 
-    // The funnel names the automation doing the sending, and links to it.
-    cy.contains('Post-visit review request').scrollIntoView().should('be.visible')
-    cy.contains('a', 'Open in Automations').should('have.attr', 'href', '/growth/automations')
+    cy.get('[role="img"][aria-label="4.3 out of 5"]').should('exist')
+    cy.get('[data-test="review-card"]').should('have.length', 4)
+  })
 
-    // A negative theme is not dressed in the same neutral chip as the praise.
-    cy.contains('Waiting time · 9').scrollIntoView().should('be.visible')
+  it('holds a draft back for approval and says nothing posts without it', () => {
+    cy.task('db:createReview', {
+      accountId: account.accountId,
+      authorName: 'Jordi Puigdemont',
+      rating: 3,
+      body: 'Buen trato, pero esperé 25 minutos.',
+      draftBody: 'Gracias por decírnoslo, Jordi.',
+    })
+
+    cy.visit('/growth/reputation?growth=1')
+
+    cy.get('[data-test="pending-reply"]').within(() => {
+      cy.contains('needs your approval').should('be.visible')
+      cy.contains('Gracias por decírnoslo, Jordi.').should('be.visible')
+
+      // The design had this posting itself after 22 hours. It does not, and
+      // the card has to keep saying so -- a countdown reappearing here would
+      // mean an AI sentence can reach a public page unread.
+      cy.contains('Nothing posts without your approval').should('be.visible')
+      cy.contains('Auto-posts').should('not.exist')
+    })
+
+    cy.get('[data-test="pending-reply"]').should('be.visible')
+  })
+
+  it('writes the draft into the reply on approval, and records that AI wrote it', () => {
+    cy.task('db:createReview', {
+      accountId: account.accountId,
+      authorName: 'Ana Ruiz',
+      rating: 5,
+      body: 'Excelente.',
+      draftBody: 'Muchas gracias, Ana.',
+    }).then((review) => {
+      const id = (review as { id: string }).id
+
+      cy.visit('/growth/reputation?growth=1')
+      cy.get('[data-test="approve-reply"]').click()
+
+      // "Saved", not "Posted" -- nothing reaches Google until the platform
+      // integration exists, and the toast is where that lie would be easiest.
+      cy.contains('Reply approved and saved.').should('be.visible')
+      cy.contains('Replied · AI drafted, approved').should('be.visible')
+      cy.get('[data-test="pending-reply"]').should('not.exist')
+
+      cy.task('db:reviewById', { id }).then((row) => {
+        const saved = row as { reply_body: string; replied_at: string; reply_was_ai_drafted: boolean; draft_body: string | null }
+        expect(saved.reply_body).to.eq('Muchas gracias, Ana.')
+        expect(saved.replied_at).to.not.be.null
+        expect(saved.reply_was_ai_drafted).to.be.true
+        expect(saved.draft_body).to.be.null
+      })
+    })
+  })
+
+  it('stops calling it AI-written once a person has edited it', () => {
+    cy.task('db:createReview', {
+      accountId: account.accountId,
+      authorName: 'Marc Vidal',
+      rating: 4,
+      body: 'Muy bien.',
+      draftBody: 'Gracias por la reseña.',
+    }).then((review) => {
+      const id = (review as { id: string }).id
+
+      cy.visit('/growth/reputation?growth=1')
+      cy.get('[data-test="edit-reply-start"]').click()
+      cy.get('[data-test="edit-reply"]').clear().type('Gracias Marc, nos alegra mucho.')
+      cy.get('[data-test="approve-reply"]').click()
+
+      cy.contains('Reply approved and saved.').should('be.visible')
+
+      cy.task('db:reviewById', { id }).then((row) => {
+        const saved = row as { reply_body: string; reply_was_ai_drafted: boolean }
+        expect(saved.reply_body).to.eq('Gracias Marc, nos alegra mucho.')
+        // The words are the clinic's now. Attributing them to the model
+        // would be wrong in the direction that matters.
+        expect(saved.reply_was_ai_drafted).to.be.false
+      })
+    })
+  })
+
+  it('leaves nothing behind when a draft is discarded', () => {
+    cy.task('db:createReview', {
+      accountId: account.accountId,
+      authorName: 'Discarded Draft',
+      rating: 2,
+      body: 'No me gustó.',
+      draftBody: 'Lo sentimos mucho.',
+    }).then((review) => {
+      const id = (review as { id: string }).id
+
+      cy.visit('/growth/reputation?growth=1')
+      cy.get('[data-test="discard-reply"]').click()
+
+      cy.contains('Draft discarded. Nothing was saved.').should('be.visible')
+      cy.get('[data-test="pending-reply"]').should('not.exist')
+      cy.get('[data-test="draft-reply"]').should('be.visible')
+
+      cy.task('db:reviewById', { id }).then((row) => {
+        const saved = row as { draft_body: string | null; reply_body: string | null; replied_at: string | null }
+        expect(saved.draft_body).to.be.null
+        expect(saved.reply_body).to.be.null
+        expect(saved.replied_at).to.be.null
+      })
+    })
+  })
+
+  it('says drafting needs a key rather than failing silently', () => {
+    // CI has no ANTHROPIC_API_KEY, which is also the state a self-hosted
+    // install starts in. The button has to explain itself there.
+    cy.task('db:createReview', { accountId: account.accountId, authorName: 'No Key Yet', rating: 5, body: 'Genial.' })
+
+    cy.visit('/growth/reputation?growth=1')
+    cy.get('[data-test="draft-reply"]').click()
+    cy.contains('needs an Anthropic API key').should('be.visible')
+  })
+
+  it('counts sent and opened exactly, and refuses to guess the rest', () => {
+    cy.task('db:createReviewRequest', { accountId: account.accountId, token: token('sent-only') })
+    cy.task('db:createReviewRequest', { accountId: account.accountId, token: token('opened'), openedAt: new Date().toISOString() })
+
+    cy.visit('/growth/reputation?growth=1')
+
+    cy.get('[data-test="request-funnel"]').within(() => {
+      cy.contains('Sent').should('be.visible')
+      cy.contains('50%').should('be.visible')
+
+      // Nothing has been attributed to a review, so the last step is unknown
+      // rather than zero. "0 left a review" would read as a measurement.
+      cy.contains('Left a review').parent().should('contain', '—')
+    })
+  })
+
+  describe('the tracked link', () => {
+    it('records the open and sends the patient to the clinic listing', () => {
+      cy.task('db:setGoogleReviewUrl', { accountId: account.accountId, url: 'https://g.page/r/seeded-listing/review' })
+      const tracked = token('redirect')
+      cy.task('db:createReviewRequest', { accountId: account.accountId, token: tracked })
+
+      cy.request({ url: `/api/r/${tracked}`, followRedirect: false }).then((res) => {
+        expect(res.status).to.eq(302)
+        expect(res.headers.location).to.eq('https://g.page/r/seeded-listing/review')
+      })
+
+      cy.task('db:reviewRequestByToken', { token: tracked }).then((row) => {
+        expect((row as { opened_at: string | null }).opened_at).to.not.be.null
+      })
+    })
+
+    it('redirects an unknown token too, so it cannot be used to probe', () => {
+      cy.request({ url: '/api/r/definitely-not-a-token', followRedirect: false }).then((res) => {
+        // A 404 here would answer "is this token real?" for anyone asking,
+        // and would strand a patient whose link we mangled.
+        expect(res.status).to.eq(302)
+        expect(res.headers.location).to.contain('google.com/maps')
+      })
+    })
   })
 
   it('points an account without the tier at the upgrade screen', () => {

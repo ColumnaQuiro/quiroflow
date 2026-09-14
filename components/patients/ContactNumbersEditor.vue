@@ -71,7 +71,7 @@ async function updateNumber(n: Tables<'patient_contact_numbers'>, patch: Partial
         <template v-if="editable">
           <select
             :value="n.country_code"
-            class="h-9 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none"
+            class="h-9 w-[120px] shrink-0 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none"
             @change="updateNumber(n, { country_code: ($event.target as HTMLSelectElement).value })"
           >
             <option v-for="c in COUNTRIES_BY_NAME" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }} {{ c.name }}</option>
@@ -106,7 +106,8 @@ async function updateNumber(n: Tables<'patient_contact_numbers'>, patch: Partial
     <p v-else-if="!loading" class="mt-1.5 text-[13px] text-ink-faint">{{ t('No numbers yet.', 'Aún no hay números.') }}</p>
 
     <div v-if="editable" class="mt-2 flex flex-wrap items-center gap-2">
-      <select v-model="newCountry" class="h-9 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
+      <!-- See NewAppointmentPanel for why the width is pinned. -->
+      <select v-model="newCountry" class="h-9 w-[120px] shrink-0 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
         <option v-for="c in COUNTRIES_BY_NAME" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }} {{ c.name }}</option>
       </select>
       <input

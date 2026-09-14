@@ -160,9 +160,11 @@ async function onSubmit() {
           <div v-if="isVisible('phone')" class="min-w-0">
             <label class="block text-sm font-medium text-ink-700">{{ t('Phone', 'Teléfono') }}</label>
             <div class="mt-1 flex gap-2">
+              <!-- See NewAppointmentPanel: unpinned, this select is as wide as
+              its longest country name and squeezes the number beside it. -->
               <select
                 v-model="phoneCountry"
-                class="shrink-0 rounded-ctl border border-line-control px-2 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                class="w-[120px] shrink-0 rounded-ctl border border-line-control px-2 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
               >
                 <option v-for="c in COUNTRIES_BY_NAME" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }} {{ c.name }}</option>
               </select>

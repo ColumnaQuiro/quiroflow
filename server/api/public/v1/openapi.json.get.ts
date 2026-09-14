@@ -44,6 +44,7 @@ export default defineEventHandler((event) => {
     tags: [
       { name: 'Patients', description: 'Patient records and contact details.' },
       { name: 'Appointments', description: 'Bookings, rescheduling, cancellation and free-slot lookup.' },
+      { name: 'Growth', description: 'Leads captured from ad platforms and forms.' },
       { name: 'Catalog', description: 'Clinics, practitioners, appointment types and services — the reference data everything else points at.' },
       { name: 'Billing', description: 'Invoices and payments (read-only in v1).' },
       { name: 'Messaging', description: 'Send WhatsApp messages as the clinic.' },
@@ -51,6 +52,7 @@ export default defineEventHandler((event) => {
     paths: {
       ...collection('/patients', API_RESOURCES.patients, 'Patients', ['patient', 'patients'], 'Patient', { detail: true, create: true, update: true }),
       '/patients/lookup': lookupPath(),
+      '/leads': leadsPath(),
       ...collection('/appointments', API_RESOURCES.appointments, 'Appointments', ['appointment', 'appointments'], 'Appointment', { detail: true, create: true, update: true, cancel: true }),
       '/availability': availabilityPath(),
       ...collection('/practitioners', API_RESOURCES.practitioners, 'Catalog', ['practitioner', 'practitioners'], 'Practitioner', {}),
@@ -172,6 +174,95 @@ function createOperation(tag: string, label: string, schema: string, scope: stri
       201: objectResponse(schema),
       400: errorResponse('Validation failed. `error.field` names the offending field.'),
       409: errorResponse(`A conflicting ${label} already exists.`),
+    },
+  }
+}
+
+function leadsPath() {
+  return {
+    post: {
+      tags: ['Growth'],
+      summary: 'Create a lead from an ad platform or form',
+      description: [
+        'Posts an enquiry in from wherever it was captured — a Meta lead-ad form, a landing page, a form builder — and files it in three places: the lead itself, its attribution, and the answers the person gave.',
+        '',
+        '**Send `external_id`.** With it, this endpoint is idempotent: a redelivery of the same submission returns the lead already created, with `deduplicated: true` and a 200, instead of making a second one. Ad platforms redeliver whenever they do not get a clean 200, so without it a retry becomes a duplicate lead, a duplicate welcome message, and a double count in the funnel.',
+        '',
+        'Either `phone` or `email` is required — a lead with neither cannot be contacted. Names may be sent as `full_name` or as `first_name`/`last_name`.',
+        '',
+        '`answers` are stored and displayed as given, not mapped onto fields: every clinic asks different questions and changes them between campaigns.',
+      ].join('\n'),
+      security: [{ bearerAuth: ['leads:write'] }],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['full_name'],
+              properties: {
+                full_name: { type: 'string', description: 'Or send first_name / last_name and they are joined.' },
+                first_name: text(),
+                last_name: text(),
+                phone: { type: 'string', description: 'E.164, or a local number with phone_country_code. Required unless email is given.' },
+                phone_country_code: { type: 'string', default: '+34' },
+                email: { type: 'string', format: 'email', description: 'Required unless phone is given.' },
+                channel: { type: 'string', enum: ['whatsapp', 'sms', 'phone', 'web', 'instagram', 'facebook', 'walk_in'], default: 'facebook' },
+                source: { type: 'string', description: 'Campaign or referrer, e.g. "Meta Ads · Sciatica". The dashboard groups spend by the part before the "·".' },
+                stage: { type: 'string', enum: ['new', 'contacted', 'qualified', 'booked'], default: 'new', description: 'Outcomes (converted, lost) are the clinic\'s to set, not a form\'s.' },
+                clinic_id: uuid(),
+                estimated_value_cents: { type: 'integer', minimum: 0 },
+                external_id: { type: 'string', description: 'The platform\'s own id for this submission. Send it — see above.' },
+                external_source: { type: 'string', default: 'facebook', description: 'Which platform external_id belongs to.' },
+                occurred_at: { type: 'string', format: 'date-time', description: 'When the person submitted, if that differs from now.' },
+                attribution: {
+                  type: 'object',
+                  properties: {
+                    campaign: text(), ad: text(), audience: text(),
+                    first_touch: text(), last_touch: text(),
+                    cost_cents: { type: 'integer', minimum: 0 },
+                  },
+                },
+                answers: {
+                  type: 'array',
+                  maxItems: 50,
+                  items: {
+                    type: 'object',
+                    required: ['question'],
+                    properties: { question: { type: 'string' }, answer: { type: 'string' } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        201: {
+          description: 'The lead was created.',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  data: {
+                    type: 'object',
+                    properties: {
+                      id: uuid(),
+                      reference: { type: 'string', example: 'LEAD-2026-0042' },
+                      stage: { type: 'string' },
+                      created_at: { type: 'string', format: 'date-time' },
+                      deduplicated: { type: 'boolean', description: 'False on a create.' },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        200: { description: 'This external_id was already received; the existing lead is returned with `deduplicated: true`. Nothing was created.' },
+        400: errorResponse('Neither phone nor email was given, a field failed validation, or an unknown field was sent.'),
+      },
     },
   }
 }

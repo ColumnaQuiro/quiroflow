@@ -77,6 +77,20 @@ export function isoDateTime(body: Body, field: string, opts: { required?: boolea
   return new Date(parsed).toISOString()
 }
 
+export function integer(body: Body, field: string, opts: { min?: number; max?: number } = {}): number | undefined {
+  const value = body[field]
+  if (value === undefined || value === null) return undefined
+  // Rejecting "1200" rather than coercing it. A money field that silently
+  // accepts strings is how a caller ships `"12.50"` for months and nobody
+  // notices until the total is wrong.
+  if (typeof value !== 'number' || !Number.isInteger(value)) {
+    throw badRequest(`"${field}" must be a whole number.`, field)
+  }
+  if (opts.min !== undefined && value < opts.min) throw badRequest(`"${field}" must be ${opts.min} or more.`, field)
+  if (opts.max !== undefined && value > opts.max) throw badRequest(`"${field}" must be ${opts.max} or less.`, field)
+  return value
+}
+
 export function bool(body: Body, field: string): boolean | undefined {
   const value = body[field]
   if (value === undefined || value === null) return undefined

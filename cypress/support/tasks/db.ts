@@ -790,6 +790,8 @@ async function createLead(opts: {
   reference?: string
   /** Backdates stage_changed_at, so "time in stage" can be asserted. */
   stageChangedAt?: string
+  /** Backdates created_at, for the dashboard's stale-lead and cohort maths. */
+  createdAt?: string
   events?: { kind: string; title: string; detail?: string; body?: unknown; occurredAt?: string }[]
   attribution?: { campaign?: string; ad?: string; audience?: string; firstTouch?: string; lastTouch?: string; costCents?: number }
 }) {
@@ -815,8 +817,16 @@ async function createLead(opts: {
   // Set after insert rather than in it: the leads_touch_updated_at trigger
   // only fires on UPDATE, so an insert cannot be backdated through it, and a
   // backdated stage_changed_at is what makes "2 d in stage" testable.
-  if (opts.stageChangedAt) {
-    assertOk(await admin.from('leads').update({ stage_changed_at: opts.stageChangedAt }).eq('id', lead.id))
+  if (opts.stageChangedAt || opts.createdAt) {
+    assertOk(
+      await admin
+        .from('leads')
+        .update({
+          ...(opts.stageChangedAt ? { stage_changed_at: opts.stageChangedAt } : {}),
+          ...(opts.createdAt ? { created_at: opts.createdAt } : {}),
+        })
+        .eq('id', lead.id),
+    )
   }
 
   for (const event of opts.events ?? []) {
@@ -880,9 +890,22 @@ async function patientCount(opts: { accountId: string }) {
   return count ?? 0
 }
 
+/** Records ad spend for a channel in the current month. */
+async function setChannelSpend(opts: { accountId: string; channel: string; amountCents: number; month?: string }) {
+  const month = opts.month ?? new Date().toISOString().slice(0, 8) + '01'
+  assertOk(
+    await admin.from('channel_spend').upsert(
+      { account_id: opts.accountId, channel: opts.channel, period_month: month, amount_cents: opts.amountCents },
+      { onConflict: 'account_id,channel,period_month' },
+    ),
+  )
+  return { channel: opts.channel, month }
+}
+
 export const dbTasks = {
   'db:createStaffAccount': createStaffAccount,
   'db:createLead': createLead,
+  'db:setChannelSpend': setChannelSpend,
   'db:patientWithContacts': patientWithContacts,
   'db:patientCount': patientCount,
   'db:leadById': leadById,

@@ -19,7 +19,11 @@ defineProps<{ data: GrowthDashboardData }>()
         :drop-off="data.dropOff"
       />
       <div class="flex flex-col gap-3">
-        <GrowthAiSummaryCard :ai="data.ai" />
+        <!-- Hidden until there is an AI receptionist to summarise. The card
+        is the tier's headline claim -- "handled 148 conversations, booked
+        61" -- and a zeroed version of it would be a claim about a thing that
+        does not exist rather than an empty state. -->
+        <GrowthAiSummaryCard v-if="data.ai" :ai="data.ai" />
         <GrowthNeedsAttention :alerts="data.alerts" />
       </div>
     </div>

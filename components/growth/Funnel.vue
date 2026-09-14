@@ -5,7 +5,8 @@ const props = defineProps<{
   stages: GrowthFunnelStage[]
   steps: GrowthFunnelStep[]
   endToEndRate: string
-  dropOff: { summary: string; action: string }
+  /** Absent when the funnel is too empty to name a worst step. */
+  dropOff: { summary: string; action: string } | null
 }>()
 
 const t = useT()
@@ -64,17 +65,17 @@ const RATE_TONE: Record<GrowthFunnelStep['tone'], string> = {
             >{{ steps[i - 1]!.delta }}</span>
           </div>
 
-          <div class="flex flex-1 flex-col gap-2">
+          <div class="flex flex-1 flex-col gap-2" :data-test="`funnel-stage-${stage.key}`">
             <span class="text-[11px] text-ink-muted">{{ stage.label }}</span>
             <span class="text-[22px] font-semibold leading-none tracking-tightTitle text-ink-900">{{ stage.count }}</span>
             <div class="rounded-ctl" :class="SHADE[i]" :style="{ height: `${bars[i]}px` }" />
-            <span class="text-[10.5px] text-ink-faint">{{ stage.caption }}</span>
+            <span v-if="stage.caption" class="text-[10.5px] text-ink-faint">{{ stage.caption }}</span>
           </div>
         </template>
       </div>
     </div>
 
-    <div class="mt-4 flex flex-col gap-2 rounded-ctl border border-danger-border bg-danger-bg px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+    <div v-if="dropOff" class="mt-4 flex flex-col gap-2 rounded-ctl border border-danger-border bg-danger-bg px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
       <p class="text-[11.5px] text-danger-text">{{ dropOff.summary }}</p>
       <!-- The design points this at the AI receptionist's booking rules,
       which do not have a page yet. Left as plain text rather than a link

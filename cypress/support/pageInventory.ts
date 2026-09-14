@@ -55,6 +55,8 @@ export const APP_PAGES = [
   // without the tier gets. Both states are asserted in growth/growth-dashboard.cy.ts.
   '/growth',
   '/growth/leads',
+  '/growth/receptionist',
+  '/growth/automations',
   '/patients',
   '/practitioner',
   '/recalls',

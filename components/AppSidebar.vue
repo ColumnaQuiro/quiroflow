@@ -111,6 +111,12 @@ interface NavItem {
   perm: () => boolean
   icon: string
   badge?: 'myday' | 'recalls' | 'campaigns' | 'inbox'
+  /**
+   * Highlight only on this exact path. For an item whose `to` is a prefix of
+   * its siblings' -- /growth against /growth/leads -- without which both it
+   * and the real destination light up at once.
+   */
+  exact?: boolean
 }
 
 const navGroups = computed<{ label: string; tier?: string; items: NavItem[] }[]>(() => [
@@ -151,7 +157,7 @@ const navGroups = computed<{ label: string; tier?: string; items: NavItem[] }[]>
     // tier, and the badge is what tells the two apart at a glance.
     tier: 'GROWTH',
     items: [
-      { label: t('Dashboard', 'Panel'), to: '/growth', perm: () => can('communication_config'), icon: 'M2 12.5V7m3.5 5.5V3.5M9 12.5V9m3.5 3.5V5.5' },
+      { label: t('Dashboard', 'Panel'), to: '/growth', exact: true, perm: () => can('communication_config'), icon: 'M2 12.5V7m3.5 5.5V3.5M9 12.5V9m3.5 3.5V5.5' },
       { label: t('Leads', 'Contactos'), to: '/growth/leads', perm: () => can('communication_config'), icon: 'M2.5 3.5h11v9h-11zM2.5 6.5h11M6 6.5v6' },
       // Deliberately points at /inbox, not a screen of its own: the Growth
       // tier upgrades the one inbox the clinic already uses rather than
@@ -160,6 +166,8 @@ const navGroups = computed<{ label: string; tier?: string; items: NavItem[] }[]>
       // route.path, which never carries the query, so Inbox above is the item
       // that highlights on arrival -- right, because that is where you are.
       { label: t('Conversations', 'Conversaciones'), to: '/inbox?ai=handling', perm: () => can('inbox_access'), icon: 'M2 3.5h12v9h-8l-3 2.5v-2.5h-1z' },
+      { label: t('AI Receptionist', 'Recepcionista IA'), to: '/growth/receptionist', perm: () => can('communication_config'), icon: 'M4 5.5h8v5h-3l-2 2v-2h-3zM6.2 8h.01M9.8 8h.01' },
+      { label: t('Automations', 'Automatizaciones'), to: '/growth/automations', perm: () => can('communication_config'), icon: 'M3 3.5h4v3h-4zM9 9.5h4v3h-4zM5 6.5v3h4' },
       { label: t('Campaigns', 'Campañas'), to: '/campaigns', perm: () => can('communication_config'), icon: 'M8 2l4.5 6H8.9l1.1 6L5.5 8h3.6z', badge: 'campaigns' },
     ],
   },
@@ -169,7 +177,11 @@ const visibleGroups = computed(() =>
   navGroups.value.map((g) => ({ ...g, items: g.items.filter((i) => i.perm()) })).filter((g) => g.items.length > 0),
 )
 
-function isActive(to: string) {
+function isActive(to: string, exact = false) {
+  // Most items are section roots -- /reports should stay lit on
+  // /reports/income -- so a prefix match is the default. `exact` opts out for
+  // the ones that are a page rather than a section.
+  if (exact) return route.path === to
   return route.path === to || route.path.startsWith(`${to}/`)
 }
 
@@ -261,7 +273,7 @@ watch(() => route.fullPath, () => emit('close'))
           :key="item.to"
           :to="item.to"
           class="relative flex h-8 items-center gap-[9px] rounded-ctlSm text-[13.5px]"
-          :class="[collapsed ? 'w-8 justify-center' : 'w-full px-[9px]', isActive(item.to) ? 'bg-brand-tint text-brand-text font-semibold' : 'text-ink-600 hover:bg-surface-sidebarHover']"
+          :class="[collapsed ? 'w-8 justify-center' : 'w-full px-[9px]', isActive(item.to, item.exact) ? 'bg-brand-tint text-brand-text font-semibold' : 'text-ink-600 hover:bg-surface-sidebarHover']"
           :title="collapsed ? item.label : undefined"
         >
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path :d="item.icon" /></svg>

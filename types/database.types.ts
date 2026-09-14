@@ -2016,6 +2016,206 @@ export type Database = {
           },
         ]
       }
+      lead_attribution: {
+        Row: {
+          account_id: string
+          ad: string | null
+          audience: string | null
+          campaign: string | null
+          cost_cents: number | null
+          created_at: string
+          first_touch: string | null
+          last_touch: string | null
+          lead_id: string
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          ad?: string | null
+          audience?: string | null
+          campaign?: string | null
+          cost_cents?: number | null
+          created_at?: string
+          first_touch?: string | null
+          last_touch?: string | null
+          lead_id: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          ad?: string | null
+          audience?: string | null
+          campaign?: string | null
+          cost_cents?: number | null
+          created_at?: string
+          first_touch?: string | null
+          last_touch?: string | null
+          lead_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_attribution_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_attribution_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: true
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lead_events: {
+        Row: {
+          account_id: string
+          body: Json | null
+          created_at: string
+          detail: string | null
+          id: string
+          kind: string
+          lead_id: string
+          occurred_at: string
+          title: string
+        }
+        Insert: {
+          account_id: string
+          body?: Json | null
+          created_at?: string
+          detail?: string | null
+          id?: string
+          kind: string
+          lead_id: string
+          occurred_at?: string
+          title: string
+        }
+        Update: {
+          account_id?: string
+          body?: Json | null
+          created_at?: string
+          detail?: string | null
+          id?: string
+          kind?: string
+          lead_id?: string
+          occurred_at?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_events_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_events_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      leads: {
+        Row: {
+          account_id: string
+          ai_handling: boolean
+          channel: string
+          clinic_id: string | null
+          converted_at: string | null
+          created_at: string
+          deleted_at: string | null
+          email: string | null
+          estimated_value_cents: number | null
+          full_name: string
+          id: string
+          owner_team_member_id: string | null
+          patient_id: string | null
+          phone: string | null
+          reference: string
+          source: string | null
+          stage: string
+          stage_changed_at: string
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          ai_handling?: boolean
+          channel: string
+          clinic_id?: string | null
+          converted_at?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          email?: string | null
+          estimated_value_cents?: number | null
+          full_name: string
+          id?: string
+          owner_team_member_id?: string | null
+          patient_id?: string | null
+          phone?: string | null
+          reference: string
+          source?: string | null
+          stage?: string
+          stage_changed_at?: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          ai_handling?: boolean
+          channel?: string
+          clinic_id?: string | null
+          converted_at?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          email?: string | null
+          estimated_value_cents?: number | null
+          full_name?: string
+          id?: string
+          owner_team_member_id?: string | null
+          patient_id?: string | null
+          phone?: string | null
+          reference?: string
+          source?: string | null
+          stage?: string
+          stage_changed_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leads_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leads_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leads_owner_team_member_id_fkey"
+            columns: ["owner_team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leads_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       membership_payments: {
         Row: {
           account_id: string

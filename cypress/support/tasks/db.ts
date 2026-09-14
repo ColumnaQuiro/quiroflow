@@ -776,8 +776,94 @@ async function createAppointment(opts: {
   return appointment as { id: string; practitioner_id: string | null }
 }
 
+/** Seeds a lead, optionally with timeline entries and attribution. */
+async function createLead(opts: {
+  accountId: string
+  fullName: string
+  stage?: string
+  channel?: string
+  source?: string
+  estimatedValueCents?: number | null
+  aiHandling?: boolean
+  reference?: string
+  /** Backdates stage_changed_at, so "time in stage" can be asserted. */
+  stageChangedAt?: string
+  events?: { kind: string; title: string; detail?: string; body?: unknown; occurredAt?: string }[]
+  attribution?: { campaign?: string; ad?: string; audience?: string; firstTouch?: string; lastTouch?: string; costCents?: number }
+}) {
+  const lead = unwrap(
+    await admin
+      .from('leads')
+      .insert({
+        account_id: opts.accountId,
+        reference: opts.reference ?? `LEAD-TEST-${randomUUID().slice(0, 8)}`,
+        full_name: opts.fullName,
+        stage: opts.stage ?? 'new',
+        channel: opts.channel ?? 'whatsapp',
+        source: opts.source ?? null,
+        estimated_value_cents: opts.estimatedValueCents === undefined ? 100500 : opts.estimatedValueCents,
+        ai_handling: opts.aiHandling ?? false,
+      })
+      .select('id, reference')
+      .single(),
+  )
+
+  // Set after insert rather than in it: the leads_touch_updated_at trigger
+  // only fires on UPDATE, so an insert cannot be backdated through it, and a
+  // backdated stage_changed_at is what makes "2 d in stage" testable.
+  if (opts.stageChangedAt) {
+    assertOk(await admin.from('leads').update({ stage_changed_at: opts.stageChangedAt }).eq('id', lead.id))
+  }
+
+  for (const event of opts.events ?? []) {
+    assertOk(
+      await admin.from('lead_events').insert({
+        account_id: opts.accountId,
+        lead_id: lead.id,
+        kind: event.kind,
+        title: event.title,
+        detail: event.detail ?? null,
+        body: (event.body ?? null) as never,
+        occurred_at: event.occurredAt ?? new Date().toISOString(),
+      }),
+    )
+  }
+
+  if (opts.attribution) {
+    assertOk(
+      await admin.from('lead_attribution').insert({
+        account_id: opts.accountId,
+        lead_id: lead.id,
+        campaign: opts.attribution.campaign ?? null,
+        ad: opts.attribution.ad ?? null,
+        audience: opts.attribution.audience ?? null,
+        first_touch: opts.attribution.firstTouch ?? null,
+        last_touch: opts.attribution.lastTouch ?? null,
+        cost_cents: opts.attribution.costCents ?? null,
+      }),
+    )
+  }
+
+  return lead as { id: string; reference: string }
+}
+
+/** Reads a lead back, for asserting a PATCH actually persisted. */
+async function leadById(opts: { id: string }) {
+  const { data } = await admin.from('leads').select('id, stage, stage_changed_at, full_name').eq('id', opts.id).maybeSingle()
+  return data
+}
+
+/** The timeline the API wrote, for asserting a stage change was recorded. */
+async function leadEvents(opts: { leadId: string }) {
+  const { data } = await admin.from('lead_events').select('kind, title, detail').eq('lead_id', opts.leadId).order('occurred_at')
+  return data ?? []
+}
+
 export const dbTasks = {
   'db:createStaffAccount': createStaffAccount,
+  'db:createLead': createLead,
+  'db:leadById': leadById,
+  'db:leadEvents': leadEvents,
   'db:createTeamMemberWithRole': createTeamMemberWithRole,
   'db:setRolePermissions': setRolePermissions,
   'db:setSubscriptionStatus': setSubscriptionStatus,

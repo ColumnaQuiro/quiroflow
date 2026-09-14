@@ -20,9 +20,20 @@ export default defineEventHandler((event) => {
     return `User-Agent: *\nAllow: /\n\nSitemap: ${DEV_PORTAL_ORIGIN}/sitemap.xml\n`
   }
 
-  // The app host keeps exactly what public/robots.txt used to say. The
-  // /developers/* copies that also live here stay disallowed on purpose:
-  // they canonicalise to the docs subdomain, so there is nothing to gain
-  // from having them crawled here and a duplicate-content risk in it.
-  return 'User-Agent: *\nDisallow: /\n'
+  // The app host ASKS to be crawled, which looks backwards for a staff tool
+  // and is the only way to keep it out of the index.
+  //
+  // It used to say `Disallow: /`, paired with a noindex meta tag. That pair
+  // cancels out: robots.txt is read before the page is fetched, so a crawler
+  // obeying the disallow never sees the tag, and a URL someone links to gets
+  // indexed regardless -- which is how the login page ended up in Google with
+  // its own text as the snippet. Refusing the crawl is precisely what stopped
+  // us retracting it.
+  //
+  // The refusal is now the X-Robots-Tag header on every response from this
+  // host (server/middleware/noindex.ts), which a crawler can only obey by
+  // fetching the page. Nothing here is worth crawling and everything real is
+  // behind auth, so the crawl costs a redirect to /login and buys the one
+  // thing the disallow made impossible: pages leaving the index.
+  return 'User-Agent: *\nAllow: /\n'
 })

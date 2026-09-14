@@ -24,8 +24,16 @@ export default defineNuxtConfig({
     head: {
       // The whole app currently lives on app.quiroflow.com -- there's no
       // separate marketing site yet, so nothing here should be indexed.
-      // robots.txt alone doesn't stop a page Google discovers via an
-      // external link from being indexed; this tag is the actual guarantee.
+      //
+      // This tag is a backstop, not the guarantee it was once described as:
+      // it only works if the crawler fetches the page, and while robots.txt
+      // said `Disallow: /` no crawler ever did -- which is how the login page
+      // sat in Google with a noindex tag it had never read. The directive
+      // that does the work is the X-Robots-Tag header
+      // (server/middleware/noindex.ts). The tag stays because it costs
+      // nothing and covers a fetch that somehow skips the header.
+      //
+      // The developer portal's own pages override it with `index, follow`.
       meta: [
         { name: 'robots', content: 'noindex, nofollow' },
         // Without this, iOS Safari paints the status-bar/toolbar areas its

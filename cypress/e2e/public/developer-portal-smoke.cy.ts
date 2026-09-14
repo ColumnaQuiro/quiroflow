@@ -28,8 +28,14 @@ describe('Developer portal', () => {
   // quietly being uncrawlable, which is how it shipped the first time.
   it('serves robots.txt and the sitemap per host', () => {
     cy.request('/robots.txt').then((res) => {
-      expect(res.body, 'app host stays fully disallowed').to.contain('Disallow: /')
-      expect(res.body).not.to.contain('Allow: /')
+      // The app host invites the crawl on purpose. It said `Disallow: /`
+      // until the login page turned up in Google anyway: a disallowed URL
+      // still gets indexed when something links to it, and the crawler never
+      // fetches the page, so the noindex inside it is never read. The refusal
+      // is the X-Robots-Tag header below, which only works if the crawl is
+      // allowed to happen.
+      expect(res.body, 'app host must be crawlable for its noindex to be seen').to.contain('Allow: /')
+      expect(res.body).not.to.contain('Disallow: /')
     })
     cy.request({ url: '/sitemap.xml', failOnStatusCode: false }).its('status').should('eq', 404)
 
@@ -46,6 +52,22 @@ describe('Developer portal', () => {
       for (const slug of DEV_PORTAL_SLUGS) {
         expect(res.body, `sitemap lists /${slug}`).to.contain(`https://developers.quiroflow.com/${slug}<`)
       }
+    })
+  })
+
+  // The half that actually keeps the app out of the index, and the half a
+  // rendering test can never notice is missing.
+  it('sends noindex from the app host and never from the docs host', () => {
+    cy.request('/login').then((res) => {
+      expect(res.headers['x-robots-tag'], 'app host refuses indexing').to.contain('noindex')
+    })
+    // Not just HTML: an invoice PDF is served from this host too, and a meta
+    // tag cannot say anything about a PDF.
+    cy.request({ url: '/api/invoices/00000000-0000-0000-0000-000000000000/pdf', failOnStatusCode: false }).then((res) => {
+      expect(res.headers['x-robots-tag']).to.contain('noindex')
+    })
+    cy.request({ url: '/authentication', headers: { Host: 'developers.localtest.me' } }).then((res) => {
+      expect(res.headers['x-robots-tag'], 'the docs are meant to rank').to.be.undefined
     })
   })
 })

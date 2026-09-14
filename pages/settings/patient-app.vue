@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { appStoreUrl, playStoreUrl } from '~/utils/appLinks'
 // What this clinic lets its patients do in the app, and a way to push an
 // announcement to them.
 //
@@ -49,6 +50,21 @@ async function save() {
     .eq('id', store.accountId!)
   saving.value = false
   showToast(error ? error.message : t('Saved.', 'Guardado.'), error ? 'error' : 'success')
+}
+
+// --- store links, for sending to a patient ---
+
+// Reception needs these often enough (a WhatsApp reply, an email signature,
+// a sign for the desk) that hunting for them in the stores every time is the
+// thing this section exists to stop.
+const iosUrl = appStoreUrl()
+const androidUrl = playStoreUrl()
+
+const copiedKey = ref<string | null>(null)
+async function copyLink(key: string, url: string) {
+  await navigator.clipboard.writeText(url)
+  copiedKey.value = key
+  setTimeout(() => (copiedKey.value = null), 2000)
 }
 
 // --- announcements ---
@@ -142,6 +158,43 @@ async function sendAnnouncement() {
         }}
       </p>
     </div>
+
+    <!-- Outside the loading gate below on purpose: these links are constants,
+         not account settings, so someone who opened this page mid-call to
+         paste a link to a patient should not wait on a round trip first. -->
+    <section class="space-y-3 rounded-card border border-line bg-surface p-4">
+      <div>
+        <h2 class="text-[13.5px] font-semibold text-ink-900">{{ t('Share the app', 'Compartir la app') }}</h2>
+        <p class="mt-1 text-[12.5px] text-ink-faint">
+          {{
+            t(
+              'Send these to a patient so they can install it. Patients also see them on the booking confirmation and in the web portal.',
+              'Envía estos enlaces a un paciente para que la instale. Los pacientes también los ven al confirmar una reserva y en el portal web.',
+            )
+          }}
+        </p>
+      </div>
+
+      <div class="space-y-2">
+        <div v-for="link in [{ key: 'ios', label: 'App Store', url: iosUrl }, { key: 'android', label: 'Google Play', url: androidUrl }]" :key="link.key">
+          <div v-if="link.url" class="flex items-center gap-2">
+            <span class="w-[86px] shrink-0 text-[12.5px] font-medium text-ink-700">{{ link.label }}</span>
+            <code class="min-w-0 flex-1 truncate rounded-ctlSm bg-surface-subtle px-2 py-1.5 font-mono text-[12px] text-ink-600">{{ link.url }}</code>
+            <UiBtn size="sm" @click="copyLink(link.key, link.url)">
+              {{ copiedKey === link.key ? t('Copied', 'Copiado') : t('Copy', 'Copiar') }}
+            </UiBtn>
+          </div>
+          <p v-else class="text-[12.5px] text-ink-faint">
+            {{ t('App Store — link not set up yet.', 'App Store — enlace aún no configurado.') }}
+          </p>
+        </div>
+      </div>
+
+      <div class="border-t border-line-divider pt-3">
+        <p class="mb-2.5 text-[12px] text-ink-faint">{{ t('How it looks to a patient', 'Cómo lo ve un paciente') }}</p>
+        <AppDownloadButtons />
+      </div>
+    </section>
 
     <div v-if="loading" class="text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
 

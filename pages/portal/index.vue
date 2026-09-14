@@ -103,6 +103,11 @@ function eur(cents: number) {
           <span class="text-[13px] text-ink-faint">&rarr;</span>
         </NuxtLink>
       </div>
+
+      <!-- Last, not first: someone who opened the portal came for the two
+           things above it, and a download prompt above their next visit
+           would be an advert sitting on top of the reason they are here. -->
+      <AppDownloadPrompt class="mt-4" />
     </template>
   </div>
 </template>

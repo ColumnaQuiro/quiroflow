@@ -1,3 +1,5 @@
+import { appStoreUrl, playStoreUrl } from '../../../utils/appLinks'
+
 function selectBookableDayWithSlots(attempt = 0) {
   cy.get('.grid.grid-cols-7 button:not([disabled])').eq(attempt).click()
   cy.contains('Cargando horarios').should('not.exist')
@@ -36,6 +38,21 @@ describe('Public online booking', () => {
 
         cy.contains('¡Cita reservada!', { timeout: 15000 }).should('be.visible')
         cy.contains('Le hemos enviado los detalles a maria.garcia@example.test.').should('be.visible')
+
+        // The install prompt rides on the confirmation. Spanish whatever the
+        // viewer's language preference says, because this page is read by the
+        // patient and never by the staff member that preference belongs to.
+        cy.contains('Descarga la app de QuiroFlow').should('be.visible')
+        cy.get('a[href*="play.google.com"]').should('have.attr', 'href', playStoreUrl())
+
+        // Asserted against the constant rather than a hard-coded state, so
+        // this keeps holding once the App Store's numeric ID is filled in
+        // instead of failing the day someone adds it.
+        if (appStoreUrl()) {
+          cy.get('a[href*="apps.apple.com"]').should('have.attr', 'href', appStoreUrl())
+        } else {
+          cy.get('a[href*="apps.apple.com"]').should('not.exist')
+        }
       })
     })
   })

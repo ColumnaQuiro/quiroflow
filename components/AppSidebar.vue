@@ -168,6 +168,7 @@ const navGroups = computed<{ label: string; tier?: string; items: NavItem[] }[]>
       { label: t('Conversations', 'Conversaciones'), to: '/inbox?ai=handling', perm: () => can('inbox_access'), icon: 'M2 3.5h12v9h-8l-3 2.5v-2.5h-1z' },
       { label: t('AI Receptionist', 'Recepcionista IA'), to: '/growth/receptionist', perm: () => can('communication_config'), icon: 'M4 5.5h8v5h-3l-2 2v-2h-3zM6.2 8h.01M9.8 8h.01' },
       { label: t('Automations', 'Automatizaciones'), to: '/growth/automations', perm: () => can('communication_config'), icon: 'M3 3.5h4v3h-4zM9 9.5h4v3h-4zM5 6.5v3h4' },
+      { label: t('Reputation', 'Reputación'), to: '/growth/reputation', perm: () => can('communication_config'), icon: 'M8 1.8l1.8 3.7 4 .6-2.9 2.8.7 4L8 11l-3.6 1.9.7-4-2.9-2.8 4-.6z' },
       { label: t('Campaigns', 'Campañas'), to: '/campaigns', perm: () => can('communication_config'), icon: 'M8 2l4.5 6H8.9l1.1 6L5.5 8h3.6z', badge: 'campaigns' },
     ],
   },

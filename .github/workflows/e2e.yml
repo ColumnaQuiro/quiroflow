@@ -108,6 +108,13 @@ jobs:
             specs: "cypress/e2e/subscription/**,cypress/e2e/public/**"
           - name: navigation
             specs: "cypress/e2e/navigation/**"
+          # Its own shard rather than folded into an existing one: Growth is
+          # mid-build and this folder is the one still growing -- receptionist,
+          # automations and reputation specs are still to come. scripts/
+          # check-e2e-shards.mjs is what noticed it had no shard at all, after
+          # two spec files had already merged and never run.
+          - name: growth
+            specs: "cypress/e2e/growth/**"
           - name: patients-and-booking
             specs: "cypress/e2e/patients/**,cypress/e2e/public-booking/**"
           - name: auth-calendar-inbox

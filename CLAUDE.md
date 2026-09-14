@@ -11,7 +11,7 @@ gate behind it. Because of that:
   (from the latest `main`) for any change, however small.
 - **Open a pull request** for every change and let CI run on it. CI
   (`.github/workflows/e2e.yml`) runs a `typecheck` job (which also builds)
-  and five sharded `cypress` e2e jobs, and runs **on pull requests only** —
+  and six sharded `cypress` e2e jobs, and runs **on pull requests only** —
   nothing re-checks the code after a merge, so the PR is the only gate
   there is.
 - **Only merge once CI is green.** Don't merge a PR with a failing or
@@ -25,11 +25,19 @@ gate behind it. Because of that:
   again, then merge.
 - Before opening a PR, run `npm run preflight` **and `npm run build`**
   locally so CI isn't the first place a problem shows up. Both, because
-  `preflight` is `nuxi typecheck` and typechecking does not compile
-  templates: it exits 0 on a tree that cannot build. That is how a stray
+  the typecheck inside `preflight` does not compile templates: it exits 0
+  on a tree that cannot build. That is how a stray
   `v-else` shipped — preflight clean, every route 500ing, and the only
   signal was three Cypress shards failing on pages unrelated to the
   change. `npm run build` names it outright in about a minute.
+- **A new folder of e2e specs runs in no shard until the matrix names
+  it.** The shard list in `e2e.yml` is a set of folder globs, so a spec
+  added to an *existing* folder is picked up automatically — but a brand
+  new folder belongs to nothing, and the specs inside it then pass
+  locally while CI never executes one of them. Every job stays green,
+  which is what makes it hard to spot: `cypress/e2e/growth` had two spec
+  files merged before anyone noticed. `npm run check:e2e-shards` now
+  fails on any folder no shard covers, and runs as part of `preflight`.
 - Merges are manual (no auto-merge configured) — CI green is a
   precondition for merging, not a signal to merge automatically.
 - This applies the same way whether the change was requested by a person

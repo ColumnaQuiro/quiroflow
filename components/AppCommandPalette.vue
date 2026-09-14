@@ -21,6 +21,8 @@ const NAV_ITEMS = computed(() => [
   // entries called Dashboard would be indistinguishable here.
   { label: t('Growth', 'Crecimiento'), to: '/growth' },
   { label: t('Growth leads', 'Contactos de crecimiento'), to: '/growth/leads' },
+  { label: t('AI Receptionist', 'Recepcionista IA'), to: '/growth/receptionist' },
+  { label: t('Automations', 'Automatizaciones'), to: '/growth/automations' },
   { label: t('Settings', 'Ajustes'), to: '/settings' },
 ])
 

@@ -1,6 +1,6 @@
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig()
-  const { supabase, teamMember } = await requirePermission(event, 'team_admin')
+  const { supabase, teamMember } = await requireSettingsPermission(event, 'team_admin')
 
   const body = await readBody<{ inviteId: string }>(event)
   if (!body?.inviteId) {

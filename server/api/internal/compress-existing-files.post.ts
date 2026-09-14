@@ -8,7 +8,7 @@
 // Compress Files) is expected to call this repeatedly until `remaining`
 // hits 0, showing live progress as it goes.
 export default defineEventHandler(async (event) => {
-  const { supabase, teamMember } = await requirePermission(event, 'data_admin')
+  const { supabase, teamMember } = await requireSettingsPermission(event, 'data_admin')
   const body = await readBody<{ limit?: number }>(event).catch(() => ({ limit: undefined }))
   const limit = Math.min(Math.max(body?.limit ?? 10, 1), 25)
 

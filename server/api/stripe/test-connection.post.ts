@@ -1,7 +1,7 @@
 import { stripeClientFor } from '~/server/utils/stripe'
 
 export default defineEventHandler(async (event) => {
-  const { supabase, teamMember } = await requirePermission(event, 'billing_config')
+  const { supabase, teamMember } = await requireSettingsPermission(event, 'billing_config')
 
   const { data: account } = await supabase
     .from('accounts')

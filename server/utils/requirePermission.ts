@@ -86,18 +86,49 @@ export async function requireActiveAccount(event: H3Event) {
   return { supabase, teamMember }
 }
 
-export async function requirePermission(event: H3Event, permKey: string) {
+async function checkPermissions(event: H3Event, permKeys: string[]) {
   const { supabase, teamMember } = await requireActiveAccount(event)
 
   if (!teamMember.is_owner) {
-    const { data: allowed } = await supabase.rpc('has_permission', {
-      target_account_id: teamMember.account_id,
-      perm_key: permKey,
-    })
-    if (!allowed) {
-      throw createError({ statusCode: 403, statusMessage: `Missing permission: ${permKey}` })
+    for (const permKey of permKeys) {
+      const { data: allowed } = await supabase.rpc('has_permission', {
+        target_account_id: teamMember.account_id,
+        perm_key: permKey,
+      })
+      if (!allowed) {
+        throw createError({ statusCode: 403, statusMessage: `Missing permission: ${permKey}` })
+      }
     }
   }
 
   return { supabase, teamMember }
+}
+
+export async function requirePermission(event: H3Event, permKey: string) {
+  return checkPermissions(event, [permKey])
+}
+
+/**
+ * For endpoints that exist only to serve a Settings page: requires
+ * `settings_access` as well as the specific permission.
+ *
+ * utils/routePermissions.ts has always gated the Settings *routes* on both --
+ * `can(settings_access) && can(billing_config)` and so on -- but the API
+ * behind them checked the sub-permission alone. So a role with
+ * `settings_access: false` and `billing_config: true` saw no Settings link,
+ * was redirected away from /settings/payments, and could still POST
+ * /api/stripe/secrets and overwrite the clinic's live Stripe key. Hiding a
+ * page is not a guard; this is what makes the server agree with the router.
+ *
+ * Deliberately NOT applied to every route behind these permissions. Most of
+ * them are day-to-day work that a non-settings role is supposed to do:
+ * `communication_config` also gates campaigns, the growth inbox and the lead
+ * pipeline (routePermissions gates /campaigns on that key *alone*, on
+ * purpose), and `billing_config` also gates taking a card and scheduling a
+ * payment from a patient's billing tab. Requiring settings_access there would
+ * lock receptionists out of their own job. Only the endpoints whose sole
+ * caller is a Settings page use this.
+ */
+export async function requireSettingsPermission(event: H3Event, permKey: string) {
+  return checkPermissions(event, ['settings_access', permKey])
 }

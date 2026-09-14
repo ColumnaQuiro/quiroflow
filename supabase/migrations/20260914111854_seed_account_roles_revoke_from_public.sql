@@ -1,0 +1,26 @@
+-- The revoke that actually works.
+--
+-- 0042_rbac_lock_down_seed_function.sql, and the one in
+-- 20260914104205_default_role_permissions.sql that copied it, both said:
+--
+--   revoke execute on function seed_account_roles(uuid) from anon, authenticated;
+--
+-- Neither did anything. The function's ACL was
+-- {=X/postgres, postgres=X/postgres, service_role=X/postgres}, and that
+-- leading "=X" is EXECUTE granted to PUBLIC -- what Postgres gives every new
+-- function by default. anon and authenticated reach it by inheriting the
+-- PUBLIC grant, not by holding one of their own, so revoking from them by
+-- name removes nothing and still reports success. Verified against
+-- production: after the 2026-09-14 revoke ran,
+-- has_function_privilege('anon', …, 'EXECUTE') was still true.
+--
+-- Revoking from PUBLIC is what closes it. postgres and service_role keep
+-- their explicit grants, so create_account_with_owner -- SECURITY DEFINER,
+-- owned by postgres -- still calls this internally as its owner, and signup
+-- is unaffected. Confirmed live: the ACL is now
+-- {postgres=X/postgres, service_role=X/postgres}, anon and authenticated are
+-- both false, and the function still executes and returns the owner role id.
+--
+-- Worth remembering generally: "revoke from anon, authenticated" is the wrong
+-- shape for any function that has never had its PUBLIC grant removed.
+revoke execute on function public.seed_account_roles(uuid) from public;

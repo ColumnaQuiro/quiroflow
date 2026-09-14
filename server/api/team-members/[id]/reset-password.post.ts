@@ -9,7 +9,7 @@ export default defineEventHandler(async (event) => {
   const targetId = getRouterParam(event, 'id')
   if (!targetId) throw createError({ statusCode: 400, statusMessage: 'Missing team member id' })
 
-  const { supabase, teamMember } = await requirePermission(event, 'team_admin')
+  const { supabase, teamMember } = await requireSettingsPermission(event, 'team_admin')
 
   const { data: target } = await supabase.from('team_members').select('id, account_id, user_id').eq('id', targetId).maybeSingle()
   if (!target || target.account_id !== teamMember.account_id) {

@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto'
 // against CSRF (someone else's authorization code being linked to this
 // clinic), then redirects to Stripe's own authorize screen.
 export default defineEventHandler(async (event) => {
-  await requirePermission(event, 'billing_config')
+  await requireSettingsPermission(event, 'billing_config')
 
   setHeader(event, 'Cache-Control', 'no-store')
 

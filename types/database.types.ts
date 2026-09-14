@@ -240,13 +240,13 @@ export type Database = {
           email_confirmation_subject: string | null
           email_reminder_body: string | null
           email_reminder_subject: string | null
-          google_review_url: string | null
           hide_account_balance: boolean
           hide_invoice_balance: boolean
           hide_logo_on_invoices: boolean
           hide_next_visit_on_invoices: boolean
           hide_payments_on_invoices: boolean
           hide_provider_on_invoices: boolean
+          google_review_url: string | null
           id: string
           invoice_email_body: string | null
           invoice_email_subject: string | null
@@ -309,13 +309,13 @@ export type Database = {
           email_confirmation_subject?: string | null
           email_reminder_body?: string | null
           email_reminder_subject?: string | null
-          google_review_url?: string | null
           hide_account_balance?: boolean
           hide_invoice_balance?: boolean
           hide_logo_on_invoices?: boolean
           hide_next_visit_on_invoices?: boolean
           hide_payments_on_invoices?: boolean
           hide_provider_on_invoices?: boolean
+          google_review_url?: string | null
           id?: string
           invoice_email_body?: string | null
           invoice_email_subject?: string | null
@@ -377,13 +377,13 @@ export type Database = {
           email_confirmation_subject?: string | null
           email_reminder_body?: string | null
           email_reminder_subject?: string | null
-          google_review_url?: string | null
           hide_account_balance?: boolean
           hide_invoice_balance?: boolean
           hide_logo_on_invoices?: boolean
           hide_next_visit_on_invoices?: boolean
           hide_payments_on_invoices?: boolean
           hide_provider_on_invoices?: boolean
+          google_review_url?: string | null
           id?: string
           invoice_email_body?: string | null
           invoice_email_subject?: string | null
@@ -3927,6 +3927,135 @@ export type Database = {
           },
         ]
       }
+      review_requests: {
+        Row: {
+          account_id: string
+          appointment_id: string | null
+          channel: string
+          created_at: string
+          id: string
+          opened_at: string | null
+          patient_id: string | null
+          review_id: string | null
+          sent_at: string
+          token: string
+        }
+        Insert: {
+          account_id: string
+          appointment_id?: string | null
+          channel?: string
+          created_at?: string
+          id?: string
+          opened_at?: string | null
+          patient_id?: string | null
+          review_id?: string | null
+          sent_at?: string
+          token: string
+        }
+        Update: {
+          account_id?: string
+          appointment_id?: string | null
+          channel?: string
+          created_at?: string
+          id?: string
+          opened_at?: string | null
+          patient_id?: string | null
+          review_id?: string | null
+          sent_at?: string
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "review_requests_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "review_requests_review_id_fkey"
+            columns: ["review_id"]
+            isOneToOne: false
+            referencedRelation: "reviews"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reviews: {
+        Row: {
+          account_id: string
+          author_name: string
+          body: string | null
+          clinic_id: string | null
+          created_at: string
+          draft_body: string | null
+          draft_created_at: string | null
+          external_id: string | null
+          id: string
+          platform: string
+          posted_at: string
+          rating: number
+          replied_at: string | null
+          reply_body: string | null
+          reply_by_team_member_id: string | null
+          reply_was_ai_drafted: boolean
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          author_name: string
+          body?: string | null
+          clinic_id?: string | null
+          created_at?: string
+          draft_body?: string | null
+          draft_created_at?: string | null
+          external_id?: string | null
+          id?: string
+          platform: string
+          posted_at: string
+          rating: number
+          replied_at?: string | null
+          reply_body?: string | null
+          reply_by_team_member_id?: string | null
+          reply_was_ai_drafted?: boolean
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          author_name?: string
+          body?: string | null
+          clinic_id?: string | null
+          created_at?: string
+          draft_body?: string | null
+          draft_created_at?: string | null
+          external_id?: string | null
+          id?: string
+          platform?: string
+          posted_at?: string
+          rating?: number
+          replied_at?: string | null
+          reply_body?: string | null
+          reply_by_team_member_id?: string | null
+          reply_was_ai_drafted?: boolean
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reviews_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reviews_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       saved_replies: {
         Row: {
           account_id: string
@@ -5038,6 +5167,10 @@ export type Database = {
           storage_bytes: number
           whatsapp_conversations_mtd: number
         }[]
+      }
+      record_review_request_opened: {
+        Args: { p_token: string }
+        Returns: undefined
       }
       can_access_patient: {
         Args: { target_account_id: string; target_patient_id: string }

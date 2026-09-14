@@ -34,6 +34,12 @@ export interface ReceptionistConfig {
   answerDuringHours: boolean
 }
 
+/** The clinic's chosen tone, as an instruction. Shared with review replies
+ * so the two voices are the same voice. */
+export function toneWording(tone: string) {
+  return TONE_WORDING[tone] ?? TONE_WORDING.warm_brief!
+}
+
 const TONE_WORDING: Record<string, string> = {
   warm_brief: 'Warm and brief. Two or three sentences at most.',
   clinical: 'Precise and clinical. No small talk.',

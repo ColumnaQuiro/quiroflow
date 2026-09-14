@@ -52,3 +52,15 @@ mobile/ios/build
 *.p8
 AuthKey_*
 private_keys/
+
+# Agent git worktrees, checked out inside the repo by the Claude Code
+# runtime. Each is a full checkout of this repo -- node_modules and
+# mobile/ios asset catalogs included -- so committing one by accident
+# (a stray `git add -A`) would be a very large mistake. The runtime also
+# writes this path to .git/info/exclude, but that file is local to one
+# clone and never committed, so a fresh clone elsewhere has no such
+# protection. Only worktrees/ is ignored -- .claude/launch.json is
+# tracked deliberately.
+# nuxt.config.ts excludes the same path from Nuxt's and Vite's file
+# watchers, for a different reason (EMFILE) with the same root cause.
+.claude/worktrees/

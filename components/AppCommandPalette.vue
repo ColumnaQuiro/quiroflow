@@ -23,6 +23,7 @@ const NAV_ITEMS = computed(() => [
   { label: t('Growth leads', 'Contactos de crecimiento'), to: '/growth/leads' },
   { label: t('AI Receptionist', 'Recepcionista IA'), to: '/growth/receptionist' },
   { label: t('Automations', 'Automatizaciones'), to: '/growth/automations' },
+  { label: t('Reputation', 'Reputación'), to: '/growth/reputation' },
   { label: t('Settings', 'Ajustes'), to: '/settings' },
 ])
 

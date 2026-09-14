@@ -9,7 +9,16 @@ export default defineNuxtConfig({
   // has no reason to scan or watch, and watching them blows past macOS's
   // per-process open-file limit (EMFILE) once CocoaPods/Gradle populate
   // mobile/ios and mobile/android.
-  ignore: ['mobile/**'],
+  //
+  // .claude/worktrees/ holds agent git worktrees -- each one a full checkout
+  // of this repo, node_modules and mobile/ios asset catalogs included, so a
+  // couple of them are already more files than the rest of the tree put
+  // together. Watching them hits that same EMFILE ceiling: `npm run dev`
+  // dies on a flood of `EMFILE: too many open files, watch '...'` before it
+  // ever finishes booting. They're checked out inside the repo so that
+  // `git worktree list` and the agent tooling can find them, which is
+  // exactly why they have to be excluded here by hand.
+  ignore: ['mobile/**', '.claude/worktrees/**'],
   css: ['~/assets/css/theme.css'],
   app: {
     head: {
@@ -188,7 +197,7 @@ export default defineNuxtConfig({
     server: {
       allowedHosts: ['.localtest.me'],
       watch: {
-        ignored: ['**/mobile/**'],
+        ignored: ['**/mobile/**', '**/.claude/worktrees/**'],
       },
     },
     // These are only ever imported lazily -- papaparse and @stripe/stripe-js

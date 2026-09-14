@@ -34,27 +34,85 @@ interface Answer {
 }
 
 /**
+ * Field names an ad platform sends as part of the lead itself, rather than as
+ * a question the clinic asked. Excluded from the derived answers so the
+ * drawer does not show "Email: pablo@example.com" as though it were a
+ * qualifying question. Matched case-insensitively and underscore-insensitively,
+ * because platforms disagree about `phone_number` vs `phoneNumber`.
+ */
+const NOT_A_QUESTION = new Set([
+  'firstname', 'lastname', 'fullname', 'name', 'email', 'phone', 'phonenumber',
+  'city', 'country', 'zip', 'postalcode', 'street', 'state', 'province',
+])
+
+function isQuestionKey(key: string) {
+  return !NOT_A_QUESTION.has(key.toLowerCase().replace(/[_\s-]/g, ''))
+}
+
+/**
+ * Meta names a custom question by its own text, lowercased with underscores:
+ * `¿cuál_sería_el_motivo_de_tu_visita?_(alguna_molestia...)`. Underscores back
+ * to spaces is the whole transformation -- punctuation and accents stay,
+ * because "¿Cuál sería el motivo de tu visita?" is the question the clinic
+ * wrote and the front desk recognises.
+ */
+function humanise(key: string) {
+  return key.replace(/_/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+function toAnswer(question: string, value: unknown, i: number): Answer | null {
+  if (!question) throw badRequest(`"answers[${i}].question" is required.`, 'answers')
+  // Arrays happen: a multi-select question answers with a list.
+  const text = Array.isArray(value) ? value.filter((v) => v !== null && v !== undefined).join(', ') : value
+  if (text === null || text === undefined || text === '') return null
+  if (typeof text === 'object') return null
+  return { question: question.slice(0, 500), answer: String(text).trim().slice(0, 2000) }
+}
+
+/**
  * The form's own questions, as asked. Not mapped onto columns: every clinic
  * asks different ones and changes them between campaigns, so a column per
- * question would be a migration per campaign. They are displayed, not
- * queried.
+ * question would be a migration per campaign. They are displayed, not queried.
+ *
+ * Two accepted shapes, because the caller usually does not know the questions
+ * either:
+ *
+ *   [{ question, answer }]  -- when the sender knows what it asked
+ *   { "<question>": "<answer>" }  -- the platform's raw field bag, e.g. Meta's
+ *                                   `data` object passed straight through
+ *
+ * The object form is what makes this survive a new campaign: whatever
+ * questions the next form asks arrive as new keys and are captured without
+ * anyone editing a mapping. Known lead fields in that bag (name, email,
+ * phone) are dropped rather than shown as questions.
  */
 function readAnswers(body: Record<string, unknown>): Answer[] | undefined {
   const raw = body.answers
   if (raw === undefined || raw === null) return undefined
-  if (!Array.isArray(raw)) throw badRequest('"answers" must be an array of { question, answer } objects.', 'answers')
-  if (raw.length > 50) throw badRequest('"answers" cannot hold more than 50 entries.', 'answers')
 
-  return raw.map((entry, i) => {
-    if (typeof entry !== 'object' || entry === null) {
-      throw badRequest(`"answers[${i}]" must be an object with "question" and "answer".`, 'answers')
-    }
-    const item = entry as Record<string, unknown>
-    const question = typeof item.question === 'string' ? item.question.trim() : ''
-    const answer = typeof item.answer === 'string' ? item.answer.trim() : ''
-    if (!question) throw badRequest(`"answers[${i}].question" is required.`, 'answers')
-    return { question: question.slice(0, 500), answer: answer.slice(0, 2000) }
-  })
+  if (Array.isArray(raw)) {
+    if (raw.length > 50) throw badRequest('"answers" cannot hold more than 50 entries.', 'answers')
+    return raw
+      .map((entry, i) => {
+        if (typeof entry !== 'object' || entry === null) {
+          throw badRequest(`"answers[${i}]" must be an object with "question" and "answer".`, 'answers')
+        }
+        const item = entry as Record<string, unknown>
+        const question = typeof item.question === 'string' ? item.question.trim() : ''
+        return toAnswer(question, item.answer, i)
+      })
+      .filter((a): a is Answer => a !== null)
+  }
+
+  if (typeof raw === 'object') {
+    const entries = Object.entries(raw as Record<string, unknown>).filter(([key]) => isQuestionKey(key))
+    if (entries.length > 50) throw badRequest('"answers" cannot hold more than 50 entries.', 'answers')
+    return entries
+      .map(([key, value], i) => toAnswer(humanise(key), value, i))
+      .filter((a): a is Answer => a !== null)
+  }
+
+  throw badRequest('"answers" must be an array of { question, answer } objects, or an object of question/answer pairs.', 'answers')
 }
 
 export default defineApiHandler({ scope: 'leads:write' }, async ({ event, supabase, accountId }) => {

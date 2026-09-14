@@ -90,6 +90,49 @@ describe('Lead ingest API', () => {
     cy.contains('Pablo Danazzo').should('be.visible')
   })
 
+  it('captures whatever a new campaign decides to ask, without a mapping', () => {
+    // The point of the object form: these are not the questions the current
+    // form asks. A new campaign invents new ones and they still arrive.
+    post({
+      full_name: 'New Campaign Lead',
+      phone: '+34600222111',
+      external_id: 'new-campaign-1',
+      answers: {
+        first_name: 'Ignored',
+        email: 'ignored@example.com',
+        phone_number: '34600222111',
+        '¿has_ido_antes_al_quiropráctico?': 'no, nunca',
+        'en_qué_horario_te_viene_mejor?': ['mañanas', 'tardes'],
+        'comentarios_adicionales': '',
+      },
+    }).then((res) => {
+      cy.task('db:leadEvents', { leadId: res.body.data.id }).then((rows) => {
+        const events = rows as { kind: string; body: { answers: { question: string; answer: string }[] } | null }[]
+        const q = events.find((e) => e.kind === 'qualification')
+        expect(q, 'a qualification event').to.not.be.undefined
+
+        const answers = q!.body!.answers
+        const asked = answers.map((a) => a.question)
+
+        // Name, email and phone are the lead, not questions about it.
+        expect(asked.join(' | ')).to.not.contain('first name')
+        expect(asked.join(' | ')).to.not.contain('email')
+        expect(asked.join(' | ')).to.not.contain('phone')
+
+        // Underscores become spaces; the accents and punctuation the clinic
+        // wrote are left alone.
+        expect(asked).to.include('¿has ido antes al quiropráctico?')
+        expect(answers.find((a) => a.question.startsWith('¿has ido'))!.answer).to.eq('no, nunca')
+
+        // A multi-select answers with a list.
+        expect(answers.find((a) => a.question.startsWith('en qué horario'))!.answer).to.eq('mañanas, tardes')
+
+        // An unanswered optional question is dropped rather than shown blank.
+        expect(asked.join(' | ')).to.not.contain('comentarios')
+      })
+    })
+  })
+
   it('returns the same lead when the platform redelivers, instead of making a second one', () => {
     const submission = {
       full_name: 'Retried Twice',

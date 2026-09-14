@@ -152,6 +152,7 @@ const navGroups = computed<{ label: string; tier?: string; items: NavItem[] }[]>
     tier: 'GROWTH',
     items: [
       { label: t('Dashboard', 'Panel'), to: '/growth', perm: () => can('communication_config'), icon: 'M2 12.5V7m3.5 5.5V3.5M9 12.5V9m3.5 3.5V5.5' },
+      { label: t('Leads', 'Contactos'), to: '/growth/leads', perm: () => can('communication_config'), icon: 'M2.5 3.5h11v9h-11zM2.5 6.5h11M6 6.5v6' },
       { label: t('Campaigns', 'Campañas'), to: '/campaigns', perm: () => can('communication_config'), icon: 'M8 2l4.5 6H8.9l1.1 6L5.5 8h3.6z', badge: 'campaigns' },
     ],
   },

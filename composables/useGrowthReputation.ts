@@ -1,198 +1,120 @@
-// Reputation: what patients are saying in public, and the AI replies waiting
-// for someone to approve them.
+// Reputation, read from the database.
 //
-// Ratings are stored as numbers, not as the artboard's "★★★★☆" strings. A
-// glyph string cannot be averaged, compared or sorted, and it tells a screen
-// reader nothing -- the stars are a rendering of the number, so the number is
-// what lives in the data.
+// Two halves with very different footing, and the shape says which is which:
+//
+//   Reviews  -- only what has been imported or entered by hand. Ratings and
+//               review text live inside Google, Doctoralia and Facebook,
+//               behind an OAuth integration per platform that does not exist
+//               yet, so `hasReviews: false` means "nothing to show", not
+//               "zero stars".
+//   Requests -- ours end to end. We sent it, and the link goes through our
+//               own redirect, so sent and opened are exact. Whether someone
+//               then wrote a review is on the platform's side of the fence.
 
-export type ReviewPlatform = 'Google' | 'Doctoralia' | 'Facebook'
-export type ReviewSentiment = 'positive' | 'mixed' | 'negative'
-
-export interface Review {
+export interface ReputationReview {
   id: string
-  rating: number
+  platform: string
+  location: string | null
   author: string
-  platform: ReviewPlatform
-  location: string
-  sentiment: ReviewSentiment
-  when: string
-  text: string
-  /** How this review was answered, once it has been. */
-  replyNote?: string
-}
-
-/** A reply the AI has written that no one has approved yet. */
-export interface PendingReply {
-  review: Review
-  /** Extra context the front desk needs to judge the reply. */
-  patientNote: string
-  draft: string
-  autoPostNote: string
-}
-
-export interface RatingBucket {
-  stars: number
-  count: number
-}
-
-export interface FunnelStep {
-  label: string
-  value: number
-  /** Share of the step above, already worked out. */
-  share?: string
-}
-
-export interface LocationRating {
-  name: string
   rating: number
-  reviews: number
+  body: string
+  postedAt: string
+  repliedAt: string | null
+  replyBody: string | null
+  replyWasAiDrafted: boolean
+  draftBody: string | null
 }
 
-export interface GrowthReputation {
-  rating: number
+export interface ReputationData {
+  hasReviews: boolean
+  rating: number | null
   reviewCount: number
-  yearDelta: string
-  distribution: RatingBucket[]
-  trendLabel: string
-  trend: number[]
-  trendAxis: string[]
+  distribution: { stars: number; count: number }[]
+  trend: { label: string; value: number }[]
+  trendLabel: string | null
   pendingCount: number
-  pendingReply: PendingReply
-  reviews: Review[]
-  funnel: FunnelStep[]
-  sendingAutomation: { name: string; enabled: boolean; detail: string }
-  byLocation: LocationRating[]
-  mostMentioned: { label: string; count: number }[]
-}
-
-const FIXTURE: GrowthReputation = {
-  rating: 4.8,
-  reviewCount: 412,
-  yearDelta: '+38 this year',
-  distribution: [
-    { stars: 5, count: 354 },
-    { stars: 4, count: 41 },
-    { stars: 3, count: 9 },
-    { stars: 2, count: 4 },
-    { stars: 1, count: 4 },
-  ],
-  trendLabel: '4.5 → 4.8',
-  trend: [4.5, 4.53, 4.52, 4.58, 4.6, 4.64, 4.63, 4.7, 4.73, 4.76, 4.78, 4.8],
-  trendAxis: ['Oct 2025', 'Mar', 'Jun', 'Sep 2026'],
-  pendingCount: 4,
-  pendingReply: {
-    review: {
-      id: 'r-pending',
-      rating: 3,
-      author: 'Jordi Puigdemont',
-      platform: 'Google',
-      location: 'Gràcia',
-      sentiment: 'mixed',
-      when: '2 days ago',
-      text: '"El tratamiento fue muy bueno y el dolor de espalda ha mejorado mucho, pero esperé 25 minutos más allá de mi hora y nadie me avisó."',
-    },
-    patientNote: 'Left 2 days ago · patient of Dr. Lizárraga · 3 visits',
-    draft: 'Gracias por contarnos las dos cosas, Jordi. Nos alegra mucho que la espalda vaya mejor. La espera de 25 minutos no es aceptable y ya hemos ajustado la agenda de los martes por la tarde en Gràcia. Si quieres, te reservamos tu próxima sesión a primera hora para que no vuelva a pasar.',
-    autoPostNote: 'Auto-posts in 22 h unless you edit it',
-  },
-  reviews: [
-    {
-      id: 'r-1',
-      rating: 5,
-      author: 'Alicia Sandoval',
-      platform: 'Google',
-      location: 'Sants',
-      sentiment: 'positive',
-      when: '3 days ago',
-      text: '"Fui por una lumbalgia que arrastraba meses. La valoración inicial fue muy detallada y a la cuarta sesión ya dormía bien."',
-      replyNote: 'Replied by Nerea Bilbao · 2 days ago',
-    },
-    {
-      id: 'r-2',
-      rating: 5,
-      author: 'Daniel Okonkwo',
-      platform: 'Doctoralia',
-      location: 'Poblenou',
-      sentiment: 'positive',
-      when: '4 days ago',
-      text: '"Booked on WhatsApp at 22:00 and had an appointment the next morning. Sports massage before my half marathon was exactly what I needed."',
-      replyNote: 'Replied by AI · approved by Marta Ferrer',
-    },
-    {
-      id: 'r-3',
-      rating: 5,
-      author: 'Rocío Alcántara',
-      platform: 'Google',
-      location: 'Sants',
-      sentiment: 'positive',
-      when: '6 days ago',
-      text: '"Muy profesionales y puntuales. Me explicaron el plan de 12 visitas sin presionarme para nada."',
-      replyNote: 'Replied by AI · approved by Nerea Bilbao',
-    },
-    {
-      id: 'r-4',
-      rating: 4,
-      author: 'Marc Vilaseca',
-      platform: 'Facebook',
-      location: 'Gràcia',
-      sentiment: 'positive',
-      when: '1 week ago',
-      text: '"Buen trato y resultados. El parking de la zona es complicado, id en metro."',
-      replyNote: 'Replied by Nerea Bilbao · 6 days ago',
-    },
-    {
-      id: 'r-5',
-      rating: 5,
-      author: 'Elisa Montalbán',
-      platform: 'Google',
-      location: 'Gràcia',
-      sentiment: 'positive',
-      when: '1 week ago',
-      text: '"Llegué con una cervicalgia fuerte y salí notando la diferencia en la primera sesión. El shockwave ayudó mucho."',
-      replyNote: 'Replied by AI · approved by Marta Ferrer',
-    },
-  ],
-  funnel: [
-    { label: 'Requests sent', value: 287 },
-    { label: 'Opened', value: 214, share: '75%' },
-    { label: 'Left a review', value: 38, share: '13%' },
-  ],
-  sendingAutomation: {
-    name: 'Post-visit review request',
-    enabled: true,
-    detail: 'WhatsApp, 3 hours after a completed visit · skips anyone who left a review in the last 12 months · 143 runs in 30 days',
-  },
-  byLocation: [
-    { name: 'Sants', rating: 4.9, reviews: 221 },
-    { name: 'Gràcia', rating: 4.6, reviews: 118 },
-    { name: 'Poblenou', rating: 4.8, reviews: 73 },
-  ],
-  mostMentioned: [
-    { label: 'Dr. Ferrer', count: 64 },
-    { label: 'Back pain', count: 51 },
-    { label: 'Shockwave', count: 22 },
-    { label: 'Waiting time', count: 9 },
-  ],
+  reviews: ReputationReview[]
+  funnel: {
+    sent: number
+    opened: number
+    openedShare: number | null
+    converted: number
+    /** null when nothing has been attributed -- "0%" would be a claim. */
+    convertedShare: number | null
+  }
 }
 
 export function useGrowthReputation() {
-  const data = ref<GrowthReputation | null>(null)
+  const data = ref<ReputationData | null>(null)
   const loading = ref(true)
-  /** Set once the pending draft has been dealt with, so the card can clear. */
-  const pendingOutcome = ref<'approved' | 'discarded' | null>(null)
+  const busyId = ref<string | null>(null)
+  const error = ref<string | null>(null)
+  const { showToast } = useToast()
+  const t = useT()
 
-  onMounted(() => {
-    data.value = structuredClone(FIXTURE)
-    loading.value = false
-  })
-
-  function approvePending() {
-    pendingOutcome.value = 'approved'
+  async function load() {
+    try {
+      data.value = await useStaffFetch<ReputationData>('/api/growth/reputation')
+      error.value = null
+    } catch {
+      error.value = t('Could not load reputation.', 'No se ha podido cargar la reputación.')
+    } finally {
+      loading.value = false
+    }
   }
-  function discardPending() {
-    pendingOutcome.value = 'discarded'
+  onMounted(load)
+
+  async function draftReply(reviewId: string) {
+    busyId.value = reviewId
+    try {
+      const result = await useStaffFetch<{ available: boolean; draft: string; refused?: boolean }>(
+        `/api/growth/reputation/${reviewId}/draft-reply`,
+        { method: 'POST' },
+      )
+      if (!result.available) {
+        showToast(t('Drafting needs an Anthropic API key on the server.', 'Redactar necesita una clave de API de Anthropic en el servidor.'), 'error')
+        return
+      }
+      if (result.refused) {
+        showToast(t('The model declined to draft that one.', 'El modelo no ha querido redactar esa respuesta.'), 'error')
+        return
+      }
+      await load()
+    } catch (e) {
+      showToast((e as { statusMessage?: string }).statusMessage ?? t('Could not draft a reply.', 'No se ha podido redactar la respuesta.'), 'error')
+    } finally {
+      busyId.value = null
+    }
   }
 
-  return { data, loading, pendingOutcome, approvePending, discardPending }
+  async function approve(reviewId: string, body?: string) {
+    busyId.value = reviewId
+    try {
+      await useStaffFetch(`/api/growth/reputation/${reviewId}/reply`, { method: 'POST', body: { body } })
+      // Deliberately not "Posted": nothing reaches Google until the platform
+      // integration exists, and a toast that says otherwise would be the
+      // easiest possible thing to believe.
+      showToast(t('Reply approved and saved.', 'Respuesta aprobada y guardada.'))
+      await load()
+    } catch (e) {
+      showToast((e as { statusMessage?: string }).statusMessage ?? t('Could not save that reply.', 'No se ha podido guardar la respuesta.'), 'error')
+    } finally {
+      busyId.value = null
+    }
+  }
+
+  async function discard(reviewId: string) {
+    busyId.value = reviewId
+    try {
+      await useStaffFetch(`/api/growth/reputation/${reviewId}/reply`, { method: 'POST', body: { discard: true } })
+      showToast(t('Draft discarded. Nothing was saved.', 'Borrador descartado. No se ha guardado nada.'))
+      await load()
+    } catch {
+      showToast(t('Could not discard that draft.', 'No se ha podido descartar el borrador.'), 'error')
+    } finally {
+      busyId.value = null
+    }
+  }
+
+  return { data, loading, error, busyId, draftReply, approve, discard, reload: load }
 }

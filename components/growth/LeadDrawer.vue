@@ -1,10 +1,24 @@
 <script setup lang="ts">
 import type { GrowthLeadDetail, LeadTimelineKind } from '~/composables/useGrowthLeadDetail'
 
-defineProps<{ lead: GrowthLeadDetail }>()
-const emit = defineEmits<{ close: [] }>()
+const props = defineProps<{ lead: GrowthLeadDetail }>()
+const emit = defineEmits<{ close: []; converted: [patientId: string] }>()
 
 const t = useT()
+const { converting, candidates, convert, linkToExisting, createAnyway, dismissCandidates } = useGrowthLeadConvert()
+
+async function onConvert() {
+  const patientId = await convert(props.lead.id)
+  if (patientId) emit('converted', patientId)
+}
+async function onLink(patientId: string) {
+  const linked = await linkToExisting(props.lead.id, patientId)
+  if (linked) emit('converted', linked)
+}
+async function onCreateAnyway() {
+  const patientId = await createAnyway(props.lead.id)
+  if (patientId) emit('converted', patientId)
+}
 
 // Dot colour carries what kind of thing happened, so the timeline can be
 // skimmed vertically: indigo where the AI acted, green where the clinic
@@ -178,14 +192,83 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
         <!-- The terminal action, and the only one styled as primary: this is
         the bridge out of Growth and into the practice itself. -->
         <div class="ml-auto flex flex-col items-end gap-1">
-          <button type="button" class="flex h-9 items-center gap-1.5 rounded-ctl bg-brand px-4 text-[12.5px] font-semibold text-white hover:bg-brand-hover">
-            {{ t('Convert to patient', 'Convertir en paciente') }} <span aria-hidden="true">→</span>
+          <button
+            v-if="!lead.patientId"
+            type="button"
+            class="flex h-9 items-center gap-1.5 rounded-ctl bg-brand px-4 text-[12.5px] font-semibold text-white hover:bg-brand-hover disabled:opacity-60"
+            :disabled="converting"
+            data-test="convert-lead"
+            @click="onConvert"
+          >
+            {{ converting ? t('Converting…', 'Convirtiendo…') : t('Convert to patient', 'Convertir en paciente') }}
+            <span v-if="!converting" aria-hidden="true">→</span>
           </button>
+          <NuxtLink
+            v-else
+            :to="`/patients/${lead.patientId}`"
+            class="flex h-9 items-center gap-1.5 rounded-ctl border border-success-border bg-success-bg px-4 text-[12.5px] font-semibold text-success-text"
+            data-test="open-patient"
+          >{{ t('Open patient record', 'Abrir ficha del paciente') }} →</NuxtLink>
+          <!-- Says what it actually does. It used to promise it kept the
+          appointment too, which leads have no link to yet -- a sentence that
+          would have been false the first time anyone relied on it. -->
           <span class="text-[10px] text-ink-faint">
-            {{ t('Creates the patient record, keeps the appointment and the attribution', 'Crea la ficha del paciente y conserva la cita y la atribución') }}
+            {{ lead.patientId
+              ? t('Already converted', 'Ya convertido')
+              : t('Creates the patient record and keeps the attribution', 'Crea la ficha del paciente y conserva la atribución') }}
           </span>
         </div>
       </footer>
+
+      <!-- A likely duplicate stops the conversion. Silently creating a second
+      record for someone who is already a patient splits their history and
+      their balance, and someone has to merge it back by hand. -->
+      <div v-if="candidates.length" class="absolute inset-0 z-10 flex items-center justify-center bg-ink-900/30 p-6" data-test="duplicate-warning">
+        <div class="flex w-full max-w-[420px] flex-col gap-3 rounded-card border border-line bg-surface p-5 shadow-popover">
+          <div class="flex flex-col gap-1">
+            <h3 class="text-[14px] font-semibold tracking-tightTitle text-ink-900">
+              {{ t('This person may already be a patient', 'Puede que esta persona ya sea paciente') }}
+            </h3>
+            <p class="text-[12px] leading-[1.5] text-ink-muted">
+              {{ t('Linking keeps one record. Creating a second one splits their history and balance.', 'Vincular mantiene una sola ficha. Crear una segunda divide su historial y su saldo.') }}
+            </p>
+          </div>
+
+          <div class="flex flex-col gap-1.5">
+            <button
+              v-for="candidate in candidates"
+              :key="candidate.id"
+              type="button"
+              class="flex items-center justify-between gap-2 rounded-ctl border border-line-control bg-surface px-3 py-2 text-left hover:border-brand hover:bg-brand-tint"
+              :disabled="converting"
+              data-test="link-existing"
+              @click="onLink(candidate.id)"
+            >
+              <span class="flex min-w-0 flex-col">
+                <span class="truncate text-[12.5px] font-medium text-ink-900">{{ candidate.name }}</span>
+                <span class="text-[10.5px] text-ink-muted">{{ candidate.reason }}</span>
+              </span>
+              <span class="shrink-0 text-[11px] font-semibold text-brand-text">{{ t('Link', 'Vincular') }}</span>
+            </button>
+          </div>
+
+          <div class="flex flex-wrap items-center justify-between gap-2 border-t border-line-divider pt-3">
+            <button
+              type="button"
+              class="text-[11.5px] font-medium text-ink-muted hover:text-ink-700"
+              :disabled="converting"
+              @click="dismissCandidates"
+            >{{ t('Cancel', 'Cancelar') }}</button>
+            <button
+              type="button"
+              class="flex h-8 items-center rounded-ctl border border-line-control bg-surface px-3 text-[11.5px] font-medium text-ink-700 hover:bg-surface-subtle disabled:opacity-60"
+              :disabled="converting"
+              data-test="create-anyway"
+              @click="onCreateAnyway"
+            >{{ t('Create a new record anyway', 'Crear una ficha nueva igualmente') }}</button>
+          </div>
+        </div>
+      </div>
     </aside>
   </div>
 </template>

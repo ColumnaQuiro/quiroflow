@@ -783,6 +783,8 @@ async function createLead(opts: {
   stage?: string
   channel?: string
   source?: string
+  phone?: string
+  email?: string
   estimatedValueCents?: number | null
   aiHandling?: boolean
   reference?: string
@@ -798,6 +800,8 @@ async function createLead(opts: {
         account_id: opts.accountId,
         reference: opts.reference ?? `LEAD-TEST-${randomUUID().slice(0, 8)}`,
         full_name: opts.fullName,
+        phone: opts.phone ?? null,
+        email: opts.email ?? null,
         stage: opts.stage ?? 'new',
         channel: opts.channel ?? 'whatsapp',
         source: opts.source ?? null,
@@ -859,9 +863,28 @@ async function leadEvents(opts: { leadId: string }) {
   return data ?? []
 }
 
+/** A patient plus the contact-number rows that drive has_phone. */
+async function patientWithContacts(opts: { id: string }) {
+  const { data: patient } = await admin
+    .from('patients')
+    .select('id, first_name, last_name, email, referral_source, has_phone, clinic_id')
+    .eq('id', opts.id)
+    .maybeSingle()
+  const { data: numbers } = await admin.from('patient_contact_numbers').select('number, is_whatsapp').eq('patient_id', opts.id)
+  return { patient, numbers: numbers ?? [] }
+}
+
+/** How many patients this account has, for asserting nothing was duplicated. */
+async function patientCount(opts: { accountId: string }) {
+  const { count } = await admin.from('patients').select('id', { count: 'exact', head: true }).eq('account_id', opts.accountId)
+  return count ?? 0
+}
+
 export const dbTasks = {
   'db:createStaffAccount': createStaffAccount,
   'db:createLead': createLead,
+  'db:patientWithContacts': patientWithContacts,
+  'db:patientCount': patientCount,
   'db:leadById': leadById,
   'db:leadEvents': leadEvents,
   'db:createTeamMemberWithRole': createTeamMemberWithRole,

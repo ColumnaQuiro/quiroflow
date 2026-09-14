@@ -5,7 +5,7 @@ const t = useT()
 const route = useRoute()
 const { can } = usePermission()
 const { hasGrowth, resolved } = useGrowthTier()
-const { columns, summary, loading, error, moveLead } = useGrowthLeads()
+const { columns, summary, loading, error, moveLead, reload } = useGrowthLeads()
 const { lead: openLead, loading: leadLoading, loadLead, close: closeLead } = useGrowthLeadDetail()
 
 // Same key that gates the Growth dashboard and Campaigns -- see
@@ -51,6 +51,16 @@ function onDrop(key: string) {
 
 function onOpen(lead: GrowthLead) {
   loadLead(lead.id)
+}
+
+// Converting moves the lead to its last stage, so the board behind the drawer
+// is now wrong. Reloaded rather than patched in place: conversion also
+// changes the stage totals and the open-leads count in the header, and
+// reproducing all of that here would be a second implementation of the
+// grouping the API already does.
+async function onConverted() {
+  closeLead()
+  await reload()
 }
 </script>
 
@@ -183,7 +193,7 @@ function onOpen(lead: GrowthLead) {
     </template>
   </div>
 
-  <GrowthLeadDrawer v-if="openLead" :lead="openLead" @close="closeLead" />
+  <GrowthLeadDrawer v-if="openLead" :lead="openLead" @close="closeLead" @converted="onConverted" />
   <!-- The drawer opens on click and fills in when the fetch lands, rather
   than the row staying inert until it does. -->
   <div v-else-if="leadLoading" class="fixed inset-0 z-50 flex justify-end" data-test="lead-drawer-loading">

@@ -133,7 +133,20 @@ async function createTeamMemberWithRole(opts: {
   return { email, password, userId, teamMemberId: teamMember.id as string }
 }
 
-/** Merges a partial permissions patch into a role's permissions jsonb (for narrowing default-permissive roles). */
+/** A role's permissions exactly as seed_account_roles left them -- for asserting the seeded defaults. */
+async function rolePermissions(opts: { accountId: string; roleName: string }) {
+  const { accountId, roleName } = opts
+  const role = unwrap(
+    await admin.from('account_roles').select('id, name, is_system, permissions').eq('account_id', accountId).eq('name', roleName).single(),
+  )
+  return {
+    roleId: role.id as string,
+    isSystem: role.is_system as boolean,
+    permissions: role.permissions as Record<string, unknown>,
+  }
+}
+
+/** Merges a partial permissions patch into a role's permissions jsonb. */
 async function setRolePermissions(opts: { accountId: string; roleName: string; patch: Record<string, unknown> }) {
   const { accountId, roleName, patch } = opts
   const role = unwrap(
@@ -988,4 +1001,5 @@ export const dbTasks = {
   'db:clearWhatsappAppSecret': clearWhatsappAppSecret,
   'db:setAccountSecret': setAccountSecret,
   'db:readAsStaff': readAsStaff,
+  'db:rolePermissions': rolePermissions,
 }

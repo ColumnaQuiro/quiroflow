@@ -922,6 +922,25 @@ if (import.meta.client) {
             Le hemos enviado los detalles a {{ email }}.
           </p>
         </div>
+
+        <!-- Straight after booking is the one moment a patient is certain to
+             be holding their phone and already sold on the clinic, so this
+             sits here rather than in a later email nobody opens. Its own
+             v-if, not part of the phase chain above, so the confirmation card
+             keeps its centred layout and this keeps a left-aligned one.
+             Spanish regardless of viewer: this page is patient-facing only. -->
+        <AppDownloadPrompt
+          v-if="phase === 'success'"
+          lang="es"
+          class="mx-auto mt-4 max-w-md"
+          :heading="t('app_promo_heading', 'Descarga la app de QuiroFlow')"
+          :body="
+            t(
+              'app_promo_body',
+              'Consulta tus citas, documentos y mensajes desde el móvil, y recibe un recordatorio antes de cada visita.',
+            )
+          "
+        />
       </template>
     </div>
   </div>

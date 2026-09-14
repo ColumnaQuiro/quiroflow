@@ -215,6 +215,17 @@ async function save() {
         first_name: newPatientFirstName.value.trim(),
         last_name: newPatientLastName.value.trim() || null,
         email: newPatientEmail.value.trim() || null,
+        // The practitioner is chosen two fields above, and until now the
+        // patient created here was never linked to them: the appointment
+        // recorded who saw them, the patient record recorded nobody. So
+        // Jordana Aguar's dashboard read "0 total patients, 13 active" --
+        // thirteen people she had treated, none of them hers. Account-wide
+        // it was 1,381 of 1,559 patients with no practitioner at all.
+        //
+        // A default, not a verdict: Overview lets staff change it, and it
+        // stays empty when the appointment is booked with nobody, which is
+        // the honest answer rather than guessing.
+        default_practitioner_id: practitionerId.value || null,
       })
       .select('id')
       .single()

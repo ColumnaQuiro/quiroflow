@@ -32,6 +32,79 @@ interface PatientForAction {
   gender?: string | null
   emergency_contact?: string | null
 }
+/**
+ * A lead, for the purposes of being messaged. Deliberately not shaped like a
+ * patient: a lead has one name field, carries its own phone rather than a
+ * patient_contact_numbers row, and has no clinical or billing history to
+ * merge into anything.
+ */
+export interface LeadForAction {
+  id: string
+  full_name: string
+  email: string | null
+  /** Bare E.164 as the leads table stores it. */
+  phone: string | null
+  marketing_consent_at?: string | null
+}
+
+/**
+ * Who a rule is being run for.
+ *
+ * The engine was written when the only answer was "a patient", and nine call
+ * sites still pass one. Rather than rewrite those, both kinds are narrowed to
+ * this shape at the door, and everything downstream reads the shape instead
+ * of the row. `patient` is present only for patient-backed recipients, and is
+ * what the patient-only features (doc-template links, contact numbers) check
+ * before doing anything -- so a lead cannot silently acquire a health-history
+ * form or a patient's phone number.
+ */
+interface Recipient {
+  kind: 'patient' | 'lead'
+  id: string
+  firstName: string
+  lastName: string | null
+  email: string | null
+  /** Set when the recipient carries its own number, as a lead does. */
+  phone?: string
+  canContact: boolean
+  /** Channels this recipient may receive *marketing* on. */
+  marketingChannels: string[]
+  patient?: PatientForAction
+}
+
+function patientRecipient(patient: PatientForAction): Recipient {
+  return {
+    kind: 'patient',
+    id: patient.id,
+    firstName: patient.first_name ?? '',
+    lastName: patient.last_name ?? null,
+    email: patient.email ?? null,
+    // Minors and do-not-contact patients get no communications.
+    canContact: !patient.is_minor && !patient.do_not_contact,
+    marketingChannels: patient.marketing_channels ?? [],
+    patient,
+  }
+}
+
+function leadRecipient(lead: LeadForAction): Recipient {
+  // A lead who enquired can be answered -- that is transactional, and it is
+  // the entire reason they gave us a number. Marketing is a separate
+  // question, and the answer is only yes where consent was recorded at
+  // capture: LSSI-CE and GDPR want evidence, not an inference from the fact
+  // that a row exists.
+  const consented = Boolean(lead.marketing_consent_at)
+  return {
+    kind: 'lead',
+    id: lead.id,
+    firstName: (lead.full_name ?? '').trim().split(/\s+/)[0] ?? '',
+    lastName: (lead.full_name ?? '').trim().split(/\s+/).slice(1).join(' ') || null,
+    email: lead.email ?? null,
+    phone: lead.phone ?? undefined,
+    canContact: Boolean(lead.phone || lead.email),
+    marketingChannels: consented ? ['whatsapp', 'email'] : [],
+  }
+}
+
 interface ActionRow {
   id: string
   action_type: 'whatsapp_template' | 'email' | 'webhook'
@@ -88,16 +161,62 @@ export async function runActionsList(
   // those two keys.
   extraContext?: Partial<MergeContext>,
 ) {
-  // Minors and do-not-contact patients get no communications -- webhook
-  // actions still run since those are internal side effects, not messages
-  // sent to the patient.
-  const canContact = !patient.is_minor && !patient.do_not_contact
-  // Marketing rules (patient.birthday campaigns, or any rule staff has
-  // explicitly flagged as promotional rather than transactional) only reach
-  // patients who've opted that channel in via marketing_channels -- LSSI-CE
-  // and GDPR require real opt-in for unsolicited commercial communications,
-  // distinct from transactional ones like an appointment confirmation.
-  const channelAllowed = (channel: string) => !isMarketing || (patient.marketing_channels ?? []).includes(channel)
+  await runForRecipient(supabase, accountId, actions, patientRecipient(patient), origin, isMarketing, appointmentId, triggerBody, whatsappOverrideNumber, extraContext)
+}
+
+/**
+ * Runs a rule's actions for a lead rather than a patient.
+ *
+ * Its own entry point instead of a union on the existing one, so the nine
+ * patient call sites keep their exact signature and a lead can never arrive
+ * at one of them by accident.
+ */
+export async function runLeadRuleActions(
+  supabase: any,
+  accountId: string,
+  ruleId: string,
+  lead: LeadForAction,
+  origin: string,
+  extraContext?: Partial<MergeContext>,
+) {
+  const [{ data: rule }, { data: actions }] = await Promise.all([
+    supabase.from('automation_rules').select('is_marketing').eq('id', ruleId).maybeSingle(),
+    supabase.from('automation_actions').select('id, action_type, config').eq('rule_id', ruleId).order('position'),
+  ])
+
+  await runForRecipient(
+    supabase,
+    accountId,
+    (actions ?? []) as ActionRow[],
+    leadRecipient(lead),
+    origin,
+    rule?.is_marketing ?? false,
+    undefined,
+    undefined,
+    undefined,
+    extraContext,
+  )
+}
+
+async function runForRecipient(
+  supabase: any,
+  accountId: string,
+  actions: ActionRow[],
+  recipient: Recipient,
+  origin: string,
+  isMarketing = false,
+  appointmentId?: string,
+  triggerBody?: TriggerBody,
+  whatsappOverrideNumber?: string,
+  extraContext?: Partial<MergeContext>,
+) {
+  const canContact = recipient.canContact
+  // Marketing rules (birthday campaigns, a lead welcome drip, or any rule
+  // staff flagged as promotional rather than transactional) only reach a
+  // recipient who opted that channel in -- LSSI-CE and GDPR require real
+  // opt-in for unsolicited commercial communications, distinct from
+  // transactional ones like an appointment confirmation.
+  const channelAllowed = (channel: string) => !isMarketing || recipient.marketingChannels.includes(channel)
 
   // Resolved once per rule firing (not per-action) since the {{next_appointment}}
   // merge token always refers to the appointment that triggered this rule --
@@ -120,11 +239,11 @@ export async function runActionsList(
   for (const action of actions) {
     try {
       if (action.action_type === 'whatsapp_template') {
-        if (canContact && channelAllowed('whatsapp')) await runWhatsAppAction(supabase, accountId, patient, action.config, origin, appointmentId, whatsappOverrideNumber, context)
+        if (canContact && channelAllowed('whatsapp')) await runWhatsAppAction(supabase, accountId, recipient, action.config, origin, appointmentId, whatsappOverrideNumber, context)
       } else if (action.action_type === 'email') {
-        if (canContact && channelAllowed('email')) await runEmailAction(patient, action.config, context)
+        if (canContact && channelAllowed('email')) await runEmailAction(recipient, action.config, context)
       } else if (action.action_type === 'webhook') {
-        await runWebhookAction(action.config, triggerBody ?? { triggerEvent: 'manual', patientId: patient.id, appointmentId })
+        await runWebhookAction(action.config, triggerBody ?? { triggerEvent: 'manual', patientId: recipient.id, appointmentId })
       }
     } catch {
       // Best-effort: one failed action shouldn't stop the rest of the rule.
@@ -134,10 +253,10 @@ export async function runActionsList(
 
 interface MergeContext { nextAppointmentAt?: string; googleReviewUrl?: string; waitlistClaimLink?: string; waitlistSlotDatetime?: string }
 
-function patientFieldValue(patient: PatientForAction, source: string, context?: MergeContext): string {
-  if (source === 'first_name') return patient.first_name ?? ''
-  if (source === 'last_name') return patient.last_name ?? ''
-  if (source === 'email') return patient.email ?? ''
+function recipientFieldValue(recipient: Recipient, source: string, context?: MergeContext): string {
+  if (source === 'first_name') return recipient.firstName ?? ''
+  if (source === 'last_name') return recipient.lastName ?? ''
+  if (source === 'email') return recipient.email ?? ''
   if (source === 'google_review_link') return context?.googleReviewUrl ?? ''
   if (source === 'waitlist_claim_link') return context?.waitlistClaimLink ?? ''
   if (source === 'waitlist_slot_datetime') return context?.waitlistSlotDatetime ?? ''
@@ -165,7 +284,12 @@ function patientFieldValue(patient: PatientForAction, source: string, context?: 
 // shapes: appended as `${origin}/doc/${token}` in a message body, or as the
 // bare token substituted into a WhatsApp URL button's {{n}} placeholder
 // (Meta stores the rest of the URL, e.g. ".../doc/{{1}}", on the button itself).
-async function generateDocLink(supabase: any, accountId: string, patient: PatientForAction, docTemplateId: string): Promise<string | null> {
+async function generateDocLink(supabase: any, accountId: string, patient: PatientForAction | undefined, docTemplateId: string): Promise<string | null> {
+  // Patient-only by construction. A doc is the patient's own copy of a health
+  // history or consent form and hangs off patient_id, so a lead has nothing
+  // to attach one to -- the button falls back to Meta's example suffix
+  // rather than the send being rejected.
+  if (!patient) return null
   const { data: template } = await supabase.from('doc_templates').select('title, fields').eq('id', docTemplateId).maybeSingle()
   if (!template) return null
   const rendered = renderTemplateFields(template.fields, {
@@ -193,7 +317,7 @@ async function generateDocLink(supabase: any, accountId: string, patient: Patien
 async function runWhatsAppAction(
   supabase: any,
   accountId: string,
-  patient: PatientForAction,
+  recipient: Recipient,
   config: Record<string, any>,
   origin: string,
   appointmentId?: string,
@@ -214,11 +338,14 @@ async function runWhatsAppAction(
   if (!account?.whatsapp_phone_number_id || !account?.whatsapp_access_token) return
 
   let to = toOverride
-  if (!to) {
+  // A lead carries its own number, already normalised at ingest. Only a
+  // patient has contact-number rows to look through.
+  if (!to) to = recipient.phone
+  if (!to && recipient.patient) {
     const { data: numbers } = await supabase
       .from('patient_contact_numbers')
       .select('number, country_code, is_whatsapp')
-      .eq('patient_id', patient.id)
+      .eq('patient_id', recipient.patient.id)
     const target = numbers?.find((n: any) => n.is_whatsapp) ?? numbers?.[0]
     if (!target) return
     to = toE164(target.number, target.country_code) ?? undefined
@@ -233,7 +360,7 @@ async function runWhatsAppAction(
   const configuredVariables: { source: string; text?: string }[] = Array.isArray(config.variables) && config.variables.length > 0
     ? config.variables
     : [{ source: 'first_name' }]
-  const variables: string[] = configuredVariables.map((v) => (v.source === 'text' ? (v.text ?? '') : patientFieldValue(patient, v.source, context)))
+  const variables: string[] = configuredVariables.map((v) => (v.source === 'text' ? (v.text ?? '') : recipientFieldValue(recipient, v.source, context)))
 
   // One doc-template slot per configured link. A template with URL buttons
   // that carry a {{n}} placeholder maps each slot to a button by position
@@ -279,7 +406,7 @@ async function runWhatsAppAction(
     // No dynamic URL button to attach a doc link to -- fall back to the
     // older behaviour of tacking it onto the message body instead.
     if (dynamicUrlButtonIndexes.length === 0 && docTemplateIds[0]) {
-      const token = await generateDocLink(supabase, accountId, patient, docTemplateIds[0])
+      const token = await generateDocLink(supabase, accountId, recipient.patient, docTemplateIds[0])
       if (token) variables.push(`${origin}/doc/${token}`)
     }
 
@@ -287,21 +414,21 @@ async function runWhatsAppAction(
     const bodySlots = new Set<string>()
     for (const m of bodyText.matchAll(/\{\{(\d+)\}\}/g)) bodySlots.add(m[1])
     if (bodySlots.size > 0) {
-      const trimmed = Array.from({ length: bodySlots.size }, (_, i) => variables[i] ?? patient.first_name ?? '')
+      const trimmed = Array.from({ length: bodySlots.size }, (_, i) => variables[i] ?? recipient.firstName ?? '')
       bodyComponents.push({ type: 'body', parameters: trimmed.map((v) => ({ type: 'text', text: v })) })
     }
 
     for (let i = 0; i < dynamicUrlButtonIndexes.length; i++) {
       const docTemplateId = docTemplateIds[i]
-      const token = docTemplateId ? await generateDocLink(supabase, accountId, patient, docTemplateId) : null
-      const paramText = token ? token : `name=${encodeURIComponent(patient.first_name ?? '')}&id=${patient.id}`
+      const token = docTemplateId ? await generateDocLink(supabase, accountId, recipient.patient, docTemplateId) : null
+      const paramText = token ? token : `name=${encodeURIComponent(recipient.firstName ?? '')}&id=${recipient.id}`
       buttonComponents.push({ type: 'button', sub_type: 'url', index: String(dynamicUrlButtonIndexes[i]), parameters: [{ type: 'text', text: paramText }] })
     }
   } else {
     // No business-account id on file to look the template up against --
     // fall back to sending exactly what was configured, same as before.
     if (docTemplateIds[0]) {
-      const token = await generateDocLink(supabase, accountId, patient, docTemplateIds[0])
+      const token = await generateDocLink(supabase, accountId, recipient.patient, docTemplateIds[0])
       if (token) variables.push(`${origin}/doc/${token}`)
     }
     if (variables.length > 0) bodyComponents.push({ type: 'body', parameters: variables.map((v) => ({ type: 'text', text: v })) })
@@ -352,9 +479,13 @@ async function runWhatsAppAction(
   // too but asks for nothing, so it must not touch confirmation state.
   const asksForConfirmation = purpose === 'confirmation' || purpose === 'reminder'
 
+  // Logged against whichever it was sent to. lead_id is what puts a drip
+  // message into the lead's own Inbox thread rather than nowhere -- the
+  // column exists for exactly this, from the merged-inbox work.
   await supabase.from('whatsapp_messages').insert({
     account_id: accountId,
-    patient_id: patient.id,
+    patient_id: recipient.patient?.id ?? null,
+    lead_id: recipient.kind === 'lead' ? recipient.id : null,
     appointment_id: appointmentId ?? null,
     wamid,
     purpose,
@@ -382,19 +513,19 @@ async function runWhatsAppAction(
   }
 }
 
-async function runEmailAction(patient: PatientForAction, config: Record<string, any>, context?: MergeContext) {
+async function runEmailAction(recipient: Recipient, config: Record<string, any>, context?: MergeContext) {
   const subject: string | undefined = config.subject
   const rawBody: string | undefined = config.body
-  if (!subject || !rawBody || !patient.email) return
+  if (!subject || !rawBody || !recipient.email) return
 
   const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-  const mergePlain = (text: string) => text.replace(/\{\{(\w+)\}\}/g, (_, key: string) => patientFieldValue(patient, key, context))
+  const mergePlain = (text: string) => text.replace(/\{\{(\w+)\}\}/g, (_, key: string) => recipientFieldValue(recipient, key, context))
   // rawBody is HTML produced by the account's own rich-text editor (bold/
   // italic/underline/image, no freeform tag entry), so unlike the plain
   // subject it's trusted and must NOT be escaped wholesale -- that would
   // turn every tag into literal text. Only the substituted variable values
   // (patient-controlled data) get escaped.
-  const mergeHtml = (html: string) => html.replace(/\{\{(\w+)\}\}/g, (_, key: string) => escapeHtml(patientFieldValue(patient, key, context)))
+  const mergeHtml = (html: string) => html.replace(/\{\{(\w+)\}\}/g, (_, key: string) => escapeHtml(recipientFieldValue(recipient, key, context)))
 
   const runtimeConfig = useRuntimeConfig()
   if (!runtimeConfig.resendApiKey) return
@@ -410,7 +541,7 @@ async function runEmailAction(patient: PatientForAction, config: Record<string, 
   await $fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${runtimeConfig.resendApiKey}`, 'Content-Type': 'application/json' },
-    body: { from: 'QuiroFlow <notifications@quiroflow.com>', to: patient.email, subject: mergePlain(subject), html },
+    body: { from: 'QuiroFlow <notifications@quiroflow.com>', to: recipient.email, subject: mergePlain(subject), html },
   }).catch(() => null)
 }
 

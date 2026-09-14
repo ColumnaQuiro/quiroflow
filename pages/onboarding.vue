@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { COUNTRIES, COUNTRIES_BY_NAME } from '~/utils/countries'
+
 definePageMeta({ layout: false })
 
 const supabase = useSupabaseClient()
@@ -9,6 +11,26 @@ const { preference: langPreference, setPreference: setLangPreference } = useLang
 const ownerName = ref('')
 const accountName = ref('')
 const clinicName = ref('')
+// The country every phone number defaults to from here on -- the manual
+// "add a number" field, the new-patient forms, the public booking page and
+// an import's fallback all read it. Asking once, here, is what stops a
+// clinic outside Spain from silently storing Spanish numbers.
+//
+// Guessed from the browser's own region so most practices never touch it;
+// anything unrecognised lands on ES, which is what it was before.
+const phoneCountry = ref('ES')
+
+// Guessed on the client only: this page server-renders, and `navigator`
+// doesn't exist there. Starting at ES and correcting on mount keeps the
+// server and client markup identical.
+onMounted(() => {
+  try {
+    const region = new Intl.Locale(navigator.language || 'es-ES').maximize().region
+    if (region && COUNTRIES.some((c) => c.code === region)) phoneCountry.value = region
+  } catch {
+    // An exotic or missing navigator.language just leaves the default.
+  }
+})
 const error = ref('')
 const loading = ref(false)
 // 'form' -> 'preferences' -> 'launch': a couple of quick preference picks
@@ -25,6 +47,7 @@ async function onSubmit() {
     p_clinic_name: clinicName.value,
     p_owner_name: ownerName.value,
     p_referred_by_slug: localStorage.getItem('signup_referred_by') || null,
+    p_default_phone_country: phoneCountry.value,
   })
   loading.value = false
   if (rpcError) {
@@ -97,6 +120,17 @@ async function chooseLanguage(value: 'en' | 'es') {
               placeholder="Valencia"
               class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
             />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-ink-700" for="phone-country">Phone numbers are mostly from</label>
+            <select
+              id="phone-country"
+              v-model="phoneCountry"
+              class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            >
+              <option v-for="c in COUNTRIES_BY_NAME" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }} {{ c.name }}</option>
+            </select>
+            <p class="mt-1 text-[12.5px] text-ink-muted2">Used when a patient's number doesn't say. You can change it later.</p>
           </div>
           <p v-if="error" class="text-sm text-danger-text">{{ error }}</p>
           <UiBtn type="submit" variant="primary" class="w-full" :disabled="loading">

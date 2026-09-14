@@ -57,20 +57,24 @@ async function loadNumberCountries() {
   }
 }
 
-const DEFAULT_COUNTRY = 'ES'
+// The fallback for a number PracticeHub's API didn't answer for. The
+// account's own country, not Spain's -- a clinic in Lisbon importing without
+// a connection should get Portuguese numbers, not the bug this replaced.
+const defaultCountry = computed(() => store.defaultPhoneCountry)
+const defaultCountryName = computed(() => countryByCode(defaultCountry.value).name)
 
 // How many of the numbers about to be written are foreign. Worth showing:
 // it is the difference between this import and the one that made every
 // patient Spanish, and it is a number the clinic can sanity-check.
 const foreignNumberCount = computed(() =>
   [...toImport.value, ...toUpdate.value].reduce(
-    (total, row) => total + row.numbers.filter((n) => n.country_code !== DEFAULT_COUNTRY).length,
+    (total, row) => total + row.numbers.filter((n) => n.country_code !== defaultCountry.value).length,
     0,
   ),
 )
 
 function countryFor(patientNumber: string, number: string): string {
-  return numberCountries.value.get(countryKey(patientNumber, number)) ?? DEFAULT_COUNTRY
+  return numberCountries.value.get(countryKey(patientNumber, number)) ?? defaultCountry.value
 }
 
 type CsvRow = Record<string, string>
@@ -610,14 +614,14 @@ const introNotes = computed(() => [
              every number Spanish and that is exactly the bug this replaced. -->
         <p v-if="countryLookupState === 'ready'" class="mt-3 text-[12.5px] text-ink-muted2">
           {{ t(
-            `Phone countries read from PracticeHub · ${foreignNumberCount} number(s) outside Spain`,
-            `Países de los teléfonos leídos de PracticeHub · ${foreignNumberCount} número(s) fuera de España`,
+            `Phone countries read from PracticeHub · ${foreignNumberCount} number(s) outside ${defaultCountryName}`,
+            `Países de los teléfonos leídos de PracticeHub · ${foreignNumberCount} número(s) fuera de ${defaultCountryName}`,
           ) }}
         </p>
         <p v-else-if="countryLookupState === 'unavailable'" class="mt-3 text-[12.5px] text-warning-text">
           {{ t(
-            'No PracticeHub connection, so every phone number will be saved as Spanish. Connect PracticeHub under Settings → Import → PracticeHub → General and re-run this to get each number\'s real country.',
-            'Sin conexión con PracticeHub, todos los teléfonos se guardarán como españoles. Conecta PracticeHub en Ajustes → Importar → PracticeHub → General y vuelve a ejecutarlo para obtener el país real de cada número.',
+            `No PracticeHub connection, so every phone number will be saved as ${defaultCountryName}. Connect PracticeHub under Settings → Import → PracticeHub → General and re-run this to get each number's real country.`,
+            `Sin conexión con PracticeHub, todos los teléfonos se guardarán como ${defaultCountryName}. Conecta PracticeHub en Ajustes → Importar → PracticeHub → General y vuelve a ejecutarlo para obtener el país real de cada número.`,
           ) }}
         </p>
       </div>

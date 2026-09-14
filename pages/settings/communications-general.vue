@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { TablesUpdate } from '~/types/database.types'
+import { COUNTRIES_BY_NAME } from '~/utils/countries'
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
@@ -22,6 +23,11 @@ const emailReminderBody = ref('')
 // this is the account's one general communications settings page.
 const googleReviewUrl = ref('')
 
+// Which country a phone number belongs to when nothing says otherwise --
+// the "add a number" field, the new-patient forms, the public booking page,
+// and an import's fallback. Chosen at onboarding; changed here.
+const defaultPhoneCountry = ref('ES')
+
 const { showToast } = useToast()
 const loading = ref(true)
 const saving = ref(false)
@@ -31,7 +37,7 @@ async function load() {
   const { data } = await supabase
     .from('accounts')
     .select(
-      'appointment_confirmation_enabled, appointment_confirmation_channels, email_confirmation_subject, email_confirmation_body, appointment_reminder_enabled, appointment_reminder_channels, appointment_reminder_hours_before, email_reminder_subject, email_reminder_body, google_review_url',
+      'appointment_confirmation_enabled, appointment_confirmation_channels, email_confirmation_subject, email_confirmation_body, appointment_reminder_enabled, appointment_reminder_channels, appointment_reminder_hours_before, email_reminder_subject, email_reminder_body, google_review_url, default_phone_country',
     )
     .eq('id', store.accountId!)
     .maybeSingle()
@@ -45,6 +51,7 @@ async function load() {
   emailReminderSubject.value = data?.email_reminder_subject ?? ''
   emailReminderBody.value = data?.email_reminder_body ?? ''
   googleReviewUrl.value = data?.google_review_url ?? ''
+  defaultPhoneCountry.value = data?.default_phone_country ?? 'ES'
   loading.value = false
 }
 onMounted(load)
@@ -62,6 +69,7 @@ async function save() {
     email_reminder_subject: emailReminderSubject.value.trim() || null,
     email_reminder_body: emailReminderBody.value.trim() || null,
     google_review_url: googleReviewUrl.value.trim() || null,
+    default_phone_country: defaultPhoneCountry.value,
   }
   const { error: updateError } = await supabase.from('accounts').update(update).eq('id', store.accountId!)
   saving.value = false
@@ -69,6 +77,7 @@ async function save() {
     showToast(updateError.message, 'error')
     return
   }
+  store.defaultPhoneCountry = defaultPhoneCountry.value
   showToast(t('Saved', 'Guardado'))
 }
 </script>
@@ -232,6 +241,22 @@ async function save() {
                   </p>
                 </div>
               </template>
+            </div>
+
+            <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+              <p class="text-[13.5px] font-[560] text-ink-700">{{ t('Phone numbers', 'Teléfonos') }}</p>
+              <p class="mt-0.5 text-[12.5px] text-ink-muted2">
+                {{ t(
+                  'The country a phone number belongs to when nothing says otherwise: adding a number by hand, a new patient, an online booking, or a number an import could not place.',
+                  'El país al que pertenece un teléfono cuando nada indica lo contrario: al añadir un número a mano, un paciente nuevo, una reserva online, o un número que una importación no pudo ubicar.',
+                ) }}
+              </p>
+              <select
+                v-model="defaultPhoneCountry"
+                class="mt-3 h-8 w-full rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+              >
+                <option v-for="c in COUNTRIES_BY_NAME" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }} {{ c.name }}</option>
+              </select>
             </div>
 
             <div class="rounded-card border border-line bg-surface p-4 shadow-card">

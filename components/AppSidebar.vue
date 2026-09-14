@@ -113,7 +113,7 @@ interface NavItem {
   badge?: 'myday' | 'recalls' | 'campaigns' | 'inbox'
 }
 
-const navGroups = computed<{ label: string; items: NavItem[] }[]>(() => [
+const navGroups = computed<{ label: string; tier?: string; items: NavItem[] }[]>(() => [
   {
     label: t('Today', 'Hoy'),
     items: [
@@ -146,7 +146,12 @@ const navGroups = computed<{ label: string; items: NavItem[] }[]>(() => [
   },
   {
     label: t('Growth', 'Crecimiento'),
+    // The one group carrying a tier badge -- everything under it is either
+    // already included in every plan (Campaigns) or part of the paid Growth
+    // tier, and the badge is what tells the two apart at a glance.
+    tier: 'GROWTH',
     items: [
+      { label: t('Dashboard', 'Panel'), to: '/growth', perm: () => can('communication_config'), icon: 'M2 12.5V7m3.5 5.5V3.5M9 12.5V9m3.5 3.5V5.5' },
       { label: t('Campaigns', 'Campañas'), to: '/campaigns', perm: () => can('communication_config'), icon: 'M8 2l4.5 6H8.9l1.1 6L5.5 8h3.6z', badge: 'campaigns' },
     ],
   },
@@ -236,7 +241,13 @@ watch(() => route.fullPath, () => emit('close'))
 
     <nav class="flex flex-1 flex-col gap-3.5 overflow-y-auto px-3 pb-3 pt-0.5" :class="{ 'items-center px-1.5': collapsed }">
       <div v-for="group in visibleGroups" :key="group.label" class="flex flex-col gap-0.5" :class="{ 'items-center': collapsed }">
-        <div v-if="!collapsed" class="px-[9px] py-1 text-[10.5px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ group.label }}</div>
+        <div v-if="!collapsed" class="flex items-center gap-[7px] px-[9px] py-1">
+          <span class="text-[10.5px] font-[640] uppercase tracking-[.07em]" :class="group.tier ? 'text-brand-text' : 'text-ink-faint'">{{ group.label }}</span>
+          <span
+            v-if="group.tier"
+            class="rounded-pill bg-brand px-1.5 py-px text-[8.5px] font-bold uppercase leading-none tracking-[.06em] text-white"
+          >{{ group.tier }}</span>
+        </div>
         <NuxtLink
           v-for="item in group.items"
           :key="item.to"

@@ -16,6 +16,10 @@ const NAV_ITEMS = computed(() => [
   { label: t('Billing', 'Facturación'), to: '/billing' },
   { label: t('Reports', 'Informes'), to: '/reports' },
   { label: t('Campaigns', 'Campañas'), to: '/campaigns' },
+  // "Growth", not "Dashboard" as the sidebar calls it -- the sidebar can lean
+  // on its group heading for context and this flat list cannot, so two
+  // entries called Dashboard would be indistinguishable here.
+  { label: t('Growth', 'Crecimiento'), to: '/growth' },
   { label: t('Settings', 'Ajustes'), to: '/settings' },
 ])
 

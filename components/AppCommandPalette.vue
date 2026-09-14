@@ -20,6 +20,7 @@ const NAV_ITEMS = computed(() => [
   // on its group heading for context and this flat list cannot, so two
   // entries called Dashboard would be indistinguishable here.
   { label: t('Growth', 'Crecimiento'), to: '/growth' },
+  { label: t('Growth leads', 'Contactos de crecimiento'), to: '/growth/leads' },
   { label: t('Settings', 'Ajustes'), to: '/settings' },
 ])
 

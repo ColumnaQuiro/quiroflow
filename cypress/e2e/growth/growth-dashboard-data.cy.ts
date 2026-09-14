@@ -124,4 +124,37 @@ describe('Growth dashboard', () => {
     cy.visit('/growth?growth=1')
     cy.contains('leads waiting more than a week').scrollIntoView().should('be.visible')
   })
+
+  // The dashboard is where an unapproved draft gets noticed. Without this it
+  // sits on the Reputation screen indefinitely, which is the failure the
+  // design tried to fix with an auto-post timer -- see the note in
+  // dashboard.get.ts for why surfacing it is the answer instead of posting it.
+  it('surfaces review drafts that are waiting for a person', () => {
+    cy.task('db:createReview', {
+      accountId: account.accountId,
+      authorName: 'Waiting On Us',
+      rating: 4,
+      body: 'Bien en general.',
+      draftBody: 'Gracias por la reseña.',
+    })
+
+    cy.visit('/growth?growth=1')
+    cy.contains('1 AI reply is waiting for approval').scrollIntoView().should('be.visible')
+    cy.contains('nothing posts until someone approves').scrollIntoView().should('be.visible')
+  })
+
+  it('says nothing about drafts when a review has already been answered', () => {
+    cy.task('db:createReview', {
+      accountId: account.accountId,
+      authorName: 'Already Handled',
+      rating: 5,
+      body: 'Genial.',
+      repliedAt: new Date().toISOString(),
+      replyBody: 'Gracias.',
+    })
+
+    cy.visit('/growth?growth=1')
+    cy.contains('Needs attention').scrollIntoView().should('be.visible')
+    cy.contains('waiting for approval').should('not.exist')
+  })
 })

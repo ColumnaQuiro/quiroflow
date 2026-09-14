@@ -49,7 +49,7 @@ export default defineEventHandler(async (event) => {
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
   const windowStart = new Date(now.getTime() - 90 * 24 * 3600 * 1000)
 
-  const [{ data: rows, error }, { data: spendRows }] = await Promise.all([
+  const [{ data: rows, error }, { data: spendRows }, { count: pendingReplies }] = await Promise.all([
     supabase
       .from('leads')
       .select('id, stage, furthest_stage, source, estimated_value_cents, created_at, converted_at')
@@ -61,6 +61,15 @@ export default defineEventHandler(async (event) => {
       .select('channel, amount_cents, period_month')
       .eq('account_id', teamMember.account_id)
       .gte('period_month', monthStart.toISOString().slice(0, 10)),
+    // Review drafts waiting for a person. Counted, not fetched -- the
+    // dashboard needs the number, and the bodies belong on the Reputation
+    // screen where someone can actually read them before approving.
+    supabase
+      .from('reviews')
+      .select('id', { count: 'exact', head: true })
+      .eq('account_id', teamMember.account_id)
+      .not('draft_body', 'is', null)
+      .is('replied_at', null),
   ])
 
   if (error) throw createError({ statusCode: 500, statusMessage: error.message })
@@ -239,6 +248,19 @@ export default defineEventHandler(async (event) => {
       tone: 'neutral',
       title: 'No ad spend recorded this month',
       detail: 'Cost per lead, cost per new patient and ROAS stay hidden until it is',
+    })
+  }
+  // An AI draft nobody approves is the failure mode the design tried to solve
+  // with a 22-hour auto-post timer. Posting unread text under the clinic's
+  // name on a public review is not an acceptable answer to it -- in a
+  // healthcare business a reply can confirm that an identifiable person was a
+  // patient -- so the queue is surfaced here instead. Visible beats automatic.
+  if (pendingReplies && pendingReplies > 0) {
+    alerts.push({
+      key: 'pending-replies',
+      tone: 'neutral',
+      title: `${pendingReplies} AI ${pendingReplies === 1 ? 'reply is' : 'replies are'} waiting for approval`,
+      detail: 'Drafted for reviews, and nothing posts until someone approves them',
     })
   }
   if (unattributed > 0) {

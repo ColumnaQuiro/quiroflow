@@ -2,10 +2,12 @@
 import { Line } from 'vue-chartjs'
 import { computePresetRange, monthKeysInRange, rangeBounds } from '~/composables/useDateRangePresets'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
+import { classifyPaymentForFilter } from '~/utils/incomeAttribution'
 
-interface PaymentRow { amount_cents: number; paid_at: string; invoice_id: string | null; invoices?: { status: string } | null }
+interface PaymentRow { amount_cents: number; paid_at: string; invoice_id: string | null; patient_id: string | null; invoices?: { status: string } | null }
 interface InvoiceRow { id: string; appointment_id: string | null }
 interface AppointmentRow { id: string; practitioner_id: string | null; clinic_id: string | null }
+interface PatientRow { id: string; default_practitioner_id: string | null; clinic_id: string | null }
 interface TeamMemberRow { id: string; full_name: string; color: string }
 
 const supabase = useSupabaseClient()
@@ -19,6 +21,7 @@ const loading = ref(true)
 const payments = ref<PaymentRow[]>([])
 const invoices = ref<InvoiceRow[]>([])
 const appointments = ref<AppointmentRow[]>([])
+const patients = ref<PatientRow[]>([])
 const teamMembers = ref<TeamMemberRow[]>([])
 
 async function load() {
@@ -29,7 +32,7 @@ async function load() {
     fetchAllRows<PaymentRow>((f, t) =>
       supabase
         .from('payments')
-        .select('amount_cents, paid_at, invoice_id, invoices(status)')
+        .select('amount_cents, paid_at, invoice_id, patient_id, invoices(status)')
         .gte('paid_at', from.toISOString())
         .lte('paid_at', to.toISOString())
         .range(f, t),
@@ -48,7 +51,7 @@ async function load() {
   // appointment, so unlike the other reports this page always needs the
   // appointment map -- but only for the invoices actually in range, not the
   // entire appointments table.
-  await loadAppointmentsFor(inv)
+  await Promise.all([loadAppointmentsFor(inv), loadPatientsFor(payments.value)])
   loading.value = false
 }
 
@@ -73,6 +76,29 @@ async function loadAppointmentsFor(inRangeInvoices: InvoiceRow[]) {
   )
   appointments.value = results.flat()
 }
+// The patients behind the payments in range -- the answer for money with no
+// appointment, which is most of what a bono or credit on account produces.
+async function loadPatientsFor(inRangePayments: PaymentRow[]) {
+  const ids = [...new Set(inRangePayments.map((p) => p.patient_id).filter((id): id is string => !!id))]
+  if (ids.length === 0) {
+    patients.value = []
+    return
+  }
+  const CHUNK = 300
+  const chunks: string[][] = []
+  for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK))
+  const results = await Promise.all(
+    chunks.map((chunk) =>
+      supabase
+        .from('patients')
+        .select('id, default_practitioner_id, clinic_id')
+        .in('id', chunk)
+        .then((r) => (r.data ?? []) as PatientRow[]),
+    ),
+  )
+  patients.value = results.flat()
+}
+
 onMounted(() => {
   load()
   loadFilterOptions()
@@ -81,16 +107,23 @@ watch(range, load)
 
 const invoiceById = computed(() => new Map(invoices.value.map((i) => [i.id, i])))
 const appointmentById = computed(() => new Map(appointments.value.map((a) => [a.id, a])))
+const patientById = computed(() => new Map(patients.value.map((p) => [p.id, p])))
 
-function apptMatchesFilter(appointmentId: string | null): boolean {
-  if (!practitionerFilter.value && !clinicFilter.value) return true
-  const appt = appointmentId ? appointmentById.value.get(appointmentId) : undefined
-  if (!appt) return false
-  if (practitionerFilter.value && appt.practitioner_id !== practitionerFilter.value) return false
-  if (clinicFilter.value && appt.clinic_id !== clinicFilter.value) return false
-  return true
+function appointmentFor(payment: PaymentRow) {
+  const invoice = payment.invoice_id ? invoiceById.value.get(payment.invoice_id) : undefined
+  return invoice?.appointment_id ? (appointmentById.value.get(invoice.appointment_id) ?? null) : null
 }
-const filteredPayments = computed(() => payments.value.filter((p) => apptMatchesFilter((p.invoice_id ? invoiceById.value.get(p.invoice_id) : undefined)?.appointment_id ?? null)))
+const filteredPayments = computed(() =>
+  payments.value.filter(
+    (p) =>
+      classifyPaymentForFilter({
+        practitionerId: practitionerFilter.value || undefined,
+        clinicId: clinicFilter.value || undefined,
+        appointment: appointmentFor(p),
+        patient: p.patient_id ? (patientById.value.get(p.patient_id) ?? null) : null,
+      }) === 'matches',
+  ),
+)
 
 function monthKey(iso: string) {
   const d = new Date(iso)
@@ -102,10 +135,15 @@ function monthLabel(key: string) {
 }
 const monthKeys = computed(() => monthKeysInRange(range.value))
 
+// Whose line this payment lands on. The appointment first, since that is who
+// actually did the work; then the patient's own practitioner, which is what
+// places a bono or money on account instead of dropping it into __unassigned
+// -- that bucket held 8,748 EUR of September against 919 attributed.
 function practitionerFor(payment: PaymentRow): string {
-  const invoice = payment.invoice_id ? invoiceById.value.get(payment.invoice_id) : undefined
-  const appt = invoice?.appointment_id ? appointmentById.value.get(invoice.appointment_id) : undefined
-  return appt?.practitioner_id ?? '__unassigned'
+  const appt = appointmentFor(payment)
+  if (appt?.practitioner_id) return appt.practitioner_id
+  const patient = payment.patient_id ? patientById.value.get(payment.patient_id) : undefined
+  return patient?.default_practitioner_id ?? '__unassigned'
 }
 
 const series = computed(() => {

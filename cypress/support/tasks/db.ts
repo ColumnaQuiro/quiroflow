@@ -218,8 +218,12 @@ async function createPatient(opts: {
   lastName?: string
   email?: string
   dateOfBirth?: string
+  // Who the patient belongs to. Left unset by default, which is what most
+  // specs want -- it is also how income attribution falls back for money with
+  // no appointment behind it (see utils/incomeAttribution).
+  defaultPractitionerId?: string
 }) {
-  const { accountId, clinicId, firstName, lastName, email, dateOfBirth } = opts
+  const { accountId, clinicId, firstName, lastName, email, dateOfBirth, defaultPractitionerId } = opts
   const patient = unwrap(
     await admin
       .from('patients')
@@ -230,6 +234,7 @@ async function createPatient(opts: {
         last_name: lastName ?? null,
         email: email ?? null,
         date_of_birth: dateOfBirth ?? null,
+        default_practitioner_id: defaultPractitionerId ?? null,
       })
       .select('id, first_name, last_name')
       .single(),

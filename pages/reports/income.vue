@@ -1,13 +1,15 @@
 <script setup lang="ts">
+import { classifyPaymentForFilter } from '~/utils/incomeAttribution'
 import { Line, Bar } from 'vue-chartjs'
 import { computePresetRange, monthKeysInRange, rangeBounds } from '~/composables/useDateRangePresets'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
 
-interface PaymentRow { amount_cents: number; method: string; paid_at: string; invoice_id: string | null; invoices?: { status: string } | null }
-interface InvoiceRow { id: string; total_cents: number; status: string; appointment_id: string | null }
+interface PaymentRow { amount_cents: number; method: string; paid_at: string; invoice_id: string | null; patient_id: string | null; invoices?: { status: string } | null }
+interface InvoiceRow { id: string; total_cents: number; status: string; appointment_id: string | null; patient_id: string | null }
 interface LineItemRow { invoice_id: string; price_cents: number; quantity: number; service_id: string | null }
 interface ServiceRow { id: string; name: string }
 interface AppointmentRow { id: string; practitioner_id: string | null; clinic_id: string | null }
+interface PatientRow { id: string; default_practitioner_id: string | null; clinic_id: string | null }
 interface TeamMemberRow { id: string; full_name: string }
 
 const supabase = useSupabaseClient()
@@ -23,6 +25,7 @@ const invoices = ref<InvoiceRow[]>([])
 const lineItems = ref<LineItemRow[]>([])
 const services = ref<ServiceRow[]>([])
 const appointments = ref<AppointmentRow[]>([])
+const patients = ref<PatientRow[]>([])
 const teamMembers = ref<TeamMemberRow[]>([])
 
 function eur(cents: number) {
@@ -60,7 +63,7 @@ async function load() {
     fetchAllRows<PaymentRow>((f, t) =>
       supabase
         .from('payments')
-        .select('amount_cents, method, paid_at, invoice_id, invoices(status)')
+        .select('amount_cents, method, paid_at, invoice_id, patient_id, invoices(status)')
         .gte('paid_at', from.toISOString())
         .lte('paid_at', to.toISOString())
         .range(f, t),
@@ -68,7 +71,7 @@ async function load() {
     fetchAllRows<InvoiceRow>((f, t) =>
       supabase
         .from('invoices')
-        .select('id, total_cents, status, appointment_id')
+        .select('id, total_cents, status, appointment_id, patient_id')
         .neq('status', 'void')
         .gte('created_at', from.toISOString())
         .lte('created_at', to.toISOString())
@@ -86,17 +89,23 @@ async function load() {
   teamMembers.value = tm
   lineItems.value = await fetchLineItemsFor([...new Set(payments.value.map((row) => row.invoice_id).filter((id): id is string => !!id))])
 
-  // Appointments are only consulted to resolve a practitioner/clinic filter
-  // (see apptMatchesFilter) -- with no filter set, which is how the page
-  // first renders, the whole table was fetched and never read.
-  if (practitionerFilter.value || clinicFilter.value) await loadAppointments()
+  // Appointments and patients are only consulted to resolve a
+  // practitioner/clinic filter -- with no filter set, which is how the page
+  // first renders, both tables were fetched and never read.
+  if (practitionerFilter.value || clinicFilter.value) await loadAttribution()
   loading.value = false
 }
 
 const appointmentsLoaded = ref(false)
-async function loadAppointments() {
+async function loadAttribution() {
   if (appointmentsLoaded.value) return
-  appointments.value = await fetchAllRows<AppointmentRow>((f, t) => supabase.from('appointments').select('id, practitioner_id, clinic_id').range(f, t))
+  const [appts, pats] = await Promise.all([
+    fetchAllRows<AppointmentRow>((f, t) => supabase.from('appointments').select('id, practitioner_id, clinic_id').range(f, t)),
+    // The fallback for money with no appointment behind it.
+    fetchAllRows<PatientRow>((f, t) => supabase.from('patients').select('id, default_practitioner_id, clinic_id').range(f, t)),
+  ])
+  appointments.value = appts
+  patients.value = pats
   appointmentsLoaded.value = true
 }
 
@@ -111,25 +120,40 @@ watch(range, load)
 watch([practitionerFilter, clinicFilter], async () => {
   if (appointmentsLoaded.value || (!practitionerFilter.value && !clinicFilter.value)) return
   loading.value = true
-  await loadAppointments()
+  await loadAttribution()
   loading.value = false
 })
 
 const appointmentById = computed(() => new Map(appointments.value.map((a) => [a.id, a])))
+const patientById = computed(() => new Map(patients.value.map((p) => [p.id, p])))
 const invoiceById = computed(() => new Map(invoices.value.map((i) => [i.id, i])))
 
 // practitioner/clinic filters key off the linked appointment, since neither
 // payments nor invoices carry those columns directly.
-function apptMatchesFilter(appointmentId: string | null): boolean {
-  if (!practitionerFilter.value && !clinicFilter.value) return true
-  const appt = appointmentId ? appointmentById.value.get(appointmentId) : undefined
-  if (!appt) return false
-  if (practitionerFilter.value && appt.practitioner_id !== practitionerFilter.value) return false
-  if (clinicFilter.value && appt.clinic_id !== clinicFilter.value) return false
-  return true
+// Where there is no appointment -- a bono, money on account, a quick invoice
+// -- the patient's own practitioner answers instead. See utils/incomeAttribution.
+function classify(appointmentId: string | null, patientId: string | null) {
+  return classifyPaymentForFilter({
+    practitionerId: practitionerFilter.value || undefined,
+    clinicId: clinicFilter.value || undefined,
+    appointment: appointmentId ? (appointmentById.value.get(appointmentId) ?? null) : null,
+    patient: patientId ? (patientById.value.get(patientId) ?? null) : null,
+  })
 }
-const filteredPayments = computed(() => payments.value.filter((p) => apptMatchesFilter((p.invoice_id ? invoiceById.value.get(p.invoice_id) : undefined)?.appointment_id ?? null)))
-const filteredInvoices = computed(() => invoices.value.filter((i) => apptMatchesFilter(i.appointment_id)))
+function appointmentIdOf(invoiceId: string | null): string | null {
+  return (invoiceId ? invoiceById.value.get(invoiceId) : undefined)?.appointment_id ?? null
+}
+const filteredPayments = computed(() => payments.value.filter((p) => classify(appointmentIdOf(p.invoice_id), p.patient_id) === 'matches'))
+const filteredInvoices = computed(() => invoices.value.filter((i) => classify(i.appointment_id, i.patient_id) === 'matches'))
+
+// Money no filter can place -- almost all of it PracticeHub payments imported
+// unallocated, which PracticeHub never attributed either. Reported rather
+// than dropped, so a filtered total still reconciles with the takings.
+const unattributedCents = computed(() =>
+  payments.value
+    .filter((p) => classify(appointmentIdOf(p.invoice_id), p.patient_id) === 'unattributable')
+    .reduce((sum, p) => sum + p.amount_cents, 0),
+)
 
 const totalPaid = computed(() => filteredPayments.value.reduce((sum, p) => sum + p.amount_cents, 0))
 const totalCharged = computed(() => filteredInvoices.value.reduce((sum, i) => sum + i.total_cents, 0))
@@ -232,6 +256,15 @@ const byService = computed(() => {
             <p class="mt-1.5 font-mono text-[23px] font-semibold" :class="outstanding > 0 ? 'text-warning-text' : 'text-ink-900'">{{ eur(outstanding) }}</p>
           </div>
         </div>
+
+        <!-- Said out loud rather than silently dropped. A filtered total that
+        does not reconcile with the clinic's takings is worse than one that
+        names the gap: almost all of this is PracticeHub money imported
+        unallocated, which PracticeHub never attributed to anyone either. -->
+        <p v-if="unattributedCents > 0" class="mt-2 text-[12px] text-ink-muted2">
+          {{ t('Plus', 'Más') }} <span class="font-medium text-ink-700">{{ eur(unattributedCents) }}</span>
+          {{ t('in this period that no filter can attribute — money with no visit and no practitioner on the patient.', 'en este periodo que ningún filtro puede atribuir: dinero sin visita y sin profesional en el paciente.') }}
+        </p>
 
         <div v-if="filteredPayments.length === 0" class="mt-4 rounded-card border border-dashed border-line-control bg-surface p-6 text-center text-[13px] text-ink-faint2">
           {{ t('No payments recorded yet in this range — charts will fill in as receipts get paid.', 'Todavía no hay pagos registrados en este periodo — los gráficos se completarán a medida que se paguen recibos.') }}

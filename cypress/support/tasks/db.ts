@@ -563,7 +563,7 @@ async function createPackagePurchase(opts: {
 async function packageSessionEffects(opts: { patientId: string; packagePurchaseId: string }) {
   const { patientId, packagePurchaseId } = opts
   const purchase = unwrap(await admin.from('package_purchases').select('sessions_used').eq('id', packagePurchaseId).single())
-  const appointments = unwrap(await admin.from('appointments').select('id, status').eq('patient_id', patientId))
+  const appointments = unwrap(await admin.from('appointments').select('id, status, practitioner_id').eq('patient_id', patientId))
   const invoices = unwrap(await admin.from('invoices').select('id, status, total_cents, appointment_id').eq('patient_id', patientId))
   const credits = unwrap(await admin.from('account_credits').select('amount_cents, reason').eq('patient_id', patientId))
   const sessions = unwrap(
@@ -808,6 +808,8 @@ async function createAppointment(opts: {
   durationMinutes?: number
   practitionerId?: string | null
   status?: string
+  /** Arrived and with the practitioner, but not checked out yet. */
+  checkedIn?: boolean
 }) {
   const startsAt = new Date(opts.startsAt)
   const endsAt = new Date(startsAt.getTime() + (opts.durationMinutes ?? 30) * 60000)
@@ -822,6 +824,7 @@ async function createAppointment(opts: {
         starts_at: startsAt.toISOString(),
         ends_at: endsAt.toISOString(),
         status: opts.status ?? 'booked',
+        ...(opts.checkedIn ? { checked_in_at: startsAt.toISOString(), flow_with_practitioner_at: startsAt.toISOString() } : {}),
       })
       .select('id, practitioner_id')
       .single(),

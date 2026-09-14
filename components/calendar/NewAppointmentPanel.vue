@@ -3,7 +3,7 @@ import type { BusinessHours } from '~/utils/businessHours'
 import { dayKeyFor, hasBusinessHoursConfigured, practitionerWindowsForDay, windowsForDay } from '~/utils/businessHours'
 import { effectivePriceCents, effectiveDuration, type AppointmentTypeOverride } from '~/utils/appointmentOverrides'
 import { normalizeSearchTerm, sanitizeSearchToken } from '~/utils/searchText'
-import { COUNTRIES } from '~/utils/countries'
+import { COUNTRIES_BY_NAME } from '~/utils/countries'
 import { splitDialPrefix } from '~/utils/phone'
 
 interface RoomOption { id: string; name: string }
@@ -475,7 +475,7 @@ async function save() {
                 v-model="newPatientPhoneCountry"
                 class="shrink-0 rounded-ctl border border-line-control bg-surface px-2 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none"
               >
-                <option v-for="c in COUNTRIES" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }}</option>
+                <option v-for="c in COUNTRIES_BY_NAME" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }} {{ c.name }}</option>
               </select>
               <input v-model="newPatientPhone" type="tel" :placeholder="t('Phone', 'Teléfono')" class="min-w-0 flex-1 rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
             </div>

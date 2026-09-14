@@ -18,7 +18,11 @@ export function formatPhoneDisplay(number: string, countryCode: string): string 
   const trimmed = number.trim()
   if (!trimmed) return ''
   if (trimmed.startsWith('+')) return trimmed
-  return `${countryByCode(countryCode).dial} ${trimmed}`
+  // A country we don't have a dial code for prints bare. Guessing one is how
+  // a Belgian number came to read as "+34 478 956 575" -- a wrong number,
+  // not merely an unformatted one.
+  const { dial } = countryByCode(countryCode)
+  return dial ? `${dial} ${trimmed}` : trimmed
 }
 
 export function splitDialPrefix(input: string, fallbackCountryCode: string): { countryCode: string; number: string } {
@@ -61,7 +65,11 @@ export function toE164(number: string, countryCode: string): string | null {
   const digits = trimmed.replace(/\D/g, '')
   if (!digits) return null
 
+  // Same reasoning as formatPhoneDisplay: without a dial code for this
+  // country there is no honest E.164 to build, and prefixing Spain's would
+  // send the message to whoever owns that number in Spain.
   const dial = countryByCode(countryCode).dial.replace('+', '')
+  if (!dial) return null
   return `${dial}${digits}`
 }
 

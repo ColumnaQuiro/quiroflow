@@ -164,7 +164,7 @@ async function onSubmit() {
                 v-model="phoneCountry"
                 class="shrink-0 rounded-ctl border border-line-control px-2 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
               >
-                <option v-for="c in COUNTRIES" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }}</option>
+                <option v-for="c in COUNTRIES_BY_NAME" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }} {{ c.name }}</option>
               </select>
               <input
                 v-model="phoneNumber"

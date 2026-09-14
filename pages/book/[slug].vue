@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { COUNTRIES } from '~/utils/countries'
+import { COUNTRIES_BY_NAME } from '~/utils/countries'
 import { effectiveDuration, effectivePriceCents, type AppointmentTypeOverride } from '~/utils/appointmentOverrides'
 import { practitionerWindowsForDay } from '~/utils/businessHours'
 
@@ -875,7 +875,7 @@ if (import.meta.client) {
                   <label class="block text-sm font-medium text-ink-700">Número de móvil</label>
                   <div class="mt-1 flex gap-2">
                     <select v-model="dialCode" class="rounded-ctl border border-line-control px-2 py-2 text-sm">
-                      <option v-for="c in COUNTRIES" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }}</option>
+                      <option v-for="c in COUNTRIES_BY_NAME" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }} {{ c.name }}</option>
                     </select>
                     <input v-model="phoneNumber" type="tel" class="w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
                   </div>

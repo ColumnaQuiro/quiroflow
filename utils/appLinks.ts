@@ -18,8 +18,13 @@ export const APP_BUNDLE_ID = 'com.quiroflow.app'
  *
  * While it is empty, `appStoreUrl()` returns null and every caller hides its
  * iOS button rather than shipping a link that 404s at a patient.
+ *
+ * Filled in 2026-09-14, once the app was actually live: Apple's public
+ * lookup (`itunes.apple.com/lookup?bundleId=com.quiroflow.app&country=es`)
+ * reports it released on 2026-09-10 at version 1.1. Until then the iOS
+ * button was hidden everywhere, which is why only Android had one.
  */
-export const APP_STORE_NUMERIC_ID = ''
+export const APP_STORE_NUMERIC_ID = '6805009978'
 
 /**
  * Spain-only storefront, deliberately -- see CLAUDE.md "Releasing the mobile

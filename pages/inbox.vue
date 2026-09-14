@@ -209,7 +209,8 @@ const labelFilter = ref<string | null>(null)
 // decorated with AI state that does not exist for it. Without the tier
 // nothing below loads and this page is exactly what it was.
 const { hasGrowth } = useGrowthTier()
-const { conversations: leadConversations, takeOver, handBack, sendReply } = useGrowthConversations()
+const { conversations: leadConversations, reload: reloadLeadConversations, takeOver, handBack } = useGrowthConversations(hasGrowth)
+const { thread: leadThread, sending: leadSending, load: loadLeadThread, reply: replyToLead, close: closeLeadThread } = useGrowthLeadThread()
 
 // Only "AI handling" and "Needs human" are here. The design also draws
 // Unassigned and Mine, which need a per-conversation owner -- leads could
@@ -255,14 +256,38 @@ const selectedLead = computed(() => {
   return leadConversations.value.find((c) => c.key === selectedKey.value) ?? null
 })
 
-function selectLeadConversation(c: { key: string }) {
+function selectLeadConversation(c: { key: string; leadId: string }) {
   draftConversation.value = null
   selectedKey.value = c.key
   const match = leadConversations.value.find((l) => l.key === c.key)
   if (match) match.unread = false
+  loadLeadThread(c.leadId)
 }
 
-const staffName = computed(() => store.teamMember?.full_name ?? t('You', 'Tú'))
+async function onLeadTakeOver() {
+  if (!selectedLead.value) return
+  await takeOver(selectedLead.value.leadId)
+  await loadLeadThread(selectedLead.value.leadId)
+}
+async function onLeadHandBack() {
+  if (!selectedLead.value) return
+  await handBack(selectedLead.value.leadId)
+  await loadLeadThread(selectedLead.value.leadId)
+}
+async function onLeadReply(text: string) {
+  if (!selectedLead.value) return
+  // The list's preview and unread flag come from the same rows the thread
+  // does, so both are refreshed rather than patched in two places.
+  if (await replyToLead(selectedLead.value.leadId, text)) await reloadLeadConversations()
+}
+
+// Today shows a clock, anything older shows a date -- the same shorthand the
+// patient rows beside these use.
+function leadRowTime(at: string) {
+  const when = new Date(at)
+  const today = new Date().toDateString() === when.toDateString()
+  return when.toLocaleString('en-GB', today ? { hour: '2-digit', minute: '2-digit' } : { day: 'numeric', month: 'short' })
+}
 
 const filteredConversations = computed(() => {
   let list = conversations.value.filter((c) => archivedKeys.value.has(c.key) === (view.value === 'archived'))
@@ -1105,7 +1130,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             <div class="min-w-0 flex-1">
               <div class="flex items-baseline justify-between gap-2">
                 <span class="truncate text-[13.5px] text-ink-900" :class="c.unread ? 'font-[640]' : 'font-[500]'">{{ c.name }}</span>
-                <span class="shrink-0 text-[11px] text-ink-faint">{{ c.when }}</span>
+                <span class="shrink-0 text-[11px] text-ink-faint">{{ leadRowTime(c.lastMessageAt) }}</span>
               </div>
               <p class="truncate text-[12px]" :class="c.unread ? 'font-medium text-ink-700' : 'text-ink-muted2'">{{ c.preview }}</p>
               <div class="mt-1 flex flex-wrap items-center gap-1">
@@ -1179,13 +1204,20 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
       API against a real patient row, and a lead has neither. -->
       <template v-else-if="selectedLead">
         <GrowthInboxLeadThread
-          :conversation="selectedLead"
-          @back="selectedKey = null"
-          @take-over="takeOver(selectedLead.key, staffName)"
-          @hand-back="handBack(selectedLead.key)"
-          @send="(text) => sendReply(selectedLead!.key, text, staffName)"
+          v-if="leadThread"
+          :thread="leadThread"
+          :sending="leadSending"
+          @back="selectedKey = null; closeLeadThread()"
+          @take-over="onLeadTakeOver"
+          @hand-back="onLeadHandBack"
+          @send="onLeadReply"
         />
-        <GrowthInboxLeadRail :conversation="selectedLead" />
+        <div v-else class="flex min-w-0 flex-1 flex-col gap-3 bg-surface-page p-4" data-test="lead-thread-loading">
+          <UiSkeleton class="h-10 w-56 rounded-ctl" />
+          <UiSkeleton class="h-16 w-3/4 rounded-card" />
+          <UiSkeleton class="ml-auto h-16 w-2/3 rounded-card" />
+        </div>
+        <GrowthInboxLeadRail v-if="leadThread" :thread="leadThread" />
       </template>
       <!-- v-else-if rather than v-else so the compiler can still narrow
       `selected` to non-null through the branch, which the whole block below

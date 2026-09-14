@@ -2168,6 +2168,9 @@ export type Database = {
         Row: {
           account_id: string
           ai_handling: boolean
+          ai_state: string
+          ai_taken_over_at: string | null
+          ai_taken_over_by: string | null
           channel: string
           clinic_id: string | null
           converted_at: string | null
@@ -2190,6 +2193,9 @@ export type Database = {
         Insert: {
           account_id: string
           ai_handling?: boolean
+          ai_state?: string
+          ai_taken_over_at?: string | null
+          ai_taken_over_by?: string | null
           channel: string
           clinic_id?: string | null
           converted_at?: string | null
@@ -2212,6 +2218,9 @@ export type Database = {
         Update: {
           account_id?: string
           ai_handling?: boolean
+          ai_state?: string
+          ai_taken_over_at?: string | null
+          ai_taken_over_by?: string | null
           channel?: string
           clinic_id?: string | null
           converted_at?: string | null
@@ -2237,6 +2246,13 @@ export type Database = {
             columns: ["account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leads_ai_taken_over_by_fkey"
+            columns: ["ai_taken_over_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
             referencedColumns: ["id"]
           },
           {
@@ -4739,6 +4755,7 @@ export type Database = {
           error_code: string | null
           error_message: string | null
           id: string
+          lead_id: string | null
           media_filename: string | null
           media_mime_type: string | null
           media_storage_path: string | null
@@ -4761,6 +4778,7 @@ export type Database = {
           error_code?: string | null
           error_message?: string | null
           id?: string
+          lead_id?: string | null
           media_filename?: string | null
           media_mime_type?: string | null
           media_storage_path?: string | null
@@ -4783,6 +4801,7 @@ export type Database = {
           error_code?: string | null
           error_message?: string | null
           id?: string
+          lead_id?: string | null
           media_filename?: string | null
           media_mime_type?: string | null
           media_storage_path?: string | null
@@ -4801,6 +4820,13 @@ export type Database = {
             columns: ["account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_messages_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
             referencedColumns: ["id"]
           },
           {

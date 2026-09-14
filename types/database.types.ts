@@ -2181,6 +2181,8 @@ export type Database = {
           external_id: string | null
           external_source: string | null
           full_name: string
+          marketing_consent_at: string | null
+          marketing_consent_source: string | null
           furthest_stage: string
           id: string
           owner_team_member_id: string | null
@@ -2208,6 +2210,8 @@ export type Database = {
           external_id?: string | null
           external_source?: string | null
           full_name: string
+          marketing_consent_at?: string | null
+          marketing_consent_source?: string | null
           furthest_stage?: string
           id?: string
           owner_team_member_id?: string | null
@@ -2235,6 +2239,8 @@ export type Database = {
           external_id?: string | null
           external_source?: string | null
           full_name?: string
+          marketing_consent_at?: string | null
+          marketing_consent_source?: string | null
           furthest_stage?: string
           id?: string
           owner_team_member_id?: string | null

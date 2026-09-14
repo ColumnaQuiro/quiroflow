@@ -196,6 +196,41 @@ describe('Lead ingest API', () => {
     })
   })
 
+  it('records consent only when the caller states it', () => {
+    post({ full_name: 'Said Yes', phone: '+34600333111', external_id: 'consent-yes', marketing_consent: true, marketing_consent_source: 'Meta lead form' }).then((yes) => {
+      cy.task('db:leadById', { id: yes.body.data.id }).then((row) => {
+        const lead = row as { marketing_consent_at: string | null; marketing_consent_source: string | null }
+        expect(lead.marketing_consent_at).to.not.be.null
+        expect(lead.marketing_consent_source).to.eq('Meta lead form')
+      })
+    })
+
+    // Absent means not evidenced, not "probably fine". A row existing is not
+    // consent, and defaulting to true here would make every walk-in typed in
+    // at the desk a marketing target.
+    post({ full_name: 'Said Nothing', phone: '+34600333222', external_id: 'consent-absent' }).then((none) => {
+      cy.task('db:leadById', { id: none.body.data.id }).then((row) => {
+        expect((row as { marketing_consent_at: string | null }).marketing_consent_at).to.be.null
+      })
+    })
+  })
+
+  it('dates consent to when they agreed, not when we heard about it', () => {
+    const submitted = '2026-09-11T05:05:57+0000'
+    post({
+      full_name: 'Agreed Earlier',
+      phone: '+34600333333',
+      external_id: 'consent-dated',
+      occurred_at: submitted,
+      marketing_consent: true,
+    }).then((res) => {
+      cy.task('db:leadById', { id: res.body.data.id }).then((row) => {
+        const at = new Date((row as { marketing_consent_at: string }).marketing_consent_at)
+        expect(at.toISOString()).to.eq(new Date(submitted).toISOString())
+      })
+    })
+  })
+
   it('refuses a lead nobody could contact', () => {
     post({ full_name: 'No Way To Reach' }, false).then((res) => {
       expect(res.status).to.eq(400)

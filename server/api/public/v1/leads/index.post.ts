@@ -1,7 +1,7 @@
 import { toE164Loose } from '~/utils/phone'
 import { ApiError, defineApiHandler, badRequest } from '~/server/utils/publicApi'
 import { assertBelongsToAccount, loose } from '~/server/utils/publicApiHandlers'
-import { definedOnly, email as emailField, enumValue, integer, readApiBody, rejectUnknownFields, str, uuid } from '~/server/utils/publicApiBody'
+import { bool, definedOnly, email as emailField, enumValue, integer, readApiBody, rejectUnknownFields, str, uuid } from '~/server/utils/publicApiBody'
 import { LEAD_CHANNELS, nextLeadReference } from '~/server/utils/leads'
 
 // Where an enquiry gets in from outside.
@@ -24,6 +24,7 @@ const FIELDS = [
   'full_name', 'first_name', 'last_name', 'phone', 'phone_country_code', 'email',
   'channel', 'source', 'clinic_id', 'estimated_value_cents', 'stage',
   'external_id', 'external_source', 'occurred_at', 'attribution', 'answers',
+  'marketing_consent', 'marketing_consent_source',
 ]
 
 const ATTRIBUTION_FIELDS = ['campaign', 'ad', 'audience', 'first_touch', 'last_touch', 'cost_cents']
@@ -156,6 +157,15 @@ export default defineApiHandler({ scope: 'leads:write' }, async ({ event, supaba
   const clinicId = uuid(body, 'clinic_id')
   if (clinicId) await assertBelongsToAccount(supabase, 'clinics', clinicId, accountId, 'clinic_id')
 
+  // Consent is stated, never inferred. A lead-ad form carries its own
+  // consent text and the caller knows whether the person agreed; the
+  // existence of a row is not evidence, and defaulting to true here would
+  // make every hand-typed walk-in a marketing target. Absent means no
+  // marketing -- it does not stop anyone answering the enquiry itself.
+  const occurredAtValue = str(body, 'occurred_at')
+  const consented = bool(body, 'marketing_consent') === true
+  const consentSource = str(body, 'marketing_consent_source', { max: 120 })
+
   const externalId = str(body, 'external_id', { max: 255 })
   const externalSource = str(body, 'external_source', { max: 60 }) ?? (externalId ? 'facebook' : undefined)
 
@@ -209,6 +219,10 @@ export default defineApiHandler({ scope: 'leads:write' }, async ({ event, supaba
     stage: enumValue(body, 'stage', ['new', 'contacted', 'qualified', 'booked'] as const),
     external_id: externalId,
     external_source: externalId ? externalSource : undefined,
+    // Dated to when they actually agreed, which is when they submitted --
+    // not when the webhook reached us, which can be minutes or hours later.
+    marketing_consent_at: consented ? (occurredAtValue ?? new Date().toISOString()) : undefined,
+    marketing_consent_source: consented ? (consentSource ?? externalSource ?? 'form') : undefined,
   })
 
   const { data: created, error } = await loose(supabase)
@@ -242,7 +256,6 @@ export default defineApiHandler({ scope: 'leads:write' }, async ({ event, supaba
   }
 
   const answers = readAnswers(body)
-  const occurredAt = str(body, 'occurred_at')
 
   await loose(supabase).from('lead_events').insert({
     account_id: accountId,
@@ -254,7 +267,7 @@ export default defineApiHandler({ scope: 'leads:write' }, async ({ event, supaba
     // When it happened, which is not when we heard about it: an ad platform
     // can deliver a submission minutes late, and the drawer's timeline has
     // to read in the order the patient experienced it.
-    ...definedOnly({ occurred_at: occurredAt }),
+    ...definedOnly({ occurred_at: occurredAtValue }),
   } as never)
 
   setResponseStatus(event, 201)

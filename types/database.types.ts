@@ -3792,6 +3792,77 @@ export type Database = {
         }
         Relationships: []
       }
+      receptionist_config: {
+        Row: {
+          account_id: string
+          after_hours: boolean
+          answer_during_hours: boolean
+          bookable_appointment_type_ids: string[]
+          booking_window_days: number
+          created_at: string
+          enabled: boolean
+          escalation_rules: Json
+          knowledge: Json
+          languages: string[]
+          minimum_notice_minutes: number
+          missed_call_text_back: boolean
+          never_says: string
+          persona_name: string
+          qualification_questions: Json
+          slots_per_reply: number
+          tone: string
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          after_hours?: boolean
+          answer_during_hours?: boolean
+          bookable_appointment_type_ids?: string[]
+          booking_window_days?: number
+          created_at?: string
+          enabled?: boolean
+          escalation_rules?: Json
+          knowledge?: Json
+          languages?: string[]
+          minimum_notice_minutes?: number
+          missed_call_text_back?: boolean
+          never_says?: string
+          persona_name?: string
+          qualification_questions?: Json
+          slots_per_reply?: number
+          tone?: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          after_hours?: boolean
+          answer_during_hours?: boolean
+          bookable_appointment_type_ids?: string[]
+          booking_window_days?: number
+          created_at?: string
+          enabled?: boolean
+          escalation_rules?: Json
+          knowledge?: Json
+          languages?: string[]
+          minimum_notice_minutes?: number
+          missed_call_text_back?: boolean
+          never_says?: string
+          persona_name?: string
+          qualification_questions?: Json
+          slots_per_reply?: number
+          tone?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "receptionist_config_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: true
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       referral_sources: {
         Row: {
           account_id: string

@@ -1,7 +1,11 @@
-// The two configuration screens: what the AI receptionist is allowed to do,
-// and the workflow builder that runs around it.
+// The automations workflow builder.
+//
+// The AI receptionist used to be tested here too, against a fixture. It has
+// real configuration storage now, so those assertions moved to
+// growth-receptionist.cy.ts rather than being kept alongside a screen they no
+// longer describe.
 
-describe('Growth AI receptionist and automations', () => {
+describe('Growth automations', () => {
   before(() => {
     cy.seedStaffAccount().then((account) => {
       Cypress.env('growthAccount', account)
@@ -11,65 +15,6 @@ describe('Growth AI receptionist and automations', () => {
   beforeEach(() => {
     const account = Cypress.env('growthAccount')
     cy.login(account.email, account.password)
-  })
-
-  describe('AI receptionist', () => {
-    it('shows the persona, what it knows, and what it may book', () => {
-      cy.visit('/growth/receptionist?growth=1')
-
-      cy.contains('Alba').should('be.visible')
-      cy.contains('Warm and brief').should('be.visible')
-
-      // The knowledge cards are what a system prompt gets built from.
-      cy.contains('Services and prices').scrollIntoView().should('be.visible')
-      cy.contains('Initial Assessment · 45 min · €55').scrollIntoView().should('be.visible')
-
-      // And the cards that mirror data this app already holds say so, rather
-      // than inviting the owner to keep a second copy that drifts.
-      cy.contains('Synced from Billing · 4 services').scrollIntoView().should('be.visible')
-      cy.contains('Synced from Calendar').scrollIntoView().should('be.visible')
-
-      // Scoped to the chip, not a bare contains(): "Initial Assessment" also
-      // appears in the services knowledge card further up the page.
-      cy.contains('May book these appointment types').scrollIntoView().should('be.visible')
-      cy.contains('Shockwave · off').scrollIntoView().should('be.visible')
-    })
-
-    it('spells out when it must stop and fetch a person', () => {
-      cy.visit('/growth/receptionist?growth=1')
-
-      cy.contains('Escalation rules').scrollIntoView().should('be.visible')
-      cy.contains('Red-flag symptoms named → hand over now').scrollIntoView().should('be.visible')
-      cy.contains('Insurer named → hand over now').scrollIntoView().should('be.visible')
-
-      // A disconnected channel is visible here too, not only in the Inbox.
-      cy.contains('WhatsApp · +34 931 22 04 88').scrollIntoView().should('be.visible')
-      cy.contains('Reconnect').scrollIntoView().should('be.visible')
-    })
-
-    it('lets the owner try the persona without booking anything', () => {
-      cy.visit('/growth/receptionist?growth=1')
-
-      cy.contains('Try Alba').should('be.visible')
-      cy.contains('Nothing is booked from here').should('be.visible')
-      cy.contains('Test mode').should('be.visible')
-
-      // "Why this reply" is the thing actually being tested: whether the
-      // rules the owner set are the ones being used.
-      cy.contains('Why this reply').scrollIntoView().should('be.visible')
-
-      cy.get('input[placeholder*="patient"]').type('¿Abrís los sábados?')
-      cy.contains('button', 'Send').click()
-      cy.contains('¿Abrís los sábados?').should('be.visible')
-      cy.contains('Test mode is not wired to a model yet').should('be.visible')
-    })
-
-    it('points an account without the tier at the upgrade screen', () => {
-      cy.visit('/growth/receptionist?growth=0')
-
-      cy.contains('The AI receptionist is part of the Growth tier.').should('be.visible')
-      cy.contains('Try Alba').should('not.exist')
-    })
   })
 
   describe('Automations', () => {

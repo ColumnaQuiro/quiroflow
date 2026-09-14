@@ -92,6 +92,35 @@ function significantDigits(raw: string): string {
 // "00" that toE164 didn't yet know to treat like "+". Without this, those
 // patients' WhatsApp replies never match and the inbox shows their bare
 // phone number instead of their name.
+/**
+ * What a webhook sent, as E.164.
+ *
+ * Meta's lead-ads payload, WhatsApp's webhook and anything that has been
+ * through an n8n `replace('+','')` all deliver a number with no "+" on the
+ * front -- "34614375211". toE164 reads that as a local number and prepends
+ * the dial code again, producing "3434614375211" and a message to nobody.
+ *
+ * The plus-less case is genuinely ambiguous: a Spanish local mobile
+ * "614375211" also starts with a real dial code (+61, Australia), so a rule
+ * that trusts any leading dial code would silently reroute Spanish numbers
+ * abroad. This deliberately does not try to be clever about that. It treats
+ * plus-less digits as already-E.164 only when they start with the dial code
+ * of the country we were told to assume AND there is a plausible local
+ * number left over -- which covers every real caller here, and leaves every
+ * genuinely ambiguous string being read as a local number, the same as before.
+ */
+export function toE164Loose(input: string, countryCode: string): string | null {
+  const trimmed = input.trim()
+  if (!trimmed) return null
+  if (trimmed.startsWith('+') || trimmed.startsWith('00')) return toE164(trimmed, countryCode)
+
+  const digits = trimmed.replace(/\D/g, '')
+  const dial = countryByCode(countryCode).dial.replace('+', '')
+  if (dial && digits.startsWith(dial) && digits.length - dial.length >= 6) return digits
+
+  return toE164(digits, countryCode)
+}
+
 export function phoneMatches(storedNumber: string, storedCountryCode: string, incomingE164: string): boolean {
   if (toE164(storedNumber, storedCountryCode) === incomingE164) return true
   const stored = significantDigits(storedNumber)

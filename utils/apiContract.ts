@@ -28,6 +28,11 @@ export const API_SCOPES = [
   { key: 'appointments:write', group: 'Appointments', en: 'Book, reschedule and cancel appointments', es: 'Reservar, reprogramar y cancelar citas' },
   { key: 'catalog:read', group: 'Catalog', en: 'Read clinics, practitioners, appointment types and services', es: 'Leer clínicas, profesionales, tipos de cita y servicios' },
   { key: 'billing:read', group: 'Billing', en: 'Read invoices and payments', es: 'Leer facturas y pagos' },
+  // Lead-gen platforms post enquiries in: Meta lead ads, a landing page, a
+  // form builder. Write-only on purpose -- pushing an enquiry in is a much
+  // smaller thing to hand out than the ability to read the whole pipeline,
+  // and the callers that need this need nothing else.
+  { key: 'leads:write', group: 'Growth', en: 'Create leads from an external form or ad platform', es: 'Crear leads desde un formulario o plataforma de anuncios externa' },
   { key: 'whatsapp:send', group: 'Messaging', en: 'Send WhatsApp messages as the clinic', es: 'Enviar mensajes de WhatsApp en nombre de la clínica' },
   // For a forwarder (n8n, Zapier, your own backend) that relays Meta's webhook
   // on to /api/whatsapp/webhook. Meta's own signature cannot survive that hop

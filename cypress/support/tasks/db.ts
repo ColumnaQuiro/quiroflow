@@ -876,13 +876,13 @@ async function createLead(opts: {
 
 /** Reads a lead back, for asserting a PATCH actually persisted. */
 async function leadById(opts: { id: string }) {
-  const { data } = await admin.from('leads').select('id, stage, stage_changed_at, full_name').eq('id', opts.id).maybeSingle()
+  const { data } = await admin.from('leads').select('*').eq('id', opts.id).maybeSingle()
   return data
 }
 
 /** The timeline the API wrote, for asserting a stage change was recorded. */
 async function leadEvents(opts: { leadId: string }) {
-  const { data } = await admin.from('lead_events').select('kind, title, detail').eq('lead_id', opts.leadId).order('occurred_at')
+  const { data } = await admin.from('lead_events').select('*').eq('lead_id', opts.leadId).order('occurred_at')
   return data ?? []
 }
 

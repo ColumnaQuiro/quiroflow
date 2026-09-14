@@ -2178,6 +2178,8 @@ export type Database = {
           deleted_at: string | null
           email: string | null
           estimated_value_cents: number | null
+          external_id: string | null
+          external_source: string | null
           full_name: string
           furthest_stage: string
           id: string
@@ -2203,6 +2205,8 @@ export type Database = {
           deleted_at?: string | null
           email?: string | null
           estimated_value_cents?: number | null
+          external_id?: string | null
+          external_source?: string | null
           full_name: string
           furthest_stage?: string
           id?: string
@@ -2228,6 +2232,8 @@ export type Database = {
           deleted_at?: string | null
           email?: string | null
           estimated_value_cents?: number | null
+          external_id?: string | null
+          external_source?: string | null
           full_name?: string
           furthest_stage?: string
           id?: string

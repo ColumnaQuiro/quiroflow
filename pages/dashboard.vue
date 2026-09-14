@@ -47,6 +47,7 @@ const store = useAccountStore()
 const { practitioners, load: loadFilterOptions } = useReportFilterOptions()
 const { widgets, loaded, load: loadLayout, save, add, remove, setSize, reorder } = useDashboardLayout()
 const t = useT()
+const { preference: lang } = useLang()
 
 const editing = ref(false)
 const practitionerFilter = ref('')
@@ -92,17 +93,57 @@ const widgetProps = computed(() => ({
   practitionerId: practitionerFilter.value || undefined,
 }))
 
+// Both of the strings below describe the viewer's own clock -- what time of
+// day it is for them, and what day it is where they are. The server only has
+// its own timezone, so it cannot know either, and computing them inside a
+// plain computed() meant SSR and the browser could disagree.
+//
+// useState is what keeps that from being a hydration mismatch: the server's
+// value travels in the payload, so the client's FIRST render is byte-identical
+// to the server's, and onMounted then re-resolves against the viewer's real
+// timezone and locale. A plain ref('') would also have hydrated cleanly, but
+// at the cost of rendering the heading empty until mount.
+function greetingBucket(hour: number) {
+  if (hour < 12) return 'morning' as const
+  if (hour < 18) return 'afternoon' as const
+  return 'evening' as const
+}
+// The bucket, not the finished sentence -- storing the translated string would
+// freeze it in whichever language the payload was built with.
+const bucket = useState('dashboard-greeting', () => greetingBucket(new Date().getHours()))
+onMounted(() => {
+  bucket.value = greetingBucket(new Date().getHours())
+})
 const greeting = computed(() => {
-  const hour = new Date().getHours()
-  if (hour < 12) return t('Good morning', 'Buenos días')
-  if (hour < 18) return t('Good afternoon', 'Buenas tardes')
+  if (bucket.value === 'morning') return t('Good morning', 'Buenos días')
+  if (bucket.value === 'afternoon') return t('Good afternoon', 'Buenas tardes')
   return t('Good evening', 'Buenas noches')
 })
 const firstName = computed(() => store.teamMember?.full_name?.split(' ')[0] ?? '')
-const todayLabel = computed(() => new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }))
+// es-ES / en-GB rather than `undefined`, which means "whatever locale this
+// runtime defaults to" -- Node's ICU during SSR and the viewer's browser
+// locale after it. That disagreement rendered "Monday, September 14" on the
+// server against "Monday 14 September" on the client, one hydration mismatch
+// per dashboard load. en-GB because it is the day-month order the rest of the
+// app writes dates in.
+const dateLocale = computed(() => (lang.value === 'es' ? 'es-ES' : 'en-GB'))
 
+// Same payload-then-correct treatment as the greeting. Worth stressing that
+// the timezone half of this is a correctness bug, not just a cosmetic one: a
+// clinic far enough from the server's timezone was told the wrong day
+// outright, not merely a differently punctuated one.
+function formatToday(locale: string) {
+  return new Date().toLocaleDateString(locale, { weekday: 'long', month: 'long', day: 'numeric' })
+}
+const todayLabel = useState('dashboard-today', () => formatToday('en-GB'))
+onMounted(() => {
+  todayLabel.value = formatToday(dateLocale.value)
+})
+
+// Safe to format synchronously: the ISO string is parsed as local midnight,
+// so every timezone agrees on the calendar day and only the wording varies.
 function formatShort(iso: string) {
-  return new Date(`${iso}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  return new Date(`${iso}T00:00:00`).toLocaleDateString(dateLocale.value, { month: 'short', day: 'numeric' })
 }
 function widgetMeta(type: string): string | undefined {
   if (THIS_WEEK_TYPES.has(type)) return t('This week', 'Esta semana')

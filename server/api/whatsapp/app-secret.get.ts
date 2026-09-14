@@ -9,7 +9,7 @@ import type { Database } from '~/types/database.types'
 // Worth surfacing because the webhook fails closed: a clinic letting Meta post
 // directly, with no secret stored, silently stops having replies tracked.
 export default defineEventHandler(async (event) => {
-  const { teamMember } = await requirePermission(event, 'communication_config')
+  const { teamMember } = await requireSettingsPermission(event, 'communication_config')
 
   const admin = serverSupabaseServiceRole<Database>(event)
   const { data } = await admin.from('whatsapp_app_secrets').select('updated_at').eq('account_id', teamMember.account_id).maybeSingle()

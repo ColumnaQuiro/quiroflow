@@ -3,7 +3,7 @@
 // still requires a signed-in team member so this can't be used as an open
 // proxy to arbitrary URLs by anyone who finds the endpoint.
 export default defineEventHandler(async (event) => {
-  await requirePermission(event, 'data_admin')
+  await requireSettingsPermission(event, 'data_admin')
 
   const body = await readBody<{
     baseUrl: string

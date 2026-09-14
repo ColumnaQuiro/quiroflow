@@ -12,7 +12,7 @@ import type { Database } from '~/types/database.types'
 export default defineEventHandler(async (event) => {
   // billing_config already gates the rest of Settings > Payments, so this
   // needs no more and no less than the fields beside it.
-  const { teamMember } = await requirePermission(event, 'billing_config')
+  const { teamMember } = await requireSettingsPermission(event, 'billing_config')
   const body = await readBody<{ secretKey?: string; webhookSecret?: string }>(event)
 
   const secretKey = (body?.secretKey ?? '').trim()

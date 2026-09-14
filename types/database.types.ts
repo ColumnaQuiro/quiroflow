@@ -1429,6 +1429,47 @@ export type Database = {
           },
         ]
       }
+      channel_spend: {
+        Row: {
+          account_id: string
+          amount_cents: number
+          channel: string
+          created_at: string
+          id: string
+          period_month: string
+          source: string
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          amount_cents: number
+          channel: string
+          created_at?: string
+          id?: string
+          period_month: string
+          source?: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          amount_cents?: number
+          channel?: string
+          created_at?: string
+          id?: string
+          period_month?: string
+          source?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "channel_spend_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       clinics: {
         Row: {
           account_id: string
@@ -2135,6 +2176,7 @@ export type Database = {
           email: string | null
           estimated_value_cents: number | null
           full_name: string
+          furthest_stage: string
           id: string
           owner_team_member_id: string | null
           patient_id: string | null
@@ -2156,6 +2198,7 @@ export type Database = {
           email?: string | null
           estimated_value_cents?: number | null
           full_name: string
+          furthest_stage?: string
           id?: string
           owner_team_member_id?: string | null
           patient_id?: string | null
@@ -2177,6 +2220,7 @@ export type Database = {
           email?: string | null
           estimated_value_cents?: number | null
           full_name?: string
+          furthest_stage?: string
           id?: string
           owner_team_member_id?: string | null
           patient_id?: string | null

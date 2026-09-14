@@ -2,7 +2,7 @@
 const t = useT()
 const { can } = usePermission()
 const { hasGrowth, resolved } = useGrowthTier()
-const { data, loading } = useGrowthDashboard()
+const { data, loading, error } = useGrowthDashboard()
 
 // Reuses communication_config, the key that already gates Campaigns, rather
 // than introducing a growth_access key. A new permission defaults to
@@ -34,6 +34,8 @@ const allowed = computed(() => can('communication_config'))
           {{ t("You don't have access to Growth.", 'No tienes acceso a Crecimiento.') }}
         </p>
       </div>
+
+      <p v-else-if="error" class="py-16 text-center text-[13px] text-danger-text" data-test="dashboard-error">{{ error }}</p>
 
       <GrowthDashboardSkeleton v-else-if="!resolved || loading || !data" />
 

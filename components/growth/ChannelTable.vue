@@ -5,19 +5,19 @@ defineProps<{ rows: GrowthChannelRow[]; totals: GrowthChannelRow }>()
 
 const t = useT()
 
-// en-IE, not es-ES, and not the viewer's language: it renders "€1,480" and
-// "€34.10", which is the symbol-first, dot-decimal shape the rest of the app
-// hardcodes as `€{{ n.toFixed(2) }}`. es-ES would give "1.480 €" / "34,10 €"
-// on a screen sitting next to billing totals that do not move.
-const euro = new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
-const euroCents = new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2 })
-
-// An em dash, not €0. A referral has no ad spend at all, and a zero would
-// put it in the same column of comparison as a channel that spent nothing
-// this month but could.
-function money(value: number | null, withCents = false) {
-  if (value === null) return '—'
-  return withCents ? euroCents.format(value) : euro.format(value)
+// Money arrives already formatted from the API, which is also where the
+// decision lives about whether there is a figure at all -- the euro
+// formatting that used to live here moved to server/utils/leads.ts, so the
+// board, the drawer and this table cannot drift apart on it.
+//
+// An em dash, not €0: a referral has no ad spend, and a zero would put it in
+// the same column of comparison as a channel that spent nothing this month
+// but could.
+function money(value: string | null) {
+  return value ?? '—'
+}
+function percent(value: number | null) {
+  return value === null ? '—' : `${value}%`
 }
 </script>
 
@@ -53,19 +53,19 @@ function money(value: number | null, withCents = false) {
             <td class="px-2 py-[9px] text-right" :class="row.spend === null ? 'text-ink-faint' : ''">{{ money(row.spend) }}</td>
             <td class="px-2 py-[9px] text-right">{{ row.leads }}</td>
             <td class="px-2 py-[9px] text-right">{{ row.booked }}</td>
-            <td class="px-2 py-[9px] text-right">{{ row.showRate }}%</td>
+            <td class="px-2 py-[9px] text-right" :class="row.showRate === null ? 'text-ink-faint' : ''">{{ percent(row.showRate) }}</td>
             <td
               class="px-4 py-[9px] text-right sm:pr-[18px]"
               :class="row.costPerNewPatient === null ? 'text-ink-faint' : 'font-semibold'"
-            >{{ money(row.costPerNewPatient, true) }}</td>
+            >{{ money(row.costPerNewPatient) }}</td>
           </tr>
           <tr class="bg-chip-bg text-[12px] font-semibold text-ink-900">
             <td class="px-4 py-2.5 sm:pl-[18px]">{{ totals.channel }}</td>
             <td class="px-2 py-2.5 text-right">{{ money(totals.spend) }}</td>
             <td class="px-2 py-2.5 text-right">{{ totals.leads }}</td>
             <td class="px-2 py-2.5 text-right">{{ totals.booked }}</td>
-            <td class="px-2 py-2.5 text-right">{{ totals.showRate }}%</td>
-            <td class="px-4 py-2.5 text-right sm:pr-[18px]">{{ money(totals.costPerNewPatient, true) }}</td>
+            <td class="px-2 py-2.5 text-right">{{ percent(totals.showRate) }}</td>
+            <td class="px-4 py-2.5 text-right sm:pr-[18px]">{{ money(totals.costPerNewPatient) }}</td>
           </tr>
         </tbody>
       </table>

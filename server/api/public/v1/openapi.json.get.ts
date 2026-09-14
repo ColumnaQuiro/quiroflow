@@ -190,7 +190,7 @@ function leadsPath() {
         '',
         'Either `phone` or `email` is required — a lead with neither cannot be contacted. Names may be sent as `full_name` or as `first_name`/`last_name`.',
         '',
-        '`answers` are stored and displayed as given, not mapped onto fields: every clinic asks different questions and changes them between campaigns.',
+        '`answers` accepts either `[{ question, answer }]` or a plain object of question/answer pairs — so you can pass an ad platform\'s raw field bag (Meta\'s `data`) straight through. Keys that are lead fields rather than questions (name, email, phone, address) are dropped, underscores become spaces, list answers are joined, and blank answers are omitted. The object form is what survives a new campaign: new questions arrive as new keys with no mapping to edit.',
       ].join('\n'),
       security: [{ bearerAuth: ['leads:write'] }],
       requestBody: {
@@ -224,13 +224,23 @@ function leadsPath() {
                   },
                 },
                 answers: {
-                  type: 'array',
-                  maxItems: 50,
-                  items: {
-                    type: 'object',
-                    required: ['question'],
-                    properties: { question: { type: 'string' }, answer: { type: 'string' } },
-                  },
+                  description: 'Either a list of question/answer objects, or a plain object of question/answer pairs.',
+                  oneOf: [
+                    {
+                      type: 'array',
+                      maxItems: 50,
+                      items: {
+                        type: 'object',
+                        required: ['question'],
+                        properties: { question: { type: 'string' }, answer: { type: 'string' } },
+                      },
+                    },
+                    {
+                      type: 'object',
+                      additionalProperties: { type: ['string', 'number', 'boolean', 'array'] },
+                      example: { '¿cuál_sería_el_motivo_de_tu_visita?': 'dolor lumbar' },
+                    },
+                  ],
                 },
               },
             },

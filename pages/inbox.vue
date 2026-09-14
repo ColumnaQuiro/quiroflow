@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { normalizeSearchTerm } from '~/utils/searchText'
+import { CHANNEL_LABEL } from '~/composables/useGrowthConversations'
 
 interface Message {
   id: string
@@ -199,6 +200,69 @@ const unreadOnly = ref(false)
 // exists to surface that "unread" alone would miss.
 const replyFilter = ref<'all' | 'awaiting_us' | 'awaiting_patient'>('all')
 const labelFilter = ref<string | null>(null)
+
+// --- Growth tier -------------------------------------------------------
+// Lead conversations live in their own list and are merged in only at the
+// display layer, never into `conversations` above. That keeps every real
+// whatsapp_messages code path -- thread grouping, unread, delete, ticks,
+// sending -- untouched, and guarantees a real patient thread can never be
+// decorated with AI state that does not exist for it. Without the tier
+// nothing below loads and this page is exactly what it was.
+const { hasGrowth } = useGrowthTier()
+const { conversations: leadConversations, takeOver, handBack, sendReply } = useGrowthConversations()
+
+// Only "AI handling" and "Needs human" are here. The design also draws
+// Unassigned and Mine, which need a per-conversation owner -- leads could
+// carry one but the real patient threads beside them cannot, so the filter
+// would mean two different things in one list. They arrive with the leads
+// endpoint, which is what gives both sides an owner.
+const aiFilter = ref<'all' | 'ai_handling' | 'needs_human'>('all')
+
+// Growth > Conversations in the sidebar is a saved view into this inbox, not
+// a screen of its own -- it deep-links here with the filter already applied.
+// Read once on mount rather than watched: after landing, the chips are the
+// user's to change, and re-applying the query on every navigation would
+// fight them.
+onMounted(() => {
+  const q = useRoute().query.ai
+  if (q === 'handling') aiFilter.value = 'ai_handling'
+  else if (q === 'needs_human') aiFilter.value = 'needs_human'
+})
+
+const visibleLeadConversations = computed(() => {
+  if (!hasGrowth.value || view.value === 'archived') return []
+  let list = leadConversations.value
+  if (search.value.trim()) {
+    const q = normalizeSearchTerm(search.value.trim())
+    list = list.filter((c) => normalizeSearchTerm(`${c.name} ${c.preview}`).includes(q))
+  }
+  if (unreadOnly.value) list = list.filter((c) => c.unread)
+  if (aiFilter.value === 'ai_handling') list = list.filter((c) => c.aiState === 'handling')
+  else if (aiFilter.value === 'needs_human') list = list.filter((c) => c.aiState === 'needs_human' || c.aiState === 'blocked')
+  return list
+})
+
+const aiHandlingCount = computed(() => leadConversations.value.filter((c) => c.aiState === 'handling').length)
+const needsHumanCount = computed(() => leadConversations.value.filter((c) => c.aiState === 'needs_human' || c.aiState === 'blocked').length)
+
+// Resolved against the full list, never the filtered one -- exactly as
+// `selected` is for real conversations above. Reading it from
+// visibleLeadConversations meant taking a thread off the AI filtered it out
+// from under the person who had just opened it: the panel emptied and the
+// inbox fell back to "Select a conversation", mid-reply.
+const selectedLead = computed(() => {
+  if (!hasGrowth.value) return null
+  return leadConversations.value.find((c) => c.key === selectedKey.value) ?? null
+})
+
+function selectLeadConversation(c: { key: string }) {
+  draftConversation.value = null
+  selectedKey.value = c.key
+  const match = leadConversations.value.find((l) => l.key === c.key)
+  if (match) match.unread = false
+}
+
+const staffName = computed(() => store.teamMember?.full_name ?? t('You', 'Tú'))
 
 const filteredConversations = computed(() => {
   let list = conversations.value.filter((c) => archivedKeys.value.has(c.key) === (view.value === 'archived'))
@@ -970,6 +1034,28 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
               {{ t('Awaiting patient', 'Esperando respuesta del paciente') }}
             </button>
             <InboxLabelFilterPicker v-model="labelFilter" :labels="labels" />
+            <!-- Growth only. Without the tier there are no AI-handled
+            conversations, so these would filter a list of nothing. -->
+            <template v-if="hasGrowth">
+              <button
+                type="button"
+                class="flex h-7 items-center gap-1 rounded-pill border px-2.5 text-[12px] font-medium"
+                :class="aiFilter === 'ai_handling' ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted hover:bg-surface-subtle'"
+                data-test="filter-ai-handling"
+                @click="aiFilter = aiFilter === 'ai_handling' ? 'all' : 'ai_handling'"
+              >
+                {{ t('AI handling', 'IA gestionando') }} · {{ aiHandlingCount }}
+              </button>
+              <button
+                type="button"
+                class="flex h-7 items-center gap-1 rounded-pill border px-2.5 text-[12px] font-medium"
+                :class="aiFilter === 'needs_human' ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted hover:bg-surface-subtle'"
+                data-test="filter-needs-human"
+                @click="aiFilter = aiFilter === 'needs_human' ? 'all' : 'needs_human'"
+              >
+                {{ t('Needs human', 'Requiere persona') }} · {{ needsHumanCount }}
+              </button>
+            </template>
           </div>
         </div>
         <div
@@ -998,9 +1084,39 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
               </div>
             </div>
           </div>
-          <p v-else-if="filteredConversations.length === 0" class="p-6 text-center text-[13px] text-ink-faint">
+          <p v-else-if="filteredConversations.length === 0 && visibleLeadConversations.length === 0" class="p-6 text-center text-[13px] text-ink-faint">
             {{ view === 'archived' ? t('No archived conversations.', 'No hay conversaciones archivadas.') : t('No conversations yet.', 'Aún no hay conversaciones.') }}
           </p>
+          <!-- Lead conversations sit at the top of the same list, not in a
+          section of their own: one person, one thread is the whole argument
+          for merging these inboxes rather than shipping a second one. -->
+          <button
+            v-for="c in visibleLeadConversations"
+            :key="c.key"
+            type="button"
+            class="flex w-full items-start gap-2.5 border-b border-line-row px-3 py-2.5 text-left hover:bg-surface-subtle"
+            :class="selectedKey === c.key && !selectionMode ? 'bg-brand-tint' : ''"
+            data-test="lead-row"
+            @click="selectLeadConversation(c)"
+          >
+            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[11px] font-semibold text-brand-text">
+              {{ c.initials }}
+            </span>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline justify-between gap-2">
+                <span class="truncate text-[13.5px] text-ink-900" :class="c.unread ? 'font-[640]' : 'font-[500]'">{{ c.name }}</span>
+                <span class="shrink-0 text-[11px] text-ink-faint">{{ c.when }}</span>
+              </div>
+              <p class="truncate text-[12px]" :class="c.unread ? 'font-medium text-ink-700' : 'text-ink-muted2'">{{ c.preview }}</p>
+              <div class="mt-1 flex flex-wrap items-center gap-1">
+                <span class="rounded-pill border border-chip-border bg-chip-bg px-1.5 py-px text-[10px] text-ink-muted">{{ CHANNEL_LABEL[c.channel] }}</span>
+                <span v-if="c.aiState === 'handling'" class="rounded-pill bg-brand px-1.5 py-px text-[10px] font-semibold text-white">{{ t('AI handling', 'IA gestionando') }}</span>
+                <span v-else-if="c.aiState === 'paused'" class="rounded-pill border border-chip-border bg-chip-bg px-1.5 py-px text-[10px] text-ink-muted">{{ t('AI paused', 'IA en pausa') }}</span>
+                <span v-else-if="c.aiState === 'needs_human'" class="rounded-pill border border-warning-border bg-warning-bg px-1.5 py-px text-[10px] font-medium text-warning-text">{{ t('Needs human', 'Requiere persona') }}</span>
+                <span v-else-if="c.aiState === 'blocked'" class="rounded-pill border border-danger-border bg-danger-bg px-1.5 py-px text-[10px] font-medium text-danger-text">{{ t('Blocked', 'Bloqueado') }}</span>
+              </div>
+            </div>
+          </button>
           <button
             v-for="c in filteredConversations"
             :key="c.key"
@@ -1055,10 +1171,26 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
       </div>
 
       <!-- Thread -->
-      <div v-if="!selected" class="hidden flex-1 items-center justify-center text-[13px] text-ink-faint md:flex">
+      <div v-if="!selected && !selectedLead" class="hidden flex-1 items-center justify-center text-[13px] text-ink-faint md:flex">
         {{ t('Select a conversation to view messages.', 'Selecciona una conversación para ver los mensajes.') }}
       </div>
-      <div v-else class="flex min-w-0 flex-1 flex-col bg-surface-page">
+      <!-- A lead thread renders its own panel and rail. It shares nothing
+      with the block below on purpose: that one sends through the WhatsApp
+      API against a real patient row, and a lead has neither. -->
+      <template v-else-if="selectedLead">
+        <GrowthInboxLeadThread
+          :conversation="selectedLead"
+          @back="selectedKey = null"
+          @take-over="takeOver(selectedLead.key, staffName)"
+          @hand-back="handBack(selectedLead.key)"
+          @send="(text) => sendReply(selectedLead!.key, text, staffName)"
+        />
+        <GrowthInboxLeadRail :conversation="selectedLead" />
+      </template>
+      <!-- v-else-if rather than v-else so the compiler can still narrow
+      `selected` to non-null through the branch, which the whole block below
+      depends on. -->
+      <div v-else-if="selected" class="flex min-w-0 flex-1 flex-col bg-surface-page">
         <div class="flex h-14 shrink-0 items-center gap-2.5 border-b border-line bg-surface px-4">
           <button
             type="button"

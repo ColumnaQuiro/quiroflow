@@ -153,6 +153,13 @@ const navGroups = computed<{ label: string; tier?: string; items: NavItem[] }[]>
     items: [
       { label: t('Dashboard', 'Panel'), to: '/growth', perm: () => can('communication_config'), icon: 'M2 12.5V7m3.5 5.5V3.5M9 12.5V9m3.5 3.5V5.5' },
       { label: t('Leads', 'Contactos'), to: '/growth/leads', perm: () => can('communication_config'), icon: 'M2.5 3.5h11v9h-11zM2.5 6.5h11M6 6.5v6' },
+      // Deliberately points at /inbox, not a screen of its own: the Growth
+      // tier upgrades the one inbox the clinic already uses rather than
+      // giving the front desk a second queue to watch, so this is a saved
+      // view that lands there with the AI filter applied. isActive() compares
+      // route.path, which never carries the query, so Inbox above is the item
+      // that highlights on arrival -- right, because that is where you are.
+      { label: t('Conversations', 'Conversaciones'), to: '/inbox?ai=handling', perm: () => can('inbox_access'), icon: 'M2 3.5h12v9h-8l-3 2.5v-2.5h-1z' },
       { label: t('Campaigns', 'Campañas'), to: '/campaigns', perm: () => can('communication_config'), icon: 'M8 2l4.5 6H8.9l1.1 6L5.5 8h3.6z', badge: 'campaigns' },
     ],
   },

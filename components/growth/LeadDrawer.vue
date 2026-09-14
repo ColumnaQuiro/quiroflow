@@ -16,7 +16,8 @@ const DOT: Record<LeadTimelineKind, string> = {
   qualification: 'bg-info-text',
   appointment: 'bg-success-text',
   reminder: 'bg-ink-faint3',
-  pending: 'bg-ink-faint3',
+  note: 'bg-ink-faint3',
+  stage_change: 'bg-ink-faint3',
 }
 
 function onKeydown(e: KeyboardEvent) {
@@ -99,13 +100,13 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 
               <div class="flex min-w-0 flex-1 flex-col gap-1.5 pb-1.5">
                 <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-                  <span class="text-[12px] font-semibold text-ink-900" :class="entry.kind === 'pending' ? 'text-ink-muted' : ''">{{ entry.title }}</span>
+                  <span class="text-[12px] font-semibold text-ink-900" :class="entry.kind === 'stage_change' ? 'text-ink-muted' : ''">{{ entry.title }}</span>
                   <span class="text-[10.5px] text-ink-faint">{{ entry.time }}</span>
                 </div>
 
-                <div v-if="entry.kind === 'conversation'" class="flex flex-col gap-1.5">
+                <div v-if="entry.kind === 'conversation' && entry.body?.messages" class="flex flex-col gap-1.5">
                   <p
-                    v-for="(msg, m) in entry.messages"
+                    v-for="(msg, m) in entry.body.messages"
                     :key="m"
                     class="max-w-[82%] rounded-card px-2.5 py-2 text-[12px] leading-[1.45] text-ink-700"
                     :class="msg.from === 'ai'
@@ -115,17 +116,17 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
                 </div>
 
                 <template v-else-if="entry.kind === 'qualification'">
-                  <span class="self-start rounded-pill border border-info-border bg-info-bg px-2 py-0.5 text-[10.5px] font-semibold text-info-text">{{ entry.verdict }}</span>
+                  <span v-if="entry.body?.verdict" class="self-start rounded-pill border border-info-border bg-info-bg px-2 py-0.5 text-[10.5px] font-semibold text-info-text">{{ entry.body.verdict }}</span>
                   <p class="text-[11.5px] leading-[1.5] text-ink-muted">{{ entry.detail }}</p>
                 </template>
 
                 <div
-                  v-else-if="entry.kind === 'appointment'"
+                  v-else-if="entry.kind === 'appointment' && entry.body?.slot"
                   class="flex flex-wrap items-center justify-between gap-2 rounded-ctl border border-success-border bg-success-bg px-2.5 py-2"
                 >
                   <div class="flex min-w-0 flex-col">
-                    <span class="text-[11.5px] font-semibold text-success-text">{{ entry.slot }}</span>
-                    <span class="text-[10.5px] text-ink-muted">{{ entry.slotDetail }}</span>
+                    <span class="text-[11.5px] font-semibold text-success-text">{{ entry.body.slot }}</span>
+                    <span class="text-[10.5px] text-ink-muted">{{ entry.body.slotDetail }}</span>
                   </div>
                   <NuxtLink to="/calendar" class="shrink-0 whitespace-nowrap text-[11px] font-semibold text-success-text hover:underline">
                     {{ t('Open in calendar', 'Abrir en el calendario') }} →
@@ -144,7 +145,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
             <span v-for="line in lead.contact" :key="line" class="break-words text-[11.5px] text-ink-700">{{ line }}</span>
           </section>
 
-          <section class="flex flex-col gap-1.5 border-t border-line-divider pt-3.5">
+          <section v-if="lead.attribution.length" class="flex flex-col gap-1.5 border-t border-line-divider pt-3.5">
             <h3 class="text-[9.5px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ t('Attribution', 'Atribución') }}</h3>
             <div v-for="row in lead.attribution" :key="row.label" class="flex flex-col">
               <span class="text-[10px] text-ink-faint">{{ row.label }}</span>
@@ -152,7 +153,11 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
             </div>
           </section>
 
-          <section class="flex flex-col gap-1.5 border-t border-line-divider pt-3.5">
+          <!-- Hidden until there is consent to show. WhatsApp opt-in and
+          data-processing status are real obligations, and inventing a line
+          that says "accepted" when nothing recorded it would be the worst
+          possible placeholder on this particular rail. -->
+          <section v-if="lead.consent?.length" class="flex flex-col gap-1.5 border-t border-line-divider pt-3.5">
             <h3 class="text-[9.5px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ t('Consent', 'Consentimiento') }}</h3>
             <span v-for="line in lead.consent" :key="line" class="text-[11.5px] text-ink-700">{{ line }}</span>
           </section>

@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import type { GrowthLead, GrowthLeadColumn } from '~/composables/useGrowthLeads'
-import type { GrowthLeadDetail } from '~/composables/useGrowthLeadDetail'
 
 const t = useT()
 const route = useRoute()
 const { can } = usePermission()
 const { hasGrowth, resolved } = useGrowthTier()
-const { columns, summary, loading, moveLead } = useGrowthLeads()
-const { loadLead } = useGrowthLeadDetail()
+const { columns, summary, loading, error, moveLead } = useGrowthLeads()
+const { lead: openLead, loading: leadLoading, loadLead, close: closeLead } = useGrowthLeadDetail()
 
 // Same key that gates the Growth dashboard and Campaigns -- see
 // pages/growth/index.vue for why this reuses communication_config.
@@ -50,9 +49,8 @@ function onDrop(key: string) {
   onDragEnd()
 }
 
-const openLead = ref<GrowthLeadDetail | null>(null)
 function onOpen(lead: GrowthLead) {
-  openLead.value = loadLead(lead.id)
+  loadLead(lead.id)
 }
 </script>
 
@@ -132,7 +130,9 @@ function onOpen(lead: GrowthLead) {
         </span>
       </div>
 
-      <GrowthLeadsBoardSkeleton v-if="showLoading" class="pt-4" />
+      <p v-if="error" class="px-4 py-10 text-center text-[13px] text-danger-text sm:px-6" data-test="leads-error">{{ error }}</p>
+
+      <GrowthLeadsBoardSkeleton v-else-if="showLoading" class="pt-4" />
 
       <div v-else-if="view === 'board'" class="flex flex-1 gap-3 overflow-x-auto px-4 pb-4 pt-4 sm:px-6">
         <GrowthLeadColumn
@@ -183,5 +183,16 @@ function onOpen(lead: GrowthLead) {
     </template>
   </div>
 
-  <GrowthLeadDrawer v-if="openLead" :lead="openLead" @close="openLead = null" />
+  <GrowthLeadDrawer v-if="openLead" :lead="openLead" @close="closeLead" />
+  <!-- The drawer opens on click and fills in when the fetch lands, rather
+  than the row staying inert until it does. -->
+  <div v-else-if="leadLoading" class="fixed inset-0 z-50 flex justify-end" data-test="lead-drawer-loading">
+    <div class="absolute inset-0 bg-ink-900/20" @click="closeLead" />
+    <aside class="relative flex h-full w-full max-w-[720px] flex-col gap-3 bg-surface p-5 shadow-drawer">
+      <UiSkeleton class="h-9 w-48 rounded-ctl" />
+      <UiSkeleton class="h-4 w-64 rounded-ctlSm" />
+      <UiSkeleton class="mt-4 h-24 w-full rounded-card" />
+      <UiSkeleton class="h-24 w-full rounded-card" />
+    </aside>
+  </div>
 </template>

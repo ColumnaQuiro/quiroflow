@@ -10,6 +10,8 @@ export default defineEventHandler(async (event) => {
   const body = await readBody<{
     patientId?: string
     phoneNumber?: string
+    /** Stamps the message onto a lead's thread as well as the phone's. */
+    leadId?: string
     text?: string
     mediaBase64?: string
     mediaMimeType?: string
@@ -18,14 +20,14 @@ export default defineEventHandler(async (event) => {
     caption?: string
   }>(event)
 
-  if (!body?.patientId && !body?.phoneNumber) {
-    throw createError({ statusCode: 400, statusMessage: 'patientId or phoneNumber is required' })
+  if (!body?.patientId && !body?.phoneNumber && !body?.leadId) {
+    throw createError({ statusCode: 400, statusMessage: 'patientId, leadId or phoneNumber is required' })
   }
   if (!body.text && !body.mediaBase64) {
     throw createError({ statusCode: 400, statusMessage: 'text or media is required' })
   }
 
-  const { supabase, teamMember } = await requirePermission(event, 'inbox_access')
+  const { supabase, teamMember } = await requirePermission(event, body?.leadId ? 'communication_config' : 'inbox_access')
 
   const { data: account } = await supabase
     .from('accounts')
@@ -38,6 +40,28 @@ export default defineEventHandler(async (event) => {
   const waAccount = { whatsapp_phone_number_id: account.whatsapp_phone_number_id, whatsapp_access_token: account.whatsapp_access_token }
 
   let to = body.phoneNumber ?? ''
+
+  // A lead reply resolves its number here rather than in a route of its own,
+  // so it inherits everything below: the WhatsApp configuration check, the
+  // 24h customer-service window, Meta's error surfacing, and the message row
+  // the Inbox reads. A parallel lead-reply endpoint would have had to
+  // reimplement all four, and would have drifted from them the first time
+  // one changed.
+  if (body.leadId) {
+    const { data: lead } = await supabase
+      .from('leads')
+      .select('id, phone')
+      .eq('id', body.leadId)
+      .eq('account_id', teamMember.account_id)
+      .is('deleted_at', null)
+      .maybeSingle()
+    if (!lead) throw createError({ statusCode: 404, statusMessage: 'Lead not found' })
+    if (!lead.phone) throw createError({ statusCode: 400, statusMessage: 'This lead has no phone number to reply to' })
+    const e164 = toE164(lead.phone, 'ES')
+    if (!e164) throw createError({ statusCode: 400, statusMessage: "This lead's phone number could not be formatted for WhatsApp" })
+    to = e164
+  }
+
   if (body.patientId) {
     const { data: patient } = await supabase.from('patients').select('id, is_minor, do_not_contact').eq('id', body.patientId).maybeSingle()
     if (!patient) throw createError({ statusCode: 404, statusMessage: 'Patient not found' })
@@ -72,6 +96,7 @@ export default defineEventHandler(async (event) => {
   const insert: Record<string, unknown> = {
     account_id: account.id,
     patient_id: body.patientId ?? null,
+    lead_id: body.leadId ?? null,
     phone_number: to,
     direction: 'outbound',
     status: 'sent',

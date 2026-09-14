@@ -890,6 +890,43 @@ async function patientCount(opts: { accountId: string }) {
   return count ?? 0
 }
 
+/** A WhatsApp message attached to a lead's thread. */
+async function createLeadMessage(opts: {
+  accountId: string
+  leadId: string
+  direction: 'inbound' | 'outbound'
+  body: string
+  createdAt?: string
+  status?: string
+}) {
+  const row = unwrap(
+    await admin
+      .from('whatsapp_messages')
+      .insert({
+        account_id: opts.accountId,
+        lead_id: opts.leadId,
+        direction: opts.direction,
+        body_preview: opts.body,
+        status: opts.status ?? (opts.direction === 'inbound' ? 'received' : 'sent'),
+        channel: 'whatsapp',
+      })
+      .select('id')
+      .single(),
+  )
+  // created_at has a default, so backdating needs a second statement --
+  // which is what makes the 24h window testable.
+  if (opts.createdAt) {
+    assertOk(await admin.from('whatsapp_messages').update({ created_at: opts.createdAt }).eq('id', row.id))
+  }
+  return row as { id: string }
+}
+
+/** Reads a lead's AI state back, for asserting a take-over persisted. */
+async function leadAiState(opts: { id: string }) {
+  const { data } = await admin.from('leads').select('ai_state, ai_handling, ai_taken_over_by').eq('id', opts.id).maybeSingle()
+  return data
+}
+
 /** Records ad spend for a channel in the current month. */
 async function setChannelSpend(opts: { accountId: string; channel: string; amountCents: number; month?: string }) {
   const month = opts.month ?? new Date().toISOString().slice(0, 8) + '01'
@@ -905,6 +942,8 @@ async function setChannelSpend(opts: { accountId: string; channel: string; amoun
 export const dbTasks = {
   'db:createStaffAccount': createStaffAccount,
   'db:createLead': createLead,
+  'db:createLeadMessage': createLeadMessage,
+  'db:leadAiState': leadAiState,
   'db:setChannelSpend': setChannelSpend,
   'db:patientWithContacts': patientWithContacts,
   'db:patientCount': patientCount,

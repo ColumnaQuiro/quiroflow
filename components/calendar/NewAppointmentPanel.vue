@@ -470,10 +470,21 @@ async function save() {
             <input v-model="newPatientFirstName" type="text" :placeholder="t('First name', 'Nombre')" required class="rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
             <input v-model="newPatientLastName" type="text" :placeholder="t('Last name', 'Apellidos')" class="rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
             <input v-model="newPatientEmail" type="email" :placeholder="t('Email', 'Email')" class="rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
-            <div class="flex min-w-0 gap-2">
+            <!-- Full width rather than one half of the grid: a country select
+            and a phone number do not fit in the half-column the other fields
+            share. -->
+            <div class="col-span-2 flex min-w-0 gap-2">
+              <!-- Width pinned. A select with no width takes the width of its
+              LONGEST option, and across these 92 countries that is "+971
+              United Arab Emirates" at 25 characters, while the selected one
+              reads "+34 Spain" at 9. Paired with shrink-0 it claimed the whole
+              row and left the number field about one character wide. 120px
+              fits the common case unclipped and lets a long name ellipsize,
+              which costs nothing: the dial code is at the front and the full
+              name is there in the open list. -->
               <select
                 v-model="newPatientPhoneCountry"
-                class="shrink-0 rounded-ctl border border-line-control bg-surface px-2 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none"
+                class="w-[120px] shrink-0 rounded-ctl border border-line-control bg-surface px-2 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none"
               >
                 <option v-for="c in COUNTRIES_BY_NAME" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }} {{ c.name }}</option>
               </select>

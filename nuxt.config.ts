@@ -18,7 +18,7 @@ export default defineNuxtConfig({
   // ever finishes booting. They're checked out inside the repo so that
   // `git worktree list` and the agent tooling can find them, which is
   // exactly why they have to be excluded here by hand.
-  ignore: ['mobile/**', '.claude/worktrees/**'],
+  ignore: ['mobile/**', '.claude/worktrees/**', 'cypress/screenshots/**', 'cypress/videos/**', 'cypress/downloads/**'],
   css: ['~/assets/css/theme.css'],
   app: {
     head: {
@@ -205,7 +205,7 @@ export default defineNuxtConfig({
     server: {
       allowedHosts: ['.localtest.me'],
       watch: {
-        ignored: ['**/mobile/**', '**/.claude/worktrees/**'],
+        ignored: ['**/mobile/**', '**/.claude/worktrees/**', '**/cypress/screenshots/**', '**/cypress/videos/**', '**/cypress/downloads/**'],
       },
     },
     // These are only ever imported lazily -- papaparse and @stripe/stripe-js

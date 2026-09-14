@@ -61,7 +61,15 @@ describe('Growth leads pipeline', () => {
   it('filters the board by name without rewriting the stage totals', () => {
     cy.visit('/growth/leads?growth=1')
 
-    cy.get('input[type="search"]').type('valeria')
+    // Wait for a card before typing. The filter bar is server-rendered, so
+    // the input exists well before Vue binds v-model to it -- typing into it
+    // first sends the keystrokes nowhere, and the board then renders
+    // unfiltered. A rendered card only appears after mount, so it is proof
+    // hydration is done. This failed three times running in CI, where the
+    // window is wide enough to lose the race every time.
+    cy.contains('button', 'Rubén Ortega').should('be.visible')
+
+    cy.get('input[type="search"]').should('not.be.disabled').type('valeria')
     cy.contains('Valeria Ocampo').should('be.visible')
     cy.contains('Rubén Ortega').should('not.exist')
 

@@ -99,10 +99,16 @@ function onOpen(lead: GrowthLead) {
       <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-surface px-4 py-2.5 sm:px-6">
         <label class="relative flex h-8 min-w-[210px] flex-1 items-center sm:max-w-[280px] sm:flex-none">
           <span class="sr-only">{{ t('Search leads', 'Buscar contactos') }}</span>
+          <!-- Disabled until the board is real. The filter bar is server-
+          rendered, so without this there is a window where the box accepts
+          typing that goes nowhere: v-model is not bound yet, hydration then
+          binds an empty ref, and the text the user entered is silently
+          discarded. Cheaper to refuse the keystroke than to swallow it. -->
           <input
             v-model="search"
             type="search"
-            class="h-8 w-full rounded-ctl border border-line-control bg-surface px-2.5 text-[12px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none"
+            :disabled="showLoading"
+            class="h-8 w-full rounded-ctl border border-line-control bg-surface px-2.5 text-[12px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
             :placeholder="t('Search name, phone or email', 'Buscar nombre, teléfono o email')"
           >
         </label>

@@ -90,8 +90,9 @@ const sendingFacturaId = ref('')
 const facturaSendResult = ref<Record<string, string>>({})
 
 async function loadFacturas() {
-  const { data: patientRow } = await supabase.from('patients').select('national_id').eq('id', props.patientId).maybeSingle()
+  const { data: patientRow } = await supabase.from('patients').select('national_id, default_practitioner_id').eq('id', props.patientId).maybeSingle()
   patientNationalId.value = patientRow?.national_id ?? null
+  patientDefaultPractitionerId.value = patientRow?.default_practitioner_id ?? null
   const { data } = await supabase
     .from('facturas')
     .select('id, number, kind, description, amount_cents, issued_at, recipient_nif')
@@ -116,6 +117,8 @@ async function sendFactura(id: string) {
 // is told it is still missing, and the document picks it up the moment it is
 // added to the patient record.
 const patientNationalId = ref<string | null>(null)
+// Who a logged session belongs to when it has to invent the visit.
+const patientDefaultPractitionerId = ref<string | null>(null)
 const facturasMissingNif = computed(() =>
   patientNationalId.value ? [] : facturas.value.filter((f) => f.kind === 'full' && !f.recipient_nif),
 )
@@ -1145,12 +1148,13 @@ const loggingSessionFor = ref<string | null>(null)
 interface UncoveredVisit {
   id: string
   starts_at: string
+  practitionerId: string | null
   typeName: string | null
   unpaidInvoice: { id: string; invoice_number: string | null; total_cents: number } | null
 }
 
-// The visit this session most likely belongs to: a completed appointment
-// today that no bono session covers yet.
+// The visit this session most likely belongs to: an appointment today that
+// the patient has arrived for and that no bono session covers yet.
 //
 // Without this the flow always invented an appointment, even when the real
 // one was sitting on the calendar. That is how a patient ended up billed
@@ -1162,11 +1166,22 @@ async function findUncoveredVisitToday(): Promise<UncoveredVisit | null> {
   const dayStart = new Date()
   dayStart.setHours(0, 0, 0, 0)
 
+  // Completed OR already in the room. Only 'completed' counted before, and
+  // that is not the order a front desk works in: Jose Maria Cremades' session
+  // was logged at 17:55:21 while he was still with the practitioner -- he was
+  // checked out at 17:56:23, 62 seconds later. Finding nothing, this invented
+  // an off-calendar visit, so his real 60 EUR appointment was charged AND a
+  // 44 EUR session came off his bono for the same visit.
+  //
+  // Checked in is the safe widening: the patient is here, the visit is
+  // happening. A booking later today that nobody has arrived for is still
+  // ignored, which is what stops a session being spent in advance.
   const { data: appts } = await supabase
     .from('appointments')
-    .select('id, starts_at, appointment_types(name)')
+    .select('id, starts_at, practitioner_id, appointment_types(name)')
     .eq('patient_id', props.patientId)
-    .eq('status', 'completed')
+    .neq('status', 'cancelled')
+    .or('status.eq.completed,checked_in_at.not.is.null')
     .is('deleted_at', null)
     .gte('starts_at', dayStart.toISOString())
     .order('starts_at', { ascending: false })
@@ -1186,6 +1201,7 @@ async function findUncoveredVisitToday(): Promise<UncoveredVisit | null> {
   return {
     id: match.id,
     starts_at: match.starts_at,
+    practitionerId: match.practitioner_id ?? null,
     typeName: (match.appointment_types as { name: string } | null)?.name ?? null,
     unpaidInvoice: invoice ? { id: invoice.id, invoice_number: invoice.invoice_number, total_cents: invoice.total_cents } : null,
   }
@@ -1259,7 +1275,13 @@ async function useSession(purchase: PackagePurchaseRow) {
           account_id: store.accountId,
           clinic_id: store.currentClinicId,
           patient_id: props.patientId,
-          practitioner_id: store.teamMember?.id ?? null,
+          // The patient's own practitioner, not whoever is logged in. This
+          // used to record the front desk: Jose Maria Cremades' bono visit
+          // went down as nury@columnaquiro.com, a reception account that is
+          // not a practitioner at all, which also takes the visit out of the
+          // treating practitioner's income. The signed-in member is only the
+          // last resort, for a patient with nobody assigned.
+          practitioner_id: patientDefaultPractitionerId.value ?? store.teamMember?.id ?? null,
           starts_at: now.toISOString(),
           ends_at: ends.toISOString(),
           status: 'completed',

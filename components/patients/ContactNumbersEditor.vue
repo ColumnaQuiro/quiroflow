@@ -11,7 +11,7 @@ const t = useT()
 const numbers = ref<Tables<'patient_contact_numbers'>[]>([])
 const loading = ref(true)
 
-const newCountry = ref('ES')
+const newCountry = ref(store.defaultPhoneCountry)
 const newNumber = ref('')
 const newIsWhatsapp = ref(false)
 const adding = ref(false)

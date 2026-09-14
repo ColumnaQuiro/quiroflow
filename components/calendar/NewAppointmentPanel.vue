@@ -187,7 +187,7 @@ const newPatientFirstName = ref('')
 const newPatientLastName = ref('')
 const newPatientEmail = ref('')
 const newPatientPhone = ref('')
-const newPatientPhoneCountry = ref('ES')
+const newPatientPhoneCountry = ref(store.defaultPhoneCountry)
 
 // -- Collect Payment --------------------------------------------------
 const collectPayment = ref(false)

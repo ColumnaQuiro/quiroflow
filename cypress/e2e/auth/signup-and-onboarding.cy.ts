@@ -18,6 +18,10 @@ describe('Signup and onboarding', () => {
     cy.get('#owner-name').type(ownerName)
     cy.get('#account-name').type(accountName)
     cy.get('#clinic-name').type(clinicName)
+    // The phone country is asked here rather than assumed, because every
+    // number the account later stores without one falls back to it. Picking
+    // a non-default proves the choice actually reaches the account.
+    cy.get('#phone-country').select('PT')
     cy.contains('button', 'Create practice').click()
 
     cy.contains('h1', 'Make it yours', { timeout: 15000 }).should('be.visible')
@@ -35,5 +39,13 @@ describe('Signup and onboarding', () => {
     cy.visit('/dashboard')
     cy.location('pathname').should('eq', '/dashboard')
     cy.contains(accountName).should('be.visible')
+
+    // The country chosen during onboarding is what a new number defaults to
+    // -- not Spain, which is what every account got before it was asked.
+    cy.visit('/settings/communications-general')
+    cy.get('select').filter(':visible').then(($selects) => {
+      const withPortugal = [...$selects].find((el) => (el as HTMLSelectElement).value === 'PT')
+      expect(withPortugal, 'a country select showing Portugal').to.not.equal(undefined)
+    })
   })
 })

@@ -282,6 +282,7 @@ export type Database = {
           show_ssn_on_invoices: boolean
           show_taxes_on_invoices: boolean
           slug: string
+          default_phone_country: string
           stripe_connect_account_id: string | null
           stripe_publishable_key: string | null
           stripe_secret_key: string | null
@@ -418,6 +419,7 @@ export type Database = {
           show_ssn_on_invoices?: boolean
           show_taxes_on_invoices?: boolean
           slug?: string
+          default_phone_country?: string
           stripe_connect_account_id?: string | null
           stripe_publishable_key?: string | null
           stripe_secret_key?: string | null
@@ -4972,6 +4974,7 @@ export type Database = {
               p_clinic_name: string
               p_owner_name?: string
               p_referred_by_slug?: string
+              p_default_phone_country?: string
             }
             Returns: {
               account_id: string

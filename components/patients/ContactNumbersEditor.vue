@@ -74,7 +74,7 @@ async function updateNumber(n: Tables<'patient_contact_numbers'>, patch: Partial
             class="h-9 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none"
             @change="updateNumber(n, { country_code: ($event.target as HTMLSelectElement).value })"
           >
-            <option v-for="c in COUNTRIES" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }}</option>
+            <option v-for="c in COUNTRIES_BY_NAME" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }} {{ c.name }}</option>
           </select>
           <input
             :value="n.number"
@@ -107,7 +107,7 @@ async function updateNumber(n: Tables<'patient_contact_numbers'>, patch: Partial
 
     <div v-if="editable" class="mt-2 flex flex-wrap items-center gap-2">
       <select v-model="newCountry" class="h-9 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
-        <option v-for="c in COUNTRIES" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }}</option>
+        <option v-for="c in COUNTRIES_BY_NAME" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }} {{ c.name }}</option>
       </select>
       <input
         v-model="newNumber"

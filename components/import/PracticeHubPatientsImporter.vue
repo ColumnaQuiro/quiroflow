@@ -7,6 +7,72 @@ const store = useAccountStore()
 const t = useT()
 const { showToast } = useToast()
 
+// The CSV export carries "Mobile" and "Home" as bare strings with no
+// country. PracticeHub itself knows better -- its /patients API returns each
+// number with an `iso2` -- and that is the only place the country exists, so
+// the import reads it from there and falls back to Spain only for numbers it
+// cannot find.
+//
+// Getting this wrong is not cosmetic. Every imported number was stored
+// against 'ES', so a US patient's "(303) 710-5245" rendered as
+// "+34 (303) 710-5245" and any WhatsApp sent to it would have gone to a
+// Spanish number instead. On the first live migration that was 90 numbers
+// across 16 countries.
+interface PHNumber { number: string | null; iso2: string | null }
+interface PHPatientNumbers { patient_number: string | number | null; numbers: PHNumber[] | null }
+
+const connection = usePracticeHubConnection()
+const numberCountries = ref(new Map<string, string>())
+const countryLookupState = ref<'idle' | 'loading' | 'ready' | 'unavailable'>('idle')
+
+function countryKey(patientNumber: string, number: string) {
+  return `${patientNumber.trim()}|${number.trim()}`
+}
+
+async function loadNumberCountries() {
+  if (!connection.value) {
+    countryLookupState.value = 'unavailable'
+    return
+  }
+  countryLookupState.value = 'loading'
+  try {
+    const api = usePracticeHubApi(connection.value)
+    const patients = await api.fetchAll<PHPatientNumbers>('/patients')
+    const map = new Map<string, string>()
+    for (const p of patients) {
+      const ref = String(p.patient_number ?? '').trim()
+      if (!ref) continue
+      for (const n of p.numbers ?? []) {
+        const num = (n?.number ?? '').trim()
+        const iso = (n?.iso2 ?? '').trim().toUpperCase()
+        if (num && iso) map.set(countryKey(ref, num), iso)
+      }
+    }
+    numberCountries.value = map
+    countryLookupState.value = 'ready'
+  } catch {
+    // A failed lookup imports the numbers rather than the whole file --
+    // every other field is in the CSV and is still worth having.
+    countryLookupState.value = 'unavailable'
+  }
+}
+
+const DEFAULT_COUNTRY = 'ES'
+
+// How many of the numbers about to be written are foreign. Worth showing:
+// it is the difference between this import and the one that made every
+// patient Spanish, and it is a number the clinic can sanity-check.
+const foreignNumberCount = computed(() =>
+  [...toImport.value, ...toUpdate.value].reduce(
+    (total, row) => total + row.numbers.filter((n) => n.country_code !== DEFAULT_COUNTRY).length,
+    0,
+  ),
+)
+
+function countryFor(patientNumber: string, number: string): string {
+  return numberCountries.value.get(countryKey(patientNumber, number)) ?? DEFAULT_COUNTRY
+}
+
 type CsvRow = Record<string, string>
 type ContactNumber = { country_code: string; number: string; is_whatsapp: boolean }
 
@@ -104,6 +170,9 @@ const teamMembers = ref<TeamMemberOption[]>([])
 onMounted(async () => {
   const { data } = await supabase.from('team_members').select('id, full_name')
   teamMembers.value = data ?? []
+  // Picks up the connection saved under Settings -> Import -> PracticeHub ->
+  // General, so the country lookup works without re-typing the API key here.
+  await loadSavedPracticeHubConnection()
 })
 
 function matchPractitioner(name: string): string | null {
@@ -222,6 +291,9 @@ async function handleFile(file: File) {
   }
 
   rawRows.value = parsed.data
+  // Before the diff, not after: computeDiff() decides each number's country,
+  // and the preview should show what will really be written.
+  await loadNumberCountries()
   await computeDiff()
   stage.value = 'preview'
 }
@@ -277,8 +349,10 @@ async function computeDiff() {
     const existing = (externalRef && byRef.get(externalRef)) || (email && byEmail.get(email.toLowerCase())) || undefined
 
     const numbers: ContactNumber[] = []
-    if (row['Mobile']?.trim()) numbers.push({ country_code: 'ES', number: row['Mobile'].trim(), is_whatsapp: false })
-    if (row['Home']?.trim()) numbers.push({ country_code: 'ES', number: row['Home'].trim(), is_whatsapp: false })
+    const mobile = row['Mobile']?.trim()
+    const home = row['Home']?.trim()
+    if (mobile) numbers.push({ country_code: countryFor(externalRef, mobile), number: mobile, is_whatsapp: false })
+    if (home) numbers.push({ country_code: countryFor(externalRef, home), number: home, is_whatsapp: false })
 
     const realCreatedAt = parseCreatedAt(row['Created'] || '')
     const patient: TablesInsert<'patients'> = {
@@ -531,6 +605,21 @@ const introNotes = computed(() => [
           <div><dt class="text-ink-muted2">{{ t('No changes', 'Sin cambios') }}</dt><dd class="font-medium text-ink-900">{{ skippedDuplicate }}</dd></div>
           <div><dt class="text-ink-muted2">{{ t('Deleted/no-name skipped', 'Eliminados/sin nombre omitidos') }}</dt><dd class="font-medium text-ink-900">{{ skippedDeleted + skippedNoName }}</dd></div>
         </dl>
+        <!-- The CSV has no country for a phone number; PracticeHub's API
+             does. Say which of the two answered, because the fallback makes
+             every number Spanish and that is exactly the bug this replaced. -->
+        <p v-if="countryLookupState === 'ready'" class="mt-3 text-[12.5px] text-ink-muted2">
+          {{ t(
+            `Phone countries read from PracticeHub · ${foreignNumberCount} number(s) outside Spain`,
+            `Países de los teléfonos leídos de PracticeHub · ${foreignNumberCount} número(s) fuera de España`,
+          ) }}
+        </p>
+        <p v-else-if="countryLookupState === 'unavailable'" class="mt-3 text-[12.5px] text-warning-text">
+          {{ t(
+            'No PracticeHub connection, so every phone number will be saved as Spanish. Connect PracticeHub under Settings → Import → PracticeHub → General and re-run this to get each number\'s real country.',
+            'Sin conexión con PracticeHub, todos los teléfonos se guardarán como españoles. Conecta PracticeHub en Ajustes → Importar → PracticeHub → General y vuelve a ejecutarlo para obtener el país real de cada número.',
+          ) }}
+        </p>
       </div>
 
       <div>

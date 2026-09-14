@@ -214,7 +214,7 @@ async function computeDiff() {
     const existing = (externalRef && byRef.get(externalRef)) || (email && byEmail.get(email.toLowerCase())) || undefined
 
     const phone = mappedValue(row, 'phone')
-    const numbers: ContactNumber[] = phone ? [{ country_code: 'ES', number: phone, is_whatsapp: false }] : []
+    const numbers: ContactNumber[] = phone ? [{ country_code: store.defaultPhoneCountry, number: phone, is_whatsapp: false }] : []
 
     const tagsRaw = mappedValue(row, 'tags')
     const patient: TablesInsert<'patients'> = {

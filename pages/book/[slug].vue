@@ -47,6 +47,7 @@ interface BookingInfo {
     online_booking_hide_logo: boolean
     online_booking_text_overrides: Record<string, string>
     discount_codes_enabled: boolean
+    default_phone_country: string | null
   }
   clinics: BookingClinic[]
   appointment_types: BookingAppointmentType[]
@@ -190,6 +191,7 @@ onMounted(async () => {
     return
   }
   info.value = parsed
+  dialCode.value = parsed.account.default_phone_country || 'ES'
   clinicId.value = parsed.clinics[0].id
   // Marketing pages can deep-link straight into a specific offer (e.g. a
   // promo page's own appointment type/practitioner) via ?type=&practitioner=
@@ -486,6 +488,9 @@ function pickSlot(slot: DaySlot) {
 const firstName = ref('')
 const lastName = ref('')
 const email = ref('')
+// Starts on the clinic's own country, not Spain's. A patient booking with
+// a French clinic sees +33 selected, and only changes it if their number is
+// from somewhere else. Set once the booking payload lands.
 const dialCode = ref('ES')
 const phoneNumber = ref('')
 const note = ref('')

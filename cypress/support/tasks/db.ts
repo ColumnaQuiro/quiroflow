@@ -594,6 +594,18 @@ async function insertDuplicateSession(opts: { accountId: string; patientId: stri
   return { rejected: !!error, message: error?.message ?? null }
 }
 
+/** The patient row itself, for assertions the UI does not display. */
+async function patientByName(opts: { accountId: string; firstName: string; lastName: string }) {
+  const { data } = await admin
+    .from('patients')
+    .select('id, first_name, last_name, default_practitioner_id')
+    .eq('account_id', opts.accountId)
+    .eq('first_name', opts.firstName)
+    .eq('last_name', opts.lastName)
+    .maybeSingle()
+  return data ?? null
+}
+
 async function createWhatsappMessage(opts: {
   accountId: string
   patientId?: string
@@ -1063,6 +1075,7 @@ export const dbTasks = {
   'db:setExtraProfessionals': setExtraProfessionals,
   'db:setSubscriptionStripeIds': setSubscriptionStripeIds,
   'db:createPatient': createPatient,
+  'db:patientByName': patientByName,
   'db:createAppointmentType': createAppointmentType,
   'db:createServiceProduct': createServiceProduct,
   'db:enableOnlineBooking': enableOnlineBooking,

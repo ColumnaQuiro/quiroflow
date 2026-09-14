@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import { classifyPaymentForFilter } from '~/utils/incomeAttribution'
 import type { DateRange } from '~/composables/useDateRangePresets'
 
 const props = defineProps<{ dateRange: DateRange; practitionerId?: string; clinicId?: string }>()
 
-interface PaymentRow { amount_cents: number; paid_at: string; invoice_id: string | null; invoices?: { status: string } | null }
-interface InvoiceRow { id: string; total_cents: number; appointment_id: string | null }
+interface PaymentRow { amount_cents: number; paid_at: string; invoice_id: string | null; patient_id: string | null; invoices?: { status: string } | null }
+interface InvoiceRow { id: string; total_cents: number; appointment_id: string | null; patient_id: string | null }
+interface PatientRow { id: string; default_practitioner_id: string | null; clinic_id: string | null }
 interface AppointmentRow { id: string; practitioner_id: string | null; clinic_id: string | null }
 
 const t = useT()
@@ -13,6 +15,7 @@ const loading = ref(true)
 const payments = ref<PaymentRow[]>([])
 const invoices = ref<InvoiceRow[]>([])
 const appointments = ref<AppointmentRow[]>([])
+const patients = ref<PatientRow[]>([])
 const prevPaidCents = ref<number | null>(null)
 
 // Same-length window immediately preceding the selected period, for the KPI
@@ -37,11 +40,11 @@ async function load() {
   // be skipped rather than lazy-loaded.
   const needsAppointments = !!props.practitionerId || !!props.clinicId
 
-  const [p, inv, appt, prevPayments] = await Promise.all([
+  const [p, inv, appt, pats, prevPayments] = await Promise.all([
     fetchAllRows<PaymentRow>((f, t) =>
       supabase
         .from('payments')
-        .select('amount_cents, paid_at, invoice_id, invoices(status)')
+        .select('amount_cents, paid_at, invoice_id, patient_id, invoices(status)')
         .gte('paid_at', from.toISOString())
         .lte('paid_at', to.toISOString())
         .range(f, t),
@@ -49,7 +52,7 @@ async function load() {
     fetchAllRows<InvoiceRow>((f, t) =>
       supabase
         .from('invoices')
-        .select('id, total_cents, appointment_id')
+        .select('id, total_cents, appointment_id, patient_id')
         .neq('status', 'void')
         .gte('created_at', from.toISOString())
         .lte('created_at', to.toISOString())
@@ -58,10 +61,16 @@ async function load() {
     needsAppointments
       ? fetchAllRows<AppointmentRow>((f, t) => supabase.from('appointments').select('id, practitioner_id, clinic_id').range(f, t))
       : Promise.resolve([] as AppointmentRow[]),
-    fetchAllRows<PaymentRow>((f, t) =>
+    // The fallback for money with no appointment behind it -- a bono, credit
+    // on account, a quick invoice. Same "only when filtering" reasoning.
+    needsAppointments
+      ? fetchAllRows<PatientRow>((f, t) => supabase.from('patients').select('id, default_practitioner_id, clinic_id').range(f, t))
+      : Promise.resolve([] as PatientRow[]),
+    // Only ever summed, never attributed -- the trend line is account-wide.
+    fetchAllRows<{ amount_cents: number }>((f, t) =>
       supabase
         .from('payments')
-        .select('amount_cents, paid_at, invoice_id')
+        .select('amount_cents')
         .gte('paid_at', prevFrom.toISOString())
         .lte('paid_at', prevTo.toISOString())
         .range(f, t),
@@ -73,6 +82,7 @@ async function load() {
   payments.value = p.filter(notVoid)
   invoices.value = inv
   appointments.value = appt
+  patients.value = pats
   prevPaidCents.value = prevPayments.reduce((sum, row) => sum + row.amount_cents, 0)
   loading.value = false
 }
@@ -81,17 +91,23 @@ watch(() => [props.dateRange, props.practitionerId, props.clinicId], load, { dee
 
 const appointmentById = computed(() => new Map(appointments.value.map((a) => [a.id, a])))
 const invoiceById = computed(() => new Map(invoices.value.map((i) => [i.id, i])))
+const patientById = computed(() => new Map(patients.value.map((p) => [p.id, p])))
 
-function apptMatchesFilter(appointmentId: string | null): boolean {
-  if (!props.practitionerId && !props.clinicId) return true
-  const appt = appointmentId ? appointmentById.value.get(appointmentId) : undefined
-  if (!appt) return false
-  if (props.practitionerId && appt.practitioner_id !== props.practitionerId) return false
-  if (props.clinicId && appt.clinic_id !== props.clinicId) return false
-  return true
+// Money with no appointment behind it falls back to the patient's own
+// practitioner -- see utils/incomeAttribution for why, and for what it costs.
+function classify(appointmentId: string | null, patientId: string | null) {
+  return classifyPaymentForFilter({
+    practitionerId: props.practitionerId,
+    clinicId: props.clinicId,
+    appointment: appointmentId ? (appointmentById.value.get(appointmentId) ?? null) : null,
+    patient: patientId ? (patientById.value.get(patientId) ?? null) : null,
+  })
 }
-const filteredPayments = computed(() => payments.value.filter((p) => apptMatchesFilter((p.invoice_id ? invoiceById.value.get(p.invoice_id) : undefined)?.appointment_id ?? null)))
-const filteredInvoices = computed(() => invoices.value.filter((i) => apptMatchesFilter(i.appointment_id)))
+function appointmentIdOf(invoiceId: string | null): string | null {
+  return (invoiceId ? invoiceById.value.get(invoiceId) : undefined)?.appointment_id ?? null
+}
+const filteredPayments = computed(() => payments.value.filter((p) => classify(appointmentIdOf(p.invoice_id), p.patient_id) === 'matches'))
+const filteredInvoices = computed(() => invoices.value.filter((i) => classify(i.appointment_id, i.patient_id) === 'matches'))
 
 const totalPaid = computed(() => filteredPayments.value.reduce((sum, p) => sum + p.amount_cents, 0))
 const totalCharged = computed(() => filteredInvoices.value.reduce((sum, i) => sum + i.total_cents, 0))

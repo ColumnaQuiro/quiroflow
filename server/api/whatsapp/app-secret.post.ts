@@ -14,7 +14,7 @@ export default defineEventHandler(async (event) => {
   // communication_config is the permission that already gates the rest of
   // Settings > WhatsApp, so setting this needs no more and no less than
   // configuring the templates beside it.
-  const { teamMember } = await requirePermission(event, 'communication_config')
+  const { teamMember } = await requireSettingsPermission(event, 'communication_config')
   const body = await readBody<{ appSecret?: string }>(event)
 
   const appSecret = (body?.appSecret ?? '').trim()

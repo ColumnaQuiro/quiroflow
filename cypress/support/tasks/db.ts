@@ -571,6 +571,29 @@ async function packageSessionEffects(opts: { patientId: string; packagePurchaseI
   return { purchase, appointments, invoices, credits, payments, sessions }
 }
 
+/**
+ * Tries to write a SECOND bono session against an appointment that already
+ * has one, the way a double click did before
+ * package_sessions_one_per_appointment existed. Returns the database's
+ * refusal rather than throwing, so a spec can assert on it.
+ *
+ * This is the half no UI test can reach: the screen stops offering the button
+ * once a session is taken, so the only way to prove the rule actually holds --
+ * for the mobile app, for a race, for whatever is written next -- is to
+ * attempt the write directly.
+ */
+async function insertDuplicateSession(opts: { accountId: string; patientId: string; packagePurchaseId: string; appointmentId: string; amountCents: number }) {
+  const { error } = await admin.from('package_sessions').insert({
+    account_id: opts.accountId,
+    patient_id: opts.patientId,
+    package_purchase_id: opts.packagePurchaseId,
+    appointment_id: opts.appointmentId,
+    amount_cents: opts.amountCents,
+    used_at: new Date().toISOString(),
+  })
+  return { rejected: !!error, message: error?.message ?? null }
+}
+
 async function createWhatsappMessage(opts: {
   accountId: string
   patientId?: string
@@ -1061,6 +1084,7 @@ export const dbTasks = {
   'db:createImportedPayment': createImportedPayment,
   'db:createPackagePurchase': createPackagePurchase,
   'db:packageSessionEffects': packageSessionEffects,
+  'db:insertDuplicateSession': insertDuplicateSession,
   'db:createWhatsappMessage': createWhatsappMessage,
   'db:seedWhatsappReplyScenario': seedWhatsappReplyScenario,
   'db:createAppointment': createAppointment,

@@ -285,6 +285,31 @@ async function usePackageSession(pkg: { id: string; package_name: string; sessio
   }
   savingPayment.value = true
 
+  // Has this visit already taken a session? The compare-and-set below does
+  // not answer that: it defends against a SHARED bono being drawn on from two
+  // patients' screens at once, where the second write must lose. A second
+  // click on the same screen is not that -- it reads the count the first one
+  // left behind, claims the next session legitimately, and takes a second
+  // session for a visit that only happened once. Adrian Oropeza's bono lost
+  // 44 EUR that way, two clicks 18 seconds apart.
+  //
+  // Read from the database, not from anything this component is holding: the
+  // first click's own write is what has to be seen.
+  const { data: existingSession } = await supabase
+    .from('package_sessions')
+    .select('id, package_purchase_id, package_purchases(package_name)')
+    .eq('appointment_id', props.appointmentId)
+    .maybeSingle()
+  if (existingSession) {
+    const takenFrom = (existingSession as unknown as { package_purchases: { package_name: string } | null }).package_purchases?.package_name
+    error.value = takenFrom
+      ? t(`This visit is already covered by ${takenFrom}.`, `Esta visita ya está cubierta por ${takenFrom}.`)
+      : t('This visit has already taken a session from a bono.', 'Esta visita ya ha usado una sesión de un bono.')
+    savingPayment.value = false
+    await refreshSummary()
+    return
+  }
+
   // Re-read the bono rather than trusting the copy this component loaded.
   // `activePackages` includes bonos SHARED from another patient (a family
   // bono), and a shared bono is being drawn on from several patients' screens

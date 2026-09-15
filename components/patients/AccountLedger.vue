@@ -33,7 +33,7 @@ const props = defineProps<{
   payments: PaymentRow[]
   credits: CreditRow[]
   packageSessions: PackageSessionRow[]
-  creditLedgerCents: number
+  spendableCreditCents: number
   sendingInvoiceId: string
   sendResultInvoiceId: string
   sendResultMessage: string
@@ -376,7 +376,7 @@ async function submitTransferCredit() {
   transferError.value = ''
   if (!transferTarget.value) return
   const amountCents = Math.round((parseFloat(transferAmount.value) || 0) * 100)
-  if (amountCents <= 0 || amountCents > props.creditLedgerCents) {
+  if (amountCents <= 0 || amountCents > props.spendableCreditCents) {
     transferError.value = t('Amount must be positive and not exceed available credit.', 'El importe debe ser positivo y no superar el crédito disponible.')
     return
   }
@@ -444,7 +444,7 @@ async function sendStatement() {
             <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="newInvoice">{{ t('New receipt', 'Nuevo recibo') }}</button>
             <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="takePayment">{{ t('New Payment', 'Nuevo pago') }}</button>
             <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="addCredit">{{ t('Add Credit', 'Añadir crédito') }}</button>
-            <button v-if="creditLedgerCents > 0" type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="openTransferCredit">
+            <button v-if="spendableCreditCents > 0" type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="openTransferCredit">
               {{ t('Transfer Credit', 'Transferir crédito') }}
             </button>
             <div class="my-1 border-t border-line-divider"></div>
@@ -550,7 +550,7 @@ async function sendStatement() {
   <div v-if="transferModalOpen" class="fixed inset-0 z-20 flex items-center justify-center bg-ink-900/40 p-4" @click.self="transferModalOpen = false">
     <div class="w-full max-w-sm rounded-card border border-line bg-surface p-4 shadow-popover">
       <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Transfer credit', 'Transferir crédito') }}</p>
-      <p class="mt-1 text-[12px] text-ink-faint">{{ t('Moves an amount from this patient\'s credit', 'Mueve un importe del crédito de este paciente') }} (€{{ (creditLedgerCents / 100).toFixed(2) }} {{ t('available', 'disponible') }}) {{ t('to another patient\'s account.', 'a la cuenta de otro paciente.') }}</p>
+      <p class="mt-1 text-[12px] text-ink-faint">{{ t('Moves an amount from this patient\'s credit', 'Mueve un importe del crédito de este paciente') }} (€{{ (spendableCreditCents / 100).toFixed(2) }} {{ t('available', 'disponible') }}) {{ t('to another patient\'s account.', 'a la cuenta de otro paciente.') }}</p>
 
       <div class="mt-3">
         <label class="block text-[11px] text-ink-muted">{{ t('To patient', 'Al paciente') }}</label>

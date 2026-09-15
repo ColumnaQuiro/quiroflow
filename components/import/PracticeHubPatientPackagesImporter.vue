@@ -142,6 +142,12 @@ const phDuplicateBonos = ref<{ patientName: string; packageName: string; priceCe
 // Bonos PracticeHub still lists but on which nothing ever happened: no
 // session used, no balance, nothing owed, nobody sharing them.
 const voidBonos = ref<{ patientName: string; packageName: string; priceCents: number; phPackageId: number }[]>([])
+// Bonos whose PracticeHub figures contradict each other -- see
+// balanceDisagreesWithPrice. Imported as-is and listed for a human to check,
+// because a wrong price here mis-charges every session drawn from the bono.
+const mispricedBonos = ref<
+  { patientName: string; packageName: string; phPackageId: number; priceCents: number; visits: number; visitsLeft: number; statedBalance: number; impliedBalance: number }[]
+>([])
 const mergesApplied = ref(0)
 const mergeError = ref('')
 const duplicateMerges = ref<
@@ -215,6 +221,69 @@ function paidNotConsumedCentsFor(pkg: PHPatientPackage): number {
   return Math.max(0, Math.round(paidMinusConsumed * 100))
 }
 
+// Does PracticeHub's own arithmetic on this bono add up?
+//
+// `balance` is documented above as visits_left x (price / visits) -- verified
+// against 519 of 545 live records. When it does NOT, one of those three
+// numbers is wrong in PracticeHub, and `price` is taken here as given, so a
+// wrong price is copied in and then silently mis-charges every session drawn
+// from that bono for the rest of its life.
+//
+// That is not hypothetical. Bernardo Figueroa's Bono mantenimiento (PH 524)
+// came over at 240 EUR for 12 sessions where the product is 480 for 12 --
+// someone appears to have entered the half he was paying as the price. His
+// visit on 2026-09-15 drew 20 EUR instead of 40, five weeks after the import,
+// and nothing would have surfaced it. PracticeHub's own numbers disagreed the
+// whole time: 10 visits left at 20 each is 200, and it stated a balance of
+// 160.
+//
+// Deliberately NOT a comparison against our own package templates, which was
+// the obvious version of this check. Two of the Ferrer family hold a Bono 14
+// at 301 EUR against a 602 template -- half rate, and entirely real: each paid
+// their 301 in two instalments. A template check calls that an error every
+// run. This one does not flag them, because their figures are self-consistent
+// (1 visit left x 21.50 = the 21.50 balance PracticeHub states).
+//
+// Reported, never corrected. Which of the three numbers is wrong is not
+// knowable from here -- Bernardo's balance does not match ANY of the candidate
+// prices -- so this asks a human to look at the bono in PracticeHub before the
+// price is trusted.
+//
+// Tuned against all 553 snapshot records, because a plain "these disagree"
+// check flags 27 of them and most are noise in two recognisable shapes:
+//
+//   * 9 ACTIVE bonos whose balance is higher than sessions left imply by
+//     EXACTLY one session (46 on a Bono 10, 44 on a Bono 12, 43 on a Bono 14).
+//     PracticeHub looks to count the balance before decrementing the visit.
+//     Their prices are all correct, so an over-statement is not the signal.
+//   * 14 CLOSED bonos with no sessions left and a few euros of round-off.
+//
+// What is left once those go is a SHORTFALL on a live bono -- the stated
+// balance being less than the remaining sessions are worth -- which is the
+// shape Bernardo's has (160 against 200). Directional, and 10 EUR rather than
+// 1, because two records sit 4 EUR under on identical Bono 10s and look like
+// the same rounding as the closed ones. That leaves 2 of 553 flagged: PH 524,
+// the known bad one, and PH 241, half a session under on a half-paid bono and
+// worth the same human glance. Widen the tolerance if real ones start slipping
+// through; the cost of being wrong here is a line in a report, not a write.
+const BALANCE_SHORTFALL_TOLERANCE_EUR = 10
+function balanceDisagreesWithPrice(pkg: PHPatientPackage): { statedBalance: number; impliedBalance: number } | null {
+  const visits = pkg.visits ?? 0
+  const visitsLeft = pkg.visits_left ?? 0
+  const price = pkg.price ?? 0
+  // Live bonos only: a closed one's price can no longer mis-charge anything,
+  // since no further session will ever be drawn from it.
+  if (pkg.active !== 1) return null
+  // An over-used bono carries a negative balance by design (see
+  // paidNotConsumedCentsFor), a spent one has nothing left to mis-charge, and
+  // a priceless one has nothing to check.
+  if (visits <= 0 || price <= 0 || visitsLeft <= 0 || visitsLeft > visits) return null
+  const impliedBalance = visitsLeft * (price / visits)
+  const statedBalance = pkg.balance ?? 0
+  if (statedBalance >= impliedBalance - BALANCE_SHORTFALL_TOLERANCE_EUR) return null
+  return { statedBalance, impliedBalance }
+}
+
 // What is still owed on a bono. `package_balance` is paid minus price, so it
 // is negative by exactly the outstanding amount and zero once settled.
 //
@@ -277,6 +346,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
   duplicateMerges.value = []
   phDuplicateBonos.value = []
   voidBonos.value = []
+  mispricedBonos.value = []
   mergesApplied.value = 0
   mergeError.value = ''
   skippedNoValue.value = 0
@@ -664,6 +734,22 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         continue
       }
 
+      // Checked after the void/duplicate branches so a bono that is being
+      // skipped anyway does not also demand a human look at its price.
+      const priceDisagreement = balanceDisagreesWithPrice(pkg)
+      if (priceDisagreement) {
+        mispricedBonos.value.push({
+          patientName: ourPatient.name,
+          packageName,
+          phPackageId: pkg.id,
+          priceCents,
+          visits: pkg.visits ?? 0,
+          visitsLeft: pkg.visits_left ?? 0,
+          statedBalance: priceDisagreement.statedBalance,
+          impliedBalance: priceDisagreement.impliedBalance,
+        })
+      }
+
       // Only meaningful for a live package -- a closed one having no value
       // left is the normal case, not a reason to skip it. Owing money counts
       // as something left to do even with no visits left: a bono used to the
@@ -1018,6 +1104,7 @@ function reset() {
   duplicateMerges.value = []
   phDuplicateBonos.value = []
   voidBonos.value = []
+  mispricedBonos.value = []
   mergesApplied.value = 0
   mergeError.value = ''
   skippedNoValue.value = 0
@@ -1130,6 +1217,33 @@ const introNotes = computed(() => [
           <li v-for="v in voidBonos" :key="v.phPackageId">
             {{ v.patientName }} &middot; {{ v.packageName }} &middot; &euro;{{ formatEuros(v.priceCents) }}
             <span class="font-mono text-warning-text/70">#{{ v.phPackageId }}</span>
+          </li>
+        </ul>
+      </div>
+
+      <div v-if="mispricedBonos.length > 0" class="rounded-ctl border border-warning-border bg-warning-bg p-3">
+        <p class="text-[12.5px] font-medium text-warning-text">
+          {{ t(`${mispricedBonos.length} bono(s) whose price may be wrong in PracticeHub — imported, please check`, `${mispricedBonos.length} bono(s) con un precio posiblemente incorrecto en PracticeHub: importados, revísalos`) }}
+        </p>
+        <p class="mt-1 text-[12.5px] leading-relaxed text-warning-text">
+          {{
+            t(
+              "PracticeHub's own figures disagree on these: the balance it states is not what its sessions left and price come to. The price is imported as given, so if it is the wrong one, every session drawn from the bono is charged at the wrong rate from now on. Check the bono in PracticeHub and correct it there, then run this importer again.",
+              'Las cifras de PracticeHub no cuadran en estos: el saldo que indica no coincide con las sesiones restantes por el precio. El precio se importa tal cual, así que si es incorrecto, cada sesión que se descuente del bono se cobrará mal a partir de ahora. Revisa el bono en PracticeHub, corrígelo allí y vuelve a ejecutar esta importación.',
+            )
+          }}
+        </p>
+        <ul class="mt-2 space-y-0.5 text-[12px] text-warning-text">
+          <li v-for="m in mispricedBonos" :key="m.phPackageId">
+            {{ m.patientName }} &middot; {{ m.packageName }} &middot; &euro;{{ formatEuros(m.priceCents) }} / {{ m.visits }}
+            &middot;
+            {{
+              t(
+                `${m.visitsLeft} left implies €${m.impliedBalance.toFixed(2)}, PracticeHub says €${m.statedBalance.toFixed(2)}`,
+                `${m.visitsLeft} restantes implican €${m.impliedBalance.toFixed(2)}; PracticeHub indica €${m.statedBalance.toFixed(2)}`,
+              )
+            }}
+            <span class="font-mono text-warning-text/70">#{{ m.phPackageId }}</span>
           </li>
         </ul>
       </div>

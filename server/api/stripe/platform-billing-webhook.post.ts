@@ -63,9 +63,14 @@ export default defineEventHandler(async (event) => {
     .from('plans')
     .select('id, stripe_monthly_price_id, stripe_annual_price_id, stripe_extra_professional_monthly_price_id, stripe_extra_professional_annual_price_id')
 
+  const { data: addons } = await supabase
+    .from('addons')
+    .select('id, stripe_monthly_price_id, stripe_annual_price_id')
+
   let planId: string | null = null
   let billingInterval: Database['public']['Tables']['subscriptions']['Row']['billing_interval'] = 'monthly'
   let extraProfessionals = 0
+  let growthAddon = false
 
   for (const item of subscription.items.data) {
     const priceId = item.price.id
@@ -76,7 +81,12 @@ export default defineEventHandler(async (event) => {
       continue
     }
     const addOnPlan = (plans ?? []).find((p) => p.stripe_extra_professional_monthly_price_id === priceId || p.stripe_extra_professional_annual_price_id === priceId)
-    if (addOnPlan) extraProfessionals = item.quantity ?? 0
+    if (addOnPlan) {
+      extraProfessionals = item.quantity ?? 0
+      continue
+    }
+    const growth = (addons ?? []).find((a) => a.id === 'growth' && (a.stripe_monthly_price_id === priceId || a.stripe_annual_price_id === priceId))
+    if (growth) growthAddon = true
   }
 
   const mappedStatus = stripeEvent.type === 'customer.subscription.deleted' ? 'canceled' : STATUS_MAP[subscription.status]
@@ -88,6 +98,13 @@ export default defineEventHandler(async (event) => {
       billing_interval: billingInterval,
       ...(mappedStatus ? { status: mappedStatus } : {}),
       extra_professionals: extraProfessionals,
+      // Absent item means absent add-on: dropping Growth has to turn the
+      // column off, not just leave it wherever it was. That makes the Stripe
+      // subscription the single source of truth for what was *bought*, which
+      // is why the two ways of granting Growth without buying it -- `comped`
+      // and an active trial -- are separate columns and separate branches in
+      // hasGrowth(), rather than this one being set by hand.
+      growth_addon: growthAddon,
       trial_ends_at: subscription.trial_end ? new Date(subscription.trial_end * 1000).toISOString() : null,
       stripe_customer_id: typeof subscription.customer === 'string' ? subscription.customer : subscription.customer.id,
       stripe_subscription_id: subscription.id,

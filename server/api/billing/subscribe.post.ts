@@ -15,11 +15,12 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, statusMessage: 'Only the account owner can manage billing' })
   }
 
-  const body = await readBody<{ planId: string; interval: 'monthly' | 'annual'; extraProfessionals?: number }>(event)
+  const body = await readBody<{ planId: string; interval: 'monthly' | 'annual'; extraProfessionals?: number; growth?: boolean }>(event)
   if (!body?.planId || (body.interval !== 'monthly' && body.interval !== 'annual')) {
     throw createError({ statusCode: 400, statusMessage: 'planId and interval are required' })
   }
   const extraProfessionals = Math.max(0, Math.trunc(body.extraProfessionals ?? 0))
+  const wantsGrowth = body.growth === true
 
   const serviceRole = serverSupabaseServiceRole<Database>(event)
   const { data: plan } = await serviceRole.from('plans').select('*').eq('id', body.planId).maybeSingle()
@@ -31,6 +32,12 @@ export default defineEventHandler(async (event) => {
   if (extraProfessionals > 0 && !addOnPriceId) {
     throw createError({ statusCode: 400, statusMessage: 'This plan does not support extra professionals' })
   }
+
+  // Growth attaches to any plan, so it is resolved from `addons` rather than
+  // from the chosen plan's columns -- that is the whole point of it being an
+  // add-on and not a fourth tier. Whether a missing price is fatal is decided
+  // below, after the seat check.
+  const growth = await growthAddonPrices(serviceRole, body.interval)
 
   // enforce_practitioner_seats (0150) only blocks a plan limit from being
   // breached going FORWARD -- it has nothing to say about an account that's
@@ -56,6 +63,15 @@ export default defineEventHandler(async (event) => {
         statusMessage: `This plan covers ${allowance} practitioner(s), but ${practitionerCount} are currently active. Add more extra professionals, or mark some staff as non-practitioner, before switching.`,
       })
     }
+  }
+
+  // Deliberately after the seat check. This is an operator problem -- nobody
+  // configured a Stripe price -- while the seat check is something the owner
+  // can act on, and whichever throws first is the only message they see.
+  // Refusing rather than quietly dropping Growth from the items: an account
+  // that pays for it must not lose it as a side effect of changing plan.
+  if (wantsGrowth && !growth.priceId) {
+    throw createError({ statusCode: 500, statusMessage: 'Growth has no Stripe price configured for this billing interval' })
   }
 
   const { data: subscription } = await serviceRole
@@ -101,6 +117,7 @@ export default defineEventHandler(async (event) => {
 
     const planItem = current.items.data.find((item) => allPlanPriceIds.has(item.price.id))
     const addOnItem = current.items.data.find((item) => addOnPriceIds.has(item.price.id))
+    const growthItem = current.items.data.find((item) => growth.allPriceIds.has(item.price.id))
 
     const items: Array<{ id?: string; price?: string; quantity?: number; deleted?: boolean }> = []
     items.push(planItem ? { id: planItem.id, price: planPriceId, quantity: 1 } : { price: planPriceId, quantity: 1 })
@@ -108,6 +125,13 @@ export default defineEventHandler(async (event) => {
       items.push(addOnItem ? { id: addOnItem.id, price: addOnPriceId, quantity: extraProfessionals } : { price: addOnPriceId, quantity: extraProfessionals })
     } else if (addOnItem) {
       items.push({ id: addOnItem.id, deleted: true })
+    }
+    // Quantity 1 always: Growth is one flat thing per account, unlike extra
+    // professionals which are priced per seat.
+    if (wantsGrowth && growth.priceId) {
+      items.push(growthItem ? { id: growthItem.id, price: growth.priceId, quantity: 1 } : { price: growth.priceId, quantity: 1 })
+    } else if (growthItem) {
+      items.push({ id: growthItem.id, deleted: true })
     }
 
     // default_tax_rates is set on every update, not just at creation, so a
@@ -142,6 +166,7 @@ export default defineEventHandler(async (event) => {
     line_items: [
       { price: planPriceId, quantity: 1 },
       ...(extraProfessionals > 0 && addOnPriceId ? [{ price: addOnPriceId, quantity: extraProfessionals }] : []),
+      ...(wantsGrowth && growth.priceId ? [{ price: growth.priceId, quantity: 1 }] : []),
     ],
     // On the subscription rather than the line items: line-item tax_rates
     // apply to this one checkout's invoice, so every renewal after it would

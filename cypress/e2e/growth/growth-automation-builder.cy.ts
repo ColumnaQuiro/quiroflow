@@ -67,6 +67,39 @@ describe('Campaign builder: waiting', () => {
     })
   })
 
+  it('asks for a header only when the template declares one', () => {
+    // Stubbed at the network edge rather than seeded, because the template
+    // list comes from Meta and a test account has no WhatsApp credentials --
+    // without this the list is empty and the assertions would be passing
+    // against a vacuum rather than against the branch logic.
+    cy.intercept('GET', '**/api/whatsapp/templates*', {
+      body: {
+        templates: [
+          { name: 'plain_message', language: 'es', category: 'MARKETING', bodyText: 'Hola {{1}}', variableCount: 1, urlButtonCount: 0, mediaHeaderFormat: null },
+          { name: 'with_location', language: 'es', category: 'MARKETING', bodyText: 'Aquí estamos', variableCount: 0, urlButtonCount: 0, mediaHeaderFormat: 'LOCATION' },
+          { name: 'with_video', language: 'en', category: 'MARKETING', bodyText: 'Hi {{1}}', variableCount: 1, urlButtonCount: 0, mediaHeaderFormat: 'VIDEO' },
+        ],
+      },
+    }).as('templates')
+
+    // Reopen so the modal loads the stubbed list.
+    cy.contains('button', 'Cancel').click()
+    cy.contains('button', 'New campaign').click()
+    cy.wait('@templates')
+
+    cy.get('[data-test="template-select"]').select('plain_message::es')
+    cy.get('[data-test="header-location"]').should('not.exist')
+    cy.get('[data-test="header-media"]').should('not.exist')
+
+    cy.get('[data-test="template-select"]').select('with_location::es')
+    cy.get('[data-test="header-location"]').scrollIntoView().should('be.visible')
+    cy.get('[data-test="header-media"]').should('not.exist')
+
+    cy.get('[data-test="template-select"]').select('with_video::en')
+    cy.get('[data-test="header-media"]').scrollIntoView().should('be.visible')
+    cy.get('[data-test="header-location"]').should('not.exist')
+  })
+
   it('offers a test run that records instead of sending', () => {
     cy.get('[data-test="dry-run-toggle"]').scrollIntoView().should('have.attr', 'aria-checked', 'false').click()
     cy.get('[data-test="dry-run-toggle"]').should('have.attr', 'aria-checked', 'true')

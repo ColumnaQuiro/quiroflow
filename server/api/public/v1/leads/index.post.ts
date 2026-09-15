@@ -3,6 +3,7 @@ import { ApiError, defineApiHandler, badRequest } from '~/server/utils/publicApi
 import { assertBelongsToAccount, loose } from '~/server/utils/publicApiHandlers'
 import { bool, definedOnly, email as emailField, enumValue, integer, readApiBody, rejectUnknownFields, str, uuid } from '~/server/utils/publicApiBody'
 import { LEAD_CHANNELS, nextLeadReference } from '~/server/utils/leads'
+import { startLeadSequence } from '~/server/utils/leadSequences'
 
 // Where an enquiry gets in from outside.
 //
@@ -269,6 +270,29 @@ export default defineApiHandler({ scope: 'leads:write' }, async ({ event, supaba
     // to read in the order the patient experienced it.
     ...definedOnly({ occurred_at: occurredAtValue }),
   } as never)
+
+  // Any enabled lead.created sequence starts now, in the same request. Not
+  // left to the cron: the first message of a welcome drip is the one whose
+  // timing matters -- "within a minute of enquiring" is the product promise,
+  // and a 15-minute tick would make it "within a quarter of an hour".
+  //
+  // Deliberately after the lead, its attribution and its answers are all
+  // committed, and deliberately non-fatal: a rule that throws must not lose
+  // the enquiry itself, which is the thing that cannot be recovered.
+  try {
+    const { data: rules } = await loose(supabase)
+      .from('automation_rules')
+      .select('id')
+      .eq('account_id', accountId)
+      .eq('trigger_event', 'lead.created')
+      .eq('enabled', true)
+
+    for (const rule of (rules ?? []) as { id: string }[]) {
+      await startLeadSequence(supabase, accountId, rule.id, lead.id, getRequestURL(event).origin)
+    }
+  } catch (err) {
+    console.error('[public/v1/leads] lead.created sequence failed to start:', (err as Error)?.message ?? err)
+  }
 
   setResponseStatus(event, 201)
   return {

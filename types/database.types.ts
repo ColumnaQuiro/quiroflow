@@ -1126,6 +1126,67 @@ export type Database = {
           },
         ]
       }
+      automation_sequence_runs: {
+        Row: {
+          account_id: string
+          id: string
+          lead_id: string
+          next_position: number
+          resume_at: string
+          rule_id: string
+          started_at: string
+          status: string
+          stopped_reason: string | null
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          id?: string
+          lead_id: string
+          next_position?: number
+          resume_at?: string
+          rule_id: string
+          started_at?: string
+          status?: string
+          stopped_reason?: string | null
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          id?: string
+          lead_id?: string
+          next_position?: number
+          resume_at?: string
+          rule_id?: string
+          started_at?: string
+          status?: string
+          stopped_reason?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "automation_sequence_runs_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "automation_sequence_runs_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "automation_sequence_runs_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "automation_rules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       availability_blocks: {
         Row: {
           account_id: string

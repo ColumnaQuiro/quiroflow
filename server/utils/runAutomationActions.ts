@@ -105,9 +105,12 @@ function leadRecipient(lead: LeadForAction): Recipient {
   }
 }
 
-interface ActionRow {
+export interface ActionRow {
   id: string
-  action_type: 'whatsapp_template' | 'email' | 'webhook'
+  // 'delay' is handled by the sequence runner before it ever reaches here --
+  // it is a pause, not something to send -- but it shares the table and so
+  // the type.
+  action_type: 'whatsapp_template' | 'email' | 'webhook' | 'delay'
   config: Record<string, any>
 }
 interface TriggerBody {
@@ -178,10 +181,16 @@ export async function runLeadRuleActions(
   lead: LeadForAction,
   origin: string,
   extraContext?: Partial<MergeContext>,
+  // A sequence runs one step at a time and has already read the rule's
+  // actions to find where it got to, so it passes the step rather than
+  // making this re-read them and run the lot.
+  only?: ActionRow[],
 ) {
   const [{ data: rule }, { data: actions }] = await Promise.all([
     supabase.from('automation_rules').select('is_marketing').eq('id', ruleId).maybeSingle(),
-    supabase.from('automation_actions').select('id, action_type, config').eq('rule_id', ruleId).order('position'),
+    only
+      ? Promise.resolve({ data: only })
+      : supabase.from('automation_actions').select('id, action_type, config').eq('rule_id', ruleId).order('position'),
   ])
 
   await runForRecipient(

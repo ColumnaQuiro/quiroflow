@@ -1,88 +1,112 @@
-// The automations workflow builder.
+// The automations workflow canvas.
 //
-// The AI receptionist used to be tested here too, against a fixture. It has
-// real configuration storage now, so those assertions moved to
-// growth-receptionist.cy.ts rather than being kept alongside a screen they no
-// longer describe.
+// It used to draw fixtures: seven invented workflows with invented run
+// counts, credited in the header to a person who does not work here. Those
+// assertions tested that the fixture still said what the fixture said, which
+// is why none of them noticed the page was fiction. It now draws the
+// account's real automation_rules, so these test that what is on the canvas
+// is what is in the database.
+
+interface SeededAccount {
+  email: string
+  password: string
+  accountId: string
+}
 
 describe('Growth automations', () => {
-  before(() => {
-    cy.seedStaffAccount().then((account) => {
-      Cypress.env('growthAccount', account)
-    })
-  })
+  let account: SeededAccount
 
   beforeEach(() => {
-    const account = Cypress.env('growthAccount')
-    cy.login(account.email, account.password)
+    cy.seedStaffAccount().then((seeded) => {
+      account = seeded as SeededAccount
+      cy.login(account.email, account.password)
+    })
   })
 
-  describe('Automations', () => {
-    it('draws the speed-to-lead workflow, branches and all', () => {
-      cy.visit('/growth/automations?growth=1')
+  it('says there is nothing rather than drawing something', () => {
+    // The state every clinic starts in, and the one the fixtures hid.
+    cy.visit('/growth/automations?growth=1')
+    cy.get('[data-test="no-workflows"]').should('contain', 'No automations yet')
+    cy.get('[data-test="node-0"]').should('not.exist')
+  })
 
-      cy.get('[data-test="node-trigger"]').should('contain', 'New lead from Meta Ads form')
-      cy.get('[data-test="node-wa"]').should('contain', 'Send WhatsApp within 60s')
-      cy.get('[data-test="node-wait10"]').should('contain', 'Wait 10 minutes')
-
-      // The condition names both of its exits on the node itself.
-      cy.get('[data-test="node-replied"]').within(() => {
-        cy.contains('Replied?').should('be.visible')
-        cy.contains('Yes · 61%').should('be.visible')
-        cy.contains('No · 39%').should('be.visible')
-      })
-
-      // Both branches, and where they end up.
-      cy.get('[data-test="node-ai-books"]').should('contain', 'AI qualifies and books')
-      cy.get('[data-test="node-sms"]').should('contain', 'Send SMS')
-      cy.get('[data-test="node-notify"]').should('contain', 'Notify front desk')
-      cy.get('[data-test="node-end"]').should('contain', 'Ends · lead is booked')
+  it('draws a real rule as its trigger and steps, in order', () => {
+    cy.task('db:createAutomationRule', {
+      accountId: account.accountId,
+      triggerEvent: 'lead.created',
+      actions: [
+        { type: 'whatsapp_template', config: { template_name: 'welcome_1', template_language: 'es', header: { type: 'video', storage_path: 'x/y.mp4' } } },
+        { type: 'delay', config: { delay_minutes: 1440 } },
+        { type: 'whatsapp_template', config: { template_name: 'welcome_day_2', template_language: 'es' } },
+      ],
     })
 
-    it('connects the nodes with edges derived from where they actually are', () => {
-      cy.visit('/growth/automations?growth=1')
+    cy.visit('/growth/automations?growth=1')
 
-      // One path per edge, and the fallback branch is the dashed one. Drawn
-      // from node geometry rather than stored, so an edge cannot point at
-      // where a node used to be.
-      cy.get('[data-test="workflow-edges"] path').should('have.length', 8)
-      cy.get('[data-test="workflow-edges"] path[stroke-dasharray]').should('have.length', 1)
+    cy.get('[data-test="node-0"]').should('contain', 'New lead arrives')
+    cy.get('[data-test="node-1"]').should('contain', 'welcome_1')
+    // The header is named on the node, because a template that needs one and
+    // has not got one is a send that fails.
+    cy.get('[data-test="node-1"]').should('contain', 'video header')
+    // Minutes are shown in the unit a person would say them in.
+    cy.get('[data-test="node-2"]').should('contain', 'Wait 1 day')
+    cy.get('[data-test="node-3"]').should('contain', 'welcome_day_2')
+    cy.get('[data-test="node-4"]').should('not.exist')
+  })
+
+  it('connects the nodes with edges derived from where they actually are', () => {
+    cy.task('db:createAutomationRule', {
+      accountId: account.accountId,
+      triggerEvent: 'lead.created',
+      actions: [
+        { type: 'whatsapp_template', config: { template_name: 'one' } },
+        { type: 'whatsapp_template', config: { template_name: 'two' } },
+      ],
     })
 
-    it('configures the selected step, and says so when a type has no panel yet', () => {
-      cy.visit('/growth/automations?growth=1')
+    cy.visit('/growth/automations?growth=1')
 
-      // The condition opens selected, because it is the only step with a
-      // configuration panel written so far.
-      cy.get('[data-test="node-config"]').within(() => {
-        cy.contains('Condition · Replied?').should('be.visible')
-        cy.contains('Lead replied on any channel').should('be.visible')
-        cy.contains('Yes → AI qualifies and books').should('be.visible')
-        cy.contains('251').should('be.visible')
-      })
+    // One path per gap between nodes, computed from node geometry rather
+    // than hand-written coordinates -- scoped to the edge layer so this
+    // cannot accidentally count the sidebar's icons.
+    cy.get('[data-test="workflow-edges"]').find('path').should('have.length', 2)
+  })
 
-      cy.get('[data-test="node-wa"]').click()
-      cy.get('[data-test="node-config"]').within(() => {
-        cy.contains('Send WhatsApp within 60s').should('be.visible')
-        cy.contains('Configuration for this step type is not built yet').should('be.visible')
-      })
+  it('calls a test run a test run, not enabled', () => {
+    // The single most misleading word this screen could show: a rule that
+    // records instead of sending is neither enabled nor paused.
+    cy.task('db:createAutomationRule', {
+      accountId: account.accountId,
+      triggerEvent: 'lead.created',
+      dryRun: true,
+      actions: [{ type: 'whatsapp_template', config: { template_name: 'welcome_1' } }],
     })
 
-    it('lists the other workflows and the chiro templates', () => {
-      cy.visit('/growth/automations?growth=1')
+    cy.visit('/growth/automations?growth=1')
+    cy.get('[data-test="workflow-state"]').should('contain', 'records, does not send')
+    cy.get('[data-test="workflow-state"]').should('not.contain', 'Enabled')
+  })
 
-      cy.get('[data-test="workflow-missed-call"]').should('contain', 'Missed-call text back')
-      cy.get('[data-test="workflow-dormant"]').should('contain', '0 runs · paused')
-
-      cy.contains('Chiro templates').scrollIntoView().should('be.visible')
-      cy.contains('Texts within 30s of a missed call').scrollIntoView().should('be.visible')
+  it('counts runs from what actually ran', () => {
+    cy.task('db:createAutomationRule', {
+      accountId: account.accountId,
+      triggerEvent: 'lead.created',
+      actions: [{ type: 'whatsapp_template', config: { template_name: 'welcome_1' } }],
     })
 
-    it('points an account without the tier at the upgrade screen', () => {
-      cy.visit('/growth/automations?growth=0')
+    cy.visit('/growth/automations?growth=1')
+    // Zero says zero. A new automation has not run, and that is worth
+    // seeing rather than dressing up.
+    cy.contains('0 runs · 30d').should('be.visible')
+  })
 
-      cy.contains('The automation builder is part of the Growth tier.').should('be.visible')
-      cy.get('[data-test="node-trigger"]').should('not.exist')
-    })
+  it('sends editing to Campaigns rather than offering a second editor', () => {
+    cy.visit('/growth/automations?growth=1')
+    cy.contains('a', 'Edit in Campaigns').should('have.attr', 'href', '/campaigns')
+  })
+
+  it('points an account without the tier at the upgrade screen', () => {
+    cy.visit('/growth/automations?growth=0')
+    cy.contains('part of the Growth tier').should('be.visible')
   })
 })

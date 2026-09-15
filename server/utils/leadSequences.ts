@@ -27,6 +27,22 @@ interface SequenceRun {
 export type StopReason = 'converted' | 'already_a_patient' | 'lead_deleted' | 'lost' | 'no_contact' | 'rule_shortened'
 
 /**
+ * 'defer' is the third answer, and the reason this is not a boolean.
+ *
+ * While QuiroFlow and PracticeHub are dual-running, somebody can be a patient
+ * there and not here, so the check has to reach an external API -- which can
+ * be down. Both obvious responses to that are wrong: carrying on risks
+ * messaging somebody who booked last week, and stopping risks cancelling
+ * every clinic's drip because a third party had a bad afternoon.
+ *
+ * So an unreachable PracticeHub defers. The run stays due and the next tick
+ * tries again: the drip is delayed rather than wrong or destroyed, and a long
+ * outage costs lateness instead of trust. A clinic with no PracticeHub
+ * configured skips the check entirely rather than deferring forever.
+ */
+export type SequenceVerdict = StopReason | 'defer' | null
+
+/**
  * Whether this lead should still be receiving the sequence.
  *
  * Re-checked before every step, not once at the start -- the entire value of
@@ -45,7 +61,7 @@ export async function sequenceStopReason(
   supabase: any,
   accountId: string,
   lead: { id: string; stage: string; patient_id: string | null; deleted_at: string | null; phone: string | null; email: string | null },
-): Promise<StopReason | null> {
+): Promise<SequenceVerdict> {
   if (lead.deleted_at) return 'lead_deleted'
   if (lead.stage === 'converted' || lead.patient_id) return 'converted'
   if (lead.stage === 'lost') return 'lost'
@@ -67,13 +83,57 @@ export async function sequenceStopReason(
     }
   }
 
-  // Deliberately not checked here: PracticeHub. n8n asks it too, because the
-  // two systems are still dual-running and somebody can exist there and not
-  // here. Reaching it needs that integration's credentials on this path, so
-  // until then a lead converted only in PracticeHub keeps receiving the
-  // drip -- worth knowing, and worth closing before this replaces n8n
-  // outright rather than running beside it.
-  return null
+  return practiceHubVerdict(supabase, accountId, lead)
+}
+
+/** How long to wait on PracticeHub before treating it as unreachable. */
+const PRACTICEHUB_TIMEOUT_MS = 5000
+
+/**
+ * Asks PracticeHub whether this person is already a patient there.
+ *
+ * n8n asks the same question for the same reason: the two systems are
+ * dual-running, so somebody booked in PracticeHub is converted even though
+ * nothing in QuiroFlow knows it. Without this the drip keeps chasing them.
+ */
+async function practiceHubVerdict(
+  supabase: any,
+  accountId: string,
+  lead: { email: string | null; phone: string | null },
+): Promise<SequenceVerdict> {
+  const { data: account } = await supabase
+    .from('accounts')
+    .select('practicehub_base_url, practicehub_api_key, practicehub_contact_email')
+    .eq('id', accountId)
+    .maybeSingle()
+
+  const baseUrl: string | undefined = account?.practicehub_base_url ?? undefined
+  const apiKey: string | undefined = account?.practicehub_api_key ?? undefined
+  // Not configured is not the same as unreachable. A clinic that never used
+  // PracticeHub must not have its drips deferred forever waiting for an
+  // answer nobody can give.
+  if (!baseUrl || !apiKey) return null
+  if (!lead.email) return null
+
+  const url = new URL(`${baseUrl.replace(/\/$/, '')}/api/patients`)
+  url.searchParams.set('email', lead.email)
+  url.searchParams.set('page_size', '1')
+
+  try {
+    const result = await $fetch<{ total_entries?: number }>(url.toString(), {
+      headers: {
+        'x-practicehub-key': apiKey,
+        // Same shape the importers send -- see usePracticeHubConnection.
+        'x-app-details': `QuiroFlow=${account?.practicehub_contact_email ?? ''}`,
+      },
+      timeout: PRACTICEHUB_TIMEOUT_MS,
+    })
+    // Exactly n8n's condition: nothing found means not converted.
+    return (result?.total_entries ?? 0) > 0 ? 'already_a_patient' : null
+  } catch (err) {
+    console.error('[leadSequences] PracticeHub unreachable, deferring:', (err as Error)?.message ?? err)
+    return 'defer'
+  }
 }
 
 function delayMinutes(config: Record<string, any>) {
@@ -103,8 +163,17 @@ export async function advanceSequenceRun(supabase: any, run: SequenceRun, origin
 
   if (!lead) return stop(supabase, run.id, 'lead_deleted')
 
-  const reason = await sequenceStopReason(supabase, run.account_id, lead)
-  if (reason) return stop(supabase, run.id, reason)
+  const verdict = await sequenceStopReason(supabase, run.account_id, lead)
+  if (verdict === 'defer') {
+    // Left running and due again shortly, so the next tick re-asks rather
+    // than this one guessing.
+    await supabase
+      .from('automation_sequence_runs')
+      .update({ resume_at: new Date(Date.now() + SEQUENCE_TICK_MINUTES * 60_000).toISOString() })
+      .eq('id', run.id)
+    return
+  }
+  if (verdict) return stop(supabase, run.id, verdict)
 
   const { data: actionRows } = await supabase
     .from('automation_actions')

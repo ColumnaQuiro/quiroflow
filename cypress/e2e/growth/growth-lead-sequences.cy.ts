@@ -154,6 +154,62 @@ describe('Lead welcome sequences', () => {
     })
   })
 
+  it('defers rather than sending or stopping when PracticeHub cannot be reached', () => {
+    // The third answer. Carrying on risks messaging somebody who booked in
+    // PracticeHub last week; stopping risks cancelling every drip because a
+    // third party had a bad afternoon. So neither: try again next tick.
+    cy.task('db:setPracticeHubConnection', { accountId: account.accountId, baseUrl: 'http://127.0.0.1:9' })
+
+    threeStepDrip()
+    ingest({ full_name: 'Practicehub Down', phone: '+34600900008', email: 'ph.down@example.com', external_id: 'seq-ph-down' }).then((res) => {
+      const id = res.body.data.id
+      cy.task('db:makeSequenceDue', { leadId: id })
+      runCron()
+
+      cy.task<Run[]>('db:sequenceRuns', { leadId: id }).then((runs) => {
+        // Still alive, not cancelled -- and pushed out rather than retried
+        // in a tight loop.
+        expect(runs[0]!.status).to.eq('running')
+        expect(runs[0]!.stopped_reason).to.be.null
+        expect(new Date(runs[0]!.resume_at).getTime()).to.be.greaterThan(Date.now())
+      })
+    })
+  })
+
+  it('skips the PracticeHub check entirely when no connection is configured', () => {
+    // Not configured is not the same as unreachable: a clinic that never used
+    // PracticeHub must not have its drips deferred forever.
+    threeStepDrip()
+    ingest({ full_name: 'No Practicehub', phone: '+34600900009', email: 'none@example.com', external_id: 'seq-ph-none' }).then((res) => {
+      const id = res.body.data.id
+      cy.task('db:makeSequenceDue', { leadId: id })
+      runCron()
+      cy.task<Run[]>('db:sequenceRuns', { leadId: id }).then((runs) => {
+        expect(runs[0]!.status).to.eq('done')
+      })
+    })
+  })
+
+  it('records what it would send instead of sending, in dry run', () => {
+    cy.task<{ id: string }>('db:createAutomationRule', {
+      accountId: account.accountId,
+      triggerEvent: 'lead.created',
+      isMarketing: true,
+      dryRun: true,
+      actions: [{ type: 'whatsapp_template', config: { template_name: 'welcome_1', template_language: 'es' } }],
+    })
+
+    ingest({ full_name: 'Dry Run', phone: '+34600900010', external_id: 'seq-dry' }).then((res) => {
+      cy.task<{ status: string; template_name: string; wamid: string | null }[]>('db:leadMessages', { leadId: res.body.data.id }).then((msgs) => {
+        expect(msgs).to.have.length(1)
+        expect(msgs[0]!.status).to.eq('would_send')
+        expect(msgs[0]!.template_name).to.eq('welcome_1')
+        // Nothing reached Meta, so there is no message id to show for it.
+        expect(msgs[0]!.wamid).to.be.null
+      })
+    })
+  })
+
   it('does not start anything when no lead.created rule is enabled', () => {
     ingest({ full_name: 'No Rule', phone: '+34600900006', external_id: 'seq-none' }).then((res) => {
       cy.task<Run[]>('db:sequenceRuns', { leadId: res.body.data.id }).then((runs) => {

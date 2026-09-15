@@ -1079,6 +1079,7 @@ export type Database = {
         Row: {
           account_id: string
           created_at: string
+          dry_run: boolean
           created_by: string | null
           enabled: boolean
           filters: Json
@@ -1090,6 +1091,7 @@ export type Database = {
         Insert: {
           account_id: string
           created_at?: string
+          dry_run?: boolean
           created_by?: string | null
           enabled?: boolean
           filters?: Json
@@ -1101,6 +1103,7 @@ export type Database = {
         Update: {
           account_id?: string
           created_at?: string
+          dry_run?: boolean
           created_by?: string | null
           enabled?: boolean
           filters?: Json

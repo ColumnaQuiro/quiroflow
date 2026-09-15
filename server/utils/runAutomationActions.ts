@@ -287,6 +287,71 @@ function recipientFieldValue(recipient: Recipient, source: string, context?: Mer
   return ''
 }
 
+/**
+ * The header of a template, when it has one that needs filling.
+ *
+ * Two kinds, because the welcome drip this was written for uses both: a video
+ * on the first message and the clinic's location on the third. A template
+ * whose header is plain text or fixed needs nothing here and gets an empty
+ * list.
+ *
+ * Media is sent as a `link` rather than an uploaded media id, deliberately.
+ * Meta's /media ids expire after about 30 days, so the id route means either
+ * re-uploading the same video per send or keeping a cache with its own
+ * expiry bookkeeping. A link is fetched by Meta at send time and the problem
+ * disappears -- and a signed URL means the file can stay in the private
+ * whatsapp-media bucket instead of a public one, which is the right default
+ * for anything we send to patients.
+ *
+ * config.header:
+ *   { type: 'video' | 'image' | 'document', storage_path: 'welcome/saludo.mp4' }
+ *   { type: 'location', latitude, longitude, name, address }
+ */
+const SIGNED_URL_SECONDS = 60 * 60
+
+async function buildHeaderComponent(supabase: any, header: Record<string, any> | undefined): Promise<Record<string, any>[]> {
+  if (!header || typeof header !== 'object') return []
+  const type = String(header.type ?? '')
+
+  if (type === 'location') {
+    const latitude = Number(header.latitude)
+    const longitude = Number(header.longitude)
+    // No graceful degradation is available here, and pretending otherwise
+    // would be worse than the truth: a template whose header is required is
+    // rejected by Meta with 132000 whether the header is malformed or
+    // missing. So an unbuildable header means the send fails -- what this
+    // returns decides only which error lands in
+    // whatsapp_messages.error_message, and "parameters do not match" is a
+    // better trail than a rejected location object.
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return []
+    return [{
+      type: 'header',
+      parameters: [{
+        type: 'location',
+        location: {
+          latitude: String(latitude),
+          longitude: String(longitude),
+          name: header.name ?? '',
+          address: header.address ?? '',
+        },
+      }],
+    }]
+  }
+
+  if (type !== 'video' && type !== 'image' && type !== 'document') return []
+
+  const storagePath: string | undefined = header.storage_path
+  if (!storagePath) return []
+
+  const { data, error } = await supabase.storage.from('whatsapp-media').createSignedUrl(storagePath, SIGNED_URL_SECONDS)
+  if (error || !data?.signedUrl) return []
+
+  const media: Record<string, any> = { link: data.signedUrl }
+  if (type === 'document' && header.filename) media.filename = header.filename
+
+  return [{ type: 'header', parameters: [{ type, [type]: media }] }]
+}
+
 // Creates the patient's copy of a doc template (health history, consent,
 // etc.) and returns its public_token, or null if the template is gone.
 // Returns just the token, not the full URL, since callers need it in two
@@ -394,6 +459,7 @@ async function runWhatsAppAction(
   // trimmed/padded to match.
   const bodyComponents: Record<string, any>[] = []
   const buttonComponents: Record<string, any>[] = []
+  const headerComponents = await buildHeaderComponent(supabase, config.header)
   if (account.whatsapp_business_account_id) {
     const templates = await $fetch<{ data: { name: string; language: string; components: any[] }[] }>(
       `https://graph.facebook.com/v21.0/${account.whatsapp_business_account_id}/message_templates`,
@@ -458,7 +524,9 @@ async function runWhatsAppAction(
           template: {
             name: templateName,
             language: { code: templateLanguage },
-            components: [...bodyComponents, ...buttonComponents],
+            // Header first: Meta rejects a template whose components are
+            // out of order with 132000 rather than reordering them.
+            components: [...headerComponents, ...bodyComponents, ...buttonComponents],
           },
         },
       },

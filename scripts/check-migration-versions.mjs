@@ -1,4 +1,5 @@
-// Two branches, two migrations, one number.
+// Two branches, two migrations, one number -- and the gate that keeps every
+// new migration timestamped, which check-migrations-applied.mjs depends on.
 //
 // Migrations used to be numbered by hand -- 0173, 0174, 0175 -- and the next
 // free number is whatever main happens to show when you start. Two branches
@@ -25,8 +26,14 @@ import { readdirSync } from 'node:fs'
 const DIR = 'supabase/migrations'
 const files = readdirSync(DIR).filter((f) => f.endsWith('.sql'))
 
+// Hand numbering stopped at 0174. Everything at or below that is history and
+// stays as it is -- renaming an applied migration changes its version and
+// would re-run it.
+const LAST_HAND_NUMBERED = 174
+
 const byVersion = new Map()
 const malformed = []
+const handNumbered = []
 for (const file of files) {
   // Both shapes: 0174_name.sql (legacy) and 20260913082934_name.sql (new).
   const match = /^(\d+)_/.exec(file)
@@ -35,6 +42,17 @@ for (const file of files) {
     continue
   }
   const version = match[1]
+  // A NEW hand-numbered file is rejected outright, not merely discouraged.
+  // Two reasons, and the second is the one that bites silently:
+  //
+  //   * it can collide, which is the whole subject of this file, and
+  //   * check-migrations-applied.mjs can only verify TIMESTAMPED migrations
+  //     against the database -- the legacy ones are recorded under generated
+  //     versions, and 29 are not recorded at all -- so a hand-numbered file
+  //     added today would never be checked for having been applied, and could
+  //     ride a release into production with its columns missing. That is
+  //     exactly the failure that check exists to prevent.
+  if (version.length !== 14 && Number(version) > LAST_HAND_NUMBERED) handNumbered.push(file)
   if (!byVersion.has(version)) byVersion.set(version, [])
   byVersion.get(version).push(file)
 }
@@ -47,7 +65,14 @@ if (malformed.length > 0) {
 for (const [version, names] of collisions) {
   console.error(`Two migrations claim version ${version}:\n${names.map((f) => `  ${DIR}/${f}`).join('\n')}`)
 }
-if (malformed.length > 0 || collisions.length > 0) {
+if (handNumbered.length > 0) {
+  console.error(`Hand-numbered migrations stopped at ${LAST_HAND_NUMBERED}; these need a timestamp:`)
+  console.error(handNumbered.map((f) => `  ${DIR}/${f}`).join('\n'))
+  console.error('\nBesides colliding between branches, a hand-numbered file cannot be verified')
+  console.error('as applied by check:migrations-applied, so it could reach production with its')
+  console.error('columns missing and nothing would notice.')
+}
+if (malformed.length > 0 || collisions.length > 0 || handNumbered.length > 0) {
   console.error('\nRename the newer one. Prefer a timestamp -- `supabase migration new <name>` -- which no other branch can take.')
   process.exit(1)
 }

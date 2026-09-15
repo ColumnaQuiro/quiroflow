@@ -1,6 +1,6 @@
 // Creates (or updates) QuiroFlow's own billing catalogue -- the three plan
-// products and their prices -- in a Stripe account, and prints the price ids
-// to paste into the `plans` table.
+// products, the extra-practitioner seat and the Growth add-on -- in a Stripe
+// account, and prints the price ids to paste into `plans` and `addons`.
 //
 // This is QuiroFlow billing its CLINIC CUSTOMERS for using the product. It is
 // NOT the Connect account that bills a clinic's own patients: those are
@@ -9,7 +9,8 @@
 // reach the other's data. Run this with the platform-billing key only.
 //
 // Safe to re-run. Products are upserted by their fixed ids (starter / pro /
-// clinic / extra-professional), and a price is only created when no active
+// clinic / extra-professional / the Growth product), and a price is only
+// created when no active
 // price on that product already has the same amount and interval -- Stripe
 // prices are immutable, so changing an amount means creating a new one and
 // repointing `plans` at it. Nothing is ever archived or deleted here; old
@@ -68,6 +69,26 @@ const CATALOGUE = [
     annual: 16900,
   },
   {
+    // Growth is an add-on, not a plan -- it attaches to whichever plan the
+    // account is on, which is why it has no planId and why its prices live in
+    // `addons` rather than in a column on `plans`.
+    //
+    // The id is Stripe's own rather than a readable `growth`, because this
+    // product was created in the dashboard (which cannot set a product id)
+    // before it was added here. Naming it `growth` would make the next run of
+    // this script create a SECOND Growth product with duplicate prices, and
+    // the price ids already in `addons` -- the ones customers would be billed
+    // against -- point at this one. Only price ids are ever stored, so the
+    // ugly id costs nothing.
+    id: 'prod_VGYO3CyN90xQFT',
+    planId: null,
+    addonId: 'growth',
+    name: 'QuiroFlow Growth',
+    description: 'Lead pipeline, AI receptionist, campaign automations and reputation. An add-on for any plan.',
+    monthly: 4900,
+    annual: 3900,
+  },
+  {
     id: 'extra-professional',
     planId: null,
     name: 'QuiroFlow extra practitioner',
@@ -86,7 +107,7 @@ async function upsertProduct(entry) {
   const body = {
     name: entry.name,
     description: entry.description,
-    metadata: { source: 'quiroflow', ...(entry.planId ? { plan_id: entry.planId } : {}) },
+    metadata: { source: 'quiroflow', ...(entry.planId ? { plan_id: entry.planId } : {}), ...(entry.addonId ? { addon_id: entry.addonId } : {}) },
   }
   try {
     const existing = await stripe.products.retrieve(entry.id)
@@ -148,6 +169,15 @@ for (const planId of ['starter', 'pro', 'clinic']) {
       `where id = '${planId}';\n`,
   )
 }
+
+const growth = byId['prod_VGYO3CyN90xQFT']
+console.log('--- SQL to point the addons table at these prices ---\n')
+console.log(
+  `update addons set\n` +
+    `  stripe_monthly_price_id = '${growth.monthly.price.id}',\n` +
+    `  stripe_annual_price_id = '${growth.annual.price.id}'\n` +
+    `where id = 'growth';\n`,
+)
 
 console.log('--- Still to do by hand in the Stripe dashboard ---\n')
 console.log('1. Webhook endpoint -> https://app.quiroflow.com/api/stripe/platform-billing-webhook')

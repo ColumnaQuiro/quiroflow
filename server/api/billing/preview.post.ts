@@ -26,11 +26,12 @@ export default defineEventHandler(async (event): Promise<PreviewResult> => {
     throw createError({ statusCode: 403, statusMessage: 'Only the account owner can manage billing' })
   }
 
-  const body = await readBody<{ planId: string; interval: 'monthly' | 'annual'; extraProfessionals?: number }>(event)
+  const body = await readBody<{ planId: string; interval: 'monthly' | 'annual'; extraProfessionals?: number; growth?: boolean }>(event)
   if (!body?.planId || (body.interval !== 'monthly' && body.interval !== 'annual')) {
     throw createError({ statusCode: 400, statusMessage: 'planId and interval are required' })
   }
   const extraProfessionals = Math.max(0, Math.trunc(body.extraProfessionals ?? 0))
+  const wantsGrowth = body.growth === true
 
   const serviceRole = serverSupabaseServiceRole<Database>(event)
   const { data: plan } = await serviceRole.from('plans').select('*').eq('id', body.planId).maybeSingle()
@@ -41,6 +42,11 @@ export default defineEventHandler(async (event): Promise<PreviewResult> => {
   if (!planPriceId) throw createError({ statusCode: 500, statusMessage: 'This plan has no Stripe price configured' })
   if (extraProfessionals > 0 && !addOnPriceId) {
     throw createError({ statusCode: 400, statusMessage: 'This plan does not support extra professionals' })
+  }
+
+  const growth = await growthAddonPrices(serviceRole, body.interval)
+  if (wantsGrowth && !growth.priceId) {
+    throw createError({ statusCode: 500, statusMessage: 'Growth has no Stripe price configured for this billing interval' })
   }
 
   const { data: subscription } = await serviceRole
@@ -66,6 +72,7 @@ export default defineEventHandler(async (event): Promise<PreviewResult> => {
 
   const planItem = current.items.data.find((item) => allPlanPriceIds.has(item.price.id))
   const addOnItem = current.items.data.find((item) => addOnPriceIds.has(item.price.id))
+  const growthItem = current.items.data.find((item) => growth.allPriceIds.has(item.price.id))
 
   const items: Array<{ id?: string; price?: string; quantity?: number; deleted?: boolean }> = []
   items.push(planItem ? { id: planItem.id, price: planPriceId, quantity: 1 } : { price: planPriceId, quantity: 1 })
@@ -73,6 +80,11 @@ export default defineEventHandler(async (event): Promise<PreviewResult> => {
     items.push(addOnItem ? { id: addOnItem.id, price: addOnPriceId, quantity: extraProfessionals } : { price: addOnPriceId, quantity: extraProfessionals })
   } else if (addOnItem) {
     items.push({ id: addOnItem.id, deleted: true })
+  }
+  if (wantsGrowth && growth.priceId) {
+    items.push(growthItem ? { id: growthItem.id, price: growth.priceId, quantity: 1 } : { price: growth.priceId, quantity: 1 })
+  } else if (growthItem) {
+    items.push({ id: growthItem.id, deleted: true })
   }
 
   const preview = await stripe.invoices.createPreview({

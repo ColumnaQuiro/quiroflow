@@ -6,6 +6,9 @@ interface ActivePackage { id: string; package_name: string; sessions_total: numb
 const props = defineProps<{
   patient: Tables<'patients'>
   balanceCents: number
+  // What the patient can actually draw on: loose credit plus unused bono
+  // value. The pill shows this, not the balance -- see UiBalancePill.
+  availableCents: number
   creditCents: number
   bonoValueCents: number
   activePackages: ActivePackage[]
@@ -88,7 +91,7 @@ function money(cents: number) {
         </div>
       </div>
 
-      <UiBalancePill v-if="!financialLoading" class="mt-2.5" :balance-cents="balanceCents" />
+      <UiBalancePill v-if="!financialLoading" class="mt-2.5" :available-cents="availableCents" :balance-cents="balanceCents" />
 
       <div class="mt-3.5 grid gap-2" :class="canContact ? 'grid-cols-2' : 'grid-cols-1'">
         <UiBtn v-if="canContact" size="sm" variant="secondary" class="w-full justify-center" @click="emit('message')">WhatsApp</UiBtn>

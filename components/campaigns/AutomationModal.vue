@@ -75,9 +75,15 @@ interface ActionForm {
   secret: string
   delayValue: string
   delayUnit: string
+  headerPath: string
+  headerFilename: string
+  headerLatitude: string
+  headerLongitude: string
+  headerName: string
+  headerAddress: string
 }
 function blankAction(): ActionForm {
-  return { action_type: 'whatsapp_template', template_name: '', template_language: 'es', doc_template_ids: [], variables: [{ source: 'first_name', text: '' }], subject: '', body: '', url: '', secret: '', delayValue: '1', delayUnit: 'days' }
+  return { action_type: 'whatsapp_template', template_name: '', template_language: 'es', doc_template_ids: [], variables: [{ source: 'first_name', text: '' }], subject: '', body: '', url: '', secret: '', delayValue: '1', delayUnit: 'days', headerPath: '', headerFilename: '', headerLatitude: '', headerLongitude: '', headerName: '', headerAddress: '' }
 }
 
 /** Minutes back into the largest unit that divides cleanly, for editing. */
@@ -87,7 +93,7 @@ function splitDelay(minutes: number): { delayValue: string; delayUnit: string } 
   return { delayValue: String(minutes), delayUnit: 'minutes' }
 }
 
-interface WhatsAppTemplate { name: string; language: string; variableCount: number; urlButtonCount: number }
+interface WhatsAppTemplate { name: string; language: string; variableCount: number; urlButtonCount: number; mediaHeaderFormat: string | null }
 const whatsappTemplates = ref<WhatsAppTemplate[]>([])
 const templatesError = ref('')
 function templateKey(t: Pick<WhatsAppTemplate, 'name' | 'language'>) {
@@ -265,6 +271,12 @@ onMounted(async () => {
           url: config.url ?? '',
           secret: config.secret ?? '',
           ...splitDelay(Number(config.delay_minutes) || 1440),
+          headerPath: config.header?.storage_path ?? '',
+          headerFilename: config.header?.filename ?? '',
+          headerLatitude: config.header?.latitude != null ? String(config.header.latitude) : '',
+          headerLongitude: config.header?.longitude != null ? String(config.header.longitude) : '',
+          headerName: config.header?.name ?? '',
+          headerAddress: config.header?.address ?? '',
         }
       })
     }
@@ -283,6 +295,48 @@ function templateKeyFor(a: ActionForm) {
     ? `${a.template_name}::${a.template_language}`
     : ''
 }
+/** The header format this template declares, if it needs one filled. */
+function headerFormatFor(a: ActionForm): string | null {
+  return whatsappTemplateFor(a)?.mediaHeaderFormat ?? null
+}
+
+function headerConfigFor(a: ActionForm): Record<string, unknown> | null {
+  const format = headerFormatFor(a)
+  if (!format) return null
+  if (format === 'LOCATION') {
+    const latitude = Number(a.headerLatitude)
+    const longitude = Number(a.headerLongitude)
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null
+    return { type: 'location', latitude, longitude, name: a.headerName.trim(), address: a.headerAddress.trim() }
+  }
+  if (!a.headerPath) return null
+  return { type: format.toLowerCase(), storage_path: a.headerPath, filename: a.headerFilename || undefined }
+}
+
+const headerUploading = ref<number | null>(null)
+const headerUploadError = ref('')
+
+async function uploadHeaderMedia(a: ActionForm, index: number, event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  headerUploadError.value = ''
+  headerUploading.value = index
+  try {
+    const body = new FormData()
+    body.append('file', file)
+    body.append('kind', (headerFormatFor(a) ?? '').toLowerCase())
+    const result = await useStaffFetch<{ storage_path: string; filename: string }>('/api/whatsapp/header-media', { method: 'POST', body })
+    a.headerPath = result.storage_path
+    a.headerFilename = result.filename
+  } catch (e) {
+    headerUploadError.value = (e as { statusMessage?: string }).statusMessage ?? t('Could not upload that file.', 'No se ha podido subir el archivo.')
+  } finally {
+    headerUploading.value = null
+    input.value = ''
+  }
+}
+
 function selectTemplate(a: ActionForm, key: string) {
   const t = whatsappTemplates.value.find((tpl) => templateKey(tpl) === key)
   if (!t) return
@@ -327,6 +381,7 @@ function configFor(a: ActionForm): Record<string, unknown> {
       template_language: a.template_language.trim() || 'es',
       doc_template_ids: a.doc_template_ids.map((id) => id || null),
       variables: a.variables.map((v) => ({ source: v.source, text: v.source === 'text' ? v.text.trim() : undefined })),
+      ...(headerConfigFor(a) ? { header: headerConfigFor(a) } : {}),
     }
   }
   if (a.action_type === 'email') {
@@ -730,6 +785,7 @@ async function sendTestToMe() {
                     v-else
                     :value="templateKeyFor(a)"
                     class="h-8 w-full rounded-ctl border border-line-control px-2.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                    data-test="template-select"
                     @change="selectTemplate(a, ($event.target as HTMLSelectElement).value)"
                   >
                     <option value="" disabled>{{ whatsappTemplates.length === 0 ? t('No approved templates found', 'No se han encontrado plantillas aprobadas') : t('Choose a template…', 'Elige una plantilla…') }}</option>
@@ -738,6 +794,40 @@ async function sendTestToMe() {
                   <p v-if="a.template_name && !templateKeyFor(a) && !templatesError" class="text-[11.5px] text-warning-text">
                     {{ t('Currently set to', 'Actualmente configurado en') }} "{{ a.template_name }}" ({{ a.template_language }}), {{ t("which isn't in the approved template list anymore.", 'que ya no está en la lista de plantillas aprobadas.') }}
                   </p>
+                  <!-- Only when the chosen template declares a header that
+                  needs filling. Meta rejects the whole send if a required
+                  header is missing, so this is not decoration. -->
+                  <div v-if="headerFormatFor(a) === 'LOCATION'" class="space-y-1.5 rounded-ctl border border-line bg-surface-subtle p-2.5" data-test="header-location">
+                    <p class="text-[11.5px] font-medium text-ink-muted2">{{ t('Location shown at the top of this message', 'Ubicación mostrada al principio del mensaje') }}</p>
+                    <div class="grid grid-cols-2 gap-2">
+                      <input v-model="a.headerLatitude" type="text" inputmode="decimal" :placeholder="t('Latitude', 'Latitud')" class="h-8 rounded-ctl border border-line-control px-2.5 text-[13px] focus:border-brand focus:outline-none" />
+                      <input v-model="a.headerLongitude" type="text" inputmode="decimal" :placeholder="t('Longitude', 'Longitud')" class="h-8 rounded-ctl border border-line-control px-2.5 text-[13px] focus:border-brand focus:outline-none" />
+                    </div>
+                    <input v-model="a.headerName" type="text" :placeholder="t('Place name', 'Nombre del sitio')" class="h-8 w-full rounded-ctl border border-line-control px-2.5 text-[13px] focus:border-brand focus:outline-none" />
+                    <input v-model="a.headerAddress" type="text" :placeholder="t('Street address', 'Dirección')" class="h-8 w-full rounded-ctl border border-line-control px-2.5 text-[13px] focus:border-brand focus:outline-none" />
+                  </div>
+
+                  <div v-else-if="headerFormatFor(a)" class="space-y-1.5 rounded-ctl border border-line bg-surface-subtle p-2.5" data-test="header-media">
+                    <p class="text-[11.5px] font-medium text-ink-muted2">
+                      {{ t('File shown at the top of this message', 'Archivo mostrado al principio del mensaje') }} ({{ (headerFormatFor(a) ?? '').toLowerCase() }})
+                    </p>
+                    <p v-if="a.headerFilename" class="text-[11.5px] text-ink-700" data-test="header-media-name">{{ a.headerFilename }}</p>
+                    <input
+                      type="file"
+                      class="block w-full text-[11.5px] text-ink-muted file:mr-2 file:rounded-ctl file:border-0 file:bg-chip-bg file:px-2.5 file:py-1 file:text-[11.5px] file:text-ink-700"
+                      :disabled="headerUploading !== null"
+                      data-test="header-media-input"
+                      @change="uploadHeaderMedia(a, i, $event)"
+                    />
+                    <p v-if="headerUploading === i" class="text-[11.5px] text-ink-muted">{{ t('Uploading…', 'Subiendo…') }}</p>
+                    <p v-if="headerUploadError" class="text-[11.5px] text-danger-text">{{ headerUploadError }}</p>
+                    <!-- Kept out of the public bucket on purpose: it is sent to
+                    patients, so the send signs a short-lived link instead. -->
+                    <p class="text-[11px] leading-[1.5] text-ink-muted2">
+                      {{ t('Stored privately and attached at send time.', 'Se guarda de forma privada y se adjunta al enviar.') }}
+                    </p>
+                  </div>
+
                   <div v-for="(_, di) in docSlotCountFor(a)" :key="di">
                     <select
                       v-model="a.doc_template_ids[di]"

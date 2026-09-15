@@ -1009,6 +1009,18 @@ async function leadAiState(opts: { id: string }) {
   return data
 }
 
+/** Sets a lead's ai_state directly, to stand in for a person taking over. */
+async function setLeadAiState(opts: { id: string; aiState: string }) {
+  assertOk(await admin.from('leads').update({ ai_state: opts.aiState }).eq('id', opts.id))
+  return { ok: true }
+}
+
+/** Points an account at a WhatsApp number, which is how the webhook finds it. */
+async function setWhatsappPhoneNumberId(opts: { accountId: string; phoneNumberId: string }) {
+  assertOk(await admin.from('accounts').update({ whatsapp_phone_number_id: opts.phoneNumberId }).eq('id', opts.accountId))
+  return { ok: true }
+}
+
 /** Records ad spend for a channel in the current month. */
 async function setChannelSpend(opts: { accountId: string; channel: string; amountCents: number; month?: string }) {
   const month = opts.month ?? new Date().toISOString().slice(0, 8) + '01'
@@ -1203,6 +1215,8 @@ export const dbTasks = {
   'db:createLead': createLead,
   'db:createLeadMessage': createLeadMessage,
   'db:leadAiState': leadAiState,
+  'db:setLeadAiState': setLeadAiState,
+  'db:setWhatsappPhoneNumberId': setWhatsappPhoneNumberId,
   'db:setChannelSpend': setChannelSpend,
   'db:createAutomationRule': createAutomationRule,
   'db:reviewRequestsFor': reviewRequestsFor,

@@ -157,6 +157,15 @@ push: a failed deploy leaves production as it was, an applied migration does
 not. **Applying is still a human step** — `supabase db push`, then re-run the
 deploy.
 
+The check covers **timestamped migrations only**. The hand-numbered ones
+(0001-0174) are recorded under generated versions with the number folded into
+the name -- `0165_clinic_code_lookup` is version `20260911135143` -- and 29 are
+not recorded at all, so comparing versions calls every one of them missing.
+That is not a hole, because `npm run check:migrations` now **rejects any new
+hand-numbered file**: everything added from here on is timestamped and
+therefore checked. The two scripts hold each other up; weaken that rule and
+migrations start escaping the applied-check silently.
+
 Do not try to answer "is this migration applied?" by comparing the newest
 version in `schema_migrations` against the repo. A migration applied out of
 order sits BELOW that high-water mark and is invisible to the comparison —

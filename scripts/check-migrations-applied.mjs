@@ -20,17 +20,17 @@
 // failed deploy leaves production exactly as it was. What this buys is that
 // the gap is impossible to miss.
 //
-// Why comparing versions is trustworthy now, and was not before: the
-// schema_migrations table had drifted from the repo. Nineteen migrations had
-// been applied by a tool that stamps its OWN timestamp, so the same migration
-// sat in the repo as 20260914171332_lead_marketing_consent and in the database
-// as 20260915035219, and "is this applied?" could not be answered by
-// comparing. Every one was verified present by its actual objects -- tables,
-// columns, indexes -- and recorded at its repo version, so the two now line
-// up and this check means what it says. If it ever reports something you are
-// sure is applied, suspect that drift has started again rather than the
-// migration being missing, and confirm against the objects before recording
-// anything by hand.
+// Comparing versions only means anything because the bookkeeping was
+// reconciled first. schema_migrations had drifted from the repo: nineteen
+// migrations were applied by a tool that stamps its OWN timestamp, so the same
+// migration sat in the repo as 20260914171332_lead_marketing_consent and in
+// the database as 20260915035219. Each was verified present by its actual
+// objects -- tables, columns, indexes -- and recorded at its repo version, so
+// the two now line up for every timestamped migration.
+//
+// If this ever reports something you are sure is applied, suspect that drift
+// has restarted rather than the migration being missing, and confirm against
+// the objects before recording anything by hand.
 //
 // Reads the database through psql rather than a Node driver. The project has
 // no postgres client dependency and this is the only thing that would want
@@ -50,8 +50,25 @@ if (!SUPABASE_DB_URL) {
   process.exit(1)
 }
 
+// Timestamped migrations only -- the ones written under the current
+// convention, which is every migration added since 13 Sep.
+//
+// The hand-numbered files (0001..0174) cannot be checked this way and must not
+// be. They predate the database recording anything reliable: all 172 are long
+// applied, but they are stored with a GENERATED timestamp as the version and
+// the hand-number folded into the name -- `0165_clinic_code_lookup` is version
+// 20260911135143 -- and 29 of them, `0001_init_schema` among them, are not in
+// schema_migrations under any spelling at all. Comparing versions reports every
+// one of them as missing, which is what the first version of this check did on
+// its first real run: 174 false alarms and a stopped deploy.
+//
+// This is not a gap, because that set cannot grow: check-migration-versions.mjs
+// refuses any NEW hand-numbered file, so anything added from here on is
+// timestamped and therefore checked. The two scripts are load-bearing for each
+// other -- weaken that rule and migrations start escaping this one silently.
+const TIMESTAMP_VERSION = /^\d{14}_/
 const repoVersions = readdirSync(DIR)
-  .filter((f) => f.endsWith('.sql'))
+  .filter((f) => f.endsWith('.sql') && TIMESTAMP_VERSION.test(f))
   .map((f) => ({ version: f.split('_')[0], file: f }))
 
 let rows
@@ -108,4 +125,4 @@ if (missing.length > 0) {
   process.exit(1)
 }
 
-console.log(`${repoVersions.length} migrations, all applied to the database.`)
+console.log(`${repoVersions.length} timestamped migrations, all applied to the database.`)

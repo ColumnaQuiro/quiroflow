@@ -11,6 +11,15 @@ function selectBookableDayWithSlots(attempt = 0) {
   })
 }
 
+function attributionRow(accountId: string, attempt = 0): Cypress.Chainable<Record<string, string | null>> {
+  return cy.task<{ rows: Record<string, string | null>[] }>('db:bookingAttribution', { accountId }).then((r) => {
+    if (r.rows.length > 0) return cy.wrap(r.rows[0])
+    if (attempt > 20) throw new Error('No booking_attribution row was written')
+    cy.wait(250)
+    return attributionRow(accountId, attempt + 1)
+  })
+}
+
 describe('Public online booking', () => {
   it('books an appointment as an unauthenticated visitor', () => {
     cy.seedStaffAccount().then((account) => {
@@ -53,6 +62,90 @@ describe('Public online booking', () => {
         } else {
           cy.get('a[href*="apps.apple.com"]').should('not.exist')
         }
+      })
+    })
+  })
+
+  it('records where an ad-driven booking came from', () => {
+    // The gap this closes: an online booking used to arrive with nothing but
+    // source='online'. Someone who clicked a Meta ad and booked was
+    // indistinguishable from someone who typed the URL in, which is how a
+    // real lead -- in the Meta Leads Center three days earlier -- looked like
+    // she appeared from nowhere.
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:enableOnlineBooking', { clinicId: account.clinicId })
+      cy.task('db:createAppointmentType', {
+        accountId: account.accountId,
+        name: 'Consultation',
+        durationMinutes: 30,
+        onlineBookingEnabled: true,
+      }).then(() => {
+        cy.visit(`/book/${account.accountSlug}?utm_source=facebook&utm_medium=paid&utm_campaign=oferta-primera-visita&fbclid=IwAR_test_click_id`)
+
+        cy.contains('Elija su fecha y hora').should('be.visible')
+        selectBookableDayWithSlots()
+        cy.contains('button', /^\d{2}:\d{2}$/).first().click()
+
+        cy.contains('Introduzca sus datos').should('be.visible')
+        cy.contains('label', 'Nombre *').parent().find('input').type('Marta')
+        cy.contains('label', 'Apellidos').parent().find('input').type('Diaz')
+        cy.contains('label', 'Correo electrónico *').parent().find('input').type('marta.attrib@example.test')
+        cy.contains('button', 'Reservar cita').click()
+
+        cy.contains('¡Cita reservada!', { timeout: 15000 }).should('be.visible')
+
+        // Written fire-and-forget after the booking, so it can land a moment
+        // after the success screen -- retried rather than asserted once.
+        attributionRow(account.accountId).then((row) => {
+          expect(row.utm_source).to.eq('facebook')
+          expect(row.utm_medium).to.eq('paid')
+          expect(row.utm_campaign).to.eq('oferta-primera-visita')
+          // The click id is what joins this booking back to Meta's own
+          // reporting, and the platform is derived from which param carried it.
+          expect(row.click_id).to.eq('IwAR_test_click_id')
+          expect(row.click_id_source).to.eq('meta')
+          expect(row.landing_path).to.contain('utm_source=facebook')
+        })
+
+        cy.task<{ rows: unknown[] }>('db:bookingAttribution', { accountId: account.accountId }).then(({ rows }) => {
+          expect(rows, 'exactly one row per booking, never a duplicate').to.have.length(1)
+        })
+      })
+    })
+  })
+
+  it('writes no attribution row for a booking that carries none', () => {
+    // Most bookings are direct. Those must not leave a row of nulls behind,
+    // or every report has to filter them out again.
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:enableOnlineBooking', { clinicId: account.clinicId })
+      cy.task('db:createAppointmentType', {
+        accountId: account.accountId,
+        name: 'Consultation',
+        durationMinutes: 30,
+        onlineBookingEnabled: true,
+      }).then(() => {
+        cy.visit(`/book/${account.accountSlug}`)
+
+        cy.contains('Elija su fecha y hora').should('be.visible')
+        selectBookableDayWithSlots()
+        cy.contains('button', /^\d{2}:\d{2}$/).first().click()
+
+        cy.contains('Introduzca sus datos').should('be.visible')
+        cy.contains('label', 'Nombre *').parent().find('input').type('Directo')
+        cy.contains('label', 'Apellidos').parent().find('input').type('Visitante')
+        cy.contains('label', 'Correo electrónico *').parent().find('input').type('directo@example.test')
+        cy.contains('button', 'Reservar cita').click()
+
+        cy.contains('¡Cita reservada!', { timeout: 15000 }).should('be.visible')
+
+        // The request still fires -- it is the server that decides there is
+        // nothing to record -- so give it time to land before asserting it
+        // did not, otherwise this passes for the wrong reason.
+        cy.wait(2000)
+        cy.task<{ rows: unknown[] }>('db:bookingAttribution', { accountId: account.accountId }).then(({ rows }) => {
+          expect(rows, 'no row for a direct booking').to.have.length(0)
+        })
       })
     })
   })

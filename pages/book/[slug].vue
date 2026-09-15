@@ -169,6 +169,37 @@ const clinicLogoUrl = computed(() => {
   return path ? supabase.storage.from('clinic-logos').getPublicUrl(path).data.publicUrl : null
 })
 
+// --- where this visit came from ---
+//
+// Captured once on mount, not read at submit time: document.referrer is only
+// the real referrer on the first paint, and a patient who steps through the
+// flow (or reloads after picking a slot) would otherwise lose it. The query
+// string survives the phase changes because this page never navigates, but
+// snapshotting both together keeps the two halves consistent.
+//
+// Sent after the booking exists, never before -- this is marketing data, and
+// nothing about it should be able to fail a booking.
+const ATTRIBUTION_PARAMS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'fbclid', 'gclid', 'ttclid', 'msclkid']
+const visitAttribution = ref<{ params: Record<string, string>; referrer: string; landingPath: string } | null>(null)
+
+function captureAttribution() {
+  const params: Record<string, string> = {}
+  for (const key of ATTRIBUTION_PARAMS) {
+    const value = route.query[key]
+    if (typeof value === 'string' && value.trim()) params[key] = value.trim()
+  }
+  // Same-origin referrers are the patient moving between steps, not where
+  // they came from -- recording those would make every booking look
+  // self-referred.
+  let referrer = ''
+  try {
+    if (document.referrer && new URL(document.referrer).host !== window.location.host) referrer = document.referrer
+  } catch {
+    referrer = ''
+  }
+  visitAttribution.value = { params, referrer, landingPath: window.location.pathname + window.location.search }
+}
+
 // --- discount code (validated server-side at submit, in create_public_booking) ---
 const discountCode = ref('')
 const discountAppliedCents = ref(0)
@@ -179,6 +210,8 @@ onMounted(async () => {
   // member's saved theme, if previewed from inside the app). Always light,
   // with brand colors layered on top via brandStyle above.
   document.documentElement.setAttribute('data-theme', 'light')
+
+  captureAttribution()
 
   const { data, error } = await supabase.rpc('get_public_booking_info', { p_slug: slug })
   if (error || !data) {
@@ -553,6 +586,20 @@ async function submitBooking() {
   // a failed confirmation send should never block the success screen the
   // patient is about to see.
   $fetch('/api/public-booking/send-confirmation', { method: 'POST', body: { accountSlug: slug, appointmentId: result.appointment_id } }).catch(() => {})
+  // Same fire-and-forget reasoning: the booking is already made, and a
+  // marketing record that fails to save must never surface to the patient.
+  if (visitAttribution.value) {
+    $fetch('/api/public-booking/attribution', {
+      method: 'POST',
+      body: {
+        accountSlug: slug,
+        appointmentId: result.appointment_id,
+        params: visitAttribution.value.params,
+        referrer: visitAttribution.value.referrer,
+        landingPath: visitAttribution.value.landingPath,
+      },
+    }).catch(() => {})
+  }
   // Booking always succeeds first regardless of payment -- if the type requires
   // online payment, the appointment already exists (visible to staff) before
   // the patient even sees the payment step, so a dropped connection here never

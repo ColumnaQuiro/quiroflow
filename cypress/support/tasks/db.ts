@@ -584,6 +584,18 @@ async function createPackagePurchase(opts: {
   return row as { id: string; package_name: string; sessions_total: number; sessions_used: number; price_cents: number }
 }
 
+/** Gives a second patient the run of someone else's bono -- a family sharing one. */
+async function sharePackageWith(opts: { accountId: string; packagePurchaseId: string; patientId: string }) {
+  const row = unwrap(
+    await admin
+      .from('package_purchase_shares')
+      .insert({ account_id: opts.accountId, package_purchase_id: opts.packagePurchaseId, patient_id: opts.patientId })
+      .select('id')
+      .single(),
+  )
+  return row as { id: string }
+}
+
 // Reads back what "Log session" wrote, so the spec can assert the money side
 // (invoice, payment, credit debit) and not just the on-screen counter.
 async function packageSessionEffects(opts: { patientId: string; packagePurchaseId: string }) {
@@ -1270,6 +1282,7 @@ export const dbTasks = {
   'db:createImportedInvoice': createImportedInvoice,
   'db:createImportedPayment': createImportedPayment,
   'db:createPackagePurchase': createPackagePurchase,
+  'db:sharePackageWith': sharePackageWith,
   'db:packageSessionEffects': packageSessionEffects,
   'db:insertDuplicateSession': insertDuplicateSession,
   'db:createWhatsappMessage': createWhatsappMessage,

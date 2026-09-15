@@ -1,4 +1,4 @@
-import { requirePermission } from '~/server/utils/requirePermission'
+import { requireGrowth } from '~/server/utils/requireGrowth'
 import { STAGE_TITLES, formatEuros, type LeadStage } from '~/server/utils/leads'
 
 // One lead, with everything the drawer renders: the unified timeline, the
@@ -7,7 +7,7 @@ export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
   if (!id) throw createError({ statusCode: 400, statusMessage: 'Missing lead id' })
 
-  const { supabase, teamMember } = await requirePermission(event, 'communication_config')
+  const { supabase, teamMember } = await requireGrowth(event)
 
   // account_id is filtered here as well as by RLS. RLS is what makes it safe;
   // this is what makes a cross-account id a clean 404 rather than an empty

@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { requirePermission } from '~/server/utils/requirePermission'
+import { requireGrowth } from '~/server/utils/requireGrowth'
 import { toConfig, toneWording } from '~/server/utils/receptionist'
 
 // Drafts a public reply to a review.
@@ -19,7 +19,7 @@ export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
   if (!id) throw createError({ statusCode: 400, statusMessage: 'Missing review id' })
 
-  const { supabase, teamMember } = await requirePermission(event, 'communication_config')
+  const { supabase, teamMember } = await requireGrowth(event)
 
   const { data: review } = await supabase
     .from('reviews')

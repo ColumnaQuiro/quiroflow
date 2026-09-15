@@ -1,4 +1,4 @@
-import { requirePermission } from '~/server/utils/requirePermission'
+import { requireGrowth } from '~/server/utils/requireGrowth'
 import {
   CARDS_PER_STAGE,
   LEAD_STAGES,
@@ -16,7 +16,7 @@ import {
 // 23 leads shows 23 and the sum of all 23, while rendering the first 25 cards
 // and a "+N more". Computing that client-side would need every row.
 export default defineEventHandler(async (event) => {
-  const { supabase, teamMember } = await requirePermission(event, 'communication_config')
+  const { supabase, teamMember } = await requireGrowth(event)
 
   // One pass over the open leads for this account. At clinic scale (hundreds
   // of open leads) this is cheaper than seven per-stage round trips, and the

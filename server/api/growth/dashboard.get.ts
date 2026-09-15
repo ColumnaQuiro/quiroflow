@@ -1,4 +1,4 @@
-import { requirePermission } from '~/server/utils/requirePermission'
+import { requireGrowth } from '~/server/utils/requireGrowth'
 import { LEAD_STAGES, STAGE_TITLES, formatEuros, type LeadStage } from '~/server/utils/leads'
 
 // The Growth dashboard, computed from the leads a clinic actually has.
@@ -43,7 +43,7 @@ function channelOf(source: string | null) {
 }
 
 export default defineEventHandler(async (event) => {
-  const { supabase, teamMember } = await requirePermission(event, 'communication_config')
+  const { supabase, teamMember } = await requireGrowth(event)
 
   const now = new Date()
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))

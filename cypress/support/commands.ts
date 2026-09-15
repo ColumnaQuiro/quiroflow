@@ -86,7 +86,14 @@ Cypress.Commands.add('seedStaffAccount', (overrides: Partial<{
     clinicName: overrides.clinicName ?? 'Main Location',
     ownerName: overrides.ownerName ?? 'Test Owner',
   }
-  return cy.task<StaffAccount>('db:createStaffAccount', payload)
+  // Seeded accounts get the Growth add-on. Every /api/growth/* route now
+  // checks the entitlement server-side, so without this every Growth spec
+  // would 402 -- and a suite that has to opt in to the product it is testing
+  // is one bad default away from testing nothing. Specs that care about NOT
+  // having it turn it off explicitly with db:setGrowthAddon.
+  return cy.task<StaffAccount>('db:createStaffAccount', payload).then((account) => {
+    return cy.task('db:setGrowthAddon', { accountId: account.accountId, enabled: true }).then(() => account)
+  })
 })
 
 Cypress.Commands.add('setComped', (accountId: string, comped: boolean) => {

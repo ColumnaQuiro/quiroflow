@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { requirePermission } from '~/server/utils/requirePermission'
+import { requireGrowth } from '~/server/utils/requireGrowth'
 import { buildSystemPrompt, loadReceptionistConfig } from '~/server/utils/receptionist'
 
 // "Try Alba" -- the clinic owner talking to their own configuration.
@@ -35,7 +35,7 @@ function isTurn(value: unknown): value is Turn {
 }
 
 export default defineEventHandler(async (event) => {
-  const { supabase, teamMember } = await requirePermission(event, 'communication_config')
+  const { supabase, teamMember } = await requireGrowth(event)
   const body = (await readBody<Body>(event).catch(() => null)) ?? ({} as Body)
 
   const turns = Array.isArray(body.messages) ? body.messages.filter(isTurn).slice(-MAX_TURNS) : []

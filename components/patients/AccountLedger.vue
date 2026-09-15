@@ -113,7 +113,12 @@ interface LedgerRow {
 const rows = computed<LedgerRow[]>(() => {
   const invoiceRows: LedgerRow[] = props.invoices.map((inv) => {
     const paidForInvoice = props.payments.filter((p) => p.invoice_id === inv.id).reduce((sum, p) => sum + p.amount_cents, 0)
-    const openCents = inv.total_cents - paidForInvoice
+    // A receipt marked paid is settled even with no payment rows behind it:
+    // that is what a visit covered by a prepaid bono looks like, and what
+    // settle_imported_invoices() left across the migrated history. Subtracting
+    // payments alone showed the full amount outstanding, in red, on visits the
+    // patient had already paid for.
+    const openCents = inv.status === 'paid' ? 0 : inv.total_cents - paidForInvoice
     const items = props.lineItemDescriptions[inv.id] ?? []
 
     // A refund invoice reads as a credit against the original, not a

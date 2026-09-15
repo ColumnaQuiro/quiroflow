@@ -27,11 +27,27 @@ create table addons (
   created_at timestamptz not null default now()
 );
 
--- Prices are the ones the upgrade panel has been quoting. The Stripe price
--- ids stay null until somebody creates them, and the subscribe endpoint
--- refuses to sell an add-on with no price rather than charging nothing.
+-- EUR 49 a month, EUR 39 billed annually.
+--
+-- Not the EUR 299 the upgrade panel was quoting: that was pricing for a
+-- fourth tier, and it did not survive the change of shape. Against plans at
+-- EUR 69 to EUR 199 a EUR 299 add-on costs more than the product it attaches
+-- to, which makes it a separate purchase decision needing its own business
+-- case rather than a line on the same invoice. The precedent already in this
+-- schema is extra_professional_price_cents at EUR 25: add-ons here are
+-- priced as increments.
+--
+-- Worth revisiting when the AI receptionist actually answers enquiries.
+-- Growth has real marginal cost -- Meta bills per WhatsApp conversation and
+-- the receptionist will burn model tokens per enquiry, which is why
+-- usage_allowances exists at all -- but today it does not answer anything,
+-- so what this price buys is leads, the drip and reputation. Priced for what
+-- it does now rather than for what it might cost later.
+--
+-- The Stripe price ids stay null until somebody creates them; nothing can be
+-- sold through Checkout until they exist.
 insert into addons (id, name, monthly_price_cents, annual_price_cents) values
-  ('growth', 'Growth', 29900, 24900);
+  ('growth', 'Growth', 4900, 3900);
 
 alter table addons enable row level security;
 -- Same reasoning as plans: a pricing catalogue is not account-specific and

@@ -1,7 +1,13 @@
 // Pricing and the plan delta shown on the Growth upgrade screen.
 //
 // These are the design's figures, not anything read from Stripe. The Growth
-// tier has no price object yet, so "Start 14-day trial" cannot open Checkout
+// Growth is an add-on now, not a fourth tier, and priced like one: EUR 49 a
+// month against plans costing EUR 69 to EUR 199, rather than the EUR 299
+// that sat here when it was going to be its own plan. "per clinic" and
+// "3 locations included" went with it -- an add-on sits on whatever plan the
+// account already has, and locations come from there.
+//
+// The add-on has no Stripe price object yet, so "Start 14-day trial" cannot open Checkout
 // -- pages/growth/index.vue routes it at /subscription instead, which is the
 // one place in the app that already knows how to start and repair a
 // subscription. Replace PLAN_COMPARISON's prices and GROWTH_PRICING with the
@@ -39,17 +45,17 @@ export const GROWTH_INCLUDED: string[] = [
 export const GROWTH_PRICING: GrowthPricingOption[] = [
   {
     key: 'annual',
-    label: 'Annual · 2 months free',
-    price: '€249',
-    unit: '/ month per clinic',
-    note: '€2,988 billed yearly · 3 locations included',
+    label: 'Annual · save 20%',
+    price: '€39',
+    unit: '/ month',
+    note: '€468 billed yearly',
     featured: true,
   },
   {
     key: 'monthly',
     label: 'Monthly',
-    price: '€299',
-    unit: '/ month per clinic',
+    price: '€49',
+    unit: '/ month',
     note: 'Cancel any time',
     featured: false,
   },
@@ -71,8 +77,16 @@ export const PLAN_COMPARISON: PlanComparisonRow[] = [
   { feature: 'Locations included', note: '', solo: '1', clinic: '3', growth: '3' },
 ]
 
+// Prices taken from the plans table rather than invented: Solo is EUR 59 and
+// Clinic EUR 199, and the EUR 89 that stood here was a number no customer
+// has ever been charged. The third column is no longer a bundle -- Growth is
+// an add-on, so it is the same plan plus EUR 49 rather than a different one.
+//
+// `current` is false on all three because nothing here knows which plan the
+// account is on; marking one as theirs was a guess the fixture could afford
+// and a real screen cannot.
 export const PLAN_COLUMNS = [
-  { key: 'solo' as const, name: 'Solo', price: '€89 / month', current: false },
-  { key: 'clinic' as const, name: 'Clinic', price: '€169 / month', current: true },
-  { key: 'growth' as const, name: 'Clinic + Growth', price: '€249 / month annual', current: false },
+  { key: 'solo' as const, name: 'Solo', price: '€59 / month', current: false },
+  { key: 'clinic' as const, name: 'Clinic', price: '€199 / month', current: false },
+  { key: 'growth' as const, name: 'Your plan + Growth', price: '+€49 / month', current: false },
 ]

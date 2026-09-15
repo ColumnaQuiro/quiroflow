@@ -69,6 +69,7 @@ export const useAccountStore = defineStore('account', {
     // most worth selling.
     hasGrowthAddon: (state) =>
       state.comped ||
+      state.subscriptionStatus === 'trialing' ||
       (state.growthAddon && state.subscriptionStatus !== 'locked' && state.subscriptionStatus !== 'canceled'),
     // Only meaningful while still trialing -- null once on a real plan (no
     // trial_ends_at) or already past it (negative), so the banner can just

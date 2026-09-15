@@ -2,7 +2,7 @@
 const t = useT()
 const { can } = usePermission()
 const { hasGrowth, resolved } = useGrowthTier()
-const { data, loading, error } = useGrowthDashboard()
+const { data, loading, error, saveChannelSpend } = useGrowthDashboard()
 
 // Reuses communication_config, the key that already gates Campaigns, rather
 // than introducing a growth_access key. A new permission defaults to
@@ -39,7 +39,7 @@ const allowed = computed(() => can('communication_config'))
 
       <GrowthDashboardSkeleton v-else-if="!resolved || loading || !data" />
 
-      <GrowthDashboardBody v-else-if="hasGrowth" :data="data" />
+      <GrowthDashboardBody v-else-if="hasGrowth" :data="data" @save-spend="saveChannelSpend" />
 
       <!-- Locked: the real dashboard out of focus behind the upgrade card,
       rather than a separate mock that can drift from it. inert keeps its
@@ -48,7 +48,7 @@ const allowed = computed(() => can('communication_config'))
       <div v-else class="flex flex-col gap-4" data-test="growth-locked">
         <div class="relative isolate overflow-hidden rounded-card">
           <div inert aria-hidden="true" class="pointer-events-none absolute inset-0 -z-10 select-none overflow-hidden blur-[5px]">
-            <GrowthDashboardBody :data="data" />
+            <GrowthDashboardBody :data="data" @save-spend="saveChannelSpend" />
           </div>
           <div aria-hidden="true" class="absolute inset-0 -z-10 bg-surface-page/50" />
           <div class="flex justify-center px-2 py-8 sm:px-4">

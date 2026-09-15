@@ -184,6 +184,10 @@ export default defineEventHandler(async (event) => {
       return {
         channel,
         spend: spend === null ? null : formatEuros(spend),
+        // The raw figure alongside the formatted one, so the table can put a
+        // clinic back into the box it typed rather than making it re-read
+        // "€1,480" and work out what to type.
+        spendCents: spend,
         leads: mine.length,
         booked,
         showRate: booked === 0 ? null : Math.round((showed / booked) * 100),
@@ -195,6 +199,7 @@ export default defineEventHandler(async (event) => {
   const totals = {
     channel: 'All channels',
     spend: hasSpend ? formatEuros(totalSpend) : null,
+    spendCents: hasSpend ? totalSpend : null,
     leads: thisMonth.length,
     booked: thisMonth.filter((lead) => stageRank(lead.furthest_stage) >= stageRank('booked')).length,
     showRate: null as number | null,

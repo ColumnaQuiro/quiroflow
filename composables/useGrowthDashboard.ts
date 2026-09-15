@@ -43,6 +43,8 @@ export interface GrowthChannelRow {
   channel: string
   /** null where the clinic has recorded no spend for this channel. */
   spend: string | null
+  /** The same figure unformatted, so it can be edited in place. */
+  spendCents: number | null
   leads: number
   booked: number
   /** null where nothing was booked, so there is no rate to state. */
@@ -92,7 +94,7 @@ export function useGrowthDashboard() {
   const error = ref<string | null>(null)
   const t = useT()
 
-  onMounted(async () => {
+  async function load() {
     try {
       data.value = await useStaffFetch<GrowthDashboardData>('/api/growth/dashboard')
     } catch {
@@ -100,7 +102,20 @@ export function useGrowthDashboard() {
     } finally {
       loading.value = false
     }
-  })
+  }
 
-  return { data, loading, error }
+  /**
+   * Records what was spent on a channel this month, then reloads -- cost per
+   * lead, cost per new patient and ROAS all move the moment it lands, and
+   * re-deriving them here would be a second implementation of the maths the
+   * dashboard endpoint already does.
+   */
+  async function saveChannelSpend(channel: string, amountCents: number | null) {
+    await useStaffFetch('/api/growth/channel-spend', { method: 'PUT', body: { channel, amountCents } })
+    await load()
+  }
+
+  onMounted(load)
+
+  return { data, loading, error, saveChannelSpend, reload: load }
 }

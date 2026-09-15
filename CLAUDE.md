@@ -143,6 +143,32 @@ guessable from the code:
   empty string and the deploy fails with
   `Unauthorized: could not retrieve project`.
 
+**A release does not apply migrations, and never has.** The workflow builds
+and uploads; nothing runs `supabase db push`. So a migration can merge, pass
+CI, ride a release into production and leave its columns missing while the
+deploy still reports success. That shipped twice on 15 Sep — the second time
+v1.9.0 went live with a Billing tab reading `payments.created_by` against a
+table that had no such column, and every patient's ledger failed with
+`42703: column "created_by" does not exist` until someone noticed.
+
+`npm run check:migrations-applied` now runs as the first step of the deploy
+and fails it when the database is behind the code. It is a check, not a
+push: a failed deploy leaves production as it was, an applied migration does
+not. **Applying is still a human step** — `supabase db push`, then re-run the
+deploy.
+
+Do not try to answer "is this migration applied?" by comparing the newest
+version in `schema_migrations` against the repo. A migration applied out of
+order sits BELOW that high-water mark and is invisible to the comparison —
+which is exactly how `20260915100557` was missed after being looked for. The
+version table had also drifted: nineteen migrations had been applied by a
+tool that stamps its own timestamp, so the same migration sat in the repo as
+`20260914171332_lead_marketing_consent` and in the database as
+`20260915035219`. Each was verified present by its actual objects and
+recorded at its repo version, so the two now line up. If the check reports
+something you are sure is applied, suspect that drift has restarted, and
+confirm against the objects before recording anything by hand.
+
 `--build` is deliberately not passed to the CLI. It would hand the build
 to Netlify's own build system, and that system doesn't install
 dependencies when driven this way from CI. Nitro's `netlify` preset

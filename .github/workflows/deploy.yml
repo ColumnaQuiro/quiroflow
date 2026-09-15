@@ -82,6 +82,26 @@ jobs:
       - run: npm ci
         if: steps.modules.outputs.cache-hit != 'true'
 
+      # Stops a release whose schema is not in the database yet.
+      #
+      # Nothing here has ever applied a migration -- this workflow builds and
+      # uploads, and that is all -- so a migration could merge, pass CI, ride a
+      # release into production and leave its columns missing, with the deploy
+      # still green. It happened twice on 15 Sep; the second time v1.9.0 went
+      # live with a Billing tab reading payments.created_by against a table
+      # that had no such column, and every patient's ledger failed until
+      # someone noticed.
+      #
+      # A check rather than a `db push`: applying DDL as a side effect of a
+      # release is a much bigger promise than verifying agreement, and a failed
+      # deploy leaves production exactly as it was, which an applied migration
+      # does not. Runs BEFORE the build so a mismatch costs seconds rather than
+      # a full build, and before the upload so production is never touched.
+      - name: Check every migration in this build is applied
+        run: npm run check:migrations-applied
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+
       # Nitro's `netlify` preset (nuxt.config.ts) already produces
       # Netlify-shaped output on its own -- `dist/` for static assets *and*
       # `.netlify/functions-internal/server` for the serverless function that

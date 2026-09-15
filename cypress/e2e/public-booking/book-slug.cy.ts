@@ -114,6 +114,45 @@ describe('Public online booking', () => {
     })
   })
 
+  it('still captures the campaign when the ad URL is malformed', () => {
+    // The live Meta ad points at "…?+utm_campaign=ad_imagen&utm_medium=ad&
+    // utm_source=Facebook". That `+` immediately after the `?` decodes to a
+    // space, so the parameter is really named " utm_campaign" and
+    // searchParams.get('utm_campaign') is null -- Analytics loses the campaign
+    // and, before this, so did we. Uses the real shape, not a tidied one.
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:enableOnlineBooking', { clinicId: account.clinicId })
+      cy.task('db:createAppointmentType', {
+        accountId: account.accountId,
+        name: 'Consultation',
+        durationMinutes: 30,
+        onlineBookingEnabled: true,
+      }).then(() => {
+        cy.visit(`/book/${account.accountSlug}?+utm_campaign=ad_imagen&utm_medium=ad&utm_source=Facebook`)
+
+        cy.contains('Elija su fecha y hora').should('be.visible')
+        selectBookableDayWithSlots()
+        cy.contains('button', /^\d{2}:\d{2}$/).first().click()
+
+        cy.contains('Introduzca sus datos').should('be.visible')
+        cy.contains('label', 'Nombre *').parent().find('input').type('Ada')
+        cy.contains('label', 'Apellidos').parent().find('input').type('Malformed')
+        cy.contains('label', 'Correo electrónico *').parent().find('input').type('ada.malformed@example.test')
+        cy.contains('button', 'Reservar cita').click()
+
+        cy.contains('¡Cita reservada!', { timeout: 15000 }).should('be.visible')
+
+        attributionRow(account.accountId).then((row) => {
+          expect(row.utm_campaign, 'campaign survives the stray "+"').to.eq('ad_imagen')
+          expect(row.utm_medium).to.eq('ad')
+          // Stored as written: "Facebook" capitalised is what the ad sends,
+          // and a report can fold case itself without us losing the original.
+          expect(row.utm_source).to.eq('Facebook')
+        })
+      })
+    })
+  })
+
   it('writes no attribution row for a booking that carries none', () => {
     // Most bookings are direct. Those must not leave a row of nulls behind,
     // or every report has to filter them out again.

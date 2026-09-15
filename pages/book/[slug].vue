@@ -183,10 +183,23 @@ const ATTRIBUTION_PARAMS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_con
 const visitAttribution = ref<{ params: Record<string, string>; referrer: string; landingPath: string } | null>(null)
 
 function captureAttribution() {
+  // Keys are matched after trimming and lowercasing, because hand-built ad
+  // URLs routinely are not clean. The live Meta ad points at
+  // `…?+utm_campaign=ad_imagen&utm_medium=ad&utm_source=Facebook` -- that `+`
+  // straight after the `?` decodes to a space, so the parameter is really
+  // named " utm_campaign" and `searchParams.get('utm_campaign')` returns
+  // null. Analytics silently loses the campaign; there is no reason for this
+  // to lose it too over a stray character nobody can see.
+  const normalised = new Map<string, string>()
+  for (const key of Object.keys(route.query)) {
+    const value = route.query[key]
+    if (typeof value === 'string' && value.trim()) normalised.set(key.trim().toLowerCase(), value.trim())
+  }
+
   const params: Record<string, string> = {}
   for (const key of ATTRIBUTION_PARAMS) {
-    const value = route.query[key]
-    if (typeof value === 'string' && value.trim()) params[key] = value.trim()
+    const value = normalised.get(key)
+    if (value) params[key] = value
   }
   // Same-origin referrers are the patient moving between steps, not where
   // they came from -- recording those would make every booking look

@@ -132,11 +132,11 @@ export async function runRuleActions(
   extraContext?: Partial<MergeContext>,
 ) {
   const [{ data: rule }, { data: actions }] = await Promise.all([
-    supabase.from('automation_rules').select('is_marketing').eq('id', ruleId).maybeSingle(),
+    supabase.from('automation_rules').select('is_marketing, dry_run').eq('id', ruleId).maybeSingle(),
     supabase.from('automation_actions').select('id, action_type, config').eq('rule_id', ruleId).order('position'),
   ])
 
-  await runActionsList(supabase, accountId, (actions ?? []) as ActionRow[], patient, origin, rule?.is_marketing ?? false, appointmentId, triggerBody, undefined, extraContext)
+  await runActionsList(supabase, accountId, (actions ?? []) as ActionRow[], patient, origin, rule?.is_marketing ?? false, appointmentId, triggerBody, undefined, extraContext, rule?.dry_run ?? false)
 }
 
 // Split out from runRuleActions so a caller that already has an in-memory
@@ -163,8 +163,9 @@ export async function runActionsList(
   // waitlistOffer.ts (which never sets appointmentId) has any reason to pass
   // those two keys.
   extraContext?: Partial<MergeContext>,
+  dryRun = false,
 ) {
-  await runForRecipient(supabase, accountId, actions, patientRecipient(patient), origin, isMarketing, appointmentId, triggerBody, whatsappOverrideNumber, extraContext)
+  await runForRecipient(supabase, accountId, actions, patientRecipient(patient), origin, isMarketing, appointmentId, triggerBody, whatsappOverrideNumber, extraContext, dryRun)
 }
 
 /**
@@ -187,7 +188,7 @@ export async function runLeadRuleActions(
   only?: ActionRow[],
 ) {
   const [{ data: rule }, { data: actions }] = await Promise.all([
-    supabase.from('automation_rules').select('is_marketing').eq('id', ruleId).maybeSingle(),
+    supabase.from('automation_rules').select('is_marketing, dry_run').eq('id', ruleId).maybeSingle(),
     only
       ? Promise.resolve({ data: only })
       : supabase.from('automation_actions').select('id, action_type, config').eq('rule_id', ruleId).order('position'),
@@ -204,6 +205,7 @@ export async function runLeadRuleActions(
     undefined,
     undefined,
     extraContext,
+    rule?.dry_run ?? false,
   )
 }
 
@@ -218,6 +220,7 @@ async function runForRecipient(
   triggerBody?: TriggerBody,
   whatsappOverrideNumber?: string,
   extraContext?: Partial<MergeContext>,
+  dryRun = false,
 ) {
   const canContact = recipient.canContact
   // Marketing rules (birthday campaigns, a lead welcome drip, or any rule
@@ -248,7 +251,7 @@ async function runForRecipient(
   for (const action of actions) {
     try {
       if (action.action_type === 'whatsapp_template') {
-        if (canContact && channelAllowed('whatsapp')) await runWhatsAppAction(supabase, accountId, recipient, action.config, origin, appointmentId, whatsappOverrideNumber, context)
+        if (canContact && channelAllowed('whatsapp')) await runWhatsAppAction(supabase, accountId, recipient, action.config, origin, appointmentId, whatsappOverrideNumber, context, dryRun)
       } else if (action.action_type === 'email') {
         if (canContact && channelAllowed('email')) await runEmailAction(recipient, action.config, context)
       } else if (action.action_type === 'webhook') {
@@ -397,6 +400,7 @@ async function runWhatsAppAction(
   appointmentId?: string,
   toOverride?: string,
   context?: MergeContext,
+  dryRun = false,
 ) {
   const templateName: string | undefined = config.template_name
   const templateLanguage: string = config.template_language || 'es'
@@ -409,7 +413,13 @@ async function runWhatsAppAction(
     )
     .eq('id', accountId)
     .maybeSingle()
-  if (!account?.whatsapp_phone_number_id || !account?.whatsapp_access_token) return
+  // A dry run is allowed to proceed without WhatsApp credentials: rehearsing
+  // the rule before the channel is connected is a legitimate thing to want,
+  // and is the order a clinic actually does things in. It does prove less --
+  // the live template lookup below needs those credentials, so an
+  // unconnected account cannot catch a wrong variable count. Worth having
+  // anyway, and worth not pretending otherwise.
+  if (!dryRun && (!account?.whatsapp_phone_number_id || !account?.whatsapp_access_token)) return
 
   let to = toOverride
   // A lead carries its own number, already normalised at ingest. Only a
@@ -460,7 +470,7 @@ async function runWhatsAppAction(
   const bodyComponents: Record<string, any>[] = []
   const buttonComponents: Record<string, any>[] = []
   const headerComponents = await buildHeaderComponent(supabase, config.header)
-  if (account.whatsapp_business_account_id) {
+  if (account?.whatsapp_business_account_id) {
     const templates = await $fetch<{ data: { name: string; language: string; components: any[] }[] }>(
       `https://graph.facebook.com/v21.0/${account.whatsapp_business_account_id}/message_templates`,
       { params: { name: templateName, fields: 'name,language,components' }, headers: { Authorization: `Bearer ${account.whatsapp_access_token}` } },
@@ -509,8 +519,42 @@ async function runWhatsAppAction(
     if (variables.length > 0) bodyComponents.push({ type: 'body', parameters: variables.map((v) => ({ type: 'text', text: v })) })
   }
 
+  // Same template-name -> purpose mapping the manual staff send
+  // (api/whatsapp/send.post.ts) uses, instead of flatly recording every
+  // automation send as 'other' -- a rule that fires the account's own
+  // reminder template is a reminder, and the inbox and reporting reads on
+  // this column should be able to say so.
+  const purpose =
+    templateName === account?.whatsapp_confirmation_template_name
+      ? 'confirmation'
+      : templateName === account?.whatsapp_reminder_template_name
+        ? 'reminder'
+        : templateName === account?.whatsapp_recall_template_name
+          ? 'recall'
+          : 'other'
+
   let wamid: string | null = null
   let errorMessage: string | null = null
+
+  // Everything above still ran: the recipient, the consent gate, the live
+  // template lookup, the variable trimming, the header. Only the call to
+  // Meta is skipped, so a dry run exercises every part that can be wrong
+  // except the one that cannot be taken back.
+  if (dryRun) {
+    await supabase.from('whatsapp_messages').insert({
+      account_id: accountId,
+      patient_id: recipient.patient?.id ?? null,
+      lead_id: recipient.kind === 'lead' ? recipient.id : null,
+      appointment_id: appointmentId ?? null,
+      wamid: null,
+      purpose,
+      template_name: templateName,
+      status: 'would_send',
+      phone_number: to,
+    })
+    return
+  }
+
   try {
     const response = await $fetch<{ messages?: { id: string }[] }>(
       `https://graph.facebook.com/v21.0/${account.whatsapp_phone_number_id}/messages`,
@@ -536,19 +580,6 @@ async function runWhatsAppAction(
     errorMessage = e?.data?.error?.message ?? e?.message ?? 'Unknown error'
   }
 
-  // Same template-name -> purpose mapping the manual staff send
-  // (api/whatsapp/send.post.ts) uses, instead of flatly recording every
-  // automation send as 'other' -- a rule that fires the account's own
-  // reminder template is a reminder, and the inbox and reporting reads on
-  // this column should be able to say so.
-  const purpose =
-    templateName === account.whatsapp_confirmation_template_name
-      ? 'confirmation'
-      : templateName === account.whatsapp_reminder_template_name
-        ? 'reminder'
-        : templateName === account.whatsapp_recall_template_name
-          ? 'recall'
-          : 'other'
 
   // Only the confirmation and reminder templates carry the Confirmar/
   // Cambiar/Cancelar reply buttons. Everything else an automation might send

@@ -1083,6 +1083,7 @@ async function createAutomationRule(opts: {
   triggerEvent: string
   isMarketing?: boolean
   enabled?: boolean
+  dryRun?: boolean
   actions: { type: string; config?: Record<string, unknown> }[]
 }) {
   const rule = unwrap(
@@ -1094,6 +1095,7 @@ async function createAutomationRule(opts: {
         trigger_event: opts.triggerEvent,
         enabled: opts.enabled ?? true,
         is_marketing: opts.isMarketing ?? false,
+        dry_run: opts.dryRun ?? false,
       })
       .select('id')
       .single(),
@@ -1114,6 +1116,31 @@ async function createAutomationRule(opts: {
     )
   }
   return { id: ruleId }
+}
+
+/** Messages recorded against a lead, for asserting a dry run wrote instead of sent. */
+async function leadMessages(opts: { leadId: string }) {
+  const { data } = await admin
+    .from('whatsapp_messages')
+    .select('status, template_name, phone_number, wamid')
+    .eq('lead_id', opts.leadId)
+    .order('created_at')
+  return data ?? []
+}
+
+/** Gives an account PracticeHub credentials, to exercise the external check. */
+async function setPracticeHubConnection(opts: { accountId: string; baseUrl: string | null; apiKey?: string | null }) {
+  assertOk(
+    await admin
+      .from('accounts')
+      .update({
+        practicehub_base_url: opts.baseUrl,
+        practicehub_api_key: opts.apiKey === undefined ? 'test-key' : opts.apiKey,
+        practicehub_contact_email: 'cypress@example.com',
+      })
+      .eq('id', opts.accountId),
+  )
+  return { ok: true }
 }
 
 /** Moves a lead's stage without a staff session, for specs about other things. */
@@ -1146,6 +1173,8 @@ export const dbTasks = {
   'db:leadAiState': leadAiState,
   'db:setChannelSpend': setChannelSpend,
   'db:createAutomationRule': createAutomationRule,
+  'db:leadMessages': leadMessages,
+  'db:setPracticeHubConnection': setPracticeHubConnection,
   'db:setLeadStage': setLeadStage,
   'db:sequenceRuns': sequenceRuns,
   'db:makeSequenceDue': makeSequenceDue,

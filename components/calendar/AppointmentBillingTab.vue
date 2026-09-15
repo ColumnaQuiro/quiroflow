@@ -15,7 +15,7 @@ const { fire } = useAutomations()
 const { issueFactura } = useFacturas()
 const t = useT()
 
-const { loading: summaryLoading, balanceCents, creditLedgerCents, bonoValueCents, activeMembership, activePackages, refresh: refreshSummary } = usePatientFinancialSummary(
+const { loading: summaryLoading, balanceCents, spendableCreditCents, bonoValueCents, activeMembership, activePackages, refresh: refreshSummary } = usePatientFinancialSummary(
   () => props.patientId,
 )
 
@@ -475,13 +475,19 @@ async function recordPayment() {
   // balanceCents is negative when the patient owes money, so this must only
   // run when a credit row actually exists -- otherwise 0 > a negative
   // balance reads as "exceeded" and blocks a plain cash/card payment.
-  // Capped by the credit LEDGER, not the balance. Since the re-migration a
-  // balance carries prepaid bono money -- pay 264 for a bono and the balance
-  // reads 264 until visits draw it down -- and that money is not spendable
-  // twice: it buys the sessions. Offering it here as "credit on account" would
-  // let it be spent again while the counter still holds the visits, which is
-  // exactly the double-count migration 0161 removed.
-  if (paymentCreditCents.value > 0 && paymentCreditCents.value > creditLedgerCents.value) {
+  // Capped by what is spendable, not by the raw balance. Since the
+  // re-migration a balance carries prepaid bono money -- pay 264 for a bono
+  // and the balance reads 264 until visits draw it down -- and that money is
+  // not spendable twice: it buys the sessions. Offering it here as "credit on
+  // account" would let it be spent again while the counter still holds the
+  // visits, which is exactly the double-count migration 0161 removed.
+  //
+  // spendableCreditCents (usePatientFinancialSummary) is that rule written
+  // down once, so this screen and the Billing tab cannot give one patient two
+  // different answers. It was the credit LEDGER here, which held the line but
+  // counted only account_credits rows -- three patients have one -- so it also
+  // refused every genuine overpayment.
+  if (paymentCreditCents.value > 0 && paymentCreditCents.value > spendableCreditCents.value) {
     error.value = t('Amount exceeds available credit.', 'El importe supera el crédito disponible.')
     return
   }
@@ -729,7 +735,10 @@ async function recordPayment() {
             <select v-model="row.method" class="mt-1 rounded-ctl border border-line-control bg-surface px-2 py-1.5 text-sm text-ink-700 focus:border-brand focus:outline-none">
               <option value="cash">{{ t('Cash', 'Efectivo') }}</option>
               <option value="card">{{ t('Card', 'Tarjeta') }}</option>
-              <option v-if="creditLedgerCents > 0" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} (€{{ (creditLedgerCents / 100).toFixed(2) }} {{ t('available', 'disponible') }})</option>
+              <option value="credit" :disabled="spendableCreditCents <= 0">
+                {{ t('Credit on account', 'Crédito en cuenta') }}
+                ({{ spendableCreditCents > 0 ? `€${(spendableCreditCents / 100).toFixed(2)} ${t('available', 'disponible')}` : t('none available', 'sin crédito') }})
+              </option>
             </select>
           </div>
           <button v-if="paymentRows.length > 1" type="button" class="mb-2 text-xs text-ink-faint hover:text-danger-text" @click="removePaymentRow(i)">

@@ -1,3 +1,5 @@
+import { bonoOwedCents, type BonoOwedPayment } from '~/utils/bonoOwed'
+
 interface ActiveMembership {
   id: string
   membership_name: string
@@ -20,6 +22,13 @@ interface FinancialState {
   loading: Ref<boolean>
   balanceCents: Ref<number>
   creditLedgerCents: Ref<number>
+  /**
+   * Money the patient can actually spend -- credit ledger plus any genuine
+   * surplus, with bono money they have already paid for excluded. This is the
+   * figure every "pay from credit" option gates on; see doLoad for why it is
+   * none of balanceCents, creditLedgerCents or availableCents on their own.
+   */
+  spendableCreditCents: Ref<number>
   // Everything the patient has ever actually paid. Already summed here to
   // get balanceCents -- exposed because DetailSidebar's "Lifetime" figure is
   // exactly this number, and it was re-deriving it with its own invoices
@@ -66,6 +75,7 @@ function stateFor(id: string | null | undefined): FinancialState {
       loading: ref(true),
       balanceCents: ref(0),
       creditLedgerCents: ref(0),
+      spendableCreditCents: ref(0),
       lifetimeCents: ref(0),
       bonoValueCents: ref(0),
       availableCents: ref(0),
@@ -95,15 +105,18 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     // only for the status the credit-on-void rule below needs, and left outer
     // so an unallocated payment survives it.
     const [{ data: invoices }, { data: memberships }, { data: packages }, { data: credits }, { data: shares }, { data: payments }] = await Promise.all([
-      supabase.from('invoices').select('id, total_cents').eq('patient_id', currentId).neq('status', 'void'),
+      // status and the bono columns are read for spendableCreditCents below,
+      // which needs bonoOwedCents' full input: the bono's own sale invoice
+      // where it has one, and every payment that might be linked to it.
+      supabase.from('invoices').select('id, total_cents, status').eq('patient_id', currentId).neq('status', 'void'),
       supabase.from('patient_memberships').select('id, membership_name, status').eq('patient_id', currentId).eq('status', 'active'),
-      supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used, price_cents').eq('patient_id', currentId).order('purchased_at', { ascending: false }),
+      supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used, price_cents, owed_cents, invoice_id').eq('patient_id', currentId).order('purchased_at', { ascending: false }),
       supabase.from('account_credits').select('amount_cents, external_reference').eq('patient_id', currentId),
       supabase
         .from('package_purchase_shares')
         .select('package_purchases(id, package_name, sessions_total, sessions_used, price_cents, patients(first_name, last_name))')
         .eq('patient_id', currentId),
-      supabase.from('payments').select('amount_cents, method, invoices(status)').eq('patient_id', currentId),
+      supabase.from('payments').select('amount_cents, method, invoice_id, package_purchase_id, external_reference, invoices(status)').eq('patient_id', currentId),
     ])
 
     // A 'credit' payment against a VOIDED invoice is not money and never was:
@@ -184,6 +197,44 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
       }, 0)
     state.availableCents.value = state.creditLedgerCents.value + state.bonoValueCents.value
 
+    // Bono value the patient's own money is actually tied up in: what is left
+    // on the counter, minus whatever is still owed on it. Paid for, not merely
+    // held -- an unpaid bono must not mask real money, or a patient with EUR
+    // 100 of credit behind an unpaid EUR 528 bono reads as having nothing.
+    const committedBonoCents = (packages ?? []).reduce((sum, p) => {
+      if (!p.sessions_total) return sum
+      const perSessionCents = Math.round(p.price_cents / p.sessions_total)
+      const remainingCents = perSessionCents * Math.max(0, p.sessions_total - p.sessions_used)
+      const owed = bonoOwedCents({
+        purchaseId: p.id,
+        invoiceId: p.invoice_id,
+        priceCents: p.price_cents,
+        owedCents: p.owed_cents,
+        invoice: (invoices ?? []).find((i) => i.id === p.invoice_id) ?? null,
+        payments: countablePayments as unknown as BonoOwedPayment[],
+      })
+      return sum + Math.max(0, remainingCents - owed)
+    }, 0)
+
+    // What the patient can actually put towards something: the credit ledger
+    // in full, plus anything paid beyond what has been invoiced and what the
+    // bonos have already committed.
+    //
+    // Not creditLedgerCents alone -- it counts only account_credits rows, and
+    // three patients in the database have one, so gating a "pay from credit"
+    // option on it hid the option from essentially everyone. Not availableCents
+    // either: bono money is already spent on those sessions, and offering it
+    // again is the double-count 0161 removed. And not balanceCents, which nets
+    // outstanding invoices against credit -- settling an outstanding invoice is
+    // the main thing credit is FOR, so the two terms are added rather than
+    // netted.
+    //
+    // Lives here rather than in BillingTab so the visit-checkout screen and the
+    // Billing tab cannot answer the same question differently for one patient.
+    state.spendableCreditCents.value =
+      state.creditLedgerCents.value +
+      Math.max(0, state.balanceCents.value - state.creditLedgerCents.value - committedBonoCents)
+
     state.loading.value = false
     state.loaded = true
   }
@@ -221,6 +272,7 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     loading: computed(() => stateFor(id.value).loading.value),
     balanceCents: computed(() => stateFor(id.value).balanceCents.value),
     creditLedgerCents: computed(() => stateFor(id.value).creditLedgerCents.value),
+    spendableCreditCents: computed(() => stateFor(id.value).spendableCreditCents.value),
     lifetimeCents: computed(() => stateFor(id.value).lifetimeCents.value),
     bonoValueCents: computed(() => stateFor(id.value).bonoValueCents.value),
     availableCents: computed(() => stateFor(id.value).availableCents.value),

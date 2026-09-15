@@ -68,7 +68,7 @@ const { can } = usePermission()
 const { fire } = useAutomations()
 const t = useT()
 
-const { balanceCents, creditLedgerCents, refresh: refreshCreditSummary } = usePatientFinancialSummary(() => props.patientId)
+const { balanceCents, creditLedgerCents, spendableCreditCents, refresh: refreshCreditSummary } = usePatientFinancialSummary(() => props.patientId)
 const { issueFactura } = useFacturas()
 
 // The documents the patient has actually been given, as opposed to the charges
@@ -859,56 +859,6 @@ const bonoValueCents = computed(() =>
 )
 const availableCents = computed(() => creditLedgerCents.value + bonoValueCents.value)
 
-/**
- * Bono value the patient's own money is actually tied up in.
- *
- * Paid for, not merely held: packageRemainingValueCents counts unused sessions
- * whether or not anyone has paid for them, so an unpaid bono would otherwise
- * mask real money -- a patient with EUR 100 of credit and an unpaid EUR 528
- * bono has EUR 100 to spend, not nothing. Netting off what is still owed
- * leaves only the part their money has already bought.
- */
-const committedBonoCents = computed(() =>
-  purchases.value
-    .filter((p) => !p.shared)
-    .reduce((sum, p) => sum + Math.max(0, packageRemainingValueCents(p) - packageOwedCents(p)), 0),
-)
-
-/**
- * Money the patient can actually put towards something: their credit ledger in
- * full, plus anything paid beyond what has been invoiced and what their bonos
- * have already committed.
- *
- * NOT creditLedgerCents alone, which counts only account_credits rows. Three
- * patients in the whole database have one, so gating on it hid the credit
- * option from essentially everyone -- including patients plainly showing a
- * credit balance on this very tab, since "Available" above reads
- * creditLedgerCents + bonoValueCents. What reception saw and what the gates
- * tested were never the same number.
- *
- * NOT availableCents either, and this is the part that matters. A bono raises
- * no invoice -- its price sits on the purchase as owed_cents and each visit
- * draws it down -- so money paid for it reads as a positive balance until the
- * sessions are used. Offering that as credit would buy something else with
- * money already spent on the bono, leaving those sessions unfunded: the
- * double-count 0161 removed.
- *
- * And NOT balanceCents on its own, which is the mistake this started as.
- * balanceCents nets outstanding invoices against credit, but settling an
- * outstanding invoice is the main thing credit is FOR. A patient with EUR 100
- * of credit and an unpaid EUR 55 invoice has a balance of EUR 45 and EUR 100
- * to spend, 55 of which belongs on that invoice. Subtracting the debt from the
- * credit refused exactly that -- caught by factura-per-payment.cy.ts, which is
- * why the two terms are added rather than read off the balance.
- *
- * The surplus term is derived from balanceCents because the composable exposes
- * only the balance, not the raw paid/invoiced totals. The cutover adjustment
- * folded into it makes that term more conservative for an imported bono, and
- * under-offering is the safe direction to be wrong in.
- */
-const spendableCreditCents = computed(() =>
-  creditLedgerCents.value + Math.max(0, balanceCents.value - creditLedgerCents.value - committedBonoCents.value),
-)
 
 function scheduleForPackage(purchaseId: string) {
   return schedules.value.find((s) => s.package_purchase_id === purchaseId)

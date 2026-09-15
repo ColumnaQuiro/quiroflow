@@ -1,4 +1,4 @@
-import { createHmac } from 'node:crypto'
+import { createHmac, randomUUID } from 'node:crypto'
 import { toE164 } from '~/utils/phone'
 import { renderTemplateFields } from '~/utils/docFields'
 
@@ -244,7 +244,17 @@ async function runForRecipient(
   // nextAppointmentAt above, kept simple rather than conditioned on whether
   // any action actually references the token.
   const { data: account } = await supabase.from('accounts').select('google_review_url').eq('id', accountId).maybeSingle()
-  const googleReviewUrl: string | undefined = account?.google_review_url ?? undefined
+  const googleReviewUrl = await trackedReviewLink(supabase, accountId, recipient, origin, account?.google_review_url ?? null, {
+    appointmentId,
+    // Only when this rule actually sends the link. Minting on every firing
+    // would put a review_requests row behind every appointment reminder the
+    // clinic sends, and the Reputation funnel counts rows -- "412 review
+    // requests sent" when four went out is worse than the blank it replaces.
+    //
+    // A test send and a dry run are excluded for the same reason: neither
+    // reaches anybody, and both would still be counted.
+    record: !dryRun && !whatsappOverrideNumber && actionsUseReviewLink(actions),
+  })
 
   const context: MergeContext = { ...extraContext, nextAppointmentAt, googleReviewUrl }
 
@@ -353,6 +363,65 @@ async function buildHeaderComponent(supabase: any, header: Record<string, any> |
   if (type === 'document' && header.filename) media.filename = header.filename
 
   return [{ type: 'header', parameters: [{ type, [type]: media }] }]
+}
+
+/**
+ * Whether any action in this rule actually sends the review link -- as a
+ * WhatsApp template variable, or as a {{google_review_link}} merge token in
+ * an email body.
+ */
+function actionsUseReviewLink(actions: ActionRow[]) {
+  return actions.some((action) => {
+    const config = action.config ?? {}
+    if (Array.isArray(config.variables) && config.variables.some((v: { source?: string }) => v?.source === 'google_review_link')) return true
+    return typeof config.body === 'string' && config.body.includes('{{google_review_link}}')
+  })
+}
+
+/**
+ * The review link a patient is actually sent.
+ *
+ * {{google_review_link}} used to resolve straight to the clinic's Google
+ * page, which works -- the patient lands where they should -- but means
+ * nothing observes that it happened. review_requests was only ever read, by
+ * the redirect; nothing wrote to it, so the Reputation funnel reported
+ * 0 sent and 0 opened however many review requests went out. Two of its three
+ * steps were permanently blank for a feature that was already running.
+ *
+ * Routing through /api/r/<token> fixes that without changing what the patient
+ * experiences: they still arrive at the same Google page, and we learn the
+ * request was sent and whether the link was opened. The third step -- whether
+ * they then wrote a review -- still belongs to Google, and the screen still
+ * says so.
+ *
+ * Falls back to the raw URL if a token cannot be stored. A patient who cannot
+ * be counted should still be able to leave a review.
+ */
+async function trackedReviewLink(
+  supabase: any,
+  accountId: string,
+  recipient: Recipient,
+  origin: string,
+  googleReviewUrl: string | null,
+  opts: { appointmentId?: string; record: boolean },
+): Promise<string | undefined> {
+  if (!googleReviewUrl) return undefined
+  if (!opts.record || recipient.kind !== 'patient') return googleReviewUrl
+
+  const token = randomUUID().replace(/-/g, '')
+  const { error } = await supabase.from('review_requests').insert({
+    account_id: accountId,
+    patient_id: recipient.id,
+    appointment_id: opts.appointmentId ?? null,
+    token,
+    // Which channel carries it is not knowable here -- the link is resolved
+    // once for the rule, before any individual action runs, and a rule can
+    // have both a WhatsApp and an email action. Left at the column default;
+    // nothing reads it yet, and a guess would be worse than a default.
+  })
+  if (error) return googleReviewUrl
+
+  return `${origin}/api/r/${token}`
 }
 
 // Creates the patient's copy of a doc template (health history, consent,

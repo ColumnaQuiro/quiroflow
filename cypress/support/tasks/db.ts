@@ -1128,6 +1128,16 @@ async function createAutomationRule(opts: {
   return { id: ruleId }
 }
 
+/** Review requests for an account, for asserting what was and was not counted. */
+async function reviewRequestsFor(opts: { accountId: string }) {
+  const { data } = await admin
+    .from('review_requests')
+    .select('token, patient_id, appointment_id, opened_at, review_id')
+    .eq('account_id', opts.accountId)
+    .order('sent_at')
+  return data ?? []
+}
+
 /** The most recently created rule's actions, for builder round-trip tests. */
 async function latestAutomationActions() {
   const { data: rule } = await admin.from('automation_rules').select('id').order('created_at', { ascending: false }).limit(1).maybeSingle()
@@ -1195,6 +1205,7 @@ export const dbTasks = {
   'db:leadAiState': leadAiState,
   'db:setChannelSpend': setChannelSpend,
   'db:createAutomationRule': createAutomationRule,
+  'db:reviewRequestsFor': reviewRequestsFor,
   'db:latestAutomationActions': latestAutomationActions,
   'db:leadMessages': leadMessages,
   'db:setPracticeHubConnection': setPracticeHubConnection,

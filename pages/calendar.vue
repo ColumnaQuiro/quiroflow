@@ -1626,7 +1626,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                 <div
                   v-for="block in blocksForRoom(col.id)"
                   :key="block.id"
-                  class="absolute left-0 right-0 z-0 flex items-center justify-center overflow-hidden bg-[repeating-linear-gradient(135deg,#F4F5F8,#F4F5F8_6px,#EBECF1_6px,#EBECF1_12px)] font-mono text-[10.5px] text-ink-muted2"
+                  class="absolute left-0 right-0 z-0 flex cursor-pointer items-center justify-center overflow-hidden bg-[repeating-linear-gradient(135deg,#F4F5F8,#F4F5F8_6px,#EBECF1_6px,#EBECF1_12px)] font-mono text-[10.5px] text-ink-muted2"
                   :style="{ top: `${timeToPx(block.starts_at, DAY_HOUR_PX)}px`, height: `${durationToPx(block.starts_at, block.ends_at, DAY_HOUR_PX, DAY_MIN_AVAILABILITY_PX)}px` }"
                   @click.stop="openBlockEditModal(block)"
                 >
@@ -1774,11 +1774,22 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                   <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-line-control" :style="{ top: `${(h - START_HOUR) * WEEK_HOUR_PX}px` }" />
                   <div v-for="rect in closedSlotRects(day, WEEK_HOUR_PX)" :key="rect.top" class="pointer-events-none absolute left-0 right-0 bg-line-row2" :style="{ top: `${rect.top}px`, height: `${rect.height}px` }" />
 
+                  <!--
+                    Clickable, exactly as in Day view above -- this is the only
+                    way to reach the block's Remove button, and `workweek` is
+                    the default view, so while this was `pointer-events-none`
+                    a block could not be removed at all without first switching
+                    to Day. Worse than inert: the click fell through to the
+                    cell underneath and opened New Appointment on a slot that
+                    was deliberately blocked off.
+                  -->
                   <div
                     v-for="block in blocksForRoomOnDay(day, col.id)"
                     :key="block.id"
-                    class="pointer-events-none absolute left-0 right-0 z-0 flex items-center justify-center overflow-hidden bg-[repeating-linear-gradient(135deg,#F4F5F8,#F4F5F8_6px,#EBECF1_6px,#EBECF1_12px)] font-mono text-[10px] text-ink-muted2"
+                    class="absolute left-0 right-0 z-0 flex cursor-pointer items-center justify-center overflow-hidden bg-[repeating-linear-gradient(135deg,#F4F5F8,#F4F5F8_6px,#EBECF1_6px,#EBECF1_12px)] font-mono text-[10px] text-ink-muted2"
                     :style="{ top: `${timeToPx(block.starts_at, WEEK_HOUR_PX)}px`, height: `${durationToPx(block.starts_at, block.ends_at, WEEK_HOUR_PX, WEEK_MIN_AVAILABILITY_PX)}px` }"
+                    :title="blockLabel(block)"
+                    @click.stop="openBlockEditModal(block)"
                   >
                     {{ t('Blocked', 'Bloqueado') }}
                   </div>

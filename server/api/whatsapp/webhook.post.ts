@@ -118,6 +118,43 @@ async function findPatientIdsByPhone(supabase: ReturnType<typeof serverSupabaseS
   }
 }
 
+/**
+ * The lead this number belongs to, when it belongs to no patient.
+ *
+ * Inbound messages were attributed to a patient or to nobody, which meant a
+ * reply from somebody who enquired through a Facebook ad -- a lead, by
+ * definition not yet a patient -- attached to nothing. Their thread in the
+ * Inbox showed only what the clinic had sent them, with their answers
+ * missing, and the lead's own drawer showed no sign they had ever written
+ * back.
+ *
+ * Patients win where a number matches both, deliberately: somebody who has
+ * become a patient is a patient, and their clinical thread is the one their
+ * messages belong in. This only runs when no patient matched at all.
+ *
+ * Newest lead wins where one person enquired twice, on the grounds that the
+ * reply is far more likely to be about the enquiry they just made.
+ */
+async function findLeadIdByPhone(supabase: ReturnType<typeof serverSupabaseServiceRole<Database>>, accountId: string, fromNumber: string): Promise<string | null> {
+  const { data } = await supabase
+    .from('leads')
+    .select('id, phone')
+    .eq('account_id', accountId)
+    .is('deleted_at', null)
+    .not('phone', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(500)
+
+  const incoming = fromNumber.replace(/\D/g, '')
+  for (const lead of data ?? []) {
+    // The same tolerance patients get: a lead's number may have been typed
+    // by hand at the desk, or arrived from Meta with no "+", and both should
+    // still match the digits Meta sends on the way back.
+    if (lead.phone && phoneMatches(lead.phone, 'ES', incoming)) return lead.id
+  }
+  return null
+}
+
 // Which appointment is a Confirmar/Cambiar/Cancelar reply about?
 //
 // This used to be a single query for "the earliest-starting appointment with
@@ -256,12 +293,14 @@ export default defineEventHandler(async (event) => {
       for (const msg of value?.messages ?? []) {
         const patientIds = await findPatientIdsByPhone(supabase, account.id, msg.from)
         const patientId = patientIds[0] ?? null
+        const leadId = patientId ? null : await findLeadIdByPhone(supabase, account.id, msg.from)
         const mediaKind = MEDIA_KINDS.includes(msg.type as MediaKind) ? (msg.type as MediaKind) : null
         const media = mediaKind ? msg[mediaKind] : undefined
 
         const insert: Database['public']['Tables']['whatsapp_messages']['Insert'] = {
           account_id: account.id,
           patient_id: patientId,
+          lead_id: leadId,
           phone_number: msg.from,
           wamid: msg.id,
           direction: 'inbound',
@@ -296,14 +335,40 @@ export default defineEventHandler(async (event) => {
 
         await supabase.from('whatsapp_messages').insert(insert)
 
+        // A lead writing back is the thing the whole acquisition funnel is
+        // trying to cause, and until now it left no trace anywhere except an
+        // unattributed row. Recorded on the lead's own timeline so the drawer
+        // shows it, and flagged as needing a person: the AI receptionist does
+        // not answer real enquiries yet, so nobody is replying unless a human
+        // does.
+        if (leadId) {
+          await supabase.from('lead_events').insert({
+            account_id: account.id,
+            lead_id: leadId,
+            kind: 'conversation',
+            title: 'Replied',
+            detail: insert.body_preview?.slice(0, 500) ?? null,
+          })
+          // Only lifts a lead the AI was handling, so a lead a person has
+          // already taken over is left where that person put it.
+          await supabase
+            .from('leads')
+            .update({ ai_state: 'needs_human' })
+            .eq('id', leadId)
+            .eq('ai_state', 'handling')
+        }
+
         let senderName = msg.from
         if (patientId) {
           const { data: patient } = await supabase.from('patients').select('first_name, last_name').eq('id', patientId).maybeSingle()
           if (patient) senderName = `${patient.first_name} ${patient.last_name ?? ''}`.trim()
+        } else if (leadId) {
+          const { data: lead } = await supabase.from('leads').select('full_name').eq('id', leadId).maybeSingle()
+          if (lead?.full_name) senderName = lead.full_name
         }
         await notifyInboxTeamMembers(supabase, account.id, senderName, insert.body_preview ?? 'New message', {
           type: 'whatsapp_message',
-          key: patientId ?? msg.from,
+          key: patientId ?? leadId ?? msg.from,
         })
 
         const intent = classifyReply(replyText(msg))

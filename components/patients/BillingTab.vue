@@ -84,6 +84,10 @@ interface FacturaRow {
   amount_cents: number
   issued_at: string
   recipient_nif: string | null
+  // Null once the payment this documented has been deleted. The factura still
+  // stands -- a number issued in a correlative series cannot just disappear --
+  // but it no longer matches any money, which someone has to resolve.
+  payment_id: string | null
 }
 const facturas = ref<FacturaRow[]>([])
 const sendingFacturaId = ref('')
@@ -95,7 +99,7 @@ async function loadFacturas() {
   patientDefaultPractitionerId.value = patientRow?.default_practitioner_id ?? null
   const { data } = await supabase
     .from('facturas')
-    .select('id, number, kind, description, amount_cents, issued_at, recipient_nif')
+    .select('id, number, kind, description, amount_cents, issued_at, recipient_nif, payment_id')
     .eq('patient_id', props.patientId)
     .order('issued_at', { ascending: false })
   facturas.value = data ?? []
@@ -727,10 +731,31 @@ async function deleteInvoice(invoice: InvoiceRow) {
 // patient, and here it never left in the first place.
 async function deletePayment(paymentId: string, invoiceId: string | null, amountCents: number) {
   const invoice = invoices.value.find((i) => i.id === invoiceId)
+
+  // A factura was issued for this payment, and it is about to stop matching
+  // anything. Said out loud because this used to be silent AND destructive:
+  // facturas.payment_id cascaded, so the numbered document was deleted along
+  // with the payment and the series was left with a hole. Four numbers went
+  // that way before anyone noticed. The document now survives (migration
+  // 20260915160852), but whoever is deleting still needs to know one exists --
+  // a refund may be the right instrument rather than a deletion.
+  const { data: linkedFacturas } = await supabase
+    .from('facturas')
+    .select('number')
+    .eq('payment_id', paymentId)
+  const facturaNumbers = (linkedFacturas ?? []).map((f) => f.number).join(', ')
+
   if (
     !confirm(
       `${t('Remove this', 'Eliminar este')} ${money(amountCents)} ${t('payment', 'pago')}${invoice ? ` ${t('from', 'de')} ${invoice.invoice_number}` : ''}? ` +
-        t('The receipt reopens if it is no longer fully paid. This does not refund any money.', 'El recibo se reabrirá si deja de estar pagado. Esto no reembolsa ningún importe.'),
+        t('The receipt reopens if it is no longer fully paid. This does not refund any money.', 'El recibo se reabrirá si deja de estar pagado. Esto no reembolsa ningún importe.') +
+        (facturaNumbers
+          ? '\n\n' +
+            t(
+              `Factura ${facturaNumbers} was issued for this payment. It stays on the fiscal series and will be flagged as no longer matching a payment. If money actually went back to the patient, record a refund instead.`,
+              `Se emitió la factura ${facturaNumbers} por este pago. Seguirá en la serie fiscal y quedará marcada como sin pago asociado. Si el dinero se devolvió realmente al paciente, registra un reembolso en su lugar.`,
+            )
+          : ''),
     )
   )
     return
@@ -1680,6 +1705,15 @@ function money(cents: number) {
                 {{ f.number }}
                 <span v-if="f.kind === 'simplified'" class="ml-1 rounded-ctlSm bg-chip-bg px-1.5 py-0.5 font-sans text-[10.5px] text-chip-text">
                   {{ t('simplified', 'simplificada') }}
+                </span>
+                <!--
+                  Its payment has since been deleted. The document stays on the
+                  series -- it was issued, and a correlative series cannot have
+                  holes punched in it -- but it now documents money that is no
+                  longer recorded, which needs resolving rather than ignoring.
+                -->
+                <span v-if="!f.payment_id" class="ml-1 rounded-ctlSm bg-warning-bg px-1.5 py-0.5 font-sans text-[10.5px] text-warning-text">
+                  {{ t('payment removed', 'pago eliminado') }}
                 </span>
               </p>
               <p class="truncate text-[12.5px] text-ink-muted2">{{ f.description }}</p>

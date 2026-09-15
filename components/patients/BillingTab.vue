@@ -59,7 +59,7 @@ interface PaymentScheduleRow {
   status: string
 }
 interface StripeEventRow { id: string; payment_schedule_id: string; period_start: string; amount_cents: number; status: string }
-interface LedgerPaymentRow { id: string; invoice_id: string | null; amount_cents: number; method: string; paid_at: string; package_purchase_id: string | null; external_reference: string | null }
+interface LedgerPaymentRow { id: string; invoice_id: string | null; amount_cents: number; method: string; paid_at: string; package_purchase_id: string | null; external_reference: string | null; created_by: string | null; stripe_payment_intent_id: string | null; team_members: { full_name: string | null } | null }
 interface LedgerCreditRow { id: string; amount_cents: number; reason: string | null; method: string | null; invoice_id: string | null; created_at: string }
 
 const supabase = useSupabaseClient()
@@ -553,9 +553,13 @@ async function loadLedger() {
     // none. invoice_id is still selected: it is how the ledger below matches
     // a payment to the charge it settled, and it is simply null when it
     // settled nothing in particular.
+    // created_by's name is embedded rather than resolved from a team-members
+    // list: there isn't one in the store, and a payment can name someone who
+    // has since been removed from the team (the FK is ON DELETE SET NULL, but
+    // a soft-deleted member keeps their row and their name).
     supabase
       .from('payments')
-      .select('id, invoice_id, amount_cents, method, paid_at, package_purchase_id, external_reference')
+      .select('id, invoice_id, amount_cents, method, paid_at, package_purchase_id, external_reference, created_by, stripe_payment_intent_id, team_members(full_name)')
       .eq('patient_id', props.patientId),
     supabase
       .from('account_credits')

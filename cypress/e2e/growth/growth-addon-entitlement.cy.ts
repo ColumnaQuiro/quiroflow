@@ -28,8 +28,20 @@ describe('The Growth add-on', () => {
     return cy.request({ url, failOnStatusCode: false })
   }
 
-  it('refuses the Growth API to an account that has not bought it', () => {
+  /**
+   * A clinic past its trial that never bought the add-on.
+   *
+   * Turning the add-on off is not enough on its own: a seeded account is
+   * trialing, and a trial includes Growth deliberately. Both halves are what
+   * "has not bought it" actually means.
+   */
+  function neverBought() {
     cy.task('db:setGrowthAddon', { accountId: account.accountId, enabled: false })
+    cy.setSubscriptionStatus(account.accountId, 'active')
+  }
+
+  it('refuses the Growth API to an account that has not bought it', () => {
+    neverBought()
 
     // 402, not 403: this is not "you may not", it is "this is not on your
     // subscription", and the two want different answers from the client.
@@ -46,13 +58,13 @@ describe('The Growth add-on', () => {
   it('does not let the preview flag buy it', () => {
     // The flag still renders the screens, deliberately -- the suite needs
     // both states. What it must not do is get data out of the API.
-    cy.task('db:setGrowthAddon', { accountId: account.accountId, enabled: false })
+    neverBought()
     cy.visit('/growth?growth=1')
     get('/api/growth/dashboard').its('status').should('eq', 402)
   })
 
   it('refuses lead capture, so an ad platform is told rather than ignored', () => {
-    cy.task('db:setGrowthAddon', { accountId: account.accountId, enabled: false })
+    neverBought()
     cy.task<{ token: string }>('db:createApiToken', { accountId: account.accountId, scopes: ['leads:write'] }).then((t) => {
       cy.request({
         method: 'POST',
@@ -65,6 +77,22 @@ describe('The Growth add-on', () => {
         expect(JSON.stringify(res.body)).to.contain('Growth is not on this subscription')
       })
     })
+  })
+
+  it('includes Growth in a trial, before anyone has bought anything', () => {
+    // The trial is the one period a clinic is deciding, and this is the part
+    // most worth deciding about. Hiding it behind a purchase then would be
+    // the wrong way round.
+    cy.task('db:setGrowthAddon', { accountId: account.accountId, enabled: false })
+    cy.setSubscriptionStatus(account.accountId, 'trialing')
+    get('/api/growth/dashboard').its('status').should('eq', 200)
+  })
+
+  it('stops when the trial ends and nothing was bought', () => {
+    // The cliff, deliberately: lead capture stops until they buy. The
+    // refusal says so in words rather than failing quietly.
+    neverBought()
+    get('/api/growth/dashboard').its('status').should('eq', 402)
   })
 
   it('keeps working for an account whose card failed this morning', () => {
@@ -102,7 +130,7 @@ describe('The Growth add-on', () => {
         // Cancelled between messages. Continuing to message strangers on
         // behalf of a clinic that stopped paying for the thing sending them
         // is indefensible.
-        cy.task('db:setGrowthAddon', { accountId: account.accountId, enabled: false })
+        neverBought()
         cy.task('db:makeSequenceDue', { leadId })
         cy.request({
           method: 'POST',

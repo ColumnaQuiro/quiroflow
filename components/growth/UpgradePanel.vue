@@ -48,13 +48,16 @@ const store = useAccountStore()
     </div>
 
     <p class="rounded-ctl border border-line bg-surface-subtle px-3 py-2.5 text-[11.5px] leading-[1.5] text-ink-muted">
+      <!-- The arithmetic here is derived from the price, so it changes when
+      the price does. At EUR 299 this said six extra conversions were needed
+      to cover it; at EUR 49 one does, and claiming otherwise would be
+      understating the product as badly as overstating it. -->
       {{ t('Clinics of your size book', 'Las clínicas de tu tamaño consiguen') }}
       <strong class="font-semibold text-ink-700">{{ t('18–24 extra new patients a month', '18–24 pacientes nuevos más al mes') }}</strong>
       {{ t(
-        'with Growth. At your average initial value of €55 and a 12-visit plan of €1,005, six extra conversions cover the tier — about',
-        'con Growth. Con tu valor medio inicial de 55 € y un plan de 12 visitas de 1.005 €, seis conversiones extra cubren el plan: unos',
+        'with Growth. At your average initial value of €55, a single extra new patient covers it — and a 12-visit plan of €1,005 covers a year and a half.',
+        'con Growth. Con tu valor medio inicial de 55 €, un solo paciente nuevo lo cubre, y un plan de 12 visitas de 1.005 € cubre año y medio.',
       ) }}
-      <strong class="font-semibold text-ink-700">{{ t('€12 per new patient acquired', '12 € por paciente nuevo captado') }}</strong>.
     </p>
 
     <div class="flex flex-col gap-2">

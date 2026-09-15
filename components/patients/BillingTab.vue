@@ -856,6 +856,35 @@ const bonoValueCents = computed(() =>
 )
 const availableCents = computed(() => creditLedgerCents.value + bonoValueCents.value)
 
+/**
+ * Money the patient has with the clinic that is not already committed to
+ * sessions -- what they can actually put towards something new.
+ *
+ * NOT creditLedgerCents, which counts only account_credits rows. Three
+ * patients in the whole database have one of those, so gating on it hid the
+ * credit option from essentially everyone, including patients plainly showing
+ * a credit balance on this very tab. That is the bug: "Available" above reads
+ * creditLedgerCents + bonoValueCents, so what reception sees and what the
+ * dropdown tests were never the same number.
+ *
+ * NOT availableCents either, and this is the part that matters. A bono sold
+ * here raises no invoice -- its price sits on the purchase as owed_cents and
+ * each visit draws it down -- so the money paid for it shows up as a positive
+ * balance until the sessions are used. Offering that as credit would sell a
+ * second bono with money already spent on the first, leaving those sessions
+ * unfunded. That is the double-count 0161 removed, and it is why
+ * AppointmentBillingTab refuses the same thing when taking a visit payment.
+ *
+ * balanceCents minus the value still sitting on the sessions counter nets the
+ * bono back out and leaves the genuine surplus: a real overpayment, a refund
+ * kept on account, an account_credits top-up. Clamped at zero because a
+ * patient who owes money has nothing to spend, and because an imported bono
+ * carries a bono-cutover adjustment that already took its value off the
+ * balance -- subtracting it twice goes negative, and under-offering is the
+ * safe direction to be wrong in.
+ */
+const spendableCreditCents = computed(() => Math.max(0, balanceCents.value - bonoValueCents.value))
+
 function scheduleForPackage(purchaseId: string) {
   return schedules.value.find((s) => s.package_purchase_id === purchaseId)
 }
@@ -951,7 +980,11 @@ async function sellPackage() {
   const tpl = packageTemplates.value.find((p) => p.id === sellPackageId.value)
   if (!tpl) return
   const amountCents = Math.round((parseFloat(sellAmountPaid.value) || 0) * 100)
-  if (sellMethod.value === 'credit' && amountCents > creditLedgerCents.value) {
+  // Against what is actually spendable, and against the amount being paid
+  // now rather than the package's price -- part-paying a EUR 528 bono with
+  // EUR 50 of credit is a normal sale, with the rest taken later or put on
+  // autopay.
+  if (sellMethod.value === 'credit' && amountCents > spendableCreditCents.value) {
     creditError.value = t('Amount exceeds available credit.', 'El importe supera el crédito disponible.')
     return
   }
@@ -1872,7 +1905,18 @@ function money(cents: number) {
             <select v-model="sellMethod" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]">
               <option value="cash">{{ t('Cash', 'Efectivo') }}</option>
               <option value="card">{{ t('Card', 'Tarjeta') }}</option>
-              <option v-if="creditLedgerCents > 0" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} (€{{ (creditLedgerCents / 100).toFixed(2) }} {{ t('available', 'disponible') }})</option>
+              <!--
+                Always rendered, disabled when there is nothing spendable,
+                rather than hidden. Hidden, paying from credit looked like
+                something the app couldn't do at all: there was no way to tell
+                "this patient has no credit" apart from "this isn't possible
+                here", and with only three patients in the database holding an
+                account_credits row, nobody ever saw it appear.
+              -->
+              <option value="credit" :disabled="spendableCreditCents <= 0">
+                {{ t('Credit on account', 'Crédito en cuenta') }}
+                ({{ spendableCreditCents > 0 ? `€${(spendableCreditCents / 100).toFixed(2)} ${t('available', 'disponible')}` : t('none available', 'sin crédito') }})
+              </option>
             </select>
           </div>
           <UiBtn size="sm" variant="secondary" :disabled="!sellPackageId || sellingPackage" @click="sellPackage">{{ sellingPackage ? t('Selling…', 'Vendiendo…') : t('Sell', 'Vender') }}</UiBtn>

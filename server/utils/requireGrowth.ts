@@ -43,16 +43,22 @@ export async function requireGrowth(event: H3Event): Promise<GrowthAccess> {
  * Comped accounts get everything -- that row exists so QuiroFlow's own
  * account appears in the customer list like any other, not to bill it.
  *
- * A trialing account gets Growth too: the trial is there to sell the
- * product, and the part most worth selling is the part that brings patients
- * in. A lapsed one does not, which is the whole point of the column.
+ * A trial includes Growth, without having bought the add-on. The trial
+ * exists to sell the product and this is the part most worth selling, so
+ * hiding it behind a purchase during the one period a clinic is deciding
+ * would be the wrong way round. It does mean a cliff when the trial ends --
+ * lead capture stops until they buy -- which is why the refusal says so in
+ * words rather than failing quietly.
+ *
+ * Past that, the add-on is required. 'locked' and 'canceled' are the two
+ * statuses that stop it; past_due is somebody whose card failed this
+ * morning, and cutting their lead capture off over that would lose enquiries
+ * they have already paid for.
  */
 export function hasGrowth(subscription: { growth_addon?: boolean | null; status?: string | null; comped?: boolean | null } | null): boolean {
   if (!subscription) return false
   if (subscription.comped) return true
+  if (subscription.status === 'trialing') return true
   if (!subscription.growth_addon) return false
-  // 'locked' and 'canceled' are the two that mean stop. past_due is somebody
-  // whose card failed this morning, and cutting their lead capture off over
-  // that would lose enquiries they paid for.
   return subscription.status !== 'locked' && subscription.status !== 'canceled'
 }

@@ -191,7 +191,7 @@ async function applyCreditToInvoice() {
   const invoice = invoices.value.find((i) => i.id === applyCreditInvoiceId.value)
   if (!invoice) return
   const amountCents = Math.round((parseFloat(applyCreditAmount.value) || 0) * 100)
-  if (amountCents <= 0 || amountCents > creditLedgerCents.value) {
+  if (amountCents <= 0 || amountCents > spendableCreditCents.value) {
     creditError.value = t('Amount must be positive and not exceed available credit.', 'El importe debe ser positivo y no superar el crédito disponible.')
     return
   }
@@ -250,13 +250,16 @@ async function takePayment() {
   // balanceCents is negative when the patient owes money, so this must only
   // run when a credit row actually exists -- otherwise 0 > a negative
   // balance reads as "exceeded" and blocks a plain cash/card payment.
-  // Capped by the credit LEDGER, not the balance. Since the re-migration a
-  // balance carries prepaid bono money -- pay 264 for a bono and the balance
-  // reads 264 until visits draw it down -- and that money is not spendable
-  // twice: it buys the sessions. Offering it here as "credit on account" would
-  // let it be spent again while the counter still holds the visits, which is
-  // exactly the double-count migration 0161 removed.
-  if (paymentCreditCents.value > 0 && paymentCreditCents.value > creditLedgerCents.value) {
+  // Capped by what is spendable, not by the raw balance. Since the
+  // re-migration a balance carries prepaid bono money -- pay 264 for a bono
+  // and the balance reads 264 until visits draw it down -- and that money is
+  // not spendable twice: it buys the sessions. Offering it here as "credit on
+  // account" would let it be spent again while the counter still holds the
+  // visits, which is exactly the double-count migration 0161 removed.
+  // spendableCreditCents is that rule written down: it was the credit LEDGER
+  // here, which held the line but counted only account_credits rows and so
+  // also refused genuine overpayments.
+  if (paymentCreditCents.value > 0 && paymentCreditCents.value > spendableCreditCents.value) {
     paymentError.value = t('Amount exceeds available credit.', 'El importe supera el crédito disponible.')
     return
   }
@@ -856,6 +859,57 @@ const bonoValueCents = computed(() =>
 )
 const availableCents = computed(() => creditLedgerCents.value + bonoValueCents.value)
 
+/**
+ * Bono value the patient's own money is actually tied up in.
+ *
+ * Paid for, not merely held: packageRemainingValueCents counts unused sessions
+ * whether or not anyone has paid for them, so an unpaid bono would otherwise
+ * mask real money -- a patient with EUR 100 of credit and an unpaid EUR 528
+ * bono has EUR 100 to spend, not nothing. Netting off what is still owed
+ * leaves only the part their money has already bought.
+ */
+const committedBonoCents = computed(() =>
+  purchases.value
+    .filter((p) => !p.shared)
+    .reduce((sum, p) => sum + Math.max(0, packageRemainingValueCents(p) - packageOwedCents(p)), 0),
+)
+
+/**
+ * Money the patient can actually put towards something: their credit ledger in
+ * full, plus anything paid beyond what has been invoiced and what their bonos
+ * have already committed.
+ *
+ * NOT creditLedgerCents alone, which counts only account_credits rows. Three
+ * patients in the whole database have one, so gating on it hid the credit
+ * option from essentially everyone -- including patients plainly showing a
+ * credit balance on this very tab, since "Available" above reads
+ * creditLedgerCents + bonoValueCents. What reception saw and what the gates
+ * tested were never the same number.
+ *
+ * NOT availableCents either, and this is the part that matters. A bono raises
+ * no invoice -- its price sits on the purchase as owed_cents and each visit
+ * draws it down -- so money paid for it reads as a positive balance until the
+ * sessions are used. Offering that as credit would buy something else with
+ * money already spent on the bono, leaving those sessions unfunded: the
+ * double-count 0161 removed.
+ *
+ * And NOT balanceCents on its own, which is the mistake this started as.
+ * balanceCents nets outstanding invoices against credit, but settling an
+ * outstanding invoice is the main thing credit is FOR. A patient with EUR 100
+ * of credit and an unpaid EUR 55 invoice has a balance of EUR 45 and EUR 100
+ * to spend, 55 of which belongs on that invoice. Subtracting the debt from the
+ * credit refused exactly that -- caught by factura-per-payment.cy.ts, which is
+ * why the two terms are added rather than read off the balance.
+ *
+ * The surplus term is derived from balanceCents because the composable exposes
+ * only the balance, not the raw paid/invoiced totals. The cutover adjustment
+ * folded into it makes that term more conservative for an imported bono, and
+ * under-offering is the safe direction to be wrong in.
+ */
+const spendableCreditCents = computed(() =>
+  creditLedgerCents.value + Math.max(0, balanceCents.value - creditLedgerCents.value - committedBonoCents.value),
+)
+
 function scheduleForPackage(purchaseId: string) {
   return schedules.value.find((s) => s.package_purchase_id === purchaseId)
 }
@@ -951,7 +1005,11 @@ async function sellPackage() {
   const tpl = packageTemplates.value.find((p) => p.id === sellPackageId.value)
   if (!tpl) return
   const amountCents = Math.round((parseFloat(sellAmountPaid.value) || 0) * 100)
-  if (sellMethod.value === 'credit' && amountCents > creditLedgerCents.value) {
+  // Against what is actually spendable, and against the amount being paid
+  // now rather than the package's price -- part-paying a EUR 528 bono with
+  // EUR 50 of credit is a normal sale, with the rest taken later or put on
+  // autopay.
+  if (sellMethod.value === 'credit' && amountCents > spendableCreditCents.value) {
     creditError.value = t('Amount exceeds available credit.', 'El importe supera el crédito disponible.')
     return
   }
@@ -1073,7 +1131,7 @@ async function submitPackageCollection(purchase: PackagePurchaseRow) {
   if (amountCents <= 0) return
   // Same cap the sale panel applies: credit can only spend credit the patient
   // actually holds, never the value of the bono they are paying for.
-  if (collectMethod.value === 'credit' && amountCents > creditLedgerCents.value) {
+  if (collectMethod.value === 'credit' && amountCents > spendableCreditCents.value) {
     collectError.value = t('Amount exceeds available credit.', 'El importe supera el crédito disponible.')
     return
   }
@@ -1418,7 +1476,7 @@ async function activateMembership() {
   const tpl = membershipTemplates.value.find((m) => m.id === activateMembershipId.value)
   if (!tpl) return
   const amountCents = Math.round((parseFloat(activateAmountPaid.value) || 0) * 100)
-  if (activateMethod.value === 'credit' && amountCents > creditLedgerCents.value) {
+  if (activateMethod.value === 'credit' && amountCents > spendableCreditCents.value) {
     creditError.value = t('Amount exceeds available credit.', 'El importe supera el crédito disponible.')
     return
   }
@@ -1518,7 +1576,7 @@ function money(cents: number) {
           <UiBtn variant="primary" size="sm" :disabled="!addCreditAmount || addingCredit" @click="addCredit">{{ addingCredit ? t('Adding…', 'Añadiendo…') : t('Add credit', 'Añadir crédito') }}</UiBtn>
         </form>
 
-        <form v-if="creditLedgerCents > 0 && unpaidInvoices.length > 0" class="mt-3 flex flex-wrap items-end gap-2 border-t border-line-divider pt-3" @submit.prevent="applyCreditToInvoice">
+        <form v-if="spendableCreditCents > 0 && unpaidInvoices.length > 0" class="mt-3 flex flex-wrap items-end gap-2 border-t border-line-divider pt-3" @submit.prevent="applyCreditToInvoice">
           <div>
             <label class="block text-[11px] text-ink-muted">{{ t('Apply to receipt', 'Aplicar a recibo') }}</label>
             <select v-model="applyCreditInvoiceId" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
@@ -1560,7 +1618,10 @@ function money(cents: number) {
               <select v-model="row.method" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
                 <option value="card">{{ t('Card', 'Tarjeta') }}</option>
                 <option value="cash">{{ t('Cash', 'Efectivo') }}</option>
-                <option v-if="creditLedgerCents > 0" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} (€{{ (creditLedgerCents / 100).toFixed(2) }} {{ t('available', 'disponible') }})</option>
+                <option value="credit" :disabled="spendableCreditCents <= 0">
+                  {{ t('Credit on account', 'Crédito en cuenta') }}
+                  ({{ spendableCreditCents > 0 ? `€${(spendableCreditCents / 100).toFixed(2)} ${t('available', 'disponible')}` : t('none available', 'sin crédito') }})
+                </option>
               </select>
             </div>
             <button
@@ -1775,8 +1836,9 @@ function money(cents: number) {
                   <select v-model="collectMethod" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
                     <option value="cash">{{ t('Cash', 'Efectivo') }}</option>
                     <option value="card">{{ t('Card', 'Tarjeta') }}</option>
-                    <option v-if="creditLedgerCents > 0" value="credit">
-                      {{ t('Credit on account', 'Crédito en cuenta') }} ({{ money(creditLedgerCents) }} {{ t('available', 'disponible') }})
+                    <option value="credit" :disabled="spendableCreditCents <= 0">
+                      {{ t('Credit on account', 'Crédito en cuenta') }}
+                      ({{ spendableCreditCents > 0 ? `${money(spendableCreditCents)} ${t('available', 'disponible')}` : t('none available', 'sin crédito') }})
                     </option>
                   </select>
                 </div>
@@ -1872,7 +1934,18 @@ function money(cents: number) {
             <select v-model="sellMethod" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]">
               <option value="cash">{{ t('Cash', 'Efectivo') }}</option>
               <option value="card">{{ t('Card', 'Tarjeta') }}</option>
-              <option v-if="creditLedgerCents > 0" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} (€{{ (creditLedgerCents / 100).toFixed(2) }} {{ t('available', 'disponible') }})</option>
+              <!--
+                Always rendered, disabled when there is nothing spendable,
+                rather than hidden. Hidden, paying from credit looked like
+                something the app couldn't do at all: there was no way to tell
+                "this patient has no credit" apart from "this isn't possible
+                here", and with only three patients in the database holding an
+                account_credits row, nobody ever saw it appear.
+              -->
+              <option value="credit" :disabled="spendableCreditCents <= 0">
+                {{ t('Credit on account', 'Crédito en cuenta') }}
+                ({{ spendableCreditCents > 0 ? `€${(spendableCreditCents / 100).toFixed(2)} ${t('available', 'disponible')}` : t('none available', 'sin crédito') }})
+              </option>
             </select>
           </div>
           <UiBtn size="sm" variant="secondary" :disabled="!sellPackageId || sellingPackage" @click="sellPackage">{{ sellingPackage ? t('Selling…', 'Vendiendo…') : t('Sell', 'Vender') }}</UiBtn>
@@ -1981,7 +2054,10 @@ function money(cents: number) {
             <select v-model="activateMethod" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]">
               <option value="cash">{{ t('Cash', 'Efectivo') }}</option>
               <option value="card">{{ t('Card', 'Tarjeta') }}</option>
-              <option v-if="creditLedgerCents > 0" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} (€{{ (creditLedgerCents / 100).toFixed(2) }} {{ t('available', 'disponible') }})</option>
+              <option value="credit" :disabled="spendableCreditCents <= 0">
+                {{ t('Credit on account', 'Crédito en cuenta') }}
+                ({{ spendableCreditCents > 0 ? `€${(spendableCreditCents / 100).toFixed(2)} ${t('available', 'disponible')}` : t('none available', 'sin crédito') }})
+              </option>
             </select>
           </div>
           <UiBtn size="sm" variant="secondary" :disabled="!activateMembershipId || activatingMembership" @click="activateMembership">{{ activatingMembership ? t('Activating…', 'Activando…') : t('Activate', 'Activar') }}</UiBtn>
@@ -2012,7 +2088,7 @@ function money(cents: number) {
       :payments="ledgerPayments"
       :credits="ledgerCredits"
       :package-sessions="ledgerPackageSessions"
-      :credit-ledger-cents="creditLedgerCents"
+      :spendable-credit-cents="spendableCreditCents"
       :sending-invoice-id="sendingInvoiceId"
       :send-result-invoice-id="sendResultInvoiceId"
       :send-result-message="sendResultMessage"

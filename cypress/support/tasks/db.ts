@@ -133,6 +133,16 @@ async function createTeamMemberWithRole(opts: {
   return { email, password, userId, teamMemberId: teamMember.id as string }
 }
 
+/** The attribution row a public booking recorded, if any -- keyed by account since the spec does not know the appointment id. */
+async function bookingAttribution(opts: { accountId: string }) {
+  const { data } = await admin
+    .from('booking_attribution')
+    .select('appointment_id, utm_source, utm_medium, utm_campaign, utm_content, utm_term, click_id, click_id_source, referrer, landing_path')
+    .eq('account_id', opts.accountId)
+    .order('created_at', { ascending: false })
+  return { rows: data ?? [] }
+}
+
 /** A role's permissions exactly as seed_account_roles left them -- for asserting the seeded defaults. */
 async function rolePermissions(opts: { accountId: string; roleName: string }) {
   const { accountId, roleName } = opts
@@ -1242,4 +1252,5 @@ export const dbTasks = {
   'db:setAccountSecret': setAccountSecret,
   'db:readAsStaff': readAsStaff,
   'db:rolePermissions': rolePermissions,
+  'db:bookingAttribution': bookingAttribution,
 }

@@ -1265,6 +1265,66 @@ export type Database = {
           },
         ]
       }
+      booking_attribution: {
+        Row: {
+          account_id: string
+          appointment_id: string
+          click_id: string | null
+          click_id_source: string | null
+          created_at: string
+          landing_path: string | null
+          referrer: string | null
+          utm_campaign: string | null
+          utm_content: string | null
+          utm_medium: string | null
+          utm_source: string | null
+          utm_term: string | null
+        }
+        Insert: {
+          account_id: string
+          appointment_id: string
+          click_id?: string | null
+          click_id_source?: string | null
+          created_at?: string
+          landing_path?: string | null
+          referrer?: string | null
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
+        }
+        Update: {
+          account_id?: string
+          appointment_id?: string
+          click_id?: string | null
+          click_id_source?: string | null
+          created_at?: string
+          landing_path?: string | null
+          referrer?: string | null
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "booking_attribution_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_attribution_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: true
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       calendar_resources: {
         Row: {
           account_id: string

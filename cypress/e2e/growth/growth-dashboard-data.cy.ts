@@ -125,6 +125,39 @@ describe('Growth dashboard', () => {
     cy.contains('leads waiting more than a week').scrollIntoView().should('be.visible')
   })
 
+  it('lets a clinic type in what it spent, and the cost figures follow', () => {
+    // The three cost KPIs cannot be computed from anything this app holds --
+    // the money was spent inside Meta. This cell is where they come from
+    // until an importer exists.
+    cy.task('db:createLead', { accountId: account.accountId, fullName: 'Paid Lead', stage: 'converted', source: 'Meta Ads · Sciatica' })
+
+    cy.visit('/growth?growth=1')
+    cy.get('[data-test="spend-cell-Meta Ads"]').scrollIntoView().should('contain', '—')
+    cy.get('[data-test="spend-cell-Meta Ads"]').click()
+    cy.get('[data-test="spend-input-Meta Ads"]').type('480{enter}')
+
+    cy.get('[data-test="spend-cell-Meta Ads"]').should('contain', '480')
+    // One converted lead for EUR 480 spent.
+    cy.contains('Cost per new patient').scrollIntoView()
+    cy.contains('€480').should('exist')
+  })
+
+  it('tells the two kinds of nothing apart', () => {
+    cy.task('db:createLead', { accountId: account.accountId, fullName: 'Referred', stage: 'new', source: 'Referral' })
+
+    cy.visit('/growth?growth=1')
+    cy.get('[data-test="spend-cell-Referral"]').scrollIntoView().click()
+    cy.get('[data-test="spend-input-Referral"]').type('0{enter}')
+    // Zero spent is a figure, and says so.
+    cy.get('[data-test="spend-cell-Referral"]').should('not.contain', '—')
+
+    // Clearing it is the other answer: we have not said, so the cost
+    // columns go back to blank rather than claiming free patients.
+    cy.get('[data-test="spend-cell-Referral"]').click()
+    cy.get('[data-test="spend-input-Referral"]').clear().type('{enter}')
+    cy.get('[data-test="spend-cell-Referral"]').should('contain', '—')
+  })
+
   // The dashboard is where an unapproved draft gets noticed. Without this it
   // sits on the Reputation screen indefinitely, which is the failure the
   // design tried to fix with an auto-post timer -- see the note in

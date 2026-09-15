@@ -5,6 +5,7 @@ import type { GrowthDashboardData } from '~/composables/useGrowthDashboard'
 // behind the upgrade card. A clinic evaluating Growth should be looking at
 // the real thing out of focus, not a separate mock that can drift from it.
 defineProps<{ data: GrowthDashboardData }>()
+const emit = defineEmits<{ saveSpend: [channel: string, amountCents: number | null] }>()
 </script>
 
 <template>
@@ -30,7 +31,7 @@ defineProps<{ data: GrowthDashboardData }>()
 
     <div class="grid gap-3 xl:grid-cols-2">
       <GrowthTrendChart :points="data.trend" :axis="data.trendAxis" />
-      <GrowthChannelTable :rows="data.channels" :totals="data.channelTotals" />
+      <GrowthChannelTable :rows="data.channels" :totals="data.channelTotals" @save-spend="(c, a) => emit('saveSpend', c, a)" />
     </div>
   </div>
 </template>

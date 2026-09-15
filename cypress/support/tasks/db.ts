@@ -1118,6 +1118,18 @@ async function createAutomationRule(opts: {
   return { id: ruleId }
 }
 
+/** The most recently created rule's actions, for builder round-trip tests. */
+async function latestAutomationActions() {
+  const { data: rule } = await admin.from('automation_rules').select('id').order('created_at', { ascending: false }).limit(1).maybeSingle()
+  if (!rule) return []
+  const { data } = await admin
+    .from('automation_actions')
+    .select('action_type, position, config')
+    .eq('rule_id', (rule as { id: string }).id)
+    .order('position')
+  return data ?? []
+}
+
 /** Messages recorded against a lead, for asserting a dry run wrote instead of sent. */
 async function leadMessages(opts: { leadId: string }) {
   const { data } = await admin
@@ -1173,6 +1185,7 @@ export const dbTasks = {
   'db:leadAiState': leadAiState,
   'db:setChannelSpend': setChannelSpend,
   'db:createAutomationRule': createAutomationRule,
+  'db:latestAutomationActions': latestAutomationActions,
   'db:leadMessages': leadMessages,
   'db:setPracticeHubConnection': setPracticeHubConnection,
   'db:setLeadStage': setLeadStage,

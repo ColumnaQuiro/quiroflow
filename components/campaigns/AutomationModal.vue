@@ -49,9 +49,19 @@ const ACTION_TONE: Record<string, string> = {
   whatsapp_template: 'bg-success-bg text-success-text',
   email: 'bg-brand-tint text-brand-text',
   webhook: 'bg-chip-bg text-chip-text',
+  delay: 'bg-warning-bg text-warning-text',
 }
 
-type ActionType = 'whatsapp_template' | 'email' | 'webhook'
+// The units staff actually think in. Minutes underneath, because the cron
+// that runs a sequence ticks in minutes and a second unit in the database
+// would be two ways to say the same thing.
+const DELAY_UNITS = computed(() => [
+  { value: 'minutes', label: t('minutes', 'minutos'), multiplier: 1 },
+  { value: 'hours', label: t('hours', 'horas'), multiplier: 60 },
+  { value: 'days', label: t('days', 'días'), multiplier: 1440 },
+])
+
+type ActionType = 'whatsapp_template' | 'email' | 'webhook' | 'delay'
 interface WhatsAppVariable { source: string; text: string }
 interface ActionForm {
   action_type: ActionType
@@ -63,9 +73,18 @@ interface ActionForm {
   body: string
   url: string
   secret: string
+  delayValue: string
+  delayUnit: string
 }
 function blankAction(): ActionForm {
-  return { action_type: 'whatsapp_template', template_name: '', template_language: 'es', doc_template_ids: [], variables: [{ source: 'first_name', text: '' }], subject: '', body: '', url: '', secret: '' }
+  return { action_type: 'whatsapp_template', template_name: '', template_language: 'es', doc_template_ids: [], variables: [{ source: 'first_name', text: '' }], subject: '', body: '', url: '', secret: '', delayValue: '1', delayUnit: 'days' }
+}
+
+/** Minutes back into the largest unit that divides cleanly, for editing. */
+function splitDelay(minutes: number): { delayValue: string; delayUnit: string } {
+  if (minutes % 1440 === 0) return { delayValue: String(minutes / 1440), delayUnit: 'days' }
+  if (minutes % 60 === 0) return { delayValue: String(minutes / 60), delayUnit: 'hours' }
+  return { delayValue: String(minutes), delayUnit: 'minutes' }
 }
 
 interface WhatsAppTemplate { name: string; language: string; variableCount: number; urlButtonCount: number }
@@ -85,6 +104,7 @@ const enabled = ref(true)
 // appointment/invoice), except patient.birthday which isn't tied to any
 // transaction and is close to always promotional in practice.
 const isMarketing = ref(false)
+const dryRun = ref(false)
 const actions = ref<ActionForm[]>([blankAction()])
 const docTemplates = ref<{ id: string; title: string }[]>([])
 const appointmentTypes = ref<{ id: string; name: string }[]>([])
@@ -174,7 +194,7 @@ onMounted(async () => {
 
   if (props.ruleId) {
     const [{ data: rule }, { data: existingActions }] = await Promise.all([
-      supabase.from('automation_rules').select('name, trigger_event, enabled, filters, is_marketing').eq('id', props.ruleId).maybeSingle(),
+      supabase.from('automation_rules').select('name, trigger_event, enabled, filters, is_marketing, dry_run').eq('id', props.ruleId).maybeSingle(),
       supabase.from('automation_actions').select('action_type, config').eq('rule_id', props.ruleId).order('position'),
     ])
     if (rule) {
@@ -182,6 +202,7 @@ onMounted(async () => {
       triggerEvent.value = rule.trigger_event
       enabled.value = rule.enabled
       isMarketing.value = rule.is_marketing
+      dryRun.value = rule.dry_run ?? false
       const filters = (rule.filters ?? {}) as Record<string, unknown>
       // appointment_type_id (singular) is what rules saved before multi-select
       // existed still have on disk -- read it as a one-item array so an old
@@ -243,6 +264,7 @@ onMounted(async () => {
           body: config.body ?? '',
           url: config.url ?? '',
           secret: config.secret ?? '',
+          ...splitDelay(Number(config.delay_minutes) || 1440),
         }
       })
     }
@@ -310,6 +332,10 @@ function configFor(a: ActionForm): Record<string, unknown> {
   if (a.action_type === 'email') {
     return { subject: a.subject.trim(), body: a.body }
   }
+  if (a.action_type === 'delay') {
+    const multiplier = DELAY_UNITS.value.find((u) => u.value === a.delayUnit)?.multiplier ?? 1
+    return { delay_minutes: Math.max(1, Number(a.delayValue) || 1) * multiplier }
+  }
   return { url: a.url.trim(), secret: a.secret.trim() || null }
 }
 
@@ -347,6 +373,7 @@ async function persist(): Promise<string | null> {
     enabled: enabled.value,
     filters: filters as any,
     is_marketing: isMarketing.value,
+    dry_run: dryRun.value,
   }
 
   const ruleResult = savedRuleId.value
@@ -487,6 +514,29 @@ async function sendTestToMe() {
                 'Solo se envía a pacientes que hayan activado ese canal en Canales de marketing en su perfil. Actívalo para contenido promocional (ofertas, felicitaciones de cumpleaños) -- desactívalo para mensajes transaccionales ligados a una cita o factura concreta, que no necesitan consentimiento de marketing por separado.',
               ) }}
               <template v-if="triggerEvent === 'patient.birthday' && !isMarketing"> {{ t('Birthday campaigns are usually marketing.', 'Las campañas de cumpleaños suelen ser de marketing.') }}</template>
+            </p>
+          </div>
+
+          <div class="rounded-card border px-3.5 py-2.5" :class="dryRun ? 'border-warning-border bg-warning-bg' : 'border-line'">
+            <label class="flex items-center justify-between">
+              <span class="text-[12.5px] font-medium text-ink-700">{{ t('Test run (records, does not send)', 'Prueba (registra, no envía)') }}</span>
+              <button
+                type="button"
+                role="switch"
+                :aria-checked="dryRun"
+                data-test="dry-run-toggle"
+                class="relative inline-flex h-5 w-[34px] shrink-0 items-center rounded-full transition-colors"
+                :class="dryRun ? 'bg-warning-accent' : 'bg-toggle-off'"
+                @click="dryRun = !dryRun"
+              >
+                <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform" :class="dryRun ? 'translate-x-[16px]' : 'translate-x-[2px]'" />
+              </button>
+            </label>
+            <p class="mt-1.5 text-[11.5px] leading-relaxed text-ink-muted2">
+              {{ t(
+                'The automation runs for real -- it picks the right people, fills in the template and follows every step -- but records what it would have sent instead of sending it. The messages appear in the Inbox marked as not sent. The safe way to watch a new automation for a few days before letting it reach anyone.',
+                'La automatización se ejecuta de verdad -- elige a las personas correctas, rellena la plantilla y sigue todos los pasos -- pero registra lo que habría enviado en lugar de enviarlo. Los mensajes aparecen en el Inbox marcados como no enviados. La forma segura de observar una automatización nueva durante unos días antes de dejar que llegue a nadie.',
+              ) }}
             </p>
           </div>
 
@@ -633,17 +683,48 @@ async function sendTestToMe() {
                 <div class="flex items-center justify-between gap-2">
                   <select
                     v-model="a.action_type"
+                    data-test="action-type"
                     class="appearance-none rounded-pill border-0 px-3 py-1 text-[12px] font-semibold focus:outline-none focus:ring-1 focus:ring-brand"
                     :class="ACTION_TONE[a.action_type]"
                   >
                     <option value="whatsapp_template">{{ t('WhatsApp template', 'Plantilla de WhatsApp') }}</option>
                     <option value="email">{{ t('Email', 'Correo electrónico') }}</option>
                     <option value="webhook">{{ t('Webhook', 'Webhook') }}</option>
+                    <option value="delay">{{ t('Wait', 'Esperar') }}</option>
                   </select>
                   <UiIconBtn v-if="actions.length > 1" icon="trash" tone="danger" :label="t('Remove action', 'Eliminar acción')" @click="removeAction(i)" />
                 </div>
 
-                <div v-if="a.action_type === 'whatsapp_template'" class="mt-3 space-y-2.5">
+                <div v-if="a.action_type === 'delay'" class="mt-3 space-y-2" data-test="delay-config">
+                  <div class="flex items-center gap-2">
+                    <input
+                      v-model="a.delayValue"
+                      type="number"
+                      min="1"
+                      class="w-20 rounded-ctl border border-line-control bg-surface px-2.5 py-1.5 text-[12.5px] text-ink-700 focus:border-brand focus:outline-none"
+                      :aria-label="t('Wait for', 'Esperar')"
+                    />
+                    <select
+                      v-model="a.delayUnit"
+                      class="rounded-ctl border border-line-control bg-surface px-2.5 py-1.5 text-[12.5px] text-ink-700 focus:border-brand focus:outline-none"
+                      :aria-label="t('Unit', 'Unidad')"
+                    >
+                      <option v-for="u in DELAY_UNITS" :key="u.value" :value="u.value">{{ u.label }}</option>
+                    </select>
+                    <span class="text-[12px] text-ink-muted">{{ t('before the next step', 'antes del siguiente paso') }}</span>
+                  </div>
+                  <!-- Said once, here, rather than left for somebody to
+                  discover: the sequence is checked every 15 minutes, so a
+                  shorter wait is honoured as "next check", not to the minute. -->
+                  <p class="text-[11.5px] leading-[1.5] text-ink-muted">
+                    {{ t(
+                      'Steps are checked every 15 minutes, so a wait shorter than that happens at the next check. Anything that must arrive seconds apart should be separate actions with no wait between them.',
+                      'Los pasos se comprueban cada 15 minutos, así que una espera menor ocurre en la siguiente comprobación. Lo que deba llegar con segundos de diferencia deben ser acciones seguidas sin espera.',
+                    ) }}
+                  </p>
+                </div>
+
+                <div v-else-if="a.action_type === 'whatsapp_template'" class="mt-3 space-y-2.5">
                   <p v-if="templatesError" class="text-[12px] text-danger-text">{{ templatesError }}</p>
                   <select
                     v-else
@@ -702,7 +783,7 @@ async function sendTestToMe() {
                   <CampaignsRichTextEditor v-model="a.body" />
                 </div>
 
-                <div v-else class="mt-3 space-y-2.5">
+                <div v-else-if="a.action_type === 'webhook'" class="mt-3 space-y-2.5">
                   <input
                     v-model="a.url"
                     type="url"

@@ -19,7 +19,7 @@ interface InvoiceRow {
   is_refund: boolean
   refunds_invoice_id: string | null
 }
-interface PaymentRow { id: string; invoice_id: string | null; amount_cents: number; method: string; paid_at: string }
+interface PaymentRow { id: string; invoice_id: string | null; amount_cents: number; method: string; paid_at: string; created_by?: string | null; stripe_payment_intent_id?: string | null; team_members?: { full_name: string | null } | null }
 // A visit drawn from a package. Carries no debit or credit -- the money was
 // already accounted for when the package was bought -- so it appears in the
 // ledger purely so a visit is not silently absent from a patient's history.
@@ -70,6 +70,24 @@ function money(cents: number) {
 function invoiceRefFor(id: string | null) {
   if (!id) return null
   return props.invoices.find((i) => i.id === id)?.invoice_number ?? '(deleted invoice)'
+}
+
+/**
+ * Who recorded a payment, distinguishing the three things a missing author
+ * can mean.
+ *
+ * A name is a person at the desk. No author but a Stripe payment intent is
+ * money that arrived on its own -- autopay on a bono, a membership renewal --
+ * which is a real answer, not a gap, and the reason created_by is nullable at
+ * all. No author and no Stripe reference is a row written before created_by
+ * existed: nothing recorded it at the time and nothing can recover it now, so
+ * it says so rather than implying the payment was automatic.
+ */
+function recordedBy(p: PaymentRow): string {
+  const name = p.team_members?.full_name
+  if (name) return name
+  if (p.stripe_payment_intent_id) return t('Automatic (card on file)', 'Automático (tarjeta guardada)')
+  return t('Not recorded', 'Sin registrar')
 }
 
 interface LedgerRow {
@@ -186,6 +204,11 @@ const rows = computed<LedgerRow[]>(() => {
     detail: [
       { label: t('Method', 'Método'), value: p.method },
       { label: t('Applied to', 'Aplicado a'), value: invoiceRefFor(p.invoice_id) ?? '—' },
+      // Shown for every payment, including the ones with no author, because
+      // "Automatic" and "not recorded" are different answers and a row that
+      // simply omits the line can't tell them apart. Rows written before
+      // created_by existed are the honest third case: nothing recorded it.
+      { label: t('Recorded by', 'Registrado por'), value: recordedBy(p) },
     ],
   }))
 

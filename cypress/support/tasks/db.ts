@@ -222,6 +222,9 @@ async function createPatient(opts: {
   // specs want -- it is also how income attribution falls back for money with
   // no appointment behind it (see utils/incomeAttribution).
   defaultPractitionerId?: string
+  /** Adds a contact number, which is what the lead-to-patient match reads. */
+  phone?: string
+  phoneCountryCode?: string
 }) {
   const { accountId, clinicId, firstName, lastName, email, dateOfBirth, defaultPractitionerId } = opts
   const patient = unwrap(
@@ -239,6 +242,19 @@ async function createPatient(opts: {
       .select('id, first_name, last_name')
       .single(),
   )
+
+  if (opts.phone) {
+    assertOk(
+      await admin.from('patient_contact_numbers').insert({
+        account_id: accountId,
+        patient_id: (patient as { id: string }).id,
+        number: opts.phone,
+        country_code: opts.phoneCountryCode ?? 'ES',
+        is_whatsapp: true,
+      }),
+    )
+  }
+
   return patient as { id: string; first_name: string; last_name: string | null }
 }
 
@@ -1061,12 +1077,78 @@ async function setGoogleReviewUrl(opts: { accountId: string; url: string | null 
   return { url: opts.url }
 }
 
+/** An automation rule plus its ordered actions, for sequence tests. */
+async function createAutomationRule(opts: {
+  accountId: string
+  triggerEvent: string
+  isMarketing?: boolean
+  enabled?: boolean
+  actions: { type: string; config?: Record<string, unknown> }[]
+}) {
+  const rule = unwrap(
+    await admin
+      .from('automation_rules')
+      .insert({
+        account_id: opts.accountId,
+        name: 'cypress sequence',
+        trigger_event: opts.triggerEvent,
+        enabled: opts.enabled ?? true,
+        is_marketing: opts.isMarketing ?? false,
+      })
+      .select('id')
+      .single(),
+  )
+  const ruleId = (rule as { id: string }).id
+
+  if (opts.actions.length > 0) {
+    assertOk(
+      await admin.from('automation_actions').insert(
+        opts.actions.map((a, i) => ({
+          account_id: opts.accountId,
+          rule_id: ruleId,
+          action_type: a.type,
+          position: i,
+          config: a.config ?? {},
+        })),
+      ),
+    )
+  }
+  return { id: ruleId }
+}
+
+/** Moves a lead's stage without a staff session, for specs about other things. */
+async function setLeadStage(opts: { id: string; stage: string }) {
+  assertOk(await admin.from('leads').update({ stage: opts.stage }).eq('id', opts.id))
+  return { ok: true }
+}
+
+/** Where a lead has got to in a sequence, for asserting it stopped. */
+async function sequenceRuns(opts: { leadId: string }) {
+  const { data } = await admin.from('automation_sequence_runs').select('*').eq('lead_id', opts.leadId)
+  return data ?? []
+}
+
+/** Pulls a run's resume_at back so the cron sees it as due. */
+async function makeSequenceDue(opts: { leadId: string }) {
+  assertOk(
+    await admin
+      .from('automation_sequence_runs')
+      .update({ resume_at: new Date(Date.now() - 60_000).toISOString() })
+      .eq('lead_id', opts.leadId),
+  )
+  return { ok: true }
+}
+
 export const dbTasks = {
   'db:createStaffAccount': createStaffAccount,
   'db:createLead': createLead,
   'db:createLeadMessage': createLeadMessage,
   'db:leadAiState': leadAiState,
   'db:setChannelSpend': setChannelSpend,
+  'db:createAutomationRule': createAutomationRule,
+  'db:setLeadStage': setLeadStage,
+  'db:sequenceRuns': sequenceRuns,
+  'db:makeSequenceDue': makeSequenceDue,
   'db:createReview': createReview,
   'db:createReviewRequest': createReviewRequest,
   'db:reviewById': reviewById,

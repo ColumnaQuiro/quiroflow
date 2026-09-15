@@ -236,6 +236,12 @@ jobs:
         run: npx start-server-and-test dev http://localhost:3000 "cypress run --spec '${{ matrix.shard.specs }}'"
         env:
           CYPRESS_baseUrl: http://localhost:3000
+          # The automation crons refuse an unsigned call, so a spec that drives
+          # one needs the same secret the server checks. A fixed value: it
+          # guards a local, ephemeral stack, and a real secret in the workflow
+          # file would be worse in every way.
+          NUXT_CRON_SECRET: e2e-cron-secret
+          CYPRESS_CRON_SECRET: e2e-cron-secret
 
       - name: Upload screenshots on failure
         if: failure()

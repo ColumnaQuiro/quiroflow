@@ -1904,7 +1904,7 @@ export type Database = {
           kind: string
           number: string
           patient_id: string
-          payment_id: string
+          payment_id: string | null
           recipient_address: string | null
           recipient_name: string | null
           recipient_nif: string | null
@@ -1920,7 +1920,7 @@ export type Database = {
           kind?: string
           number: string
           patient_id: string
-          payment_id: string
+          payment_id?: string | null
           recipient_address?: string | null
           recipient_name?: string | null
           recipient_nif?: string | null
@@ -1936,7 +1936,7 @@ export type Database = {
           kind?: string
           number?: string
           patient_id?: string
-          payment_id?: string
+          payment_id?: string | null
           recipient_address?: string | null
           recipient_name?: string | null
           recipient_nif?: string | null

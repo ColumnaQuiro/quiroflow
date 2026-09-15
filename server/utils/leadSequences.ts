@@ -1,5 +1,6 @@
 import { phoneMatches } from '~/utils/phone'
 import { runLeadRuleActions, type ActionRow as SenderAction, type LeadForAction } from '~/server/utils/runAutomationActions'
+import { hasGrowth } from '~/server/utils/requireGrowth'
 
 // A multi-step automation for a lead: send, wait, send again, and stop the
 // moment it stops being appropriate.
@@ -24,7 +25,7 @@ interface SequenceRun {
   next_position: number
 }
 
-export type StopReason = 'converted' | 'already_a_patient' | 'lead_deleted' | 'lost' | 'no_contact' | 'rule_shortened'
+export type StopReason = 'converted' | 'already_a_patient' | 'lead_deleted' | 'lost' | 'no_contact' | 'rule_shortened' | 'not_entitled'
 
 /**
  * 'defer' is the third answer, and the reason this is not a boolean.
@@ -162,6 +163,18 @@ export async function advanceSequenceRun(supabase: any, run: SequenceRun, origin
     .maybeSingle()
 
   if (!lead) return stop(supabase, run.id, 'lead_deleted')
+
+  // A drip that keeps messaging strangers after the clinic stopped paying
+  // for the thing sending them is indefensible, so an in-flight sequence
+  // stops with the reason on it. past_due is deliberately not one of the
+  // statuses that stop: a card that failed this morning should not silently
+  // abandon somebody mid-conversation.
+  const { data: subscription } = await supabase
+    .from('subscriptions')
+    .select('growth_addon, status, comped')
+    .eq('account_id', run.account_id)
+    .maybeSingle()
+  if (!hasGrowth(subscription)) return stop(supabase, run.id, 'not_entitled')
 
   const verdict = await sequenceStopReason(supabase, run.account_id, lead)
   if (verdict === 'defer') {

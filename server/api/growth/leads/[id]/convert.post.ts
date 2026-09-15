@@ -1,4 +1,4 @@
-import { requirePermission } from '~/server/utils/requirePermission'
+import { requireGrowth } from '~/server/utils/requireGrowth'
 
 interface Body {
   /** Attach the lead to this existing patient instead of creating one. */
@@ -36,7 +36,7 @@ export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
   if (!id) throw createError({ statusCode: 400, statusMessage: 'Missing lead id' })
 
-  const { supabase, teamMember } = await requirePermission(event, 'communication_config')
+  const { supabase, teamMember } = await requireGrowth(event)
   // ?? {} as well as the catch: readBody RESOLVES to undefined for a request
   // with no body at all, so the catch never fires and the first property
   // access throws. A bare POST with no options is the commonest call this
@@ -151,7 +151,7 @@ export default defineEventHandler(async (event) => {
   return { patientId, created: !linkPatientId, alreadyConverted: false }
 })
 
-type Supa = Awaited<ReturnType<typeof requirePermission>>['supabase']
+type Supa = Awaited<ReturnType<typeof requireGrowth>>['supabase']
 
 /** Existing patients sharing this lead's phone or email. */
 async function findLikelyExistingPatients(supabase: Supa, accountId: string, phone: string | null, email: string | null) {

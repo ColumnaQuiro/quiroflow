@@ -1,4 +1,4 @@
-import { requirePermission } from '~/server/utils/requirePermission'
+import { requireGrowth } from '~/server/utils/requireGrowth'
 import { STAGE_TITLES, isLeadStage, type LeadStage } from '~/server/utils/leads'
 import type { TablesUpdate } from '~/types/database.types'
 
@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
   if (!id) throw createError({ statusCode: 400, statusMessage: 'Missing lead id' })
 
-  const { supabase, teamMember } = await requirePermission(event, 'communication_config')
+  const { supabase, teamMember } = await requireGrowth(event)
   const body = await readBody<Body>(event)
 
   // The generated Update type rather than a loose record, so a column typo

@@ -742,6 +742,36 @@ export type Database = {
           },
         ]
       }
+      addons: {
+        Row: {
+          annual_price_cents: number
+          created_at: string
+          id: string
+          monthly_price_cents: number
+          name: string
+          stripe_annual_price_id: string | null
+          stripe_monthly_price_id: string | null
+        }
+        Insert: {
+          annual_price_cents: number
+          created_at?: string
+          id: string
+          monthly_price_cents: number
+          name: string
+          stripe_annual_price_id?: string | null
+          stripe_monthly_price_id?: string | null
+        }
+        Update: {
+          annual_price_cents?: number
+          created_at?: string
+          id?: string
+          monthly_price_cents?: number
+          name?: string
+          stripe_annual_price_id?: string | null
+          stripe_monthly_price_id?: string | null
+        }
+        Relationships: []
+      }
       appointment_types: {
         Row: {
           account_id: string
@@ -4360,6 +4390,7 @@ export type Database = {
           comped: boolean
           created_at: string
           extra_professionals: number
+          growth_addon: boolean
           id: string
           plan_id: string
           status: string
@@ -4374,6 +4405,7 @@ export type Database = {
           comped?: boolean
           created_at?: string
           extra_professionals?: number
+          growth_addon?: boolean
           id?: string
           plan_id: string
           status?: string
@@ -4388,6 +4420,7 @@ export type Database = {
           comped?: boolean
           created_at?: string
           extra_professionals?: number
+          growth_addon?: boolean
           id?: string
           plan_id?: string
           status?: string

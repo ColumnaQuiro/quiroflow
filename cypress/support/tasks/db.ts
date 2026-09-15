@@ -1009,6 +1009,12 @@ async function leadAiState(opts: { id: string }) {
   return data
 }
 
+/** Adds or removes the Growth add-on, which every Growth route now checks. */
+async function setGrowthAddon(opts: { accountId: string; enabled: boolean }) {
+  assertOk(await admin.from('subscriptions').update({ growth_addon: opts.enabled }).eq('account_id', opts.accountId))
+  return { ok: true }
+}
+
 /** Sets a lead's ai_state directly, to stand in for a person taking over. */
 async function setLeadAiState(opts: { id: string; aiState: string }) {
   assertOk(await admin.from('leads').update({ ai_state: opts.aiState }).eq('id', opts.id))
@@ -1215,6 +1221,7 @@ export const dbTasks = {
   'db:createLead': createLead,
   'db:createLeadMessage': createLeadMessage,
   'db:leadAiState': leadAiState,
+  'db:setGrowthAddon': setGrowthAddon,
   'db:setLeadAiState': setLeadAiState,
   'db:setWhatsappPhoneNumberId': setWhatsappPhoneNumberId,
   'db:setChannelSpend': setChannelSpend,

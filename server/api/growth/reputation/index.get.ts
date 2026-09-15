@@ -1,4 +1,4 @@
-import { requirePermission } from '~/server/utils/requirePermission'
+import { requireGrowth } from '~/server/utils/requireGrowth'
 
 // The reputation screen, computed from whatever the clinic actually has.
 //
@@ -15,7 +15,7 @@ import { requirePermission } from '~/server/utils/requirePermission'
 //                 review, because nobody can watch someone type on Google.
 
 export default defineEventHandler(async (event) => {
-  const { supabase, teamMember } = await requirePermission(event, 'communication_config')
+  const { supabase, teamMember } = await requireGrowth(event)
 
   const yearAgo = new Date(Date.now() - 365 * 24 * 3600 * 1000).toISOString()
 

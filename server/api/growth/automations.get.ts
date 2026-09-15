@@ -1,4 +1,4 @@
-import { requirePermission } from '~/server/utils/requirePermission'
+import { requireGrowth } from '~/server/utils/requireGrowth'
 
 // The account's real automations, shaped for the workflow canvas.
 //
@@ -45,7 +45,7 @@ function delayLabel(minutes: number) {
 }
 
 export default defineEventHandler(async (event) => {
-  const { supabase, teamMember } = await requirePermission(event, 'communication_config')
+  const { supabase, teamMember } = await requireGrowth(event)
   const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
 
   const [{ data: rules }, { data: actions }, { data: sequenceRuns }, { data: sends }] = await Promise.all([

@@ -1897,6 +1897,7 @@ export type Database = {
           account_id: string
           amount_cents: number
           created_at: string
+          created_by: string | null
           description: string
           id: string
           issued_at: string
@@ -1912,6 +1913,7 @@ export type Database = {
           account_id: string
           amount_cents: number
           created_at?: string
+          created_by?: string | null
           description: string
           id?: string
           issued_at?: string
@@ -1927,6 +1929,7 @@ export type Database = {
           account_id?: string
           amount_cents?: number
           created_at?: string
+          created_by?: string | null
           description?: string
           id?: string
           issued_at?: string
@@ -1944,6 +1947,13 @@ export type Database = {
             columns: ["account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "facturas_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
             referencedColumns: ["id"]
           },
           {
@@ -3747,6 +3757,7 @@ export type Database = {
         Row: {
           account_id: string
           amount_cents: number
+          created_by: string | null
           external_reference: string | null
           id: string
           invoice_id: string | null
@@ -3760,6 +3771,7 @@ export type Database = {
         Insert: {
           account_id: string
           amount_cents: number
+          created_by?: string | null
           external_reference?: string | null
           id?: string
           invoice_id?: string | null
@@ -3773,6 +3785,7 @@ export type Database = {
         Update: {
           account_id?: string
           amount_cents?: number
+          created_by?: string | null
           external_reference?: string | null
           id?: string
           invoice_id?: string | null
@@ -3789,6 +3802,13 @@ export type Database = {
             columns: ["account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payments_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
             referencedColumns: ["id"]
           },
           {

@@ -526,7 +526,7 @@ async function createAccountCredit(opts: { accountId: string; patientId: string;
 async function facturasFor(opts: { patientId: string }) {
   const { data, error } = await admin
     .from('facturas')
-    .select('number, kind, description, amount_cents, recipient_nif, payment_id')
+    .select('number, kind, description, amount_cents, recipient_nif, payment_id, created_by')
     .eq('patient_id', opts.patientId)
     .order('issued_at')
   if (error) throw error

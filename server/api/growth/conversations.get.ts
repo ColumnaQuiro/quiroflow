@@ -1,4 +1,4 @@
-import { requirePermission } from '~/server/utils/requirePermission'
+import { requireGrowth } from '~/server/utils/requireGrowth'
 import { formatEuros } from '~/server/utils/leads'
 
 // Lead conversations for the Inbox.
@@ -13,7 +13,7 @@ import { formatEuros } from '~/server/utils/leads'
 // place to put a message, so no conversation on those channels can exist
 // yet and none is invented here.
 export default defineEventHandler(async (event) => {
-  const { supabase, teamMember } = await requirePermission(event, 'communication_config')
+  const { supabase, teamMember } = await requireGrowth(event)
 
   const { data: messages, error } = await supabase
     .from('whatsapp_messages')

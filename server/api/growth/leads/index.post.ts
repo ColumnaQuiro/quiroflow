@@ -1,4 +1,4 @@
-import { requirePermission } from '~/server/utils/requirePermission'
+import { requireGrowth } from '~/server/utils/requireGrowth'
 import { isLeadChannel, isLeadStage, nextLeadReference } from '~/server/utils/leads'
 
 interface Body {
@@ -17,7 +17,7 @@ interface Body {
 // the reference and the opening timeline entry are written here rather than
 // by the caller.
 export default defineEventHandler(async (event) => {
-  const { supabase, teamMember } = await requirePermission(event, 'communication_config')
+  const { supabase, teamMember } = await requireGrowth(event)
   const body = await readBody<Body>(event)
 
   const fullName = typeof body.fullName === 'string' ? body.fullName.trim() : ''

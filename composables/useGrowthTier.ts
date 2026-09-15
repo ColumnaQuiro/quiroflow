@@ -1,52 +1,56 @@
-// Growth is a paid tier above the plan an account is already on: the
-// acquisition layer (leads, AI receptionist, automations, reputation) sitting
-// on top of the scheduling/records/billing the clinic already pays for.
+// Growth is a paid add-on, and this is where the screens ask whether this
+// account has it.
 //
-// Nothing in the database says whether an account bought it yet.
-// get_my_bootstrap returns only { status, trial_ends_at } for the
-// subscription -- there is no plan_tier column -- so until that ships this
-// composable is the one place the rest of the app asks the question. Every
-// Growth screen gates on `hasGrowth` from here and nowhere else, so pointing
-// it at the real column later is a one-file change instead of a hunt through
-// every screen.
+// It used to be a flag in localStorage, because nothing in the database said
+// -- get_my_bootstrap returned only { status, trial_ends_at } and there was
+// no column to read. That has changed: subscriptions.growth_addon exists,
+// the bootstrap returns it, and server/utils/requireGrowth.ts enforces it on
+// every Growth route. So the answer now comes from the same place the API
+// gets it, and the two cannot disagree.
 //
-// Meanwhile the preview flag below is how the tier gets exercised: ?growth=1
-// unlocks and ?growth=0 re-locks (both remembered, so it survives navigation
-// between Growth pages), which is also how the e2e specs drive the two
-// states. It is deliberately not a secret -- there is nothing behind the gate
-// yet but fixture data, and an owner who flips it sees the same screens they
-// would be buying.
+// The ?growth= override survives for one reason: the e2e suite needs to
+// render both states, and a preview of a locked screen is harmless because
+// the API is no longer taking the client's word for anything. Flipping it on
+// an account that has not bought Growth gets you the screens and 402s from
+// every endpoint behind them -- which is exactly what it should do.
 const PREVIEW_KEY = 'quiroflow-growth-preview'
 
 export function useGrowthTier() {
   const route = useRoute()
+  const account = useAccountStore()
 
-  // Resolved on the client only. The flag lives in localStorage, which the
-  // server cannot read, so deciding during SSR would render the locked state
-  // and then swap it out on hydration -- a mismatch warning plus a visible
-  // flash of the wrong screen. Pages render their skeleton until `resolved`
-  // flips, the same way the rest of the app waits on the account store.
+  // Resolved on the client only. The entitlement is in the store, which is
+  // populated by the bootstrap call after mount, and the preview flag lives
+  // in localStorage which the server cannot read -- so deciding during SSR
+  // would render the locked state and swap it on hydration. Pages render
+  // their skeleton until `resolved` flips, the same way the rest of the app
+  // waits on the account store.
   const hasGrowth = ref(false)
   const resolved = ref(false)
 
-  onMounted(() => {
-    const q = route.query.growth
-    if (q === '1' || q === '0') {
-      try {
-        localStorage.setItem(PREVIEW_KEY, q)
-      } catch {
-        // Safari in private mode throws on setItem. The query param still
-        // decides this navigation; it just will not be remembered.
-      }
-    }
-    let stored: string | null = null
+  function decide() {
+    let preview: string | null = null
     try {
-      stored = localStorage.getItem(PREVIEW_KEY)
+      const q = route.query.growth
+      if (q === '1' || q === '0') localStorage.setItem(PREVIEW_KEY, q)
+      preview = typeof q === 'string' && (q === '1' || q === '0') ? q : localStorage.getItem(PREVIEW_KEY)
     } catch {
-      stored = null
+      // Safari in private mode throws on both. The query param still decides
+      // this navigation; it just will not be remembered.
+      const q = route.query.growth
+      preview = q === '1' || q === '0' ? q : null
     }
-    hasGrowth.value = (q === '1' || q === '0' ? q : stored) === '1'
+
+    hasGrowth.value = preview === null ? account.hasGrowthAddon : preview === '1'
     resolved.value = true
+  }
+
+  onMounted(() => {
+    decide()
+    // The store fills in after its own bootstrap request, so a page mounted
+    // before that lands would otherwise sit on the upgrade screen while the
+    // account it is describing does have Growth.
+    watch(() => account.hasGrowthAddon, decide)
   })
 
   return { hasGrowth, resolved }

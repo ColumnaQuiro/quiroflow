@@ -1,4 +1,4 @@
-import { requirePermission } from '~/server/utils/requirePermission'
+import { requireGrowth } from '~/server/utils/requireGrowth'
 
 // What a clinic spent on a channel this month.
 //
@@ -14,7 +14,7 @@ import { requirePermission } from '~/server/utils/requirePermission'
 // because a daily figure would demand a precision the manual path cannot
 // honestly supply.
 export default defineEventHandler(async (event) => {
-  const { supabase, teamMember } = await requirePermission(event, 'communication_config')
+  const { supabase, teamMember } = await requireGrowth(event)
   const body = (await readBody<{ channel?: unknown; amountCents?: unknown; month?: unknown }>(event).catch(() => null)) ?? {}
 
   const channel = typeof body.channel === 'string' ? body.channel.trim() : ''

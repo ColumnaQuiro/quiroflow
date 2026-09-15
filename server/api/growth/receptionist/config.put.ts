@@ -1,4 +1,4 @@
-import { requirePermission } from '~/server/utils/requirePermission'
+import { requireGrowth } from '~/server/utils/requireGrowth'
 import { loadReceptionistConfig } from '~/server/utils/receptionist'
 import type { TablesUpdate } from '~/types/database.types'
 
@@ -28,7 +28,7 @@ function intInRange(value: unknown, min: number, max: number, label: string) {
 }
 
 export default defineEventHandler(async (event) => {
-  const { supabase, teamMember } = await requirePermission(event, 'communication_config')
+  const { supabase, teamMember } = await requireGrowth(event)
   const body = (await readBody<Body>(event).catch(() => null)) ?? ({} as Body)
 
   // Ensures the row exists before the update, so a first save works.

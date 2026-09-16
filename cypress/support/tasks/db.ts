@@ -520,11 +520,20 @@ async function createPackageTemplate(opts: { accountId: string; name: string; se
   return row as { id: string }
 }
 
-async function createAccountCredit(opts: { accountId: string; patientId: string; amountCents: number; reason?: string }) {
+async function createAccountCredit(opts: {
+  accountId: string
+  patientId: string
+  amountCents: number
+  reason?: string
+  // The payment this row restates, for seeding money added on account -- which
+  // writes a payment and a credit row for the same euros. Without it the row
+  // reads as an adjustment and the balance counts the money twice.
+  paymentId?: string
+}) {
   const row = unwrap(
     await admin
       .from('account_credits')
-      .insert({ account_id: opts.accountId, patient_id: opts.patientId, amount_cents: opts.amountCents, reason: opts.reason ?? null })
+      .insert({ account_id: opts.accountId, patient_id: opts.patientId, amount_cents: opts.amountCents, reason: opts.reason ?? null, payment_id: opts.paymentId ?? null })
       .select('id')
       .single(),
   )

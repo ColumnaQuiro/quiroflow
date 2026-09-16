@@ -31,7 +31,7 @@ onMounted(async () => {
     supabase.from('payment_schedules').select('package_purchase_id, status').not('package_purchase_id', 'is', null),
     // All of them: a bono sold here has no invoice now, and a migrated one
     // never had -- its payments hang off the purchase.
-    supabase.from('payments').select('invoice_id, amount_cents, package_purchase_id, external_reference'),
+    supabase.from('payments').select('invoice_id, amount_cents, package_purchase_id, external_reference, purpose'),
   ])
   invoicesById.value = new Map((invoices ?? []).map((i) => [i.id, i as InvoiceRow]))
   schedulesByPurchase.value = new Map((schedules ?? []).map((s) => [s.package_purchase_id as string, s as ScheduleRow]))

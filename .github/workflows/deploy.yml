@@ -102,6 +102,17 @@ jobs:
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
 
+      # Scheduling a cron job is a manual step against production (see
+      # 0081_enable_pg_cron.sql for why it cannot live in a migration), so it
+      # is a step that can be forgotten -- and an endpoint nobody calls looks
+      # exactly like one with nothing to do. lead-sequence-cron shipped on
+      # 14 Sep and had never run by the 16th. Same placement and same
+      # reasoning as the migration check above: a check, never a fix.
+      - name: Check every cron endpoint is actually scheduled
+        run: npm run check:crons-scheduled
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+
       # Nitro's `netlify` preset (nuxt.config.ts) already produces
       # Netlify-shaped output on its own -- `dist/` for static assets *and*
       # `.netlify/functions-internal/server` for the serverless function that

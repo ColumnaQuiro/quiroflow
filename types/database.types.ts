@@ -246,6 +246,8 @@ export type Database = {
           hide_next_visit_on_invoices: boolean
           hide_payments_on_invoices: boolean
           hide_provider_on_invoices: boolean
+          instagram_access_token: string | null
+          instagram_user_id: string | null
           google_review_url: string | null
           id: string
           invoice_email_body: string | null
@@ -319,6 +321,8 @@ export type Database = {
           hide_next_visit_on_invoices?: boolean
           hide_payments_on_invoices?: boolean
           hide_provider_on_invoices?: boolean
+          instagram_access_token?: string | null
+          instagram_user_id?: string | null
           google_review_url?: string | null
           id?: string
           invoice_email_body?: string | null
@@ -391,6 +395,8 @@ export type Database = {
           hide_next_visit_on_invoices?: boolean
           hide_payments_on_invoices?: boolean
           hide_provider_on_invoices?: boolean
+          instagram_access_token?: string | null
+          instagram_user_id?: string | null
           google_review_url?: string | null
           id?: string
           invoice_email_body?: string | null
@@ -5162,6 +5168,7 @@ export type Database = {
           channel: string
           created_at: string
           direction: string
+          external_contact_id: string | null
           error_code: string | null
           error_message: string | null
           id: string
@@ -5185,6 +5192,7 @@ export type Database = {
           channel?: string
           created_at?: string
           direction?: string
+          external_contact_id?: string | null
           error_code?: string | null
           error_message?: string | null
           id?: string
@@ -5208,6 +5216,7 @@ export type Database = {
           channel?: string
           created_at?: string
           direction?: string
+          external_contact_id?: string | null
           error_code?: string | null
           error_message?: string | null
           id?: string

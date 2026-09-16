@@ -1,0 +1,181 @@
+// Instagram DMs arriving on the shared Meta webhook.
+//
+// Same endpoint, same app secret and the same signature check as WhatsApp --
+// one Meta app, two products -- so what is worth testing is the part that
+// differs: a payload shaped entry[].messaging[] rather than
+// entry[].changes[], a sender identified by IGSID rather than phone number,
+// and the clinic's own messages echoed back.
+//
+// Nothing here talks to Instagram. Sending is one Graph call and is not
+// reachable from CI; receiving is a POST we can make ourselves, which is
+// where the parsing, the routing to an account and the threading live.
+
+interface StoredMessage {
+  direction: string
+  status: string
+  body_preview: string | null
+  external_contact_id: string | null
+  wamid: string | null
+  channel: string
+}
+
+// Fresh per test for the reason the WhatsApp spec documents: the webhook
+// finds the account with .maybeSingle() on the id, so two accounts sharing
+// one resolve to none and the endpoint quietly does nothing -- which reads
+// as a passing test when the assertion is "nothing happened".
+let igUserId = ''
+let appSecret = ''
+let accountId = ''
+let staff: { email: string; password: string } | null = null
+
+const APP_SECRET_LENGTH = 32
+
+function payload(events: Record<string, unknown>[]) {
+  return {
+    object: 'instagram',
+    entry: [{ id: igUserId, messaging: events }],
+  }
+}
+
+function message(senderId: string, text: string, extra: Record<string, unknown> = {}) {
+  return {
+    sender: { id: senderId },
+    recipient: { id: igUserId },
+    timestamp: Date.now(),
+    message: { mid: `ig.${Date.now()}.${Math.random()}`, text, ...extra },
+  }
+}
+
+/** Posts pre-serialised bytes, so a signature over them stays valid. */
+function post(body: string, headers: Record<string, string>, failOnStatusCode = true) {
+  return cy.request({
+    method: 'POST',
+    url: '/api/whatsapp/webhook',
+    body,
+    headers: { 'content-type': 'application/json', ...headers },
+    failOnStatusCode,
+  })
+}
+
+function deliver(events: Record<string, unknown>[]) {
+  const body = JSON.stringify(payload(events))
+  return cy.task<{ signature: string }>('db:signWhatsappBody', { body, appSecret }).then((signed) => {
+    return post(body, { 'x-hub-signature-256': signed.signature })
+  })
+}
+
+function stored() {
+  return cy.task<StoredMessage[]>('db:messagesOnChannel', { accountId, channel: 'instagram' })
+}
+
+describe('Instagram DMs in the Inbox', () => {
+  beforeEach(() => {
+    cy.seedStaffAccount().then((account) => {
+      accountId = account.accountId
+      staff = { email: account.email, password: account.password }
+      igUserId = `1784140${Date.now()}`.slice(0, 17)
+      appSecret = 'a'.repeat(APP_SECRET_LENGTH)
+      cy.task('db:setInstagramAccount', { accountId, instagramUserId: igUserId })
+      cy.task('db:setWhatsappAppSecret', { accountId, appSecret })
+    })
+  })
+
+  it('stores a DM against the person who sent it', () => {
+    deliver([message('igsid-alpha', 'Hola, ¿hacéis primera visita?')])
+    stored().should((rows) => {
+      expect(rows).to.have.length(1)
+      expect(rows[0]!.channel).to.eq('instagram')
+      expect(rows[0]!.direction).to.eq('inbound')
+      expect(rows[0]!.body_preview).to.eq('Hola, ¿hacéis primera visita?')
+      // The IGSID, not a phone. Without it every Instagram conversation in
+      // the clinic collapses into one thread, because the Inbox keys threads
+      // on patient, then phone, then this.
+      expect(rows[0]!.external_contact_id).to.eq('igsid-alpha')
+    })
+  })
+
+  it('keeps two people apart', () => {
+    // The actual reason external_contact_id exists. Before it, both of these
+    // would key to 'unknown' and render as one conversation with itself.
+    deliver([message('igsid-one', 'Soy la primera')])
+    deliver([message('igsid-two', 'Soy la segunda')])
+    stored().should((rows) => {
+      expect(rows).to.have.length(2)
+      expect(new Set(rows.map((r) => r.external_contact_id))).to.have.property('size', 2)
+    })
+  })
+
+  it('ignores the clinic\'s own messages echoed back', () => {
+    // Meta echoes what the business sends. Storing those would duplicate
+    // every reply the Inbox already recorded, and file the clinic as the
+    // person who wrote in.
+    deliver([message('igsid-echo', 'Te contesto yo', { is_echo: true })])
+    stored().should((rows) => expect(rows).to.have.length(0))
+  })
+
+  it('stores an attachment as something rather than nothing', () => {
+    // A photo with no caption is still a message somebody sent. A thread that
+    // skips it reads as if they said nothing.
+    deliver([
+      {
+        sender: { id: 'igsid-photo' },
+        recipient: { id: igUserId },
+        message: { mid: `ig.${Date.now()}`, attachments: [{ type: 'image' }] },
+      },
+    ])
+    stored().should((rows) => {
+      expect(rows).to.have.length(1)
+      expect(rows[0]!.body_preview).to.eq('(image)')
+    })
+  })
+
+  it('stores a redelivered message once', () => {
+    // Meta redelivers whenever we answer anything but 200, and we now answer
+    // 401 on anything unverifiable -- so redelivery is normal traffic, not an
+    // edge case.
+    const event = message('igsid-repeat', 'Solo una vez')
+    deliver([event])
+    deliver([event])
+    stored().should((rows) => expect(rows).to.have.length(1))
+  })
+
+  it('refuses a DM it cannot verify, so Meta sends it again', () => {
+    const body = JSON.stringify(payload([message('igsid-forged', 'No debería entrar')]))
+    cy.task<{ signature: string }>('db:signWhatsappBody', { body, appSecret: 'f'.repeat(APP_SECRET_LENGTH) }).then((signed) => {
+      post(body, { 'x-hub-signature-256': signed.signature }, false).its('status').should('eq', 401)
+    })
+    stored().should((rows) => expect(rows).to.have.length(0))
+  })
+
+  it('ignores a DM addressed to an Instagram account that is not ours', () => {
+    // A silent 200, not a refusal: an id we do not know is not ours to answer
+    // for, and a 401 here would tell a forger which ids exist.
+    const body = JSON.stringify({
+      object: 'instagram',
+      entry: [{ id: 'not-ours', messaging: [{ sender: { id: 'igsid-x' }, recipient: { id: 'not-ours' }, message: { mid: 'ig.x', text: 'hola' } }] }],
+    })
+    cy.task<{ signature: string }>('db:signWhatsappBody', { body, appSecret }).then((signed) => {
+      post(body, { 'x-hub-signature-256': signed.signature }).its('status').should('eq', 200)
+    })
+    stored().should((rows) => expect(rows).to.have.length(0))
+  })
+
+  it('refuses to reply outside the 24h window, in words', () => {
+    // Instagram's own error for this is a numeric code. Somebody who has just
+    // typed a reply deserves to be told why it cannot go.
+    //
+    // Nobody has ever written from this IGSID, so the window was never open.
+    // Sending is a staff route, hence the login -- without it this answers
+    // 403 and would "pass" a test asserting only that it refused.
+    cy.login(staff!.email, staff!.password)
+    cy.request({
+      method: 'POST',
+      url: '/api/instagram/send',
+      body: { recipientId: 'igsid-stale', text: 'Hola de nuevo' },
+      failOnStatusCode: false,
+    }).then((res) => {
+      expect(res.status).to.eq(400)
+      expect(JSON.stringify(res.body)).to.contain('24 hours')
+    })
+  })
+})

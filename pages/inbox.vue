@@ -227,7 +227,7 @@ const {
 // carry one but the real patient threads beside them cannot, so the filter
 // would mean two different things in one list. They arrive with the leads
 // endpoint, which is what gives both sides an owner.
-const aiFilter = ref<'all' | 'ai_handling' | 'needs_human'>('all')
+const aiFilter = ref<'all' | 'ai_handling' | 'needs_human' | 'draft_ready'>('all')
 
 // Growth > Conversations in the sidebar is a saved view into this inbox, not
 // a screen of its own -- it deep-links here with the filter already applied.
@@ -250,11 +250,17 @@ const visibleLeadConversations = computed(() => {
   if (unreadOnly.value) list = list.filter((c) => c.unread)
   if (aiFilter.value === 'ai_handling') list = list.filter((c) => c.aiState === 'handling')
   else if (aiFilter.value === 'needs_human') list = list.filter((c) => c.aiState === 'needs_human' || c.aiState === 'blocked')
+  else if (aiFilter.value === 'draft_ready') list = list.filter((c) => c.hasDraft)
   return list
 })
 
 const aiHandlingCount = computed(() => leadConversations.value.filter((c) => c.aiState === 'handling').length)
 const needsHumanCount = computed(() => leadConversations.value.filter((c) => c.aiState === 'needs_human' || c.aiState === 'blocked').length)
+// Threads where a reply is written and waiting on a decision. This is the
+// queue the receptionist actually creates -- without it the drafts it writes
+// unprompted are only found by opening threads one at a time, which is the
+// work drafting was meant to remove.
+const draftReadyCount = computed(() => leadConversations.value.filter((c) => c.hasDraft).length)
 
 // Resolved against the full list, never the filtered one -- exactly as
 // `selected` is for real conversations above. Reading it from
@@ -1090,6 +1096,19 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
               >
                 {{ t('Needs human', 'Requiere persona') }} · {{ needsHumanCount }}
               </button>
+              <!-- Only when there is one. A chip reading "· 0" every day
+                   teaches people to stop looking at it, and this is the one
+                   that means somebody has work waiting. -->
+              <button
+                v-if="draftReadyCount > 0"
+                type="button"
+                class="flex h-7 items-center gap-1 rounded-pill border px-2.5 text-[12px] font-medium"
+                :class="aiFilter === 'draft_ready' ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted hover:bg-surface-subtle'"
+                data-test="filter-draft-ready"
+                @click="aiFilter = aiFilter === 'draft_ready' ? 'all' : 'draft_ready'"
+              >
+                {{ t('Draft ready', 'Borrador listo') }} · {{ draftReadyCount }}
+              </button>
             </template>
           </div>
         </div>
@@ -1149,6 +1168,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
               </p>
               <div class="mt-1 flex flex-wrap items-center gap-1">
                 <span class="rounded-pill border border-chip-border bg-chip-bg px-1.5 py-px text-[10px] text-ink-muted">{{ CHANNEL_LABEL[c.channel] }}</span>
+                <span v-if="c.hasDraft" class="rounded-pill border border-brand-tintBorder bg-brand-tint px-1.5 py-px text-[10px] font-semibold text-brand-text" data-test="draft-ready-badge">{{ t('Draft ready', 'Borrador listo') }}</span>
                 <span v-if="c.aiState === 'handling'" class="rounded-pill bg-brand px-1.5 py-px text-[10px] font-semibold text-white">{{ t('AI handling', 'IA gestionando') }}</span>
                 <span v-else-if="c.aiState === 'paused'" class="rounded-pill border border-chip-border bg-chip-bg px-1.5 py-px text-[10px] text-ink-muted">{{ t('AI paused', 'IA en pausa') }}</span>
                 <span v-else-if="c.aiState === 'needs_human'" class="rounded-pill border border-warning-border bg-warning-bg px-1.5 py-px text-[10px] font-medium text-warning-text">{{ t('Needs human', 'Requiere persona') }}</span>

@@ -39,6 +39,15 @@ export default defineEventHandler(async (event) => {
     ? await supabase.from('patients').select('id, balance_cents').eq('id', lead.patient_id).maybeSingle()
     : null
 
+  // Whether the receptionist may work on real conversations. Read here so the
+  // thread can decide about the draft button rather than offering one that
+  // the server would refuse.
+  const { data: receptionist } = await supabase
+    .from('receptionist_config')
+    .select('enabled')
+    .eq('account_id', teamMember.account_id)
+    .maybeSingle()
+
   return {
     id: lead.id,
     name: lead.full_name,
@@ -60,6 +69,7 @@ export default defineEventHandler(async (event) => {
     // rather than approving on sight.
     draft: lead.ai_draft_body,
     draftAt: lead.ai_draft_created_at,
+    receptionistEnabled: receptionist?.enabled ?? false,
     messages: (messages ?? []).map((message) => ({
       id: message.id,
       // A lead's own messages are inbound; everything outbound came from the

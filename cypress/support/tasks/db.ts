@@ -1224,6 +1224,16 @@ async function stopPracticeHubStub() {
   return { ok: true }
 }
 
+/** Turns the receptionist on or off, the way Growth > Receptionist does. */
+async function setReceptionistEnabled(opts: { accountId: string; enabled: boolean }) {
+  assertOk(
+    await admin
+      .from('receptionist_config')
+      .upsert({ account_id: opts.accountId, enabled: opts.enabled }, { onConflict: 'account_id' }),
+  )
+  return { ok: true }
+}
+
 /** Puts a receptionist draft on a lead, the way the drafting route would. */
 async function setLeadDraft(opts: { id: string; body: string | null }) {
   assertOk(
@@ -1306,6 +1316,7 @@ export const dbTasks = {
   'db:reviewRequestsFor': reviewRequestsFor,
   'db:latestAutomationActions': latestAutomationActions,
   'db:leadMessages': leadMessages,
+  'db:setReceptionistEnabled': setReceptionistEnabled,
   'db:setLeadDraft': setLeadDraft,
   'db:leadDraft': leadDraft,
   'db:setNewLeadNotify': setNewLeadNotify,

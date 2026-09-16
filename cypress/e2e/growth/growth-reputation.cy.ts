@@ -85,6 +85,31 @@ describe('Growth reputation', () => {
     cy.get('[data-test="review-card"]').should('have.length', 4)
   })
 
+  it('says Google is connectable rather than that reviews cannot be had', () => {
+    // The screen used to say connecting Google "is not built yet", which
+    // stopped being true. Doctoralia and Facebook still are.
+    cy.visit('/growth/reputation?growth=1')
+    cy.get('[data-test="no-reviews"]').should('contain', 'Google is connected once you add your Place ID')
+    cy.get('[data-test="no-reviews"]').should('contain', 'Doctoralia and Facebook each need their own integration')
+  })
+
+  it('says importing needs a key rather than blaming the clinic for it', () => {
+    // No Places key on this deployment, so the route reports unavailable and
+    // stops -- before it looks at whether the clinic connected a listing.
+    //
+    // That order is the point. A deployment with no key cannot read Google
+    // for anybody, and telling an owner to go and find their Place ID would
+    // send them to fix something that was never the problem. Same shape as
+    // the model key on the drafting routes: not configured is a state, not a
+    // failure.
+    cy.visit('/growth/reputation?growth=1')
+    cy.request({ method: 'POST', url: '/api/growth/reputation/sync-google' }).then((res) => {
+      expect(res.status).to.eq(200)
+      expect(res.body.available).to.eq(false)
+      expect(res.body.imported).to.eq(0)
+    })
+  })
+
   it('holds a draft back for approval and says nothing posts without it', () => {
     cy.task('db:createReview', {
       accountId: account.accountId,

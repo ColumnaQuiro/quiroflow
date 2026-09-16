@@ -2,7 +2,7 @@
 const t = useT()
 const { can } = usePermission()
 const { hasGrowth, resolved } = useGrowthTier()
-const { data, loading, error, busyId, draftReply, approve, discard } = useGrowthReputation()
+const { data, loading, error, busyId, draftReply, approve, discard, syncing, syncGoogle } = useGrowthReputation()
 
 const allowed = computed(() => can('communication_config'))
 
@@ -61,13 +61,28 @@ function when(iso: string) {
             <h2 class="text-[13.5px] font-semibold tracking-tightTitle text-ink-900">{{ t('No reviews here yet', 'Aún no hay reseñas aquí') }}</h2>
             <p class="max-w-[62ch] text-[12px] leading-[1.6] text-ink-muted">
               {{ t(
-                'Ratings and review text live inside Google, Doctoralia and Facebook. Connecting them needs an integration per platform, which is not built yet — so this stays empty rather than showing a rating nobody gave you. The request funnel is already counting.',
-                'Las valoraciones y el texto de las reseñas están dentro de Google, Doctoralia y Facebook. Conectarlos requiere una integración por plataforma, que aún no está construida, así que esto queda vacío en lugar de mostrar una valoración que nadie te ha dado. El embudo de solicitudes ya está contando.',
+                'Google is connected once you add your Place ID under Settings → Communication → General. Doctoralia and Facebook each need their own integration, which is not built yet — so those stay empty rather than showing a rating nobody gave you. The request funnel is already counting.',
+                'Google se conecta en cuanto añades tu Place ID en Ajustes → Comunicación → General. Doctoralia y Facebook necesitan cada una su propia integración, que aún no está construida, así que esas quedan vacías en lugar de mostrar una valoración que nadie te ha dado. El embudo de solicitudes ya está contando.',
               ) }}
             </p>
+            <div>
+              <UiBtn variant="secondary" size="sm" :disabled="syncing" data-test="sync-google" @click="syncGoogle">
+                {{ syncing ? t('Reading Google…', 'Leyendo Google…') : t('Import from Google', 'Importar desde Google') }}
+              </UiBtn>
+            </div>
           </section>
 
-          <section v-else class="grid gap-4 rounded-card border border-line bg-surface p-4 shadow-card sm:grid-cols-[150px_minmax(0,1fr)] lg:grid-cols-[150px_170px_minmax(0,1fr)]">
+          <!-- Once there are reviews, the same action is a refresh. Google
+          returns only the five most recent, so this tops up rather than
+          backfilling a history -- said on the settings field rather than
+          here, where it would sit under every clinic's rating forever. -->
+          <div v-else-if="data.hasReviews" class="flex justify-end">
+            <UiBtn variant="secondary" size="sm" :disabled="syncing" data-test="sync-google" @click="syncGoogle">
+              {{ syncing ? t('Reading Google…', 'Leyendo Google…') : t('Refresh from Google', 'Actualizar desde Google') }}
+            </UiBtn>
+          </div>
+
+          <section v-if="data.hasReviews" class="grid gap-4 rounded-card border border-line bg-surface p-4 shadow-card sm:grid-cols-[150px_minmax(0,1fr)] lg:grid-cols-[150px_170px_minmax(0,1fr)]">
             <div class="flex flex-col gap-1">
               <span class="text-[11px] text-ink-muted">{{ t('Average rating', 'Valoración media') }}</span>
               <div class="flex items-baseline gap-1">

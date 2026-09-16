@@ -129,7 +129,8 @@ jobs:
           # on measured time, not spec count: leads 2m41, platform 2m16.
           #
           # growth-leads takes a prefix glob, so a new growth-lead-*.cy.ts
-          # joins it with no workflow edit. growth-platform names its specs,
+          # joins it with no workflow edit; growth-receptionist* is a glob for
+          # the same reason. The rest of growth-platform names its specs,
           # which means a new non-lead growth spec matches nothing and
           # check-e2e-shards.mjs fails until someone assigns it. That is the
           # trade for splitting a folder, and the failure is the point: the
@@ -137,7 +138,7 @@ jobs:
           - name: growth-leads
             specs: "cypress/e2e/growth/growth-lead*.cy.ts,cypress/e2e/growth/growth-inbox.cy.ts"
           - name: growth-platform
-            specs: "cypress/e2e/growth/growth-receptionist.cy.ts,cypress/e2e/growth/growth-reputation.cy.ts,cypress/e2e/growth/growth-dashboard-data.cy.ts,cypress/e2e/growth/growth-dashboard.cy.ts,cypress/e2e/growth/growth-automations.cy.ts,cypress/e2e/growth/growth-automation-builder.cy.ts,cypress/e2e/growth/growth-addon-entitlement.cy.ts,cypress/e2e/growth/growth-review-links.cy.ts"
+            specs: "cypress/e2e/growth/growth-receptionist*.cy.ts,cypress/e2e/growth/growth-reputation.cy.ts,cypress/e2e/growth/growth-dashboard-data.cy.ts,cypress/e2e/growth/growth-dashboard.cy.ts,cypress/e2e/growth/growth-automations.cy.ts,cypress/e2e/growth/growth-automation-builder.cy.ts,cypress/e2e/growth/growth-addon-entitlement.cy.ts,cypress/e2e/growth/growth-review-links.cy.ts"
           - name: patients-and-booking
             specs: "cypress/e2e/patients/**,cypress/e2e/public-booking/**"
           - name: auth-calendar-inbox

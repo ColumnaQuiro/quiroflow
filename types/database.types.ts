@@ -2345,6 +2345,7 @@ export type Database = {
           account_id: string
           ai_draft_body: string | null
           ai_draft_created_at: string | null
+          ai_drafted_through_at: string | null
           ai_handling: boolean
           ai_state: string
           ai_taken_over_at: string | null
@@ -2376,6 +2377,7 @@ export type Database = {
           account_id: string
           ai_draft_body?: string | null
           ai_draft_created_at?: string | null
+          ai_drafted_through_at?: string | null
           ai_handling?: boolean
           ai_state?: string
           ai_taken_over_at?: string | null
@@ -2407,6 +2409,7 @@ export type Database = {
           account_id?: string
           ai_draft_body?: string | null
           ai_draft_created_at?: string | null
+          ai_drafted_through_at?: string | null
           ai_handling?: boolean
           ai_state?: string
           ai_taken_over_at?: string | null

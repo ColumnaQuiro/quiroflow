@@ -34,6 +34,8 @@ export interface LeadThread {
   /** A reply the receptionist wrote, waiting on a person. Never sent. */
   draft: string | null
   draftAt: string | null
+  /** The switch on Growth > Receptionist. Off means it drafts nothing. */
+  receptionistEnabled: boolean
   messages: LeadThreadMessage[]
 }
 

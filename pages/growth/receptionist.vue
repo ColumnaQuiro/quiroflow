@@ -113,17 +113,20 @@ const CHANNEL_CLASS: Record<string, string> = {
 
       <div v-else class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
         <div class="flex flex-col gap-4">
-          <!-- The switch that decides whether any of this reaches a patient,
-          first and on its own. It is off until someone turns it on, and it
-          says what is still missing before it can do anything. -->
+          <!-- The switch that decides whether the receptionist touches real
+          conversations at all, first and on its own. It used to record the
+          intent and gate nothing, which was honest while there was nothing to
+          gate; it now decides whether /api/growth/leads/:id/draft-reply will
+          write anything, and the Inbox hides the button when it is off. Still
+          off until someone turns it on. -->
           <section class="flex flex-col gap-3 rounded-card border border-line bg-surface p-4 shadow-card">
             <div class="flex flex-wrap items-start justify-between gap-3">
               <div class="flex flex-col gap-1">
-                <h2 class="text-[12.5px] font-semibold tracking-tightTitle text-ink-900">{{ t('Answering', 'Respuesta automática') }}</h2>
+                <h2 class="text-[12.5px] font-semibold tracking-tightTitle text-ink-900">{{ t('Answering', 'Respuestas') }}</h2>
                 <p class="max-w-[46ch] text-[11.5px] leading-[1.5] text-ink-muted">
                   {{ t(
-                    'Automatic answering of real enquiries is not built yet. This switch records the intent; the receptionist only replies in test mode for now.',
-                    'La respuesta automática a consultas reales aún no está construida. Este interruptor guarda la intención; por ahora la recepcionista solo responde en modo de prueba.',
+                    'On, the receptionist reads real enquiries in the Inbox and drafts replies for you to approve. It never sends on its own — every message is one somebody read first.',
+                    'Activada, la recepcionista lee las consultas reales en la Bandeja y redacta respuestas para que las apruebes. Nunca envía por su cuenta: cada mensaje lo ha leído antes una persona.',
                   ) }}
                 </p>
               </div>

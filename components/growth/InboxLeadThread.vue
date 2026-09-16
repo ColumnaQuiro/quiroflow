@@ -35,7 +35,9 @@ function approve() {
 
 // Drafting only makes sense while a free-form reply is possible at all --
 // outside WhatsApp's 24h window the approve button could only ever fail.
-const canDraft = computed(() => props.thread.canReplyFreeText && props.thread.aiState !== 'blocked')
+const canDraft = computed(
+  () => props.thread.receptionistEnabled && props.thread.canReplyFreeText && props.thread.aiState !== 'blocked',
+)
 
 // The composer opens only once a person has taken the thread off the AI --
 // two of them typing into the same conversation is the failure the banner

@@ -23,15 +23,17 @@
 // Usage:
 //   node migrate-practicehub-attachments.mjs <path-to-csv> --practicehub-url=https://<your-clinic>.practicehub.io
 //
-// For a large backlog, run several of these at once in separate terminals
-// (each will prompt for its own QuiroFlow login and open its own PracticeHub
-// browser window) using --offset/--limit to split the patient list into
-// non-overlapping slices, e.g. four terminals covering 0-249, 250-499,
-// 500-749, and 750+:
-//   node migrate-practicehub-attachments.mjs file.csv --practicehub-url=... --offset=0   --limit=250
-//   node migrate-practicehub-attachments.mjs file.csv --practicehub-url=... --offset=250 --limit=250
-//   node migrate-practicehub-attachments.mjs file.csv --practicehub-url=... --offset=500 --limit=250
-//   node migrate-practicehub-attachments.mjs file.csv --practicehub-url=... --offset=750
+// It works four patients at a time by default, in one browser off one login.
+// Raise or lower that with --concurrency=N (1-8) -- the work is nearly all
+// waiting on PracticeHub, so more tabs is mostly more waiting in parallel,
+// but they are someone else's servers and a migration is no reason to hammer
+// them:
+//   node migrate-practicehub-attachments.mjs file.csv --practicehub-url=... --concurrency=6
+//
+// --offset/--limit still slice the patient list, which is occasionally useful
+// for picking up a specific range by hand. Running several terminals that way
+// is no longer how you go faster, and has a catch: every slice reads and
+// writes the same not-found file, so staggered starts matter.
 //
 // <path-to-csv> is PracticeHub's "File Attachments - List" export (Reports
 // -> Data Exports), and must already have been imported as patient_files
@@ -79,6 +81,28 @@ const limitArg = process.argv.find((a) => a.startsWith('--limit='))
 const patientLimit = limitArg ? parseInt(limitArg.split('=')[1], 10) : null
 const offsetArg = process.argv.find((a) => a.startsWith('--offset='))
 const patientOffset = offsetArg ? parseInt(offsetArg.split('=')[1], 10) : 0
+
+// How many patients to work through at once, in one browser and one login.
+//
+// This used to be a manual job: the instructions told you to open four
+// terminals with --offset/--limit, log into PracticeHub four times, and keep
+// four windows alive. That still works and is left in place, but it is no
+// longer the way to go faster -- and it had a flaw the comment on
+// saveNotFoundIds describes, where the slices fight over one shared file.
+//
+// Four is a deliberate default rather than a maximum. The work is almost
+// entirely waiting on PracticeHub, so more tabs mostly means more waiting in
+// parallel -- but they are someone else's servers, and a migration is not a
+// reason to hammer them.
+const concurrencyArg = process.argv.find((a) => a.startsWith('--concurrency='))
+const CONCURRENCY = Math.max(1, Math.min(8, concurrencyArg ? parseInt(concurrencyArg.split('=')[1], 10) : 4))
+
+// A patient whose PracticeHub page misbehaves gets another go before being
+// counted as failed. 21 of 135 patients failed on one measured run, nearly
+// all of them "locator.click: Timeout 30000ms exceeded" on a table that had
+// not finished rendering -- transient, and previously fixable only by running
+// the whole script again.
+const ATTEMPTS_PER_PATIENT = 2
 
 // --offset/--limit let you split the work across several terminals running
 // at once, each with its own PracticeHub login -- e.g. 4 windows with
@@ -275,164 +299,250 @@ async function main() {
 
   log(`Launching browser. Log into PracticeHub in the window that opens, then come back here.`)
   const browser = await chromium.launch({ headless: false })
-  const context = await browser.newContext()
-  const page = await context.newPage()
-  await page.goto(`${PRACTICEHUB_URL}/patients`)
+  const loginContext = await browser.newContext()
+  const loginPage = await loginContext.newPage()
+  await loginPage.goto(`${PRACTICEHUB_URL}/patients`)
   await prompt('\nPress Enter once you are logged in and can see the Patients list: ')
+
+  // One login, several workers. The session cookies are copied out of the
+  // window you logged into and handed to the other contexts, so you are not
+  // asked to log in once per tab.
+  //
+  // A context each, rather than several pages in one: waitForEvent('page')
+  // and waitForEvent('download') below are CONTEXT-scoped, so workers sharing
+  // a context would race to claim each other's "View" popups and attach the
+  // wrong bytes to the wrong patient's file. Separate contexts make that
+  // impossible rather than unlikely.
+  const storageState = await loginContext.storageState()
+  const workerContexts = [loginContext]
+  for (let i = 1; i < CONCURRENCY; i++) workerContexts.push(await browser.newContext({ storageState }))
+  if (CONCURRENCY > 1) log(`Working ${CONCURRENCY} patients at a time.`)
 
   let succeeded = 0
   let failed = 0
   let skipped = 0
   const progress = () => `[${succeeded + failed + skipped}/${totalFiles}]`
 
-  for (const [patientId, files] of patientEntries) {
-    const patient = patientById.get(patientId)
-    const phFirstName = files[0].csvRow['Patient First Name']?.trim() ?? ''
-    const phLastName = files[0].csvRow['Patient Last Name']?.trim() ?? ''
-    const phName = `${phFirstName} ${phLastName}`.trim()
-    log(`${progress()} --- ${phName} (QuiroFlow: ${patient.first_name} ${patient.last_name ?? ''}) — ${files.length} file(s)`)
+  // Opens a patient's record and returns true once their Files tab is showing.
+  //
+  // Searches on the PracticeHub patient number first -- the CSV carries it as
+  // "Patient Unique Identifier" and it is unique, which a surname is not. The
+  // old path searched the surname, then clicked through every same-name match
+  // comparing phone numbers to work out which one it meant; on a list with
+  // four Cañamas that is four page loads to find one patient, and it gave up
+  // ("couldn't disambiguate by phone") often enough to matter.
+  //
+  // The name search is kept as a fallback for a row whose CSV has no number,
+  // or a clinic whose patient list does not show the number as a searchable
+  // column.
+  async function openPatientFiles(page, csvRow, phFirstName, phLastName, phName) {
+    const patientNumber = csvRow['Patient Unique Identifier']?.trim()
 
-    try {
-      await page.goto(`${PRACTICEHUB_URL}/patients`)
+    async function findRow(term, narrowBy) {
       const searchBox = page.locator('input[type="search"]').first()
-      // PracticeHub displays (and its own search filters on) "Last, First",
-      // not "First Last" -- searching/matching the full name as one ordered
-      // string never matches a two-word name. Search on whichever name part
-      // is more likely unique, then narrow further by the other part.
-      const searchTerm = phLastName || phFirstName
-      // .fill() sets the value directly and doesn't reliably fire the
-      // keyup DataTables listens for to actually filter -- without a real
-      // filter the table just shows its default first page, which is why
-      // only the one patient who happens to sort first ever "matched".
-      // Typing it out keystroke-by-keystroke fires real keyboard events.
       await searchBox.click()
       await searchBox.fill('')
-      await searchBox.pressSequentially(searchTerm, { delay: 50 })
-      await page.waitForTimeout(800)
+      // .fill() sets the value directly and doesn't reliably fire the keyup
+      // DataTables listens for, so the table never actually filters. Typed
+      // out, it does. No per-character delay: the listener is debounced on
+      // its own and the waits below are what make this deterministic.
+      await searchBox.pressSequentially(term)
+      let rows = page.locator('table tbody tr', { hasText: term })
+      if (narrowBy) rows = rows.filter({ hasText: narrowBy })
+      // Wait for the filtered row to exist rather than sleeping and hoping.
+      // This is both quicker when the table is fast and reliable when it is
+      // slow -- the fixed 800ms it replaces was the cause of a good share of
+      // the "Timeout 30000ms" clicks, which were really clicks fired before
+      // the table had re-rendered.
+      await rows.first().waitFor({ state: 'visible', timeout: 10000 }).catch(() => {})
+      return rows
+    }
 
-      let rows = page.locator('table tbody tr', { hasText: searchTerm })
-      if (phLastName && phFirstName) rows = rows.filter({ hasText: phFirstName })
-      const rowCount = await rows.count()
-      if (rowCount === 0) {
-        skipped += files.length
-        log(`${progress()} WARN "${phName}" not found in PracticeHub search, skipping ${files.length} file(s)`)
-        continue
-      }
+    let rows = patientNumber ? await findRow(patientNumber, null) : null
+    let rowCount = rows ? await rows.count() : 0
 
-      let rowToOpen = rows.first()
-      if (rowCount > 1) {
-        // Disambiguate same-name patients by phone number shown in the panel.
-        const expectedPhones = phoneByPatientId.get(patientId) ?? []
-        let matched = false
-        for (let i = 0; i < rowCount; i++) {
-          await rows.nth(i).click()
-          await page.waitForTimeout(500)
-          const contactText = await page.locator('text=Mobile').locator('..').innerText().catch(() => '')
-          const digits = contactText.replace(/\D/g, '')
-          if (expectedPhones.some((p) => p && digits.includes(p))) {
-            matched = true
-            break
-          }
-          await page.locator('button:has-text("✕"), [aria-label="Close"]').first().click().catch(() => {})
+    if (rowCount === 0) {
+      // PracticeHub displays (and filters on) "Last, First", not "First
+      // Last", so the full name as one ordered string never matches.
+      const searchTerm = phLastName || phFirstName
+      if (!searchTerm) return false
+      rows = await findRow(searchTerm, phLastName && phFirstName ? phFirstName : null)
+      rowCount = await rows.count()
+    }
+
+    if (rowCount === 0) {
+      log(`${progress()} WARN "${phName}" not found in PracticeHub search`)
+      return false
+    }
+
+    if (rowCount > 1) {
+      // Only reachable via the name fallback now -- a patient number matches
+      // one row or none. Disambiguate by phone, as before.
+      const expectedPhones = phoneByPatientId.get(csvRow.__patientId) ?? []
+      let matched = false
+      for (let i = 0; i < rowCount; i++) {
+        await rows.nth(i).click()
+        const contactText = await page
+          .locator('text=Mobile')
+          .locator('..')
+          .innerText({ timeout: 5000 })
+          .catch(() => '')
+        const digits = contactText.replace(/\D/g, '')
+        if (expectedPhones.some((p) => p && digits.includes(p))) {
+          matched = true
+          break
         }
-        if (!matched) {
-          skipped += files.length
-          log(`${progress()} WARN ${rowCount} patients named "${phName}" in PracticeHub, couldn't disambiguate by phone, skipping ${files.length} file(s)`)
+        await page.locator('button:has-text("✕"), [aria-label="Close"]').first().click().catch(() => {})
+      }
+      if (!matched) return false
+    } else {
+      await rows.first().click()
+    }
+
+    // Each click waits for what it is about to need, instead of a blanket
+    // sleep: .click() already waits for the element to be actionable, so
+    // reaching for the next thing is the wait.
+    await page.locator('text=Forms & Files').first().click({ timeout: 15000 })
+    await page.locator('text=Files').first().click({ timeout: 15000 }).catch(() => {})
+    return true
+  }
+
+  // One patient, start to finish. Returns counts rather than touching the
+  // shared totals, so a retried attempt cannot count the same file twice.
+  async function processPatient(context, page, patientId, files) {
+    const patient = patientById.get(patientId)
+    const csvRow0 = files[0].csvRow
+    const phFirstName = csvRow0['Patient First Name']?.trim() ?? ''
+    const phLastName = csvRow0['Patient Last Name']?.trim() ?? ''
+    const phName = `${phFirstName} ${phLastName}`.trim()
+    csvRow0.__patientId = patientId
+    const counts = { ok: 0, bad: 0, skip: 0 }
+
+    log(`${progress()} --- ${phName} (QuiroFlow: ${patient.first_name} ${patient.last_name ?? ''}) — ${files.length} file(s)`)
+    await page.goto(`${PRACTICEHUB_URL}/patients`)
+
+    const opened = await openPatientFiles(page, csvRow0, phFirstName, phLastName, phName)
+    if (!opened) {
+      counts.skip += files.length
+      log(`${progress()} WARN could not open "${phName}" in PracticeHub, skipping ${files.length} file(s)`)
+      return counts
+    }
+
+    // A patient can legitimately have zero files in PracticeHub (the CSV's
+    // per-file metadata rows sometimes outlive the files themselves being
+    // removed there) -- not a mismatch worth a WARN. DataTables renders one
+    // placeholder row ("No data available in table") rather than zero rows
+    // when empty, so check for that too.
+    const filesTableRows = page.locator('table tbody tr')
+    const filesTableRowCount = await filesTableRows.count()
+    const filesTableEmpty =
+      filesTableRowCount === 0 ||
+      (filesTableRowCount === 1 && /no (data|files|records)/i.test(await filesTableRows.first().innerText().catch(() => '')))
+    if (filesTableEmpty) {
+      counts.skip += files.length
+      log(`${progress()} ${phName} has no attachments in PracticeHub, skipping ${files.length} file(s) (nothing to migrate, not an error)`)
+      return counts
+    }
+
+    for (const { file, csvRow } of files) {
+      // Already done on an earlier attempt for this same patient. Patient-level
+      // failures are raised before any upload starts, so this should not
+      // trigger -- but a retry that re-uploaded would leave two copies in
+      // storage and no way to tell which the patient_files row points at.
+      if (file.storage_path) continue
+      try {
+        const fileRow = page.locator('tr', { hasText: csvRow['Filename'].trim() }).first()
+        const viewLink = fileRow.locator('a:has-text("View")').first()
+        if ((await viewLink.count()) === 0) {
+          counts.skip++
+          notFoundIds.add(file.id)
+          saveNotFoundIds(notFoundIds)
+          log(`${progress()} WARN "${csvRow['Filename']}" not found on ${phName}'s Files tab -- recording as permanently missing, future runs won't re-check it`)
           continue
         }
-      } else {
-        await rowToOpen.click()
-        await page.waitForTimeout(500)
+
+        // "View" usually opens a new tab at a signed URL the browser can
+        // render (PDF, JPG...), but for a format Chromium can't display
+        // inline -- HEIC being the one that's shown up -- it instead
+        // triggers a native download and the tab never navigates anywhere
+        // fetchable. Race both possible events and branch on whichever fires.
+        const [event] = await Promise.all([
+          Promise.race([
+            context.waitForEvent('page').then((value) => ({ kind: 'page', value })),
+            context.waitForEvent('download').then((value) => ({ kind: 'download', value })),
+          ]),
+          viewLink.click(),
+        ])
+
+        let buffer
+        if (event.kind === 'download') {
+          const downloadPath = await event.value.path()
+          buffer = readFileSync(downloadPath)
+        } else {
+          const newPage = event.value
+          await newPage.waitForLoadState('domcontentloaded').catch(() => {})
+          const signedUrl = newPage.url()
+          await newPage.close()
+          if (!signedUrl || signedUrl === 'about:blank') throw new Error('no viewable URL opened for this file')
+
+          const res = await fetch(signedUrl)
+          if (!res.ok) throw new Error(`download failed: HTTP ${res.status}`)
+          buffer = Buffer.from(await res.arrayBuffer())
+        }
+
+        const storagePath = `${accountId}/${patientId}/${Date.now()}-${sanitizeStorageFilename(file.file_name)}`
+        const { error: uploadError } = await supabase.storage.from(BUCKET).upload(storagePath, buffer, {
+          contentType: csvRow['Mime Type']?.trim() || 'application/octet-stream',
+        })
+        if (uploadError) throw new Error(`upload failed: ${uploadError.message}`)
+
+        const { error: updateError } = await supabase.from('patient_files').update({ storage_path: storagePath }).eq('id', file.id)
+        if (updateError) throw new Error(`db update failed: ${updateError.message}`)
+
+        file.storage_path = storagePath
+        counts.ok++
+        log(`${progress()} OK ${phName}: ${file.file_name} (${buffer.length} bytes)`)
+      } catch (err) {
+        counts.bad++
+        log(`${progress()} ERROR ${phName}: ${file.file_name}: ${err.message}`)
       }
+    }
 
-      await page.locator('text=Forms & Files').first().click()
-      await page.waitForTimeout(500)
-      await page.locator('text=Files').first().click().catch(() => {})
-      await page.waitForTimeout(500)
+    await page.locator('button:has-text("✕"), [aria-label="Close"]').first().click().catch(() => {})
+    return counts
+  }
 
-      // A patient can legitimately have zero files in PracticeHub (the CSV's
-      // per-file metadata rows sometimes outlive the files themselves being
-      // removed there) -- that's not a mismatch worth a WARN, just nothing
-      // to migrate. DataTables renders one placeholder row ("No data
-      // available in table") rather than zero rows when empty, so check for
-      // that too, not just a bare row count of 0.
-      const filesTableRows = page.locator('table tbody tr')
-      const filesTableRowCount = await filesTableRows.count()
-      const filesTableEmpty =
-        filesTableRowCount === 0 ||
-        (filesTableRowCount === 1 && /no (data|files|records)/i.test(await filesTableRows.first().innerText().catch(() => '')))
-      if (filesTableEmpty) {
-        skipped += files.length
-        log(`${progress()} ${phName} has no attachments in PracticeHub, skipping ${files.length} file(s) (nothing to migrate, not an error)`)
-        continue
-      }
-
-      for (const { file, csvRow } of files) {
+  // Shared queue. JavaScript is single-threaded, so handing out the next
+  // index needs no lock -- nothing can interleave between reading and
+  // incrementing it.
+  let nextIndex = 0
+  async function worker(context) {
+    const page = context.pages()[0] ?? (await context.newPage())
+    while (nextIndex < patientEntries.length) {
+      const [patientId, files] = patientEntries[nextIndex++]
+      let counts = null
+      for (let attempt = 1; attempt <= ATTEMPTS_PER_PATIENT; attempt++) {
         try {
-          const fileRow = page.locator('tr', { hasText: csvRow['Filename'].trim() }).first()
-          const viewLink = fileRow.locator('a:has-text("View")').first()
-          if ((await viewLink.count()) === 0) {
-            skipped++
-            notFoundIds.add(file.id)
-            saveNotFoundIds(notFoundIds)
-            log(`${progress()} WARN "${csvRow['Filename']}" not found on ${phName}'s Files tab -- recording as permanently missing, future runs won't re-check it`)
+          counts = await processPatient(context, page, patientId, files)
+          break
+        } catch (err) {
+          if (attempt < ATTEMPTS_PER_PATIENT) {
+            log(`${progress()} RETRY ${files.length} file(s) for patient ${patientId}: ${err.message}`)
             continue
           }
-
-          // "View" usually opens a new tab at a signed URL the browser can
-          // render (PDF, JPG...), but for a format Chromium can't display
-          // inline -- HEIC being the one that's shown up -- it instead
-          // triggers a native download and the tab never navigates anywhere
-          // fetchable. Race both possible events and branch on whichever
-          // actually fires.
-          const [event] = await Promise.all([
-            Promise.race([
-              context.waitForEvent('page').then((value) => ({ kind: 'page', value })),
-              context.waitForEvent('download').then((value) => ({ kind: 'download', value })),
-            ]),
-            viewLink.click(),
-          ])
-
-          let buffer
-          if (event.kind === 'download') {
-            const downloadPath = await event.value.path()
-            buffer = readFileSync(downloadPath)
-          } else {
-            const newPage = event.value
-            await newPage.waitForLoadState('domcontentloaded').catch(() => {})
-            const signedUrl = newPage.url()
-            await newPage.close()
-            if (!signedUrl || signedUrl === 'about:blank') throw new Error('no viewable URL opened for this file')
-
-            const res = await fetch(signedUrl)
-            if (!res.ok) throw new Error(`download failed: HTTP ${res.status}`)
-            buffer = Buffer.from(await res.arrayBuffer())
-          }
-
-          const storagePath = `${accountId}/${patientId}/${Date.now()}-${sanitizeStorageFilename(file.file_name)}`
-          const { error: uploadError } = await supabase.storage.from(BUCKET).upload(storagePath, buffer, {
-            contentType: csvRow['Mime Type']?.trim() || 'application/octet-stream',
-          })
-          if (uploadError) throw new Error(`upload failed: ${uploadError.message}`)
-
-          const { error: updateError } = await supabase.from('patient_files').update({ storage_path: storagePath }).eq('id', file.id)
-          if (updateError) throw new Error(`db update failed: ${updateError.message}`)
-
-          succeeded++
-          log(`${progress()} OK ${phName}: ${file.file_name} (${buffer.length} bytes)`)
-        } catch (err) {
-          failed++
-          log(`${progress()} ERROR ${phName}: ${file.file_name}: ${err.message}`)
+          failed += files.length
+          log(`${progress()} ERROR processing patient ${patientId} after ${ATTEMPTS_PER_PATIENT} attempts: ${err.message}`)
         }
-        await page.waitForTimeout(300)
       }
-
-      await page.locator('button:has-text("✕"), [aria-label="Close"]').first().click().catch(() => {})
-    } catch (err) {
-      failed += files.length
-      log(`${progress()} ERROR processing ${phName}: ${err.message}`)
+      if (counts) {
+        succeeded += counts.ok
+        failed += counts.bad
+        skipped += counts.skip
+      }
     }
   }
+
+  await Promise.all(workerContexts.map((context) => worker(context)))
 
   await browser.close()
   log(`Done. Succeeded: ${succeeded}, Failed: ${failed}, Skipped: ${skipped}. See ${LOG_FILE} for details.`)

@@ -22,6 +22,8 @@ const recallTemplateLanguage = ref('es')
 const reminderTemplateName = ref('')
 const reminderTemplateLanguage = ref('es')
 const staffNotifyTemplateName = ref('')
+const metaAdsAccountId = ref('')
+const metaAdsAccessToken = ref('')
 const instagramUserId = ref('')
 const instagramAccessToken = ref('')
 const newLeadNotifyTemplateName = ref('')
@@ -55,7 +57,7 @@ async function load() {
   const { data } = await supabase
     .from('accounts')
     .select(
-      'whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_access_token, whatsapp_confirmation_template_name, whatsapp_confirmation_template_language, whatsapp_recall_template_name, whatsapp_recall_template_language, whatsapp_reminder_template_name, whatsapp_reminder_template_language, online_booking_notify_whatsapp_template_name, online_booking_notify_whatsapp_template_language, new_lead_notify_whatsapp_template_name, new_lead_notify_whatsapp_template_language, instagram_user_id, instagram_access_token',
+      'whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_access_token, whatsapp_confirmation_template_name, whatsapp_confirmation_template_language, whatsapp_recall_template_name, whatsapp_recall_template_language, whatsapp_reminder_template_name, whatsapp_reminder_template_language, online_booking_notify_whatsapp_template_name, online_booking_notify_whatsapp_template_language, new_lead_notify_whatsapp_template_name, new_lead_notify_whatsapp_template_language, instagram_user_id, instagram_access_token, meta_ads_account_id, meta_ads_access_token',
     )
     .eq('id', store.accountId!)
     .maybeSingle()
@@ -77,6 +79,8 @@ async function load() {
   reminderTemplateName.value = data?.whatsapp_reminder_template_name ?? ''
   reminderTemplateLanguage.value = data?.whatsapp_reminder_template_language ?? 'es'
   staffNotifyTemplateName.value = data?.online_booking_notify_whatsapp_template_name ?? ''
+  metaAdsAccountId.value = data?.meta_ads_account_id ?? ''
+  metaAdsAccessToken.value = data?.meta_ads_access_token ?? ''
   instagramUserId.value = data?.instagram_user_id ?? ''
   instagramAccessToken.value = data?.instagram_access_token ?? ''
   newLeadNotifyTemplateName.value = data?.new_lead_notify_whatsapp_template_name ?? ''
@@ -130,6 +134,8 @@ async function save() {
     whatsapp_reminder_template_name: reminderTemplateName.value.trim() || null,
     whatsapp_reminder_template_language: reminderTemplateLanguage.value.trim() || 'es',
     online_booking_notify_whatsapp_template_name: staffNotifyTemplateName.value.trim() || null,
+    meta_ads_account_id: metaAdsAccountId.value.trim() || null,
+    meta_ads_access_token: metaAdsAccessToken.value.trim() || null,
     instagram_user_id: instagramUserId.value.trim() || null,
     instagram_access_token: instagramAccessToken.value.trim() || null,
     new_lead_notify_whatsapp_template_name: newLeadNotifyTemplateName.value.trim() || null,
@@ -331,6 +337,36 @@ async function save() {
                 type="password"
                 placeholder="EAA…"
                 data-test="instagram-access-token"
+                class="h-8 w-[240px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+              />
+            </SettingsFieldRow>
+
+            <!-- Reading only. The token asked for is ads_read, so a token
+            that leaks cannot spend anybody's money. -->
+            <SettingsFieldRow
+              label="Meta ad account ID"
+              helper="Lets Growth → Dashboard read what you spent, instead of you typing it each month. With or without the act_ prefix. Euro accounts only for now."
+              align="top"
+            >
+              <input
+                v-model="metaAdsAccountId"
+                type="text"
+                placeholder="act_1234567890"
+                data-test="meta-ads-account-id"
+                class="h-8 w-[240px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+              />
+            </SettingsFieldRow>
+
+            <SettingsFieldRow
+              label="Meta Ads read token"
+              helper="A long-lived token with ads_read for that account. Nothing here writes to Meta Ads."
+              align="top"
+            >
+              <input
+                v-model="metaAdsAccessToken"
+                type="password"
+                placeholder="EAA…"
+                data-test="meta-ads-token"
                 class="h-8 w-[240px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
               />
             </SettingsFieldRow>

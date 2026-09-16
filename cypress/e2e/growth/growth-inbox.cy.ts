@@ -298,6 +298,30 @@ describe('Growth in the shared Inbox', () => {
     cy.get('[data-test="filter-draft-ready"]').should('not.exist')
   })
 
+  it('says why a reply failed instead of showing an empty toast', () => {
+    // err.statusMessage looks like the right property and is not: ofetch maps
+    // it to the response's statusText, and HTTP/2 has no reason phrases, so
+    // in production it is always ''. `?? fallback` does not catch an empty
+    // string, so a failed reply showed a toast with no words in it -- no
+    // message, no clue, nothing to report. Locally it reads as working,
+    // because the dev server is HTTP/1.1 and statusText is "Bad Request".
+    cy.visit('/inbox?growth=1')
+    seedConversation(account, 'Send Will Fail', 'paused').then((leadId) => {
+      cy.reload()
+      cy.intercept('POST', '/api/whatsapp/inbox-send', {
+        statusCode: 400,
+        body: { statusMessage: 'This lead has no phone number to reply to' },
+      }).as('send')
+      cy.contains('[data-test="lead-row"]', 'Send Will Fail').click()
+      cy.get('[data-test="lead-composer"]').find('textarea').type('Hola{enter}')
+      cy.wait('@send')
+
+      // The server's words, not a blank rectangle.
+      cy.contains('This lead has no phone number to reply to').should('be.visible')
+      expect(leadId).to.be.a('string')
+    })
+  })
+
   it('refuses a free-text reply more than 24 hours after they last wrote', () => {
     cy.visit('/inbox?growth=1')
     // Two days since the last inbound message, which is outside WhatsApp's

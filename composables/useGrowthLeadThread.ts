@@ -39,6 +39,8 @@ export interface LeadThread {
   messages: LeadThreadMessage[]
 }
 
+
+
 export function useGrowthLeadThread() {
   const thread = ref<LeadThread | null>(null)
   const loading = ref(false)
@@ -71,7 +73,7 @@ export function useGrowthLeadThread() {
       await load(leadId)
       return true
     } catch (e) {
-      showToast((e as { statusMessage?: string }).statusMessage ?? t('Could not send that reply.', 'No se ha podido enviar la respuesta.'), 'error')
+      showToast(serverMessage(e) ?? t('Could not send that reply.', 'No se ha podido enviar la respuesta.'), 'error')
       return false
     } finally {
       sending.value = false
@@ -99,7 +101,7 @@ export function useGrowthLeadThread() {
       await load(leadId)
       return true
     } catch (e) {
-      showToast((e as { statusMessage?: string }).statusMessage ?? t('Could not draft a reply.', 'No se ha podido redactar una respuesta.'), 'error')
+      showToast(serverMessage(e) ?? t('Could not draft a reply.', 'No se ha podido redactar una respuesta.'), 'error')
       return false
     } finally {
       drafting.value = false

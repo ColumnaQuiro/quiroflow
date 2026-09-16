@@ -46,7 +46,7 @@ export function useGrowthReceptionistTest() {
       }
       turns.value.push({ role: 'assistant', content: result.reply })
     } catch (e) {
-      showToast((e as { statusMessage?: string }).statusMessage ?? t('The model did not answer.', 'El modelo no ha respondido.'), 'error')
+      showToast(serverMessage(e) ?? t('The model did not answer.', 'El modelo no ha respondido.'), 'error')
       // The unanswered question is removed rather than left hanging, so a
       // retry does not send it twice.
       turns.value.pop()

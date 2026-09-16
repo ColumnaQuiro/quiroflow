@@ -11,7 +11,7 @@ describe('Sharing the patient app', () => {
   it('gives staff a copyable Google Play link', () => {
     cy.seedStaffAccount().then((account) => {
       cy.login(account.email, account.password)
-      cy.visit('/settings/patient-app')
+      cy.visit('/settings/app')
 
       cy.contains('Share the app').should('be.visible')
       cy.contains('code', playStoreUrl()).should('be.visible')
@@ -27,7 +27,7 @@ describe('Sharing the patient app', () => {
   it('shows the App Store link only once its numeric ID is set', () => {
     cy.seedStaffAccount().then((account) => {
       cy.login(account.email, account.password)
-      cy.visit('/settings/patient-app')
+      cy.visit('/settings/app')
       cy.contains('Share the app').should('be.visible')
 
       if (appStoreUrl()) {
@@ -47,9 +47,27 @@ describe('Sharing the patient app', () => {
     // outside the loading gate.
     cy.seedStaffAccount().then((account) => {
       cy.login(account.email, account.password)
-      cy.visit('/settings/patient-app')
+      cy.visit('/settings/app')
+      // Both pages merged into /settings/app, so Appointments now sits
+      // further down a scrolling column. The assertion here was never about
+      // the fold -- it is that these render while the account round trip is
+      // still in flight, which is why the section lives outside the loading
+      // gate. Scrolling to it keeps that meaning and drops the layout
+      // coupling that made this spec fail on a reorder.
       cy.contains('Share the app').should('be.visible')
-      cy.contains('Appointments').should('be.visible')
+      cy.contains('h2', 'Appointments').scrollIntoView().should('be.visible')
+    })
+  })
+
+  it('still answers the old /settings/patient-app URL', () => {
+    // That URL is in bookmarks and quite possibly in a message already sent
+    // to a patient, so the merge left a redirect rather than a 404.
+    cy.seedStaffAccount().then((account) => {
+      cy.login(account.email, account.password)
+      cy.visit('/settings/patient-app')
+
+      cy.location('pathname').should('eq', '/settings/app')
+      cy.contains('Share the app').should('be.visible')
     })
   })
 })

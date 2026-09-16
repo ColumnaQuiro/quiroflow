@@ -67,6 +67,11 @@ export default defineEventHandler(async (event) => {
 
   return {
     hasReviews: all.length > 0,
+    // Whether importing is even possible on this deployment. Sent so the
+    // screen can offer the button or say "coming soon" -- rather than
+    // offering a button that answers "not configured on this deployment",
+    // which reads as a bug to anybody being shown the product.
+    googleImportAvailable: Boolean(useRuntimeConfig().googlePlacesApiKey),
     rating: average === null ? null : Number(average.toFixed(1)),
     reviewCount: rated.length,
     distribution,

@@ -44,20 +44,20 @@ describe('Growth reputation', () => {
     })
   })
 
-  it('says it has no reviews rather than reporting a rating of zero', () => {
+  it('offers a roadmap, not a broken button, when importing is not possible', () => {
+    // Two different nothings. With no Places key on the deployment there is
+    // no way to import at all, so the screen says "coming soon" rather than
+    // showing a button that answers "not configured on this deployment" --
+    // which reads as a bug to anybody being shown the product, and this
+    // screen is one a clinic sees while deciding whether to buy it.
     cy.visit('/growth/reputation?growth=1')
-
-    cy.get('[data-test="no-reviews"]').should('contain', 'is not built yet')
+    cy.get('[data-test="reviews-coming-soon"]').should('be.visible')
+    cy.get('[data-test="reviews-coming-soon"]').should('contain', 'Coming soon')
+    // And no rating invented to fill the space.
     cy.get('[data-test="rating"]').should('not.exist')
-    cy.get('[data-test="review-card"]').should('not.exist')
-
-    // 0.0 out of 5 is the single most misleading thing this screen could
-    // say, so it is asserted against by name.
-    cy.contains('0.0').should('not.exist')
-
-    // The half we do own is still counted, and still explains itself.
-    cy.get('[data-test="request-funnel"]').should('be.visible')
-    cy.get('[data-test="funnel-caveat"]').should('contain', 'only known once a platform is connected')
+    // The half that does work is named, so the screen is not all promises.
+    cy.get('[data-test="reviews-coming-soon"]').should('contain', 'review request funnel below is already running')
+    cy.get('[data-test="sync-google"]').should('not.exist')
   })
 
   it('averages the rating, spreads it by stars and tracks where it is heading', () => {
@@ -85,13 +85,6 @@ describe('Growth reputation', () => {
     cy.get('[data-test="review-card"]').should('have.length', 4)
   })
 
-  it('says Google is connectable rather than that reviews cannot be had', () => {
-    // The screen used to say connecting Google "is not built yet", which
-    // stopped being true. Doctoralia and Facebook still are.
-    cy.visit('/growth/reputation?growth=1')
-    cy.get('[data-test="no-reviews"]').should('contain', 'Google is connected once you add your Place ID')
-    cy.get('[data-test="no-reviews"]').should('contain', 'Doctoralia and Facebook each need their own integration')
-  })
 
   it('says importing needs a key rather than blaming the clinic for it', () => {
     // No Places key on this deployment, so the route reports unavailable and

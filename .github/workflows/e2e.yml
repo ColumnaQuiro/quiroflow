@@ -152,15 +152,41 @@ jobs:
           node-version: 22
           cache: npm
 
-      - uses: supabase/setup-cli@v1
+      # The CLI is cached and fetched by hand rather than through
+      # supabase/setup-cli, which downloads it on every job of every run --
+      # seven times per push here, and it only takes one bad response to fail
+      # a shard before a single test runs. That has now happened twice for
+      # two different reasons: resolving "latest" hit GitHub's API rate limit
+      # (PR #17), and the release download itself returned 500 three times in
+      # a row (#280). The action retries twice and gives up; a 500 outlasts
+      # that.
+      #
+      # So: restore from cache, and on a miss fetch it with retries that
+      # actually cover an outage. Keyed by version, so bumping VERSION below
+      # is all it takes to pick up a new one -- and the tarball is 54MB
+      # fetched once per version rather than seven times per push.
+      - name: Restore the Supabase CLI
+        id: supabase-cli
+        uses: actions/cache@v4
         with:
-          # Pinned instead of "latest" -- resolving "latest" queries GitHub's
-          # API on every run, across every shard and every PR, and hitting
-          # that endpoint's rate limit fails the job before any test runs
-          # (PR #17's inbox-nav-patients shard: "Failed to resolve latest
-          # Supabase CLI release: rate limit exceeded"). Bump this by hand
-          # when there's a reason to (a CLI feature/fix this suite needs).
-          version: 2.116.0
+          path: ~/.supabase-cli
+          key: supabase-cli-${{ runner.os }}-${{ runner.arch }}-2.116.0
+
+      - name: Download the Supabase CLI
+        if: steps.supabase-cli.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.supabase-cli
+          # --retry-all-errors is what makes this survive the 5xx that beat
+          # the action: plain --retry ignores HTTP errors entirely.
+          curl -fsSL --retry 6 --retry-all-errors --retry-delay 5 \
+            https://github.com/supabase/cli/releases/download/v2.116.0/supabase_linux_amd64.tar.gz \
+            | tar -xz -C ~/.supabase-cli supabase
+          chmod +x ~/.supabase-cli/supabase
+
+      - name: Put the Supabase CLI on PATH
+        run: |
+          echo "$HOME/.supabase-cli" >> "$GITHUB_PATH"
+          "$HOME/.supabase-cli/supabase" --version
 
       - name: Start local Supabase (in the background)
         # Backgrounded so it overlaps `npm ci` instead of queueing behind it:

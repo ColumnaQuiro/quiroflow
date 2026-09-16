@@ -1190,6 +1190,40 @@ async function leadMessages(opts: { leadId: string }) {
   return data ?? []
 }
 
+// A stand-in for PracticeHub's /api/patients, so a spec can choose what it
+// answers. The real call is server-to-server from the Nuxt process, which
+// cy.intercept cannot see -- and the answer is the whole point of the check,
+// so "unreachable" and "not configured" were the only cases testable without
+// this.
+let practiceHubStub: import('node:http').Server | null = null
+
+async function startPracticeHubStub(opts: { totalEntries?: number; emails?: string[] }) {
+  await stopPracticeHubStub()
+  const { createServer } = await import('node:http')
+  const emails = opts.emails ?? []
+  const server = createServer((_req, res) => {
+    res.setHeader('content-type', 'application/json')
+    res.end(
+      JSON.stringify({
+        total_entries: opts.totalEntries ?? emails.length,
+        data: emails.map((email, i) => ({ id: i + 1, email })),
+      }),
+    )
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
+  practiceHubStub = server
+  const port = (server.address() as { port: number }).port
+  return { baseUrl: `http://127.0.0.1:${port}` }
+}
+
+async function stopPracticeHubStub() {
+  const server = practiceHubStub
+  practiceHubStub = null
+  if (!server) return { ok: true }
+  await new Promise<void>((resolve) => server.close(() => resolve()))
+  return { ok: true }
+}
+
 /** Gives an account PracticeHub credentials, to exercise the external check. */
 async function setPracticeHubConnection(opts: { accountId: string; baseUrl: string | null; apiKey?: string | null }) {
   assertOk(
@@ -1242,6 +1276,8 @@ export const dbTasks = {
   'db:latestAutomationActions': latestAutomationActions,
   'db:leadMessages': leadMessages,
   'db:setPracticeHubConnection': setPracticeHubConnection,
+  'db:startPracticeHubStub': startPracticeHubStub,
+  'db:stopPracticeHubStub': stopPracticeHubStub,
   'db:setLeadStage': setLeadStage,
   'db:sequenceRuns': sequenceRuns,
   'db:makeSequenceDue': makeSequenceDue,

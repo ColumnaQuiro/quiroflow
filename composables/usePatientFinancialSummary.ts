@@ -117,7 +117,7 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
         .from('package_purchase_shares')
         .select('package_purchases(id, package_name, sessions_total, sessions_used, price_cents, patients(first_name, last_name))')
         .eq('patient_id', currentId),
-      supabase.from('payments').select('amount_cents, method, invoice_id, package_purchase_id, external_reference, invoices(status)').eq('patient_id', currentId),
+      supabase.from('payments').select('amount_cents, method, invoice_id, package_purchase_id, external_reference, purpose, invoices(status)').eq('patient_id', currentId),
     ])
 
     // A 'credit' payment against a VOIDED invoice is not money and never was:
@@ -139,6 +139,19 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
 
     const paidCents = countablePayments.reduce((sum, p) => sum + p.amount_cents, 0)
     state.lifetimeCents.value = paidCents
+    // Money taken on account is the one kind of payment the balance must not
+    // count, because the same euros are already in the credit ledger below:
+    // adding credit writes a payment (the money arrived, and a factura says
+    // so) and an account_credits row (what the patient can still direct
+    // somewhere). Counting both put Adrian Oropeza 115 EUR ahead of himself.
+    // Spending that credit later is a separate payment, method 'credit', and
+    // that one does count -- it is matched by a negative credit row, so the
+    // two moves cancel and the balance stays put while the money changes
+    // hands. Lifetime above stays gross: it answers "how much has this person
+    // paid us", where on-account money belongs.
+    const paidForBalanceCents = countablePayments
+      .filter((p) => (p as { purpose: string | null }).purpose !== 'on_account')
+      .reduce((sum, p) => sum + p.amount_cents, 0)
     const liveInvoices = (invoices ?? []).filter((i) => i.status !== 'void')
     const invoicedCents = liveInvoices.reduce((sum, i) => sum + i.total_cents, 0)
     // The PracticeHub cutover wrote one negative entry per patient holding an
@@ -162,7 +175,7 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     // matches the sign convention already used for patients.balance_cents elsewhere,
     // but computed live from invoices/payments rather than trusting that column, which
     // is only ever written at import time and never kept in sync afterward.
-    state.balanceCents.value = paidCents - invoicedCents + state.creditLedgerCents.value + cutoverAdjustmentCents
+    state.balanceCents.value = paidForBalanceCents - invoicedCents + state.creditLedgerCents.value + cutoverAdjustmentCents
 
     state.activeMembership.value = memberships?.[0] ?? null
     // Packages are pure session-count tracking (name, sessions left) -- the
@@ -220,6 +233,7 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
             invoice_id: pay.invoice_id,
             package_purchase_id: pay.package_purchase_id,
             external_reference: pay.external_reference,
+            purpose: (pay as { purpose: string | null }).purpose,
           })),
         })
         return sum + Math.max(0, remainingCents - owedCents)

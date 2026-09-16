@@ -387,8 +387,12 @@ async function createPayment(opts: {
   // price sits on the purchase as owed_cents and payments come off it through
   // this column -- so a part-paid bono can only be seeded this way.
   packagePurchaseId?: string
+  // 'on_account' is the one that matters to the ledger: money added as credit
+  // writes a payment AND an account_credits row for the same euros, and only
+  // the purpose tells them apart afterwards.
+  purpose?: 'visit' | 'bono' | 'membership' | 'on_account'
 }) {
-  const { accountId, invoiceId, amountCents, method, packagePurchaseId } = opts
+  const { accountId, invoiceId, amountCents, method, packagePurchaseId, purpose } = opts
   let patientId = opts.patientId
   if (!patientId) {
     if (!invoiceId) throw new Error('createPayment needs patientId or invoiceId')
@@ -398,7 +402,7 @@ async function createPayment(opts: {
   const row = unwrap(
     await admin
       .from('payments')
-      .insert({ account_id: accountId, patient_id: patientId, invoice_id: invoiceId ?? null, package_purchase_id: packagePurchaseId ?? null, amount_cents: amountCents, method })
+      .insert({ account_id: accountId, patient_id: patientId, invoice_id: invoiceId ?? null, package_purchase_id: packagePurchaseId ?? null, amount_cents: amountCents, method, ...(purpose ? { purpose } : {}) })
       .select('id')
       .single(),
   )

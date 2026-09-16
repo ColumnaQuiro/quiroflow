@@ -59,7 +59,7 @@ interface PaymentScheduleRow {
   status: string
 }
 interface StripeEventRow { id: string; payment_schedule_id: string; period_start: string; amount_cents: number; status: string }
-interface LedgerPaymentRow { id: string; invoice_id: string | null; amount_cents: number; method: string; paid_at: string; package_purchase_id: string | null; external_reference: string | null; created_by: string | null; stripe_payment_intent_id: string | null; team_members: { full_name: string | null } | null }
+interface LedgerPaymentRow { id: string; invoice_id: string | null; amount_cents: number; method: string; paid_at: string; package_purchase_id: string | null; external_reference: string | null; purpose: string | null; created_by: string | null; stripe_payment_intent_id: string | null; team_members: { full_name: string | null } | null }
 interface LedgerCreditRow { id: string; amount_cents: number; reason: string | null; method: string | null; invoice_id: string | null; created_at: string }
 
 const supabase = useSupabaseClient()
@@ -566,7 +566,7 @@ async function loadLedger() {
     // a soft-deleted member keeps their row and their name).
     supabase
       .from('payments')
-      .select('id, invoice_id, amount_cents, method, paid_at, package_purchase_id, external_reference, created_by, stripe_payment_intent_id, team_members(full_name)')
+      .select('id, invoice_id, amount_cents, method, paid_at, package_purchase_id, external_reference, purpose, created_by, stripe_payment_intent_id, team_members(full_name)')
       .eq('patient_id', props.patientId),
     supabase
       .from('account_credits')
@@ -1192,7 +1192,13 @@ const linkingPayment = ref(false)
 // and not offerable to link, with no way to attach them from the UI at all.
 function candidatePaymentsFor(purchase: PackagePurchaseRow) {
   const countedViaInvoice = packageInvoiceIsValid(purchase)
-  return ledgerPayments.value.filter((p) => !p.package_purchase_id && !(countedViaInvoice && p.invoice_id === purchase.invoice_id))
+  // Money taken on account is deliberately absent: it already sits in the
+  // credit ledger, and linking it here would have it pay for the bono while
+  // still showing as credit the patient can spend on something else. Put it
+  // on the bono with Collect, method Credit -- that draws the credit down.
+  return ledgerPayments.value.filter(
+    (p) => !p.package_purchase_id && p.purpose !== 'on_account' && !(countedViaInvoice && p.invoice_id === purchase.invoice_id),
+  )
 }
 
 function linkedPaymentsFor(purchase: PackagePurchaseRow) {

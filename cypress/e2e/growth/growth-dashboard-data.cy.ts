@@ -190,4 +190,13 @@ describe('Growth dashboard', () => {
     cy.contains('Needs attention').scrollIntoView().should('be.visible')
     cy.contains('waiting for approval').should('not.exist')
   })
+
+  it('refuses to import ad spend until Meta Ads is connected', () => {
+    // Names the setting rather than failing. Somebody who has just clicked
+    // import can fix this themselves in a minute.
+    cy.request({ method: 'POST', url: '/api/growth/sync-ad-spend', failOnStatusCode: false }).then((res) => {
+      expect(res.status).to.eq(400)
+      expect(JSON.stringify(res.body)).to.contain('Meta Ads is not connected')
+    })
+  })
 })

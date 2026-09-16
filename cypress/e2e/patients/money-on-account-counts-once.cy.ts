@@ -49,7 +49,13 @@ describe('Money taken on account', () => {
           // Before: the whole EUR 528 owed on the bono.
           cy.contains('€528.00').should('be.visible')
           cy.contains('button', 'Link payment').click()
-          cy.get('select').last().select(1)
+          // Picked by the option's own text rather than by position: the
+          // Billing tab has several selects (sell a package, sell a
+          // membership, take payment) and which one comes last depends on
+          // what this patient happens to have.
+          cy.contains('option', '€115.00').then(($option) => {
+            cy.wrap($option).parent('select').select(String($option.val()))
+          })
           cy.contains('button', /^Link$/).click()
 
           // After: the bono is EUR 115 better off and the credit has been

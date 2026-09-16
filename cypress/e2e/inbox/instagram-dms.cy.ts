@@ -189,6 +189,20 @@ describe('Instagram DMs in the Inbox', () => {
     })
   })
 
+  it('gives the enquiry to the receptionist when it is switched on', () => {
+    // The clearest case there is for a drafted reply waiting: somebody has
+    // just asked a question, in a channel where answering fast is the whole
+    // advantage.
+    cy.task('db:setReceptionistEnabled', { accountId, enabled: true })
+    deliver([message('igsid-for-alba', '¿Tenéis hueco esta semana?')])
+    cy.task('db:leadsByExternalId', { accountId, externalSource: 'instagram' }).then((leads) => {
+      const leadId = (leads as { id: string }[])[0]!.id
+      cy.task('db:leadAiState', { id: leadId }).should((row) => {
+        expect((row as { ai_state: string }).ai_state).to.eq('handling')
+      })
+    })
+  })
+
   it('refuses a DM it cannot verify, so Meta sends it again', () => {
     const body = JSON.stringify(payload([message('igsid-forged', 'No debería entrar')]))
     cy.task<{ signature: string }>('db:signWhatsappBody', { body, appSecret: 'f'.repeat(APP_SECRET_LENGTH) }).then((signed) => {

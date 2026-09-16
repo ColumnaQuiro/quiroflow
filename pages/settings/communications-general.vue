@@ -336,10 +336,19 @@ async function save() {
                 class="mt-1 h-8 w-full rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
               />
               <p class="mt-1 text-[11.5px] text-ink-faint">
-                {{ t(
-                  'Lets Growth → Reputation read your rating and recent reviews. Find it with Google\'s Place ID Finder. Google only returns the five most recent reviews, and replying still has to be done on Google.',
-                  'Permite que Crecimiento → Reputación lea tu valoración y las reseñas recientes. Lo encuentras con el buscador de Place ID de Google. Google solo devuelve las cinco reseñas más recientes, y responder sigue haciéndose en Google.',
-                ) }}
+                {{ t('Lets Growth → Reputation read your rating and recent reviews.', 'Permite que Crecimiento → Reputación lea tu valoración y las reseñas recientes.') }}
+                <!-- Named the finder but didn't link it, which left "go and
+                     find your Place ID" as an instruction with no next step:
+                     searching for it lands on API docs rather than on the
+                     tool, and the ID itself is not visible anywhere in a
+                     Google Business Profile. -->
+                <a
+                  href="https://developers.google.com/maps/documentation/javascript/examples/places-placeid-finder"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-test="place-id-finder-link"
+                  class="font-medium text-brand-text underline underline-offset-2 hover:text-brand-hover"
+                >{{ t('Look yours up in Google\'s Place ID Finder', 'Búscalo en el buscador de Place ID de Google') }}</a>{{ t(' — type the clinic\'s name and it gives you the ChIJ… value. Google only returns the five most recent reviews, and replying still has to be done on Google.', ' — escribe el nombre de la clínica y te da el valor ChIJ…. Google solo devuelve las cinco reseñas más recientes, y responder sigue haciéndose en Google.') }}
               </p>
             </div>
 

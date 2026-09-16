@@ -93,13 +93,23 @@ jobs:
       # specs, so it is not worth defending if a later regrouping wants it
       # back.
       #
-      # Expected Cypress time per shard: subscription+public 74s, auth+
-      # calendar+inbox ~65s, settings 62s, navigation 59s, patients+booking
-      # 57s. Rebalance again once one shard consistently lags -- read the real
-      # per-spec numbers out of the "All specs passed" table in its log rather
-      # than guessing, which is how settings came to be mis-sized before: the
-      # estimate summed a stale table and missed a spec whose name the table
-      # had truncated.
+      # Cypress time per shard, measured against the built server (see the
+      # build step below) rather than estimated: growth 237s, patients 87s,
+      # settings 50s, calendar 47s, navigation 17s, the rest under 30s each.
+      # Those numbers replace a set that had gone badly stale -- it claimed
+      # every shard ran in about a minute while growth was taking 8m25.
+      #
+      # Growth is now the whole critical path and cannot be split here:
+      # shards are folder globs on purpose, because that is what lets
+      # check-e2e-shards.mjs prove every folder runs somewhere. Listing
+      # individual spec files would balance the clock and reopen the hole it
+      # closed -- a new growth spec would belong to no shard and never run.
+      # Splitting growth means splitting the folder, or teaching that script
+      # about file-level shards first.
+      #
+      # Rebalance from the real per-spec numbers in the "All specs passed"
+      # table, never by guessing: that is how settings came to be mis-sized
+      # before, from a stale table with a truncated spec name.
       matrix:
         shard:
           - name: settings
@@ -208,6 +218,29 @@ jobs:
       # fatal.
       - run: npx cypress install
 
+      # Built here, in the window the backgrounded `supabase start` has
+      # already claimed. Cypress used to run against `nuxt dev`, which
+      # compiles each route the first time a spec visits it -- so every shard
+      # paid Vite's compile cost again, spec after spec. Measured on this
+      # suite, serving a build instead:
+      #
+      #   navigation  1m06 -> 0m17     (walks every page; the best case)
+      #   settings    1m27 -> 0m50
+      #
+      # The build costs ~60-90s, which is roughly what the step below spends
+      # waiting for Postgres to come up anyway. Putting it here means the
+      # shard pays for it out of dead time rather than adding to the run.
+      #
+      # node-server, not the netlify preset production ships: that one emits
+      # a function bundle with no server to start. It is still far closer to
+      # production than the dev server was -- same bundling, same SSR path,
+      # no on-demand compilation. The typecheck job still builds with the
+      # real preset, so the production output keeps its own gate.
+      - name: Build the app the specs will run against
+        run: npm run build
+        env:
+          NITRO_PRESET: node-server
+
       - name: Wait for Supabase and export its env vars
         run: |
           pid="$(cat /tmp/supabase-start.pid)"
@@ -233,9 +266,13 @@ jobs:
             /tmp/supabase-status.env >> "$GITHUB_ENV"
 
       - name: Run Cypress (${{ matrix.shard.name }})
-        run: npx start-server-and-test dev http://localhost:3000 "cypress run --spec '${{ matrix.shard.specs }}'"
+        # The built server, not `nuxt dev` -- see the build step above. Env
+        # reaches it at runtime (NUXT_PUBLIC_*), which is why building before
+        # Supabase is up is fine.
+        run: npx start-server-and-test "node .output/server/index.mjs" http://localhost:3000 "cypress run --spec '${{ matrix.shard.specs }}'"
         env:
           CYPRESS_baseUrl: http://localhost:3000
+          PORT: 3000
           # The automation crons refuse an unsigned call, so a spec that drives
           # one needs the same secret the server checks. A fixed value: it
           # guards a local, ephemeral stack, and a real secret in the workflow

@@ -1,4 +1,4 @@
-import { toE164 } from '~/utils/phone'
+import { toE164, toE164Loose } from '~/utils/phone'
 import { sanitizeStorageFilename } from '~/utils/storageFilename'
 import { isWithin24hWindow, sendWhatsAppText, sendWhatsAppMedia, uploadMediaToMeta, type MediaKind } from '~/server/utils/whatsappSend'
 
@@ -31,7 +31,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: account } = await supabase
     .from('accounts')
-    .select('id, whatsapp_phone_number_id, whatsapp_access_token')
+    .select('id, whatsapp_phone_number_id, whatsapp_access_token, default_phone_country')
     .eq('id', teamMember.account_id)
     .maybeSingle()
   if (!account?.whatsapp_phone_number_id || !account?.whatsapp_access_token) {
@@ -57,7 +57,20 @@ export default defineEventHandler(async (event) => {
       .maybeSingle()
     if (!lead) throw createError({ statusCode: 404, statusMessage: 'Lead not found' })
     if (!lead.phone) throw createError({ statusCode: 400, statusMessage: 'This lead has no phone number to reply to' })
-    const e164 = toE164(lead.phone, 'ES')
+    // Loose, not toE164 -- and this is the second time the difference has
+    // cost a working feature. A lead's phone is stored the way it arrived:
+    // Meta's lead ads and WhatsApp's own webhook both strip the "+", so it
+    // sits as "34617948363". toE164 sees no "+" and no "00", treats it as a
+    // local number, and prepends Spain's dial code again -- "3434617948363",
+    // which is not anybody, so every reply to every lead was refused by
+    // Meta. toE164Loose recognises a number that already starts with the
+    // country's dial code and leaves it alone.
+    //
+    // The account's own default country rather than a hardcoded 'ES',
+    // because the fallback branch is the one that decides whose country a
+    // bare local number belongs to, and getting that wrong sends the message
+    // to a stranger.
+    const e164 = toE164Loose(lead.phone, account.default_phone_country ?? 'ES')
     if (!e164) throw createError({ statusCode: 400, statusMessage: "This lead's phone number could not be formatted for WhatsApp" })
     to = e164
   }

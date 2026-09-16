@@ -57,7 +57,7 @@ export function useGrowthLeadConvert() {
         return null
       }
       showToast(
-        (e as { statusMessage?: string }).statusMessage
+        serverMessage(e)
           ?? t('Could not convert that lead.', 'No se ha podido convertir el contacto.'),
         'error',
       )

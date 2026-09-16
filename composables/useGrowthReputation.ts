@@ -81,7 +81,7 @@ export function useGrowthReputation() {
       }
       await load()
     } catch (e) {
-      showToast((e as { statusMessage?: string }).statusMessage ?? t('Could not draft a reply.', 'No se ha podido redactar la respuesta.'), 'error')
+      showToast(serverMessage(e) ?? t('Could not draft a reply.', 'No se ha podido redactar la respuesta.'), 'error')
     } finally {
       busyId.value = null
     }
@@ -97,7 +97,7 @@ export function useGrowthReputation() {
       showToast(t('Reply approved and saved.', 'Respuesta aprobada y guardada.'))
       await load()
     } catch (e) {
-      showToast((e as { statusMessage?: string }).statusMessage ?? t('Could not save that reply.', 'No se ha podido guardar la respuesta.'), 'error')
+      showToast(serverMessage(e) ?? t('Could not save that reply.', 'No se ha podido guardar la respuesta.'), 'error')
     } finally {
       busyId.value = null
     }

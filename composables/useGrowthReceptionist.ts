@@ -80,7 +80,7 @@ export function useGrowthReceptionist() {
       showToast(t('Saved.', 'Guardado.'))
       return true
     } catch (e) {
-      showToast((e as { statusMessage?: string }).statusMessage ?? t('Could not save.', 'No se ha podido guardar.'), 'error')
+      showToast(serverMessage(e) ?? t('Could not save.', 'No se ha podido guardar.'), 'error')
       return false
     } finally {
       saving.value = false

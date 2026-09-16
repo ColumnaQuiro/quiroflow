@@ -45,8 +45,31 @@ async function copyCommand() {
       <div class="flex gap-8 p-6">
         <SettingsNav />
         <div class="min-w-0 max-w-[660px] flex-1">
-          <p class="text-[13px] leading-relaxed text-ink-muted2">
-            {{ t('PracticeHub doesn\'t offer a bulk file-download API — only a metadata export and a one-file-at-a-time "View" link in its own UI. This page gets you the rest of the way: a helper script that drives a real browser through your PracticeHub login to fetch every file and attach it to the matching patient.', 'PracticeHub no ofrece una API de descarga masiva de archivos — solo una exportación de metadatos y un enlace "Ver" de uno en uno en su propia interfaz. Esta página te lleva el resto del camino: un script auxiliar que controla un navegador real a través de tu inicio de sesión en PracticeHub para obtener cada archivo y adjuntarlo al paciente correspondiente.') }}
+          <!--
+            This page was built on the belief that PracticeHub had no file API
+            and the only way to a file's bytes was clicking "View" in a
+            logged-in browser. It has one: /api/files returns every attachment
+            with its patient and a signed download URL. Settings -> Import ->
+            Files uses it, needs no export, no install and no second login, and
+            identifies a patient from the file record instead of by searching a
+            surname -- which is where the old route's failures came from.
+            The script stays below for a clinic whose API key cannot reach
+            /files; the progress figure above it is worth keeping either way.
+          -->
+          <div class="rounded-card border border-brand/30 bg-brand-tint p-4">
+            <p class="text-[13px] font-[560] text-ink-900">
+              {{ t('There is a quicker way now.', 'Ahora hay una forma más rápida.') }}
+            </p>
+            <p class="mt-1 text-[12.5px] leading-relaxed text-ink-700">
+              {{ t('PracticeHub does have a file API, so files can be brought over from inside QuiroFlow — no export, no script, nothing to install.', 'PracticeHub sí tiene una API de archivos, así que se pueden traer desde dentro de QuiroFlow: sin exportación, sin script y sin instalar nada.') }}
+            </p>
+            <NuxtLink to="/settings/import" class="mt-2 inline-block text-[12.5px] font-medium text-brand-text underline">
+              {{ t('Go to Import → PracticeHub → Files', 'Ir a Importar → PracticeHub → Archivos') }}
+            </NuxtLink>
+          </div>
+
+          <p class="mt-6 text-[13px] leading-relaxed text-ink-muted2">
+            {{ t('The script below is the older route, kept for a clinic whose API key cannot reach the files endpoint. It drives a real browser through your PracticeHub login to fetch each file and attach it to the matching patient.', 'El script de abajo es la vía antigua, que se mantiene por si la clave de API de una clínica no puede acceder al endpoint de archivos. Controla un navegador real a través de tu inicio de sesión en PracticeHub para obtener cada archivo y adjuntarlo al paciente correspondiente.') }}
           </p>
 
           <div class="mt-6 rounded-card border border-line bg-surface p-4 shadow-card">

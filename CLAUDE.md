@@ -178,6 +178,38 @@ recorded at its repo version, so the two now line up. If the check reports
 something you are sure is applied, suspect that drift has restarted, and
 confirm against the objects before recording anything by hand.
 
+**Scheduling a cron is a manual step too, and it is easy to forget.** New
+`*-cron.post.ts` endpoints are called by pg_cron jobs that are created by
+hand against the production database -- `cron.schedule` needs the real URL
+and `NUXT_CRON_SECRET`, which is why `0081_enable_pg_cron.sql` says the
+schedule "is applied separately there". So an endpoint can be written,
+reviewed, tested, merged and deployed while nothing ever calls it, and
+nothing looks wrong: an endpoint nobody calls is indistinguishable from one
+with nothing to do. `lead-sequence-cron` shipped on 14 Sep and had still
+never run on the 16th -- every lead drip would have started, sent its first
+message, parked at the first delay and stayed there. It went unnoticed for
+two days only because a separate bug cancelled every run before it reached a
+delay; one failure hid another.
+
+`npm run check:crons-scheduled` now runs in the deploy beside
+`check:migrations-applied` and fails it when an endpoint has no active job.
+To add one, clone an existing job so the URL and secret header stay
+identical and only the path differs:
+
+```sql
+select cron.schedule(
+  'lead-sequence-15min',
+  '*/15 * * * *',
+  (select replace(command, 'same-day-cron', 'lead-sequence-cron')
+   from cron.job where jobname = 'appointment-same-day-15min')
+);
+```
+
+That form also keeps the secret out of anything that reads the statement.
+Job names are descriptive rather than derived (`same-day-cron` is scheduled
+as `appointment-same-day-15min`), so the check matches on the endpoint path
+inside the command, not on the name.
+
 `--build` is deliberately not passed to the CLI. It would hand the build
 to Netlify's own build system, and that system doesn't install
 dependencies when driven this way from CI. Nitro's `netlify` preset

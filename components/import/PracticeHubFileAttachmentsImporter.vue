@@ -340,13 +340,17 @@ const introNotes = computed(() => [
       <div class="rounded-lg border border-line bg-surface-subtle p-4 text-sm text-ink-muted2">
         {{
           t(
-            'These are placeholders (name/size/type known, content not yet attached) — PracticeHub has no bulk file-download API, so pulling in the actual content is a separate step.',
-            'Son marcadores de posición (se conoce el nombre/tamaño/tipo, el contenido aún no está adjunto); PracticeHub no tiene una API de descarga masiva de archivos, así que traer el contenido real es un paso aparte.',
+            'These are placeholders — name, size and type are known, the content is not attached yet.',
+            'Son marcadores de posición: se conoce el nombre, el tamaño y el tipo, pero el contenido aún no está adjunto.',
           )
         }}
-        {{ t('Head to', 'Ve a') }}
-        <NuxtLink to="/settings/migrate-attachments" class="font-medium text-brand-text underline">{{ t('Settings → Migrate Attachments', 'Ajustes → Migrar archivos adjuntos') }}</NuxtLink>
-        {{ t('for the download and instructions.', 'para la descarga y las instrucciones.') }}
+        {{
+          t(
+            'The Files importer fills them in straight from the PracticeHub API — it matches on the same File ID, so these rows are completed rather than duplicated.',
+            'El importador de Archivos los completa directamente desde la API de PracticeHub: coincide por el mismo File ID, así que estas filas se completan en lugar de duplicarse.',
+          )
+        }}
+        <NuxtLink to="/settings/import" class="font-medium text-brand-text underline">{{ t('Import → PracticeHub → Files', 'Importar → PracticeHub → Archivos') }}</NuxtLink>
       </div>
       <div v-if="importErrors.length > 0" class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
         <p class="font-medium">{{ t('Some rows failed:', 'Algunas filas fallaron:') }}</p>

@@ -1,8 +1,10 @@
 <script setup lang="ts">
-// Minimal rich-text editor for campaign emails: bold/italic/underline via
-// execCommand (only ever produces a small, known set of tags -- b/i/u/img/
-// div/br -- so the HTML it outputs is safe to render unescaped server-side,
-// unlike a plain textarea which would let staff paste arbitrary markup) plus
+// Minimal rich-text editor for campaign emails: bold/italic/underline/link
+// via execCommand (only ever produces a small, known set of tags -- a/b/i/u/
+// img/div/br -- so the HTML it outputs is safe to render unescaped
+// server-side, unlike a plain textarea which would let staff paste arbitrary
+// markup; the paste handler below is what keeps that true, since a paste
+// from Word or a web page would otherwise bring its own markup in) plus
 // drag-and-drop/file-picker image upload and one-click patient-variable
 // placeholders. Images upload to the public "campaign-images" bucket (not
 // patient-files) -- email clients load the <img> src with no auth, so it
@@ -35,13 +37,75 @@ watch(
 )
 
 function exec(command: string) {
+  editorRef.value?.focus()
   document.execCommand(command)
   onInput()
 }
 function insertLink() {
   const url = prompt(t('Link URL', 'URL del enlace'))
   if (!url) return
-  document.execCommand('createLink', false, url)
+  editorRef.value?.focus()
+  document.execCommand('createLink', false, withScheme(url))
+  onInput()
+}
+
+// A URL typed or pasted without a scheme ("columnaquiro.com") becomes a
+// relative link in the sent email and resolves against the mail client's own
+// host, which goes nowhere.
+function withScheme(url: string) {
+  const trimmed = url.trim()
+  if (/^(https?:|mailto:|tel:)/i.test(trimmed)) return trimmed
+  if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed)) return `mailto:${trimmed}`
+  return `https://${trimmed}`
+}
+
+function looksLikeUrl(text: string) {
+  const trimmed = text.trim()
+  if (!trimmed || /\s/.test(trimmed)) return false
+  return /^(https?:\/\/|mailto:|www\.)/i.test(trimmed) || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed) || /^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(trimmed)
+}
+
+function hasSelection() {
+  const selection = window.getSelection()
+  return Boolean(selection && !selection.isCollapsed && selection.toString().trim())
+}
+
+// Ctrl/Cmd+B/I/U already work in a contenteditable in every browser we
+// support, but only because the browser decides to -- handling them here
+// makes them ours, and gets the model updated on the same tick rather than
+// whenever the browser's own input event lands. Ctrl/Cmd+K is the one people
+// actually miss: there is no native equivalent.
+function onKeydown(e: KeyboardEvent) {
+  if (!(e.metaKey || e.ctrlKey) || e.altKey) return
+  const key = e.key.toLowerCase()
+  if (key === 'b' || key === 'i' || key === 'u') {
+    e.preventDefault()
+    exec({ b: 'bold', i: 'italic', u: 'underline' }[key] as string)
+  } else if (key === 'k') {
+    e.preventDefault()
+    insertLink()
+  }
+}
+
+// Paste does two things beyond the default.
+//
+// A URL pasted over selected text becomes a link on that text -- the thing
+// every other editor does, and what staff expect when they highlight "book
+// here" and paste the booking URL over it.
+//
+// Everything else is inserted as PLAIN TEXT. That is not tidiness: the body
+// this editor produces is injected into the outgoing email unescaped, on the
+// stated assumption that it only ever contains the small tag set these
+// buttons produce. A paste from Word or a web page would break that
+// assumption silently, and carries font and colour markup that renders badly
+// in a mail client regardless.
+function onPaste(e: ClipboardEvent) {
+  const text = e.clipboardData?.getData('text/plain') ?? ''
+  if (!text) return
+  e.preventDefault()
+  editorRef.value?.focus()
+  if (looksLikeUrl(text) && hasSelection()) document.execCommand('createLink', false, withScheme(text))
+  else document.execCommand('insertText', false, text)
   onInput()
 }
 
@@ -101,7 +165,7 @@ function onInput() {
       <button type="button" class="flex h-6 w-6 items-center justify-center rounded-ctlSm text-[13px] italic text-ink-600 hover:bg-line-faint" @click="exec('italic')">I</button>
       <button type="button" class="flex h-6 w-6 items-center justify-center rounded-ctlSm text-[13px] underline text-ink-600 hover:bg-line-faint" @click="exec('underline')">U</button>
       <span class="mx-1 h-4 w-px bg-line-control"></span>
-      <button type="button" class="rounded-ctlSm px-2 py-1 text-[12px] font-medium text-ink-600 hover:bg-line-faint" @click="insertLink">{{ t('Link', 'Enlace') }}</button>
+      <button type="button" class="rounded-ctlSm px-2 py-1 text-[12px] font-medium text-ink-600 hover:bg-line-faint" :title="t('Link (Ctrl/Cmd + K)', 'Enlace (Ctrl/Cmd + K)')" @click="insertLink">{{ t('Link', 'Enlace') }}</button>
       <button type="button" class="rounded-ctlSm px-2 py-1 text-[12px] font-medium text-ink-600 hover:bg-line-faint" :disabled="uploading" @click="pickImage">
         {{ uploading ? t('Uploading…', 'Subiendo…') : t('Image', 'Imagen') }}
       </button>
@@ -114,15 +178,18 @@ function onInput() {
     </div>
     <div
       ref="editorRef"
+      data-test="email-body"
       contenteditable="true"
-      class="min-h-[120px] px-3 py-2 text-[13.5px] text-ink-900 focus:outline-none [&_img]:max-w-full"
+      class="min-h-[120px] px-3 py-2 text-[13.5px] text-ink-900 focus:outline-none [&_img]:max-w-full [&_a]:text-brand-text [&_a]:underline"
       :class="dragOver ? 'bg-brand-tint' : ''"
       @input="onInput"
+      @keydown="onKeydown"
+      @paste="onPaste"
       @dragover.prevent="dragOver = true"
       @dragleave="dragOver = false"
       @drop.prevent="onDrop"
     ></div>
     <p v-if="uploadError" class="border-t border-line-control px-3 py-1.5 text-[11.5px] text-danger-text">{{ uploadError }}</p>
-    <p class="border-t border-line-control px-3 py-1.5 text-[11px] text-ink-faint2">{{ t('Drag an image into the editor, or use the Image button. Max', 'Arrastra una imagen al editor, o usa el botón Imagen. Máx.') }} {{ (MAX_IMAGE_BYTES / (1024 * 1024)).toFixed(0) }} MB.</p>
+    <p class="border-t border-line-control px-3 py-1.5 text-[11px] text-ink-faint2">{{ t('Ctrl/Cmd + B, I, U for bold, italic and underline; Ctrl/Cmd + K, or paste a URL over selected text, to link it. Drag an image in, or use the Image button. Max', 'Ctrl/Cmd + B, I, U para negrita, cursiva y subrayado; Ctrl/Cmd + K, o pega una URL sobre el texto seleccionado, para enlazarlo. Arrastra una imagen, o usa el botón Imagen. Máx.') }} {{ (MAX_IMAGE_BYTES / (1024 * 1024)).toFixed(0) }} MB.</p>
   </div>
 </template>

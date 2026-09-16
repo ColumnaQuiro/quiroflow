@@ -100,6 +100,26 @@ describe('Campaign builder: waiting', () => {
     cy.get('[data-test="header-location"]').should('not.exist')
   })
 
+  it('says why a test send failed instead of just that it did', () => {
+    // "Send test to me" answered every failure with "Failed to send test.",
+    // because the catch in AutomationModal replaced whatever the server said
+    // with a fixed string -- and underneath it runEmailAction swallowed the
+    // Resend error too, and returned silently when no API key was configured
+    // at all. A staff member with a campaign that would never send had no way
+    // to find out why, and neither did anyone they reported it to.
+    //
+    // No Resend key is configured against the test environment, which is one
+    // of the reasons the old code turned into silence. It now names it.
+    cy.get('[data-test="action-type"]').select('email')
+    cy.get('[data-test="email-subject"]').scrollIntoView().type('Prueba')
+    cy.get('[data-test="email-body"]').scrollIntoView().type('Hola')
+
+    cy.contains('button', 'Send test to me').click()
+
+    cy.contains('Failed to send test.').should('not.exist')
+    cy.contains('not configured').should('be.visible')
+  })
+
   it('offers a test run that records instead of sending', () => {
     cy.get('[data-test="dry-run-toggle"]').scrollIntoView().should('have.attr', 'aria-checked', 'false').click()
     cy.get('[data-test="dry-run-toggle"]').should('have.attr', 'aria-checked', 'true')

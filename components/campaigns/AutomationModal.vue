@@ -501,8 +501,11 @@ async function sendTestToMe() {
     if (result.email) parts.push(`${t('email to', 'correo a')} ${result.email}`)
     testMessage.value = parts.length > 0 ? `${t('Sent', 'Enviado')}: ${parts.join(', ')}` : t('Nothing to send.', 'Nada que enviar.')
     testMessageIsError.value = false
-  } catch {
-    testMessage.value = t('Failed to send test.', 'No se ha podido enviar la prueba.')
+  } catch (e: any) {
+    // The server knows exactly why -- no email on file, an unverified sending
+    // domain, a consent gate. Replacing that with a flat "failed" left nobody
+    // able to fix it, here or in a bug report.
+    testMessage.value = e?.data?.statusMessage ?? e?.statusMessage ?? t('Failed to send test.', 'No se ha podido enviar la prueba.')
     testMessageIsError.value = true
   } finally {
     testing.value = false
@@ -866,6 +869,7 @@ async function sendTestToMe() {
                 <div v-else-if="a.action_type === 'email'" class="mt-3 space-y-2.5">
                   <input
                     v-model="a.subject"
+                    data-test="email-subject"
                     type="text"
                     :placeholder="t('Subject — {{first_name}} works here too', 'Asunto — {{first_name}} también funciona aquí')"
                     class="h-8 w-full rounded-ctl border border-line-control px-2.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"

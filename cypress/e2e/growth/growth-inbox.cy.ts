@@ -180,12 +180,44 @@ describe('Growth in the shared Inbox', () => {
 
   it('does not offer drafting once the 24h window has closed', () => {
     // Approving would only ever fail there, so the button that leads to it
-    // should not be on screen.
+    // should not be on screen. The receptionist is switched ON here on
+    // purpose: with it off the button is hidden anyway, and the test would
+    // pass without proving anything about the window.
     cy.visit('/inbox?growth=1')
+    cy.task('db:setReceptionistEnabled', { accountId: account.accountId, enabled: true })
     seedConversation(account, 'Too Late To Draft', 'handling', { lastInboundMinutesAgo: 60 * 48 })
     cy.reload()
     cy.contains('[data-test="lead-row"]', 'Too Late To Draft').click()
     cy.get('[data-test="draft-lead-reply"]').should('not.exist')
+  })
+
+  it('offers drafting only while the receptionist is switched on', () => {
+    // The switch used to record an intention and gate nothing. A control that
+    // controls nothing is worse than no control: it reads as one somebody has
+    // already used.
+    cy.visit('/inbox?growth=1')
+    seedConversation(account, 'Switch Check', 'handling').then((leadId) => {
+      cy.task('db:setReceptionistEnabled', { accountId: account.accountId, enabled: false })
+      cy.reload()
+      cy.contains('[data-test="lead-row"]', 'Switch Check').click()
+      cy.get('[data-test="draft-lead-reply"]').should('not.exist')
+
+      // And refused server-side too -- the button being hidden is not the
+      // protection, it is the courtesy.
+      cy.request({
+        method: 'POST',
+        url: `/api/growth/leads/${leadId}/draft-reply`,
+        failOnStatusCode: false,
+      }).then((res) => {
+        expect(res.status).to.eq(400)
+        expect(JSON.stringify(res.body)).to.contain('switched off')
+      })
+
+      cy.task('db:setReceptionistEnabled', { accountId: account.accountId, enabled: true })
+      cy.reload()
+      cy.contains('[data-test="lead-row"]', 'Switch Check').click()
+      cy.get('[data-test="draft-lead-reply"]').should('be.visible')
+    })
   })
 
   it('does not show a message the dry run only recorded as one that was sent', () => {

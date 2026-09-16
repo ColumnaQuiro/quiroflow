@@ -70,11 +70,6 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'There is nothing new from this lead to reply to' })
   }
 
-  const apiKey = useRuntimeConfig().anthropicApiKey
-  // Not configured is a normal state, not a failure -- same handling as the
-  // test chat and the review drafter.
-  if (!apiKey) return { available: false as const, draft: '' }
-
   // Read the row directly rather than through loadReceptionistConfig, which
   // creates a default row as a side effect. Drafting a reply is no reason to
   // write to a settings table -- the same note reputation's drafter makes.
@@ -84,6 +79,28 @@ export default defineEventHandler(async (event) => {
     .eq('account_id', teamMember.account_id)
     .maybeSingle()
   const config = toConfig(configRow)
+
+  // The switch on the receptionist screen decides whether it works on real
+  // conversations at all. Until now it decided nothing -- it recorded the
+  // intent and the page said so, which was honest while there was nothing to
+  // gate. There is now, and a switch that does not switch anything is worse
+  // than no switch: it reads as a control somebody has already used.
+  //
+  // Checked BEFORE the model key, deliberately. "You turned this off" is
+  // something the clinic chose and can undo; "this deployment has no model
+  // key" is neither. Answering the second first tells an owner their
+  // receptionist is unavailable when in fact they switched it off themselves.
+  if (!config.enabled) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'The receptionist is switched off. Turn it on under Growth > Receptionist.',
+    })
+  }
+
+  const apiKey = useRuntimeConfig().anthropicApiKey
+  // Not configured is a normal state, not a failure -- same handling as the
+  // test chat and the review drafter.
+  if (!apiKey) return { available: false as const, draft: '' }
 
   const client = new Anthropic({ apiKey })
   try {

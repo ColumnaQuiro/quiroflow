@@ -868,22 +868,6 @@ const hasCard = computed(() => !!stripeCustomer.value?.default_payment_method_id
 const unpaidInvoices = computed(() => invoices.value.filter((i) => i.status === 'unpaid'))
 const outstandingCents = computed(() => (balanceCents.value < 0 ? -balanceCents.value : 0))
 
-// What the patient can still draw on, in one number, for the front desk: loose
-// account credit PLUS what their unused bono sessions are worth. The question
-// it answers is "do I need to ask this person for money?", and answering it
-// meant reading the credit box and then counting sessions across every bono
-// card underneath it.
-//
-// This is a summary, not a second balance. Nothing spends from it -- a bono
-// session still comes off its own counter and credit still comes off the
-// ledger -- so the value cannot be spent twice by showing it here. Bonos
-// shared FROM someone else are left out: those sessions are the owner's money,
-// and they already carry a "Shared by" pill saying so.
-const bonoValueCents = computed(() =>
-  purchases.value.filter((p) => !p.shared).reduce((sum, p) => sum + packageRemainingValueCents(p), 0),
-)
-const availableCents = computed(() => creditLedgerCents.value + bonoValueCents.value)
-
 /**
  * Bono value the patient's own money is actually tied up in.
  *
@@ -899,6 +883,24 @@ const committedBonoCents = computed(() =>
     .reduce((sum, p) => sum + Math.max(0, packageRemainingValueCents(p) - packageOwedCents(p)), 0),
 )
 
+// What the patient can still draw on, in one number, for the front desk: loose
+// account credit PLUS what their unused bono sessions are worth once whatever
+// is still owed on those bonos comes off. The question it answers is "do I
+// need to ask this person for money?", and answering it meant reading the
+// credit box and then counting sessions across every bono card underneath it.
+//
+// It has to be committedBonoCents rather than the gross session value, or the
+// answer is wrong in the direction that costs money: a patient 378 EUR behind
+// on a 528 EUR bono read as "484 available" here while the Debtors report
+// listed the 378. Same database, same day, two screens disagreeing.
+//
+// This is a summary, not a second balance. Nothing spends from it -- a bono
+// session still comes off its own counter and credit still comes off the
+// ledger -- so the value cannot be spent twice by showing it here. Bonos
+// shared FROM someone else are left out: those sessions are the owner's money,
+// and they already carry a "Shared by" pill saying so.
+const availableCents = computed(() => creditLedgerCents.value + committedBonoCents.value)
+
 /**
  * Money the patient can actually put towards something: their credit ledger in
  * full, plus anything paid beyond what has been invoiced and what their bonos
@@ -908,8 +910,8 @@ const committedBonoCents = computed(() =>
  * patients in the whole database have one, so gating on it hid the credit
  * option from essentially everyone -- including patients plainly showing a
  * credit balance on this very tab, since "Available" above reads
- * creditLedgerCents + bonoValueCents. What reception saw and what the gates
- * tested were never the same number.
+ * creditLedgerCents plus committedBonoCents. What reception saw and what the
+ * gates tested were never the same number.
  *
  * NOT availableCents either, and this is the part that matters. A bono raises
  * no invoice -- its price sits on the purchase as owed_cents and each visit

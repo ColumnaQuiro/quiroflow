@@ -49,6 +49,48 @@ describe('The balance pill', () => {
     })
   })
 
+  it('leaves out the part of the bono that has not been paid for', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Pau', lastName: 'Partpaid' }).then((patient: any) => {
+        // A bono sold here, part-paid: EUR 528 for twelve sessions with EUR
+        // 150 down, one session taken. Eleven sessions left is EUR 484 of
+        // value -- but EUR 378 of it has not been paid for, and the Debtors
+        // report says exactly that. Counting it gross told the front desk to
+        // let him carry on while he owed for most of the bono.
+        cy.task('db:createPackagePurchase', {
+          accountId: account.accountId,
+          patientId: patient.id,
+          packageName: 'Bono 12 sesiones',
+          sessionsTotal: 12,
+          sessionsUsed: 1,
+          priceCents: 52800,
+          owedCents: 52800,
+        }).then((purchase: any) => {
+          cy.task('db:createPayment', {
+            accountId: account.accountId,
+            patientId: patient.id,
+            packagePurchaseId: purchase.id,
+            amountCents: 15000,
+            method: 'card',
+          })
+        })
+        // His visits either side of the bono: EUR 114 charged, EUR 70 paid.
+        cy.task('db:createInvoice', { accountId: account.accountId, patientId: patient.id, totalCents: 11400, status: 'unpaid' }).then((inv: any) => {
+          cy.task('db:createPayment', { accountId: account.accountId, invoiceId: inv.id, amountCents: 7000, method: 'cash' })
+        })
+
+        cy.login(account.email, account.password)
+        cy.visit(`/patients/${patient.id}`)
+
+        // 484 of sessions less 378 still owed on them. It matches his balance
+        // -- EUR 220 paid against EUR 114 invoiced -- because what he can draw
+        // on IS what he has paid beyond what he has been charged.
+        cy.contains('€106.00 available').should('be.visible')
+        cy.contains('€484.00 available').should('not.exist')
+      })
+    })
+  })
+
   it('reads as due when the patient owes, and shows nothing when square', () => {
     cy.seedStaffAccount().then((account) => {
       cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Otto', lastName: 'Owing' }).then((owing: any) => {

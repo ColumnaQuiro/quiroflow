@@ -383,8 +383,12 @@ async function createPayment(opts: {
   // spec can seed money on account -- a payment settling no particular charge.
   patientId?: string
   invoiceId?: string
+  // A deposit put against a bono. A bono sold here raises no invoice -- its
+  // price sits on the purchase as owed_cents and payments come off it through
+  // this column -- so a part-paid bono can only be seeded this way.
+  packagePurchaseId?: string
 }) {
-  const { accountId, invoiceId, amountCents, method } = opts
+  const { accountId, invoiceId, amountCents, method, packagePurchaseId } = opts
   let patientId = opts.patientId
   if (!patientId) {
     if (!invoiceId) throw new Error('createPayment needs patientId or invoiceId')
@@ -394,7 +398,7 @@ async function createPayment(opts: {
   const row = unwrap(
     await admin
       .from('payments')
-      .insert({ account_id: accountId, patient_id: patientId, invoice_id: invoiceId ?? null, amount_cents: amountCents, method })
+      .insert({ account_id: accountId, patient_id: patientId, invoice_id: invoiceId ?? null, package_purchase_id: packagePurchaseId ?? null, amount_cents: amountCents, method })
       .select('id')
       .single(),
   )

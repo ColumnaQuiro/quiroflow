@@ -25,6 +25,8 @@ export interface LeadConversation {
   unread: boolean
   lastMessageAt: string
   preview: string
+  /** The previewed message was only recorded by a dry run, never sent. */
+  previewWasNotSent?: boolean
   source: string | null
   stage: string
   value: string | null

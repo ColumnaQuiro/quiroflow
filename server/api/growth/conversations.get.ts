@@ -67,6 +67,10 @@ export default defineEventHandler(async (event) => {
         unread: last.direction === 'inbound',
         lastMessageAt: last.created_at,
         preview: last.body_preview ?? '',
+        // A dry-run rule records what it WOULD have sent as an outbound row,
+        // so the newest row on a lead in test mode is routinely a message
+        // nobody received. Unmarked, this list says the clinic said it.
+        previewWasNotSent: last.status === 'would_send',
         source: lead.source,
         stage: lead.stage,
         value: formatEuros(lead.estimated_value_cents),

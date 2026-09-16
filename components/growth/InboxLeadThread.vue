@@ -49,6 +49,28 @@ function time(at: string) {
   return new Date(at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 
+/**
+ * A dry-run rule records what it WOULD have sent instead of sending it.
+ *
+ * That row is an outbound whatsapp_message like any other, so without this it
+ * renders as a message the clinic sent -- same bubble, same side, only the
+ * word 'would_send' to tell them apart, and that word was being printed raw.
+ * A message nobody received, shown as one that was, is the worst thing this
+ * screen could say: it is the screen someone reads to decide whether the
+ * automation is working.
+ */
+const isDryRun = (status: string) => status === 'would_send'
+
+function statusLabel(status: string) {
+  if (status === 'would_send') return t('would have been sent', 'se habría enviado')
+  if (status === 'received') return t('received', 'recibido')
+  if (status === 'delivered') return t('delivered', 'entregado')
+  if (status === 'read') return t('read', 'leído')
+  if (status === 'sent') return t('sent', 'enviado')
+  if (status === 'failed') return t('failed', 'fallido')
+  return status
+}
+
 function submit() {
   if (!draft.value.trim() || props.sending) return
   emit('send', draft.value)
@@ -95,16 +117,22 @@ function submit() {
         :class="message.from === 'lead' ? 'items-start' : 'items-end'"
       >
         <p
-          class="max-w-[78%] whitespace-pre-wrap rounded-card px-3 py-2 text-[12.5px] leading-[1.45] text-ink-700"
-          :class="message.from === 'lead'
-            ? 'rounded-bl-[4px] border border-line bg-surface'
-            : 'rounded-br-[4px] border border-brand-tintBorder bg-brand-tint'"
+          class="max-w-[78%] whitespace-pre-wrap rounded-card px-3 py-2 text-[12.5px] leading-[1.45]"
+          :class="isDryRun(message.status)
+            ? 'rounded-br-[4px] border border-dashed border-line-control bg-surface-subtle text-ink-muted'
+            : message.from === 'lead'
+              ? 'rounded-bl-[4px] border border-line bg-surface text-ink-700'
+              : 'rounded-br-[4px] border border-brand-tintBorder bg-brand-tint text-ink-700'"
+          :data-test="isDryRun(message.status) ? 'dry-run-message' : undefined"
         >{{ message.text }}</p>
         <!-- Status comes off the row Meta acknowledged, so "delivered" here
         means delivered. Nothing claims which human or model wrote it,
         because the row does not record that. -->
-        <span class="text-[10px] text-ink-faint">
-          {{ time(message.at) }} · {{ message.status }}<template v-if="message.templateName"> · {{ message.templateName }}</template>
+        <span class="text-[10px]" :class="isDryRun(message.status) ? 'text-warning-text' : 'text-ink-faint'">
+          <template v-if="isDryRun(message.status)">
+            {{ t('Test run · not sent', 'Prueba · no enviado') }} ·
+          </template>
+          {{ time(message.at) }} · {{ statusLabel(message.status) }}<template v-if="message.templateName"> · {{ message.templateName }}</template>
         </span>
       </div>
     </div>

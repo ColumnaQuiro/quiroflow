@@ -258,6 +258,10 @@ export type Database = {
           online_booking_gtm_id: string | null
           online_booking_hide_logo: boolean
           online_booking_max_days_ahead: number
+          new_lead_notify_email: string | null
+          new_lead_notify_whatsapp: string | null
+          new_lead_notify_whatsapp_template_language: string | null
+          new_lead_notify_whatsapp_template_name: string | null
           online_booking_notify_email: string | null
           online_booking_notify_whatsapp: string | null
           online_booking_notify_whatsapp_template_language: string
@@ -327,6 +331,10 @@ export type Database = {
           online_booking_gtm_id?: string | null
           online_booking_hide_logo?: boolean
           online_booking_max_days_ahead?: number
+          new_lead_notify_email?: string | null
+          new_lead_notify_whatsapp?: string | null
+          new_lead_notify_whatsapp_template_language?: string | null
+          new_lead_notify_whatsapp_template_name?: string | null
           online_booking_notify_email?: string | null
           online_booking_notify_whatsapp?: string | null
           online_booking_notify_whatsapp_template_language?: string
@@ -395,6 +403,10 @@ export type Database = {
           online_booking_gtm_id?: string | null
           online_booking_hide_logo?: boolean
           online_booking_max_days_ahead?: number
+          new_lead_notify_email?: string | null
+          new_lead_notify_whatsapp?: string | null
+          new_lead_notify_whatsapp_template_language?: string | null
+          new_lead_notify_whatsapp_template_name?: string | null
           online_booking_notify_email?: string | null
           online_booking_notify_whatsapp?: string | null
           online_booking_notify_whatsapp_template_language?: string
@@ -741,6 +753,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      addons: {
+        Row: {
+          annual_price_cents: number
+          created_at: string
+          id: string
+          monthly_price_cents: number
+          name: string
+          stripe_annual_price_id: string | null
+          stripe_monthly_price_id: string | null
+        }
+        Insert: {
+          annual_price_cents: number
+          created_at?: string
+          id: string
+          monthly_price_cents: number
+          name: string
+          stripe_annual_price_id?: string | null
+          stripe_monthly_price_id?: string | null
+        }
+        Update: {
+          annual_price_cents?: number
+          created_at?: string
+          id?: string
+          monthly_price_cents?: number
+          name?: string
+          stripe_annual_price_id?: string | null
+          stripe_monthly_price_id?: string | null
+        }
+        Relationships: []
       }
       appointment_types: {
         Row: {
@@ -1261,6 +1303,66 @@ export type Database = {
             columns: ["room_id"]
             isOneToOne: false
             referencedRelation: "calendar_resources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      booking_attribution: {
+        Row: {
+          account_id: string
+          appointment_id: string
+          click_id: string | null
+          click_id_source: string | null
+          created_at: string
+          landing_path: string | null
+          referrer: string | null
+          utm_campaign: string | null
+          utm_content: string | null
+          utm_medium: string | null
+          utm_source: string | null
+          utm_term: string | null
+        }
+        Insert: {
+          account_id: string
+          appointment_id: string
+          click_id?: string | null
+          click_id_source?: string | null
+          created_at?: string
+          landing_path?: string | null
+          referrer?: string | null
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
+        }
+        Update: {
+          account_id?: string
+          appointment_id?: string
+          click_id?: string | null
+          click_id_source?: string | null
+          created_at?: string
+          landing_path?: string | null
+          referrer?: string | null
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "booking_attribution_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_attribution_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: true
+            referencedRelation: "appointments"
             referencedColumns: ["id"]
           },
         ]
@@ -1837,13 +1939,14 @@ export type Database = {
           account_id: string
           amount_cents: number
           created_at: string
+          created_by: string | null
           description: string
           id: string
           issued_at: string
           kind: string
           number: string
           patient_id: string
-          payment_id: string
+          payment_id: string | null
           recipient_address: string | null
           recipient_name: string | null
           recipient_nif: string | null
@@ -1852,13 +1955,14 @@ export type Database = {
           account_id: string
           amount_cents: number
           created_at?: string
+          created_by?: string | null
           description: string
           id?: string
           issued_at?: string
           kind?: string
           number: string
           patient_id: string
-          payment_id: string
+          payment_id?: string | null
           recipient_address?: string | null
           recipient_name?: string | null
           recipient_nif?: string | null
@@ -1867,13 +1971,14 @@ export type Database = {
           account_id?: string
           amount_cents?: number
           created_at?: string
+          created_by?: string | null
           description?: string
           id?: string
           issued_at?: string
           kind?: string
           number?: string
           patient_id?: string
-          payment_id?: string
+          payment_id?: string | null
           recipient_address?: string | null
           recipient_name?: string | null
           recipient_nif?: string | null
@@ -1884,6 +1989,13 @@ export type Database = {
             columns: ["account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "facturas_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
             referencedColumns: ["id"]
           },
           {
@@ -2231,6 +2343,9 @@ export type Database = {
       leads: {
         Row: {
           account_id: string
+          ai_draft_body: string | null
+          ai_draft_created_at: string | null
+          ai_drafted_through_at: string | null
           ai_handling: boolean
           ai_state: string
           ai_taken_over_at: string | null
@@ -2260,6 +2375,9 @@ export type Database = {
         }
         Insert: {
           account_id: string
+          ai_draft_body?: string | null
+          ai_draft_created_at?: string | null
+          ai_drafted_through_at?: string | null
           ai_handling?: boolean
           ai_state?: string
           ai_taken_over_at?: string | null
@@ -2289,6 +2407,9 @@ export type Database = {
         }
         Update: {
           account_id?: string
+          ai_draft_body?: string | null
+          ai_draft_created_at?: string | null
+          ai_drafted_through_at?: string | null
           ai_handling?: boolean
           ai_state?: string
           ai_taken_over_at?: string | null
@@ -3687,6 +3808,7 @@ export type Database = {
         Row: {
           account_id: string
           amount_cents: number
+          created_by: string | null
           external_reference: string | null
           id: string
           invoice_id: string | null
@@ -3700,6 +3822,7 @@ export type Database = {
         Insert: {
           account_id: string
           amount_cents: number
+          created_by?: string | null
           external_reference?: string | null
           id?: string
           invoice_id?: string | null
@@ -3713,6 +3836,7 @@ export type Database = {
         Update: {
           account_id?: string
           amount_cents?: number
+          created_by?: string | null
           external_reference?: string | null
           id?: string
           invoice_id?: string | null
@@ -3729,6 +3853,13 @@ export type Database = {
             columns: ["account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payments_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
             referencedColumns: ["id"]
           },
           {
@@ -4280,6 +4411,7 @@ export type Database = {
           comped: boolean
           created_at: string
           extra_professionals: number
+          growth_addon: boolean
           id: string
           plan_id: string
           status: string
@@ -4294,6 +4426,7 @@ export type Database = {
           comped?: boolean
           created_at?: string
           extra_professionals?: number
+          growth_addon?: boolean
           id?: string
           plan_id: string
           status?: string
@@ -4308,6 +4441,7 @@ export type Database = {
           comped?: boolean
           created_at?: string
           extra_professionals?: number
+          growth_addon?: boolean
           id?: string
           plan_id?: string
           status?: string

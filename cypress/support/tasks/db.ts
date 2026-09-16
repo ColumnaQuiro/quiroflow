@@ -133,6 +133,16 @@ async function createTeamMemberWithRole(opts: {
   return { email, password, userId, teamMemberId: teamMember.id as string }
 }
 
+/** The attribution row a public booking recorded, if any -- keyed by account since the spec does not know the appointment id. */
+async function bookingAttribution(opts: { accountId: string }) {
+  const { data } = await admin
+    .from('booking_attribution')
+    .select('appointment_id, utm_source, utm_medium, utm_campaign, utm_content, utm_term, click_id, click_id_source, referrer, landing_path')
+    .eq('account_id', opts.accountId)
+    .order('created_at', { ascending: false })
+  return { rows: data ?? [] }
+}
+
 /** A role's permissions exactly as seed_account_roles left them -- for asserting the seeded defaults. */
 async function rolePermissions(opts: { accountId: string; roleName: string }) {
   const { accountId, roleName } = opts
@@ -516,7 +526,7 @@ async function createAccountCredit(opts: { accountId: string; patientId: string;
 async function facturasFor(opts: { patientId: string }) {
   const { data, error } = await admin
     .from('facturas')
-    .select('number, kind, description, amount_cents, recipient_nif, payment_id')
+    .select('number, kind, description, amount_cents, recipient_nif, payment_id, created_by')
     .eq('patient_id', opts.patientId)
     .order('issued_at')
   if (error) throw error
@@ -572,6 +582,18 @@ async function createPackagePurchase(opts: {
       .single(),
   )
   return row as { id: string; package_name: string; sessions_total: number; sessions_used: number; price_cents: number }
+}
+
+/** Gives a second patient the run of someone else's bono -- a family sharing one. */
+async function sharePackageWith(opts: { accountId: string; packagePurchaseId: string; patientId: string }) {
+  const row = unwrap(
+    await admin
+      .from('package_purchase_shares')
+      .insert({ account_id: opts.accountId, package_purchase_id: opts.packagePurchaseId, patient_id: opts.patientId })
+      .select('id')
+      .single(),
+  )
+  return row as { id: string }
 }
 
 // Reads back what "Log session" wrote, so the spec can assert the money side
@@ -999,6 +1021,24 @@ async function leadAiState(opts: { id: string }) {
   return data
 }
 
+/** Adds or removes the Growth add-on, which every Growth route now checks. */
+async function setGrowthAddon(opts: { accountId: string; enabled: boolean }) {
+  assertOk(await admin.from('subscriptions').update({ growth_addon: opts.enabled }).eq('account_id', opts.accountId))
+  return { ok: true }
+}
+
+/** Sets a lead's ai_state directly, to stand in for a person taking over. */
+async function setLeadAiState(opts: { id: string; aiState: string }) {
+  assertOk(await admin.from('leads').update({ ai_state: opts.aiState }).eq('id', opts.id))
+  return { ok: true }
+}
+
+/** Points an account at a WhatsApp number, which is how the webhook finds it. */
+async function setWhatsappPhoneNumberId(opts: { accountId: string; phoneNumberId: string }) {
+  assertOk(await admin.from('accounts').update({ whatsapp_phone_number_id: opts.phoneNumberId }).eq('id', opts.accountId))
+  return { ok: true }
+}
+
 /** Records ad spend for a channel in the current month. */
 async function setChannelSpend(opts: { accountId: string; channel: string; amountCents: number; month?: string }) {
   const month = opts.month ?? new Date().toISOString().slice(0, 8) + '01'
@@ -1118,6 +1158,16 @@ async function createAutomationRule(opts: {
   return { id: ruleId }
 }
 
+/** Review requests for an account, for asserting what was and was not counted. */
+async function reviewRequestsFor(opts: { accountId: string }) {
+  const { data } = await admin
+    .from('review_requests')
+    .select('token, patient_id, appointment_id, opened_at, review_id')
+    .eq('account_id', opts.accountId)
+    .order('sent_at')
+  return data ?? []
+}
+
 /** The most recently created rule's actions, for builder round-trip tests. */
 async function latestAutomationActions() {
   const { data: rule } = await admin.from('automation_rules').select('id').order('created_at', { ascending: false }).limit(1).maybeSingle()
@@ -1138,6 +1188,87 @@ async function leadMessages(opts: { leadId: string }) {
     .eq('lead_id', opts.leadId)
     .order('created_at')
   return data ?? []
+}
+
+// A stand-in for PracticeHub's /api/patients, so a spec can choose what it
+// answers. The real call is server-to-server from the Nuxt process, which
+// cy.intercept cannot see -- and the answer is the whole point of the check,
+// so "unreachable" and "not configured" were the only cases testable without
+// this.
+let practiceHubStub: import('node:http').Server | null = null
+
+async function startPracticeHubStub(opts: { totalEntries?: number; emails?: string[] }) {
+  await stopPracticeHubStub()
+  const { createServer } = await import('node:http')
+  const emails = opts.emails ?? []
+  const server = createServer((_req, res) => {
+    res.setHeader('content-type', 'application/json')
+    res.end(
+      JSON.stringify({
+        total_entries: opts.totalEntries ?? emails.length,
+        data: emails.map((email, i) => ({ id: i + 1, email })),
+      }),
+    )
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
+  practiceHubStub = server
+  const port = (server.address() as { port: number }).port
+  return { baseUrl: `http://127.0.0.1:${port}` }
+}
+
+async function stopPracticeHubStub() {
+  const server = practiceHubStub
+  practiceHubStub = null
+  if (!server) return { ok: true }
+  await new Promise<void>((resolve) => server.close(() => resolve()))
+  return { ok: true }
+}
+
+/** How far the receptionist has already drafted, for the no-redraft guard. */
+async function setLeadDraftedThrough(opts: { id: string; at: string | null }) {
+  assertOk(await admin.from('leads').update({ ai_drafted_through_at: opts.at }).eq('id', opts.id))
+  return { ok: true }
+}
+
+/** Turns the receptionist on or off, the way Growth > Receptionist does. */
+async function setReceptionistEnabled(opts: { accountId: string; enabled: boolean }) {
+  assertOk(
+    await admin
+      .from('receptionist_config')
+      .upsert({ account_id: opts.accountId, enabled: opts.enabled }, { onConflict: 'account_id' }),
+  )
+  return { ok: true }
+}
+
+/** Puts a receptionist draft on a lead, the way the drafting route would. */
+async function setLeadDraft(opts: { id: string; body: string | null }) {
+  assertOk(
+    await admin
+      .from('leads')
+      .update({ ai_draft_body: opts.body, ai_draft_created_at: opts.body ? new Date().toISOString() : null })
+      .eq('id', opts.id),
+  )
+  return { ok: true }
+}
+
+/** Reads back what survived an approve or a discard. */
+async function leadDraft(opts: { id: string }) {
+  const { data } = await admin.from('leads').select('ai_draft_body, ai_draft_created_at').eq('id', opts.id).maybeSingle()
+  return data
+}
+
+/** Turns on the new-lead staff notification, to exercise its wiring. */
+async function setNewLeadNotify(opts: { accountId: string; email?: string | null; whatsapp?: string | null }) {
+  assertOk(
+    await admin
+      .from('accounts')
+      .update({
+        new_lead_notify_email: opts.email ?? null,
+        new_lead_notify_whatsapp: opts.whatsapp ?? null,
+      })
+      .eq('id', opts.accountId),
+  )
+  return { ok: true }
 }
 
 /** Gives an account PracticeHub credentials, to exercise the external check. */
@@ -1183,11 +1314,22 @@ export const dbTasks = {
   'db:createLead': createLead,
   'db:createLeadMessage': createLeadMessage,
   'db:leadAiState': leadAiState,
+  'db:setGrowthAddon': setGrowthAddon,
+  'db:setLeadAiState': setLeadAiState,
+  'db:setWhatsappPhoneNumberId': setWhatsappPhoneNumberId,
   'db:setChannelSpend': setChannelSpend,
   'db:createAutomationRule': createAutomationRule,
+  'db:reviewRequestsFor': reviewRequestsFor,
   'db:latestAutomationActions': latestAutomationActions,
   'db:leadMessages': leadMessages,
+  'db:setLeadDraftedThrough': setLeadDraftedThrough,
+  'db:setReceptionistEnabled': setReceptionistEnabled,
+  'db:setLeadDraft': setLeadDraft,
+  'db:leadDraft': leadDraft,
+  'db:setNewLeadNotify': setNewLeadNotify,
   'db:setPracticeHubConnection': setPracticeHubConnection,
+  'db:startPracticeHubStub': startPracticeHubStub,
+  'db:stopPracticeHubStub': stopPracticeHubStub,
   'db:setLeadStage': setLeadStage,
   'db:sequenceRuns': sequenceRuns,
   'db:makeSequenceDue': makeSequenceDue,
@@ -1228,6 +1370,7 @@ export const dbTasks = {
   'db:createImportedInvoice': createImportedInvoice,
   'db:createImportedPayment': createImportedPayment,
   'db:createPackagePurchase': createPackagePurchase,
+  'db:sharePackageWith': sharePackageWith,
   'db:packageSessionEffects': packageSessionEffects,
   'db:insertDuplicateSession': insertDuplicateSession,
   'db:createWhatsappMessage': createWhatsappMessage,
@@ -1242,4 +1385,5 @@ export const dbTasks = {
   'db:setAccountSecret': setAccountSecret,
   'db:readAsStaff': readAsStaff,
   'db:rolePermissions': rolePermissions,
+  'db:bookingAttribution': bookingAttribution,
 }

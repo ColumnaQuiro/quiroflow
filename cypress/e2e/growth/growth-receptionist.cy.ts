@@ -35,7 +35,14 @@ describe('Growth AI receptionist', () => {
     // patients because someone opened the settings screen would be the worst
     // failure this feature could have.
     cy.get('[data-test="receptionist-status"]').should('contain', 'Off')
-    cy.contains('Automatic answering of real enquiries is not built yet').should('be.visible')
+
+    // And says what being on would mean, which is drafting for approval --
+    // not sending. The switch used to gate nothing and the copy used to say
+    // the feature did not exist; both changed once it started drafting
+    // replies to real enquiries, and the page has to keep up or it is telling
+    // an owner something untrue about their own clinic.
+    cy.contains('drafts replies for you to approve').should('be.visible')
+    cy.contains('never sends on its own').should('be.visible')
   })
 
   it('saves the persona and tone, and they survive a reload', () => {
@@ -142,5 +149,75 @@ describe('Growth AI receptionist', () => {
 
     cy.contains('The AI receptionist is part of the Growth tier.').should('be.visible')
     cy.get('[data-test="test-chat"]').should('not.exist')
+  })
+
+  describe('what the receptionist knows and asks', () => {
+    // These three lists are what the system prompt is built from, and all
+    // three were rendered read-only -- so the knowledge base stayed
+    // permanently empty while the card itself explained that an empty one
+    // makes the receptionist deflect instead of answering.
+
+    it('takes a knowledge card and keeps it', () => {
+      cy.visit('/growth/receptionist?growth=1')
+      cy.get('[data-test="knowledge-empty"]').should('be.visible')
+
+      cy.get('[data-test="card-title"]').scrollIntoView().type('Prices')
+      cy.get('[data-test="card-lines"]').type('First visit 50€\nFollow-up 40€')
+      cy.get('[data-test="add-card"]').click()
+
+      cy.get('[data-test="knowledge-card"]').should('have.length', 1)
+      cy.get('[data-test="knowledge-card"]').should('contain', 'Prices').and('contain', 'First visit 50€')
+      cy.get('[data-test="knowledge-empty"]').should('not.exist')
+
+      // Survives a reload, which is the only proof it reached the database
+      // rather than a ref.
+      cy.reload()
+      cy.get('[data-test="knowledge-card"]').should('contain', 'First visit 50€')
+    })
+
+    it('drops a blank line rather than storing it', () => {
+      cy.visit('/growth/receptionist?growth=1')
+      cy.get('[data-test="card-title"]').scrollIntoView().type('Hours')
+      cy.get('[data-test="card-lines"]').type('Mon-Fri 9-19\n\n   \nSat closed')
+      cy.get('[data-test="add-card"]').click()
+
+      cy.get('[data-test="knowledge-card"]').within(() => {
+        cy.contains('Mon-Fri 9-19').should('exist')
+        cy.contains('Sat closed').should('exist')
+      })
+    })
+
+    it('removes a card it was given', () => {
+      cy.visit('/growth/receptionist?growth=1')
+      cy.get('[data-test="card-title"]').scrollIntoView().type('Parking')
+      cy.get('[data-test="add-card"]').click()
+      cy.get('[data-test="knowledge-card"]').should('have.length', 1)
+
+      cy.get('[data-test^="remove-card-"]').click()
+      cy.get('[data-test="knowledge-empty"]').should('be.visible')
+    })
+
+    it('takes qualification questions in the order they will be asked', () => {
+      cy.visit('/growth/receptionist?growth=1')
+      cy.get('[data-test="questions-empty"]').should('exist')
+
+      cy.get('[data-test="question-text"]').scrollIntoView().type('What brings you in?{enter}')
+      cy.get('[data-test="question-text"]').type('How long have you had it?{enter}')
+
+      cy.get('[data-test="qualification-question"]').should('have.length', 2)
+      cy.get('[data-test="qualification-question"]').first().should('contain', 'What brings you in?')
+      cy.get('[data-test="qualification-question"]').last().should('contain', 'How long')
+    })
+
+    it('takes an escalation rule, and needs both halves of it', () => {
+      cy.visit('/growth/receptionist?growth=1')
+      cy.get('[data-test="rule-when"]').scrollIntoView().type('They mention chest pain')
+      // A rule with no action is not a rule.
+      cy.get('[data-test="add-rule"]').should('be.disabled')
+
+      cy.get('[data-test="rule-then"]').type('Hand to a chiropractor now')
+      cy.get('[data-test="add-rule"]').click()
+      cy.get('[data-test="escalation-rule"]').should('contain', 'chest pain').and('contain', 'chiropractor')
+    })
   })
 })

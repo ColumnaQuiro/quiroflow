@@ -143,6 +143,73 @@ guessable from the code:
   empty string and the deploy fails with
   `Unauthorized: could not retrieve project`.
 
+**A release does not apply migrations, and never has.** The workflow builds
+and uploads; nothing runs `supabase db push`. So a migration can merge, pass
+CI, ride a release into production and leave its columns missing while the
+deploy still reports success. That shipped twice on 15 Sep — the second time
+v1.9.0 went live with a Billing tab reading `payments.created_by` against a
+table that had no such column, and every patient's ledger failed with
+`42703: column "created_by" does not exist` until someone noticed.
+
+`npm run check:migrations-applied` now runs as the first step of the deploy
+and fails it when the database is behind the code. It is a check, not a
+push: a failed deploy leaves production as it was, an applied migration does
+not. **Applying is still a human step** — `supabase db push`, then re-run the
+deploy.
+
+The check covers **timestamped migrations only**. The hand-numbered ones
+(0001-0174) are recorded under generated versions with the number folded into
+the name -- `0165_clinic_code_lookup` is version `20260911135143` -- and 29 are
+not recorded at all, so comparing versions calls every one of them missing.
+That is not a hole, because `npm run check:migrations` now **rejects any new
+hand-numbered file**: everything added from here on is timestamped and
+therefore checked. The two scripts hold each other up; weaken that rule and
+migrations start escaping the applied-check silently.
+
+Do not try to answer "is this migration applied?" by comparing the newest
+version in `schema_migrations` against the repo. A migration applied out of
+order sits BELOW that high-water mark and is invisible to the comparison —
+which is exactly how `20260915100557` was missed after being looked for. The
+version table had also drifted: nineteen migrations had been applied by a
+tool that stamps its own timestamp, so the same migration sat in the repo as
+`20260914171332_lead_marketing_consent` and in the database as
+`20260915035219`. Each was verified present by its actual objects and
+recorded at its repo version, so the two now line up. If the check reports
+something you are sure is applied, suspect that drift has restarted, and
+confirm against the objects before recording anything by hand.
+
+**Scheduling a cron is a manual step too, and it is easy to forget.** New
+`*-cron.post.ts` endpoints are called by pg_cron jobs that are created by
+hand against the production database -- `cron.schedule` needs the real URL
+and `NUXT_CRON_SECRET`, which is why `0081_enable_pg_cron.sql` says the
+schedule "is applied separately there". So an endpoint can be written,
+reviewed, tested, merged and deployed while nothing ever calls it, and
+nothing looks wrong: an endpoint nobody calls is indistinguishable from one
+with nothing to do. `lead-sequence-cron` shipped on 14 Sep and had still
+never run on the 16th -- every lead drip would have started, sent its first
+message, parked at the first delay and stayed there. It went unnoticed for
+two days only because a separate bug cancelled every run before it reached a
+delay; one failure hid another.
+
+`npm run check:crons-scheduled` now runs in the deploy beside
+`check:migrations-applied` and fails it when an endpoint has no active job.
+To add one, clone an existing job so the URL and secret header stay
+identical and only the path differs:
+
+```sql
+select cron.schedule(
+  'lead-sequence-15min',
+  '*/15 * * * *',
+  (select replace(command, 'same-day-cron', 'lead-sequence-cron')
+   from cron.job where jobname = 'appointment-same-day-15min')
+);
+```
+
+That form also keeps the secret out of anything that reads the statement.
+Job names are descriptive rather than derived (`same-day-cron` is scheduled
+as `appointment-same-day-15min`), so the check matches on the endpoint path
+inside the command, not on the name.
+
 `--build` is deliberately not passed to the CLI. It would hand the build
 to Netlify's own build system, and that system doesn't install
 dependencies when driven this way from CI. Nitro's `netlify` preset

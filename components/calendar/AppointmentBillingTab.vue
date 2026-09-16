@@ -15,7 +15,7 @@ const { fire } = useAutomations()
 const { issueFactura } = useFacturas()
 const t = useT()
 
-const { loading: summaryLoading, balanceCents, creditLedgerCents, bonoValueCents, activeMembership, activePackages, refresh: refreshSummary } = usePatientFinancialSummary(
+const { loading: summaryLoading, balanceCents, availableCents, creditLedgerCents, bonoValueCents, activeMembership, activePackages, refresh: refreshSummary } = usePatientFinancialSummary(
   () => props.patientId,
 )
 
@@ -63,7 +63,30 @@ async function sendInvoiceEmail() {
 }
 
 const paidCents = computed(() => payments.value.reduce((sum, p) => sum + p.amount_cents, 0))
-const balanceDueCents = computed(() => (invoice.value?.total_cents ?? 0) - paidCents.value)
+/**
+ * Nothing is due on an invoice already marked paid, even with no payment rows
+ * against it.
+ *
+ * A visit drawn from a prepaid bono is exactly that shape: chargeTheVisit()
+ * raises the charge and marks it paid because the balance already covers it --
+ * the money went in when the bono was bought -- so no payment row is ever
+ * created. settle_imported_invoices() left the whole migrated history looking
+ * the same way.
+ *
+ * Reading the balance from payment rows alone therefore showed the full
+ * session price as still due and put the take-payment box in front of
+ * reception, on a visit the patient had already paid for. Five patients paid
+ * twice on 15 Sep that way -- EUR 206 across maximiliano mosciaro, Kenneth
+ * Davis, Carolina Cañamas, yaimara garcia montero and Eduardo Stengel -- all
+ * of them holding a bono with nothing outstanding.
+ *
+ * Status is the right thing to trust here: deletePayment recomputes it from
+ * what is actually left, so a 'paid' invoice with no payments means covered,
+ * never stale.
+ */
+const balanceDueCents = computed(() =>
+  invoice.value?.status === 'paid' ? 0 : (invoice.value?.total_cents ?? 0) - paidCents.value,
+)
 
 async function loadAppointmentTiming() {
   const { data } = await supabase.from('appointments').select('starts_at').eq('id', props.appointmentId).maybeSingle()
@@ -562,7 +585,7 @@ async function recordPayment() {
       <div v-else class="space-y-1.5">
         <p class="flex items-center gap-1.5">
           <span class="text-ink-muted2">{{ t('Balance:', 'Saldo:') }}</span>
-          <UiBalancePill :balance-cents="balanceCents" />
+          <UiBalancePill :available-cents="availableCents" :balance-cents="balanceCents" />
           <span v-if="balanceCents === 0" class="font-medium text-ink-700">€0.00</span>
         </p>
         <p v-if="activeMembership">

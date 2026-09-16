@@ -118,6 +118,43 @@ async function findPatientIdsByPhone(supabase: ReturnType<typeof serverSupabaseS
   }
 }
 
+/**
+ * The lead this number belongs to, when it belongs to no patient.
+ *
+ * Inbound messages were attributed to a patient or to nobody, which meant a
+ * reply from somebody who enquired through a Facebook ad -- a lead, by
+ * definition not yet a patient -- attached to nothing. Their thread in the
+ * Inbox showed only what the clinic had sent them, with their answers
+ * missing, and the lead's own drawer showed no sign they had ever written
+ * back.
+ *
+ * Patients win where a number matches both, deliberately: somebody who has
+ * become a patient is a patient, and their clinical thread is the one their
+ * messages belong in. This only runs when no patient matched at all.
+ *
+ * Newest lead wins where one person enquired twice, on the grounds that the
+ * reply is far more likely to be about the enquiry they just made.
+ */
+async function findLeadIdByPhone(supabase: ReturnType<typeof serverSupabaseServiceRole<Database>>, accountId: string, fromNumber: string): Promise<string | null> {
+  const { data } = await supabase
+    .from('leads')
+    .select('id, phone')
+    .eq('account_id', accountId)
+    .is('deleted_at', null)
+    .not('phone', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(500)
+
+  const incoming = fromNumber.replace(/\D/g, '')
+  for (const lead of data ?? []) {
+    // The same tolerance patients get: a lead's number may have been typed
+    // by hand at the desk, or arrived from Meta with no "+", and both should
+    // still match the digits Meta sends on the way back.
+    if (lead.phone && phoneMatches(lead.phone, 'ES', incoming)) return lead.id
+  }
+  return null
+}
+
 // Which appointment is a Confirmar/Cambiar/Cancelar reply about?
 //
 // This used to be a single query for "the earliest-starting appointment with
@@ -201,6 +238,10 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  // Counted so the response can say "I did not take this", rather than
+  // answering 200 and dropping it. See the throw at the end of the handler.
+  let unverified = 0
+
   let body: { entry?: { changes?: { value?: MetaChangeValue }[] }[] }
   try {
     body = JSON.parse(rawBody.toString('utf8'))
@@ -225,13 +266,12 @@ export default defineEventHandler(async (event) => {
       // itself -- it needs the account to know which secret to check against.
       // Locating the account from the body is not trusting the body: nothing
       // below this line runs unless the proof holds for this specific clinic.
-      // A silent skip rather than an error, so a forged phone_number_id learns
-      // nothing about which ones exist.
       if (!(await webhookMayActOnAccount(auth, account.id, rawBody, supabase))) {
         console.error(
           `[whatsapp] rejected an unverified webhook for account ${account.id} (${auth.kind} auth). ` +
             'On the signature path this usually means no Meta App Secret is stored in Settings > WhatsApp.',
         )
+        unverified++
         continue
       }
 
@@ -256,12 +296,14 @@ export default defineEventHandler(async (event) => {
       for (const msg of value?.messages ?? []) {
         const patientIds = await findPatientIdsByPhone(supabase, account.id, msg.from)
         const patientId = patientIds[0] ?? null
+        const leadId = patientId ? null : await findLeadIdByPhone(supabase, account.id, msg.from)
         const mediaKind = MEDIA_KINDS.includes(msg.type as MediaKind) ? (msg.type as MediaKind) : null
         const media = mediaKind ? msg[mediaKind] : undefined
 
         const insert: Database['public']['Tables']['whatsapp_messages']['Insert'] = {
           account_id: account.id,
           patient_id: patientId,
+          lead_id: leadId,
           phone_number: msg.from,
           wamid: msg.id,
           direction: 'inbound',
@@ -296,14 +338,40 @@ export default defineEventHandler(async (event) => {
 
         await supabase.from('whatsapp_messages').insert(insert)
 
+        // A lead writing back is the thing the whole acquisition funnel is
+        // trying to cause, and until now it left no trace anywhere except an
+        // unattributed row. Recorded on the lead's own timeline so the drawer
+        // shows it, and flagged as needing a person: the AI receptionist does
+        // not answer real enquiries yet, so nobody is replying unless a human
+        // does.
+        if (leadId) {
+          await supabase.from('lead_events').insert({
+            account_id: account.id,
+            lead_id: leadId,
+            kind: 'conversation',
+            title: 'Replied',
+            detail: insert.body_preview?.slice(0, 500) ?? null,
+          })
+          // Only lifts a lead the AI was handling, so a lead a person has
+          // already taken over is left where that person put it.
+          await supabase
+            .from('leads')
+            .update({ ai_state: 'needs_human' })
+            .eq('id', leadId)
+            .eq('ai_state', 'handling')
+        }
+
         let senderName = msg.from
         if (patientId) {
           const { data: patient } = await supabase.from('patients').select('first_name, last_name').eq('id', patientId).maybeSingle()
           if (patient) senderName = `${patient.first_name} ${patient.last_name ?? ''}`.trim()
+        } else if (leadId) {
+          const { data: lead } = await supabase.from('leads').select('full_name').eq('id', leadId).maybeSingle()
+          if (lead?.full_name) senderName = lead.full_name
         }
         await notifyInboxTeamMembers(supabase, account.id, senderName, insert.body_preview ?? 'New message', {
           type: 'whatsapp_message',
-          key: patientId ?? msg.from,
+          key: patientId ?? leadId ?? msg.from,
         })
 
         const intent = classifyReply(replyText(msg))
@@ -361,6 +429,32 @@ export default defineEventHandler(async (event) => {
         }
       }
     }
+  }
+
+  // A message we could not verify must not be answered with 200.
+  //
+  // It used to be: the change was skipped, the handler returned success, and
+  // Meta -- told the delivery worked -- never sent it again. The message was
+  // gone, with nothing to see anywhere. No error, no row, no retry. The only
+  // trace was a console line nobody reads until something is already missing.
+  //
+  // 401 instead, so Meta retries with backoff for up to 7 days. That turns
+  // every transient cause -- an app secret not yet saved, a deploy mid-flight,
+  // a clock skew -- from lost messages into late ones. Replays are safe:
+  // whatsapp_messages.wamid is uniquely indexed, so a redelivery of something
+  // already stored inserts nothing.
+  //
+  // The cost is an oracle: a forged request naming a phone_number_id we know
+  // gets 401, an unknown one gets 200, so the difference reveals which
+  // clinics are here. That is worth it. Nothing in the payload is acted on
+  // without a valid signature either way, and silently losing a patient's
+  // message is the worse failure -- which is not hypothetical, it is what
+  // sent us looking.
+  if (unverified > 0) {
+    throw createError({
+      statusCode: 401,
+      statusMessage: `Could not verify ${unverified} change(s). Check the Meta App Secret in Settings > WhatsApp, or the forwarder's API token.`,
+    })
   }
 
   return { success: true }

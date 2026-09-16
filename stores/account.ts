@@ -51,6 +51,8 @@ export const useAccountStore = defineStore('account', {
     permissions: {} as Record<string, PermissionValue>,
     subscriptionStatus: null as string | null,
     trialEndsAt: null as string | null,
+    growthAddon: false,
+    comped: false,
     loaded: false,
     loading: false,
   }),
@@ -61,6 +63,14 @@ export const useAccountStore = defineStore('account', {
     // No row at all (shouldn't happen post-backfill, but a store reload
     // mid-migration is possible) fails open, same as requireActiveAccount.
     isBillingLocked: (state) => state.subscriptionStatus === 'locked' || state.subscriptionStatus === 'canceled',
+    // The same rule the server applies in requireGrowth, so the screen and
+    // the API cannot disagree about what this account has bought. Trialing
+    // counts: the trial exists to sell the product, and this is the part
+    // most worth selling.
+    hasGrowthAddon: (state) =>
+      state.comped ||
+      state.subscriptionStatus === 'trialing' ||
+      (state.growthAddon && state.subscriptionStatus !== 'locked' && state.subscriptionStatus !== 'canceled'),
     // Only meaningful while still trialing -- null once on a real plan (no
     // trial_ends_at) or already past it (negative), so the banner can just
     // check `!== null`.
@@ -97,7 +107,7 @@ export const useAccountStore = defineStore('account', {
         account: { name: string; slug: string; whatsapp_confirmation_template_name: string | null; whatsapp_recall_template_name: string | null; scheduling_policy_fee_cents: number | null; default_phone_country: string | null } | null
         clinics: Clinic[]
         permissions: Record<string, PermissionValue>
-        subscription: { status: string; trial_ends_at: string | null } | null
+        subscription: { status: string; trial_ends_at: string | null; growth_addon?: boolean; comped?: boolean } | null
       }
       const teamMember = bootstrap.team_member
 
@@ -130,6 +140,8 @@ export const useAccountStore = defineStore('account', {
       this.permissions = (permissions as Record<string, PermissionValue>) ?? {}
       this.subscriptionStatus = subscription?.status ?? null
       this.trialEndsAt = subscription?.trial_ends_at ?? null
+      this.growthAddon = subscription?.growth_addon ?? false
+      this.comped = subscription?.comped ?? false
       if (!this.currentClinicId && this.clinics.length > 0) {
         const stored = import.meta.server ? null : localStorage.getItem(CURRENT_CLINIC_STORAGE_KEY)
         this.currentClinicId = (stored && this.clinics.some((c) => c.id === stored)) ? stored : this.clinics[0].id
@@ -157,6 +169,8 @@ export const useAccountStore = defineStore('account', {
       this.permissions = {}
       this.subscriptionStatus = null
       this.trialEndsAt = null
+      this.growthAddon = false
+      this.comped = false
       this.loaded = false
       this.loading = false
     },

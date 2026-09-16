@@ -4,6 +4,7 @@ import { assertBelongsToAccount, loose } from '~/server/utils/publicApiHandlers'
 import { bool, definedOnly, email as emailField, enumValue, integer, readApiBody, rejectUnknownFields, str, uuid } from '~/server/utils/publicApiBody'
 import { LEAD_CHANNELS, nextLeadReference } from '~/server/utils/leads'
 import { startLeadSequence } from '~/server/utils/leadSequences'
+import { hasGrowth } from '~/server/utils/requireGrowth'
 
 // Where an enquiry gets in from outside.
 //
@@ -118,6 +119,24 @@ function readAnswers(body: Record<string, unknown>): Answer[] | undefined {
 }
 
 export default defineApiHandler({ scope: 'leads:write' }, async ({ event, supabase, accountId }) => {
+  // The token proves who is calling; this proves the clinic bought the thing
+  // being called. Checked before anything is read or written, so a lapsed
+  // account gets one clear answer rather than a half-created lead.
+  //
+  // Refusing does mean enquiries are not captured while it is lapsed, which
+  // is the cost of the add-on meaning anything. The status code says so
+  // plainly -- an ad platform's retry log showing 402 is diagnosable; a
+  // silent success that stores nothing is not.
+  const { data: subscription } = await loose(supabase)
+    .from('subscriptions')
+    .select('growth_addon, status, comped')
+    .eq('account_id', accountId)
+    .maybeSingle()
+
+  if (!hasGrowth(subscription as never)) {
+    throw new ApiError('forbidden', 'Growth is not on this subscription, so leads cannot be captured. Add it under Billing.')
+  }
+
   const body = await readApiBody(event)
   rejectUnknownFields(body, FIELDS)
 
@@ -292,6 +311,16 @@ export default defineApiHandler({ scope: 'leads:write' }, async ({ event, supaba
     }
   } catch (err) {
     console.error('[public/v1/leads] lead.created sequence failed to start:', (err as Error)?.message ?? err)
+  }
+
+  // After the sequence, and non-fatal for the same reason: the drip answers
+  // the lead, this tells the clinic, and neither is worth losing the enquiry
+  // over. Deliberately not inside the try above -- a rule that throws must
+  // not also silence the notification.
+  try {
+    await notifyStaffOfNewLead(supabase, accountId, lead.id)
+  } catch (err) {
+    console.error('[public/v1/leads] new lead notification failed:', (err as Error)?.message ?? err)
   }
 
   setResponseStatus(event, 201)

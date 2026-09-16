@@ -210,14 +210,24 @@ const labelFilter = ref<string | null>(null)
 // nothing below loads and this page is exactly what it was.
 const { hasGrowth } = useGrowthTier()
 const { conversations: leadConversations, reload: reloadLeadConversations, takeOver, handBack } = useGrowthConversations(hasGrowth)
-const { thread: leadThread, sending: leadSending, load: loadLeadThread, reply: replyToLead, close: closeLeadThread } = useGrowthLeadThread()
+const {
+  thread: leadThread,
+  sending: leadSending,
+  drafting: leadDrafting,
+  load: loadLeadThread,
+  reply: replyToLead,
+  draftReply: draftLeadReply,
+  discardDraft: discardLeadDraft,
+  approveDraft: approveLeadDraft,
+  close: closeLeadThread,
+} = useGrowthLeadThread()
 
 // Only "AI handling" and "Needs human" are here. The design also draws
 // Unassigned and Mine, which need a per-conversation owner -- leads could
 // carry one but the real patient threads beside them cannot, so the filter
 // would mean two different things in one list. They arrive with the leads
 // endpoint, which is what gives both sides an owner.
-const aiFilter = ref<'all' | 'ai_handling' | 'needs_human'>('all')
+const aiFilter = ref<'all' | 'ai_handling' | 'needs_human' | 'draft_ready'>('all')
 
 // Growth > Conversations in the sidebar is a saved view into this inbox, not
 // a screen of its own -- it deep-links here with the filter already applied.
@@ -240,11 +250,17 @@ const visibleLeadConversations = computed(() => {
   if (unreadOnly.value) list = list.filter((c) => c.unread)
   if (aiFilter.value === 'ai_handling') list = list.filter((c) => c.aiState === 'handling')
   else if (aiFilter.value === 'needs_human') list = list.filter((c) => c.aiState === 'needs_human' || c.aiState === 'blocked')
+  else if (aiFilter.value === 'draft_ready') list = list.filter((c) => c.hasDraft)
   return list
 })
 
 const aiHandlingCount = computed(() => leadConversations.value.filter((c) => c.aiState === 'handling').length)
 const needsHumanCount = computed(() => leadConversations.value.filter((c) => c.aiState === 'needs_human' || c.aiState === 'blocked').length)
+// Threads where a reply is written and waiting on a decision. This is the
+// queue the receptionist actually creates -- without it the drafts it writes
+// unprompted are only found by opening threads one at a time, which is the
+// work drafting was meant to remove.
+const draftReadyCount = computed(() => leadConversations.value.filter((c) => c.hasDraft).length)
 
 // Resolved against the full list, never the filtered one -- exactly as
 // `selected` is for real conversations above. Reading it from
@@ -1080,6 +1096,19 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
               >
                 {{ t('Needs human', 'Requiere persona') }} · {{ needsHumanCount }}
               </button>
+              <!-- Only when there is one. A chip reading "· 0" every day
+                   teaches people to stop looking at it, and this is the one
+                   that means somebody has work waiting. -->
+              <button
+                v-if="draftReadyCount > 0"
+                type="button"
+                class="flex h-7 items-center gap-1 rounded-pill border px-2.5 text-[12px] font-medium"
+                :class="aiFilter === 'draft_ready' ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted hover:bg-surface-subtle'"
+                data-test="filter-draft-ready"
+                @click="aiFilter = aiFilter === 'draft_ready' ? 'all' : 'draft_ready'"
+              >
+                {{ t('Draft ready', 'Borrador listo') }} · {{ draftReadyCount }}
+              </button>
             </template>
           </div>
         </div>
@@ -1132,9 +1161,14 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
                 <span class="truncate text-[13.5px] text-ink-900" :class="c.unread ? 'font-[640]' : 'font-[500]'">{{ c.name }}</span>
                 <span class="shrink-0 text-[11px] text-ink-faint">{{ leadRowTime(c.lastMessageAt) }}</span>
               </div>
-              <p class="truncate text-[12px]" :class="c.unread ? 'font-medium text-ink-700' : 'text-ink-muted2'">{{ c.preview }}</p>
+              <p class="truncate text-[12px]" :class="c.unread ? 'font-medium text-ink-700' : 'text-ink-muted2'">
+                <!-- Said before the message, not after: the row is truncated,
+                and a marker at the end is the part that gets cut off. -->
+                <span v-if="c.previewWasNotSent" class="font-medium text-warning-text">{{ t('Not sent ·', 'No enviado ·') }} </span>{{ c.preview }}
+              </p>
               <div class="mt-1 flex flex-wrap items-center gap-1">
                 <span class="rounded-pill border border-chip-border bg-chip-bg px-1.5 py-px text-[10px] text-ink-muted">{{ CHANNEL_LABEL[c.channel] }}</span>
+                <span v-if="c.hasDraft" class="rounded-pill border border-brand-tintBorder bg-brand-tint px-1.5 py-px text-[10px] font-semibold text-brand-text" data-test="draft-ready-badge">{{ t('Draft ready', 'Borrador listo') }}</span>
                 <span v-if="c.aiState === 'handling'" class="rounded-pill bg-brand px-1.5 py-px text-[10px] font-semibold text-white">{{ t('AI handling', 'IA gestionando') }}</span>
                 <span v-else-if="c.aiState === 'paused'" class="rounded-pill border border-chip-border bg-chip-bg px-1.5 py-px text-[10px] text-ink-muted">{{ t('AI paused', 'IA en pausa') }}</span>
                 <span v-else-if="c.aiState === 'needs_human'" class="rounded-pill border border-warning-border bg-warning-bg px-1.5 py-px text-[10px] font-medium text-warning-text">{{ t('Needs human', 'Requiere persona') }}</span>
@@ -1207,10 +1241,14 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
           v-if="leadThread"
           :thread="leadThread"
           :sending="leadSending"
+          :drafting="leadDrafting"
           @back="selectedKey = null; closeLeadThread()"
           @take-over="onLeadTakeOver"
           @hand-back="onLeadHandBack"
           @send="onLeadReply"
+          @draft-reply="leadThread && draftLeadReply(leadThread.id)"
+          @approve-draft="(text) => leadThread && approveLeadDraft(leadThread.id, text)"
+          @discard-draft="leadThread && discardLeadDraft(leadThread.id)"
         />
         <div v-else class="flex min-w-0 flex-1 flex-col gap-3 bg-surface-page p-4" data-test="lead-thread-loading">
           <UiSkeleton class="h-10 w-56 rounded-ctl" />

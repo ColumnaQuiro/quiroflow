@@ -1,4 +1,4 @@
-import { requirePermission } from '~/server/utils/requirePermission'
+import { requireGrowth } from '~/server/utils/requireGrowth'
 
 interface Body {
   /** Approve the stored draft, or send different text entirely. */
@@ -26,7 +26,7 @@ export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
   if (!id) throw createError({ statusCode: 400, statusMessage: 'Missing review id' })
 
-  const { supabase, teamMember } = await requirePermission(event, 'communication_config')
+  const { supabase, teamMember } = await requireGrowth(event)
   const body = (await readBody<Body>(event).catch(() => null)) ?? ({} as Body)
 
   const { data: review } = await supabase

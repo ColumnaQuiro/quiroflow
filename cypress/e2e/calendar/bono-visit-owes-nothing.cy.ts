@@ -56,7 +56,7 @@ describe('An appointment covered by a bono', () => {
           cy.contains('patient owes the difference').should('not.exist')
           cy.contains('Covered by package at €40.00 (3 sessions left after this one)').should('be.visible')
           // And what she is holding, which this screen never said at all.
-          cy.contains('€160.00 credit').should('be.visible')
+          cy.contains('€160.00 available').should('be.visible')
           // Her only booking is the one being edited, so she is about to fall
           // out of the schedule. That warning now lives here, on the tab about
           // the booking, instead of at the bottom of Billing.

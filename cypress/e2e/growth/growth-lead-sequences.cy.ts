@@ -37,6 +37,10 @@ describe('Lead welcome sequences', () => {
     })
   })
 
+  afterEach(() => {
+    cy.task('db:stopPracticeHubStub')
+  })
+
   function ingest(body: Record<string, unknown>) {
     return cy.request({
       method: 'POST',
@@ -172,6 +176,60 @@ describe('Lead welcome sequences', () => {
         expect(runs[0]!.status).to.eq('running')
         expect(runs[0]!.stopped_reason).to.be.null
         expect(new Date(runs[0]!.resume_at).getTime()).to.be.greaterThan(Date.now())
+      })
+    })
+  })
+
+  it('keeps the drip going when PracticeHub answers about somebody else', () => {
+    // The regression that silently switched the whole drip off. The old check
+    // read total_entries and stopped on any non-zero count, which is only the
+    // right question if PracticeHub applies `email` as a filter. When it does
+    // not, the response is the entire patient list -- thousands of rows, none
+    // of them this lead -- and every real lead was cancelled as
+    // already_a_patient within a second of arriving. Three did, on the first
+    // night of real Facebook traffic.
+    cy.task<{ baseUrl: string }>('db:startPracticeHubStub', {
+      totalEntries: 4213,
+      emails: ['someone.else@example.com'],
+    }).then(({ baseUrl }) => {
+      cy.task('db:setPracticeHubConnection', { accountId: account.accountId, baseUrl })
+
+      threeStepDrip()
+      ingest({ full_name: 'Not Their Patient', phone: '+34600900011', email: 'not.theirs@example.com', external_id: 'seq-ph-mismatch' }).then((res) => {
+        const id = res.body.data.id
+        cy.task('db:makeSequenceDue', { leadId: id })
+        runCron()
+
+        cy.task<Run[]>('db:sequenceRuns', { leadId: id }).then((runs) => {
+          expect(runs[0]!.stopped_reason).to.be.null
+          expect(runs[0]!.status).to.not.eq('cancelled')
+        })
+      })
+    })
+  })
+
+  it('stops when PracticeHub returns the lead themselves', () => {
+    // The other half: when the row really is this person, the drip must stop.
+    // Dual-running means PracticeHub holds patients QuiroFlow has never seen,
+    // so this check earns its place -- it just has to be right.
+    cy.task<{ baseUrl: string }>('db:startPracticeHubStub', {
+      totalEntries: 1,
+      emails: ['THEIR.patient@example.com'],
+    }).then(({ baseUrl }) => {
+      cy.task('db:setPracticeHubConnection', { accountId: account.accountId, baseUrl })
+
+      threeStepDrip()
+      // Deliberately cased differently from the stub's row -- an email match
+      // that only works when the casing agrees is not a match.
+      ingest({ full_name: 'Their Patient', phone: '+34600900012', email: 'their.patient@example.com', external_id: 'seq-ph-match' }).then((res) => {
+        const id = res.body.data.id
+        cy.task('db:makeSequenceDue', { leadId: id })
+        runCron()
+
+        cy.task<Run[]>('db:sequenceRuns', { leadId: id }).then((runs) => {
+          expect(runs[0]!.status).to.eq('cancelled')
+          expect(runs[0]!.stopped_reason).to.eq('already_a_patient')
+        })
       })
     })
   })

@@ -1,8 +1,8 @@
-import { requirePermission } from '~/server/utils/requirePermission'
+import { requireGrowth } from '~/server/utils/requireGrowth'
 import { loadReceptionistConfig } from '~/server/utils/receptionist'
 
 export default defineEventHandler(async (event) => {
-  const { supabase, teamMember } = await requirePermission(event, 'communication_config')
+  const { supabase, teamMember } = await requireGrowth(event)
   const config = await loadReceptionistConfig(supabase, teamMember.account_id)
 
   // Channel status is read from where it actually lives rather than stored

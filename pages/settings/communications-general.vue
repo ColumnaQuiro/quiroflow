@@ -23,6 +23,14 @@ const emailReminderBody = ref('')
 // this is the account's one general communications settings page.
 const googleReviewUrl = ref('')
 
+// Where to tell the clinic a lead has come in. Here rather than on a Growth
+// screen for the same reason the Google review link is here: this is the
+// account's one general communications settings page, and "who do we ping"
+// is the same question whichever feature raised it. The matching WhatsApp
+// template lives in Settings → WhatsApp, alongside the booking one.
+const newLeadNotifyEmail = ref('')
+const newLeadNotifyWhatsapp = ref('')
+
 // Which country a phone number belongs to when nothing says otherwise --
 // the "add a number" field, the new-patient forms, the public booking page,
 // and an import's fallback. Chosen at onboarding; changed here.
@@ -37,7 +45,7 @@ async function load() {
   const { data } = await supabase
     .from('accounts')
     .select(
-      'appointment_confirmation_enabled, appointment_confirmation_channels, email_confirmation_subject, email_confirmation_body, appointment_reminder_enabled, appointment_reminder_channels, appointment_reminder_hours_before, email_reminder_subject, email_reminder_body, google_review_url, default_phone_country',
+      'appointment_confirmation_enabled, appointment_confirmation_channels, email_confirmation_subject, email_confirmation_body, appointment_reminder_enabled, appointment_reminder_channels, appointment_reminder_hours_before, email_reminder_subject, email_reminder_body, google_review_url, default_phone_country, new_lead_notify_email, new_lead_notify_whatsapp',
     )
     .eq('id', store.accountId!)
     .maybeSingle()
@@ -51,6 +59,8 @@ async function load() {
   emailReminderSubject.value = data?.email_reminder_subject ?? ''
   emailReminderBody.value = data?.email_reminder_body ?? ''
   googleReviewUrl.value = data?.google_review_url ?? ''
+  newLeadNotifyEmail.value = data?.new_lead_notify_email ?? ''
+  newLeadNotifyWhatsapp.value = data?.new_lead_notify_whatsapp ?? ''
   defaultPhoneCountry.value = data?.default_phone_country ?? 'ES'
   loading.value = false
 }
@@ -69,6 +79,8 @@ async function save() {
     email_reminder_subject: emailReminderSubject.value.trim() || null,
     email_reminder_body: emailReminderBody.value.trim() || null,
     google_review_url: googleReviewUrl.value.trim() || null,
+    new_lead_notify_email: newLeadNotifyEmail.value.trim() || null,
+    new_lead_notify_whatsapp: newLeadNotifyWhatsapp.value.trim() || null,
     default_phone_country: defaultPhoneCountry.value,
   }
   const { error: updateError } = await supabase.from('accounts').update(update).eq('id', store.accountId!)
@@ -257,6 +269,42 @@ async function save() {
               >
                 <option v-for="c in COUNTRIES_BY_NAME" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }} {{ c.name }}</option>
               </select>
+            </div>
+
+            <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+              <p class="text-[13.5px] font-[560] text-ink-700">{{ t('New lead notifications', 'Avisos de nuevo lead') }}</p>
+              <p class="mt-0.5 text-[12.5px] text-ink-muted2">
+                {{ t(
+                  'Get pinged the moment an enquiry arrives -- from a Facebook lead ad, the API, or anywhere else. The drip answers them straight away; this is so a person follows up.',
+                  'Recibe un aviso en cuanto llega una solicitud -- de un anuncio de leads de Facebook, la API, o cualquier otro sitio. La secuencia les responde al instante; esto es para que una persona haga el seguimiento.',
+                ) }}
+              </p>
+              <div class="mt-3 space-y-3">
+                <div>
+                  <label class="block text-[12px] font-medium text-ink-muted">{{ t('Notify email', 'Correo de notificación') }}</label>
+                  <input
+                    v-model="newLeadNotifyEmail"
+                    type="email"
+                    placeholder="you@clinic.com"
+                    class="mt-1 h-8 w-full rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+                  />
+                </div>
+                <div>
+                  <label class="block text-[12px] font-medium text-ink-muted">{{ t('Notify WhatsApp number', 'Número de WhatsApp de notificación') }}</label>
+                  <input
+                    v-model="newLeadNotifyWhatsapp"
+                    type="text"
+                    placeholder="+34600000000"
+                    class="mt-1 h-8 w-full rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+                  />
+                  <p class="mt-1 text-[11.5px] text-ink-faint">
+                    {{ t(
+                      "In E.164 format. WhatsApp only delivers a free-form message within 24h of that number last messaging your clinic's WhatsApp number -- set a new-lead notification template in Settings → WhatsApp to send outside that window too.",
+                      'En formato E.164. WhatsApp solo entrega un mensaje de texto libre dentro de las 24h posteriores a que ese número le escribiera por última vez al WhatsApp de tu clínica -- configura una plantilla de aviso de nuevo lead en Ajustes → WhatsApp para enviarlos también fuera de esa ventana.',
+                    ) }}
+                  </p>
+                </div>
+              </div>
             </div>
 
             <div class="rounded-card border border-line bg-surface p-4 shadow-card">

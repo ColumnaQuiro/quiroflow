@@ -1,0 +1,73 @@
+// seedStaffAccount() grants the Growth add-on by default (see
+// cypress/support/commands.ts -- otherwise every Growth spec would 402), so
+// both states here are set explicitly rather than relying on that default.
+// This spec is about the purchase path, and the account's starting state is
+// the input to it.
+function seedActiveSubscriber(withGrowth: boolean) {
+  return cy.seedStaffAccount().then((account) => {
+    cy.task('db:setSubscriptionStripeIds', {
+      accountId: account.accountId,
+      stripeCustomerId: 'cus_test_stub',
+      stripeSubscriptionId: 'sub_test_stub',
+    })
+    cy.task('db:setGrowthAddon', { accountId: account.accountId, enabled: withGrowth })
+    cy.setSubscriptionStatus(account.accountId, 'active')
+    cy.login(account.email, account.password)
+    cy.visit('/subscription')
+    return cy.wrap(account)
+  })
+}
+
+describe('Buying the Growth add-on', () => {
+  it('re-prices every plan card and sends growth: true with the plan change', () => {
+    seedActiveSubscriber(false).then(() => {
+      // Stubbed for the same reason as the proration spec: the real routes
+      // call Stripe, which isn't configured in CI. What's under test here is
+      // that the tick travels from the checkbox to the request body -- the
+      // one thing that decides whether the customer is charged for it.
+      cy.intercept('POST', '/api/billing/preview', {
+        statusCode: 200,
+        body: { previewable: true, amountDueCents: 4900, taxCents: 1029, currency: 'eur' },
+      }).as('preview')
+      cy.intercept('POST', '/api/billing/subscribe', { statusCode: 200, body: { updated: true } }).as('subscribe')
+
+      cy.contains('.rounded-card', 'Lead pipeline').as('growthCard')
+      cy.get('@growthCard').scrollIntoView()
+      cy.get('@growthCard').contains('+49,00').should('be.visible')
+      cy.get('@growthCard').find('input[type="checkbox"]').should('not.be.checked')
+
+      // Solo is 59€/mo on its own; ticking Growth has to show 108€, not 59,
+      // or the owner is told one number and billed another.
+      cy.get('.grid.sm\\:grid-cols-3').contains('.rounded-card', 'Solo').as('soloCard')
+      cy.get('@soloCard').should('contain', '59,00')
+      cy.get('@growthCard').find('input[type="checkbox"]').check()
+      cy.get('@soloCard').should('contain', '108,00')
+
+      cy.get('@soloCard').contains('button', 'Switch to this plan').click()
+      cy.wait('@preview').its('request.body').should('deep.equal', { planId: 'starter', interval: 'monthly', extraProfessionals: 0, growth: true })
+
+      cy.get('@soloCard').contains('button', 'Confirm switch').click()
+      cy.wait('@subscribe').its('request.body').should('deep.equal', { planId: 'starter', interval: 'monthly', extraProfessionals: 0, growth: true })
+    })
+  })
+
+  it('offers to drop Growth when the account already has it', () => {
+    seedActiveSubscriber(true).then(() => {
+      cy.intercept('POST', '/api/billing/preview', {
+        statusCode: 200,
+        body: { previewable: true, amountDueCents: 0, taxCents: 0, currency: 'eur' },
+      }).as('preview')
+
+      // Ticked on arrival, and the current plan reads as current -- nothing to
+      // change until the owner actually touches something.
+      cy.contains('.rounded-card', 'Lead pipeline').as('growthCard')
+      cy.get('@growthCard').find('input[type="checkbox"]').should('be.checked')
+      cy.get('.grid.sm\\:grid-cols-3').contains('.rounded-card', 'Solo').as('soloCard')
+      cy.get('@soloCard').contains('button', 'Current plan').should('be.disabled')
+
+      cy.get('@growthCard').find('input[type="checkbox"]').uncheck()
+      cy.get('@soloCard').contains('button', 'Switch to this plan').click()
+      cy.wait('@preview').its('request.body').should('deep.equal', { planId: 'starter', interval: 'monthly', extraProfessionals: 0, growth: false })
+    })
+  })
+})

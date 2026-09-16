@@ -1,4 +1,4 @@
-import { requirePermission } from '~/server/utils/requirePermission'
+import { requireGrowth } from '~/server/utils/requireGrowth'
 import { LEAD_STAGES, STAGE_TITLES, formatEuros, type LeadStage } from '~/server/utils/leads'
 
 // The Growth dashboard, computed from the leads a clinic actually has.
@@ -43,7 +43,7 @@ function channelOf(source: string | null) {
 }
 
 export default defineEventHandler(async (event) => {
-  const { supabase, teamMember } = await requirePermission(event, 'communication_config')
+  const { supabase, teamMember } = await requireGrowth(event)
 
   const now = new Date()
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
@@ -184,6 +184,10 @@ export default defineEventHandler(async (event) => {
       return {
         channel,
         spend: spend === null ? null : formatEuros(spend),
+        // The raw figure alongside the formatted one, so the table can put a
+        // clinic back into the box it typed rather than making it re-read
+        // "€1,480" and work out what to type.
+        spendCents: spend,
         leads: mine.length,
         booked,
         showRate: booked === 0 ? null : Math.round((showed / booked) * 100),
@@ -195,6 +199,7 @@ export default defineEventHandler(async (event) => {
   const totals = {
     channel: 'All channels',
     spend: hasSpend ? formatEuros(totalSpend) : null,
+    spendCents: hasSpend ? totalSpend : null,
     leads: thisMonth.length,
     booked: thisMonth.filter((lead) => stageRank(lead.furthest_stage) >= stageRank('booked')).length,
     showRate: null as number | null,

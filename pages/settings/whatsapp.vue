@@ -22,6 +22,8 @@ const recallTemplateLanguage = ref('es')
 const reminderTemplateName = ref('')
 const reminderTemplateLanguage = ref('es')
 const staffNotifyTemplateName = ref('')
+const newLeadNotifyTemplateName = ref('')
+const newLeadNotifyTemplateLanguage = ref('es')
 const staffNotifyTemplateLanguage = ref('es')
 
 const { showToast } = useToast()
@@ -51,7 +53,7 @@ async function load() {
   const { data } = await supabase
     .from('accounts')
     .select(
-      'whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_access_token, whatsapp_confirmation_template_name, whatsapp_confirmation_template_language, whatsapp_recall_template_name, whatsapp_recall_template_language, whatsapp_reminder_template_name, whatsapp_reminder_template_language, online_booking_notify_whatsapp_template_name, online_booking_notify_whatsapp_template_language',
+      'whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_access_token, whatsapp_confirmation_template_name, whatsapp_confirmation_template_language, whatsapp_recall_template_name, whatsapp_recall_template_language, whatsapp_reminder_template_name, whatsapp_reminder_template_language, online_booking_notify_whatsapp_template_name, online_booking_notify_whatsapp_template_language, new_lead_notify_whatsapp_template_name, new_lead_notify_whatsapp_template_language',
     )
     .eq('id', store.accountId!)
     .maybeSingle()
@@ -73,6 +75,8 @@ async function load() {
   reminderTemplateName.value = data?.whatsapp_reminder_template_name ?? ''
   reminderTemplateLanguage.value = data?.whatsapp_reminder_template_language ?? 'es'
   staffNotifyTemplateName.value = data?.online_booking_notify_whatsapp_template_name ?? ''
+  newLeadNotifyTemplateName.value = data?.new_lead_notify_whatsapp_template_name ?? ''
+  newLeadNotifyTemplateLanguage.value = data?.new_lead_notify_whatsapp_template_language ?? 'es'
   staffNotifyTemplateLanguage.value = data?.online_booking_notify_whatsapp_template_language ?? 'es'
   loading.value = false
 
@@ -122,6 +126,8 @@ async function save() {
     whatsapp_reminder_template_name: reminderTemplateName.value.trim() || null,
     whatsapp_reminder_template_language: reminderTemplateLanguage.value.trim() || 'es',
     online_booking_notify_whatsapp_template_name: staffNotifyTemplateName.value.trim() || null,
+    new_lead_notify_whatsapp_template_name: newLeadNotifyTemplateName.value.trim() || null,
+    new_lead_notify_whatsapp_template_language: newLeadNotifyTemplateLanguage.value.trim() || 'es',
     online_booking_notify_whatsapp_template_language: staffNotifyTemplateLanguage.value.trim() || 'es',
   }
   if (accessToken.value.trim()) update.whatsapp_access_token = accessToken.value.trim()
@@ -284,6 +290,27 @@ async function save() {
                 />
                 <input
                   v-model="staffNotifyTemplateLanguage"
+                  type="text"
+                  placeholder="es"
+                  class="h-8 w-[70px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+                />
+              </div>
+            </SettingsFieldRow>
+
+            <SettingsFieldRow
+              label="New lead notification template"
+              helper="Used for the 'new lead' ping to Settings → Communication → General's notify number when it's outside WhatsApp's 24h free-form window. Variables fill in this order: name, phone, email, source, reference. Leave blank to only send free-form, which silently fails outside that window."
+              align="top"
+            >
+              <div class="flex gap-2">
+                <input
+                  v-model="newLeadNotifyTemplateName"
+                  type="text"
+                  placeholder="template_name"
+                  class="h-8 w-[152px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+                />
+                <input
+                  v-model="newLeadNotifyTemplateLanguage"
                   type="text"
                   placeholder="es"
                   class="h-8 w-[70px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"

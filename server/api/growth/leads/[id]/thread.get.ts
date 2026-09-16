@@ -1,4 +1,4 @@
-import { requirePermission } from '~/server/utils/requirePermission'
+import { requireGrowth } from '~/server/utils/requireGrowth'
 import { formatEuros } from '~/server/utils/leads'
 
 // One lead's conversation: the messages, and the context a person needs
@@ -7,11 +7,11 @@ export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
   if (!id) throw createError({ statusCode: 400, statusMessage: 'Missing lead id' })
 
-  const { supabase, teamMember } = await requirePermission(event, 'communication_config')
+  const { supabase, teamMember } = await requireGrowth(event)
 
   const { data: lead } = await supabase
     .from('leads')
-    .select('id, full_name, phone, email, source, stage, estimated_value_cents, ai_state, patient_id, ai_taken_over_at, clinics:clinic_id(name), team_members:ai_taken_over_by(full_name)')
+    .select('id, full_name, phone, email, source, stage, estimated_value_cents, ai_state, patient_id, ai_taken_over_at, ai_draft_body, ai_draft_created_at, clinics:clinic_id(name), team_members:ai_taken_over_by(full_name)')
     .eq('id', id)
     .eq('account_id', teamMember.account_id)
     .is('deleted_at', null)
@@ -39,6 +39,15 @@ export default defineEventHandler(async (event) => {
     ? await supabase.from('patients').select('id, balance_cents').eq('id', lead.patient_id).maybeSingle()
     : null
 
+  // Whether the receptionist may work on real conversations. Read here so the
+  // thread can decide about the draft button rather than offering one that
+  // the server would refuse.
+  const { data: receptionist } = await supabase
+    .from('receptionist_config')
+    .select('enabled')
+    .eq('account_id', teamMember.account_id)
+    .maybeSingle()
+
   return {
     id: lead.id,
     name: lead.full_name,
@@ -54,6 +63,13 @@ export default defineEventHandler(async (event) => {
     patientId: lead.patient_id,
     patientBalance: patient?.data ? formatEuros(patient.data.balance_cents) : null,
     canReplyFreeText: withinWindow,
+    // A reply the receptionist wrote, waiting on a person. Sent separately
+    // with its own timestamp so the Inbox can say how stale it is: a draft
+    // written before the patient said three more things is worth re-reading
+    // rather than approving on sight.
+    draft: lead.ai_draft_body,
+    draftAt: lead.ai_draft_created_at,
+    receptionistEnabled: receptionist?.enabled ?? false,
     messages: (messages ?? []).map((message) => ({
       id: message.id,
       // A lead's own messages are inbound; everything outbound came from the

@@ -1,34 +1,57 @@
 <script setup lang="ts">
-import { TEMPLATES, WORKFLOWS } from '~/composables/useGrowthAutomations'
-
 const t = useT()
 const { can } = usePermission()
 const { hasGrowth, resolved } = useGrowthTier()
-const { nodes, edgePaths, loading, selectedNode, selectedConfig, selectedNodeId, selectNode } = useGrowthAutomations()
+const {
+  workflows,
+  activeWorkflow,
+  activeWorkflowId,
+  selectWorkflow,
+  nodes,
+  edgePaths,
+  loading,
+  error,
+  selectedNode,
+  selectedConfig,
+  selectedNodeId,
+  selectNode,
+} = useGrowthAutomations()
 
 const allowed = computed(() => can('communication_config'))
-const activeWorkflowId = ref('meta-speed')
-const activeWorkflow = computed(() => WORKFLOWS.find((w) => w.id === activeWorkflowId.value) ?? WORKFLOWS[0]!)
 </script>
 
 <template>
   <PageHeader
-    :title="activeWorkflow.name"
-    :meta="`${t('Automations · edited by Nerea Bilbao 2 h ago', 'Automatizaciones · editado por Nerea Bilbao hace 2 h')} · ${activeWorkflow.runs}`"
+    :title="activeWorkflow?.name ?? t('Automations', 'Automatizaciones')"
+    :meta="activeWorkflow ? `${t('Automations', 'Automatizaciones')} · ${activeWorkflow.runs}` : t('Built in Campaigns', 'Se crean en Campañas')"
   >
+    <!-- A rule that records instead of sending is neither enabled nor
+    paused, and saying "Enabled" for one would be the single most
+    misleading word on this screen. -->
     <span
+      v-if="activeWorkflow?.dryRun"
+      class="flex h-8 items-center gap-1.5 rounded-ctl border border-warning-border bg-warning-bg px-2.5 text-[12px] font-medium text-warning-text"
+      data-test="workflow-state"
+    >
+      <span class="h-1.5 w-1.5 rounded-full bg-warning-accent" />
+      {{ t('Test run · records, does not send', 'Prueba · registra, no envía') }}
+    </span>
+    <span
+      v-else-if="activeWorkflow"
       class="flex h-8 items-center gap-1.5 rounded-ctl border px-2.5 text-[12px] font-medium"
       :class="activeWorkflow.enabled ? 'border-success-border bg-success-bg text-success-text' : 'border-chip-border bg-chip-bg text-ink-muted'"
+      data-test="workflow-state"
     >
       <span class="h-1.5 w-1.5 rounded-full" :class="activeWorkflow.enabled ? 'bg-success-accent' : 'bg-toggle-off'" />
       {{ activeWorkflow.enabled ? t('Enabled', 'Activo') : t('Paused', 'En pausa') }}
     </span>
-    <button type="button" class="flex h-8 items-center rounded-ctl border border-line-control bg-surface px-3 text-[12.5px] font-medium text-ink-700 hover:bg-surface-subtle">
-      {{ t('Test run', 'Ejecución de prueba') }}
-    </button>
-    <button type="button" class="flex h-8 items-center rounded-ctl bg-brand px-3.5 text-[12.5px] font-semibold text-white hover:bg-brand-hover">
-      {{ t('Publish', 'Publicar') }}
-    </button>
+    <NuxtLink
+      v-if="activeWorkflow"
+      to="/campaigns"
+      class="flex h-8 items-center rounded-ctl bg-brand px-3.5 text-[12.5px] font-semibold text-white hover:bg-brand-hover"
+    >
+      {{ t('Edit', 'Editar') }}
+    </NuxtLink>
   </PageHeader>
 
   <div class="flex-1 overflow-y-auto">
@@ -56,49 +79,39 @@ const activeWorkflow = computed(() => WORKFLOWS.find((w) => w.id === activeWorkf
           <section class="flex flex-col gap-1 rounded-card border border-line bg-surface p-3 shadow-card">
             <div class="flex items-baseline justify-between gap-2 px-0.5 pb-1">
               <h2 class="text-[11px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ t('Workflows', 'Flujos') }}</h2>
-              <button type="button" class="text-[11px] font-semibold text-brand-text hover:underline">{{ t('New', 'Nuevo') }}</button>
+              <!-- Editing lives in Campaigns, which is where these rules are
+              actually built. A second editor here would be a second source of
+              truth for the same rows. -->
+              <NuxtLink to="/campaigns" class="text-[11px] font-semibold text-brand-text hover:underline">{{ t('Edit in Campaigns', 'Editar en Campañas') }}</NuxtLink>
             </div>
+            <p v-if="workflows.length === 0" class="px-0.5 py-1 text-[11px] leading-[1.5] text-ink-muted" data-test="no-workflows">
+              {{ t('No automations yet. Create one in Campaigns and it appears here.', 'Aún no hay automatizaciones. Crea una en Campañas y aparecerá aquí.') }}
+            </p>
             <button
-              v-for="flow in WORKFLOWS"
+              v-for="flow in workflows"
               :key="flow.id"
               type="button"
               class="flex flex-col gap-0.5 rounded-ctl px-2 py-1.5 text-left"
               :class="activeWorkflowId === flow.id ? 'bg-brand-tint' : 'hover:bg-surface-subtle'"
               :data-test="`workflow-${flow.id}`"
-              @click="activeWorkflowId = flow.id"
+              @click="selectWorkflow(flow.id)"
             >
               <span class="text-[11.5px] font-medium" :class="activeWorkflowId === flow.id ? 'text-brand-text' : 'text-ink-700'">{{ flow.name }}</span>
               <span class="flex items-center gap-1.5">
-                <span class="h-1.5 w-1.5 rounded-full" :class="flow.enabled ? 'bg-success-accent' : 'bg-toggle-off'" />
+                <span class="h-1.5 w-1.5 rounded-full" :class="flow.dryRun ? 'bg-warning-accent' : flow.enabled ? 'bg-success-accent' : 'bg-toggle-off'" />
                 <span class="text-[10px] text-ink-faint">{{ flow.runs }}</span>
               </span>
             </button>
           </section>
 
-          <!-- Prefabs, because a clinic should not have to invent
-          missed-call-text-back from an empty canvas. -->
-          <section class="flex flex-col gap-2 rounded-card border border-line bg-surface p-3 shadow-card">
-            <h2 class="px-0.5 text-[11px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ t('Chiro templates', 'Plantillas') }}</h2>
-            <button
-              v-for="tpl in TEMPLATES"
-              :key="tpl.name"
-              type="button"
-              class="flex flex-col gap-0.5 rounded-ctl border border-line bg-surface-subtle px-2.5 py-2 text-left hover:border-brand-tintBorder"
-            >
-              <span class="text-[11.5px] font-medium text-ink-700">{{ tpl.name }}</span>
-              <span class="text-[10px] text-ink-muted">{{ tpl.note }}</span>
-            </button>
-          </section>
         </div>
 
         <!-- Canvas -->
         <div class="flex flex-col gap-2">
           <div class="flex items-center gap-2">
-            <button type="button" class="flex h-7 items-center rounded-ctl border border-line-control bg-surface px-2.5 text-[11.5px] font-medium text-ink-700 hover:bg-surface-subtle">
-              + {{ t('Add step', 'Añadir paso') }}
-            </button>
-            <span class="rounded-ctl border border-line-control bg-surface px-2 py-1 text-[11px] text-ink-muted">{{ t('Fit', 'Ajustar') }}</span>
-            <span class="rounded-ctl border border-line-control bg-surface px-2 py-1 text-[11px] text-ink-muted">100%</span>
+            <NuxtLink to="/campaigns" class="flex h-7 items-center rounded-ctl border border-line-control bg-surface px-2.5 text-[11.5px] font-medium text-ink-700 hover:bg-surface-subtle">
+              + {{ t('Add step in Campaigns', 'Añadir paso en Campañas') }}
+            </NuxtLink>
           </div>
           <GrowthWorkflowCanvas
             :nodes="nodes"
@@ -123,7 +136,10 @@ const activeWorkflow = computed(() => WORKFLOWS.find((w) => w.id === activeWorkf
               <span class="rounded-ctl border border-line-control bg-surface px-2.5 py-1.5 text-[11.5px] text-ink-700">{{ field.value }}</span>
             </div>
 
-            <div class="flex flex-col gap-1.5 border-t border-line-divider pt-3">
+            <!-- Only when there are any. Nothing in the schema branches yet,
+            so every step has exactly one exit, and an empty "Outputs"
+            heading is a gap where the fixture used to promise branches. -->
+            <div v-if="selectedConfig.outputs.length > 0" class="flex flex-col gap-1.5 border-t border-line-divider pt-3">
               <span class="text-[10.5px] uppercase tracking-[.06em] text-ink-faint">{{ t('Outputs', 'Salidas') }}</span>
               <div v-for="out in selectedConfig.outputs" :key="out.label" class="flex items-center justify-between gap-2 rounded-ctl border border-line bg-surface-subtle px-2.5 py-1.5">
                 <span class="min-w-0 truncate text-[11px] text-ink-700">{{ out.label }}</span>

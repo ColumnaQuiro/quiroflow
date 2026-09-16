@@ -6,6 +6,61 @@ const { config, channels, testModelAvailable, loading, saving, error, save, live
 
 const allowed = computed(() => can('communication_config'))
 
+// The three lists the prompt is actually built from. They were rendered and
+// not editable, which left the knowledge base permanently empty -- and the
+// card itself says an empty one makes the receptionist deflect rather than
+// answer. The endpoint already accepted all three; only the way in was
+// missing.
+const newQuestion = ref('')
+const newRuleText = ref('')
+const newRuleAction = ref('')
+const newCardTitle = ref('')
+const newCardLines = ref('')
+
+function addKnowledgeCard() {
+  const title = newCardTitle.value.trim()
+  if (!title) return
+  const lines = newCardLines.value.split('\n').map((l) => l.trim()).filter(Boolean)
+  save({
+    knowledge: [
+      ...(config.value?.knowledge ?? []),
+      // A stable id so Vue's keys and any later edit refer to the same card
+      // rather than to whatever is currently in that position.
+      { id: crypto.randomUUID(), title: title.slice(0, 120), lines },
+    ],
+  })
+  newCardTitle.value = ''
+  newCardLines.value = ''
+}
+
+function removeKnowledgeCard(id: string) {
+  save({ knowledge: (config.value?.knowledge ?? []).filter((c) => c.id !== id) })
+}
+
+function addQuestion() {
+  const question = newQuestion.value.trim()
+  if (!question) return
+  save({ qualificationQuestions: [...(config.value?.qualificationQuestions ?? []), question.slice(0, 300)] })
+  newQuestion.value = ''
+}
+
+function removeQuestion(index: number) {
+  save({ qualificationQuestions: (config.value?.qualificationQuestions ?? []).filter((_, i) => i !== index) })
+}
+
+function addEscalationRule() {
+  const rule = newRuleText.value.trim()
+  const action = newRuleAction.value.trim()
+  if (!rule || !action) return
+  save({ escalationRules: [...(config.value?.escalationRules ?? []), { rule: rule.slice(0, 300), action: action.slice(0, 300) }] })
+  newRuleText.value = ''
+  newRuleAction.value = ''
+}
+
+function removeEscalationRule(index: number) {
+  save({ escalationRules: (config.value?.escalationRules ?? []).filter((_, i) => i !== index) })
+}
+
 const TONES = [
   { value: 'warm_brief', label: t('Warm and brief', 'Cercano y breve') },
   { value: 'clinical', label: t('Clinical', 'Clínico') },
@@ -58,17 +113,20 @@ const CHANNEL_CLASS: Record<string, string> = {
 
       <div v-else class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
         <div class="flex flex-col gap-4">
-          <!-- The switch that decides whether any of this reaches a patient,
-          first and on its own. It is off until someone turns it on, and it
-          says what is still missing before it can do anything. -->
+          <!-- The switch that decides whether the receptionist touches real
+          conversations at all, first and on its own. It used to record the
+          intent and gate nothing, which was honest while there was nothing to
+          gate; it now decides whether /api/growth/leads/:id/draft-reply will
+          write anything, and the Inbox hides the button when it is off. Still
+          off until someone turns it on. -->
           <section class="flex flex-col gap-3 rounded-card border border-line bg-surface p-4 shadow-card">
             <div class="flex flex-wrap items-start justify-between gap-3">
               <div class="flex flex-col gap-1">
-                <h2 class="text-[12.5px] font-semibold tracking-tightTitle text-ink-900">{{ t('Answering', 'Respuesta automática') }}</h2>
+                <h2 class="text-[12.5px] font-semibold tracking-tightTitle text-ink-900">{{ t('Answering', 'Respuestas') }}</h2>
                 <p class="max-w-[46ch] text-[11.5px] leading-[1.5] text-ink-muted">
                   {{ t(
-                    'Automatic answering of real enquiries is not built yet. This switch records the intent; the receptionist only replies in test mode for now.',
-                    'La respuesta automática a consultas reales aún no está construida. Este interruptor guarda la intención; por ahora la recepcionista solo responde en modo de prueba.',
+                    'On, the receptionist reads real enquiries in the Inbox and drafts replies for you to approve. It never sends on its own — every message is one somebody read first.',
+                    'Activada, la recepcionista lee las consultas reales en la Bandeja y redacta respuestas para que las apruebes. Nunca envía por su cuenta: cada mensaje lo ha leído antes una persona.',
                   ) }}
                 </p>
               </div>
@@ -150,9 +208,91 @@ const CHANNEL_CLASS: Record<string, string> = {
                   'Nada todavía. Sin esto, la recepcionista dirá que lo consultará con un compañero en lugar de inventar precios u horarios.',
                 ) }}
               </p>
-              <div v-for="card in config.knowledge" :key="card.id" class="flex flex-col gap-1 rounded-ctl border border-line bg-surface-subtle p-3">
-                <span class="text-[11.5px] font-semibold text-ink-900">{{ card.title }}</span>
+              <div v-for="card in config.knowledge" :key="card.id" class="flex flex-col gap-1 rounded-ctl border border-line bg-surface-subtle p-3" data-test="knowledge-card">
+                <div class="flex items-baseline justify-between gap-2">
+                  <span class="text-[11.5px] font-semibold text-ink-900">{{ card.title }}</span>
+                  <button
+                    type="button"
+                    class="shrink-0 text-[10.5px] font-medium text-danger-text hover:underline"
+                    :disabled="saving"
+                    :data-test="`remove-card-${card.id}`"
+                    @click="removeKnowledgeCard(card.id)"
+                  >{{ t('Remove', 'Quitar') }}</button>
+                </div>
                 <span v-for="line in card.lines" :key="line" class="text-[11px] text-ink-muted">{{ line }}</span>
+              </div>
+
+              <div class="flex flex-col gap-1.5 border-t border-line-divider pt-2.5">
+                <input
+                  v-model="newCardTitle"
+                  type="text"
+                  :placeholder="t('What it is about — e.g. Prices, Opening hours, Parking', 'De qué trata — p. ej. Precios, Horarios, Parking')"
+                  class="h-8 rounded-ctl border border-line-control bg-surface px-2.5 text-[12px] text-ink-700 focus:border-brand focus:outline-none"
+                  data-test="card-title"
+                />
+                <textarea
+                  v-model="newCardLines"
+                  rows="3"
+                  :placeholder="t('One fact per line. First visit 50€\nFollow-up 40€', 'Un dato por línea. Primera visita 50€\nRevisión 40€')"
+                  class="resize-none rounded-ctl border border-line-control bg-surface px-2.5 py-2 text-[12px] leading-[1.5] text-ink-700 focus:border-brand focus:outline-none"
+                  data-test="card-lines"
+                />
+                <UiBtn variant="secondary" size="sm" class="self-start" :disabled="saving || !newCardTitle.trim()" data-test="add-card" @click="addKnowledgeCard">
+                  {{ t('Add card', 'Añadir tarjeta') }}
+                </UiBtn>
+                <!-- The model is told these are the clinic's own facts, so a
+                wrong one is repeated confidently to a patient rather than
+                hedged. Worth saying where it is typed. -->
+                <p class="text-[10.5px] leading-[1.5] text-ink-muted">
+                  {{ t(
+                    'The receptionist treats these as fact and repeats them to patients. Anything not here, it says it will check.',
+                    'La recepcionista trata esto como un hecho y se lo repite a los pacientes. Lo que no esté aquí, dirá que lo consultará.',
+                  ) }}
+                </p>
+              </div>
+            </GrowthSettingCard>
+
+            <GrowthSettingCard :title="t('Qualification questions', 'Preguntas de cualificación')">
+              <p v-if="!config.qualificationQuestions.length" class="text-[11.5px] leading-[1.5] text-ink-muted" data-test="questions-empty">
+                {{ t(
+                  'None yet. The receptionist will answer and offer times without finding out what is wrong first.',
+                  'Ninguna todavía. La recepcionista responderá y ofrecerá horarios sin averiguar antes qué le pasa.',
+                ) }}
+              </p>
+              <ol v-else class="flex flex-col gap-1.5">
+                <li
+                  v-for="(question, i) in config.qualificationQuestions"
+                  :key="`${question}-${i}`"
+                  class="flex items-start justify-between gap-2 text-[11.5px] text-ink-700"
+                  data-test="qualification-question"
+                >
+                  <span class="flex min-w-0 items-start gap-2">
+                    <span class="mt-px flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-chip-bg text-[9.5px] font-semibold text-ink-muted">{{ i + 1 }}</span>
+                    <span>{{ question }}</span>
+                  </span>
+                  <button type="button" class="shrink-0 text-[10.5px] font-medium text-danger-text hover:underline" :disabled="saving" @click="removeQuestion(i)">
+                    {{ t('Remove', 'Quitar') }}
+                  </button>
+                </li>
+              </ol>
+
+              <div class="flex flex-col gap-1.5 border-t border-line-divider pt-2.5">
+                <input
+                  v-model="newQuestion"
+                  type="text"
+                  :placeholder="t('e.g. How long have you had it?', 'p. ej. ¿Desde cuándo lo tienes?')"
+                  class="h-8 rounded-ctl border border-line-control bg-surface px-2.5 text-[12px] text-ink-700 focus:border-brand focus:outline-none"
+                  data-test="question-text"
+                  @keyup.enter="addQuestion"
+                />
+                <UiBtn variant="secondary" size="sm" class="self-start" :disabled="saving || !newQuestion.trim()" data-test="add-question" @click="addQuestion">
+                  {{ t('Add question', 'Añadir pregunta') }}
+                </UiBtn>
+                <!-- Order is the order they get asked, because that is how the
+                prompt lists them. -->
+                <p class="text-[10.5px] leading-[1.5] text-ink-muted">
+                  {{ t('Asked in this order, one at a time.', 'Se preguntan en este orden, de una en una.') }}
+                </p>
               </div>
             </GrowthSettingCard>
 
@@ -195,10 +335,40 @@ const CHANNEL_CLASS: Record<string, string> = {
               {{ t('None set. The receptionist will answer everything it can.', 'Ninguna definida. La recepcionista responderá todo lo que pueda.') }}
             </p>
             <ul v-else class="flex flex-col gap-1.5">
-              <li v-for="rule in config.escalationRules" :key="rule.rule" class="rounded-ctl border border-line bg-surface-subtle px-2.5 py-1.5 text-[11.5px] text-ink-700">
-                {{ rule.rule }} → {{ rule.action }}
+              <li
+                v-for="(rule, i) in config.escalationRules"
+                :key="`${rule.rule}-${i}`"
+                class="flex items-baseline justify-between gap-2 rounded-ctl border border-line bg-surface-subtle px-2.5 py-1.5 text-[11.5px] text-ink-700"
+                data-test="escalation-rule"
+              >
+                <span class="min-w-0">{{ rule.rule }} → {{ rule.action }}</span>
+                <button type="button" class="shrink-0 text-[10.5px] font-medium text-danger-text hover:underline" :disabled="saving" @click="removeEscalationRule(i)">
+                  {{ t('Remove', 'Quitar') }}
+                </button>
               </li>
             </ul>
+
+            <div class="flex flex-col gap-1.5 border-t border-line-divider pt-2.5">
+              <div class="grid gap-1.5 sm:grid-cols-2">
+                <input
+                  v-model="newRuleText"
+                  type="text"
+                  :placeholder="t('When… e.g. they mention chest pain', 'Cuando… p. ej. mencionan dolor torácico')"
+                  class="h-8 rounded-ctl border border-line-control bg-surface px-2.5 text-[12px] text-ink-700 focus:border-brand focus:outline-none"
+                  data-test="rule-when"
+                />
+                <input
+                  v-model="newRuleAction"
+                  type="text"
+                  :placeholder="t('Then… e.g. hand to a chiropractor now', 'Entonces… p. ej. pasar a un quiropráctico ya')"
+                  class="h-8 rounded-ctl border border-line-control bg-surface px-2.5 text-[12px] text-ink-700 focus:border-brand focus:outline-none"
+                  data-test="rule-then"
+                />
+              </div>
+              <UiBtn variant="secondary" size="sm" class="self-start" :disabled="saving || !newRuleText.trim() || !newRuleAction.trim()" data-test="add-rule" @click="addEscalationRule">
+                {{ t('Add rule', 'Añadir regla') }}
+              </UiBtn>
+            </div>
           </GrowthSettingCard>
         </div>
 

@@ -1,15 +1,25 @@
-// The pill by the patient's name is the balance, the way PracticeHub states
-// it: one number, positive when the clinic holds their money, negative when
-// they owe.
+// The pill by the patient's name answers one question for the front desk:
+// what can this person draw on right now?
 //
-// It has been three shapes. Credit only, which went blank for every bono
+// It has been several shapes. Credit only, which went blank for every bono
 // holder once 0161 moved a bono's value onto its session counter. Then credit
-// plus the euro value of unused sessions, labelled "in bonos", which existed
-// to paper over that gap. The re-migration removed the gap itself: a visit is
-// charged at the bono rate, so prepaid money sits in the balance and each
-// visit draws it down. There is nothing left for a second figure to explain.
+// plus the euro value of unused sessions, labelled "in bonos". Then the
+// balance, on the reasoning that a visit is charged at the bono rate so
+// prepaid money sits in the balance and each visit draws it down.
+//
+// That last shape held only where the arithmetic happened to line up. The
+// balance spans every charge and payment a patient has ever had, so it carries
+// the whole imported PracticeHub history; for 139 of the 217 patients showing
+// a positive one it disagreed with what they could actually use. And it was
+// labelled "credit", which bono money is not -- it is already committed to the
+// sessions it bought.
+//
+// So the pill shows availableCents now, the figure the Billing tab calls
+// Available. In THIS spec the two coincide, which is the case the old
+// reasoning was built on; see pill-shows-what-they-can-draw-on.cy.ts for one
+// where they do not.
 describe('The balance pill', () => {
-  it('shows prepaid bono money as credit, drawn down by the visits taken', () => {
+  it('shows prepaid bono money as available, drawn down by the visits taken', () => {
     cy.seedStaffAccount().then((account) => {
       cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Bruna', lastName: 'Bonovalue' }).then((patient: any) => {
         // She paid €528 for a Bono 12 and has taken 6 visits, charged at the
@@ -31,7 +41,7 @@ describe('The balance pill', () => {
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}`)
 
-        cy.contains('€264.00 credit').should('be.visible')
+        cy.contains('€264.00 available').should('be.visible')
         // The sessions counter still says what is left in visits, which is
         // the other half of the picture and not money.
         cy.contains('dt', 'In bonos').parent().should('contain', '€264.00')

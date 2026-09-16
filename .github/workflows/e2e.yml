@@ -93,13 +93,24 @@ jobs:
       # specs, so it is not worth defending if a later regrouping wants it
       # back.
       #
-      # Expected Cypress time per shard: subscription+public 74s, auth+
-      # calendar+inbox ~65s, settings 62s, navigation 59s, patients+booking
-      # 57s. Rebalance again once one shard consistently lags -- read the real
-      # per-spec numbers out of the "All specs passed" table in its log rather
-      # than guessing, which is how settings came to be mis-sized before: the
-      # estimate summed a stale table and missed a spec whose name the table
-      # had truncated.
+      # Cypress time per shard, measured against the built server (see the
+      # build step below) rather than estimated: growth-leads 2m41,
+      # growth-platform 2m16, patients 1m27, settings 50s, calendar 47s,
+      # navigation 17s, the rest under 30s each.
+      # Those numbers replace a set that had gone badly stale -- it claimed
+      # every shard ran in about a minute while growth was taking 8m25.
+      #
+      # Growth is now the whole critical path and cannot be split here:
+      # shards are folder globs on purpose, because that is what lets
+      # check-e2e-shards.mjs prove every folder runs somewhere. Listing
+      # individual spec files would balance the clock and reopen the hole it
+      # closed -- a new growth spec would belong to no shard and never run.
+      # Splitting growth means splitting the folder, or teaching that script
+      # about file-level shards first.
+      #
+      # Rebalance from the real per-spec numbers in the "All specs passed"
+      # table, never by guessing: that is how settings came to be mis-sized
+      # before, from a stale table with a truncated spec name.
       matrix:
         shard:
           - name: settings
@@ -113,8 +124,21 @@ jobs:
           # automations and reputation specs are still to come. scripts/
           # check-e2e-shards.mjs is what noticed it had no shard at all, after
           # two spec files had already merged and never run.
-          - name: growth
-            specs: "cypress/e2e/growth/**"
+          # Growth is split because as one shard it was the whole critical
+          # path: 237s against the next-slowest 87s. The halves are balanced
+          # on measured time, not spec count: leads 2m41, platform 2m16.
+          #
+          # growth-leads takes a prefix glob, so a new growth-lead-*.cy.ts
+          # joins it with no workflow edit; growth-receptionist* is a glob for
+          # the same reason. The rest of growth-platform names its specs,
+          # which means a new non-lead growth spec matches nothing and
+          # check-e2e-shards.mjs fails until someone assigns it. That is the
+          # trade for splitting a folder, and the failure is the point: the
+          # alternative is a spec that never runs and says nothing.
+          - name: growth-leads
+            specs: "cypress/e2e/growth/growth-lead*.cy.ts,cypress/e2e/growth/growth-inbox.cy.ts"
+          - name: growth-platform
+            specs: "cypress/e2e/growth/growth-receptionist*.cy.ts,cypress/e2e/growth/growth-reputation.cy.ts,cypress/e2e/growth/growth-dashboard-data.cy.ts,cypress/e2e/growth/growth-dashboard.cy.ts,cypress/e2e/growth/growth-automations.cy.ts,cypress/e2e/growth/growth-automation-builder.cy.ts,cypress/e2e/growth/growth-addon-entitlement.cy.ts,cypress/e2e/growth/growth-review-links.cy.ts"
           - name: patients-and-booking
             specs: "cypress/e2e/patients/**,cypress/e2e/public-booking/**"
           - name: auth-calendar-inbox
@@ -129,15 +153,41 @@ jobs:
           node-version: 22
           cache: npm
 
-      - uses: supabase/setup-cli@v1
+      # The CLI is cached and fetched by hand rather than through
+      # supabase/setup-cli, which downloads it on every job of every run --
+      # seven times per push here, and it only takes one bad response to fail
+      # a shard before a single test runs. That has now happened twice for
+      # two different reasons: resolving "latest" hit GitHub's API rate limit
+      # (PR #17), and the release download itself returned 500 three times in
+      # a row (#280). The action retries twice and gives up; a 500 outlasts
+      # that.
+      #
+      # So: restore from cache, and on a miss fetch it with retries that
+      # actually cover an outage. Keyed by version, so bumping VERSION below
+      # is all it takes to pick up a new one -- and the tarball is 54MB
+      # fetched once per version rather than seven times per push.
+      - name: Restore the Supabase CLI
+        id: supabase-cli
+        uses: actions/cache@v4
         with:
-          # Pinned instead of "latest" -- resolving "latest" queries GitHub's
-          # API on every run, across every shard and every PR, and hitting
-          # that endpoint's rate limit fails the job before any test runs
-          # (PR #17's inbox-nav-patients shard: "Failed to resolve latest
-          # Supabase CLI release: rate limit exceeded"). Bump this by hand
-          # when there's a reason to (a CLI feature/fix this suite needs).
-          version: 2.116.0
+          path: ~/.supabase-cli
+          key: supabase-cli-${{ runner.os }}-${{ runner.arch }}-2.116.0
+
+      - name: Download the Supabase CLI
+        if: steps.supabase-cli.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.supabase-cli
+          # --retry-all-errors is what makes this survive the 5xx that beat
+          # the action: plain --retry ignores HTTP errors entirely.
+          curl -fsSL --retry 6 --retry-all-errors --retry-delay 5 \
+            https://github.com/supabase/cli/releases/download/v2.116.0/supabase_linux_amd64.tar.gz \
+            | tar -xz -C ~/.supabase-cli supabase
+          chmod +x ~/.supabase-cli/supabase
+
+      - name: Put the Supabase CLI on PATH
+        run: |
+          echo "$HOME/.supabase-cli" >> "$GITHUB_PATH"
+          "$HOME/.supabase-cli/supabase" --version
 
       - name: Start local Supabase (in the background)
         # Backgrounded so it overlaps `npm ci` instead of queueing behind it:
@@ -208,6 +258,29 @@ jobs:
       # fatal.
       - run: npx cypress install
 
+      # Built here, in the window the backgrounded `supabase start` has
+      # already claimed. Cypress used to run against `nuxt dev`, which
+      # compiles each route the first time a spec visits it -- so every shard
+      # paid Vite's compile cost again, spec after spec. Measured on this
+      # suite, serving a build instead:
+      #
+      #   navigation  1m06 -> 0m17     (walks every page; the best case)
+      #   settings    1m27 -> 0m50
+      #
+      # The build costs ~60-90s, which is roughly what the step below spends
+      # waiting for Postgres to come up anyway. Putting it here means the
+      # shard pays for it out of dead time rather than adding to the run.
+      #
+      # node-server, not the netlify preset production ships: that one emits
+      # a function bundle with no server to start. It is still far closer to
+      # production than the dev server was -- same bundling, same SSR path,
+      # no on-demand compilation. The typecheck job still builds with the
+      # real preset, so the production output keeps its own gate.
+      - name: Build the app the specs will run against
+        run: npm run build
+        env:
+          NITRO_PRESET: node-server
+
       - name: Wait for Supabase and export its env vars
         run: |
           pid="$(cat /tmp/supabase-start.pid)"
@@ -233,9 +306,13 @@ jobs:
             /tmp/supabase-status.env >> "$GITHUB_ENV"
 
       - name: Run Cypress (${{ matrix.shard.name }})
-        run: npx start-server-and-test dev http://localhost:3000 "cypress run --spec '${{ matrix.shard.specs }}'"
+        # The built server, not `nuxt dev` -- see the build step above. Env
+        # reaches it at runtime (NUXT_PUBLIC_*), which is why building before
+        # Supabase is up is fine.
+        run: npx start-server-and-test "node .output/server/index.mjs" http://localhost:3000 "cypress run --spec '${{ matrix.shard.specs }}'"
         env:
           CYPRESS_baseUrl: http://localhost:3000
+          PORT: 3000
           # The automation crons refuse an unsigned call, so a spec that drives
           # one needs the same secret the server checks. A fixed value: it
           # guards a local, ephemeral stack, and a real secret in the workflow

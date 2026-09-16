@@ -19,7 +19,7 @@ interface InvoiceRow {
   is_refund: boolean
   refunds_invoice_id: string | null
 }
-interface PaymentRow { id: string; invoice_id: string | null; amount_cents: number; method: string; paid_at: string }
+interface PaymentRow { id: string; invoice_id: string | null; amount_cents: number; method: string; paid_at: string; created_by?: string | null; stripe_payment_intent_id?: string | null; team_members?: { full_name: string | null } | null }
 // A visit drawn from a package. Carries no debit or credit -- the money was
 // already accounted for when the package was bought -- so it appears in the
 // ledger purely so a visit is not silently absent from a patient's history.
@@ -33,7 +33,7 @@ const props = defineProps<{
   payments: PaymentRow[]
   credits: CreditRow[]
   packageSessions: PackageSessionRow[]
-  creditLedgerCents: number
+  spendableCreditCents: number
   sendingInvoiceId: string
   sendResultInvoiceId: string
   sendResultMessage: string
@@ -72,6 +72,24 @@ function invoiceRefFor(id: string | null) {
   return props.invoices.find((i) => i.id === id)?.invoice_number ?? '(deleted invoice)'
 }
 
+/**
+ * Who recorded a payment, distinguishing the three things a missing author
+ * can mean.
+ *
+ * A name is a person at the desk. No author but a Stripe payment intent is
+ * money that arrived on its own -- autopay on a bono, a membership renewal --
+ * which is a real answer, not a gap, and the reason created_by is nullable at
+ * all. No author and no Stripe reference is a row written before created_by
+ * existed: nothing recorded it at the time and nothing can recover it now, so
+ * it says so rather than implying the payment was automatic.
+ */
+function recordedBy(p: PaymentRow): string {
+  const name = p.team_members?.full_name
+  if (name) return name
+  if (p.stripe_payment_intent_id) return t('Automatic (card on file)', 'Automático (tarjeta guardada)')
+  return t('Not recorded', 'Sin registrar')
+}
+
 interface LedgerRow {
   key: string
   ref: string
@@ -95,7 +113,12 @@ interface LedgerRow {
 const rows = computed<LedgerRow[]>(() => {
   const invoiceRows: LedgerRow[] = props.invoices.map((inv) => {
     const paidForInvoice = props.payments.filter((p) => p.invoice_id === inv.id).reduce((sum, p) => sum + p.amount_cents, 0)
-    const openCents = inv.total_cents - paidForInvoice
+    // A receipt marked paid is settled even with no payment rows behind it:
+    // that is what a visit covered by a prepaid bono looks like, and what
+    // settle_imported_invoices() left across the migrated history. Subtracting
+    // payments alone showed the full amount outstanding, in red, on visits the
+    // patient had already paid for.
+    const openCents = inv.status === 'paid' ? 0 : inv.total_cents - paidForInvoice
     const items = props.lineItemDescriptions[inv.id] ?? []
 
     // A refund invoice reads as a credit against the original, not a
@@ -186,6 +209,11 @@ const rows = computed<LedgerRow[]>(() => {
     detail: [
       { label: t('Method', 'Método'), value: p.method },
       { label: t('Applied to', 'Aplicado a'), value: invoiceRefFor(p.invoice_id) ?? '—' },
+      // Shown for every payment, including the ones with no author, because
+      // "Automatic" and "not recorded" are different answers and a row that
+      // simply omits the line can't tell them apart. Rows written before
+      // created_by existed are the honest third case: nothing recorded it.
+      { label: t('Recorded by', 'Registrado por'), value: recordedBy(p) },
     ],
   }))
 
@@ -353,7 +381,7 @@ async function submitTransferCredit() {
   transferError.value = ''
   if (!transferTarget.value) return
   const amountCents = Math.round((parseFloat(transferAmount.value) || 0) * 100)
-  if (amountCents <= 0 || amountCents > props.creditLedgerCents) {
+  if (amountCents <= 0 || amountCents > props.spendableCreditCents) {
     transferError.value = t('Amount must be positive and not exceed available credit.', 'El importe debe ser positivo y no superar el crédito disponible.')
     return
   }
@@ -421,7 +449,7 @@ async function sendStatement() {
             <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="newInvoice">{{ t('New receipt', 'Nuevo recibo') }}</button>
             <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="takePayment">{{ t('New Payment', 'Nuevo pago') }}</button>
             <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="addCredit">{{ t('Add Credit', 'Añadir crédito') }}</button>
-            <button v-if="creditLedgerCents > 0" type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="openTransferCredit">
+            <button v-if="spendableCreditCents > 0" type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="openTransferCredit">
               {{ t('Transfer Credit', 'Transferir crédito') }}
             </button>
             <div class="my-1 border-t border-line-divider"></div>
@@ -527,7 +555,7 @@ async function sendStatement() {
   <div v-if="transferModalOpen" class="fixed inset-0 z-20 flex items-center justify-center bg-ink-900/40 p-4" @click.self="transferModalOpen = false">
     <div class="w-full max-w-sm rounded-card border border-line bg-surface p-4 shadow-popover">
       <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Transfer credit', 'Transferir crédito') }}</p>
-      <p class="mt-1 text-[12px] text-ink-faint">{{ t('Moves an amount from this patient\'s credit', 'Mueve un importe del crédito de este paciente') }} (€{{ (creditLedgerCents / 100).toFixed(2) }} {{ t('available', 'disponible') }}) {{ t('to another patient\'s account.', 'a la cuenta de otro paciente.') }}</p>
+      <p class="mt-1 text-[12px] text-ink-faint">{{ t('Moves an amount from this patient\'s credit', 'Mueve un importe del crédito de este paciente') }} (€{{ (spendableCreditCents / 100).toFixed(2) }} {{ t('available', 'disponible') }}) {{ t('to another patient\'s account.', 'a la cuenta de otro paciente.') }}</p>
 
       <div class="mt-3">
         <label class="block text-[11px] text-ink-muted">{{ t('To patient', 'Al paciente') }}</label>

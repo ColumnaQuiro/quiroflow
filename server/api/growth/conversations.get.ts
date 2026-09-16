@@ -1,4 +1,4 @@
-import { requirePermission } from '~/server/utils/requirePermission'
+import { requireGrowth } from '~/server/utils/requireGrowth'
 import { formatEuros } from '~/server/utils/leads'
 
 // Lead conversations for the Inbox.
@@ -13,7 +13,7 @@ import { formatEuros } from '~/server/utils/leads'
 // place to put a message, so no conversation on those channels can exist
 // yet and none is invented here.
 export default defineEventHandler(async (event) => {
-  const { supabase, teamMember } = await requirePermission(event, 'communication_config')
+  const { supabase, teamMember } = await requireGrowth(event)
 
   const { data: messages, error } = await supabase
     .from('whatsapp_messages')
@@ -37,7 +37,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: leads } = await supabase
     .from('leads')
-    .select('id, full_name, phone, source, stage, ai_state, estimated_value_cents, patient_id, ai_taken_over_at, team_members:ai_taken_over_by(full_name)')
+    .select('id, full_name, phone, source, stage, ai_state, estimated_value_cents, patient_id, ai_taken_over_at, ai_draft_body, team_members:ai_taken_over_by(full_name)')
     .eq('account_id', teamMember.account_id)
     .is('deleted_at', null)
     .in('id', [...byLead.keys()])
@@ -67,6 +67,17 @@ export default defineEventHandler(async (event) => {
         unread: last.direction === 'inbound',
         lastMessageAt: last.created_at,
         preview: last.body_preview ?? '',
+        // A dry-run rule records what it WOULD have sent as an outbound row,
+        // so the newest row on a lead in test mode is routinely a message
+        // nobody received. Unmarked, this list says the clinic said it.
+        previewWasNotSent: last.status === 'would_send',
+        // A reply the receptionist wrote and nobody has decided on. Since the
+        // tick started writing these unprompted, a draft can appear on a
+        // thread nobody opened -- so the list has to say which rows are
+        // waiting on a person, or the drafts help only whoever goes looking.
+        // The text is not sent: this is a flag, and the list is not where
+        // somebody should be reading a reply before approving it.
+        hasDraft: Boolean(lead.ai_draft_body),
         source: lead.source,
         stage: lead.stage,
         value: formatEuros(lead.estimated_value_cents),

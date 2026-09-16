@@ -59,7 +59,7 @@ interface PaymentScheduleRow {
   status: string
 }
 interface StripeEventRow { id: string; payment_schedule_id: string; period_start: string; amount_cents: number; status: string }
-interface LedgerPaymentRow { id: string; invoice_id: string | null; amount_cents: number; method: string; paid_at: string; package_purchase_id: string | null; external_reference: string | null; created_by: string | null; stripe_payment_intent_id: string | null; team_members: { full_name: string | null } | null }
+interface LedgerPaymentRow { id: string; invoice_id: string | null; amount_cents: number; method: string; paid_at: string; package_purchase_id: string | null; external_reference: string | null; purpose: string | null; created_by: string | null; stripe_payment_intent_id: string | null; team_members: { full_name: string | null } | null }
 interface LedgerCreditRow { id: string; amount_cents: number; reason: string | null; method: string | null; invoice_id: string | null; created_at: string }
 
 const supabase = useSupabaseClient()
@@ -172,6 +172,10 @@ async function addCredit() {
     amount_cents: amountCents,
     reason: addCreditReason.value || null,
     method: addCreditMethod.value,
+    // The row restates the payment above rather than adjusting anything, and
+    // says so -- otherwise the balance counts the same euros twice, once as
+    // money in and once as credit. See the column comment.
+    payment_id: creditPayment?.id ?? null,
     created_by: store.teamMember?.id ?? null,
   })
   if (creditPayment) {
@@ -566,7 +570,7 @@ async function loadLedger() {
     // a soft-deleted member keeps their row and their name).
     supabase
       .from('payments')
-      .select('id, invoice_id, amount_cents, method, paid_at, package_purchase_id, external_reference, created_by, stripe_payment_intent_id, team_members(full_name)')
+      .select('id, invoice_id, amount_cents, method, paid_at, package_purchase_id, external_reference, purpose, created_by, stripe_payment_intent_id, team_members(full_name)')
       .eq('patient_id', props.patientId),
     supabase
       .from('account_credits')
@@ -1212,10 +1216,35 @@ function toggleLinkPayment(packageId: string) {
 async function linkPaymentToPackage(purchase: PackagePurchaseRow) {
   if (!linkPaymentSelection.value) return
   linkingPayment.value = true
+  const payment = ledgerPayments.value.find((p) => p.id === linkPaymentSelection.value)
+
+  // Money taken ON ACCOUNT is not moved by relabelling it. Adding credit wrote
+  // two rows for the same euros -- this payment, and a credit row saying the
+  // patient still has it to direct somewhere -- so pointing the payment at a
+  // bono while that credit row stands spends it twice: Adrian Oropeza's 115
+  // EUR paid down his bono AND sat in his credit, and "available" read 292
+  // where he had 177.
+  //
+  // Putting it on the bono is therefore the same operation as Collect with
+  // method Credit, and is done the same way: the credit is drawn down and a
+  // payment of method 'credit' records where it went. No factura -- that money
+  // was documented when the cash came in.
+  //
+  // The original payment is still marked against the bono, because that is
+  // what the front desk asked for and the card should show it. It is the
+  // credit-method payment that pays the bono down; utils/bonoOwed skips
+  // on-account money for exactly this reason, so the two cannot both count.
+  if (payment?.purpose === 'on_account') {
+    await recordPackagePayment(purchase.id, payment.amount_cents, 'credit', purchase.package_name, {
+      priceCents: purchase.price_cents,
+      sessionsTotal: purchase.sessions_total,
+    })
+  }
   await supabase.from('payments').update({ package_purchase_id: purchase.id }).eq('id', linkPaymentSelection.value)
+
   linkPaymentSelection.value = ''
   linkingPayment.value = false
-  await loadAll()
+  await Promise.all([loadAll(), refreshCreditSummary()])
 }
 
 async function unlinkPayment(paymentId: string) {

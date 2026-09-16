@@ -46,7 +46,7 @@ onMounted(async () => {
     // Every bono payment, not just those on a sale invoice. A bono sold here
     // has no invoice at all now, and a migrated one never did -- its payments
     // are tied to the purchase directly.
-    supabase.from('payments').select('invoice_id, amount_cents, package_purchase_id, external_reference'),
+    supabase.from('payments').select('invoice_id, amount_cents, package_purchase_id, external_reference, purpose'),
   ])
   invoicesById.value = new Map((invoices ?? []).map((i) => [i.id, i as InvoiceRow]))
   patientsById.value = new Map((patients ?? []).map((p2) => [p2.id, p2 as PatientRow]))

@@ -25,6 +25,7 @@ export type Database = {
           invoice_id: string | null
           method: string | null
           patient_id: string
+          payment_id: string | null
           reason: string | null
         }
         Insert: {
@@ -37,6 +38,7 @@ export type Database = {
           invoice_id?: string | null
           method?: string | null
           patient_id: string
+          payment_id?: string | null
           reason?: string | null
         }
         Update: {
@@ -49,6 +51,7 @@ export type Database = {
           invoice_id?: string | null
           method?: string | null
           patient_id?: string
+          payment_id?: string | null
           reason?: string | null
         }
         Relationships: [
@@ -71,6 +74,13 @@ export type Database = {
             columns: ["invoice_id"]
             isOneToOne: false
             referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_credits_payment_id_fkey"
+            columns: ["payment_id"]
+            isOneToOne: false
+            referencedRelation: "payments"
             referencedColumns: ["id"]
           },
           {

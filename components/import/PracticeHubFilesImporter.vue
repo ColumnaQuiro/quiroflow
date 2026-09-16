@@ -222,10 +222,24 @@ async function importOne(item: { ph: PHFile; patientId: string }) {
     responseType: 'blob',
   })
 
-  const storagePath = `${store.accountId}/${item.patientId}/${Date.now()}-${storageSafe(fileName)}`
+  // Keyed on PracticeHub's file id, not the clock. Date.now() alone collides
+  // when one patient has two files of the same name uploaded in the same
+  // millisecond -- which a batch of 20 makes reachable, and a patient with
+  // several IMG_0001.jpg makes likely. upload() refuses an existing key, so it
+  // would surface as a failed file rather than a lost one, but the id is
+  // already unique per file and costs nothing.
+  const storagePath = `${store.accountId}/${item.patientId}/${item.ph.id}-${storageSafe(fileName)}`
   const { error: uploadError } = await supabase.storage
     .from('patient-files')
-    .upload(storagePath, blob, { contentType: item.ph.mime_type ?? 'application/octet-stream' })
+    .upload(storagePath, blob, {
+      contentType: item.ph.mime_type ?? 'application/octet-stream',
+      // Paired with the deterministic path above: a retry writes the same
+      // object again instead of being refused for existing. Together they make
+      // re-running free of both duplicates and orphans -- the clock-based path
+      // took a fresh key every attempt, so a file fetched twice left its first
+      // upload behind with nothing pointing at it.
+      upsert: true,
+    })
   if (uploadError) throw new Error(uploadError.message)
 
   // The CSV importer may already have made a placeholder row for this file

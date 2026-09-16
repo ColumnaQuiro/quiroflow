@@ -387,8 +387,12 @@ async function createPayment(opts: {
   // price sits on the purchase as owed_cents and payments come off it through
   // this column -- so a part-paid bono can only be seeded this way.
   packagePurchaseId?: string
+  // 'on_account' is the one that matters to the ledger: money added as credit
+  // writes a payment AND an account_credits row for the same euros, and only
+  // the purpose tells them apart afterwards.
+  purpose?: 'visit' | 'bono' | 'membership' | 'on_account'
 }) {
-  const { accountId, invoiceId, amountCents, method, packagePurchaseId } = opts
+  const { accountId, invoiceId, amountCents, method, packagePurchaseId, purpose } = opts
   let patientId = opts.patientId
   if (!patientId) {
     if (!invoiceId) throw new Error('createPayment needs patientId or invoiceId')
@@ -398,7 +402,7 @@ async function createPayment(opts: {
   const row = unwrap(
     await admin
       .from('payments')
-      .insert({ account_id: accountId, patient_id: patientId, invoice_id: invoiceId ?? null, package_purchase_id: packagePurchaseId ?? null, amount_cents: amountCents, method })
+      .insert({ account_id: accountId, patient_id: patientId, invoice_id: invoiceId ?? null, package_purchase_id: packagePurchaseId ?? null, amount_cents: amountCents, method, ...(purpose ? { purpose } : {}) })
       .select('id')
       .single(),
   )
@@ -516,11 +520,20 @@ async function createPackageTemplate(opts: { accountId: string; name: string; se
   return row as { id: string }
 }
 
-async function createAccountCredit(opts: { accountId: string; patientId: string; amountCents: number; reason?: string }) {
+async function createAccountCredit(opts: {
+  accountId: string
+  patientId: string
+  amountCents: number
+  reason?: string
+  // The payment this row restates, for seeding money added on account -- which
+  // writes a payment and a credit row for the same euros. Without it the row
+  // reads as an adjustment and the balance counts the money twice.
+  paymentId?: string
+}) {
   const row = unwrap(
     await admin
       .from('account_credits')
-      .insert({ account_id: opts.accountId, patient_id: opts.patientId, amount_cents: opts.amountCents, reason: opts.reason ?? null })
+      .insert({ account_id: opts.accountId, patient_id: opts.patientId, amount_cents: opts.amountCents, reason: opts.reason ?? null, payment_id: opts.paymentId ?? null })
       .select('id')
       .single(),
   )

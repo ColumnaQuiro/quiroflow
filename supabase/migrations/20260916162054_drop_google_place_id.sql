@@ -1,0 +1,29 @@
+-- Take the half-built Google import back out.
+--
+-- It worked: Places API, one call per click, rating and the five most recent
+-- reviews upserted on the index the reviews table already had. What it could
+-- not do was post a reply -- that needs the Business Profile API, which needs
+-- per-clinic OAuth and an access request Google processes by hand.
+--
+-- So the loop stayed open. A clinic read the review in QuiroFlow, drafted a
+-- reply in QuiroFlow, and then went to Google anyway. For a handful of reviews
+-- a month that is not worth a paid API, a key to rotate, a quota to watch and
+-- a Google Cloud project to keep alive.
+--
+-- The deciding reason is who sees it. QuiroFlow is being sold to other clinics
+-- now, and a settings field asking for a "Google Place ID" -- powering a
+-- feature nobody has been sold, behind a button that answers "not configured
+-- on this deployment" -- is worse than an honest "coming soon". Which is what
+-- the Reputation screen says instead, next to a review-request funnel that
+-- backs it up with real numbers.
+--
+-- Nothing is lost that would have to be rebuilt from nothing: the reviews
+-- table, its unique index, the rating and distribution rendering and the AI
+-- reply drafting all stay. They are the destination for whichever integration
+-- comes back, and they are unreachable rather than broken in the meantime --
+-- no review can enter, so the screen shows the empty state and never a zero.
+--
+-- No data is lost either: this column was added today and no clinic ever
+-- imported against it.
+
+alter table accounts drop column if exists google_place_id;

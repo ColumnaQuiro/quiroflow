@@ -135,12 +135,6 @@ export default defineNuxtConfig({
     // skips straight to "message the QuiroFlow team" rather than failing,
     // so a missing key degrades the feature instead of breaking it.
     anthropicApiKey: '',
-    // Reads a clinic's Google rating and recent reviews (Places API, New).
-    // One platform key rather than one per clinic: it is QuiroFlow calling
-    // Google on their behalf, and obtaining a Google API key is not work to
-    // hand a chiropractor. Optional -- unset, the reputation screen says
-    // Google is not connected instead of failing.
-    googlePlacesApiKey: '',
     // Where the assistant reads the help articles from. Overridable mostly
     // so a deploy preview can point at a preview of the help centre.
     helpCorpusUrl: 'https://learn.quiroflow.com/corpus.json',

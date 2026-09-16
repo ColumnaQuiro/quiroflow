@@ -247,12 +247,14 @@ export type Database = {
           hide_payments_on_invoices: boolean
           hide_provider_on_invoices: boolean
           google_place_id: string | null
-          instagram_access_token: string | null
-          instagram_user_id: string | null
           google_review_url: string | null
           id: string
+          instagram_access_token: string | null
+          instagram_user_id: string | null
           invoice_email_body: string | null
           invoice_email_subject: string | null
+          meta_ads_access_token: string | null
+          meta_ads_account_id: string | null
           missed_appointment_fee_cents: number | null
           name: string
           new_patient_field_config: Json
@@ -323,12 +325,14 @@ export type Database = {
           hide_payments_on_invoices?: boolean
           hide_provider_on_invoices?: boolean
           google_place_id?: string | null
-          instagram_access_token?: string | null
-          instagram_user_id?: string | null
           google_review_url?: string | null
           id?: string
+          instagram_access_token?: string | null
+          instagram_user_id?: string | null
           invoice_email_body?: string | null
           invoice_email_subject?: string | null
+          meta_ads_access_token?: string | null
+          meta_ads_account_id?: string | null
           missed_appointment_fee_cents?: number | null
           name: string
           new_patient_field_config?: Json
@@ -398,12 +402,14 @@ export type Database = {
           hide_payments_on_invoices?: boolean
           hide_provider_on_invoices?: boolean
           google_place_id?: string | null
-          instagram_access_token?: string | null
-          instagram_user_id?: string | null
           google_review_url?: string | null
           id?: string
+          instagram_access_token?: string | null
+          instagram_user_id?: string | null
           invoice_email_body?: string | null
           invoice_email_subject?: string | null
+          meta_ads_access_token?: string | null
+          meta_ads_account_id?: string | null
           missed_appointment_fee_cents?: number | null
           name?: string
           new_patient_field_config?: Json

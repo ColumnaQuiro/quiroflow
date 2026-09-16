@@ -243,6 +243,14 @@ export default defineApiHandler({ scope: 'leads:write' }, async ({ event, supaba
     // not when the webhook reached us, which can be minutes or hours later.
     marketing_consent_at: consented ? (occurredAtValue ?? new Date().toISOString()) : undefined,
     marketing_consent_source: consented ? (consentSource ?? externalSource ?? 'form') : undefined,
+    // Handed to the receptionist when the clinic has switched it on.
+    //
+    // Leads have always been created 'none', and the only thing that ever
+    // changed that is a button in the Inbox. So the tick that drafts replies
+    // -- which looks for 'handling' -- had nothing to do on any lead in any
+    // clinic, while the switch said the receptionist reads real enquiries.
+    // This is what makes that switch true.
+    ai_state: (await receptionistHandlesNewLeads(supabase, accountId)) ? 'handling' : undefined,
   })
 
   const { data: created, error } = await loose(supabase)

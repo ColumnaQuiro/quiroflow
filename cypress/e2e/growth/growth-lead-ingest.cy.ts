@@ -287,6 +287,35 @@ describe('Lead ingest API', () => {
     })
   })
 
+  it('hands a new lead to the receptionist when it is switched on', () => {
+    // Leads have always been created 'none', and the only thing that ever
+    // changed that is a button in the Inbox -- so the tick that drafts
+    // replies, which looks for 'handling', had nothing to do on any lead in
+    // any clinic while the switch claimed the receptionist reads real
+    // enquiries. This is what makes that switch true.
+    cy.task('db:setReceptionistEnabled', { accountId: account.accountId, enabled: true })
+    post({ full_name: 'Alba Takes This', phone: '+34600112001', external_id: 'ai-on' }).then((res) => {
+      cy.task('db:leadAiState', { id: res.body.data.id }).should((row) => {
+        const state = row as { ai_state: string; ai_handling: boolean }
+        expect(state.ai_state).to.eq('handling')
+        // The board reads the boolean and a trigger keeps it in step. This is
+        // the assertion that notices if that ever stops being true.
+        expect(state.ai_handling).to.eq(true)
+      })
+    })
+  })
+
+  it('leaves a new lead alone when the receptionist is off', () => {
+    // Off has to mean off. A clinic that has not turned this on must not find
+    // the AI holding its conversations.
+    cy.task('db:setReceptionistEnabled', { accountId: account.accountId, enabled: false })
+    post({ full_name: 'Nobody Takes This', phone: '+34600112002', external_id: 'ai-off' }).then((res) => {
+      cy.task('db:leadAiState', { id: res.body.data.id }).should((row) => {
+        expect((row as { ai_state: string }).ai_state).to.eq('none')
+      })
+    })
+  })
+
   it('counts an ingested lead in the dashboard funnel', () => {
     post({ full_name: 'Arrived Booked', phone: '+34600111777', stage: 'booked' }).then((res) => {
       expect(res.body.data.stage).to.eq('booked')

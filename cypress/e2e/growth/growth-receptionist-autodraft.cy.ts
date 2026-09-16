@@ -81,6 +81,35 @@ describe('Who the receptionist drafts for without being asked', () => {
     })
   })
 
+  it('picks up a lead that arrived through the front door', () => {
+    // Every other case here hands a lead over by calling the ai-state route,
+    // which is a person pressing a button. That was the ONLY way a lead ever
+    // reached 'handling', so this tick was tested and inert at the same time:
+    // green in CI, and with nothing to do on any real lead in any clinic.
+    //
+    // This one arrives the way a real one does, through the public ingest,
+    // and is due a draft without anybody touching it.
+    cy.task<{ token: string }>('db:createApiToken', { accountId: account.accountId, scopes: ['leads:write'] }).then((t) => {
+      cy.request({
+        method: 'POST',
+        url: '/api/public/v1/leads',
+        headers: { Authorization: `Bearer ${t.token}` },
+        body: { full_name: 'Arrived By Itself', phone: '+34600900123', marketing_consent: true },
+      }).then((res) => {
+        const leadId = res.body.data.id
+        cy.task('db:createLeadMessage', {
+          accountId: account.accountId,
+          leadId,
+          direction: 'inbound',
+          body: '¿Cuánto cuesta?',
+        })
+        runCron().then((body) => {
+          expect(body.consideredLeadIds, 'due a draft with nobody pressing anything').to.include(leadId)
+        })
+      })
+    })
+  })
+
   it('leaves a lead alone once drafting has read past their last message', () => {
     // The loop this guards against: discarding a draft clears ai_draft_body,
     // so without a separate record of how far drafting has READ, the next

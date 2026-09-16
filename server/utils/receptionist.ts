@@ -126,3 +126,29 @@ export function buildSystemPrompt(config: ReceptionistConfig, opts: { testMode: 
     .filter(Boolean)
     .join('\n\n')
 }
+
+/**
+ * Whether a lead arriving now should be handed to the receptionist.
+ *
+ * Leads are created with ai_state 'none', and the only thing that has ever
+ * changed it is a button in the Inbox -- which sets 'paused' when a person
+ * takes over and 'handling' when they hand back. So a lead could only reach
+ * 'handling' by a person first taking over a conversation the receptionist
+ * was never on.
+ *
+ * The consequence was quiet and total: the tick that drafts replies looks for
+ * ai_state 'handling', so with nothing ever setting it, it had nothing to do
+ * on any lead in any clinic. The switch said the receptionist reads real
+ * enquiries; no enquiry was ever given to it.
+ *
+ * Which is what the switch means, then: on, new leads arrive with the
+ * receptionist on them. Off, they arrive exactly as they always did.
+ */
+export async function receptionistHandlesNewLeads(supabase: any, accountId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('receptionist_config')
+    .select('enabled')
+    .eq('account_id', accountId)
+    .maybeSingle()
+  return Boolean(data?.enabled)
+}

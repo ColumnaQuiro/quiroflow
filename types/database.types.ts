@@ -2343,6 +2343,8 @@ export type Database = {
       leads: {
         Row: {
           account_id: string
+          ai_draft_body: string | null
+          ai_draft_created_at: string | null
           ai_handling: boolean
           ai_state: string
           ai_taken_over_at: string | null
@@ -2372,6 +2374,8 @@ export type Database = {
         }
         Insert: {
           account_id: string
+          ai_draft_body?: string | null
+          ai_draft_created_at?: string | null
           ai_handling?: boolean
           ai_state?: string
           ai_taken_over_at?: string | null
@@ -2401,6 +2405,8 @@ export type Database = {
         }
         Update: {
           account_id?: string
+          ai_draft_body?: string | null
+          ai_draft_created_at?: string | null
           ai_handling?: boolean
           ai_state?: string
           ai_taken_over_at?: string | null

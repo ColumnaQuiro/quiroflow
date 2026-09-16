@@ -210,7 +210,17 @@ const labelFilter = ref<string | null>(null)
 // nothing below loads and this page is exactly what it was.
 const { hasGrowth } = useGrowthTier()
 const { conversations: leadConversations, reload: reloadLeadConversations, takeOver, handBack } = useGrowthConversations(hasGrowth)
-const { thread: leadThread, sending: leadSending, load: loadLeadThread, reply: replyToLead, close: closeLeadThread } = useGrowthLeadThread()
+const {
+  thread: leadThread,
+  sending: leadSending,
+  drafting: leadDrafting,
+  load: loadLeadThread,
+  reply: replyToLead,
+  draftReply: draftLeadReply,
+  discardDraft: discardLeadDraft,
+  approveDraft: approveLeadDraft,
+  close: closeLeadThread,
+} = useGrowthLeadThread()
 
 // Only "AI handling" and "Needs human" are here. The design also draws
 // Unassigned and Mine, which need a per-conversation owner -- leads could
@@ -1207,10 +1217,14 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
           v-if="leadThread"
           :thread="leadThread"
           :sending="leadSending"
+          :drafting="leadDrafting"
           @back="selectedKey = null; closeLeadThread()"
           @take-over="onLeadTakeOver"
           @hand-back="onLeadHandBack"
           @send="onLeadReply"
+          @draft-reply="leadThread && draftLeadReply(leadThread.id)"
+          @approve-draft="(text) => leadThread && approveLeadDraft(leadThread.id, text)"
+          @discard-draft="leadThread && discardLeadDraft(leadThread.id)"
         />
         <div v-else class="flex min-w-0 flex-1 flex-col gap-3 bg-surface-page p-4" data-test="lead-thread-loading">
           <UiSkeleton class="h-10 w-56 rounded-ctl" />

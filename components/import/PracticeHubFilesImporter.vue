@@ -84,6 +84,39 @@ function storageSafe(name: string): string {
   return name.replace(/[áéíóúüñÁÉÍÓÚÜÑ]/g, (c) => ACCENTS[c] ?? c).replace(/[^a-zA-Z0-9._-]/g, '_')
 }
 
+// PostgREST returns at most max_rows per request -- 1,000 for this project
+// (supabase/config.toml) -- and does it SILENTLY: a truncated answer looks
+// exactly like a complete one, no error, no flag.
+//
+// That is what made 688 files report "Patient not here". There are 1,530
+// patients carrying a PracticeHub reference, so the map was built from the
+// first 1,000 of them and every file belonging to the other 530 failed to
+// match. The ids on screen were 3, 5, 11, 14 -- PracticeHub's OLDEST
+// patients, which is what finally gave it away: a truncated read, not missing
+// data, because the rows come back in no order anyone chose.
+//
+// The same cap silently truncated the already-stored set, from 2,635 rows to
+// 1,000. That one had not bitten yet only because the queue it feeds was
+// truncated too; left alone it would have re-downloaded and re-uploaded
+// roughly 1,500 files the clinic already had, orphaning their storage objects
+// on the way past.
+const PAGE_SIZE = 1000
+async function readAll<T>(
+  run: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+): Promise<T[]> {
+  const rows: T[] = []
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await run(from, from + PAGE_SIZE - 1)
+    if (error) throw new Error(error.message)
+    const page = data ?? []
+    rows.push(...page)
+    // A short page is the last one. Asking again after an exactly-full page
+    // costs one request and is the only way to know it was the end.
+    if (page.length < PAGE_SIZE) break
+  }
+  return rows
+}
+
 async function buildList() {
   if (!connection.value) return
   phase.value = 'listing'
@@ -116,24 +149,30 @@ async function buildList() {
       if (ref) numberByPhId.set(p.id, ref)
     }
 
-    const { data: ourPatients } = await supabase
-      .from('patients')
-      .select('id, external_reference')
-      .eq('account_id', store.accountId!)
-      .not('external_reference', 'is', null)
+    const ourPatients = await readAll<{ id: string; external_reference: string }>((from, to) =>
+      supabase
+        .from('patients')
+        .select('id, external_reference')
+        .eq('account_id', store.accountId!)
+        .not('external_reference', 'is', null)
+        .range(from, to),
+    )
     const idByNumber = new Map<string, string>()
-    for (const p of ourPatients ?? []) idByNumber.set(String(p.external_reference).trim(), p.id)
+    for (const p of ourPatients) idByNumber.set(String(p.external_reference).trim(), p.id)
 
     // Files already carrying their bytes are skipped, which is what makes this
     // resumable -- and what lets it run again after a clinic adds more in
     // PracticeHub without re-downloading everything.
-    const { data: existing } = await supabase
-      .from('patient_files')
-      .select('external_reference, storage_path')
-      .eq('account_id', store.accountId!)
-      .not('external_reference', 'is', null)
+    const existing = await readAll<{ external_reference: string; storage_path: string | null }>((from, to) =>
+      supabase
+        .from('patient_files')
+        .select('external_reference, storage_path')
+        .eq('account_id', store.accountId!)
+        .not('external_reference', 'is', null)
+        .range(from, to),
+    )
     const storedRefs = new Set(
-      (existing ?? []).filter((r) => r.storage_path).map((r) => String(r.external_reference)),
+      existing.filter((r) => r.storage_path).map((r) => String(r.external_reference)),
     )
 
     for (const f of phFiles) {

@@ -165,7 +165,7 @@ export async function runActionsList(
   extraContext?: Partial<MergeContext>,
   dryRun = false,
 ) {
-  await runForRecipient(supabase, accountId, actions, patientRecipient(patient), origin, isMarketing, appointmentId, triggerBody, whatsappOverrideNumber, extraContext, dryRun)
+  return runForRecipient(supabase, accountId, actions, patientRecipient(patient), origin, isMarketing, appointmentId, triggerBody, whatsappOverrideNumber, extraContext, dryRun)
 }
 
 /**
@@ -258,19 +258,36 @@ async function runForRecipient(
 
   const context: MergeContext = { ...extraContext, nextAppointmentAt, googleReviewUrl }
 
+  // Why an action did nothing, in the sender's words. Actions stay
+  // best-effort -- one failure must not stop the rest of a rule -- but the
+  // reason is no longer thrown away. "Send test to me" shows this list; a
+  // real automated send logs it and carries on.
+  const problems: string[] = []
+  const skipped = (channel: string) =>
+    !canContact
+      ? `${channel}: this recipient is marked do-not-contact (or is a minor).`
+      : `${channel}: this is a marketing rule and the recipient has not opted in to ${channel}.`
+
   for (const action of actions) {
     try {
       if (action.action_type === 'whatsapp_template') {
         if (canContact && channelAllowed('whatsapp')) await runWhatsAppAction(supabase, accountId, recipient, action.config, origin, appointmentId, whatsappOverrideNumber, context, dryRun)
+        else problems.push(skipped('WhatsApp'))
       } else if (action.action_type === 'email') {
         if (canContact && channelAllowed('email')) await runEmailAction(recipient, action.config, context)
+        else problems.push(skipped('Email'))
       } else if (action.action_type === 'webhook') {
         await runWebhookAction(action.config, triggerBody ?? { triggerEvent: 'manual', patientId: recipient.id, appointmentId })
       }
-    } catch {
+    } catch (e: any) {
       // Best-effort: one failed action shouldn't stop the rest of the rule.
+      const message = e?.message ?? String(e)
+      problems.push(`${action.action_type}: ${message}`)
+      console.error(`[automations] ${action.action_type} action failed for ${recipient.kind} ${recipient.id}: ${message}`)
     }
   }
+
+  return problems
 }
 
 interface MergeContext { nextAppointmentAt?: string; googleReviewUrl?: string; waitlistClaimLink?: string; waitlistSlotDatetime?: string }
@@ -690,36 +707,67 @@ async function runWhatsAppAction(
   }
 }
 
+// Email clients disagree about what an unstyled <a> looks like, and some
+// render it in the surrounding body colour -- which is how a link staff
+// inserted arrives looking like ordinary text. A <style> block is no help
+// either: Gmail and Outlook strip them. So the colour goes inline, on every
+// anchor that doesn't already carry a style of its own.
+function styleLinks(html: string) {
+  return html.replace(/<a\b(?![^>]*\sstyle=)/gi, '<a style="color:#4F46E5;text-decoration:underline;"')
+}
+
 async function runEmailAction(recipient: Recipient, config: Record<string, any>, context?: MergeContext) {
   const subject: string | undefined = config.subject
   const rawBody: string | undefined = config.body
-  if (!subject || !rawBody || !recipient.email) return
+  // These used to be silent returns. Every one of them is a reason an email
+  // never arrived, and the caller now turns a thrown reason into something
+  // the sender can read -- see the problems list in runForRecipient.
+  if (!subject) throw new Error('The email action has no subject.')
+  if (!rawBody) throw new Error('The email action has no body.')
+  if (!recipient.email) throw new Error('No email address to send to.')
 
   const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
   const mergePlain = (text: string) => text.replace(/\{\{(\w+)\}\}/g, (_, key: string) => recipientFieldValue(recipient, key, context))
   // rawBody is HTML produced by the account's own rich-text editor (bold/
-  // italic/underline/image, no freeform tag entry), so unlike the plain
+  // italic/underline/link/image, no freeform tag entry -- its paste handler
+  // strips markup rather than carrying it in), so unlike the plain
   // subject it's trusted and must NOT be escaped wholesale -- that would
   // turn every tag into literal text. Only the substituted variable values
   // (patient-controlled data) get escaped.
   const mergeHtml = (html: string) => html.replace(/\{\{(\w+)\}\}/g, (_, key: string) => escapeHtml(recipientFieldValue(recipient, key, context)))
 
   const runtimeConfig = useRuntimeConfig()
-  if (!runtimeConfig.resendApiKey) return
+  // No key means nothing has ever been sent from this deployment. Silence
+  // here reads exactly like a delivery failure, which is the harder thing to
+  // diagnose of the two.
+  if (!runtimeConfig.resendApiKey) throw new Error('Email sending is not configured (no Resend API key on this deployment).')
 
   const html = `
     <div style="background:#F4F4F6;padding:40px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
       <div style="max-width:560px;margin:0 auto;background:#FFFFFF;border-radius:14px;border:1px solid #E4E4EA;overflow:hidden;">
-        <div style="padding:24px 32px 32px;font-size:14px;line-height:1.6;color:#4A4A57;">${mergeHtml(rawBody)}</div>
+        <div style="padding:24px 32px 32px;font-size:14px;line-height:1.6;color:#4A4A57;">${styleLinks(mergeHtml(rawBody))}</div>
       </div>
     </div>
   `
 
-  await $fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${runtimeConfig.resendApiKey}`, 'Content-Type': 'application/json' },
-    body: { from: 'QuiroFlow <notifications@quiroflow.com>', to: recipient.email, subject: mergePlain(subject), html },
-  }).catch(() => null)
+  // Deliberately NOT `.catch(() => null)` any more. Resend refuses sends for
+  // reasons that are entirely fixable and entirely invisible from here -- an
+  // unverified sending domain, a key scoped to the wrong domain, a recipient
+  // on the suppression list -- and each one used to end as a no-op with a
+  // green tick on it. The caller decides what to do with the failure; a real
+  // automated send still swallows it so one bad address can't halt a rule.
+  try {
+    await $fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${runtimeConfig.resendApiKey}`, 'Content-Type': 'application/json' },
+      body: { from: 'QuiroFlow <notifications@quiroflow.com>', to: recipient.email, subject: mergePlain(subject), html },
+    })
+  } catch (e: any) {
+    // Resend answers a refusal with {name, message} in the body; the HTTP
+    // status alone ("422") says nothing a person can act on.
+    const detail = e?.data?.message || e?.data?.error?.message || e?.message || 'unknown error'
+    throw new Error(`Resend rejected the email: ${detail}`)
+  }
 }
 
 async function runWebhookAction(config: Record<string, any>, body: TriggerBody) {

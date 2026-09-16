@@ -38,6 +38,8 @@ interface MetaMessage {
   document?: MetaMedia
   sticker?: MetaMedia
 }
+import type { InstagramMessagingEvent } from '~/server/utils/instagramWebhook'
+
 interface MetaChangeValue {
   metadata?: { phone_number_id: string }
   statuses?: MetaStatus[]
@@ -242,11 +244,36 @@ export default defineEventHandler(async (event) => {
   // answering 200 and dropping it. See the throw at the end of the handler.
   let unverified = 0
 
-  let body: { entry?: { changes?: { value?: MetaChangeValue }[] }[] }
+  let body: {
+    object?: string
+    entry?: {
+      id?: string
+      changes?: { value?: MetaChangeValue }[]
+      /** Instagram's shape: messages hang off the entry, not off a change. */
+      messaging?: InstagramMessagingEvent[]
+    }[]
+  }
   try {
     body = JSON.parse(rawBody.toString('utf8'))
   } catch {
     throw createError({ statusCode: 400, statusMessage: 'Body is not valid JSON.' })
+  }
+
+  // Instagram arrives on this same endpoint, signed by the same app with the
+  // same secret -- one Meta app, two products -- but in a different shape:
+  // entry[].messaging[] rather than entry[].changes[], an IGSID instead of a
+  // phone number, and no statuses. Handled in its own pass rather than
+  // threaded through the loop below, which is built around
+  // value.metadata.phone_number_id and would need an `if` on every line.
+  if (body.object === 'instagram') {
+    const handled = await handleInstagramEntries(supabase, body.entry ?? [], auth, rawBody)
+    if (handled.unverified > 0) {
+      throw createError({
+        statusCode: 401,
+        statusMessage: `Could not verify ${handled.unverified} Instagram event(s).`,
+      })
+    }
+    return { success: true }
   }
 
   for (const entry of body?.entry ?? []) {

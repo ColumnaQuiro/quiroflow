@@ -15,6 +15,8 @@ interface Message {
   media_mime_type: string | null
   media_filename: string | null
   channel: string
+  /** Who the conversation is with when there is no phone -- an Instagram IGSID. */
+  external_contact_id: string | null
   created_at: string
   pending?: boolean
 }
@@ -22,6 +24,8 @@ interface Conversation {
   key: string
   patientId: string | null
   phoneNumber: string | null
+  /** Set instead of phoneNumber on a channel that has no phone, e.g. Instagram. */
+  externalContactId?: string | null
   name: string
   channel: string
   lastMessage: Message | null
@@ -100,7 +104,7 @@ async function load(opts: { silent?: boolean } = {}) {
   const [{ data: waData }, { data: appData }] = await Promise.all([
     supabase
       .from('whatsapp_messages')
-      .select('id, patient_id, phone_number, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, channel, created_at')
+      .select('id, patient_id, phone_number, external_contact_id, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, channel, created_at')
       .order('created_at', { ascending: false })
       .limit(1000),
     supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at').order('created_at', { ascending: false }).limit(1000),
@@ -112,6 +116,7 @@ async function load(opts: { silent?: boolean } = {}) {
     id: m.id,
     patient_id: m.patient_id,
     phone_number: null,
+    external_contact_id: null,
     direction: m.direction,
     status: 'sent',
     body_preview: m.body,
@@ -157,7 +162,7 @@ const allMessages = computed<Message[]>(() =>
 const conversations = computed<Conversation[]>(() => {
   const byKey = new Map<string, Message[]>()
   for (const m of allMessages.value) {
-    const key = m.patient_id ?? m.phone_number ?? 'unknown'
+    const key = m.patient_id ?? m.phone_number ?? m.external_contact_id ?? 'unknown'
     if (!byKey.has(key)) byKey.set(key, [])
     byKey.get(key)!.push(m)
   }
@@ -183,7 +188,7 @@ const conversations = computed<Conversation[]>(() => {
 const conversationSearchText = computed(() => {
   const map: Record<string, string> = {}
   for (const m of allMessages.value) {
-    const key = m.patient_id ?? m.phone_number ?? 'unknown'
+    const key = m.patient_id ?? m.phone_number ?? m.external_contact_id ?? 'unknown'
     map[key] = `${map[key] ?? ''} ${m.body_preview ?? ''}`
   }
   return map
@@ -227,7 +232,7 @@ const {
 // carry one but the real patient threads beside them cannot, so the filter
 // would mean two different things in one list. They arrive with the leads
 // endpoint, which is what gives both sides an owner.
-const aiFilter = ref<'all' | 'ai_handling' | 'needs_human'>('all')
+const aiFilter = ref<'all' | 'ai_handling' | 'needs_human' | 'draft_ready'>('all')
 
 // Growth > Conversations in the sidebar is a saved view into this inbox, not
 // a screen of its own -- it deep-links here with the filter already applied.
@@ -250,11 +255,17 @@ const visibleLeadConversations = computed(() => {
   if (unreadOnly.value) list = list.filter((c) => c.unread)
   if (aiFilter.value === 'ai_handling') list = list.filter((c) => c.aiState === 'handling')
   else if (aiFilter.value === 'needs_human') list = list.filter((c) => c.aiState === 'needs_human' || c.aiState === 'blocked')
+  else if (aiFilter.value === 'draft_ready') list = list.filter((c) => c.hasDraft)
   return list
 })
 
 const aiHandlingCount = computed(() => leadConversations.value.filter((c) => c.aiState === 'handling').length)
 const needsHumanCount = computed(() => leadConversations.value.filter((c) => c.aiState === 'needs_human' || c.aiState === 'blocked').length)
+// Threads where a reply is written and waiting on a decision. This is the
+// queue the receptionist actually creates -- without it the drafts it writes
+// unprompted are only found by opening threads one at a time, which is the
+// work drafting was meant to remove.
+const draftReadyCount = computed(() => leadConversations.value.filter((c) => c.hasDraft).length)
 
 // Resolved against the full list, never the filtered one -- exactly as
 // `selected` is for real conversations above. Reading it from
@@ -343,7 +354,7 @@ const selected = computed(
   () => conversations.value.find((c) => c.key === selectedKey.value) ?? (draftConversation.value?.key === selectedKey.value ? draftConversation.value : null),
 )
 const thread = computed(() =>
-  selectedKey.value ? allMessages.value.filter((m) => (m.patient_id ?? m.phone_number ?? 'unknown') === selectedKey.value).slice().reverse() : [],
+  selectedKey.value ? allMessages.value.filter((m) => (m.patient_id ?? m.phone_number ?? m.external_contact_id ?? 'unknown') === selectedKey.value).slice().reverse() : [],
 )
 
 // Auto-scroll, WhatsApp-style: snap to the bottom when a conversation is
@@ -489,8 +500,8 @@ async function deleteKeys(keys: string[]) {
         await supabase.from('whatsapp_conversation_labels').delete().eq('team_member_id', store.teamMember.id).eq('conversation_key', key)
       }
     }
-    messages.value = messages.value.filter((m) => !keys.includes(m.patient_id ?? m.phone_number ?? 'unknown'))
-    pendingMessages.value = pendingMessages.value.filter((m) => !keys.includes(m.patient_id ?? m.phone_number ?? 'unknown'))
+    messages.value = messages.value.filter((m) => !keys.includes(m.patient_id ?? m.phone_number ?? m.external_contact_id ?? 'unknown'))
+    pendingMessages.value = pendingMessages.value.filter((m) => !keys.includes(m.patient_id ?? m.phone_number ?? m.external_contact_id ?? 'unknown'))
     if (selectedKey.value && keys.includes(selectedKey.value)) selectedKey.value = null
   } finally {
     deletingConversation.value = false
@@ -701,6 +712,7 @@ async function sendText() {
       id: tempId,
       patient_id: target.patientId,
       phone_number: target.phoneNumber,
+      external_contact_id: target.externalContactId ?? null,
       direction: 'outbound',
       status: 'pending',
       body_preview: text,
@@ -769,6 +781,7 @@ async function sendMedia(mediaBase64: string, mediaMimeType: string, mediaFilena
       id: tempId,
       patient_id: target.patientId,
       phone_number: target.phoneNumber,
+      external_contact_id: target.externalContactId ?? null,
       direction: 'outbound',
       status: 'pending',
       body_preview: null,
@@ -1090,6 +1103,19 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
               >
                 {{ t('Needs human', 'Requiere persona') }} · {{ needsHumanCount }}
               </button>
+              <!-- Only when there is one. A chip reading "· 0" every day
+                   teaches people to stop looking at it, and this is the one
+                   that means somebody has work waiting. -->
+              <button
+                v-if="draftReadyCount > 0"
+                type="button"
+                class="flex h-7 items-center gap-1 rounded-pill border px-2.5 text-[12px] font-medium"
+                :class="aiFilter === 'draft_ready' ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted hover:bg-surface-subtle'"
+                data-test="filter-draft-ready"
+                @click="aiFilter = aiFilter === 'draft_ready' ? 'all' : 'draft_ready'"
+              >
+                {{ t('Draft ready', 'Borrador listo') }} · {{ draftReadyCount }}
+              </button>
             </template>
           </div>
         </div>
@@ -1149,6 +1175,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
               </p>
               <div class="mt-1 flex flex-wrap items-center gap-1">
                 <span class="rounded-pill border border-chip-border bg-chip-bg px-1.5 py-px text-[10px] text-ink-muted">{{ CHANNEL_LABEL[c.channel] }}</span>
+                <span v-if="c.hasDraft" class="rounded-pill border border-brand-tintBorder bg-brand-tint px-1.5 py-px text-[10px] font-semibold text-brand-text" data-test="draft-ready-badge">{{ t('Draft ready', 'Borrador listo') }}</span>
                 <span v-if="c.aiState === 'handling'" class="rounded-pill bg-brand px-1.5 py-px text-[10px] font-semibold text-white">{{ t('AI handling', 'IA gestionando') }}</span>
                 <span v-else-if="c.aiState === 'paused'" class="rounded-pill border border-chip-border bg-chip-bg px-1.5 py-px text-[10px] text-ink-muted">{{ t('AI paused', 'IA en pausa') }}</span>
                 <span v-else-if="c.aiState === 'needs_human'" class="rounded-pill border border-warning-border bg-warning-bg px-1.5 py-px text-[10px] font-medium text-warning-text">{{ t('Needs human', 'Requiere persona') }}</span>

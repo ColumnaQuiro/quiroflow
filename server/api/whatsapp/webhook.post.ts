@@ -238,6 +238,10 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  // Counted so the response can say "I did not take this", rather than
+  // answering 200 and dropping it. See the throw at the end of the handler.
+  let unverified = 0
+
   let body: { entry?: { changes?: { value?: MetaChangeValue }[] }[] }
   try {
     body = JSON.parse(rawBody.toString('utf8'))
@@ -262,13 +266,12 @@ export default defineEventHandler(async (event) => {
       // itself -- it needs the account to know which secret to check against.
       // Locating the account from the body is not trusting the body: nothing
       // below this line runs unless the proof holds for this specific clinic.
-      // A silent skip rather than an error, so a forged phone_number_id learns
-      // nothing about which ones exist.
       if (!(await webhookMayActOnAccount(auth, account.id, rawBody, supabase))) {
         console.error(
           `[whatsapp] rejected an unverified webhook for account ${account.id} (${auth.kind} auth). ` +
             'On the signature path this usually means no Meta App Secret is stored in Settings > WhatsApp.',
         )
+        unverified++
         continue
       }
 
@@ -426,6 +429,32 @@ export default defineEventHandler(async (event) => {
         }
       }
     }
+  }
+
+  // A message we could not verify must not be answered with 200.
+  //
+  // It used to be: the change was skipped, the handler returned success, and
+  // Meta -- told the delivery worked -- never sent it again. The message was
+  // gone, with nothing to see anywhere. No error, no row, no retry. The only
+  // trace was a console line nobody reads until something is already missing.
+  //
+  // 401 instead, so Meta retries with backoff for up to 7 days. That turns
+  // every transient cause -- an app secret not yet saved, a deploy mid-flight,
+  // a clock skew -- from lost messages into late ones. Replays are safe:
+  // whatsapp_messages.wamid is uniquely indexed, so a redelivery of something
+  // already stored inserts nothing.
+  //
+  // The cost is an oracle: a forged request naming a phone_number_id we know
+  // gets 401, an unknown one gets 200, so the difference reveals which
+  // clinics are here. That is worth it. Nothing in the payload is acted on
+  // without a valid signature either way, and silently losing a patient's
+  // message is the worse failure -- which is not hypothetical, it is what
+  // sent us looking.
+  if (unverified > 0) {
+    throw createError({
+      statusCode: 401,
+      statusMessage: `Could not verify ${unverified} change(s). Check the Meta App Secret in Settings > WhatsApp, or the forwarder's API token.`,
+    })
   }
 
   return { success: true }

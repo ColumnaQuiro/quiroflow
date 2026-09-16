@@ -79,7 +79,7 @@ const sources = computed<Source[]>(() => [
           { key: 'patient_logs', label: t('Patient logs', 'Registros de pacientes'), hint: t('History entries', 'Entradas del historial') },
           { key: 'sticky_notes', label: t('Sticky notes', 'Notas adhesivas'), hint: t('Front-desk reminders', 'Recordatorios de recepción') },
           { key: 'custom_form_responses', label: t('Form responses', 'Respuestas de formularios'), hint: t('Also creates a reusable document template per form', 'También crea una plantilla de documento por formulario') },
-          { key: 'file_attachments', label: t('Files', 'Archivos'), hint: t('Scans, photos and PDFs', 'Escaneos, fotos y PDF') },
+          { key: 'file_attachments', label: t('Files', 'Archivos'), hint: t('Scans, photos and PDFs — straight from the API', 'Escaneos, fotos y PDF: directo desde la API') },
         ],
       },
       {
@@ -203,7 +203,14 @@ function selectSource(key: string) {
             <ImportPracticeHubClinicalNotesImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'treatment_notes'" />
             <ImportPracticeHubCarePlansImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'care_plans'" />
             <ImportPracticeHubCustomFormResponsesImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'custom_form_responses'" />
-            <ImportPracticeHubFileAttachmentsImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'file_attachments'" />
+            <!--
+              The API importer, not the CSV one. PracticeHub's /files endpoint
+              returns every attachment with its patient and a signed download
+              URL, so there is no export to take and no browser script to run.
+              ImportPracticeHubFileAttachmentsImporter is the older CSV path and
+              stays available for a clinic whose API key cannot reach /files.
+            -->
+            <ImportPracticeHubFilesImporter v-else-if="sourceKey === 'practicehub' && dataTypeKey === 'file_attachments'" />
             <ImportGenericCsvPatientsImporter v-else-if="sourceKey === 'other' && dataTypeKey === 'patients'" />
             <ImportComingSoon v-else :label="activeType?.label ?? ''" />
           </div>

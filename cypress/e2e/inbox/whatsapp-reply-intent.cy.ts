@@ -126,7 +126,7 @@ describe('Who may post to the WhatsApp webhook', () => {
     seed(null, (appointmentId, patientId) => {
       const body = JSON.stringify(payload(buttonMessage('Confirmar')))
       cy.task<{ signature: string }>('db:signWhatsappBody', { body, appSecret: 'f'.repeat(APP_SECRET_LENGTH) }).then((signed) => {
-        post(body, { 'x-hub-signature-256': signed.signature })
+        post(body, { 'x-hub-signature-256': signed.signature }, false).its('status').should('eq', 401)
       })
       // Nothing is persisted either: the gate sits ahead of the insert, so
       // forged content never reaches the clinic's inbox at all. That is the
@@ -143,7 +143,7 @@ describe('Who may post to the WhatsApp webhook', () => {
     seed(null, (appointmentId) => {
       const signedBody = JSON.stringify(payload(buttonMessage('Confirmar')))
       cy.task<{ signature: string }>('db:signWhatsappBody', { body: signedBody, appSecret }).then((signed) => {
-        post(`${signedBody} `, { 'x-hub-signature-256': signed.signature })
+        post(`${signedBody} `, { 'x-hub-signature-256': signed.signature }, false).its('status').should('eq', 401)
       })
       statusOf(appointmentId).should('be.null')
     })
@@ -174,10 +174,40 @@ describe('Who may post to the WhatsApp webhook', () => {
     seed(null, (appointmentId) => {
       cy.seedStaffAccount().then((other) => {
         cy.task<{ token: string }>('db:createApiToken', { accountId: other.accountId, scopes: ['whatsapp:webhook'] }).then((tok) => {
-          post(JSON.stringify(payload(buttonMessage('Confirmar'))), { authorization: `Bearer ${tok.token}` })
+          // 401, not a quiet 200: a forwarder pointed at the wrong clinic is
+          // misconfigured, and answering "fine" is how that goes unnoticed.
+          post(JSON.stringify(payload(buttonMessage('Confirmar'))), { authorization: `Bearer ${tok.token}` }, false)
+            .its('status')
+            .should('eq', 401)
         })
         statusOf(appointmentId).should('be.null')
       })
+    })
+  })
+
+  it('answers an unverifiable webhook with 401 so Meta sends it again', () => {
+    // The behaviour this whole file exists to protect, and the one that cost
+    // real messages: a change we cannot verify used to be skipped while the
+    // handler still answered 200. Meta treats 200 as delivered and never
+    // retries, so the message was simply gone -- no row, no error, nothing to
+    // find. 401 makes Meta redeliver for up to 7 days, which turns a
+    // momentarily missing app secret into a late message instead of a lost
+    // one.
+    seed(null, (appointmentId, _patientId, accountId) => {
+      cy.task('db:clearWhatsappAppSecret', { accountId })
+      const body = JSON.stringify(payload(buttonMessage('Confirmar')))
+      cy.task<{ signature: string }>('db:signWhatsappBody', { body, appSecret }).then((signed) => {
+        post(body, { 'x-hub-signature-256': signed.signature }, false).its('status').should('eq', 401)
+      })
+      statusOf(appointmentId).should('be.null')
+
+      // ...and once the secret is there, the very same delivery is taken --
+      // which is what makes the retry worth anything.
+      cy.task('db:setWhatsappAppSecret', { accountId, appSecret })
+      cy.task<{ signature: string }>('db:signWhatsappBody', { body, appSecret }).then((signed) => {
+        post(body, { 'x-hub-signature-256': signed.signature }).its('status').should('eq', 200)
+      })
+      statusOf(appointmentId).should('eq', 'confirmed')
     })
   })
 
@@ -188,7 +218,7 @@ describe('Who may post to the WhatsApp webhook', () => {
       cy.task('db:clearWhatsappAppSecret', { accountId })
       const body = JSON.stringify(payload(buttonMessage('Confirmar')))
       cy.task<{ signature: string }>('db:signWhatsappBody', { body, appSecret }).then((signed) => {
-        post(body, { 'x-hub-signature-256': signed.signature })
+        post(body, { 'x-hub-signature-256': signed.signature }, false).its('status').should('eq', 401)
       })
       statusOf(appointmentId).should('be.null')
     })

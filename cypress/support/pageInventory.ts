@@ -30,7 +30,6 @@ export const SETTINGS_PAGES = [
   '/settings/new-patient-fields',
   '/settings/online-booking',
   '/settings/packages',
-  '/settings/patient-app',
   '/settings/payment-methods',
   '/settings/payments',
   '/settings/practitioners',

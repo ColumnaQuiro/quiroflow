@@ -1043,6 +1043,17 @@ async function setWhatsappPhoneNumberId(opts: { accountId: string; phoneNumberId
   return { ok: true }
 }
 
+/** The lead an Instagram sender became, for asserting it was created once. */
+async function leadsByExternalId(opts: { accountId: string; externalSource: string }) {
+  const { data } = await admin
+    .from('leads')
+    .select('id, full_name, channel, source, stage, external_id, external_source')
+    .eq('account_id', opts.accountId)
+    .eq('external_source', opts.externalSource)
+    .is('deleted_at', null)
+  return data ?? []
+}
+
 /** Connects an Instagram account, the way Settings > WhatsApp does. */
 async function setInstagramAccount(opts: { accountId: string; instagramUserId: string | null; accessToken?: string | null }) {
   assertOk(
@@ -1061,7 +1072,7 @@ async function setInstagramAccount(opts: { accountId: string; instagramUserId: s
 async function messagesOnChannel(opts: { accountId: string; channel: string }) {
   const { data } = await admin
     .from('whatsapp_messages')
-    .select('direction, status, body_preview, external_contact_id, wamid, channel')
+    .select('direction, status, body_preview, external_contact_id, wamid, channel, lead_id')
     .eq('account_id', opts.accountId)
     .eq('channel', opts.channel)
     .order('created_at')
@@ -1346,6 +1357,7 @@ export const dbTasks = {
   'db:setGrowthAddon': setGrowthAddon,
   'db:setLeadAiState': setLeadAiState,
   'db:setWhatsappPhoneNumberId': setWhatsappPhoneNumberId,
+  'db:leadsByExternalId': leadsByExternalId,
   'db:setInstagramAccount': setInstagramAccount,
   'db:messagesOnChannel': messagesOnChannel,
   'db:setChannelSpend': setChannelSpend,

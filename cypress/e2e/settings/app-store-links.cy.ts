@@ -58,4 +58,16 @@ describe('Sharing the patient app', () => {
       cy.contains('h2', 'Appointments').scrollIntoView().should('be.visible')
     })
   })
+
+  it('still answers the old /settings/patient-app URL', () => {
+    // That URL is in bookmarks and quite possibly in a message already sent
+    // to a patient, so the merge left a redirect rather than a 404.
+    cy.seedStaffAccount().then((account) => {
+      cy.login(account.email, account.password)
+      cy.visit('/settings/patient-app')
+
+      cy.location('pathname').should('eq', '/settings/app')
+      cy.contains('Share the app').should('be.visible')
+    })
+  })
 })

@@ -37,7 +37,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: leads } = await supabase
     .from('leads')
-    .select('id, full_name, phone, source, stage, ai_state, estimated_value_cents, patient_id, ai_taken_over_at, team_members:ai_taken_over_by(full_name)')
+    .select('id, full_name, phone, source, stage, ai_state, estimated_value_cents, patient_id, ai_taken_over_at, ai_draft_body, team_members:ai_taken_over_by(full_name)')
     .eq('account_id', teamMember.account_id)
     .is('deleted_at', null)
     .in('id', [...byLead.keys()])
@@ -71,6 +71,13 @@ export default defineEventHandler(async (event) => {
         // so the newest row on a lead in test mode is routinely a message
         // nobody received. Unmarked, this list says the clinic said it.
         previewWasNotSent: last.status === 'would_send',
+        // A reply the receptionist wrote and nobody has decided on. Since the
+        // tick started writing these unprompted, a draft can appear on a
+        // thread nobody opened -- so the list has to say which rows are
+        // waiting on a person, or the drafts help only whoever goes looking.
+        // The text is not sent: this is a flag, and the list is not where
+        // somebody should be reading a reply before approving it.
+        hasDraft: Boolean(lead.ai_draft_body),
         source: lead.source,
         stage: lead.stage,
         value: formatEuros(lead.estimated_value_cents),

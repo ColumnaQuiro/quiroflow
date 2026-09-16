@@ -268,6 +268,36 @@ describe('Growth in the shared Inbox', () => {
     })
   })
 
+  it('says which threads have a draft waiting, and can show only those', () => {
+    // Since the tick began writing drafts unprompted, a draft can appear on a
+    // thread nobody opened. Without this the drafts are found only by opening
+    // conversations one at a time -- which is the work drafting was meant to
+    // remove.
+    cy.visit('/inbox?growth=1')
+    seedConversation(account, 'Draft Is Ready', 'handling').then((leadId) => {
+      seedConversation(account, 'Nothing Waiting', 'handling')
+      cy.task('db:setLeadDraft', { id: leadId, body: 'Te propongo el jueves a las 10:00.' })
+      cy.reload()
+
+      cy.contains('[data-test="lead-row"]', 'Draft Is Ready').find('[data-test="draft-ready-badge"]').should('be.visible')
+      cy.contains('[data-test="lead-row"]', 'Nothing Waiting').find('[data-test="draft-ready-badge"]').should('not.exist')
+
+      cy.get('[data-test="filter-draft-ready"]').should('contain', '1').click()
+      cy.contains('[data-test="lead-row"]', 'Draft Is Ready').should('be.visible')
+      cy.contains('[data-test="lead-row"]', 'Nothing Waiting').should('not.exist')
+    })
+  })
+
+  it('hides the draft chip when nothing is waiting', () => {
+    // A chip reading "· 0" every day teaches people to stop looking at it,
+    // and this is the one that means somebody has work waiting.
+    cy.visit('/inbox?growth=1')
+    seedConversation(account, 'No Drafts Here', 'handling')
+    cy.reload()
+    cy.contains('[data-test="lead-row"]', 'No Drafts Here').should('be.visible')
+    cy.get('[data-test="filter-draft-ready"]').should('not.exist')
+  })
+
   it('refuses a free-text reply more than 24 hours after they last wrote', () => {
     cy.visit('/inbox?growth=1')
     // Two days since the last inbound message, which is outside WhatsApp's

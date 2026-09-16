@@ -1142,7 +1142,11 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
                 <span class="truncate text-[13.5px] text-ink-900" :class="c.unread ? 'font-[640]' : 'font-[500]'">{{ c.name }}</span>
                 <span class="shrink-0 text-[11px] text-ink-faint">{{ leadRowTime(c.lastMessageAt) }}</span>
               </div>
-              <p class="truncate text-[12px]" :class="c.unread ? 'font-medium text-ink-700' : 'text-ink-muted2'">{{ c.preview }}</p>
+              <p class="truncate text-[12px]" :class="c.unread ? 'font-medium text-ink-700' : 'text-ink-muted2'">
+                <!-- Said before the message, not after: the row is truncated,
+                and a marker at the end is the part that gets cut off. -->
+                <span v-if="c.previewWasNotSent" class="font-medium text-warning-text">{{ t('Not sent ·', 'No enviado ·') }} </span>{{ c.preview }}
+              </p>
               <div class="mt-1 flex flex-wrap items-center gap-1">
                 <span class="rounded-pill border border-chip-border bg-chip-bg px-1.5 py-px text-[10px] text-ink-muted">{{ CHANNEL_LABEL[c.channel] }}</span>
                 <span v-if="c.aiState === 'handling'" class="rounded-pill bg-brand px-1.5 py-px text-[10px] font-semibold text-white">{{ t('AI handling', 'IA gestionando') }}</span>

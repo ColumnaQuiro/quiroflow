@@ -2,7 +2,7 @@
 const t = useT()
 const { can } = usePermission()
 const { hasGrowth, resolved } = useGrowthTier()
-const { data, loading, error, busyId, draftReply, approve, discard, syncing, syncGoogle } = useGrowthReputation()
+const { data, loading, error, busyId, draftReply, approve, discard } = useGrowthReputation()
 
 const allowed = computed(() => can('communication_config'))
 
@@ -64,7 +64,7 @@ function when(iso: string) {
           bug to anybody being shown the product. With a key, it is an
           invitation to connect. -->
           <UiEmptyState
-            v-if="!data.hasReviews && !data.googleImportAvailable"
+            v-if="!data.hasReviews"
             data-test="reviews-coming-soon"
             :eyebrow="t('Coming soon', 'Próximamente')"
             tone="soon"
@@ -80,33 +80,6 @@ function when(iso: string) {
               </svg>
             </template>
           </UiEmptyState>
-
-          <UiEmptyState
-            v-else-if="!data.hasReviews"
-            :title="t('No reviews here yet', 'Aún no hay reseñas aquí')"
-            :description="t(
-              'Import your Google rating and recent reviews to see them here. Doctoralia and Facebook each need their own integration, which is not built yet.',
-              'Importa tu valoración de Google y las reseñas recientes para verlas aquí. Doctoralia y Facebook necesitan cada una su propia integración, que aún no está construida.',
-            )"
-            data-test="no-reviews"
-          >
-            <template #icon>
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                <path d="M10 2.6l2.1 4.6 5 .6-3.7 3.4 1 4.9L10 13.7l-4.4 2.4 1-4.9L2.9 7.8l5-.6L10 2.6z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />
-              </svg>
-            </template>
-            <template #actions>
-              <UiBtn variant="primary" size="sm" :disabled="syncing" data-test="sync-google" @click="syncGoogle">
-                {{ syncing ? t('Reading Google…', 'Leyendo Google…') : t('Import from Google', 'Importar desde Google') }}
-              </UiBtn>
-            </template>
-          </UiEmptyState>
-
-          <div v-if="data.hasReviews && data.googleImportAvailable" class="flex justify-end">
-            <UiBtn variant="secondary" size="sm" :disabled="syncing" data-test="sync-google" @click="syncGoogle">
-              {{ syncing ? t('Reading Google…', 'Leyendo Google…') : t('Refresh from Google', 'Actualizar desde Google') }}
-            </UiBtn>
-          </div>
 
           <section v-if="data.hasReviews" class="grid gap-4 rounded-card border border-line bg-surface p-4 shadow-card sm:grid-cols-[150px_minmax(0,1fr)] lg:grid-cols-[150px_170px_minmax(0,1fr)]">
             <div class="flex flex-col gap-1">

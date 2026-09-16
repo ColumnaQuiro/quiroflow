@@ -27,8 +27,6 @@ export interface ReputationReview {
 
 export interface ReputationData {
   hasReviews: boolean
-  /** The deployment has a Places key, so importing is possible at all. */
-  googleImportAvailable: boolean
   rating: number | null
   reviewCount: number
   distribution: { stars: number; count: number }[]
@@ -50,7 +48,6 @@ export function useGrowthReputation() {
   const data = ref<ReputationData | null>(null)
   const loading = ref(true)
   const busyId = ref<string | null>(null)
-  const syncing = ref(false)
   const error = ref<string | null>(null)
   const { showToast } = useToast()
   const t = useT()
@@ -119,38 +116,6 @@ export function useGrowthReputation() {
     }
   }
 
-  /**
-   * Pulls the rating and recent reviews in from Google.
-   *
-   * On demand rather than on a tick: a clinic's rating moves slowly, this
-   * costs a billed Google call every time, and the moment somebody wants it
-   * fresh is the moment they are looking at this screen.
-   */
-  async function syncGoogle() {
-    syncing.value = true
-    try {
-      const result = await useStaffFetch<{ available: boolean; imported: number; updated: number }>(
-        '/api/growth/reputation/sync-google',
-        { method: 'POST' },
-      )
-      if (!result.available) {
-        showToast(t('Google reviews are not configured on this deployment.', 'Las reseñas de Google no están configuradas en este despliegue.'), 'error')
-        return
-      }
-      if (result.imported === 0 && result.updated === 0) {
-        showToast(t('Google returned no reviews for that listing.', 'Google no ha devuelto reseñas para esa ficha.'))
-      } else {
-        showToast(
-          t(`${result.imported} new, ${result.updated} updated.`, `${result.imported} nuevas, ${result.updated} actualizadas.`),
-        )
-      }
-      await load()
-    } catch (e) {
-      showToast((e as { statusMessage?: string }).statusMessage ?? t('Could not read Google.', 'No se ha podido leer Google.'), 'error')
-    } finally {
-      syncing.value = false
-    }
-  }
 
-  return { data, loading, error, busyId, draftReply, approve, discard, reload: load, syncing, syncGoogle }
+  return { data, loading, error, busyId, draftReply, approve, discard, reload: load }
 }

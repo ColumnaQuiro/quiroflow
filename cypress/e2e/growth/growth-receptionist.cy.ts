@@ -35,7 +35,14 @@ describe('Growth AI receptionist', () => {
     // patients because someone opened the settings screen would be the worst
     // failure this feature could have.
     cy.get('[data-test="receptionist-status"]').should('contain', 'Off')
-    cy.contains('Automatic answering of real enquiries is not built yet').should('be.visible')
+
+    // And says what being on would mean, which is drafting for approval --
+    // not sending. The switch used to gate nothing and the copy used to say
+    // the feature did not exist; both changed once it started drafting
+    // replies to real enquiries, and the page has to keep up or it is telling
+    // an owner something untrue about their own clinic.
+    cy.contains('drafts replies for you to approve').should('be.visible')
+    cy.contains('never sends on its own').should('be.visible')
   })
 
   it('saves the persona and tone, and they survive a reload', () => {

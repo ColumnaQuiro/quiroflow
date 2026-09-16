@@ -54,8 +54,18 @@ const error = ref('')
 const totalInPracticeHub = ref(0)
 const queue = ref<{ ph: PHFile; patientId: string }[]>([])
 const alreadyHere = ref(0)
+// Three different reasons, counted separately. They were one bucket called
+// "No patient match", which then reported 688 of 2,624 and told the clinic to
+// run the Patients import -- advice that was wrong, and unfalsifiable from the
+// screen: a file with no download URL landed in the same number as a file
+// whose patient was genuinely absent.
 const noPatientMatch = ref(0)
+const noDownloadUrl = ref(0)
 const notPatientFiles = ref(0)
+// Which PracticeHub patients could not be found, so the clinic can go and look
+// at one instead of taking the number on faith. Capped -- this is a hint, not
+// a report.
+const unmatchedPhPatients = ref<number[]>([])
 
 const done = ref(0)
 const failed = ref<string[]>([])
@@ -81,7 +91,9 @@ async function buildList() {
   queue.value = []
   alreadyHere.value = 0
   noPatientMatch.value = 0
+  noDownloadUrl.value = 0
   notPatientFiles.value = 0
+  unmatchedPhPatients.value = []
   done.value = 0
   failed.value = []
 
@@ -91,10 +103,11 @@ async function buildList() {
     // A file names its patient by PracticeHub's internal id; our patients
     // carry the patient NUMBER as external_reference. /patients is the only
     // place both appear together, so it is the bridge between them.
-    const [phFiles, phPatients] = await Promise.all([
-      api.fetchAll<PHFile>('/files'),
-      api.fetchAll<PHPatient>('/patients'),
-    ])
+    // Sequential, not Promise.all. PracticeHub rate-limits: two of these at
+    // once answers 429, and while fetchPage retries, starting a long migration
+    // by tripping their limiter is a poor way to begin.
+    const phFiles = await api.fetchAll<PHFile>('/files')
+    const phPatients = await api.fetchAll<PHPatient>('/patients')
     totalInPracticeHub.value = phFiles.length
 
     const numberByPhId = new Map<number, string>()
@@ -138,10 +151,14 @@ async function buildList() {
       const patientId = number ? idByNumber.get(number) : undefined
       if (!patientId) {
         noPatientMatch.value++
+        if (f.patient_id !== null && unmatchedPhPatients.value.length < 12 && !unmatchedPhPatients.value.includes(f.patient_id)) {
+          unmatchedPhPatients.value.push(f.patient_id)
+        }
         continue
       }
+      // Nothing to do with the patient: PracticeHub gave us no link to fetch.
       if (!f.url) {
-        noPatientMatch.value++
+        noDownloadUrl.value++
         continue
       }
       queue.value.push({ ph: f, patientId })
@@ -263,16 +280,35 @@ async function run() {
               <dd class="mt-0.5 font-mono text-[15px] text-ink-700">{{ alreadyHere }}</dd>
             </div>
             <div>
-              <dt class="text-ink-faint">{{ t('No patient match', 'Sin paciente') }}</dt>
+              <dt class="text-ink-faint">{{ t('Patient not here', 'Paciente no está') }}</dt>
               <dd class="mt-0.5 font-mono text-[15px]" :class="noPatientMatch > 0 ? 'text-warning-text' : 'text-ink-700'">{{ noPatientMatch }}</dd>
             </div>
           </dl>
           <p v-if="notPatientFiles > 0" class="mt-2 text-[12px] text-ink-faint">
-            {{ t(`${notPatientFiles} file(s) in PracticeHub are not attached to a patient and are left alone.`, `${notPatientFiles} archivo(s) de PracticeHub no están asociados a un paciente y se dejan como están.`) }}
+            {{ t(`${notPatientFiles} file(s) in PracticeHub are attached to something other than a patient — reports and data exports — and are left alone.`, `${notPatientFiles} archivo(s) de PracticeHub están asociados a algo que no es un paciente (informes y exportaciones) y se dejan como están.`) }}
           </p>
-          <p v-if="noPatientMatch > 0" class="mt-1 text-[12px] text-warning-text">
-            {{ t('Files with no patient match belong to patients that have not been imported yet — run the Patients import first, then come back.', 'Los archivos sin paciente pertenecen a pacientes que aún no se han importado: ejecuta primero la importación de Pacientes y vuelve aquí.') }}
+          <p v-if="noDownloadUrl > 0" class="mt-1 text-[12px] text-warning-text">
+            {{ t(`${noDownloadUrl} file(s) have a patient here but PracticeHub gave no download link, so there is nothing to fetch.`, `${noDownloadUrl} archivo(s) tienen paciente aquí pero PracticeHub no dio enlace de descarga, así que no hay nada que traer.`) }}
           </p>
+          <!--
+            Says what was not found instead of asserting why. The first version
+            claimed these belonged to patients "not imported yet" and told the
+            clinic to run the Patients import -- on an account where 1,530 of
+            PracticeHub's 1,535 patients were already here, so the advice was
+            wrong and the screen gave no way to tell.
+          -->
+          <div v-if="noPatientMatch > 0" class="mt-1 text-[12px] text-warning-text">
+            <p>
+              {{ t(`${noPatientMatch} file(s) name a PracticeHub patient that is not in QuiroFlow.`, `${noPatientMatch} archivo(s) indican un paciente de PracticeHub que no está en QuiroFlow.`) }}
+            </p>
+            <p class="mt-0.5 text-ink-muted2">
+              {{ t('Usually a patient added to PracticeHub since the last Patients import, or one removed here. Run the Patients import and re-check; anything still listed is worth opening in PracticeHub.', 'Normalmente es un paciente añadido en PracticeHub desde la última importación de Pacientes, o uno eliminado aquí. Ejecuta la importación de Pacientes y vuelve a comprobar; lo que siga apareciendo conviene abrirlo en PracticeHub.') }}
+            </p>
+            <p v-if="unmatchedPhPatients.length > 0" class="mt-0.5 font-mono text-[11.5px] text-ink-muted2">
+              {{ t('PracticeHub patient ids:', 'Ids de paciente en PracticeHub:') }}
+              {{ unmatchedPhPatients.join(', ') }}{{ noPatientMatch > unmatchedPhPatients.length ? '…' : '' }}
+            </p>
+          </div>
         </div>
 
         <div v-if="phase === 'working' || done > 0" class="rounded-card border border-line bg-surface p-4">

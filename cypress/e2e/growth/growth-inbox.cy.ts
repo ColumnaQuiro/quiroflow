@@ -188,6 +188,54 @@ describe('Growth in the shared Inbox', () => {
     cy.get('[data-test="draft-lead-reply"]').should('not.exist')
   })
 
+  it('does not show a message the dry run only recorded as one that was sent', () => {
+    // A rule in test mode writes what it WOULD have sent as an outbound row,
+    // which is the same shape as a real one. This screen is where somebody
+    // decides whether the automation is working, so a message nobody received
+    // must not read as one that was.
+    cy.visit('/inbox?growth=1')
+    seedConversation(account, 'Dry Run Thread', 'handling').then((leadId) => {
+      // Ordered deliberately: the dry-run row is the NEWEST, which is the
+      // normal state of a lead on a rule in test mode and the case where the
+      // list would otherwise claim the clinic said something it never did.
+      cy.task('db:createLeadMessage', {
+        accountId: account.accountId,
+        leadId,
+        direction: 'outbound',
+        body: 'Esta sí salió.',
+        status: 'delivered',
+        createdAt: new Date(Date.now() - 4 * 60000).toISOString(),
+      })
+      cy.task('db:createLeadMessage', {
+        accountId: account.accountId,
+        leadId,
+        direction: 'outbound',
+        body: 'Bienvenida que solo se registró.',
+        status: 'would_send',
+        createdAt: new Date(Date.now() - 3 * 60000).toISOString(),
+      })
+      cy.reload()
+      cy.contains('[data-test="lead-row"]', 'Dry Run Thread').click()
+
+      cy.get('[data-test="lead-thread"]').within(() => {
+        cy.contains('Test run · not sent').should('be.visible')
+        cy.contains('would have been sent').should('be.visible')
+        // The raw enum never reaches the screen.
+        cy.contains('would_send').should('not.exist')
+        // A genuinely sent message still reads as sent, in plain words.
+        cy.contains('delivered').should('be.visible')
+      })
+
+      // Only the recorded one is marked; the real one keeps the normal bubble.
+      cy.get('[data-test="dry-run-message"]').should('have.length', 1).and('contain', 'Bienvenida que solo se registró.')
+
+      // And the row in the list, which is what somebody scans first. The
+      // newest row on a lead in test mode is routinely a message nobody
+      // received, so an unmarked preview says the clinic said it.
+      cy.contains('[data-test="lead-row"]', 'Dry Run Thread').should('contain', 'Not sent ·')
+    })
+  })
+
   it('refuses a free-text reply more than 24 hours after they last wrote', () => {
     cy.visit('/inbox?growth=1')
     // Two days since the last inbound message, which is outside WhatsApp's

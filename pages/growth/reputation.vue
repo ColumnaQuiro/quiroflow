@@ -57,26 +57,52 @@ function when(iso: string) {
           <!-- No reviews is a missing integration, not a bad score. Saying
           "0.0 out of 5" here would be the single most misleading number this
           screen could show. -->
-          <section v-if="!data.hasReviews" class="flex flex-col gap-2 rounded-card border border-line bg-surface p-5 shadow-card" data-test="no-reviews">
-            <h2 class="text-[13.5px] font-semibold tracking-tightTitle text-ink-900">{{ t('No reviews here yet', 'Aún no hay reseñas aquí') }}</h2>
-            <p class="max-w-[62ch] text-[12px] leading-[1.6] text-ink-muted">
-              {{ t(
-                'Google is connected once you add your Place ID under Settings → Communication → General. Doctoralia and Facebook each need their own integration, which is not built yet — so those stay empty rather than showing a rating nobody gave you. The request funnel is already counting.',
-                'Google se conecta en cuanto añades tu Place ID en Ajustes → Comunicación → General. Doctoralia y Facebook necesitan cada una su propia integración, que aún no está construida, así que esas quedan vacías en lugar de mostrar una valoración que nadie te ha dado. El embudo de solicitudes ya está contando.',
-              ) }}
-            </p>
-            <div>
-              <UiBtn variant="secondary" size="sm" :disabled="syncing" data-test="sync-google" @click="syncGoogle">
+          <!-- Two different nothings, and they must not look the same.
+          Without a Places key on the deployment, importing is not possible
+          at all -- so this says "coming soon" rather than offering a button
+          that answers "not configured on this deployment", which reads as a
+          bug to anybody being shown the product. With a key, it is an
+          invitation to connect. -->
+          <UiEmptyState
+            v-if="!data.hasReviews && !data.googleImportAvailable"
+            data-test="reviews-coming-soon"
+            :eyebrow="t('Coming soon', 'Próximamente')"
+            tone="soon"
+            :title="t('Ratings and reviews', 'Valoraciones y reseñas')"
+            :description="t(
+              'Your Google rating and recent reviews will appear here, with a reply drafted for you to approve. The review request funnel below is already running.',
+              'Tu valoración de Google y las reseñas recientes aparecerán aquí, con una respuesta redactada para que la apruebes. El embudo de solicitudes de abajo ya está funcionando.',
+            )"
+          >
+            <template #icon>
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path d="M10 2.6l2.1 4.6 5 .6-3.7 3.4 1 4.9L10 13.7l-4.4 2.4 1-4.9L2.9 7.8l5-.6L10 2.6z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />
+              </svg>
+            </template>
+          </UiEmptyState>
+
+          <UiEmptyState
+            v-else-if="!data.hasReviews"
+            :title="t('No reviews here yet', 'Aún no hay reseñas aquí')"
+            :description="t(
+              'Import your Google rating and recent reviews to see them here. Doctoralia and Facebook each need their own integration, which is not built yet.',
+              'Importa tu valoración de Google y las reseñas recientes para verlas aquí. Doctoralia y Facebook necesitan cada una su propia integración, que aún no está construida.',
+            )"
+            data-test="no-reviews"
+          >
+            <template #icon>
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path d="M10 2.6l2.1 4.6 5 .6-3.7 3.4 1 4.9L10 13.7l-4.4 2.4 1-4.9L2.9 7.8l5-.6L10 2.6z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />
+              </svg>
+            </template>
+            <template #actions>
+              <UiBtn variant="primary" size="sm" :disabled="syncing" data-test="sync-google" @click="syncGoogle">
                 {{ syncing ? t('Reading Google…', 'Leyendo Google…') : t('Import from Google', 'Importar desde Google') }}
               </UiBtn>
-            </div>
-          </section>
+            </template>
+          </UiEmptyState>
 
-          <!-- Once there are reviews, the same action is a refresh. Google
-          returns only the five most recent, so this tops up rather than
-          backfilling a history -- said on the settings field rather than
-          here, where it would sit under every clinic's rating forever. -->
-          <div v-else-if="data.hasReviews" class="flex justify-end">
+          <div v-if="data.hasReviews && data.googleImportAvailable" class="flex justify-end">
             <UiBtn variant="secondary" size="sm" :disabled="syncing" data-test="sync-google" @click="syncGoogle">
               {{ syncing ? t('Reading Google…', 'Leyendo Google…') : t('Refresh from Google', 'Actualizar desde Google') }}
             </UiBtn>

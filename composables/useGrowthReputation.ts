@@ -27,6 +27,8 @@ export interface ReputationReview {
 
 export interface ReputationData {
   hasReviews: boolean
+  /** The deployment has a Places key, so importing is possible at all. */
+  googleImportAvailable: boolean
   rating: number | null
   reviewCount: number
   distribution: { stars: number; count: number }[]

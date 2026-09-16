@@ -3,7 +3,7 @@ import { Line } from 'vue-chartjs'
 import { computePresetRange, rangeBounds } from '~/composables/useDateRangePresets'
 import type { Database } from '~/types/database.types'
 
-interface ApptRow { id: string; patient_id: string; starts_at: string; appointment_type_id: string | null; practitioner_id: string | null; clinic_id: string | null }
+interface ApptRow { id: string; patient_id: string; starts_at: string; status: string; appointment_type_id: string | null; practitioner_id: string | null; clinic_id: string | null }
 interface TypeRow { id: string; name: string; stage: string | null }
 interface PaymentRow { amount_cents: number; paid_at: string; invoice_id: string }
 interface InvoiceRow { id: string; appointment_id: string | null }
@@ -16,7 +16,12 @@ const range = ref(computePresetRange({ months: 1 }))
 const practitionerFilter = ref('')
 const clinicFilter = ref('')
 const loading = ref(true)
-const allCompleted = ref<ApptRow[]>([]) // every completed appointment, all-time — several metrics need full patient history
+// Every appointment, all-time and every status. All-time because the funnel
+// metrics need each patient's full history to find the step after the one
+// in range; every status because the tiles report what was attended against
+// what is still booked, which is the difference the clinic sees when they
+// compare this page with their calendar.
+const allAppointments = ref<ApptRow[]>([])
 const types = ref<TypeRow[]>([])
 const payments = ref<PaymentRow[]>([])
 const invoices = ref<InvoiceRow[]>([])
@@ -36,17 +41,26 @@ async function fetchAll<T>(table: keyof Database['public']['Tables'], select: st
 
 async function load() {
   loading.value = true
-  const [completed, typeRows] = await Promise.all([
-    fetchAll<ApptRow>('appointments', 'id, patient_id, starts_at, appointment_type_id, practitioner_id, clinic_id', (q) => q.eq('status', 'completed')),
+  const [appts, typeRows] = await Promise.all([
+    fetchAll<ApptRow>('appointments', 'id, patient_id, starts_at, status, appointment_type_id, practitioner_id, clinic_id', (q) => q.is('deleted_at', null)),
     supabase.from('appointment_types').select('id, name, stage').then((r) => r.data ?? []),
   ])
-  allCompleted.value = completed.sort((a, b) => a.starts_at.localeCompare(b.starts_at))
+  allAppointments.value = appts.sort((a, b) => a.starts_at.localeCompare(b.starts_at))
   types.value = typeRows
 
+  // Wide enough for whichever is longer: the selected range, or the twelve
+  // months the trend chart draws (PVA is per month, so it needs the money
+  // for every month on that chart, not just the range).
   const { from, to } = rangeBounds(range.value)
+  const from12 = new Date()
+  from12.setDate(1)
+  from12.setMonth(from12.getMonth() - (TREND_MONTHS - 1))
+  from12.setHours(0, 0, 0, 0)
+  const moneyFrom = from12 < from ? from12 : from
+  const moneyTo = to > new Date() ? to : new Date()
   const [p, inv] = await Promise.all([
-    fetchAll<PaymentRow>('payments', 'amount_cents, paid_at, invoice_id', (q) => q.gte('paid_at', from.toISOString()).lte('paid_at', to.toISOString())),
-    fetchAll<InvoiceRow>('invoices', 'id, appointment_id', (q) => q.gte('created_at', from.toISOString()).lte('created_at', to.toISOString())),
+    fetchAll<PaymentRow>('payments', 'amount_cents, paid_at, invoice_id', (q) => q.gte('paid_at', moneyFrom.toISOString()).lte('paid_at', moneyTo.toISOString())),
+    fetchAll<InvoiceRow>('invoices', 'id, appointment_id', (q) => q.gte('created_at', moneyFrom.toISOString()).lte('created_at', moneyTo.toISOString())),
   ])
   payments.value = p
   invoices.value = inv
@@ -64,14 +78,18 @@ const stageById = computed(() => new Map(types.value.map((t) => [t.id, t.stage])
 // practitioner/clinic filters apply to the full-history set before anything
 // else touches it, so every metric below (conversion, retention, ...) is
 // automatically scoped without needing its own filter logic.
-const filteredCompleted = computed(() => {
-  if (!practitionerFilter.value && !clinicFilter.value) return allCompleted.value
-  return allCompleted.value.filter((a) => {
+const filteredAppointments = computed(() => {
+  if (!practitionerFilter.value && !clinicFilter.value) return allAppointments.value
+  return allAppointments.value.filter((a) => {
     if (practitionerFilter.value && a.practitioner_id !== practitionerFilter.value) return false
     if (clinicFilter.value && a.clinic_id !== clinicFilter.value) return false
     return true
   })
 })
+
+// Every metric below this line counts attended visits only -- a booking
+// nobody turned up to is not a first visit, and never a conversion.
+const filteredCompleted = computed(() => filteredAppointments.value.filter((a) => a.status === 'completed'))
 
 const rangeStart = computed(() => rangeBounds(range.value).from)
 const rangeEnd = computed(() => rangeBounds(range.value).to)
@@ -168,7 +186,7 @@ const retentionRate = computed(() => {
   return Math.round((returning / patientsInRange.size) * 100)
 })
 
-const appointmentById = computed(() => new Map(allCompleted.value.map((a) => [a.id, a])))
+const appointmentById = computed(() => new Map(allAppointments.value.map((a) => [a.id, a])))
 const invoiceById = computed(() => new Map(invoices.value.map((i) => [i.id, i])))
 const filteredPayments = computed(() => {
   if (!practitionerFilter.value && !clinicFilter.value) return payments.value
@@ -193,12 +211,25 @@ const pva = computed(() => {
 // month" compares against last month and "last 7 days" against the 7 before
 // it. A number on its own says nothing about whether the clinic is doing
 // better or worse; this is what turns each tile into a direction.
-const previousRange = computed(() => {
-  const from = rangeStart.value
-  const to = rangeEnd.value
-  const span = to.getTime() - from.getTime()
-  return { from: new Date(from.getTime() - span - 1), to: new Date(from.getTime() - 1) }
-})
+// The same dates one calendar month earlier: 1-15 Sep compares with
+// 1-15 Aug, "last month" with the month before it. A same-length window
+// slid back instead (15 days -> the previous 15 days) compared the first
+// half of a month with the second half of the one before, which is a
+// comparison nobody asked for and reads as noise.
+function shiftMonths(d: Date, months: number): Date {
+  const shifted = new Date(d)
+  shifted.setMonth(shifted.getMonth() + months)
+  // Clamp: 31 Mar shifted back a month is 31 Feb, which JS rolls into
+  // March. Landing on the last day of the shorter month is what a person
+  // means by "the same dates last month".
+  if (shifted.getDate() !== d.getDate()) shifted.setDate(0)
+  return shifted
+}
+
+const previousRange = computed(() => ({
+  from: shiftMonths(rangeStart.value, -1),
+  to: shiftMonths(rangeEnd.value, -1),
+}))
 
 const inPreviousRange = computed(() =>
   filteredCompleted.value.filter((a) => {
@@ -225,16 +256,37 @@ interface Tile {
   label: string
   value: number
   previous: number
+  /** Still in the diary for this range -- the difference between this page and the calendar. */
+  booked?: number
+  /** Cancelled or no-show in this range: on the calendar, never attended. */
+  missed?: number
+}
+
+// What the calendar shows and this page doesn't. Natacha's September read 5
+// first visits here against 9 on her calendar: 5 attended, 2 still booked
+// later in the month, 2 cancelled. Nothing was miscounted -- the page only
+// ever said "attended" without saying so.
+function stageStatusCounts(stage: string) {
+  const rows = filteredAppointments.value.filter(
+    (a) =>
+      stageById.value.get(a.appointment_type_id ?? '') === stage &&
+      new Date(a.starts_at) >= rangeStart.value &&
+      new Date(a.starts_at) <= rangeEnd.value,
+  )
+  return {
+    booked: rows.filter((a) => a.status === 'booked').length,
+    missed: rows.filter((a) => a.status === 'cancelled' || a.status === 'no_show').length,
+  }
 }
 
 const tiles = computed<Tile[]>(() => [
-  { key: 'first_visit', label: t('First visits', 'Primeras visitas'), value: firstVisits.value, previous: previousCountByStage('first_visit') },
-  { key: 'first_visit_offer', label: t('First visit offers', 'Ofertas de primera visita'), value: firstVisitOffers.value, previous: previousCountByStage('first_visit_offer') },
-  { key: 'report', label: t('Reports', 'Informes'), value: reports.value, previous: previousCountByStage('report') },
-  { key: 'adjustment', label: t('Adjustments', 'Ajustes quiroprácticos'), value: adjustments.value, previous: previousCountByStage('adjustment') },
+  { key: 'first_visit', label: t('First visits', 'Primeras visitas'), value: firstVisits.value, previous: previousCountByStage('first_visit'), ...stageStatusCounts('first_visit') },
+  { key: 'first_visit_offer', label: t('First visit offers', 'Ofertas de primera visita'), value: firstVisitOffers.value, previous: previousCountByStage('first_visit_offer'), ...stageStatusCounts('first_visit_offer') },
+  { key: 'report', label: t('Reports', 'Informes'), value: reports.value, previous: previousCountByStage('report'), ...stageStatusCounts('report') },
+  { key: 'adjustment', label: t('Adjustments', 'Ajustes quiroprácticos'), value: adjustments.value, previous: previousCountByStage('adjustment'), ...stageStatusCounts('adjustment') },
   { key: 'revision1', label: t('Revision 1', 'Revisión 1'), value: revisionOrdinals.value.revision1, previous: previousRevisionOrdinals.value.revision1 },
   { key: 'revision2', label: t('Revision 2', 'Revisión 2'), value: revisionOrdinals.value.revision2, previous: previousRevisionOrdinals.value.revision2 },
-  { key: 'maintenance', label: t('Maintenance visits', 'Visitas de mantenimiento'), value: maintenance.value, previous: previousCountByStage('maintenance') },
+  { key: 'maintenance', label: t('Maintenance visits', 'Visitas de mantenimiento'), value: maintenance.value, previous: previousCountByStage('maintenance'), ...stageStatusCounts('maintenance') },
   { key: 'total', label: t('Total completed visits', 'Total de visitas completadas'), value: inRange.value.length, previous: inPreviousRange.value.length },
 ])
 
@@ -278,39 +330,106 @@ function monthLabel(key: string) {
   return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: 'short', year: '2-digit' })
 }
 
-const TREND_SERIES = computed(() => [
-  { stage: 'first_visit', label: t('First visits', 'Primeras visitas'), color: '#6366f1' },
-  { stage: 'report', label: t('Reports', 'Informes'), color: '#0ea5e9' },
-  { stage: 'adjustment', label: t('Adjustments', 'Ajustes'), color: '#22c55e' },
-  { stage: 'maintenance', label: t('Maintenance', 'Mantenimiento'), color: '#f59e0b' },
-])
+// The rates, month by month -- which is the comparison the clinic actually
+// wants to look at. Counts already have their own tiles; what a curve adds
+// is whether the *percentages* are moving, and PVA alongside them because
+// it is the one that turns the others into money.
+//
+// Each month is computed the same way the tiles are, just with that month
+// as the window, so a point on this chart and the tile for that month agree.
+function monthBounds(key: string): { from: Date; to: Date } {
+  const [y, m] = key.split('-').map(Number)
+  return { from: new Date(y, m - 1, 1, 0, 0, 0, 0), to: new Date(y, m, 0, 23, 59, 59, 999) }
+}
 
-const trendChartData = computed(() => {
-  const counts = new Map<string, Map<string, number>>()
-  for (const a of filteredCompleted.value) {
-    const stage = stageById.value.get(a.appointment_type_id ?? '')
-    if (!stage) continue
-    const key = monthKeyOf(a.starts_at)
-    const forStage = counts.get(stage) ?? new Map<string, number>()
-    forStage.set(key, (forStage.get(key) ?? 0) + 1)
-    counts.set(stage, forStage)
-  }
-  return {
-    labels: trendMonthKeys.value.map(monthLabel),
-    datasets: TREND_SERIES.value.map((serie) => ({
-      label: serie.label,
-      data: trendMonthKeys.value.map((key) => counts.get(serie.stage)?.get(key) ?? 0),
-      borderColor: serie.color,
-      backgroundColor: serie.color,
+function overallRetentionIn(from: Date, to: Date): number | null {
+  const before = new Set(filteredCompleted.value.filter((a) => new Date(a.starts_at) < from).map((a) => a.patient_id))
+  const seen = new Set(
+    filteredCompleted.value.filter((a) => new Date(a.starts_at) >= from && new Date(a.starts_at) <= to).map((a) => a.patient_id),
+  )
+  if (seen.size === 0) return null
+  return Math.round(([...seen].filter((id) => before.has(id)).length / seen.size) * 100)
+}
+
+function pvaIn(from: Date, to: Date): number | null {
+  const visits = filteredCompleted.value.filter((a) => new Date(a.starts_at) >= from && new Date(a.starts_at) <= to).length
+  if (visits === 0) return null
+  const cents = filteredPayments.value
+    .filter((p) => {
+      const paid = new Date(p.paid_at)
+      return paid >= from && paid <= to
+    })
+    .reduce((sum, p) => sum + p.amount_cents, 0)
+  return cents / 100 / visits
+}
+
+const trendRates = computed(() =>
+  trendMonthKeys.value.map((key) => {
+    const { from, to } = monthBounds(key)
+    return {
+      key,
+      conversion: stepConversion('report', 'adjustment', from, to)?.pct ?? null,
+      retention: stepConversion('revision', 'maintenance', from, to)?.pct ?? null,
+      overall: overallRetentionIn(from, to),
+      pva: pvaIn(from, to),
+    }
+  }),
+)
+
+const trendChartData = computed(() => ({
+  labels: trendMonthKeys.value.map(monthLabel),
+  datasets: [
+    {
+      label: t('Conversion to 3rd visit', 'Conversión a 3ª visita'),
+      data: trendRates.value.map((r) => r.conversion),
+      borderColor: '#6366f1',
+      backgroundColor: '#6366f1',
       tension: 0.3,
-    })),
-  }
-})
+      yAxisID: 'pct',
+      spanGaps: true,
+    },
+    {
+      label: t('Retention post-revision', 'Retención tras revisión'),
+      data: trendRates.value.map((r) => r.retention),
+      borderColor: '#22c55e',
+      backgroundColor: '#22c55e',
+      tension: 0.3,
+      yAxisID: 'pct',
+      spanGaps: true,
+    },
+    {
+      label: t('Overall retention', 'Retención global'),
+      data: trendRates.value.map((r) => r.overall),
+      borderColor: '#0ea5e9',
+      backgroundColor: '#0ea5e9',
+      tension: 0.3,
+      yAxisID: 'pct',
+      spanGaps: true,
+    },
+    {
+      label: t('PVA (€)', 'PVA (€)'),
+      data: trendRates.value.map((r) => (r.pva === null ? null : Number(r.pva.toFixed(2)))),
+      borderColor: '#f59e0b',
+      backgroundColor: '#f59e0b',
+      borderDash: [5, 4],
+      tension: 0.3,
+      yAxisID: 'eur',
+      spanGaps: true,
+    },
+  ],
+}))
 
+// Two axes on purpose: three of these are percentages and one is euros, and
+// forcing them onto one scale would flatten whichever is smaller into the
+// floor. PVA is dashed so it reads as the odd one out.
 const trendChartOptions = {
   responsive: true,
   maintainAspectRatio: false,
-  scales: { y: { beginAtZero: true } },
+  interaction: { mode: 'index' as const, intersect: false },
+  scales: {
+    pct: { type: 'linear' as const, position: 'left' as const, beginAtZero: true, max: 100, ticks: { callback: (v: number | string) => `${v}%` } },
+    eur: { type: 'linear' as const, position: 'right' as const, beginAtZero: true, grid: { drawOnChartArea: false }, ticks: { callback: (v: number | string) => `€${v}` } },
+  },
   plugins: { legend: { position: 'bottom' as const } },
 }
 
@@ -353,7 +472,8 @@ const unclassifiedTypeNames = computed(() =>
 
       <template v-else>
         <p class="mt-4 text-[12px] text-ink-faint2">
-          {{ t('Compared with the same length of time just before it:', 'Comparado con el mismo periodo justo anterior:') }} {{ previousRangeLabel }}
+          {{ t('Counts attended visits. Compared with the same dates a month earlier:', 'Cuenta visitas atendidas. Comparado con las mismas fechas del mes anterior:') }}
+          {{ previousRangeLabel }}
         </p>
 
         <div class="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -365,6 +485,11 @@ const unclassifiedTypeNames = computed(() =>
               <span class="text-ink-faint2">{{ t(`vs ${tile.previous}`, `vs ${tile.previous}`) }}</span>
             </p>
             <p v-else class="mt-1 text-[11.5px] text-ink-faint2">{{ t(`vs ${tile.previous} before`, `vs ${tile.previous} antes`) }}</p>
+            <p v-if="tile.booked || tile.missed" class="mt-1 text-[11px] text-ink-faint2">
+              <span v-if="tile.booked">{{ t(`+${tile.booked} booked`, `+${tile.booked} reservadas`) }}</span>
+              <span v-if="tile.booked && tile.missed"> · </span>
+              <span v-if="tile.missed">{{ t(`${tile.missed} cancelled`, `${tile.missed} canceladas`) }}</span>
+            </p>
           </div>
           <div class="rounded-card border border-line bg-surface p-4 shadow-card">
             <p class="font-mono text-[23px] font-semibold text-ink-900">{{ pva !== null ? `€${pva.toFixed(2)}` : '—' }}</p>
@@ -409,9 +534,12 @@ const unclassifiedTypeNames = computed(() =>
         </div>
 
         <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
-          <h3 class="text-[13.5px] font-semibold text-ink-800">{{ t('Last 12 months', 'Últimos 12 meses') }}</h3>
+          <h3 class="text-[13.5px] font-semibold text-ink-800">{{ t('Month by month', 'Mes a mes') }}</h3>
           <p class="text-[12px] text-ink-faint2">
-            {{ t('Completed visits per month. Not affected by the date range above.', 'Visitas completadas por mes. No depende del rango de fechas de arriba.') }}
+            {{ t(
+              'The three rates and PVA, one point per month, over the last 12 months. Not affected by the date range above.',
+              'Las tres tasas y el PVA, un punto por mes, durante los últimos 12 meses. No depende del rango de fechas de arriba.',
+            ) }}
           </p>
           <div class="mt-3 h-80"><Line :data="trendChartData" :options="trendChartOptions" /></div>
         </div>

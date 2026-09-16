@@ -31,6 +31,9 @@ export interface LeadThread {
    * is going to be rejected on send.
    */
   canReplyFreeText: boolean
+  /** A reply the receptionist wrote, waiting on a person. Never sent. */
+  draft: string | null
+  draftAt: string | null
   messages: LeadThreadMessage[]
 }
 
@@ -38,6 +41,7 @@ export function useGrowthLeadThread() {
   const thread = ref<LeadThread | null>(null)
   const loading = ref(false)
   const sending = ref(false)
+  const drafting = ref(false)
   const { showToast } = useToast()
   const t = useT()
 
@@ -72,9 +76,61 @@ export function useGrowthLeadThread() {
     }
   }
 
+  /** Asks the receptionist for a reply. Writes a draft; sends nothing. */
+  async function draftReply(leadId: string) {
+    drafting.value = true
+    try {
+      const result = await useStaffFetch<{ available: boolean; draft: string; refused?: boolean }>(
+        `/api/growth/leads/${leadId}/draft-reply`,
+        { method: 'POST' },
+      )
+      if (!result.available) {
+        showToast(t('The AI receptionist is not configured on this deployment.', 'La recepcionista IA no está configurada en este despliegue.'), 'error')
+        return false
+      }
+      if (result.refused || !result.draft) {
+        // The model declining to write this is an answer, not a failure --
+        // said plainly rather than shown as a broken request.
+        showToast(t('The receptionist did not want to answer this one -- reply yourself.', 'La recepcionista no ha querido responder a este -- respóndele tú.'))
+        return false
+      }
+      await load(leadId)
+      return true
+    } catch (e) {
+      showToast((e as { statusMessage?: string }).statusMessage ?? t('Could not draft a reply.', 'No se ha podido redactar una respuesta.'), 'error')
+      return false
+    } finally {
+      drafting.value = false
+    }
+  }
+
+  async function discardDraft(leadId: string) {
+    try {
+      await useStaffFetch(`/api/growth/leads/${leadId}/draft-reply`, { method: 'DELETE' })
+      await load(leadId)
+    } catch {
+      showToast(t('Could not discard that draft.', 'No se ha podido descartar el borrador.'), 'error')
+    }
+  }
+
+  /**
+   * Sends the draft, then clears it.
+   *
+   * The clear is deliberately after the send succeeds and deliberately not
+   * inside the send route: a draft that survives its own send is a draft
+   * somebody sends twice, and /api/whatsapp/inbox-send is the same route the
+   * composer uses to type a reply by hand -- it should know nothing about
+   * drafts.
+   */
+  async function approveDraft(leadId: string, text: string) {
+    const sent = await reply(leadId, text)
+    if (sent) await discardDraft(leadId)
+    return sent
+  }
+
   function close() {
     thread.value = null
   }
 
-  return { thread, loading, sending, load, reply, close }
+  return { thread, loading, sending, drafting, load, reply, draftReply, discardDraft, approveDraft, close }
 }

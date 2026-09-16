@@ -1039,6 +1039,31 @@ async function setWhatsappPhoneNumberId(opts: { accountId: string; phoneNumberId
   return { ok: true }
 }
 
+/** Connects an Instagram account, the way Settings > WhatsApp does. */
+async function setInstagramAccount(opts: { accountId: string; instagramUserId: string | null; accessToken?: string | null }) {
+  assertOk(
+    await admin
+      .from('accounts')
+      .update({
+        instagram_user_id: opts.instagramUserId,
+        instagram_access_token: opts.accessToken === undefined ? 'ig-test-token' : opts.accessToken,
+      })
+      .eq('id', opts.accountId),
+  )
+  return { ok: true }
+}
+
+/** Every message stored on a channel, for asserting what a webhook did. */
+async function messagesOnChannel(opts: { accountId: string; channel: string }) {
+  const { data } = await admin
+    .from('whatsapp_messages')
+    .select('direction, status, body_preview, external_contact_id, wamid, channel')
+    .eq('account_id', opts.accountId)
+    .eq('channel', opts.channel)
+    .order('created_at')
+  return data ?? []
+}
+
 /** Records ad spend for a channel in the current month. */
 async function setChannelSpend(opts: { accountId: string; channel: string; amountCents: number; month?: string }) {
   const month = opts.month ?? new Date().toISOString().slice(0, 8) + '01'
@@ -1317,6 +1342,8 @@ export const dbTasks = {
   'db:setGrowthAddon': setGrowthAddon,
   'db:setLeadAiState': setLeadAiState,
   'db:setWhatsappPhoneNumberId': setWhatsappPhoneNumberId,
+  'db:setInstagramAccount': setInstagramAccount,
+  'db:messagesOnChannel': messagesOnChannel,
   'db:setChannelSpend': setChannelSpend,
   'db:createAutomationRule': createAutomationRule,
   'db:reviewRequestsFor': reviewRequestsFor,

@@ -22,6 +22,8 @@ const recallTemplateLanguage = ref('es')
 const reminderTemplateName = ref('')
 const reminderTemplateLanguage = ref('es')
 const staffNotifyTemplateName = ref('')
+const instagramUserId = ref('')
+const instagramAccessToken = ref('')
 const newLeadNotifyTemplateName = ref('')
 const newLeadNotifyTemplateLanguage = ref('es')
 const staffNotifyTemplateLanguage = ref('es')
@@ -53,7 +55,7 @@ async function load() {
   const { data } = await supabase
     .from('accounts')
     .select(
-      'whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_access_token, whatsapp_confirmation_template_name, whatsapp_confirmation_template_language, whatsapp_recall_template_name, whatsapp_recall_template_language, whatsapp_reminder_template_name, whatsapp_reminder_template_language, online_booking_notify_whatsapp_template_name, online_booking_notify_whatsapp_template_language, new_lead_notify_whatsapp_template_name, new_lead_notify_whatsapp_template_language',
+      'whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_access_token, whatsapp_confirmation_template_name, whatsapp_confirmation_template_language, whatsapp_recall_template_name, whatsapp_recall_template_language, whatsapp_reminder_template_name, whatsapp_reminder_template_language, online_booking_notify_whatsapp_template_name, online_booking_notify_whatsapp_template_language, new_lead_notify_whatsapp_template_name, new_lead_notify_whatsapp_template_language, instagram_user_id, instagram_access_token',
     )
     .eq('id', store.accountId!)
     .maybeSingle()
@@ -75,6 +77,8 @@ async function load() {
   reminderTemplateName.value = data?.whatsapp_reminder_template_name ?? ''
   reminderTemplateLanguage.value = data?.whatsapp_reminder_template_language ?? 'es'
   staffNotifyTemplateName.value = data?.online_booking_notify_whatsapp_template_name ?? ''
+  instagramUserId.value = data?.instagram_user_id ?? ''
+  instagramAccessToken.value = data?.instagram_access_token ?? ''
   newLeadNotifyTemplateName.value = data?.new_lead_notify_whatsapp_template_name ?? ''
   newLeadNotifyTemplateLanguage.value = data?.new_lead_notify_whatsapp_template_language ?? 'es'
   staffNotifyTemplateLanguage.value = data?.online_booking_notify_whatsapp_template_language ?? 'es'
@@ -126,6 +130,8 @@ async function save() {
     whatsapp_reminder_template_name: reminderTemplateName.value.trim() || null,
     whatsapp_reminder_template_language: reminderTemplateLanguage.value.trim() || 'es',
     online_booking_notify_whatsapp_template_name: staffNotifyTemplateName.value.trim() || null,
+    instagram_user_id: instagramUserId.value.trim() || null,
+    instagram_access_token: instagramAccessToken.value.trim() || null,
     new_lead_notify_whatsapp_template_name: newLeadNotifyTemplateName.value.trim() || null,
     new_lead_notify_whatsapp_template_language: newLeadNotifyTemplateLanguage.value.trim() || 'es',
     online_booking_notify_whatsapp_template_language: staffNotifyTemplateLanguage.value.trim() || 'es',
@@ -295,6 +301,38 @@ async function save() {
                   class="h-8 w-[70px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
                 />
               </div>
+            </SettingsFieldRow>
+
+            <!-- Instagram rides the same Meta app and the same webhook, so
+            there is nothing new to verify and no second app secret -- only
+            which account to receive and send as. Here rather than on a screen
+            of its own for that reason: it is the same connection. -->
+            <SettingsFieldRow
+              label="Instagram account ID"
+              helper="Your Instagram professional account id. DMs to it arrive in the Inbox beside WhatsApp. Leave blank to keep Instagram disconnected."
+              align="top"
+            >
+              <input
+                v-model="instagramUserId"
+                type="text"
+                placeholder="17841400000000000"
+                data-test="instagram-user-id"
+                class="h-8 w-[240px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+              />
+            </SettingsFieldRow>
+
+            <SettingsFieldRow
+              label="Instagram access token"
+              helper="Page access token with instagram_manage_messages. Needed to send replies; receiving works without it."
+              align="top"
+            >
+              <input
+                v-model="instagramAccessToken"
+                type="password"
+                placeholder="EAA…"
+                data-test="instagram-access-token"
+                class="h-8 w-[240px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+              />
             </SettingsFieldRow>
 
             <SettingsFieldRow

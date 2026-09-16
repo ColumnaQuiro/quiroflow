@@ -15,6 +15,8 @@ interface Message {
   media_mime_type: string | null
   media_filename: string | null
   channel: string
+  /** Who the conversation is with when there is no phone -- an Instagram IGSID. */
+  external_contact_id: string | null
   created_at: string
   pending?: boolean
 }
@@ -22,6 +24,8 @@ interface Conversation {
   key: string
   patientId: string | null
   phoneNumber: string | null
+  /** Set instead of phoneNumber on a channel that has no phone, e.g. Instagram. */
+  externalContactId?: string | null
   name: string
   channel: string
   lastMessage: Message | null
@@ -100,7 +104,7 @@ async function load(opts: { silent?: boolean } = {}) {
   const [{ data: waData }, { data: appData }] = await Promise.all([
     supabase
       .from('whatsapp_messages')
-      .select('id, patient_id, phone_number, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, channel, created_at')
+      .select('id, patient_id, phone_number, external_contact_id, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, channel, created_at')
       .order('created_at', { ascending: false })
       .limit(1000),
     supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at').order('created_at', { ascending: false }).limit(1000),
@@ -112,6 +116,7 @@ async function load(opts: { silent?: boolean } = {}) {
     id: m.id,
     patient_id: m.patient_id,
     phone_number: null,
+    external_contact_id: null,
     direction: m.direction,
     status: 'sent',
     body_preview: m.body,
@@ -157,7 +162,7 @@ const allMessages = computed<Message[]>(() =>
 const conversations = computed<Conversation[]>(() => {
   const byKey = new Map<string, Message[]>()
   for (const m of allMessages.value) {
-    const key = m.patient_id ?? m.phone_number ?? 'unknown'
+    const key = m.patient_id ?? m.phone_number ?? m.external_contact_id ?? 'unknown'
     if (!byKey.has(key)) byKey.set(key, [])
     byKey.get(key)!.push(m)
   }
@@ -183,7 +188,7 @@ const conversations = computed<Conversation[]>(() => {
 const conversationSearchText = computed(() => {
   const map: Record<string, string> = {}
   for (const m of allMessages.value) {
-    const key = m.patient_id ?? m.phone_number ?? 'unknown'
+    const key = m.patient_id ?? m.phone_number ?? m.external_contact_id ?? 'unknown'
     map[key] = `${map[key] ?? ''} ${m.body_preview ?? ''}`
   }
   return map
@@ -349,7 +354,7 @@ const selected = computed(
   () => conversations.value.find((c) => c.key === selectedKey.value) ?? (draftConversation.value?.key === selectedKey.value ? draftConversation.value : null),
 )
 const thread = computed(() =>
-  selectedKey.value ? allMessages.value.filter((m) => (m.patient_id ?? m.phone_number ?? 'unknown') === selectedKey.value).slice().reverse() : [],
+  selectedKey.value ? allMessages.value.filter((m) => (m.patient_id ?? m.phone_number ?? m.external_contact_id ?? 'unknown') === selectedKey.value).slice().reverse() : [],
 )
 
 // Auto-scroll, WhatsApp-style: snap to the bottom when a conversation is
@@ -495,8 +500,8 @@ async function deleteKeys(keys: string[]) {
         await supabase.from('whatsapp_conversation_labels').delete().eq('team_member_id', store.teamMember.id).eq('conversation_key', key)
       }
     }
-    messages.value = messages.value.filter((m) => !keys.includes(m.patient_id ?? m.phone_number ?? 'unknown'))
-    pendingMessages.value = pendingMessages.value.filter((m) => !keys.includes(m.patient_id ?? m.phone_number ?? 'unknown'))
+    messages.value = messages.value.filter((m) => !keys.includes(m.patient_id ?? m.phone_number ?? m.external_contact_id ?? 'unknown'))
+    pendingMessages.value = pendingMessages.value.filter((m) => !keys.includes(m.patient_id ?? m.phone_number ?? m.external_contact_id ?? 'unknown'))
     if (selectedKey.value && keys.includes(selectedKey.value)) selectedKey.value = null
   } finally {
     deletingConversation.value = false
@@ -707,6 +712,7 @@ async function sendText() {
       id: tempId,
       patient_id: target.patientId,
       phone_number: target.phoneNumber,
+      external_contact_id: target.externalContactId ?? null,
       direction: 'outbound',
       status: 'pending',
       body_preview: text,
@@ -775,6 +781,7 @@ async function sendMedia(mediaBase64: string, mediaMimeType: string, mediaFilena
       id: tempId,
       patient_id: target.patientId,
       phone_number: target.phoneNumber,
+      external_contact_id: target.externalContactId ?? null,
       direction: 'outbound',
       status: 'pending',
       body_preview: null,

@@ -94,8 +94,9 @@ jobs:
       # back.
       #
       # Cypress time per shard, measured against the built server (see the
-      # build step below) rather than estimated: growth 237s, patients 87s,
-      # settings 50s, calendar 47s, navigation 17s, the rest under 30s each.
+      # build step below) rather than estimated: growth-leads 2m41,
+      # growth-platform 2m16, patients 1m27, settings 50s, calendar 47s,
+      # navigation 17s, the rest under 30s each.
       # Those numbers replace a set that had gone badly stale -- it claimed
       # every shard ran in about a minute while growth was taking 8m25.
       #
@@ -123,8 +124,20 @@ jobs:
           # automations and reputation specs are still to come. scripts/
           # check-e2e-shards.mjs is what noticed it had no shard at all, after
           # two spec files had already merged and never run.
-          - name: growth
-            specs: "cypress/e2e/growth/**"
+          # Growth is split because as one shard it was the whole critical
+          # path: 237s against the next-slowest 87s. The halves are balanced
+          # on measured time, not spec count: leads 2m41, platform 2m16.
+          #
+          # growth-leads takes a prefix glob, so a new growth-lead-*.cy.ts
+          # joins it with no workflow edit. growth-platform names its specs,
+          # which means a new non-lead growth spec matches nothing and
+          # check-e2e-shards.mjs fails until someone assigns it. That is the
+          # trade for splitting a folder, and the failure is the point: the
+          # alternative is a spec that never runs and says nothing.
+          - name: growth-leads
+            specs: "cypress/e2e/growth/growth-lead*.cy.ts,cypress/e2e/growth/growth-inbox.cy.ts"
+          - name: growth-platform
+            specs: "cypress/e2e/growth/growth-receptionist.cy.ts,cypress/e2e/growth/growth-reputation.cy.ts,cypress/e2e/growth/growth-dashboard-data.cy.ts,cypress/e2e/growth/growth-dashboard.cy.ts,cypress/e2e/growth/growth-automations.cy.ts,cypress/e2e/growth/growth-automation-builder.cy.ts,cypress/e2e/growth/growth-addon-entitlement.cy.ts,cypress/e2e/growth/growth-review-links.cy.ts"
           - name: patients-and-booking
             specs: "cypress/e2e/patients/**,cypress/e2e/public-booking/**"
           - name: auth-calendar-inbox

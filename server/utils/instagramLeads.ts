@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 import { nextLeadReference } from '~/server/utils/leads'
+import { receptionistHandlesNewLeads } from '~/server/utils/receptionist'
 
 // Turning an Instagram DM into a lead.
 //
@@ -90,6 +91,10 @@ export async function leadForInstagramSender(
       // 'contacted' rather than 'new': they wrote first. 'new' means an
       // enquiry nobody has spoken to, and the funnel counts it that way.
       stage: 'contacted',
+      // Same rule as the form ingest: on means the receptionist has it.
+      // Especially here -- somebody who has just asked a question in a DM is
+      // the clearest case there is for a drafted reply already waiting.
+      ...((await receptionistHandlesNewLeads(supabase, accountId)) ? { ai_state: 'handling' as const } : {}),
     })
     .select('id')
     .single()

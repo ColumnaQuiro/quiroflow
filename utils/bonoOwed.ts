@@ -24,12 +24,23 @@
 // deliberate: "we have no record of a charge" and "they have not paid" are
 // different things, and treating the first as the second once put 210,147 EUR
 // of invented debt on 427 migrated bonos.
+//
+// Money taken ON ACCOUNT never counts towards a bono, even when it is linked
+// to one. Adding credit writes a payment AND an account_credits row for the
+// same euros -- the payment records that the money arrived, the credit row is
+// what the patient can still direct somewhere -- so letting it pay down a
+// bono as well spends it twice: Adrian Oropeza's 115 EUR read as 115 of loose
+// credit and 115 off his bono at the same time, and "available" came out 292
+// where he has 177. It buys bono sessions when somebody actually spends it,
+// through Collect with method 'credit', which draws the credit row down and
+// writes a payment with purpose 'bono'.
 
 export interface BonoOwedPayment {
   amount_cents: number
   invoice_id: string | null
   package_purchase_id: string | null
   external_reference: string | null
+  purpose: string | null
 }
 
 export interface BonoOwedInput {
@@ -55,6 +66,7 @@ export function bonoOwedCents(input: BonoOwedInput): number {
   let paidHereCents = 0
   let hasAnyLinkedPayment = false
   for (const p of input.payments) {
+    if (p.purpose === 'on_account') continue
     const countsViaInvoice = invoiceIsValid && input.invoiceId !== null && p.invoice_id === input.invoiceId
     const countsViaBono = p.package_purchase_id === input.purchaseId
     if (!countsViaInvoice && !countsViaBono) continue

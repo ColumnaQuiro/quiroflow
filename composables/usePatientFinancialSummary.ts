@@ -112,12 +112,12 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
       supabase.from('invoices').select('id, total_cents, status').eq('patient_id', currentId),
       supabase.from('patient_memberships').select('id, membership_name, status').eq('patient_id', currentId).eq('status', 'active'),
       supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used, price_cents, invoice_id, owed_cents').eq('patient_id', currentId).order('purchased_at', { ascending: false }),
-      supabase.from('account_credits').select('amount_cents, external_reference').eq('patient_id', currentId),
+      supabase.from('account_credits').select('amount_cents, external_reference, payment_id').eq('patient_id', currentId),
       supabase
         .from('package_purchase_shares')
         .select('package_purchases(id, package_name, sessions_total, sessions_used, price_cents, patients(first_name, last_name))')
         .eq('patient_id', currentId),
-      supabase.from('payments').select('amount_cents, method, invoice_id, package_purchase_id, external_reference, invoices(status)').eq('patient_id', currentId),
+      supabase.from('payments').select('amount_cents, method, invoice_id, package_purchase_id, external_reference, purpose, invoices(status)').eq('patient_id', currentId),
     ])
 
     // A 'credit' payment against a VOIDED invoice is not money and never was:
@@ -158,11 +158,33 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     state.creditLedgerCents.value = (credits ?? [])
       .filter((c) => !(c as { external_reference: string | null }).external_reference?.startsWith('bono-cutover-'))
       .reduce((sum, c) => sum + c.amount_cents, 0)
+    // The same credit rows again, minus the ones that only restate a payment.
+    //
+    // Adding credit writes both: a payment, because the money arrived and a
+    // factura has to say so, and a credit row, because it is still the
+    // patient's to direct somewhere. Two rows, one set of euros -- and a
+    // balance of paid - invoiced + credit counted them both, putting Adrian
+    // Oropeza 115 EUR ahead of himself the moment the cash was counted.
+    //
+    // Only that one path sets payment_id. Everything else stays: the cutover
+    // entries, goodwill credits, credit added before the payment row existed,
+    // and the negative rows recording credit being spent -- those pair with a
+    // payment of method 'credit' moving the money somewhere else, so the two
+    // have to cancel here rather than both dropping out.
+    //
+    // creditLedgerCents above keeps every row, because what the patient can
+    // spend is a different question from what the clinic owes them.
+    const balanceCreditCents = (credits ?? [])
+      .filter((c) => {
+        const row = c as { external_reference: string | null; payment_id: string | null }
+        return !row.external_reference?.startsWith('bono-cutover-') && !row.payment_id
+      })
+      .reduce((sum, c) => sum + c.amount_cents, 0)
     // Positive = clinic owes the patient (credit), negative = patient owes the clinic --
     // matches the sign convention already used for patients.balance_cents elsewhere,
     // but computed live from invoices/payments rather than trusting that column, which
     // is only ever written at import time and never kept in sync afterward.
-    state.balanceCents.value = paidCents - invoicedCents + state.creditLedgerCents.value + cutoverAdjustmentCents
+    state.balanceCents.value = paidCents - invoicedCents + balanceCreditCents + cutoverAdjustmentCents
 
     state.activeMembership.value = memberships?.[0] ?? null
     // Packages are pure session-count tracking (name, sessions left) -- the
@@ -220,6 +242,7 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
             invoice_id: pay.invoice_id,
             package_purchase_id: pay.package_purchase_id,
             external_reference: pay.external_reference,
+            purpose: (pay as { purpose: string | null }).purpose,
           })),
         })
         return sum + Math.max(0, remainingCents - owedCents)

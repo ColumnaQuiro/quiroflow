@@ -258,6 +258,10 @@ export type Database = {
           online_booking_gtm_id: string | null
           online_booking_hide_logo: boolean
           online_booking_max_days_ahead: number
+          new_lead_notify_email: string | null
+          new_lead_notify_whatsapp: string | null
+          new_lead_notify_whatsapp_template_language: string | null
+          new_lead_notify_whatsapp_template_name: string | null
           online_booking_notify_email: string | null
           online_booking_notify_whatsapp: string | null
           online_booking_notify_whatsapp_template_language: string
@@ -327,6 +331,10 @@ export type Database = {
           online_booking_gtm_id?: string | null
           online_booking_hide_logo?: boolean
           online_booking_max_days_ahead?: number
+          new_lead_notify_email?: string | null
+          new_lead_notify_whatsapp?: string | null
+          new_lead_notify_whatsapp_template_language?: string | null
+          new_lead_notify_whatsapp_template_name?: string | null
           online_booking_notify_email?: string | null
           online_booking_notify_whatsapp?: string | null
           online_booking_notify_whatsapp_template_language?: string
@@ -395,6 +403,10 @@ export type Database = {
           online_booking_gtm_id?: string | null
           online_booking_hide_logo?: boolean
           online_booking_max_days_ahead?: number
+          new_lead_notify_email?: string | null
+          new_lead_notify_whatsapp?: string | null
+          new_lead_notify_whatsapp_template_language?: string | null
+          new_lead_notify_whatsapp_template_name?: string | null
           online_booking_notify_email?: string | null
           online_booking_notify_whatsapp?: string | null
           online_booking_notify_whatsapp_template_language?: string

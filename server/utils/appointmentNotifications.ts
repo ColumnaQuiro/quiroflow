@@ -98,7 +98,10 @@ interface MetaTemplate {
 // SendWhatsAppModal.vue already uses for a manual send: exact language match,
 // then a locale-prefix match (e.g. patient 'en' against template 'en_US'),
 // then the account's configured default language, then whatever's left.
-async function resolveTemplateVariant(
+// Exported for leadNotifications.ts, which needs the same "what does this
+// approved template's body actually look like" answer before it can fill in
+// {{1}}, {{2}}…
+export async function resolveTemplateVariant(
   businessAccountId: string,
   accessToken: string,
   templateName: string,

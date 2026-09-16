@@ -1224,6 +1224,20 @@ async function stopPracticeHubStub() {
   return { ok: true }
 }
 
+/** Turns on the new-lead staff notification, to exercise its wiring. */
+async function setNewLeadNotify(opts: { accountId: string; email?: string | null; whatsapp?: string | null }) {
+  assertOk(
+    await admin
+      .from('accounts')
+      .update({
+        new_lead_notify_email: opts.email ?? null,
+        new_lead_notify_whatsapp: opts.whatsapp ?? null,
+      })
+      .eq('id', opts.accountId),
+  )
+  return { ok: true }
+}
+
 /** Gives an account PracticeHub credentials, to exercise the external check. */
 async function setPracticeHubConnection(opts: { accountId: string; baseUrl: string | null; apiKey?: string | null }) {
   assertOk(
@@ -1275,6 +1289,7 @@ export const dbTasks = {
   'db:reviewRequestsFor': reviewRequestsFor,
   'db:latestAutomationActions': latestAutomationActions,
   'db:leadMessages': leadMessages,
+  'db:setNewLeadNotify': setNewLeadNotify,
   'db:setPracticeHubConnection': setPracticeHubConnection,
   'db:startPracticeHubStub': startPracticeHubStub,
   'db:stopPracticeHubStub': stopPracticeHubStub,

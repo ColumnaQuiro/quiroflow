@@ -23,6 +23,12 @@ const emailReminderBody = ref('')
 // this is the account's one general communications settings page.
 const googleReviewUrl = ref('')
 
+// Which Google listing this clinic is, so its rating and recent reviews can
+// be read into Growth > Reputation. Beside the review link because they are
+// the same listing seen from two sides: the link asks for a review, this
+// reads the ones that arrived.
+const googlePlaceId = ref('')
+
 // Where to tell the clinic a lead has come in. Here rather than on a Growth
 // screen for the same reason the Google review link is here: this is the
 // account's one general communications settings page, and "who do we ping"
@@ -45,7 +51,7 @@ async function load() {
   const { data } = await supabase
     .from('accounts')
     .select(
-      'appointment_confirmation_enabled, appointment_confirmation_channels, email_confirmation_subject, email_confirmation_body, appointment_reminder_enabled, appointment_reminder_channels, appointment_reminder_hours_before, email_reminder_subject, email_reminder_body, google_review_url, default_phone_country, new_lead_notify_email, new_lead_notify_whatsapp',
+      'appointment_confirmation_enabled, appointment_confirmation_channels, email_confirmation_subject, email_confirmation_body, appointment_reminder_enabled, appointment_reminder_channels, appointment_reminder_hours_before, email_reminder_subject, email_reminder_body, google_review_url, google_place_id, default_phone_country, new_lead_notify_email, new_lead_notify_whatsapp',
     )
     .eq('id', store.accountId!)
     .maybeSingle()
@@ -59,6 +65,7 @@ async function load() {
   emailReminderSubject.value = data?.email_reminder_subject ?? ''
   emailReminderBody.value = data?.email_reminder_body ?? ''
   googleReviewUrl.value = data?.google_review_url ?? ''
+  googlePlaceId.value = data?.google_place_id ?? ''
   newLeadNotifyEmail.value = data?.new_lead_notify_email ?? ''
   newLeadNotifyWhatsapp.value = data?.new_lead_notify_whatsapp ?? ''
   defaultPhoneCountry.value = data?.default_phone_country ?? 'ES'
@@ -79,6 +86,7 @@ async function save() {
     email_reminder_subject: emailReminderSubject.value.trim() || null,
     email_reminder_body: emailReminderBody.value.trim() || null,
     google_review_url: googleReviewUrl.value.trim() || null,
+    google_place_id: googlePlaceId.value.trim() || null,
     new_lead_notify_email: newLeadNotifyEmail.value.trim() || null,
     new_lead_notify_whatsapp: newLeadNotifyWhatsapp.value.trim() || null,
     default_phone_country: defaultPhoneCountry.value,
@@ -318,6 +326,21 @@ async function save() {
                 placeholder="https://g.page/r/…/review"
                 class="mt-3 h-8 w-full rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
               />
+
+              <label class="mt-3 block text-[12px] font-medium text-ink-muted">{{ t('Google Place ID', 'ID de lugar de Google') }}</label>
+              <input
+                v-model="googlePlaceId"
+                type="text"
+                placeholder="ChIJ…"
+                data-test="google-place-id"
+                class="mt-1 h-8 w-full rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+              />
+              <p class="mt-1 text-[11.5px] text-ink-faint">
+                {{ t(
+                  'Lets Growth → Reputation read your rating and recent reviews. Find it with Google\'s Place ID Finder. Google only returns the five most recent reviews, and replying still has to be done on Google.',
+                  'Permite que Crecimiento → Reputación lea tu valoración y las reseñas recientes. Lo encuentras con el buscador de Place ID de Google. Google solo devuelve las cinco reseñas más recientes, y responder sigue haciéndose en Google.',
+                ) }}
+              </p>
             </div>
 
           </form>

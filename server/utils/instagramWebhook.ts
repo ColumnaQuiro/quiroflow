@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 import { webhookMayActOnAccount, type WebhookAuth } from '~/server/utils/whatsappWebhookAuth'
 import { notifyInboxTeamMembers } from '~/server/utils/pushNotifications'
+import { leadForInstagramSender } from '~/server/utils/instagramLeads'
 
 // Instagram DMs arriving on the shared webhook.
 //
@@ -64,7 +65,7 @@ export async function handleInstagramEntries(
 
       const { data: account } = await supabase
         .from('accounts')
-        .select('id, instagram_user_id')
+        .select('id, instagram_user_id, instagram_access_token')
         .eq('instagram_user_id', igUserId)
         .maybeSingle()
       // A silent skip rather than an error: an id we do not know is not ours
@@ -84,8 +85,19 @@ export async function handleInstagramEntries(
       const preview = text || (attachment ? `(${attachment})` : '')
       if (!preview) continue
 
+      // Somebody asking a question on Instagram is a lead by every
+      // definition this product uses, so they become one -- which is what
+      // puts them on the board, in the funnel, in the dashboard's channel
+      // table, and in front of the receptionist, all of which work per lead.
+      //
+      // Before the message is stored, so the row carries the lead from the
+      // start: attaching it afterwards would leave a window where the Inbox
+      // shows a message belonging to nobody.
+      const leadId = await leadForInstagramSender(supabase, account.id, senderId, account.instagram_access_token)
+
       const { error } = await supabase.from('whatsapp_messages').insert({
         account_id: account.id,
+        lead_id: leadId,
         channel: 'instagram',
         direction: 'inbound',
         status: 'received',

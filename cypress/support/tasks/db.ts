@@ -383,8 +383,12 @@ async function createPayment(opts: {
   // spec can seed money on account -- a payment settling no particular charge.
   patientId?: string
   invoiceId?: string
+  // A deposit put against a bono. A bono sold here raises no invoice -- its
+  // price sits on the purchase as owed_cents and payments come off it through
+  // this column -- so a part-paid bono can only be seeded this way.
+  packagePurchaseId?: string
 }) {
-  const { accountId, invoiceId, amountCents, method } = opts
+  const { accountId, invoiceId, amountCents, method, packagePurchaseId } = opts
   let patientId = opts.patientId
   if (!patientId) {
     if (!invoiceId) throw new Error('createPayment needs patientId or invoiceId')
@@ -394,7 +398,7 @@ async function createPayment(opts: {
   const row = unwrap(
     await admin
       .from('payments')
-      .insert({ account_id: accountId, patient_id: patientId, invoice_id: invoiceId ?? null, amount_cents: amountCents, method })
+      .insert({ account_id: accountId, patient_id: patientId, invoice_id: invoiceId ?? null, package_purchase_id: packagePurchaseId ?? null, amount_cents: amountCents, method })
       .select('id')
       .single(),
   )
@@ -1039,6 +1043,17 @@ async function setWhatsappPhoneNumberId(opts: { accountId: string; phoneNumberId
   return { ok: true }
 }
 
+/** The lead an Instagram sender became, for asserting it was created once. */
+async function leadsByExternalId(opts: { accountId: string; externalSource: string }) {
+  const { data } = await admin
+    .from('leads')
+    .select('id, full_name, channel, source, stage, external_id, external_source')
+    .eq('account_id', opts.accountId)
+    .eq('external_source', opts.externalSource)
+    .is('deleted_at', null)
+  return data ?? []
+}
+
 /** Connects an Instagram account, the way Settings > WhatsApp does. */
 async function setInstagramAccount(opts: { accountId: string; instagramUserId: string | null; accessToken?: string | null }) {
   assertOk(
@@ -1057,7 +1072,7 @@ async function setInstagramAccount(opts: { accountId: string; instagramUserId: s
 async function messagesOnChannel(opts: { accountId: string; channel: string }) {
   const { data } = await admin
     .from('whatsapp_messages')
-    .select('direction, status, body_preview, external_contact_id, wamid, channel')
+    .select('direction, status, body_preview, external_contact_id, wamid, channel, lead_id')
     .eq('account_id', opts.accountId)
     .eq('channel', opts.channel)
     .order('created_at')
@@ -1342,6 +1357,7 @@ export const dbTasks = {
   'db:setGrowthAddon': setGrowthAddon,
   'db:setLeadAiState': setLeadAiState,
   'db:setWhatsappPhoneNumberId': setWhatsappPhoneNumberId,
+  'db:leadsByExternalId': leadsByExternalId,
   'db:setInstagramAccount': setInstagramAccount,
   'db:messagesOnChannel': messagesOnChannel,
   'db:setChannelSpend': setChannelSpend,

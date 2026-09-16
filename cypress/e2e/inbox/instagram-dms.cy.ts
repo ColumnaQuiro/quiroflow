@@ -17,6 +17,7 @@ interface StoredMessage {
   external_contact_id: string | null
   wamid: string | null
   channel: string
+  lead_id: string | null
 }
 
 // Fresh per test for the reason the WhatsApp spec documents: the webhook
@@ -137,6 +138,55 @@ describe('Instagram DMs in the Inbox', () => {
     deliver([event])
     deliver([event])
     stored().should((rows) => expect(rows).to.have.length(1))
+  })
+
+  it('turns an enquiry into a lead, so the rest of Growth can see it', () => {
+    // Without this the DM exists only in the Inbox: absent from the leads
+    // board, uncounted in the funnel, missing from the dashboard's channel
+    // table, and invisible to the receptionist -- which drafts per lead.
+    deliver([message('igsid-enquirer', '¿Cuánto cuesta la primera visita?')])
+
+    cy.task('db:leadsByExternalId', { accountId, externalSource: 'instagram' }).should((leads) => {
+      const rows = leads as { full_name: string; channel: string; source: string; stage: string; external_id: string }[]
+      expect(rows).to.have.length(1)
+      expect(rows[0]!.external_id).to.eq('igsid-enquirer')
+      expect(rows[0]!.channel).to.eq('instagram')
+      // Spelled so the dashboard's channelOf() reads it as its own channel.
+      expect(rows[0]!.source).to.eq('Instagram')
+      // 'contacted', not 'new': they wrote first, and 'new' means an enquiry
+      // nobody has spoken to.
+      expect(rows[0]!.stage).to.eq('contacted')
+    })
+  })
+
+  it('keeps one lead for somebody who messages again', () => {
+    // Deduped on external_id, the same pair the Facebook lead-ad ingest uses.
+    // Otherwise a regular is a new lead every week and the funnel counts them
+    // all as separate enquiries.
+    deliver([message('igsid-regular', 'Hola otra vez')])
+    deliver([message('igsid-regular', 'Y otra pregunta')])
+    cy.task('db:leadsByExternalId', { accountId, externalSource: 'instagram' }).should((leads) => {
+      expect(leads as unknown[]).to.have.length(1)
+    })
+  })
+
+  it('attaches the message to the lead it just made', () => {
+    // The point of creating it: the thread on the leads board has to be the
+    // same conversation as the one in the Inbox, not a lead with no messages
+    // sitting beside a message belonging to nobody.
+    deliver([message('igsid-attached', 'Buenas')])
+    cy.task('db:leadsByExternalId', { accountId, externalSource: 'instagram' }).then((leads) => {
+      const leadId = (leads as { id: string }[])[0]!.id
+      stored().should((rows) => {
+        expect(rows).to.have.length(1)
+        expect(rows[0]!.lead_id, 'the message carries the lead').to.eq(leadId)
+      })
+      cy.task('db:sequenceRuns', { leadId }).should((runs) => {
+        // And deliberately NOT dripped at. They are mid-conversation; a
+        // scripted welcome sequence is the wrong reply to a live question.
+        expect(runs as unknown[]).to.have.length(0)
+      })
+    })
   })
 
   it('refuses a DM it cannot verify, so Meta sends it again', () => {

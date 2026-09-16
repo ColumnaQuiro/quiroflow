@@ -18,8 +18,15 @@
 //
 // So the pill now shows availableCents, the same number the Billing tab calls
 // Available: loose account credit plus what the unused bono sessions are
-// worth. That is the question the front desk is asking when they glance at it
-// -- "has this person got anything left, or do I need to charge them?".
+// worth, net of anything still owed on those bonos. That is the question the
+// front desk is asking when they glance at it -- "has this person got anything
+// left, or do I need to charge them?".
+//
+// Net, because gross was a second way of being wrong: a patient who had put
+// 150 EUR down on a 528 EUR bono and used one session read "484 available"
+// while the Debtors report, on the same day, listed him as owing 378. Netting
+// the debt off leaves 106 -- which is what he has paid beyond what he has been
+// invoiced, so the pill and the balance finally describe the same patient.
 //
 // The debt side still comes from the balance, because owing money is not the
 // absence of available money: a patient can hold four unused sessions and
@@ -27,7 +34,7 @@
 // the pill answers "what can they use" when there is anything to use, and
 // falls back to what they owe when there is not.
 const props = defineProps<{
-  /** Loose credit + the value of unused bono sessions -- what they can spend. */
+  /** Loose credit + unused bono value less bono debt -- what they can spend. */
   availableCents: number
   /** Negative when the patient owes; only the owing side is read from it. */
   balanceCents: number

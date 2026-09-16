@@ -3,6 +3,7 @@ interface SubscriptionRow {
   status: string
   billing_interval: string
   extra_professionals: number
+  growth_addon: boolean
   trial_ends_at: string | null
   comped: boolean
   stripe_customer_id: string | null
@@ -30,6 +31,13 @@ interface PlanRow {
   sort_order: number
 }
 
+interface AddonRow {
+  id: string
+  name: string
+  monthly_price_cents: number
+  annual_price_cents: number
+}
+
 interface BillingInfo {
   hasCustomer: boolean
   country?: string | null
@@ -55,6 +63,7 @@ const { loading: loadingPortal, openPortal } = useBillingPortal()
 
 const subscription = ref<SubscriptionRow | null>(null)
 const plans = ref<PlanRow[]>([])
+const growthAddon = ref<AddonRow | null>(null)
 const practitionerCount = ref(0)
 const usage = ref<{ whatsapp_conversations_mtd: number; storage_bytes: number } | null>(null)
 const loading = ref(true)
@@ -63,7 +72,7 @@ async function loadSubscription() {
   const { data } = await supabase
     .from('subscriptions')
     .select(
-      'status, billing_interval, extra_professionals, trial_ends_at, comped, stripe_customer_id, stripe_subscription_id, plan_id, plans(name, monthly_price_cents, annual_price_cents, included_professionals, extra_professional_price_cents, included_whatsapp_conversations, included_storage_gb)',
+      'status, billing_interval, extra_professionals, growth_addon, trial_ends_at, comped, stripe_customer_id, stripe_subscription_id, plan_id, plans(name, monthly_price_cents, annual_price_cents, included_professionals, extra_professional_price_cents, included_whatsapp_conversations, included_storage_gb)',
     )
     .eq('account_id', store.accountId!)
     .maybeSingle()
@@ -109,14 +118,16 @@ async function loadBillingInfo() {
 }
 
 onMounted(async () => {
-  const [, { data: planRows }] = await Promise.all([
+  const [, { data: planRows }, { data: addonRows }] = await Promise.all([
     loadSubscription(),
     supabase.from('plans').select('id, name, monthly_price_cents, annual_price_cents, included_professionals, included_clinics, extra_professional_price_cents, sort_order').order('sort_order'),
+    supabase.from('addons').select('id, name, monthly_price_cents, annual_price_cents'),
     loadPractitionerCount(),
     loadUsage(),
     loadBillingInfo(),
   ])
   plans.value = planRows ?? []
+  growthAddon.value = (addonRows ?? []).find((a) => a.id === 'growth') ?? null
   loading.value = false
 
   // Checkout redirects back here before the webhook has necessarily landed
@@ -162,12 +173,22 @@ const PAYMENT_STATUS_TONE: Record<PaymentRow['status'], string> = {
   pending: 'text-ink-muted',
 }
 
+// What the add-on contributes to the bill as it stands -- zero unless it was
+// actually bought, so a comped or trialing account (which gets Growth without
+// paying for it) is not quoted a price it will never be charged.
+const growthOnBillCents = computed(() => {
+  const sub = subscription.value
+  const addon = growthAddon.value
+  if (!sub?.growth_addon || !addon) return 0
+  return sub.billing_interval === 'annual' ? addon.annual_price_cents : addon.monthly_price_cents
+})
+
 const monthlyEquivalentCents = computed(() => {
   const sub = subscription.value
   if (!sub?.plans) return 0
   const base = sub.billing_interval === 'annual' ? sub.plans.annual_price_cents : sub.plans.monthly_price_cents
   const overage = sub.extra_professionals > 0 ? sub.extra_professionals * (sub.plans.extra_professional_price_cents ?? 0) : 0
-  return base + overage
+  return base + overage + growthOnBillCents.value
 })
 
 // The actual amount the next charge will be for -- distinct from the
@@ -178,7 +199,7 @@ const nextChargeCents = computed(() => {
   if (!sub?.plans) return 0
   const base = sub.billing_interval === 'annual' ? sub.plans.annual_price_cents : sub.plans.monthly_price_cents
   const overage = sub.extra_professionals > 0 ? sub.extra_professionals * (sub.plans.extra_professional_price_cents ?? 0) : 0
-  return base + overage
+  return base + overage + growthOnBillCents.value
 })
 
 // Only practitioners consume a seat -- front desk, practice managers and
@@ -259,15 +280,29 @@ watch(subscription, (sub) => {
   if (sub) extraProfessionals.value = sub.extra_professionals
 }, { once: true })
 
+// Growth is one flat add-on rather than a plan, so it sits outside the plan
+// cards and applies to whichever of them is chosen -- picking it does not
+// change which card is selected, only what that card costs.
+const wantsGrowth = ref(false)
+watch(subscription, (sub) => {
+  if (sub) wantsGrowth.value = sub.growth_addon
+}, { once: true })
+
+const growthPriceCents = computed(() => {
+  const addon = growthAddon.value
+  if (!addon) return 0
+  return interval.value === 'annual' ? addon.annual_price_cents : addon.monthly_price_cents
+})
+
 function priceFor(plan: PlanRow) {
   const base = interval.value === 'annual' ? plan.annual_price_cents : plan.monthly_price_cents
   const overage = plan.extra_professional_price_cents ? extraProfessionals.value * plan.extra_professional_price_cents : 0
-  return base + overage
+  return base + overage + (wantsGrowth.value ? growthPriceCents.value : 0)
 }
 
 function isCurrentPlan(plan: PlanRow) {
   const sub = subscription.value
-  return !!sub && sub.plan_id === plan.id && sub.billing_interval === interval.value && sub.extra_professionals === extraProfessionals.value && !!sub.stripe_subscription_id
+  return !!sub && sub.plan_id === plan.id && sub.billing_interval === interval.value && sub.extra_professionals === extraProfessionals.value && sub.growth_addon === wantsGrowth.value && !!sub.stripe_subscription_id
 }
 
 const changingPlanId = ref<string | null>(null)
@@ -280,7 +315,7 @@ async function choosePlan(plan: PlanRow) {
   try {
     const result = await $fetch<{ url?: string; updated?: boolean }>('/api/billing/subscribe', {
       method: 'POST',
-      body: { planId: plan.id, interval: interval.value, extraProfessionals: plan.extra_professional_price_cents ? extraProfessionals.value : 0 },
+      body: { planId: plan.id, interval: interval.value, extraProfessionals: plan.extra_professional_price_cents ? extraProfessionals.value : 0, growth: wantsGrowth.value },
     })
     if (result.url) {
       window.location.href = result.url
@@ -322,7 +357,7 @@ async function requestPlanChange(plan: PlanRow) {
   try {
     const result = await $fetch<{ previewable: boolean; amountDueCents?: number; taxCents?: number; currency?: string }>('/api/billing/preview', {
       method: 'POST',
-      body: { planId: plan.id, interval: interval.value, extraProfessionals: plan.extra_professional_price_cents ? extraProfessionals.value : 0 },
+      body: { planId: plan.id, interval: interval.value, extraProfessionals: plan.extra_professional_price_cents ? extraProfessionals.value : 0, growth: wantsGrowth.value },
     })
     if (!result.previewable || result.amountDueCents === undefined) {
       // Shouldn't happen given the stripe_subscription_id check above, but
@@ -440,6 +475,7 @@ const headerMeta = computed(() => {
           <p class="text-sm text-ink-muted">
             {{ professionalsLabel }}
             <span class="text-ink-faint2">&middot; admin users are free</span>
+            <span v-if="subscription.growth_addon" class="text-ink-faint2">&middot; Growth add-on</span>
           </p>
           <p v-if="seatsFull" class="text-sm text-ink-muted">
             Every practitioner seat on your plan is in use. Adding another practitioner needs an extra seat
@@ -602,6 +638,42 @@ const headerMeta = computed(() => {
                 {{ subscription.stripe_subscription_id ? 'Switch to this plan' : 'Subscribe' }}
               </UiBtn>
             </div>
+          </div>
+
+          <!-- Growth sits below the grid rather than inside it because it is
+               not a fourth card to choose between: it attaches to whichever
+               plan is picked. Ticking it re-prices every card above, and the
+               plan card's own button is what commits the change -- one
+               confirmation, one proration preview, one Stripe call. -->
+          <div v-if="growthAddon" class="mt-4 rounded-card border p-4" :class="wantsGrowth ? 'border-brand shadow-card' : 'border-line'">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div class="flex-1">
+                <p class="text-sm font-semibold text-ink-900">{{ growthAddon.name }}</p>
+                <p class="mt-1 text-xs text-ink-muted">
+                  Lead pipeline, campaign automations and reputation. Works with any plan above.
+                </p>
+              </div>
+              <div class="text-right">
+                <p class="text-xl font-semibold text-ink-900">
+                  +{{ eur(growthPriceCents) }}<span class="text-sm font-normal text-ink-muted">/mo</span>
+                </p>
+                <p class="text-xs text-ink-muted">{{ interval === 'annual' ? 'billed annually' : 'billed monthly' }}</p>
+              </div>
+            </div>
+            <p v-if="subscription.comped" class="mt-3 text-xs text-ink-muted">Included with your complimentary access.</p>
+            <label v-else class="mt-3 flex items-center gap-2 text-sm text-ink-700">
+              <input v-model="wantsGrowth" type="checkbox" class="rounded border-line-control text-brand focus:ring-brand" />
+              <span>{{ wantsGrowth ? 'Add Growth to my subscription' : 'Add Growth' }}</span>
+            </label>
+            <!-- A trial already includes Growth (see hasGrowth in
+                 server/utils/requireGrowth.ts), so say so rather than letting
+                 someone think the tick is what switched it on. -->
+            <p v-if="!subscription.comped && subscription.status === 'trialing'" class="mt-2 text-xs text-ink-muted">
+              Growth is included for the rest of your trial. Tick it to keep it afterwards.
+            </p>
+            <p v-else-if="!subscription.comped && wantsGrowth !== subscription.growth_addon" class="mt-2 text-xs text-ink-muted">
+              Choose a plan above to apply this change.
+            </p>
           </div>
         </div>
       </template>

@@ -54,7 +54,7 @@ export default defineEventHandler(async (event) => {
   // isMarketing: false -- a deliberately-requested preview send should never
   // be blocked by a consent gate the staff member sending it already knows
   // about; the gate exists for real automated sends to real patients.
-  await runActionsList(
+  const problems = await runActionsList(
     supabase,
     accountId,
     body.actions.map((a, i) => ({ id: `test-${i}`, action_type: a.action_type, config: a.config ?? {} })),
@@ -65,6 +65,16 @@ export default defineEventHandler(async (event) => {
     undefined,
     whatsappNumber,
   )
+
+  // A test that quietly sent nothing is worse than one that fails loudly:
+  // staff read the tick as "email works" and go on to schedule a campaign
+  // against it. runActionsList collects the reason each action did nothing --
+  // an unverified sending domain, a missing key, a consent gate -- and a test
+  // send reports them rather than swallowing them the way a real automated
+  // send does.
+  if (problems.length > 0) {
+    throw createError({ statusCode: 502, statusMessage: problems.join(' ') })
+  }
 
   const hasEmailAction = body.actions.some((a) => a.action_type === 'email')
   return { sent: true, email: hasEmailAction ? user.email : null, whatsappNumber: whatsappNumber ?? null }

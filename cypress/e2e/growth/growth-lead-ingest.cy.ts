@@ -269,6 +269,24 @@ describe('Lead ingest API', () => {
     })
   })
 
+  it('still captures the lead when the staff notification cannot be sent', () => {
+    // The notification is best-effort by design, and this is what that has to
+    // mean in practice. RESEND_API_KEY is not set here, so sendResendEmail
+    // throws on every run -- which is exactly the shape of a real outage, an
+    // expired WhatsApp token, or a notify address that bounces. The enquiry
+    // is the thing that cannot be recovered; telling the clinic about it is
+    // not, so a failure there must never reach the caller as a 500 and turn a
+    // captured lead into somebody else's retry.
+    cy.task('db:setNewLeadNotify', { accountId: account.accountId, email: 'clinic@example.test', whatsapp: '+34600111888' })
+
+    post({ full_name: 'Notify Fails', phone: '+34600111889', external_id: 'notify-fails' }).then((res) => {
+      expect(res.status).to.eq(201)
+      cy.task('db:leadById', { id: res.body.data.id }).then((row) => {
+        expect((row as { full_name: string }).full_name).to.eq('Notify Fails')
+      })
+    })
+  })
+
   it('counts an ingested lead in the dashboard funnel', () => {
     post({ full_name: 'Arrived Booked', phone: '+34600111777', stage: 'booked' }).then((res) => {
       expect(res.body.data.stage).to.eq('booked')

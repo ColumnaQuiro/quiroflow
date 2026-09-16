@@ -313,6 +313,16 @@ export default defineApiHandler({ scope: 'leads:write' }, async ({ event, supaba
     console.error('[public/v1/leads] lead.created sequence failed to start:', (err as Error)?.message ?? err)
   }
 
+  // After the sequence, and non-fatal for the same reason: the drip answers
+  // the lead, this tells the clinic, and neither is worth losing the enquiry
+  // over. Deliberately not inside the try above -- a rule that throws must
+  // not also silence the notification.
+  try {
+    await notifyStaffOfNewLead(supabase, accountId, lead.id)
+  } catch (err) {
+    console.error('[public/v1/leads] new lead notification failed:', (err as Error)?.message ?? err)
+  }
+
   setResponseStatus(event, 201)
   return {
     data: {

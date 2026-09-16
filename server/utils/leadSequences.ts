@@ -91,6 +91,13 @@ export async function sequenceStopReason(
 const PRACTICEHUB_TIMEOUT_MS = 5000
 
 /**
+ * Small, but more than one. If `email` really does filter, one row is all
+ * there is; if it does not, a handful of rows costs nothing and still will
+ * not match. Deliberately not a full scan -- this runs per lead per tick.
+ */
+const PRACTICEHUB_PAGE_SIZE = '25'
+
+/**
  * Asks PracticeHub whether this person is already a patient there.
  *
  * n8n asks the same question for the same reason: the two systems are
@@ -118,10 +125,10 @@ async function practiceHubVerdict(
 
   const url = new URL(`${baseUrl.replace(/\/$/, '')}/api/patients`)
   url.searchParams.set('email', lead.email)
-  url.searchParams.set('page_size', '1')
+  url.searchParams.set('page_size', PRACTICEHUB_PAGE_SIZE)
 
   try {
-    const result = await $fetch<{ total_entries?: number }>(url.toString(), {
+    const result = await $fetch<{ total_entries?: number; data?: Array<{ email?: string | null }> }>(url.toString(), {
       headers: {
         'x-practicehub-key': apiKey,
         // Same shape the importers send -- see usePracticeHubConnection.
@@ -129,8 +136,39 @@ async function practiceHubVerdict(
       },
       timeout: PRACTICEHUB_TIMEOUT_MS,
     })
-    // Exactly n8n's condition: nothing found means not converted.
-    return (result?.total_entries ?? 0) > 0 ? 'already_a_patient' : null
+
+    // Require a row whose email actually matches, rather than trusting
+    // total_entries.
+    //
+    // total_entries answers "how many rows does this query have", which is
+    // only the question we meant if PracticeHub applies `email` as a filter.
+    // Nothing in this codebase establishes that it does -- every other caller
+    // walks /patients unfiltered (usePracticeHubApi) -- and an API that
+    // ignores an unknown query param returns the whole patient list with a
+    // total in the thousands. That reads as "> 0" for everybody.
+    //
+    // It is not a theoretical worry: on 15 Sep the first three real Facebook
+    // leads were all stopped here as already_a_patient, and none of the three
+    // matched any patient in QuiroFlow by email or phone. Comparing the
+    // returned email is right either way -- if the filter works this is the
+    // same answer one step more carefully, and if it does not, an arbitrary
+    // patient's address will not match the lead's.
+    //
+    // The residual error is a false NEGATIVE: a genuine PracticeHub patient
+    // sitting beyond the first page when the filter is ignored. That keeps a
+    // converted person in the drip, which is the lesser mistake and is what
+    // n8n does today anyway -- its own check asks QuiroFlow's
+    // /api/public/v1/patients/lookup and never consults PracticeHub.
+    const rows = result?.data ?? []
+    const wanted = lead.email.trim().toLowerCase()
+    const matched = rows.some((row) => (row?.email ?? '').trim().toLowerCase() === wanted)
+
+    if (!matched && (result?.total_entries ?? 0) > 0) {
+      console.warn(
+        `[leadSequences] PracticeHub returned ${result?.total_entries} row(s) for ${wanted} but none matched; treating as not converted.`,
+      )
+    }
+    return matched ? 'already_a_patient' : null
   } catch (err) {
     console.error('[leadSequences] PracticeHub unreachable, deferring:', (err as Error)?.message ?? err)
     return 'defer'

@@ -1224,6 +1224,23 @@ async function stopPracticeHubStub() {
   return { ok: true }
 }
 
+/** Puts a receptionist draft on a lead, the way the drafting route would. */
+async function setLeadDraft(opts: { id: string; body: string | null }) {
+  assertOk(
+    await admin
+      .from('leads')
+      .update({ ai_draft_body: opts.body, ai_draft_created_at: opts.body ? new Date().toISOString() : null })
+      .eq('id', opts.id),
+  )
+  return { ok: true }
+}
+
+/** Reads back what survived an approve or a discard. */
+async function leadDraft(opts: { id: string }) {
+  const { data } = await admin.from('leads').select('ai_draft_body, ai_draft_created_at').eq('id', opts.id).maybeSingle()
+  return data
+}
+
 /** Turns on the new-lead staff notification, to exercise its wiring. */
 async function setNewLeadNotify(opts: { accountId: string; email?: string | null; whatsapp?: string | null }) {
   assertOk(
@@ -1289,6 +1306,8 @@ export const dbTasks = {
   'db:reviewRequestsFor': reviewRequestsFor,
   'db:latestAutomationActions': latestAutomationActions,
   'db:leadMessages': leadMessages,
+  'db:setLeadDraft': setLeadDraft,
+  'db:leadDraft': leadDraft,
   'db:setNewLeadNotify': setNewLeadNotify,
   'db:setPracticeHubConnection': setPracticeHubConnection,
   'db:startPracticeHubStub': startPracticeHubStub,

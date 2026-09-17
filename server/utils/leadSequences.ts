@@ -209,7 +209,7 @@ export async function advanceSequenceRun(supabase: any, run: SequenceRun, origin
   // abandon somebody mid-conversation.
   const { data: subscription } = await supabase
     .from('subscriptions')
-    .select('growth_addon, status, comped')
+    .select('plan_id, growth_addon, status, comped')
     .eq('account_id', run.account_id)
     .maybeSingle()
   if (!hasGrowth(subscription)) return stop(supabase, run.id, 'not_entitled')

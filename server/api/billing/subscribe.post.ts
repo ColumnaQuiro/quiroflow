@@ -1,6 +1,7 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { stripeForPlatformBilling } from '~/server/utils/platformBillingStripe'
+import { planIncludesGrowth } from '~/utils/growthPlans'
 
 // Starts a brand-new platform subscription (redirect to Stripe Checkout to
 // collect a card) or changes an existing one's plan/interval/seat count in
@@ -20,7 +21,11 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'planId and interval are required' })
   }
   const extraProfessionals = Math.max(0, Math.trunc(body.extraProfessionals ?? 0))
-  const wantsGrowth = body.growth === true
+  // A plan that includes Growth never gets a Growth line item, whatever the
+  // client asked for. Billing 39 euros on top of a plan sold as "Growth
+  // included" would be the invoice nobody can explain, and the entitlement
+  // does not need it either -- hasGrowth() reads the plan.
+  const wantsGrowth = body.growth === true && !planIncludesGrowth(body.planId)
 
   const serviceRole = serverSupabaseServiceRole<Database>(event)
   const { data: plan } = await serviceRole.from('plans').select('*').eq('id', body.planId).maybeSingle()

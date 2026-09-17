@@ -16,7 +16,10 @@ import { buildSystemPrompt, loadReceptionistConfig } from '~/server/utils/recept
 // autonomous booking, and it should be reviewed on its own rather than
 // arriving as a side effect of a settings screen.
 
-const MODEL = 'claude-opus-5'
+// Sonnet, matching receptionistDraft.ts -- see the note there. The test
+// panel has to run the model the drafts actually run on, or it advertises a
+// quality the clinic will not get.
+const MODEL = 'claude-sonnet-5'
 const MAX_TOKENS = 1024
 const MAX_TURNS = 20
 

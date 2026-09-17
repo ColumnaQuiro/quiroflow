@@ -150,6 +150,11 @@ const conversations = computed<Conversation[]>(() => {
       key,
       patientId: last.patient_id,
       phoneNumber: last.phone_number,
+      // The IGSID, which is who an Instagram reply is addressed to. The field
+      // was on the type and read when sending, but nothing ever set it, so
+      // every Instagram thread carried undefined and the reply could not be
+      // addressed at all.
+      externalContactId: last.external_contact_id,
       name: (last.patient_id && patientNames.value[last.patient_id]) || last.phone_number || 'Unknown',
       channel: last.channel,
       lastMessage: last,
@@ -472,7 +477,12 @@ watch(thread, async (msgs) => {
 const replyChannel = computed(() => (thread.value.length === 0 ? 'whatsapp' : thread.value[thread.value.length - 1].channel))
 const within24h = computed(() => {
   if (replyChannel.value === 'in_app') return true
-  const lastInbound = thread.value.filter((m) => m.direction === 'inbound' && m.channel === 'whatsapp').at(-1)
+  // Whichever channel the reply goes out on -- not always WhatsApp. An
+  // Instagram thread's inbound messages carry channel 'instagram', so looking
+  // only at WhatsApp ones found nothing and every Instagram conversation read
+  // as "more than 24 hours since they last wrote", however recent it was. The
+  // composer was shut before the first DM had finished arriving.
+  const lastInbound = thread.value.filter((m) => m.direction === 'inbound' && m.channel === replyChannel.value).at(-1)
   if (!lastInbound) return false
   return Date.now() - new Date(lastInbound.created_at).getTime() < 24 * 60 * 60 * 1000
 })
@@ -515,6 +525,14 @@ async function performTextSend(tempId: string, text: string, channel: string, ta
     if (channel === 'in_app') {
       if (!target.patientId) throw new Error('In-app messages require a linked patient')
       await authedFetch('/api/patient-messages/send', { method: 'POST', body: { patientId: target.patientId, text } })
+    } else if (channel === 'instagram') {
+      // Its own route: a recipient here is an IGSID, not a phone number, so
+      // whatsapp/inbox-send has nothing to send to. Everything that was not
+      // in-app used to go there, which meant /api/instagram/send existed and
+      // shipped and was never once called -- an Instagram reply was posted to
+      // WhatsApp with no number and failed.
+      if (!target.externalContactId) throw new Error('This Instagram conversation has no sender id')
+      await authedFetch('/api/instagram/send', { method: 'POST', body: { recipientId: target.externalContactId, text } })
     } else {
       await authedFetch('/api/whatsapp/inbox-send', {
         method: 'POST',
@@ -1097,7 +1115,8 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
       <div class="shrink-0 border-t border-line bg-surface p-3">
         <p v-if="sendError" class="mb-2 text-[12.5px] text-danger-text">{{ sendError }}</p>
         <p v-if="!within24h" class="rounded-ctl border border-warning-border bg-warning-bg px-3 py-2 text-[12.5px] text-warning-text">
-          More than 24h since {{ selected.name }} last messaged — free-form replies are blocked by WhatsApp.
+          More than 24h since {{ selected.name }} last messaged — free-form replies are blocked by
+          {{ replyChannel === 'instagram' ? 'Instagram' : 'WhatsApp' }}.
         </p>
         <div v-else-if="audioRecording" class="flex items-center gap-3 rounded-ctl border border-line-control bg-surface-subtle px-3 py-2.5">
           <span class="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-danger-text" />

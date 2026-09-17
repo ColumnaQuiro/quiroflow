@@ -129,7 +129,7 @@ export default defineApiHandler({ scope: 'leads:write' }, async ({ event, supaba
   // silent success that stores nothing is not.
   const { data: subscription } = await loose(supabase)
     .from('subscriptions')
-    .select('growth_addon, status, comped')
+    .select('plan_id, growth_addon, status, comped')
     .eq('account_id', accountId)
     .maybeSingle()
 

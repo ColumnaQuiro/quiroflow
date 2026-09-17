@@ -57,7 +57,12 @@ describe('Platform billing: trial banner, subscription page, and lock screen', (
       cy.contains('button', 'Subscribe').should('not.exist')
       cy.contains('button', 'Switch to this plan').should('not.exist')
       cy.contains('h2', 'Change plan').should('not.exist')
-      cy.contains('unlimited included').should('be.visible')
+      // The wording changed when Clinic went unlimited ("1 practitioner(s) --
+      // unlimited included" read like a broken template); what matters is
+      // unchanged -- no seat ceiling is claimed for an account the trigger
+      // will not enforce one against.
+      cy.contains('no seat limit on this plan').should('be.visible')
+      cy.contains('seat(s) in use').should('not.exist')
     })
   })
 

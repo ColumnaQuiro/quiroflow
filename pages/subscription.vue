@@ -179,7 +179,10 @@ const PAYMENT_STATUS_TONE: Record<PaymentRow['status'], string> = {
 const growthOnBillCents = computed(() => {
   const sub = subscription.value
   const addon = growthAddon.value
-  if (!sub?.growth_addon || !addon) return 0
+  // A plan that includes Growth adds nothing to the bill for it -- there is
+  // no Stripe line item, so quoting one would overstate the invoice.
+  if (!sub || !addon) return 0
+  if (planIncludesGrowth(sub.plan_id) || !sub.growth_addon) return 0
   return sub.billing_interval === 'annual' ? addon.annual_price_cents : addon.monthly_price_cents
 })
 
@@ -194,12 +197,30 @@ const monthlyEquivalentCents = computed(() => {
 // The actual amount the next charge will be for -- distinct from the
 // monthly-equivalent shown in the plan card, since an annual plan's next
 // charge is the full annual price, not 1/12th of it.
+//
+// It used to be byte-identical to monthlyEquivalentCents despite that
+// comment, so an annual customer was told their next payment was 44 EUR when
+// Stripe was about to take 528. Nobody saw it because no annual subscription
+// existed yet -- every account was comped or trialing. The prices in `plans`
+// are all per-month figures; annual ones are billed twelve at a time, which
+// is what MONTHS_PER_YEAR says here and what the Stripe annual prices are
+// created as.
+// Whether the plan in force already includes Growth. There is no "selected
+// plan" state to read -- each plan card commits on its own button -- so this
+// follows the current subscription, and updates when the switch completes.
+const currentPlanIncludesGrowth = computed(() => planIncludesGrowth(subscription.value?.plan_id))
+const currentPlanName = computed(() => subscription.value?.plans?.name ?? '')
+
+const MONTHS_PER_YEAR = 12
+
 const nextChargeCents = computed(() => {
   const sub = subscription.value
   if (!sub?.plans) return 0
-  const base = sub.billing_interval === 'annual' ? sub.plans.annual_price_cents : sub.plans.monthly_price_cents
+  const annual = sub.billing_interval === 'annual'
+  const base = annual ? sub.plans.annual_price_cents : sub.plans.monthly_price_cents
   const overage = sub.extra_professionals > 0 ? sub.extra_professionals * (sub.plans.extra_professional_price_cents ?? 0) : 0
-  return base + overage + growthOnBillCents.value
+  const perMonth = base + overage + growthOnBillCents.value
+  return annual ? perMonth * MONTHS_PER_YEAR : perMonth
 })
 
 // Only practitioners consume a seat -- front desk, practice managers and
@@ -217,7 +238,7 @@ const seatsIncluded = computed(() => {
 
 const professionalsLabel = computed(() => {
   const total = seatsIncluded.value
-  if (total === null) return `${practitionerCount.value} practitioner(s) -- unlimited included`
+  if (total === null) return `${practitionerCount.value} practitioner(s) -- no seat limit on this plan`
   return `${practitionerCount.value} of ${total} practitioner seat(s) in use`
 })
 
@@ -234,16 +255,13 @@ const usageRows = computed(() => {
   if (!plan || !u) return []
   const rows: { label: string; used: string; allowance: string; pct: number | null; over: boolean }[] = []
 
-  if (plan.included_whatsapp_conversations) {
-    const pct = Math.min(100, Math.round((u.whatsapp_conversations_mtd / plan.included_whatsapp_conversations) * 100))
-    rows.push({
-      label: 'WhatsApp conversations this month',
-      used: u.whatsapp_conversations_mtd.toLocaleString('es-ES'),
-      allowance: plan.included_whatsapp_conversations.toLocaleString('es-ES'),
-      pct,
-      over: u.whatsapp_conversations_mtd > plan.included_whatsapp_conversations,
-    })
-  }
+  // Deliberately no WhatsApp conversation row. Each clinic connects its own
+  // WhatsApp Business account, so Meta bills them directly for conversations
+  // and QuiroFlow neither pays for one nor meters one -- an "included 3.000"
+  // line implied an allowance that was never ours to give, and invited "am I
+  // being charged for the extra 600?" about somebody else's invoice. The
+  // column stays on `plans` until a decision about real per-tier limits is
+  // made; nothing reads it now.
   if (plan.included_storage_gb) {
     const usedGb = u.storage_bytes / GB
     const pct = Math.min(100, Math.round((usedGb / plan.included_storage_gb) * 100))
@@ -468,7 +486,7 @@ const headerMeta = computed(() => {
           </div>
 
           <p class="text-sm text-ink-700">
-            {{ eur(monthlyEquivalentCents) }}/mo
+            {{ eur(monthlyEquivalentCents) }}/mo <span class="text-ink-muted">+ IVA</span>
             <span class="text-ink-muted">({{ subscription.billing_interval === 'annual' ? 'billed annually' : 'billed monthly' }})</span>
             <span v-if="subscription.comped" class="text-ink-faint2">&middot; not charged</span>
           </p>
@@ -578,12 +596,12 @@ const headerMeta = computed(() => {
               <div>
                 <p class="text-sm font-semibold text-ink-900">{{ plan.name }}</p>
                 <p class="mt-1 text-xl font-semibold text-ink-900">
-                  {{ eur(priceFor(plan)) }}<span class="text-sm font-normal text-ink-muted">/mo</span>
+                  {{ eur(priceFor(plan)) }}<span class="text-sm font-normal text-ink-muted">/mo + IVA</span>
                 </p>
                 <p class="text-xs text-ink-muted">{{ interval === 'annual' ? 'billed annually' : 'billed monthly' }}</p>
               </div>
               <ul class="flex-1 space-y-1 text-xs text-ink-muted">
-                <li>{{ plan.included_professionals ?? 'Unlimited' }} professional(s) included</li>
+                <li>{{ plan.included_professionals === null ? 'Unlimited professionals' : `${plan.included_professionals} professional(s) included` }}</li>
                 <li>{{ plan.included_clinics ?? 'Unlimited' }} clinic location(s)</li>
                 <li v-if="plan.extra_professional_price_cents">{{ eur(plan.extra_professional_price_cents) }}/mo per extra professional</li>
               </ul>
@@ -654,13 +672,22 @@ const headerMeta = computed(() => {
                 </p>
               </div>
               <div class="text-right">
-                <p class="text-xl font-semibold text-ink-900">
-                  +{{ eur(growthPriceCents) }}<span class="text-sm font-normal text-ink-muted">/mo</span>
-                </p>
-                <p class="text-xs text-ink-muted">{{ interval === 'annual' ? 'billed annually' : 'billed monthly' }}</p>
+                <template v-if="currentPlanIncludesGrowth">
+                  <p class="text-sm font-semibold text-success-text">Included</p>
+                  <p class="text-xs text-ink-muted">in the {{ currentPlanName }} plan</p>
+                </template>
+                <template v-else>
+                  <p class="text-xl font-semibold text-ink-900">
+                    +{{ eur(growthPriceCents) }}<span class="text-sm font-normal text-ink-muted">/mo + IVA</span>
+                  </p>
+                  <p class="text-xs text-ink-muted">{{ interval === 'annual' ? 'billed annually' : 'billed monthly' }}</p>
+                </template>
               </div>
             </div>
-            <p v-if="subscription.comped" class="mt-3 text-xs text-ink-muted">Included with your complimentary access.</p>
+            <p v-if="currentPlanIncludesGrowth" class="mt-3 text-xs text-ink-muted">
+              Growth comes with this plan -- there is nothing to add and nothing extra to pay.
+            </p>
+            <p v-else-if="subscription.comped" class="mt-3 text-xs text-ink-muted">Included with your complimentary access.</p>
             <label v-else class="mt-3 flex items-center gap-2 text-sm text-ink-700">
               <input v-model="wantsGrowth" type="checkbox" class="rounded border-line-control text-brand focus:ring-brand" />
               <span>{{ wantsGrowth ? 'Add Growth to my subscription' : 'Add Growth' }}</span>
@@ -668,10 +695,10 @@ const headerMeta = computed(() => {
             <!-- A trial already includes Growth (see hasGrowth in
                  server/utils/requireGrowth.ts), so say so rather than letting
                  someone think the tick is what switched it on. -->
-            <p v-if="!subscription.comped && subscription.status === 'trialing'" class="mt-2 text-xs text-ink-muted">
+            <p v-if="!currentPlanIncludesGrowth && !subscription.comped && subscription.status === 'trialing'" class="mt-2 text-xs text-ink-muted">
               Growth is included for the rest of your trial. Tick it to keep it afterwards.
             </p>
-            <p v-else-if="!subscription.comped && wantsGrowth !== subscription.growth_addon" class="mt-2 text-xs text-ink-muted">
+            <p v-else-if="!currentPlanIncludesGrowth && !subscription.comped && wantsGrowth !== subscription.growth_addon" class="mt-2 text-xs text-ink-muted">
               Choose a plan above to apply this change.
             </p>
           </div>

@@ -12,7 +12,20 @@ import { buildSystemPrompt, toConfig } from '~/server/utils/receptionist'
 //
 // Nothing here sends anything. It writes leads.ai_draft_body and returns.
 
-const MODEL = 'claude-opus-5'
+// Sonnet, not Opus.
+//
+// This writes a short WhatsApp reply to a lead, in Spanish, from a persona
+// and a handful of knowledge cards -- the kind of constrained, well-briefed
+// writing Sonnet does as well as Opus, and a member of staff reads every
+// word before it is sent, so the failure mode is a worse first draft rather
+// than a bad message reaching a patient.
+//
+// It is also the only part of Growth with a per-use cost. Growth is a 39
+// euro add-on and a busy clinic can draft well over a thousand replies a
+// month, so the model choice is what decides whether the add-on is
+// profitable at all. The support assistant has run on Sonnet since it
+// shipped for the same reason.
+const MODEL = 'claude-sonnet-5'
 const MAX_TOKENS = 1024
 
 /**

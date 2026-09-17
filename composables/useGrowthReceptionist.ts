@@ -37,6 +37,8 @@ export interface ReceptionistConfig {
 export type ChannelStatus = 'connected' | 'not_set_up' | 'not_built'
 
 export interface ReceptionistChannel {
+  /** Stable across renaming and translation, so tests can name one row. */
+  key: string
   name: string
   status: ChannelStatus
   statusLabel: string

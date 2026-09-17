@@ -49,7 +49,7 @@ export default defineEventHandler(async (event) => {
   // on, and a background job is exactly where that would go unnoticed.
   const { data: subscriptions } = await supabase
     .from('subscriptions')
-    .select('account_id, growth_addon, status, comped')
+    .select('account_id, plan_id, growth_addon, status, comped')
     .in('account_id', accountIds)
 
   const entitled = new Set(

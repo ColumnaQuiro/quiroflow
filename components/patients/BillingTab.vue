@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { normalizeSearchTerm } from '~/utils/searchText'
 import { bonoOwedCents } from '~/utils/bonoOwed'
+import { settleInvoiceIfCovered } from '~/utils/settleInvoice'
 
 const props = defineProps<{ patientId: string; openPaymentTrigger?: boolean }>()
 const emit = defineEmits<{ paymentTriggerConsumed: [] }>()
@@ -222,11 +223,7 @@ async function applyCreditToInvoice() {
     created_by: store.teamMember?.id ?? null,
   })
 
-  const { data: paid } = await supabase.from('payments').select('amount_cents').eq('invoice_id', invoice.id)
-  const paidCents = (paid ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
-  if (paidCents >= invoice.total_cents) {
-    await supabase.from('invoices').update({ status: 'paid' }).eq('id', invoice.id)
-  }
+  await settleInvoiceIfCovered(supabase, invoice.id)
 
   applyCreditInvoiceId.value = ''
   applyCreditAmount.value = ''
@@ -322,10 +319,7 @@ async function takePayment() {
   // would represent the same prepaid money in two places -- which is what
   // 0161 retired for the bonos that were already sold.
 
-  const { data: paid } = await supabase.from('payments').select('amount_cents').eq('invoice_id', invoice.id)
-  const paidCents = (paid ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
-  if (paidCents >= invoice.total_cents) {
-    await supabase.from('invoices').update({ status: 'paid' }).eq('id', invoice.id)
+  if (await settleInvoiceIfCovered(supabase, invoice.id)) {
     // Matches the appointment dialog's recordPayment() -- paying off an
     // invoice auto-sends it the same way regardless of which screen it
     // happened from, when the patient has opted in.
@@ -792,7 +786,7 @@ async function writeOffInvoice(invoiceId: string) {
   if (openCents <= 0) return
   if (!confirm(`${t('Write off', 'Condonar')} ${money(openCents)} ${t('remaining on', 'restantes de')} ${invoice.invoice_number}? ${t('This settles the receipt without collecting payment.', 'Esto salda el recibo sin cobrar el pago.')}`)) return
   await supabase.from('payments').insert({ account_id: store.accountId!, patient_id: props.patientId, invoice_id: invoiceId, amount_cents: openCents, method: 'write_off' })
-  await supabase.from('invoices').update({ status: 'paid' }).eq('id', invoiceId)
+  await settleInvoiceIfCovered(supabase, invoiceId)
   await Promise.all([loadAll(), refreshCreditSummary(), loadFacturas()])
 }
 

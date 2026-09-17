@@ -1,5 +1,6 @@
 import type { H3Event } from 'h3'
 import { requirePermission } from '~/server/utils/requirePermission'
+import { planIncludesGrowth } from '~/utils/growthPlans'
 
 // Growth is a paid add-on, and this is where that is true.
 //
@@ -25,7 +26,7 @@ export async function requireGrowth(event: H3Event): Promise<GrowthAccess> {
 
   const { data: subscription } = await access.supabase
     .from('subscriptions')
-    .select('growth_addon, status, comped')
+    .select('plan_id, growth_addon, status, comped')
     .eq('account_id', access.teamMember.account_id)
     .maybeSingle()
 
@@ -50,15 +51,26 @@ export async function requireGrowth(event: H3Event): Promise<GrowthAccess> {
  * lead capture stops until they buy -- which is why the refusal says so in
  * words rather than failing quietly.
  *
+ * The Clinic plan includes Growth in its price, so it is entitled without
+ * growth_addon ever being set. That is a packaging decision, not a flag: a
+ * Clinic subscription has no Growth line item on its Stripe invoice, because
+ * charging 39 euros on top of a plan sold as "Growth included" is exactly the
+ * bill nobody wants to explain. Read the plan here rather than writing
+ * growth_addon = true on those rows, so the entitlement cannot drift from what
+ * the plan actually is.
+ *
  * Past that, the add-on is required. 'locked' and 'canceled' are the two
  * statuses that stop it; past_due is somebody whose card failed this
  * morning, and cutting their lead capture off over that would lose enquiries
  * they have already paid for.
  */
-export function hasGrowth(subscription: { growth_addon?: boolean | null; status?: string | null; comped?: boolean | null } | null): boolean {
+export function hasGrowth(
+  subscription: { plan_id?: string | null; growth_addon?: boolean | null; status?: string | null; comped?: boolean | null } | null,
+): boolean {
   if (!subscription) return false
   if (subscription.comped) return true
   if (subscription.status === 'trialing') return true
-  if (!subscription.growth_addon) return false
+  const entitled = subscription.growth_addon || planIncludesGrowth(subscription.plan_id)
+  if (!entitled) return false
   return subscription.status !== 'locked' && subscription.status !== 'canceled'
 }

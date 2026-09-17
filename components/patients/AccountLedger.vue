@@ -235,7 +235,8 @@ const rows = computed<LedgerRow[]>(() => {
     detail: [
       { label: t('Package', 'Bono'), value: ps.package_name ?? '—' },
       { label: t('Value used', 'Valor consumido'), value: money(ps.amount_cents) },
-      { label: t('Charged', 'Cobrado'), value: t('Nothing -- already covered by the package', 'Nada -- ya cubierto por el bono') },
+      // "Cobrado" is collected; this row is what was billed, which is facturado.
+      { label: t('Charged', 'Facturado'), value: t('Nothing -- already covered by the package', 'Nada -- ya cubierto por el bono') },
     ],
   }))
 

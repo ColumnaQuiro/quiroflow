@@ -118,7 +118,10 @@ jobs:
           - name: subscription-and-public
             specs: "cypress/e2e/subscription/**,cypress/e2e/public/**"
           - name: navigation
-            specs: "cypress/e2e/navigation/**"
+            # dashboard rides along here rather than taking a shard of its own:
+            # both are "does an app page render the right thing", and a new
+            # shard is a whole extra CI job for two specs.
+            specs: "cypress/e2e/navigation/**,cypress/e2e/dashboard/**"
           # Its own shard rather than folded into an existing one: Growth is
           # mid-build and this folder is the one still growing -- receptionist,
           # automations and reputation specs are still to come. scripts/

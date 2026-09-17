@@ -148,10 +148,13 @@ const allowed = computed(() => can('communication_config'))
             </div>
           </template>
 
-          <!-- Only the condition has its fields written out so far. Saying so
-          beats an empty panel that looks broken. -->
+          <!-- This said "configuration for this step type is not built yet",
+          which was never what the empty panel meant: selectedConfig is null
+          only when nothing is selected, and every step has its fields written
+          out. It was telling an owner a feature was missing when they had
+          simply not clicked anything. -->
           <p v-else class="text-[11.5px] leading-[1.5] text-ink-muted">
-            {{ t('Configuration for this step type is not built yet. Select the condition to see a configured step.', 'La configuración de este tipo de paso aún no está hecha. Selecciona la condición para ver un paso configurado.') }}
+            {{ t('Select a step above to see how it is configured.', 'Selecciona un paso arriba para ver cómo está configurado.') }}
           </p>
         </section>
       </div>

@@ -143,7 +143,7 @@ const CHANNEL_CLASS: Record<string, string> = {
 
             <div class="flex flex-col gap-1.5 border-t border-line-divider pt-3">
               <span class="text-[9.5px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ t('Channels', 'Canales') }}</span>
-              <div v-for="channel in channels" :key="channel.name" class="flex items-center justify-between gap-3">
+              <div v-for="channel in channels" :key="channel.name" :data-test="`channel-${channel.key}`" class="flex items-center justify-between gap-3">
                 <span class="text-[11.5px] text-ink-700">{{ channel.name }}</span>
                 <span class="shrink-0 rounded-pill border px-2 py-0.5 text-[10.5px] font-medium" :class="CHANNEL_CLASS[channel.status]">
                   {{ channel.statusLabel }}

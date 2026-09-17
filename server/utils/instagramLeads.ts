@@ -38,9 +38,28 @@ async function fetchInstagramName(igsid: string, accessToken: string): Promise<s
     // by, and it beats "Instagram user" on a board somebody has to scan.
     const username = (profile.username ?? '').trim()
     return username ? `@${username}` : null
-  } catch {
+  } catch (err: any) {
+    // Logged, not swallowed. The lead is still created -- a placeholder name
+    // beats no lead -- but a board full of "Instagram user" with nothing
+    // explaining it is the same silent failure as an error toast with no
+    // words in it. Meta's message names the cause: usually a token without
+    // instagram_manage_messages, or a person who has not messaged this
+    // account before.
+    console.error('[instagram] could not read the sender profile:', err?.data?.error?.message ?? err?.message ?? err)
     return null
   }
+}
+
+/**
+ * The name to show before Instagram tells us a real one.
+ *
+ * Suffixed, because several unnamed senders otherwise appear on the leads
+ * board as identical rows called "Instagram user" and cannot be told apart.
+ * The digits are meaningless on their own and are meant to be temporary --
+ * they disappear the moment a profile lookup succeeds.
+ */
+function placeholderName(igsid: string): string {
+  return `Instagram user ${igsid.slice(-4)}`
 }
 
 /**
@@ -61,14 +80,30 @@ export async function leadForInstagramSender(
   // messages every week has one lead, not one per message.
   const { data: existing } = await supabase
     .from('leads')
-    .select('id')
+    .select('id, full_name')
     .eq('account_id', accountId)
     .eq('external_source', 'instagram')
     .eq('external_id', igsid)
     .is('deleted_at', null)
     .maybeSingle()
 
-  if (existing) return existing.id
+  if (existing) {
+    // Try again for a name if the first attempt only got a placeholder.
+    //
+    // The lookup fails for reasons that get fixed -- a token granted the
+    // wrong scope, a permission approved later -- and without this the lead
+    // keeps the placeholder for as long as it exists, so fixing the cause
+    // repairs nothing that already came through. The next message they send
+    // is the cheapest moment to retry, and it costs one call only while the
+    // name is still missing.
+    if (accessToken && existing.full_name.startsWith('Instagram user')) {
+      const name = await fetchInstagramName(igsid, accessToken)
+      if (name) {
+        await supabase.from('leads').update({ full_name: name }).eq('id', existing.id).eq('account_id', accountId)
+      }
+    }
+    return existing.id
+  }
 
   const name = accessToken ? await fetchInstagramName(igsid, accessToken) : null
 
@@ -80,7 +115,7 @@ export async function leadForInstagramSender(
       // Named as honestly as Instagram allows. Not left blank: full_name is
       // NOT NULL and a board of empty rows is worse than a board of
       // placeholders somebody can rename.
-      full_name: name ?? 'Instagram user',
+      full_name: name ?? placeholderName(igsid),
       channel: 'instagram',
       // Spelled so the dashboard's channelOf() reads it as its own channel --
       // it splits a source on '·' and takes the head, which is how "Meta Ads

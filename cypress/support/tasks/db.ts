@@ -572,6 +572,33 @@ async function facturasFor(opts: { patientId: string }) {
   return data
 }
 
+/** The registro de facturación chain for an account, oldest first. */
+async function facturaRecordsFor(opts: { accountId: string }) {
+  const { data, error } = await admin
+    .from('factura_records')
+    .select('id, sequence, factura_id, record_type, invoice_type, serie_number, cuota_total_cents, importe_total_cents, previous_huella, huella, huella_spec_version')
+    .eq('account_id', opts.accountId)
+    .order('sequence')
+  if (error) throw error
+  return data
+}
+
+/**
+ * Tries to alter a record, and reports what happened.
+ *
+ * The append-only guarantee is the whole point of the table, so a test has to
+ * attempt the thing that must fail rather than trust a comment saying it does.
+ */
+async function tryMutateFacturaRecord(opts: { id: string }) {
+  const update = await admin.from('factura_records').update({ huella: 'TAMPERED' }).eq('id', opts.id)
+  const del = await admin.from('factura_records').delete().eq('id', opts.id)
+  return {
+    updateBlocked: Boolean(update.error),
+    updateMessage: update.error?.message ?? null,
+    deleteBlocked: Boolean(del.error),
+  }
+}
+
 async function nextFacturaNumber(opts: { accountId: string }) {
   const { data, error } = await admin.rpc('next_factura_number', { p_account_id: opts.accountId })
   if (error) throw error
@@ -1460,6 +1487,8 @@ export const dbTasks = {
   'db:setPatientNif': setPatientNif,
   'db:createAccountCredit': createAccountCredit,
   'db:facturasFor': facturasFor,
+  'db:facturaRecordsFor': facturaRecordsFor,
+  'db:tryMutateFacturaRecord': tryMutateFacturaRecord,
   'db:nextFacturaNumber': nextFacturaNumber,
   'db:settleImportedInvoices': settleImportedInvoices,
   'db:invoiceById': invoiceById,

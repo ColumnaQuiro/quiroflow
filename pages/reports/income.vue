@@ -22,6 +22,7 @@ const clinicFilter = ref('')
 const loading = ref(true)
 const payments = ref<PaymentRow[]>([])
 const invoices = ref<InvoiceRow[]>([])
+const invoicePayments = ref<{ invoice_id: string | null; amount_cents: number }[]>([])
 const lineItems = ref<LineItemRow[]>([])
 const services = ref<ServiceRow[]>([])
 const appointments = ref<AppointmentRow[]>([])
@@ -89,6 +90,22 @@ async function load() {
   teamMembers.value = tm
   lineItems.value = await fetchLineItemsFor([...new Set(payments.value.map((row) => row.invoice_id).filter((id): id is string => !!id))])
 
+  // Every payment against this period's invoices, whenever it was taken. An
+  // invoice raised on the 30th is usually settled in the next window, and
+  // outstanding has to see that money or it reports a debt already paid.
+  // Chunked: PostgREST puts an .in() list in the URL, and a busy month's
+  // invoices make one long enough to be refused.
+  const invoiceIds = inv.map((i) => i.id)
+  const allocations: { invoice_id: string | null; amount_cents: number }[] = []
+  for (let start = 0; start < invoiceIds.length; start += 200) {
+    const chunk = invoiceIds.slice(start, start + 200)
+    const rows = await fetchAllRows<{ invoice_id: string | null; amount_cents: number }>((f, t) =>
+      supabase.from('payments').select('invoice_id, amount_cents').in('invoice_id', chunk).range(f, t),
+    )
+    allocations.push(...rows)
+  }
+  invoicePayments.value = allocations
+
   // Appointments and patients are only consulted to resolve a
   // practitioner/clinic filter -- with no filter set, which is how the page
   // first renders, both tables were fetched and never read.
@@ -127,6 +144,14 @@ watch([practitionerFilter, clinicFilter], async () => {
 const appointmentById = computed(() => new Map(appointments.value.map((a) => [a.id, a])))
 const patientById = computed(() => new Map(patients.value.map((p) => [p.id, p])))
 const invoiceById = computed(() => new Map(invoices.value.map((i) => [i.id, i])))
+const paidByInvoice = computed(() => {
+  const map = new Map<string, number>()
+  for (const row of invoicePayments.value) {
+    if (!row.invoice_id) continue
+    map.set(row.invoice_id, (map.get(row.invoice_id) ?? 0) + row.amount_cents)
+  }
+  return map
+})
 
 // practitioner/clinic filters key off the linked appointment, since neither
 // payments nor invoices carry those columns directly.
@@ -157,7 +182,23 @@ const unattributedCents = computed(() =>
 
 const totalPaid = computed(() => filteredPayments.value.reduce((sum, p) => sum + p.amount_cents, 0))
 const totalCharged = computed(() => filteredInvoices.value.reduce((sum, i) => sum + i.total_cents, 0))
-const outstanding = computed(() => totalCharged.value - totalPaid.value)
+/**
+ * What is still unpaid on the invoices raised in this period.
+ *
+ * It used to be totalCharged - totalPaid, which is not outstanding anything:
+ * the two count different populations, since a payment in this window often
+ * settles an earlier invoice and a bono or money on account is collected
+ * against no invoice at all. That made it routinely NEGATIVE for this clinic
+ * -- the dashboard's copy of the same arithmetic read "Outstanding -1054.00"
+ * beside 2,320 collected against 1,266 invoiced.
+ *
+ * Measured per invoice against its own payments instead, so it answers "of
+ * what we billed in this window, how much has not come in" and cannot go
+ * below zero.
+ */
+const outstanding = computed(() =>
+  filteredInvoices.value.reduce((sum, i) => sum + Math.max(0, i.total_cents - (paidByInvoice.value.get(i.id) ?? 0)), 0),
+)
 
 function monthKey(iso: string) {
   const d = new Date(iso)

@@ -391,8 +391,11 @@ async function createPayment(opts: {
   // writes a payment AND an account_credits row for the same euros, and only
   // the purpose tells them apart afterwards.
   purpose?: 'visit' | 'bono' | 'membership' | 'on_account'
+  // ISO timestamp. Defaults to now; set it to put money in an earlier period,
+  // which is the only way to exercise anything that compares two windows.
+  paidAt?: string
 }) {
-  const { accountId, invoiceId, amountCents, method, packagePurchaseId, purpose } = opts
+  const { accountId, invoiceId, amountCents, method, packagePurchaseId, purpose, paidAt } = opts
   let patientId = opts.patientId
   if (!patientId) {
     if (!invoiceId) throw new Error('createPayment needs patientId or invoiceId')
@@ -402,7 +405,7 @@ async function createPayment(opts: {
   const row = unwrap(
     await admin
       .from('payments')
-      .insert({ account_id: accountId, patient_id: patientId, invoice_id: invoiceId ?? null, package_purchase_id: packagePurchaseId ?? null, amount_cents: amountCents, method, ...(purpose ? { purpose } : {}) })
+      .insert({ account_id: accountId, patient_id: patientId, invoice_id: invoiceId ?? null, package_purchase_id: packagePurchaseId ?? null, amount_cents: amountCents, method, ...(purpose ? { purpose } : {}), ...(paidAt ? { paid_at: paidAt } : {}) })
       .select('id')
       .single(),
   )

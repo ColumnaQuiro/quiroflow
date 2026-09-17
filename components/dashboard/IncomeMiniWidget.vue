@@ -16,7 +16,12 @@ const payments = ref<PaymentRow[]>([])
 const invoices = ref<InvoiceRow[]>([])
 const appointments = ref<AppointmentRow[]>([])
 const patients = ref<PatientRow[]>([])
-const prevPaidCents = ref<number | null>(null)
+const prevPayments = ref<PaymentRow[]>([])
+const prevInvoices = ref<InvoiceRow[]>([])
+// Every payment against this period's invoices, whenever it was taken -- an
+// invoice raised on the 30th is usually settled in the next window, and
+// outstanding has to see that money or it reports a debt already paid.
+const invoicePayments = ref<{ invoice_id: string | null; amount_cents: number }[]>([])
 
 // Same-length window immediately preceding the selected period, for the KPI
 // delta (e.g. selecting "this month" compares against last month).
@@ -40,7 +45,7 @@ async function load() {
   // be skipped rather than lazy-loaded.
   const needsAppointments = !!props.practitionerId || !!props.clinicId
 
-  const [p, inv, appt, pats, prevPayments] = await Promise.all([
+  const [p, inv, appt, pats, prevPaymentRows, prevInvoiceRows] = await Promise.all([
     fetchAllRows<PaymentRow>((f, t) =>
       supabase
         .from('payments')
@@ -66,15 +71,32 @@ async function load() {
     needsAppointments
       ? fetchAllRows<PatientRow>((f, t) => supabase.from('patients').select('id, default_practitioner_id, clinic_id').range(f, t))
       : Promise.resolve([] as PatientRow[]),
-    // Only ever summed, never attributed -- the trend line is account-wide.
-    fetchAllRows<{ amount_cents: number }>((f, t) =>
+    // Classified exactly like the current period. It used to be summed
+    // account-wide, which compared one practitioner's takings against the
+    // whole clinic's: Jordana Aguar's first month read "-56% vs previous
+    // period" -- 2,320 of her own against 5,278 of everyone's -- when she
+    // had no previous period at all and had gone from nothing to 2,320.
+    fetchAllRows<PaymentRow>((f, t) =>
       supabase
         .from('payments')
-        .select('amount_cents')
+        .select('amount_cents, paid_at, invoice_id, patient_id, invoices(status)')
         .gte('paid_at', prevFrom.toISOString())
         .lte('paid_at', prevTo.toISOString())
         .range(f, t),
     ),
+    // Only to resolve those payments to an appointment, and so to a
+    // practitioner. Never summed: "charged" is about the current period.
+    needsAppointments
+      ? fetchAllRows<InvoiceRow>((f, t) =>
+          supabase
+            .from('invoices')
+            .select('id, total_cents, appointment_id, patient_id')
+            .neq('status', 'void')
+            .gte('created_at', prevFrom.toISOString())
+            .lte('created_at', prevTo.toISOString())
+            .range(f, t),
+        )
+      : Promise.resolve([] as InvoiceRow[]),
   ])
   // The void rule moved out of the query when the join went from inner to
   // left: a payment with no invoice has nothing to void and must survive it.
@@ -83,14 +105,33 @@ async function load() {
   invoices.value = inv
   appointments.value = appt
   patients.value = pats
-  prevPaidCents.value = prevPayments.reduce((sum, row) => sum + row.amount_cents, 0)
+  // Same void rule as the current period. It was missing here, so a payment
+  // against a voided invoice counted towards the comparison but not towards
+  // the figure being compared.
+  prevPayments.value = prevPaymentRows.filter(notVoid)
+  prevInvoices.value = prevInvoiceRows
+
+  const invoiceIds = inv.map((i) => i.id)
+  const allocations: { invoice_id: string | null; amount_cents: number }[] = []
+  // Chunked: PostgREST puts an .in() list in the URL, and a busy month's
+  // invoices make one long enough to be refused.
+  for (let start = 0; start < invoiceIds.length; start += 200) {
+    const chunk = invoiceIds.slice(start, start + 200)
+    const rows = await fetchAllRows<{ invoice_id: string | null; amount_cents: number }>((f, t) =>
+      supabase.from('payments').select('invoice_id, amount_cents').in('invoice_id', chunk).range(f, t),
+    )
+    allocations.push(...rows)
+  }
+  invoicePayments.value = allocations
   loading.value = false
 }
 onMounted(load)
 watch(() => [props.dateRange, props.practitionerId, props.clinicId], load, { deep: true })
 
 const appointmentById = computed(() => new Map(appointments.value.map((a) => [a.id, a])))
-const invoiceById = computed(() => new Map(invoices.value.map((i) => [i.id, i])))
+// Both periods' invoices: a previous-period payment resolves to an appointment
+// through the invoice it settled, which was raised in that period, not this one.
+const invoiceById = computed(() => new Map([...invoices.value, ...prevInvoices.value].map((i) => [i.id, i])))
 const patientById = computed(() => new Map(patients.value.map((p) => [p.id, p])))
 
 // Money with no appointment behind it falls back to the patient's own
@@ -106,17 +147,51 @@ function classify(appointmentId: string | null, patientId: string | null) {
 function appointmentIdOf(invoiceId: string | null): string | null {
   return (invoiceId ? invoiceById.value.get(invoiceId) : undefined)?.appointment_id ?? null
 }
+const paidByInvoice = computed(() => {
+  const map = new Map<string, number>()
+  for (const row of invoicePayments.value) {
+    if (!row.invoice_id) continue
+    map.set(row.invoice_id, (map.get(row.invoice_id) ?? 0) + row.amount_cents)
+  }
+  return map
+})
 const filteredPayments = computed(() => payments.value.filter((p) => classify(appointmentIdOf(p.invoice_id), p.patient_id) === 'matches'))
 const filteredInvoices = computed(() => invoices.value.filter((i) => classify(i.appointment_id, i.patient_id) === 'matches'))
 
 const totalPaid = computed(() => filteredPayments.value.reduce((sum, p) => sum + p.amount_cents, 0))
 const totalCharged = computed(() => filteredInvoices.value.reduce((sum, i) => sum + i.total_cents, 0))
-const outstanding = computed(() => totalCharged.value - totalPaid.value)
 
-// The prior-period comparison is account-wide (not practitioner/clinic
-// filtered) -- it's a lightweight trend indicator, not a filtered total.
+/**
+ * What is still unpaid on the invoices raised in this period.
+ *
+ * It used to be totalCharged - totalPaid, which is not outstanding anything:
+ * the two count different populations, since a payment this month often
+ * settles last month's invoice and a bono or money on account is collected
+ * against no invoice at all. For this clinic that made it routinely NEGATIVE
+ * -- the card read "Outstanding -1054.00" beside 2,320 collected against
+ * 1,266 invoiced, which says nothing a person can act on.
+ *
+ * Measured per invoice against its own payments instead, so it answers "of
+ * what we billed in this window, how much has not come in" and can never go
+ * below zero.
+ */
+const outstanding = computed(() =>
+  filteredInvoices.value.reduce((sum, i) => sum + Math.max(0, i.total_cents - (paidByInvoice.value.get(i.id) ?? 0)), 0),
+)
+
+// Filtered the same way as the figure it is compared against. Comparing a
+// practitioner's month against the whole clinic's is not a trend, it is two
+// unrelated numbers: it showed -56% for somebody whose takings had gone from
+// nothing to 2,320.
+const prevPaidCents = computed(() =>
+  prevPayments.value
+    .filter((p) => classify(appointmentIdOf(p.invoice_id), p.patient_id) === 'matches')
+    .reduce((sum, p) => sum + p.amount_cents, 0),
+)
 const deltaPct = computed(() => {
-  if (prevPaidCents.value === null || prevPaidCents.value === 0) return null
+  // No previous period is not a 100% fall, and saying so about somebody's
+  // first month reads as alarm about their best possible result.
+  if (prevPaidCents.value === 0) return null
   return Math.round(((totalPaid.value - prevPaidCents.value) / prevPaidCents.value) * 100)
 })
 
@@ -136,7 +211,9 @@ function euros(cents: number) {
       {{ t(`${deltaPct > 0 ? '+' : ''}${deltaPct}% vs previous period`, `${deltaPct > 0 ? '+' : ''}${deltaPct}% frente al periodo anterior`) }}
     </p>
     <div class="mt-2.5 flex items-center gap-4 border-t border-line-row2 pt-2 text-[12px] text-ink-muted2">
-      <span>{{ t('Charged', 'Cobrado') }} <span class="font-mono text-ink-700">{{ euros(totalCharged) }}</span></span>
+      <!-- "Cobrado" means collected, which is the big number above, not this
+      one. This is what was invoiced: facturado. -->
+      <span>{{ t('Charged', 'Facturado') }} <span class="font-mono text-ink-700">{{ euros(totalCharged) }}</span></span>
       <span>{{ t('Outstanding', 'Pendiente') }} <span class="font-mono" :class="outstanding > 0 ? 'text-danger-text' : 'text-ink-700'">{{ euros(outstanding) }}</span></span>
     </div>
   </div>

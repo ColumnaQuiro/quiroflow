@@ -418,6 +418,16 @@ async function settleImportedInvoices(opts: { accountId: string }) {
   return data as number
 }
 
+// By id, for a spec that seeded the invoice itself and wants to see what
+// taking a payment through the UI did to it. invoiceStatusByRef answers the
+// same question for an imported row, which is keyed on its PracticeHub
+// reference instead.
+async function invoiceById(opts: { invoiceId: string }) {
+  const { data, error } = await admin.from('invoices').select('id, status, total_cents').eq('id', opts.invoiceId).maybeSingle()
+  if (error) throw error
+  return data as { id: string; status: string; total_cents: number } | null
+}
+
 async function invoiceStatusByRef(opts: { accountId: string; externalReference: string }) {
   const { data, error } = await admin
     .from('invoices')
@@ -1425,6 +1435,7 @@ export const dbTasks = {
   'db:facturasFor': facturasFor,
   'db:nextFacturaNumber': nextFacturaNumber,
   'db:settleImportedInvoices': settleImportedInvoices,
+  'db:invoiceById': invoiceById,
   'db:invoiceStatusByRef': invoiceStatusByRef,
   'db:createImportedInvoice': createImportedInvoice,
   'db:createImportedPayment': createImportedPayment,

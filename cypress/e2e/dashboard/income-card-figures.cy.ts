@@ -101,4 +101,40 @@ describe('The dashboard income card', () => {
       })
     })
   })
+
+  it('does not call a settled invoice a debt just because no payment points at it', () => {
+    // Outstanding measured every invoice as total minus the payments linked to
+    // it, and never looked at whether the invoice was settled. Two whole
+    // populations here are settled and will never have a linked payment:
+    //
+    //   - everything imported from PracticeHub. The ledger importer carries
+    //     the invoice across marked paid; the money comes over as unallocated
+    //     payments. All 136 of one September's imports had zero linked.
+    //   - every bono session's recibo, which the bono already paid for. That
+    //     is the model, not a gap in it.
+    //
+    // Counting those read 7,509 EUR of September debt against 272 EUR really
+    // owed, while /billing -- which has always filtered on status -- showed
+    // 850 EUR for all of history.
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Reci', lastName: 'Bono' }).then((patient: any) => {
+        // The recibo for a bono session: settled, nothing linked to it.
+        cy.task('db:createInvoice', { accountId: account.accountId, patientId: patient.id, totalCents: 4400, status: 'paid' })
+        // And a real debt, so the card is asserted against a figure rather
+        // than against zero -- which it would also show if it had stopped
+        // counting altogether.
+        cy.task('db:createInvoice', { accountId: account.accountId, patientId: patient.id, totalCents: 5000, status: 'unpaid' })
+
+        cy.login(account.email, account.password)
+        cy.visit('/dashboard')
+
+        // Scoped to the figure itself: 94.00 is also the legitimate "total
+        // charged", so an unscoped assertion would read the wrong number and
+        // pass or fail for the wrong reason.
+        // 94 here would be the settled recibo counted as debt alongside the
+        // real one.
+        cy.get('[data-test="income-outstanding"]').should('have.text', '€50.00')
+      })
+    })
+  })
 })

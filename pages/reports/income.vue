@@ -195,9 +195,22 @@ const totalCharged = computed(() => filteredInvoices.value.reduce((sum, i) => su
  * Measured per invoice against its own payments instead, so it answers "of
  * what we billed in this window, how much has not come in" and cannot go
  * below zero.
+ *
+ * A settled invoice is skipped outright rather than measured, because "has a
+ * payment row pointing at it" is not what settled means here and never was.
+ * Two whole populations of invoice are paid and always will have none:
+ * everything imported from PracticeHub, where the ledger importer carried the
+ * invoice across while the money came over as unallocated payments; and every
+ * bono session's recibo, which is settled by the bono rather than by a
+ * payment -- that is the point of the model. Measuring those found 7,509 EUR
+ * of debt in one September, against 272 EUR that was actually owed, while
+ * /billing -- which has always filtered on status -- showed 850 EUR for all
+ * of history. Two pages, the same question, an order of magnitude apart.
  */
 const outstanding = computed(() =>
-  filteredInvoices.value.reduce((sum, i) => sum + Math.max(0, i.total_cents - (paidByInvoice.value.get(i.id) ?? 0)), 0),
+  filteredInvoices.value
+    .filter((i) => i.status !== 'paid')
+    .reduce((sum, i) => sum + Math.max(0, i.total_cents - (paidByInvoice.value.get(i.id) ?? 0)), 0),
 )
 
 function monthKey(iso: string) {
@@ -294,7 +307,7 @@ const byService = computed(() => {
           </div>
           <div class="rounded-card border border-line bg-surface p-4 shadow-card">
             <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ t('Outstanding', 'Pendiente') }}</p>
-            <p class="mt-1.5 font-mono text-[23px] font-semibold" :class="outstanding > 0 ? 'text-warning-text' : 'text-ink-900'">{{ eur(outstanding) }}</p>
+            <p data-test="income-outstanding" class="mt-1.5 font-mono text-[23px] font-semibold" :class="outstanding > 0 ? 'text-warning-text' : 'text-ink-900'">{{ eur(outstanding) }}</p>
           </div>
         </div>
 

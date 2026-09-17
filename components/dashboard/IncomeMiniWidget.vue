@@ -5,7 +5,7 @@ import type { DateRange } from '~/composables/useDateRangePresets'
 const props = defineProps<{ dateRange: DateRange; practitionerId?: string; clinicId?: string }>()
 
 interface PaymentRow { amount_cents: number; paid_at: string; invoice_id: string | null; patient_id: string | null; invoices?: { status: string } | null }
-interface InvoiceRow { id: string; total_cents: number; appointment_id: string | null; patient_id: string | null }
+interface InvoiceRow { id: string; total_cents: number; status: string; appointment_id: string | null; patient_id: string | null }
 interface PatientRow { id: string; default_practitioner_id: string | null; clinic_id: string | null }
 interface AppointmentRow { id: string; practitioner_id: string | null; clinic_id: string | null }
 
@@ -57,7 +57,7 @@ async function load() {
     fetchAllRows<InvoiceRow>((f, t) =>
       supabase
         .from('invoices')
-        .select('id, total_cents, appointment_id, patient_id')
+        .select('id, total_cents, status, appointment_id, patient_id')
         .neq('status', 'void')
         .gte('created_at', from.toISOString())
         .lte('created_at', to.toISOString())
@@ -90,7 +90,7 @@ async function load() {
       ? fetchAllRows<InvoiceRow>((f, t) =>
           supabase
             .from('invoices')
-            .select('id, total_cents, appointment_id, patient_id')
+            .select('id, total_cents, status, appointment_id, patient_id')
             .neq('status', 'void')
             .gte('created_at', prevFrom.toISOString())
             .lte('created_at', prevTo.toISOString())
@@ -174,9 +174,20 @@ const totalCharged = computed(() => filteredInvoices.value.reduce((sum, i) => su
  * Measured per invoice against its own payments instead, so it answers "of
  * what we billed in this window, how much has not come in" and can never go
  * below zero.
+ *
+ * A settled invoice is skipped outright rather than measured, because "has a
+ * payment row pointing at it" is not what settled means here and never was.
+ * Two whole populations of invoice are paid and always will have none:
+ * everything imported from PracticeHub, where the ledger importer carried the
+ * invoice across while the money came over as unallocated payments; and every
+ * bono session's recibo, which is settled by the bono rather than by a
+ * payment -- that is the point of the model. Measuring those found 7,509 EUR
+ * of debt in one September, against 272 EUR that was actually owed.
  */
 const outstanding = computed(() =>
-  filteredInvoices.value.reduce((sum, i) => sum + Math.max(0, i.total_cents - (paidByInvoice.value.get(i.id) ?? 0)), 0),
+  filteredInvoices.value
+    .filter((i) => i.status !== 'paid')
+    .reduce((sum, i) => sum + Math.max(0, i.total_cents - (paidByInvoice.value.get(i.id) ?? 0)), 0),
 )
 
 // Filtered the same way as the figure it is compared against. Comparing a
@@ -214,7 +225,7 @@ function euros(cents: number) {
       <!-- "Cobrado" means collected, which is the big number above, not this
       one. This is what was invoiced: facturado. -->
       <span>{{ t('Charged', 'Facturado') }} <span class="font-mono text-ink-700">{{ euros(totalCharged) }}</span></span>
-      <span>{{ t('Outstanding', 'Pendiente') }} <span class="font-mono" :class="outstanding > 0 ? 'text-danger-text' : 'text-ink-700'">{{ euros(outstanding) }}</span></span>
+      <span>{{ t('Outstanding', 'Pendiente') }} <span data-test="income-outstanding" class="font-mono" :class="outstanding > 0 ? 'text-danger-text' : 'text-ink-700'">{{ euros(outstanding) }}</span></span>
     </div>
   </div>
 </template>

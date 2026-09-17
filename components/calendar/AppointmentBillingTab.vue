@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { settleInvoiceIfCovered } from '~/utils/settleInvoice'
 const props = defineProps<{
   appointmentId: string
   patientId: string
@@ -553,9 +554,9 @@ async function recordPayment() {
     )
   }
 
-  const newPaid = paidCents.value + paymentTotalCents.value
-  if (newPaid >= invoice.value.total_cents) {
-    await supabase.from('invoices').update({ status: 'paid' }).eq('id', invoice.value.id)
+  // Decided from the database, not from the totals this dialog loaded when it
+  // opened -- see utils/settleInvoice.
+  if (await settleInvoiceIfCovered(supabase, invoice.value.id)) {
     // Recording full payment implies the visit happened -- mirrors PracticeHub's
     // "Process" button, which finalizes the invoice and completes the visit
     // in one action rather than requiring a separate status change.

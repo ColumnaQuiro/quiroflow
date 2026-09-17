@@ -88,12 +88,36 @@ describe('Growth AI receptionist', () => {
   it('shows which channels exist rather than hiding the ones that do not', () => {
     cy.visit('/growth/receptionist?growth=1')
 
-    // WhatsApp is unconfigured on a fresh account, and the others are not
-    // built -- an owner comparing this to what they were sold should see both.
-    cy.contains('WhatsApp').should('be.visible')
-    cy.contains('Not set up').should('be.visible')
-    cy.contains('Instagram DM').should('be.visible')
-    cy.contains('Not available yet').should('be.visible')
+    // Three different nothings, and the row each one lands on is the point.
+    // WhatsApp and Instagram are built and merely unconfigured on a fresh
+    // account; SMS and web chat do not exist at all. An owner comparing this
+    // screen to what they were sold has to be able to tell those apart.
+    //
+    // Asserted per row rather than by searching the page, because "Not
+    // available yet" is on screen either way: while Instagram said it, this
+    // test passed on SMS's copy and reported a built channel as missing for
+    // a day after it shipped.
+    cy.get('[data-test="channel-whatsapp"]').should('contain', 'Not set up')
+    cy.get('[data-test="channel-instagram"]').should('contain', 'Not set up')
+    cy.get('[data-test="channel-instagram"]').should('not.contain', 'Not available yet')
+    cy.get('[data-test="channel-sms"]').should('contain', 'Not available yet')
+    cy.get('[data-test="channel-web-chat"]').should('contain', 'Not available yet')
+  })
+
+  it('calls Instagram connected once it is, and counts it as a live channel', () => {
+    cy.task('db:setInstagramAccount', { accountId: account.accountId, instagramUserId: 'ig-17841400000000000' })
+
+    cy.visit('/growth/receptionist?growth=1')
+
+    // Receiving needs only the account id -- the webhook is shared with
+    // WhatsApp and verified by the same app secret -- so this is a real
+    // working state, not a half-filled form.
+    cy.get('[data-test="channel-instagram"]').should('contain', 'Connected')
+
+    // And the count in the header is derived from the channels, so a channel
+    // that starts reporting itself has to reach it without a second edit.
+    cy.get('[data-test="toggle-enabled"]').click()
+    cy.get('[data-test="receptionist-status"]').should('contain', '1 channel')
   })
 
   it('offers test mode as unavailable when the server has no model key', () => {

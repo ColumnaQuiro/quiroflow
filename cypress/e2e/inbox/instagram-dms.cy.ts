@@ -159,6 +159,22 @@ describe('Instagram DMs in the Inbox', () => {
     })
   })
 
+  it('names unnamed senders apart, so the board is readable', () => {
+    // Instagram will not always say who somebody is -- a token scoped wrong,
+    // a permission not yet approved -- and the lead is created anyway,
+    // because a placeholder beats no lead. But several of them rendered as
+    // identical rows called "Instagram user" cannot be told apart at all,
+    // which is the state a clinic actually sees while the cause is fixed.
+    deliver([message('igsid-aaaa1111', 'Primera')])
+    deliver([message('igsid-bbbb2222', 'Segunda')])
+    cy.task('db:leadsByExternalId', { accountId, externalSource: 'instagram' }).should((leads) => {
+      const names = (leads as { full_name: string }[]).map((l) => l.full_name)
+      expect(names).to.have.length(2)
+      expect(new Set(names), 'two senders, two distinguishable rows').to.have.property('size', 2)
+      expect(names[0]).to.contain('Instagram user')
+    })
+  })
+
   it('keeps one lead for somebody who messages again', () => {
     // Deduped on external_id, the same pair the Facebook lead-ad ingest uses.
     // Otherwise a regular is a new lead every week and the funnel counts them

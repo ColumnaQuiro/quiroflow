@@ -1127,7 +1127,13 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
         <div v-else class="flex items-end gap-2">
           <InboxSavedRepliesPicker size="lg" @insert="insertReply" />
           <input ref="fileInput" type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx" class="hidden" @change="onFileChosen" />
+          <!-- Attachments, camera and voice notes are WhatsApp-only: all three
+               upload through whatsapp/inbox-send, and instagram/send posts
+               text alone. On an Instagram thread they would take a file,
+               upload it, and fail at the very last step. Same reasoning as
+               the web Inbox. -->
           <button
+            v-if="replyChannel !== 'instagram'"
             type="button"
             class="flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-muted disabled:opacity-50"
             :disabled="sending"
@@ -1153,6 +1159,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
           />
           <input ref="cameraInput" type="file" accept="image/*" capture="environment" class="hidden" @change="onFileChosen" />
           <button
+            v-if="replyChannel !== 'instagram'"
             type="button"
             class="flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-muted disabled:opacity-50"
             :disabled="sending"
@@ -1165,6 +1172,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             </svg>
           </button>
           <button
+            v-if="replyChannel !== 'instagram'"
             type="button"
             class="flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-muted disabled:opacity-50"
             :disabled="sending"

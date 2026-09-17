@@ -509,6 +509,15 @@ async function createFactura(opts: {
         kind: opts.kind ?? 'simplified',
         description: opts.description,
         amount_cents: opts.amountCents,
+        // A seeded factura carries the same exempt breakdown the issuing code
+        // produces, because tax_base_cents is NOT NULL on purpose: a factura
+        // without a base is not a document anyone may hand a patient, and a
+        // seeder that could create one would let a spec pass against a row
+        // production cannot produce.
+        tax_base_cents: opts.amountCents,
+        tax_rate_bp: 0,
+        tax_amount_cents: 0,
+        tax_exemption_code: 'E1',
       })
       .select('id')
       .single(),
@@ -556,7 +565,7 @@ async function createAccountCredit(opts: {
 async function facturasFor(opts: { patientId: string }) {
   const { data, error } = await admin
     .from('facturas')
-    .select('number, kind, description, amount_cents, recipient_nif, payment_id, created_by, rectifies_factura_id')
+    .select('id, number, kind, description, amount_cents, tax_base_cents, tax_rate_bp, tax_amount_cents, tax_exemption_code, recipient_nif, payment_id, created_by, rectifies_factura_id')
     .eq('patient_id', opts.patientId)
     .order('issued_at')
   if (error) throw error

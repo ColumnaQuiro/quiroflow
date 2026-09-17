@@ -69,6 +69,16 @@ export function useFacturas() {
     const { data: number } = await supabase.rpc('next_factura_number', { p_account_id: input.accountId })
     if (!number) return null
 
+    // Same lookup and the same helper as issueFacturaServer -- a factura
+    // issued at the desk and one issued by a Stripe webhook have to carry the
+    // same tax breakdown for the same money.
+    const { data: taxDefaults } = await supabase
+      .from('accounts')
+      .select('factura_tax_rate_bp, factura_tax_exemption_code')
+      .eq('id', input.accountId)
+      .maybeSingle()
+    const tax = facturaTaxFor(input.amountCents, taxDefaults)
+
     const { data, error } = await supabase
       .from('facturas')
       .insert({
@@ -79,6 +89,10 @@ export function useFacturas() {
         kind: facturaKind(input),
         description: facturaDescription(input),
         amount_cents: input.amountCents,
+        tax_base_cents: tax.taxBaseCents,
+        tax_rate_bp: tax.taxRateBp,
+        tax_amount_cents: tax.taxAmountCents,
+        tax_exemption_code: tax.taxExemptionCode,
         // Recipient left null on purpose: it resolves from the patient record
         // when the document is rendered, so a NIF collected next week appears
         // on this factura without anyone reissuing it. Setting these freezes
@@ -120,6 +134,21 @@ export function useFacturas() {
     if (!number) return null
 
     const corrects = input.rectifiesNumber ? `Rectificación de ${input.rectifiesNumber}` : 'Rectificación'
+
+    // A rectificativa carries the same tax treatment as the operation it
+    // corrects, negated with it: money going back under an exemption does not
+    // become taxable on the way out. Read from the account for the same reason
+    // the original was -- and it must be set, because a factura with no base
+    // is rejected, which is how this path was found: it inserts separately
+    // from issueFactura and silently produced nothing.
+    const { data: taxDefaults } = await supabase
+      .from('accounts')
+      .select('factura_tax_rate_bp, factura_tax_exemption_code')
+      .eq('id', input.accountId)
+      .maybeSingle()
+    const refunded = -Math.abs(input.amountCents)
+    const tax = facturaTaxFor(Math.abs(input.amountCents), taxDefaults)
+
     const { data, error } = await supabase
       .from('facturas')
       .insert({
@@ -131,7 +160,11 @@ export function useFacturas() {
         description: input.reason?.trim() ? `${corrects} — ${input.reason.trim()}` : corrects,
         // Negative, mirroring the payment. The sign is what makes this a
         // correction rather than a second sale.
-        amount_cents: -Math.abs(input.amountCents),
+        amount_cents: refunded,
+        tax_base_cents: -tax.taxBaseCents,
+        tax_rate_bp: tax.taxRateBp,
+        tax_amount_cents: -tax.taxAmountCents,
+        tax_exemption_code: tax.taxExemptionCode,
         rectifies_factura_id: input.rectifiesFacturaId ?? null,
       })
       .select('number')

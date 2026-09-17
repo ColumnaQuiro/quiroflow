@@ -299,6 +299,8 @@ export type Database = {
           show_dob_on_invoices: boolean
           show_ssn_on_invoices: boolean
           show_taxes_on_invoices: boolean
+          factura_tax_rate_bp: number
+          factura_tax_exemption_code: string | null
           slug: string
           default_phone_country: string
           stripe_connect_account_id: string | null
@@ -376,6 +378,8 @@ export type Database = {
           show_dob_on_invoices?: boolean
           show_ssn_on_invoices?: boolean
           show_taxes_on_invoices?: boolean
+          factura_tax_rate_bp?: number
+          factura_tax_exemption_code?: string | null
           slug: string
           stripe_connect_account_id?: string | null
           stripe_publishable_key?: string | null
@@ -452,6 +456,8 @@ export type Database = {
           show_dob_on_invoices?: boolean
           show_ssn_on_invoices?: boolean
           show_taxes_on_invoices?: boolean
+          factura_tax_rate_bp?: number
+          factura_tax_exemption_code?: string | null
           slug?: string
           default_phone_country?: string
           stripe_connect_account_id?: string | null
@@ -1973,6 +1979,10 @@ export type Database = {
           patient_id: string
           payment_id: string | null
           rectifies_factura_id: string | null
+          tax_base_cents: number
+          tax_rate_bp: number
+          tax_amount_cents: number
+          tax_exemption_code: string | null
           recipient_address: string | null
           recipient_name: string | null
           recipient_nif: string | null
@@ -1990,6 +2000,10 @@ export type Database = {
           patient_id: string
           payment_id?: string | null
           rectifies_factura_id?: string | null
+          tax_base_cents?: number
+          tax_rate_bp?: number
+          tax_amount_cents?: number
+          tax_exemption_code?: string | null
           recipient_address?: string | null
           recipient_name?: string | null
           recipient_nif?: string | null
@@ -2007,6 +2021,10 @@ export type Database = {
           patient_id?: string
           payment_id?: string | null
           rectifies_factura_id?: string | null
+          tax_base_cents?: number
+          tax_rate_bp?: number
+          tax_amount_cents?: number
+          tax_exemption_code?: string | null
           recipient_address?: string | null
           recipient_name?: string | null
           recipient_nif?: string | null

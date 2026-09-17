@@ -1047,6 +1047,23 @@ async function setGrowthAddon(opts: { accountId: string; enabled: boolean }) {
   return { ok: true }
 }
 
+/**
+ * Puts an account on a plan and billing interval.
+ *
+ * Needed because two things now depend on the plan rather than on a flag:
+ * Clinic includes Growth (utils/growthPlans.ts), and an annual subscription's
+ * next charge is twelve months at once.
+ */
+async function setSubscriptionPlan(opts: { accountId: string; planId: string; interval?: 'monthly' | 'annual' }) {
+  assertOk(
+    await admin
+      .from('subscriptions')
+      .update({ plan_id: opts.planId, ...(opts.interval ? { billing_interval: opts.interval } : {}) })
+      .eq('account_id', opts.accountId),
+  )
+  return { ok: true }
+}
+
 /** Sets a lead's ai_state directly, to stand in for a person taking over. */
 async function setLeadAiState(opts: { id: string; aiState: string }) {
   assertOk(await admin.from('leads').update({ ai_state: opts.aiState }).eq('id', opts.id))
@@ -1371,6 +1388,7 @@ export const dbTasks = {
   'db:createLeadMessage': createLeadMessage,
   'db:leadAiState': leadAiState,
   'db:setGrowthAddon': setGrowthAddon,
+  'db:setSubscriptionPlan': setSubscriptionPlan,
   'db:setLeadAiState': setLeadAiState,
   'db:setWhatsappPhoneNumberId': setWhatsappPhoneNumberId,
   'db:leadsByExternalId': leadsByExternalId,

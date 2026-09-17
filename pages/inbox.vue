@@ -173,6 +173,11 @@ const conversations = computed<Conversation[]>(() => {
       key,
       patientId: last.patient_id,
       phoneNumber: last.phone_number,
+      // The IGSID, which is who an Instagram reply is addressed to. The field
+      // was on the type and read when sending, but nothing ever set it, so
+      // every Instagram thread carried undefined and the reply could not be
+      // addressed at all.
+      externalContactId: last.external_contact_id,
       name: (last.patient_id && patientNames.value[last.patient_id]) || last.phone_number || t('Unknown', 'Desconocido'),
       channel: last.channel,
       lastMessage: last,
@@ -621,7 +626,12 @@ watch(thread, async (msgs) => {
 const replyChannel = computed(() => (thread.value.length === 0 ? 'whatsapp' : thread.value[thread.value.length - 1].channel))
 const within24h = computed(() => {
   if (replyChannel.value === 'in_app') return true
-  const lastInbound = thread.value.filter((m) => m.direction === 'inbound' && m.channel === 'whatsapp').at(-1)
+  // Whichever channel the reply goes out on -- not always WhatsApp. An
+  // Instagram thread's inbound messages carry channel 'instagram', so looking
+  // only at WhatsApp ones found nothing and every Instagram conversation read
+  // as "more than 24 hours since they last wrote", however recent it was. The
+  // composer was shut before the first DM had finished arriving.
+  const lastInbound = thread.value.filter((m) => m.direction === 'inbound' && m.channel === replyChannel.value).at(-1)
   if (!lastInbound) return false
   return Date.now() - new Date(lastInbound.created_at).getTime() < 24 * 60 * 60 * 1000
 })
@@ -668,6 +678,14 @@ async function performTextSend(tempId: string, text: string, channel: string, ta
     if (channel === 'in_app') {
       if (!target.patientId) throw new Error('In-app messages require a linked patient')
       await useStaffFetch('/api/patient-messages/send', { method: 'POST', body: { patientId: target.patientId, text } })
+    } else if (channel === 'instagram') {
+      // Its own route: a recipient here is an IGSID, not a phone number, so
+      // whatsapp/inbox-send has nothing to send to. Everything that was not
+      // in-app used to go there, which meant /api/instagram/send existed and
+      // shipped and was never once called -- an Instagram reply was posted to
+      // WhatsApp with no number and failed.
+      if (!target.externalContactId) throw new Error('This Instagram conversation has no sender id')
+      await useStaffFetch('/api/instagram/send', { method: 'POST', body: { recipientId: target.externalContactId, text } })
     } else {
       await useStaffFetch('/api/whatsapp/inbox-send', {
         method: 'POST',
@@ -1407,9 +1425,14 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
           <div v-if="!within24h" class="flex items-center justify-between gap-3 rounded-ctl border border-warning-border bg-warning-bg px-3 py-2">
             <p class="text-[12.5px] text-warning-text">
               <template v-if="isNewConversation">{{ selected.name }} {{ t("hasn't messaged you before — start with an approved template.", 'no te ha escrito antes — comienza con una plantilla aprobada.') }}</template>
+              <!-- Instagram has no template escape hatch: outside the window
+              there is nothing to send, only a wait. Saying "send a template
+              instead" and showing the button sends staff looking for one that
+              cannot exist. -->
+              <template v-else-if="replyChannel === 'instagram'">{{ t('More than 24h since', 'Han pasado más de 24h desde que') }} {{ selected.name }} {{ t('last messaged — Instagram blocks replies until they write again.', 'escribió por última vez — Instagram bloquea las respuestas hasta que vuelva a escribir.') }}</template>
               <template v-else>{{ t('More than 24h since', 'Han pasado más de 24h desde que') }} {{ selected.name }} {{ t('last messaged — free-form replies are blocked by WhatsApp. Send a template instead.', 'escribió por última vez — WhatsApp bloquea las respuestas libres. Envía una plantilla en su lugar.') }}</template>
             </p>
-            <UiBtn v-if="selected.patientId" variant="primary" size="sm" @click="templateModalOpen = true">{{ t('Send template', 'Enviar plantilla') }}</UiBtn>
+            <UiBtn v-if="selected.patientId && replyChannel !== 'instagram'" variant="primary" size="sm" @click="templateModalOpen = true">{{ t('Send template', 'Enviar plantilla') }}</UiBtn>
           </div>
           <div v-else-if="audioRecording" class="flex items-center gap-3 rounded-ctl border border-line-control bg-surface-subtle px-3 py-2">
             <span class="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-danger-text" />
@@ -1418,13 +1441,18 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             <UiBtn variant="primary" size="sm" @click="toggleAudioRecording">{{ t('Send', 'Enviar') }}</UiBtn>
           </div>
           <div v-else class="flex items-end gap-2">
-            <button type="button" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-500 hover:bg-surface-subtle" :disabled="sending" @click="fileInput?.click()">
+            <!-- Attachments and voice notes are WhatsApp-only: both upload
+            through whatsapp/inbox-send, and instagram/send posts text alone.
+            Offering the buttons on an Instagram thread would take a file,
+            upload it and fail at the very end. -->
+            <button v-if="replyChannel !== 'instagram'" type="button" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-500 hover:bg-surface-subtle" :disabled="sending" @click="fileInput?.click()">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
                 <path d="M11.5 5.5L6.4 10.6a2 2 0 002.8 2.8l5.1-5.1a3.5 3.5 0 00-4.95-4.95L4.25 8.45a5 5 0 007.07 7.07" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
             </button>
             <input ref="fileInput" type="file" class="hidden" accept="image/*,video/*,audio/*,.pdf,.doc,.docx" @change="onFileChosen" />
             <button
+              v-if="replyChannel !== 'instagram'"
               type="button"
               class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-500 hover:bg-surface-subtle disabled:opacity-50"
               :disabled="sending"

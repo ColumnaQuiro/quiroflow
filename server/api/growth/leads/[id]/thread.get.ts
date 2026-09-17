@@ -11,7 +11,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: lead } = await supabase
     .from('leads')
-    .select('id, full_name, phone, email, source, stage, estimated_value_cents, ai_state, patient_id, ai_taken_over_at, ai_draft_body, ai_draft_created_at, clinics:clinic_id(name), team_members:ai_taken_over_by(full_name)')
+    .select('id, full_name, phone, email, channel, source, stage, estimated_value_cents, ai_state, patient_id, ai_taken_over_at, ai_draft_body, ai_draft_created_at, clinics:clinic_id(name), team_members:ai_taken_over_by(full_name)')
     .eq('id', id)
     .eq('account_id', teamMember.account_id)
     .is('deleted_at', null)
@@ -53,6 +53,10 @@ export default defineEventHandler(async (event) => {
     name: lead.full_name,
     phone: lead.phone,
     email: lead.email,
+    // Which way a reply has to go out. An Instagram lead has no phone at all,
+    // so a composer that assumes WhatsApp sends it to a route whose entire
+    // body is phone numbers and gets a 400 back.
+    channel: lead.channel,
     source: lead.source,
     stage: lead.stage,
     value: formatEuros(lead.estimated_value_cents),

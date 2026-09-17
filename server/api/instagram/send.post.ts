@@ -12,14 +12,35 @@ import { sendInstagramText, instagramWindowOpen } from '~/server/utils/instagram
 // What it does share is the message row, so the Inbox reads both channels
 // from one table and the thread interleaves correctly.
 export default defineEventHandler(async (event) => {
-  const body = await readBody<{ recipientId?: string; text?: string }>(event)
+  const body = await readBody<{ recipientId?: string; leadId?: string; text?: string }>(event)
 
-  const recipientId = body?.recipientId?.trim()
+  const leadId = body?.leadId?.trim()
+  let recipientId = body?.recipientId?.trim()
   const text = body?.text?.trim()
-  if (!recipientId) throw createError({ statusCode: 400, statusMessage: 'recipientId is required' })
+  if (!recipientId && !leadId) throw createError({ statusCode: 400, statusMessage: 'recipientId or leadId is required' })
   if (!text) throw createError({ statusCode: 400, statusMessage: 'text is required' })
 
   const { supabase, teamMember } = await requirePermission(event, 'inbox_access')
+
+  // A DM from somebody with no patient record shows in the Inbox as their
+  // LEAD conversation, not as a plain message thread -- that is what becoming
+  // a lead does -- and the lead composer knows the lead, not the IGSID. It is
+  // stored as external_id, put there when the lead was made from the DM.
+  if (!recipientId && leadId) {
+    const { data: lead } = await supabase
+      .from('leads')
+      .select('external_id')
+      .eq('id', leadId)
+      .eq('account_id', teamMember.account_id)
+      .eq('external_source', 'instagram')
+      .is('deleted_at', null)
+      .maybeSingle()
+    if (!lead?.external_id) {
+      throw createError({ statusCode: 400, statusMessage: 'That lead did not come from Instagram, so there is no account to reply to.' })
+    }
+    recipientId = lead.external_id
+  }
+  if (!recipientId) throw createError({ statusCode: 400, statusMessage: 'recipientId is required' })
 
   const { data: account } = await supabase
     .from('accounts')
@@ -71,6 +92,10 @@ export default defineEventHandler(async (event) => {
   // failed afterwards is a thread showing a reply the person never received.
   await supabase.from('whatsapp_messages').insert({
     account_id: teamMember.account_id,
+    // Carried so the reply appears in the lead's own thread, which reads
+    // messages by lead_id -- without it the answer vanishes from the
+    // conversation it was written in.
+    lead_id: leadId ?? null,
     channel: 'instagram',
     direction: 'outbound',
     status: 'sent',

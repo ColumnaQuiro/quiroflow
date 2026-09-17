@@ -111,3 +111,53 @@ as $function$
     )
   end;
 $function$;
+
+-- The Stripe prices themselves.
+--
+-- Stripe prices are immutable: an amount cannot be edited, only replaced. So
+-- these are ten new Price objects created in the live account
+-- (acct_1UD1lr0Ov3CXtGBc) on 2026-09-17, and the columns below are repointed
+-- at them in the same migration as the cents above. Split across two
+-- migrations and there would be a window where the app quotes 49 EUR and
+-- Stripe charges 59 -- which is the exact failure mode the check on
+-- `plans.monthly_price_cents` cannot catch, because the amount that gets
+-- charged never lives in this database.
+--
+-- Every id below was read back from its own price page and checked against
+-- its amount and interval, rather than inferred from the order of rows in
+-- the dashboard. Annual prices are a yearly interval at twelve times the
+-- per-month figure, matching what the previous ones did (Solo annual was
+-- 600 EUR/year against annual_price_cents = 5000).
+--
+-- Tax behaviour on all ten is "exclusive": the 21% IVA is added by Stripe
+-- from the fixed rate in subscribe.post.ts, not folded into these amounts.
+--
+-- The old prices are left active deliberately. Nothing references them once
+-- this runs, no subscription is on one, and archiving them is reversible
+-- housekeeping that does not need to ride a migration.
+
+update plans set
+  stripe_monthly_price_id = 'price_1UGgXZ0Ov3CXtGBc3k7rZkT7',                      -- 49,00 EUR / month
+  stripe_annual_price_id = 'price_1UGgZP0Ov3CXtGBc66Lxky4v',                       -- 528,00 EUR / year
+  stripe_extra_professional_monthly_price_id = 'price_1UGgms0Ov3CXtGBcICMEqBI5',   -- 19,00 EUR / month
+  stripe_extra_professional_annual_price_id = 'price_1UGgoN0Ov3CXtGBcGynLbRHP'     -- 228,00 EUR / year
+where id = 'starter';
+
+update plans set
+  stripe_monthly_price_id = 'price_1UGgar0Ov3CXtGBcYlb2qtU8',                      -- 99,00 EUR / month
+  stripe_annual_price_id = 'price_1UGgcT0Ov3CXtGBcr20TnVek',                       -- 1.068,00 EUR / year
+  stripe_extra_professional_monthly_price_id = 'price_1UGgms0Ov3CXtGBcICMEqBI5',
+  stripe_extra_professional_annual_price_id = 'price_1UGgoN0Ov3CXtGBcGynLbRHP'
+where id = 'pro';
+
+update plans set
+  stripe_monthly_price_id = 'price_1UGgel0Ov3CXtGBcVYEdoZKG',                      -- 149,00 EUR / month
+  stripe_annual_price_id = 'price_1UGgfu0Ov3CXtGBc4MEVE1fq',                       -- 1.608,00 EUR / year
+  stripe_extra_professional_monthly_price_id = 'price_1UGgms0Ov3CXtGBcICMEqBI5',
+  stripe_extra_professional_annual_price_id = 'price_1UGgoN0Ov3CXtGBcGynLbRHP'
+where id = 'clinic';
+
+update addons set
+  stripe_monthly_price_id = 'price_1UGghs0Ov3CXtGBcB8i1X5fD',                      -- 39,00 EUR / month
+  stripe_annual_price_id = 'price_1UGgkf0Ov3CXtGBcUSa5pJGN'                        -- 420,00 EUR / year
+where id = 'growth';

@@ -67,7 +67,14 @@ describe('The dashboard income card', () => {
         cy.login(account.email, account.password)
         cy.visit('/dashboard')
 
-        cy.contains('button', /days|month/i).click()
+        // clickUntil, not click: the dashboard's HTML (this button included)
+        // is server-rendered and present long before Vue hydrates, so the
+        // first click can land on a button nothing is listening to yet and
+        // vanish. The panel then never opens and the failure reads as
+        // "Expected to find content: 'Last 30 days'", which sounds like the
+        // preset is missing rather than like a click that went nowhere.
+        // See clickUntil in cypress/support/commands.ts.
+        cy.clickUntil('button:contains("month"), button:contains("days")', 'button:contains("Last 7 days")')
         cy.contains('Last 30 days').click()
         cy.get('select').first().select('Nueva Nadia')
 

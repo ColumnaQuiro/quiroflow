@@ -91,5 +91,55 @@ export function useFacturas() {
     return data
   }
 
-  return { issueFactura, facturaDescription, facturaKind }
+  /**
+   * The rectifying document for money going back to a patient.
+   *
+   * A refund used to write the REF- invoice and the negative payment and stop
+   * there, leaving the factura that says the money came in standing on its own
+   * -- every refund the clinic had ever made was in that state.
+   *
+   * Its own R- series rather than the next F- number: see the migration for
+   * why. Same never-throws contract as issueFactura -- the money has already
+   * gone back to the patient by the time this runs, and failing the refund
+   * over a document would leave the clinic with no record of it at all.
+   */
+  async function issueRectificativa(input: {
+    accountId: string
+    patientId: string
+    /** The refund's own negative payment row. */
+    paymentId: string
+    /** Negative: what is going back. */
+    amountCents: number
+    /** Set when the refunded invoice had exactly one factura behind it. */
+    rectifiesFacturaId?: string | null
+    /** The number being corrected, for the line the patient reads. */
+    rectifiesNumber?: string | null
+    reason?: string
+  }): Promise<{ number: string } | null> {
+    const { data: number } = await supabase.rpc('next_factura_number', { p_account_id: input.accountId, p_series: 'R' })
+    if (!number) return null
+
+    const corrects = input.rectifiesNumber ? `Rectificación de ${input.rectifiesNumber}` : 'Rectificación'
+    const { data, error } = await supabase
+      .from('facturas')
+      .insert({
+        account_id: input.accountId,
+        patient_id: input.patientId,
+        payment_id: input.paymentId,
+        number,
+        kind: 'rectificativa',
+        description: input.reason?.trim() ? `${corrects} — ${input.reason.trim()}` : corrects,
+        // Negative, mirroring the payment. The sign is what makes this a
+        // correction rather than a second sale.
+        amount_cents: -Math.abs(input.amountCents),
+        rectifies_factura_id: input.rectifiesFacturaId ?? null,
+      })
+      .select('number')
+      .single()
+
+    if (error) return null
+    return data
+  }
+
+  return { issueFactura, issueRectificativa, facturaDescription, facturaKind }
 }

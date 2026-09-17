@@ -70,7 +70,7 @@ const { fire } = useAutomations()
 const t = useT()
 
 const { balanceCents, creditLedgerCents, refresh: refreshCreditSummary } = usePatientFinancialSummary(() => props.patientId)
-const { issueFactura } = useFacturas()
+const { issueFactura, issueRectificativa } = useFacturas()
 
 // The documents the patient has actually been given, as opposed to the charges
 // that drive their balance. Kept as its own list rather than mixed into the
@@ -851,13 +851,46 @@ async function createRefund(invoiceId: string, amountCents: number, reason: stri
   // patient's balance for money that had already gone back to them. Same
   // gap in reports/income.vue's Total paid/By payment method, which read
   // only from `payments` and never saw a refund at all.
-  await supabase.from('payments').insert({
-    account_id: store.accountId!,
-    patient_id: props.patientId,
-    invoice_id: refund.id,
-    amount_cents: -amountCents,
-    method,
-  })
+  const { data: refundPayment } = await supabase
+    .from('payments')
+    .insert({
+      account_id: store.accountId!,
+      patient_id: props.patientId,
+      invoice_id: refund.id,
+      amount_cents: -amountCents,
+      method,
+    })
+    .select('id')
+    .single()
+
+  // The rectifying document. Without it the factura saying this money came in
+  // stays in the series with nothing against it, which is the state every
+  // refund the clinic had ever made was in.
+  //
+  // 'credit' is excluded on the way in -- spending account credit moves no
+  // money and issues no factura -- so refunding it has nothing to rectify.
+  if (refundPayment && method !== 'credit') {
+    // The factura(s) behind the invoice being refunded. Exactly one is the
+    // ordinary case: a visit paid in one go. Several means the visit was
+    // settled in parts, and no single document is "the" one being corrected --
+    // the rectificativa is still issued, it just names no predecessor.
+    const { data: originalPayments } = await supabase.from('payments').select('id').eq('invoice_id', invoiceId)
+    const originalIds = (originalPayments ?? []).map((p) => p.id)
+    const { data: originalFacturas } = originalIds.length
+      ? await supabase.from('facturas').select('id, number').in('payment_id', originalIds)
+      : { data: [] as { id: string; number: string }[] }
+    const only = (originalFacturas ?? []).length === 1 ? originalFacturas![0] : null
+
+    await issueRectificativa({
+      accountId: store.accountId!,
+      patientId: props.patientId,
+      paymentId: refundPayment.id,
+      amountCents,
+      rectifiesFacturaId: only?.id ?? null,
+      rectifiesNumber: only?.number ?? null,
+      reason: reason.trim(),
+    })
+  }
 
   await Promise.all([loadAll(), refreshCreditSummary(), loadFacturas()])
 }
@@ -1730,6 +1763,12 @@ function money(cents: number) {
                 {{ f.number }}
                 <span v-if="f.kind === 'simplified'" class="ml-1 rounded-ctlSm bg-chip-bg px-1.5 py-0.5 font-sans text-[10.5px] text-chip-text">
                   {{ t('simplified', 'simplificada') }}
+                </span>
+                <!-- Money going back, in a series of its own. Marked here so a
+                     negative amount in this list reads as a correction rather
+                     than as a sale somebody typed wrong. -->
+                <span v-else-if="f.kind === 'rectificativa'" class="ml-1 rounded-ctlSm bg-amber-bg px-1.5 py-0.5 font-sans text-[10.5px] text-amber-text">
+                  {{ t('rectifying', 'rectificativa') }}
                 </span>
                 <!--
                   Its payment has since been deleted. The document stays on the

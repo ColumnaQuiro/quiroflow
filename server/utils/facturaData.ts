@@ -9,6 +9,12 @@ import type { Database } from '~/types/database.types'
 // and the footer are identical on both, and two copies of that would drift --
 // the parts that genuinely differ are the title, a single line item, and the
 // absence of a balance, all of which the shared shape now carries.
+const FACTURA_TITLES: Record<string, string> = {
+  simplified: 'Factura simplificada',
+  full: 'Factura',
+  rectificativa: 'Factura rectificativa',
+}
+
 export async function loadFacturaDocumentData(
   supabase: SupabaseClient<Database>,
   facturaId: string,
@@ -16,7 +22,7 @@ export async function loadFacturaDocumentData(
   const { data: factura } = await supabase
     .from('facturas')
     .select(
-      'number, kind, description, amount_cents, issued_at, account_id, patient_id, recipient_name, recipient_nif, recipient_address, patients(first_name, last_name, email, address, city, postal_code, country, national_id)',
+      'number, kind, description, amount_cents, issued_at, account_id, patient_id, recipient_name, recipient_nif, recipient_address, rectifies_factura_id, patients(first_name, last_name, email, address, city, postal_code, country, national_id)',
     )
     .eq('id', facturaId)
     .maybeSingle()
@@ -87,7 +93,9 @@ export async function loadFacturaDocumentData(
     // A factura is not a reminder to come back; it is a receipt.
     nextAppointmentDate: null,
     hideNextVisit: true,
-    documentTitle: `${factura.kind === 'simplified' ? 'Factura simplificada' : 'Factura'} ${factura.number}`,
+    // A rectificativa has to say so on its face -- that is most of what makes
+    // it one, rather than a factura with a minus sign.
+    documentTitle: `${FACTURA_TITLES[factura.kind] ?? 'Factura'} ${factura.number}`,
     showTotalsBreakdown: false,
   }
 }

@@ -150,6 +150,11 @@ const conversations = computed<Conversation[]>(() => {
       key,
       patientId: last.patient_id,
       phoneNumber: last.phone_number,
+      // The IGSID, which is who an Instagram reply is addressed to. The field
+      // was on the type and read when sending, but nothing ever set it, so
+      // every Instagram thread carried undefined and the reply could not be
+      // addressed at all.
+      externalContactId: last.external_contact_id,
       name: (last.patient_id && patientNames.value[last.patient_id]) || last.phone_number || 'Unknown',
       channel: last.channel,
       lastMessage: last,

@@ -1,4 +1,8 @@
-import { bonoOwedCents } from '~/utils/bonoOwed'
+// Relative, not '~/utils/...'. This file is shared with the mobile app,
+// where '~' is mobile/ -- so the alias resolved to mobile/utils/bonoOwed,
+// which does not exist, and Xcode Cloud died on it. Nothing in CI compiles
+// the mobile app, so the only signal was a red cloud build four days later.
+import { bonoOwedCents } from '../utils/bonoOwed'
 
 interface ActiveMembership {
   id: string

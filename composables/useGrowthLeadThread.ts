@@ -16,6 +16,8 @@ export interface LeadThread {
   name: string
   phone: string | null
   email: string | null
+  /** Which way a reply goes out: 'whatsapp', 'instagram', and so on. */
+  channel: string
   source: string | null
   stage: string
   value: string | null
@@ -65,7 +67,12 @@ export function useGrowthLeadThread() {
     if (!text.trim()) return false
     sending.value = true
     try {
-      await useStaffFetch('/api/whatsapp/inbox-send', { method: 'POST', body: { leadId, text: text.trim() } })
+      // Instagram has its own route: whatsapp/inbox-send addresses a reply by
+      // phone number and an Instagram lead has none, so every answer to a DM
+      // came back 400. The lead carries the IGSID, which is what that route
+      // resolves it by.
+      const path = thread.value?.channel === 'instagram' ? '/api/instagram/send' : '/api/whatsapp/inbox-send'
+      await useStaffFetch(path, { method: 'POST', body: { leadId, text: text.trim() } })
       // Reloaded rather than appended optimistically: the row the server
       // wrote carries the delivery status and the id, and a message shown as
       // sent that WhatsApp actually refused is the one mistake worth a round

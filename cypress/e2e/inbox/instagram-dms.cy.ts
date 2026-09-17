@@ -232,18 +232,22 @@ describe('Instagram DMs in the Inbox', () => {
     deliver([message('igsid-fresh', 'Hola')])
     cy.login(staff!.email, staff!.password)
     cy.visit('/inbox')
-    cy.contains('Hola').click()
+    // The LEAD conversation, which is where a DM from somebody with no
+    // patient record actually appears -- becoming a lead is what puts it
+    // there. The plain message thread exists too; this is the one a person
+    // opens.
+    cy.contains('Instagram user').click()
     cy.contains('More than 24h since').should('not.exist')
 
-    // And the reply goes to Instagram's own route. Everything that was not
-    // in-app posted to whatsapp/inbox-send, whose recipient is a phone
-    // number -- so an Instagram reply had nowhere to go and
-    // /api/instagram/send shipped without a single caller.
+    // And the reply goes to Instagram's own route. Lead replies all posted to
+    // whatsapp/inbox-send, which addresses by phone number -- an Instagram
+    // lead has none, so every answer came back 400 and /api/instagram/send
+    // shipped without a single caller.
     cy.intercept('POST', '/api/instagram/send', { statusCode: 200, body: { ok: true, messageId: 'ig.stub' } }).as('igSend')
     cy.get('textarea').last().type('Buenas, sí que hacemos')
     cy.contains('button', 'Send').click()
     cy.wait('@igSend').its('request.body').should((body: any) => {
-      expect(body.recipientId).to.eq('igsid-fresh')
+      expect(body.leadId, 'addressed by the lead it was written in').to.be.a('string')
       expect(body.text).to.eq('Buenas, sí que hacemos')
     })
   })

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Tables } from '~/types/database.types'
+import { settleInvoiceIfCovered } from '~/utils/settleInvoice'
 
 const route = useRoute()
 const supabase = useSupabaseClient()
@@ -154,10 +155,9 @@ async function recordPayment() {
     })
   }
 
-  const newPaid = paidCents.value + amountCents
-  if (newPaid >= (invoice.value?.total_cents ?? 0)) {
-    await supabase.from('invoices').update({ status: 'paid' }).eq('id', invoiceId)
-  }
+  // Decided from the database, not from the totals this page loaded when it
+  // opened -- see utils/settleInvoice.
+  await settleInvoiceIfCovered(supabase, invoiceId)
 
   savingPayment.value = false
   await Promise.all([load(), refreshCreditSummary()])

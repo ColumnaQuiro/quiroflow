@@ -676,6 +676,74 @@ async function verifyFacturaChainAs(opts: {
   }
 }
 
+/**
+ * Asks for another account's transmission log as somebody who should not see it.
+ *
+ * Same shape as verifyFacturaChainAs: `anon` is the key that ships in the
+ * client bundle, `outsider` is a real user of a different clinic -- the
+ * caller a permission check passes by accident because they look legitimate.
+ */
+async function awaitingAeatAs(opts: {
+  accountId: string
+  as: 'anon' | 'outsider'
+  email?: string
+  password?: string
+}) {
+  const client = createClient(SUPABASE_URL, ANON_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+
+  if (opts.as === 'outsider') {
+    const { error } = await client.auth.signInWithPassword({ email: opts.email!, password: opts.password! })
+    if (error) throw error
+  }
+
+  const { data, error } = await client.rpc('factura_records_awaiting_aeat', { p_account_id: opts.accountId })
+  return { refused: Boolean(error), message: error?.message ?? null, rows: data ?? null }
+}
+
+/** Records the AEAT has not acknowledged yet, in chain order. */
+async function awaitingAeat(opts: { accountId: string }) {
+  const { data, error } = await admin.rpc('factura_records_awaiting_aeat', { p_account_id: opts.accountId })
+  if (error) throw error
+  return data
+}
+
+/**
+ * Writes what the AEAT said about a record.
+ *
+ * Stands in for the sender, which does not exist yet -- the point of the
+ * test is the consequence of each answer, not the transport. `status` takes
+ * AEAT's own vocabulary so the test reads like their documentation.
+ */
+async function recordAeatSubmission(opts: {
+  accountId: string
+  facturaRecordId: string
+  attempt?: number
+  status: 'queued' | 'sent' | 'transport_error' | 'Correcto' | 'AceptadoConErrores' | 'Incorrecto'
+  csv?: string
+  errorCode?: string
+  errorMessage?: string
+}) {
+  const { data, error } = await admin
+    .from('factura_record_submissions')
+    .insert({
+      account_id: opts.accountId,
+      factura_record_id: opts.facturaRecordId,
+      attempt: opts.attempt ?? 1,
+      status: opts.status,
+      aeat_csv: opts.csv ?? null,
+      error_code: opts.errorCode ?? null,
+      error_message: opts.errorMessage ?? null,
+      sent_at: new Date().toISOString(),
+      responded_at: new Date().toISOString(),
+    })
+    .select('id, status, attempt')
+    .single()
+  if (error) throw error
+  return data
+}
+
 /** The registro de facturación chain for an account, oldest first. */
 async function facturaRecordsFor(opts: { accountId: string }) {
   const { data, error } = await admin
@@ -1647,6 +1715,9 @@ export const dbTasks = {
   'db:huellaFor': huellaFor,
   'db:facturaRecordsFor': facturaRecordsFor,
   'db:verifyFacturaChain': verifyFacturaChain,
+  'db:awaitingAeat': awaitingAeat,
+  'db:awaitingAeatAs': awaitingAeatAs,
+  'db:recordAeatSubmission': recordAeatSubmission,
   'db:verifyFacturaChainAs': verifyFacturaChainAs,
   'db:rebuildFacturaHuellas': rebuildFacturaHuellas,
   'db:tryMutateFacturaRecord': tryMutateFacturaRecord,

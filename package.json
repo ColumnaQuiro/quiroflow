@@ -21,7 +21,8 @@
     "cypress:run": "cypress run",
     "cypress:open": "cypress open",
     "supabase:test:reset": "supabase db reset",
-    "prepare": "husky"
+    "prepare": "husky",
+    "apply:migrations": "./scripts/with-node.sh node scripts/apply-migrations.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.124.0",

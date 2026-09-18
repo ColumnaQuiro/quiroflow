@@ -130,6 +130,11 @@ export default defineNuxtConfig({
   },
   runtimeConfig: {
     resendApiKey: '',
+    // Resend's webhook signing secret (Webhooks -> your endpoint in their
+    // dashboard). Without it the delivery-event endpoint refuses everything,
+    // which is the right way round: an unverified metrics feed is worse than
+    // none, because a number nobody can trust still gets acted on.
+    resendWebhookSecret: '',
     // Powers the in-app help assistant (the floating widget), which answers
     // from the help centre's own articles. Optional -- if unset, the widget
     // skips straight to "message the QuiroFlow team" rather than failing,

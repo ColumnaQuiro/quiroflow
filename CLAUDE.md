@@ -170,12 +170,14 @@ timestamp into `schema_migrations`, which is the drift described below and had
 to be hand-corrected every time. `supabase db push` records the repo's
 version.
 
-It needs three **repository** secrets — `SUPABASE_ACCESS_TOKEN`,
-`SUPABASE_DB_PASSWORD`, `SUPABASE_PROJECT_REF`. Repository, not organization:
-a Free-plan org does not expose org secrets to a private repo, and the secret
-silently resolves to an empty string, which is the same trap
-`NETLIFY_AUTH_TOKEN` fell into. The workflow checks all three are non-empty
-before it does anything, so that failure names itself.
+It uses **`SUPABASE_DB_URL`**, the repository secret `deploy.yml` already
+passes to `check:migrations-applied` — so the apply and the check that guards
+the deploy read the same credential and cannot end up pointed at different
+databases. Nothing new to set up. Repository, not organization: a Free-plan
+org does not expose org secrets to a private repo, and the secret silently
+resolves to an empty string, which is the trap `NETLIFY_AUTH_TOKEN` fell into.
+The workflow checks it is non-empty before doing anything, so that failure
+names itself.
 
 **The cost: between a merge and the next release, production runs the code
 that is ALREADY LIVE against the new schema.** A migration that drops a

@@ -32,6 +32,17 @@ export default defineEventHandler(async (event) => {
   if (!plan) throw createError({ statusCode: 400, statusMessage: 'Unknown plan' })
 
   const planPriceId = body.interval === 'annual' ? plan.stripe_annual_price_id : plan.stripe_monthly_price_id
+  // Both of these are 19 EUR a month: seats carry no annual discount, unlike
+  // the plans, which are 10% off.
+  //
+  // Not an oversight. `plans` has two Stripe price ids for seats but a single
+  // extra_professional_price_cents to display, so a discounted annual seat
+  // would show one number on the Subscription page and charge another -- and
+  // an owner adding a seat mid-year is the person least likely to forgive
+  // that. The choice is a second column or one price; one price won.
+  //
+  // So if you are here to "fix" the missing annual discount on seats, it
+  // needs the column first, in plans and in the card that renders it.
   const addOnPriceId = body.interval === 'annual' ? plan.stripe_extra_professional_annual_price_id : plan.stripe_extra_professional_monthly_price_id
   if (!planPriceId) throw createError({ statusCode: 500, statusMessage: 'This plan has no Stripe price configured' })
   if (extraProfessionals > 0 && !addOnPriceId) {

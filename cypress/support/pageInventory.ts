@@ -85,7 +85,19 @@ export const STATIC_AUTHENTICATED_PAGES = [...APP_PAGES, ...SETTINGS_PAGES]
 // automatically rather than tripping the guard test.
 export const DEV_PORTAL_PAGES = DEV_PORTAL_SLUGS.map((slug) => `/developers/${slug}`)
 
-export const UNAUTHENTICATED_PAGES = ['/login', '/signup', '/forgot-password', ...DEV_PORTAL_PAGES]
+// The SIF declaración responsable is swept unauthenticated rather than
+// parked in NOT_SWEPT_HERE beside the other legal pages, because its being
+// reachable without an account is the requirement, not an incidental. RD
+// 1007/2023 makes the producer publish it independently, available before
+// purchase -- so a middleware change that quietly put it behind the login
+// would breach the regulation while every other test still passed.
+export const UNAUTHENTICATED_PAGES = [
+  '/login',
+  '/signup',
+  '/forgot-password',
+  '/legal/declaracion-responsable',
+  ...DEV_PORTAL_PAGES,
+]
 
 // Routes no sweep visits, each for a reason the guard test re-checks.
 // Anything not here and not in one of the lists above makes that test fail,

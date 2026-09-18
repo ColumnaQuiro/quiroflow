@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { SIF_NAME, SIF_VERSION } from '~/utils/sifIdentity'
+
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
@@ -126,6 +128,18 @@ async function save() {
           </form>
           <p v-if="error" class="mt-2 text-[12.5px] text-danger-text">{{ error }}</p>
         </div>
+      </div>
+
+      <!-- RD 1007/2023 requires the producer's declaración responsable to be
+           visible inside the invoicing system itself, for the version that is
+           running -- publishing it externally is necessary but not enough. -->
+      <div class="mt-8 border-t border-line pt-4">
+        <p class="text-[12px] text-ink-faint">
+          {{ t('Invoicing system', 'Sistema informático de facturación') }}: {{ SIF_NAME }} {{ SIF_VERSION }} —
+          <NuxtLink to="/legal/declaracion-responsable" class="text-brand-text hover:text-brand-hover">
+            {{ t('responsible declaration', 'declaración responsable') }}
+          </NuxtLink>
+        </p>
       </div>
     </div>
   </div>

@@ -6,7 +6,7 @@ const store = useAccountStore()
 const t = useT()
 // The pickers cache this list; without invalidating, a method added here
 // would not appear on a Billing tab until a full page reload.
-const { invalidate: invalidatePaymentMethods, labelFor: methodLabel } = usePaymentMethods()
+const { invalidate: invalidatePaymentMethods, displayName: methodLabel } = usePaymentMethods()
 
 const methods = ref<Tables<'payment_methods'>[]>([])
 const loading = ref(true)
@@ -122,7 +122,7 @@ async function removeMethod(id: string) {
                   </tr>
                 </template>
                 <tr v-for="m in methods" :key="m.id">
-                  <td class="px-4 py-2.5 text-ink-700">{{ methodLabel(m.key) }}</td>
+                  <td class="px-4 py-2.5 text-ink-700">{{ methodLabel(m) }}</td>
                   <td class="px-4 py-2.5">
                     <button
                       type="button"

@@ -67,6 +67,15 @@ const SEEDED_LABELS: Record<string, { name: string; es: string }> = {
 
 export function usePaymentMethods() {
   const t = useT()
+  /**
+   * The label for a row, translated when it is still a seeded built-in.
+   *
+   * Takes the row rather than reading the cache, so the settings screen can
+   * use it too: that screen lists INACTIVE methods as well, which the cache
+   * deliberately excludes, and it loads its own rows anyway. Rendering from
+   * the cache there showed raw keys -- "transfer" instead of "Bank transfer"
+   * -- for every row, since a freshly loaded page has no cache yet.
+   */
   const display = (m: PaymentMethodOption) => {
     const seeded = SEEDED_LABELS[m.key]
     return seeded && seeded.name === m.name ? t(seeded.name, seeded.es) : m.name
@@ -90,6 +99,8 @@ export function usePaymentMethods() {
       const found = methods.value?.find((m) => m.key === key)
       return found ? display(found) : key
     },
+    /** For a row the caller already holds -- see display(). */
+    displayName: display,
     invalidate: () => {
       methods.value = null
     },

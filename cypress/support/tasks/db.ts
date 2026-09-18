@@ -605,6 +605,34 @@ async function createFacturaWithoutTax(opts: {
   return data
 }
 
+/**
+ * Runs the huella functions directly, so the algorithm can be checked against
+ * AEAT's own worked example rather than only against our own output.
+ */
+async function huellaFor(opts: {
+  issuerNif: string
+  serieNumber: string
+  issuedOn: string
+  invoiceType: string
+  cuotaTotalCents: number
+  importeTotalCents: number
+  previousHuella: string | null
+  generatedAt: string
+}) {
+  const { data, error } = await admin.rpc('factura_huella_probe', {
+    p_issuer_nif: opts.issuerNif,
+    p_serie_number: opts.serieNumber,
+    p_issued_on: opts.issuedOn,
+    p_invoice_type: opts.invoiceType,
+    p_cuota_total_cents: opts.cuotaTotalCents,
+    p_importe_total_cents: opts.importeTotalCents,
+    p_previous_huella: opts.previousHuella,
+    p_generated_at: opts.generatedAt,
+  })
+  if (error) throw error
+  return data
+}
+
 /** The registro de facturación chain for an account, oldest first. */
 async function facturaRecordsFor(opts: { accountId: string }) {
   const { data, error } = await admin
@@ -1521,6 +1549,7 @@ export const dbTasks = {
   'db:createAccountCredit': createAccountCredit,
   'db:facturasFor': facturasFor,
   'db:createFacturaWithoutTax': createFacturaWithoutTax,
+  'db:huellaFor': huellaFor,
   'db:facturaRecordsFor': facturaRecordsFor,
   'db:tryMutateFacturaRecord': tryMutateFacturaRecord,
   'db:nextFacturaNumber': nextFacturaNumber,

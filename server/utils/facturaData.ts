@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
+import { exemptionClause } from '~/utils/facturaTax'
 
 // The document the patient is actually given: one per payment, describing what
 // the money bought.
@@ -22,7 +23,7 @@ export async function loadFacturaDocumentData(
   const { data: factura } = await supabase
     .from('facturas')
     .select(
-      'number, kind, description, amount_cents, issued_at, account_id, patient_id, recipient_name, recipient_nif, recipient_address, rectifies_factura_id, patients(first_name, last_name, email, address, city, postal_code, country, national_id)',
+      'number, kind, description, amount_cents, tax_base_cents, tax_rate_bp, tax_amount_cents, tax_exemption_code, issued_at, account_id, patient_id, recipient_name, recipient_nif, recipient_address, rectifies_factura_id, patients(first_name, last_name, email, address, city, postal_code, country, national_id)',
     )
     .eq('id', facturaId)
     .maybeSingle()
@@ -97,5 +98,11 @@ export async function loadFacturaDocumentData(
     // it one, rather than a factura with a minus sign.
     documentTitle: `${FACTURA_TITLES[factura.kind] ?? 'Factura'} ${factura.number}`,
     showTotalsBreakdown: false,
+    tax: {
+      baseCents: factura.tax_base_cents ?? factura.amount_cents,
+      rateBp: factura.tax_rate_bp ?? 0,
+      amountCents: factura.tax_amount_cents ?? 0,
+      exemptionClause: exemptionClause(factura.tax_exemption_code),
+    },
   }
 }

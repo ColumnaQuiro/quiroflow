@@ -37,6 +37,14 @@ export interface InvoiceDocumentData {
   // actively confusing.
   documentTitle?: string
   showTotalsBreakdown?: boolean
+  // The tax a factura was issued under. Absent on the visit document, which is
+  // a receipt rather than an invoice, so the block simply does not print.
+  //
+  // RD 1619/2012 requires an invoice to state the base imponible and the rate
+  // and cuota, or to cite the provision it is exempt under -- a line reading
+  // only "Total" satisfies neither. The same figures are what a VERI*FACTU
+  // registro de facturación carries.
+  tax?: { baseCents: number; rateBp: number; amountCents: number; exemptionClause: string | null } | null
 }
 
 // "123 Main St" + "28001 Madrid" + "Spain" on their own lines, skipping any
@@ -233,12 +241,33 @@ export function generateInvoicePdf(data: InvoiceDocumentData): Promise<Buffer> {
     let totalsY = y + 14
     doc.font('Helvetica').fontSize(10).fillColor('#555')
     if (data.showTotalsBreakdown === false) {
-      // A factura states one figure: what was paid.
+      // A factura states its base, then its tax, then the total. It used to
+      // print the total alone, which is not an invoice's job: the reader has
+      // to be able to see what was taxed and at what rate, or why it was not.
+      if (data.tax) {
+        doc.text(`Base imponible: €${(data.tax.baseCents / 100).toFixed(2)}`, col.price, totalsY, { width: 145, align: 'right' })
+        totalsY += 15
+        const taxLine = data.tax.exemptionClause
+          ? 'IVA: exenta'
+          : `IVA (${(data.tax.rateBp / 100).toFixed(0)}%): €${(data.tax.amountCents / 100).toFixed(2)}`
+        doc.text(taxLine, col.price, totalsY, { width: 145, align: 'right' })
+        totalsY += 18
+      }
       doc
         .font('Helvetica-Bold')
         .fontSize(11)
         .fillColor('#000')
         .text(`Total: €${(data.totalCents / 100).toFixed(2)}`, col.price, totalsY, { width: 145, align: 'right' })
+
+      // The clause goes on its own line on the left, where a reader looks for
+      // it, rather than squeezed into the totals column.
+      if (data.tax?.exemptionClause) {
+        doc
+          .font('Helvetica')
+          .fontSize(9)
+          .fillColor('#555')
+          .text(data.tax.exemptionClause, 50, totalsY + 2, { width: 300 })
+      }
     } else {
       doc.text(`Subtotal: €${(data.totalCents / 100).toFixed(2)}`, col.price, totalsY, { width: 145, align: 'right' })
       totalsY += 15

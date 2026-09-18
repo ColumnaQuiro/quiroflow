@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
+import { facturaTaxFor } from '~/utils/facturaTax'
 
 // The server-side twin of useFacturas(). Money can also arrive without anyone
 // at a screen -- a Stripe autopay instalment on a bono, a membership renewal --
@@ -42,6 +43,16 @@ export async function issueFacturaServer(
 
   const kind = input.purpose === 'bono' || input.purpose === 'membership' || input.amountCents > 40000 ? 'full' : 'simplified'
 
+  // The tax position is read at issue time and stored on the factura, not
+  // resolved when the PDF is rendered: it is a fact about the day the money
+  // changed hands. See utils/facturaTax.ts.
+  const { data: taxDefaults } = await supabase
+    .from('accounts')
+    .select('factura_tax_rate_bp, factura_tax_exemption_code')
+    .eq('id', input.accountId)
+    .maybeSingle()
+  const tax = facturaTaxFor(input.amountCents, taxDefaults)
+
   const { error } = await supabase.from('facturas').insert({
     account_id: input.accountId,
     patient_id: input.patientId,
@@ -50,6 +61,10 @@ export async function issueFacturaServer(
     kind,
     description,
     amount_cents: input.amountCents,
+    tax_base_cents: tax.taxBaseCents,
+    tax_rate_bp: tax.taxRateBp,
+    tax_amount_cents: tax.taxAmountCents,
+    tax_exemption_code: tax.taxExemptionCode,
   })
   if (error) return null
   return number

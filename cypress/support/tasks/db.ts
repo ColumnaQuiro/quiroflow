@@ -670,6 +670,29 @@ async function tryMutateFacturaRecord(opts: { id: string }) {
   }
 }
 
+/** What the chain verifier says about an account: one row per problem. */
+async function verifyFacturaChain(opts: { accountId: string }) {
+  const { data, error } = await admin.rpc('verify_factura_chain', { p_account_id: opts.accountId })
+  if (error) throw error
+  return data
+}
+
+/**
+ * Rebuilds an account's chain under a named formula version.
+ *
+ * A real production function, not a test hook -- it is how a chain built
+ * under a superseded huella formula is brought forward. Used here to put a
+ * chain into the state the verifier has to describe correctly.
+ */
+async function rebuildFacturaHuellas(opts: { accountId: string; specVersion: string }) {
+  const { data, error } = await admin.rpc('rebuild_factura_huellas', {
+    p_account_id: opts.accountId,
+    p_spec_version: opts.specVersion,
+  })
+  if (error) throw error
+  return data
+}
+
 async function nextFacturaNumber(opts: { accountId: string }) {
   const { data, error } = await admin.rpc('next_factura_number', { p_account_id: opts.accountId })
   if (error) throw error
@@ -1562,6 +1585,8 @@ export const dbTasks = {
   'db:createFacturaWithoutTax': createFacturaWithoutTax,
   'db:huellaFor': huellaFor,
   'db:facturaRecordsFor': facturaRecordsFor,
+  'db:verifyFacturaChain': verifyFacturaChain,
+  'db:rebuildFacturaHuellas': rebuildFacturaHuellas,
   'db:tryMutateFacturaRecord': tryMutateFacturaRecord,
   'db:nextFacturaNumber': nextFacturaNumber,
   'db:settleImportedInvoices': settleImportedInvoices,

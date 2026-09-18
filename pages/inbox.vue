@@ -105,6 +105,17 @@ async function load(opts: { silent?: boolean } = {}) {
     supabase
       .from('whatsapp_messages')
       .select('id, patient_id, phone_number, external_contact_id, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, channel, created_at')
+      // A lead's messages are already a row of their own at the top of this
+      // list, drawn from the same table by useGrowthConversations. Without
+      // this they ALSO group by phone number into a second, nameless
+      // conversation -- so every lead appeared twice, once as themselves and
+      // once as "Unknown", and the second copy sat in among the patients.
+      // 17 of the live account's rows were these ghosts.
+      //
+      // Keyed on patient_id rather than lead_id alone: once a lead converts,
+      // their messages carry both, and that thread is a real patient's
+      // history that has to stay.
+      .or('lead_id.is.null,patient_id.not.is.null')
       .order('created_at', { ascending: false })
       .limit(1000),
     supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at').order('created_at', { ascending: false }).limit(1000),
@@ -239,6 +250,14 @@ const {
 // endpoint, which is what gives both sides an owner.
 const aiFilter = ref<'all' | 'ai_handling' | 'needs_human' | 'draft_ready'>('all')
 
+// Leads sit above the patient threads in one list, which is the right call --
+// one person, one thread, and a lead who becomes a patient does not move.
+// But the front desk's question is usually "has a PATIENT written to us",
+// and on a busy lead day the answer is buried under people who are not
+// patients yet. This narrows the list to one side or the other; the badge on
+// each lead row is what answers the same question without touching a filter.
+const sourceFilter = ref<'all' | 'leads' | 'patients'>('all')
+
 // Growth > Conversations in the sidebar is a saved view into this inbox, not
 // a screen of its own -- it deep-links here with the filter already applied.
 // Read once on mount rather than watched: after landing, the chips are the
@@ -250,7 +269,11 @@ onMounted(() => {
   else if (q === 'needs_human') aiFilter.value = 'needs_human'
 })
 
-const visibleLeadConversations = computed(() => {
+// Everything except the leads/patients split, so the chip counts can be
+// read off this. Counting the visible list instead would make "Leads · 3"
+// become "Leads · 0" the moment you clicked "Patients", which reads as the
+// leads having gone somewhere.
+const leadConversationsInView = computed(() => {
   if (!hasGrowth.value || view.value === 'archived') return []
   let list = leadConversations.value
   if (search.value.trim()) {
@@ -264,6 +287,8 @@ const visibleLeadConversations = computed(() => {
   return list
 })
 
+const visibleLeadConversations = computed(() => (sourceFilter.value === 'patients' ? [] : leadConversationsInView.value))
+
 const aiHandlingCount = computed(() => leadConversations.value.filter((c) => c.aiState === 'handling').length)
 const needsHumanCount = computed(() => leadConversations.value.filter((c) => c.aiState === 'needs_human' || c.aiState === 'blocked').length)
 // Threads where a reply is written and waiting on a decision. This is the
@@ -271,6 +296,12 @@ const needsHumanCount = computed(() => leadConversations.value.filter((c) => c.a
 // unprompted are only found by opening threads one at a time, which is the
 // work drafting was meant to remove.
 const draftReadyCount = computed(() => leadConversations.value.filter((c) => c.hasDraft).length)
+
+// Unread rather than total. The split itself is visible in the list; what
+// the front desk is actually asking is "is anyone waiting on me", and
+// "Patients · 14" answers that with the fourteen threads nobody has to touch.
+const leadUnreadCount = computed(() => leadConversationsInView.value.filter((c) => c.unread).length)
+const patientUnreadCount = computed(() => patientConversationsInView.value.filter((c) => c.unread).length)
 
 // Resolved against the full list, never the filtered one -- exactly as
 // `selected` is for real conversations above. Reading it from
@@ -315,7 +346,7 @@ function leadRowTime(at: string) {
   return when.toLocaleString('en-GB', today ? { hour: '2-digit', minute: '2-digit' } : { day: 'numeric', month: 'short' })
 }
 
-const filteredConversations = computed(() => {
+const patientConversationsInView = computed(() => {
   let list = conversations.value.filter((c) => archivedKeys.value.has(c.key) === (view.value === 'archived'))
   if (search.value.trim()) {
     const q = normalizeSearchTerm(search.value.trim())
@@ -327,6 +358,13 @@ const filteredConversations = computed(() => {
   if (labelFilter.value) list = list.filter((c) => myLabelsByKey.value[c.key]?.includes(labelFilter.value!))
   return list
 })
+
+// Archived is a view of its own with no leads in it, so "Leads" there would
+// blank the list and show nothing in its place. The filter only bites where
+// there are two kinds of row to tell apart.
+const filteredConversations = computed(() =>
+  sourceFilter.value === 'leads' && hasGrowth.value && view.value !== 'archived' ? [] : patientConversationsInView.value,
+)
 
 // Bulk select: "Select" enters the mode, clicking rows checks them, then
 // mark-unread or delete applies to everything checked at once.
@@ -1075,6 +1113,30 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             </div>
           </div>
           <div v-if="!selectionMode" class="mt-2 flex flex-wrap items-center gap-1.5">
+            <!-- First in the row, and only where both kinds exist. This is
+            the split people are actually scanning for; every chip after it
+            narrows within whichever side is showing. -->
+            <template v-if="hasGrowth && view !== 'archived'">
+              <button
+                type="button"
+                class="flex h-7 items-center gap-1 rounded-pill border px-2.5 text-[12px] font-medium"
+                :class="sourceFilter === 'patients' ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted hover:bg-surface-subtle'"
+                data-test="filter-patients-only"
+                @click="sourceFilter = sourceFilter === 'patients' ? 'all' : 'patients'"
+              >
+                {{ t('Patients', 'Pacientes') }}<span v-if="patientUnreadCount > 0"> · {{ patientUnreadCount }}</span>
+              </button>
+              <button
+                type="button"
+                class="flex h-7 items-center gap-1 rounded-pill border px-2.5 text-[12px] font-medium"
+                :class="sourceFilter === 'leads' ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted hover:bg-surface-subtle'"
+                data-test="filter-leads-only"
+                @click="sourceFilter = sourceFilter === 'leads' ? 'all' : 'leads'"
+              >
+                {{ t('Leads', 'Leads') }}<span v-if="leadUnreadCount > 0"> · {{ leadUnreadCount }}</span>
+              </button>
+              <span class="mx-0.5 h-4 w-px bg-line-control" aria-hidden="true" />
+            </template>
             <button
               type="button"
               class="flex h-7 items-center gap-1 rounded-pill border px-2.5 text-[12px] font-medium"
@@ -1192,6 +1254,10 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
                 <span v-if="c.previewWasNotSent" class="font-medium text-warning-text">{{ t('Not sent ·', 'No enviado ·') }} </span>{{ c.preview }}
               </p>
               <div class="mt-1 flex flex-wrap items-center gap-1">
+                <!-- Leftmost, because the row truncates from the right and
+                this is the one badge that says what kind of row it is. The
+                channel beside it is "how they wrote in"; this is "who". -->
+                <span class="rounded-pill border border-info-border bg-info-bg px-1.5 py-px text-[10px] font-semibold text-info-text" data-test="lead-badge">{{ t('Lead', 'Lead') }}</span>
                 <span class="rounded-pill border border-chip-border bg-chip-bg px-1.5 py-px text-[10px] text-ink-muted">{{ CHANNEL_LABEL[c.channel] }}</span>
                 <span v-if="c.hasDraft" class="rounded-pill border border-brand-tintBorder bg-brand-tint px-1.5 py-px text-[10px] font-semibold text-brand-text" data-test="draft-ready-badge">{{ t('Draft ready', 'Borrador listo') }}</span>
                 <span v-if="c.aiState === 'handling'" class="rounded-pill bg-brand px-1.5 py-px text-[10px] font-semibold text-white">{{ t('AI handling', 'IA gestionando') }}</span>

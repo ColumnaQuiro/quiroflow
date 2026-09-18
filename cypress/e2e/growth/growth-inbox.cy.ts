@@ -363,4 +363,94 @@ describe('Growth in the shared Inbox', () => {
     cy.contains('[data-test="lead-row"]', 'Handled By Ai').should('be.visible')
     cy.contains('[data-test="lead-row"]', 'Taken Over').should('not.exist')
   })
+
+  // Leads sit above the patient threads in one list, which is the right
+  // call -- but on a day with a lead-ad campaign running, "has a PATIENT
+  // written to us" becomes a scrolling exercise. These two are the answer:
+  // a badge for reading, a chip for narrowing.
+  describe('telling leads and patients apart', () => {
+    function seedPatientConversation(firstName: string, lastName: string, body: string) {
+      return cy
+        .task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName, lastName })
+        .then((patient) => {
+          cy.task('db:createWhatsappMessage', {
+            accountId: account.accountId,
+            patientId: (patient as { id: string }).id,
+            direction: 'inbound',
+            bodyPreview: body,
+          })
+        })
+    }
+
+    // A lead's messages live in whatsapp_messages with a phone number and no
+    // patient_id, so they also grouped by phone into a second, nameless
+    // "Unknown" conversation among the patient threads. Every lead appeared
+    // twice. This is the half of the problem a filter cannot fix.
+    it('does not also list a lead as a nameless phone-number conversation', () => {
+      cy.visit('/inbox?growth=1')
+      seedConversation(account, 'Nuria Lead', 'handling')
+      cy.reload()
+
+      cy.contains('[data-test="lead-row"]', 'Nuria Lead').should('be.visible')
+      cy.contains('Unknown').should('not.exist')
+      // The phone the lead wrote from must not open a thread of its own.
+      cy.contains('+34622471903').should('not.exist')
+    })
+
+    it('badges the lead rows and leaves the patient rows alone', () => {
+      cy.visit('/inbox?growth=1')
+      seedConversation(account, 'Nuria Lead', 'handling')
+      seedPatientConversation('Real', 'Patient', 'Necesito cambiar mi cita')
+      cy.reload()
+
+      cy.contains('[data-test="lead-row"]', 'Nuria Lead').find('[data-test="lead-badge"]').should('be.visible')
+      // The badge is what makes the distinction readable without touching a
+      // filter, so a patient row carrying one would be worse than no badge.
+      cy.contains('Real Patient').should('be.visible')
+      cy.get('[data-test="lead-row"]').should('have.length', 1)
+    })
+
+    it('narrows to one side and back', () => {
+      cy.visit('/inbox?growth=1')
+      seedConversation(account, 'Nuria Lead', 'handling')
+      seedPatientConversation('Real', 'Patient', 'Necesito cambiar mi cita')
+      cy.reload()
+
+      cy.get('[data-test="filter-patients-only"]').click()
+      cy.contains('Real Patient').should('be.visible')
+      cy.get('[data-test="lead-row"]').should('not.exist')
+
+      cy.get('[data-test="filter-leads-only"]').click()
+      cy.contains('[data-test="lead-row"]', 'Nuria Lead').should('be.visible')
+      cy.contains('Real Patient').should('not.exist')
+
+      // Clicking the active chip clears it, the way every other chip here
+      // behaves -- otherwise there is no way back to both without a reload.
+      cy.get('[data-test="filter-leads-only"]').click()
+      cy.contains('[data-test="lead-row"]', 'Nuria Lead').should('be.visible')
+      cy.contains('Real Patient').should('be.visible')
+    })
+
+    it('opens a thread that the filter then hides, without closing it', () => {
+      cy.visit('/inbox?growth=1')
+      seedConversation(account, 'Nuria Lead', 'handling')
+      cy.reload()
+
+      cy.contains('[data-test="lead-row"]', 'Nuria Lead').click()
+      cy.get('[data-test="filter-patients-only"]').click()
+
+      // The row goes; the open conversation must not. Resolving the
+      // selection against the filtered list is what emptied the panel
+      // mid-reply when the AI chips were added.
+      cy.get('[data-test="lead-row"]').should('not.exist')
+      cy.get('[data-test="lead-thread"], [data-test="lead-thread-loading"]').should('exist')
+    })
+
+    it('offers no such chips to an account without the tier', () => {
+      cy.visit('/inbox?growth=0')
+
+      cy.get('[data-test="filter-patients-only"]').should('not.exist')
+      cy.get('[data-test="filter-leads-only"]').should('not.exist')
+    })
+  })
 })

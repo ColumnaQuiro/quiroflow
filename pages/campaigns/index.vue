@@ -235,6 +235,12 @@ function openCreate() {
   editingRuleId.value = null
   modalOpen.value = true
 }
+
+const templatePickerOpen = ref(false)
+async function onTemplatesCreated() {
+  templatePickerOpen.value = false
+  await load()
+}
 function openEdit(rule: Rule) {
   editingRuleId.value = rule.id
   modalOpen.value = true
@@ -350,6 +356,7 @@ async function sendNow(patient: PatientOption) {
           </svg>
         </button>
       </div>
+      <UiBtn variant="secondary" @click="templatePickerOpen = true">{{ t('Templates', 'Plantillas') }}</UiBtn>
       <UiBtn variant="secondary" @click="openSendNowPanel">{{ t('Send now', 'Enviar ahora') }}</UiBtn>
       <UiBtn variant="primary" @click="openCreate">{{ t('New campaign', 'Nueva campaña') }}</UiBtn>
     </PageHeader>
@@ -423,7 +430,10 @@ async function sendNow(patient: PatientOption) {
           </div>
         </div>
         <div v-else-if="rules.length === 0" class="rounded-card border border-line bg-surface p-10 text-center text-[13px] text-ink-faint">
-          {{ t('No campaigns yet. Create one to automate a WhatsApp, email, or webhook send.', 'Aún no hay campañas. Crea una para automatizar un envío por WhatsApp, correo electrónico o webhook.') }}
+          <p>{{ t('No campaigns yet. Create one to automate a WhatsApp, email, or webhook send.', 'Aún no hay campañas. Crea una para automatizar un envío por WhatsApp, correo electrónico o webhook.') }}</p>
+          <UiBtn variant="secondary" size="sm" class="mt-3" @click="templatePickerOpen = true">
+            {{ t('Start from a template', 'Empezar con plantillas') }}
+          </UiBtn>
         </div>
         <div v-else class="space-y-2.5">
           <div v-for="rule in rules" :key="rule.id" class="overflow-hidden rounded-card border border-line bg-surface shadow-card">
@@ -527,5 +537,6 @@ async function sendNow(patient: PatientOption) {
     </div>
 
     <CampaignsAutomationModal v-if="modalOpen" :rule-id="editingRuleId" @close="modalOpen = false" @saved="onSaved" />
+    <CampaignsTemplatePicker v-if="templatePickerOpen" @close="templatePickerOpen = false" @created="onTemplatesCreated" />
   </div>
 </template>

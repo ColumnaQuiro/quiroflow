@@ -643,6 +643,39 @@ async function huellaFor(opts: {
   return data
 }
 
+/**
+ * Asks the verifier about an account as somebody who should not be allowed to.
+ *
+ * `as: 'anon'` uses the anon key alone -- the key that ships in the client
+ * bundle. `as: 'outsider'` signs in as a real user of a DIFFERENT account,
+ * which is the case a permission check can pass by accident.
+ *
+ * Returns what happened rather than throwing, so the test can assert on the
+ * refusal instead of on a stack trace.
+ */
+async function verifyFacturaChainAs(opts: {
+  accountId: string
+  as: 'anon' | 'outsider'
+  email?: string
+  password?: string
+}) {
+  const client = createClient(SUPABASE_URL, ANON_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+
+  if (opts.as === 'outsider') {
+    const { error } = await client.auth.signInWithPassword({ email: opts.email!, password: opts.password! })
+    if (error) throw error
+  }
+
+  const { data, error } = await client.rpc('verify_factura_chain', { p_account_id: opts.accountId })
+  return {
+    refused: Boolean(error),
+    message: error?.message ?? null,
+    rows: data ?? null,
+  }
+}
+
 /** The registro de facturación chain for an account, oldest first. */
 async function facturaRecordsFor(opts: { accountId: string }) {
   const { data, error } = await admin
@@ -1586,6 +1619,7 @@ export const dbTasks = {
   'db:huellaFor': huellaFor,
   'db:facturaRecordsFor': facturaRecordsFor,
   'db:verifyFacturaChain': verifyFacturaChain,
+  'db:verifyFacturaChainAs': verifyFacturaChainAs,
   'db:rebuildFacturaHuellas': rebuildFacturaHuellas,
   'db:tryMutateFacturaRecord': tryMutateFacturaRecord,
   'db:nextFacturaNumber': nextFacturaNumber,

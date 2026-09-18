@@ -13,10 +13,14 @@
 // verified against the database directly (see the migration); a test that
 // needed a tampering backdoor would have to ship one.
 describe('Verifying the registro de facturación', () => {
+  // The Packages/bonos card renders skeletons until its own fetch lands, so
+  // the select does not exist for the first moment the tab is open. The
+  // default 4s is enough on an idle machine and not enough on a busy one --
+  // which is a flake in the test, not a slow page.
   const sellBono = (name: string, label: string) => {
-    cy.contains('select', 'Sell a package').should('exist').select(label)
+    cy.contains('select', 'Sell a package', { timeout: 30000 }).should('exist').select(label)
     cy.contains('button', /^Sell$/).click()
-    cy.contains('button', 'Selling…').should('not.exist')
+    cy.contains('button', 'Selling…', { timeout: 30000 }).should('not.exist')
     return cy.wrap(name, { log: false })
   }
 
@@ -115,6 +119,50 @@ describe('Verifying the registro de facturación', () => {
       fields.forEach(([what, change]) => {
         cy.task('db:huellaFor', { ...base, ...change }).then((altered: any) => {
           expect(altered.huella, `${what} is covered by the huella`).to.not.eq(original.huella)
+        })
+      })
+    })
+  })
+  it('will not tell an outsider, or the anon key, anything about a chain', () => {
+    // verify_factura_chain is security definer: it reads whatever account_id
+    // it is handed, so the account is the only thing standing between a
+    // caller and another clinic's serie numbers.
+    //
+    // The guard first asked whether there was a user (auth.uid()), reasoning
+    // that a caller without one must be a cron or an operator. An anonymous
+    // PostgREST request has no user either, so it was waved through -- with
+    // the anon key, which ships in the client bundle.
+    cy.seedStaffAccount().then((owner) => {
+      cy.task('db:createPatient', { accountId: owner.accountId, clinicId: owner.clinicId, firstName: 'Ajena', lastName: 'Tres' }).then((patient: any) => {
+        cy.task('db:createPackageTemplate', { accountId: owner.accountId, name: 'Bono V4', sessionCount: 4, priceCents: 22000 })
+
+        cy.login(owner.email, owner.password)
+        cy.visit(`/patients/${patient.id}?tab=billing`)
+        sellBono('one', 'Bono V4 (4, €220.00)')
+
+        // Nothing but the anon key.
+        cy.task('db:verifyFacturaChainAs', { accountId: owner.accountId, as: 'anon' }).then((result: any) => {
+          expect(result.refused, `anon was allowed to ask: ${JSON.stringify(result.rows)}`).to.be.true
+        })
+
+        // A real, signed-in user -- of somebody else's clinic. The case a
+        // permission check passes by accident, because the caller looks
+        // entirely legitimate.
+        cy.seedStaffAccount().then((stranger) => {
+          cy.task('db:verifyFacturaChainAs', {
+            accountId: owner.accountId,
+            as: 'outsider',
+            email: stranger.email,
+            password: stranger.password,
+          }).then((result: any) => {
+            expect(result.refused, `an outsider read the chain: ${JSON.stringify(result.rows)}`).to.be.true
+          })
+
+          // And their own account answers normally, so the refusal is about
+          // the account rather than the function being broken for everyone.
+          cy.task('db:verifyFacturaChain', { accountId: stranger.accountId }).then((problems: any) => {
+            expect(problems).to.deep.eq([])
+          })
         })
       })
     })

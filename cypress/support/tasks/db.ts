@@ -572,6 +572,39 @@ async function facturasFor(opts: { patientId: string }) {
   return data
 }
 
+/**
+ * Inserts a factura the way the PREVIOUS release did: no tax columns at all.
+ *
+ * Exists to prove the database fills them in. Without that, applying the tax
+ * migration before deploying the code would make every factura insert violate
+ * a NOT NULL constraint, and useFacturas() swallows errors, so facturas would
+ * stop being issued silently.
+ */
+async function createFacturaWithoutTax(opts: {
+  accountId: string
+  patientId: string
+  paymentId: string
+  number: string
+  description: string
+  amountCents: number
+}) {
+  const { data, error } = await admin
+    .from('facturas')
+    .insert({
+      account_id: opts.accountId,
+      patient_id: opts.patientId,
+      payment_id: opts.paymentId,
+      number: opts.number,
+      kind: 'simplified',
+      description: opts.description,
+      amount_cents: opts.amountCents,
+    } as never)
+    .select('id, amount_cents, tax_base_cents, tax_rate_bp, tax_amount_cents, tax_exemption_code')
+    .single()
+  if (error) throw error
+  return data
+}
+
 /** The registro de facturación chain for an account, oldest first. */
 async function facturaRecordsFor(opts: { accountId: string }) {
   const { data, error } = await admin
@@ -1487,6 +1520,7 @@ export const dbTasks = {
   'db:setPatientNif': setPatientNif,
   'db:createAccountCredit': createAccountCredit,
   'db:facturasFor': facturasFor,
+  'db:createFacturaWithoutTax': createFacturaWithoutTax,
   'db:facturaRecordsFor': facturaRecordsFor,
   'db:tryMutateFacturaRecord': tryMutateFacturaRecord,
   'db:nextFacturaNumber': nextFacturaNumber,

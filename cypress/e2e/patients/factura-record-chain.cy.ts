@@ -50,9 +50,11 @@ describe('The registro de facturación', () => {
           // Exempt, so no cuota reaches the record either.
           expect(first.cuota_total_cents).to.eq(0)
 
-          // Which formula produced this row, so a chain built under a draft
-          // can be found and rebuilt once the spec is confirmed.
-          expect(first.huella_spec_version).to.eq('draft-2026-09-unverified')
+          // Which formula produced this row, so a chain built under a
+          // superseded one can be found and rebuilt. It has to name the
+          // formula that actually ran: new records once went on claiming the
+          // draft after the draft had been replaced.
+          expect(first.huella_spec_version).to.eq('aeat-0.1.2')
         })
       })
     })

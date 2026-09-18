@@ -134,6 +134,63 @@ const templateStats = ref<Record<string, TemplateStat>>({})
 // as fact rather than as "not visible to you".
 const canReadMessageStats = computed(() => can('inbox_access'))
 
+// Email delivery, per campaign, for the same 30-day window as the WhatsApp
+// figures beside it. Counted from email_messages -- one row per email, folded
+// forward by the Resend webhook -- rather than from rule firings, which count
+// attempts: a campaign whose every message bounced used to look exactly like
+// one that landed.
+interface EmailStats { sent: number; delivered: number; opened: number; clicked: number; bounced: number; failed: number }
+const emailStatsByRule = ref<Record<string, EmailStats>>({})
+const emailTotals = ref<EmailStats>({ sent: 0, delivered: 0, opened: 0, clicked: 0, bounced: 0, failed: 0 })
+
+async function loadEmailStats() {
+  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+  const rows = await fetchAllRows<{
+    rule_id: string | null
+    delivered_at: string | null
+    first_opened_at: string | null
+    first_clicked_at: string | null
+    bounced_at: string | null
+    failed_at: string | null
+  }>((from, to) =>
+    supabase
+      .from('email_messages')
+      .select('rule_id, delivered_at, first_opened_at, first_clicked_at, bounced_at, failed_at')
+      .gte('sent_at', since)
+      .range(from, to),
+  )
+
+  const blank = (): EmailStats => ({ sent: 0, delivered: 0, opened: 0, clicked: 0, bounced: 0, failed: 0 })
+  const byRule: Record<string, EmailStats> = {}
+  const totals = blank()
+  for (const row of rows) {
+    // Opens and clicks are counted on FIRST-seen, not on the tally: the
+    // question is how many patients read it, not how many times it was opened
+    // on the bus.
+    const bump = (s: EmailStats) => {
+      s.sent++
+      if (row.delivered_at) s.delivered++
+      if (row.first_opened_at) s.opened++
+      if (row.first_clicked_at) s.clicked++
+      if (row.bounced_at) s.bounced++
+      if (row.failed_at) s.failed++
+    }
+    bump(totals)
+    // A send with no rule is a one-off -- a test, an invoice, a document link.
+    // It belongs in the totals but under no campaign.
+    if (row.rule_id) bump((byRule[row.rule_id] ??= blank()))
+  }
+  emailStatsByRule.value = byRule
+  emailTotals.value = totals
+}
+
+function pct(part: number, whole: number): string {
+  // Of what was DELIVERED, not of what was sent: an open rate diluted by
+  // messages that never arrived measures the address list, not the email.
+  if (!whole) return '—'
+  return `${Math.round((part / whole) * 100)}%`
+}
+
 async function loadStats() {
   if (!canReadMessageStats.value) return
   const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
@@ -172,6 +229,7 @@ async function loadStats() {
 onMounted(() => {
   load()
   loadStats()
+  loadEmailStats()
 })
 
 function ruleWhatsappTemplateNames(rule: Rule): string[] {
@@ -247,7 +305,7 @@ function openEdit(rule: Rule) {
 }
 async function onSaved() {
   modalOpen.value = false
-  await Promise.all([load(), loadStats()])
+  await Promise.all([load(), loadStats(), loadEmailStats()])
 }
 
 async function toggleEnabled(rule: Rule) {
@@ -416,6 +474,31 @@ async function sendNow(patient: PatientOption) {
           <p class="text-[11.5px] font-medium text-ink-muted2">{{ t('Replies', 'Respuestas') }}</p>
           <p class="mt-1.5 font-mono text-[22px] font-semibold text-ink-900">{{ globalStats.replies }}</p>
         </div>
+        <!-- Email, 30 days. Percentages are of DELIVERED rather than of sent:
+             an open rate diluted by messages that never arrived describes the
+             address list, not the email. -->
+        <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+          <p class="text-[11.5px] font-medium text-ink-muted2">{{ t('Emails sent 30 d', 'Correos enviados 30 d') }}</p>
+          <p class="mt-1.5 font-mono text-[22px] font-semibold text-ink-900" data-test="email-sent">{{ emailTotals.sent }}</p>
+        </div>
+        <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+          <p class="text-[11.5px] font-medium text-ink-muted2">{{ t('Opened', 'Abiertos') }}</p>
+          <p class="mt-1.5 font-mono text-[22px] font-semibold text-ink-900" data-test="email-opened">{{ pct(emailTotals.opened, emailTotals.delivered) }}</p>
+        </div>
+        <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+          <p class="text-[11.5px] font-medium text-ink-muted2">{{ t('Clicked', 'Clics') }}</p>
+          <p class="mt-1.5 font-mono text-[22px] font-semibold text-ink-900" data-test="email-clicked">{{ pct(emailTotals.clicked, emailTotals.delivered) }}</p>
+        </div>
+        <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+          <p class="text-[11.5px] font-medium text-ink-muted2">{{ t('Bounced / failed', 'Rebotados / fallidos') }}</p>
+          <p
+            class="mt-1.5 font-mono text-[22px] font-semibold"
+            :class="emailTotals.bounced + emailTotals.failed > 0 ? 'text-danger-text' : 'text-ink-900'"
+            data-test="email-bounced"
+          >
+            {{ emailTotals.bounced + emailTotals.failed }}
+          </p>
+        </div>
         <div class="rounded-card border border-line bg-surface p-4 shadow-card">
           <p class="text-[11.5px] font-medium text-ink-muted2">{{ t('Failed', 'Fallidos') }}</p>
           <p class="mt-1.5 font-mono text-[22px] font-semibold text-ink-900">{{ globalStats.failed }}</p>
@@ -488,6 +571,46 @@ async function sendNow(patient: PatientOption) {
 
             <div v-if="expandedId === rule.id" class="border-t border-line-divider bg-surface-subtle2 px-4 py-4">
               <div class="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_2fr_180px]">
+                <div v-if="emailStatsByRule[rule.id]" class="rounded-card border border-line bg-surface p-3 lg:col-span-3" data-test="rule-email-stats">
+                  <h3 class="text-[12px] font-semibold text-ink-700">{{ t('Email, last 30 days', 'Correo, últimos 30 días') }}</h3>
+                  <div class="mt-2 flex flex-wrap gap-x-8 gap-y-2">
+                    <div>
+                      <p class="text-[11px] text-ink-muted2">{{ t('Sent', 'Enviados') }}</p>
+                      <p class="font-mono text-[15px] font-medium text-ink-900">{{ emailStatsByRule[rule.id]!.sent }}</p>
+                    </div>
+                    <div>
+                      <p class="text-[11px] text-ink-muted2">{{ t('Delivered', 'Entregados') }}</p>
+                      <p class="font-mono text-[15px] font-medium text-ink-900">{{ emailStatsByRule[rule.id]!.delivered }}</p>
+                    </div>
+                    <div>
+                      <p class="text-[11px] text-ink-muted2">{{ t('Opened', 'Abiertos') }}</p>
+                      <p class="font-mono text-[15px] font-medium text-ink-900">
+                        {{ emailStatsByRule[rule.id]!.opened }}
+                        <span class="text-[11.5px] text-ink-muted2">{{ pct(emailStatsByRule[rule.id]!.opened, emailStatsByRule[rule.id]!.delivered) }}</span>
+                      </p>
+                    </div>
+                    <div>
+                      <p class="text-[11px] text-ink-muted2">{{ t('Clicked', 'Clics') }}</p>
+                      <p class="font-mono text-[15px] font-medium text-ink-900">
+                        {{ emailStatsByRule[rule.id]!.clicked }}
+                        <span class="text-[11.5px] text-ink-muted2">{{ pct(emailStatsByRule[rule.id]!.clicked, emailStatsByRule[rule.id]!.delivered) }}</span>
+                      </p>
+                    </div>
+                    <div>
+                      <p class="text-[11px] text-ink-muted2">{{ t('Bounced', 'Rebotados') }}</p>
+                      <p class="font-mono text-[15px] font-medium" :class="emailStatsByRule[rule.id]!.bounced > 0 ? 'text-danger-text' : 'text-ink-900'">
+                        {{ emailStatsByRule[rule.id]!.bounced }}
+                      </p>
+                    </div>
+                    <div>
+                      <p class="text-[11px] text-ink-muted2">{{ t('Failed', 'Fallidos') }}</p>
+                      <p class="font-mono text-[15px] font-medium" :class="emailStatsByRule[rule.id]!.failed > 0 ? 'text-danger-text' : 'text-ink-900'">
+                        {{ emailStatsByRule[rule.id]!.failed }}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
                 <div class="rounded-card border border-line bg-surface p-3">
                   <h3 class="text-[12px] font-semibold text-ink-700">{{ t('Trigger', 'Disparador') }}</h3>
                   <p class="mt-1.5 text-[12.5px] font-medium text-ink-800">{{ triggerLabel(rule.trigger_event) }}</p>

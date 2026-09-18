@@ -1435,6 +1435,8 @@ async function setGoogleReviewUrl(opts: { accountId: string; url: string | null 
 async function createAutomationRule(opts: {
   accountId: string
   triggerEvent: string
+  /** Defaults to the old hardcoded value, for the sequence specs that predate this. */
+  name?: string
   isMarketing?: boolean
   enabled?: boolean
   dryRun?: boolean
@@ -1445,7 +1447,7 @@ async function createAutomationRule(opts: {
       .from('automation_rules')
       .insert({
         account_id: opts.accountId,
-        name: 'cypress sequence',
+        name: opts.name ?? 'cypress sequence',
         trigger_event: opts.triggerEvent,
         enabled: opts.enabled ?? true,
         is_marketing: opts.isMarketing ?? false,
@@ -1492,6 +1494,81 @@ async function reviewRequestsFor(opts: { accountId: string }) {
 // other nine had created alongside the 2 under test -- and passed locally,
 // where the spec ran alone against a fresh reset. Taking only the newest row
 // is what hides that in latestAutomationActions; counting rows cannot.
+// --- Email delivery metrics ------------------------------------------------
+
+/**
+ * A sent email in whatever delivery state the spec needs.
+ *
+ * Seeded rather than sent, because the alternative is a real Resend call: the
+ * key is send-only, the account is the clinic's own, and a test that emails
+ * somebody every time it runs is not a test.
+ */
+async function seedEmailMessage(opts: {
+  providerMessageId: string
+  accountId?: string
+  ruleId?: string
+  delivered?: boolean
+  openCount?: number
+  clicked?: boolean
+  bounced?: boolean
+  failed?: boolean
+}) {
+  let accountId = opts.accountId
+  if (!accountId) {
+    const acc = unwrap(await admin.from('accounts').select('id').order('created_at').limit(1).single())
+    accountId = (acc as { id: string }).id
+  }
+  const now = new Date().toISOString()
+  const row = unwrap(
+    await admin
+      .from('email_messages')
+      .insert({
+        account_id: accountId,
+        provider_message_id: opts.providerMessageId,
+        rule_id: opts.ruleId ?? null,
+        recipient_email: `seed-${Date.now()}@example.test`,
+        subject: 'Seeded',
+        delivered_at: opts.delivered || opts.openCount || opts.clicked ? now : null,
+        first_opened_at: opts.openCount ? now : null,
+        open_count: opts.openCount ?? 0,
+        first_clicked_at: opts.clicked ? now : null,
+        click_count: opts.clicked ? 1 : 0,
+        bounced_at: opts.bounced ? now : null,
+        failed_at: opts.failed ? now : null,
+      })
+      .select('id, provider_message_id')
+      .single(),
+  )
+  return row as { id: string; provider_message_id: string }
+}
+
+async function emailMessage(opts: { providerMessageId: string }) {
+  const { data, error } = await admin
+    .from('email_messages')
+    .select('provider_message_id, delivered_at, first_opened_at, open_count, first_clicked_at, click_count, bounced_at, failed_at')
+    .eq('provider_message_id', opts.providerMessageId)
+    .maybeSingle()
+  if (error) throw error
+  return data
+}
+
+/**
+ * Svix headers for a body, so a spec can post a genuinely signed event.
+ *
+ * The secret defaults to the one the dev server runs with. Signing here rather
+ * than in the spec keeps the scheme in one place -- and a spec that computed
+ * its own digest would pass against a verifier that checked nothing.
+ */
+async function signResendWebhook(opts: { body: string; secret?: string }) {
+  const { createHmac } = await import('node:crypto')
+  const secret = opts.secret ?? process.env.CYPRESS_RESEND_WEBHOOK_SECRET ?? process.env.NUXT_RESEND_WEBHOOK_SECRET ?? 'whsec_dGVzdC1zZWNyZXQtZm9yLWN5cHJlc3M='
+  const id = `msg_${Date.now()}`
+  const timestamp = String(Math.floor(Date.now() / 1000))
+  const key = Buffer.from(secret.replace(/^whsec_/, ''), 'base64')
+  const signature = createHmac('sha256', key).update(`${id}.${timestamp}.${opts.body}`).digest('base64')
+  return { 'svix-id': id, 'svix-timestamp': timestamp, 'svix-signature': `v1,${signature}` }
+}
+
 async function latestAutomationRules(opts: { accountId: string }) {
   const { data: rules } = await admin
     .from('automation_rules')
@@ -1510,8 +1587,19 @@ async function latestAutomationRules(opts: { accountId: string }) {
   return out
 }
 
-async function latestAutomationActions() {
-  const { data: rule } = await admin.from('automation_rules').select('id').order('created_at', { ascending: false }).limit(1).maybeSingle()
+// accountId is required for the same reason it is on latestAutomationRules:
+// CI runs eleven growth specs against one database, so "the newest rule" is
+// only this spec's rule by luck of ordering. It held until a shard run under
+// load returned a neighbouring spec's rule instead, and the failure read as
+// "the delay was not saved" -- which it had been.
+async function latestAutomationActions(opts: { accountId: string }) {
+  const { data: rule } = await admin
+    .from('automation_rules')
+    .select('id')
+    .eq('account_id', opts.accountId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
   if (!rule) return []
   const { data } = await admin
     .from('automation_actions')
@@ -1663,10 +1751,13 @@ export const dbTasks = {
   'db:setInstagramAccount': setInstagramAccount,
   'db:messagesOnChannel': messagesOnChannel,
   'db:setChannelSpend': setChannelSpend,
-  'db:createAutomationRule': createAutomationRule,
   'db:reviewRequestsFor': reviewRequestsFor,
   'db:latestAutomationActions': latestAutomationActions,
   'db:latestAutomationRules': latestAutomationRules,
+  'db:seedEmailMessage': seedEmailMessage,
+  'db:emailMessage': emailMessage,
+  'db:signResendWebhook': signResendWebhook,
+  'db:createAutomationRule': createAutomationRule,
   'db:leadMessages': leadMessages,
   'db:setLeadDraftedThrough': setLeadDraftedThrough,
   'db:setReceptionistEnabled': setReceptionistEnabled,

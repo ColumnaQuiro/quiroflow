@@ -36,7 +36,7 @@ describe('Campaign templates', () => {
       // The ones left unticked were not created.
       cy.contains('Birthday (active patient)').should('not.exist')
 
-      cy.task('db:latestAutomationRules').then((rows: any) => {
+      cy.task('db:latestAutomationRules', { accountId: account.accountId }).then((rows: any) => {
         expect(rows, 'only the two chosen').to.have.length(2)
         for (const rule of rows) {
           expect(rule.enabled, `${rule.name} arrives switched off`).to.eq(false)

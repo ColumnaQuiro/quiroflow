@@ -1965,6 +1965,104 @@ export type Database = {
           },
         ]
       }
+      email_messages: {
+        Row: {
+          account_id: string
+          bounce_kind: string | null
+          bounced_at: string | null
+          click_count: number
+          complained_at: string | null
+          delivered_at: string | null
+          failed_at: string | null
+          failure_reason: string | null
+          first_clicked_at: string | null
+          first_opened_at: string | null
+          id: string
+          last_event_at: string | null
+          lead_id: string | null
+          open_count: number
+          patient_id: string | null
+          provider_message_id: string
+          recipient_email: string
+          rule_id: string | null
+          sent_at: string
+          subject: string | null
+        }
+        Insert: {
+          account_id: string
+          bounce_kind?: string | null
+          bounced_at?: string | null
+          click_count?: number
+          complained_at?: string | null
+          delivered_at?: string | null
+          failed_at?: string | null
+          failure_reason?: string | null
+          first_clicked_at?: string | null
+          first_opened_at?: string | null
+          id?: string
+          last_event_at?: string | null
+          lead_id?: string | null
+          open_count?: number
+          patient_id?: string | null
+          provider_message_id: string
+          recipient_email: string
+          rule_id?: string | null
+          sent_at?: string
+          subject?: string | null
+        }
+        Update: {
+          account_id?: string
+          bounce_kind?: string | null
+          bounced_at?: string | null
+          click_count?: number
+          complained_at?: string | null
+          delivered_at?: string | null
+          failed_at?: string | null
+          failure_reason?: string | null
+          first_clicked_at?: string | null
+          first_opened_at?: string | null
+          id?: string
+          last_event_at?: string | null
+          lead_id?: string | null
+          open_count?: number
+          patient_id?: string | null
+          provider_message_id?: string
+          recipient_email?: string
+          rule_id?: string | null
+          sent_at?: string
+          subject?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_messages_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_messages_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "automation_rules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_messages_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_messages_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       facturas: {
         Row: {
           account_id: string
@@ -5542,6 +5640,15 @@ export type Database = {
       get_my_permissions: { Args: { target_account_id: string }; Returns: Json }
       get_patient_booking_info: { Args: never; Returns: Json }
       cancel_patient_appointment: { Args: { p_appointment_id: string }; Returns: Json }
+      record_email_event: {
+        Args: {
+          p_provider_message_id: string
+          p_event: string
+          p_occurred_at: string
+          p_detail?: string | null
+        }
+        Returns: boolean
+      }
       next_factura_number: { Args: { p_account_id: string; p_series?: string }; Returns: string }
       next_invoice_number: {
         Args: { p_account_id: string; p_prefix?: string }

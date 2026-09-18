@@ -136,7 +136,7 @@ export async function runRuleActions(
     supabase.from('automation_actions').select('id, action_type, config').eq('rule_id', ruleId).order('position'),
   ])
 
-  await runActionsList(supabase, accountId, (actions ?? []) as ActionRow[], patient, origin, rule?.is_marketing ?? false, appointmentId, triggerBody, undefined, extraContext, rule?.dry_run ?? false)
+  await runActionsList(supabase, accountId, (actions ?? []) as ActionRow[], patient, origin, rule?.is_marketing ?? false, appointmentId, triggerBody, undefined, extraContext, rule?.dry_run ?? false, ruleId)
 }
 
 // Split out from runRuleActions so a caller that already has an in-memory
@@ -164,8 +164,12 @@ export async function runActionsList(
   // those two keys.
   extraContext?: Partial<MergeContext>,
   dryRun = false,
+  // Set by runRuleActions, which knows the campaign. Left undefined by the
+  // editor's "send test to me" -- counting a staff member's own test open
+  // against the campaign would flatter every metric on the page.
+  ruleId?: string,
 ) {
-  return runForRecipient(supabase, accountId, actions, patientRecipient(patient), origin, isMarketing, appointmentId, triggerBody, whatsappOverrideNumber, extraContext, dryRun)
+  return runForRecipient(supabase, accountId, actions, patientRecipient(patient), origin, isMarketing, appointmentId, triggerBody, whatsappOverrideNumber, extraContext, dryRun, ruleId)
 }
 
 /**
@@ -206,6 +210,7 @@ export async function runLeadRuleActions(
     undefined,
     extraContext,
     rule?.dry_run ?? false,
+    ruleId,
   )
 }
 
@@ -221,6 +226,10 @@ async function runForRecipient(
   whatsappOverrideNumber?: string,
   extraContext?: Partial<MergeContext>,
   dryRun = false,
+  // Which campaign this firing belongs to, so a sent email can be counted
+  // against it later. Undefined for a test send and for the one-off sends that
+  // are not a campaign.
+  ruleId?: string,
 ) {
   const canContact = recipient.canContact
   // Marketing rules (birthday campaigns, a lead welcome drip, or any rule
@@ -274,7 +283,9 @@ async function runForRecipient(
         if (canContact && channelAllowed('whatsapp')) await runWhatsAppAction(supabase, accountId, recipient, action.config, origin, appointmentId, whatsappOverrideNumber, context, dryRun)
         else problems.push(skipped('WhatsApp'))
       } else if (action.action_type === 'email') {
-        if (canContact && channelAllowed('email')) await runEmailAction(recipient, action.config, context)
+        if (canContact && channelAllowed('email')) {
+          await runEmailAction(recipient, action.config, context, { supabase, accountId, ruleId })
+        }
         else problems.push(skipped('Email'))
       } else if (action.action_type === 'webhook') {
         await runWebhookAction(action.config, triggerBody ?? { triggerEvent: 'manual', patientId: recipient.id, appointmentId })
@@ -716,7 +727,19 @@ function styleLinks(html: string) {
   return html.replace(/<a\b(?![^>]*\sstyle=)/gi, '<a style="color:#4F46E5;text-decoration:underline;"')
 }
 
-async function runEmailAction(recipient: Recipient, config: Record<string, any>, context?: MergeContext) {
+/**
+ * `record` is how the send becomes measurable: Resend returns an id, and that
+ * id is the only thing its delivery webhook carries that can find its way back
+ * to a campaign. Optional, because one caller has no business recording
+ * anything -- a "send test to me" would otherwise put the staff member's own
+ * open into the campaign's open rate.
+ */
+async function runEmailAction(
+  recipient: Recipient,
+  config: Record<string, any>,
+  context?: MergeContext,
+  record?: { supabase: any; accountId: string; ruleId?: string },
+) {
   const subject: string | undefined = config.subject
   const rawBody: string | undefined = config.body
   // These used to be silent returns. Every one of them is a reason an email
@@ -756,12 +779,30 @@ async function runEmailAction(recipient: Recipient, config: Record<string, any>,
   // on the suppression list -- and each one used to end as a no-op with a
   // green tick on it. The caller decides what to do with the failure; a real
   // automated send still swallows it so one bad address can't halt a rule.
+  const mergedSubject = mergePlain(subject)
   try {
-    await $fetch('https://api.resend.com/emails', {
+    const sent = await $fetch<{ id?: string }>('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${runtimeConfig.resendApiKey}`, 'Content-Type': 'application/json' },
-      body: { from: 'QuiroFlow <notifications@quiroflow.com>', to: recipient.email, subject: mergePlain(subject), html },
+      body: { from: 'QuiroFlow <notifications@quiroflow.com>', to: recipient.email, subject: mergedSubject, html },
     })
+
+    // Best-effort, and deliberately after the send rather than around it: the
+    // email has already gone by this point, and failing the action over a
+    // bookkeeping row would make the caller believe it never sent and, on a
+    // retry, send it twice.
+    if (record && sent?.id) {
+      const { error } = await record.supabase.from('email_messages').insert({
+        account_id: record.accountId,
+        provider_message_id: sent.id,
+        rule_id: record.ruleId ?? null,
+        patient_id: recipient.kind === 'patient' ? recipient.id : null,
+        lead_id: recipient.kind === 'lead' ? recipient.id : null,
+        recipient_email: recipient.email,
+        subject: mergedSubject,
+      })
+      if (error) console.error(`[automations] could not record email ${sent.id}: ${error.message}`)
+    }
   } catch (e: any) {
     // Resend answers a refusal with {name, message} in the body; the HTTP
     // status alone ("422") says nothing a person can act on.

@@ -3730,6 +3730,8 @@ export type Database = {
           created_at: string
           id: string
           is_active: boolean
+          is_system: boolean
+          key: string
           name: string
           sort_order: number
         }
@@ -3738,6 +3740,8 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          is_system?: boolean
+          key: string
           name: string
           sort_order?: number
         }
@@ -3746,6 +3750,8 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          is_system?: boolean
+          key?: string
           name?: string
           sort_order?: number
         }

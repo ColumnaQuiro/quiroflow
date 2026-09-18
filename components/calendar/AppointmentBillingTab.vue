@@ -44,7 +44,8 @@ const appointmentIsUpcoming = ref(true)
 // Billing tab already uses for "Apply credit" (BillingTab.vue). Rows can
 // split one payment across methods (part cash, part card) -- see
 // useSplitPayment.
-const { rows: paymentRows, reset: resetPaymentRows, addRow: addPaymentRow, removeRow: removePaymentRow, centsOf: paymentRowCents, totalCents: paymentTotalCents, creditCents: paymentCreditCents } = useSplitPayment()
+const { methods: paymentMethods, ensureLoaded: ensurePaymentMethodsLoaded, defaultMethod } = usePaymentMethods()
+const { rows: paymentRows, reset: resetPaymentRows, addRow: addPaymentRow, removeRow: removePaymentRow, centsOf: paymentRowCents, totalCents: paymentTotalCents, creditCents: paymentCreditCents } = useSplitPayment('cash', computed(() => paymentMethods.value.map((m) => m.key)))
 const savingPayment = ref(false)
 const error = ref('')
 
@@ -220,6 +221,8 @@ async function loadInvoice() {
 }
 
 onMounted(async () => {
+  await ensurePaymentMethodsLoaded()
+  for (const row of paymentRows.value) if (row.method !== 'credit') row.method = defaultMethod.value
   const { data: svc } = await supabase.from('services_products').select('id, name, price_cents').order('name')
   services.value = svc ?? []
   await loadAppointmentTiming()
@@ -751,8 +754,7 @@ async function recordPayment() {
           <div>
             <label class="block text-xs font-medium text-ink-700">{{ t('Method', 'Método') }}</label>
             <select v-model="row.method" class="mt-1 rounded-ctl border border-line-control bg-surface px-2 py-1.5 text-sm text-ink-700 focus:border-brand focus:outline-none">
-              <option value="cash">{{ t('Cash', 'Efectivo') }}</option>
-              <option value="card">{{ t('Card', 'Tarjeta') }}</option>
+              <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
               <option v-if="creditLedgerCents > 0" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} (€{{ (creditLedgerCents / 100).toFixed(2) }} {{ t('available', 'disponible') }})</option>
             </select>
           </div>

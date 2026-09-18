@@ -71,6 +71,7 @@ const t = useT()
 
 const { balanceCents, creditLedgerCents, refresh: refreshCreditSummary } = usePatientFinancialSummary(() => props.patientId)
 const { issueFactura, issueRectificativa } = useFacturas()
+const { methods: paymentMethods, ensureLoaded: ensurePaymentMethodsLoaded, defaultMethod } = usePaymentMethods()
 
 // The documents the patient has actually been given, as opposed to the charges
 // that drive their balance. Kept as its own list rather than mixed into the
@@ -130,7 +131,7 @@ const facturasMissingNif = computed(() =>
 const { packageTemplates, membershipTemplates, ensureLoaded: ensureBillingTemplatesLoaded } = useBillingTemplates()
 const addCreditAmount = ref('')
 const addCreditReason = ref('')
-const addCreditMethod = ref<'card' | 'cash'>('cash')
+const addCreditMethod = ref<string>('cash')
 const addingCredit = ref(false)
 const applyCreditInvoiceId = ref('')
 const applyCreditAmount = ref('')
@@ -236,7 +237,7 @@ async function applyCreditToInvoice() {
 const paymentInvoiceId = ref('')
 const takingPayment = ref(false)
 const paymentError = ref('')
-const { rows: paymentRows, reset: resetPaymentRows, addRow: addPaymentRow, removeRow: removePaymentRow, centsOf: paymentRowCents, totalCents: paymentTotalCents, creditCents: paymentCreditCents } = useSplitPayment()
+const { rows: paymentRows, reset: resetPaymentRows, addRow: addPaymentRow, removeRow: removePaymentRow, centsOf: paymentRowCents, totalCents: paymentTotalCents, creditCents: paymentCreditCents } = useSplitPayment('cash', computed(() => paymentMethods.value.map((m) => m.key)))
 
 function openTakePayment() {
   activePanel.value = 'payment'
@@ -394,14 +395,14 @@ const membershipsLoading = ref(true)
 const purchases = ref<PackagePurchaseRow[]>([])
 const sellPackageId = ref('')
 const sellAmountPaid = ref('')
-const sellMethod = ref<'cash' | 'card' | 'credit'>('cash')
+const sellMethod = ref<string>('cash')
 const sellingPackage = ref(false)
 
 const patientMemberships = ref<PatientMembershipRow[]>([])
 const membershipPayments = ref<MembershipPaymentRow[]>([])
 const activateMembershipId = ref('')
 const activateAmountPaid = ref('')
-const activateMethod = ref<'cash' | 'card' | 'credit'>('cash')
+const activateMethod = ref<string>('cash')
 const activatingMembership = ref(false)
 
 watch(sellPackageId, (id) => {
@@ -418,7 +419,7 @@ watch(activateMembershipId, (id) => {
 // the existing Stripe autopay/installments flow below, which already has an
 // "already paid" concept for exactly this). Same compound cash/card/other/
 // credit handling as recordPayment's credit branch and applyCreditToInvoice.
-async function recordSalePayment(description: string, amountCents: number, method: 'cash' | 'card' | 'credit') {
+async function recordSalePayment(description: string, amountCents: number, method: string) {
   const { data: invoiceNumber } = await supabase.rpc('next_invoice_number', { p_account_id: store.accountId! })
   if (!invoiceNumber) return
 
@@ -470,7 +471,7 @@ async function recordSalePayment(description: string, amountCents: number, metho
 async function recordPackagePayment(
     packagePurchaseId: string | null,
     amountCents: number,
-    method: 'cash' | 'card' | 'credit',
+    method: string,
     description: string,
     bono?: { priceCents: number; sessionsTotal: number },
   ) {
@@ -673,10 +674,15 @@ async function loadAll() {
 async function onLedgerCreditsChanged() {
   await Promise.all([refreshCreditSummary(), loadAll()])
 }
-onMounted(() => {
+onMounted(async () => {
   loadAll()
   loadFacturas()
   maybeOpenPaymentFromTrigger()
+  // Then preselect whatever the clinic put first, rather than leaving the
+  // hardcoded 'cash' every form was initialised with.
+  await ensurePaymentMethodsLoaded()
+  for (const m of [addCreditMethod, sellMethod, activateMethod, collectMethod]) m.value = defaultMethod.value
+  for (const row of paymentRows.value) if (row.method !== 'credit') row.method = defaultMethod.value
 })
 // The sidebar's "Charge" button sets this to jump straight to the "Take
 // payment" panel -- both when it just switched the parent onto this tab
@@ -1171,7 +1177,7 @@ function packageOwedCents(purchase: PackagePurchaseRow): number {
 // here would be a second charge for sessions already being charged per visit.
 const collectOnPackageId = ref<string | null>(null)
 const collectAmount = ref('')
-const collectMethod = ref<'cash' | 'card' | 'credit'>('cash')
+const collectMethod = ref<string>('cash')
 const collectError = ref('')
 const collectingPayment = ref(false)
 
@@ -1648,8 +1654,7 @@ function money(cents: number) {
           <div>
             <label class="block text-[11px] text-ink-muted">{{ t('Method', 'Método') }}</label>
             <select v-model="addCreditMethod" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
-              <option value="cash">{{ t('Cash', 'Efectivo') }}</option>
-              <option value="card">{{ t('Card', 'Tarjeta') }}</option>
+              <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
             </select>
           </div>
           <div class="flex-1">
@@ -1699,8 +1704,10 @@ function money(cents: number) {
             <div>
               <label class="block text-[11px] text-ink-muted">{{ t('Method', 'Método') }}</label>
               <select v-model="row.method" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
-                <option value="card">{{ t('Card', 'Tarjeta') }}</option>
-                <option value="cash">{{ t('Cash', 'Efectivo') }}</option>
+                <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
+                <!-- Not one of the configured methods: this spends the
+                     patient's own balance rather than taking money, so it is
+                     offered separately and only when there is some. -->
                 <option value="credit" :disabled="spendableCreditCents <= 0">
                   {{ t('Credit on account', 'Crédito en cuenta') }}
                   ({{ spendableCreditCents > 0 ? `€${(spendableCreditCents / 100).toFixed(2)} ${t('available', 'disponible')}` : t('none available', 'sin crédito') }})
@@ -1932,8 +1939,7 @@ function money(cents: number) {
                 <div>
                   <label class="block text-[11px] text-ink-muted">{{ t('Method', 'Método') }}</label>
                   <select v-model="collectMethod" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
-                    <option value="cash">{{ t('Cash', 'Efectivo') }}</option>
-                    <option value="card">{{ t('Card', 'Tarjeta') }}</option>
+                    <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
                     <option value="credit" :disabled="spendableCreditCents <= 0">
                       {{ t('Credit on account', 'Crédito en cuenta') }}
                       ({{ spendableCreditCents > 0 ? `${money(spendableCreditCents)} ${t('available', 'disponible')}` : t('none available', 'sin crédito') }})
@@ -2030,8 +2036,7 @@ function money(cents: number) {
           <div v-if="sellPackageId && Number(sellAmountPaid) > 0">
             <label class="block text-[11px] text-ink-muted">{{ t('Method', 'Método') }}</label>
             <select v-model="sellMethod" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]">
-              <option value="cash">{{ t('Cash', 'Efectivo') }}</option>
-              <option value="card">{{ t('Card', 'Tarjeta') }}</option>
+              <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
               <!--
                 Always rendered, disabled when there is nothing spendable,
                 rather than hidden. Hidden, paying from credit looked like
@@ -2150,8 +2155,7 @@ function money(cents: number) {
           <div v-if="activateMembershipId && Number(activateAmountPaid) > 0">
             <label class="block text-[11px] text-ink-muted">{{ t('Method', 'Método') }}</label>
             <select v-model="activateMethod" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]">
-              <option value="cash">{{ t('Cash', 'Efectivo') }}</option>
-              <option value="card">{{ t('Card', 'Tarjeta') }}</option>
+              <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
               <option value="credit" :disabled="spendableCreditCents <= 0">
                 {{ t('Credit on account', 'Crédito en cuenta') }}
                 ({{ spendableCreditCents > 0 ? `€${(spendableCreditCents / 100).toFixed(2)} ${t('available', 'disponible')}` : t('none available', 'sin crédito') }})

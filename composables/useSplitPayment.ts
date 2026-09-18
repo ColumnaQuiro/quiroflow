@@ -1,4 +1,8 @@
-export type SplitPaymentMethod = 'card' | 'cash' | 'credit'
+// A configured method's key (see usePaymentMethods) or 'credit', which is not
+// a configured method -- it spends the patient's own balance. Once methods
+// became configurable per account a literal union stopped being able to name
+// them: a clinic may have 'bizum', 'transfer', or something it added itself.
+export type SplitPaymentMethod = string
 
 export interface SplitPaymentRow {
   method: SplitPaymentMethod
@@ -14,7 +18,7 @@ export interface SplitPaymentRow {
 // entry, paid-status side effects), since those differ between the two
 // (recordPayment() also completes the appointment and fires automation
 // events).
-export function useSplitPayment(defaultMethod: SplitPaymentMethod = 'cash') {
+export function useSplitPayment(defaultMethod: SplitPaymentMethod = 'cash', options: Ref<string[]> = ref([])) {
   const rows = ref<SplitPaymentRow[]>([{ method: defaultMethod, amount: '' }])
 
   // Back to a single row -- called when opening the form fresh (e.g. for a
@@ -24,11 +28,11 @@ export function useSplitPayment(defaultMethod: SplitPaymentMethod = 'cash') {
   }
 
   function addRow() {
-    // Cash+card is the actual case this exists for, so default the new row
-    // to whichever of those isn't already in use rather than making the
-    // owner touch the method picker twice.
+    // Splitting means a second method, so default to one not already in the
+    // form rather than making the owner touch the picker twice. The list is
+    // the account's own now, so this can no longer assume cash and card.
     const used = new Set(rows.value.map((r) => r.method))
-    const next: SplitPaymentMethod = used.has('cash') ? 'card' : 'cash'
+    const next = options.value.find((key) => !used.has(key)) ?? defaultMethod
     rows.value.push({ method: next, amount: '' })
   }
 

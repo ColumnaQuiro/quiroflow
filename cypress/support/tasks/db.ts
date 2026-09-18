@@ -562,6 +562,16 @@ async function createAccountCredit(opts: {
   return row as { id: string }
 }
 
+async function paymentsFor(opts: { patientId: string }) {
+  const { data, error } = await admin
+    .from('payments')
+    .select('amount_cents, method, purpose, invoice_id')
+    .eq('patient_id', opts.patientId)
+    .order('paid_at')
+  if (error) throw error
+  return data
+}
+
 async function facturasFor(opts: { patientId: string }) {
   const { data, error } = await admin
     .from('facturas')
@@ -1570,6 +1580,7 @@ export const dbTasks = {
   'db:createFactura': createFactura,
   'db:setPatientNif': setPatientNif,
   'db:createAccountCredit': createAccountCredit,
+  'db:paymentsFor': paymentsFor,
   'db:facturasFor': facturasFor,
   'db:createFacturaWithoutTax': createFacturaWithoutTax,
   'db:huellaFor': huellaFor,

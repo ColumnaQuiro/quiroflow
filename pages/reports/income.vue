@@ -129,6 +129,7 @@ async function loadAttribution() {
 onMounted(() => {
   load()
   loadFilterOptions()
+  ensurePaymentMethodsLoaded()
 })
 watch(range, load)
 // Filtering is client-side against appointmentById, so the map has to exist
@@ -238,13 +239,18 @@ const revenueChartData = computed(() => ({
 }))
 const lineChartOptions = { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } }, plugins: { legend: { display: false } } }
 
+const { ensureLoaded: ensurePaymentMethodsLoaded, labelFor: labelForMethod } = usePaymentMethods()
+
 const byMethod = computed(() => {
   const totals = new Map<string, number>()
   for (const p of filteredPayments.value) totals.set(p.method, (totals.get(p.method) ?? 0) + p.amount_cents)
   return [...totals.entries()].map(([method, cents]) => ({ method, cents })).sort((a, b) => b.cents - a.cents)
 })
 const methodChartData = computed(() => ({
-  labels: byMethod.value.map((m) => m.method),
+  // The label the clinic chose, not the stored key: this chart used to read
+  // "card, cash, other" whatever a clinic had named them, and a clinic with
+  // 'transfer' and 'bizum' would have read those raw too.
+  labels: byMethod.value.map((m) => labelForMethod(m.method)),
   datasets: [{ label: t('Revenue (€)', 'Ingresos (€)'), data: byMethod.value.map((m) => m.cents / 100), backgroundColor: '#4f46e5' }],
 }))
 const barChartOptions = { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } }, plugins: { legend: { display: false } } }

@@ -29,7 +29,8 @@ const loading = ref(true)
 const notFound = ref(false)
 
 const paymentAmount = ref('')
-const paymentMethod = ref<'card' | 'cash' | 'credit'>('card')
+const { methods: paymentMethods, ensureLoaded: ensurePaymentMethodsLoaded, defaultMethod } = usePaymentMethods()
+const paymentMethod = ref<string>('card')
 const savingPayment = ref(false)
 const error = ref('')
 const sending = ref(false)
@@ -68,7 +69,11 @@ async function load() {
   paymentAmount.value = (balanceDueCents.value / 100).toFixed(2)
   loading.value = false
 }
-onMounted(load)
+onMounted(async () => {
+  load()
+  await ensurePaymentMethodsLoaded()
+  paymentMethod.value = defaultMethod.value
+})
 
 const paidCents = computed(() => payments.value.reduce((sum, p) => sum + p.amount_cents, 0))
 const balanceDueCents = computed(() => (invoice.value?.total_cents ?? 0) - paidCents.value)
@@ -384,8 +389,7 @@ function formatDate(iso: string) {
             <div>
               <label class="block text-[12.5px] font-medium text-ink-500">{{ t('Method', 'Método') }}</label>
               <select v-model="paymentMethod" class="mt-1 rounded-ctl border border-line-control px-3 py-1.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
-                <option value="card">{{ t('Card', 'Tarjeta') }}</option>
-                <option value="cash">{{ t('Cash', 'Efectivo') }}</option>
+                <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
                 <option v-if="creditLedgerCents > 0" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} (€{{ (creditLedgerCents / 100).toFixed(2) }} {{ t('available', 'disponible') }})</option>
               </select>
             </div>

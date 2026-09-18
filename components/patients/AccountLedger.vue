@@ -316,15 +316,20 @@ const refundMaxCents = ref(0)
 // (both read only from `payments`, which a refund never touched), which is
 // also what let a refunded, fully-paid invoice leave a phantom credit on the
 // patient's balance -- see createRefund's matching payments insert.
-const refundMethod = ref<'card' | 'cash' | 'other'>('card')
+const { methods: paymentMethods, ensureLoaded: ensurePaymentMethodsLoaded, defaultMethod } = usePaymentMethods()
+// Which method the money physically went back through -- the account's own
+// list, same as taking one. It used to offer card/cash/"Other (e.g. bank
+// transfer)" and was the ONLY screen that mentioned bank transfer at all.
+const refundMethod = ref<string>('card')
 
 function openRefundModal(invoiceId: string, maxCents: number) {
   menuOpen.value = false
+  ensurePaymentMethodsLoaded()
   refundModalInvoiceId.value = invoiceId
   refundMaxCents.value = maxCents
   refundAmount.value = (maxCents / 100).toFixed(2)
   refundReason.value = ''
-  refundMethod.value = 'card'
+  refundMethod.value = defaultMethod.value
 }
 function submitRefund() {
   if (!refundModalInvoiceId.value) return
@@ -619,9 +624,7 @@ async function sendStatement() {
       <div class="mt-3">
         <label class="block text-[11px] text-ink-muted">{{ t('Refunded via', 'Reembolsado vía') }}</label>
         <select v-model="refundMethod" class="bg-surface mt-0.5 w-full rounded-ctlSm border border-line-control px-2 py-1.5 text-[13px]">
-          <option value="card">{{ t('Card', 'Tarjeta') }}</option>
-          <option value="cash">{{ t('Cash', 'Efectivo') }}</option>
-          <option value="other">{{ t('Other (e.g. bank transfer)', 'Otro (p. ej. transferencia)') }}</option>
+          <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
         </select>
       </div>
       <div class="mt-3">

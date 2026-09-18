@@ -1,0 +1,127 @@
+name: Apply migrations
+
+# Schema changes go live when they merge, not when a release ships.
+#
+# Nothing applied migrations before this. deploy.yml builds and uploads;
+# `npm run check:migrations-applied` runs first and STOPS the deploy when the
+# database is behind, which is the right thing to do but leaves someone having
+# to notice the failure, apply by hand, and re-run. Three migrations needed
+# that treatment on 18 Sep alone, each one a round trip.
+#
+# Why on merge rather than as part of the release:
+#
+#   - It puts the schema AHEAD of the code, which is the order that works.
+#     Between this and the next release, production runs the old code against
+#     the new schema. So a migration must be backwards-compatible with the
+#     code already live -- see check:migration-compatibility, which fails a PR
+#     that drops something still referenced.
+#   - A failure here is isolated. Nothing else in this workflow touches
+#     production, and a refused push leaves the database exactly as it was.
+#     Applying DDL as a side effect of a release would fail a deploy halfway
+#     through instead.
+#   - check:migrations-applied stays where it is, and becomes a check that
+#     should never fire rather than the thing that catches this.
+#
+# Applying by hand through an MCP tool also stamped its OWN timestamp on every
+# migration, which is the schema_migrations drift CLAUDE.md describes -- the
+# recorded version had to be corrected each time or the applied-check would
+# call the migration missing. `supabase db push` records the repo's version,
+# so that whole class of problem goes away with it.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/migrations/**"
+  # For retrying after a failure (a rotated token, a lock timeout) without
+  # pushing an empty commit to re-trigger the event.
+  workflow_dispatch:
+
+# One at a time. Two merges in quick succession would otherwise race, and
+# `db push` applying two sets of DDL concurrently is how you get a half-applied
+# schema nobody can reason about. cancel-in-progress is deliberately FALSE:
+# a migration that is already running must finish, not be killed partway.
+concurrency:
+  group: apply-migrations
+  cancel-in-progress: false
+
+jobs:
+  push:
+    name: supabase db push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore the Supabase CLI
+        id: supabase-cli
+        uses: actions/cache@v4
+        with:
+          path: ~/.supabase-cli
+          key: supabase-cli-${{ runner.os }}-${{ runner.arch }}-2.116.0
+
+      - name: Download the Supabase CLI
+        if: steps.supabase-cli.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.supabase-cli
+          # --retry-all-errors is what makes this survive the 5xx that beat
+          # the setup action: plain --retry ignores HTTP errors entirely.
+          curl -fsSL --retry 6 --retry-all-errors --retry-delay 5 \
+            https://github.com/supabase/cli/releases/download/v2.116.0/supabase_linux_amd64.tar.gz \
+            | tar -xz -C ~/.supabase-cli supabase
+          chmod +x ~/.supabase-cli/supabase
+
+      - name: Put the Supabase CLI on PATH
+        run: |
+          echo "$HOME/.supabase-cli" >> "$GITHUB_PATH"
+          "$HOME/.supabase-cli/supabase" --version
+
+      - name: Check the secrets are actually set
+        # A repository secret that does not exist resolves to an empty string
+        # rather than failing, so `supabase link` would run with no token and
+        # report something unrelated. Free-plan organizations do not expose
+        # ORGANIZATION secrets to private repos -- that is how NETLIFY_AUTH_TOKEN
+        # silently became "" and the deploy failed with "could not retrieve
+        # project". These must be REPOSITORY secrets.
+        env:
+          ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          missing=""
+          [ -n "$ACCESS_TOKEN" ] || missing="$missing SUPABASE_ACCESS_TOKEN"
+          [ -n "$DB_PASSWORD" ] || missing="$missing SUPABASE_DB_PASSWORD"
+          [ -n "$PROJECT_REF" ] || missing="$missing SUPABASE_PROJECT_REF"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secret(s):$missing"
+            echo "Set them under Settings -> Secrets and variables -> Actions, on the REPOSITORY (not the organization)."
+            exit 1
+          fi
+
+      - name: Link the project
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: supabase link --project-ref "${{ secrets.SUPABASE_PROJECT_REF }}"
+
+      - name: What would be applied
+        # Printed before anything runs, so the log says what this changed even
+        # when the push itself succeeds silently.
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: supabase migration list --linked
+
+      - name: Apply
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: supabase db push --linked
+
+      - name: Confirm the database matches the repo
+        # The same check the deploy runs, here on the other side of the push:
+        # if this passes, the next deploy cannot be stopped by a missing
+        # migration.
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: supabase migration list --linked

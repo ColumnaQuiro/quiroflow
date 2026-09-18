@@ -151,11 +151,52 @@ v1.9.0 went live with a Billing tab reading `payments.created_by` against a
 table that had no such column, and every patient's ledger failed with
 `42703: column "created_by" does not exist` until someone noticed.
 
-`npm run check:migrations-applied` now runs as the first step of the deploy
-and fails it when the database is behind the code. It is a check, not a
-push: a failed deploy leaves production as it was, an applied migration does
-not. **Applying is still a human step** — `supabase db push`, then re-run the
-deploy.
+`npm run check:migrations-applied` runs as the first step of the deploy and
+fails it when the database is behind the code. It is a check, not a push: a
+failed deploy leaves production as it was, an applied migration does not.
+
+**Applying is no longer a human step.** `.github/workflows/migrate.yml` runs
+`supabase db push` on every push to `main` that touches
+`supabase/migrations/`, so the schema goes live when a PR merges and a release
+later ships code onto a schema that is already there. The deploy check above
+stays exactly where it is and should now never fire.
+
+That is deliberately a separate workflow rather than a step inside the deploy.
+Applying DDL as a side effect of shipping code would fail a deploy halfway
+through; here a refused push touches nothing else, and production keeps
+running the old code against the old schema. It also fixes a problem the
+manual route had: applying through an MCP tool stamps that tool's OWN
+timestamp into `schema_migrations`, which is the drift described below and had
+to be hand-corrected every time. `supabase db push` records the repo's
+version.
+
+It needs three **repository** secrets — `SUPABASE_ACCESS_TOKEN`,
+`SUPABASE_DB_PASSWORD`, `SUPABASE_PROJECT_REF`. Repository, not organization:
+a Free-plan org does not expose org secrets to a private repo, and the secret
+silently resolves to an empty string, which is the same trap
+`NETLIFY_AUTH_TOKEN` fell into. The workflow checks all three are non-empty
+before it does anything, so that failure names itself.
+
+**The cost: between a merge and the next release, production runs the code
+that is ALREADY LIVE against the new schema.** A migration that drops a
+column, table or function the live code still calls breaks it in that window,
+and `check:migrations-applied` cannot see it — the database is ahead, not
+behind, which is the opposite of what it tests. So migrations must be
+backwards-compatible with what is deployed, and
+`npm run check:migration-compatibility` (part of `preflight`) fails a PR whose
+new migration removes something still referenced under `components/`,
+`pages/`, `server/`, `composables/`, `utils/`, `middleware/`, `plugins/` or
+`mobile/`. Re-creating the name in the same migration is not a removal —
+dropping `next_factura_number(uuid)` to replace it with a two-argument version
+left every caller working. To proceed anyway, say why in the migration itself:
+
+```sql
+-- compat-ok: nothing has read this column since the importer was retired
+```
+
+That window is not new. It was previously as long as it took someone to
+notice a failing deploy; automating the apply makes it short and predictable
+rather than open-ended.
 
 The check covers **timestamped migrations only**. The hand-numbered ones
 (0001-0174) are recorded under generated versions with the number folded into

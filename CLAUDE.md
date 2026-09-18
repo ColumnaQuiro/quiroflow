@@ -156,10 +156,32 @@ fails it when the database is behind the code. It is a check, not a push: a
 failed deploy leaves production as it was, an applied migration does not.
 
 **Applying is no longer a human step.** `.github/workflows/migrate.yml` runs
-`supabase db push` on every push to `main` that touches
+`npm run apply:migrations` on every push to `main` that touches
 `supabase/migrations/`, so the schema goes live when a PR merges and a release
 later ships code onto a schema that is already there. The deploy check above
 stays exactly where it is and should now never fire.
+
+**It does not use `supabase db push`, and must not.** That was the first
+attempt and it cannot work on this database. `db push` refuses unless the
+local migrations directory is a superset of the remote history, and this repo
+can never satisfy that: the hand-numbered migrations are files named
+`0001_*.sql` but are recorded remotely under generated timestamps, so push
+sees ~170 remote versions with no local file and stops with *"Remote migration
+versions not found in local migrations directory"*. It failed on the first
+migration to merge after the workflow was added -- the workflow went red and
+the migration silently did not apply -- and it would have failed on every
+merge after that. Do not "fix" it with the repair the CLI suggests:
+`migration repair --status reverted` deletes those history rows, after which
+push would see `0001..0174` as unapplied and try to RUN them against populated
+production.
+
+`scripts/apply-migrations.mjs` applies only the **timestamped** migrations the
+database is missing, in version order, each one in a single transaction
+together with its `schema_migrations` row -- so a failure rolls that migration
+back, records nothing, and stops without attempting the ones after it. That is
+exactly the set `check-migrations-applied.mjs` compares, which is what keeps
+the apply and the deploy's check from disagreeing about what counts as a
+migration.
 
 That is deliberately a separate workflow rather than a step inside the deploy.
 Applying DDL as a side effect of shipping code would fail a deploy halfway
@@ -167,8 +189,7 @@ through; here a refused push touches nothing else, and production keeps
 running the old code against the old schema. It also fixes a problem the
 manual route had: applying through an MCP tool stamps that tool's OWN
 timestamp into `schema_migrations`, which is the drift described below and had
-to be hand-corrected every time. `supabase db push` records the repo's
-version.
+to be hand-corrected every time. The script records the repo's version.
 
 It uses **`SUPABASE_DB_URL`**, the repository secret `deploy.yml` already
 passes to `check:migrations-applied` — so the apply and the check that guards

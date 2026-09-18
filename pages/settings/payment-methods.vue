@@ -4,6 +4,9 @@ import type { Tables } from '~/types/database.types'
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+// The pickers cache this list; without invalidating, a method added here
+// would not appear on a Billing tab until a full page reload.
+const { invalidate: invalidatePaymentMethods, displayName: methodLabel } = usePaymentMethods()
 
 const methods = ref<Tables<'payment_methods'>[]>([])
 const loading = ref(true)
@@ -13,18 +16,44 @@ const error = ref('')
 
 async function load() {
   loading.value = true
-  const { data } = await supabase.from('payment_methods').select('*').order('sort_order').order('name')
+  // is_system excluded: 'credit' and 'write_off' exist as rows so payments can
+  // reference them, but they carry behaviour and renaming or deactivating one
+  // would break the forms that special-case them. The note at the foot of this
+  // page has always said they are not managed here; now they actually aren't.
+  const { data } = await supabase.from('payment_methods').select('*').eq('is_system', false).order('sort_order').order('name')
   methods.value = data ?? []
+  invalidatePaymentMethods()
   loading.value = false
 }
 onMounted(load)
+
+// The key is what gets written to payments.method and never changes again --
+// the name above it is a label staff can re-word whenever they like. Deriving
+// it from the name once, here, is what lets "Transferencia bancaria" be
+// renamed to "Transferencia" later without orphaning the payments taken under
+// the old wording.
+function keyFrom(name: string) {
+  const base = name.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+  return base || 'method'
+}
 
 async function addMethod() {
   error.value = ''
   if (!name.value.trim()) return
   saving.value = true
+  let key = keyFrom(name.value)
+  // Two methods a staff member would read as different ("Bizum" and "bizum ")
+  // collapse to one key, and the unique index would refuse the second with a
+  // constraint message nobody can act on.
+  const taken = new Set(methods.value.map((m) => m.key))
+  if (taken.has(key)) {
+    let n = 2
+    while (taken.has(`${key}_${n}`)) n++
+    key = `${key}_${n}`
+  }
   const { error: insertError } = await supabase.from('payment_methods').insert({
     account_id: store.accountId!,
+    key,
     name: name.value.trim(),
     sort_order: methods.value.length,
   })
@@ -40,11 +69,26 @@ async function addMethod() {
 async function toggleActive(method: Tables<'payment_methods'>) {
   method.is_active = !method.is_active
   await supabase.from('payment_methods').update({ is_active: method.is_active }).eq('id', method.id)
+  invalidatePaymentMethods()
 }
 
 async function removeMethod(id: string) {
   if (!confirm(t('Delete this payment method?', '¿Eliminar este método de pago?'))) return
-  await supabase.from('payment_methods').delete().eq('id', id)
+  error.value = ''
+  const { error: deleteError } = await supabase.from('payment_methods').delete().eq('id', id)
+  // A method with payments against it is refused by the foreign key. That is
+  // the right answer -- deleting it would leave those payments naming a method
+  // the account no longer has, and the reports that group by method reading a
+  // key with nothing behind it. Deactivating keeps the history and takes it
+  // out of the pickers, which is what "we stopped taking bank transfers"
+  // actually means.
+  if (deleteError) {
+    error.value = t(
+      'This method has payments recorded against it, so it cannot be deleted. Deactivate it instead -- it will disappear from the payment forms and the history stays intact.',
+      'Este método tiene pagos registrados, así que no se puede eliminar. Desactívalo en su lugar: desaparecerá de los formularios de pago y el historial se mantiene.',
+    )
+    return
+  }
   await load()
 }
 </script>
@@ -78,7 +122,7 @@ async function removeMethod(id: string) {
                   </tr>
                 </template>
                 <tr v-for="m in methods" :key="m.id">
-                  <td class="px-4 py-2.5 text-ink-700">{{ m.name }}</td>
+                  <td class="px-4 py-2.5 text-ink-700">{{ methodLabel(m) }}</td>
                   <td class="px-4 py-2.5">
                     <button
                       type="button"

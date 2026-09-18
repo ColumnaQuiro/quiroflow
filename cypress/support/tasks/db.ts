@@ -1415,6 +1415,26 @@ async function reviewRequestsFor(opts: { accountId: string }) {
 }
 
 /** The most recently created rule's actions, for builder round-trip tests. */
+// Every rule with its actions, for a spec that creates several at once --
+// latestAutomationActions answers for the newest rule only, which cannot say
+// whether the OTHER templates were created or left alone.
+async function latestAutomationRules() {
+  const { data: rules } = await admin
+    .from('automation_rules')
+    .select('id, name, trigger_event, enabled, is_marketing, filters')
+    .order('created_at')
+  const out = []
+  for (const rule of (rules ?? []) as { id: string }[]) {
+    const { data: actions } = await admin
+      .from('automation_actions')
+      .select('action_type, position, config')
+      .eq('rule_id', rule.id)
+      .order('position')
+    out.push({ ...rule, actions: actions ?? [] })
+  }
+  return out
+}
+
 async function latestAutomationActions() {
   const { data: rule } = await admin.from('automation_rules').select('id').order('created_at', { ascending: false }).limit(1).maybeSingle()
   if (!rule) return []
@@ -1571,6 +1591,7 @@ export const dbTasks = {
   'db:createAutomationRule': createAutomationRule,
   'db:reviewRequestsFor': reviewRequestsFor,
   'db:latestAutomationActions': latestAutomationActions,
+  'db:latestAutomationRules': latestAutomationRules,
   'db:leadMessages': leadMessages,
   'db:setLeadDraftedThrough': setLeadDraftedThrough,
   'db:setReceptionistEnabled': setReceptionistEnabled,

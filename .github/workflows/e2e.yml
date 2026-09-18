@@ -141,7 +141,7 @@ jobs:
           - name: growth-leads
             specs: "cypress/e2e/growth/growth-lead*.cy.ts,cypress/e2e/growth/growth-inbox.cy.ts"
           - name: growth-platform
-            specs: "cypress/e2e/growth/growth-receptionist*.cy.ts,cypress/e2e/growth/growth-reputation.cy.ts,cypress/e2e/growth/growth-dashboard-data.cy.ts,cypress/e2e/growth/growth-dashboard.cy.ts,cypress/e2e/growth/growth-automations.cy.ts,cypress/e2e/growth/growth-automation-builder.cy.ts,cypress/e2e/growth/growth-addon-entitlement.cy.ts,cypress/e2e/growth/growth-review-links.cy.ts"
+            specs: "cypress/e2e/growth/growth-receptionist*.cy.ts,cypress/e2e/growth/growth-reputation.cy.ts,cypress/e2e/growth/growth-dashboard-data.cy.ts,cypress/e2e/growth/growth-dashboard.cy.ts,cypress/e2e/growth/growth-automations.cy.ts,cypress/e2e/growth/growth-automation-builder.cy.ts,cypress/e2e/growth/growth-addon-entitlement.cy.ts,cypress/e2e/growth/growth-review-links.cy.ts,cypress/e2e/growth/growth-campaign-templates.cy.ts"
           - name: patients-and-booking
             specs: "cypress/e2e/patients/**,cypress/e2e/public-booking/**"
           - name: auth-calendar-inbox

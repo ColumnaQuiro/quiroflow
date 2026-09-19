@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import {
+  SIF_CAN_TRANSMIT,
   SIF_CODE,
   SIF_DECLARATION_IN_FORCE,
   SIF_HUELLA_SPEC,
   SIF_NAME,
+  SIF_ONLY_VERIFACTU,
   SIF_PRODUCER,
+  SIF_SUPPORTS_MULTIPLE_OBLIGADOS,
+  SIF_SYSTEM_NAME,
   SIF_VERSION,
 } from '~/utils/sifIdentity'
 
@@ -97,6 +101,17 @@ const pending = requirements.filter(r => !r.done).length
             <dt class="text-ink-muted">Formato de huella</dt>
             <dd class="text-ink-900">SHA-256 — {{ SIF_HUELLA_SPEC }}</dd>
           </dl>
+
+          <p class="mt-4 text-[13px] text-ink-muted">
+            Estos son los valores que identifican al sistema en el bloque
+            <code class="text-ink-700">SistemaInformatico</code> de cada registro remitido:
+            <code class="text-ink-700">NombreSistemaInformatico</code> = {{ SIF_SYSTEM_NAME }},
+            <code class="text-ink-700">IdSistemaInformatico</code> = {{ SIF_CODE }},
+            <code class="text-ink-700">TipoUsoPosibleSoloVerifactu</code> = {{ SIF_ONLY_VERIFACTU }},
+            <code class="text-ink-700">TipoUsoPosibleMultiOT</code> = {{ SIF_SUPPORTS_MULTIPLE_OBLIGADOS }}.
+            <code class="text-ink-700">IndicadorMultiplesOT</code> lo calcula el propio sistema en el momento de generar cada
+            registro, como exige el diseño de registro; no es configurable.
+          </p>
         </div>
 
         <div>
@@ -113,6 +128,12 @@ const pending = requirements.filter(r => !r.done).length
               {{ SIF_PRODUCER.address || '[pendiente]' }}
             </dd>
           </dl>
+
+          <p v-if="!SIF_CAN_TRANSMIT" class="mt-3 text-[13px] text-warning-text">
+            El NIF del productor no es sólo un dato de esta página: es un campo obligatorio del bloque
+            <code>SistemaInformatico</code> de <strong>cada</strong> registro remitido a la AEAT. Mientras no esté confirmado, no puede
+            iniciarse la remisión.
+          </p>
         </div>
 
         <div>

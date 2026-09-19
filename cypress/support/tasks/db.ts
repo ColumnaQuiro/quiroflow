@@ -702,6 +702,20 @@ async function awaitingAeatAs(opts: {
   return { refused: Boolean(error), message: error?.message ?? null, rows: data ?? null }
 }
 
+/** IndicadorMultiplesOT as the database derives it, not as anyone configured it. */
+async function indicadorMultiplesOt() {
+  const { data, error } = await admin.rpc('sif_indicador_multiples_ot')
+  if (error) throw error
+  return data as string
+}
+
+/** The obligado count the indicator above is derived from. */
+async function accountCount() {
+  const { count, error } = await admin.from('accounts').select('id', { count: 'exact', head: true })
+  if (error) throw error
+  return count ?? 0
+}
+
 /** Records the AEAT has not acknowledged yet, in chain order. */
 async function awaitingAeat(opts: { accountId: string }) {
   const { data, error } = await admin.rpc('factura_records_awaiting_aeat', { p_account_id: opts.accountId })
@@ -1807,6 +1821,8 @@ export const dbTasks = {
   'db:facturaRecordsFor': facturaRecordsFor,
   'db:verifyFacturaChain': verifyFacturaChain,
   'db:awaitingAeat': awaitingAeat,
+  'db:indicadorMultiplesOt': indicadorMultiplesOt,
+  'db:accountCount': accountCount,
   'db:awaitingAeatAs': awaitingAeatAs,
   'db:recordAeatSubmission': recordAeatSubmission,
   'db:verifyFacturaChainAs': verifyFacturaChainAs,

@@ -336,6 +336,15 @@ jobs:
           # and the fallback would be the only thing ever tested.
           NUXT_META_PLATFORM_APP_SECRET: e2e-meta-platform-app-secret
           CYPRESS_META_PLATFORM_APP_SECRET: e2e-meta-platform-app-secret
+          # Points the connect callback at a local stub instead of Meta. The
+          # port is fixed because Nuxt reads this once at startup, so it must
+          # be known before the server boots -- unlike the PracticeHub stub,
+          # whose URL is per-account and can take a random port.
+          #
+          # Without this the callback made LIVE calls to graph.facebook.com
+          # from CI, which started the moment metaPlatformAppId stopped being
+          # blank and the "not configured" branch stopped catching it.
+          NUXT_META_GRAPH_BASE_URL: http://127.0.0.1:9147
 
       - name: Upload screenshots on failure
         if: failure()

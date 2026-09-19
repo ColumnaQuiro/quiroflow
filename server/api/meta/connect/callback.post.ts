@@ -16,7 +16,6 @@ import type { Database } from '~/types/database.types'
 // What the clinic ends up with is a BUSINESS token, not a user token: Tech
 // Providers use those exclusively, they are not tied to the person who
 // happened to click, and they do not expire when that person leaves.
-const GRAPH = 'https://graph.facebook.com/v21.0'
 
 interface DebugTokenResponse {
   data?: {
@@ -42,6 +41,7 @@ export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig()
   const appId = config.public.metaPlatformAppId
   const appSecret = config.metaPlatformAppSecret
+  const GRAPH = config.metaGraphBaseUrl
   if (!appId || !appSecret) {
     throw createError({ statusCode: 500, statusMessage: 'WhatsApp connect is not configured on this deployment.' })
   }

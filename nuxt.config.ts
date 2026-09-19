@@ -186,6 +186,13 @@ export default defineNuxtConfig({
     // the same shape as stripeSecretKey above, where clinics that have not
     // connected still use their own pasted keys.
     metaPlatformAppSecret: '',
+    // Where the Graph API lives. Overridable for exactly one reason: the
+    // connect callback spends a credential and writes a token onto an
+    // account, and the only way to test that hermetically is to point it at a
+    // local stub. Without this, CI either leaves the whole exchange untested
+    // or makes live calls to Meta from a test -- which is what it started
+    // doing the moment metaPlatformAppId stopped being blank.
+    metaGraphBaseUrl: 'https://graph.facebook.com/v21.0',
     public: {
       // Booking subdomains: <account-slug>.<appDomain> gets rewritten to
       // /book/<account-slug> by server/middleware/subdomain-booking.ts.

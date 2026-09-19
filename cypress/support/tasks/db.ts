@@ -1666,6 +1666,79 @@ async function leadMessages(opts: { leadId: string }) {
 // cy.intercept cannot see -- and the answer is the whole point of the check,
 // so "unreachable" and "not configured" were the only cases testable without
 // this.
+// A stand-in for Meta's Graph API on a FIXED port, because unlike the
+// PracticeHub stub below -- whose URL is stored per account and can therefore
+// be a random port -- the Graph base URL is one global setting the Nuxt server
+// reads at startup. So the port has to be known before the server boots, and
+// e2e.yml passes it as NUXT_META_GRAPH_BASE_URL.
+//
+// This exists because /api/meta/connect/callback spends an authorization code
+// and writes an access token onto an account. Testing that against the real
+// Graph API would mean live calls to Meta from CI; testing it not at all would
+// leave the one endpoint that stores a credential unexercised.
+const META_GRAPH_STUB_PORT = 9147
+let metaGraphStub: import('node:http').Server | null = null
+
+async function startMetaGraphStub(opts: {
+  /** Which step should fail, to prove a half-connection is never stored. */
+  failAt?: 'exchange' | 'debug' | 'phones' | 'subscribe'
+  wabaId?: string
+  phoneNumberId?: string
+  displayPhoneNumber?: string
+  /** Scopes granted, so a connection with no WABA on it can be simulated. */
+  scope?: string
+}) {
+  await stopMetaGraphStub()
+  const { createServer } = await import('node:http')
+
+  const wabaId = opts.wabaId ?? '102290129340398'
+  const phoneNumberId = opts.phoneNumberId ?? '387933511072949'
+  const seen: string[] = []
+
+  const server = createServer((req, res) => {
+    const path = (req.url ?? '').split('?')[0]
+    seen.push(`${req.method} ${path}`)
+    const send = (status: number, body: unknown) => {
+      res.statusCode = status
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify(body))
+    }
+    const refuse = (message: string) => send(400, { error: { message } })
+
+    if (path.endsWith('/oauth/access_token')) {
+      if (opts.failAt === 'exchange') return refuse('This authorization code has been used.')
+      return send(200, { access_token: 'STUB-BUSINESS-TOKEN' })
+    }
+    if (path.endsWith('/debug_token')) {
+      if (opts.failAt === 'debug') return refuse('Invalid OAuth access token.')
+      return send(200, {
+        data: { granular_scopes: [{ scope: opts.scope ?? 'whatsapp_business_management', target_ids: opts.scope === 'none' ? [] : [wabaId] }] },
+      })
+    }
+    if (path.endsWith('/phone_numbers')) {
+      if (opts.failAt === 'phones') return refuse('Unsupported get request.')
+      return send(200, { data: [{ id: phoneNumberId, display_phone_number: opts.displayPhoneNumber ?? '+34 960 05 40 40' }] })
+    }
+    if (path.endsWith('/subscribed_apps')) {
+      if (opts.failAt === 'subscribe') return refuse('Application does not have permission for this action.')
+      return send(200, { success: true })
+    }
+    return send(404, { error: { message: `stub has no route for ${path}` } })
+  })
+
+  await new Promise<void>((resolve) => server.listen(META_GRAPH_STUB_PORT, '127.0.0.1', () => resolve()))
+  metaGraphStub = server
+  return { baseUrl: `http://127.0.0.1:${META_GRAPH_STUB_PORT}`, seen }
+}
+
+async function stopMetaGraphStub() {
+  const server = metaGraphStub
+  metaGraphStub = null
+  if (!server) return { ok: true }
+  await new Promise<void>((resolve) => server.close(() => resolve()))
+  return { ok: true }
+}
+
 let practiceHubStub: import('node:http').Server | null = null
 
 async function startPracticeHubStub(opts: { totalEntries?: number; emails?: string[] }) {
@@ -1878,6 +1951,8 @@ export const dbTasks = {
   'db:setAccountSecret': setAccountSecret,
   'db:accountWhatsappConnection': accountWhatsappConnection,
   'db:setWhatsappBusinessAccount': setWhatsappBusinessAccount,
+  'db:startMetaGraphStub': startMetaGraphStub,
+  'db:stopMetaGraphStub': stopMetaGraphStub,
   'db:readAsStaff': readAsStaff,
   'db:rolePermissions': rolePermissions,
   'db:bookingAttribution': bookingAttribution,

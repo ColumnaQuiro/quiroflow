@@ -179,8 +179,24 @@ async function save() {
       <div class="flex gap-8 p-6">
         <SettingsNav />
         <div class="min-w-0 max-w-[660px] flex-1">
+          <!-- The one-click route first, because it is the one almost every
+          clinic should take. The manual fields below stay exactly where they
+          were: a clinic already connected that way (Columnaquiro) must not
+          have its setup moved or hidden, and connecting is not the same act
+          as reconfiguring templates. -->
+          <SettingsWhatsAppConnectCard
+            class="mb-5"
+            :connected-waba-id="businessAccountId || null"
+            @connected="load"
+          />
+
           <p class="text-[13px] leading-relaxed text-ink-muted2">
-            {{ t("Connects directly to Meta's WhatsApp Business Cloud API. You'll need a Phone Number ID, a WhatsApp Business Account ID, and a permanent access token from your Meta Business account, plus at least one approved message template.", 'Se conecta directamente con la API de WhatsApp Business Cloud de Meta. Necesitarás un ID de número de teléfono, un ID de cuenta de WhatsApp Business y un token de acceso permanente de tu cuenta de Meta Business, además de al menos una plantilla de mensaje aprobada.') }}
+            <!-- Reworded once Connect existed: this paragraph used to be the
+            only instruction on the page, and left as it was it flatly
+            contradicted the card above it ("nothing to copy across"). It is
+            now what it actually is -- the manual alternative, for a clinic
+            that already runs its own Meta app. -->
+            {{ t("Already have your own Meta app? You can set it up by hand instead: a Phone Number ID, a WhatsApp Business Account ID and a permanent access token, plus at least one approved message template.", '¿Ya tienes tu propia app de Meta? Puedes configurarlo a mano: un ID de número de teléfono, un ID de cuenta de WhatsApp Business y un token de acceso permanente, además de al menos una plantilla de mensaje aprobada.') }}
           </p>
 
           <div v-if="loading" class="mt-5 space-y-3">

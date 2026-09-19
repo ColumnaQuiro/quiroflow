@@ -73,7 +73,7 @@ export async function sendPendingRecords(
 
   let responseXml: string
   try {
-    const res = await fetch(verifactuEndpoint(config.environment), {
+    const res = await fetch(verifactuEndpoint(config.environment, config.certificateType ?? 'representative'), {
       method: 'POST',
       headers: { 'Content-Type': 'text/xml; charset=utf-8', SOAPAction: '' },
       body: envelope,

@@ -10,7 +10,7 @@ import { MAX_RECORDS_PER_SUBMISSION, transmissionBlockedBy } from '../../../util
 // answered in words rather than discovered as a failed request.
 describe('Whether the records may be sent', () => {
   const NIF = 'B99999999'
-  const cert = { environment: 'test' as const, certificatePath: '/tmp/sello.p12' }
+  const cert = { environment: 'test' as const, certificatePath: '/tmp/c.p12', certificateType: 'representative' as const }
   const past = new Date(Date.now() - 60_000)
   const future = new Date(Date.now() + 60_000)
 
@@ -38,6 +38,20 @@ describe('Whether the records may be sent', () => {
     expect(
       transmissionBlockedBy({ config: { environment: 'test' }, pendingCount: 10, readyAt: past, producerNif: NIF }),
     ).to.eq('no-certificate')
+  })
+
+  it('will not guess which kind of certificate it has', () => {
+    // The kind decides the host, and the wrong host fails at the TLS
+    // handshake -- an error that mentions nothing about certificates and
+    // would be debugged as a network problem.
+    expect(
+      transmissionBlockedBy({
+        config: { environment: 'test', certificatePath: '/tmp/c.p12' },
+        pendingCount: 10,
+        readyAt: past,
+        producerNif: NIF,
+      }),
+    ).to.eq('no-certificate-type')
   })
 
   it('says there is nothing to send rather than sending an empty envelope', () => {

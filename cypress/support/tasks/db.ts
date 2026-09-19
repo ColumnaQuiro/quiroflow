@@ -1063,6 +1063,21 @@ async function createApiToken(opts: { accountId: string; scopes: string[] }) {
 // Meta's signature over the exact bytes a spec is about to send. Done here in
 // Node rather than in the browser so the spec can post a pre-serialised string
 // and know the digest covers precisely those bytes.
+/**
+ * The WhatsApp connection fields on an account, for asserting that a refused
+ * connect attempt wrote nothing. Read with the service role deliberately: a
+ * spec checking "no token was stored" must not be satisfied merely because
+ * RLS hid one that IS there.
+ */
+async function accountWhatsappConnection(opts: { accountId: string }) {
+  const { data } = await admin
+    .from('accounts')
+    .select('whatsapp_access_token, whatsapp_business_account_id, whatsapp_phone_number_id')
+    .eq('id', opts.accountId)
+    .maybeSingle()
+  return data ?? null
+}
+
 // Stores a secret the way the server does, so a spec can then try to read it
 // back the way a staff member would.
 async function setAccountSecret(opts: { accountId: string; name: string; value: string }) {
@@ -1848,6 +1863,7 @@ export const dbTasks = {
   'db:signWhatsappBody': signWhatsappBody,
   'db:clearWhatsappAppSecret': clearWhatsappAppSecret,
   'db:setAccountSecret': setAccountSecret,
+  'db:accountWhatsappConnection': accountWhatsappConnection,
   'db:readAsStaff': readAsStaff,
   'db:rolePermissions': rolePermissions,
   'db:bookingAttribution': bookingAttribution,

@@ -193,6 +193,17 @@ export default defineNuxtConfig({
       // in local dev with no /etc/hosts changes -- set this to your real
       // domain once QuiroFlow is deployed somewhere with wildcard DNS.
       appDomain: 'localtest.me',
+      // The platform Meta app's id, and the Embedded Signup configuration
+      // inside it (Facebook Login for Business > Configurations). Both are
+      // public by design -- they go into an FB.login() call in the browser,
+      // the way stripeConnectClientId goes into a redirect URL. The secret
+      // half stays server-side in metaPlatformAppSecret.
+      //
+      // Unset, Settings > WhatsApp simply does not offer the Connect button
+      // and the manual token fields remain the only way in. That is how every
+      // clinic works today, and how they keep working until this is filled.
+      metaPlatformAppId: '',
+      metaEmbeddedSignupConfigId: '',
       // Connect "client ID" (ca_...) from Stripe Dashboard > Connect >
       // Settings -- not a secret, it's meant to sit in a redirect URL.
       stripeConnectClientId: '',

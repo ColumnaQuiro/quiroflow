@@ -2063,6 +2063,105 @@ export type Database = {
           },
         ]
       }
+      factura_records: {
+        Row: {
+          account_id: string
+          created_at: string
+          cuota_total_cents: number
+          factura_id: string
+          generated_at: string
+          huella: string
+          huella_spec_version: string
+          id: string
+          importe_total_cents: number
+          invoice_type: string
+          issued_on: string
+          issuer_nif: string
+          previous_huella: string | null
+          record_type: string
+          sequence: number
+          serie_number: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          cuota_total_cents: number
+          factura_id: string
+          generated_at?: string
+          huella: string
+          huella_spec_version?: string
+          id?: string
+          importe_total_cents: number
+          invoice_type: string
+          issued_on: string
+          issuer_nif: string
+          previous_huella?: string | null
+          record_type?: string
+          sequence?: number
+          serie_number: string
+        }
+        Update: {
+          huella_spec_version?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "factura_records_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      factura_record_submissions: {
+        Row: {
+          account_id: string
+          aeat_csv: string | null
+          attempt: number
+          created_at: string
+          error_code: string | null
+          error_message: string | null
+          factura_record_id: string
+          id: string
+          request_id: string | null
+          responded_at: string | null
+          sent_at: string | null
+          status: string
+          wait_seconds: number | null
+        }
+        Insert: {
+          account_id: string
+          aeat_csv?: string | null
+          attempt: number
+          created_at?: string
+          error_code?: string | null
+          error_message?: string | null
+          factura_record_id: string
+          id?: string
+          request_id?: string | null
+          responded_at?: string | null
+          sent_at?: string | null
+          status: string
+          wait_seconds?: number | null
+        }
+        Update: {
+          aeat_csv?: string | null
+          error_code?: string | null
+          error_message?: string | null
+          responded_at?: string | null
+          status?: string
+          wait_seconds?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "factura_record_submissions_factura_record_id_fkey"
+            columns: ["factura_record_id"]
+            isOneToOne: false
+            referencedRelation: "factura_records"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       facturas: {
         Row: {
           account_id: string
@@ -5649,6 +5748,20 @@ export type Database = {
         }
         Returns: boolean
       }
+      factura_records_awaiting_aeat: {
+        Args: { p_account_id: string }
+        Returns: {
+          factura_record_id: string
+          sequence: number
+          serie_number: string
+          huella: string
+          attempts: number
+          last_status: string | null
+          last_error_code: string | null
+        }[]
+      }
+      factura_submission_ready_at: { Args: { p_account_id: string }; Returns: string }
+      sif_indicador_multiples_ot: { Args: Record<string, never>; Returns: string }
       next_factura_number: { Args: { p_account_id: string; p_series?: string }; Returns: string }
       next_invoice_number: {
         Args: { p_account_id: string; p_prefix?: string }

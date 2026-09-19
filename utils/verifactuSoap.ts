@@ -5,6 +5,8 @@
 // be got right and tested before any of that exists. The sender that uses
 // them is small by comparison and mostly about credentials.
 //
+import { SIF_PRODUCER } from './sifIdentity'
+
 // Endpoints, namespaces, limits and the response shape all come from AEAT's
 // own WSDL (SistemaFacturacion.wsdl), RespuestaSuministro.xsd, and
 // Descripción SWeb 1.0.3.
@@ -91,6 +93,55 @@ export function buildRegFactuEnvelope(input: {
     '</soapenv:Body>',
     '</soapenv:Envelope>',
   ].join('')
+}
+
+export interface SenderConfig {
+  environment: 'test' | 'production'
+  /** PKCS#12 seal certificate. Absent until one is obtained. */
+  certificatePath?: string
+  certificatePassphrase?: string
+}
+
+export type BlockedReason =
+  | 'no-producer-nif'
+  | 'no-certificate'
+  | 'nothing-to-send'
+  | 'waiting-on-aeat-pace'
+
+/**
+ * Why this account cannot transmit right now, or null if it can.
+ *
+ * Returned rather than thrown, and checked before anything is built: a
+ * partially assembled submission that then cannot go is harder to reason
+ * about than one that was never started.
+ */
+export function transmissionBlockedBy(input: {
+  config: SenderConfig
+  pendingCount: number
+  readyAt: Date
+  now?: Date
+  /**
+   * Defaults to the configured producer, which is how callers use it. Taken
+   * as an input so the pacing rules below can be tested on their own instead
+   * of being permanently short-circuited by the blank NIF -- a rule that
+   * cannot be exercised until the day it matters is a rule nobody has checked.
+   */
+  producerNif?: string
+}): BlockedReason | null {
+  // The producer's NIF rides on every record. Sending without it would put a
+  // malformed SistemaInformatico block on real fiscal records.
+  const producerNif = input.producerNif ?? SIF_PRODUCER.nif
+  if (!producerNif) return 'no-producer-nif'
+  if (!input.config.certificatePath) return 'no-certificate'
+  if (input.pendingCount === 0) return 'nothing-to-send'
+
+  // The AEAT's pace, with the escape the spec allows: a full batch may go
+  // immediately, "la circunstancia que ocurra primero". Without that, 1000
+  // ready records would sit waiting for a timer for no reason.
+  const now = input.now ?? new Date()
+  if (input.pendingCount < MAX_RECORDS_PER_SUBMISSION && now < input.readyAt) return 'waiting-on-aeat-pace'
+
+  return null
 }
 
 /** AEAT's per-record verdicts, unchanged -- the same strings #326 stores. */

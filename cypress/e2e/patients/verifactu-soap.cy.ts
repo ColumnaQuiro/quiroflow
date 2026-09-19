@@ -41,14 +41,19 @@ describe('Talking to the AEAT', () => {
       indicadorMultiplesOt: 'S',
     } as RegistroAltaInput)
 
-  it('sends to the Sello endpoint, because nobody is sitting at the server', () => {
-    // The WSDL exposes SistemaVerifactu and SistemaVerifactuSello. The plain
-    // port expects a certificate identifying a person; the Sello one expects
-    // an entity's seal, which is what unattended automated submission needs.
-    expect(verifactuEndpoint('test')).to.eq(VERIFACTU_ENDPOINTS.testSello)
-    expect(verifactuEndpoint('production')).to.eq(VERIFACTU_ENDPOINTS.productionSello)
-    expect(verifactuEndpoint('test')).to.contain('prewww10.aeat.es')
-    expect(verifactuEndpoint('production')).to.contain('www10.agenciatributaria.gob.es')
+  it('sends each kind of certificate to its own host', () => {
+    // The WSDL exposes SistemaVerifactu and SistemaVerifactuSello on separate
+    // hosts, and the AEAT will not accept a certificate at the wrong one --
+    // it fails at the TLS handshake, which reads as a connection error and
+    // says nothing about certificates.
+    //
+    // Columnaquiro's certificate is a representante (issuer "AC
+    // Representación"), so today's traffic goes to the plain host.
+    expect(verifactuEndpoint('test', 'representative')).to.contain('prewww1.aeat.es')
+    expect(verifactuEndpoint('production', 'representative')).to.contain('www1.agenciatributaria.gob.es')
+    expect(verifactuEndpoint('test', 'seal')).to.contain('prewww10.aeat.es')
+    expect(verifactuEndpoint('production', 'seal')).to.contain('www10.agenciatributaria.gob.es')
+    expect(verifactuEndpoint('production', 'seal')).to.eq(VERIFACTU_ENDPOINTS.productionSello)
   })
 
   it('names the clinic as obligado, not us', () => {

@@ -1063,6 +1063,19 @@ async function createApiToken(opts: { accountId: string; scopes: string[] }) {
 // Meta's signature over the exact bytes a spec is about to send. Done here in
 // Node rather than in the browser so the spec can post a pre-serialised string
 // and know the digest covers precisely those bytes.
+/** Puts an account in the state a finished Embedded Signup leaves it in. */
+async function setWhatsappBusinessAccount(opts: { accountId: string; businessAccountId: string; phoneNumberId?: string }) {
+  unwrap(
+    await admin
+      .from('accounts')
+      .update({ whatsapp_business_account_id: opts.businessAccountId, whatsapp_phone_number_id: opts.phoneNumberId ?? `pnid-${Date.now()}` })
+      .eq('id', opts.accountId)
+      .select('id')
+      .single(),
+  )
+  return { connected: true }
+}
+
 /**
  * The WhatsApp connection fields on an account, for asserting that a refused
  * connect attempt wrote nothing. Read with the service role deliberately: a
@@ -1864,6 +1877,7 @@ export const dbTasks = {
   'db:clearWhatsappAppSecret': clearWhatsappAppSecret,
   'db:setAccountSecret': setAccountSecret,
   'db:accountWhatsappConnection': accountWhatsappConnection,
+  'db:setWhatsappBusinessAccount': setWhatsappBusinessAccount,
   'db:readAsStaff': readAsStaff,
   'db:rolePermissions': rolePermissions,
   'db:bookingAttribution': bookingAttribution,

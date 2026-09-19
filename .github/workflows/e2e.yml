@@ -329,6 +329,13 @@ jobs:
           # only ever prove the endpoint rejects things.
           NUXT_RESEND_WEBHOOK_SECRET: whsec_dGVzdC1zZWNyZXQtZm9yLWN5cHJlc3M=
           CYPRESS_RESEND_WEBHOOK_SECRET: whsec_dGVzdC1zZWNyZXQtZm9yLWN5cHJlc3M=
+          # The platform Meta app's secret, which signs the webhooks of every
+          # clinic onboarded through Embedded Signup. Set here so a spec can
+          # prove such a clinic is accepted WITHOUT a row in
+          # whatsapp_app_secrets -- unset, that path cannot be reached at all
+          # and the fallback would be the only thing ever tested.
+          NUXT_META_PLATFORM_APP_SECRET: e2e-meta-platform-app-secret
+          CYPRESS_META_PLATFORM_APP_SECRET: e2e-meta-platform-app-secret
 
       - name: Upload screenshots on failure
         if: failure()

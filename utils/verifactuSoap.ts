@@ -32,9 +32,38 @@ export const VERIFACTU_ENDPOINTS = {
   testSello: 'https://prewww10.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP',
 } as const
 
-/** The one this system will use, once it has a seal certificate. */
-export function verifactuEndpoint(env: 'test' | 'production'): string {
-  return env === 'production' ? VERIFACTU_ENDPOINTS.productionSello : VERIFACTU_ENDPOINTS.testSello
+/**
+ * Which certificate is presenting itself, because it picks the endpoint.
+ *
+ *   'seal'           certificado de sello electrónico -- an entity's seal,
+ *                    issued for unattended automated use. Nobody's name on it.
+ *   'representative' certificado de representante de persona jurídica -- a
+ *                    named person acting for the company. Issuer "AC
+ *                    Representación", subject carries GN/SN and an
+ *                    IDCES-<documento> serialNumber.
+ *
+ * Columnaquiro's current certificate is the second kind. It is perfectly
+ * valid for submitting the company's own records, and it is worth writing
+ * down what that costs: it is bound to one individual, so it is revoked if
+ * that person stops representing the company, and it expires on their
+ * renewal cycle rather than the server's. For an unattended sender that is a
+ * single point of failure with a human attached to it. A sello would not
+ * have that property, and is worth moving to before other clinics depend on
+ * this.
+ */
+export type CertificateType = 'seal' | 'representative'
+
+/**
+ * The AEAT keeps these on separate hosts and will not accept a certificate at
+ * the wrong one, so this is not a preference. Posting a representante
+ * certificate to the Sello endpoint fails at the TLS handshake, which
+ * presents as a connection error rather than as anything about certificates.
+ */
+export function verifactuEndpoint(env: 'test' | 'production', certificate: CertificateType): string {
+  if (certificate === 'seal') {
+    return env === 'production' ? VERIFACTU_ENDPOINTS.productionSello : VERIFACTU_ENDPOINTS.testSello
+  }
+  return env === 'production' ? VERIFACTU_ENDPOINTS.production : VERIFACTU_ENDPOINTS.test
 }
 
 const NS_SOAP = 'http://schemas.xmlsoap.org/soap/envelope/'
@@ -97,14 +126,17 @@ export function buildRegFactuEnvelope(input: {
 
 export interface SenderConfig {
   environment: 'test' | 'production'
-  /** PKCS#12 seal certificate. Absent until one is obtained. */
+  /** PKCS#12 certificate. Absent until one is configured. */
   certificatePath?: string
   certificatePassphrase?: string
+  /** Decides the endpoint; see CertificateType. */
+  certificateType?: CertificateType
 }
 
 export type BlockedReason =
   | 'no-producer-nif'
   | 'no-certificate'
+  | 'no-certificate-type'
   | 'nothing-to-send'
   | 'waiting-on-aeat-pace'
 
@@ -133,6 +165,10 @@ export function transmissionBlockedBy(input: {
   const producerNif = input.producerNif ?? SIF_PRODUCER.nif
   if (!producerNif) return 'no-producer-nif'
   if (!input.config.certificatePath) return 'no-certificate'
+  // Which kind it is decides the host, and the wrong host fails at the TLS
+  // handshake -- an error that says nothing about certificates. Refused here
+  // rather than guessed.
+  if (!input.config.certificateType) return 'no-certificate-type'
   if (input.pendingCount === 0) return 'nothing-to-send'
 
   // The AEAT's pace, with the escape the spec allows: a full batch may go

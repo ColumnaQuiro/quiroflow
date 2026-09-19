@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import {
-  SIF_CAN_TRANSMIT,
   SIF_CODE,
   SIF_DECLARATION_IN_FORCE,
   SIF_HUELLA_SPEC,
@@ -120,19 +119,19 @@ const pending = requirements.filter(r => !r.done).length
             <dt class="text-ink-muted">Productor</dt>
             <dd class="text-ink-900">{{ SIF_PRODUCER.name }}</dd>
             <dt class="text-ink-muted">NIF</dt>
-            <dd :class="SIF_PRODUCER.nif ? 'text-ink-900' : 'text-warning-text'">
-              {{ SIF_PRODUCER.nif || '[pendiente de confirmar la entidad que comercializa QuiroFlow]' }}
-            </dd>
+            <dd class="text-ink-900">{{ SIF_PRODUCER.nif }}</dd>
             <dt class="text-ink-muted">Domicilio</dt>
-            <dd :class="SIF_PRODUCER.address ? 'text-ink-900' : 'text-warning-text'">
-              {{ SIF_PRODUCER.address || '[pendiente]' }}
-            </dd>
+            <dd class="text-ink-900">{{ SIF_PRODUCER.address }}</dd>
           </dl>
 
-          <p v-if="!SIF_CAN_TRANSMIT" class="mt-3 text-[13px] text-warning-text">
+          <p class="mt-3 text-[13px] text-ink-muted">
             El NIF del productor no es sólo un dato de esta página: es un campo obligatorio del bloque
-            <code>SistemaInformatico</code> de <strong>cada</strong> registro remitido a la AEAT. Mientras no esté confirmado, no puede
-            iniciarse la remisión.
+            <code class="text-ink-700">SistemaInformatico</code> de <strong>cada</strong> registro remitido a la AEAT.
+          </p>
+          <p class="mt-2 text-[13px] text-ink-muted">
+            Productor y obligado tributario coinciden hoy, porque la misma sociedad desarrolla QuiroFlow y explota la clínica. Siguen siendo
+            dos papeles distintos: el productor se identifica en <code class="text-ink-700">SistemaInformatico</code> y el obligado en
+            <code class="text-ink-700">Cabecera</code>. Cuando remita una segunda clínica, sólo cambiará el segundo.
           </p>
         </div>
 

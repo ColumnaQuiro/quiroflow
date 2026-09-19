@@ -175,6 +175,17 @@ export default defineNuxtConfig({
     // which carries no session, so this stands in for auth on that one
     // request. Optional -- if unset, the endpoint just always rejects.
     cronSecret: '',
+    // App Secret of the QuiroFlow PLATFORM Meta app (1377782808751290), the
+    // one registered as a WhatsApp Tech Provider. Clinics onboarded through
+    // Embedded Signup have their webhooks signed with THIS secret rather than
+    // one of their own, because they never create a Meta app at all.
+    //
+    // Optional, and deliberately so: unset, every clinic falls back to the
+    // per-account row in whatsapp_app_secrets exactly as before. That is what
+    // lets the platform app be reviewed and rolled out without a flag day --
+    // the same shape as stripeSecretKey above, where clinics that have not
+    // connected still use their own pasted keys.
+    metaPlatformAppSecret: '',
     public: {
       // Booking subdomains: <account-slug>.<appDomain> gets rewritten to
       // /book/<account-slug> by server/middleware/subdomain-booking.ts.

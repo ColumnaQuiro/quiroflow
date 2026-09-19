@@ -89,6 +89,28 @@ export async function resolveWebhookAuth(event: H3Event): Promise<WebhookAuth | 
  * the account -- and therefore the secret -- is known. A clinic with no app
  * secret stored can never pass: that is the fail-closed half of this change,
  * and the reason Settings > WhatsApp shows whether one is configured.
+ *
+ * TWO secrets can satisfy it, and which one depends on how the clinic was
+ * onboarded rather than on anything in the request:
+ *
+ *  - **Platform.** A clinic that connected through Embedded Signup never
+ *    creates a Meta app, so there is no per-account secret to store and never
+ *    will be. Meta signs their webhooks with the QuiroFlow Tech Provider
+ *    app's secret -- one secret shared by every such clinic.
+ *  - **Direct.** A clinic that pasted its own tokens into Settings has its
+ *    own app, and its own row in whatsapp_app_secrets. Columnaquiro is this.
+ *
+ * The platform secret is tried first because it needs no query, and because
+ * it is the path every new clinic will take. The per-account row is the
+ * fallback, and it is what keeps the existing direct clinics working while
+ * the platform app is still in App Review -- there is no flag day, and no
+ * moment where a clinic is onboarded one way but verified the other.
+ *
+ * Sharing one secret across clinics does not let one clinic forge another's
+ * traffic: producing a valid signature requires the secret, which only this
+ * server holds. What a platform signature proves is "Meta sent this, through
+ * our app" -- the account is then located from phone_number_id, and Meta only
+ * delivers events for WABAs actually connected to the app.
  */
 export async function webhookMayActOnAccount(
   auth: WebhookAuth,
@@ -97,6 +119,9 @@ export async function webhookMayActOnAccount(
   supabase: SupabaseClient<Database>,
 ): Promise<boolean> {
   if (auth.kind === 'token') return auth.accountId === accountId
+
+  const platformSecret = useRuntimeConfig().metaPlatformAppSecret
+  if (platformSecret && signatureMatches(rawBody, auth.signatureHeader, platformSecret)) return true
 
   const { data } = await supabase.from('whatsapp_app_secrets').select('app_secret').eq('account_id', accountId).maybeSingle()
   if (!data?.app_secret) return false

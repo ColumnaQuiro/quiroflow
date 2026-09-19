@@ -1,3 +1,4 @@
+import { SIF_PRODUCER, SIF_PRODUCER_IDENTIFIED } from '../../../utils/sifIdentity'
 import { MAX_RECORDS_PER_SUBMISSION, transmissionBlockedBy } from '../../../utils/verifactuSoap'
 
 // Whether anything may go out at all.
@@ -14,11 +15,23 @@ describe('Whether the records may be sent', () => {
   const future = new Date(Date.now() + 60_000)
 
   it('will not send without the producer NIF, whatever else is ready', () => {
-    // The real SIF_PRODUCER.nif is still blank, so this is today's answer for
-    // every caller. It is a required field of the SistemaInformatico block on
-    // every record: sending without it would put a malformed block on real
-    // fiscal records at the AEAT.
-    expect(transmissionBlockedBy({ config: cert, pendingCount: 10, readyAt: past })).to.eq('no-producer-nif')
+    // A required field of the SistemaInformatico block on every record:
+    // sending without it would put a malformed block on real fiscal records
+    // at the AEAT.
+    expect(transmissionBlockedBy({ config: cert, pendingCount: 10, readyAt: past, producerNif: '' })).to.eq(
+      'no-producer-nif',
+    )
+  })
+
+  it('has a producer NIF now, so that is no longer what stops it', () => {
+    // Confirmed 19 Sep 2026: the same company produces QuiroFlow and operates
+    // the clinic. Asserted against the real constant rather than a fixture --
+    // when this test was written the constant was blank and every rule below
+    // it was unreachable, so this is the assertion that says that era ended.
+    expect(SIF_PRODUCER.nif).to.eq('B16365504')
+    expect(SIF_PRODUCER.nif.length, 'FormatoNIF (9)').to.eq(9)
+    expect(SIF_PRODUCER_IDENTIFIED).to.be.true
+    expect(transmissionBlockedBy({ config: cert, pendingCount: 10, readyAt: past })).to.eq(null)
   })
 
   it('will not send without a certificate', () => {

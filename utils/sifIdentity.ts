@@ -84,24 +84,36 @@ export const SIF_SUPPORTS_MULTIPLE_OBLIGADOS = 'S'
  * for software built only for its own use. Once it is sold to other clinics
  * it cannot be disclaimed.
  *
- * Left blank rather than guessed. This is not only a line on a page now: the
- * NIF is a required field on every alta record, so transmission cannot start
- * until the entity that sells QuiroFlow is confirmed. Guessing it would put a
- * wrong NIF on fiscal records at the AEAT, which is worse than not sending.
+ * Confirmed 19 Sep 2026: QuiroFlow is produced and sold by the same company
+ * that operates the clinic. So the producer and the first obligado share a
+ * NIF, which is legitimate and worth stating plainly rather than leaving to
+ * be inferred -- they are still two different roles, and the SistemaInformatico
+ * block (producer) and Cabecera/ObligadoEmision (obligado) stay separate
+ * fields that happen to agree today. The moment a second clinic transmits,
+ * only one of them changes.
  *
  * NombreRazon is Alfanumérico (120), NIF is FormatoNIF (9).
  */
 export const SIF_PRODUCER = {
-  name: 'QuiroFlow',
-  nif: '',
-  address: '',
+  name: 'Columnaquiro S.L',
+  nif: 'B16365504',
+  address: 'Calle Vivons 29, Bajo Izquierdo, 46006 Valencia',
 } as const
 
 /** Whether the declaration can honestly be made yet. See the page. */
 export const SIF_DECLARATION_IN_FORCE = false
 
-/** Nothing can be transmitted until the producer's NIF is known. */
-export const SIF_CAN_TRANSMIT = SIF_PRODUCER.nif.length > 0
+/**
+ * The producer is fully identified -- every field the SistemaInformatico block
+ * needs from us is known.
+ *
+ * Deliberately NOT called "can transmit". It says nothing about the
+ * certificate, and a flag that conflated the two would let the page announce
+ * that remisión can begin while the sender still refuses for want of a
+ * certificate. transmissionBlockedBy() is what actually decides, and it
+ * checks both.
+ */
+export const SIF_PRODUCER_IDENTIFIED = SIF_PRODUCER.nif.length > 0
 
 /**
  * NumeroInstalacion -- Alfanumérico (100).

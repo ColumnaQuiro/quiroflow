@@ -186,6 +186,13 @@ export default defineNuxtConfig({
     // the same shape as stripeSecretKey above, where clinics that have not
     // connected still use their own pasted keys.
     metaPlatformAppSecret: '',
+    // Where the Graph API lives. Overridable for exactly one reason: the
+    // connect callback spends a credential and writes a token onto an
+    // account, and the only way to test that hermetically is to point it at a
+    // local stub. Without this, CI either leaves the whole exchange untested
+    // or makes live calls to Meta from a test -- which is what it started
+    // doing the moment metaPlatformAppId stopped being blank.
+    metaGraphBaseUrl: 'https://graph.facebook.com/v21.0',
     public: {
       // Booking subdomains: <account-slug>.<appDomain> gets rewritten to
       // /book/<account-slug> by server/middleware/subdomain-booking.ts.
@@ -202,8 +209,19 @@ export default defineNuxtConfig({
       // Unset, Settings > WhatsApp simply does not offer the Connect button
       // and the manual token fields remain the only way in. That is how every
       // clinic works today, and how they keep working until this is filled.
-      metaPlatformAppId: '',
-      metaEmbeddedSignupConfigId: '',
+      // Real values rather than blanks, the same way firebaseWebConfig below
+      // ships its ids: neither is a secret, both are identical in every
+      // environment, and hard-coding them means the Connect button works on
+      // deploy with nothing to remember in Netlify. NUXT_PUBLIC_* still
+      // overrides either, which is the escape hatch a fork or a second
+      // platform app would need.
+      //
+      // What actually gates this is not these ids: it is the JavaScript SDK
+      // domain allowlist on the Meta app, which contains app.quiroflow.com
+      // and nothing else. The popup returns no token to any other origin, so
+      // a copy of these ids elsewhere buys nobody anything.
+      metaPlatformAppId: '1377782808751290',
+      metaEmbeddedSignupConfigId: '1071135465616821',
       // Connect "client ID" (ca_...) from Stripe Dashboard > Connect >
       // Settings -- not a secret, it's meant to sit in a redirect URL.
       stripeConnectClientId: '',

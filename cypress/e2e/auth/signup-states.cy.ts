@@ -15,7 +15,7 @@ describe('Signup form states', () => {
     }).as('signup')
 
     cy.visit('/signup')
-    cy.get('#email').type('lea@columnaquiro.com')
+    cy.get('#email').type('owner@example.test')
     cy.get('#password').type('valencia2026')
     cy.contains('button', 'Create account').click()
     cy.wait('@signup')
@@ -27,7 +27,7 @@ describe('Signup form states', () => {
 
     // Retyping an address you already typed is the thing that makes this
     // error infuriating, so the value stays and focus returns to it.
-    cy.get('#email').should('have.value', 'lea@columnaquiro.com')
+    cy.get('#email').should('have.value', 'owner@example.test')
     cy.get('#email').should('have.focus').and('have.attr', 'aria-invalid', 'true')
     cy.get('#email').should('have.attr', 'aria-describedby', 'email-error')
   })

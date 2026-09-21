@@ -244,11 +244,11 @@ const LAUNCH_CARDS = computed(() => [
       <!-- Step 2 -->
       <form v-if="step === 'form'" class="mt-5 flex flex-col gap-4 lg:mt-7" novalidate @submit.prevent="onSubmit">
         <OnboardingFormField id="owner-name" :label="t('Your name', 'Tu nombre')">
-          <OnboardingTextInput id="owner-name" v-model="ownerName" autocomplete="name" required :readonly="loading" placeholder="Lea Guido" />
+          <OnboardingTextInput id="owner-name" v-model="ownerName" autocomplete="name" required :readonly="loading" placeholder="Alba Esteve" />
         </OnboardingFormField>
 
         <OnboardingFormField id="account-name" :label="t('Practice name', 'Nombre de la consulta')">
-          <OnboardingTextInput id="account-name" v-model="accountName" required :readonly="loading" placeholder="ColumnaQuiro" />
+          <OnboardingTextInput id="account-name" v-model="accountName" required :readonly="loading" :placeholder="t('Your practice name', 'Nombre de tu consulta')" />
         </OnboardingFormField>
 
         <OnboardingFormField id="clinic-name" :label="t('First clinic location', 'Primera clínica')">

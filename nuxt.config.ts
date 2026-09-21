@@ -96,6 +96,10 @@ export default defineNuxtConfig({
         '/',
         '/login',
         '/signup',
+        // Reached straight after signUp() when email confirmation is on, so by
+        // definition there is no session yet -- without this it redirects to
+        // /login and the person never learns a confirmation email was sent.
+        '/check-email',
         '/confirm',
         '/join',
         '/portal/**',

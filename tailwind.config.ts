@@ -113,6 +113,14 @@ export default <Partial<Config>>{
         popover: '0 12px 32px rgba(20,22,30,.14)',
         drawer: '-16px 0 40px rgba(20,22,30,.12)',
         selected: '0 0 0 3px #EEF0FE',
+        // Focus and selected rings for the onboarding form primitives. They
+        // reference the brand/danger CSS variables rather than the design's
+        // literal rgba(79,70,229,.14), so the ring follows the dark palette
+        // the same way the border it sits outside does -- a baked-in indigo
+        // glows wrongly against a #0F1014 page.
+        focus: '0 0 0 3px rgb(var(--color-brand) / 0.14)',
+        focusTile: '0 0 0 3px rgb(var(--color-brand) / 0.13)',
+        focusDanger: '0 0 0 3px rgb(var(--color-danger-text) / 0.12)',
       },
       letterSpacing: {
         tightTitle: '-.012em',

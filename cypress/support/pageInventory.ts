@@ -91,9 +91,17 @@ export const DEV_PORTAL_PAGES = DEV_PORTAL_SLUGS.map((slug) => `/developers/${sl
 // 1007/2023 makes the producer publish it independently, available before
 // purchase -- so a middleware change that quietly put it behind the login
 // would breach the regulation while every other test still passed.
+//
+// /check-email is swept here for the same kind of reason. It is the page
+// someone lands on immediately after signUp() when email confirmation is on,
+// which is precisely when they have no session -- so it has to be in the
+// Supabase module's redirect exclude list, and a sweep that visits it is the
+// only thing that notices when it is not. It bounced to /login the first time
+// it was written.
 export const UNAUTHENTICATED_PAGES = [
   '/login',
   '/signup',
+  '/check-email',
   '/forgot-password',
   '/legal/declaracion-responsable',
   ...DEV_PORTAL_PAGES,

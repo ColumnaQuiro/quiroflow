@@ -276,18 +276,66 @@ export default defineEventHandler(async (event) => {
     return { success: true }
   }
 
+  // Which phone number ids this delivery has already complained about. A
+  // single POST can carry several changes for one number, and one unroutable
+  // number should read as one problem rather than as a burst.
+  const alreadyReported = new Set<string>()
+
   for (const entry of body?.entry ?? []) {
     for (const change of entry.changes ?? []) {
       const value = change.value
       const phoneNumberId = value?.metadata?.phone_number_id
       if (!phoneNumberId) continue
 
-      const { data: account } = await supabase
+      // Deliberately not .maybeSingle(). That returns NULL for two matching
+      // rows just as it does for none, so two accounts sharing a phone number
+      // id used to land in the same `if (!account) continue` as an unknown
+      // number -- inbound WhatsApp stopping dead for BOTH clinics with nothing
+      // logged, no failed request, and each one's Settings > WhatsApp page
+      // still showing a correct configuration. There was no symptom to notice.
+      //
+      // accounts_whatsapp_phone_number_id_key now makes two rows impossible,
+      // so the branch below should never be taken. It stays because "cannot
+      // happen" is exactly what was believed before, and the cost of being
+      // wrong a second time is silence again: an index can be dropped, a
+      // restore can omit it, and neither announces itself. Two rows is a
+      // routing question this code cannot answer, so it refuses to guess.
+      const { data: matches, error: lookupError } = await supabase
         .from('accounts')
         .select('id, whatsapp_phone_number_id, whatsapp_access_token')
         .eq('whatsapp_phone_number_id', phoneNumberId)
-        .maybeSingle()
-      if (!account) continue
+        .limit(2)
+
+      if (lookupError) {
+        console.error(`[whatsapp] could not look up the account for phone number id ${phoneNumberId}: ${lookupError.message}`)
+        continue
+      }
+      if (matches.length > 1) {
+        if (!alreadyReported.has(phoneNumberId)) {
+          alreadyReported.add(phoneNumberId)
+          console.error(
+            `[whatsapp] phone number id ${phoneNumberId} is claimed by ${matches.length} accounts (${matches.map((a) => a.id).join(', ')}). ` +
+              'Dropping this delivery: there is no way to tell which clinic it belongs to. Inbound WhatsApp is DOWN for every account sharing it ' +
+              'until one of them is cleared -- accounts_whatsapp_phone_number_id_key should have prevented this, so check it still exists.',
+          )
+        }
+        continue
+      }
+      const account = matches[0]
+      if (!account) {
+        // Meta only delivers for WABAs this app is subscribed to, so a number
+        // we cannot place is a real misconfiguration -- a clinic that changed
+        // its number in Settings, or a subscription outliving the connection
+        // that created it -- and the messages are being lost meanwhile.
+        if (!alreadyReported.has(phoneNumberId)) {
+          alreadyReported.add(phoneNumberId)
+          console.warn(
+            `[whatsapp] no account has phone number id ${phoneNumberId}. Dropping this delivery -- ` +
+              'the number in Settings > WhatsApp may not match the one Meta is sending from.',
+          )
+        }
+        continue
+      }
 
       // The authorisation decision, and on the signature path the verification
       // itself -- it needs the account to know which secret to check against.

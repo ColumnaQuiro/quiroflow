@@ -1068,7 +1068,7 @@ async function setWhatsappBusinessAccount(opts: { accountId: string; businessAcc
   unwrap(
     await admin
       .from('accounts')
-      .update({ whatsapp_business_account_id: opts.businessAccountId, whatsapp_phone_number_id: opts.phoneNumberId ?? `pnid-${Date.now()}` })
+      .update({ whatsapp_business_account_id: opts.businessAccountId, whatsapp_phone_number_id: opts.phoneNumberId ?? `pnid-${Date.now()}-${Math.floor(Math.random() * 1e9)}` })
       .eq('id', opts.accountId)
       .select('id')
       .single(),

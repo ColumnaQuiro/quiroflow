@@ -54,6 +54,39 @@ describe('Whether the records may be sent', () => {
     ).to.eq('no-certificate-type')
   })
 
+  it('refuses an expired certificate instead of retrying it forever', () => {
+    // An expired certificate fails at the TLS handshake, which reads as a
+    // network problem: recorded as transport_error and retried every minute,
+    // forever, never saying why. Refused here, where the reason is the answer.
+    //
+    // The one in use expires 16 Feb 2028 and is tied to an individual, so it
+    // can also be revoked before then without anyone here being told.
+    expect(
+      transmissionBlockedBy({
+        config: { ...cert, certificateNotAfter: new Date(Date.now() - 86_400_000) },
+        pendingCount: 10,
+        readyAt: past,
+        producerNif: NIF,
+      }),
+    ).to.eq('certificate-expired')
+
+    // Still valid tomorrow is still valid.
+    expect(
+      transmissionBlockedBy({
+        config: { ...cert, certificateNotAfter: new Date(Date.now() + 86_400_000) },
+        pendingCount: 10,
+        readyAt: past,
+        producerNif: NIF,
+      }),
+    ).to.eq(null)
+
+    // A certificate configured by hand has no recorded expiry, and is simply
+    // not checked rather than being treated as expired.
+    expect(
+      transmissionBlockedBy({ config: cert, pendingCount: 10, readyAt: past, producerNif: NIF }),
+    ).to.eq(null)
+  })
+
   it('says there is nothing to send rather than sending an empty envelope', () => {
     // An empty envío is rejected, and it would reset the pace for no reason.
     expect(transmissionBlockedBy({ config: cert, pendingCount: 0, readyAt: past, producerNif: NIF })).to.eq(

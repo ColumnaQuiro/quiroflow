@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 // PracticeHub-style unified ledger: invoices (debit) and payments/credits
 // (credit) merged into one chronological table, replacing the old separate
 // "Invoices" table + "creditHistory" list. See the plan notes on why a
@@ -64,8 +65,9 @@ const expandedKey = ref<string | null>(null)
 const menuOpen = ref(false)
 
 function money(cents: number) {
-  const amount = (Math.abs(cents) / 100).toFixed(2)
-  return `${cents < 0 ? '-' : ''}€${amount}`
+  const amount = formatEur(Math.abs(cents))
+  // formatEur already carries the symbol, in the Spanish position.
+  return `${cents < 0 ? '-' : ''}${amount}`
 }
 function invoiceRefFor(id: string | null) {
   if (!id) return null
@@ -572,7 +574,7 @@ async function sendStatement() {
   <div v-if="transferModalOpen" class="fixed inset-0 z-20 flex items-center justify-center bg-ink-900/40 p-4" @click.self="transferModalOpen = false">
     <div class="w-full max-w-sm rounded-card border border-line bg-surface p-4 shadow-popover">
       <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Transfer credit', 'Transferir crédito') }}</p>
-      <p class="mt-1 text-[12px] text-ink-faint">{{ t('Moves an amount from this patient\'s credit', 'Mueve un importe del crédito de este paciente') }} (€{{ (spendableCreditCents / 100).toFixed(2) }} {{ t('available', 'disponible') }}) {{ t('to another patient\'s account.', 'a la cuenta de otro paciente.') }}</p>
+      <p class="mt-1 text-[12px] text-ink-faint">{{ t('Moves an amount from this patient\'s credit', 'Mueve un importe del crédito de este paciente') }} ({{ formatEur(spendableCreditCents) }} {{ t('available', 'disponible') }}) {{ t('to another patient\'s account.', 'a la cuenta de otro paciente.') }}</p>
 
       <div class="mt-3">
         <label class="block text-[11px] text-ink-muted">{{ t('To patient', 'Al paciente') }}</label>

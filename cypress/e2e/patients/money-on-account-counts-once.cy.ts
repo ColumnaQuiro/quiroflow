@@ -18,8 +18,8 @@ describe('Money taken on account', () => {
           cy.login(account.email, account.password)
           cy.visit(`/patients/${patient.id}`)
 
-          cy.contains('€115.00 available').should('be.visible')
-          cy.contains('€230.00 available').should('not.exist')
+          cy.contains('115,00 € available').should('be.visible')
+          cy.contains('230,00 € available').should('not.exist')
         })
       })
     })
@@ -47,13 +47,13 @@ describe('Money taken on account', () => {
           cy.visit(`/patients/${patient.id}?tab=billing`)
 
           // Before: the whole EUR 528 owed on the bono.
-          cy.contains('€528.00').should('be.visible')
+          cy.contains('528,00 €').should('be.visible')
           cy.contains('button', 'Link payment').click()
           // Picked by the option's own text rather than by position: the
           // Billing tab has several selects (sell a package, sell a
           // membership, take payment) and which one comes last depends on
           // what this patient happens to have.
-          cy.contains('option', '€115.00').then(($option) => {
+          cy.contains('option', '115,00 €').then(($option) => {
             cy.wrap($option).parent('select').select(String($option.val()))
           })
           cy.contains('button', /^Link$/).click()
@@ -61,12 +61,12 @@ describe('Money taken on account', () => {
           // After: the bono is EUR 115 better off and the credit has been
           // drawn down to pay for it. The same euros in one place, not both --
           // which is what linking alone used to leave behind.
-          cy.contains('€413.00').should('be.visible')
+          cy.contains('413,00 €').should('be.visible')
           cy.contains('Applied to Bono 12 sesiones').should('exist')
           // Twelve sessions still worth EUR 528, EUR 413 of them not paid for,
           // so EUR 115 is what the patient can draw on. Not 230.
-          cy.contains('€115.00 available').should('be.visible')
-          cy.contains('€230.00 available').should('not.exist')
+          cy.contains('115,00 € available').should('be.visible')
+          cy.contains('230,00 € available').should('not.exist')
         })
       })
     })

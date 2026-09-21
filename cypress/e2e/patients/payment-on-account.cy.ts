@@ -27,7 +27,7 @@ describe('A payment with no invoice', () => {
         // Nothing invoiced, EUR 50 paid: the clinic owes the patient EUR 50.
         // Before this change the payment was invisible -- the balance read
         // through an inner join to invoices, which it has none of.
-        cy.contains('dt', 'Balance').parent().should('contain', '€50.00')
+        cy.contains('dt', 'Balance').parent().should('contain', '50,00 €')
 
         // And it is visible as an event, not just as a number: the ledger
         // matches a payment to its invoice by invoice_id, and this one has
@@ -50,7 +50,7 @@ describe('A payment with no invoice', () => {
         // 50 paid, 30 charged. The invoice stays unpaid -- nothing was
         // allocated to it, exactly as PracticeHub records it -- but the
         // patient is EUR 20 in credit overall.
-        cy.contains('dt', 'Balance').parent().should('contain', '€20.00')
+        cy.contains('dt', 'Balance').parent().should('contain', '20,00 €')
       })
     })
   })

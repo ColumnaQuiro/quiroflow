@@ -57,7 +57,7 @@ describe('A visit the bono already paid for', () => {
           cy.contains('button', 'Use Bono mantenimiento').click()
 
           // The money went in when the bono was bought. Asking again is the bug.
-          cy.contains('Balance due: €0.00').should('be.visible')
+          cy.contains('Balance due: 0,00 €').should('be.visible')
           cy.contains('button', 'Take payment').should('not.exist')
         })
 

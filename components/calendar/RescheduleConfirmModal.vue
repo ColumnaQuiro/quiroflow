@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 import type { Tables } from '~/types/database.types'
 
 const props = defineProps<{
@@ -151,7 +152,7 @@ async function confirmMove() {
 
       <label v-if="store.schedulingPolicyFeeCents" class="mt-4 flex items-center gap-2 text-[13px] text-ink-600">
         <input v-model="applyFee" type="checkbox" class="h-4 w-4 rounded border-line-control text-brand focus:ring-brand" />
-        {{ t('Apply a scheduling policy fee to patient file', 'Aplicar un cargo por política de citas al historial del paciente') }} (€{{ (store.schedulingPolicyFeeCents / 100).toFixed(2) }})
+        {{ t('Apply a scheduling policy fee to patient file', 'Aplicar un cargo por política de citas al historial del paciente') }} ({{ formatEur(store.schedulingPolicyFeeCents) }})
       </label>
 
       <label class="mt-2 flex items-center gap-2 text-[13px] text-ink-600">

@@ -27,8 +27,8 @@ describe('A credit payment left on a voided invoice', () => {
           cy.visit(`/patients/${patient.id}`)
 
           // The void invoice contributes no debit, so if its credit payment
-          // still counted the balance would read €44.00.
-          cy.contains('dt', 'Balance').parent().should('contain', '€0.00')
+          // still counted the balance would read 44,00 €.
+          cy.contains('dt', 'Balance').parent().should('contain', '0,00 €')
         })
       })
     })
@@ -56,7 +56,7 @@ describe('A credit payment left on a voided invoice', () => {
           cy.login(account.email, account.password)
           cy.visit(`/patients/${patient.id}`)
 
-          cy.contains('dt', 'Balance').parent().should('contain', '€44.00')
+          cy.contains('dt', 'Balance').parent().should('contain', '44,00 €')
         })
       })
     })

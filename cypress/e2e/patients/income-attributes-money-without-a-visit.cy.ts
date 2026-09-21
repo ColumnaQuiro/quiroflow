@@ -27,11 +27,11 @@ describe('Income filtered by practitioner', () => {
         cy.contains('Total paid').should('be.visible')
 
         // Unfiltered it was always counted.
-        cy.contains('€200.00').should('be.visible')
+        cy.contains('200,00 €').should('be.visible')
 
         // Filtered to the practitioner it now still is, via the patient.
         cy.contains('select', 'All practitioners').select('Test Owner')
-        cy.contains('€200.00').should('be.visible')
+        cy.contains('200,00 €').should('be.visible')
       })
     })
   })
@@ -50,7 +50,7 @@ describe('Income filtered by practitioner', () => {
         cy.contains('no filter can attribute').should('not.exist')
 
         cy.contains('select', 'All practitioners').select('Test Owner')
-        cy.contains('€75.00').should('be.visible')
+        cy.contains('75,00 €').should('be.visible')
         cy.contains('no filter can attribute').should('be.visible')
       })
     })

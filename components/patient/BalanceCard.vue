@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 // Balance, bonos and care plan -- lifted out of mobile's PatientHome so the
 // web portal shows them too. usePatientFinancialSummary already lives in
 // the root app and works in both.
@@ -25,7 +26,7 @@ const amountDueCents = computed(() => (balanceCents.value < 0 ? -balanceCents.va
         <div v-if="creditLedgerCents + bonoValueCents > 0 || amountDueCents > 0" class="flex flex-wrap items-center gap-2">
           <UiBalancePill :available-cents="availableCents" :balance-cents="balanceCents" />
           <span v-if="amountDueCents > 0" class="rounded-pill bg-danger-bg px-2 py-0.5 text-[12.5px] font-medium text-danger-text">
-            {{ t(`€${(amountDueCents / 100).toFixed(2)} due`, `€${(amountDueCents / 100).toFixed(2)} pendiente`) }}
+            {{ t(`${formatEur(amountDueCents)} due`, `${formatEur(amountDueCents)} pendiente`) }}
           </span>
         </div>
         <p v-else class="text-[13px] text-ink-muted">{{ t('Balance is settled.', 'No tienes saldo pendiente.') }}</p>

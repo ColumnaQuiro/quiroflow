@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 import type { Tables } from '~/types/database.types'
 
 const emit = defineEmits<{ close: [] }>()
@@ -141,7 +142,7 @@ const expectedInDrawerCents = computed(() => cashPaymentsCents.value + movements
 const totalPaidCents = computed(() => paidByMethod.value.reduce((s, m) => s + m.cents, 0))
 
 function fmt(cents: number) {
-  return `€${(cents / 100).toFixed(2)}`
+  return `${formatEur(cents)}`
 }
 
 async function openShift() {

@@ -32,8 +32,8 @@ describe('Verifying the registro de facturación', () => {
 
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}?tab=billing`)
-        sellBono('one', 'Bono V1 (4, €200.00)')
-        sellBono('two', 'Bono V2 (4, €300.00)')
+        sellBono('one', 'Bono V1 (4, 200,00 €)')
+        sellBono('two', 'Bono V2 (4, 300,00 €)')
 
         cy.task('db:facturaRecordsFor', { accountId: account.accountId }).then((records: any) => {
           expect(records, 'two facturas, two records').to.have.length(2)
@@ -62,7 +62,7 @@ describe('Verifying the registro de facturación', () => {
 
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}?tab=billing`)
-        sellBono('one', 'Bono V3 (4, €250.00)')
+        sellBono('one', 'Bono V3 (4, 250,00 €)')
 
         // Stamp the chain with a formula this database no longer implements
         // -- the state every record is in between a formula being corrected
@@ -138,7 +138,7 @@ describe('Verifying the registro de facturación', () => {
 
         cy.login(owner.email, owner.password)
         cy.visit(`/patients/${patient.id}?tab=billing`)
-        sellBono('one', 'Bono V4 (4, €220.00)')
+        sellBono('one', 'Bono V4 (4, 220,00 €)')
 
         // Nothing but the anon key.
         cy.task('db:verifyFacturaChainAs', { accountId: owner.accountId, as: 'anon' }).then((result: any) => {

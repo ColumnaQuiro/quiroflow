@@ -54,9 +54,9 @@ describe('An appointment covered by a bono', () => {
         cy.get('.fixed.inset-0.z-50').within(() => {
           // The €55 type against a €40 bono used to read as a debt.
           cy.contains('patient owes the difference').should('not.exist')
-          cy.contains('Covered by package at €40.00 (3 sessions left after this one)').should('be.visible')
+          cy.contains('Covered by package at 40,00 € (3 sessions left after this one)').should('be.visible')
           // And what she is holding, which this screen never said at all.
-          cy.contains('€160.00 available').should('be.visible')
+          cy.contains('160,00 € available').should('be.visible')
           // Her only booking is the one being edited, so she is about to fall
           // out of the schedule. That warning now lives here, on the tab about
           // the booking, instead of at the bottom of Billing.
@@ -66,8 +66,8 @@ describe('An appointment covered by a bono', () => {
           // walk-in price -- the reverse of what it used to do.
           cy.contains('button', 'billing').click()
           cy.contains('Not charged yet').should('be.visible')
-          cy.contains('button', 'Use Bono mantenimiento — €40.00').should('be.visible')
-          cy.contains('button', 'Charge €55.00 instead').should('be.visible')
+          cy.contains('button', 'Use Bono mantenimiento — 40,00 €').should('be.visible')
+          cy.contains('button', 'Charge 55,00 € instead').should('be.visible')
           cy.contains('Or use a package session').should('not.exist')
         })
       })

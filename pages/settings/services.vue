@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 import type { Tables } from '~/types/database.types'
 
 const supabase = useSupabaseClient()
@@ -83,7 +84,7 @@ async function removeService(id: string) {
                 </tr>
                 <tr v-for="s in services" :key="s.id">
                   <td class="px-4 py-2.5 text-ink-800">{{ s.name }}</td>
-                  <td class="px-4 py-2.5 font-mono text-ink-muted">€{{ (s.price_cents / 100).toFixed(2) }}</td>
+                  <td class="px-4 py-2.5 font-mono text-ink-muted">{{ formatEur(s.price_cents) }}</td>
                   <td class="px-4 py-2.5 text-ink-muted">{{ s.tax_rate }}%</td>
                   <td class="px-4 py-2.5 text-right">
                     <button type="button" class="text-ink-faint2 hover:text-danger-text" @click="removeService(s.id)">✕</button>

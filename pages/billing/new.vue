@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 import type { Tables } from '~/types/database.types'
 
 interface PatientOption { id: string; first_name: string; last_name: string | null }
@@ -203,7 +204,7 @@ async function save() {
 
           <div class="mt-4 flex justify-end border-t border-line-row2 pt-4 text-[13px]">
             <span class="font-semibold text-ink-900">
-              {{ t('Total:', 'Total:') }} <span class="font-mono">€{{ (totalCents / 100).toFixed(2) }}</span>
+              {{ t('Total:', 'Total:') }} <span class="font-mono">{{ formatEur(totalCents) }}</span>
             </span>
           </div>
         </div>

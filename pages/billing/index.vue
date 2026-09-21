@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
 
 interface InvoiceRow {
@@ -275,7 +276,7 @@ function formatDate(iso: string) {
                 </div>
               </div>
               <div class="flex shrink-0 flex-col items-end gap-1">
-                <span class="font-mono text-[13px] font-semibold text-ink-900">€{{ (invoice.total_cents / 100).toFixed(2) }}</span>
+                <span class="font-mono text-[13px] font-semibold text-ink-900">{{ formatEur(invoice.total_cents) }}</span>
                 <UiPill :tone="STATUS_TONE[invoice.status] ?? 'neutral'">{{ invoice.status }}</UiPill>
               </div>
             </li>

@@ -348,7 +348,7 @@ describe('Growth in the shared Inbox', () => {
       cy.contains('In QuiroFlow').should('be.visible')
       cy.contains('Patient record').should('be.visible')
       cy.contains('Not created').should('be.visible')
-      // A lead has no balance, so no balance row is drawn rather than €0.00.
+      // A lead has no balance, so no balance row is drawn rather than 0,00 €.
       cy.contains('Balance').should('not.exist')
     })
   })

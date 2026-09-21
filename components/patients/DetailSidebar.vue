@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 import type { Tables } from '~/types/database.types'
 
 interface ActivePackage { id: string; package_name: string; sessions_total: number; sessions_used: number }
@@ -75,8 +76,9 @@ const identityMeta = computed(() => {
 })
 
 function money(cents: number) {
-  const amount = (Math.abs(cents) / 100).toFixed(2)
-  return `${cents < 0 ? '-' : ''}€${amount}`
+  const amount = formatEur(Math.abs(cents))
+  // formatEur already carries the symbol, in the Spanish position.
+  return `${cents < 0 ? '-' : ''}${amount}`
 }
 </script>
 

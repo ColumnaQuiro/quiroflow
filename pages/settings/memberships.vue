@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 interface MembershipRow {
   id: string
   name: string
@@ -84,7 +85,7 @@ async function removeMembership(id: string) {
                 </tr>
                 <tr v-for="m in memberships" :key="m.id">
                   <td class="px-4 py-2.5 text-ink-700">{{ m.name }}</td>
-                  <td class="px-4 py-2.5 text-ink-muted2">€{{ (m.price_cents / 100).toFixed(2) }}</td>
+                  <td class="px-4 py-2.5 text-ink-muted2">{{ formatEur(m.price_cents) }}</td>
                   <td class="px-4 py-2.5 text-right">
                     <button type="button" class="text-ink-faint hover:text-danger-text" @click="removeMembership(m.id)">✕</button>
                   </td>

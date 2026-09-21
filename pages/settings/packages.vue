@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 interface PackageRow {
   id: string
   name: string
@@ -91,7 +92,7 @@ async function removePackage(id: string) {
                 <tr v-for="p in packages" :key="p.id">
                   <td class="px-4 py-2.5 text-ink-700">{{ p.name }}</td>
                   <td class="px-4 py-2.5 text-ink-muted2">{{ p.session_count }}</td>
-                  <td class="px-4 py-2.5 text-ink-muted2">€{{ (p.price_cents / 100).toFixed(2) }}</td>
+                  <td class="px-4 py-2.5 text-ink-muted2">{{ formatEur(p.price_cents) }}</td>
                   <td class="px-4 py-2.5 text-right">
                     <button type="button" class="text-ink-faint hover:text-danger-text" @click="removePackage(p.id)">✕</button>
                   </td>

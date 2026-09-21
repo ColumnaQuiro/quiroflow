@@ -65,7 +65,7 @@ describe('Taking a visit from a bono in the calendar', () => {
             // would read as a second bill.
             cy.contains('Covered by', { timeout: 15000 }).should('be.visible')
             cy.contains('Bono 12').should('be.visible')
-            cy.contains('Total: €44.00').should('be.visible')
+            cy.contains('Total: 44,00 €').should('be.visible')
           })
 
           cy.task('db:packageSessionEffects', { patientId: patient.id, packagePurchaseId: purchase.id }).then((eff: any) => {

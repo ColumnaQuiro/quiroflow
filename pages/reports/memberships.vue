@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 interface MembershipRow {
   id: string
   patient_id: string
@@ -115,7 +116,7 @@ function lastPayment(membershipId: string) {
             <p class="text-[12px] text-ink-muted2">{{ t('Active memberships', 'Membresías activas') }}</p>
           </div>
           <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-            <p class="font-mono text-[23px] font-semibold text-ink-900">€{{ (monthlyRevenue / 100).toFixed(2) }}</p>
+            <p class="font-mono text-[23px] font-semibold text-ink-900">{{ formatEur(monthlyRevenue) }}</p>
             <p class="text-[12px] text-ink-muted2">{{ t('Revenue this month (paid)', 'Ingresos este mes (pagado)') }}</p>
           </div>
           <div class="rounded-card border border-line bg-surface p-4 shadow-card">

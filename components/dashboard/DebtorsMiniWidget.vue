@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 import { bonoOwedCents, type BonoOwedPayment } from '~/utils/bonoOwed'
 defineProps<{ dateRange?: unknown; practitionerId?: string; clinicId?: string }>()
 
@@ -70,7 +71,7 @@ function patientName(p: PurchaseRow) {
   return p.patients ? `${p.patients.first_name} ${p.patients.last_name ?? ''}`.trim() : t('Unknown patient', 'Paciente desconocido')
 }
 function euros(cents: number) {
-  return `€${(cents / 100).toFixed(2)}`
+  return `${formatEur(cents)}`
 }
 </script>
 

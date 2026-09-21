@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 import { normalizeSearchTerm } from '~/utils/searchText'
 import { bonoOwedCents } from '~/utils/bonoOwed'
 import { settleInvoiceIfCovered } from '~/utils/settleInvoice'
@@ -1615,7 +1616,7 @@ async function logPayment(m: PatientMembershipRow, status: 'paid' | 'failed') {
 }
 
 function money(cents: number) {
-  return `€${(cents / 100).toFixed(2)}`
+  return formatEur(cents)
 }
 </script>
 
@@ -1710,7 +1711,7 @@ function money(cents: number) {
                      offered separately and only when there is some. -->
                 <option value="credit" :disabled="spendableCreditCents <= 0">
                   {{ t('Credit on account', 'Crédito en cuenta') }}
-                  ({{ spendableCreditCents > 0 ? `€${(spendableCreditCents / 100).toFixed(2)} ${t('available', 'disponible')}` : t('none available', 'sin crédito') }})
+                  ({{ spendableCreditCents > 0 ? `${formatEur(spendableCreditCents)} ${t('available', 'disponible')}` : t('none available', 'sin crédito') }})
                 </option>
               </select>
             </div>
@@ -2047,7 +2048,7 @@ function money(cents: number) {
               -->
               <option value="credit" :disabled="spendableCreditCents <= 0">
                 {{ t('Credit on account', 'Crédito en cuenta') }}
-                ({{ spendableCreditCents > 0 ? `€${(spendableCreditCents / 100).toFixed(2)} ${t('available', 'disponible')}` : t('none available', 'sin crédito') }})
+                ({{ spendableCreditCents > 0 ? `${formatEur(spendableCreditCents)} ${t('available', 'disponible')}` : t('none available', 'sin crédito') }})
               </option>
             </select>
           </div>
@@ -2158,7 +2159,7 @@ function money(cents: number) {
               <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
               <option value="credit" :disabled="spendableCreditCents <= 0">
                 {{ t('Credit on account', 'Crédito en cuenta') }}
-                ({{ spendableCreditCents > 0 ? `€${(spendableCreditCents / 100).toFixed(2)} ${t('available', 'disponible')}` : t('none available', 'sin crédito') }})
+                ({{ spendableCreditCents > 0 ? `${formatEur(spendableCreditCents)} ${t('available', 'disponible')}` : t('none available', 'sin crédito') }})
               </option>
             </select>
           </div>

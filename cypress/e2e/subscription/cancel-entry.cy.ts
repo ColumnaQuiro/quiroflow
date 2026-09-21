@@ -20,6 +20,9 @@ describe('Subscription cancellation entry point', () => {
       // Stripe's portal actually opens it (that's Stripe's own contract).
       cy.intercept('POST', '/api/billing/portal-session', { statusCode: 200, body: { url: '/subscription?portal=stub' } }).as('portalSession')
 
+      // Cancelling now lives with the other Stripe handoffs on the Billing
+      // view rather than under the plan summary.
+      cy.contains('[role="tab"]', 'Billing').click()
       cy.contains('button', 'Cancel subscription').click()
       cy.wait('@portalSession').its('request.body').should('deep.equal', { flow: 'cancel' })
     })
@@ -32,6 +35,10 @@ describe('Subscription cancellation entry point', () => {
       // comped accounts never get real Stripe ids either.
       cy.login(account.email, account.password)
       cy.visit('/subscription')
+      cy.contains('[role="tab"]', 'Billing').click()
+      // No Stripe customer means no billing record and no handoffs at all --
+      // there is nothing to cancel, so nothing offers to.
+      cy.contains('No billing details yet').should('be.visible')
       cy.contains('button', 'Cancel subscription').should('not.exist')
     })
   })

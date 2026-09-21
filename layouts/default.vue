@@ -39,7 +39,7 @@ function dismissDenied() {
   router.replace({ query })
 }
 
-const contactHref = 'mailto:hola@columnaquiro.com'
+const contactHref = 'mailto:hola@quiroflow.com'
 </script>
 
 <template>
@@ -68,7 +68,7 @@ const contactHref = 'mailto:hola@columnaquiro.com'
       </NuxtLink>
       <p v-else class="mt-4 text-sm text-gray-600">Ask the account owner to renew the subscription.</p>
       <p class="mt-3 text-sm text-gray-600">Or contact us directly:</p>
-      <a :href="contactHref" class="mt-1 inline-block text-sm font-medium text-indigo-600 hover:text-indigo-800">hola@columnaquiro.com</a>
+      <a :href="contactHref" class="mt-1 inline-block text-sm font-medium text-indigo-600 hover:text-indigo-800">hola@quiroflow.com</a>
     </div>
   </div>
   <div v-else class="flex h-screen flex-col bg-surface-page">

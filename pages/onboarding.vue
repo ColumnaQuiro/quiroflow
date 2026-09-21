@@ -201,7 +201,7 @@ async function chooseLanguage(value: 'en' | 'es') {
           </li>
           <li>
             <p class="font-medium text-ink-900">Need a hand?</p>
-            <p class="text-ink-muted">Reach us any time at <a href="mailto:hola@columnaquiro.com" class="text-brand hover:text-brand-hover">hola@columnaquiro.com</a>.</p>
+            <p class="text-ink-muted">Reach us any time at <a href="mailto:hola@quiroflow.com" class="text-brand hover:text-brand-hover">hola@quiroflow.com</a>.</p>
           </li>
         </ul>
         <UiBtn variant="primary" class="mt-6 w-full" @click="navigateTo('/dashboard')">Get started</UiBtn>

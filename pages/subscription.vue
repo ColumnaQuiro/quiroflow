@@ -283,7 +283,7 @@ const seatsFull = computed(
 
 const contactHref = computed(() => {
   const subject = encodeURIComponent(`Question about my QuiroFlow plan -- ${store.accountName}`)
-  return `mailto:hola@columnaquiro.com?subject=${subject}`
+  return `mailto:hola@quiroflow.com?subject=${subject}`
 })
 
 // Plan picker -- hidden entirely for comped accounts (admin-granted free
@@ -467,7 +467,7 @@ const headerMeta = computed(() => {
       <UiSkeleton class="h-3 w-full rounded-ctlSm" />
       <UiSkeleton class="h-3 w-2/3 rounded-ctlSm" />
     </div>
-    <div v-else-if="!subscription" class="text-sm text-ink-muted">No subscription found. Contact <a :href="contactHref" class="text-brand hover:text-brand-hover">hola@columnaquiro.com</a>.</div>
+    <div v-else-if="!subscription" class="text-sm text-ink-muted">No subscription found. Contact <a :href="contactHref" class="text-brand hover:text-brand-hover">hola@quiroflow.com</a>.</div>
 
     <template v-else>
       <!-- Summary tab -->

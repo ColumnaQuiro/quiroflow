@@ -89,7 +89,7 @@ const CAPABILITIES = [
 
     <h2>Getting help</h2>
     <p>
-      Email <a href="mailto:hola@columnaquiro.com">hola@columnaquiro.com</a>. Every response carries an
+      Email <a href="mailto:hola@quiroflow.com">hola@quiroflow.com</a>. Every response carries an
       <code>X-QuiroFlow-Request-Id</code> header — quoting it lets us find the exact request in the clinic's log, which turns most questions
       into a one-message answer.
     </p>

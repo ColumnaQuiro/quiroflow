@@ -43,6 +43,9 @@ describe('Public online booking', () => {
         cy.contains('label', 'Nombre *').parent().find('input').type('Maria')
         cy.contains('label', 'Apellidos').parent().find('input').type('Garcia')
         cy.contains('label', 'Correo electrónico *').parent().find('input').type('maria.garcia@example.test')
+        // Required since online bookings started arriving with no way to
+        // ring the patient back.
+        cy.contains('label', 'Número de móvil *').parent().find('input[type="tel"]').type('600111001')
         cy.contains('button', 'Reservar cita').click()
 
         cy.contains('¡Cita reservada!', { timeout: 15000 }).should('be.visible')
@@ -90,6 +93,9 @@ describe('Public online booking', () => {
         cy.contains('label', 'Nombre *').parent().find('input').type('Marta')
         cy.contains('label', 'Apellidos').parent().find('input').type('Diaz')
         cy.contains('label', 'Correo electrónico *').parent().find('input').type('marta.attrib@example.test')
+        // Required since online bookings started arriving with no way to
+        // ring the patient back.
+        cy.contains('label', 'Número de móvil *').parent().find('input[type="tel"]').type('600111002')
         cy.contains('button', 'Reservar cita').click()
 
         cy.contains('¡Cita reservada!', { timeout: 15000 }).should('be.visible')
@@ -138,6 +144,9 @@ describe('Public online booking', () => {
         cy.contains('label', 'Nombre *').parent().find('input').type('Ada')
         cy.contains('label', 'Apellidos').parent().find('input').type('Malformed')
         cy.contains('label', 'Correo electrónico *').parent().find('input').type('ada.malformed@example.test')
+        // Required since online bookings started arriving with no way to
+        // ring the patient back.
+        cy.contains('label', 'Número de móvil *').parent().find('input[type="tel"]').type('600111003')
         cy.contains('button', 'Reservar cita').click()
 
         cy.contains('¡Cita reservada!', { timeout: 15000 }).should('be.visible')
@@ -174,6 +183,9 @@ describe('Public online booking', () => {
         cy.contains('label', 'Nombre *').parent().find('input').type('Directo')
         cy.contains('label', 'Apellidos').parent().find('input').type('Visitante')
         cy.contains('label', 'Correo electrónico *').parent().find('input').type('directo@example.test')
+        // Required since online bookings started arriving with no way to
+        // ring the patient back.
+        cy.contains('label', 'Número de móvil *').parent().find('input[type="tel"]').type('600111004')
         cy.contains('button', 'Reservar cita').click()
 
         cy.contains('¡Cita reservada!', { timeout: 15000 }).should('be.visible')

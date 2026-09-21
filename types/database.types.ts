@@ -2318,6 +2318,7 @@ export type Database = {
           description: string
           id: string
           invoice_id: string
+          package_purchase_id: string | null
           price_cents: number
           quantity: number
           service_id: string | null
@@ -2327,6 +2328,7 @@ export type Database = {
           description: string
           id?: string
           invoice_id: string
+          package_purchase_id?: string | null
           price_cents?: number
           quantity?: number
           service_id?: string | null
@@ -2336,6 +2338,7 @@ export type Database = {
           description?: string
           id?: string
           invoice_id?: string
+          package_purchase_id?: string | null
           price_cents?: number
           quantity?: number
           service_id?: string | null
@@ -2346,6 +2349,13 @@ export type Database = {
             columns: ["account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_line_items_package_purchase_id_fkey"
+            columns: ["package_purchase_id"]
+            isOneToOne: false
+            referencedRelation: "package_purchases"
             referencedColumns: ["id"]
           },
           {

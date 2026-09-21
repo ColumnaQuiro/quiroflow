@@ -937,12 +937,12 @@ if (import.meta.client) {
                   <input v-model="email" type="email" required placeholder="Su dirección de correo" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
                 </div>
                 <div>
-                  <label class="block text-sm font-medium text-ink-700">Número de móvil</label>
+                  <label class="block text-sm font-medium text-ink-700">Número de móvil *</label>
                   <div class="mt-1 flex gap-2">
                     <select v-model="dialCode" class="rounded-ctl border border-line-control px-2 py-2 text-sm">
                       <option v-for="c in COUNTRIES_BY_NAME" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }} {{ c.name }}</option>
                     </select>
-                    <input v-model="phoneNumber" type="tel" class="w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
+                    <input v-model="phoneNumber" type="tel" required placeholder="Su número de móvil" class="w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
                   </div>
                 </div>
               </div>

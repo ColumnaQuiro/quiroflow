@@ -846,7 +846,7 @@ async function createRefund(invoiceId: string, amountCents: number, reason: stri
   await supabase.from('invoice_line_items').insert({
     account_id: store.accountId!,
     invoice_id: refund.id,
-    description: reason.trim() ? `Refund (${invoice.invoice_number}) — ${reason.trim()}` : `Refund — ${invoice.invoice_number}`,
+    description: refundDescription(invoice.invoice_number, reason),
     quantity: 1,
     price_cents: -amountCents,
   })
@@ -1483,7 +1483,10 @@ async function useSession(purchase: PackagePurchaseRow) {
         await supabase.from('invoice_line_items').insert({
           account_id: store.accountId!,
           invoice_id: charge.id,
-          description: `${purchase.package_name} — ${t('session', 'sesión')}`,
+          description: bonoSessionDescription(purchase.package_name),
+          // Which bono, as a key rather than as words. The description is a
+          // copy of the name at purchase time and is not an identifier.
+          package_purchase_id: purchase.id,
           quantity: 1,
           price_cents: perSessionCents,
         })

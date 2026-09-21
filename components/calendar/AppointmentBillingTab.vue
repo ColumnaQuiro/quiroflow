@@ -419,6 +419,9 @@ async function usePackageSession(pkg: { id: string; package_name: string; sessio
   // Captured out here: TypeScript loses the null-narrowing on `bono` inside a
   // closure, and the name is all the charge needs.
   const bonoName = bono.package_name
+  // Captured out here for the same reason as the name above: TypeScript loses
+  // the null-narrowing on `bono` inside the closure.
+  const bonoPurchaseId = bono.id
   async function chargeTheVisit(): Promise<void> {
     const { data: chargeNumber } = await supabase.rpc('next_invoice_number', { p_account_id: store.accountId! })
     if (!chargeNumber) {
@@ -441,7 +444,8 @@ async function usePackageSession(pkg: { id: string; package_name: string; sessio
       await supabase.from('invoice_line_items').insert({
         account_id: store.accountId!,
         invoice_id: created.id,
-        description: `${bonoName} — ${t('session', 'sesión')}`,
+        description: bonoSessionDescription(bonoName),
+        package_purchase_id: bonoPurchaseId,
         quantity: 1,
         price_cents: perSessionCents,
       })

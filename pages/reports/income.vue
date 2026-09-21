@@ -7,7 +7,7 @@ import { fetchAllRows } from '~/composables/useFetchAllRows'
 
 interface PaymentRow { amount_cents: number; method: string; paid_at: string; invoice_id: string | null; patient_id: string | null; invoices?: { status: string } | null }
 interface InvoiceRow { id: string; total_cents: number; status: string; appointment_id: string | null; patient_id: string | null }
-interface LineItemRow { invoice_id: string; price_cents: number; quantity: number; service_id: string | null }
+interface LineItemRow { invoice_id: string; price_cents: number; quantity: number; service_id: string | null; package_purchase_id: string | null }
 interface ServiceRow { id: string; name: string }
 interface AppointmentRow { id: string; practitioner_id: string | null; clinic_id: string | null }
 interface PatientRow { id: string; default_practitioner_id: string | null; clinic_id: string | null }
@@ -26,6 +26,12 @@ const invoices = ref<InvoiceRow[]>([])
 const invoicePayments = ref<{ invoice_id: string | null; amount_cents: number }[]>([])
 const lineItems = ref<LineItemRow[]>([])
 const services = ref<ServiceRow[]>([])
+// Only what naming a line needs: the bonos its lines drew from, the templates
+// those bonos belong to, and the type of visit behind each invoice.
+const purchases = ref<{ id: string; package_id: string | null; package_name: string }[]>([])
+const packages = ref<{ id: string; name: string }[]>([])
+const appointmentTypes = ref<{ id: string; name: string }[]>([])
+const invoiceAppointmentTypes = ref<{ invoice_id: string; appointment_type_id: string | null }[]>([])
 const appointments = ref<AppointmentRow[]>([])
 const patients = ref<PatientRow[]>([])
 const teamMembers = ref<TeamMemberRow[]>([])
@@ -49,7 +55,7 @@ async function fetchLineItemsFor(invoiceIds: string[]): Promise<LineItemRow[]> {
     chunks.map((ids) =>
       supabase
         .from('invoice_line_items')
-        .select('invoice_id, price_cents, quantity, service_id')
+        .select('invoice_id, price_cents, quantity, service_id, package_purchase_id')
         .in('invoice_id', ids)
         .then((r) => (r.data ?? []) as LineItemRow[]),
     ),
@@ -106,6 +112,34 @@ async function load() {
     allocations.push(...rows)
   }
   invoicePayments.value = allocations
+
+  // What each line was for. Fetched by id rather than wholesale: the
+  // appointments table is thousands of rows and this only needs the ones
+  // behind invoices in range, which is why the practitioner filter loads it
+  // separately and only when set.
+  const purchaseIds = [...new Set(lineItems.value.map((li) => li.package_purchase_id).filter((id): id is string => !!id))]
+  const appointmentIds = [...new Set(inv.map((i) => i.appointment_id).filter((id): id is string => !!id))]
+  const [pur, pkg, apptTypes, appts] = await Promise.all([
+    purchaseIds.length
+      ? fetchAllRows<{ id: string; package_id: string | null; package_name: string }>((f, t) =>
+          supabase.from('package_purchases').select('id, package_id, package_name').in('id', purchaseIds).range(f, t),
+        )
+      : Promise.resolve([] as { id: string; package_id: string | null; package_name: string }[]),
+    supabase.from('packages').select('id, name').then((r) => r.data ?? []),
+    supabase.from('appointment_types').select('id, name').then((r) => r.data ?? []),
+    appointmentIds.length
+      ? fetchAllRows<{ id: string; appointment_type_id: string | null }>((f, t) =>
+          supabase.from('appointments').select('id, appointment_type_id').in('id', appointmentIds).range(f, t),
+        )
+      : Promise.resolve([] as { id: string; appointment_type_id: string | null }[]),
+  ])
+  purchases.value = pur
+  packages.value = pkg
+  appointmentTypes.value = apptTypes
+  const typeByAppointment = new Map(appts.map((a) => [a.id, a.appointment_type_id]))
+  invoiceAppointmentTypes.value = inv
+    .filter((i) => i.appointment_id)
+    .map((i) => ({ invoice_id: i.id, appointment_type_id: typeByAppointment.get(i.appointment_id!) ?? null }))
 
   // Appointments and patients are only consulted to resolve a
   // practitioner/clinic filter -- with no filter set, which is how the page
@@ -271,12 +305,65 @@ const byPractitioner = computed(() => {
 })
 
 const serviceById = computed(() => new Map(services.value.map((s) => [s.id, s.name])))
+const purchaseById = computed(() => new Map(purchases.value.map((p) => [p.id, p])))
+const packageById = computed(() => new Map(packages.value.map((p) => [p.id, p.name])))
+const appointmentTypeById = computed(() => new Map(appointmentTypes.value.map((a) => [a.id, a.name])))
+const appointmentTypeIdByInvoice = computed(
+  () => new Map(invoiceAppointmentTypes.value.filter((r) => r.appointment_type_id).map((r) => [r.invoice_id, r.appointment_type_id!])),
+)
+
+/**
+ * What a line was for.
+ *
+ * Only a minority of lines carry a service_id, and that is by design rather
+ * than neglect: a bono session is not a catalogue service, and the base visit
+ * line must have no service_id because AppointmentBillingTab uses exactly that
+ * to tell "the visit the bono covers" from "extras the patient still owes".
+ * So reading service_id alone reported 235 EUR by name and swept 4,824 into
+ * one row called "Sin servicio vinculado", which is most of the clinic's
+ * income and tells nobody anything.
+ *
+ * Three sources, in order of how directly they say it:
+ *
+ *   1. the catalogue service, when a line has one -- a product, an added extra
+ *   2. the BONO, through package_purchase_id, reported by its template so a
+ *      migrated "Bono 12" and the same bono sold here as "Bono 12 sesiones"
+ *      land in one row instead of two
+ *   3. the APPOINTMENT TYPE behind the invoice -- Ajuste, Primera visita --
+ *      which is what an ordinary visit line is for
+ *
+ * What is left over is genuinely unidentifiable, and saying so about 940 EUR
+ * is a report; saying it about 4,824 is a shrug.
+ */
+function lineLabel(li: LineItemRow): string {
+  if (li.service_id) return serviceById.value.get(li.service_id) ?? t('Unknown service', 'Servicio desconocido')
+
+  if (li.package_purchase_id) {
+    const purchase = purchaseById.value.get(li.package_purchase_id)
+    if (purchase) {
+      // The template's name, falling back to the purchase's own copy for the
+      // few bonos that still have no template (a retired Bono 20, a shared
+      // one). Never the line's description, which is that same copy again.
+      const templateName = purchase.package_id ? packageById.value.get(purchase.package_id) : null
+      return templateName ?? purchase.package_name
+    }
+  }
+
+  const appointmentTypeId = appointmentTypeIdByInvoice.value.get(li.invoice_id)
+  if (appointmentTypeId) {
+    const name = appointmentTypeById.value.get(appointmentTypeId)
+    if (name) return name
+  }
+
+  return t('Not identified', 'Sin identificar')
+}
+
 const byService = computed(() => {
   const paidInvoiceIds = new Set(filteredPayments.value.map((p) => p.invoice_id))
   const totals = new Map<string, number>()
   for (const li of lineItems.value) {
     if (!paidInvoiceIds.has(li.invoice_id)) continue
-    const label = li.service_id ? (serviceById.value.get(li.service_id) ?? t('Unknown service', 'Servicio desconocido')) : t('No service linked', 'Sin servicio vinculado')
+    const label = lineLabel(li)
     totals.set(label, (totals.get(label) ?? 0) + li.price_cents * li.quantity)
   }
   return [...totals.entries()].map(([label, cents]) => ({ label, cents })).sort((a, b) => b.cents - a.cents)

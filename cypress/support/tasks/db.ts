@@ -859,6 +859,22 @@ async function createPackagePurchase(opts: {
   return row as { id: string; package_name: string; sessions_total: number; sessions_used: number; price_cents: number }
 }
 
+/**
+ * Calls create_public_booking with the ANON key, the way the booking widget
+ * does -- and the way anything that is not the widget would.
+ *
+ * Deliberately not the service-role client: the point of the guards inside
+ * that function is that they hold for a caller who never loaded the form, so
+ * a test using admin privileges would prove nothing about them.
+ */
+async function callPublicBookingAsAnon(args: Record<string, unknown>) {
+  const anon = createClient(SUPABASE_URL, ANON_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+  const { error } = await anon.rpc('create_public_booking', args as never)
+  return { error: error?.message ?? null }
+}
+
 /** Gives a second patient the run of someone else's bono -- a family sharing one. */
 async function sharePackageWith(opts: { accountId: string; packagePurchaseId: string; patientId: string }) {
   const row = unwrap(
@@ -886,7 +902,11 @@ async function packageSessionEffects(opts: { patientId: string; packagePurchaseI
   const payments = invoiceIds.length
     ? unwrap(await admin.from('payments').select('amount_cents, method, invoice_id').in('invoice_id', invoiceIds))
     : []
-  return { purchase, appointments, invoices, credits, payments, sessions }
+  // What the charge SAYS it is for, which is stored and ends up on a factura.
+  const lineItems = invoiceIds.length
+    ? unwrap(await admin.from('invoice_line_items').select('description, quantity, price_cents, service_id, package_purchase_id').in('invoice_id', invoiceIds))
+    : []
+  return { purchase, appointments, invoices, credits, payments, sessions, lineItems }
 }
 
 /**
@@ -1960,6 +1980,7 @@ export const dbTasks = {
   'db:createImportedInvoice': createImportedInvoice,
   'db:createImportedPayment': createImportedPayment,
   'db:createPackagePurchase': createPackagePurchase,
+  'db:callPublicBookingAsAnon': callPublicBookingAsAnon,
   'db:sharePackageWith': sharePackageWith,
   'db:packageSessionEffects': packageSessionEffects,
   'db:insertDuplicateSession': insertDuplicateSession,

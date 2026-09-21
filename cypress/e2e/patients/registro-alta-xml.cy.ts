@@ -1,4 +1,4 @@
-import { aeatDate, buildRegistroAlta, type RegistroAltaInput } from '../../../utils/registroAlta'
+import { aeatDate, aeatDateTime, buildRegistroAlta, type RegistroAltaInput } from '../../../utils/registroAlta'
 
 // The XML the AEAT will actually read.
 //
@@ -42,6 +42,32 @@ describe('The RegistroAlta the AEAT will read', () => {
     // accepted by nothing.
     expect(aeatDate('2026-09-18')).to.eq('18-09-2026')
     expect(aeatDate('2026-01-02T10:00:00+01:00')).to.eq('02-01-2026')
+  })
+
+  it('sends the timestamp the huella was computed from, not the one Postgres stores', () => {
+    // The AEAT recomputes the huella from the XML, so this field has to be
+    // byte-identical to what factura_huella_input() hashed: Spanish local
+    // time, whole seconds, offset spelled out.
+    //
+    // These two strings are the same instant, and only the first was hashed:
+    //   hashed   2026-09-18T09:09:39+02:00
+    //   postgres 2026-09-18 07:09:39.571153+00
+    //
+    // Sending the second would have been rejected on every record, with an
+    // error about the huella rather than about the date.
+    expect(aeatDateTime('2026-09-18T07:09:39.571153+00:00')).to.eq('2026-09-18T09:09:39+02:00')
+
+    // Winter is +01:00. Read from the zone rather than assumed, so the clocks
+    // changing does not quietly start producing rejected records.
+    expect(aeatDateTime('2026-01-15T07:09:39.000000+00:00')).to.eq('2026-01-15T08:09:39+01:00')
+
+    // Microseconds never survive into the document.
+    const xml = buildRegistroAlta({
+      ...base,
+      record: { ...base.record, generatedAt: '2026-09-18T07:09:39.571153+00:00' },
+    })
+    expect(xml).to.contain('<sum1:FechaHoraHusoGenRegistro>2026-09-18T09:09:39+02:00</sum1:FechaHoraHusoGenRegistro>')
+    expect(xml).to.not.contain('571153')
   })
 
   it('carries OperacionExenta and NOT CalificacionOperacion when exempt', () => {

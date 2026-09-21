@@ -86,15 +86,15 @@ describe('Appointment booking and billing checkout', () => {
             cy.contains('Not charged yet').should('be.visible')
             cy.contains('button', 'Charge this visit').click()
             cy.contains('-- Add Service/Product --').should('be.visible')
-            cy.get('select').eq(0).should('contain.text', 'Adjustment').select('Adjustment (€50.00)')
+            cy.get('select').eq(0).should('contain.text', 'Adjustment').select('Adjustment (50,00 €)')
 
-            cy.contains('Total: €50.00').should('be.visible')
-            cy.contains('Balance due: €50.00').should('be.visible')
+            cy.contains('Total: 50,00 €').should('be.visible')
+            cy.contains('Balance due: 50,00 €').should('be.visible')
 
             cy.contains('button', 'Process').click()
 
             cy.contains('paid', { matchCase: false }).should('be.visible')
-            cy.contains('Balance due: €0.00').should('be.visible')
+            cy.contains('Balance due: 0,00 €').should('be.visible')
           })
         },
       )

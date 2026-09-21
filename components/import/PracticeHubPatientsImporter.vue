@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 import Papa from 'papaparse'
 import type { TablesInsert, TablesUpdate } from '~/types/database.types'
 
@@ -653,7 +654,7 @@ const introNotes = computed(() => [
             <tr v-for="(row, i) in toImport.slice(0, 10)" :key="i">
               <td class="px-3 py-2 text-ink-900">{{ row.patient.first_name }} {{ row.patient.last_name }}</td>
               <td class="px-3 py-2 text-ink-muted2">{{ row.patient.email ?? t('N/A', 'N/D') }}</td>
-              <td class="px-3 py-2 text-ink-muted2">€{{ ((row.patient.balance_cents ?? 0) / 100).toFixed(2) }}</td>
+              <td class="px-3 py-2 text-ink-muted2">{{ formatEur((row.patient.balance_cents ?? 0)) }}</td>
               <td class="px-3 py-2 text-ink-muted2">{{ row.patient.preferred_language }}</td>
               <td class="px-3 py-2 text-ink-muted2">{{ (row.patient.tags ?? []).join(', ') || t('N/A', 'N/D') }}</td>
             </tr>

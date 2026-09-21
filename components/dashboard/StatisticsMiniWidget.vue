@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEurFromAmount } from '~/utils/billing'
 import type { DateRange } from '~/composables/useDateRangePresets'
 
 const props = defineProps<{ dateRange: DateRange; practitionerId?: string; clinicId?: string }>()
@@ -106,7 +107,7 @@ const retentionRate = computed(() => {
     </li>
     <li class="flex items-center justify-between py-1.5">
       <span class="text-ink-700">{{ t('Per-visit average', 'Media por visita') }}</span>
-      <span class="font-mono text-[12.5px] text-ink-900">{{ pva !== null ? `€${pva.toFixed(2)}` : '—' }}</span>
+      <span class="font-mono text-[12.5px] text-ink-900">{{ pva !== null ? formatEurFromAmount(pva) : '—' }}</span>
     </li>
     <li class="flex items-center justify-between py-1.5">
       <span class="text-ink-700">{{ t('Retention', 'Retención') }}</span>

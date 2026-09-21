@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 import { classifyPaymentForFilter } from '~/utils/incomeAttribution'
 import type { DateRange } from '~/composables/useDateRangePresets'
 
@@ -207,7 +208,7 @@ const deltaPct = computed(() => {
 })
 
 function euros(cents: number) {
-  return `€${(cents / 100).toFixed(2)}`
+  return `${formatEur(cents)}`
 }
 </script>
 

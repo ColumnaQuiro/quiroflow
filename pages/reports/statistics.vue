@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEurFromAmount } from '~/utils/billing'
 import { Line } from 'vue-chartjs'
 import { computePresetRange, rangeBounds } from '~/composables/useDateRangePresets'
 import type { Database } from '~/types/database.types'
@@ -492,7 +493,7 @@ const unclassifiedTypeNames = computed(() =>
             </p>
           </div>
           <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-            <p class="font-mono text-[23px] font-semibold text-ink-900">{{ pva !== null ? `€${pva.toFixed(2)}` : '—' }}</p>
+            <p class="font-mono text-[23px] font-semibold text-ink-900">{{ pva !== null ? formatEurFromAmount(pva) : '—' }}</p>
             <p class="text-[12px] text-ink-muted2">{{ t('PVA (avg. revenue / visit)', 'PVA (ingreso medio / visita)') }}</p>
           </div>
         </div>

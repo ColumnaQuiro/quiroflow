@@ -1,6 +1,6 @@
 // The dashboard's income card, filtered to one practitioner.
 //
-// Jordana Aguar's first month read "€2320.00, -56% vs previous period" — her
+// Jordana Aguar's first month read "2320,00 €, -56% vs previous period" — her
 // September against the WHOLE CLINIC's late August, because the
 // previous-period total was summed account-wide while the figure above it was
 // filtered. She had gone from nothing to 2,320 and the card called it a 56%
@@ -79,7 +79,7 @@ describe('The dashboard income card', () => {
         cy.get('select').first().select('Nueva Nadia')
 
         // Her own takings, and nothing else's.
-        cy.contains('€2320.00').should('be.visible')
+        cy.contains('2320,00 €').should('be.visible')
         // No comparison at all: she has no previous period. It used to read
         // "-56% vs previous period", measured against the 5,278 above.
         cy.contains('vs previous period').should('not.exist')
@@ -102,7 +102,7 @@ describe('The dashboard income card', () => {
           // Charged 44, collected 550. The old arithmetic was charged minus
           // collected, so it showed "Outstanding -506.00" -- a debt owed
           // backwards. What is actually unpaid is the other half of the visit.
-          cy.contains('€22.00').should('be.visible')
+          cy.contains('22,00 €').should('be.visible')
           cy.contains('€-506.00').should('not.exist')
         })
       })
@@ -140,7 +140,7 @@ describe('The dashboard income card', () => {
         // pass or fail for the wrong reason.
         // 94 here would be the settled recibo counted as debt alongside the
         // real one.
-        cy.get('[data-test="income-outstanding"]').should('have.text', '€50.00')
+        cy.get('[data-test="income-outstanding"]').should('have.text', '50,00 €')
       })
     })
   })

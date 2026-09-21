@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 import type { BusinessHours } from '~/utils/businessHours'
 import { dayKeyFor, hasBusinessHoursConfigured, practitionerWindowsForDay, windowsForDay } from '~/utils/businessHours'
 import type { AppointmentTypeOverride } from '~/utils/appointmentOverrides'
@@ -650,7 +651,7 @@ function nameClass(appt: AppointmentRow) {
   return appointmentVisualStatus(appt) === 'no_show' ? 'text-danger-text' : 'text-ink-900'
 }
 function formatCredit(cents: number) {
-  return `€${(cents / 100).toFixed(2)}`
+  return `${formatEur(cents)}`
 }
 
 function hexToRgba(hex: string, alpha: number) {

@@ -1,3 +1,4 @@
+import { formatEur } from './billing'
 export type BonoTone = 'success' | 'danger' | 'warning' | null
 
 export interface BonoActivePackage {
@@ -49,14 +50,14 @@ export function computeBonoStatus({ balanceCents, activePackage }: BonoStatusInp
     // banner got wrong: what this visit costs is the bono's rate, not the
     // appointment type's.
     const perSessionCents = Math.round(activePackage.priceCents / activePackage.sessionsTotal)
-    const rate = `€${(perSessionCents / 100).toFixed(2)}`
+    const rate = formatEur(perSessionCents)
     if (sessionsRemainingBefore === 1) {
       return { tone: 'warning', label: `Last session covered by the package, at ${rate} — offer a renewal now for next time` }
     }
     const leftAfter = sessionsRemainingBefore - 1
     return { tone: 'success', label: `Covered by package at ${rate} (${leftAfter} session${leftAfter === 1 ? '' : 's'} left after this one)` }
   }
-  if (balanceCents > 0) return { tone: 'success', label: `Patient has €${(balanceCents / 100).toFixed(2)} credit on account` }
-  if (balanceCents < 0) return { tone: 'danger', label: `Patient owes €${(Math.abs(balanceCents) / 100).toFixed(2)} — will need to pay` }
+  if (balanceCents > 0) return { tone: 'success', label: `Patient has ${formatEur(balanceCents)} credit on account` }
+  if (balanceCents < 0) return { tone: 'danger', label: `Patient owes ${formatEur(Math.abs(balanceCents))} — will need to pay` }
   return { tone: null, label: '' }
 }

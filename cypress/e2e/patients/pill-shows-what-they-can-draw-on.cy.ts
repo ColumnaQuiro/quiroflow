@@ -8,7 +8,7 @@
 // actually use. And bono money is not credit: it is already committed to the
 // sessions it bought.
 //
-// Carolina Cañamas read "€281.00 credit" next to an Available of €120.
+// Carolina Cañamas read "281,00 € credit" next to an Available of €120.
 describe('The balance pill', () => {
   it('shows what the patient can draw on, not their balance', () => {
     cy.seedStaffAccount().then((account) => {
@@ -31,15 +31,15 @@ describe('The balance pill', () => {
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}`)
 
-        cy.contains('€120.00 available').should('be.visible')
+        cy.contains('120,00 € available').should('be.visible')
         // Never the word "credit": bono money is committed to the sessions it
         // bought, and loose credit is its own ledger.
         cy.contains('credit').should('not.exist')
-        // The Balance row below still reads €200.00, and should -- it is
+        // The Balance row below still reads 200,00 €, and should -- it is
         // labelled Balance and it is the honest arithmetic. What must not
         // happen is that number appearing in the pill as though it were
         // spendable.
-        cy.contains('€200.00 available').should('not.exist')
+        cy.contains('200,00 € available').should('not.exist')
       })
     })
   })
@@ -54,7 +54,7 @@ describe('The balance pill', () => {
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}`)
 
-        cy.contains('€44.00 due').should('be.visible')
+        cy.contains('44,00 € due').should('be.visible')
       })
     })
   })

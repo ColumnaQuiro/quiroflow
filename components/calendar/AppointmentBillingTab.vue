@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 import { settleInvoiceIfCovered } from '~/utils/settleInvoice'
 const props = defineProps<{
   appointmentId: string
@@ -244,12 +245,12 @@ const visitPriceCents = computed(() => props.appointmentTypePriceCents ?? 0)
 // what it actually bills, so the button and the charge cannot disagree.
 function perSessionLabel(p: { price_cents: number; sessions_total: number }): string {
   if (!p.sessions_total) return '—'
-  return `€${(Math.round(p.price_cents / p.sessions_total) / 100).toFixed(2)}`
+  return `${formatEur(Math.round(p.price_cents / p.sessions_total))}`
 }
 
 const chargeLabel = computed(() =>
   visitPriceCents.value > 0
-    ? `${t('Charge', 'Cobrar')} €${(visitPriceCents.value / 100).toFixed(2)}`
+    ? `${t('Charge', 'Cobrar')} ${formatEur(visitPriceCents.value)}`
     : t('Charge this visit', 'Cobrar esta visita'),
 )
 
@@ -634,7 +635,7 @@ async function recordPayment() {
         {{ t('Covered by', 'Cubierta por') }} {{ packageCoverage.packageName || t('a bono', 'un bono') }}
       </p>
       <p class="mt-0.5 text-[12.5px] text-ink-muted2">
-        {{ t('Worth', 'Valor') }} €{{ (packageCoverage.amountCents / 100).toFixed(2) }} —
+        {{ t('Worth', 'Valor') }} {{ formatEur(packageCoverage.amountCents) }} —
         {{ t('paid when the bono was bought.', 'pagada al comprar el bono.') }}
       </p>
     </div>
@@ -645,7 +646,7 @@ async function recordPayment() {
     <div v-else-if="!invoice" class="rounded-card border border-line bg-surface p-3">
       <p class="text-[13px] font-medium text-ink-700">{{ t('Not charged yet', 'Sin cobrar') }}</p>
       <p class="mt-0.5 text-[12.5px] text-ink-muted2">
-        {{ appointmentTypeName || t('Appointment', 'Cita') }}<span v-if="visitPriceCents > 0"> — €{{ (visitPriceCents / 100).toFixed(2) }}</span>
+        {{ appointmentTypeName || t('Appointment', 'Cita') }}<span v-if="visitPriceCents > 0"> — {{ formatEur(visitPriceCents) }}</span>
       </p>
       <!-- A patient holding a bono has already paid for this visit, so that
       is the action rather than the footnote it used to be: the filled button
@@ -716,7 +717,7 @@ async function recordPayment() {
         <li v-for="line in lineItems" :key="line.id" class="flex items-center justify-between text-ink-700">
           <span>{{ line.description }} &times;{{ line.quantity }}</span>
           <span class="flex items-center gap-2">
-            €{{ ((line.price_cents * line.quantity) / 100).toFixed(2) }}
+            {{ formatEur((line.price_cents * line.quantity)) }}
             <button
               v-if="can('billing_access') && invoice.status !== 'paid'"
               type="button"
@@ -736,13 +737,13 @@ async function recordPayment() {
         @change="addLineItem"
       >
         <option value="" disabled>{{ t('-- Add Service/Product --', '-- Añadir servicio/producto --') }}</option>
-        <option v-for="s in services" :key="s.id" :value="s.id">{{ s.name }} (€{{ (s.price_cents / 100).toFixed(2) }})</option>
+        <option v-for="s in services" :key="s.id" :value="s.id">{{ s.name }} ({{ formatEur(s.price_cents) }})</option>
       </select>
 
       <div class="mt-2 space-y-0.5 border-t border-line-divider pt-2 text-right">
-        <p class="text-ink-muted2">{{ t('Total:', 'Total:') }} €{{ (invoice.total_cents / 100).toFixed(2) }}</p>
-        <p class="text-ink-muted2">{{ t('Paid:', 'Pagado:') }} €{{ (paidCents / 100).toFixed(2) }}</p>
-        <p class="font-semibold text-ink-900">{{ t('Balance due:', 'Saldo pendiente:') }} €{{ (balanceDueCents / 100).toFixed(2) }}</p>
+        <p class="text-ink-muted2">{{ t('Total:', 'Total:') }} {{ formatEur(invoice.total_cents) }}</p>
+        <p class="text-ink-muted2">{{ t('Paid:', 'Pagado:') }} {{ formatEur(paidCents) }}</p>
+        <p class="font-semibold text-ink-900">{{ t('Balance due:', 'Saldo pendiente:') }} {{ formatEur(balanceDueCents) }}</p>
       </div>
 
       <form
@@ -759,7 +760,7 @@ async function recordPayment() {
             <label class="block text-xs font-medium text-ink-700">{{ t('Method', 'Método') }}</label>
             <select v-model="row.method" class="mt-1 rounded-ctl border border-line-control bg-surface px-2 py-1.5 text-sm text-ink-700 focus:border-brand focus:outline-none">
               <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
-              <option v-if="creditLedgerCents > 0" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} (€{{ (creditLedgerCents / 100).toFixed(2) }} {{ t('available', 'disponible') }})</option>
+              <option v-if="creditLedgerCents > 0" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} ({{ formatEur(creditLedgerCents) }} {{ t('available', 'disponible') }})</option>
             </select>
           </div>
           <button v-if="paymentRows.length > 1" type="button" class="mb-2 text-xs text-ink-faint hover:text-danger-text" @click="removePaymentRow(i)">
@@ -770,7 +771,7 @@ async function recordPayment() {
           <button type="button" class="text-xs font-medium text-ink-muted hover:text-brand-text" @click="addPaymentRow">
             + {{ t('Split into another method', 'Dividir en otro método') }}
           </button>
-          <span v-if="paymentRows.length > 1" class="text-xs text-ink-faint">{{ t('Total:', 'Total:') }} €{{ (paymentTotalCents / 100).toFixed(2) }}</span>
+          <span v-if="paymentRows.length > 1" class="text-xs text-ink-faint">{{ t('Total:', 'Total:') }} {{ formatEur(paymentTotalCents) }}</span>
           <button type="submit" :disabled="savingPayment || paymentTotalCents <= 0" class="rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50">
             {{ savingPayment ? t('Processing…', 'Procesando…') : t('Process', 'Procesar') }}
           </button>
@@ -795,7 +796,7 @@ async function recordPayment() {
         </button>
       </div>
       <ul v-if="payments.length > 0" class="mt-2 space-y-0.5 text-xs text-ink-muted2">
-        <li v-for="p in payments" :key="p.id">{{ new Date(p.paid_at).toLocaleDateString() }} &middot; {{ p.method }} &middot; €{{ (p.amount_cents / 100).toFixed(2) }}</li>
+        <li v-for="p in payments" :key="p.id">{{ new Date(p.paid_at).toLocaleDateString() }} &middot; {{ p.method }} &middot; {{ formatEur(p.amount_cents) }}</li>
       </ul>
 
     </div>

@@ -16,7 +16,7 @@ describe('A factura for each payment', () => {
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}?tab=billing`)
 
-        cy.contains('select', 'Sell a package').should('exist').select('Bono 12 (12, €528.00)')
+        cy.contains('select', 'Sell a package').should('exist').select('Bono 12 (12, 528,00 €)')
         cy.get('input[type="number"]').last().clear().type('264')
         cy.contains('button', /^Sell$/).click()
         cy.contains('button', 'Selling…').should('not.exist')
@@ -53,10 +53,10 @@ describe('A factura for each payment', () => {
         // Wait for the ledger to load: the take-payment form is gated on there
         // being an unpaid invoice, and clicking before they arrive opens an
         // empty panel.
-        cy.contains('€55.00').should('be.visible')
+        cy.contains('55,00 €').should('be.visible')
         cy.contains('button', 'Take payment').click()
         cy.contains('button', 'Record payment').parents('form').as('form')
-        cy.get('@form').find('select').last().select('Credit on account (€100.00 available)')
+        cy.get('@form').find('select').last().select('Credit on account (100,00 € available)')
         cy.get('@form').contains('button', 'Record payment').click()
         cy.contains('button', 'Recording…').should('not.exist')
         cy.task('db:facturasFor', { patientId: patient.id }).then((rows: any) => {

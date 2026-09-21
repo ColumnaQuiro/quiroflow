@@ -20,7 +20,7 @@ describe('A factura states its tax', () => {
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}?tab=billing`)
 
-        cy.contains('select', 'Sell a package').should('exist').select('Bono 10 (10, €450.00)')
+        cy.contains('select', 'Sell a package').should('exist').select('Bono 10 (10, 450,00 €)')
         cy.contains('button', /^Sell$/).click()
         cy.contains('button', 'Selling…').should('not.exist')
 
@@ -47,7 +47,7 @@ describe('A factura states its tax', () => {
 
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}?tab=billing`)
-        cy.contains('select', 'Sell a package').should('exist').select('Bono 5 (5, €220.00)')
+        cy.contains('select', 'Sell a package').should('exist').select('Bono 5 (5, 220,00 €)')
         cy.contains('button', /^Sell$/).click()
         cy.contains('button', 'Selling…').should('not.exist')
 

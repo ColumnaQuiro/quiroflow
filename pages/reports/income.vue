@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 import { classifyPaymentForFilter } from '~/utils/incomeAttribution'
 import { Line, Bar } from 'vue-chartjs'
 import { computePresetRange, monthKeysInRange, rangeBounds } from '~/composables/useDateRangePresets'
@@ -36,7 +37,7 @@ const patients = ref<PatientRow[]>([])
 const teamMembers = ref<TeamMemberRow[]>([])
 
 function eur(cents: number) {
-  return `€${(cents / 100).toFixed(2)}`
+  return `${formatEur(cents)}`
 }
 
 // Only `byService` reads line items, and only for invoices the in-range

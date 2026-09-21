@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEurFromAmount } from '~/utils/billing'
 import { Line } from 'vue-chartjs'
 import { computePresetRange, monthKeysInRange, rangeBounds } from '~/composables/useDateRangePresets'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
@@ -209,7 +210,7 @@ const totalsByPractitioner = computed(() => series.value.map((s) => ({ label: s.
           <ul class="mt-2 space-y-1.5 text-[13px]">
             <li v-for="row in totalsByPractitioner" :key="row.label" class="flex items-center justify-between">
               <span class="text-ink-600">{{ row.label }}</span>
-              <span class="font-mono font-medium text-ink-900">€{{ row.total.toFixed(2) }}</span>
+              <span class="font-mono font-medium text-ink-900">{{ formatEurFromAmount(row.total) }}</span>
             </li>
           </ul>
         </div>

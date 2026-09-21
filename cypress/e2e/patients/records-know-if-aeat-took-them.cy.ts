@@ -24,8 +24,8 @@ describe('Records that know whether the AEAT took them', () => {
 
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}?tab=billing`)
-        sellBono('Bono E1 (4, €200.00)')
-        sellBono('Bono E2 (4, €300.00)')
+        sellBono('Bono E1 (4, 200,00 €)')
+        sellBono('Bono E2 (4, 300,00 €)')
 
         cy.task('db:awaitingAeat', { accountId: account.accountId }).then((outstanding: any) => {
           // Issued is not sent. Both records are owed to the AEAT.
@@ -50,9 +50,9 @@ describe('Records that know whether the AEAT took them', () => {
 
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}?tab=billing`)
-        sellBono('Bono E3 (4, €210.00)')
-        sellBono('Bono E4 (4, €220.00)')
-        sellBono('Bono E5 (4, €230.00)')
+        sellBono('Bono E3 (4, 210,00 €)')
+        sellBono('Bono E4 (4, 220,00 €)')
+        sellBono('Bono E5 (4, 230,00 €)')
 
         cy.task('db:facturaRecordsFor', { accountId: account.accountId }).then((records: any) => {
           expect(records).to.have.length(3)
@@ -124,7 +124,7 @@ describe('Records that know whether the AEAT took them', () => {
 
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}?tab=billing`)
-        sellBono('Bono E6 (4, €240.00)')
+        sellBono('Bono E6 (4, 240,00 €)')
 
         cy.task('db:facturaRecordsFor', { accountId: account.accountId }).then((records: any) => {
           cy.task('db:recordAeatSubmission', {
@@ -154,7 +154,7 @@ describe('Records that know whether the AEAT took them', () => {
 
         cy.login(owner.email, owner.password)
         cy.visit(`/patients/${patient.id}?tab=billing`)
-        sellBono('Bono E7 (4, €250.00)')
+        sellBono('Bono E7 (4, 250,00 €)')
 
         cy.seedStaffAccount().then((stranger) => {
           cy.task('db:verifyFacturaChainAs', {

@@ -34,7 +34,7 @@ describe('Voiding an invoice that has payments', () => {
           cy.get('@paymentForm').find('select').select('Cash')
           cy.get('@paymentForm').contains('button', 'Record payment').click()
 
-          cy.contains('li', 'cash').should('contain', '€50.00')
+          cy.contains('li', 'cash').should('contain', '50,00 €')
 
           // Money is on the invoice now -- the way out is a refund, not a void.
           cy.contains('button', 'Void receipt')

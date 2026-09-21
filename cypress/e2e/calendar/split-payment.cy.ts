@@ -48,8 +48,8 @@ describe('Splitting an appointment payment across methods', () => {
             // The visit isn't invoiced until someone says so -- see
             // ensureInvoice(); this is that decision.
             cy.contains('button', 'Charge this visit').click()
-            cy.get('select').eq(0).should('contain.text', 'Adjustment').select('Adjustment (€50.00)')
-            cy.contains('Balance due: €50.00').should('be.visible')
+            cy.get('select').eq(0).should('contain.text', 'Adjustment').select('Adjustment (50,00 €)')
+            cy.contains('Balance due: 50,00 €').should('be.visible')
 
             cy.contains('button', 'Process').parents('form').as('paymentForm')
             cy.get('@paymentForm').find('input[type="number"]').eq(0).clear().type('30')
@@ -59,13 +59,13 @@ describe('Splitting an appointment payment across methods', () => {
             // -- the newly-added second row's method is select[1].
             cy.get('@paymentForm').find('input[type="number"]').eq(1).type('20')
             cy.get('@paymentForm').find('select').eq(1).select('Card')
-            cy.get('@paymentForm').contains('Total: €50.00').should('be.visible')
+            cy.get('@paymentForm').contains('Total: 50,00 €').should('be.visible')
             cy.get('@paymentForm').contains('button', 'Process').click()
 
             cy.contains('paid', { matchCase: false }).should('be.visible')
-            cy.contains('Balance due: €0.00').should('be.visible')
-            cy.contains('li', 'cash').should('contain', '€30.00')
-            cy.contains('li', 'card').should('contain', '€20.00')
+            cy.contains('Balance due: 0,00 €').should('be.visible')
+            cy.contains('li', 'cash').should('contain', '30,00 €')
+            cy.contains('li', 'card').should('contain', '20,00 €')
           })
         },
       )

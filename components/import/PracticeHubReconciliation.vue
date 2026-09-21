@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 // Read-only check of what actually landed. Writes nothing.
 //
 // Every importer here is a one-way copy with no verification step, so the
@@ -54,7 +55,7 @@ const PAGE_SIZE = 1000
 const MAX_LISTED = 200
 
 function eur(cents: number): string {
-  return `€${(cents / 100).toFixed(2)}`
+  return `${formatEur(cents)}`
 }
 
 // Every row of a table, paged -- the importers all hand-roll this loop.

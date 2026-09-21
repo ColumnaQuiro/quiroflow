@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 const props = defineProps<{ practitionerId?: string; clinicId?: string }>()
 
 const t = useT()
@@ -79,7 +80,7 @@ onMounted(load)
 watch(() => [props.practitionerId, props.clinicId], load)
 
 function euros(cents: number) {
-  return `€${(cents / 100).toFixed(2)}`
+  return `${formatEur(cents)}`
 }
 </script>
 

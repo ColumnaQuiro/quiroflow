@@ -41,10 +41,10 @@ describe('The balance pill', () => {
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}`)
 
-        cy.contains('€264.00 available').should('be.visible')
+        cy.contains('264,00 € available').should('be.visible')
         // The sessions counter still says what is left in visits, which is
         // the other half of the picture and not money.
-        cy.contains('dt', 'In bonos').parent().should('contain', '€264.00')
+        cy.contains('dt', 'In bonos').parent().should('contain', '264,00 €')
       })
     })
   })
@@ -85,8 +85,8 @@ describe('The balance pill', () => {
         // 484 of sessions less 378 still owed on them. It matches his balance
         // -- EUR 220 paid against EUR 114 invoiced -- because what he can draw
         // on IS what he has paid beyond what he has been charged.
-        cy.contains('€106.00 available').should('be.visible')
-        cy.contains('€484.00 available').should('not.exist')
+        cy.contains('106,00 € available').should('be.visible')
+        cy.contains('484,00 € available').should('not.exist')
       })
     })
   })
@@ -104,7 +104,7 @@ describe('The balance pill', () => {
             cy.login(account.email, account.password)
 
             cy.visit(`/patients/${owing.id}`)
-            cy.contains('€55.00 due').should('be.visible')
+            cy.contains('55,00 € due').should('be.visible')
 
             // Nothing owed and nothing held: no pill at all, rather than a
             // zero that reads as a figure someone should act on.

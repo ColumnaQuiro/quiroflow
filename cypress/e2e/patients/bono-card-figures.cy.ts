@@ -1,6 +1,6 @@
 // The bono card used to print two euro figures under the same words.
 //
-// "11 of 12 left · €484.00" at the top, then "11/12 left · €528.00" three
+// "11 of 12 left · 484,00 €" at the top, then "11/12 left · 528,00 €" three
 // lines below -- the session count repeated, and two different amounts, each
 // unlabelled. One is what the remaining sessions are worth, the other is what
 // the bono cost, and nothing on screen said which was which. The person who
@@ -27,9 +27,9 @@ describe('The bono card’s figures', () => {
           cy.contains('Bono 12 sesiones').should('be.visible')
           // What is left, and what it is worth — 11 × €44.
           cy.contains('11 of 12 sessions left').should('be.visible')
-          cy.contains('worth €484.00').should('be.visible')
+          cy.contains('worth 484,00 €').should('be.visible')
           // What it cost, said as a price rather than a bare number.
-          cy.contains('€528.00 paid in full').should('be.visible')
+          cy.contains('528,00 € paid in full').should('be.visible')
           // And the count is not printed a second time with a different
           // amount beside it.
           cy.contains('11/12 left').should('not.exist')
@@ -58,7 +58,7 @@ describe('The bono card’s figures', () => {
           cy.visit(`/patients/${patient.id}?tab=billing`)
 
           cy.contains('12 of 12 sessions left').should('be.visible')
-          cy.contains('€264.00 paid of €528.00').should('be.visible')
+          cy.contains('264,00 € paid of 528,00 €').should('be.visible')
           cy.contains('paid in full').should('not.exist')
         })
       })

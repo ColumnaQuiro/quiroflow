@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 // The one prominent figure shown near a patient's name, for the front desk:
 // what this patient can draw on right now.
 //
@@ -40,9 +41,13 @@ const props = defineProps<{
   balanceCents: number
 }>()
 
+const t = useT()
+
 const label = computed(() => {
-  if (props.availableCents > 0) return `€${(props.availableCents / 100).toFixed(2)} available`
-  return `€${(Math.abs(props.balanceCents) / 100).toFixed(2)} due`
+  if (props.availableCents > 0) {
+    return `${formatEur(props.availableCents)} ${t('available', 'disponible')}`
+  }
+  return `${formatEur(Math.abs(props.balanceCents))} ${t('due', 'pendiente')}`
 })
 const tone = computed(() => (props.availableCents > 0 ? 'success' : 'danger'))
 const show = computed(() => props.availableCents > 0 || props.balanceCents < 0)

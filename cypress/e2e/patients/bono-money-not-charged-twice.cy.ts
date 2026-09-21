@@ -18,7 +18,7 @@ describe('Buying a bono', () => {
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}?tab=billing`)
 
-        cy.contains('select', 'Sell a package').should('exist').select('Bono 12 (12, €528.00)')
+        cy.contains('select', 'Sell a package').should('exist').select('Bono 12 (12, 528,00 €)')
         cy.get('input[type="number"]').last().clear().type('264')
         cy.contains('button', /^Sell$/).click()
         cy.contains('button', 'Selling…').should('not.exist')
@@ -26,8 +26,8 @@ describe('Buying a bono', () => {
         // No charge was raised for the bono itself. The money is a payment on
         // the account, and the debt lives on the bono.
         cy.contains('INV-').should('not.exist')
-        cy.contains('€264.00 owed').should('be.visible')
-        cy.contains('€264.00 paid of €528.00').should('be.visible')
+        cy.contains('264,00 € owed').should('be.visible')
+        cy.contains('264,00 € paid of 528,00 €').should('be.visible')
 
         // The payment still produces its factura -- that is the fiscal
         // document for a bono, and the only one.
@@ -44,7 +44,7 @@ describe('Buying a bono', () => {
         cy.contains('button', 'Record payment').click()
         cy.contains('Recording…').should('not.exist')
 
-        cy.contains('€528.00 paid in full').should('be.visible')
+        cy.contains('528,00 € paid in full').should('be.visible')
         cy.contains('INV-').should('not.exist')
         cy.task('db:facturasFor', { patientId: patient.id }).then((rows: any) => {
           expect(rows, 'a factura for each payment').to.have.length(2)

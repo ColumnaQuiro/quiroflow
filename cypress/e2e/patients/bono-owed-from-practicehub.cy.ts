@@ -35,8 +35,8 @@ describe('A bono migrated from PracticeHub', () => {
         cy.visit(`/patients/${patient.id}?tab=billing`)
 
         cy.contains('Bono 12 sesiones').should('be.visible')
-        cy.contains('€264.00 owed').should('be.visible')
-        cy.contains('€264.00 paid of €528.00').should('be.visible')
+        cy.contains('264,00 € owed').should('be.visible')
+        cy.contains('264,00 € paid of 528,00 €').should('be.visible')
         cy.contains('paid in full').should('not.exist')
       })
     })
@@ -58,7 +58,7 @@ describe('A bono migrated from PracticeHub', () => {
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}?tab=billing`)
 
-        cy.contains('€264.00 owed').should('be.visible')
+        cy.contains('264,00 € owed').should('be.visible')
         // There is no invoice to take the money against, so this button used
         // to do nothing at all. It now raises one for the outstanding amount
         // and opens the payment panel prefilled with it.
@@ -67,8 +67,8 @@ describe('A bono migrated from PracticeHub', () => {
         cy.contains('button', 'Take payment\u2026').click()
         cy.contains('button', 'Record payment').click()
 
-        cy.contains('€528.00 paid in full').should('be.visible')
-        cy.contains('€264.00 owed').should('not.exist')
+        cy.contains('528,00 € paid in full').should('be.visible')
+        cy.contains('264,00 € owed').should('not.exist')
       })
     })
   })

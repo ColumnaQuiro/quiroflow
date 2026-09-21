@@ -5,10 +5,38 @@
 // parser (#331). This is the part in between -- deciding what to send, sending
 // it over a certificate, and writing down what came back.
 //
+// THE FOUR-MINUTE WINDOW -- read this before scheduling anything.
+//
+// The AEAT's preproduction service, on the first real submission, returned:
+//
+//   2004  El valor del campo FechaHoraHusoGenRegistro debe ser la fecha
+//         actual del sistema de la AEAT, admitiéndose un margen de error
+//         de: 240 segundos.
+//
+// A record must reach the AEAT within FOUR MINUTES of being generated. That
+// appears nowhere in the record design or the web service description; only
+// the live service says it.
+//
+// It is not fatal -- the records came back AceptadoConErrores, which means
+// registered, with a CSV. But a fiscal record registered with a complaint
+// about its own timestamp is not a thing to ship deliberately, and it makes
+// the obvious schedule wrong: a cron every 15 minutes would earn this error
+// on nearly every record.
+//
+// So whatever calls this must run about every minute. That sits comfortably
+// with the other constraint, TiempoEsperaEnvio, which has been 60 seconds on
+// every response so far: send no more often than the AEAT allows, and no
+// less often than it tolerates.
+//
+// The 53 records backfilled on 18 Sep can never satisfy this -- their
+// generated_at is historical and the record is immutable, which is the whole
+// point of it. They will register with 2004 whenever they go, and that is
+// the correct outcome rather than a bug to work around: the alternative is
+// restating when they were generated, which would be false.
+//
 // It cannot send anything yet, and says so rather than failing obscurely at
-// the first record. Two things are missing and neither is code: a certificado
-// de sello for the entity that produces QuiroFlow, and that entity's NIF,
-// which is a required field of the SistemaInformatico block on every record.
+// the first record. What is missing is not code: a configured certificate,
+// and the passphrase for it.
 import { Agent } from 'node:https'
 import { readFileSync } from 'node:fs'
 import type { SupabaseClient } from '@supabase/supabase-js'

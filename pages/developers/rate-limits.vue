@@ -74,7 +74,7 @@ Retry-After: 12
     </ul>
 
     <DevportalCallout>
-      Building something that genuinely needs a higher limit? Email <a href="mailto:hola@columnaquiro.com">hola@columnaquiro.com</a> with
+      Building something that genuinely needs a higher limit? Email <a href="mailto:hola@quiroflow.com">hola@quiroflow.com</a> with
       what you're doing and the shape of the traffic. The limit is a default, not a hard ceiling.
     </DevportalCallout>
   </DevportalPage>

@@ -6,7 +6,7 @@ const { loading: loadingPortal, openPortal } = useBillingPortal()
 
 const upgradeHref = computed(() => {
   const subject = encodeURIComponent(`Upgrade my QuiroFlow plan -- ${store.accountName}`)
-  return `mailto:hola@columnaquiro.com?subject=${subject}`
+  return `mailto:hola@quiroflow.com?subject=${subject}`
 })
 </script>
 

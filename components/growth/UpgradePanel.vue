@@ -72,7 +72,7 @@ const store = useAccountStore()
           class="flex h-9 items-center rounded-ctl bg-brand px-4 text-[12.5px] font-semibold text-white hover:bg-brand-hover"
         >{{ t('Start 14-day trial', 'Empezar prueba de 14 días') }}</NuxtLink>
         <a
-          href="mailto:hola@columnaquiro.com?subject=QuiroFlow%20Growth"
+          href="mailto:hola@quiroflow.com?subject=QuiroFlow%20Growth"
           class="flex h-9 items-center rounded-ctl border border-line-control bg-surface px-4 text-[12.5px] font-semibold text-ink-700 hover:bg-surface-subtle"
         >{{ t('Talk to us', 'Hablemos') }}</a>
       </div>

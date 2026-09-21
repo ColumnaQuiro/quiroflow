@@ -97,7 +97,7 @@ const tokenSettingsUrl = 'https://app.quiroflow.com/settings/developers'
       <div class="mx-auto flex max-w-[1180px] flex-wrap items-center justify-between gap-3 px-5 py-6 text-[12.5px] text-ink-faint">
         <p>© {{ new Date().getFullYear() }} QuiroFlow</p>
         <div class="flex flex-wrap items-center gap-4">
-          <a href="mailto:hola@columnaquiro.com" class="hover:text-ink-600">hola@columnaquiro.com</a>
+          <a href="mailto:hola@quiroflow.com" class="hover:text-ink-600">hola@quiroflow.com</a>
           <a href="https://app.quiroflow.com/legal/terms" class="hover:text-ink-600">Terms</a>
           <a href="https://app.quiroflow.com/legal/privacy" class="hover:text-ink-600">Privacy</a>
           <!-- Only shown on the app-host copies: on the docs subdomain the

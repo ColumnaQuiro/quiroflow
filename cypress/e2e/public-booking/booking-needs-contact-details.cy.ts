@@ -79,4 +79,83 @@ describe('Booking without a way to reach the patient', () => {
       })
     })
   })
+
+  // Booking is converting yourself, and the lead should know.
+  //
+  // Conversion was a staff action only, so a lead who booked online stayed at
+  // 'new' with no patient_id and its drip sequence kept running.
+  // sequenceStopReason() compares lead.email to patients.email on the next
+  // cron pass -- late, and blind to a typo. Geraldo Ruiz Mochon booked on
+  // 14 Sep and got a seven-step sequence over the following two days because
+  // his lead says ruizmochon@ and his patient record says ruzmochon@.
+  describe('the lead it came from', () => {
+    it('is linked and moved to booked, matching on email', () => {
+      cy.get('@acct').then((account: any) => {
+        cy.get('@typeId').then((type: any) => {
+          cy.task('db:createLead', {
+            accountId: account.accountId,
+            fullName: 'Ana Anuncio',
+            stage: 'new',
+            channel: 'facebook',
+            email: 'ana.anuncio@example.test',
+            phone: '34611222333',
+          }).then((lead: any) => {
+            book({ p_email: 'ana.anuncio@example.test', p_phone: '699888777' }, account, type.id).then((r) => {
+              expect(r.error).to.eq(null)
+              cy.task('db:leadById', { id: lead.id }).then((after: any) => {
+                expect(after.patient_id, 'linked to the patient who booked').to.not.be.null
+                expect(after.stage, 'booked, not converted -- they have not attended yet').to.eq('booked')
+              })
+            })
+          })
+        })
+      })
+    })
+
+    it('is linked on the PHONE when the email was mistyped', () => {
+      // The case the email-only backstop misses, and the one that actually
+      // happened: the lead carries the number from the Meta form, the booking
+      // carries the same number typed by hand, and the two emails differ.
+      cy.get('@acct').then((account: any) => {
+        cy.get('@typeId').then((type: any) => {
+          cy.task('db:createLead', {
+            accountId: account.accountId,
+            fullName: 'Geraldo Tecla',
+            stage: 'new',
+            channel: 'facebook',
+            email: 'geraldo.tecla@example.test',
+            phone: '34645775024',
+          }).then((lead: any) => {
+            book({ p_email: 'gerardo.tecla@example.test', p_phone: '645 775 024' }, account, type.id).then((r) => {
+              expect(r.error).to.eq(null)
+              cy.task('db:leadById', { id: lead.id }).then((after: any) => {
+                expect(after.patient_id, 'matched on the number, not the address').to.not.be.null
+                expect(after.stage).to.eq('booked')
+              })
+            })
+          })
+        })
+      })
+    })
+
+    it('leaves a lead that is already further along where it is', () => {
+      cy.get('@acct').then((account: any) => {
+        cy.get('@typeId').then((type: any) => {
+          cy.task('db:createLead', {
+            accountId: account.accountId,
+            fullName: 'Ya Convertida',
+            stage: 'showed',
+            email: 'ya.convertida@example.test',
+          }).then((lead: any) => {
+            book({ p_email: 'ya.convertida@example.test', p_phone: '600555444' }, account, type.id).then(() => {
+              cy.task('db:leadById', { id: lead.id }).then((after: any) => {
+                expect(after.stage, 'never moved backwards').to.eq('showed')
+                expect(after.patient_id, 'still linked').to.not.be.null
+              })
+            })
+          })
+        })
+      })
+    })
+  })
 })

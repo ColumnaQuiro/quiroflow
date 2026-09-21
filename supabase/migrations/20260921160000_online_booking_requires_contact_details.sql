@@ -1,4 +1,4 @@
--- Online booking asks for a way to reach the patient, and means it.
+-- Online booking asks for a way to reach the patient, and links the lead.
 --
 -- plpgsql cannot amend a function in place, so this restates 0127's
 -- definition unchanged apart from the guard at the top of the body. The
@@ -169,6 +169,50 @@ begin
     insert into patient_contact_numbers (account_id, patient_id, number, country_code)
     values (v_account_id, v_patient_id, trim(p_phone), coalesce(p_country_code, 'ES'));
   end if;
+
+  -- Somebody who books has converted themselves, and the lead they came from
+  -- should stop being chased.
+  --
+  -- Conversion was a staff action only -- POST /api/growth/leads/:id/convert,
+  -- clicked by a person -- so a lead who books online stayed at 'new' with no
+  -- patient_id, and the drip sequence kept running. sequenceStopReason() is a
+  -- backstop rather than a link: it compares lead.email to patients.email on
+  -- the next cron pass, which is both late and email-only.
+  --
+  -- Both of those cost something real. Geraldo Ruiz Mochon booked on 14 Sep
+  -- and received a seven-step sequence between the 16th and the 18th, because
+  -- his lead says ruizmochon@ and his patient record says ruzmochon@ -- one
+  -- letter, and the backstop never fired. Ramon Canal booked four minutes
+  -- after his sequence started and it ran for another day before the cron
+  -- noticed.
+  --
+  -- So: match on email OR phone, here, at the moment of booking.
+  --
+  -- 'booked' rather than 'converted': they have an appointment, they have not
+  -- attended it. Setting patient_id is what stops the sequence either way.
+  -- A lead already further along keeps its stage -- this can only move
+  -- somebody forward, never back.
+  update leads l
+  set patient_id = v_patient_id,
+      stage = case when l.stage in ('new', 'contacted', 'qualified') then 'booked' else l.stage end,
+      stage_changed_at = now()
+  where l.account_id = v_account_id
+    and l.deleted_at is null
+    and l.patient_id is null
+    and (
+      lower(l.email) = lower(trim(p_email))
+      -- Digits only, last nine compared: a lead from a Meta form carries
+      -- '34617449701' while the booking sends a bare '617449701' with the
+      -- country in its own field, and a patient typing their own number puts
+      -- spaces wherever they like.
+      or (
+        l.phone is not null
+        and length(regexp_replace(l.phone, '\D', '', 'g')) >= 9
+        and length(regexp_replace(trim(p_phone), '\D', '', 'g')) >= 9
+        and right(regexp_replace(l.phone, '\D', '', 'g'), 9)
+            = right(regexp_replace(trim(p_phone), '\D', '', 'g'), 9)
+      )
+    );
 
   insert into appointments (
     account_id, clinic_id, practitioner_id, patient_id, appointment_type_id,

@@ -50,7 +50,7 @@ const outboundParts = computed(() => {
         </div>
         <div class="flex-1">
           <div class="text-[13.5px] font-semibold text-ink-900">Lucía Ferrer</div>
-          <div class="mt-0.5 text-[11.5px] text-ink-muted">WhatsApp · +34 611 23 45 67</div>
+          <div class="mt-0.5 text-[11.5px] text-ink-muted">WhatsApp · +34 600 00 00 00</div>
         </div>
         <span class="rounded-pill border border-line-control bg-surface-subtle px-2.5 py-[3px] text-[11.5px] font-semibold text-ink-muted">{{ thread.badge }}</span>
       </div>

@@ -98,8 +98,8 @@ const dial = computed(() => countryByCode(props.countryCode).dial || '+34')
           <span class="flex h-[38px] shrink-0 items-center rounded-ctl border border-line-control px-3.5 text-[13.5px] font-semibold text-ink-700">{{ t('Copy link', 'Copiar enlace') }}</span>
         </div>
         <p class="mt-[11px] text-[12.5px] leading-[1.5] text-ink-muted">
-          {{ t('Patients pick a slot themselves. A number typed as 611 23 45 67 is read as', 'Los pacientes eligen su hora. Un número escrito como 611 23 45 67 se lee como') }}
-          <span class="font-semibold text-ink-700">{{ dial }} 611 23 45 67</span>.
+          {{ t('Patients pick a slot themselves. A number typed as 600 00 00 00 is read as', 'Los pacientes eligen su hora. Un número escrito como 600 00 00 00 se lee como') }}
+          <span class="font-semibold text-ink-700">{{ dial }} 600 00 00 00</span>.
         </p>
       </div>
     </OnboardingPreviewFragment>

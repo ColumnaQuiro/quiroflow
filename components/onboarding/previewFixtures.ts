@@ -9,6 +9,17 @@
 // server-render, and a week derived at render time can differ between the
 // server and the client across midnight, which hydrates as a mismatch. A
 // preview of a product does not need to be on today's date.
+//
+// Every name here is invented AND was checked against the production
+// patients and team_members tables before being committed -- none of them
+// matches a real person. Do that check before adding a name to this file,
+// not after: an earlier draft carried a practitioner name over from an old
+// form placeholder, and it turned out to belong to a real record. A
+// plausible Spanish name is not the same as a safe one, and the only way to
+// tell the two apart is to look.
+//
+// The phone number is 600 00 00 00 for the same reason: all-zero after the
+// prefix, so it reads as a format example and cannot belong to anybody.
 
 export type PreviewTone = 'brand' | 'success' | 'neutral'
 
@@ -49,16 +60,16 @@ export const PREVIEW_APPOINTMENTS: PreviewAppointment[] = [
 export const PREVIEW_PATIENT = {
   name: 'Lucía Ferrer',
   initials: 'LF',
-  phone: '+34 611 23 45 67',
+  phone: '+34 600 00 00 00',
   since: 'Aug 2025',
   sinceEs: 'ago 2025',
   next: 'Tue 09:00',
   nextEs: 'mar 09:00',
   totalBilled: '€155,00',
   visits: [
-    { date: '14 Sep', service: 'Adjustment · Lea Guido · Sala 1', amount: '€45,00' },
-    { date: '31 Aug', service: 'Adjustment · Lea Guido · Sala 2', amount: '€45,00' },
-    { date: '17 Aug', service: 'Initial Assessment · Lea Guido · Sala 1', amount: '€65,00' },
+    { date: '14 Sep', service: 'Adjustment · Alba Esteve · Sala 1', amount: '€45,00' },
+    { date: '31 Aug', service: 'Adjustment · Alba Esteve · Sala 2', amount: '€45,00' },
+    { date: '17 Aug', service: 'Initial Assessment · Alba Esteve · Sala 1', amount: '€65,00' },
   ],
   note: {
     date: '14 Sep',
@@ -74,7 +85,7 @@ export const PREVIEW_THREAD = {
   en: {
     badge: 'Reminder · 24 h',
     outbound:
-      'Hi Lucía, a reminder of your appointment at {clinic}: Tuesday 22 September at 09:00 — Adjustment with Lea Guido, Sala 1.',
+      'Hi Lucía, a reminder of your appointment at {clinic}: Tuesday 22 September at 09:00 — Adjustment with Alba Esteve, Sala 1.',
     instruction: 'Reply {confirm} or {change}.',
     confirm: 'CONFIRM',
     change: 'RESCHEDULE',
@@ -91,7 +102,7 @@ export const PREVIEW_THREAD = {
   es: {
     badge: 'Recordatorio · 24 h',
     outbound:
-      'Hola Lucía, te recordamos tu cita en {clinic}: martes 22 de septiembre a las 09:00 — Ajuste con Lea Guido, Sala 1.',
+      'Hola Lucía, te recordamos tu cita en {clinic}: martes 22 de septiembre a las 09:00 — Ajuste con Alba Esteve, Sala 1.',
     instruction: 'Responde {confirm} o {change}.',
     confirm: 'CONFIRMAR',
     change: 'CAMBIAR',

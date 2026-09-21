@@ -39,6 +39,31 @@ const visiblePages = computed(() => Array.from({ length: Math.min(totalPages.val
 // doesn't affect which rows are loaded, purely cosmetic.
 const highlightId = computed(() => (route.query.highlight as string) || '')
 
+// Narrows the whole page to one patient. Lives in the URL rather than in
+// component state so a patient record can link straight here ("every receipt
+// for this patient") and the result stays shareable and back-button safe.
+const patientId = computed(() => (route.query.patient as string) || '')
+const patientName = ref('')
+
+async function loadPatientName() {
+  if (!patientId.value) {
+    patientName.value = ''
+    return
+  }
+  const { data } = await supabase
+    .from('patients')
+    .select('first_name, last_name')
+    .eq('id', patientId.value)
+    .maybeSingle()
+  patientName.value = data ? [data.first_name, data.last_name].filter(Boolean).join(' ') : ''
+}
+
+function clearPatientFilter() {
+  const query = { ...route.query }
+  delete query.patient
+  navigateTo({ path: route.path, query })
+}
+
 const FILTERS = computed<{ value: StatusFilter; label: string }[]>(() => [
   { value: 'unpaid', label: t('Unpaid', 'Impagadas') },
   { value: 'paid', label: t('Paid', 'Pagadas') },
@@ -59,6 +84,7 @@ async function load() {
     .select('id, invoice_number, status, total_cents, created_at, patients(first_name, last_name)', { count: 'exact' })
     .order('created_at', { ascending: false })
   if (statusFilter.value !== 'all') query = query.eq('status', statusFilter.value)
+  if (patientId.value) query = query.eq('patient_id', patientId.value)
 
   const from = (page.value - 1) * PAGE_SIZE
   const { data, count } = await query.range(from, from + PAGE_SIZE - 1)
@@ -77,9 +103,16 @@ async function load() {
 // header with no row payload at all.
 async function loadCounts() {
   const buckets: Exclude<StatusFilter, 'all'>[] = ['unpaid', 'paid', 'void']
+  // Scoped to the patient filter as well as the status. A chip counting the
+  // whole account while the list below shows one patient is the same class of
+  // lie as the 1000-row cap this function was written to fix.
+  const scoped = () => {
+    const q = supabase.from('invoices').select('id', { count: 'exact', head: true })
+    return patientId.value ? q.eq('patient_id', patientId.value) : q
+  }
   const [all, ...rest] = await Promise.all([
-    supabase.from('invoices').select('id', { count: 'exact', head: true }),
-    ...buckets.map((status) => supabase.from('invoices').select('id', { count: 'exact', head: true }).eq('status', status)),
+    scoped(),
+    ...buckets.map((status) => scoped().eq('status', status)),
   ])
   const next: Record<StatusFilter, number> = { all: all.count ?? 0, unpaid: 0, paid: 0, void: 0 }
   buckets.forEach((status, i) => {
@@ -92,9 +125,10 @@ async function loadOutstanding() {
   // fetchAllRows rather than a bare select() for that same 1000-row cap -- an
   // account carrying more unpaid invoices than that silently under-reported
   // what it is owed in the header.
-  const rows = await fetchAllRows<{ id: string; total_cents: number }>((from, to) =>
-    supabase.from('invoices').select('id, total_cents').eq('status', 'unpaid').range(from, to),
-  )
+  const rows = await fetchAllRows<{ id: string; total_cents: number }>((from, to) => {
+    const q = supabase.from('invoices').select('id, total_cents').eq('status', 'unpaid')
+    return (patientId.value ? q.eq('patient_id', patientId.value) : q).range(from, to)
+  })
   const ids = rows.map((r) => r.id)
 
   const paidByInvoice: Record<string, number> = {}
@@ -114,10 +148,18 @@ onMounted(() => {
   load()
   loadCounts()
   loadOutstanding()
+  loadPatientName()
 })
 watch(statusFilter, () => {
   page.value = 1
   load()
+})
+watch(patientId, () => {
+  page.value = 1
+  load()
+  loadCounts()
+  loadOutstanding()
+  loadPatientName()
 })
 
 function goToPage(p: number) {
@@ -155,6 +197,28 @@ function formatDate(iso: string) {
 
     <div class="flex-1 overflow-y-auto bg-surface-page p-6">
       <div class="mx-auto max-w-xl">
+        <!-- The active patient filter, as a removable chip. Shown above the
+             status chips because it scopes them: with it on, "Unpaid · 3"
+             means three for this patient, not three for the clinic. -->
+        <div v-if="patientId" class="mb-3 flex flex-wrap items-center gap-2">
+          <span class="flex h-7 items-center gap-2 rounded-pill border border-brand-tintBorder bg-brand-tint pl-3 pr-1.5 text-[12.5px] font-medium text-brand-text">
+            {{ patientName || t('This patient', 'Este paciente') }}
+            <button
+              type="button"
+              class="flex h-5 w-5 items-center justify-center rounded-full text-brand-text hover:bg-brand-tintDeep"
+              :aria-label="t('Show every patient', 'Mostrar todos los pacientes')"
+              @click="clearPatientFilter"
+            >
+              <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" class="h-3 w-3">
+                <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+              </svg>
+            </button>
+          </span>
+          <NuxtLink :to="`/patients/${patientId}`" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover">
+            {{ t('Open patient record', 'Abrir ficha del paciente') }}
+          </NuxtLink>
+        </div>
+
         <div class="flex flex-wrap items-center gap-2">
           <button
             v-for="f in FILTERS"
@@ -182,7 +246,9 @@ function formatDate(iso: string) {
               <UiSkeleton class="h-3.5 w-16 rounded-ctlSm" />
             </div>
           </div>
-          <div v-else-if="invoices.length === 0" class="px-4 py-10 text-center text-[13px] text-ink-muted2">{{ t('No receipts yet.', 'Todavía no hay recibos.') }}</div>
+          <div v-else-if="invoices.length === 0" class="px-4 py-10 text-center text-[13px] text-ink-muted2">
+            {{ patientId ? t('No receipts for this patient.', 'Este paciente no tiene recibos.') : t('No receipts yet.', 'Todavía no hay recibos.') }}
+          </div>
           <ul v-else class="divide-y divide-line-row">
             <li
               v-for="invoice in invoices"

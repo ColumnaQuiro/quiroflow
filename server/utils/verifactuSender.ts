@@ -77,6 +77,31 @@ export function buildAgent(config: SenderConfig): Agent {
   return new Agent({ pfx, passphrase: config.certificatePassphrase, keepAlive: false })
 }
 
+/**
+ * The certificate for an account, from the store.
+ *
+ * Read per send rather than cached: a renewed certificate is a row update,
+ * and the next tick should pick it up without a redeploy. That matters more
+ * than the query -- the one in use expires in February 2028 and is tied to an
+ * individual, so it can be revoked before then with no warning to us.
+ */
+export async function certificateFor(
+  supabase: SupabaseClient<Database>,
+  accountId: string,
+): Promise<Pick<SenderConfig, 'certificateBase64' | 'certificateType' | 'certificateNotAfter'> | null> {
+  const { data } = await supabase
+    .from('verifactu_certificates')
+    .select('pkcs12_base64, certificate_type, not_after')
+    .eq('account_id', accountId)
+    .maybeSingle()
+  if (!data) return null
+  return {
+    certificateBase64: data.pkcs12_base64,
+    certificateType: data.certificate_type === 'seal' ? 'seal' : 'representative',
+    certificateNotAfter: data.not_after ? new Date(data.not_after) : undefined,
+  }
+}
+
 /** The sender's configuration, from runtimeConfig. */
 export function verifactuConfigFrom(runtime: {
   verifactuEnvironment?: string
@@ -118,7 +143,14 @@ export async function sendPendingRecords(
   const { data: readyAtRaw } = await supabase.rpc('factura_submission_ready_at', { p_account_id: accountId })
   const readyAt = new Date((readyAtRaw as unknown as string) ?? Date.now())
 
-  const blocked = transmissionBlockedBy({ config, pendingCount: pending.length, readyAt })
+  // The store wins over anything configured by hand. Configuration is the
+  // developer's escape hatch; the store is where a renewed certificate lands,
+  // and a stale env var silently taking precedence over it is the bug this
+  // ordering prevents.
+  const stored = await certificateFor(supabase, accountId)
+  const effective: SenderConfig = stored ? { ...config, ...stored } : config
+
+  const blocked = transmissionBlockedBy({ config: effective, pendingCount: pending.length, readyAt })
   if (blocked) return { sent: 0, blocked, estadoEnvio: null }
 
   const built = await buildRecordsFor(supabase, accountId, pending)
@@ -129,12 +161,12 @@ export async function sendPendingRecords(
 
   let responseXml: string
   try {
-    const res = await fetch(verifactuEndpoint(config.environment, config.certificateType ?? 'representative'), {
+    const res = await fetch(verifactuEndpoint(effective.environment, effective.certificateType ?? 'representative'), {
       method: 'POST',
       headers: { 'Content-Type': 'text/xml; charset=utf-8', SOAPAction: '' },
       body: envelope,
       // @ts-expect-error -- undici accepts a dispatcher/agent; typed loosely here
-      agent: buildAgent(config),
+      agent: buildAgent(effective),
     })
     responseXml = await res.text()
   } catch (err) {

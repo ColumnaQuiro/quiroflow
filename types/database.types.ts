@@ -2162,6 +2162,40 @@ export type Database = {
           },
         ]
       }
+      verifactu_certificates: {
+        Row: {
+          account_id: string
+          certificate_type: string
+          not_after: string | null
+          pkcs12_base64: string
+          subject: string | null
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          certificate_type?: string
+          not_after?: string | null
+          pkcs12_base64: string
+          subject?: string | null
+          updated_at?: string
+        }
+        Update: {
+          certificate_type?: string
+          not_after?: string | null
+          pkcs12_base64?: string
+          subject?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "verifactu_certificates_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: true
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       facturas: {
         Row: {
           account_id: string
@@ -5773,6 +5807,10 @@ export type Database = {
       factura_records_awaiting_aeat_summary: {
         Args: Record<string, never>
         Returns: { account_id: string; outstanding: number; oldest_sequence: number }[]
+      }
+      verifactu_certificates_expiring: {
+        Args: { p_within_days?: number }
+        Returns: { account_id: string; subject: string | null; not_after: string; days_left: number }[]
       }
       factura_submission_ready_at: { Args: { p_account_id: string }; Returns: string }
       sif_indicador_multiples_ot: { Args: Record<string, never>; Returns: string }

@@ -143,6 +143,12 @@ export interface SenderConfig {
   certificatePassphrase?: string
   /** Decides the endpoint; see CertificateType. */
   certificateType?: CertificateType
+  /**
+   * When the certificate stops working. Known only when it came from the
+   * store, which records it; a certificate configured by hand has no expiry
+   * here and is simply not checked.
+   */
+  certificateNotAfter?: Date
 }
 
 /** Either form of the certificate counts as having one. */
@@ -153,6 +159,7 @@ export type BlockedReason =
   | 'no-producer-nif'
   | 'no-certificate'
   | 'no-certificate-type'
+  | 'certificate-expired'
   | 'nothing-to-send'
   | 'waiting-on-aeat-pace'
 
@@ -185,6 +192,14 @@ export function transmissionBlockedBy(input: {
   // handshake -- an error that says nothing about certificates. Refused here
   // rather than guessed.
   if (!input.config.certificateType) return 'no-certificate-type'
+
+  // An expired certificate fails at the TLS handshake, which reads as a
+  // network problem and would be recorded as transport_error -- retried
+  // every minute, forever, saying nothing about the actual cause. Refused
+  // here instead, where the reason is the answer.
+  if (input.config.certificateNotAfter && input.config.certificateNotAfter <= (input.now ?? new Date())) {
+    return 'certificate-expired'
+  }
   if (input.pendingCount === 0) return 'nothing-to-send'
 
   // The AEAT's pace, with the escape the spec allows: a full batch may go

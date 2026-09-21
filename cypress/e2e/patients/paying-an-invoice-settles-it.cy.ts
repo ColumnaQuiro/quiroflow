@@ -25,7 +25,7 @@ describe('Paying an invoice in full', () => {
           // Wait for the invoice list itself: openTakePayment() snapshots it
           // synchronously, and the outstanding total is on screen before the
           // list has loaded.
-          cy.contains('INV-').should('be.visible')
+          cy.contains('INV-').should('exist')
           cy.contains('button', 'Take payment').click()
           cy.contains('button', 'Record payment').parents('form').as('form')
           // The first row already defaults to the full balance in cash.

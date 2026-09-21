@@ -1,9 +1,23 @@
 <script setup lang="ts">
-import { formatEur } from '~/utils/billing'
 import type { Tables } from '~/types/database.types'
 
+// The patient record.
+//
+// Shape of this page, and why: a full-width banner carrying identity and the
+// ways to reach the patient, then six tabs. It used to be a 56px header plus
+// a 280px rail plus seven tabs, and the rail was the problem -- it repeated
+// the name and balance the header already showed, it held clinical panels
+// that were on screen while you read an invoice, and the phone number was
+// only visible if you happened to be on Overview. The front desk needs the
+// number wherever they are, so it moved up into the banner; the clinical
+// panels moved into Clinical, where they are read; the account figures moved
+// into Money, which is the tab that is about them.
+//
+// The seven tabs became six by merging Docs and Files into Attachments --
+// see AttachmentsTab for why that split was never a distinction staff made.
 const route = useRoute()
 const supabase = useSupabaseClient()
+const store = useAccountStore()
 const t = useT()
 const { can } = usePermission()
 const { showToast } = useToast()
@@ -22,10 +36,41 @@ async function loadPatient() {
 }
 onMounted(loadPatient)
 
-const { balanceCents, availableCents, creditLedgerCents, bonoValueCents, activePackages, loading: financialLoading } = usePatientFinancialSummary(patientId)
+// The banner shows the number, so the number is loaded here rather than by
+// whichever tab happens to be open.
+const primaryNumber = ref<Tables<'patient_contact_numbers'> | null>(null)
+const practitionerName = ref<string | null>(null)
+async function loadBannerDetail() {
+  const { data } = await supabase
+    .from('patient_contact_numbers')
+    .select('*')
+    .eq('patient_id', patientId)
+    .order('created_at')
+    .limit(1)
+  primaryNumber.value = data?.[0] ?? null
+}
+onMounted(loadBannerDetail)
 
-const isVip = computed(() => !!patient.value?.tags.some((t) => t.toUpperCase() === 'VIP'))
-const amountDue = computed(() => (balanceCents.value < 0 ? -balanceCents.value : 0))
+watch(
+  () => patient.value?.default_practitioner_id,
+  async (id) => {
+    if (!id) {
+      practitionerName.value = null
+      return
+    }
+    const { data } = await supabase.from('team_members').select('full_name').eq('id', id).maybeSingle()
+    practitionerName.value = data?.full_name ?? null
+  },
+  { immediate: true },
+)
+
+const clinicName = computed(() => store.clinics.find((c) => c.id === patient.value?.clinic_id)?.name ?? null)
+
+// Only the two figures the banner's pill reads; the rest of the account's
+// money is Billing's own business and is loaded there.
+const { balanceCents, availableCents } = usePatientFinancialSummary(patientId)
+
+const isVip = computed(() => !!patient.value?.tags.some((tag) => tag.toUpperCase() === 'VIP'))
 
 // Minors get no communications at all -- the tab and every send entry point
 // are hidden rather than merely disabled, matching how do-not-contact
@@ -34,19 +79,33 @@ const canContact = computed(() => !patient.value?.is_minor && !patient.value?.do
 
 const tabs = computed(() => [
   { key: 'overview', label: t('Overview', 'Resumen') },
+  { key: 'clinical', label: t('Clinical', 'Clínico') },
   { key: 'appointments', label: t('Appointments', 'Citas') },
-  { key: 'visit-notes', label: t('Visit notes', 'Notas de visita') },
-  { key: 'billing', label: t('Billing', 'Facturación') },
+  { key: 'money', label: t('Money', 'Dinero') },
   // Also hidden without inbox_access: 0164 stops those roles reading
   // messages at all, so the tab would render an empty thread that reads as
   // "this patient has never been contacted" -- worse than not offering it.
   ...(patient.value?.is_minor || !can('inbox_access') ? [] : [{ key: 'communications', label: t('Communications', 'Comunicaciones') }]),
-  { key: 'docs', label: t('Docs', 'Documentos') },
-  { key: 'files', label: t('Files', 'Archivos') },
+  { key: 'attachments', label: t('Attachments', 'Adjuntos') },
 ])
 
+// The old tab names still work. They are in bookmarks, in links mailed
+// between staff, and in `?tab=billing` deep links this app builds itself
+// from the invoice list -- silently landing all of those on Overview would
+// look like the record had lost its billing.
+const TAB_ALIASES: Record<string, string> = {
+  'visit-notes': 'clinical',
+  billing: 'money',
+  docs: 'attachments',
+  files: 'attachments',
+}
+
 const activeTab = computed({
-  get: () => (route.query.tab as string) ?? 'overview',
+  get: () => {
+    const requested = (route.query.tab as string) ?? 'overview'
+    const resolved = TAB_ALIASES[requested] ?? requested
+    return tabs.value.some((tab) => tab.key === resolved) ? resolved : 'overview'
+  },
   set: (value) => navigateTo({ path: route.path, query: { ...route.query, tab: value } }),
 })
 
@@ -69,12 +128,12 @@ async function onMerged(survivorId: string) {
   await navigateTo(`/patients/${survivorId}`)
 }
 
-// Charge (sidebar) should always land on Billing's "Take payment" panel --
-// switching tabs alone is a no-op when Billing is already the active tab.
+// Charge should always land on Money's "Take payment" panel -- switching tabs
+// alone is a no-op when Money is already the active tab.
 const chargeRequested = ref(false)
 function handleCharge() {
   chargeRequested.value = true
-  activeTab.value = 'billing'
+  activeTab.value = 'money'
 }
 
 // Archiving is the reversible alternative to Delete below -- just flips the
@@ -100,167 +159,122 @@ async function toggleArchived() {
   }
 }
 
-// Deleting a patient cascades in the database -- appointments, invoices,
-// payments, docs, files, package purchases, everything keyed off patient_id
-// (see 0044_rbac_row_scope_appointments_patients.sql for the RLS policy
-// this button relies on; the FKs themselves are `on delete cascade` from
-// 0001_init_schema.sql onward). That's permanent and wipes financial/clinical
-// records a clinic may be legally required to retain, so the confirmation
-// names what's actually at stake rather than a generic "are you sure".
-const deleting = ref(false)
-async function deletePatient() {
-  if (!patient.value || deleting.value) return
-  deleting.value = true
-  try {
-    const [{ count: appointmentCount }, { count: invoiceCount }] = await Promise.all([
-      supabase.from('appointments').select('id', { count: 'exact', head: true }).eq('patient_id', patientId),
-      supabase.from('invoices').select('id', { count: 'exact', head: true }).eq('patient_id', patientId),
-    ])
-    const name = `${patient.value.first_name} ${patient.value.last_name ?? ''}`.trim()
-    const warning = t(
-      `Permanently delete ${name}? This also deletes ${appointmentCount ?? 0} appointment(s) and ${invoiceCount ?? 0} invoice(s), plus every document, file, and message tied to them. This can't be undone.`,
-      `¿Eliminar permanentemente a ${name}? Esto también elimina ${appointmentCount ?? 0} cita(s) y ${invoiceCount ?? 0} factura(s), además de todos los documentos, archivos y mensajes asociados. Esta acción no se puede deshacer.`,
-    )
-    if (!confirm(warning)) return
-
-    const { error } = await supabase.from('patients').delete().eq('id', patientId)
-    if (error) {
-      showToast(error.message, 'error')
-      return
-    }
-    await navigateTo('/patients')
-  } finally {
-    deleting.value = false
-  }
+// Delete is a dialog rather than a confirm() because it has to count what
+// goes, and because it sometimes has to refuse: a patient with an issued
+// factura cannot be deleted at all. See PatientsDeleteDialog.
+const deleteOpen = ref(false)
+async function onDeleted() {
+  deleteOpen.value = false
+  await navigateTo('/patients')
 }
+function onArchiveInstead() {
+  deleteOpen.value = false
+  toggleArchived()
+}
+
+const fullName = computed(() => [patient.value?.first_name, patient.value?.last_name].filter(Boolean).join(' '))
 </script>
 
 <template>
   <div v-if="loading" class="flex h-full flex-col">
-    <header class="flex h-14 shrink-0 items-center gap-2.5 border-b border-line bg-surface px-4 sm:px-6">
-      <UiSkeleton class="h-[15px] w-40 rounded" />
+    <header class="shrink-0 border-b border-line bg-surface px-4 py-3 sm:px-6">
+      <div class="flex items-center gap-3">
+        <UiSkeleton class="h-10 w-10 rounded-full" />
+        <UiSkeleton class="h-[15px] w-40 rounded" />
+      </div>
+      <UiSkeleton class="mt-2.5 h-3.5 w-64 rounded" />
     </header>
     <div class="flex-1 overflow-y-auto bg-surface-page">
-      <div class="flex flex-col items-start gap-6 px-4 py-6 sm:px-6 lg:flex-row">
-        <div class="w-full shrink-0 rounded-card border border-line bg-surface p-4 lg:w-[280px]">
-          <UiSkeleton class="mx-auto h-16 w-16 rounded-full" />
-          <UiSkeleton class="mx-auto mt-3 h-4 w-32 rounded" />
-          <div class="mt-5 space-y-3">
-            <UiSkeleton v-for="i in 5" :key="i" class="h-3.5 w-full rounded" />
-          </div>
+      <div class="px-4 py-5 sm:px-6">
+        <div class="flex gap-4 border-b border-chip-border pb-3">
+          <UiSkeleton v-for="i in 6" :key="i" class="h-4 w-16 rounded" />
         </div>
-        <div class="min-w-0 w-full flex-1">
-          <div class="flex gap-4 border-b border-chip-border pb-3">
-            <UiSkeleton v-for="i in 5" :key="i" class="h-4 w-16 rounded" />
-          </div>
-          <div class="mt-5 space-y-3">
-            <UiSkeleton v-for="i in 6" :key="i" class="h-4 w-full rounded" />
-          </div>
+        <div class="mt-5 space-y-3">
+          <UiSkeleton v-for="i in 6" :key="i" class="h-4 w-full rounded" />
         </div>
       </div>
     </div>
   </div>
   <div v-else-if="notFound" class="flex h-full items-center justify-center text-[13px] text-ink-faint">{{ t('Patient not found.', 'Paciente no encontrado.') }}</div>
   <div v-else-if="patient" class="flex h-full flex-col">
-    <header class="flex shrink-0 flex-col gap-2.5 border-b border-line bg-surface px-4 py-2.5 lg:h-14 lg:flex-row lg:items-center lg:justify-between lg:px-6 lg:py-0">
-      <div class="flex min-w-0 items-center gap-2.5">
-        <NuxtLink
-          to="/patients"
-          class="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-ctlSm text-ink-muted hover:bg-surface-subtle hover:text-ink-700"
-          :title="t('Back to patients', 'Volver a pacientes')"
-        >
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
-            <path d="M10 3.5L5 8l5 4.5" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-        </NuxtLink>
-        <NuxtLink to="/patients" class="hidden shrink-0 text-[13px] text-ink-muted2 hover:text-ink-700 sm:inline">{{ t('Patients /', 'Pacientes /') }}</NuxtLink>
-        <h1 class="truncate text-[14.5px] font-[620] text-ink-900">{{ patient.first_name }} {{ patient.last_name }}</h1>
-        <div class="flex shrink-0 flex-wrap items-center gap-1.5">
-          <UiPill v-if="isVip" tone="brand" :dot="true">{{ t('VIP', 'VIP') }}</UiPill>
-          <UiPill v-if="amountDue > 0" tone="danger">{{ formatEur(amountDue) }} {{ t('due', 'pendiente') }}</UiPill>
-          <UiPill v-if="patient.is_minor" tone="brand">{{ t('Minor', 'Menor') }}</UiPill>
-          <UiPill v-if="patient.do_not_contact" tone="danger">{{ t('Do not contact', 'No contactar') }}</UiPill>
-        </div>
-      </div>
-
-      <div class="flex shrink-0 flex-wrap items-center gap-2">
-        <UiBtn v-if="canContact" variant="secondary" @click="whatsAppOpen = true">{{ t('Message', 'Mensaje') }}</UiBtn>
-        <UiBtn variant="primary" @click="navigateTo('/calendar')">{{ t('Book visit', 'Reservar visita') }}</UiBtn>
-        <UiBtn v-if="can('patients_edit')" variant="secondary" :disabled="archiving" @click="toggleArchived">
-          {{ patient.status === 'active' ? t('Archive', 'Archivar') : t('Unarchive', 'Desarchivar') }}
-        </UiBtn>
-        <UiBtn v-if="can('patients_delete_merge')" variant="secondary" @click="mergeOpen = true">{{ t('Merge', 'Fusionar') }}</UiBtn>
-        <UiIconBtn
-          v-if="can('patients_delete_merge')"
-          icon="trash"
-          tone="danger"
-          :disabled="deleting"
-          :label="deleting ? t('Deleting…', 'Eliminando…') : t('Delete patient', 'Eliminar paciente')"
-          @click="deletePatient"
-        />
-      </div>
-    </header>
+    <div class="shrink-0 bg-surface-page px-4 pt-4 sm:px-6">
+      <PatientsBanner
+        :patient="patient"
+        :is-vip="isVip"
+        :available-cents="availableCents"
+        :balance-cents="balanceCents"
+        :clinic-name="clinicName"
+        :practitioner-name="practitionerName"
+        :can-contact="canContact"
+        :can-edit="can('patients_edit')"
+        :can-manage-record="can('patients_delete_merge')"
+        :can-book="true"
+        :archiving="archiving"
+        :primary-number="primaryNumber"
+        @message="whatsAppOpen = true"
+        @book="navigateTo('/calendar')"
+        @charge="handleCharge"
+        @archive="toggleArchived"
+        @merge="mergeOpen = true"
+        @remove="deleteOpen = true"
+      />
+    </div>
 
     <div class="flex-1 overflow-y-auto bg-surface-page">
-      <div class="flex flex-col items-start gap-6 px-4 py-6 sm:px-6 lg:flex-row">
-        <PatientsDetailSidebar
-          :patient="patient"
-          :balance-cents="balanceCents"
-          :available-cents="availableCents"
-          :credit-cents="creditLedgerCents"
-          :bono-value-cents="bonoValueCents"
-          :active-packages="activePackages"
-          :financial-loading="financialLoading"
-          class="lg:sticky lg:top-6"
-          @message="whatsAppOpen = true"
-          @charge="handleCharge"
-          @photo-updated="loadPatient"
-        />
+      <div class="min-w-0 px-4 sm:px-6">
+        <nav
+          class="sticky top-0 z-10 flex gap-1 overflow-x-auto border-b border-chip-border bg-surface-page"
+          :aria-label="t('Patient record sections', 'Secciones de la ficha')"
+        >
+          <button
+            v-for="tab in tabs"
+            :key="tab.key"
+            type="button"
+            class="h-10 shrink-0 px-[11px] text-[13.5px] outline-none focus-visible:shadow-focus"
+            :class="
+              activeTab === tab.key
+                ? 'font-semibold text-ink-700 shadow-[inset_0_-2px_0_#4F46E5]'
+                : 'text-ink-muted hover:text-ink-600'
+            "
+            :aria-current="activeTab === tab.key ? 'page' : undefined"
+            @click="activeTab = tab.key"
+          >
+            {{ tab.label }}
+          </button>
+        </nav>
 
-        <div class="min-w-0 w-full flex-1">
-          <nav class="sticky top-0 z-10 flex gap-1 overflow-x-auto border-b border-chip-border bg-surface-page">
-            <button
-              v-for="tab in tabs"
-              :key="tab.key"
-              type="button"
-              class="h-9 shrink-0 px-[11px] text-[13.5px]"
-              :class="
-                activeTab === tab.key
-                  ? 'font-semibold text-ink-700 shadow-[inset_0_-2px_0_#4F46E5]'
-                  : 'text-ink-muted hover:text-ink-600'
-              "
-              @click="activeTab = tab.key"
-            >
-              {{ tab.label }}
-            </button>
-          </nav>
+        <div class="py-5">
+          <PatientsOverviewTab v-if="activeTab === 'overview'" :patient="patient" @updated="loadPatient" />
 
-          <div class="mt-4">
-            <PatientsOverviewTab v-if="activeTab === 'overview'" :patient="patient" @updated="loadPatient" />
-            <PatientsAppointmentsTab
-              v-else-if="activeTab === 'appointments'"
-              :patient-id="patientId"
-              :first-name="patient.first_name"
-              :last-name="patient.last_name"
-              :preferred-language="patient.preferred_language"
-            />
-            <PatientsVisitNotesTab v-else-if="activeTab === 'visit-notes'" :patient-id="patientId" />
-            <PatientsBillingTab
-              v-else-if="activeTab === 'billing'"
-              :patient-id="patientId"
-              :open-payment-trigger="chargeRequested"
-              @payment-trigger-consumed="chargeRequested = false"
-            />
-            <PatientsCommunicationsTab
-              v-else-if="activeTab === 'communications'"
-              :patient-id="patientId"
-              :first-name="patient.first_name"
-              :preferred-language="patient.preferred_language"
-              :can-contact="canContact"
-            />
-            <PatientsDocsTab v-else-if="activeTab === 'docs'" :patient-id="patientId" />
-            <PatientsFilesTab v-else-if="activeTab === 'files'" :patient-id="patientId" />
-          </div>
+          <PatientsClinicalTab v-else-if="activeTab === 'clinical'" :patient-id="patientId" />
+
+          <PatientsAppointmentsTab
+            v-else-if="activeTab === 'appointments'"
+            :patient-id="patientId"
+            :first-name="patient.first_name"
+            :last-name="patient.last_name"
+            :preferred-language="patient.preferred_language"
+          />
+
+          <!-- No wrapper card of account figures above this: they are part
+               of Billing's own summary strip. A fifth stacked card pushed
+               the ledger below the fold. -->
+          <PatientsBillingTab
+            v-else-if="activeTab === 'money'"
+            :patient-id="patientId"
+            :open-payment-trigger="chargeRequested"
+            @payment-trigger-consumed="chargeRequested = false"
+          />
+
+          <PatientsCommunicationsTab
+            v-else-if="activeTab === 'communications'"
+            :patient-id="patientId"
+            :first-name="patient.first_name"
+            :preferred-language="patient.preferred_language"
+            :can-contact="canContact"
+          />
+
+          <PatientsAttachmentsTab v-else-if="activeTab === 'attachments'" :patient-id="patientId" />
         </div>
       </div>
     </div>
@@ -275,5 +289,15 @@ async function deletePatient() {
     />
 
     <PatientsMergePatientModal v-if="mergeOpen" :patient="patient" @close="mergeOpen = false" @merged="onMerged" />
+
+    <PatientsDeleteDialog
+      v-if="deleteOpen"
+      :patient-id="patientId"
+      :patient-name="fullName"
+      :archived="patient.status !== 'active'"
+      @close="deleteOpen = false"
+      @deleted="onDeleted"
+      @archive="onArchiveInstead"
+    />
   </div>
 </template>

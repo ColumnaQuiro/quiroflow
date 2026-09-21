@@ -39,7 +39,7 @@ describe('The balance pill', () => {
         })
 
         cy.login(account.email, account.password)
-        cy.visit(`/patients/${patient.id}`)
+        cy.visit(`/patients/${patient.id}?tab=billing`)
 
         cy.contains('264,00 € available').should('be.visible')
         // The sessions counter still says what is left in visits, which is

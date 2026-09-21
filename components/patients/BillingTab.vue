@@ -70,7 +70,8 @@ const { can } = usePermission()
 const { fire } = useAutomations()
 const t = useT()
 
-const { balanceCents, creditLedgerCents, refresh: refreshCreditSummary } = usePatientFinancialSummary(() => props.patientId)
+const { balanceCents, creditLedgerCents, bonoValueCents, lifetimeCents, refresh: refreshCreditSummary } =
+  usePatientFinancialSummary(() => props.patientId)
 const { issueFactura, issueRectificativa } = useFacturas()
 const { methods: paymentMethods, ensureLoaded: ensurePaymentMethodsLoaded, defaultMethod } = usePaymentMethods()
 
@@ -1648,6 +1649,33 @@ function money(cents: number) {
           <UiBtn v-if="hasCard" variant="secondary" size="sm" :disabled="removingCard" @click="removeCard">{{ removingCard ? t('Removing…', 'Eliminando…') : t('Remove card', 'Eliminar tarjeta') }}</UiBtn>
         </div>
       </div>
+
+      <!-- The account's standing figures, which used to live in the record's
+           left rail and so were on screen while you read a clinical note.
+           Secondary to Outstanding/Available above, hence the smaller type:
+           those two answer "what do I do now", these four answer "what has
+           this patient's history been". -->
+      <dl class="mt-3 flex flex-wrap gap-x-6 gap-y-1 border-t border-line-divider pt-2.5">
+        <div class="flex items-baseline gap-1.5">
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Balance', 'Saldo') }}</dt>
+          <dd class="font-mono text-[12.5px]" :class="balanceCents < 0 ? 'text-danger-text' : 'text-ink-700'">{{ money(balanceCents) }}</dd>
+        </div>
+        <div class="flex items-baseline gap-1.5">
+          <!-- Bono money is the figure staff reach for, and the one
+               PracticeHub shows, so it is not folded into Credit: those are
+               different pots and they spend differently. -->
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('In bonos', 'En bonos') }}</dt>
+          <dd class="font-mono text-[12.5px] text-ink-700">{{ money(bonoValueCents) }}</dd>
+        </div>
+        <div class="flex items-baseline gap-1.5">
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Credit', 'Crédito') }}</dt>
+          <dd class="font-mono text-[12.5px] text-ink-700">{{ money(creditLedgerCents) }}</dd>
+        </div>
+        <div class="flex items-baseline gap-1.5">
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Lifetime', 'Total histórico') }}</dt>
+          <dd class="font-mono text-[12.5px] text-ink-700">{{ money(lifetimeCents) }}</dd>
+        </div>
+      </dl>
 
       <div v-if="activePanel === 'credit'" class="mt-4 border-t border-line-divider pt-4">
         <form class="flex flex-wrap items-end gap-2" @submit.prevent="addCredit">

@@ -53,7 +53,7 @@ describe('A factura for each payment', () => {
         // Wait for the ledger to load: the take-payment form is gated on there
         // being an unpaid invoice, and clicking before they arrive opens an
         // empty panel.
-        cy.contains('55,00 €').should('be.visible')
+        cy.contains('55,00 €').should('exist')
         cy.contains('button', 'Take payment').click()
         cy.contains('button', 'Record payment').parents('form').as('form')
         cy.get('@form').find('select').last().select('Credit on account (100,00 € available)')

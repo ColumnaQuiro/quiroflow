@@ -32,7 +32,7 @@ interface FinancialState {
   balanceCents: Ref<number>
   creditLedgerCents: Ref<number>
   // Everything the patient has ever actually paid. Already summed here to
-  // get balanceCents -- exposed because DetailSidebar's "Lifetime" figure is
+  // get balanceCents -- exposed because the Money tab's "Lifetime" figure is
   // exactly this number, and it was re-deriving it with its own invoices
   // query followed by a dependent payments query.
   lifetimeCents: Ref<number>

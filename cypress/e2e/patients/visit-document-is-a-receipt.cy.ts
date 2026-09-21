@@ -17,7 +17,7 @@ describe('The document for a visit', () => {
           // The ledger names the charge a Receipt, while the Facturas card
           // right above it keeps its own name -- the whole point is that the
           // two documents are no longer called the same thing.
-          cy.contains('Receipt').should('be.visible')
+          cy.contains('Receipt').scrollIntoView().should('be.visible')
           cy.contains('Facturas').should('be.visible')
           cy.contains('button', 'Take payment').click()
           cy.contains('label', 'Receipt').should('be.visible')

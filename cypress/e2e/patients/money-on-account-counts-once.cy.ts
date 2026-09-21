@@ -61,7 +61,7 @@ describe('Money taken on account', () => {
           // After: the bono is EUR 115 better off and the credit has been
           // drawn down to pay for it. The same euros in one place, not both --
           // which is what linking alone used to leave behind.
-          cy.contains('413,00 €').should('be.visible')
+          cy.contains('413,00 €').scrollIntoView().should('be.visible')
           cy.contains('Applied to Bono 12 sesiones').should('exist')
           // Twelve sessions still worth EUR 528, EUR 413 of them not paid for,
           // so EUR 115 is what the patient can draw on. Not 230.

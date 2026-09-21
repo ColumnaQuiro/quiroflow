@@ -87,6 +87,53 @@ export function aeatDate(iso: string): string {
   return `${d}-${m}-${y}`
 }
 
+/**
+ * FechaHoraHusoGenRegistro, formatted the way the huella was computed.
+ *
+ * This is not cosmetic. The AEAT recomputes the huella from the fields in the
+ * XML, so the timestamp here must be byte-identical to the one that went into
+ * the hash -- and what went in is defined by factura_huella_input(): local
+ * Spanish time, whole seconds, offset spelled out.
+ *
+ *   hashed:   2026-09-18T09:09:39+02:00
+ *   postgres: 2026-09-18 07:09:39.571153+00
+ *
+ * Sending the second would have been rejected on every record, with an error
+ * about the huella rather than about the date -- and the huella would look
+ * wrong while being perfectly correct. Found by diffing a dry-run envelope
+ * against factura_huella_input()'s own output before the first submission.
+ *
+ * Europe/Madrid rather than the stored offset, because that is the zone the
+ * database function pins itself to. Peninsular Spain is what the clinic is
+ * in; a Canary clinic would hash under a different offset and this would have
+ * to follow whatever the function does.
+ */
+export function aeatDateTime(iso: string): string {
+  const d = new Date(iso)
+  const tz = 'Europe/Madrid'
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-GB', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    })
+      .formatToParts(d)
+      .map((p) => [p.type, p.value]),
+  )
+  // "GMT+02:00" in summer, "GMT+01:00" in winter -- read from the zone rather
+  // than assumed, so the change of season does not silently break the hash.
+  const tzName = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'longOffset' })
+    .formatToParts(d)
+    .find((p) => p.type === 'timeZoneName')?.value
+  const offset = (tzName ?? 'GMT+00:00').replace('GMT', '') || '+00:00'
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}${offset}`
+}
+
 /** Decimal (3,2) -- 21 % is "21.00", and an exempt operation has no rate. */
 const rate = (bp: number) => (bp / 100).toFixed(2)
 
@@ -192,7 +239,7 @@ export function buildRegistroAlta(input: RegistroAltaInput): string {
     L('TipoUsoPosibleMultiOT', SIF_SUPPORTS_MULTIPLE_OBLIGADOS),
     L('IndicadorMultiplesOT', input.indicadorMultiplesOt),
     '</sum1:SistemaInformatico>',
-    L('FechaHoraHusoGenRegistro', record.generatedAt),
+    L('FechaHoraHusoGenRegistro', aeatDateTime(record.generatedAt)),
     L('TipoHuella', TIPO_HUELLA_SHA256),
     L('Huella', record.huella),
     // No Signature element. The record design says it is "obligatorio para

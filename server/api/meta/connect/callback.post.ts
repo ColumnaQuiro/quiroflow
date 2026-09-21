@@ -113,7 +113,43 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // 4. Subscribe THIS app to THAT account's webhooks.
+  // 4. Is that number already somebody else's?
+  //
+  //    Checked here, before anything with a side effect: a phone number id
+  //    routes inbound messages to exactly one account, and the webhook finds
+  //    that account with .maybeSingle(), which returns NULL -- not the first
+  //    row -- when two match. A collision therefore does not misroute inbound
+  //    WhatsApp, it stops it dead for BOTH clinics, while each one's Settings
+  //    page still shows a correct-looking configuration. Nothing is logged and
+  //    nothing looks wrong, which is why it has to be refused rather than
+  //    reported afterwards.
+  //
+  //    Service role deliberately: the answer must cover every account, not the
+  //    ones this caller can see. It returns no more than whether the number is
+  //    taken -- not by whom, which is another clinic's business.
+  const admin = serverSupabaseServiceRole<Database>(event)
+  const { data: claimants, error: claimError } = await admin
+    .from('accounts')
+    .select('id')
+    .eq('whatsapp_phone_number_id', phoneNumberId)
+    .neq('id', teamMember.account_id)
+    .limit(1)
+  if (claimError) {
+    throw createError({ statusCode: 500, statusMessage: claimError.message })
+  }
+  if (claimants && claimants.length > 0) {
+    console.error(
+      `[meta-connect] account ${teamMember.account_id} tried to connect WhatsApp phone number id ${phoneNumberId}, ` +
+        `already held by account ${claimants[0].id}. Refused -- connecting both would have silently stopped inbound for both.`,
+    )
+    throw createError({
+      statusCode: 409,
+      statusMessage:
+        'That WhatsApp number is already connected to another QuiroFlow account. Disconnect it there first, or pick a different number -- connecting it twice would stop incoming messages for both.',
+    })
+  }
+
+  // 5. Subscribe THIS app to THAT account's webhooks.
   //
   //    Easy to skip and impossible to notice: the app-level webhook
   //    configuration is not enough on its own, and without this call nothing
@@ -128,11 +164,10 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 502, statusMessage: `Connected, but could not subscribe to incoming messages: ${detail}` })
   }
 
-  // 5. Store it. Service role because accounts.whatsapp_access_token is a
+  // 6. Store it. Service role because accounts.whatsapp_access_token is a
   //    credential, and the same reasoning as whatsapp/app-secret.post.ts: the
   //    write goes through a route that can validate, not a direct table
   //    update from the page.
-  const admin = serverSupabaseServiceRole<Database>(event)
   const { error } = await admin
     .from('accounts')
     .update({
@@ -143,6 +178,17 @@ export default defineEventHandler(async (event) => {
     .eq('id', teamMember.account_id)
 
   if (error) {
+    // The check in step 4 is not a lock, and two clinics can be in the dialog
+    // at once. accounts_whatsapp_phone_number_id_key is what actually settles
+    // it; this turns the loser's raw constraint error into the same answer the
+    // check above would have given, rather than a 500 nobody can act on.
+    if (error.code === '23505') {
+      throw createError({
+        statusCode: 409,
+        statusMessage:
+          'That WhatsApp number was connected to another QuiroFlow account a moment ago. Disconnect it there first, or pick a different number.',
+      })
+    }
     throw createError({ statusCode: 500, statusMessage: error.message })
   }
 

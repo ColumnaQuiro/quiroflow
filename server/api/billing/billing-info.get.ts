@@ -67,8 +67,12 @@ export default defineEventHandler(async (event) => {
   }
 
   let nextPaymentDate: string | null = null
+  let cancelAt: string | null = null
   if (subscription.stripe_subscription_id) {
     const stripeSubscription = await stripe.subscriptions.retrieve(subscription.stripe_subscription_id)
+    // Set only when Stripe's dunning is configured to cancel after the last
+    // retry. Absent, there is no date to promise.
+    cancelAt = stripeSubscription.cancel_at ? new Date(stripeSubscription.cancel_at * 1000).toISOString() : null
     // current_period_end lives on the subscription ITEM, not the subscription
     // itself, as of this pinned API version -- every item on a single-price
     // subscription shares the same renewal date, so the first is enough.
@@ -98,6 +102,62 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  // What a past_due account actually needs to know: what we tried to take,
+  // when we try again, and why the bank said no.
+  //
+  // All of it comes from Stripe because nothing in this app decides any of
+  // it. trial-expiry-cron only locks TRIALING accounts that never had a
+  // Stripe subscription; once a real subscription exists its status mirrors
+  // Stripe's, and the retry schedule and what happens after the last retry
+  // are Stripe dunning settings. cancelAt is therefore only present when
+  // those settings are configured to cancel -- left null otherwise rather
+  // than guessing a date a clinic would plan around.
+  let pastDue: {
+    amountCents: number
+    attemptedAt: string | null
+    nextAttemptAt: string | null
+    declineReason: string | null
+    invoiceUrl: string | null
+    cancelAt: string | null
+  } | null = null
+  try {
+    const open = await stripe.invoices.list({
+      customer: subscription.stripe_customer_id,
+      status: 'open',
+      limit: 1,
+    })
+    const invoice = open.data[0]
+    if (invoice) {
+      // The message the bank gave, if Stripe recorded one. Shapes differ
+      // across API versions, so each hop is optional and a miss just means
+      // the banner says less rather than throwing.
+      let declineReason: string | null = null
+      try {
+        const charge = (invoice as unknown as { charge?: string | { failure_message?: string | null } }).charge
+        if (charge && typeof charge !== 'string') declineReason = charge.failure_message ?? null
+        else if (typeof charge === 'string') {
+          const full = await stripe.charges.retrieve(charge)
+          declineReason = full.failure_message ?? null
+        }
+      } catch {
+        declineReason = null
+      }
+
+      pastDue = {
+        amountCents: invoice.amount_due,
+        attemptedAt: invoice.status_transitions?.finalized_at
+          ? new Date(invoice.status_transitions.finalized_at * 1000).toISOString()
+          : null,
+        nextAttemptAt: invoice.next_payment_attempt ? new Date(invoice.next_payment_attempt * 1000).toISOString() : null,
+        declineReason,
+        invoiceUrl: invoice.hosted_invoice_url ?? null,
+        cancelAt: cancelAt,
+      }
+    }
+  } catch {
+    pastDue = null
+  }
+
   const address = customer.address
   return {
     hasCustomer: true as const,
@@ -116,5 +176,6 @@ export default defineEventHandler(async (event) => {
     card,
     nextPaymentDate,
     upcoming,
+    pastDue,
   }
 })

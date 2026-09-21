@@ -76,6 +76,14 @@ interface BillingInfo {
   card?: { brand: string; last4: string; expMonth: number; expYear: number } | null
   nextPaymentDate?: string | null
   upcoming?: { totalCents: number; subtotalCents: number; taxCents: number; currency: string } | null
+  pastDue?: {
+    amountCents: number
+    attemptedAt: string | null
+    nextAttemptAt: string | null
+    declineReason: string | null
+    invoiceUrl: string | null
+    cancelAt: string | null
+  } | null
 }
 
 const route = useRoute()
@@ -445,13 +453,13 @@ function openStripeCancel() {
 
             <SubscriptionFailedBanner
               v-else-if="state === 'past_due'"
-              :amount-cents="nextChargeCents"
-              :attempted-on="billingInfo?.nextPaymentDate ?? null"
+              :amount-cents="billingInfo?.pastDue?.amountCents ?? nextChargeCents"
+              :attempted-on="billingInfo?.pastDue?.attemptedAt ?? null"
               :card="billingInfo?.card ?? null"
-              :decline-reason="t('The card was declined by the bank.', 'El banco rechazó la tarjeta.')"
-              :retry-dates="[]"
-              :lock-date="null"
-              :invoice-url="null"
+              :decline-reason="billingInfo?.pastDue?.declineReason ?? t('The bank declined it.', 'El banco lo rechazó.')"
+              :next-attempt-at="billingInfo?.pastDue?.nextAttemptAt ?? null"
+              :cancel-at="billingInfo?.pastDue?.cancelAt ?? null"
+              :invoice-url="billingInfo?.pastDue?.invoiceUrl ?? null"
               @update-card="openStripePortal"
             />
 
@@ -530,6 +538,8 @@ function openStripeCancel() {
               :tax-cents="nextChargeTax"
               :date="billingInfo?.nextPaymentDate ?? subscription.trial_ends_at"
               :card="billingInfo?.card ?? null"
+              :retry-date="billingInfo?.pastDue?.nextAttemptAt ?? null"
+              :decline-reason="state === 'past_due' ? (billingInfo?.pastDue?.declineReason ?? null) : null"
               :estimated="!usingStripeAmount"
               @portal="openStripePortal"
             />

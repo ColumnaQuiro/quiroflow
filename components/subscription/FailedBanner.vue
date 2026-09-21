@@ -8,8 +8,8 @@ defineProps<{
   attemptedOn: string | null
   card: { brand: string; last4: string } | null
   declineReason: string | null
-  retryDates: string[]
-  lockDate: string | null
+  nextAttemptAt: string | null
+  cancelAt: string | null
   invoiceUrl: string | null
 }>()
 defineEmits<{ updateCard: [] }>()
@@ -33,12 +33,20 @@ const t = useT()
     <div class="mt-3.5 rounded-ctl border border-line bg-surface px-3.5 py-3">
       <p class="text-[12.5px] font-semibold text-ink-900">{{ t(`What happens if it isn't paid`, 'Qué pasa si no se paga') }}</p>
       <p class="mt-1.5 text-[12.5px] leading-[1.55] text-ink-muted">
-        <template v-if="retryDates.length">
-          {{ t('We try again on', 'Lo volvemos a intentar el') }}
-          {{ retryDates.map((d) => formatLongDate(d)).join(t(' and ', ' y ')) }}.
+        <template v-if="nextAttemptAt">
+          {{ t('We try again on', 'Lo volvemos a intentar el') }} {{ formatLongDate(nextAttemptAt) }}.
         </template>
-        <template v-if="lockDate">
-          {{ t('If none succeeds, the account locks on', 'Si ninguno funciona, la cuenta se bloquea el') }} {{ formatLongDate(lockDate) }}.
+        <template v-else>
+          {{ t('We will try the card again automatically.', 'Volveremos a intentar el cobro automáticamente.') }}
+        </template>
+        <!-- Only when Stripe is actually configured to cancel. Inventing a
+             cut-off date is worse than not naming one: a clinic would plan
+             around it. -->
+        <template v-if="cancelAt">
+          {{ t('If it keeps failing, access ends on', 'Si sigue fallando, el acceso termina el') }} {{ formatLongDate(cancelAt) }}.
+        </template>
+        <template v-else>
+          {{ t('Access continues while we keep retrying.', 'El acceso continúa mientras seguimos reintentando.') }}
         </template>
       </p>
       <p class="mt-2 text-[12.5px] leading-[1.55] text-ink-700">

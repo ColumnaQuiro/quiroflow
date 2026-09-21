@@ -446,6 +446,17 @@ async function sendStatement() {
     <div class="flex items-center justify-between border-b border-line-divider px-4 py-3">
       <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Account Ledger', 'Libro de cuenta') }}</p>
       <div class="flex items-center gap-2">
+        <!-- The ledger stays here, on the record, because "what does this
+             person owe" is a patient-context question asked with the patient
+             on the phone or at the desk. This is the way OUT to the clinic's
+             receipt list scoped to them, for the rarer "show me all their
+             paperwork" -- not a replacement for the ledger. -->
+        <NuxtLink
+          :to="`/billing?patient=${patientId}`"
+          class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover"
+        >
+          {{ t('All receipts', 'Todos los recibos') }}
+        </NuxtLink>
         <span v-if="statementMessage" class="text-[12px] text-ink-faint">{{ statementMessage }}</span>
         <div class="relative">
           <button type="button" class="rounded-ctlSm px-1.5 py-1 text-ink-faint hover:bg-surface-subtle hover:text-ink-700" @click="menuOpen = !menuOpen">

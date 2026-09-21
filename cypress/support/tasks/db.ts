@@ -1063,6 +1063,12 @@ async function createApiToken(opts: { accountId: string; scopes: string[] }) {
 // Meta's signature over the exact bytes a spec is about to send. Done here in
 // Node rather than in the browser so the spec can post a pre-serialised string
 // and know the digest covers precisely those bytes.
+/** A stored WhatsApp token, so a spec can drive the endpoints that need one. */
+async function setAccountWhatsappToken(opts: { accountId: string; token: string }) {
+  unwrap(await admin.from('accounts').update({ whatsapp_access_token: opts.token }).eq('id', opts.accountId).select('id').single())
+  return { stored: true }
+}
+
 /** Puts an account in the state a finished Embedded Signup leaves it in. */
 async function setWhatsappBusinessAccount(opts: { accountId: string; businessAccountId: string; phoneNumberId?: string }) {
   unwrap(
@@ -1681,7 +1687,7 @@ let metaGraphStub: import('node:http').Server | null = null
 
 async function startMetaGraphStub(opts: {
   /** Which step should fail, to prove a half-connection is never stored. */
-  failAt?: 'exchange' | 'debug' | 'phones' | 'subscribe'
+  failAt?: 'exchange' | 'debug' | 'phones' | 'subscribe' | 'templates'
   wabaId?: string
   phoneNumberId?: string
   displayPhoneNumber?: string
@@ -1713,6 +1719,24 @@ async function startMetaGraphStub(opts: {
       if (opts.failAt === 'debug') return refuse('Invalid OAuth access token.')
       return send(200, {
         data: { granular_scopes: [{ scope: opts.scope ?? 'whatsapp_business_management', target_ids: opts.scope === 'none' ? [] : [wabaId] }] },
+      })
+    }
+    if (path.endsWith('/message_templates')) {
+      // The error branch is the point: an expired token and a wrong Business
+      // Account ID both land here, and the endpoint used to describe neither.
+      if (opts.failAt === 'templates') {
+        return send(401, { error: { message: 'Error validating access token: Session has expired.', type: 'OAuthException', code: 190 } })
+      }
+      return send(200, {
+        data: [
+          {
+            name: 'recordatorio_cita',
+            language: 'es',
+            category: 'UTILITY',
+            status: 'APPROVED',
+            components: [{ type: 'BODY', text: 'Hola {{1}}, te recordamos tu cita el {{2}}.' }],
+          },
+        ],
       })
     }
     if (path.endsWith('/phone_numbers')) {
@@ -1951,6 +1975,7 @@ export const dbTasks = {
   'db:setAccountSecret': setAccountSecret,
   'db:accountWhatsappConnection': accountWhatsappConnection,
   'db:setWhatsappBusinessAccount': setWhatsappBusinessAccount,
+  'db:setAccountWhatsappToken': setAccountWhatsappToken,
   'db:startMetaGraphStub': startMetaGraphStub,
   'db:stopMetaGraphStub': stopMetaGraphStub,
   'db:readAsStaff': readAsStaff,

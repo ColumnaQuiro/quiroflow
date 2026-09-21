@@ -133,6 +133,27 @@ export default defineNuxtConfig({
     },
   },
   runtimeConfig: {
+    // VeriFactu. Sending registros to the AEAT needs a qualified certificate,
+    // which cannot be a file here: production is a Netlify function with no
+    // filesystem to put one on, and anything bundled would be a private key
+    // in the repository. So the certificate arrives base64-encoded and the
+    // passphrase separately -- neither half is usable without the other.
+    //
+    // NOTE for whoever sets this up: a Netlify function inherits AWS Lambda's
+    // limit on the TOTAL size of its environment variables, and a base64 .p12
+    // is a few kilobytes of that budget. If the deploy starts refusing the
+    // configuration, that is why, and the certificate needs to move to
+    // storage the function reads at runtime rather than an env var.
+    //
+    // Defaults to the AEAT's TEST service. Production has to be asked for by
+    // name; it is not what an unset variable gets you.
+    verifactuEnvironment: 'test',
+    verifactuCertificateBase64: '',
+    verifactuCertificatePassphrase: '',
+    // 'representative' (FNMT "AC Representación", tied to a person) or
+    // 'seal' (an entity's certificado de sello). It picks the endpoint host,
+    // and the wrong host fails at the TLS handshake.
+    verifactuCertificateType: 'representative',
     resendApiKey: '',
     // Resend's webhook signing secret (Webhooks -> your endpoint in their
     // dashboard). Without it the delivery-event endpoint refuses everything,

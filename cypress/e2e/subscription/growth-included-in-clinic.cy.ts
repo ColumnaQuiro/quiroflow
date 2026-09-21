@@ -47,19 +47,25 @@ describe('Growth included in the Clinic plan', () => {
   it('adds nothing to the bill for something already in the price', () => {
     onClinic().then(() => {
       cy.visit('/subscription')
+      cy.contains('button', 'Change plan').click()
 
       // 149, not 188. A Clinic subscription has no Growth line item in
       // Stripe, so quoting one would overstate the invoice by 39 EUR/month.
       cy.contains('149,00').should('be.visible')
       cy.contains('188,00').should('not.exist')
 
-      cy.contains('.rounded-card', 'Lead pipeline').as('growthCard')
+      cy.contains('.rounded-card', 'Growth add-on').as('growthCard')
       cy.get('@growthCard').scrollIntoView()
       cy.get('@growthCard').should('contain', 'Included')
       cy.get('@growthCard').should('contain', 'Clinic')
       // Offering to sell it would be the clearest possible way to say the
       // packaging is not real.
-      cy.get('@growthCard').find('input[type="checkbox"]').should('not.exist')
+      // The switch is present but disabled, which says "you already have
+      // this" rather than leaving a blank where a control should be.
+      // Offering to SELL it would be the clearest possible way to say the
+      // packaging is not real, and it does not.
+      cy.get('@growthCard').find('[role="switch"]').should('be.disabled')
+      cy.get('@growthCard').should('not.contain', '/mo + IVA')
     })
   })
 
@@ -79,6 +85,7 @@ describe('Growth included in the Clinic plan', () => {
       }).as('billingInfo')
 
       cy.visit('/subscription')
+      cy.contains('button', 'Change plan').click()
       cy.wait('@billingInfo')
 
       // The plan card shows the monthly equivalent, 134 EUR.
@@ -96,6 +103,7 @@ describe('Growth included in the Clinic plan', () => {
   it('says prices exclude IVA, because Stripe adds 21% to every one of them', () => {
     onClinic().then(() => {
       cy.visit('/subscription')
+      cy.contains('button', 'Change plan').click()
       cy.contains('+ IVA').should('be.visible')
     })
   })

@@ -1,4 +1,30 @@
 <script setup lang="ts">
+import { planIncludesGrowth } from '~/utils/growthPlans'
+import {
+  bytesToGb,
+  formatEur,
+  formatLongDate,
+  nextChargeTotal,
+  pricePerMonth,
+  seatAllowance,
+  subscriptionState,
+} from '~/utils/billing'
+import type { PaymentEntry } from '~/components/subscription/PaymentsTable.vue'
+
+// /subscription.
+//
+// This replaced a three-tab page capped at 768px whose most important fact --
+// what Stripe is about to charge, and when -- was a run-on string in the page
+// header, assembled by joining parts with five literal spaces.
+//
+// Two things drive the new shape. The rail carries the next payment and the
+// card on every view, so that answer is never more than a glance away. And
+// nothing on this page formats money or a date itself: utils/billing.ts owns
+// both, which is what stopped es-ES amounts appearing inside en-US dates in
+// the same sentence.
+
+const SUPPORT_EMAIL = 'hola@quiroflow.com'
+
 interface SubscriptionRow {
   status: string
   billing_interval: string
@@ -6,6 +32,7 @@ interface SubscriptionRow {
   growth_addon: boolean
   trial_ends_at: string | null
   comped: boolean
+  created_at: string | null
   stripe_customer_id: string | null
   stripe_subscription_id: string | null
   plan_id: string
@@ -14,9 +41,9 @@ interface SubscriptionRow {
     monthly_price_cents: number
     annual_price_cents: number
     included_professionals: number | null
-    extra_professional_price_cents: number | null
-    included_whatsapp_conversations: number | null
+    included_clinics: number | null
     included_storage_gb: number | null
+    extra_professional_price_cents: number | null
   } | null
 }
 
@@ -27,6 +54,7 @@ interface PlanRow {
   annual_price_cents: number
   included_professionals: number | null
   included_clinics: number | null
+  included_storage_gb: number | null
   extra_professional_price_cents: number | null
   sort_order: number
 }
@@ -40,385 +68,206 @@ interface AddonRow {
 
 interface BillingInfo {
   hasCustomer: boolean
+  name?: string | null
+  email?: string | null
   country?: string | null
-  card?: { brand: string; last4: string } | null
+  taxId?: string | null
+  address?: { line1: string | null; line2: string | null; postalCode: string | null; city: string | null } | null
+  card?: { brand: string; last4: string; expMonth: number; expYear: number } | null
   nextPaymentDate?: string | null
-}
-
-interface PaymentRow {
-  saleId: string
-  date: string
-  product: string
-  transactionAmountCents: number
-  taxAmountCents: number
-  status: 'success' | 'failed' | 'pending'
-  method: { brand: string; last4: string } | null
-  invoiceUrl: string | null
+  upcoming?: { totalCents: number; subtotalCents: number; taxCents: number; currency: string } | null
 }
 
 const route = useRoute()
+const router = useRouter()
 const store = useAccountStore()
 const supabase = useSupabaseClient()
+const t = useT()
 const { loading: loadingPortal, openPortal } = useBillingPortal()
 
 const subscription = ref<SubscriptionRow | null>(null)
 const plans = ref<PlanRow[]>([])
 const growthAddon = ref<AddonRow | null>(null)
-const practitionerCount = ref(0)
+const practitioners = ref<{ full_name: string | null }[]>([])
 const usage = ref<{ whatsapp_conversations_mtd: number; storage_bytes: number } | null>(null)
+const billingInfo = ref<BillingInfo | null>(null)
 const loading = ref(true)
+
+const contactHref = computed(() => {
+  const subject = encodeURIComponent(`Question about my QuiroFlow plan -- ${store.accountName}`)
+  return `mailto:${SUPPORT_EMAIL}?subject=${subject}`
+})
 
 async function loadSubscription() {
   const { data } = await supabase
     .from('subscriptions')
     .select(
-      'status, billing_interval, extra_professionals, growth_addon, trial_ends_at, comped, stripe_customer_id, stripe_subscription_id, plan_id, plans(name, monthly_price_cents, annual_price_cents, included_professionals, extra_professional_price_cents, included_whatsapp_conversations, included_storage_gb)',
+      'status, billing_interval, extra_professionals, growth_addon, trial_ends_at, comped, created_at, stripe_customer_id, stripe_subscription_id, plan_id, plans(name, monthly_price_cents, annual_price_cents, included_professionals, included_clinics, included_storage_gb, extra_professional_price_cents)',
     )
     .eq('account_id', store.accountId!)
     .maybeSingle()
   subscription.value = data as SubscriptionRow | null
 }
 
-// WhatsApp conversations and file storage are the only two things in the
-// product with a real marginal cost, so they are the only two the plans put a
-// ceiling on. Read through account_usage() rather than counting here: it is
-// SECURITY DEFINER, so the figure is the same account-level truth for every
-// team member, instead of being filtered down to whatever patients the reader
-// happens to have access to.
+// Read through account_usage() rather than counting here: it is SECURITY
+// DEFINER, so the figure is the same account-level truth for every team
+// member instead of being filtered to whatever the reader can see.
 async function loadUsage() {
   const { data } = await supabase.rpc('account_usage', { target_account_id: store.accountId! })
   usage.value = Array.isArray(data) ? (data[0] ?? null) : (data ?? null)
 }
 
-async function loadPractitionerCount() {
-  const { count } = await supabase
+async function loadPractitioners() {
+  const { data } = await supabase
     .from('team_members')
-    .select('id', { count: 'exact', head: true })
+    .select('full_name')
     .eq('account_id', store.accountId!)
     .eq('is_practitioner', true)
     .is('deleted_at', null)
-  practitionerCount.value = count ?? 0
+    .order('full_name')
+  practitioners.value = data ?? []
 }
 
-// Billing info (country, card, next renewal date) is fetched eagerly on
-// mount, not lazily on tab-open, because the page header needs the renewal
-// date regardless of which tab is active.
-const billingInfo = ref<BillingInfo | null>(null)
-const loadingBillingInfo = ref(false)
 async function loadBillingInfo() {
   if (!store.isOwner) return
-  loadingBillingInfo.value = true
   try {
     billingInfo.value = await $fetch<BillingInfo>('/api/billing/billing-info')
   } catch {
     billingInfo.value = { hasCustomer: false }
-  } finally {
-    loadingBillingInfo.value = false
   }
 }
 
-onMounted(async () => {
-  const [, { data: planRows }, { data: addonRows }] = await Promise.all([
-    loadSubscription(),
-    supabase.from('plans').select('id, name, monthly_price_cents, annual_price_cents, included_professionals, included_clinics, extra_professional_price_cents, sort_order').order('sort_order'),
-    supabase.from('addons').select('id, name, monthly_price_cents, annual_price_cents'),
-    loadPractitionerCount(),
-    loadUsage(),
-    loadBillingInfo(),
-  ])
-  plans.value = planRows ?? []
-  growthAddon.value = (addonRows ?? []).find((a) => a.id === 'growth') ?? null
-  loading.value = false
+// ---------------------------------------------------------------- derived
 
-  // Checkout redirects back here before the webhook has necessarily landed
-  // -- poll a few times rather than showing a stale "trialing" status right
-  // after the customer just paid.
-  if (route.query.checkout === 'success') {
-    checkoutJustCompleted.value = true
-    for (let i = 0; i < 5; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 2000))
-      await loadSubscription()
-      if (subscription.value?.stripe_subscription_id) break
-    }
-    await loadBillingInfo()
-  }
-})
-
-function eur(cents: number) {
-  return (cents / 100).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })
-}
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
-}
-
-const STATUS_LABEL: Record<string, string> = {
-  trialing: 'Free trial',
-  active: 'Active',
-  past_due: 'Payment failed',
-  locked: 'Locked',
-  canceled: 'Canceled',
-}
-const STATUS_TONE: Record<string, string> = {
-  trialing: 'bg-blue-50 text-blue-700',
-  active: 'bg-green-50 text-green-700',
-  past_due: 'bg-red-50 text-red-700',
-  locked: 'bg-red-50 text-red-700',
-  canceled: 'bg-gray-100 text-gray-500',
-}
-
-const PAYMENT_STATUS_TONE: Record<PaymentRow['status'], string> = {
-  success: 'text-green-700',
-  failed: 'text-red-700',
-  pending: 'text-ink-muted',
-}
-
-// What the add-on contributes to the bill as it stands -- zero unless it was
-// actually bought, so a comped or trialing account (which gets Growth without
-// paying for it) is not quoted a price it will never be charged.
-const growthOnBillCents = computed(() => {
-  const sub = subscription.value
-  const addon = growthAddon.value
-  // A plan that includes Growth adds nothing to the bill for it -- there is
-  // no Stripe line item, so quoting one would overstate the invoice.
-  if (!sub || !addon) return 0
-  if (planIncludesGrowth(sub.plan_id) || !sub.growth_addon) return 0
-  return sub.billing_interval === 'annual' ? addon.annual_price_cents : addon.monthly_price_cents
-})
-
-const monthlyEquivalentCents = computed(() => {
-  const sub = subscription.value
-  if (!sub?.plans) return 0
-  const base = sub.billing_interval === 'annual' ? sub.plans.annual_price_cents : sub.plans.monthly_price_cents
-  const overage = sub.extra_professionals > 0 ? sub.extra_professionals * (sub.plans.extra_professional_price_cents ?? 0) : 0
-  return base + overage + growthOnBillCents.value
-})
-
-// The actual amount the next charge will be for -- distinct from the
-// monthly-equivalent shown in the plan card, since an annual plan's next
-// charge is the full annual price, not 1/12th of it.
-//
-// It used to be byte-identical to monthlyEquivalentCents despite that
-// comment, so an annual customer was told their next payment was 44 EUR when
-// Stripe was about to take 528. Nobody saw it because no annual subscription
-// existed yet -- every account was comped or trialing. The prices in `plans`
-// are all per-month figures; annual ones are billed twelve at a time, which
-// is what MONTHS_PER_YEAR says here and what the Stripe annual prices are
-// created as.
-// Whether the plan in force already includes Growth. There is no "selected
-// plan" state to read -- each plan card commits on its own button -- so this
-// follows the current subscription, and updates when the switch completes.
+const state = computed(() =>
+  subscription.value ? subscriptionState(subscription.value.status, subscription.value.comped) : 'locked',
+)
+const comped = computed(() => state.value === 'comped')
+const interval = computed<'monthly' | 'annual'>(() =>
+  subscription.value?.billing_interval === 'annual' ? 'annual' : 'monthly',
+)
 const currentPlanIncludesGrowth = computed(() => planIncludesGrowth(subscription.value?.plan_id))
-const currentPlanName = computed(() => subscription.value?.plans?.name ?? '')
 
-const MONTHS_PER_YEAR = 12
+/** Whether Growth is a billed line of its own, rather than bundled into the plan. */
+const growthBilled = computed(() => !!subscription.value?.growth_addon && !currentPlanIncludesGrowth.value)
 
-const nextChargeCents = computed(() => {
-  const sub = subscription.value
-  if (!sub?.plans) return 0
-  const annual = sub.billing_interval === 'annual'
-  const base = annual ? sub.plans.annual_price_cents : sub.plans.monthly_price_cents
-  const overage = sub.extra_professionals > 0 ? sub.extra_professionals * (sub.plans.extra_professional_price_cents ?? 0) : 0
-  const perMonth = base + overage + growthOnBillCents.value
-  return annual ? perMonth * MONTHS_PER_YEAR : perMonth
-})
+const shape = computed(() => ({
+  interval: interval.value,
+  extraProfessionals: subscription.value?.extra_professionals ?? 0,
+  growthBilled: growthBilled.value,
+}))
 
-// Only practitioners consume a seat -- front desk, practice managers and
-// bookkeepers are free and unlimited, so the count has to say "practitioner",
-// not "user", or an owner reads it as a cap on their whole team.
-const seatsIncluded = computed(() => {
-  // Comped accounts genuinely have no ceiling -- practitioner_seat_allowance()
-  // (0150) returns null for them, so the trigger would never refuse a seat.
-  // Printing "3 of 1 seat(s) in use" here claimed a limit that does not exist.
-  if (subscription.value?.comped) return null
-  const included = subscription.value?.plans?.included_professionals
-  if (included === null || included === undefined) return null
-  return included + (subscription.value?.extra_professionals ?? 0)
-})
-
-const professionalsLabel = computed(() => {
-  const total = seatsIncluded.value
-  if (total === null) return `${practitionerCount.value} practitioner(s) -- no seat limit on this plan`
-  return `${practitionerCount.value} of ${total} practitioner seat(s) in use`
-})
-
-// Both allowances are presented as headroom, not as a meter. They exist so a
-// clinic can see where it stands and so an overage conversation is possible --
-// nothing in the app blocks a send or an upload when they are passed, because
-// WhatsApp is how these clinics reach patients and cutting that off over a
-// billing threshold would be a worse product than absorbing the overage.
-const GB = 1024 ** 3
-
-const usageRows = computed(() => {
-  const plan = subscription.value?.plans
-  const u = usage.value
-  if (!plan || !u) return []
-  const rows: { label: string; used: string; allowance: string; pct: number | null; over: boolean }[] = []
-
-  // Deliberately no WhatsApp conversation row. Each clinic connects its own
-  // WhatsApp Business account, so Meta bills them directly for conversations
-  // and QuiroFlow neither pays for one nor meters one -- an "included 3.000"
-  // line implied an allowance that was never ours to give, and invited "am I
-  // being charged for the extra 600?" about somebody else's invoice. The
-  // column stays on `plans` until a decision about real per-tier limits is
-  // made; nothing reads it now.
-  if (plan.included_storage_gb) {
-    const usedGb = u.storage_bytes / GB
-    const pct = Math.min(100, Math.round((usedGb / plan.included_storage_gb) * 100))
-    rows.push({
-      label: 'Patient file storage',
-      used: `${usedGb.toFixed(usedGb < 10 ? 2 : 1)} GB`,
-      allowance: `${plan.included_storage_gb} GB`,
-      pct,
-      over: usedGb > plan.included_storage_gb,
-    })
+const planPricing = computed(() => {
+  const p = subscription.value?.plans
+  if (!p) return null
+  return {
+    monthlyPriceCents: p.monthly_price_cents,
+    annualPriceCents: p.annual_price_cents,
+    extraProfessionalPriceCents: p.extra_professional_price_cents,
   }
-  return rows
 })
 
-// Comped accounts have no ceiling at all, so never nag them about seats.
-const seatsFull = computed(
-  () => !subscription.value?.comped && seatsIncluded.value !== null && practitionerCount.value >= seatsIncluded.value,
+const addonPricing = computed(() =>
+  growthAddon.value
+    ? { monthlyPriceCents: growthAddon.value.monthly_price_cents, annualPriceCents: growthAddon.value.annual_price_cents }
+    : null,
 )
 
-const contactHref = computed(() => {
-  const subject = encodeURIComponent(`Question about my QuiroFlow plan -- ${store.accountName}`)
-  return `mailto:hola@quiroflow.com?subject=${subject}`
+const perMonthCents = computed(() =>
+  planPricing.value ? pricePerMonth(planPricing.value, shape.value, addonPricing.value) : 0,
+)
+
+// Stripe's own figure wherever it exists. The local computation is the
+// fallback for an account with no readable customer, and it is flagged as an
+// estimate when it is used -- never presented as the invoice.
+const usingStripeAmount = computed(() => !!billingInfo.value?.upcoming)
+const nextChargeCents = computed(() => {
+  if (billingInfo.value?.upcoming) return billingInfo.value.upcoming.totalCents
+  return planPricing.value ? nextChargeTotal(planPricing.value, shape.value, addonPricing.value) : null
 })
+const nextChargeSubtotal = computed(() => billingInfo.value?.upcoming?.subtotalCents ?? null)
+const nextChargeTax = computed(() => billingInfo.value?.upcoming?.taxCents ?? null)
 
-// Plan picker -- hidden entirely for comped accounts (admin-granted free
-// access, not something the account itself should be changing).
-const interval = ref<'monthly' | 'annual'>(subscription.value?.billing_interval === 'annual' ? 'annual' : 'monthly')
-watch(subscription, (sub) => {
-  if (sub) interval.value = sub.billing_interval === 'annual' ? 'annual' : 'monthly'
-}, { once: true })
-
-const extraProfessionals = ref(0)
-watch(subscription, (sub) => {
-  if (sub) extraProfessionals.value = sub.extra_professionals
-}, { once: true })
-
-// Growth is one flat add-on rather than a plan, so it sits outside the plan
-// cards and applies to whichever of them is chosen -- picking it does not
-// change which card is selected, only what that card costs.
-const wantsGrowth = ref(false)
-watch(subscription, (sub) => {
-  if (sub) wantsGrowth.value = sub.growth_addon
-}, { once: true })
-
-const growthPriceCents = computed(() => {
-  const addon = growthAddon.value
-  if (!addon) return 0
-  return interval.value === 'annual' ? addon.annual_price_cents : addon.monthly_price_cents
-})
-
-function priceFor(plan: PlanRow) {
-  const base = interval.value === 'annual' ? plan.annual_price_cents : plan.monthly_price_cents
-  const overage = plan.extra_professional_price_cents ? extraProfessionals.value * plan.extra_professional_price_cents : 0
-  return base + overage + (wantsGrowth.value ? growthPriceCents.value : 0)
-}
-
-function isCurrentPlan(plan: PlanRow) {
+const planLineItems = computed(() => {
   const sub = subscription.value
-  return !!sub && sub.plan_id === plan.id && sub.billing_interval === interval.value && sub.extra_professionals === extraProfessionals.value && sub.growth_addon === wantsGrowth.value && !!sub.stripe_subscription_id
-}
-
-const changingPlanId = ref<string | null>(null)
-const planError = ref('')
-const checkoutJustCompleted = ref(false)
-
-async function choosePlan(plan: PlanRow) {
-  planError.value = ''
-  changingPlanId.value = plan.id
-  try {
-    const result = await $fetch<{ url?: string; updated?: boolean }>('/api/billing/subscribe', {
-      method: 'POST',
-      body: { planId: plan.id, interval: interval.value, extraProfessionals: plan.extra_professional_price_cents ? extraProfessionals.value : 0, growth: wantsGrowth.value },
+  const plan = sub?.plans
+  if (!sub || !plan) return []
+  const annual = interval.value === 'annual'
+  const items = [
+    {
+      key: 'plan',
+      label: t(`${plan.name} plan`, `Plan ${plan.name}`),
+      amountCents: annual ? plan.annual_price_cents : plan.monthly_price_cents,
+    },
+  ]
+  if (sub.extra_professionals > 0 && plan.extra_professional_price_cents) {
+    items.push({
+      key: 'seats',
+      label: t(
+        `${sub.extra_professionals} extra practitioner seat(s)`,
+        `${sub.extra_professionals} plaza(s) de profesional extra`,
+      ),
+      amountCents: sub.extra_professionals * plan.extra_professional_price_cents,
     })
-    if (result.url) {
-      window.location.href = result.url
-      return
-    }
-    // Updated an existing subscription in place -- the webhook will land
-    // shortly and sync the real numbers; refetch after a short beat.
-    await new Promise((resolve) => setTimeout(resolve, 1500))
-    await loadSubscription()
-    await loadBillingInfo()
-  } catch (err: any) {
-    planError.value = err?.data?.statusMessage ?? 'Could not update your plan. Please try again.'
-  } finally {
-    changingPlanId.value = null
   }
-}
-
-// A brand-new subscription (no stripe_subscription_id yet) has nothing to
-// preview -- the sticker price on the card already IS what Checkout will
-// charge, so that case skips straight to choosePlan(). An in-place switch
-// prorates against whatever's left of the current billing period, which the
-// card price can't show, so that case previews first and only calls
-// choosePlan() once the owner confirms the real amount.
-const previewingPlanId = ref<string | null>(null)
-const previewLoading = ref(false)
-const previewError = ref('')
-const previewResult = ref<{ amountDueCents: number; taxCents: number; currency: string } | null>(null)
-
-async function requestPlanChange(plan: PlanRow) {
-  if (!subscription.value?.stripe_subscription_id) {
-    await choosePlan(plan)
-    return
-  }
-  planError.value = ''
-  previewError.value = ''
-  previewResult.value = null
-  previewingPlanId.value = plan.id
-  previewLoading.value = true
-  try {
-    const result = await $fetch<{ previewable: boolean; amountDueCents?: number; taxCents?: number; currency?: string }>('/api/billing/preview', {
-      method: 'POST',
-      body: { planId: plan.id, interval: interval.value, extraProfessionals: plan.extra_professional_price_cents ? extraProfessionals.value : 0, growth: wantsGrowth.value },
+  if (growthBilled.value && growthAddon.value) {
+    items.push({
+      key: 'growth',
+      label: t('Growth add-on', 'Complemento Growth'),
+      amountCents: annual ? growthAddon.value.annual_price_cents : growthAddon.value.monthly_price_cents,
     })
-    if (!result.previewable || result.amountDueCents === undefined) {
-      // Shouldn't happen given the stripe_subscription_id check above, but
-      // fail open to the direct switch rather than leaving the owner stuck.
-      previewingPlanId.value = null
-      await choosePlan(plan)
-      return
-    }
-    previewResult.value = { amountDueCents: result.amountDueCents, taxCents: result.taxCents ?? 0, currency: result.currency ?? 'eur' }
-  } catch (err: any) {
-    previewError.value = err?.data?.statusMessage ?? 'Could not calculate the price for this change.'
-  } finally {
-    previewLoading.value = false
   }
-}
+  return items
+})
 
-function cancelPreview() {
-  previewingPlanId.value = null
-  previewResult.value = null
-  previewError.value = ''
-}
+const seatCeiling = computed(() =>
+  seatAllowance(subscription.value?.plans?.included_professionals, subscription.value?.extra_professionals ?? 0, comped.value),
+)
 
-async function confirmPlanChange(plan: PlanRow) {
-  cancelPreview()
-  await choosePlan(plan)
-}
+const billingDay = computed(() => {
+  const iso = billingInfo.value?.nextPaymentDate
+  return iso ? new Date(iso).getDate() : null
+})
 
-// Tabs -----------------------------------------------------------------
-const activeTab = ref<'summary' | 'billing' | 'payments'>('summary')
-const tabs = [
-  { key: 'summary', label: 'Summary' },
-  { key: 'billing', label: 'Billing info' },
-  { key: 'payments', label: 'Payments' },
-] as const
+const alternativePerMonth = computed(() => {
+  const plan = subscription.value?.plans
+  if (!plan || interval.value === 'annual') return null
+  return plan.annual_price_cents
+})
+const alternativeYearly = computed(() => (alternativePerMonth.value === null ? null : alternativePerMonth.value * 12))
 
-const payments = ref<PaymentRow[]>([])
+// ------------------------------------------------------------------ views
+
+type View = 'plan' | 'billing' | 'payments'
+const view = ref<View>('plan')
+const changingPlan = ref(false)
+
+// A comped account has no bill, so the two billing views have nothing to
+// show. The control renders "Plan" alone rather than offering two dead tabs.
+const views = computed(() =>
+  comped.value
+    ? [{ key: 'plan', label: t('Plan', 'Plan') }]
+    : [
+        { key: 'plan', label: t('Plan', 'Plan') },
+        { key: 'billing', label: t('Billing', 'Facturación') },
+        { key: 'payments', label: t('Payments', 'Pagos') },
+      ],
+)
+
+watch(view, (value) => {
+  if (value === 'payments') loadPayments()
+})
+
+// ---------------------------------------------------------------- payments
+
+const payments = ref<PaymentEntry[]>([])
 const loadingPayments = ref(false)
 const paymentsLoaded = ref(false)
 async function loadPayments() {
   if (paymentsLoaded.value || !store.isOwner) return
   loadingPayments.value = true
   try {
-    const result = await $fetch<{ payments: PaymentRow[] }>('/api/billing/payments')
+    const result = await $fetch<{ payments: PaymentEntry[] }>('/api/billing/payments')
     payments.value = result.payments
     paymentsLoaded.value = true
   } finally {
@@ -426,364 +275,348 @@ async function loadPayments() {
   }
 }
 
-watch(activeTab, (tab) => {
-  if (tab === 'payments') loadPayments()
+const recentPayments = computed(() => payments.value.slice(0, 3))
+
+// -------------------------------------------------------- post-checkout poll
+
+const MAX_ATTEMPTS = 20
+const activating = ref(false)
+const attempt = ref(0)
+const secondsToNext = ref(3)
+let pollTimer: ReturnType<typeof setTimeout> | undefined
+let tickTimer: ReturnType<typeof setInterval> | undefined
+
+function stopPolling() {
+  clearTimeout(pollTimer)
+  clearInterval(tickTimer)
+  activating.value = false
+}
+
+// Backoff, capped: a webhook that never arrives must not leave the tab
+// hammering the API forever. When the attempts run out the copy falls back to
+// "we'll email you", which is what actually happens.
+async function pollForActivation() {
+  if (attempt.value >= MAX_ATTEMPTS) {
+    stopPolling()
+    return
+  }
+  attempt.value += 1
+  await loadSubscription()
+  if (subscription.value?.stripe_subscription_id) {
+    await loadBillingInfo()
+    stopPolling()
+    router.replace({ query: {} })
+    return
+  }
+  const delay = Math.min(15, 2 + attempt.value)
+  secondsToNext.value = delay
+  clearInterval(tickTimer)
+  tickTimer = setInterval(() => {
+    if (secondsToNext.value > 0) secondsToNext.value -= 1
+  }, 1000)
+  pollTimer = setTimeout(pollForActivation, delay * 1000)
+}
+
+function refreshNow() {
+  clearTimeout(pollTimer)
+  clearInterval(tickTimer)
+  pollForActivation()
+}
+
+onBeforeUnmount(stopPolling)
+
+onMounted(async () => {
+  const [, { data: planRows }, { data: addonRows }] = await Promise.all([
+    loadSubscription(),
+    supabase
+      .from('plans')
+      .select(
+        'id, name, monthly_price_cents, annual_price_cents, included_professionals, included_clinics, included_storage_gb, extra_professional_price_cents, sort_order',
+      )
+      .order('sort_order'),
+    supabase.from('addons').select('id, name, monthly_price_cents, annual_price_cents'),
+    loadPractitioners(),
+    loadUsage(),
+    loadBillingInfo(),
+  ])
+  plans.value = planRows ?? []
+  growthAddon.value = (addonRows ?? []).find((a) => a.id === 'growth') ?? null
+  loading.value = false
+
+  if (route.query.checkout === 'success' && !subscription.value?.stripe_subscription_id) {
+    activating.value = true
+    pollForActivation()
+  }
 })
 
-const headerMeta = computed(() => {
-  if (!subscription.value || subscription.value.comped || !subscription.value.stripe_subscription_id) return undefined
-  const parts = [`Recurring: ${STATUS_LABEL[subscription.value.status] ?? subscription.value.status}`]
-  if (billingInfo.value?.nextPaymentDate) {
-    parts.unshift(`Next payment: ${formatDate(billingInfo.value.nextPaymentDate)} -- ${eur(nextChargeCents.value)}`)
-  }
-  return parts.join('     ')
-})
+// The change is applied by Stripe in place (subscribe.post.ts updates the
+// subscription with create_prorations), so the row here is stale until the
+// webhook lands. Re-reading both is cheaper than guessing what changed.
+async function onPlanChanged() {
+  changingPlan.value = false
+  loading.value = true
+  await Promise.all([loadSubscription(), loadBillingInfo()])
+  paymentsLoaded.value = false
+  loading.value = false
+}
+
+function openStripePortal() {
+  openPortal(contactHref.value)
+}
+function openStripeCancel() {
+  openPortal(contactHref.value, 'cancel')
+}
 </script>
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Subscription info" :meta="headerMeta" />
-    <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
-    <div class="max-w-3xl">
+    <PageHeader
+      :title="t('Subscription', 'Suscripción')"
+      :meta="
+        store.accountName +
+        (store.teamMember?.full_name ? ` · ${t('Owner', 'Propietario')}: ${store.teamMember.full_name}` : '') +
+        (subscription?.created_at ? ` · ${t('Customer since', 'Cliente desde')} ${formatLongDate(subscription.created_at)}` : '')
+      "
+    />
 
-    <div class="mb-4 flex gap-1 border-b border-line">
-      <button
-        v-for="tab in tabs"
-        :key="tab.key"
-        type="button"
-        class="px-3 pb-2 text-sm"
-        :class="activeTab === tab.key ? 'border-b-2 border-brand font-semibold text-ink-900' : 'text-ink-muted hover:text-ink-700'"
-        @click="activeTab = tab.key"
-      >
-        {{ tab.label }}
-      </button>
-    </div>
+    <div class="flex-1 overflow-y-auto bg-surface-page px-4 pb-7 pt-4 lg:px-8 lg:pt-6">
+      <!-- Not the permission: /api/billing/* refuses a non-owner server-side.
+           This is the courtesy that explains why the page is empty. -->
+      <SubscriptionNonOwnerNotice
+        v-if="!store.isOwner"
+        :owner-name="null"
+        :support-email="SUPPORT_EMAIL"
+        class="mx-auto max-w-[620px]"
+      />
 
-    <div v-if="loading" class="space-y-4 rounded-card border border-line bg-surface p-4 shadow-card">
-      <div class="flex items-center justify-between">
-        <UiSkeleton class="h-4 w-24 rounded-ctlSm" />
-        <UiSkeleton class="h-6 w-20 rounded-full" />
+      <SubscriptionLoadingSkeleton v-else-if="loading" />
+
+      <div v-else-if="!subscription" class="text-[13px] text-ink-muted">
+        {{ t('No subscription found. Contact', 'No se ha encontrado ninguna suscripción. Escríbenos a') }}
+        <a :href="contactHref" class="font-semibold text-brand-text hover:text-brand-hover">{{ SUPPORT_EMAIL }}</a>.
       </div>
-      <UiSkeleton class="h-3 w-full rounded-ctlSm" />
-      <UiSkeleton class="h-3 w-2/3 rounded-ctlSm" />
-    </div>
-    <div v-else-if="!subscription" class="text-sm text-ink-muted">No subscription found. Contact <a :href="contactHref" class="text-brand hover:text-brand-hover">hola@quiroflow.com</a>.</div>
 
-    <template v-else>
-      <!-- Summary tab -->
-      <template v-if="activeTab === 'summary'">
-        <p v-if="checkoutJustCompleted && !subscription.stripe_subscription_id" class="rounded-card border border-line bg-brand-tint px-4 py-3 text-sm text-brand-text">
-          Payment received -- activating your subscription… this can take a few seconds.
-        </p>
+      <template v-else>
+        <div class="mt-1">
+          <SubscriptionSegmentedControl v-model="view" :items="views" />
+        </div>
 
-        <div class="mt-4 space-y-4 rounded-card border border-line bg-surface p-4 shadow-card">
-          <div class="flex items-center justify-between">
-            <p class="text-base font-semibold text-ink-900">{{ subscription.plans?.name ?? 'Plan' }}</p>
-            <span v-if="subscription.comped" class="rounded-full bg-brand-tint px-2.5 py-1 text-xs font-medium text-brand">Comped -- no charge</span>
-            <span v-else class="rounded-full px-2.5 py-1 text-xs font-medium" :class="STATUS_TONE[subscription.status] ?? 'bg-gray-100 text-gray-500'">
-              {{ STATUS_LABEL[subscription.status] ?? subscription.status }}
-            </span>
+        <SubscriptionActivatingCard
+          v-if="activating"
+          class="mt-4"
+          :amount-cents="nextChargeCents"
+          :attempt="attempt"
+          :max-attempts="MAX_ATTEMPTS"
+          :seconds-to-next="secondsToNext"
+          :support-email="SUPPORT_EMAIL"
+          @refresh="refreshNow"
+        />
+
+        <!-- ======================= CHANGE PLAN ========================= -->
+        <!-- Its own screen rather than a section below the fold: it is the
+             action the summary's primary button exists to reach. Full width,
+             because the three plan cards and the footer summary need it. -->
+        <SubscriptionChangePlanPanel
+          v-if="view === 'plan' && changingPlan"
+          class="mt-4"
+          :plans="plans"
+          :current-plan-id="subscription.plan_id"
+          :current-interval="interval"
+          :current-extra-seats="subscription.extra_professionals"
+          :current-growth="!!subscription.growth_addon"
+          :growth-addon="growthAddon"
+          :card="billingInfo?.card ?? null"
+          :renewal-date="billingInfo?.nextPaymentDate ?? null"
+          @back="changingPlan = false"
+          @changed="onPlanChanged"
+        />
+
+        <!-- ============================ PLAN ============================ -->
+        <div v-else-if="view === 'plan'" class="mt-4 flex flex-col gap-4 lg:flex-row lg:gap-6">
+          <div class="flex min-w-0 flex-1 flex-col gap-4 lg:max-w-[756px]">
+            <SubscriptionTrialBanner
+              v-if="state === 'trialing' && store.trialDaysLeft !== null"
+              :days-left="store.trialDaysLeft"
+              :total-days="30"
+              :ends-at="subscription.trial_ends_at"
+              @add-card="openStripePortal"
+              @compare-plans="changingPlan = true"
+            />
+
+            <SubscriptionFailedBanner
+              v-else-if="state === 'past_due'"
+              :amount-cents="nextChargeCents"
+              :attempted-on="billingInfo?.nextPaymentDate ?? null"
+              :card="billingInfo?.card ?? null"
+              :decline-reason="t('The card was declined by the bank.', 'El banco rechazó la tarjeta.')"
+              :retry-dates="[]"
+              :lock-date="null"
+              :invoice-url="null"
+              @update-card="openStripePortal"
+            />
+
+            <SubscriptionPlanCard
+              :plan-name="subscription.plans?.name ?? t('Plan', 'Plan')"
+              :description="
+                t(
+                  'Everything your practice runs on — calendar, patient records, reminders and invoicing.',
+                  'Todo lo que hace funcionar tu consulta: agenda, historiales, recordatorios y facturación.',
+                )
+              "
+              :state="state"
+              :line-items="planLineItems"
+              :total-per-month-cents="perMonthCents"
+              :interval="interval"
+              :billing-day="billingDay"
+              :alternative-per-month-cents="alternativePerMonth"
+              :alternative-yearly-cents="alternativeYearly"
+              :comped-since="subscription.created_at"
+              :trial-ends-at="subscription.trial_ends_at"
+              :can-manage="store.isOwner"
+              @change-plan="changingPlan = true"
+            />
+
+            <SubscriptionUsageCard
+              :practitioner-count="practitioners.length"
+              :seat-allowance="seatCeiling"
+              :practitioner-names="practitioners.map((p) => p.full_name ?? '').filter(Boolean).slice(0, 3)"
+              :extra-seat-price-cents="subscription.plans?.extra_professional_price_cents ?? null"
+              :storage-gb="bytesToGb(usage?.storage_bytes ?? 0)"
+              :storage-allowance-gb="comped ? null : (subscription.plans?.included_storage_gb ?? null)"
+              :clinic-count="store.clinics.length"
+              :clinic-allowance="comped ? null : (subscription.plans?.included_clinics ?? null)"
+              :clinic-names="store.clinics.map((c) => c.name)"
+              :comped="comped"
+            />
+
+            <SubscriptionCard v-if="!comped">
+              <div class="flex items-center gap-2.5">
+                <h3 class="flex-1 text-[14px] font-semibold text-ink-900">{{ t('Recent payments', 'Pagos recientes') }}</h3>
+                <button
+                  type="button"
+                  class="text-[12.5px] font-semibold text-brand-text hover:text-brand-hover"
+                  @click="view = 'payments'"
+                >
+                  {{ t('View all payments', 'Ver todos los pagos') }}
+                </button>
+              </div>
+              <div v-if="recentPayments.length" class="mt-1.5">
+                <div
+                  v-for="payment in recentPayments"
+                  :key="payment.saleId"
+                  class="flex items-center gap-3 border-b border-line-divider py-2.5 last:border-0"
+                >
+                  <span class="w-[120px] shrink-0 text-[12.5px] text-ink-muted lg:w-[178px]">{{ formatLongDate(payment.date) }}</span>
+                  <span class="min-w-0 flex-1 truncate text-[13.5px] text-ink-700">{{ payment.product }}</span>
+                  <span class="font-mono text-[13px] font-medium text-ink-900">{{ formatEur(payment.transactionAmountCents) }}</span>
+                </div>
+              </div>
+              <p v-else class="mt-2.5 text-[12.5px] text-ink-muted">
+                {{ t('No payments yet.', 'Todavía no hay pagos.') }}
+                <template v-if="subscription.trial_ends_at">
+                  {{ t('The first lands on', 'El primero será el') }} {{ formatLongDate(subscription.trial_ends_at) }}.
+                </template>
+              </p>
+            </SubscriptionCard>
           </div>
 
-          <p class="text-sm text-ink-700">
-            {{ eur(monthlyEquivalentCents) }}/mo <span class="text-ink-muted">+ IVA</span>
-            <span class="text-ink-muted">({{ subscription.billing_interval === 'annual' ? 'billed annually' : 'billed monthly' }})</span>
-            <span v-if="subscription.comped" class="text-ink-faint2">&middot; not charged</span>
-          </p>
-          <p class="text-sm text-ink-muted">
-            {{ professionalsLabel }}
-            <span class="text-ink-faint2">&middot; admin users are free</span>
-            <span v-if="subscription.growth_addon" class="text-ink-faint2">&middot; Growth add-on</span>
-          </p>
-          <p v-if="seatsFull" class="text-sm text-ink-muted">
-            Every practitioner seat on your plan is in use. Adding another practitioner needs an extra seat
-            <span v-if="subscription.plans?.extra_professional_price_cents">({{ eur(subscription.plans.extra_professional_price_cents) }}/mo)</span> —
-            add one below. Non-practitioner staff can still be added at no cost.
-          </p>
-
-          <p v-if="subscription.status === 'trialing' && store.trialDaysLeft !== null" class="text-sm text-ink-muted">
-            {{ store.trialDaysLeft === 0 ? 'Your trial ends today.' : `${store.trialDaysLeft} day(s) left in your free trial.` }}
-          </p>
-          <p v-if="subscription.status === 'past_due'" class="text-sm text-danger-text">Your last payment failed. Update your payment method to avoid losing access.</p>
-          <p v-if="subscription.status === 'locked' || subscription.status === 'canceled'" class="text-sm text-danger-text">This account is locked pending payment.</p>
-
-          <div v-if="store.isOwner" class="flex flex-wrap items-center gap-4 pt-2">
-            <UiBtn v-if="subscription.stripe_customer_id" variant="secondary" :disabled="loadingPortal" @click="openPortal(contactHref)">
-              {{ loadingPortal ? 'Opening…' : 'Manage payment method & invoices' }}
-            </UiBtn>
-            <p v-else-if="subscription.comped" class="text-sm text-ink-muted">This account has complimentary access -- no billing to manage.</p>
-            <button
-              v-if="subscription.stripe_subscription_id && subscription.status !== 'canceled'"
-              type="button"
-              class="text-sm text-ink-muted underline decoration-dotted hover:text-danger-text disabled:opacity-50"
-              :disabled="loadingPortal"
-              @click="openPortal(contactHref, 'cancel')"
-            >
-              Cancel subscription
-            </button>
+          <!-- The rail. Present on Plan and Billing so the next payment is
+               never more than a glance away; Payments drops it for width. -->
+          <div v-if="!comped" class="flex flex-col gap-4 lg:w-[356px] lg:shrink-0">
+            <SubscriptionNextPaymentCard
+              :variant="state === 'past_due' ? 'past_due' : state === 'trialing' ? 'trial' : 'active'"
+              :total-cents="nextChargeCents"
+              :subtotal-cents="nextChargeSubtotal"
+              :tax-cents="nextChargeTax"
+              :date="billingInfo?.nextPaymentDate ?? subscription.trial_ends_at"
+              :card="billingInfo?.card ?? null"
+              :estimated="!usingStripeAmount"
+              @portal="openStripePortal"
+            />
+            <SubscriptionPaymentMethodCard
+              v-if="state !== 'trialing' || billingInfo?.card"
+              :card="billingInfo?.card ?? null"
+              :holder="billingInfo?.name ?? null"
+              @portal="openStripePortal"
+            />
+            <SubscriptionHelpCard :email="SUPPORT_EMAIL" />
           </div>
         </div>
 
-        <div v-if="usageRows.length > 0" class="mt-4 space-y-4 rounded-card border border-line bg-surface p-4 shadow-card">
-          <div>
-            <h2 class="text-sm font-semibold text-ink-900">Included usage</h2>
-            <p class="mt-0.5 text-[12.5px] text-ink-muted2">
-              Generous limits rather than a meter -- going over never blocks messages or uploads, we just get in touch.
-            </p>
-          </div>
-          <div v-for="row in usageRows" :key="row.label" class="space-y-1.5">
-            <div class="flex items-baseline justify-between gap-3">
-              <span class="text-[13px] text-ink-700">{{ row.label }}</span>
-              <span class="font-mono text-[12.5px] tabular-nums" :class="row.over ? 'text-danger-text' : 'text-ink-muted'">
-                {{ row.used }} / {{ row.allowance }}
-              </span>
+        <!-- =========================== BILLING =========================== -->
+        <div v-else-if="view === 'billing'" class="mt-4 flex flex-col gap-4 lg:flex-row lg:gap-6">
+          <div class="flex min-w-0 flex-1 flex-col gap-4 lg:max-w-[756px]">
+            <div v-if="!billingInfo?.hasCustomer" class="rounded-card border border-line bg-surface p-[18px] text-[13px] text-ink-muted shadow-card">
+              {{ t('No billing details yet — start a subscription first.', 'Todavía no hay datos de facturación: primero inicia una suscripción.') }}
             </div>
-            <div class="h-1.5 overflow-hidden rounded-full bg-surface-subtle">
-              <div
-                class="h-full rounded-full"
-                :class="row.over ? 'bg-danger-text' : 'bg-brand'"
-                :style="{ width: `${Math.max(row.pct ?? 0, 2)}%` }"
+            <template v-else>
+              <SubscriptionBillingRecord
+                :account-name="store.accountName"
+                :owner-name="store.teamMember?.full_name ?? null"
+                :billing-email="billingInfo?.email ?? null"
+                :country="billingInfo?.country ?? null"
+                :tax-id="billingInfo?.taxId ?? null"
+                :address="billingInfo?.address ?? null"
+                :card="billingInfo?.card ?? null"
+                @portal="openStripePortal"
               />
-            </div>
+              <SubscriptionStripeHandoffCard
+                :customer-since="subscription.created_at"
+                :access-ends-at="billingInfo?.nextPaymentDate ?? null"
+                @portal="openStripePortal"
+                @cancel="openStripeCancel"
+              />
+            </template>
+          </div>
+          <div class="flex flex-col gap-4 lg:w-[356px] lg:shrink-0">
+            <SubscriptionNextPaymentCard
+              :variant="state === 'past_due' ? 'past_due' : state === 'trialing' ? 'trial' : 'active'"
+              :total-cents="nextChargeCents"
+              :subtotal-cents="nextChargeSubtotal"
+              :tax-cents="nextChargeTax"
+              :date="billingInfo?.nextPaymentDate ?? subscription.trial_ends_at"
+              :card="billingInfo?.card ?? null"
+              :estimated="!usingStripeAmount"
+              @portal="openStripePortal"
+            />
+            <SubscriptionHelpCard :email="SUPPORT_EMAIL" />
           </div>
         </div>
 
-        <div v-if="store.isOwner" class="mt-8">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <h2 class="text-base font-semibold text-ink-900">{{ subscription.comped ? 'Plans' : 'Change plan' }}</h2>
-            <div class="flex items-center gap-3">
-              <div class="flex items-center gap-1.5 text-sm">
-                <label class="flex items-center gap-1.5">
-                  <span class="text-ink-muted">Extra professionals</span>
-                  <input
-                    v-model.number="extraProfessionals"
-                    type="number"
-                    min="0"
-                    class="w-14 rounded-ctl border border-line-control px-2 py-1 text-center text-sm focus:border-brand focus:outline-none"
-                  />
-                </label>
-              </div>
-              <div class="flex rounded-ctl border border-line-control p-0.5">
-                <button
-                  type="button"
-                  class="rounded-ctlSm px-3 py-1 text-xs font-medium"
-                  :class="interval === 'monthly' ? 'bg-brand text-white' : 'text-ink-600'"
-                  @click="interval = 'monthly'"
-                >
-                  Monthly
-                </button>
-                <button
-                  type="button"
-                  class="rounded-ctlSm px-3 py-1 text-xs font-medium"
-                  :class="interval === 'annual' ? 'bg-brand text-white' : 'text-ink-600'"
-                  @click="interval = 'annual'"
-                >
-                  Annual
-                </button>
-              </div>
+        <!-- ========================== PAYMENTS ========================== -->
+        <div v-else class="mt-4 flex flex-col gap-4">
+          <!-- No rail here: the table takes the full width, so the same facts
+               become a strip above it rather than disappearing. -->
+          <SubscriptionCard>
+            <div class="flex flex-wrap items-center gap-3">
+              <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] border border-brand-tintBorder bg-brand-tint">
+                <svg viewBox="0 0 18 18" fill="none" aria-hidden="true" class="h-4 w-4 text-brand-text">
+                  <rect x="2.6" y="3.8" width="12.8" height="11" rx="2.2" stroke="currentColor" stroke-width="1.4" />
+                  <path d="M2.6 7.2H15.4" stroke="currentColor" stroke-width="1.4" />
+                </svg>
+              </span>
+              <span class="text-[12.5px] font-semibold text-ink-muted">{{ t('Next payment', 'Próximo pago') }}</span>
+              <span class="font-mono text-[17px] font-semibold text-ink-900">{{ nextChargeCents === null ? '—' : formatEur(nextChargeCents) }}</span>
+              <span class="text-[13px] text-ink-500">
+                <template v-if="billingInfo?.nextPaymentDate">{{ t('on', 'el') }} {{ formatLongDate(billingInfo.nextPaymentDate) }}</template>
+                <template v-if="nextChargeSubtotal !== null && nextChargeTax"> · {{ formatEur(nextChargeSubtotal) }} + {{ formatEur(nextChargeTax) }} IVA</template>
+                <template v-if="billingInfo?.card"> · {{ billingInfo.card.brand }} ·· {{ billingInfo.card.last4 }}</template>
+              </span>
+              <span class="flex-1" />
+              <SubscriptionOutboundLink as="button" @click="openStripePortal">
+                {{ t('View upcoming invoice in Stripe', 'Ver la próxima factura en Stripe') }}
+              </SubscriptionOutboundLink>
             </div>
-          </div>
+          </SubscriptionCard>
 
-          <p v-if="planError" class="mt-3 text-sm text-danger-text">{{ planError }}</p>
-
-          <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div
-              v-for="plan in plans"
-              :key="plan.id"
-              class="flex flex-col gap-3 rounded-card border p-4"
-              :class="isCurrentPlan(plan) ? 'border-brand shadow-card' : 'border-line'"
-            >
-              <div>
-                <p class="text-sm font-semibold text-ink-900">{{ plan.name }}</p>
-                <p class="mt-1 text-xl font-semibold text-ink-900">
-                  {{ eur(priceFor(plan)) }}<span class="text-sm font-normal text-ink-muted">/mo + IVA</span>
-                </p>
-                <p class="text-xs text-ink-muted">{{ interval === 'annual' ? 'billed annually' : 'billed monthly' }}</p>
-              </div>
-              <ul class="flex-1 space-y-1 text-xs text-ink-muted">
-                <li>{{ plan.included_professionals === null ? 'Unlimited professionals' : `${plan.included_professionals} professional(s) included` }}</li>
-                <li>{{ plan.included_clinics ?? 'Unlimited' }} clinic location(s)</li>
-                <li v-if="plan.extra_professional_price_cents">{{ eur(plan.extra_professional_price_cents) }}/mo per extra professional</li>
-              </ul>
-              <!-- Comped accounts see the same cards a paying clinic sees --
-                   the point is the design, not a purchase path -- but nothing
-                   here is actionable. Complimentary access is granted from the
-                   admin panel, so a Checkout button would let an account we
-                   agreed not to charge start charging itself. -->
-              <template v-if="subscription.comped">
-                <UiBtn v-if="plan.id === subscription.plan_id" variant="secondary" disabled>Your plan</UiBtn>
-                <a v-else :href="contactHref" class="py-2 text-center text-xs text-ink-muted underline decoration-dotted hover:text-brand-text">Contact us to change</a>
-              </template>
-
-              <UiBtn
-                v-else-if="isCurrentPlan(plan)"
-                variant="secondary"
-                disabled
-              >
-                Current plan
-              </UiBtn>
-
-              <!-- Previewing this specific card's proration before committing
-                   to it -- only reachable when there's a real subscription to
-                   prorate against (requestPlanChange() skips straight to
-                   choosePlan() otherwise). -->
-              <template v-else-if="previewingPlanId === plan.id">
-                <p v-if="previewLoading" class="text-xs text-ink-muted">Checking the price…</p>
-                <template v-else-if="previewResult">
-                  <p class="text-xs text-ink-700">
-                    You'll be charged <span class="font-semibold">{{ eur(previewResult.amountDueCents) }}</span> now
-                    <span class="text-ink-muted">(prorated{{ previewResult.taxCents > 0 ? ', incl. tax' : '' }})</span>.
-                  </p>
-                  <div class="flex gap-2">
-                    <UiBtn variant="primary" class="flex-1" :disabled="changingPlanId !== null" @click="confirmPlanChange(plan)">
-                      {{ changingPlanId === plan.id ? 'Please wait…' : 'Confirm switch' }}
-                    </UiBtn>
-                    <UiBtn variant="secondary" :disabled="changingPlanId !== null" @click="cancelPreview">Cancel</UiBtn>
-                  </div>
-                </template>
-                <template v-else-if="previewError">
-                  <p class="text-xs text-danger-text">{{ previewError }}</p>
-                  <UiBtn variant="secondary" @click="cancelPreview">Dismiss</UiBtn>
-                </template>
-              </template>
-
-              <UiBtn
-                v-else
-                variant="primary"
-                :disabled="changingPlanId !== null || previewLoading"
-                @click="requestPlanChange(plan)"
-              >
-                {{ subscription.stripe_subscription_id ? 'Switch to this plan' : 'Subscribe' }}
-              </UiBtn>
-            </div>
-          </div>
-
-          <!-- Growth sits below the grid rather than inside it because it is
-               not a fourth card to choose between: it attaches to whichever
-               plan is picked. Ticking it re-prices every card above, and the
-               plan card's own button is what commits the change -- one
-               confirmation, one proration preview, one Stripe call. -->
-          <div v-if="growthAddon" class="mt-4 rounded-card border p-4" :class="wantsGrowth ? 'border-brand shadow-card' : 'border-line'">
-            <div class="flex flex-wrap items-start justify-between gap-3">
-              <div class="flex-1">
-                <p class="text-sm font-semibold text-ink-900">{{ growthAddon.name }}</p>
-                <p class="mt-1 text-xs text-ink-muted">
-                  Lead pipeline, campaign automations and reputation. Works with any plan above.
-                </p>
-              </div>
-              <div class="text-right">
-                <template v-if="currentPlanIncludesGrowth">
-                  <p class="text-sm font-semibold text-success-text">Included</p>
-                  <p class="text-xs text-ink-muted">in the {{ currentPlanName }} plan</p>
-                </template>
-                <template v-else>
-                  <p class="text-xl font-semibold text-ink-900">
-                    +{{ eur(growthPriceCents) }}<span class="text-sm font-normal text-ink-muted">/mo + IVA</span>
-                  </p>
-                  <p class="text-xs text-ink-muted">{{ interval === 'annual' ? 'billed annually' : 'billed monthly' }}</p>
-                </template>
-              </div>
-            </div>
-            <p v-if="currentPlanIncludesGrowth" class="mt-3 text-xs text-ink-muted">
-              Growth comes with this plan -- there is nothing to add and nothing extra to pay.
-            </p>
-            <p v-else-if="subscription.comped" class="mt-3 text-xs text-ink-muted">Included with your complimentary access.</p>
-            <label v-else class="mt-3 flex items-center gap-2 text-sm text-ink-700">
-              <input v-model="wantsGrowth" type="checkbox" class="rounded border-line-control text-brand focus:ring-brand" />
-              <span>{{ wantsGrowth ? 'Add Growth to my subscription' : 'Add Growth' }}</span>
-            </label>
-            <!-- A trial already includes Growth (see hasGrowth in
-                 server/utils/requireGrowth.ts), so say so rather than letting
-                 someone think the tick is what switched it on. -->
-            <p v-if="!currentPlanIncludesGrowth && !subscription.comped && subscription.status === 'trialing'" class="mt-2 text-xs text-ink-muted">
-              Growth is included for the rest of your trial. Tick it to keep it afterwards.
-            </p>
-            <p v-else-if="!currentPlanIncludesGrowth && !subscription.comped && wantsGrowth !== subscription.growth_addon" class="mt-2 text-xs text-ink-muted">
-              Choose a plan above to apply this change.
-            </p>
-          </div>
+          <SubscriptionPaymentsTable
+            :payments="payments"
+            :loading="loadingPayments"
+            :first-charge-date="subscription.trial_ends_at"
+            @download-all="openStripePortal"
+          />
         </div>
       </template>
-
-      <!-- Billing info tab -->
-      <template v-else-if="activeTab === 'billing'">
-        <div v-if="!store.isOwner" class="rounded-card border border-line bg-surface p-4 text-sm text-ink-muted shadow-card">
-          Only the account owner can view billing details.
-        </div>
-        <div v-else-if="loadingBillingInfo" class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <UiSkeleton class="h-32 rounded-card" />
-          <UiSkeleton class="h-32 rounded-card" />
-        </div>
-        <div v-else-if="!billingInfo?.hasCustomer" class="rounded-card border border-line bg-surface p-4 text-sm text-ink-muted shadow-card">
-          No billing details yet -- start a subscription first.
-        </div>
-        <div v-else class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-            <div class="flex items-center justify-between">
-              <p class="text-sm font-semibold text-ink-900">Billing information</p>
-              <button type="button" class="text-xs font-medium text-brand-text hover:text-brand-hover" @click="openPortal(contactHref)">Edit</button>
-            </div>
-            <p class="mt-3 text-xs text-ink-muted">Changes to your billing information will take effect starting with the next scheduled payment.</p>
-            <p class="mt-4 text-sm text-ink-700"><span class="font-medium text-ink-900">Country:</span> {{ billingInfo?.country ?? '--' }}</p>
-          </div>
-          <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-            <div class="flex items-center justify-between">
-              <p class="text-sm font-semibold text-ink-900">Current card</p>
-              <button type="button" class="text-xs font-medium text-brand-text hover:text-brand-hover" @click="openPortal(contactHref)">Edit</button>
-            </div>
-            <div v-if="billingInfo?.card" class="mt-4 rounded-ctl bg-surface-page px-3 py-2 text-sm text-ink-700">
-              <span class="capitalize">{{ billingInfo.card.brand }}</span>
-              <span class="ml-2 text-ink-muted">•••• {{ billingInfo.card.last4 }}</span>
-            </div>
-            <p v-else class="mt-4 text-sm text-ink-muted">No card on file.</p>
-          </div>
-        </div>
-      </template>
-
-      <!-- Payments tab -->
-      <template v-else-if="activeTab === 'payments'">
-        <div v-if="!store.isOwner" class="rounded-card border border-line bg-surface p-4 text-sm text-ink-muted shadow-card">
-          Only the account owner can view billing details.
-        </div>
-        <div v-else class="overflow-hidden rounded-card border border-line bg-surface shadow-card">
-          <div v-if="loadingPayments" class="space-y-2 p-4">
-            <UiSkeleton class="h-8 w-full rounded-ctlSm" />
-            <UiSkeleton class="h-8 w-full rounded-ctlSm" />
-            <UiSkeleton class="h-8 w-full rounded-ctlSm" />
-          </div>
-          <p v-else-if="payments.length === 0" class="p-4 text-sm text-ink-muted">No payments yet.</p>
-          <table v-else class="w-full text-left text-sm">
-            <thead>
-              <tr class="border-b border-line text-xs text-ink-muted">
-                <th class="px-4 py-2 font-medium">Sale ID</th>
-                <th class="px-4 py-2 font-medium">Date</th>
-                <th class="px-4 py-2 font-medium">Product</th>
-                <th class="px-4 py-2 text-right font-medium">Transaction Amount</th>
-                <th class="px-4 py-2 text-right font-medium">Tax Amount</th>
-                <th class="px-4 py-2 font-medium">Status</th>
-                <th class="px-4 py-2 font-medium">Method</th>
-                <th class="px-4 py-2 font-medium">Invoice</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in payments" :key="row.saleId" class="border-b border-line last:border-0">
-                <td class="px-4 py-2 text-ink-700">{{ row.saleId }}</td>
-                <td class="px-4 py-2 text-ink-700">{{ new Date(row.date).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: '2-digit' }) }}</td>
-                <td class="px-4 py-2 text-ink-700">{{ row.product }}</td>
-                <td class="px-4 py-2 text-right text-ink-700">{{ eur(row.transactionAmountCents) }}</td>
-                <td class="px-4 py-2 text-right text-ink-700">{{ eur(row.taxAmountCents) }}</td>
-                <td class="px-4 py-2 font-medium" :class="PAYMENT_STATUS_TONE[row.status]">{{ row.status }}</td>
-                <td class="px-4 py-2 text-ink-700">{{ row.method ? `${row.method.brand} ${row.method.last4}` : '--' }}</td>
-                <td class="px-4 py-2">
-                  <a v-if="row.invoiceUrl" :href="row.invoiceUrl" target="_blank" rel="noopener" class="text-xs font-medium text-brand-text hover:text-brand-hover">View</a>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </template>
-    </template>
-    </div>
     </div>
   </div>
 </template>

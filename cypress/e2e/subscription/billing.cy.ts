@@ -9,7 +9,7 @@ describe('Platform billing: trial banner, subscription page, and lock screen', (
       cy.contains('h1', 'Subscription').should('be.visible')
       cy.contains('Solo').should('be.visible')
       cy.contains('Free trial').should('be.visible')
-      cy.contains(/day\(s\) left in your free trial/).should('be.visible')
+      cy.contains(/days? left in your free trial/).should('be.visible')
     })
   })
 
@@ -42,27 +42,25 @@ describe('Platform billing: trial banner, subscription page, and lock screen', (
       cy.login(account.email, account.password)
       cy.visit('/subscription')
 
-      // Everything a paying clinic sees renders...
-      cy.contains('Comped -- no charge').should('be.visible')
-      cy.contains('Included usage').should('be.visible')
-      cy.contains('h2', 'Plans').should('be.visible')
-      cy.contains('Solo').should('be.visible')
-      cy.contains('Practice').should('be.visible')
-      cy.contains('Clinic').should('be.visible')
-      cy.contains('button', 'Your plan').should('be.disabled')
+      // The plan and what it covers still render...
+      cy.contains('Complimentary').should('be.visible')
+      cy.contains('What the plan covers').should('be.visible')
+      cy.contains('Nothing is charged for this account').should('be.visible')
 
-      // ...but there is no way to start charging an account we agreed not to
-      // charge, and no seat ceiling is claimed that the trigger would not
-      // enforce (practitioner_seat_allowance returns null when comped).
-      cy.contains('button', 'Subscribe').should('not.exist')
-      cy.contains('button', 'Switch to this plan').should('not.exist')
-      cy.contains('h2', 'Change plan').should('not.exist')
-      // The wording changed when Clinic went unlimited ("1 practitioner(s) --
-      // unlimited included" read like a broken template); what matters is
-      // unchanged -- no seat ceiling is claimed for an account the trigger
-      // will not enforce one against.
-      cy.contains('no seat limit on this plan').should('be.visible')
-      cy.contains('seat(s) in use').should('not.exist')
+      // ...but a comped account is shown no money at all, rather than zeroes:
+      // no price block, no Billing or Payments view, and no way to start
+      // charging an account we agreed not to charge.
+      cy.contains('Total per month').should('not.exist')
+      cy.contains('Next payment').should('not.exist')
+      cy.contains('[role="tab"]', 'Billing').should('not.exist')
+      cy.contains('[role="tab"]', 'Payments').should('not.exist')
+      cy.contains('button', 'Change plan').should('not.exist')
+
+      // No seat ceiling is claimed for an account the trigger will not
+      // enforce one against (practitioner_seat_allowance returns null when
+      // comped).
+      cy.contains('No seat limit on this account').should('be.visible')
+      cy.contains('seats').should('not.contain', ' of ')
     })
   })
 

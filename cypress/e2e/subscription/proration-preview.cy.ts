@@ -8,6 +8,7 @@ function seedActiveSubscriber() {
     cy.setSubscriptionStatus(account.accountId, 'active')
     cy.login(account.email, account.password)
     cy.visit('/subscription')
+      cy.contains('button', 'Change plan').click()
     return cy.wrap(account)
   })
 }
@@ -28,15 +29,16 @@ describe('Subscription proration preview', () => {
       }).as('preview')
       cy.intercept('POST', '/api/billing/subscribe', { statusCode: 200, body: { updated: true } }).as('subscribe')
 
-      cy.get('.grid.sm\\:grid-cols-3').contains('.rounded-card', 'Practice').as('practiceCard')
-      cy.get('@practiceCard').contains('button', 'Switch to this plan').click()
+      cy.get('.grid.lg\\:grid-cols-3').contains('.rounded-card', 'Practice').as('practiceCard')
+      cy.get('@practiceCard').contains('button', 'Switch to Practice').click()
       cy.wait('@preview').its('request.body').should('deep.equal', { planId: 'pro', interval: 'monthly', extraProfessionals: 0, growth: true })
 
-      // Not committed yet -- no subscribe call until the owner confirms.
-      cy.get('@practiceCard').contains("You'll be charged").should('be.visible')
-      cy.get('@practiceCard').contains('button', 'Switch to this plan').should('not.exist')
+      // Not committed yet -- the preview lands on the card, and nothing is
+      // charged until the footer bar is confirmed.
+      cy.get('@practiceCard').contains("You'd pay").should('be.visible')
+      cy.get('@subscribe.all').should('have.length', 0)
 
-      cy.get('@practiceCard').contains('button', 'Confirm switch').click()
+      cy.contains('button', 'Confirm change').click()
       cy.wait('@subscribe').its('request.body').should('deep.equal', { planId: 'pro', interval: 'monthly', extraProfessionals: 0, growth: true })
     })
   })
@@ -49,12 +51,14 @@ describe('Subscription proration preview', () => {
       }).as('preview')
       cy.intercept('POST', '/api/billing/subscribe').as('subscribe')
 
-      cy.get('.grid.sm\\:grid-cols-3').contains('.rounded-card', 'Practice').as('practiceCard')
-      cy.get('@practiceCard').contains('button', 'Switch to this plan').click()
+      cy.get('.grid.lg\\:grid-cols-3').contains('.rounded-card', 'Practice').as('practiceCard')
+      cy.get('@practiceCard').contains('button', 'Switch to Practice').click()
       cy.wait('@preview')
 
-      cy.get('@practiceCard').contains('button', 'Cancel').click()
-      cy.get('@practiceCard').contains('button', 'Switch to this plan').should('be.visible')
+      // Backing out is leaving the screen, not dismissing the card: the
+      // preview is information, and nothing commits until Confirm change.
+      cy.contains('button', 'Back to subscription').click()
+      cy.contains('button', 'Change plan').should('be.visible')
       cy.get('@subscribe.all').should('have.length', 0)
     })
   })

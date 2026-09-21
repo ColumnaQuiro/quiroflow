@@ -22,17 +22,31 @@ describe('Subscription downgrade seat guard', () => {
         cy.login(account.email, account.password)
         cy.visit('/subscription')
 
-        // Drop the extra-professionals add-on back to 0, matching an owner
+        // The plan picker is its own screen now, reached from the summary's
+        // primary button rather than sitting below it.
+        cy.contains('button', 'Change plan').click()
+
+        // Drop the extra seats back to 0 with the stepper, matching an owner
         // trying to shed the add-on cost -- with the owner plus the two
         // seeded practitioners, that's 3 active practitioners against Solo's
         // 1 included seat.
-        cy.contains('label', 'Extra professionals').find('input').clear().type('0')
+        // Re-queries each pass rather than holding the first element: the
+        // button re-renders on every click, so a captured handle goes stale.
+        const zeroTheSeats = () => {
+          cy.get('button[aria-label="Remove a seat"]').then(($minus) => {
+            if (!$minus.prop('disabled')) {
+              cy.wrap($minus).click()
+              zeroTheSeats()
+            }
+          })
+        }
+        zeroTheSeats()
 
-        // Scoped to the plan-picker grid specifically -- the summary card
-        // above it also renders the plan name "Solo" as plain text.
-        cy.get('.grid.sm\\:grid-cols-3').contains('.rounded-card', 'Solo').within(() => {
-          cy.contains('button', /Subscribe|Switch to this plan/).click()
+        // Scoped to the plan grid: the summary's own card renders "Solo" too.
+        cy.get('.grid.lg\\:grid-cols-3').contains('.rounded-card', 'Solo').within(() => {
+          cy.contains('button', 'Switch to Solo').click()
         })
+        cy.contains('button', 'Confirm change').click()
 
         cy.contains('This plan covers 1 practitioner(s), but 3 are currently active.').should('be.visible')
       })

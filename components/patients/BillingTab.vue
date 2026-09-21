@@ -1483,6 +1483,9 @@ async function useSession(purchase: PackagePurchaseRow) {
           account_id: store.accountId!,
           invoice_id: charge.id,
           description: bonoSessionDescription(purchase.package_name),
+          // Which bono, as a key rather than as words. The description is a
+          // copy of the name at purchase time and is not an identifier.
+          package_purchase_id: purchase.id,
           quantity: 1,
           price_cents: perSessionCents,
         })

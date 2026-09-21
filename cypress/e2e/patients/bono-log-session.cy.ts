@@ -57,6 +57,11 @@ describe('Logging a bono session', () => {
             // AEAT.
             expect(eff.lineItems, 'one line for the visit').to.have.length(1)
             expect(eff.lineItems[0].description, 'the clinic language, not the viewer preference').to.eq('Bono 12 — sesión')
+            // And which bono, as a key. The description is a copy of the name
+            // at purchase time -- a migrated "Bono 12" and the same bono sold
+            // here as "Bono 12 sesiones" are the same thing, and only this
+            // says so.
+            expect(eff.lineItems[0].package_purchase_id, 'the line names its bono').to.eq(purchase.id)
           })
         })
       })

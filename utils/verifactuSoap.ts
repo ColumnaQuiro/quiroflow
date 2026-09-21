@@ -126,12 +126,28 @@ export function buildRegFactuEnvelope(input: {
 
 export interface SenderConfig {
   environment: 'test' | 'production'
-  /** PKCS#12 certificate. Absent until one is configured. */
+  /**
+   * The PKCS#12 certificate, base64-encoded.
+   *
+   * Content rather than a path, because production is a Netlify function:
+   * there is no filesystem to put a .p12 on, and anything baked into the
+   * bundle would be a private key in the repository.
+   *
+   * The passphrase is kept separate and stays an environment variable, so
+   * neither half is usable alone -- whichever store ends up holding the
+   * certificate does not also hold the key to it.
+   */
+  certificateBase64?: string
+  /** A local file instead, for development. Ignored when base64 is set. */
   certificatePath?: string
   certificatePassphrase?: string
   /** Decides the endpoint; see CertificateType. */
   certificateType?: CertificateType
 }
+
+/** Either form of the certificate counts as having one. */
+export const hasCertificate = (c: SenderConfig) =>
+  Boolean(c.certificateBase64 || c.certificatePath)
 
 export type BlockedReason =
   | 'no-producer-nif'
@@ -164,7 +180,7 @@ export function transmissionBlockedBy(input: {
   // malformed SistemaInformatico block on real fiscal records.
   const producerNif = input.producerNif ?? SIF_PRODUCER.nif
   if (!producerNif) return 'no-producer-nif'
-  if (!input.config.certificatePath) return 'no-certificate'
+  if (!hasCertificate(input.config)) return 'no-certificate'
   // Which kind it is decides the host, and the wrong host fails at the TLS
   // handshake -- an error that says nothing about certificates. Refused here
   // rather than guessed.

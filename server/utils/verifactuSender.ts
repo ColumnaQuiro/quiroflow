@@ -44,6 +44,7 @@ import type { Database } from '~/types/database.types'
 import { buildRegistroAlta } from '~/utils/registroAlta'
 import {
   MAX_RECORDS_PER_SUBMISSION,
+  hasCertificate,
   type BlockedReason,
   type SenderConfig,
   buildRegFactuEnvelope,
@@ -58,12 +59,39 @@ import {
  * of a cached one is every record silently failing until someone redeploys.
  */
 export function buildAgent(config: SenderConfig): Agent {
-  if (!config.certificatePath) throw new Error('verifactu: no certificate configured')
-  return new Agent({
-    pfx: readFileSync(config.certificatePath),
-    passphrase: config.certificatePassphrase,
-    keepAlive: false,
-  })
+  // Base64 first: that is what production uses. The path is for a developer
+  // with the .p12 on their own machine.
+  const pfx = config.certificateBase64
+    ? Buffer.from(config.certificateBase64, 'base64')
+    : config.certificatePath
+      ? readFileSync(config.certificatePath)
+      : null
+  if (!pfx) throw new Error('verifactu: no certificate configured')
+
+  // A certificate written by an older tool is PKCS#12 in the legacy format
+  // (RC2-40-CBC), which the OpenSSL 3 that Node links against refuses
+  // outright -- with an "unsupported" error that names an algorithm and not
+  // the certificate. Columnaquiro's was exactly that, and had to be
+  // re-wrapped with AES before Node would load it. Worth knowing, because
+  // the message gives no hint of the fix.
+  return new Agent({ pfx, passphrase: config.certificatePassphrase, keepAlive: false })
+}
+
+/** The sender's configuration, from runtimeConfig. */
+export function verifactuConfigFrom(runtime: {
+  verifactuEnvironment?: string
+  verifactuCertificateBase64?: string
+  verifactuCertificatePassphrase?: string
+  verifactuCertificateType?: string
+}): SenderConfig {
+  return {
+    // Defaults to 'test'. Reaching production has to be a deliberate act of
+    // configuration, not what happens when a variable is unset.
+    environment: runtime.verifactuEnvironment === 'production' ? 'production' : 'test',
+    certificateBase64: runtime.verifactuCertificateBase64 || undefined,
+    certificatePassphrase: runtime.verifactuCertificatePassphrase || undefined,
+    certificateType: runtime.verifactuCertificateType === 'seal' ? 'seal' : 'representative',
+  }
 }
 
 interface PendingRecord {

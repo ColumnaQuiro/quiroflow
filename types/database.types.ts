@@ -5760,6 +5760,10 @@ export type Database = {
           last_error_code: string | null
         }[]
       }
+      factura_records_awaiting_aeat_summary: {
+        Args: Record<string, never>
+        Returns: { account_id: string; outstanding: number; oldest_sequence: number }[]
+      }
       factura_submission_ready_at: { Args: { p_account_id: string }; Returns: string }
       sif_indicador_multiples_ot: { Args: Record<string, never>; Returns: string }
       next_factura_number: { Args: { p_account_id: string; p_series?: string }; Returns: string }

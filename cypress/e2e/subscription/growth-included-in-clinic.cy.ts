@@ -54,7 +54,10 @@ describe('Growth included in the Clinic plan', () => {
       cy.contains('149,00').should('be.visible')
       cy.contains('188,00').should('not.exist')
 
-      cy.contains('.rounded-card', 'Growth add-on').as('growthCard')
+      // Anchored on the row's own heading: '.rounded-card' containing the
+      // text 'Growth add-on' also matches every plan card, whose feature list
+      // names the add-on and its price.
+      cy.contains('h3', 'Growth add-on').closest('.rounded-card').as('growthCard')
       cy.get('@growthCard').scrollIntoView()
       cy.get('@growthCard').should('contain', 'Included')
       cy.get('@growthCard').should('contain', 'Clinic')

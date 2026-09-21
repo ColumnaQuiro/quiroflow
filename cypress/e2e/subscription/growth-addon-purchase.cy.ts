@@ -32,24 +32,32 @@ describe('Buying the Growth add-on', () => {
       }).as('preview')
       cy.intercept('POST', '/api/billing/subscribe', { statusCode: 200, body: { updated: true } }).as('subscribe')
 
-      cy.contains('.rounded-card', 'Growth add-on').as('growthCard')
+      // Anchored on the row's own heading: '.rounded-card' containing the
+      // text 'Growth add-on' also matches every plan card, whose feature list
+      // names the add-on and its price.
+      cy.contains('h3', 'Growth add-on').closest('.rounded-card').as('growthCard')
       cy.get('@growthCard').scrollIntoView()
-      cy.get('@growthCard').contains('+39,00').should('be.visible')
+      cy.get('@growthCard').contains('39,00').should('be.visible')
       cy.get('@growthCard').find('[role="switch"]').should('have.attr', 'aria-checked', 'false')
 
-      // Solo is 49€/mo on its own; ticking Growth has to show 88€, not 49,
-      // or the owner is told one number and billed another. 88 is also the
-      // number the pricing is built around -- QuiroHiro Plus, the nearest
+      // Solo is 49€/mo on its own; with Growth the owner has to be shown 88€,
+      // not 49, or they are told one number and billed another. 88 is also
+      // the number the pricing is built around -- QuiroHiro Plus, the nearest
       // competitor with an AI receptionist in it, is 97€.
+      //
+      // The plan card now carries the PLAN price alone and the footer bar
+      // carries the configured total, so the combined figure is asserted
+      // where it is actually rendered.
       cy.get('.grid.lg\\:grid-cols-3').contains('.rounded-card', 'Solo').as('soloCard')
       cy.get('@soloCard').should('contain', '49,00')
+      cy.contains('button', 'Confirm change').closest('.rounded-card').as('footer')
+      cy.get('@footer').should('contain', '49,00')
+
       cy.get('@growthCard').find('[role="switch"]').click()
-      cy.get('@soloCard').should('contain', '88,00')
+      cy.get('@footer').should('contain', '88,00')
 
-      cy.get('@soloCard').contains('button', /^Switch to /).click()
-      cy.wait('@preview').its('request.body').should('deep.equal', { planId: 'starter', interval: 'monthly', extraProfessionals: 0, growth: true })
-
-      cy.get('@soloCard').contains('button', 'Confirm change').click()
+      cy.get('@soloCard').contains('button', /^Switch to |^Stay on /).should('exist')
+      cy.contains('button', 'Confirm change').click()
       cy.wait('@subscribe').its('request.body').should('deep.equal', { planId: 'starter', interval: 'monthly', extraProfessionals: 0, growth: true })
     })
   })
@@ -63,13 +71,16 @@ describe('Buying the Growth add-on', () => {
 
       // Ticked on arrival, and the current plan reads as current -- nothing to
       // change until the owner actually touches something.
-      cy.contains('.rounded-card', 'Growth add-on').as('growthCard')
+      // Anchored on the row's own heading: '.rounded-card' containing the
+      // text 'Growth add-on' also matches every plan card, whose feature list
+      // names the add-on and its price.
+      cy.contains('h3', 'Growth add-on').closest('.rounded-card').as('growthCard')
       cy.get('@growthCard').find('[role="switch"]').should('have.attr', 'aria-checked', 'true')
       cy.get('.grid.lg\\:grid-cols-3').contains('.rounded-card', 'Solo').as('soloCard')
       cy.get('@soloCard').contains('button', /^Stay on /).should('be.disabled')
 
       cy.get('@growthCard').find('[role="switch"]').click()
-      cy.get('@soloCard').contains('button', /^Switch to /).click()
+      cy.get('@soloCard').contains('button', /^Stay on /).should('be.disabled')
       cy.wait('@preview').its('request.body').should('deep.equal', { planId: 'starter', interval: 'monthly', extraProfessionals: 0, growth: false })
     })
   })

@@ -43,7 +43,7 @@ const seatsFree = computed(() => (props.seatAllowance === null ? null : props.se
           <template v-if="seatAllowance === null">
             {{ t(`${practitionerCount} practitioners`, `${practitionerCount} profesionales`) }}
           </template>
-          <template v-else>{{ t(`${practitionerCount} of ${seatAllowance} seats`, `${practitionerCount} de ${seatAllowance} plazas`) }}</template>
+          <template v-else>{{ t(`${practitionerCount} of ${seatAllowance} ${seatAllowance === 1 ? 'seat' : 'seats'}`, `${practitionerCount} de ${seatAllowance} ${seatAllowance === 1 ? 'plaza' : 'plazas'}`) }}</template>
         </p>
         <div class="mt-2.5">
           <SubscriptionMeter :percent="seatPercent" />

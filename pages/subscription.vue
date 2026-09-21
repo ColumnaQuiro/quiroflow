@@ -560,13 +560,19 @@ function openStripeCancel() {
                 :card="billingInfo?.card ?? null"
                 @portal="openStripePortal"
               />
-              <SubscriptionStripeHandoffCard
-                :customer-since="subscription.created_at"
-                :access-ends-at="billingInfo?.nextPaymentDate ?? null"
-                @portal="openStripePortal"
-                @cancel="openStripeCancel"
-              />
             </template>
+            <!-- Keyed off our OWN subscription row, not off billing-info.
+                 Reading the Stripe customer can fail (rate limit, outage, a
+                 key that is not configured in an environment) and an owner
+                 who cannot reach "Cancel subscription" because of that has no
+                 way out of a plan they are paying for. -->
+            <SubscriptionStripeHandoffCard
+              v-if="subscription.stripe_subscription_id"
+              :customer-since="subscription.created_at"
+              :access-ends-at="billingInfo?.nextPaymentDate ?? null"
+              @portal="openStripePortal"
+              @cancel="openStripeCancel"
+            />
           </div>
           <div class="flex flex-col gap-4 lg:w-[356px] lg:shrink-0">
             <SubscriptionNextPaymentCard

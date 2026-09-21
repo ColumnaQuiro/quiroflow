@@ -55,9 +55,18 @@ const yearlyCents = computed(() => props.annualPriceCents * MONTHS_PER_YEAR)
     <!-- Keep this strip. It is the only place the yearly number appears next
          to the per-month one, which is what stops them being confused. -->
     <div class="mt-3 rounded-ctl border border-line bg-surface-subtle px-3 py-2.5">
+      <!-- On monthly this is what annual WOULD cost, not what we will take.
+           Saying "we charge 528,00 € once a year" to someone paying monthly
+           is the same class of mistake this strip exists to prevent. -->
       <span class="text-[12.5px] text-ink-700">
-        {{ t('We charge', 'Cobramos') }} <strong class="font-mono font-semibold">{{ formatEur(yearlyCents) }}</strong>
-        {{ t('+ IVA once a year', '+ IVA una vez al año') }}
+        <template v-if="interval === 'annual'">
+          {{ t('We charge', 'Cobramos') }} <strong class="font-mono font-semibold">{{ formatEur(yearlyCents) }}</strong>
+          {{ t('+ IVA once a year', '+ IVA una vez al año') }}
+        </template>
+        <template v-else>
+          {{ t('On annual,', 'En anual,') }} <strong class="font-mono font-semibold">{{ formatEur(yearlyCents) }}</strong>
+          {{ t('+ IVA once a year', '+ IVA una vez al año') }}
+        </template>
       </span>
     </div>
 

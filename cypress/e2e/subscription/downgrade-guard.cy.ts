@@ -42,10 +42,10 @@ describe('Subscription downgrade seat guard', () => {
         }
         zeroTheSeats()
 
-        // Scoped to the plan grid: the summary's own card renders "Solo" too.
-        cy.get('.grid.lg\\:grid-cols-3').contains('.rounded-card', 'Solo').within(() => {
-          cy.contains('button', 'Switch to Solo').click()
-        })
+        // Solo is already the current plan, so its own card offers "Stay on
+        // Solo" and is disabled -- re-submitting the same plan with fewer
+        // seats is what the footer bar is for.
+        cy.get('.grid.lg\\:grid-cols-3').contains('.rounded-card', 'Solo').should('exist')
         cy.contains('button', 'Confirm change').click()
 
         cy.contains('This plan covers 1 practitioner(s), but 3 are currently active.').should('be.visible')

@@ -119,15 +119,33 @@ async function preview(planId: string) {
 
 function choose(planId: string) {
   selectedPlanId.value = planId
-  if (planId !== props.currentPlanId) preview(planId)
 }
 
-// Re-previewing on every knob turn would be a request per keystroke of the
-// stepper; the footer's own confirm re-checks against Stripe anyway.
-watch([interval, extraSeats, wantsGrowth], () => {
+/** Whether anything differs from what the account is on right now. */
+const dirty = computed(
+  () =>
+    selectedPlanId.value !== props.currentPlanId ||
+    interval.value !== props.currentInterval ||
+    extraSeats.value !== props.currentExtraSeats ||
+    growthChargeable.value !== props.currentGrowth,
+)
+
+// Every knob re-previews, not just the plan cards. Seats and the add-on are
+// prorated exactly like a plan switch, and an earlier version only previewed
+// on the cards -- so someone who turned Growth on and pressed Confirm was
+// charged a prorated amount they had never been shown. Debounced because the
+// seat stepper would otherwise fire a request per click.
+let previewTimer: ReturnType<typeof setTimeout> | undefined
+watch([selectedPlanId, interval, extraSeats, wantsGrowth], () => {
+  clearTimeout(previewTimer)
   previewCents.value = null
-  previewFor.value = null
+  if (!dirty.value) {
+    previewFor.value = null
+    return
+  }
+  previewTimer = setTimeout(() => preview(selectedPlanId.value), 350)
 })
+onBeforeUnmount(() => clearTimeout(previewTimer))
 
 // ------------------------------------------------------------- confirming
 
@@ -275,7 +293,7 @@ const summary = computed(() => {
               )
             }}
             <template v-if="selectedIncludesGrowth">
-              {{ t('Included at no cost on this plan.', 'Incluido sin coste en este plan.') }}
+              {{ t(`Included at no cost on the ${selectedPlan?.name ?? ''} plan.`, `Incluido sin coste en el plan ${selectedPlan?.name ?? ''}.`) }}
             </template>
           </p>
         </div>

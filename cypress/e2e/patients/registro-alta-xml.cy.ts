@@ -76,6 +76,10 @@ describe('The RegistroAlta the AEAT will read', () => {
     // is exempt under article 20, so every record it has produced takes this
     // branch -- and sending both would be rejected.
     const xml = buildRegistroAlta(base)
+    // ClaveRegimen first, and before the exemption -- the AEAT rejected the
+    // first real submission without it (error 1245), and validates the order.
+    expect(xml).to.contain('<sum1:ClaveRegimen>01</sum1:ClaveRegimen>')
+    expect(xml.indexOf('ClaveRegimen')).to.be.lessThan(xml.indexOf('OperacionExenta'))
     expect(xml).to.contain('<sum1:OperacionExenta>E1</sum1:OperacionExenta>')
     expect(xml).to.not.contain('CalificacionOperacion')
     expect(xml).to.not.contain('TipoImpositivo')
@@ -87,6 +91,7 @@ describe('The RegistroAlta the AEAT will read', () => {
       ...base,
       factura: { ...base.factura, taxExemptionCode: null, taxRateBp: 2100, taxBaseCents: 4545, taxAmountCents: 955 },
     })
+    expect(xml).to.contain('<sum1:ClaveRegimen>01</sum1:ClaveRegimen>')
     expect(xml).to.contain('<sum1:CalificacionOperacion>S1</sum1:CalificacionOperacion>')
     expect(xml).to.not.contain('OperacionExenta')
     expect(xml).to.contain('<sum1:TipoImpositivo>21.00</sum1:TipoImpositivo>')

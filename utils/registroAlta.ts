@@ -24,6 +24,26 @@ const ID_VERSION = '1.0'
 /** L12. The only value: SHA-256, which is what the chain already uses. */
 const TIPO_HUELLA_SHA256 = '01'
 
+/**
+ * ClaveRegimen -- L8A. "01: Operación de régimen general."
+ *
+ * Not marked mandatory in the record design, and rejected when absent:
+ *
+ *   1245  Si el campo Impuesto está vacío o tiene valor IVA(01) o IPSI(02)
+ *         o IGIC(03) el campo ClaveRegimen debe de estar cumplimentado.
+ *
+ * Impuesto is omitted here, which means IVA by default, which makes this
+ * conditionally required. That rule lives in the validation document rather
+ * than the record design, so nothing in the field list suggests it -- the
+ * AEAT's preproduction service is what said so, on the first submission.
+ *
+ * General regime is right for the clinic even though its work is exempt:
+ * the exemption is expressed by OperacionExenta, not by the regime. The two
+ * describe different things, and a clinic in the Canaries under IGIC would
+ * need a different value here.
+ */
+const CLAVE_REGIMEN_GENERAL = '01'
+
 export interface RegistroAltaInput {
   /** The immutable record. Its huella is what the AEAT will check. */
   record: {
@@ -164,10 +184,14 @@ export function buildRegistroAlta(input: RegistroAltaInput): string {
   const exempt = Boolean(factura.taxExemptionCode)
   const detalle = exempt
     ? [
+        // Before the exemption: the record design orders ClaveRegimen ahead
+        // of the calificación/exenta pair, and the AEAT validates the order.
+        L('ClaveRegimen', CLAVE_REGIMEN_GENERAL),
         L('OperacionExenta', factura.taxExemptionCode as string),
         L('BaseImponibleOimporteNoSujeto', money(factura.taxBaseCents)),
       ]
     : [
+        L('ClaveRegimen', CLAVE_REGIMEN_GENERAL),
         // S1: subject and not exempt, without reverse charge. The clinic sells
         // treatment to patients; nothing here is a reverse-charge operation.
         L('CalificacionOperacion', 'S1'),

@@ -92,7 +92,10 @@ const comped = computed(() => props.state === 'comped')
         {{ t('Your plan, your calendar and your patient records are unchanged.', 'Tu plan, tu agenda y los historiales de tus pacientes siguen igual.') }}
       </p>
 
-      <p v-else class="mt-3.5 border-t border-line-divider pt-3 text-[12.5px] leading-[1.5] text-ink-muted">
+      <p
+        v-else-if="billingDay || (interval === 'monthly' && alternativePerMonthCents && alternativeYearlyCents)"
+        class="mt-3.5 border-t border-line-divider pt-3 text-[12.5px] leading-[1.5] text-ink-muted"
+      >
         <!-- "day 21" rather than "the 21st": an English ordinal needs a
              suffix table to get 1st/2nd/3rd right, and Spanish takes none. -->
         <template v-if="billingDay">

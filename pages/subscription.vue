@@ -204,8 +204,8 @@ const planLineItems = computed(() => {
     items.push({
       key: 'seats',
       label: t(
-        `${sub.extra_professionals} extra practitioner seat(s)`,
-        `${sub.extra_professionals} plaza(s) de profesional extra`,
+        `${sub.extra_professionals} extra practitioner ${sub.extra_professionals === 1 ? 'seat' : 'seats'}`,
+        `${sub.extra_professionals} ${sub.extra_professionals === 1 ? 'plaza' : 'plazas'} de profesional extra`,
       ),
       amountCents: sub.extra_professionals * plan.extra_professional_price_cents,
     })
@@ -494,7 +494,7 @@ function openStripeCancel() {
                 <h3 class="flex-1 text-[14px] font-semibold text-ink-900">{{ t('Recent payments', 'Pagos recientes') }}</h3>
                 <button
                   type="button"
-                  class="text-[12.5px] font-semibold text-brand-text hover:text-brand-hover"
+                  class="inline-flex min-h-[44px] items-center text-[12.5px] font-semibold text-brand-text hover:text-brand-hover lg:min-h-0"
                   @click="view = 'payments'"
                 >
                   {{ t('View all payments', 'Ver todos los pagos') }}

@@ -57,6 +57,16 @@ async function ensureLoaded() {
 // clinic renames "Card" to "TPV Redsys", that is their word for it and must
 // win over ours. Anything they added themselves has no entry here and shows
 // exactly as typed.
+// The two the cache leaves out, for anything RENDERING history rather than
+// offering a choice. They are excluded above on purpose -- neither belongs in
+// a picker -- but payments carry them, and every report showing a method read
+// the raw key: a day's reconciliation listed "credit" and "write_off" in the
+// Method column beside Efectivo and Tarjeta, as if they were ways of paying.
+const SYSTEM_LABELS: Record<string, { name: string; es: string }> = {
+  credit: { name: 'Credit on account', es: 'Crédito en cuenta' },
+  write_off: { name: 'Write-off', es: 'Baja contable' },
+}
+
 const SEEDED_LABELS: Record<string, { name: string; es: string }> = {
   cash: { name: 'Cash', es: 'Efectivo' },
   card: { name: 'Card', es: 'Tarjeta' },
@@ -97,7 +107,9 @@ export function usePaymentMethods() {
     /** The label for a stored key, for anything rendering history. */
     labelFor: (key: string) => {
       const found = methods.value?.find((m) => m.key === key)
-      return found ? display(found) : key
+      if (found) return display(found)
+      const system = SYSTEM_LABELS[key]
+      return system ? t(system.name, system.es) : key
     },
     /** For a row the caller already holds -- see display(). */
     displayName: display,

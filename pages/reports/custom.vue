@@ -2,6 +2,7 @@
 import { Bar, Line } from 'vue-chartjs'
 import { computePresetRange, monthKeysInRange, rangeBounds, type DateRange } from '~/composables/useDateRangePresets'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
+import { isReceipt } from '~/utils/paymentReceipts'
 
 // Deliberately not `Tables<'custom_reports'>` -- that type's `config: Json`
 // field is recursive, and using it as this file's saved[] element type blows
@@ -174,7 +175,11 @@ async function run() {
     const invoiceById = new Map(invoices.map((i) => [i.id, i]))
     const apptById = new Map(appointments.map((a) => [a.id, a]))
     const memberById = new Map((members ?? []).map((m) => [m.id, m.full_name]))
-    const list = payments
+    // Whatever this report is grouped by, the amounts are takings, so the
+    // rows that only move money already taken are out -- see
+    // utils/paymentReceipts. Grouping by method was the visible case: a bar
+    // called "credit" sat beside Efectivo and Tarjeta.
+    const list = payments.filter((p: any) => isReceipt(p.method))
 
     const totals = new Map<string, number>()
     const bump = (key: string, amountCents: number) => {

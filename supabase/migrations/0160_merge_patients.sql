@@ -6,7 +6,7 @@
 -- `patients` is `on delete cascade`, so deleting the record the front desk
 -- thinks is "the empty one" takes its appointments, invoices, payments, bonos
 -- and credit with it. On this account that is not hypothetical -- the
--- PracticeHub migration left 18 duplicate pairs, and in Sarra Belhocine's the
+-- PracticeHub migration left 18 duplicate pairs, and in Samira Belkacem's the
 -- "empty" record is the one holding the Bono 12 and 176,00 of credit.
 --
 -- So merge has to move every child row before the delete, and there are

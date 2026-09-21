@@ -2,7 +2,7 @@
 //
 // The chain was payment -> invoice -> appointment -> practitioner, and any
 // payment off that chain belonged to nobody. In September that was 9,057 EUR
-// of the clinic's 9,976: filtering income by Jordana Aguar showed 849 EUR,
+// of the clinic's 9,976: filtering income by Beatriz Ferrando showed 849 EUR,
 // and the rest simply vanished rather than being counted anywhere.
 //
 // Three kinds of money have no appointment behind them by design:

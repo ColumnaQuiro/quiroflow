@@ -3,9 +3,9 @@ import { formatEur, formatEurFromAmount } from '~/utils/billing'
 // Side-by-side view of one patient in PracticeHub and in QuiroFlow.
 //
 // Every real bug in this migration was found by someone opening a patient in
-// PracticeHub and comparing it by eye -- Joha Chacon's bono that existed
-// twice here and once there, Pablo Girelli's two 528 EUR bonos against a
-// billing screen showing a single 70 EUR first visit, Ruth Sobrino's five
+// PracticeHub and comparing it by eye -- Yamila Bustos's bono that existed
+// twice here and once there, Andres Quintela's two 528 EUR bonos against a
+// billing screen showing a single 70 EUR first visit, Irene Palomar's five
 // "bono visits" drawn on a bono she has never had. Each of those took a
 // round trip through a screenshot. This makes it one click, and it works for
 // any clinic, not just the one that hit these.

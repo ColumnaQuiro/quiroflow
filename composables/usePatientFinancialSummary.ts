@@ -153,8 +153,8 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     // It is a balance adjustment, not a reduction of spendable credit, and the
     // two are different things here: creditLedgerCents is what the patient can
     // actually draw on, and the balance pill adds it to the bono's value. Left
-    // in, the entry cancelled most of the bono it was accounting for -- Esther
-    // Tarancon's 473 EUR of sessions rendered as "17.00 in bonos", and 99 of
+    // in, the entry cancelled most of the bono it was accounting for -- one
+    // patient's 473 EUR of sessions rendered as "17.00 in bonos", and 99 of
     // 197 bono holders showed no pill at all.
     const cutoverAdjustmentCents = (credits ?? [])
       .filter((c) => (c as { external_reference: string | null }).external_reference?.startsWith('bono-cutover-'))
@@ -167,8 +167,8 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     // Adding credit writes both: a payment, because the money arrived and a
     // factura has to say so, and a credit row, because it is still the
     // patient's to direct somewhere. Two rows, one set of euros -- and a
-    // balance of paid - invoiced + credit counted them both, putting Adrian
-    // Oropeza 115 EUR ahead of himself the moment the cash was counted.
+    // balance of paid - invoiced + credit counted them both, putting Alonso
+    // Varela 115 EUR ahead of himself the moment the cash was counted.
     //
     // Only that one path sets payment_id. Everything else stays: the cutover
     // entries, goodwill credits, credit added before the payment row existed,
@@ -216,7 +216,7 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     //
     // The subtraction is the whole point. Unused sessions exist whether or not
     // anyone has paid for them, so counting them gross says a patient can draw
-    // on money they have not handed over: Adrian Oropeza put 150 EUR down on a
+    // on money they have not handed over: Alonso Varela put 150 EUR down on a
     // 528 EUR bono and the pill read "484 available" while the Debtors report,
     // reading the same purchase through utils/bonoOwed, listed him as owing
     // 378. Both numbers came out of this database on the same day. Net of the

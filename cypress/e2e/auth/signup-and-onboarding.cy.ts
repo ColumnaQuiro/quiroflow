@@ -56,9 +56,27 @@ describe('Signup and onboarding', () => {
     cy.contains('button', 'Create practice').click()
 
     cy.contains('h1', 'Make QuiroFlow yours', { timeout: 15000 }).should('be.visible')
+
+    // Back returns to step 2 with every answer kept. By this point the account
+    // exists, and create_account_with_owner refuses a second one outright, so
+    // submitting again has to edit what is there rather than re-run the RPC --
+    // the button label is what says which of the two is about to happen.
+    const renamed = `${accountName} Renamed`
+    cy.contains('button', 'Back').click()
+    cy.contains('h1', 'Set up your practice').should('be.visible')
+    cy.get('#owner-name').should('have.value', ownerName)
+    cy.get('#account-name').should('have.value', accountName)
+    cy.get('#phone-country').should('contain', '+351')
+    cy.get('#account-name').clear().type(renamed)
+    cy.contains('button', 'Save and continue').click()
+
+    cy.contains('h1', 'Make QuiroFlow yours', { timeout: 15000 }).should('be.visible')
     cy.contains('button', 'Continue').click()
 
     cy.contains('h1', "You're all set", { timeout: 15000 }).should('be.visible')
+    // The rename reached the account rather than being dropped by a submit
+    // that only knows how to create.
+    cy.contains(renamed).should('be.visible')
     cy.contains('button', 'Get started').click()
 
     cy.location('pathname', { timeout: 15000 }).should('eq', '/dashboard')

@@ -52,10 +52,16 @@ watch(step, async () => {
   headingEl.value?.focus()
 })
 
-async function onSubmit() {
-  if (loading.value) return
-  error.value = ''
-  loading.value = true
+// True once the account exists -- which, on this page, only happens after
+// step 2 has been submitted once and the person has come Back from step 3.
+//
+// It matters because create_account_with_owner refuses a second account
+// outright ("User already belongs to an account"), by design. Submitting step
+// 2 again therefore has to edit what is already there rather than call the
+// RPC, or Back would lead straight into an error nobody can clear.
+const alreadyCreated = computed(() => !!store.accountId)
+
+async function createPractice() {
   const { error: rpcError } = await supabase.rpc('create_account_with_owner', {
     p_account_name: accountName.value,
     p_clinic_name: clinicName.value,
@@ -63,11 +69,7 @@ async function onSubmit() {
     p_referred_by_slug: localStorage.getItem('signup_referred_by') || null,
     p_default_phone_country: phoneCountry.value,
   })
-  loading.value = false
-  if (rpcError) {
-    error.value = rpcError.message
-    return
-  }
+  if (rpcError) return rpcError.message
   localStorage.removeItem('signup_referred_by')
   store.reset()
   await store.load()
@@ -78,7 +80,60 @@ async function onSubmit() {
   } catch {
     // ignore
   }
+  return null
+}
+
+// The same four answers, written to the rows the RPC created. Deliberately
+// not a re-run of the RPC and not a delete-and-recreate: the clinic's slug
+// and its booking subdomain were registered under the original name, and
+// tearing those down to rename a practice mid-onboarding would cost more
+// than it is worth. Renaming here leaves the slug alone, exactly as renaming
+// a clinic from Settings does.
+async function updatePractice() {
+  const clinicId = store.clinics[0]?.id
+  const { error: accountError } = await supabase
+    .from('accounts')
+    .update({ name: accountName.value, default_phone_country: phoneCountry.value })
+    .eq('id', store.accountId!)
+  if (accountError) return accountError.message
+
+  if (clinicId) {
+    const { error: clinicError } = await supabase.from('clinics').update({ name: clinicName.value }).eq('id', clinicId)
+    if (clinicError) return clinicError.message
+  }
+
+  const { error: memberError } = await supabase
+    .from('team_members')
+    .update({ full_name: ownerName.value })
+    .eq('id', store.teamMember!.id)
+  if (memberError) return memberError.message
+
+  store.reset()
+  await store.load()
+  return null
+}
+
+async function onSubmit() {
+  if (loading.value) return
+  error.value = ''
+  loading.value = true
+  const message = alreadyCreated.value ? await updatePractice() : await createPractice()
+  loading.value = false
+  if (message) {
+    error.value = message
+    return
+  }
   step.value = 'preferences'
+}
+
+// Step 2's Back is the only one that leaves the page. The auth user already
+// exists by the time this screen renders, so there is no in-app "step 1" to
+// return to -- going back to it means becoming signed-out again. Nothing is
+// lost: no account row exists yet, and signing in with the same address
+// lands straight back here.
+async function backToSignup() {
+  await supabase.auth.signOut()
+  await navigateTo('/signup')
 }
 
 // Same read-then-write pattern as pages/account.vue's Appearance section --
@@ -220,9 +275,14 @@ const LAUNCH_CARDS = computed(() => [
 
         <p v-if="error" role="alert" class="text-[12.5px] text-danger-text">{{ error }}</p>
 
-        <OnboardingPrimaryButton class="mt-1.5" :loading="loading" :loading-label="t('Setting up…', 'Configurando…')">
-          {{ t('Create practice', 'Crear consulta') }}
-        </OnboardingPrimaryButton>
+        <div class="mt-1.5 flex gap-2.5">
+          <OnboardingSecondaryButton :disabled="loading" @click="backToSignup">
+            {{ t('Back', 'Atrás') }}
+          </OnboardingSecondaryButton>
+          <OnboardingPrimaryButton class="flex-1" :loading="loading" :loading-label="t('Setting up…', 'Configurando…')">
+            {{ alreadyCreated ? t('Save and continue', 'Guardar y continuar') : t('Create practice', 'Crear consulta') }}
+          </OnboardingPrimaryButton>
+        </div>
       </form>
 
       <!-- Step 3 -->
@@ -275,9 +335,14 @@ const LAUNCH_CARDS = computed(() => [
           {{ t('You can always change these later from Account.', 'Siempre puedes cambiarlo luego desde Cuenta.') }}
         </p>
 
-        <OnboardingPrimaryButton type="button" @click="step = 'launch'">
-          {{ t('Continue', 'Continuar') }}
-        </OnboardingPrimaryButton>
+        <div class="flex gap-2.5">
+          <OnboardingSecondaryButton @click="step = 'form'">
+            {{ t('Back', 'Atrás') }}
+          </OnboardingSecondaryButton>
+          <OnboardingPrimaryButton class="flex-1" type="button" @click="step = 'launch'">
+            {{ t('Continue', 'Continuar') }}
+          </OnboardingPrimaryButton>
+        </div>
       </div>
 
       <!-- Step 4 -->

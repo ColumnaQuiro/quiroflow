@@ -71,9 +71,18 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  // Surfaced on every tick rather than in a separate alert nobody built. A
+  // certificate that expires stops transmission, and under VERI*FACTU that
+  // failure looks identical to a quiet week -- so the thing that runs every
+  // minute is the right place for it to be visible.
+  const { data: expiring } = await supabase.rpc('verifactu_certificates_expiring', { p_within_days: 30 })
+
   return {
     environment: config.environment,
     accountsOwing: owing.length,
     results,
+    ...(expiring?.length
+      ? { certificatesExpiring: expiring.map((c) => ({ account: c.account_id, daysLeft: c.days_left })) }
+      : {}),
   }
 })

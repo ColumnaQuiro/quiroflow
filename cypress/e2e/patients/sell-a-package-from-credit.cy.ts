@@ -27,14 +27,14 @@ describe('Selling a package from account credit', () => {
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}?tab=billing`)
 
-        cy.contains('select', 'Sell a package').should('exist').select('Bono 12 (12, €528.00)')
+        cy.contains('select', 'Sell a package').should('exist').select('Bono 12 (12, 528,00 €)')
 
         // Part-paying is the normal case: EUR 100 of credit against a EUR 528
         // bono, the rest taken later or put on autopay. The guard compares
         // against what is being paid now, not the package's price.
         cy.get('input[type="number"]').last().clear().type('100')
         cy.contains('label', 'Method').parent().find('select').as('method')
-        cy.get('@method').find('option[value="credit"]').should('not.be.disabled').should('contain.text', '€100.00')
+        cy.get('@method').find('option[value="credit"]').should('not.be.disabled').should('contain.text', '100,00 €')
         cy.get('@method').select('credit')
         cy.contains('button', /^Sell$/).click()
         cy.contains('button', 'Selling…').should('not.exist')
@@ -65,9 +65,9 @@ describe('Selling a package from account credit', () => {
 
         // The tab says they have EUR 528 available -- which is true, and is
         // exactly why the dropdown has to disagree.
-        cy.contains('Available').parent().should('contain.text', '€528.00')
+        cy.contains('Available').parent().should('contain.text', '528,00 €')
 
-        cy.contains('select', 'Sell a package').should('exist').select('Bono 12 (12, €528.00)')
+        cy.contains('select', 'Sell a package').should('exist').select('Bono 12 (12, 528,00 €)')
         cy.contains('label', 'Method').parent().find('select').as('method')
         // Shown, so it is clear the feature exists, but not selectable.
         cy.get('@method').find('option[value="credit"]').should('be.disabled').should('contain.text', 'none available')

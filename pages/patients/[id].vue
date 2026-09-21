@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 import type { Tables } from '~/types/database.types'
 
 const route = useRoute()
@@ -48,10 +49,6 @@ const activeTab = computed({
   get: () => (route.query.tab as string) ?? 'overview',
   set: (value) => navigateTo({ path: route.path, query: { ...route.query, tab: value } }),
 })
-
-// Purely presentational -- variant B (summary-bar layout) isn't built, so
-// the right-hand option is shown but inert.
-const layoutVariant = ref<'rail' | 'summary'>('rail')
 
 const whatsAppOpen = ref(false)
 
@@ -180,31 +177,13 @@ async function deletePatient() {
         <h1 class="truncate text-[14.5px] font-[620] text-ink-900">{{ patient.first_name }} {{ patient.last_name }}</h1>
         <div class="flex shrink-0 flex-wrap items-center gap-1.5">
           <UiPill v-if="isVip" tone="brand" :dot="true">{{ t('VIP', 'VIP') }}</UiPill>
-          <UiPill v-if="amountDue > 0" tone="danger">€{{ (amountDue / 100).toFixed(2) }} {{ t('due', 'pendiente') }}</UiPill>
+          <UiPill v-if="amountDue > 0" tone="danger">{{ formatEur(amountDue) }} {{ t('due', 'pendiente') }}</UiPill>
           <UiPill v-if="patient.is_minor" tone="brand">{{ t('Minor', 'Menor') }}</UiPill>
           <UiPill v-if="patient.do_not_contact" tone="danger">{{ t('Do not contact', 'No contactar') }}</UiPill>
         </div>
       </div>
 
       <div class="flex shrink-0 flex-wrap items-center gap-2">
-        <div class="flex items-center rounded-ctl border border-line-control p-0.5" :title="t('Layout: rail (only variant available)', 'Diseño: carril (única variante disponible)')">
-          <button
-            type="button"
-            class="flex h-6 w-7 items-center justify-center rounded-[6px]"
-            :class="layoutVariant === 'rail' ? 'bg-brand-tint text-brand-text' : 'text-ink-faint'"
-            @click="layoutVariant = 'rail'"
-          >
-            <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1" y="1" width="4" height="12" rx="0.8" /><rect x="6.5" y="1" width="6.5" height="12" rx="0.8" /></svg>
-          </button>
-          <button
-            type="button"
-            class="flex h-6 w-7 items-center justify-center rounded-[6px] text-ink-faint2 opacity-50"
-            :title="t('Summary layout isn\'t available yet', 'El diseño resumen aún no está disponible')"
-            @click="layoutVariant = 'rail'"
-          >
-            <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1" y="1" width="12" height="3.5" rx="0.8" /><rect x="1" y="6" width="12" height="7" rx="0.8" /></svg>
-          </button>
-        </div>
         <UiBtn v-if="canContact" variant="secondary" @click="whatsAppOpen = true">{{ t('Message', 'Mensaje') }}</UiBtn>
         <UiBtn variant="primary" @click="navigateTo('/calendar')">{{ t('Book visit', 'Reservar visita') }}</UiBtn>
         <UiBtn v-if="can('patients_edit')" variant="secondary" :disabled="archiving" @click="toggleArchived">

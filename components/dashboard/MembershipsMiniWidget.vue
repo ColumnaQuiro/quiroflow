@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 // eslint-disable-next-line no-unused-vars -- accepted for a consistent generic widget prop shape, not used here (source report has no filters)
 defineProps<{ dateRange?: unknown; practitionerId?: string; clinicId?: string }>()
 
@@ -60,7 +61,7 @@ const failedPayments = computed(() => payments.value.filter((p) => p.status === 
     </li>
     <li class="flex items-center justify-between py-1.5">
       <span class="text-ink-700">{{ t('Revenue this month', 'Ingresos este mes') }}</span>
-      <span class="font-mono text-[12.5px] text-ink-900">€{{ (monthlyRevenue / 100).toFixed(2) }}</span>
+      <span class="font-mono text-[12.5px] text-ink-900">{{ formatEur(monthlyRevenue) }}</span>
     </li>
     <li class="flex items-center justify-between py-1.5">
       <span class="text-ink-700">{{ t('Failed payments', 'Pagos fallidos') }}</span>

@@ -54,10 +54,16 @@ export async function nextLeadReference(supabase: SupabaseClient<Database>, acco
   return `LEAD-${year}-${String((count ?? 0) + 1).padStart(4, '0')}`
 }
 
-/** Cents to the "€1,005" the board and drawer render. */
+/**
+ * Cents to the "1.005 €" the board and drawer render.
+ *
+ * Was en-IE, which put the symbol first and grouped with commas -- Irish
+ * English in a product sold only in Spain, and the one place the Growth
+ * screens disagreed with every other euro in the app.
+ */
 export function formatEuros(cents: number | null) {
   if (cents === null) return null
-  return new Intl.NumberFormat('en-IE', {
+  return new Intl.NumberFormat('es-ES', {
     style: 'currency',
     currency: 'EUR',
     minimumFractionDigits: cents % 100 === 0 ? 0 : 2,

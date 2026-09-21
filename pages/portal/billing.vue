@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 // Money and bonos, together, because a patient's question is one question:
 // what do I have left and what do I owe?
 definePageMeta({ layout: 'portal' })
@@ -23,7 +24,7 @@ const PREVIEW = 10
 const visibleInvoices = computed(() => (showAll.value ? invoices.value : invoices.value.slice(0, PREVIEW)))
 
 function eur(cents: number) {
-  return `€${(cents / 100).toFixed(2)}`
+  return `${formatEur(cents)}`
 }
 </script>
 

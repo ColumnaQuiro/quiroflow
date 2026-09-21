@@ -1,9 +1,13 @@
-// Money and dates for the subscription screens.
+// Money and dates, for the whole app.
 //
-// Nothing on /subscription formats a currency or a date inline any more. It
-// used to, and the page ended up printing es-ES money inside en-US dates in
-// the same sentence ("21,00 € on November 21, 2026"), because each call site
-// picked its own locale.
+// Every screen that shows a euro amount comes through here. It did not use
+// to: each call site built its own string, and the result was `€45.00` on the
+// patient record and calendar -- symbol first, dot decimal, which is English
+// convention -- next to `45,00 €` on the subscription page. The same patient's
+// balance read differently depending on which screen you were standing on.
+//
+// Cents in, formatted string out. The only exceptions are input values and
+// CSV cells, which stay machine-readable and say so where they are.
 //
 // The rule that matters most here is the separation between what a plan
 // COSTS PER MONTH and what the NEXT CHARGE will be. They are different
@@ -18,8 +22,23 @@ const LOCALE = 'es-ES'
 
 export const MONTHS_PER_YEAR = 12
 
+// Note for anyone writing a test against this: Intl puts a NON-BREAKING
+// space before the euro sign, which is correct Spanish typography and stops
+// "€" being orphaned on its own line in a narrow table cell. Cypress's
+// cy.contains() normalises that to a plain space before matching, while
+// .should('contain', …) compares the raw text and does not -- so the two
+// assertion styles need different strings for the same amount.
 export function formatEur(cents: number): string {
   return (cents / 100).toLocaleString(LOCALE, { style: 'currency', currency: 'EUR' })
+}
+
+/**
+ * For the few call sites that already hold euros rather than cents -- a
+ * per-visit average, an imported balance. Rounds to the cent, which is all a
+ * display needs, and keeps them on the same formatter as everything else.
+ */
+export function formatEurFromAmount(euros: number): string {
+  return formatEur(Math.round(euros * 100))
 }
 
 /** "21 de octubre de 2026". */

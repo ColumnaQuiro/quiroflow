@@ -64,7 +64,7 @@ describe('Growth dashboard', () => {
 
     cy.visit('/growth?growth=1')
 
-    // Absent, not zero: "€0.00 per lead" reads as a claim that leads are
+    // Absent, not zero: "0,00 € per lead" reads as a claim that leads are
     // free rather than as a gap in what we know.
     cy.contains('Cost per lead').should('not.exist')
     cy.contains('ROAS').should('not.exist')
@@ -81,7 +81,7 @@ describe('Growth dashboard', () => {
 
     // €200 across 2 leads.
     cy.contains('Cost per lead').should('be.visible')
-    cy.contains('€100').should('be.visible')
+    cy.contains('100 €').should('be.visible')
     // €1,000 of converted value against €200 spent.
     cy.contains('ROAS').scrollIntoView().should('be.visible')
     cy.contains('5.0×').should('be.visible')
@@ -139,7 +139,7 @@ describe('Growth dashboard', () => {
     cy.get('[data-test="spend-cell-Meta Ads"]').should('contain', '480')
     // One converted lead for EUR 480 spent.
     cy.contains('Cost per new patient').scrollIntoView()
-    cy.contains('€480').should('exist')
+    cy.contains('480 €').should('exist')
   })
 
   it('tells the two kinds of nothing apart', () => {

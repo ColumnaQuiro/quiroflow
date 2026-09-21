@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 import type { Tables } from '~/types/database.types'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
 import { normalizeSearchTerm, sanitizeSearchToken } from '~/utils/searchText'
@@ -278,6 +279,9 @@ async function exportCsv() {
       p.first_name ?? '',
       p.last_name ?? '',
       p.email ?? '',
+      // Deliberately NOT formatEur: this is a CSV cell. es-ES would write
+      // 1.234,56, which a spreadsheet reads as a thousands-separated integer
+      // and a comma-delimited parser reads as two columns.
       ((exportBalances[p.id] ?? 0) / 100).toFixed(2),
       p.status ?? 'active',
       p.is_minor ? t('yes', 'sí') : t('no', 'no'),
@@ -304,9 +308,9 @@ function initials(p: Patient) {
 }
 
 function balancePill(cents: number) {
-  const amount = (Math.abs(cents) / 100).toFixed(2)
-  if (cents < 0) return { text: `€${amount} ${t('due', 'pendiente')}`, class: 'bg-danger-bg text-danger-text' }
-  if (cents > 0) return { text: `€${amount} ${t('cr', 'a favor')}`, class: 'bg-success-bg text-success-text' }
+  const amount = formatEur(Math.abs(cents))
+  if (cents < 0) return { text: `${amount} ${t('due', 'pendiente')}`, class: 'bg-danger-bg text-danger-text' }
+  if (cents > 0) return { text: `${amount} ${t('cr', 'a favor')}`, class: 'bg-success-bg text-success-text' }
   return { text: '€0.00', class: 'bg-chip-bg2 text-ink-muted2' }
 }
 

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEurFromAmount } from '~/utils/billing'
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
@@ -1239,8 +1240,8 @@ const introNotes = computed(() => [
             &middot;
             {{
               t(
-                `${m.visitsLeft} left implies €${m.impliedBalance.toFixed(2)}, PracticeHub says €${m.statedBalance.toFixed(2)}`,
-                `${m.visitsLeft} restantes implican €${m.impliedBalance.toFixed(2)}; PracticeHub indica €${m.statedBalance.toFixed(2)}`,
+                `${m.visitsLeft} left implies ${formatEurFromAmount(m.impliedBalance)}, PracticeHub says ${formatEurFromAmount(m.statedBalance)}`,
+                `${m.visitsLeft} restantes implican ${formatEurFromAmount(m.impliedBalance)}; PracticeHub indica ${formatEurFromAmount(m.statedBalance)}`,
               )
             }}
             <span class="font-mono text-warning-text/70">#{{ m.phPackageId }}</span>

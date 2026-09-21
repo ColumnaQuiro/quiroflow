@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 import type { Tables, TablesUpdate } from '~/types/database.types'
 
 const supabase = useSupabaseClient()
@@ -456,7 +457,7 @@ const OVERRIDABLE_STRINGS = [
                       type="number"
                       min="0"
                       step="0.01"
-                      :placeholder="t(`Full price (€${(at.default_price_cents / 100).toFixed(2)})`, `Precio completo (€${(at.default_price_cents / 100).toFixed(2)})`)"
+                      :placeholder="t(`Full price (${formatEur(at.default_price_cents)})`, `Precio completo (${formatEur(at.default_price_cents)})`)"
                       class="mt-1 h-8 w-40 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none"
                       @change="updateType(at, { online_deposit_cents: ($event.target as HTMLInputElement).value ? Math.round(parseFloat(($event.target as HTMLInputElement).value) * 100) : null })"
                     />
@@ -474,7 +475,7 @@ const OVERRIDABLE_STRINGS = [
                 <div>
                   <span class="font-mono font-semibold text-ink-700">{{ c.code }}</span>
                   <span class="ml-2 text-ink-muted2">
-                    {{ c.percent_off ? t(`${c.percent_off}% off`, `${c.percent_off}% de descuento`) : '' }}{{ c.percent_off && c.amount_off_cents ? ' + ' : '' }}{{ c.amount_off_cents ? t(`€${(c.amount_off_cents / 100).toFixed(2)} off`, `€${(c.amount_off_cents / 100).toFixed(2)} de descuento`) : '' }}
+                    {{ c.percent_off ? t(`${c.percent_off}% off`, `${c.percent_off}% de descuento`) : '' }}{{ c.percent_off && c.amount_off_cents ? ' + ' : '' }}{{ c.amount_off_cents ? t(`${formatEur(c.amount_off_cents)} off`, `${formatEur(c.amount_off_cents)} de descuento`) : '' }}
                   </span>
                   <span class="ml-2 text-[11.5px] text-ink-faint">
                     {{ t(`${c.times_used}${c.max_uses ? `/${c.max_uses}` : ''} used${c.expires_at ? ` · expires ${new Date(c.expires_at).toLocaleDateString()}` : ''}`, `${c.times_used}${c.max_uses ? `/${c.max_uses}` : ''} usos${c.expires_at ? ` · caduca ${new Date(c.expires_at).toLocaleDateString()}` : ''}`) }}

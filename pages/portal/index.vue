@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 // The portal's home: the two things a patient opens it for -- when am I
 // next in, and what do I have left -- and a way through to everything else.
 //
@@ -27,7 +28,7 @@ function longWhen(iso: string) {
   return new Date(iso).toLocaleString(undefined, { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })
 }
 function eur(cents: number) {
-  return `€${(cents / 100).toFixed(2)}`
+  return `${formatEur(cents)}`
 }
 </script>
 

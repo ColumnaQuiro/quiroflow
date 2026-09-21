@@ -63,7 +63,7 @@ describe('The huella agrees with AEAT', () => {
         cy.task('db:createPackageTemplate', { accountId: account.accountId, name: 'Bono Z', sessionCount: 3, priceCents: 12000 })
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}?tab=billing`)
-        cy.contains('select', 'Sell a package').should('exist').select('Bono Z (3, €120.00)')
+        cy.contains('select', 'Sell a package').should('exist').select('Bono Z (3, 120,00 €)')
         cy.contains('button', /^Sell$/).click()
         cy.contains('button', 'Selling…').should('not.exist')
 

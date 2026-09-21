@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 // Imports PracticeHub's ledger as PracticeHub actually keeps it: one invoice
 // per visit, one payment per payment, and no invented link between them.
 //
@@ -302,7 +303,7 @@ function retry() {
   else stage.value = 'connect'
 }
 
-const money = (cents: number) => `€${(cents / 100).toFixed(2)}`
+const money = (cents: number) => `${formatEur(cents)}`
 </script>
 
 <template>

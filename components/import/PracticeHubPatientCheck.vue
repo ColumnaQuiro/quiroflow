@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur, formatEurFromAmount } from '~/utils/billing'
 // Side-by-side view of one patient in PracticeHub and in QuiroFlow.
 //
 // Every real bug in this migration was found by someone opening a patient in
@@ -57,10 +58,10 @@ const ours = ref<{
 const ourLookupError = ref('')
 
 function eur(n: number | null | undefined): string {
-  return `€${(Number(n ?? 0)).toFixed(2)}`
+  return formatEurFromAmount(Number(n ?? 0))
 }
 function eurCents(cents: number): string {
-  return `€${(cents / 100).toFixed(2)}`
+  return `${formatEur(cents)}`
 }
 function nameOf(p: PHPatient): string {
   return `${p.first_name ?? ''} ${p.last_name ?? ''}`.trim() || p.patient_number

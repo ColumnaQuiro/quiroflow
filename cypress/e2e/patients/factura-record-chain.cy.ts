@@ -20,11 +20,11 @@ describe('The registro de facturación', () => {
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}?tab=billing`)
 
-        cy.contains('select', 'Sell a package').should('exist').select('Bono A (4, €200.00)')
+        cy.contains('select', 'Sell a package').should('exist').select('Bono A (4, 200,00 €)')
         cy.contains('button', /^Sell$/).click()
         cy.contains('button', 'Selling…').should('not.exist')
 
-        cy.contains('select', 'Sell a package').select('Bono B (4, €300.00)')
+        cy.contains('select', 'Sell a package').select('Bono B (4, 300,00 €)')
         cy.contains('button', /^Sell$/).click()
         cy.contains('button', 'Selling…').should('not.exist')
 
@@ -67,7 +67,7 @@ describe('The registro de facturación', () => {
 
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}?tab=billing`)
-        cy.contains('select', 'Sell a package').should('exist').select('Bono C (4, €150.00)')
+        cy.contains('select', 'Sell a package').should('exist').select('Bono C (4, 150,00 €)')
         cy.contains('button', /^Sell$/).click()
         cy.contains('button', 'Selling…').should('not.exist')
 

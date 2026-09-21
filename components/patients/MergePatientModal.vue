@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 import type { Tables } from '~/types/database.types'
 
 const props = defineProps<{ patient: Tables<'patients'> }>()
@@ -137,7 +138,7 @@ onMounted(async () => {
   mine.value = await holdingsFor(props.patient.id)
 })
 
-const money = (cents: number) => `€${(cents / 100).toFixed(2)}`
+const money = (cents: number) => formatEur(cents)
 </script>
 
 <template>

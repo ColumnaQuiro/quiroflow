@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 import type { Tables } from '~/types/database.types'
 import { settleInvoiceIfCovered } from '~/utils/settleInvoice'
 
@@ -294,7 +295,7 @@ function formatDate(iso: string) {
               <p class="mt-1 text-[12.5px] text-ink-muted2">{{ t('Issued', 'Emitida el') }} {{ formatDate(invoice.created_at) }}</p>
             </div>
             <div class="text-right">
-              <p class="font-mono text-[24px] font-semibold text-ink-900">€{{ (invoice.total_cents / 100).toFixed(2) }}</p>
+              <p class="font-mono text-[24px] font-semibold text-ink-900">{{ formatEur(invoice.total_cents) }}</p>
               <div class="mt-1.5 flex justify-end">
                 <UiPill :tone="STATUS_TONE[invoice.status] ?? 'neutral'">{{ invoice.status }}</UiPill>
               </div>
@@ -315,8 +316,8 @@ function formatDate(iso: string) {
                 <tr v-for="line in lineItems" :key="line.id">
                   <td class="py-[11px] text-ink-800">{{ line.description }}</td>
                   <td class="py-[11px] text-right text-ink-muted">{{ line.quantity }}</td>
-                  <td class="py-[11px] text-right font-mono text-ink-muted">€{{ (line.price_cents / 100).toFixed(2) }}</td>
-                  <td class="py-[11px] text-right font-mono text-ink-900">€{{ ((line.price_cents * line.quantity) / 100).toFixed(2) }}</td>
+                  <td class="py-[11px] text-right font-mono text-ink-muted">{{ formatEur(line.price_cents) }}</td>
+                  <td class="py-[11px] text-right font-mono text-ink-900">{{ formatEur((line.price_cents * line.quantity)) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -326,7 +327,7 @@ function formatDate(iso: string) {
             <div class="w-48 space-y-1.5 text-[12.5px]">
               <div class="flex justify-between text-ink-muted">
                 <span>{{ t('Subtotal', 'Subtotal') }}</span>
-                <span class="font-mono">€{{ (invoice.total_cents / 100).toFixed(2) }}</span>
+                <span class="font-mono">{{ formatEur(invoice.total_cents) }}</span>
               </div>
               <div class="flex justify-between text-ink-muted">
                 <span>{{ t('VAT', 'IVA') }}</span>
@@ -334,7 +335,7 @@ function formatDate(iso: string) {
               </div>
               <div class="flex justify-between border-t border-line-row2 pt-1.5 text-[14px] font-semibold text-ink-900">
                 <span>{{ t('Total due', 'Total a pagar') }}</span>
-                <span class="font-mono">€{{ (balanceDueCents / 100).toFixed(2) }}</span>
+                <span class="font-mono">{{ formatEur(balanceDueCents) }}</span>
               </div>
             </div>
           </div>
@@ -370,7 +371,7 @@ function formatDate(iso: string) {
           <ul v-if="payments.length > 0" class="mt-3 space-y-1.5 text-[13px]">
             <li v-for="p in payments" :key="p.id" class="flex justify-between">
               <span class="text-ink-muted">{{ new Date(p.paid_at).toLocaleString() }} &middot; {{ p.method }}</span>
-              <span class="font-mono text-ink-900">€{{ (p.amount_cents / 100).toFixed(2) }}</span>
+              <span class="font-mono text-ink-900">{{ formatEur(p.amount_cents) }}</span>
             </li>
           </ul>
           <p v-else class="mt-2 text-[13px] text-ink-muted2">{{ t('No payments recorded.', 'No hay pagos registrados.') }}</p>
@@ -390,7 +391,7 @@ function formatDate(iso: string) {
               <label class="block text-[12.5px] font-medium text-ink-500">{{ t('Method', 'Método') }}</label>
               <select v-model="paymentMethod" class="mt-1 rounded-ctl border border-line-control px-3 py-1.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
                 <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
-                <option v-if="creditLedgerCents > 0" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} (€{{ (creditLedgerCents / 100).toFixed(2) }} {{ t('available', 'disponible') }})</option>
+                <option v-if="creditLedgerCents > 0" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} ({{ formatEur(creditLedgerCents) }} {{ t('available', 'disponible') }})</option>
               </select>
             </div>
             <button

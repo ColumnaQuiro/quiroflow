@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 import { bonoOwedCents, type BonoOwedPayment } from '~/utils/bonoOwed'
 interface PurchaseRow {
   id: string
@@ -119,7 +120,7 @@ function patientName(id: string) {
       </div>
       <template v-else>
         <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
-          <p class="font-mono text-[23px] font-semibold text-ink-900">€{{ (totalOwed / 100).toFixed(2) }}</p>
+          <p class="font-mono text-[23px] font-semibold text-ink-900">{{ formatEur(totalOwed) }}</p>
           <p class="text-[12px] text-ink-muted2">{{ t(`Total outstanding across ${debtors.length} purchase(s)`, `Total pendiente en ${debtors.length} compra(s)`) }}</p>
         </div>
 
@@ -144,7 +145,7 @@ function patientName(id: string) {
                 </td>
                 <td class="px-4 py-2.5 text-ink-muted2">{{ p.package_name }}</td>
                 <td class="px-4 py-2.5 text-ink-muted2">{{ new Date(p.purchased_at).toLocaleDateString() }}</td>
-                <td class="px-4 py-2.5 font-mono text-ink-900">€{{ (owedCentsFor(p) / 100).toFixed(2) }}</td>
+                <td class="px-4 py-2.5 font-mono text-ink-900">{{ formatEur(owedCentsFor(p)) }}</td>
                 <td class="px-4 py-2.5">
                   <span v-if="schedulesByPurchase.get(p.id)" class="rounded-pill bg-danger-bg px-1.5 py-0.5 text-[11px] font-medium text-danger-text">{{ t('stripe charge failed', 'cobro de stripe fallido') }}</span>
                   <span v-else class="rounded-pill px-1.5 py-0.5 text-[11px] font-medium" :class="p.invoice_id ? 'bg-danger-bg text-danger-text' : 'bg-chip-bg text-chip-text'">

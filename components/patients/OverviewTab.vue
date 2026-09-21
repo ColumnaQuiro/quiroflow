@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 import type { Tables } from '~/types/database.types'
 import { normalizeSearchTerm } from '~/utils/searchText'
 
@@ -151,7 +152,7 @@ onMounted(loadKpis)
 watch(() => props.patient.id, loadKpis)
 
 function money(cents: number) {
-  return `€${(cents / 100).toFixed(2)}`
+  return formatEur(cents)
 }
 
 // -- Recent activity -------------------------------------------------------

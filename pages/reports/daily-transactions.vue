@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatEur } from '~/utils/billing'
 import { rangeBounds } from '~/composables/useDateRangePresets'
 
 interface PaymentRow {
@@ -34,7 +35,7 @@ const appointments = ref<AppointmentRow[]>([])
 const teamMembers = ref<TeamMemberRow[]>([])
 
 function eur(cents: number) {
-  return `€${(cents / 100).toFixed(2)}`
+  return `${formatEur(cents)}`
 }
 function shiftDay(days: number) {
   const d = new Date(`${dateStr.value}T00:00:00`)

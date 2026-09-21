@@ -15,7 +15,7 @@ describe('Splitting a payment across methods', () => {
           cy.contains('button', 'Take payment').click()
           cy.contains('button', 'Record payment').parents('form').as('paymentForm')
 
-          // First row defaults to the full €50.00 balance in cash -- split it
+          // First row defaults to the full 50,00 € balance in cash -- split it
           // into €30 cash + €20 card instead of two separate submissions.
           cy.get('@paymentForm').find('input[type="number"]').eq(0).clear().type('30')
           cy.get('@paymentForm').contains('button', 'Split into another method').click()
@@ -24,16 +24,16 @@ describe('Splitting a payment across methods', () => {
           cy.get('@paymentForm').find('input[type="number"]').eq(1).type('20')
           cy.get('@paymentForm').find('select').eq(2).select('Card')
 
-          cy.get('@paymentForm').contains('Total: €50.00').should('be.visible')
+          cy.get('@paymentForm').contains('Total: 50,00 €').should('be.visible')
           cy.get('@paymentForm').contains('button', 'Record payment').click()
 
           // The take-payment panel closes on success (activePanel resets)
           // and the invoice is fully paid off.
           cy.contains('button', 'Take payment').should('be.visible')
-          cy.contains('Outstanding').parent().should('contain', '€0.00')
+          cy.contains('Outstanding').parent().should('contain', '0,00 €')
 
-          cy.contains('tr', 'Payment — cash').should('contain', '€30.00')
-          cy.contains('tr', 'Payment — card').should('contain', '€20.00')
+          cy.contains('tr', 'Payment — cash').should('contain', '30,00 €')
+          cy.contains('tr', 'Payment — card').should('contain', '20,00 €')
         })
       })
     })

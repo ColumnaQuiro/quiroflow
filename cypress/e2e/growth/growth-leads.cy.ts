@@ -53,7 +53,7 @@ describe('Growth leads pipeline', () => {
     cy.get('[data-test="lead-column-contacted"] [data-test="lead-count"]').should('have.text', '27')
     cy.contains('+2 more').scrollIntoView().should('be.visible')
     // 27 x EUR 1,000 summed server-side, not from the 25 cards on screen.
-    cy.get('[data-test="lead-column-contacted"]').should('contain', '€27,000 est.')
+    cy.get('[data-test="lead-column-contacted"]').should('contain', '27.000 € est.')
 
     // Seven stages are wider than the viewport, so a column to the right has
     // to be scrolled to before Cypress will call it visible.
@@ -185,7 +185,7 @@ describe('Growth leads pipeline', () => {
       cy.contains('Campaign').should('be.visible')
       cy.contains('ES · Back pain · Sants 5km').should('be.visible')
       cy.contains('Cost per lead').should('be.visible')
-      cy.contains('€6.90').should('be.visible')
+      cy.contains('6,90 €').should('be.visible')
 
       cy.contains('button', 'Convert to patient').should('be.visible')
     })

@@ -886,7 +886,11 @@ async function packageSessionEffects(opts: { patientId: string; packagePurchaseI
   const payments = invoiceIds.length
     ? unwrap(await admin.from('payments').select('amount_cents, method, invoice_id').in('invoice_id', invoiceIds))
     : []
-  return { purchase, appointments, invoices, credits, payments, sessions }
+  // What the charge SAYS it is for, which is stored and ends up on a factura.
+  const lineItems = invoiceIds.length
+    ? unwrap(await admin.from('invoice_line_items').select('description, quantity, price_cents, service_id').in('invoice_id', invoiceIds))
+    : []
+  return { purchase, appointments, invoices, credits, payments, sessions, lineItems }
 }
 
 /**

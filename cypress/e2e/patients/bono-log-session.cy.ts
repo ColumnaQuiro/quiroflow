@@ -46,6 +46,17 @@ describe('Logging a bono session', () => {
             expect(eff.invoices[0].total_cents, 'at the bono rate, not the walk-in price').to.eq(4400)
             expect(eff.payments, 'but nothing new was collected').to.have.length(0)
             expect(eff.credits, 'no account credit written either way').to.have.length(0)
+
+            // The line says what it is for, in Spanish, while this whole test
+            // runs in English -- "Log session" above is the English button.
+            // The description used to be built with t(), so it followed the
+            // staff member's own language preference, which defaults to
+            // English: a Spanish clinic's invoice read "Bono 12 — session"
+            // depending only on who was logged in. It is a stored billing
+            // record, not a label, and from 2027 it is transmitted to the
+            // AEAT.
+            expect(eff.lineItems, 'one line for the visit').to.have.length(1)
+            expect(eff.lineItems[0].description, 'the clinic language, not the viewer preference').to.eq('Bono 12 — sesión')
           })
         })
       })

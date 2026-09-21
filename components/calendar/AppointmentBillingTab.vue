@@ -440,7 +440,7 @@ async function usePackageSession(pkg: { id: string; package_name: string; sessio
       await supabase.from('invoice_line_items').insert({
         account_id: store.accountId!,
         invoice_id: created.id,
-        description: `${bonoName} — ${t('session', 'sesión')}`,
+        description: bonoSessionDescription(bonoName),
         quantity: 1,
         price_cents: perSessionCents,
       })

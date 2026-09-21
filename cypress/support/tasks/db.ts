@@ -888,7 +888,7 @@ async function packageSessionEffects(opts: { patientId: string; packagePurchaseI
     : []
   // What the charge SAYS it is for, which is stored and ends up on a factura.
   const lineItems = invoiceIds.length
-    ? unwrap(await admin.from('invoice_line_items').select('description, quantity, price_cents, service_id').in('invoice_id', invoiceIds))
+    ? unwrap(await admin.from('invoice_line_items').select('description, quantity, price_cents, service_id, package_purchase_id').in('invoice_id', invoiceIds))
     : []
   return { purchase, appointments, invoices, credits, payments, sessions, lineItems }
 }

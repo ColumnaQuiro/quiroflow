@@ -13,6 +13,28 @@
 // short and reliable, which is an improvement, but it also makes it certain.
 // This is the other half of that trade.
 //
+// It covers two ways a migration breaks code that is already running.
+//
+// The first is a REMOVAL: dropping a column, table or function the live code
+// still calls.
+//
+// The second removes nothing at all. Adding a SECOND foreign key between two
+// tables makes every PostgREST embed between them ambiguous, and PostgREST
+// refuses rather than guesses:
+//
+//   PGRST201: Could not embed because more than one relationship was found
+//   for 'payments' and 'invoices'
+//
+// That shipped on 22 Sep 2026. `invoices.refunds_payment_id` was added so a
+// refund could name the payment it gives back -- purely additive, so this
+// check passed it -- and the eight existing `.select('..., invoices(status)')`
+// calls started failing at runtime the moment the migration applied on merge.
+// Production ran the previous release against the new schema for five minutes
+// with patient balances, the dashboard income widgets and three reports all
+// erroring. Nothing else could have caught it: a select list is a string, so
+// typecheck and `npm run build` are both clean, and the deploy gate only asks
+// whether the database is BEHIND the code.
+//
 // What it does NOT do is understand SQL. It looks for the removals that break
 // live code, takes the identifier, and asks whether the identifier still
 // appears anywhere in the app. That is a blunt question and deliberately so:
@@ -101,6 +123,87 @@ const RECREATES = [
   /\brename\s+column\s+[a-z0-9_]+\s+to\s+([a-z0-9_]+)/gi,
 ]
 
+/**
+ * Foreign keys this migration adds, as [owning table, referenced table].
+ *
+ * Split into statements first and read the owner and the target out of the
+ * same one. Scanning the file as a whole pairs an `alter table` with a
+ * `references` from some later statement, which is how you get told about a
+ * relationship between two tables that were never mentioned together.
+ */
+function foreignKeysAdded(sql) {
+  const pairs = []
+
+  for (const statement of sql.split(';')) {
+    // Only an existing table can gain a relationship that breaks an existing
+    // embed. `create table` brings its own foreign keys, but nothing can be
+    // embedding a table that did not exist a moment ago.
+    const owner = statement.match(/\balter\s+table\s+(?:if\s+exists\s+)?([a-z0-9_."]+)/i)
+    if (!owner) continue
+    if (/\bdrop\s+constraint\b/i.test(statement)) continue
+
+    for (const m of statement.matchAll(/\breferences\s+([a-z0-9_."]+)/gi)) {
+      const from = bareName(owner[1])
+      const to = bareName(m[1])
+      if (from && to && from !== to) pairs.push([from, to])
+    }
+  }
+
+  return pairs
+}
+
+/** `public."Invoices"` and `invoices` are the same table to this script. */
+function bareName(raw) {
+  return raw.replace(/"/g, '').split('.').pop().toLowerCase()
+}
+
+/** The app's own source, which is where a select list would live. */
+function codeFiles() {
+  try {
+    return git('ls-files', '--', 'components/', 'pages/', 'server/', 'composables/', 'utils/', 'middleware/', 'plugins/', 'mobile/')
+      .split('\n')
+      .filter((f) => /\.(ts|js|vue|mjs)$/.test(f))
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Embeds between two tables that do not say which relationship they mean.
+ *
+ * `invoices(status)` is ambiguous once there are two; `invoices!fk_name(status)`
+ * is not, which is what the lookbehind on `!` is for. The same lookbehind keeps
+ * `settle_imported_invoices(` from reading as an embed of `invoices`.
+ *
+ * A match only counts inside a select list, since these are ordinary words
+ * otherwise -- a comment mentioning payments(…) is not a query. The preceding
+ * lines are searched too, because a long select is usually wrapped.
+ */
+function unhintedEmbeds(tableA, tableB) {
+  const hits = []
+
+  for (const file of codeFiles()) {
+    let lines
+    try {
+      lines = readFileSync(join(root, file), 'utf8').split('\n')
+    } catch {
+      continue
+    }
+
+    lines.forEach((line, i) => {
+      for (const table of [tableA, tableB]) {
+        if (!new RegExp(`(?<![a-z0-9_!])${table}\\(`, 'i').test(line)) continue
+        const context = lines.slice(Math.max(0, i - 3), i + 1).join('\n')
+        if (!/\.select\s*\(/i.test(context)) continue
+        hits.push(`${file}:${i + 1}`)
+        return
+      }
+    })
+  }
+
+  return hits
+}
+
 function matchAll(sql, re) {
   return [...sql.matchAll(re)].map((m) => m[1].split('.').pop().toLowerCase())
 }
@@ -133,6 +236,7 @@ function referencedInCode(identifier) {
 
 const files = newMigrations()
 const problems = []
+const ambiguities = []
 
 for (const file of files) {
   // git lists deleted and renamed paths too, and a migration that is being
@@ -150,6 +254,45 @@ for (const file of files) {
       if (callers.length > 0) problems.push({ file, kind, name, callers })
     }
   }
+
+  // A new foreign key breaks any embed between the two tables that does not
+  // name a relationship. There is no need to count the keys already there: an
+  // un-hinted embed that works today proves one exists, so this one makes two.
+  for (const [from, to] of foreignKeysAdded(sql)) {
+    const embeds = unhintedEmbeds(from, to)
+    if (embeds.length > 0) ambiguities.push({ file, from, to, embeds })
+  }
+}
+
+if (ambiguities.length > 0) {
+  console.error(`check-migration-compatibility: ${ambiguities.length} new foreign key(s) that make an existing embed ambiguous:`)
+  console.error('')
+  for (const { file, from, to, embeds } of ambiguities) {
+    console.error(`  ${file}`)
+    console.error(`    adds a foreign key ${from} -> ${to}, and these embeds do not say which relationship they mean:`)
+    for (const embed of embeds.slice(0, 8)) console.error(`      ${embed}`)
+    if (embeds.length > 8) console.error(`      ... and ${embeds.length - 8} more`)
+    console.error('')
+  }
+  console.error('With two relationships between the same pair of tables, PostgREST refuses')
+  console.error('the embed rather than choosing one:')
+  console.error('')
+  console.error("  PGRST201: Could not embed because more than one relationship was found")
+  console.error('')
+  console.error('Nothing else catches this. A select list is a string, so typecheck and the')
+  console.error('build stay clean, and it fails at RUNTIME the moment this migration applies')
+  console.error('on merge -- against the release that is already live, which cannot have the')
+  console.error('fix in it yet.')
+  console.error('')
+  console.error('Name the relationship in each embed above, and ship that in the SAME pull')
+  console.error('request as this migration:')
+  console.error('')
+  console.error("  .select('..., invoices!payments_invoice_id_fkey(status)')")
+  console.error('')
+  console.error('Or, if they really are unaffected, say why in the migration:')
+  console.error('')
+  console.error('  -- compat-ok: <the reason>')
+  process.exit(1)
 }
 
 if (problems.length > 0) {

@@ -18,6 +18,11 @@ import type { Database } from '~/types/database.types'
 const CLICK_IDS = [
   ['fbclid', 'meta'],
   ['gclid', 'google'],
+  // Google's stand-ins for gclid when the click cannot be cookied -- iOS
+  // app-to-web, mostly, which is most of a clinic's paid traffic. Same
+  // platform, so they resolve to the same source name.
+  ['gbraid', 'google'],
+  ['wbraid', 'google'],
   ['ttclid', 'tiktok'],
   ['msclkid', 'microsoft'],
 ] as const

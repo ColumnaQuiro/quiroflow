@@ -227,3 +227,44 @@ describe('The patient record on a phone', () => {
     })
   })
 })
+
+// Docs and Files were two tabs and are now two groups on one. Stacking two
+// panels that each title themselves, under section headings that also title
+// them, printed "Files" twice -- which is what merging surfaces does if you
+// only check that the content arrived and not how it reads.
+describe('The merged Attachments tab', () => {
+  it('titles each group exactly once', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:createPatient', {
+        accountId: account.accountId,
+        clinicId: account.clinicId,
+        firstName: 'Adjunta',
+        lastName: 'Ficheros',
+      }).then((patient: any) => {
+        cy.login(account.email, account.password)
+        cy.visit(`/patients/${patient.id}?tab=attachments`)
+
+        // Both panels are here...
+        cy.contains('Docs').should('be.visible')
+        cy.contains('Files').should('be.visible')
+
+        // ...and neither announces itself twice to a sighted reader. The
+        // section headings stay in the markup, screen-reader only, so the
+        // groups are still named regions.
+        const visibleLeafCount = (word: string) =>
+          cy.get('body').then(($b) =>
+            [...$b.find('*')].filter((e) => {
+              const el = e as HTMLElement
+              if (el.children.length) return false
+              if (el.textContent?.trim() !== word) return false
+              const r = el.getBoundingClientRect()
+              return r.width > 1 && r.height > 1
+            }).length,
+          )
+
+        visibleLeafCount('Files').should('eq', 1)
+        visibleLeafCount('Docs').should('eq', 1)
+      })
+    })
+  })
+})

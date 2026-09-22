@@ -246,7 +246,7 @@ function paidNotConsumedCentsFor(pkg: PHPatientPackage): number {
 // (1 visit left x 21.50 = the 21.50 balance PracticeHub states).
 //
 // Reported, never corrected. Which of the three numbers is wrong is not
-// knowable from here -- Bernardo's balance does not match ANY of the candidate
+// knowable from here -- Leandro's balance does not match ANY of the candidate
 // prices -- so this asks a human to look at the bono in PracticeHub before the
 // price is trusted.
 //
@@ -261,7 +261,7 @@ function paidNotConsumedCentsFor(pkg: PHPatientPackage): number {
 //
 // What is left once those go is a SHORTFALL on a live bono -- the stated
 // balance being less than the remaining sessions are worth -- which is the
-// shape Bernardo's has (160 against 200). Directional, and 10 EUR rather than
+// shape Leandro's has (160 against 200). Directional, and 10 EUR rather than
 // 1, because two records sit 4 EUR under on identical Bono 10s and look like
 // the same rounding as the closed ones. That leaves 2 of 553 flagged: PH 524,
 // the known bad one, and PH 241, half a session under on a half-paid bono and

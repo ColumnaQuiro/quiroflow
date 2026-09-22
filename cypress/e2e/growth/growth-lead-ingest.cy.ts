@@ -41,23 +41,24 @@ describe('Lead ingest API', () => {
 
   it('files a Meta lead-ad submission into the lead, its attribution and its answers', () => {
     // The real payload shape, taken from the pinned sample in the n8n
-    // workflow this replaces.
+    // workflow this replaces. The shape is exact and is the point; every
+    // value standing in it is invented.
     post({
-      first_name: 'Pablo',
-      last_name: 'Danazzo',
-      email: 'pdanazzo@example.com',
+      first_name: 'Ruben',
+      last_name: 'Almazan',
+      email: 'ralmazan@example.com',
       phone: '34612345678',
       channel: 'facebook',
       source: 'Meta Ads · Un dia de consulta',
-      external_id: '1097814759270608',
+      external_id: '1042938571026384',
       attribution: {
         campaign: '27/01/24 - Open - Valencia +8Km',
-        ad: 'Un dia de consulta - Jordana',
+        ad: 'Un dia de consulta - Beatriz',
         cost_cents: 1450,
       },
       answers: [
         { question: '¿Vives en Valencia o alrededores?', answer: 'si' },
-        { question: '¿Cuál sería el motivo de tu visita?', answer: 'Se me adormecen las dos manos' },
+        { question: '¿Cuál sería el motivo de tu visita?', answer: 'Me duele la zona lumbar al levantarme' },
         { question: '¿Qué tan pronto quieres ser atendido?', answer: '8' },
       ],
     }).then((res) => {
@@ -68,7 +69,7 @@ describe('Lead ingest API', () => {
 
       cy.task('db:leadById', { id: res.body.data.id }).then((row) => {
         const lead = row as { full_name: string; phone: string; channel: string; furthest_stage: string }
-        expect(lead.full_name).to.eq('Pablo Danazzo')
+        expect(lead.full_name).to.eq('Ruben Almazan')
         expect(lead.channel).to.eq('facebook')
         // Bare E.164 -- digits, no "+" -- which is the shape WhatsApp's
         // webhook and phoneMatches both use. Meta sent it with no plus and
@@ -82,12 +83,12 @@ describe('Lead ingest API', () => {
         const qualification = events.find((e) => e.kind === 'qualification')
         expect(qualification, 'a qualification event').to.not.be.undefined
         expect(qualification!.body!.answers).to.have.length(3)
-        expect(qualification!.body!.answers[1]!.answer).to.contain('adormecen')
+        expect(qualification!.body!.answers[1]!.answer).to.contain('lumbar')
       })
     })
 
     cy.visit('/growth/leads?growth=1')
-    cy.contains('Pablo Danazzo').should('be.visible')
+    cy.contains('Ruben Almazan').should('be.visible')
   })
 
   it('captures whatever a new campaign decides to ask, without a mapping', () => {

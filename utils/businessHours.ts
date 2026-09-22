@@ -41,7 +41,7 @@ export function isWithinBusinessHours(date: Date, hours: BusinessHours | null | 
 // decides when they can be seen.
 //
 // Intersecting the two (which this used to do) meant a stale clinic record
-// silently clipped real schedules. Jordana works Monday 15:00-20:00, but the
+// silently clipped real schedules. Beatriz works Monday 15:00-20:00, but the
 // clinic record claimed a 13:00-16:00 closure, so her Monday came out as
 // 16:00-20:00 and the first hour vanished. That closure was not real: 284
 // appointments in the previous 120 days fell inside it.

@@ -221,6 +221,30 @@ async function setSubscriptionStripeIds(opts: { accountId: string; stripeCustome
   return { accountId, stripeCustomerId, stripeSubscriptionId }
 }
 
+/**
+ * A patient document with a chosen author -- `createdBy` is a team_members id,
+ * or left unset to seed the unattributed shape every PracticeHub-imported
+ * document has. That null case is the one worth seeding deliberately: it is
+ * what docs_files_scope has to keep visible.
+ */
+async function createPatientDoc(opts: { accountId: string; patientId: string; title: string; createdBy?: string }) {
+  const { accountId, patientId, title, createdBy } = opts
+  const doc = unwrap(
+    await admin
+      .from('patient_docs')
+      .insert({
+        account_id: accountId,
+        patient_id: patientId,
+        title,
+        fields: [],
+        created_by: createdBy ?? null,
+      })
+      .select('id')
+      .single(),
+  )
+  return { docId: doc.id as string }
+}
+
 async function createPatient(opts: {
   accountId: string
   clinicId: string
@@ -1011,6 +1035,14 @@ async function createWhatsappMessage(opts: {
   phoneNumber?: string
   direction: 'inbound' | 'outbound'
   bodyPreview?: string
+  /** Delivery state. Defaults to what the direction implies; set it to
+   *  exercise the thread's sent / delivered / read / failed treatments. */
+  status?: string
+  errorMessage?: string
+  errorCode?: string
+  templateName?: string
+  /** ISO timestamp, so a thread can be seeded in a deliberate order. */
+  createdAt?: string
 }) {
   const { accountId, patientId, phoneNumber, direction, bodyPreview } = opts
   const row = unwrap(
@@ -1021,8 +1053,12 @@ async function createWhatsappMessage(opts: {
         patient_id: patientId ?? null,
         phone_number: phoneNumber ?? null,
         direction,
-        status: direction === 'inbound' ? 'received' : 'sent',
+        status: opts.status ?? (direction === 'inbound' ? 'received' : 'sent'),
         body_preview: bodyPreview ?? 'Test message',
+        ...(opts.errorMessage ? { error_message: opts.errorMessage } : {}),
+        ...(opts.errorCode ? { error_code: opts.errorCode } : {}),
+        ...(opts.templateName ? { template_name: opts.templateName } : {}),
+        ...(opts.createdAt ? { created_at: opts.createdAt } : {}),
       })
       .select('id, channel')
       .single(),
@@ -1641,6 +1677,10 @@ async function seedEmailMessage(opts: {
   clicked?: boolean
   bounced?: boolean
   failed?: boolean
+  /** Attaches the email to a patient, so it joins their conversation. */
+  patientId?: string
+  recipientEmail?: string
+  subject?: string
 }) {
   let accountId = opts.accountId
   if (!accountId) {
@@ -1655,8 +1695,10 @@ async function seedEmailMessage(opts: {
         account_id: accountId,
         provider_message_id: opts.providerMessageId,
         rule_id: opts.ruleId ?? null,
-        recipient_email: `seed-${Date.now()}@example.test`,
-        subject: 'Seeded',
+        patient_id: opts.patientId ?? null,
+        recipient_email: opts.recipientEmail ?? `seed-${Date.now()}@example.test`,
+        subject: opts.subject ?? 'Seeded',
+        sent_at: now,
         delivered_at: opts.delivered || opts.openCount || opts.clicked ? now : null,
         first_opened_at: opts.openCount ? now : null,
         open_count: opts.openCount ?? 0,
@@ -2006,6 +2048,7 @@ export const dbTasks = {
   'db:setExtraProfessionals': setExtraProfessionals,
   'db:setSubscriptionStripeIds': setSubscriptionStripeIds,
   'db:createPatient': createPatient,
+  'db:createPatientDoc': createPatientDoc,
   'db:patientByName': patientByName,
   'db:createAppointmentType': createAppointmentType,
   'db:createServiceProduct': createServiceProduct,

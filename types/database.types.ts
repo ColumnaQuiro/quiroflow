@@ -2149,6 +2149,7 @@ export type Database = {
           error_code?: string | null
           error_message?: string | null
           responded_at?: string | null
+          sent_at?: string | null
           status?: string
           wait_seconds?: number | null
         }

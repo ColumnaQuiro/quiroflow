@@ -37,7 +37,7 @@
 // It cannot send anything yet, and says so rather than failing obscurely at
 // the first record. What is missing is not code: a configured certificate,
 // and the passphrase for it.
-import { Agent } from 'node:https'
+import { Agent, request as httpsRequest } from 'node:https'
 import { readFileSync } from 'node:fs'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
@@ -119,6 +119,51 @@ export function verifactuConfigFrom(runtime: {
   }
 }
 
+/**
+ * POST the envelope with the client certificate attached.
+ *
+ * node:https rather than fetch, and this is not a style choice. Node's fetch
+ * is undici, which IGNORES an https.Agent passed as `agent` -- silently. The
+ * request goes out with no client certificate, the AEAT refuses an anonymous
+ * caller, and what comes back is not a VERI*FACTU response at all.
+ *
+ * That is exactly what happened in production: 1,153 ticks, every one
+ * "succeeded", not one record transmitted and not one row explaining why. The
+ * hazard was written down in the throwaway probe -- which used node:https for
+ * this reason -- and then not applied here, behind a @ts-expect-error that
+ * said undici "accepts a dispatcher/agent". It does not.
+ */
+function postWithCertificate(
+  url: string,
+  body: string,
+  config: SenderConfig,
+): Promise<{ status: number; body: string }> {
+  const agent = buildAgent(config)
+  return new Promise((resolve, reject) => {
+    const req = httpsRequest(
+      url,
+      {
+        method: 'POST',
+        agent,
+        headers: {
+          'Content-Type': 'text/xml; charset=utf-8',
+          SOAPAction: '',
+          'Content-Length': Buffer.byteLength(body),
+        },
+      },
+      (res) => {
+        let data = ''
+        res.setEncoding('utf8')
+        res.on('data', (chunk) => (data += chunk))
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, body: data }))
+      },
+    )
+    req.on('error', reject)
+    req.write(body)
+    req.end()
+  })
+}
+
 interface PendingRecord {
   factura_record_id: string
   sequence: number
@@ -160,15 +205,15 @@ export async function sendPendingRecords(
   const sentAt = new Date().toISOString()
 
   let responseXml: string
+  let httpStatus = 0
   try {
-    const res = await fetch(verifactuEndpoint(effective.environment, effective.certificateType ?? 'representative'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/xml; charset=utf-8', SOAPAction: '' },
-      body: envelope,
-      // @ts-expect-error -- undici accepts a dispatcher/agent; typed loosely here
-      agent: buildAgent(effective),
-    })
-    responseXml = await res.text()
+    const res = await postWithCertificate(
+      verifactuEndpoint(effective.environment, effective.certificateType ?? 'representative'),
+      envelope,
+      effective,
+    )
+    httpStatus = res.status
+    responseXml = res.body
   } catch (err) {
     // Nothing was judged, so nothing is known about the payload. Recorded as
     // its own status precisely so it is not mistaken for a rejection, and so
@@ -182,6 +227,23 @@ export async function sendPendingRecords(
   }
 
   const parsed = parseVerifactuResponse(responseXml)
+
+  // A response with no EstadoEnvio is not a VERI*FACTU response: an error
+  // page, a refusal, a gateway. Previously this fell through the per-record
+  // loop, matched nothing, wrote nothing, and left the records owed with no
+  // record of having tried -- indistinguishable from never having run.
+  //
+  // Recorded as a transport error, because that is what it is: the payload
+  // was never judged. The status and the first of the body go in the message,
+  // since the whole point is that somebody can read what came back.
+  if (!parsed.estadoEnvio) {
+    await recordAttempts(supabase, accountId, built.attempts, {
+      status: 'transport_error',
+      sentAt,
+      errorMessage: `HTTP ${httpStatus}: response was not a VERI*FACTU answer: ${responseXml.slice(0, 300)}`,
+    })
+    return { sent: 0, blocked: null, estadoEnvio: null }
+  }
 
   // Matched by serie number, which is what the AEAT echoes back. A line with
   // no match is not silently dropped -- it is left for the next run to retry,

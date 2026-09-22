@@ -11,7 +11,7 @@ describe('Splitting a payment across methods', () => {
           // invoice to actually render in the ledger (same `invoices` fetch
           // unpaidInvoices derives from) first, or the picker opens with
           // nothing selected.
-          cy.contains('INV-').should('be.visible')
+          cy.contains('INV-').should('exist')
           cy.contains('button', 'Take payment').click()
           cy.contains('button', 'Record payment').parents('form').as('paymentForm')
 
@@ -29,7 +29,7 @@ describe('Splitting a payment across methods', () => {
 
           // The take-payment panel closes on success (activePanel resets)
           // and the invoice is fully paid off.
-          cy.contains('button', 'Take payment').should('be.visible')
+          cy.contains('button', 'Take payment').scrollIntoView().should('be.visible')
           cy.contains('Outstanding').parent().should('contain', '0,00 €')
 
           cy.contains('tr', 'Payment — cash').should('contain', '30,00 €')

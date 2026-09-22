@@ -525,6 +525,22 @@ async function createFactura(opts: {
   return row as { id: string }
 }
 
+/**
+ * The two flags that change what the record is allowed to offer: a minor has
+ * no Communications tab at all, and a do-not-contact patient has every send
+ * affordance removed rather than disabled. Both are columns on patients (see
+ * 0063_patient_status_minor_tutor_dnc.sql), and nothing could set them from a
+ * spec before.
+ */
+async function setPatientContactFlags(opts: { patientId: string; isMinor?: boolean; doNotContact?: boolean }) {
+  const patch: Record<string, boolean> = {}
+  if (opts.isMinor !== undefined) patch.is_minor = opts.isMinor
+  if (opts.doNotContact !== undefined) patch.do_not_contact = opts.doNotContact
+  const { error } = await admin.from('patients').update(patch).eq('id', opts.patientId)
+  if (error) throw error
+  return null
+}
+
 async function setPatientNif(opts: { patientId: string; nationalId: string | null }) {
   const { error } = await admin.from('patients').update({ national_id: opts.nationalId }).eq('id', opts.patientId)
   if (error) throw error
@@ -1958,6 +1974,7 @@ export const dbTasks = {
   'db:createPackageTemplate': createPackageTemplate,
   'db:createFactura': createFactura,
   'db:setPatientNif': setPatientNif,
+  'db:setPatientContactFlags': setPatientContactFlags,
   'db:createAccountCredit': createAccountCredit,
   'db:paymentsFor': paymentsFor,
   'db:facturasFor': facturasFor,

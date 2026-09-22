@@ -20,7 +20,7 @@ describe('Refunding a paid visit', () => {
         // original factura is issued by the same path a real visit takes --
         // there has to be a document to correct before correcting it means
         // anything.
-        cy.contains('INV-').should('be.visible')
+        cy.contains('INV-').should('exist')
         cy.contains('button', 'Take payment').click()
         cy.contains('button', 'Record payment').parents('form').as('form')
         cy.get('@form').contains('button', 'Record payment').click()

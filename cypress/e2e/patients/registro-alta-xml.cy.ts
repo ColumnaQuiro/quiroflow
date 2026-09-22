@@ -135,10 +135,12 @@ describe('The RegistroAlta the AEAT will read', () => {
     // instead was refused on all 21 of them:
     //
     //   1100  Valor o tipo incorrecto del campo.: NombreRazon
+    // With an identifier alongside it -- see the next test for why the name
+    // alone is not enough.
     const xml = buildRegistroAlta({
       ...base,
       record: { ...base.record, invoiceType: 'F1' },
-      factura: { ...base.factura, recipientName: null, patientName: 'Ana Ruiz' },
+      factura: { ...base.factura, recipientName: null, patientName: 'Ana Ruiz', patientNif: '12345678Z' },
     })
     expect(xml).to.contain('<sum1:NombreRazon>Ana Ruiz</sum1:NombreRazon>')
 
@@ -146,9 +148,10 @@ describe('The RegistroAlta the AEAT will read', () => {
     const frozen = buildRegistroAlta({
       ...base,
       record: { ...base.record, invoiceType: 'F1' },
-      factura: { ...base.factura, recipientName: 'Quien Sea', patientName: 'Ana Ruiz' },
+      factura: { ...base.factura, recipientName: 'Quien Sea', recipientNif: '99999999R', patientName: 'Ana Ruiz' },
     })
     expect(frozen).to.contain('<sum1:NombreRazon>Quien Sea</sum1:NombreRazon>')
+    expect(frozen).to.contain('<sum1:NIF>99999999R</sum1:NIF>')
 
     // With neither, the block is omitted rather than sent empty: an absent
     // Destinatarios is a different (and answerable) complaint from a present
@@ -156,9 +159,37 @@ describe('The RegistroAlta the AEAT will read', () => {
     const neither = buildRegistroAlta({
       ...base,
       record: { ...base.record, invoiceType: 'F1' },
-      factura: { ...base.factura, recipientName: null, patientName: null },
+      factura: { ...base.factura, recipientName: null, patientName: null, patientNif: null },
     })
     expect(neither).to.not.contain('Destinatarios')
+  })
+
+  it('needs an identifier as well as a name, or sends no destinatario at all', () => {
+    // IDDestinatario is NombreRazon AND (NIF or IDOtro). A name on its own is
+    // refused by the schema, as a SOAP Fault rather than a per-record verdict:
+    //
+    //   Codigo[4102]. El XML no cumple el esquema.
+    //   Falta informar campo obligatorio.: NIF
+    //
+    // A fault rejects the whole envelope, so one unidentifiable recipient
+    // takes every other record in the batch down with it. That is why the
+    // block is all-or-nothing.
+    const named = buildRegistroAlta({
+      ...base,
+      record: { ...base.record, invoiceType: 'F1' },
+      factura: { ...base.factura, recipientName: null, patientName: 'Ana Ruiz', patientNif: null },
+    })
+    expect(named, 'a name with no identifier is not a destinatario').to.not.contain('Destinatarios')
+
+    // The NIF resolves from the patient, like the name: a factura freezes its
+    // recipient only once delivered, and before that both live on the patient.
+    const fromPatient = buildRegistroAlta({
+      ...base,
+      record: { ...base.record, invoiceType: 'F1' },
+      factura: { ...base.factura, recipientName: null, recipientNif: null, patientName: 'Ana Ruiz', patientNif: '12345678Z' },
+    })
+    expect(fromPatient).to.contain('<sum1:NombreRazon>Ana Ruiz</sum1:NombreRazon>')
+    expect(fromPatient).to.contain('<sum1:NIF>12345678Z</sum1:NIF>')
   })
 
   it('flags a resend after rejection, and does not flag an ordinary one', () => {

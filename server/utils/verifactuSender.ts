@@ -409,8 +409,8 @@ async function buildRecordsFor(
   // same way or it sends an empty NombreRazon and is refused.
   const patientIds = [...new Set((facturas ?? []).map((f) => f.patient_id).filter(Boolean))]
   const { data: patients } = patientIds.length
-    ? await supabase.from('patients').select('id, first_name, last_name').in('id', patientIds)
-    : { data: [] as { id: string; first_name: string; last_name: string | null }[] }
+    ? await supabase.from('patients').select('id, first_name, last_name, national_id').in('id', patientIds)
+    : { data: [] as { id: string; first_name: string; last_name: string | null; national_id: string | null }[] }
 
   const registros: string[] = []
   const attempts: { recordId: string; attempt: number; serieNumber: string }[] = []
@@ -457,6 +457,7 @@ async function buildRecordsFor(
             const p = (patients ?? []).find((x) => x.id === f.patient_id)
             return p ? [p.first_name, p.last_name].filter(Boolean).join(' ') : null
           })(),
+          patientNif: (patients ?? []).find((x) => x.id === f.patient_id)?.national_id ?? null,
         },
         issuerName: clinic?.legal_name || clinic?.name || '',
         accountId,

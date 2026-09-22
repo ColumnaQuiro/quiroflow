@@ -38,6 +38,7 @@ interface Permissions {
   visit_notes_scope: 'all' | 'own'
   visit_notes_edit: boolean
   visit_notes_delete: boolean
+  docs_files_scope: 'all' | 'own'
 }
 
 // The keys above that SettingsToggle (a boolean-only control) actually
@@ -78,6 +79,7 @@ const DEFAULTS: Permissions = {
   visit_notes_scope: 'own',
   visit_notes_edit: false,
   visit_notes_delete: false,
+  docs_files_scope: 'own',
 }
 
 const name = ref('')
@@ -263,8 +265,20 @@ async function save() {
 
               <div>
                 <h2 class="text-[15px] font-[620] text-ink-900">{{ t('Clinical Information', 'Información Clínica') }}</h2>
-                <p class="mt-0.5 text-[13px] text-ink-muted2">{{ t('Appointment notes.', 'Notas de la cita.') }}</p>
+                <p class="mt-0.5 text-[13px] text-ink-muted2">{{ t('Appointment notes, documents and files.', 'Notas de la cita, documentos y archivos.') }}</p>
                 <div class="mt-3 space-y-2">
+                  <SettingsFieldRow
+                    :label="t('Documents & files', 'Documentos y archivos')"
+                    :helper="t(
+                      'Scoped by who created the record, on top of the patient scope above. Documents and files imported without an author stay visible to everyone.',
+                      'Se limita según quién creó el registro, además del alcance de pacientes de arriba. Los documentos y archivos importados sin autor siguen visibles para todos.',
+                    )"
+                  >
+                    <select v-model="permissions.docs_files_scope" class="h-8 w-[230px] rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20">
+                      <option value="all">{{ t("Any practitioner's documents", 'Documentos de cualquier profesional') }}</option>
+                      <option value="own">{{ t('Only their own documents', 'Solo sus propios documentos') }}</option>
+                    </select>
+                  </SettingsFieldRow>
                   <SettingsFieldRow :label="t('Editing/deleting notes', 'Edición/eliminación de notas')">
                     <select v-model="permissions.visit_notes_scope" class="h-8 w-[230px] rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20">
                       <option value="all">{{ t("Any team member's notes", 'Notas de cualquier miembro del equipo') }}</option>

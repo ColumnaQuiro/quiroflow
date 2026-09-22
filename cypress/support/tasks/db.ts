@@ -1011,6 +1011,14 @@ async function createWhatsappMessage(opts: {
   phoneNumber?: string
   direction: 'inbound' | 'outbound'
   bodyPreview?: string
+  /** Delivery state. Defaults to what the direction implies; set it to
+   *  exercise the thread's sent / delivered / read / failed treatments. */
+  status?: string
+  errorMessage?: string
+  errorCode?: string
+  templateName?: string
+  /** ISO timestamp, so a thread can be seeded in a deliberate order. */
+  createdAt?: string
 }) {
   const { accountId, patientId, phoneNumber, direction, bodyPreview } = opts
   const row = unwrap(
@@ -1021,8 +1029,12 @@ async function createWhatsappMessage(opts: {
         patient_id: patientId ?? null,
         phone_number: phoneNumber ?? null,
         direction,
-        status: direction === 'inbound' ? 'received' : 'sent',
+        status: opts.status ?? (direction === 'inbound' ? 'received' : 'sent'),
         body_preview: bodyPreview ?? 'Test message',
+        ...(opts.errorMessage ? { error_message: opts.errorMessage } : {}),
+        ...(opts.errorCode ? { error_code: opts.errorCode } : {}),
+        ...(opts.templateName ? { template_name: opts.templateName } : {}),
+        ...(opts.createdAt ? { created_at: opts.createdAt } : {}),
       })
       .select('id, channel')
       .single(),
@@ -1641,6 +1653,10 @@ async function seedEmailMessage(opts: {
   clicked?: boolean
   bounced?: boolean
   failed?: boolean
+  /** Attaches the email to a patient, so it joins their conversation. */
+  patientId?: string
+  recipientEmail?: string
+  subject?: string
 }) {
   let accountId = opts.accountId
   if (!accountId) {
@@ -1655,8 +1671,10 @@ async function seedEmailMessage(opts: {
         account_id: accountId,
         provider_message_id: opts.providerMessageId,
         rule_id: opts.ruleId ?? null,
-        recipient_email: `seed-${Date.now()}@example.test`,
-        subject: 'Seeded',
+        patient_id: opts.patientId ?? null,
+        recipient_email: opts.recipientEmail ?? `seed-${Date.now()}@example.test`,
+        subject: opts.subject ?? 'Seeded',
+        sent_at: now,
         delivered_at: opts.delivered || opts.openCount || opts.clicked ? now : null,
         first_opened_at: opts.openCount ? now : null,
         open_count: opts.openCount ?? 0,

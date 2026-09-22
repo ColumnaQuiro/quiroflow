@@ -121,6 +121,27 @@ function copy(text: string) {
   navigator.clipboard?.writeText(text)
 }
 
+/**
+ * What a clinic pastes into its own website to embed the booking widget.
+ *
+ * The script tag is the part that is easy to leave out and expensive to
+ * leave out. The widget reads gclid/utm_* from its own query string, and an
+ * iframe src does not inherit the page's -- so an embed without embed.js
+ * records every booking as though it arrived from nowhere, including the ones
+ * an ad was paid for. That was true of our own site for a week: 7 bookings,
+ * none carrying a campaign, against 48 paid clicks to the page in the same
+ * window. Handing over a snippet that already has it is the only version of
+ * this a clinic cannot get wrong.
+ *
+ * Built from the origin the clinic is looking at rather than a constant, so
+ * the snippet is right in development and on any future domain without
+ * anyone remembering to change it here.
+ */
+function embedSnippet(slug: string) {
+  const origin = window.location.origin
+  return `<div data-quiroflow-booking data-slug="${slug}"></div>\n<script src="${origin}/embed.js" async><\/script>`
+}
+
 // --- Clinics & Hours: per-clinic enable toggle + business hours ---
 // business_hours narrowed away from Supabase's recursive Json type here --
 // it blows up Vue's template type-checker (TS2589) when combined with v-for.
@@ -333,6 +354,34 @@ const OVERRIDABLE_STRINGS = [
                     {{ t('Copy', 'Copiar') }}
                   </button>
                 </div>
+              </div>
+
+              <div v-if="store.accountSlug" data-test="booking-embed-card" class="rounded-card border border-line bg-surface p-4 shadow-card">
+                <p class="text-[13.5px] font-[560] text-ink-700">{{ t('Embed on your website', 'Insertar en tu web') }}</p>
+                <p class="mt-0.5 text-[12.5px] text-ink-muted2">
+                  {{ t(
+                    'Paste this where the booking form should appear. The script carries the visitor\'s campaign (Google, Meta) into the widget, so paid bookings can be told apart from the rest.',
+                    'Pega esto donde deba aparecer el formulario de reserva. El script lleva la campaña del visitante (Google, Meta) al widget, para poder distinguir las reservas de pago del resto.',
+                  ) }}
+                </p>
+                <div class="mt-2 flex items-start gap-2">
+                  <textarea
+                    :value="embedSnippet(store.accountSlug)"
+                    data-test="booking-embed-snippet"
+                    readonly
+                    rows="2"
+                    class="w-full resize-none rounded-ctl border border-line-control bg-surface-subtle px-2 py-1.5 font-mono text-[12px] leading-relaxed text-ink-600"
+                  />
+                  <button type="button" class="h-8 shrink-0 rounded-ctl border border-line-control px-3 text-[12.5px] text-ink-600 hover:border-line-controlHover" @click="copy(embedSnippet(store.accountSlug))">
+                    {{ t('Copy', 'Copiar') }}
+                  </button>
+                </div>
+                <p class="mt-2 text-[12px] text-ink-muted2">
+                  {{ t(
+                    'Already embedded the widget by hand? Adding just the script tag is enough -- it upgrades an iframe that is already on the page.',
+                    '¿Ya insertaste el widget a mano? Basta con añadir la etiqueta script -- actualiza un iframe que ya esté en la página.',
+                  ) }}
+                </p>
               </div>
 
               <div class="rounded-card border border-line bg-surface p-4 shadow-card">

@@ -60,6 +60,27 @@ export function formatRelativeDays(iso: string | Date, language: 'en' | 'es', no
   return new Intl.RelativeTimeFormat(language === 'es' ? 'es-ES' : 'en-GB', { numeric: 'auto' }).format(days, 'day')
 }
 
+/** "13 sept" -- the compact form a date block or a row uses. */
+export function formatShortDate(iso: string | Date): string {
+  const date = typeof iso === 'string' ? new Date(iso) : iso
+  return date.toLocaleDateString(LOCALE, { day: 'numeric', month: 'short' })
+}
+
+/** "10:06". 24-hour, because Spain writes it that way. */
+export function formatTime(iso: string | Date): string {
+  const date = typeof iso === 'string' ? new Date(iso) : iso
+  return date.toLocaleTimeString(LOCALE, { hour: '2-digit', minute: '2-digit', hour12: false })
+}
+
+/** The day and the month, split, for a two-line date block. */
+export function dateBlock(iso: string | Date): { day: string; month: string } {
+  const date = typeof iso === 'string' ? new Date(iso) : iso
+  return {
+    day: date.toLocaleDateString(LOCALE, { day: 'numeric' }),
+    month: date.toLocaleDateString(LOCALE, { month: 'short' }).replace('.', ''),
+  }
+}
+
 export type BillingInterval = 'monthly' | 'annual'
 
 export interface PlanPricing {

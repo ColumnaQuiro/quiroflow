@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Tables } from '~/types/database.types'
+import { formatLongDate } from '~/utils/billing'
 import type { DocField } from '~/utils/docFields'
 
 const props = defineProps<{ patientId: string }>()
@@ -162,15 +163,30 @@ async function removeDoc(doc: Doc) {
   if (activeDoc.value?.id === doc.id) activeDoc.value = null
 }
 
-function statusFor(doc: Doc): { label: string; tone: 'success' | 'brand' } {
-  return doc.completed_at ? { label: t('Complete', 'Completado'), tone: 'success' } : { label: t('Sent', 'Enviado'), tone: 'brand' }
+function statusFor(doc: Doc): { label: string; tone: 'success' | 'warning' } {
+  return doc.completed_at
+    ? { label: t('Completed', 'Completado'), tone: 'success' as const }
+    : { label: t('Awaiting patient', 'Pendiente del paciente'), tone: 'warning' as const }
 }
+const senders = ref<Record<string, string>>({})
+async function loadSenders() {
+  const { data } = await supabase.from('team_members').select('id, full_name')
+  const map: Record<string, string> = {}
+  for (const m of data ?? []) map[m.id] = m.full_name
+  senders.value = map
+}
+onMounted(loadSenders)
+
 function metaFor(doc: Doc) {
   if (doc.completed_at) {
     const ip = doc.completed_ip ? ` ${t('from', 'desde')} ${doc.completed_ip}` : ''
-    return `${t('Signed', 'Firmado')} ${new Date(doc.completed_at).toLocaleDateString()}${ip}`
+    return `${t('Signed', 'Firmado')} ${formatLongDate(doc.completed_at)}${ip}`
   }
-  return `${t('Sent', 'Enviado')} ${new Date(doc.updated_at).toLocaleDateString()}`
+  // Who sent it as well as when: created_by has always been written and
+  // never read back, so a form nobody recognised had no one to ask about it.
+  const who = doc.created_by ? senders.value[doc.created_by] : null
+  const sent = `${t('Sent', 'Enviado')} ${formatLongDate(doc.updated_at)}`
+  return who ? `${sent} ${t('by', 'por')} ${who}` : sent
 }
 </script>
 
@@ -178,9 +194,12 @@ function metaFor(doc: Doc) {
   <div class="rounded-card border border-line bg-surface shadow-card">
     <template v-if="!activeDoc">
       <div class="flex items-center justify-between border-b border-line-divider px-4 py-3">
-        <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Docs', 'Documentos') }}</p>
+        <p class="text-[13.5px] font-semibold text-ink-700">
+          {{ t('Forms sent to the patient', 'Formularios enviados al paciente') }}
+          <span v-if="!loading" class="ml-1 font-normal text-ink-faint">{{ docs.length }}</span>
+        </p>
         <div class="relative">
-          <UiBtn variant="primary" size="sm" @click="showNewMenu = !showNewMenu">{{ t('+ New doc', '+ Nuevo documento') }}</UiBtn>
+          <UiBtn variant="primary" size="sm" @click="showNewMenu = !showNewMenu">{{ t('Send a form', 'Enviar un formulario') }}</UiBtn>
           <div v-if="showNewMenu" class="absolute right-0 z-10 mt-1 w-56 rounded-ctl border border-line bg-surface py-1 shadow-popover">
             <button type="button" class="block w-full px-3 py-1.5 text-left text-[13px] text-ink-600 hover:bg-surface-subtle" @click="newBlankDoc">
               {{ t('Blank document', 'Documento en blanco') }}
@@ -218,14 +237,29 @@ function metaFor(doc: Doc) {
             <path d="M7 3h8l4 4v15a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1z" stroke="currentColor" stroke-width="1.3" />
             <path d="M15 3v4h4" stroke="currentColor" stroke-width="1.3" />
           </svg>
-          <button type="button" class="min-w-0 flex-1 text-left" @click="openDoc(doc)">
-            <p class="truncate text-[13px] font-medium text-ink-700 hover:text-brand-text">{{ doc.title }}</p>
-            <p class="text-[11.5px] text-ink-faint">{{ metaFor(doc) }}</p>
-          </button>
+          <div class="min-w-0 flex-1">
+            <button type="button" class="block w-full text-left outline-none focus-visible:shadow-focus" @click="openDoc(doc)">
+              <p class="truncate text-[13px] font-medium text-ink-700 hover:text-brand-text">{{ doc.title }}</p>
+              <p class="text-[11.5px] text-ink-faint">{{ metaFor(doc) }}</p>
+            </button>
+            <!-- The patient's own link, on screen. It is the thing staff read
+                 out on the phone, and a Copy button for a link you cannot see
+                 gives you no way to check you are sending the right one. -->
+            <p class="mt-1 flex items-center gap-1.5">
+              <span class="min-w-0 truncate rounded-ctlSm bg-surface-subtle2 px-1.5 py-0.5 font-mono text-[11px] text-ink-muted2">{{ docLink(doc) }}</span>
+              <button
+                type="button"
+                class="shrink-0 text-[11px] font-medium text-brand-text outline-none hover:text-brand-hover focus-visible:shadow-focus"
+                @click="copyLink(doc)"
+              >
+                {{ copiedId === doc.id ? t('Copied!', '¡Copiado!') : t('Copy', 'Copiar') }}
+              </button>
+            </p>
+          </div>
           <UiPill :tone="statusFor(doc).tone">{{ statusFor(doc).label }}</UiPill>
           <div class="flex items-center gap-2.5">
             <button type="button" class="text-[11.5px] font-medium text-brand-text hover:text-brand-hover" :title="t('Open patient link in a new tab', 'Abrir el enlace del paciente en una pestaña nueva')" @click="openLink(doc)">
-              {{ t('Open', 'Abrir') }}
+              {{ doc.completed_at ? t('View answers', 'Ver respuestas') : t('Open', 'Abrir') }}
             </button>
             <button type="button" class="text-[11.5px] font-medium text-brand-text hover:text-brand-hover" :title="t('Copy patient link', 'Copiar el enlace del paciente')" @click="copyLink(doc)">
               {{ copiedId === doc.id ? t('Copied!', '¡Copiado!') : t('Copy link', 'Copiar enlace') }}
@@ -237,7 +271,7 @@ function metaFor(doc: Doc) {
               :title="t('Send patient link via WhatsApp', 'Enviar el enlace del paciente por WhatsApp')"
               @click="sendViaWhatsApp(doc)"
             >
-              WhatsApp
+              {{ t('Resend', 'Reenviar') }}
             </button>
             <UiIconBtn icon="trash" tone="danger" :label="t('Delete', 'Eliminar')" @click="removeDoc(doc)" />
           </div>

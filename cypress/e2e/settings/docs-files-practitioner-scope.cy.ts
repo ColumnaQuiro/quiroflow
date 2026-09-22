@@ -5,6 +5,12 @@
 describe('Documents & files scoped to the practitioner who created them', () => {
   it('shows a scoped practitioner their own and unattributed documents, but not a colleague’s', () => {
     cy.seedStaffAccount().then((account) => {
+      // A fresh account is on Solo -- one practitioner seat, already taken by
+      // the owner -- so seeding a second practitioner trips
+      // enforce_practitioner_seats (0150) with PT402 before the spec even
+      // starts. Same bypass practitioner-seat-cap.cy.ts uses.
+      cy.setExtraProfessionals(account.accountId, 1)
+
       cy.task('db:setRolePermissions', {
         accountId: account.accountId,
         roleName: 'Practitioner',
@@ -57,6 +63,8 @@ describe('Documents & files scoped to the practitioner who created them', () => 
 
   it('leaves every document visible while the role is set to all practitioners', () => {
     cy.seedStaffAccount().then((account) => {
+      cy.setExtraProfessionals(account.accountId, 1)
+
       cy.task('db:setRolePermissions', {
         accountId: account.accountId,
         roleName: 'Practitioner',

@@ -121,3 +121,89 @@ describe('Filtering the patient list', () => {
     })
   })
 })
+
+// Exporting is the one place a filter can silently mean something different
+// from what the screen shows: the table pages through `patients`, the CSV
+// walks every matching row separately, and until now the two held their own
+// copies of the balance-view lookup. Nothing tested the export at all.
+describe('Exporting the patient list', () => {
+  function captureCsv() {
+    cy.window().then((win) => {
+      cy.stub(win.URL, 'createObjectURL').callsFake((blob: Blob) => {
+        ;(win as any).__csv = blob
+        return 'blob:captured'
+      })
+      cy.stub(win.URL, 'revokeObjectURL')
+    })
+  }
+
+  function csvText() {
+    return cy.window().its('__csv').then((blob: Blob) => blob.text())
+  }
+
+  it('exports exactly the rows the active filters leave on screen', () => {
+    cy.seedStaffAccount().then((account) => {
+      const mk = (firstName: string, lastName: string) =>
+        cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName, lastName })
+
+      // One who owes money, one who does not.
+      mk('Deudora', 'Pendiente').then((owing: any) => {
+        cy.task('db:createInvoice', { accountId: account.accountId, patientId: owing.id, totalCents: 7700, status: 'unpaid' })
+      })
+      mk('Saldada', 'Aldia')
+
+      cy.login(account.email, account.password)
+      cy.visit('/patients')
+      cy.contains('Deudora Pendiente').should('be.visible')
+      cy.contains('Saldada Aldia').should('be.visible')
+
+      // Unfiltered: both. Stubbed once for the whole test -- sinon refuses
+      // to wrap the same method twice.
+      captureCsv()
+      cy.contains('button', 'Export').click()
+      csvText().then((text: string) => {
+        expect(text).to.contain('Deudora')
+        expect(text).to.contain('Saldada')
+      })
+
+      // Filtered to Owing: the export has to agree with the table, which is
+      // the whole point -- a CSV that quietly ignores the filter is worse
+      // than one that refuses, because nobody checks.
+      cy.contains('label, div', 'Balance').should('exist')
+      cy.get('select').then(($selects) => {
+        const balance = [...$selects].find((s) => s.getAttribute('aria-label') === 'Balance')
+        expect(balance, 'balance filter').to.exist
+        cy.wrap(balance).select('owing')
+      })
+      cy.contains('Saldada Aldia').should('not.exist')
+
+      cy.window().then((win) => { delete (win as any).__csv })
+      cy.contains('button', 'Export').click()
+      cy.window().its('__csv').should('exist')
+      csvText().then((text: string) => {
+        expect(text, 'the filtered-out patient').to.not.contain('Saldada')
+        expect(text, 'the patient who owes').to.contain('Deudora')
+      })
+    })
+  })
+
+  it('writes the balance machine-readably, not in es-ES', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Cifra', lastName: 'Exacta' }).then((p: any) => {
+        cy.task('db:createInvoice', { accountId: account.accountId, patientId: p.id, totalCents: 123456, status: 'unpaid' })
+        cy.login(account.email, account.password)
+        cy.visit('/patients')
+        cy.contains('Cifra Exacta').should('be.visible')
+
+        captureCsv()
+        cy.contains('button', 'Export').click()
+        csvText().then((text: string) => {
+          // 1.234,56 would read as a thousands-separated integer to a
+          // spreadsheet and as two columns to a comma-delimited parser.
+          expect(text).to.contain('-1234.56')
+          expect(text).to.not.contain('1.234,56')
+        })
+      })
+    })
+  })
+})

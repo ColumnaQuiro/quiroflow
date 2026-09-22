@@ -51,7 +51,7 @@ const items = computed(() => [
       :aria-label="`${t('Actions for', 'Acciones para')} ${patientName}`"
       :aria-expanded="open"
       aria-haspopup="menu"
-      class="inline-flex h-[26px] w-[26px] items-center justify-center rounded-ctlSm text-ink-faint outline-none hover:bg-surface-subtle hover:text-ink-700 focus-visible:shadow-focus"
+      class="inline-flex h-11 w-11 items-center justify-center rounded-ctlSm text-ink-faint outline-none hover:bg-surface-subtle hover:text-ink-700 focus-visible:shadow-focus lg:h-[26px] lg:w-[26px]"
       @click.stop="open = !open"
     >
       <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" class="h-[15px] w-[15px]">
@@ -65,7 +65,7 @@ const items = computed(() => [
         :key="item.key"
         role="menuitem"
         :to="item.to"
-        class="block px-3 py-2 text-[13px] text-ink-700 outline-none hover:bg-surface-subtle focus-visible:bg-surface-subtle"
+        class="block px-3 py-3 text-[13px] text-ink-700 outline-none hover:bg-surface-subtle focus-visible:bg-surface-subtle lg:py-2"
         @click="close(false)"
       >
         {{ item.label }}

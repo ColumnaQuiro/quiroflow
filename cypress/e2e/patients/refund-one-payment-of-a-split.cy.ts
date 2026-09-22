@@ -22,7 +22,12 @@ describe('Refunding one payment of a split', () => {
 
         // Paid through the UI, not seeded: a factura per payment is what makes
         // "which document does this correct" a real question.
-        cy.contains('50,00 €').should('exist')
+        // The receipt itself, not the header total: openTakePayment() picks
+        // its invoice from the loaded list, so clicking while that list is
+        // still empty leaves the form with no receipt and Record payment
+        // disabled for good. '50,00 €' matches the patient header, which is
+        // drawn from the financial summary and gets there first.
+        cy.contains('INV-').should('exist')
         cy.contains('button', 'Take payment').click()
         cy.contains('button', 'Record payment').parents('form').as('form')
         cy.get('@form').find('input[type="number"]').first().clear().type('30')
@@ -103,6 +108,11 @@ describe('Refunding one payment of a split', () => {
           cy.get('.fixed').find('input[type="number"]').clear().type('20')
           cy.get('.fixed').contains('button', 'Refund').should('not.be.disabled').click()
           cy.contains('Reason (optional)').should('not.exist')
+          // The modal clears itself the instant Refund is clicked while
+          // createRefund's inserts carry on behind it. The refund reaching the
+          // ledger is the end of that work -- loadAll() runs after the last
+          // write -- so this is what makes the question below answerable.
+          cy.contains('REF-').should('exist')
 
           cy.task('db:paymentsFor', { patientId: patient.id }).then((rows: any) => {
             const out = rows.filter((r: any) => r.amount_cents < 0)

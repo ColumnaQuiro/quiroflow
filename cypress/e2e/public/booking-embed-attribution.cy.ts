@@ -97,22 +97,33 @@ describe('Booking embed attribution', () => {
   it('leaves an existing embed alone when there is no campaign to add', () => {
     // An organic visitor must not cost the clinic a second iframe load to
     // record nothing -- assigning src reloads it.
+    const untouched = '/book/embed-test-clinic?type=70a38844-ebb9-4a42-b59e-dd6720160e0d'
     cy.visit('/login')
 
     cy.document().then((doc) => {
       const iframe = doc.createElement('iframe')
       iframe.id = 'untouched-embed'
-      iframe.setAttribute('src', '/book/embed-test-clinic?type=70a38844-ebb9-4a42-b59e-dd6720160e0d')
+      iframe.setAttribute('src', untouched)
       doc.body.appendChild(iframe)
+
+      // A container as well, and it is load-bearing: it gives the script
+      // something it MUST do, so waiting for that proves it ran. Without it
+      // "the src did not change" is equally true of a script that never
+      // executed at all, which is the version of this test that passes for
+      // the wrong reason.
+      const container = doc.createElement('div')
+      container.setAttribute('data-quiroflow-booking', '')
+      container.setAttribute('data-slug', 'embed-test-clinic')
+      doc.body.appendChild(container)
     })
     loadEmbedScript()
 
-    // Give the script the same window it would have had to act.
-    cy.get('#untouched-embed').should('exist')
-    cy.wait(250)
-    cy.get('#untouched-embed')
-      .should('not.have.attr', 'data-quiroflow-attributed')
-      .and('have.attr', 'src', '/book/embed-test-clinic?type=70a38844-ebb9-4a42-b59e-dd6720160e0d')
+    cy.get('[data-quiroflow-booking] iframe').should('exist')
+    // Separate assertions, not chained: `have.attr` yields the attribute
+    // value as the new subject, so an `.and()` after it asserts against a
+    // string -- or, for an absent attribute, against undefined.
+    cy.get('#untouched-embed').should('not.have.attr', 'data-quiroflow-attributed')
+    cy.get('#untouched-embed').should('have.attr', 'src', untouched)
   })
 
   it('forwards only the campaign keys, not whatever else is on the URL', () => {

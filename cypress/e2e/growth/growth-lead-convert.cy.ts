@@ -30,15 +30,15 @@ describe('Converting a lead to a patient', () => {
   it('creates the patient, keeps the attribution, and files the phone where the clinic can use it', () => {
     cy.task('db:createLead', {
       accountId: account.accountId,
-      fullName: 'Valeria Ocampo Ruiz',
+      fullName: 'Ainara Quilez Mora',
       stage: 'showed',
       source: 'Meta Ads · Back pain',
-      phone: '+34622471903',
+      phone: '+34600444901',
     }).then((lead) => {
       const leadId = (lead as { id: string }).id
 
       cy.visit('/growth/leads?growth=1')
-      cy.contains('button', 'Valeria Ocampo Ruiz').click()
+      cy.contains('button', 'Ainara Quilez Mora').click()
       cy.get('[data-test="convert-lead"]').click()
 
       cy.contains('Patient record created.').should('be.visible')
@@ -54,8 +54,8 @@ describe('Converting a lead to a patient', () => {
             patient: { first_name: string; last_name: string; referral_source: string; has_phone: boolean }
             numbers: { number: string; is_whatsapp: boolean }[]
           }
-          expect(patient.first_name).to.eq('Valeria')
-          expect(patient.last_name).to.eq('Ocampo Ruiz')
+          expect(patient.first_name).to.eq('Ainara')
+          expect(patient.last_name).to.eq('Quilez Mora')
           // The acquisition story survives on the record itself.
           expect(patient.referral_source).to.eq('Meta Ads · Back pain')
 

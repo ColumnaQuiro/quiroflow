@@ -120,13 +120,13 @@ describe('Booking without a way to reach the patient', () => {
         cy.get('@typeId').then((type: any) => {
           cy.task('db:createLead', {
             accountId: account.accountId,
-            fullName: 'Geraldo Tecla',
+            fullName: 'Alberto Rueda Mansilla',
             stage: 'new',
             channel: 'facebook',
-            email: 'geraldo.tecla@example.test',
-            phone: '34645775024',
+            email: 'ruedamansilla@example.test',
+            phone: '34600445533',
           }).then((lead: any) => {
-            book({ p_email: 'gerardo.tecla@example.test', p_phone: '645 775 024' }, account, type.id).then((r) => {
+            book({ p_email: 'rudamansilla@example.test', p_phone: '600 445 533' }, account, type.id).then((r) => {
               expect(r.error).to.eq(null)
               cy.task('db:leadById', { id: lead.id }).then((after: any) => {
                 expect(after.patient_id, 'matched on the number, not the address').to.not.be.null

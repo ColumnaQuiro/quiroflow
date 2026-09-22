@@ -211,6 +211,7 @@ const fullName = computed(() => [patient.value?.first_name, patient.value?.last_
         :can-book="true"
         :archiving="archiving"
         :primary-number="primaryNumber"
+        @photo-updated="loadPatient"
         @message="whatsAppOpen = true"
         @book="navigateTo('/calendar')"
         @charge="handleCharge"

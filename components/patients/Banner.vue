@@ -28,7 +28,7 @@ const props = defineProps<{
   primaryNumber: Tables<'patient_contact_numbers'> | null
 }>()
 
-defineEmits<{ message: []; book: []; charge: []; archive: []; merge: []; remove: [] }>()
+defineEmits<{ message: []; book: []; charge: []; archive: []; merge: []; remove: []; photoUpdated: [] }>()
 
 const t = useT()
 
@@ -112,9 +112,16 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
         </svg>
       </NuxtLink>
 
-      <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-brand-tintBorder bg-brand-tint text-[14px] font-semibold text-brand-text">
-        {{ initials }}
-      </span>
+      <!-- The photo, not just the initials: this is also the only way into
+           the upload flow, including the scan-with-your-phone QR. It lived in
+           the rail, and when the rail went it took patient photos with it. -->
+      <PatientsPhotoUpload
+        class="shrink-0"
+        :patient-id="patient.id"
+        :photo-storage-path="patient.photo_storage_path"
+        :initials="initials"
+        @uploaded="$emit('photoUpdated')"
+      />
 
       <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-center gap-2">

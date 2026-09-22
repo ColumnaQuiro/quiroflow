@@ -114,7 +114,17 @@ export function verifactuConfigFrom(runtime: {
     // configuration, not what happens when a variable is unset.
     environment: runtime.verifactuEnvironment === 'production' ? 'production' : 'test',
     certificateBase64: runtime.verifactuCertificateBase64 || undefined,
-    certificatePassphrase: runtime.verifactuCertificatePassphrase || undefined,
+    // String() on purpose. Nuxt runs environment variables through destr, so
+    // a passphrase that happens to be all digits arrives as a NUMBER -- and
+    // Node answers that with "Pass phrase must be a buffer", which names
+    // neither the passphrase nor its type nor the variable it came from.
+    //
+    // That is what 819 transport errors in production turned out to be. The
+    // certificate was right, the store was right, the transport was right;
+    // the password was a number.
+    certificatePassphrase: runtime.verifactuCertificatePassphrase
+      ? String(runtime.verifactuCertificatePassphrase)
+      : undefined,
     certificateType: runtime.verifactuCertificateType === 'seal' ? 'seal' : 'representative',
   }
 }
@@ -272,12 +282,48 @@ export async function sendPendingRecords(
   }
 }
 
+/**
+ * Writes one row per record for this attempt.
+ *
+ * A transport error that persists is NOT written every tick. The sender runs
+ * every minute and an outage lasts as long as it lasts: 63 owed records times
+ * 1,440 ticks is ninety thousand rows a day, all saying the same thing, in
+ * the table whose job is to make the exceptional visible. So a repeated
+ * transport error refreshes the existing row instead of adding to it -- the
+ * evidence is that it is still failing, not how many times it has been tried.
+ *
+ * An answer FROM the AEAT is always a new row. Those are the fiscal record of
+ * what was said about each registro, and none of them is redundant.
+ */
 async function recordAttempts(
   supabase: SupabaseClient<Database>,
   accountId: string,
   attempts: { recordId: string; attempt: number; serieNumber: string }[],
   outcome: { status: string; sentAt: string; errorMessage?: string },
 ) {
+  if (outcome.status === 'transport_error') {
+    const ids = attempts.map((a) => a.recordId)
+    const { data: latest } = await supabase
+      .from('factura_record_submissions')
+      .select('factura_record_id, status')
+      .in('factura_record_id', ids)
+      .eq('status', 'transport_error')
+    const alreadyFailing = new Set((latest ?? []).map((r) => r.factura_record_id))
+
+    const fresh = attempts.filter((a) => !alreadyFailing.has(a.recordId))
+    if (fresh.length === 0) {
+      // Still broken, already on record. Refresh when it was last seen so the
+      // row does not read as stale, and write nothing new.
+      await supabase
+        .from('factura_record_submissions')
+        .update({ sent_at: outcome.sentAt, error_message: outcome.errorMessage ?? null })
+        .in('factura_record_id', ids)
+        .eq('status', 'transport_error')
+      return
+    }
+    attempts = fresh
+  }
+
   for (const a of attempts) {
     await supabase.from('factura_record_submissions').insert({
       account_id: accountId,

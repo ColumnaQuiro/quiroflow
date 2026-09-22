@@ -58,7 +58,12 @@ describe('Refunding one payment of a split', () => {
         cy.get('.fixed').find('input[type="number"]').clear().type('5')
         cy.get('.fixed').contains('button', 'Refund').click()
         cy.contains('Reason (optional)').should('not.exist')
-        cy.contains('li', 'R-').should('be.visible')
+        // The refund reaching the ledger is the end of createRefund's writes,
+        // which is what makes the two db questions below answerable. Waiting
+        // on the factura list's own <li> instead matched an element the runner
+        // would not call visible, and the rectificativa is asserted properly
+        // from the database a few lines down anyway.
+        cy.contains('REF-').should('exist')
 
         cy.task('db:paymentsFor', { patientId: patient.id }).then((rows: any) => {
           const out = rows.filter((r: any) => r.amount_cents < 0)

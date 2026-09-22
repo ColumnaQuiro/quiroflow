@@ -19,6 +19,7 @@ interface InvoiceRow {
   created_at: string
   is_refund: boolean
   refunds_invoice_id: string | null
+  refunds_payment_id: string | null
 }
 interface PaymentRow { id: string; invoice_id: string | null; amount_cents: number; method: string; paid_at: string; created_by?: string | null; stripe_payment_intent_id?: string | null; team_members?: { full_name: string | null } | null }
 // A visit drawn from a package. Carries no debit or credit -- the money was
@@ -53,7 +54,7 @@ const emit = defineEmits<{
   deleteInvoice: [invoiceId: string]
   deletePayment: [payload: { paymentId: string; invoiceId: string | null; amountCents: number }]
   writeOffInvoice: [invoiceId: string]
-  refundInvoice: [payload: { invoiceId: string; amountCents: number; reason: string; method: string }]
+  refundInvoice: [payload: { invoiceId: string | null; paymentId: string | null; amountCents: number; reason: string; method: string }]
   creditsChanged: []
 }>()
 
@@ -108,6 +109,8 @@ interface LedgerRow {
   paymentInvoiceId?: string | null
   invoiceOpenCents?: number
   refundableCents?: number
+  paymentRefundableCents?: number
+  paymentMethod?: string
   isRefund?: boolean
   detail: { label: string; value: string }[]
 }
@@ -148,6 +151,11 @@ const rows = computed<LedgerRow[]>(() => {
     // been refunded -- caps both whether the Refund action shows at all and
     // the amount pre-filled into the modal, so staff can't refund money
     // that was never collected or double-refund the same invoice.
+    //
+    // This counts refunds made against a single PAYMENT too: those set
+    // refunds_invoice_id as well as refunds_payment_id precisely so this sum
+    // keeps working. Refund EUR 20 against the card payment and the receipt's
+    // own refundable total drops by EUR 20 with it.
     const alreadyRefunded = props.invoices
       .filter((r) => r.is_refund && r.refunds_invoice_id === inv.id)
       .reduce((sum, r) => sum + Math.abs(r.total_cents), 0)
@@ -177,6 +185,50 @@ const rows = computed<LedgerRow[]>(() => {
     }
   })
 
+  // What can still go back out on ONE payment.
+  //
+  // The lower of two rooms, which is what stops the same money being returned
+  // twice by two different routes: what's left of this payment (its amount
+  // less refunds naming it), and what's left of its receipt (everything paid
+  // on it less every refund against it, payment-level ones included). Refund
+  // EUR 20 against the card payment and then EUR 50 against the receipt and
+  // the second is capped at EUR 30 -- in the other order, the payment is
+  // capped instead. Either way EUR 50 collected returns at most EUR 50.
+  function paymentRefundableCentsFor(p: PaymentRow): number {
+    // Only money that came in can go back out. That rules out the negative
+    // row createRefund() writes for a refund (refunding a refund) and a
+    // write-off, which settles a balance without collecting anything.
+    if (p.amount_cents <= 0 || p.method === 'write_off') return 0
+
+    const refundedAgainstPayment = props.invoices
+      .filter((r) => r.is_refund && r.refunds_payment_id === p.id)
+      .reduce((sum, r) => sum + Math.abs(r.total_cents), 0)
+    const paymentRoom = p.amount_cents - refundedAgainstPayment
+
+    // Money on account -- a bono or a top-up, which since 0170 carries no
+    // invoice_id -- is deliberately NOT refundable here.
+    //
+    // A top-up writes an account_credits row alongside its payment (see
+    // addCredit), so giving the payment back without also reversing that row
+    // returns the money AND leaves the credit spendable: the patient is paid
+    // twice and their balance never says so. Reversing both is the credit
+    // ledger's problem, not this cap's, so the action stays hidden until
+    // something owns that.
+    if (!p.invoice_id) return 0
+
+    const invoice = props.invoices.find((i) => i.id === p.invoice_id)
+    // Matching the receipt-level cap above rather than second-guessing it: a
+    // voided receipt offers no Refund action there either.
+    if (!invoice || invoice.status === 'void') return 0
+
+    const paidForInvoice = props.payments.filter((q) => q.invoice_id === p.invoice_id).reduce((sum, q) => sum + q.amount_cents, 0)
+    const refundedAgainstInvoice = props.invoices
+      .filter((r) => r.is_refund && r.refunds_invoice_id === p.invoice_id)
+      .reduce((sum, r) => sum + Math.abs(r.total_cents), 0)
+
+    return Math.max(0, Math.min(paymentRoom, paidForInvoice - refundedAgainstInvoice))
+  }
+
   // Same rule as usePatientFinancialSummary: a 'credit' payment against a
   // voided invoice is not money. Its invoice contributes no debit (see
   // debitCents above), so leaving the payment in the Credit column shows a
@@ -196,6 +248,8 @@ const rows = computed<LedgerRow[]>(() => {
     // below, and a payment row offering "Delete invoice" would delete the
     // wrong thing entirely.
     paymentInvoiceId: p.invoice_id,
+    paymentRefundableCents: paymentRefundableCentsFor(p),
+    paymentMethod: p.method,
     date: p.paid_at,
     // Negative only for the payments row createRefund() inserts alongside a
     // refund invoice, so this money goes back out belongs in Debit like any
@@ -307,7 +361,9 @@ function writeOffInvoice(invoiceId: string) {
 
 // --- Refund: opens with the full refundable amount pre-filled (the common
 // case, a full refund), staff can lower it for a partial one. -------------
+const refundModalOpen = ref(false)
 const refundModalInvoiceId = ref<string | null>(null)
+const refundModalPaymentId = ref<string | null>(null)
 const refundAmount = ref('')
 const refundReason = ref('')
 const refundMaxCents = ref(0)
@@ -327,18 +383,51 @@ const refundMethod = ref<string>('card')
 function openRefundModal(invoiceId: string, maxCents: number) {
   menuOpen.value = false
   ensurePaymentMethodsLoaded()
+  refundModalOpen.value = true
   refundModalInvoiceId.value = invoiceId
+  refundModalPaymentId.value = null
   refundMaxCents.value = maxCents
   refundAmount.value = (maxCents / 100).toFixed(2)
   refundReason.value = ''
   refundMethod.value = defaultMethod.value
 }
+
+// Refunding one payment. The method defaults to the one the money arrived on
+// rather than the account default: sending EUR 20 back out by the route it
+// came in is the ordinary case, and it is the whole reason this action exists
+// -- the receipt-level refund can only offer a free choice, which is how
+// "EUR 50 back to card" could be recorded against EUR 20 of card. Still a
+// dropdown, because a card refund genuinely does sometimes go back as cash.
+function openPaymentRefundModal(paymentId: string, invoiceId: string | null, maxCents: number, method: string) {
+  menuOpen.value = false
+  ensurePaymentMethodsLoaded()
+  refundModalOpen.value = true
+  refundModalInvoiceId.value = invoiceId
+  refundModalPaymentId.value = paymentId
+  refundMaxCents.value = maxCents
+  refundAmount.value = (maxCents / 100).toFixed(2)
+  refundReason.value = ''
+  refundMethod.value = method || defaultMethod.value
+}
+
+function closeRefundModal() {
+  refundModalOpen.value = false
+  refundModalInvoiceId.value = null
+  refundModalPaymentId.value = null
+}
+
 function submitRefund() {
-  if (!refundModalInvoiceId.value) return
+  if (!refundModalOpen.value) return
   const amountCents = Math.round((parseFloat(refundAmount.value) || 0) * 100)
   if (amountCents <= 0 || amountCents > refundMaxCents.value) return
-  emit('refundInvoice', { invoiceId: refundModalInvoiceId.value, amountCents, reason: refundReason.value, method: refundMethod.value })
-  refundModalInvoiceId.value = null
+  emit('refundInvoice', {
+    invoiceId: refundModalInvoiceId.value,
+    paymentId: refundModalPaymentId.value,
+    amountCents,
+    reason: refundReason.value,
+    method: refundMethod.value,
+  })
+  closeRefundModal()
 }
 
 // --- Transfer credit: moves an amount from this patient's credit ledger to
@@ -523,15 +612,32 @@ async function sendStatement() {
                     <dd class="text-ink-muted2">{{ d.value }}</dd>
                   </template>
                 </dl>
-                <div v-if="row.paymentId && canDeletePayments" class="mt-2 flex items-center gap-3 border-t border-line-divider pt-2 text-[12px]">
+                <div
+                  v-if="row.paymentId && (canDeletePayments || (canRefund && (row.paymentRefundableCents ?? 0) > 0))"
+                  class="mt-2 flex items-center gap-3 border-t border-line-divider pt-2 text-[12px]"
+                >
+                  <template v-if="canDeletePayments">
+                    <button
+                      type="button"
+                      class="text-ink-faint hover:text-danger-text"
+                      @click="emit('deletePayment', { paymentId: row.paymentId!, invoiceId: row.paymentInvoiceId ?? null, amountCents: row.paymentAmountCents ?? 0 })"
+                    >
+                      {{ t('Remove payment', 'Eliminar pago') }}
+                    </button>
+                    <span class="text-ink-faint2">{{ t('Reopens the receipt so it can be billed again', 'Reabre el recibo para poder facturarlo de nuevo') }}</span>
+                  </template>
+                  <!-- Refunds THIS payment: capped at what came in on it and
+                       pre-set to the method it came in on. Removing a payment
+                       says it never happened and reopens the receipt; this
+                       says it happened and went back. -->
                   <button
+                    v-if="canRefund && (row.paymentRefundableCents ?? 0) > 0"
                     type="button"
                     class="text-ink-faint hover:text-danger-text"
-                    @click="emit('deletePayment', { paymentId: row.paymentId!, invoiceId: row.paymentInvoiceId ?? null, amountCents: row.paymentAmountCents ?? 0 })"
+                    @click="openPaymentRefundModal(row.paymentId!, row.paymentInvoiceId ?? null, row.paymentRefundableCents ?? 0, row.paymentMethod ?? '')"
                   >
-                    {{ t('Remove payment', 'Eliminar pago') }}
+                    {{ t('Refund…', 'Reembolsar…') }} {{ money(row.paymentRefundableCents ?? 0) }}
                   </button>
-                  <span class="text-ink-faint2">{{ t('Reopens the receipt so it can be billed again', 'Reabre el recibo para poder facturarlo de nuevo') }}</span>
                 </div>
                 <div v-if="row.invoiceId" class="mt-2 flex items-center gap-3 border-t border-line-divider pt-2 text-[12px]">
                   <NuxtLink :to="`/billing/${row.invoiceId}`" class="font-medium text-brand-text hover:text-brand-hover">{{ t('Open receipt', 'Abrir recibo') }}</NuxtLink>
@@ -618,15 +724,20 @@ async function sendStatement() {
     </div>
   </div>
 
-  <div v-if="refundModalInvoiceId" class="fixed inset-0 z-20 flex items-center justify-center bg-ink-900/40 p-4" @click.self="refundModalInvoiceId = null">
+  <div v-if="refundModalOpen" class="fixed inset-0 z-20 flex items-center justify-center bg-ink-900/40 p-4" @click.self="closeRefundModal">
     <div class="w-full max-w-sm rounded-card border border-line bg-surface p-4 shadow-popover">
       <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Refund', 'Reembolso') }}</p>
       <p class="mt-1 text-[12px] text-ink-faint">
         {{
-          t(
-            "Records a refund against this invoice and reduces the patient's balance -- doesn't call any real refund API, so process the actual refund (cash, Stripe, etc.) separately.",
-            'Registra un reembolso contra esta factura y reduce el saldo del paciente -- no llama a ninguna API de reembolso real, así que procesa el reembolso real (efectivo, Stripe, etc.) por separado.',
-          )
+          refundModalPaymentId
+            ? t(
+                "Records a refund against this one payment and reduces the patient's balance -- doesn't call any real refund API, so process the actual refund (cash, Stripe, etc.) separately.",
+                'Registra un reembolso contra este pago concreto y reduce el saldo del paciente -- no llama a ninguna API de reembolso real, así que procesa el reembolso real (efectivo, Stripe, etc.) por separado.',
+              )
+            : t(
+                "Records a refund against this invoice and reduces the patient's balance -- doesn't call any real refund API, so process the actual refund (cash, Stripe, etc.) separately.",
+                'Registra un reembolso contra esta factura y reduce el saldo del paciente -- no llama a ninguna API de reembolso real, así que procesa el reembolso real (efectivo, Stripe, etc.) por separado.',
+              )
         }}
       </p>
 
@@ -651,7 +762,7 @@ async function sendStatement() {
       </div>
 
       <div class="mt-4 flex items-center justify-end gap-2">
-        <button type="button" class="text-[12.5px] text-ink-faint hover:text-ink-muted" @click="refundModalInvoiceId = null">{{ t('Cancel', 'Cancelar') }}</button>
+        <button type="button" class="text-[12.5px] text-ink-faint hover:text-ink-muted" @click="closeRefundModal">{{ t('Cancel', 'Cancelar') }}</button>
         <UiBtn
           variant="primary"
           size="sm"

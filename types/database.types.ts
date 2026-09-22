@@ -2448,6 +2448,7 @@ export type Database = {
           is_refund: boolean
           patient_id: string
           refunds_invoice_id: string | null
+          refunds_payment_id: string | null
           status: string
           total_cents: number
         }
@@ -2461,6 +2462,7 @@ export type Database = {
           is_refund?: boolean
           patient_id: string
           refunds_invoice_id?: string | null
+          refunds_payment_id?: string | null
           status?: string
           total_cents?: number
         }
@@ -2474,6 +2476,7 @@ export type Database = {
           is_refund?: boolean
           patient_id?: string
           refunds_invoice_id?: string | null
+          refunds_payment_id?: string | null
           status?: string
           total_cents?: number
         }
@@ -2525,6 +2528,13 @@ export type Database = {
             columns: ["refunds_invoice_id"]
             isOneToOne: false
             referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoices_refunds_payment_id_fkey"
+            columns: ["refunds_payment_id"]
+            isOneToOne: false
+            referencedRelation: "payments"
             referencedColumns: ["id"]
           },
         ]

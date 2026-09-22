@@ -66,6 +66,23 @@ watch(
 
 const clinicName = computed(() => store.clinics.find((c) => c.id === patient.value?.clinic_id)?.name ?? null)
 
+// A minor's messages go to their tutor, and until now the record said so by
+// simply having no Communications tab -- which tells you the rule exists
+// and not where to act on it. The banner links the tutor's own record.
+const tutor = ref<{ id: string; first_name: string; last_name: string | null } | null>(null)
+watch(
+  () => [patient.value?.is_minor, patient.value?.tutor_patient_id] as const,
+  async ([isMinor, tutorId]) => {
+    if (!isMinor || !tutorId) {
+      tutor.value = null
+      return
+    }
+    const { data } = await supabase.from('patients').select('id, first_name, last_name').eq('id', tutorId).maybeSingle()
+    tutor.value = data
+  },
+  { immediate: true },
+)
+
 // Only the two figures the banner's pill reads; the rest of the account's
 // money is Billing's own business and is loaded there.
 const { balanceCents, availableCents } = usePatientFinancialSummary(patientId)
@@ -173,6 +190,37 @@ function onArchiveInstead() {
 }
 
 const fullName = computed(() => [patient.value?.first_name, patient.value?.last_name].filter(Boolean).join(' '))
+
+// -- Roving focus across the tabs -----------------------------------------
+// One tab stop for the whole set: Tab reaches the selected tab and then
+// leaves for the panel, and the arrows move between tabs. Without this a
+// keyboard user tabs through six controls to reach the content, every time.
+const tabRefs = new Map<string, HTMLButtonElement>()
+function setTabRef(key: string, el: unknown) {
+  if (el) tabRefs.set(key, el as HTMLButtonElement)
+  else tabRefs.delete(key)
+}
+
+function onTabKeydown(event: KeyboardEvent) {
+  const keys = tabs.value.map((tab) => tab.key)
+  const current = keys.indexOf(activeTab.value)
+  if (current === -1) return
+
+  let next: number | null = null
+  if (event.key === 'ArrowRight') next = (current + 1) % keys.length
+  else if (event.key === 'ArrowLeft') next = (current - 1 + keys.length) % keys.length
+  else if (event.key === 'Home') next = 0
+  else if (event.key === 'End') next = keys.length - 1
+  if (next === null) return
+
+  event.preventDefault()
+  const key = keys[next]
+  activeTab.value = key
+  // Focus follows selection, which is the automatic-activation pattern and
+  // the right one here: each panel is a fetch, not a form, so arrowing
+  // through them costs nothing a user would resent.
+  nextTick(() => tabRefs.get(key)?.focus())
+}
 </script>
 
 <template>
@@ -211,6 +259,7 @@ const fullName = computed(() => [patient.value?.first_name, patient.value?.last_
         :can-book="true"
         :archiving="archiving"
         :primary-number="primaryNumber"
+        :tutor="tutor"
         @photo-updated="loadPatient"
         @message="whatsAppOpen = true"
         @book="navigateTo('/calendar')"
@@ -223,28 +272,46 @@ const fullName = computed(() => [patient.value?.first_name, patient.value?.last_
 
     <div class="flex-1 overflow-y-auto bg-surface-page">
       <div class="min-w-0 px-4 sm:px-6">
-        <nav
+        <!-- A real tablist. These were buttons carrying aria-current, which
+        announces "the page you are on" -- they are not pages, and a screen
+        reader was told there were six links rather than one set of six
+        tabs. With the roles comes roving focus: one tab stop for the whole
+        set, arrows to move between them, Home and End to jump. -->
+        <div
+          role="tablist"
           class="sticky top-0 z-10 flex gap-1 overflow-x-auto border-b border-chip-border bg-surface-page"
           :aria-label="t('Patient record sections', 'Secciones de la ficha')"
+          @keydown="onTabKeydown"
         >
           <button
             v-for="tab in tabs"
             :key="tab.key"
+            :ref="(el) => setTabRef(tab.key, el)"
             type="button"
+            role="tab"
+            :id="`tab-${tab.key}`"
+            :aria-controls="`panel-${tab.key}`"
+            :aria-selected="activeTab === tab.key"
+            :tabindex="activeTab === tab.key ? 0 : -1"
             class="h-10 shrink-0 px-[11px] text-[13.5px] outline-none focus-visible:shadow-focus"
             :class="
               activeTab === tab.key
                 ? 'font-semibold text-ink-700 shadow-[inset_0_-2px_0_rgb(var(--color-brand))]'
                 : 'text-ink-muted hover:text-ink-600'
             "
-            :aria-current="activeTab === tab.key ? 'page' : undefined"
             @click="activeTab = tab.key"
           >
             {{ tab.label }}
           </button>
-        </nav>
+        </div>
 
-        <div class="py-5">
+        <div
+          class="py-5"
+          role="tabpanel"
+          :id="`panel-${activeTab}`"
+          :aria-labelledby="`tab-${activeTab}`"
+          tabindex="0"
+        >
           <PatientsOverviewTab v-if="activeTab === 'overview'" :patient="patient" @updated="loadPatient" />
 
           <PatientsClinicalTab v-else-if="activeTab === 'clinical'" :patient-id="patientId" />

@@ -143,7 +143,7 @@ describe('What the patient record must refuse to offer', () => {
         // And the tab cannot be reached by typing its name into the URL
         // either -- it falls back rather than rendering an empty thread.
         cy.visit(`/patients/${patient.id}?tab=communications`)
-        cy.contains('button', 'Overview').should('have.attr', 'aria-current', 'page')
+        cy.contains('button', 'Overview').should('have.attr', 'aria-selected', 'true')
       })
     })
   })

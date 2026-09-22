@@ -572,6 +572,13 @@ async function setPatientContactFlags(opts: { patientId: string; isMinor?: boole
   return null
 }
 
+/** Links a minor to the tutor their messages go to. */
+async function setPatientTutor(opts: { patientId: string; tutorPatientId: string | null }) {
+  const { error } = await admin.from('patients').update({ tutor_patient_id: opts.tutorPatientId }).eq('id', opts.patientId)
+  if (error) throw error
+  return null
+}
+
 async function setPatientNif(opts: { patientId: string; nationalId: string | null }) {
   const { error } = await admin.from('patients').update({ national_id: opts.nationalId }).eq('id', opts.patientId)
   if (error) throw error
@@ -2095,6 +2102,7 @@ export const dbTasks = {
   'db:createFactura': createFactura,
   'db:setPatientNif': setPatientNif,
   'db:setPatientContactFlags': setPatientContactFlags,
+  'db:setPatientTutor': setPatientTutor,
   'db:addVisitNote': addVisitNote,
   'db:setPatientClinical': setPatientClinical,
   'db:createAccountCredit': createAccountCredit,

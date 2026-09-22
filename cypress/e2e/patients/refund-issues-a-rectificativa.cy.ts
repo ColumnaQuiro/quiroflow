@@ -42,6 +42,10 @@ describe('Refunding a paid visit', () => {
         // on the document appearing in the list is waiting on the work, and
         // it is also the thing a person would look for.
         cy.contains('Reason (optional)').should('not.exist')
+        // Facturas sit behind the Money tab's sub-nav now -- it exists so the
+        // account ledger gets the full width. Bonos stayed on screen because
+        // selling one is an everyday action; filing a fiscal document is not.
+        cy.contains('button', 'Facturas & receipts').click()
         cy.contains('li', 'R-').should('be.visible')
 
         cy.task('db:facturasFor', { patientId: patient.id }).then((rows: any) => {

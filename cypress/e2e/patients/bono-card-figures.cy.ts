@@ -24,12 +24,12 @@ describe('The bono card’s figures', () => {
           cy.login(account.email, account.password)
           cy.visit(`/patients/${patient.id}?tab=billing`)
 
-          cy.contains('Bono 12 sesiones').should('be.visible')
+          cy.contains('Bono 12 sesiones').scrollIntoView().should('be.visible')
           // What is left, and what it is worth — 11 × €44.
-          cy.contains('11 of 12 sessions left').should('be.visible')
-          cy.contains('worth 484,00 €').should('be.visible')
+          cy.contains('11 of 12 sessions left').scrollIntoView().should('be.visible')
+          cy.contains('worth 484,00 €').scrollIntoView().should('be.visible')
           // What it cost, said as a price rather than a bare number.
-          cy.contains('528,00 € paid in full').should('be.visible')
+          cy.contains('528,00 € paid in full').scrollIntoView().should('be.visible')
           // And the count is not printed a second time with a different
           // amount beside it.
           cy.contains('11/12 left').should('not.exist')
@@ -57,7 +57,7 @@ describe('The bono card’s figures', () => {
           cy.login(account.email, account.password)
           cy.visit(`/patients/${patient.id}?tab=billing`)
 
-          cy.contains('12 of 12 sessions left').should('be.visible')
+          cy.contains('12 of 12 sessions left').scrollIntoView().should('be.visible')
           cy.contains('264,00 € paid of 528,00 €').should('be.visible')
           cy.contains('paid in full').should('not.exist')
         })

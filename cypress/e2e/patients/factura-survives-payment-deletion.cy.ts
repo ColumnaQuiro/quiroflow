@@ -47,6 +47,10 @@ describe('A factura outlives the payment it documents', () => {
 
         // And it says so on screen, rather than sitting in the list looking
         // like every other factura.
+        // Facturas sit behind the Money tab's sub-nav now -- it exists so the
+        // account ledger gets the full width. Bonos stayed on screen because
+        // selling one is an everyday action; filing a fiscal document is not.
+        cy.contains('button', 'Facturas & receipts').click()
         cy.contains('payment removed').should('be.visible')
       })
     })

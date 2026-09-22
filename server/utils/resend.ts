@@ -11,7 +11,12 @@ export interface ResendAttachment {
   content: string // base64
 }
 
-export async function sendResendEmail(options: { to: string; subject: string; html: string; attachments?: ResendAttachment[] }): Promise<void> {
+/**
+ * Returns Resend's own id for the message, so a caller can record it in
+ * email_messages and have the delivery webhook find the row again. Callers
+ * that only care whether it threw can keep ignoring the return.
+ */
+export async function sendResendEmail(options: { to: string; subject: string; html: string; attachments?: ResendAttachment[] }): Promise<{ id: string | null }> {
   const config = useRuntimeConfig()
   if (!config.resendApiKey) {
     throw createError({ statusCode: 500, statusMessage: 'Email sending is not configured (missing RESEND_API_KEY)' })
@@ -35,5 +40,14 @@ export async function sendResendEmail(options: { to: string; subject: string; ht
   if (!response.ok) {
     const body = await response.text()
     throw createError({ statusCode: 502, statusMessage: `Resend error: ${body}` })
+  }
+
+  // The id is useful, not essential: the mail has already gone by here, so a
+  // body that will not parse must not turn a successful send into a failure.
+  try {
+    const body = (await response.json()) as { id?: string }
+    return { id: body?.id ?? null }
+  } catch {
+    return { id: null }
   }
 }

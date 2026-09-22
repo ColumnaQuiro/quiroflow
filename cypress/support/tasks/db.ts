@@ -1450,7 +1450,7 @@ async function setWhatsappPhoneNumberId(opts: { accountId: string; phoneNumberId
 async function leadsByExternalId(opts: { accountId: string; externalSource: string }) {
   const { data } = await admin
     .from('leads')
-    .select('id, full_name, channel, source, stage, external_id, external_source')
+    .select('id, full_name, channel, source, stage, external_id, external_source, phone, marketing_consent_at')
     .eq('account_id', opts.accountId)
     .eq('external_source', opts.externalSource)
     .is('deleted_at', null)

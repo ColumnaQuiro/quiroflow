@@ -39,11 +39,16 @@ interface MetaMessage {
   sticker?: MetaMedia
 }
 import type { InstagramMessagingEvent } from '~/server/utils/instagramWebhook'
+import { leadForWhatsAppSender } from '~/server/utils/whatsappLeads'
 
 interface MetaChangeValue {
   metadata?: { phone_number_id: string }
   statuses?: MetaStatus[]
   messages?: MetaMessage[]
+  // Sent alongside an inbound message, and the only name we will ever get for
+  // a stranger -- there is no profile endpoint to ask afterwards the way
+  // Instagram has one.
+  contacts?: { wa_id: string; profile?: { name?: string } }[]
 }
 
 const MEDIA_KINDS: MediaKind[] = ['image', 'video', 'audio', 'document', 'sticker']
@@ -368,10 +373,22 @@ export default defineEventHandler(async (event) => {
           .eq('wamid', status.id)
       }
 
+      // Keyed by wa_id, because a batch can carry messages from more than one
+      // sender and the names must not be crossed over.
+      const profileNames = new Map((value?.contacts ?? []).map((c) => [c.wa_id, c.profile?.name?.trim() || null]))
+
       for (const msg of value?.messages ?? []) {
         const patientIds = await findPatientIdsByPhone(supabase, account.id, msg.from)
         const patientId = patientIds[0] ?? null
-        const leadId = patientId ? null : await findLeadIdByPhone(supabase, account.id, msg.from)
+        // Three ways to belong to somebody, in descending confidence: a
+        // patient, a lead already on the board, or nobody -- which used to
+        // mean the message attached to nothing and the person who sent it
+        // was never recorded as having asked. That last case now creates the
+        // lead, the way an Instagram DM already does.
+        const leadId = patientId
+          ? null
+          : ((await findLeadIdByPhone(supabase, account.id, msg.from))
+            ?? (await leadForWhatsAppSender(supabase, account.id, msg.from, profileNames.get(msg.from) ?? null)))
         const mediaKind = MEDIA_KINDS.includes(msg.type as MediaKind) ? (msg.type as MediaKind) : null
         const media = mediaKind ? msg[mediaKind] : undefined
 

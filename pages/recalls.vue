@@ -578,7 +578,7 @@ async function exportCsv() {
 
       <!-- Table card -->
       <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
-        <div v-if="selectedIds.size > 0" class="flex h-11 items-center gap-4 border-b border-chip-border bg-[#F7F7FE] px-4">
+        <div v-if="selectedIds.size > 0" class="flex h-11 items-center gap-4 border-b border-chip-border bg-brand-tintDeep px-4">
           <span class="text-[13px] font-semibold text-brand-text">{{ selectedIds.size }} {{ t('selected', 'seleccionados') }}</span>
           <span class="h-4 w-px bg-line-control"></span>
           <button type="button" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover" @click="bulkWhatsAppOpen = true">

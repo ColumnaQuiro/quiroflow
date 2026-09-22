@@ -392,6 +392,14 @@ const ledgerPackageSessions = ref<{ id: string; amount_cents: number; used_at: s
 // waiting on whichever of the ~8 queries loadAll() used to fire together is
 // slowest before showing anything at all.
 const ledgerLoading = ref(true)
+// Set when any of the ledger's own queries came back with an error. Without
+// it a failed load is indistinguishable from a patient who has never been
+// charged: every one of those queries used to be coalesced with `?? []`, so
+// PostgREST refusing the whole select -- a column the deployed code names and
+// the database does not have, a policy that denies the row -- rendered as
+// "No transactions yet" over a patient with money on their account. See
+// loadLedger().
+const ledgerError = ref('')
 const packagesLoading = ref(true)
 const membershipsLoading = ref(true)
 
@@ -541,13 +549,14 @@ async function recordPackagePayment(
 // round-trip) -- that part of the original optimization is unchanged.
 async function loadLedger() {
   ledgerLoading.value = true
+  ledgerError.value = ''
   // payments and account_credits used to be fetched by AccountLedger.vue
   // itself, only after this loader finished and swapped that component in --
   // a second serial round trip on every single tab open, even for a patient
   // with nothing to show. Both filter through the same embedded !inner join
   // as invoice_line_items (payments has no patient_id of its own) so they
   // can join this same parallel wave instead.
-  const [{ data: inv }, { data: lines }, { data: pays }, { data: creds }] = await Promise.all([
+  const [inv, lines, pays, creds] = await Promise.all([
     supabase
       .from('invoices')
       .select('id, invoice_number, status, total_cents, created_at, is_refund, refunds_invoice_id, refunds_payment_id')
@@ -576,21 +585,39 @@ async function loadLedger() {
       .eq('patient_id', props.patientId)
       .order('created_at', { ascending: true }),
   ])
-  invoices.value = inv ?? []
-  const byInvoice: Record<string, string[]> = {}
-  for (const l of (lines ?? []) as unknown as { invoice_id: string; description: string }[]) {
-    ;(byInvoice[l.invoice_id] ??= []).push(l.description)
-  }
-  lineItemDescriptions.value = byInvoice
-  ledgerPayments.value = (pays ?? []) as unknown as LedgerPaymentRow[]
-  ledgerCredits.value = creds ?? []
-
-  const { data: sessions } = await supabase
+  const sessions = await supabase
     .from('package_sessions')
     .select('id, amount_cents, used_at, package_purchases(package_name)')
     .eq('patient_id', props.patientId)
     .order('used_at', { ascending: true })
-  ledgerPackageSessions.value = ((sessions ?? []) as unknown as { id: string; amount_cents: number; used_at: string; package_purchases: { package_name: string } | null }[]).map((r) => ({
+
+  // Every one of these used to be read as `data ?? []`, which throws the
+  // error away and leaves an empty array that reads exactly like a patient
+  // with nothing on their account. That is the wrong default for money: the
+  // invoices query alone failing (because the code named
+  // invoices.refunds_payment_id against a database that did not have that
+  // column yet) dropped every CHARGE from the ledger while the payments
+  // against those charges still rendered, and the running balance was
+  // recomputed from what was left -- a confident, wrong figure with nothing
+  // on screen to say a query had failed. A ledger missing a row is worse
+  // than a ledger that admits it could not load, so one failure fails all
+  // five rather than rendering the rest.
+  const failed = [inv, lines, pays, creds, sessions].find((r) => r.error)
+  if (failed) {
+    ledgerError.value = failed.error!.message
+    ledgerLoading.value = false
+    return
+  }
+
+  invoices.value = inv.data ?? []
+  const byInvoice: Record<string, string[]> = {}
+  for (const l of (lines.data ?? []) as unknown as { invoice_id: string; description: string }[]) {
+    ;(byInvoice[l.invoice_id] ??= []).push(l.description)
+  }
+  lineItemDescriptions.value = byInvoice
+  ledgerPayments.value = (pays.data ?? []) as unknown as LedgerPaymentRow[]
+  ledgerCredits.value = creds.data ?? []
+  ledgerPackageSessions.value = ((sessions.data ?? []) as unknown as { id: string; amount_cents: number; used_at: string; package_purchases: { package_name: string } | null }[]).map((r) => ({
     id: r.id,
     amount_cents: r.amount_cents,
     used_at: r.used_at,
@@ -1198,8 +1225,11 @@ function packageRemainingValueCents(purchase: PackagePurchaseRow): number {
 // bonos carrying no sale invoice the other two were reporting almost nothing.
 function packageOwedCents(purchase: PackagePurchaseRow): number {
   // The bono card and the ledger load independently -- reading payments
-  // before that loader lands would flash the full price as unpaid.
-  if (ledgerLoading.value) return 0
+  // before that loader lands would flash the full price as unpaid. A ledger
+  // that FAILED to load is the same state and has to be treated the same
+  // way: ledgerPayments is empty for the same reason, and the flash would
+  // simply never end.
+  if (ledgerLoading.value || ledgerError.value) return 0
   return bonoOwedCents({
     purchaseId: purchase.id,
     invoiceId: purchase.invoice_id,
@@ -2021,6 +2051,19 @@ function money(cents: number) {
           <UiSkeleton class="h-3.5 flex-1 rounded" />
           <UiSkeleton class="h-3.5 w-20 rounded" />
         </div>
+      </div>
+    </div>
+    <!-- A failed load is shown as a failure, never as an empty ledger: see
+         loadLedger(). Retry rather than a reload, because the rest of the tab
+         is fine and loadAll() is what has to run again. -->
+    <div v-else-if="ledgerError" class="rounded-card border border-line bg-surface shadow-card">
+      <div class="flex items-center justify-between border-b border-line-divider px-4 py-3">
+        <h3 class="text-[13px] font-semibold text-ink-700">{{ t('Account Ledger', 'Extracto de cuenta') }}</h3>
+      </div>
+      <div class="p-8 text-center">
+        <p class="text-[13px] text-danger-text">{{ t("Couldn't load this patient's transactions.", 'No se pudieron cargar las transacciones de este paciente.') }}</p>
+        <p class="mt-1 font-mono text-[11.5px] text-ink-faint">{{ ledgerError }}</p>
+        <UiBtn variant="secondary" size="sm" class="mt-3" @click="loadAll()">{{ t('Try again', 'Reintentar') }}</UiBtn>
       </div>
     </div>
     <PatientsAccountLedger

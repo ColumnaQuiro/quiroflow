@@ -626,10 +626,10 @@ function tagClass(tag: string) {
                     <span class="sr-only">{{ sortDir === 'asc' ? t('sorted A to Z', 'orden de A a Z') : t('sorted Z to A', 'orden de Z a A') }}</span>
                   </button>
                 </th>
-                <th scope="col" class="w-[150px] px-3 py-2.5 text-left">{{ t('Phone', 'Teléfono') }}</th>
+                <th scope="col" class="w-[175px] px-3 py-2.5 text-left">{{ t('Contact', 'Contacto') }}</th>
                 <th scope="col" class="w-[120px] px-3 py-2.5 text-left">{{ t('Last visit', 'Última visita') }}</th>
                 <th scope="col" class="w-[150px] px-3 py-2.5 text-left">{{ t('Next visit', 'Próxima visita') }}</th>
-                <th scope="col" class="w-[180px] px-3 py-2.5 text-left">{{ t('Care plan', 'Plan de tratamiento') }}</th>
+                <th scope="col" class="w-[165px] px-3 py-2.5 text-left">{{ t('Care plan', 'Plan de tratamiento') }}</th>
                 <th scope="col" class="hidden w-[130px] px-3 py-2.5 text-left xl:table-cell">{{ t('Tags', 'Etiquetas') }}</th>
                 <th scope="col" class="w-[120px] px-3 py-2.5 text-right">{{ t('Balance', 'Saldo') }}</th>
                 <th scope="col" class="w-[48px] px-3 py-2.5"><span class="sr-only">{{ t('Actions', 'Acciones') }}</span></th>
@@ -694,9 +694,13 @@ function tagClass(tag: string) {
                   </div>
                 </td>
 
-                <!-- A missing number is not an empty cell: it is the reason a
-                reminder will never arrive, so it says so. -->
+                <!-- How this patient can actually be reached. A missing
+                number is not an empty cell: it is the reason a reminder will
+                never arrive, so it says so. The two chips are the channels
+                that are switched ON -- WhatsApp consent on the number, and
+                whether invoices go out by email. -->
                 <td class="px-3 py-2.5">
+                  <div class="flex flex-wrap items-center gap-1.5">
                   <span v-if="primaryPhoneByPatient[patient.id]" class="inline-flex items-center gap-1.5">
                     <span class="font-mono text-[12.5px] text-ink-700">{{ primaryPhoneByPatient[patient.id] }}</span>
                     <span
@@ -713,6 +717,12 @@ function tagClass(tag: string) {
                     </svg>
                     {{ t('No phone', 'Sin teléfono') }}
                   </span>
+                  <span
+                    v-if="patient.invoice_email_enabled"
+                    class="rounded-pill bg-brand-tint px-1.5 py-0.5 text-[10px] font-[600] text-brand-text2"
+                    :title="t('Invoices are emailed to this patient', 'Las facturas se envían por correo')"
+                  >{{ t('Email', 'Correo') }}</span>
+                  </div>
                 </td>
 
                 <td class="px-3 py-2.5">

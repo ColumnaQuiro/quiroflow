@@ -53,6 +53,7 @@ describe('Filtering the patient list', () => {
         firstName: 'Tomas',
         lastName: 'Contelefono',
         phone: '600333444',
+        invoiceEmailEnabled: true,
       })
 
       cy.login(account.email, account.password)
@@ -62,6 +63,11 @@ describe('Filtering the patient list', () => {
       // reminder will never reach them, so it is stated.
       cy.contains('tr', 'Paca Sinnumero').should('contain.text', 'No phone')
       cy.contains('tr', 'Tomas Contelefono').should('contain.text', '600')
+
+      // Whether invoices go out by email is the other half of "can we reach
+      // this person", and it rides in the same cell. It was briefly lost when
+      // the separate Comms column went away.
+      cy.contains('tr', 'Tomas Contelefono').should('contain.text', 'Email')
     })
   })
 

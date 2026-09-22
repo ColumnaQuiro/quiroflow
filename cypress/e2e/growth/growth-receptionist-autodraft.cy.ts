@@ -42,7 +42,7 @@ describe('Who the receptionist drafts for without being asked', () => {
   /** A lead the AI is handling, who has written and not been answered. */
   function waitingLead(name: string, opts: { inboundMinutesAgo?: number } = {}) {
     return cy
-      .task('db:createLead', { accountId: account.accountId, fullName: name, stage: 'contacted', phone: '+34622471900', source: 'Meta Ads' })
+      .task('db:createLead', { accountId: account.accountId, fullName: name, stage: 'contacted', phone: '+34600444902', source: 'Meta Ads' })
       .then((lead) => {
         const leadId = (lead as { id: string }).id
         cy.task('db:createLeadMessage', {

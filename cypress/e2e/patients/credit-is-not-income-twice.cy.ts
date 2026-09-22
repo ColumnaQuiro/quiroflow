@@ -5,7 +5,7 @@
 // SECOND payment, method 'credit', against whatever it settled. Both are real
 // rows and both are right; only one of them is income.
 //
-// Every income figure summed both. Adrian Oropeza handed over €115 in cash on
+// Every income figure summed both. Alonso Varela handed over €115 in cash on
 // 16 Sep 2026 and it was applied to his bono an hour later, so September read
 // €230 for it -- and a payment method called "credit" appeared in the
 // by-method chart beside Efectivo and Tarjeta, which is how it was spotted:
@@ -26,7 +26,7 @@ describe('Credit spent is not counted as income', () => {
 
   it('counts the cash once, not the cash and the credit it became', () => {
     cy.seedStaffAccount().then((account) => {
-      seedPatient(account, 'Adrian').then((patient: any) => {
+      seedPatient(account, 'Alonso').then((patient: any) => {
         // The money arriving.
         cy.task('db:createPayment', {
           accountId: account.accountId,

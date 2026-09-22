@@ -14,19 +14,19 @@ import { findMisreferencedPatients } from '../../../utils/practicehubReferences'
 // PracticeHub connection and the logic is the part worth pinning down.
 describe('Spotting patients stored under the wrong PracticeHub reference', () => {
   const phPatients = [
-    { patient_number: '202400007', custom_reference: 'Y7980067R' },
-    { patient_number: '202400001', custom_reference: '44507825L' },
-    { patient_number: '202400098', custom_reference: '2981208409992' },
+    { patient_number: '202400007', custom_reference: 'X4188023T' },
+    { patient_number: '202400001', custom_reference: '21874390K' },
+    { patient_number: '202400098', custom_reference: '3067412558801' },
     { patient_number: '202400500', custom_reference: null },
   ]
 
   it('names a patient keyed by their DNI, and says what it should be', () => {
     const found = findMisreferencedPatients(phPatients, [
-      { external_reference: 'Y7980067R', first_name: 'Ivanna', last_name: 'Acosta' },
+      { external_reference: 'X4188023T', first_name: 'Rocio', last_name: 'Zabala' },
     ])
     expect(found).to.have.length(1)
-    expect(found[0].name).to.eq('Ivanna Acosta')
-    expect(found[0].stored).to.eq('Y7980067R')
+    expect(found[0].name).to.eq('Rocio Zabala')
+    expect(found[0].stored).to.eq('X4188023T')
     expect(found[0].shouldBe).to.eq('202400007')
   })
 
@@ -35,7 +35,7 @@ describe('Spotting patients stored under the wrong PracticeHub reference', () =>
     // the case that makes comparing against PracticeHub's own value -- rather
     // than guessing from the shape -- the only approach that works.
     const found = findMisreferencedPatients(phPatients, [
-      { external_reference: '2981208409992', first_name: 'Christina Rosalee', last_name: 'Hui' },
+      { external_reference: '3067412558801', first_name: 'Mariela Noemi', last_name: 'Prats' },
     ])
     expect(found).to.have.length(1)
     expect(found[0].shouldBe).to.eq('202400098')
@@ -43,7 +43,7 @@ describe('Spotting patients stored under the wrong PracticeHub reference', () =>
 
   it('leaves correctly stored patients alone', () => {
     const found = findMisreferencedPatients(phPatients, [
-      { external_reference: '202400007', first_name: 'Ivanna', last_name: 'Acosta' },
+      { external_reference: '202400007', first_name: 'Rocio', last_name: 'Zabala' },
       { external_reference: '202400500', first_name: 'Ana', last_name: null },
     ])
     expect(found).to.have.length(0)
@@ -60,7 +60,7 @@ describe('Spotting patients stored under the wrong PracticeHub reference', () =>
   })
 
   it('ignores patients with no reference at all', () => {
-    // Created in QuiroFlow, never in PracticeHub -- Jordana's patients.
+    // Created in QuiroFlow, never in PracticeHub -- Beatriz's patients.
     const found = findMisreferencedPatients(phPatients, [
       { external_reference: null, first_name: 'Native', last_name: 'Patient' },
     ])

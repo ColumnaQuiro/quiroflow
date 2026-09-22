@@ -215,6 +215,9 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
         <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" class="h-3.5 w-3.5 shrink-0 text-ink-faint">
           <path d="M5.2 2.8 6.6 5.4 5.3 6.7a7.6 7.6 0 0 0 4 4l1.3-1.3 2.6 1.4-.5 2.2c-4.6.6-8.9-3.7-8.3-8.3z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />
         </svg>
+        <!-- The flag was on the old rail's number and is worth keeping: a
+             multi-country clinic reads it before the dial code. -->
+        <span aria-hidden="true">{{ countryByCode(primaryNumber!.country_code).flag }}</span>
         <span class="font-mono text-[12.5px] text-ink-500">{{ phone }}</span>
         <button
           type="button"

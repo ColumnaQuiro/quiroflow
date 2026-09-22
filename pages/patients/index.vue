@@ -17,6 +17,7 @@ type Patient = Pick<
   | 'status'
   | 'is_minor'
   | 'do_not_contact'
+  | 'date_of_birth'
 >
 
 const supabase = useSupabaseClient()
@@ -24,24 +25,40 @@ const store = useAccountStore()
 const t = useT()
 
 const PAGE_SIZE = 50
+/** A uuid nothing can match, so "no results" stays an empty page not every page. */
+const NO_MATCH_ID = '00000000-0000-0000-0000-000000000000'
 
 interface TeamMemberOption { id: string; full_name: string }
 interface CarePlanInfo { name: string; totalVisits: number; completed: number }
 
 const search = ref('')
-// Two stateful filter chips from the design. "Outstanding balance" filters
-// on the live-computed patient_live_balances view, not a stored column --
-// see loadPatients()/exportCsv() below.
-const outstandingBalanceFilter = ref(false)
-const carePlanFilter = ref(false)
+// Balance filters on the live-computed patient_live_balances view, not on a
+// stored column -- see loadPatients()/exportCsv() below.
+const balanceFilter = ref<'any' | 'owing' | 'credit'>('any')
+// Only two options, deliberately. "Not on a care plan" would need a NOT
+// EXISTS the reverse embed cannot express, and faking it by listing every
+// patient who HAS a plan and excluding those ids sends an id list that grows
+// with the clinic -- correct at 200 patients, a 40KB query string at 3000.
+const carePlanFilter = ref<'any' | 'on'>('any')
 const missingContact = ref<'any' | 'email' | 'phone'>('any')
 const practitionerFilter = ref('')
 const statusFilter = ref<'active' | 'inactive' | 'any'>('active')
+// Two toggles rather than dropdown values: they are the states a receptionist
+// scans FOR, not dimensions they slice by.
+const doNotContactFilter = ref(false)
+const minorsFilter = ref(false)
+// Name only. Last visit, next visit and balance are assembled per page from
+// separate queries, so sorting on them would order the fifty rows already
+// fetched and silently claim to have ordered all three thousand -- which
+// looks right and is wrong. They get no sort control until the ordering can
+// happen in the database.
+const sortDir = ref<'asc' | 'desc'>('asc')
 const exporting = ref(false)
 const showAddPatient = ref(false)
 const patients = ref<Patient[]>([])
 const balanceByPatient = ref<Record<string, number>>({})
 const nextAppointmentByPatient = ref<Record<string, string>>({})
+const lastVisitByPatient = ref<Record<string, string>>({})
 const carePlanByPatient = ref<Record<string, CarePlanInfo>>({})
 const whatsappConsentByPatient = ref<Record<string, boolean>>({})
 const primaryPhoneByPatient = ref<Record<string, string>>({})
@@ -68,8 +85,8 @@ async function loadPatients() {
   // patients with at least one care_plans row without duplicating the
   // patient row per plan (PostgREST nests the match, it doesn't join-fan-out).
   const selectCols =
-    'id, first_name, last_name, tags, clinic_id, email, default_practitioner_id, invoice_email_enabled, status, is_minor, do_not_contact' +
-    (carePlanFilter.value ? ', care_plans!inner(id)' : '')
+    'id, first_name, last_name, tags, clinic_id, email, default_practitioner_id, invoice_email_enabled, status, is_minor, do_not_contact, date_of_birth' +
+    (carePlanFilter.value === 'on' ? ', care_plans!inner(id)' : '')
 
   let query = supabase.from('patients').select(selectCols, { count: 'exact' })
 
@@ -77,15 +94,16 @@ async function loadPatients() {
   // balance_cents lives on a live-computed view (patient_live_balances), not
   // a column on patients -- narrow to matching ids first, same trick already
   // used below for the single-token phone search.
-  if (outstandingBalanceFilter.value) {
-    const { data: owing } = await supabase.from('patient_live_balances').select('patient_id').lt('balance_cents', 0)
-    const owingIds = (owing ?? []).map((r) => r.patient_id!)
-    query = query.in('id', owingIds.length > 0 ? owingIds : ['00000000-0000-0000-0000-000000000000'])
+  if (balanceFilter.value !== 'any') {
+    const ids = await balanceMatchIds(balanceFilter.value)
+    query = query.in('id', ids.length > 0 ? ids : [NO_MATCH_ID])
   }
   if (missingContact.value === 'email') query = query.or('email.is.null,email.eq.')
   if (missingContact.value === 'phone') query = query.eq('has_phone', false)
   if (practitionerFilter.value) query = query.eq('default_practitioner_id', practitionerFilter.value)
   if (statusFilter.value !== 'any') query = query.eq('status', statusFilter.value)
+  if (doNotContactFilter.value) query = query.eq('do_not_contact', true)
+  if (minorsFilter.value) query = query.eq('is_minor', true)
 
   // Each word must match somewhere in first/last name/email/phone -- chaining
   // .or() calls ANDs the groups together, so "john 612" matches a John whose
@@ -102,12 +120,15 @@ async function loadPatients() {
       .ilike('number', `%${token}%`)
     const phoneIds = [...new Set((phoneMatches ?? []).map((m) => m.patient_id))]
     const idClause = phoneIds.length > 0 ? `,id.in.(${phoneIds.join(',')})` : ''
-    query = query.or(`search_name.ilike.%${normalizeSearchTerm(token)}%,email.ilike.%${token}%${idClause}`)
+    query = query.or(
+      `search_name.ilike.%${normalizeSearchTerm(token)}%,email.ilike.%${token}%,national_id.ilike.%${token}%${idClause}`,
+    )
   }
 
   const from = (page.value - 1) * PAGE_SIZE
   const to = from + PAGE_SIZE - 1
-  const { data, count } = await query.order('first_name').range(from, to)
+  const ascending = sortDir.value === 'asc'
+  const { data, count } = await query.order('first_name', { ascending }).order('last_name', { ascending }).range(from, to)
 
   // selectCols is built dynamically (it grows a `care_plans!inner(...)` embed
   // when the "On a care plan" chip is active), so supabase-js can't map it to
@@ -132,7 +153,15 @@ async function loadPatients() {
         .select('patient_id, name, total_visits, created_at')
         .in('patient_id', ids)
         .order('created_at', { ascending: false }),
-      supabase.from('appointments').select('patient_id').eq('status', 'completed').in('patient_id', ids),
+      // starts_at as well as the id: the same rows give both the completed
+      // count the care-plan progress needs and the date of the last visit,
+      // so the new column costs no extra request.
+      supabase
+        .from('appointments')
+        .select('patient_id, starts_at')
+        .eq('status', 'completed')
+        .in('patient_id', ids)
+        .order('starts_at', { ascending: false }),
       supabase
         .from('patient_contact_numbers')
         .select('patient_id, number, country_code, is_whatsapp')
@@ -152,9 +181,13 @@ async function loadPatients() {
     nextAppointmentByPatient.value = nextByPatient
 
     const completedByPatient: Record<string, number> = {}
+    const lastByPatient: Record<string, string> = {}
     for (const a of completedAppts ?? []) {
       completedByPatient[a.patient_id] = (completedByPatient[a.patient_id] ?? 0) + 1
+      // Ordered newest first above, so the first one seen per patient is it.
+      if (!lastByPatient[a.patient_id]) lastByPatient[a.patient_id] = a.starts_at
     }
+    lastVisitByPatient.value = lastByPatient
     const planByPatient: Record<string, CarePlanInfo> = {}
     for (const p of plans ?? []) {
       if (!planByPatient[p.patient_id]) {
@@ -173,6 +206,7 @@ async function loadPatients() {
     primaryPhoneByPatient.value = phoneByPatient
   } else {
     nextAppointmentByPatient.value = {}
+    lastVisitByPatient.value = {}
     carePlanByPatient.value = {}
     whatsappConsentByPatient.value = {}
     primaryPhoneByPatient.value = {}
@@ -193,7 +227,10 @@ watch(search, () => {
   clearTimeout(searchDebounce)
   searchDebounce = setTimeout(() => goToPage(1), 300)
 })
-watch([outstandingBalanceFilter, carePlanFilter, missingContact, practitionerFilter, statusFilter], () => goToPage(1))
+watch(
+  [balanceFilter, carePlanFilter, missingContact, practitionerFilter, statusFilter, doNotContactFilter, minorsFilter, sortDir],
+  () => goToPage(1),
+)
 // The clinic switcher (AppSidebar.vue) can now change store.currentClinicId
 // mid-session for a multi-location account -- same reload-on-change pattern
 // calendar.vue and practitioner.vue already use for their own clinic-scoped
@@ -210,6 +247,17 @@ function csvEscape(v: string) {
 // patient_live_balances has no filters of its own to page against --
 // chunking a plain .in() keeps each request's id list a sane size rather
 // than sending a single query with 1000+ ids.
+/**
+ * The ids matching a balance filter. Shared by the table and the CSV so an
+ * export cannot disagree with what is on screen -- they used to hold two
+ * copies of the `.lt('balance_cents', 0)` query.
+ */
+async function balanceMatchIds(filter: 'owing' | 'credit'): Promise<string[]> {
+  const query = supabase.from('patient_live_balances').select('patient_id')
+  const { data } = await (filter === 'owing' ? query.lt('balance_cents', 0) : query.gt('balance_cents', 0))
+  return (data ?? []).map((r) => r.patient_id!)
+}
+
 async function fetchBalances(ids: string[]): Promise<Record<string, number>> {
   const result: Record<string, number> = {}
   const CHUNK = 300
@@ -230,13 +278,10 @@ async function exportCsv() {
   exporting.value = true
   try {
     const selectCols =
-      'id, first_name, last_name, tags, email, status, is_minor, do_not_contact' + (carePlanFilter.value ? ', care_plans!inner(id)' : '')
+      'id, first_name, last_name, tags, email, status, is_minor, do_not_contact' +
+      (carePlanFilter.value === 'on' ? ', care_plans!inner(id)' : '')
 
-    let owingIds: string[] | null = null
-    if (outstandingBalanceFilter.value) {
-      const { data: owing } = await supabase.from('patient_live_balances').select('patient_id').lt('balance_cents', 0)
-      owingIds = (owing ?? []).map((r) => r.patient_id!)
-    }
+    const balanceIds = balanceFilter.value === 'any' ? null : await balanceMatchIds(balanceFilter.value)
 
     // Computed once (not per page) -- same phone-lookup-per-token approach
     // as loadPatients() above, so an exported CSV matches what's on screen.
@@ -252,13 +297,15 @@ async function exportCsv() {
     const rows = await fetchAllRows<Patient & { tags: string[] }>((from, to) => {
       let q = supabase.from('patients').select(selectCols) as any
       if (store.currentClinicId) q = q.eq('clinic_id', store.currentClinicId)
-      if (owingIds) q = q.in('id', owingIds.length > 0 ? owingIds : ['00000000-0000-0000-0000-000000000000'])
+      if (balanceIds) q = q.in('id', balanceIds.length > 0 ? balanceIds : [NO_MATCH_ID])
       if (missingContact.value === 'email') q = q.or('email.is.null,email.eq.')
       if (missingContact.value === 'phone') q = q.eq('has_phone', false)
       if (practitionerFilter.value) q = q.eq('default_practitioner_id', practitionerFilter.value)
       if (statusFilter.value !== 'any') q = q.eq('status', statusFilter.value)
+      if (doNotContactFilter.value) q = q.eq('do_not_contact', true)
+      if (minorsFilter.value) q = q.eq('is_minor', true)
       for (const { token, idClause } of tokenIdClauses) {
-        q = q.or(`search_name.ilike.%${normalizeSearchTerm(token)}%,email.ilike.%${token}%${idClause}`)
+        q = q.or(`search_name.ilike.%${normalizeSearchTerm(token)}%,email.ilike.%${token}%,national_id.ilike.%${token}%${idClause}`)
       }
       return q.order('first_name').range(from, to)
     })
@@ -307,11 +354,92 @@ function initials(p: Patient) {
   return (a + b).toUpperCase() || '?'
 }
 
+/** "34 · Clínica Centro · Dr. Ruiz" -- whichever of the three are known. */
+function secondaryLine(patient: Patient) {
+  const parts: string[] = []
+  if (patient.date_of_birth) {
+    const dob = new Date(patient.date_of_birth)
+    const now = new Date()
+    let years = now.getFullYear() - dob.getFullYear()
+    const m = now.getMonth() - dob.getMonth()
+    if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) years--
+    parts.push(String(years))
+  }
+  const clinic = store.clinics.find((c) => c.id === patient.clinic_id)?.name
+  if (clinic) parts.push(clinic)
+  const practitioner = teamMembers.value.find((m) => m.id === patient.default_practitioner_id)?.full_name
+  if (practitioner) parts.push(practitioner)
+  return parts.join(' · ')
+}
+
+function lastVisitText(patientId: string) {
+  const iso = lastVisitByPatient.value[patientId]
+  if (!iso) return null
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+// Every active filter, as something that can be read and individually undone.
+// Without this a filtered list and an empty one look the same, and the usual
+// answer -- reload the page -- loses the search too.
+interface ActiveFilter { key: string; label: string; clear: () => void }
+const activeFilters = computed<ActiveFilter[]>(() => {
+  const out: ActiveFilter[] = []
+  if (search.value.trim()) {
+    out.push({ key: 'search', label: `"${search.value.trim()}"`, clear: () => (search.value = '') })
+  }
+  if (statusFilter.value !== 'active') {
+    const label = statusFilter.value === 'inactive' ? t('Inactive', 'Inactivo') : t('Any status', 'Cualquier estado')
+    out.push({ key: 'status', label, clear: () => (statusFilter.value = 'active') })
+  }
+  if (balanceFilter.value !== 'any') {
+    const label = balanceFilter.value === 'owing' ? t('Owing', 'Con deuda') : t('In credit', 'A favor')
+    out.push({ key: 'balance', label, clear: () => (balanceFilter.value = 'any') })
+  }
+  if (carePlanFilter.value === 'on') {
+    out.push({ key: 'plan', label: t('On a care plan', 'Con plan de tratamiento'), clear: () => (carePlanFilter.value = 'any') })
+  }
+  if (missingContact.value !== 'any') {
+    const label = missingContact.value === 'email' ? t('Missing email', 'Sin correo') : t('Missing phone', 'Sin teléfono')
+    out.push({ key: 'contact', label, clear: () => (missingContact.value = 'any') })
+  }
+  if (practitionerFilter.value) {
+    const name = teamMembers.value.find((m) => m.id === practitionerFilter.value)?.full_name ?? t('Practitioner', 'Profesional')
+    out.push({ key: 'practitioner', label: name, clear: () => (practitionerFilter.value = '') })
+  }
+  if (doNotContactFilter.value) {
+    out.push({ key: 'dnc', label: t('Do not contact', 'No contactar'), clear: () => (doNotContactFilter.value = false) })
+  }
+  if (minorsFilter.value) {
+    out.push({ key: 'minors', label: t('Minors', 'Menores'), clear: () => (minorsFilter.value = false) })
+  }
+  return out
+})
+
+// The row has been clickable since before the name was a link, and staff
+// still aim at the middle of it. A click that landed on a control inside the
+// row is that control's, though -- otherwise opening the menu also navigated.
+function onRowClick(event: MouseEvent, patientId: string) {
+  const target = event.target as HTMLElement | null
+  if (target?.closest('a, button, input, select')) return
+  navigateTo(`/patients/${patientId}`)
+}
+
+function clearAllFilters() {
+  search.value = ''
+  statusFilter.value = 'active'
+  balanceFilter.value = 'any'
+  carePlanFilter.value = 'any'
+  missingContact.value = 'any'
+  practitionerFilter.value = ''
+  doNotContactFilter.value = false
+  minorsFilter.value = false
+}
+
 function balancePill(cents: number) {
   const amount = formatEur(Math.abs(cents))
   if (cents < 0) return { text: `${amount} ${t('due', 'pendiente')}`, class: 'bg-danger-bg text-danger-text' }
   if (cents > 0) return { text: `${amount} ${t('cr', 'a favor')}`, class: 'bg-success-bg text-success-text' }
-  return { text: '€0.00', class: 'bg-chip-bg2 text-ink-muted2' }
+  return { text: formatEur(0), class: 'bg-chip-bg2 text-ink-muted2' }
 }
 
 function startOfDay(d: Date) {
@@ -368,216 +496,290 @@ function tagClass(tag: string) {
     />
 
     <div class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6">
-      <!-- Filter bar -->
+      <!-- Toolbar. Search and the four dimensions you slice by, then the two
+      states you scan for. -->
       <div class="flex flex-wrap items-center gap-2">
         <div class="relative w-[250px]">
-          <svg width="13" height="13" viewBox="0 0 14 14" class="pointer-events-none absolute left-[10px] top-1/2 -translate-y-1/2 text-ink-faint">
+          <svg width="13" height="13" viewBox="0 0 14 14" aria-hidden="true" class="pointer-events-none absolute left-[10px] top-1/2 -translate-y-1/2 text-ink-faint">
             <circle cx="6" cy="6" r="4.2" stroke="currentColor" stroke-width="1.4" fill="none" />
-            <line x1="9.2" y1="9.2" x2="12" y2="12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+            <path d="M9.2 9.2L12 12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
           </svg>
           <input
             v-model="search"
             type="search"
-            :placeholder="t('Name, phone or email', 'Nombre, teléfono o correo')"
+            :aria-label="t('Search patients', 'Buscar pacientes')"
+            :placeholder="t('Name, phone, email or ID', 'Nombre, teléfono, correo o DNI')"
             class="h-8 w-full rounded-ctl border border-line-control bg-surface pl-[30px] pr-3 text-[13px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           />
         </div>
 
+        <PatientsFilterSelect v-model="statusFilter" :label="t('Status', 'Estado')" :options="[
+          { value: 'active', label: t('Active', 'Activo') },
+          { value: 'inactive', label: t('Inactive', 'Inactivo') },
+          { value: 'any', label: t('Any status', 'Cualquier estado') },
+        ]" />
+
+        <PatientsFilterSelect v-model="carePlanFilter" :label="t('Care plan', 'Plan')" :options="[
+          { value: 'any', label: t('Care plan: any', 'Plan: cualquiera') },
+          { value: 'on', label: t('On a care plan', 'Con plan de tratamiento') },
+        ]" />
+
+        <PatientsFilterSelect v-model="balanceFilter" :label="t('Balance', 'Saldo')" :options="[
+          { value: 'any', label: t('Balance: any', 'Saldo: cualquiera') },
+          { value: 'owing', label: t('Owing', 'Con deuda') },
+          { value: 'credit', label: t('In credit', 'A favor') },
+        ]" />
+
+        <PatientsFilterSelect v-model="missingContact" :label="t('Missing contact', 'Sin contacto')" :options="[
+          { value: 'any', label: t('Missing contact', 'Sin contacto') },
+          { value: 'email', label: t('Missing email', 'Sin correo electrónico') },
+          { value: 'phone', label: t('Missing phone', 'Sin teléfono') },
+        ]" />
+
+        <PatientsFilterSelect v-model="practitionerFilter" :label="t('Practitioner', 'Profesional')" :options="[
+          { value: '', label: t('Practitioner', 'Profesional') },
+          ...teamMembers.map((m) => ({ value: m.id, label: m.full_name })),
+        ]" />
+
+        <div aria-hidden="true" class="h-[22px] w-px bg-line" />
+
         <button
           type="button"
-          class="flex h-8 items-center gap-1.5 rounded-pill border px-2.5 text-[12.5px] font-medium"
+          :aria-pressed="doNotContactFilter"
+          class="flex h-8 items-center gap-1.5 rounded-pill border px-2.5 text-[12.5px] font-medium outline-none focus-visible:shadow-focus"
           :class="
-            outstandingBalanceFilter
+            doNotContactFilter
               ? 'border-danger-border bg-danger-bg text-danger-text'
               : 'border-line-control bg-surface text-ink-500 hover:border-line-controlHover'
           "
-          @click="outstandingBalanceFilter = !outstandingBalanceFilter"
+          @click="doNotContactFilter = !doNotContactFilter"
         >
-          <span class="h-[6px] w-[6px] shrink-0 rounded-full" :class="outstandingBalanceFilter ? 'bg-danger-text' : 'bg-ink-faint3'" />
-          {{ t('Outstanding balance', 'Saldo pendiente') }}
+          <span aria-hidden="true" class="h-[6px] w-[6px] shrink-0 rounded-full" :class="doNotContactFilter ? 'bg-danger-text' : 'bg-ink-faint3'" />
+          {{ t('Do not contact', 'No contactar') }}
         </button>
 
         <button
           type="button"
-          class="flex h-8 items-center gap-1.5 rounded-pill border px-2.5 text-[12.5px] font-medium"
+          :aria-pressed="minorsFilter"
+          class="flex h-8 items-center gap-1.5 rounded-pill border px-2.5 text-[12.5px] font-medium outline-none focus-visible:shadow-focus"
           :class="
-            carePlanFilter
+            minorsFilter
               ? 'border-brand-tintBorder bg-brand-tint text-brand-text'
               : 'border-line-control bg-surface text-ink-500 hover:border-line-controlHover'
           "
-          @click="carePlanFilter = !carePlanFilter"
+          @click="minorsFilter = !minorsFilter"
         >
-          <span class="h-[6px] w-[6px] shrink-0 rounded-full" :class="carePlanFilter ? 'bg-brand' : 'bg-ink-faint3'" />
-          {{ t('On a care plan', 'Con plan de tratamiento') }}
+          <span aria-hidden="true" class="h-[6px] w-[6px] shrink-0 rounded-full" :class="minorsFilter ? 'bg-brand' : 'bg-ink-faint3'" />
+          {{ t('Minors', 'Menores') }}
         </button>
 
-        <div class="h-[22px] w-px bg-line" />
-
-        <div class="relative">
-          <select
-            v-model="practitionerFilter"
-            class="h-8 appearance-none rounded-pill border border-line-control bg-surface px-2.5 pr-6 text-[12.5px] font-medium text-ink-500 hover:border-line-controlHover focus:border-brand focus:outline-none"
-          >
-            <option value="">{{ t('Practitioner', 'Profesional') }}</option>
-            <option v-for="m in teamMembers" :key="m.id" :value="m.id">{{ m.full_name }}</option>
-          </select>
-          <svg width="8" height="8" viewBox="0 0 10 10" class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-faint">
-            <path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" />
-          </svg>
-        </div>
-
-        <div class="relative">
-          <select
-            v-model="statusFilter"
-            class="h-8 appearance-none rounded-pill border border-line-control bg-surface px-2.5 pr-6 text-[12.5px] font-medium text-ink-500 hover:border-line-controlHover focus:border-brand focus:outline-none"
-          >
-            <option value="active">{{ t('Active', 'Activo') }}</option>
-            <option value="inactive">{{ t('Inactive', 'Inactivo') }}</option>
-            <option value="any">{{ t('Any status', 'Cualquier estado') }}</option>
-          </select>
-          <svg width="8" height="8" viewBox="0 0 10 10" class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-faint">
-            <path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" />
-          </svg>
-        </div>
-
-        <div class="relative">
-          <select
-            v-model="missingContact"
-            class="h-8 appearance-none rounded-pill border border-line-control bg-surface px-2.5 pr-6 text-[12.5px] font-medium text-ink-500 hover:border-line-controlHover focus:border-brand focus:outline-none"
-          >
-            <option value="any">{{ t('Missing contact', 'Sin contacto') }}</option>
-            <option value="email">{{ t('Missing email', 'Sin correo electrónico') }}</option>
-            <option value="phone">{{ t('Missing phone', 'Sin teléfono') }}</option>
-          </select>
-          <svg width="8" height="8" viewBox="0 0 10 10" class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-faint">
-            <path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" />
-          </svg>
-        </div>
-
-        <div class="flex-1" />
-        <span v-if="!loading" class="text-[12.5px] text-ink-muted2">{{ totalCount }} {{ t('results', 'resultados') }}</span>
       </div>
 
-      <!-- Table card. Each row is a fixed-width flex layout (not a real
-      <table>), so on a narrow screen it scrolls horizontally as one unit
-      (min-w-[1000px] below) rather than squeezing every column unreadably
-      thin -- same trade-off a real table would force via its own overflow
-      wrapper. -->
+      <!-- What is actually being filtered on, and how to undo any one of it.
+      A filtered list and an empty one otherwise look identical. -->
+      <div v-if="activeFilters.length > 0" class="mt-2.5 flex flex-wrap items-center gap-1.5">
+        <span
+          v-for="filter in activeFilters"
+          :key="filter.key"
+          class="inline-flex items-center gap-1 rounded-pill border border-line bg-surface py-0.5 pl-2 pr-1 text-[12px] text-ink-600"
+        >
+          {{ filter.label }}
+          <button
+            type="button"
+            :aria-label="`${t('Remove filter', 'Quitar filtro')}: ${filter.label}`"
+            class="flex h-4 w-4 items-center justify-center rounded-full text-ink-faint outline-none hover:bg-surface-subtle hover:text-ink-700 focus-visible:shadow-focus"
+            @click="filter.clear()"
+          >
+            <svg viewBox="0 0 10 10" aria-hidden="true" class="h-2.5 w-2.5">
+              <path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+            </svg>
+          </button>
+        </span>
+        <button
+          type="button"
+          class="rounded-ctlSm px-1.5 py-0.5 text-[12px] font-medium text-ink-muted outline-none hover:text-ink-700 focus-visible:shadow-focus"
+          @click="clearAllFilters"
+        >
+          {{ t('Clear all', 'Quitar todo') }}
+        </button>
+      </div>
+
+      <!-- A real table, so a screen reader announces the column a cell belongs
+      to. min-w below keeps it scrolling horizontally as one unit on a narrow
+      screen rather than squeezing every column unreadably thin. -->
       <div class="mt-3.5 overflow-hidden rounded-card border border-line bg-surface shadow-card">
         <div class="overflow-x-auto">
-        <div class="min-w-[1000px]">
-        <div class="flex items-center gap-4 border-b border-line-row bg-surface-subtle2 px-5 py-2.5 text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">
-          <div class="min-w-0 flex-1">{{ t('Patient', 'Paciente') }}</div>
-          <div class="w-[120px] shrink-0 text-right">{{ t('Balance', 'Saldo') }}</div>
-          <div class="w-[170px] shrink-0">{{ t('Next visit', 'Próxima visita') }}</div>
-          <div class="w-[220px] shrink-0">{{ t('Care plan', 'Plan de tratamiento') }}</div>
-          <div class="w-[104px] shrink-0">{{ t('Comms', 'Comunicación') }}</div>
-          <div class="w-[150px] shrink-0">{{ t('Tags', 'Etiquetas') }}</div>
-        </div>
+          <table class="w-full min-w-[940px] border-collapse text-[13px]">
+            <caption class="sr-only">{{ t('Patients', 'Pacientes') }}</caption>
+            <thead>
+              <tr class="border-b border-line-row bg-surface-subtle2 text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">
+                <th scope="col" class="px-5 py-2.5 text-left" :aria-sort="sortDir === 'asc' ? 'ascending' : 'descending'">
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1 uppercase tracking-[.04em] outline-none hover:text-ink-600 focus-visible:shadow-focus"
+                    @click="sortDir = sortDir === 'asc' ? 'desc' : 'asc'"
+                  >
+                    {{ t('Patient', 'Paciente') }}
+                    <svg viewBox="0 0 10 10" aria-hidden="true" class="h-2.5 w-2.5" :class="sortDir === 'asc' ? '' : 'rotate-180'">
+                      <path d="M5 2.5v5M3 5l2-2.5L7 5" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                    <span class="sr-only">{{ sortDir === 'asc' ? t('sorted A to Z', 'orden de A a Z') : t('sorted Z to A', 'orden de Z a A') }}</span>
+                  </button>
+                </th>
+                <th scope="col" class="w-[175px] px-3 py-2.5 text-left">{{ t('Contact', 'Contacto') }}</th>
+                <th scope="col" class="w-[120px] px-3 py-2.5 text-left">{{ t('Last visit', 'Última visita') }}</th>
+                <th scope="col" class="w-[150px] px-3 py-2.5 text-left">{{ t('Next visit', 'Próxima visita') }}</th>
+                <th scope="col" class="w-[165px] px-3 py-2.5 text-left">{{ t('Care plan', 'Plan de tratamiento') }}</th>
+                <th scope="col" class="hidden w-[130px] px-3 py-2.5 text-left xl:table-cell">{{ t('Tags', 'Etiquetas') }}</th>
+                <th scope="col" class="w-[120px] px-3 py-2.5 text-right">{{ t('Balance', 'Saldo') }}</th>
+                <th scope="col" class="w-[48px] px-3 py-2.5"><span class="sr-only">{{ t('Actions', 'Acciones') }}</span></th>
+              </tr>
+            </thead>
 
-        <div v-if="loading">
-          <div v-for="row in 8" :key="row" class="flex items-center gap-4 border-b border-line-row px-5 py-2.5 last:border-b-0">
-            <div class="flex min-w-0 flex-1 items-center gap-2.5">
-              <UiSkeleton class="h-[26px] w-[26px] shrink-0 rounded-full" />
-              <UiSkeleton class="h-3 w-36 rounded-ctlSm" />
-            </div>
-            <div class="w-[120px] shrink-0 flex justify-end"><UiSkeleton class="h-3 w-14 rounded-ctlSm" /></div>
-            <div class="w-[170px] shrink-0"><UiSkeleton class="h-3 w-24 rounded-ctlSm" /></div>
-            <div class="w-[220px] shrink-0"><UiSkeleton class="h-3 w-32 rounded-ctlSm" /></div>
-            <div class="w-[104px] shrink-0"><UiSkeleton class="h-5 w-12 rounded-pill" /></div>
-            <div class="w-[150px] shrink-0"><UiSkeleton class="h-5 w-20 rounded-pill" /></div>
-          </div>
-        </div>
-        <div v-else-if="patients.length === 0" class="px-5 py-10 text-center text-[13px] text-ink-faint">{{ t('No patients found.', 'No se encontraron pacientes.') }}</div>
+            <tbody v-if="loading">
+              <tr v-for="row in 8" :key="row" class="border-b border-line-row last:border-b-0">
+                <td class="px-5 py-2.5">
+                  <div class="flex items-center gap-2.5">
+                    <UiSkeleton class="h-[26px] w-[26px] shrink-0 rounded-full" />
+                    <UiSkeleton class="h-3 w-36 rounded-ctlSm" />
+                  </div>
+                </td>
+                <td v-for="cell in 5" :key="cell" class="px-3 py-2.5"><UiSkeleton class="h-3 w-20 rounded-ctlSm" /></td>
+                <td class="hidden px-3 py-2.5 xl:table-cell"><UiSkeleton class="h-3 w-16 rounded-ctlSm" /></td>
+                <td class="px-3 py-2.5" />
+              </tr>
+            </tbody>
 
-        <div v-else>
-          <div
-            v-for="patient in patients"
-            :key="patient.id"
-            class="flex cursor-pointer items-center gap-4 border-b border-line-row px-5 py-2.5 last:border-b-0 hover:bg-surface-subtle"
-            @click="navigateTo(`/patients/${patient.id}`)"
-          >
-            <!-- Patient -->
-            <div class="flex min-w-0 flex-1 items-center gap-2.5">
-              <span class="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full bg-brand-tint text-[10.5px] font-[650] text-brand">
-                {{ initials(patient) }}
-              </span>
-              <div class="min-w-0">
-                <p class="flex items-center gap-1.5 truncate text-[13.5px] font-[560] text-ink-900">
-                  <span class="truncate">{{ patient.first_name }} {{ patient.last_name }}</span>
-                  <span v-if="patient.status === 'inactive'" class="shrink-0 rounded-pill bg-chip-bg2 px-1.5 py-0.5 text-[10px] font-[600] text-ink-faint3">{{ t('Inactive', 'Inactivo') }}</span>
-                  <span v-if="patient.is_minor" class="shrink-0 rounded-pill bg-brand-tint px-1.5 py-0.5 text-[10px] font-[600] text-brand-text2">{{ t('Minor', 'Menor') }}</span>
-                  <span v-if="patient.do_not_contact" class="shrink-0 rounded-pill bg-danger-bg px-1.5 py-0.5 text-[10px] font-[600] text-danger-text">{{ t('DNC', 'NC') }}</span>
-                </p>
-                <p class="truncate font-mono text-[11.5px] text-ink-muted2">{{ primaryPhoneByPatient[patient.id] ?? '—' }}</p>
-              </div>
-            </div>
+            <tbody v-else-if="patients.length === 0">
+              <tr>
+                <td colspan="8" class="px-5 py-10 text-center text-[13px] text-ink-faint">
+                  {{ activeFilters.length > 0 ? t('No patients match these filters.', 'Ningún paciente coincide con estos filtros.') : t('No patients found.', 'No se encontraron pacientes.') }}
+                  <button
+                    v-if="activeFilters.length > 0"
+                    type="button"
+                    class="ml-1 font-medium text-brand outline-none hover:underline focus-visible:shadow-focus"
+                    @click="clearAllFilters"
+                  >
+                    {{ t('Clear all', 'Quitar todo') }}
+                  </button>
+                </td>
+              </tr>
+            </tbody>
 
-            <!-- Balance -->
-            <div class="w-[120px] shrink-0 text-right">
-              <span class="inline-flex rounded-[6px] px-2 py-0.5 font-mono text-[12.5px]" :class="balancePill(balanceByPatient[patient.id] ?? 0).class">
-                {{ balancePill(balanceByPatient[patient.id] ?? 0).text }}
-              </span>
-            </div>
+            <tbody v-else>
+              <tr
+                v-for="patient in patients"
+                :key="patient.id"
+                class="cursor-pointer border-b border-line-row last:border-b-0 hover:bg-surface-subtle"
+                @click="onRowClick($event, patient.id)"
+              >
+                <td class="px-5 py-2.5">
+                  <div class="flex min-w-0 items-center gap-2.5">
+                    <span aria-hidden="true" class="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full bg-brand-tint text-[10.5px] font-[650] text-brand">
+                      {{ initials(patient) }}
+                    </span>
+                    <div class="min-w-0">
+                      <p class="flex items-center gap-1.5 text-[13.5px] font-[560] text-ink-900">
+                        <!-- A real link: openable in a new tab, and the thing
+                        a screen reader announces as the row's subject. -->
+                        <NuxtLink :to="`/patients/${patient.id}`" class="truncate outline-none hover:underline focus-visible:shadow-focus">
+                          {{ patient.first_name }} {{ patient.last_name }}
+                        </NuxtLink>
+                        <span v-if="patient.status === 'inactive'" class="shrink-0 rounded-pill bg-chip-bg2 px-1.5 py-0.5 text-[10px] font-[600] text-ink-faint3">{{ t('Inactive', 'Inactivo') }}</span>
+                        <span v-if="patient.is_minor" class="shrink-0 rounded-pill bg-brand-tint px-1.5 py-0.5 text-[10px] font-[600] text-brand-text2">{{ t('Minor', 'Menor') }}</span>
+                        <span v-if="patient.do_not_contact" class="shrink-0 rounded-pill bg-danger-bg px-1.5 py-0.5 text-[10px] font-[600] text-danger-text">{{ t('Do not contact', 'No contactar') }}</span>
+                      </p>
+                      <p class="truncate text-[11.5px] text-ink-muted2">{{ secondaryLine(patient) || '—' }}</p>
+                    </div>
+                  </div>
+                </td>
 
-            <!-- Next visit -->
-            <div class="w-[170px] shrink-0">
-              <template v-if="nextVisitInfo(patient.id).date">
-                <p class="text-[13px] text-ink-700">{{ nextVisitInfo(patient.id).date }}</p>
-                <p class="text-[11.5px]" :class="nextVisitInfo(patient.id).colorClass">{{ nextVisitInfo(patient.id).relative }}</p>
-              </template>
-              <p v-else class="text-[13px]" :class="nextVisitInfo(patient.id).colorClass">{{ nextVisitInfo(patient.id).relative }}</p>
-            </div>
+                <!-- How this patient can actually be reached. A missing
+                number is not an empty cell: it is the reason a reminder will
+                never arrive, so it says so. The two chips are the channels
+                that are switched ON -- WhatsApp consent on the number, and
+                whether invoices go out by email. -->
+                <td class="px-3 py-2.5">
+                  <div class="flex flex-wrap items-center gap-1.5">
+                  <span v-if="primaryPhoneByPatient[patient.id]" class="inline-flex items-center gap-1.5">
+                    <span class="font-mono text-[12.5px] text-ink-700">{{ primaryPhoneByPatient[patient.id] }}</span>
+                    <span
+                      v-if="whatsappConsentByPatient[patient.id]"
+                      class="rounded-pill bg-success-bg px-1.5 py-0.5 text-[10px] font-[600] text-success-text"
+                      :title="t('WhatsApp', 'WhatsApp')"
+                    >WA</span>
+                  </span>
+                  <span v-else class="inline-flex items-center gap-1 text-[12.5px] text-warning-text">
+                    <svg viewBox="0 0 12 12" aria-hidden="true" class="h-3 w-3 shrink-0">
+                      <path d="M6 1.5 11 10.5H1z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" />
+                      <path d="M6 5v2.2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+                      <circle cx="6" cy="9" r=".6" fill="currentColor" />
+                    </svg>
+                    {{ t('No phone', 'Sin teléfono') }}
+                  </span>
+                  <span
+                    v-if="patient.invoice_email_enabled"
+                    class="rounded-pill bg-brand-tint px-1.5 py-0.5 text-[10px] font-[600] text-brand-text2"
+                    :title="t('Invoices are emailed to this patient', 'Las facturas se envían por correo')"
+                  >{{ t('Email', 'Correo') }}</span>
+                  </div>
+                </td>
 
-            <!-- Care plan -->
-            <div class="w-[220px] shrink-0">
-              <template v-if="carePlanByPatient[patient.id]">
-                <div class="flex items-center justify-between gap-2">
-                  <p class="min-w-0 truncate text-[12.5px] text-ink-700">{{ carePlanByPatient[patient.id].name }}</p>
-                  <p class="shrink-0 font-mono text-[11px] text-ink-muted2">
-                    {{ carePlanByPatient[patient.id].completed }}/{{ carePlanByPatient[patient.id].totalVisits }}
-                  </p>
-                </div>
-                <div class="mt-1 h-[3px] w-full overflow-hidden rounded-full bg-[#EDEEF2]">
-                  <div
-                    class="h-full rounded-full bg-brand"
-                    :style="{ width: `${Math.min(100, (carePlanByPatient[patient.id].completed / carePlanByPatient[patient.id].totalVisits) * 100)}%` }"
+                <td class="px-3 py-2.5">
+                  <span v-if="lastVisitText(patient.id)" class="text-[13px] text-ink-700">{{ lastVisitText(patient.id) }}</span>
+                  <span v-else class="text-[12.5px] text-ink-faint2">{{ t('Never', 'Nunca') }}</span>
+                </td>
+
+                <td class="px-3 py-2.5">
+                  <template v-if="nextVisitInfo(patient.id).date">
+                    <p class="text-[13px] text-ink-700">{{ nextVisitInfo(patient.id).date }}</p>
+                    <p class="text-[11.5px]" :class="nextVisitInfo(patient.id).colorClass">{{ nextVisitInfo(patient.id).relative }}</p>
+                  </template>
+                  <p v-else class="text-[13px]" :class="nextVisitInfo(patient.id).colorClass">{{ nextVisitInfo(patient.id).relative }}</p>
+                </td>
+
+                <td class="px-3 py-2.5">
+                  <template v-if="carePlanByPatient[patient.id]">
+                    <div class="flex items-center justify-between gap-2">
+                      <p class="min-w-0 truncate text-[12.5px] text-ink-700">{{ carePlanByPatient[patient.id].name }}</p>
+                      <p class="shrink-0 font-mono text-[11px] text-ink-muted2">
+                        {{ carePlanByPatient[patient.id].completed }}/{{ carePlanByPatient[patient.id].totalVisits }}
+                      </p>
+                    </div>
+                    <div class="mt-1 h-[3px] w-full overflow-hidden rounded-full bg-chip-bg2">
+                      <div
+                        class="h-full rounded-full bg-brand"
+                        :style="{ width: `${Math.min(100, (carePlanByPatient[patient.id].completed / carePlanByPatient[patient.id].totalVisits) * 100)}%` }"
+                      />
+                    </div>
+                  </template>
+                  <p v-else class="text-[12.5px] text-ink-faint2">{{ t('No plan', 'Sin plan') }}</p>
+                </td>
+
+                <td class="hidden px-3 py-2.5 xl:table-cell">
+                  <div class="flex flex-wrap items-center gap-1">
+                    <span v-for="tag in patient.tags" :key="tag" class="rounded-pill px-1.5 py-0.5 text-[11px] font-[560]" :class="tagClass(tag)">
+                      {{ tag }}
+                    </span>
+                  </div>
+                </td>
+
+                <td class="px-3 py-2.5 text-right">
+                  <span class="inline-flex rounded-[6px] px-2 py-0.5 font-mono text-[12.5px]" :class="balancePill(balanceByPatient[patient.id] ?? 0).class">
+                    {{ balancePill(balanceByPatient[patient.id] ?? 0).text }}
+                  </span>
+                </td>
+
+                <td class="px-3 py-2.5 text-right">
+                  <PatientsRowActions
+                    :patient-id="patient.id"
+                    :patient-name="`${patient.first_name} ${patient.last_name}`"
+                    :can-contact="!patient.is_minor && !patient.do_not_contact"
                   />
-                </div>
-              </template>
-              <p v-else class="text-[12.5px] text-ink-faint2">{{ t('No plan', 'Sin plan') }}</p>
-            </div>
-
-            <!-- Comms -->
-            <div class="flex w-[104px] shrink-0 items-center gap-1">
-              <span
-                class="rounded-pill px-1.5 py-0.5 text-[10.5px] font-[600]"
-                :class="whatsappConsentByPatient[patient.id] ? 'bg-success-bg text-success-text' : 'bg-chip-bg2 text-ink-faint3'"
-              >
-                WA
-              </span>
-              <span
-                class="rounded-pill px-1.5 py-0.5 text-[10.5px] font-[600]"
-                :class="patient.invoice_email_enabled ? 'bg-brand-tint text-brand-text2' : 'bg-chip-bg2 text-ink-faint3'"
-              >
-                {{ t('Email', 'Correo') }}
-              </span>
-            </div>
-
-            <!-- Tags -->
-            <div class="flex w-[150px] shrink-0 flex-wrap items-center gap-1">
-              <span
-                v-for="tag in patient.tags"
-                :key="tag"
-                class="rounded-pill px-1.5 py-0.5 text-[11px] font-[560]"
-                :class="tagClass(tag)"
-              >
-                {{ tag }}
-              </span>
-            </div>
-          </div>
-        </div>
-        </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
 
         <UiPaginationFooter

@@ -257,7 +257,7 @@ function formatDate(iso: string) {
               class="flex cursor-pointer items-center justify-between gap-3 px-4 py-3"
               :class="
                 invoice.id === highlightId
-                  ? 'bg-[#F7F7FE] shadow-[inset_3px_0_0_theme(colors.brand.DEFAULT)]'
+                  ? 'bg-brand-tintDeep shadow-[inset_3px_0_0_theme(colors.brand.DEFAULT)]'
                   : 'hover:bg-surface-subtle'
               "
               @click="navigateTo(`/billing/${invoice.id}`)"

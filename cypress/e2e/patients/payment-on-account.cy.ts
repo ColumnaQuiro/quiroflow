@@ -22,7 +22,7 @@ describe('A payment with no invoice', () => {
         })
 
         cy.login(account.email, account.password)
-        cy.visit(`/patients/${patient.id}`)
+        cy.visit(`/patients/${patient.id}?tab=billing`)
 
         // Nothing invoiced, EUR 50 paid: the clinic owes the patient EUR 50.
         // Before this change the payment was invisible -- the balance read
@@ -33,7 +33,7 @@ describe('A payment with no invoice', () => {
         // matches a payment to its invoice by invoice_id, and this one has
         // none.
         cy.visit(`/patients/${patient.id}?tab=billing`)
-        cy.contains('Payment — cash').should('be.visible')
+        cy.contains('Payment — cash').scrollIntoView().should('be.visible')
       })
     })
   })
@@ -45,7 +45,7 @@ describe('A payment with no invoice', () => {
         cy.task('db:createInvoice', { accountId: account.accountId, patientId: patient.id, totalCents: 3000, status: 'unpaid' })
 
         cy.login(account.email, account.password)
-        cy.visit(`/patients/${patient.id}`)
+        cy.visit(`/patients/${patient.id}?tab=billing`)
 
         // 50 paid, 30 charged. The invoice stays unpaid -- nothing was
         // allocated to it, exactly as PracticeHub records it -- but the

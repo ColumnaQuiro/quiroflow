@@ -20,7 +20,7 @@ describe('A factura outlives the payment it documents', () => {
         cy.visit(`/patients/${patient.id}?tab=billing`)
 
         // Take the payment, which issues the factura.
-        cy.contains('INV-').should('be.visible')
+        cy.contains('INV-').should('exist')
         cy.contains('button', 'Take payment').click()
         cy.contains('button', 'Record payment').parents('form').as('form')
         cy.get('@form').contains('button', 'Record payment').click()

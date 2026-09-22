@@ -51,7 +51,7 @@ describe('Settling imported PracticeHub invoices', () => {
           // And the balance is what it always was: €45 paid against €90
           // charged. Settling changes presentation, not money.
           cy.login(account.email, account.password)
-          cy.visit(`/patients/${patient.id}`)
+          cy.visit(`/patients/${patient.id}?tab=billing`)
           cy.contains('dt', 'Balance').parent().should('contain', '45,00 €')
         })
       })

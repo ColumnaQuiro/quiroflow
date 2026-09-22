@@ -91,6 +91,7 @@ const router = useRouter()
 const store = useAccountStore()
 const supabase = useSupabaseClient()
 const t = useT()
+const { showToast } = useToast()
 const { loading: loadingPortal, openPortal } = useBillingPortal()
 
 const subscription = ref<SubscriptionRow | null>(null)
@@ -369,10 +370,69 @@ async function onPlanChanged() {
 }
 
 function openStripePortal() {
-  openPortal(contactHref.value)
+  openPortal()
 }
 function openStripeCancel() {
-  openPortal(contactHref.value, 'cancel')
+  openPortal('cancel')
+}
+
+// "Add payment method", on the trial banner.
+//
+// This used to call openStripePortal(), and could not work: the Customer
+// Portal needs a Stripe customer, and a TRIALING account has never had one --
+// nothing creates it until a subscription is started. portal-session answered
+// 400 every time, useBillingPortal swallowed it, and the browser was sent to
+// a mailto:. So the button that says "Add payment method" opened an email
+// client instead, on every click, for every trial, with nothing logged and
+// nothing on screen to explain it.
+//
+// Collecting a first card is Checkout's job, and Checkout is also what
+// creates the customer the portal needs later. The plan is the one they are
+// already trialing, so there is nothing to ask them first -- the seat count
+// and Growth flag come from the same row so the card they add matches what
+// they have been using.
+//
+// An account that DOES have a customer (past_due, or changing a card later)
+// still goes to the portal, which is the right tool once it exists.
+const addingCard = ref(false)
+
+async function addPaymentMethod() {
+  const sub = subscription.value
+  // The subscription row, NOT billingInfo.hasCustomer. billingInfo comes from
+  // Stripe and loadBillingInfo() reports { hasCustomer: false } when that call
+  // fails for any reason -- so an account that HAS a customer looks like one
+  // that does not whenever Stripe is unreachable or unconfigured, and would be
+  // sent to Checkout to buy a subscription it already has. stripe_customer_id
+  // is the same fact portal-session itself gates on, read from our own table.
+  if (sub?.stripe_customer_id) {
+    openStripePortal()
+    return
+  }
+  if (!sub?.plan_id || addingCard.value) return
+  addingCard.value = true
+  try {
+    const result = await $fetch<{ url?: string; updated?: boolean }>('/api/billing/subscribe', {
+      method: 'POST',
+      body: {
+        planId: sub.plan_id,
+        interval: interval.value,
+        extraProfessionals: sub.extra_professionals ?? 0,
+        growth: !!sub.growth_addon,
+      },
+    })
+    if (result.url) {
+      window.location.href = result.url
+      return
+    }
+    // No redirect means Stripe considered it already subscribed, so the
+    // page's own data is what is stale.
+    await Promise.all([loadSubscription(), loadBillingInfo()])
+  } catch (error: unknown) {
+    const detail = (error as { data?: { statusMessage?: string } })?.data?.statusMessage
+    showToast(detail || t('Could not start checkout. Please try again.', 'No se pudo iniciar el pago. Inténtalo de nuevo.'), 'error')
+  } finally {
+    addingCard.value = false
+  }
 }
 </script>
 
@@ -447,7 +507,7 @@ function openStripeCancel() {
               :days-left="store.trialDaysLeft"
               :total-days="30"
               :ends-at="subscription.trial_ends_at"
-              @add-card="openStripePortal"
+              @add-card="addPaymentMethod"
               @compare-plans="changingPlan = true"
             />
 
@@ -547,7 +607,7 @@ function openStripeCancel() {
               v-if="state !== 'trialing' || billingInfo?.card"
               :card="billingInfo?.card ?? null"
               :holder="billingInfo?.name ?? null"
-              @portal="openStripePortal"
+              @portal="addPaymentMethod"
             />
             <SubscriptionHelpCard :email="SUPPORT_EMAIL" />
           </div>

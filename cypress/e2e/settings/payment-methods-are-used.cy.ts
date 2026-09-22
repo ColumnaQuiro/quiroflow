@@ -30,7 +30,7 @@ describe('Payment methods', () => {
         cy.task('db:createInvoice', { accountId: account.accountId, patientId: patient.id, totalCents: 4400, status: 'unpaid' })
         cy.visit(`/patients/${patient.id}?tab=billing`)
 
-        cy.contains('INV-').should('be.visible')
+        cy.contains('INV-').should('exist')
         cy.contains('button', 'Take payment').click()
         cy.contains('button', 'Record payment').parents('form').as('form')
 

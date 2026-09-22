@@ -1,7 +1,7 @@
 -- A bono sold in QuiroFlow was charged twice.
 --
 -- Selling one raised an invoice for its full price, and then every visit
--- drawn from it raised its own charge as well. Adrian Oropeza: 528 EUR for
+-- drawn from it raised its own charge as well. Alonso Varela: 528 EUR for
 -- the bono, 44 EUR for the visit he took from it. Run that bono to the end
 -- and it is 528 + 12 x 44 = 1,056 EUR charged for 528 EUR of sessions.
 --
@@ -19,7 +19,7 @@
 comment on column package_purchases.owed_cents is
   'What is still owed on this bono, before payments against it. For a bono migrated from PracticeHub this is PracticeHub''s own outstanding figure, already net of what was paid over there. For a bono sold here it is the full price, and every payment linked to the purchase comes off it. See utils/bonoOwed.ts, which is the one place that arithmetic lives.';
 
--- Existing native sales: exactly one on the live account (Adrian Oropeza's
+-- Existing native sales: exactly one on the live account (Alonso Varela's
 -- Bono 12 sesiones), since the invoice-per-bono flow is recent. Its payments
 -- move onto the purchase, the credit row stops pointing at a charge that is
 -- about to disappear, and the invoice itself goes -- it was never a real debt

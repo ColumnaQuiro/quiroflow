@@ -179,12 +179,12 @@ begin
   -- backstop rather than a link: it compares lead.email to patients.email on
   -- the next cron pass, which is both late and email-only.
   --
-  -- Both of those cost something real. Geraldo Ruiz Mochon booked on 14 Sep
+  -- Both of those cost something real. Alberto Rueda Mansilla booked on 14 Sep
   -- and received a seven-step sequence between the 16th and the 18th, because
-  -- his lead says ruizmochon@ and his patient record says ruzmochon@ -- one
-  -- letter, and the backstop never fired. Ramon Canal booked four minutes
-  -- after his sequence started and it ran for another day before the cron
-  -- noticed.
+  -- his lead says ruedamansilla@ and his patient record says rudamansilla@
+  -- -- one letter, and the backstop never fired. Sergio Bielsa booked four
+  -- minutes after his sequence started and it ran for another day before
+  -- the cron noticed.
   --
   -- So: match on email OR phone, here, at the moment of booking.
   --
@@ -202,7 +202,7 @@ begin
     and (
       lower(l.email) = lower(trim(p_email))
       -- Digits only, last nine compared: a lead from a Meta form carries
-      -- '34617449701' while the booking sends a bare '617449701' with the
+      -- '34612345678' while the booking sends a bare '612345678' with the
       -- country in its own field, and a patient typing their own number puts
       -- spaces wherever they like.
       or (

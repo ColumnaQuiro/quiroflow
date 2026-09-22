@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { formatEur } from '~/utils/billing'
 import { rangeBounds } from '~/composables/useDateRangePresets'
+import { isReceipt } from '~/utils/paymentReceipts'
 
 interface PaymentRow {
   id: string
@@ -87,6 +88,7 @@ async function load() {
 onMounted(() => {
   load()
   loadFilterOptions()
+  ensurePaymentMethodsLoaded()
   supabase.from('team_members').select('id, full_name').then(({ data }) => { teamMembers.value = data ?? [] })
 })
 watch([dateStr, practitionerFilter, clinicFilter], load)
@@ -130,12 +132,25 @@ function time(iso: string) {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-const netCents = computed(() => filteredPayments.value.reduce((sum, row) => sum + row.amount_cents, 0))
+// This page is read at the end of the day against what is in the drawer and
+// what the card terminal says, so it counts only what arrived -- see
+// utils/paymentReceipts. Credit spent today is listed in the table below,
+// because it happened and staff will look for it, and totalled separately so
+// the rows still add up to the cards.
+const receipts = computed(() => filteredPayments.value.filter((row) => isReceipt(row.method)))
+const netCents = computed(() => receipts.value.reduce((sum, row) => sum + row.amount_cents, 0))
+const creditAppliedCents = computed(() =>
+  filteredPayments.value.filter((row) => row.method === 'credit').reduce((sum, row) => sum + row.amount_cents, 0),
+)
 const byMethod = computed(() => {
   const totals = new Map<string, number>()
-  for (const row of filteredPayments.value) totals.set(row.method, (totals.get(row.method) ?? 0) + row.amount_cents)
+  for (const row of receipts.value) totals.set(row.method, (totals.get(row.method) ?? 0) + row.amount_cents)
   return [...totals.entries()].map(([method, cents]) => ({ method, cents })).sort((a, b) => b.cents - a.cents)
 })
+
+// Stored keys are not labels: "transfer" and "write_off" were rendered raw in
+// the cards and in every row of the table.
+const { ensureLoaded: ensurePaymentMethodsLoaded, labelFor: labelForMethod } = usePaymentMethods()
 </script>
 
 <template>
@@ -168,11 +183,19 @@ const byMethod = computed(() => {
         <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div class="rounded-card border border-line bg-surface p-4 shadow-card">
             <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ t('Net collected', 'Neto cobrado') }}</p>
-            <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ eur(netCents) }}</p>
+            <p data-test="daily-net-collected" class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ eur(netCents) }}</p>
           </div>
           <div v-for="row in byMethod" :key="row.method" class="rounded-card border border-line bg-surface p-4 shadow-card">
-            <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ row.method }}</p>
+            <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ labelForMethod(row.method) }}</p>
             <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ eur(row.cents) }}</p>
+          </div>
+          <!-- Deliberately outside "Net collected": this money was collected
+          on whatever day the patient paid it in, and counting it again here
+          would make the day's takings disagree with the drawer. -->
+          <div v-if="creditAppliedCents > 0" class="rounded-card border border-dashed border-line-control bg-surface p-4 shadow-card">
+            <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ t('Credit applied', 'Crédito aplicado') }}</p>
+            <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-muted2">{{ eur(creditAppliedCents) }}</p>
+            <p class="mt-1 text-[11px] text-ink-faint2">{{ t('Not money in today', 'No es dinero que entra hoy') }}</p>
           </div>
         </div>
 
@@ -204,7 +227,7 @@ const byMethod = computed(() => {
                   <span v-if="invoiceFor(row)?.is_refund" class="ml-1.5 rounded-pill bg-danger-bg px-1.5 py-0.5 text-[11px] font-medium text-danger-text">{{ t('refund', 'reembolso') }}</span>
                 </td>
                 <td class="px-4 py-2.5 text-ink-muted2">{{ practitionerName(row) }}</td>
-                <td class="px-4 py-2.5 text-ink-muted2">{{ row.method }}</td>
+                <td class="px-4 py-2.5 text-ink-muted2">{{ labelForMethod(row.method) }}</td>
                 <td class="px-4 py-2.5 text-right font-mono" :class="row.amount_cents < 0 ? 'text-danger-text' : 'text-ink-900'">{{ eur(row.amount_cents) }}</td>
               </tr>
             </tbody>

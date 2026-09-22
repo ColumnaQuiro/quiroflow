@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { formatEur } from '~/utils/billing'
 import { classifyPaymentForFilter } from '~/utils/incomeAttribution'
+import { isReceipt } from '~/utils/paymentReceipts'
 import type { DateRange } from '~/composables/useDateRangePresets'
 
 const props = defineProps<{ dateRange: DateRange; practitionerId?: string; clinicId?: string }>()
 
-interface PaymentRow { amount_cents: number; paid_at: string; invoice_id: string | null; patient_id: string | null; invoices?: { status: string } | null }
+interface PaymentRow { amount_cents: number; method: string; paid_at: string; invoice_id: string | null; patient_id: string | null; invoices?: { status: string } | null }
 interface InvoiceRow { id: string; total_cents: number; status: string; appointment_id: string | null; patient_id: string | null }
 interface PatientRow { id: string; default_practitioner_id: string | null; clinic_id: string | null }
 interface AppointmentRow { id: string; practitioner_id: string | null; clinic_id: string | null }
@@ -50,7 +51,7 @@ async function load() {
     fetchAllRows<PaymentRow>((f, t) =>
       supabase
         .from('payments')
-        .select('amount_cents, paid_at, invoice_id, patient_id, invoices(status)')
+        .select('amount_cents, method, paid_at, invoice_id, patient_id, invoices(status)')
         .gte('paid_at', from.toISOString())
         .lte('paid_at', to.toISOString())
         .range(f, t),
@@ -74,13 +75,13 @@ async function load() {
       : Promise.resolve([] as PatientRow[]),
     // Classified exactly like the current period. It used to be summed
     // account-wide, which compared one practitioner's takings against the
-    // whole clinic's: Jordana Aguar's first month read "-56% vs previous
+    // whole clinic's: Beatriz Ferrando's first month read "-56% vs previous
     // period" -- 2,320 of her own against 5,278 of everyone's -- when she
     // had no previous period at all and had gone from nothing to 2,320.
     fetchAllRows<PaymentRow>((f, t) =>
       supabase
         .from('payments')
-        .select('amount_cents, paid_at, invoice_id, patient_id, invoices(status)')
+        .select('amount_cents, method, paid_at, invoice_id, patient_id, invoices(status)')
         .gte('paid_at', prevFrom.toISOString())
         .lte('paid_at', prevTo.toISOString())
         .range(f, t),
@@ -102,14 +103,17 @@ async function load() {
   // The void rule moved out of the query when the join went from inner to
   // left: a payment with no invoice has nothing to void and must survive it.
   const notVoid = (row: PaymentRow) => row.invoices?.status !== 'void'
-  payments.value = p.filter(notVoid)
+  // Credit and write-off rows settle an invoice without money arriving, and
+  // this figure is money -- see utils/paymentReceipts. Dropped here rather
+  // than at each total, because every number on this widget is takings.
+  payments.value = p.filter((row) => notVoid(row) && isReceipt(row.method))
   invoices.value = inv
   appointments.value = appt
   patients.value = pats
   // Same void rule as the current period. It was missing here, so a payment
   // against a voided invoice counted towards the comparison but not towards
   // the figure being compared.
-  prevPayments.value = prevPaymentRows.filter(notVoid)
+  prevPayments.value = prevPaymentRows.filter((row) => notVoid(row) && isReceipt(row.method))
   prevInvoices.value = prevInvoiceRows
 
   const invoiceIds = inv.map((i) => i.id)

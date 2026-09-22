@@ -9,7 +9,7 @@
 -- That is not hypothetical. The four Spanish intake/consent templates were
 -- linked to national_id after they had already been sent to patients, so 16
 -- patients completed a form with their DNI in it and kept an empty
--- national_id. Jose Maria Cremades filled his in three separate documents on
+-- national_id. Tomas Berenguer filled his in three separate documents on
 -- 2026-09-07 and none of them reached his record. Those 16 have been
 -- backfilled by hand; this is what stops the next ones happening, including
 -- the 10 docs that were still outstanding when this was written.

@@ -183,8 +183,8 @@ async function markAsPaid() {
 // (usePatientFinancialSummary's .neq('status', 'void'), AccountLedger's
 // debitCents, statementData) but still counts its payments, so voiding a paid
 // invoice leaves the money in with nothing billed against it and inflates the
-// patient's balance by exactly that amount -- silently, forever. Carmen Sanchez
-// Abad read 528 EUR of credit instead of 264 EUR for a month from one such row.
+// patient's balance by exactly that amount -- silently, forever. One such row
+// left a patient reading 528 EUR of credit instead of 264 EUR for a month.
 //
 // Excluding those payments from the totals instead would be the wrong fix: if
 // money really was collected and the charge then cancelled, the clinic really

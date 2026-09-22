@@ -46,7 +46,7 @@ describe('Lead ingest API', () => {
       first_name: 'Pablo',
       last_name: 'Danazzo',
       email: 'pdanazzo@example.com',
-      phone: '34614375211',
+      phone: '34612345678',
       channel: 'facebook',
       source: 'Meta Ads · Un dia de consulta',
       external_id: '1097814759270608',
@@ -73,7 +73,7 @@ describe('Lead ingest API', () => {
         // Bare E.164 -- digits, no "+" -- which is the shape WhatsApp's
         // webhook and phoneMatches both use. Meta sent it with no plus and
         // it must not gain a second dial code on the way in.
-        expect(lead.phone).to.eq('34614375211')
+        expect(lead.phone).to.eq('34612345678')
         expect(lead.furthest_stage).to.eq('new')
       })
 
@@ -174,12 +174,12 @@ describe('Lead ingest API', () => {
     // n8n's Set Phone node does replace('+','') before sending, and so does
     // WhatsApp's own webhook. Both forms have to land on one stored number,
     // or the drip messages one string and the patient lookup matches another.
-    post({ full_name: 'With Plus', phone: '+34614375211', external_id: 'plus-1' }).then((withPlus) => {
-      post({ full_name: 'Without Plus', phone: '34614375211', external_id: 'plus-2' }).then((without) => {
+    post({ full_name: 'With Plus', phone: '+34612345678', external_id: 'plus-1' }).then((withPlus) => {
+      post({ full_name: 'Without Plus', phone: '34612345678', external_id: 'plus-2' }).then((without) => {
         cy.task('db:leadById', { id: withPlus.body.data.id }).then((a) => {
           cy.task('db:leadById', { id: without.body.data.id }).then((b) => {
-            expect((a as { phone: string }).phone).to.eq('34614375211')
-            expect((b as { phone: string }).phone).to.eq('34614375211')
+            expect((a as { phone: string }).phone).to.eq('34612345678')
+            expect((b as { phone: string }).phone).to.eq('34612345678')
           })
         })
       })
@@ -189,9 +189,9 @@ describe('Lead ingest API', () => {
   it('still reads a local number as local', () => {
     // The other half of the same rule: nine digits with no country code are
     // a Spanish mobile, not an Australian number that happens to start 61.
-    post({ full_name: 'Local Number', phone: '614375211', external_id: 'local-1' }).then((res) => {
+    post({ full_name: 'Local Number', phone: '612345678', external_id: 'local-1' }).then((res) => {
       cy.task('db:leadById', { id: res.body.data.id }).then((row) => {
-        expect((row as { phone: string }).phone).to.eq('34614375211')
+        expect((row as { phone: string }).phone).to.eq('34612345678')
       })
     })
   })

@@ -3,7 +3,7 @@ import { assertDayGridShows, yesterday } from '../../support/calendar'
 // Reception could press the bono button again and take a second session for
 // the same visit.
 //
-// Adrian Oropeza's Bono 12: two package_sessions rows against one
+// Alonso Varela's Bono 12: two package_sessions rows against one
 // appointment, 18 seconds apart, 88 EUR of a 528 EUR bono gone on a single
 // visit. The compare-and-set in usePackageSession does not catch it -- that
 // defends a SHARED bono drawn on from two patients' screens at once, where

@@ -218,7 +218,7 @@ async function save() {
         // The practitioner is chosen two fields above, and until now the
         // patient created here was never linked to them: the appointment
         // recorded who saw them, the patient record recorded nobody. So
-        // Jordana Aguar's dashboard read "0 total patients, 13 active" --
+        // Beatriz Ferrando's dashboard read "0 total patients, 13 active" --
         // thirteen people she had treated, none of them hers. Account-wide
         // it was 1,381 of 1,559 patients with no practitioner at all.
         //

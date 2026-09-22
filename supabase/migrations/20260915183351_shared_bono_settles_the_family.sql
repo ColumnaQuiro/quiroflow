@@ -9,9 +9,9 @@
 -- bono has no payments of their own, so their running total always exceeds
 -- zero and every visit they ever took reads as unpaid, forever.
 --
--- Carolina Cartula Cañamas is the case that surfaced it: two visits, 43 EUR
+-- Adela Miralles Andrade is the case that surfaced it: two visits, 43 EUR
 -- and 40 EUR, both unpaid, both matching to the cent the per-session rate of
--- bonos owned by Eugenia Cañamas and Maximo Cartula and shared with her. She
+-- bonos owned by Pilar Andrade and Emilio Miralles and shared with her. She
 -- has never paid anything herself, because she has never needed to.
 --
 -- Across the live account that is 34 beneficiaries, 131 invoices and 5,628 EUR

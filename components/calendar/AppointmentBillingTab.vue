@@ -79,9 +79,9 @@ const paidCents = computed(() => payments.value.reduce((sum, p) => sum + p.amoun
  * Reading the balance from payment rows alone therefore showed the full
  * session price as still due and put the take-payment box in front of
  * reception, on a visit the patient had already paid for. Five patients paid
- * twice on 15 Sep that way -- EUR 206 across maximiliano mosciaro, Kenneth
- * Davis, Carolina Cañamas, yaimara garcia montero and Eduardo Stengel -- all
- * of them holding a bono with nothing outstanding.
+ * twice on 15 Sep that way -- EUR 206 across Rodrigo Palau, Peter Holloway,
+ * Adela Andrade, Arelis Campos Duarte and Martin Sagredo -- all of them
+ * holding a bono with nothing outstanding.
  *
  * Status is the right thing to trust here: deletePayment recomputes it from
  * what is actually left, so a 'paid' invoice with no payments means covered,
@@ -304,7 +304,7 @@ async function usePackageSession(pkg: { id: string; package_name: string; sessio
   // would burn a real session for a visit that isn't taking one: the invoice
   // is already paid, so there is nothing left to charge, and the session
   // would vanish with no payment, no credit, and (before this check) no
-  // package_sessions row behind it either. Janina Ron's newly-bought
+  // package_sessions row behind it either. Daniela Pardo's newly-bought
   // "maintenance" bono lost a session this way when it, not the bono actually
   // being visited, was tapped on an appointment already paid from the web tab.
   if (invoice.value?.status === 'paid') {
@@ -318,7 +318,7 @@ async function usePackageSession(pkg: { id: string; package_name: string; sessio
   // patients' screens at once, where the second write must lose. A second
   // click on the same screen is not that -- it reads the count the first one
   // left behind, claims the next session legitimately, and takes a second
-  // session for a visit that only happened once. Adrian Oropeza's bono lost
+  // session for a visit that only happened once. Alonso Varela's bono lost
   // 44 EUR that way, two clicks 18 seconds apart.
   //
   // Read from the database, not from anything this component is holding: the
@@ -342,8 +342,8 @@ async function usePackageSession(pkg: { id: string; package_name: string; sessio
   // `activePackages` includes bonos SHARED from another patient (a family
   // bono), and a shared bono is being drawn on from several patients' screens
   // at once, so the copy in hand goes stale the moment a relative uses a
-  // session. Krista Lozada's Bono Familiar was drawn on twice within ten
-  // seconds -- once by her, once by Grace Valencia -- and both writes computed
+  // session. Ainhoa Escalante's Bono Familiar was drawn on twice within ten
+  // seconds -- once by her, once by Elena Cifuentes -- and both writes computed
   // 0 + 1, so the bono recorded one session while paying for two.
   const { data: bono } = await supabase
     .from('package_purchases')

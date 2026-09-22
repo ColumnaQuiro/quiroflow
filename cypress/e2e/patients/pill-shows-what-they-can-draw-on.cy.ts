@@ -8,7 +8,7 @@
 // actually use. And bono money is not credit: it is already committed to the
 // sessions it bought.
 //
-// Carolina Cañamas read "281,00 € credit" next to an Available of €120.
+// Adela Andrade read "281,00 € credit" next to an Available of €120.
 describe('The balance pill', () => {
   it('shows what the patient can draw on, not their balance', () => {
     cy.seedStaffAccount().then((account) => {

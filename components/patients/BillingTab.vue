@@ -150,7 +150,7 @@ async function addCredit() {
   // Money in is a payment, and a payment gets a factura -- whatever the
   // method, whatever the reason. This used to write the credit row alone, so
   // cash handed over here reached no payments ledger and no fiscal document:
-  // Adrian Oropeza's 150 EUR came in this way and had neither. The gap then
+  // Alonso Varela's 150 EUR came in this way and had neither. The gap then
   // compounded, because spending that credit issues no factura either, on the
   // stated grounds that the money "was already documented when it was paid
   // in" -- which only becomes true now.
@@ -480,7 +480,7 @@ async function recordPackagePayment(
   // Attached to the bono, not to an invoice. Selling a bono used to raise an
   // invoice for its full price and hang the payments off that -- which
   // charged the patient twice, because every visit drawn from the bono raises
-  // its own charge as well. Adrian Oropeza was invoiced 528 for the bono and
+  // its own charge as well. Alonso Varela was invoiced 528 for the bono and
   // 44 for the visit he took from it; run the bono out and that is 1,056
   // charged for 528 of sessions.
   //
@@ -1145,9 +1145,9 @@ function packageInvoiceIsValid(purchase: PackagePurchaseRow): boolean {
 // sessions_left x the bono's own per-session rate, the same rounding useSession
 // bills a visit at, so this and the session it pays for never disagree by a
 // cent. PracticeHub computes its `balance` column exactly this way -- checked
-// against five patients on the live account (Jorge Portillo 3 x 44 = 132,
-// Krista Lozada 4 x 40 = 160) -- so the two systems read the same number.
-// Anything still owed on the bono is separate and already has its own pill.
+// against five patients on the live account (3 x 44 = 132, 4 x 40 = 160) --
+// so the two systems read the same number. Anything still owed on the bono
+// is separate and already has its own pill.
 function packageRemainingValueCents(purchase: PackagePurchaseRow): number {
   if (!purchase.sessions_total) return 0
   const perSessionCents = Math.round(purchase.price_cents / purchase.sessions_total)
@@ -1255,7 +1255,7 @@ async function linkPaymentToPackage(purchase: PackagePurchaseRow) {
   // Money taken ON ACCOUNT is not moved by relabelling it. Adding credit wrote
   // two rows for the same euros -- this payment, and a credit row saying the
   // patient still has it to direct somewhere -- so pointing the payment at a
-  // bono while that credit row stands spends it twice: Adrian Oropeza's 115
+  // bono while that credit row stands spends it twice: Alonso Varela's 115
   // EUR paid down his bono AND sat in his credit, and "available" read 292
   // where he had 177.
   //
@@ -1319,7 +1319,7 @@ async function findUncoveredVisitToday(): Promise<UncoveredVisit | null> {
   dayStart.setHours(0, 0, 0, 0)
 
   // Completed OR already in the room. Only 'completed' counted before, and
-  // that is not the order a front desk works in: Jose Maria Cremades' session
+  // that is not the order a front desk works in: Tomas Berenguer's session
   // was logged at 17:55:21 while he was still with the practitioner -- he was
   // checked out at 17:56:23, 62 seconds later. Finding nothing, this invented
   // an off-calendar visit, so his real 60 EUR appointment was charged AND a
@@ -1428,8 +1428,8 @@ async function useSession(purchase: PackagePurchaseRow) {
           clinic_id: store.currentClinicId,
           patient_id: props.patientId,
           // The patient's own practitioner, not whoever is logged in. This
-          // used to record the front desk: Jose Maria Cremades' bono visit
-          // went down as nury@columnaquiro.com, a reception account that is
+          // used to record the front desk: Tomas Berenguer's bono visit
+          // went down as recepcion@example.test, a reception account that is
           // not a practitioner at all, which also takes the visit out of the
           // treating practitioner's income. The signed-in member is only the
           // last resort, for a patient with nobody assigned.

@@ -12,7 +12,7 @@ import { formatEur } from '~/utils/billing'
 // arithmetic over every charge and payment a patient has ever had, so it
 // carries three years of imported PracticeHub history with it, and for 139 of
 // the 217 patients showing a positive one it disagrees with what they can
-// actually use -- Carolina Cañamas read "281.00 credit" beside an Available of
+// actually use -- Adela Andrade read "281.00 credit" beside an Available of
 // 120. Worse, it said "credit", which is the one thing this figure is not:
 // bono money is already committed to the sessions it bought, and the loose
 // credit a patient can direct at an invoice is its own ledger.

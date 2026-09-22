@@ -1,8 +1,8 @@
 // A bono that came over from PracticeHub said "Paid" while PracticeHub said
 // the patient still owed half of it.
 //
-// July Pedraza bought a €528 Bono 12 and paid €264. In PracticeHub the bono
-// itself carries the outstanding €264. On this side it carried nothing: the
+// Noelia Sanabria bought a €528 Bono 12 and paid €264. In PracticeHub the
+// bono itself carries the outstanding €264. On this side it carried nothing: the
 // re-migration deleted the invoices bonos used to be billed on, and payments
 // come across unallocated because PracticeHub allocates them to nothing --
 // so the card had neither of the two things it worked the debt out from, and

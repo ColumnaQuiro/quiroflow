@@ -1,7 +1,7 @@
 -- One visit, one session off the bono.
 --
 -- Reception reported being able to press the bono button repeatedly before
--- processing the patient, and Adrian Oropeza's Bono 12 proves it: two
+-- processing the patient, and Alonso Varela's Bono 12 proves it: two
 -- package_sessions rows, both against appointment 6bdc090b, 18 seconds apart,
 -- 88 EUR of a 528 EUR bono consumed for a single visit.
 --

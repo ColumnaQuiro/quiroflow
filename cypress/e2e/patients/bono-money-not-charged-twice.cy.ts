@@ -1,7 +1,7 @@
 // A bono sold here used to be charged twice.
 //
 // Selling one raised an invoice for its full price, and then every visit
-// drawn from it raised its own charge as well. Adrian Oropeza was invoiced
+// drawn from it raised its own charge as well. Alonso Varela was invoiced
 // €528 for the bono and €44 for the visit he took from it; run that bono out
 // and it is €1,056 charged for €528 of sessions.
 //
@@ -61,7 +61,7 @@ describe('Buying a bono', () => {
 
         // €150 cash handed over and put on account. This used to write the
         // credit row alone: no payment, no factura, and the money never
-        // reached the takings -- Adrian Oropeza's €150 came in this way.
+        // reached the takings -- Alonso Varela's €150 came in this way.
         cy.contains('button', 'Add credit').click()
         cy.get('input[type="number"]').first().clear().type('150')
         // The panel's own submit carries the same words as the button that

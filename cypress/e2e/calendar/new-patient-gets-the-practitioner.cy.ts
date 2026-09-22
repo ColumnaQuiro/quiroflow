@@ -4,7 +4,7 @@ import { SEEDED_PRACTITIONER, dateInputValue, openNewAppointmentPanel, yesterday
 //
 // The booking panel creates the patient from name, email and phone, and the
 // appointment records who is seeing them -- but nothing wrote that
-// practitioner onto the patient. Jordana Aguar's dashboard therefore read
+// practitioner onto the patient. Beatriz Ferrando's dashboard therefore read
 // "0 total patients" beside "13 active": thirteen people she had treated,
 // none of them assigned to her. Seven of those thirteen were created through
 // this very panel, with her selected in it.

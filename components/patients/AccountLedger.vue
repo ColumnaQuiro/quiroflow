@@ -36,6 +36,9 @@ const props = defineProps<{
   credits: CreditRow[]
   packageSessions: PackageSessionRow[]
   spendableCreditCents: number
+  /** Passed in rather than re-derived, so the footer and the Owed now card
+   *  cannot drift apart about what the patient owes. */
+  outstandingCents: number
   sendingInvoiceId: string
   sendResultInvoiceId: string
   sendResultMessage: string
@@ -112,8 +115,15 @@ interface LedgerRow {
   paymentRefundableCents?: number
   paymentMethod?: string
   isRefund?: boolean
+  /** Deliberately moves no money -- renders an em dash in Debit and Credit. */
+  noMoneyMoved?: boolean
+  /** One short line under the movement, explaining a row that needs it. */
+  note?: string
   detail: { label: string; value: string }[]
 }
+
+/** Whether any row on screen is one the footer's bono note explains. */
+const hasNoMoneyRows = computed(() => rows.value.some((r) => r.noMoneyMoved))
 
 const rows = computed<LedgerRow[]>(() => {
   const invoiceRows: LedgerRow[] = props.invoices.map((inv) => {
@@ -288,6 +298,11 @@ const rows = computed<LedgerRow[]>(() => {
     balanceText: `${money(ps.amount_cents)} ${t('from package', 'del bono')}`,
     balanceTone: 'neutral' as const,
     voided: false,
+    // Em dashes rather than blanks in Debit and Credit, plus a note: this
+    // row moves no money, and a blank cell reads as "not filled in yet"
+    // rather than "deliberately nothing".
+    noMoneyMoved: true,
+    note: t('Paid when the bono was bought.', 'Pagado al comprar el bono.'),
     detail: [
       { label: t('Package', 'Bono'), value: ps.package_name ?? '—' },
       { label: t('Value used', 'Valor consumido'), value: money(ps.amount_cents) },
@@ -599,9 +614,16 @@ async function sendStatement() {
               </td>
               <td class="px-2 font-mono text-[12px] text-ink-muted">{{ row.ref }}</td>
               <td class="px-2 text-ink-muted">{{ formatDate(row.date) }}</td>
-              <td class="px-2 text-ink-700">{{ row.description }}</td>
-              <td class="px-2 text-right font-mono text-ink-700">{{ row.debitCents > 0 ? money(row.debitCents) : '' }}</td>
-              <td class="px-2 text-right font-mono text-success-text">{{ row.creditCents > 0 ? money(row.creditCents) : '' }}</td>
+              <td class="px-2 text-ink-700">
+                {{ row.description }}
+                <span v-if="row.note" class="block text-[11.5px] text-ink-faint">{{ row.note }}</span>
+              </td>
+              <td class="px-2 text-right font-mono text-ink-700">
+                {{ row.noMoneyMoved ? '—' : row.debitCents > 0 ? money(row.debitCents) : '' }}
+              </td>
+              <td class="px-2 text-right font-mono text-success-text">
+                {{ row.noMoneyMoved ? '—' : row.creditCents > 0 ? money(row.creditCents) : '' }}
+              </td>
               <td class="px-4 text-right font-mono" :class="row.balanceTone === 'danger' ? 'text-danger-text' : 'text-ink-muted'">{{ row.balanceText }}</td>
             </tr>
             <tr v-if="expandedKey === row.key">
@@ -674,6 +696,21 @@ async function sendStatement() {
           </template>
         </tbody>
       </table>
+
+      <!-- The footer states the bono rule once, so a reader who meets an
+      em-dash row anywhere in the table has somewhere to resolve it, and
+      says what is on screen versus what is owed. -->
+      <div class="flex flex-wrap items-center justify-between gap-2 border-t border-line-divider px-2 py-2.5">
+        <p class="text-[11.5px] text-ink-faint">
+          {{ rows.length }} {{ rows.length === 1 ? t('movement', 'movimiento') : t('movements', 'movimientos') }}
+          <template v-if="hasNoMoneyRows">
+            · {{ t('A bono visit shows — in both columns: the money moved when the bono was bought.', 'Una visita de bono muestra — en ambas columnas: el dinero se movió al comprar el bono.') }}
+          </template>
+        </p>
+        <p class="font-mono text-[12px]" :class="outstandingCents > 0 ? 'text-danger-text' : 'text-ink-muted'">
+          {{ t('Outstanding', 'Pendiente') }} {{ money(outstandingCents) }}
+        </p>
+      </div>
     </div>
   </div>
 

@@ -96,6 +96,28 @@ Two things keep it from happening again:
 Existing hand-numbered migrations stay as they are — renaming an applied
 migration changes its version and would re-run it.
 
+**A local database behind `migrations/` presents as an application bug, not
+as a schema error.** `supabase start` only resumes the existing volume; it
+does not apply anything added since, so a long-lived local database drifts
+behind the repo every time someone else's migration merges. What you then see
+is a feature quietly missing data: PostgREST rejects the whole select when one
+column in it does not exist yet, `@supabase/supabase-js` returns
+`{ data: null, error }` rather than throwing, and any caller reading
+`data ?? []` renders that as "nothing here". One missing column cost a day of
+RLS forensics on the patient ledger — the invoices query was the only one
+naming `refunds_payment_id`, so charges vanished while the payments settling
+them still rendered, which looks exactly like a row-level-security scope
+problem and is not one. Before investigating why a query returns nothing,
+check the database is current:
+
+```bash
+SUPABASE_DB_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npm run check:migrations-applied
+```
+
+`scripts/e2e-local.sh` already does a `db reset` for the same reason, so a
+symptom that reproduces in the browser but not under `npm run test:e2e:local`
+is this until proven otherwise.
+
 ## Deploying — a published release, via GitHub Actions
 
 **Merging does not deploy.** `.github/workflows/deploy.yml` runs when a

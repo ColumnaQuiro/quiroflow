@@ -4,7 +4,7 @@
 -- say so -- and an account_credits row, because it is still the patient's to
 -- direct somewhere. Two rows, one set of euros. The balance is
 -- paid - invoiced + credit, so it added the payment and the credit row and
--- put Adrian Oropeza 115 EUR ahead of himself the moment the cash was
+-- put Alonso Varela 115 EUR ahead of himself the moment the cash was
 -- counted.
 --
 -- Nothing in the row said it was a restatement rather than an adjustment, and
@@ -28,8 +28,8 @@ comment on column account_credits.payment_id is
 create index if not exists account_credits_payment_id_idx
   on account_credits (payment_id) where payment_id is not null;
 
--- The two that exist: Ana paula Mañanes' 55 EUR on 15 Sep and Adrian
--- Oropeza's 115 EUR on 16 Sep. Matched on patient, amount and the seconds
+-- The two that exist: Marisol Quiroga's 55 EUR on 15 Sep and Alonso
+-- Varela's 115 EUR on 16 Sep. Matched on patient, amount and the seconds
 -- between the two inserts, which is the only link they have until now.
 update account_credits c
 set payment_id = p.id

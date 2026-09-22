@@ -38,7 +38,7 @@ export interface AutomationFilters {
   //
   // It matters more here than on a screen: a stale figure on the patients list
   // is a wrong number someone can see, but a stale figure here decides who an
-  // automation contacts. Carmen Berbel is settled at 0 and the import wanted to
+  // automation contacts. Elvira Cotelo is settled at 0 and the import wanted to
   // write -16 EUR against her, which is "owes money" by this convention and
   // enough to put her in a chasing automation for a debt she does not have.
   balance?: 'debit' | 'credit'

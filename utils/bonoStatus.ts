@@ -35,7 +35,7 @@ export interface BonoStatus {
 // and the bono only defrayed part of it. It is not true now: taking the
 // visit from a bono charges the BONO's per-session rate
 // (AppointmentBillingTab.usePackageSession), so there is no difference to
-// owe. Marta Abril's Ajuste Quiropractico read as a debt on a 55 EUR type
+// owe. Nieves Monteagudo's Ajuste Quiropractico read as a debt on a 55 EUR type
 // against her 40 EUR bono while she was 160 EUR in credit -- three ways of
 // being wrong about the same visit.
 export function computeBonoStatus({ balanceCents, activePackage }: BonoStatusInput): BonoStatus {

@@ -8,9 +8,9 @@
 -- linked to it.
 --
 -- packageOwedCents() returns 0 when it has neither, so every part-paid bono
--- reads "Paid". July Pedraza bought a 528 EUR Bono 12, paid half, and her card
--- says she is square while PracticeHub says she owes 264. 200 active bonos are
--- in that state.
+-- reads "Paid". Noelia Sanabria bought a 528 EUR Bono 12, paid half, and her
+-- card says she is square while PracticeHub says she owes 264. 200 active
+-- bonos are in that state.
 --
 -- PracticeHub knows the answer -- it keeps an outstanding figure on the
 -- package itself -- and the bonos importer already reads it (owedCentsFor,

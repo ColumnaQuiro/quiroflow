@@ -97,11 +97,11 @@ function significantDigits(raw: string): string {
  *
  * Meta's lead-ads payload, WhatsApp's webhook and anything that has been
  * through an n8n `replace('+','')` all deliver a number with no "+" on the
- * front -- "34614375211". toE164 reads that as a local number and prepends
- * the dial code again, producing "3434614375211" and a message to nobody.
+ * front -- "34612345678". toE164 reads that as a local number and prepends
+ * the dial code again, producing "3434612345678" and a message to nobody.
  *
  * The plus-less case is genuinely ambiguous: a Spanish local mobile
- * "614375211" also starts with a real dial code (+61, Australia), so a rule
+ * "612345678" also starts with a real dial code (+61, Australia), so a rule
  * that trusts any leading dial code would silently reroute Spanish numbers
  * abroad. This deliberately does not try to be clever about that. It treats
  * plus-less digits as already-E.164 only when they start with the dial code

@@ -30,8 +30,8 @@ onMounted(() => {
 // Grouped rather than one flat row of fifteen chips, and ordered the way a
 // migration actually runs. Everything downstream matches a record to its
 // patient by external_reference, so Patients genuinely has to go first --
-// Maximiliano Mosciaro's bono sat unimportable because his patient reference
-// had never been stored, and nothing in the UI said that was the dependency.
+// Rodrigo Palau's bono sat unimportable because his patient reference had
+// never been stored, and nothing in the UI said that was the dependency.
 // The groups make the order visible instead of leaving it to be discovered.
 const sources = computed<Source[]>(() => [
   {

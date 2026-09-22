@@ -85,9 +85,9 @@ describe('Booking without a way to reach the patient', () => {
   // Conversion was a staff action only, so a lead who booked online stayed at
   // 'new' with no patient_id and its drip sequence kept running.
   // sequenceStopReason() compares lead.email to patients.email on the next
-  // cron pass -- late, and blind to a typo. Geraldo Ruiz Mochon booked on
+  // cron pass -- late, and blind to a typo. Alberto Rueda Mansilla booked on
   // 14 Sep and got a seven-step sequence over the following two days because
-  // his lead says ruizmochon@ and his patient record says ruzmochon@.
+  // his lead says ruedamansilla@ and his patient record says rudamansilla@.
   describe('the lead it came from', () => {
     it('is linked and moved to booked, matching on email', () => {
       cy.get('@acct').then((account: any) => {

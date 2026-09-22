@@ -1,7 +1,7 @@
 // Income filtered by practitioner could only see money from visits.
 //
 // The chain was payment -> invoice -> appointment -> practitioner, and
-// anything off it belonged to nobody. Filtering September by Jordana Aguar
+// anything off it belonged to nobody. Filtering September by Beatriz Ferrando
 // showed €849 while the clinic had taken €9,976 — the other €9,057 was bono
 // payments, money on account and quick invoices, none of which has an
 // appointment behind it, so all of it silently vanished from every

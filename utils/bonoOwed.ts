@@ -29,7 +29,7 @@
 // to one. Adding credit writes a payment AND an account_credits row for the
 // same euros -- the payment records that the money arrived, the credit row is
 // what the patient can still direct somewhere -- so letting it pay down a
-// bono as well spends it twice: Adrian Oropeza's 115 EUR read as 115 of loose
+// bono as well spends it twice: Alonso Varela's 115 EUR read as 115 of loose
 // credit and 115 off his bono at the same time, and "available" came out 292
 // where he has 177. It buys bono sessions when somebody actually spends it,
 // through Collect with method 'credit', which draws the credit row down and

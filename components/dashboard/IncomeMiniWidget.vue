@@ -75,7 +75,7 @@ async function load() {
       : Promise.resolve([] as PatientRow[]),
     // Classified exactly like the current period. It used to be summed
     // account-wide, which compared one practitioner's takings against the
-    // whole clinic's: Jordana Aguar's first month read "-56% vs previous
+    // whole clinic's: Beatriz Ferrando's first month read "-56% vs previous
     // period" -- 2,320 of her own against 5,278 of everyone's -- when she
     // had no previous period at all and had gone from nothing to 2,320.
     fetchAllRows<PaymentRow>((f, t) =>

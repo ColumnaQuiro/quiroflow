@@ -1742,7 +1742,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
               <div class="sticky top-0 z-30 bg-surface">
                 <div
                   class="relative flex h-6 items-center justify-center gap-1 border-b border-line"
-                  :class="isSameDate(day, new Date()) ? 'bg-[#F7F7FE]' : ''"
+                  :class="isSameDate(day, new Date()) ? 'bg-brand-tintDeep' : ''"
                 >
                   <span class="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-muted2">{{ day.toLocaleDateString(undefined, { weekday: 'short' }) }}</span>
                   <span class="text-[12.5px] font-medium" :class="isSameDate(day, new Date()) ? 'text-brand-text' : 'text-ink-900'">{{ day.getDate() }}</span>

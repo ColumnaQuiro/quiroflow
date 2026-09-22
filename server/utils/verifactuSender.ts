@@ -369,8 +369,17 @@ async function buildRecordsFor(
   const facturaIds = (records ?? []).map((r) => r.factura_id)
   const { data: facturas } = await supabase
     .from('facturas')
-    .select('id, description, tax_base_cents, tax_rate_bp, tax_amount_cents, tax_exemption_code, recipient_name, recipient_nif')
+    .select('id, patient_id, description, tax_base_cents, tax_rate_bp, tax_amount_cents, tax_exemption_code, recipient_name, recipient_nif')
     .in('id', facturaIds)
+
+  // The patient behind each factura, for the recipient name. A factura that
+  // has not been delivered carries no frozen recipient -- the name resolves
+  // from the patient at render time, and the record has to resolve it the
+  // same way or it sends an empty NombreRazon and is refused.
+  const patientIds = [...new Set((facturas ?? []).map((f) => f.patient_id).filter(Boolean))]
+  const { data: patients } = patientIds.length
+    ? await supabase.from('patients').select('id, first_name, last_name').in('id', patientIds)
+    : { data: [] as { id: string; first_name: string; last_name: string | null }[] }
 
   const registros: string[] = []
   const attempts: { recordId: string; attempt: number; serieNumber: string }[] = []
@@ -413,6 +422,10 @@ async function buildRecordsFor(
           taxExemptionCode: f.tax_exemption_code,
           recipientName: f.recipient_name,
           recipientNif: f.recipient_nif,
+          patientName: (() => {
+            const p = (patients ?? []).find((x) => x.id === f.patient_id)
+            return p ? [p.first_name, p.last_name].filter(Boolean).join(' ') : null
+          })(),
         },
         issuerName: clinic?.legal_name || clinic?.name || '',
         accountId,

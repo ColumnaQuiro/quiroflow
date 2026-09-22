@@ -128,14 +128,50 @@ describe('The RegistroAlta the AEAT will read', () => {
     expect(xml).to.not.contain('RegistroAnterior')
   })
 
+  it('falls back to the patient when the factura has no frozen recipient', () => {
+    // Every F1 and R1 this clinic has issued carries recipient_name NULL --
+    // the name resolves from the patient at render time so a NIF collected
+    // next week appears on a document issued today. Sending the empty string
+    // instead was refused on all 21 of them:
+    //
+    //   1100  Valor o tipo incorrecto del campo.: NombreRazon
+    const xml = buildRegistroAlta({
+      ...base,
+      record: { ...base.record, invoiceType: 'F1' },
+      factura: { ...base.factura, recipientName: null, patientName: 'Ana Ruiz' },
+    })
+    expect(xml).to.contain('<sum1:NombreRazon>Ana Ruiz</sum1:NombreRazon>')
+
+    // A frozen recipient still wins -- it is the one that was delivered.
+    const frozen = buildRegistroAlta({
+      ...base,
+      record: { ...base.record, invoiceType: 'F1' },
+      factura: { ...base.factura, recipientName: 'Quien Sea', patientName: 'Ana Ruiz' },
+    })
+    expect(frozen).to.contain('<sum1:NombreRazon>Quien Sea</sum1:NombreRazon>')
+
+    // With neither, the block is omitted rather than sent empty: an absent
+    // Destinatarios is a different (and answerable) complaint from a present
+    // one containing nothing.
+    const neither = buildRegistroAlta({
+      ...base,
+      record: { ...base.record, invoiceType: 'F1' },
+      factura: { ...base.factura, recipientName: null, patientName: null },
+    })
+    expect(neither).to.not.contain('Destinatarios')
+  })
+
   it('flags a resend after rejection, and does not flag an ordinary one', () => {
     // A record the AEAT rejected was never registered there, so it goes back
     // as an ordinary alta -- with RechazoPrevio so the resend reads as
     // deliberate rather than as a duplicate.
     expect(buildRegistroAlta(base)).to.not.contain('RechazoPrevio')
-    expect(buildRegistroAlta({ ...base, afterRejection: true })).to.contain(
-      '<sum1:RechazoPrevio>S</sum1:RechazoPrevio>',
-    )
+    // Both flags, never one. The AEAT refuses RechazoPrevio without
+    // Subsanacion (1161), and every retry was rejected for it.
+    const resent = buildRegistroAlta({ ...base, afterRejection: true })
+    expect(resent).to.contain('<sum1:Subsanacion>S</sum1:Subsanacion>')
+    expect(resent).to.contain('<sum1:RechazoPrevio>S</sum1:RechazoPrevio>')
+    expect(buildRegistroAlta(base)).to.not.contain('Subsanacion')
   })
 
   it('sends no Signature, because transmitting is what replaces it', () => {

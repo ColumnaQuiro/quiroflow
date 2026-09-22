@@ -344,6 +344,9 @@ async function createInvoice(opts: {
   invoiceNumber?: string
   totalCents?: number
   status?: string
+  /** The visit this charge is for. Most invoices have one; the ledger and
+   *  the appointment row both read it. */
+  appointmentId?: string
 }) {
   const { accountId, patientId, invoiceNumber, totalCents, status } = opts
   const row = unwrap(
@@ -355,6 +358,7 @@ async function createInvoice(opts: {
         invoice_number: invoiceNumber ?? `INV-${Date.now()}`,
         ...(totalCents !== undefined ? { total_cents: totalCents } : {}),
         ...(status !== undefined ? { status } : {}),
+        ...(opts.appointmentId !== undefined ? { appointment_id: opts.appointmentId } : {}),
       })
       .select('id, invoice_number')
       .single(),
@@ -949,6 +953,44 @@ async function insertDuplicateSession(opts: { accountId: string; patientId: stri
     used_at: new Date().toISOString(),
   })
   return { rejected: !!error, message: error?.message ?? null }
+}
+
+/**
+ * Draws one session of a bono against an appointment -- what the app does
+ * when a visit is logged to a pack. It is the case an invoice-shaped read
+ * of the data gets wrong: no invoice, no payment, no document, yet the visit
+ * is paid for.
+ */
+async function usePackageSession(opts: {
+  accountId: string
+  patientId: string
+  packagePurchaseId: string
+  appointmentId: string
+  amountCents: number
+  externalReference?: string
+}) {
+  const row = unwrap(
+    await admin
+      .from('package_sessions')
+      .insert({
+        account_id: opts.accountId,
+        patient_id: opts.patientId,
+        package_purchase_id: opts.packagePurchaseId,
+        appointment_id: opts.appointmentId,
+        amount_cents: opts.amountCents,
+        used_at: new Date().toISOString(),
+        ...(opts.externalReference ? { external_reference: opts.externalReference } : {}),
+      })
+      .select('id')
+      .single(),
+  )
+  // The pack's own counter is what the UI reads for "n of m left".
+  const purchase = unwrap(await admin.from('package_purchases').select('sessions_used').eq('id', opts.packagePurchaseId).single())
+  await admin
+    .from('package_purchases')
+    .update({ sessions_used: ((purchase as { sessions_used: number }).sessions_used ?? 0) + 1 })
+    .eq('id', opts.packagePurchaseId)
+  return row as { id: string }
 }
 
 /** The patient row itself, for assertions the UI does not display. */
@@ -2004,6 +2046,7 @@ export const dbTasks = {
   'db:sharePackageWith': sharePackageWith,
   'db:packageSessionEffects': packageSessionEffects,
   'db:insertDuplicateSession': insertDuplicateSession,
+  'db:usePackageSession': usePackageSession,
   'db:createWhatsappMessage': createWhatsappMessage,
   'db:seedWhatsappReplyScenario': seedWhatsappReplyScenario,
   'db:createAppointment': createAppointment,

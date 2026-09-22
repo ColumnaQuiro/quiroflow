@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { formatEur } from '~/utils/billing'
+import { isReceipt } from '~/utils/paymentReceipts'
 const props = defineProps<{ practitionerId?: string; clinicId?: string }>()
 
 const t = useT()
@@ -53,11 +54,13 @@ async function load() {
   // would drop it. No invoice means nothing to void.
   const { data: payments } = await supabase
     .from('payments')
-    .select('amount_cents, invoices(status)')
+    .select('amount_cents, method, invoices(status)')
     .gte('paid_at', fromDate.toISOString())
     .lte('paid_at', toDate.toISOString())
+  // Takings, so credit and write-off rows are out -- see utils/paymentReceipts.
   paymentsCents.value = (payments ?? [])
     .filter((p) => (p as unknown as { invoices: { status: string } | null }).invoices?.status !== 'void')
+    .filter((p) => isReceipt((p as unknown as { method: string }).method))
     .reduce((sum, p) => sum + p.amount_cents, 0)
 
   const { data: invoicesThisWeek } = await supabase

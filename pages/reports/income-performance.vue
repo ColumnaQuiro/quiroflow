@@ -3,9 +3,10 @@ import { formatEurFromAmount } from '~/utils/billing'
 import { Line } from 'vue-chartjs'
 import { computePresetRange, monthKeysInRange, rangeBounds } from '~/composables/useDateRangePresets'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
+import { isReceipt } from '~/utils/paymentReceipts'
 import { classifyPaymentForFilter } from '~/utils/incomeAttribution'
 
-interface PaymentRow { amount_cents: number; paid_at: string; invoice_id: string | null; patient_id: string | null; invoices?: { status: string } | null }
+interface PaymentRow { amount_cents: number; method: string; paid_at: string; invoice_id: string | null; patient_id: string | null; invoices?: { status: string } | null }
 interface InvoiceRow { id: string; appointment_id: string | null }
 interface AppointmentRow { id: string; practitioner_id: string | null; clinic_id: string | null }
 interface PatientRow { id: string; default_practitioner_id: string | null; clinic_id: string | null }
@@ -33,7 +34,7 @@ async function load() {
     fetchAllRows<PaymentRow>((f, t) =>
       supabase
         .from('payments')
-        .select('amount_cents, paid_at, invoice_id, patient_id, invoices(status)')
+        .select('amount_cents, method, paid_at, invoice_id, patient_id, invoices(status)')
         .gte('paid_at', from.toISOString())
         .lte('paid_at', to.toISOString())
         .range(f, t),
@@ -44,7 +45,10 @@ async function load() {
   // The void rule moved out of the query when the join went from inner to
   // left: a payment with no invoice has nothing to void and must survive it.
   const notVoid = (row: PaymentRow) => row.invoices?.status !== 'void'
-  payments.value = p.filter(notVoid)
+  // Credit and write-off rows settle an invoice without money arriving, and
+  // this figure is money -- see utils/paymentReceipts. Dropped here rather
+  // than at each total, because every number on this widget is takings.
+  payments.value = p.filter((row) => notVoid(row) && isReceipt(row.method))
   invoices.value = inv
   teamMembers.value = tm
 

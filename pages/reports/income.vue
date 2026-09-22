@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { formatEur } from '~/utils/billing'
 import { classifyPaymentForFilter } from '~/utils/incomeAttribution'
+import { isReceipt } from '~/utils/paymentReceipts'
 import { Line, Bar } from 'vue-chartjs'
 import { computePresetRange, monthKeysInRange, rangeBounds } from '~/composables/useDateRangePresets'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
@@ -207,16 +208,40 @@ function appointmentIdOf(invoiceId: string | null): string | null {
 const filteredPayments = computed(() => payments.value.filter((p) => classify(appointmentIdOf(p.invoice_id), p.patient_id) === 'matches'))
 const filteredInvoices = computed(() => invoices.value.filter((i) => classify(i.appointment_id, i.patient_id) === 'matches'))
 
+/**
+ * The money that actually came in.
+ *
+ * Credit and write-off rows settle an invoice without anything arriving --
+ * see utils/paymentReceipts -- so every figure on this page that means
+ * TAKINGS reads this instead of filteredPayments. "By service" deliberately
+ * does not: a session paid out of a bono is still a session delivered, and
+ * dropping it would leave the service chart describing a different month from
+ * the rest of the page.
+ */
+const receipts = computed(() => filteredPayments.value.filter((p) => isReceipt(p.method)))
+
+/**
+ * Credit spent in this period, named rather than silently missing.
+ *
+ * It is not income -- it was income on the day the patient paid it in, under
+ * cash or card -- but it is money the clinic handled this month, and a figure
+ * that simply disappears from a report is how the double count went unnoticed
+ * in the first place.
+ */
+const creditAppliedCents = computed(() =>
+  filteredPayments.value.filter((p) => p.method === 'credit').reduce((sum, p) => sum + p.amount_cents, 0),
+)
+
 // Money no filter can place -- almost all of it PracticeHub payments imported
 // unallocated, which PracticeHub never attributed either. Reported rather
 // than dropped, so a filtered total still reconciles with the takings.
 const unattributedCents = computed(() =>
   payments.value
-    .filter((p) => classify(appointmentIdOf(p.invoice_id), p.patient_id) === 'unattributable')
+    .filter((p) => isReceipt(p.method) && classify(appointmentIdOf(p.invoice_id), p.patient_id) === 'unattributable')
     .reduce((sum, p) => sum + p.amount_cents, 0),
 )
 
-const totalPaid = computed(() => filteredPayments.value.reduce((sum, p) => sum + p.amount_cents, 0))
+const totalPaid = computed(() => receipts.value.reduce((sum, p) => sum + p.amount_cents, 0))
 const totalCharged = computed(() => filteredInvoices.value.reduce((sum, i) => sum + i.total_cents, 0))
 /**
  * What is still unpaid on the invoices raised in this period.
@@ -262,7 +287,7 @@ const monthKeys = computed(() => monthKeysInRange(range.value))
 
 const revenueByMonth = computed(() => {
   const totals = new Map<string, number>(monthKeys.value.map((k) => [k, 0]))
-  for (const p of filteredPayments.value) {
+  for (const p of receipts.value) {
     const k = monthKey(p.paid_at)
     if (totals.has(k)) totals.set(k, (totals.get(k) ?? 0) + p.amount_cents)
   }
@@ -278,7 +303,7 @@ const { ensureLoaded: ensurePaymentMethodsLoaded, labelFor: labelForMethod } = u
 
 const byMethod = computed(() => {
   const totals = new Map<string, number>()
-  for (const p of filteredPayments.value) totals.set(p.method, (totals.get(p.method) ?? 0) + p.amount_cents)
+  for (const p of receipts.value) totals.set(p.method, (totals.get(p.method) ?? 0) + p.amount_cents)
   return [...totals.entries()].map(([method, cents]) => ({ method, cents })).sort((a, b) => b.cents - a.cents)
 })
 const methodChartData = computed(() => ({
@@ -294,7 +319,7 @@ const memberById = computed(() => new Map(teamMembers.value.map((m) => [m.id, m.
 
 const byPractitioner = computed(() => {
   const totals = new Map<string, number>()
-  for (const p of filteredPayments.value) {
+  for (const p of receipts.value) {
     const invoice = p.invoice_id ? invoiceById.value.get(p.invoice_id) : undefined
     const appt = invoice?.appointment_id ? appointmentById.value.get(invoice.appointment_id) : undefined
     const practitionerId = appt?.practitioner_id ?? null
@@ -397,7 +422,7 @@ const byService = computed(() => {
           </div>
           <div class="rounded-card border border-line bg-surface p-4 shadow-card">
             <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ t('Total paid', 'Total pagado') }}</p>
-            <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ eur(totalPaid) }}</p>
+            <p data-test="income-total-paid" class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ eur(totalPaid) }}</p>
           </div>
           <div class="rounded-card border border-line bg-surface p-4 shadow-card">
             <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ t('Outstanding', 'Pendiente') }}</p>
@@ -412,6 +437,16 @@ const byService = computed(() => {
         <p v-if="unattributedCents > 0" class="mt-2 text-[12px] text-ink-muted2">
           {{ t('Plus', 'Más') }} <span class="font-medium text-ink-700">{{ eur(unattributedCents) }}</span>
           {{ t('in this period that no filter can attribute — money with no visit and no practitioner on the patient.', 'en este periodo que ningún filtro puede atribuir: dinero sin visita y sin profesional en el paciente.') }}
+        </p>
+
+        <!-- Money handled, not money taken. Spending credit records a payment
+        of method 'credit', and for a while this page added it to the takings
+        beside the cash or card the patient had originally paid it in with --
+        so the same euros counted twice and "credit" appeared as a payment
+        method of its own. -->
+        <p v-if="creditAppliedCents > 0" class="mt-2 text-[12px] text-ink-muted2">
+          {{ t('A further', 'Además') }} <span class="font-medium text-ink-700">{{ eur(creditAppliedCents) }}</span>
+          {{ t('was settled from credit on account — already counted as income on the day it was paid in, so it is not in the totals above.', 'se liquidó con crédito en cuenta: ya se contó como ingreso el día en que se pagó, por lo que no está en los totales de arriba.') }}
         </p>
 
         <div v-if="filteredPayments.length === 0" class="mt-4 rounded-card border border-dashed border-line-control bg-surface p-6 text-center text-[13px] text-ink-faint2">

@@ -41,7 +41,7 @@ describe('Growth leads pipeline', () => {
 
     cy.task('db:createLead', {
       accountId: account.accountId,
-      fullName: 'Valeria Ocampo',
+      fullName: 'Ainara Quilez',
       stage: 'qualified',
       source: 'Meta Ads · Back pain',
       aiHandling: true,
@@ -57,7 +57,7 @@ describe('Growth leads pipeline', () => {
 
     // Seven stages are wider than the viewport, so a column to the right has
     // to be scrolled to before Cypress will call it visible.
-    cy.contains('[data-test="lead-column-qualified"]', 'Valeria Ocampo').scrollIntoView().should('be.visible')
+    cy.contains('[data-test="lead-column-qualified"]', 'Ainara Quilez').scrollIntoView().should('be.visible')
     cy.contains('AI handling').scrollIntoView().should('be.visible')
     cy.contains('Meta Ads · Back pain').scrollIntoView().should('be.visible')
 
@@ -145,7 +145,7 @@ describe('Growth leads pipeline', () => {
   it('opens the drawer with the timeline and attribution the API returned', () => {
     cy.task('db:createLead', {
       accountId: account.accountId,
-      fullName: 'Valeria Ocampo',
+      fullName: 'Ainara Quilez',
       stage: 'qualified',
       reference: 'LEAD-2026-0918',
       source: 'Meta Ads · Back pain',
@@ -157,7 +157,7 @@ describe('Growth leads pipeline', () => {
           occurredAt: '2026-09-11T19:45:00Z',
           body: {
             messages: [
-              { from: 'ai', text: 'Hi Valeria, this is Alba from Clínica Sants.' },
+              { from: 'ai', text: 'Hi Ainara, this is Alba from Clínica Sants.' },
               { from: 'lead', text: 'Comes and goes, worse after work.' },
             ],
           },
@@ -173,13 +173,13 @@ describe('Growth leads pipeline', () => {
     })
 
     cy.visit('/growth/leads?growth=1')
-    cy.contains('button', 'Valeria Ocampo').click()
+    cy.contains('button', 'Ainara Quilez').click()
 
     cy.get('[role="dialog"]').within(() => {
       cy.contains('LEAD-2026-0918').should('be.visible')
 
       cy.contains('Meta lead form submitted').should('be.visible')
-      cy.contains('Hi Valeria, this is Alba from Clínica Sants.').should('be.visible')
+      cy.contains('Hi Ainara, this is Alba from Clínica Sants.').should('be.visible')
       cy.contains('Initial Assessment · Mon 15 Sep, 19:30').should('be.visible')
 
       cy.contains('Campaign').should('be.visible')

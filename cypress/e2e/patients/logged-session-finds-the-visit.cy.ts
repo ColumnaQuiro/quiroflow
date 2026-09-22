@@ -22,7 +22,7 @@ describe('Logging a bono session', () => {
           priceCents: 52800,
         }).then((purchase: any) => {
           // Arrived and with the practitioner, not yet checked out — the state
-          // Jose Maria was in when his session was logged.
+          // Tomas was in when his session was logged.
           cy.task('db:createAppointment', {
             accountId: account.accountId,
             clinicId: account.clinicId,

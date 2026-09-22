@@ -18,7 +18,7 @@ interface SeededAccount {
 
 function seedConversation(account: SeededAccount, name: string, aiState: string, opts: { lastInboundMinutesAgo?: number } = {}) {
   return cy
-    .task('db:createLead', { accountId: account.accountId, fullName: name, stage: 'contacted', phone: '+34622471903', source: 'Meta Ads · Back pain' })
+    .task('db:createLead', { accountId: account.accountId, fullName: name, stage: 'contacted', phone: '+34600444901', source: 'Meta Ads · Back pain' })
     .then((lead) => {
       const leadId = (lead as { id: string }).id
       cy.task('db:createLeadMessage', {
@@ -394,7 +394,7 @@ describe('Growth in the shared Inbox', () => {
       cy.contains('[data-test="lead-row"]', 'Nuria Lead').should('be.visible')
       cy.contains('Unknown').should('not.exist')
       // The phone the lead wrote from must not open a thread of its own.
-      cy.contains('+34622471903').should('not.exist')
+      cy.contains('+34600444901').should('not.exist')
     })
 
     it('badges the lead rows and leaves the patient rows alone', () => {

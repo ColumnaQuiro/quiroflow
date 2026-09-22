@@ -24,7 +24,7 @@ describe('A payment records who took it', () => {
         // the amount instead matches the outstanding total, which is on
         // screen before the invoice list has loaded, and the picker then
         // opens with nothing selected and Record payment disabled.
-        cy.contains('INV-').should('be.visible')
+        cy.contains('INV-').should('exist')
         cy.contains('button', 'Take payment').click()
         cy.contains('button', 'Record payment').parents('form').as('form')
         // The first row already defaults to the full balance in cash.

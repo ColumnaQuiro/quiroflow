@@ -564,7 +564,7 @@ async function submitBooking() {
     p_last_name: lastName.value,
     p_email: email.value,
     // Bare number, no dial prefix -- country_code is stored separately and
-    // every display site (DetailSidebar.vue, ContactNumbersEditor.vue)
+    // every display site (patients/Banner.vue, ContactNumbersEditor.vue)
     // already prepends the dial code itself from country_code.
     p_phone: phoneNumber.value,
     p_country_code: dialCode.value,

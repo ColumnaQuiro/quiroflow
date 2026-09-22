@@ -48,7 +48,10 @@ describe('Credit spent is not counted as income', () => {
         cy.visit('/reports/income')
         cy.contains('Total paid').should('be.visible')
 
-        cy.get('[data-test="income-total-paid"]').should('have.text', '115,00 €')
+        // The space before the € is U+00A0 -- formatEur is es-ES, and neither
+        // have.text nor contain.text normalises whitespace, so a plain space
+        // fails against a value that is otherwise character-for-character right.
+        cy.get('[data-test="income-total-paid"]').should('have.text', '115,00 €')
       })
     })
   })
@@ -65,8 +68,8 @@ describe('Credit spent is not counted as income', () => {
         cy.visit('/reports/income')
         cy.contains('Total paid').should('be.visible')
 
-        cy.get('[data-test="income-total-paid"]').should('have.text', '110,00 €')
-        cy.contains('p', 'settled from credit on account').should('be.visible').and('contain.text', '55,00 €')
+        cy.get('[data-test="income-total-paid"]').should('have.text', '110,00 €')
+        cy.contains('p', 'settled from credit on account').should('be.visible').and('contain.text', '55,00 €')
       })
     })
   })
@@ -81,7 +84,7 @@ describe('Credit spent is not counted as income', () => {
         cy.visit('/reports/income')
         cy.contains('Total paid').should('be.visible')
 
-        cy.get('[data-test="income-total-paid"]').should('have.text', '40,00 €')
+        cy.get('[data-test="income-total-paid"]').should('have.text', '40,00 €')
       })
     })
   })
@@ -100,7 +103,7 @@ describe('Credit spent is not counted as income', () => {
           cy.visit('/reports/daily-transactions')
           cy.contains('Net collected').should('be.visible')
 
-          cy.get('[data-test="daily-net-collected"]').should('have.text', '115,00 €')
+          cy.get('[data-test="daily-net-collected"]').should('have.text', '115,00 €')
           cy.contains('Credit applied').should('be.visible')
           cy.contains('Not money in today').should('be.visible')
         })

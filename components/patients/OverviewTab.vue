@@ -1,159 +1,273 @@
 <script setup lang="ts">
-import { formatEur } from '~/utils/billing'
+import { dateBlock, formatEur, formatLongDate, formatTime } from '~/utils/billing'
+import { resolveVisitPayment, type VisitPayment } from '~/utils/visitPayment'
 import type { Tables } from '~/types/database.types'
-import { normalizeSearchTerm } from '~/utils/searchText'
 
+// Overview is a briefing, not a drawer.
+//
+// It used to open with four counters and then the patient's fourteen-field
+// administrative record -- an address, a referral source, a preferred
+// language. Those answer "who is this on paper", which is a question asked
+// while correcting a typo or chasing an insurer. It is not the question
+// anyone has four minutes before a patient walks in.
+//
+// So the order is now: what needs doing, what happens next, where they are
+// in their plan, what has been happening. The counters moved to
+// Appointments, which is the tab about visits; the record moved behind one
+// button into PatientsDetailsDialog. Six fields stayed, the ones worth a
+// glance.
 const props = defineProps<{ patient: Tables<'patients'> }>()
 const emit = defineEmits<{ updated: [] }>()
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
-const { showToast } = useToast()
 const { can } = usePermission()
 
-interface TeamMemberOption { id: string; full_name: string }
-interface TutorOption { id: string; first_name: string; last_name: string | null }
-const teamMembers = ref<TeamMemberOption[]>([])
-const referralSources = ref<Tables<'referral_sources'>[]>([])
-const tutorSearch = ref('')
-const tutorResults = ref<TutorOption[]>([])
-const selectedTutor = ref<TutorOption | null>(null)
+const detailsOpen = ref(false)
 
-// "Referred by" a specific patient -- same self-search pattern as tutor,
-// shown only when referral_source is exactly the "Patient" option (seeded
-// per-account by migration 0095; a display-string match, not a schema
-// flag, so renaming that referral source would silently break this).
-type ReferrerOption = TutorOption
-const referredBySearch = ref('')
-const referredByResults = ref<ReferrerOption[]>([])
-const selectedReferredBy = ref<ReferrerOption | null>(null)
-const referredPatients = ref<TutorOption[]>([])
-
-async function loadReferredPatients() {
-  const { data } = await supabase.from('patients').select('id, first_name, last_name').eq('referred_by_patient_id', props.patient.id)
-  referredPatients.value = data ?? []
+// -- Next appointment, and the visit before it -----------------------------
+interface ApptRow {
+  id: string
+  starts_at: string
+  ends_at: string
+  status: string
+  confirmation_status: string | null
+  clinic_id: string | null
+  practitioner_name: string | null
+  appointment_types: { name: string } | null
+  team_members: { full_name: string } | null
+  calendar_resources: { name: string } | null
 }
+const nextAppt = ref<ApptRow | null>(null)
+const lastVisit = ref<ApptRow | null>(null)
+const lastVisitPayment = ref<VisitPayment | null>(null)
+const apptLoading = ref(true)
 
-onMounted(async () => {
-  const [{ data: members }, { data: sources }] = await Promise.all([
-    supabase.from('team_members').select('id, full_name').order('full_name'),
-    supabase.from('referral_sources').select('*').order('name'),
+const APPT_COLS =
+  'id, starts_at, ends_at, status, confirmation_status, clinic_id, practitioner_name, appointment_types(name), team_members(full_name), calendar_resources(name)'
+
+async function loadAppointments() {
+  apptLoading.value = true
+  const [{ data: upcoming }, { data: past }] = await Promise.all([
+    supabase
+      .from('appointments')
+      .select(APPT_COLS)
+      .eq('patient_id', props.patient.id)
+      .eq('status', 'booked')
+      .gt('starts_at', new Date().toISOString())
+      .is('deleted_at', null)
+      .order('starts_at')
+      .limit(1),
+    supabase
+      .from('appointments')
+      .select(APPT_COLS)
+      .eq('patient_id', props.patient.id)
+      .eq('status', 'completed')
+      .is('deleted_at', null)
+      .order('starts_at', { ascending: false })
+      .limit(1),
   ])
-  teamMembers.value = members ?? []
-  referralSources.value = sources ?? []
-  if (props.patient.tutor_patient_id) {
-    const { data } = await supabase.from('patients').select('id, first_name, last_name').eq('id', props.patient.tutor_patient_id).maybeSingle()
-    if (data) selectedTutor.value = data
-  }
-  if (props.patient.referred_by_patient_id) {
-    const { data } = await supabase.from('patients').select('id, first_name, last_name').eq('id', props.patient.referred_by_patient_id).maybeSingle()
-    if (data) selectedReferredBy.value = data
-  }
-  await loadReferredPatients()
-})
-watch(() => props.patient.id, loadReferredPatients)
-
-let tutorDebounce: ReturnType<typeof setTimeout> | undefined
-watch(tutorSearch, (value) => {
-  clearTimeout(tutorDebounce)
-  if (!value.trim()) {
-    tutorResults.value = []
-    return
-  }
-  tutorDebounce = setTimeout(async () => {
-    const { data } = await supabase
-      .from('patients')
-      .select('id, first_name, last_name')
-      .neq('id', props.patient.id)
-      .ilike('search_name', `%${normalizeSearchTerm(value.trim())}%`)
-      .limit(8)
-    tutorResults.value = data ?? []
-  }, 250)
-})
-function pickTutor(t: TutorOption) {
-  selectedTutor.value = t
-  tutorSearch.value = ''
-  tutorResults.value = []
-}
-function tutorName(t: TutorOption) {
-  return `${t.first_name} ${t.last_name ?? ''}`.trim()
+  nextAppt.value = (upcoming?.[0] as unknown as ApptRow) ?? null
+  lastVisit.value = (past?.[0] as unknown as ApptRow) ?? null
+  lastVisitPayment.value = lastVisit.value ? await resolvePaymentFor(lastVisit.value.id) : null
+  apptLoading.value = false
 }
 
-let referredByDebounce: ReturnType<typeof setTimeout> | undefined
-watch(referredBySearch, (value) => {
-  clearTimeout(referredByDebounce)
-  if (!value.trim()) {
-    referredByResults.value = []
-    return
-  }
-  referredByDebounce = setTimeout(async () => {
-    const { data } = await supabase
-      .from('patients')
-      .select('id, first_name, last_name')
-      .neq('id', props.patient.id)
-      .ilike('search_name', `%${normalizeSearchTerm(value.trim())}%`)
-      .limit(8)
-    referredByResults.value = data ?? []
-  }, 250)
-})
-function pickReferredBy(p: ReferrerOption) {
-  selectedReferredBy.value = p
-  referredBySearch.value = ''
-  referredByResults.value = []
+// The same four-table walk the Appointments tab does, for one visit: the
+// footnote says how the last one was paid, and "paid" is not a column.
+async function resolvePaymentFor(appointmentId: string): Promise<VisitPayment> {
+  const [{ data: sessions }, { data: invoices }] = await Promise.all([
+    supabase
+      .from('package_sessions')
+      .select('amount_cents, external_reference, package_purchases(package_name, sessions_total, sessions_used, external_reference)')
+      .eq('appointment_id', appointmentId)
+      .limit(1),
+    supabase.from('invoices').select('id, invoice_number, total_cents, status').eq('appointment_id', appointmentId).limit(1),
+  ])
+  const session = sessions?.[0] as any
+  const invoice = invoices?.[0]
+  const { data: payments } = invoice
+    ? await supabase.from('payments').select('id, method, amount_cents').eq('invoice_id', invoice.id).order('paid_at')
+    : { data: [] as { id: string; method: string; amount_cents: number }[] }
+  const paymentIds = (payments ?? []).map((p) => p.id)
+  const { data: facturas } = paymentIds.length
+    ? await supabase.from('facturas').select('number').in('payment_id', paymentIds)
+    : { data: [] as { number: string }[] }
+  return resolveVisitPayment({
+    session: session ? { amount_cents: session.amount_cents, external_reference: session.external_reference } : null,
+    purchase: session?.package_purchases ?? null,
+    invoice: invoice ? { invoice_number: invoice.invoice_number, total_cents: invoice.total_cents, status: invoice.status } : null,
+    payments: (payments ?? []).map((p) => ({ method: p.method, amount_cents: p.amount_cents })),
+    facturaNumbers: (facturas ?? []).map((f) => f.number),
+  })
 }
 
+const METHOD_LABELS = computed<Record<string, string>>(() => ({
+  cash: t('cash', 'efectivo'),
+  card: t('card', 'tarjeta'),
+  credit: t('credit', 'crédito'),
+  transfer: t('transfer', 'transferencia'),
+  write_off: t('a write-off', 'una condonación'),
+}))
+
+/** "Last visit 13 de septiembre de 2026, paid by card." */
+const lastVisitFootnote = computed(() => {
+  if (!lastVisit.value) return null
+  const when = formatLongDate(lastVisit.value.starts_at)
+  const payment = lastVisitPayment.value
+  const prefix = `${t('Last visit', 'Última visita')} ${when}`
+  if (!payment || payment.kind === 'none') return `${prefix}.`
+  if (payment.kind === 'bono') return `${prefix}, ${t('drawn from', 'con cargo a')} ${payment.packageName}.`
+  if (payment.kind === 'unpaid') return `${prefix}, ${t('still unpaid', 'aún sin pagar')} (${formatEur(payment.totalCents)}).`
+  if (payment.kind === 'void') return `${prefix}, ${t('charge voided', 'cargo anulado')}.`
+  const methods = payment.methods.map((m) => METHOD_LABELS.value[m] ?? m).join(' + ')
+  return `${prefix}, ${t('paid by', 'pagada con')} ${methods}.`
+})
+
+function whereLine(appt: ApptRow) {
+  const minutes = Math.round((new Date(appt.ends_at).getTime() - new Date(appt.starts_at).getTime()) / 60000)
+  const clinic = store.clinics.find((c) => c.id === appt.clinic_id)?.name
+  return [appt.team_members?.full_name ?? appt.practitioner_name, appt.calendar_resources?.name, clinic, minutes > 0 ? `${minutes} min` : null]
+    .filter(Boolean)
+    .join(' · ')
+}
+
+// -- Needs attention -------------------------------------------------------
+// Rendered only when it has something to say. A permanently-present empty
+// "nothing needs attention" card trains people to skip the top of the page,
+// which is where the things that DO need attention will appear.
+interface AttentionRow {
+  key: string
+  tone: 'danger' | 'warning'
+  icon: 'money' | 'form'
+  sentence: string
+  action: string
+  go: () => void
+}
+const unpaid = ref<{ invoice_number: string; total_cents: number; created_at: string }[]>([])
+const awaitingForms = ref<{ id: string; title: string; created_at: string }[]>([])
+const attentionLoading = ref(true)
+
+async function loadAttention() {
+  attentionLoading.value = true
+  const [{ data: invoices }, { data: docs }] = await Promise.all([
+    supabase
+      .from('invoices')
+      .select('invoice_number, total_cents, created_at')
+      .eq('patient_id', props.patient.id)
+      .eq('status', 'unpaid')
+      .order('created_at'),
+    supabase
+      .from('patient_docs')
+      .select('id, title, created_at')
+      .eq('patient_id', props.patient.id)
+      .is('completed_at', null)
+      .order('created_at'),
+  ])
+  unpaid.value = invoices ?? []
+  awaitingForms.value = docs ?? []
+  attentionLoading.value = false
+}
+
+const attention = computed<AttentionRow[]>(() => {
+  const rows: AttentionRow[] = []
+  const owed = unpaid.value.reduce((sum, i) => sum + i.total_cents, 0)
+  if (unpaid.value.length > 0) {
+    const oldest = unpaid.value[0]
+    rows.push({
+      key: 'unpaid',
+      tone: 'danger',
+      icon: 'money',
+      sentence:
+        unpaid.value.length === 1
+          ? `${formatEur(owed)} ${t('unpaid since', 'sin pagar desde el')} ${formatLongDate(oldest.created_at)}`
+          : `${formatEur(owed)} ${t('unpaid across', 'sin pagar en')} ${unpaid.value.length} ${t('charges, oldest', 'cargos, el más antiguo del')} ${formatLongDate(oldest.created_at)}`,
+      action: t('Take payment', 'Cobrar'),
+      go: () => navigateTo(`/patients/${props.patient.id}?tab=money`),
+    })
+  }
+  for (const doc of awaitingForms.value) {
+    rows.push({
+      key: `doc-${doc.id}`,
+      tone: 'warning',
+      icon: 'form',
+      sentence: `${doc.title} ${t('sent', 'enviado el')} ${formatLongDate(doc.created_at)}, ${t('not returned yet', 'aún sin devolver')}`,
+      action: t('Resend', 'Reenviar'),
+      go: () => navigateTo(`/patients/${props.patient.id}?tab=attachments`),
+    })
+  }
+  return rows
+})
+
+// -- Care plan -------------------------------------------------------------
+interface PlanRow { id: string; name: string; total_visits: number; frequency_value: number; frequency_unit: string; started_at: string | null }
+const plan = ref<PlanRow | null>(null)
+const planCompleted = ref(0)
+const planLoading = ref(true)
+
+async function loadPlan() {
+  planLoading.value = true
+  const [{ data: plans }, { count }] = await Promise.all([
+    supabase
+      .from('care_plans')
+      .select('id, name, total_visits, frequency_value, frequency_unit, started_at')
+      .eq('patient_id', props.patient.id)
+      .order('created_at', { ascending: false })
+      .limit(1),
+    supabase
+      .from('appointments')
+      .select('id', { count: 'exact', head: true })
+      .eq('patient_id', props.patient.id)
+      .eq('status', 'completed'),
+  ])
+  plan.value = (plans?.[0] as PlanRow) ?? null
+  planCompleted.value = count ?? 0
+  planLoading.value = false
+}
+
+const planPercent = computed(() => {
+  if (!plan.value || plan.value.total_visits <= 0) return 0
+  return Math.min(100, Math.round((planCompleted.value / plan.value.total_visits) * 100))
+})
+const planCadence = computed(() => {
+  if (!plan.value) return null
+  const unit = plan.value.frequency_unit === 'week' ? t('week', 'semana') : t('month', 'mes')
+  const plural = plan.value.frequency_unit === 'week' ? t('weeks', 'semanas') : t('months', 'meses')
+  return `${plan.value.frequency_value}× ${t('per', 'por')} ${plan.value.frequency_value === 1 ? unit : plural}`
+})
+// Goals are one free-text field, not a list, so they are split on the
+// separators people actually type rather than pretending the schema has
+// structure it does not.
+const goalChips = computed(() =>
+  (props.patient.goals ?? '')
+    .split(/[\n;,]+/)
+    .map((g) => g.trim())
+    .filter(Boolean)
+    .slice(0, 6),
+)
+
+// -- Clinical snapshot -----------------------------------------------------
+// red_flags and yellow_flags are free text, not counts, so a pill says
+// whether there is something to read rather than inventing a number by
+// splitting prose.
+const hasRedFlags = computed(() => !!props.patient.red_flags?.trim())
+const hasYellowFlags = computed(() => !!props.patient.yellow_flags?.trim())
+
+// -- The six fields worth a glance ----------------------------------------
 function teamMemberName(id: string | null) {
   return teamMembers.value.find((m) => m.id === id)?.full_name ?? t('None', 'Ninguno')
 }
-function clinicName(id: string | null) {
-  return store.clinics.find((c) => c.id === id)?.name ?? t('None', 'Ninguna')
-}
-function languageLabel(code: string) {
-  return LANGUAGES.find((l) => l.code === code)?.label ?? code
-}
-function channelLabel(value: string) {
-  return CHANNEL_OPTIONS.find((c) => c.value === value)?.label ?? value
-}
+const teamMembers = ref<{ id: string; full_name: string }[]>([])
 
-// -- KPI strip ------------------------------------------------------------
-const kpiLoading = ref(true)
-const visits12mo = ref(0)
-const attendancePct = ref<number | null>(null)
-const lastVisit = ref<string | null>(null)
-
-// The same shared summary the sidebar and Billing tab read -- "Lifetime
-// value" is the sum of the patient's payments, which that composable has
-// already computed for balanceCents. Deriving it here meant an invoices
-// query plus a *dependent* payments query, both duplicates, on the default
-// tab of every patient open.
-const { lifetimeCents, loading: financialSummaryLoading } = usePatientFinancialSummary(() => props.patient.id)
-
-async function loadKpis() {
-  kpiLoading.value = true
-  const oneYearAgo = new Date()
-  oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
-
-  const { data: appts } = await supabase.from('appointments').select('status, starts_at').eq('patient_id', props.patient.id)
-
-  visits12mo.value = (appts ?? []).filter((a) => a.status === 'completed' && a.starts_at >= oneYearAgo.toISOString()).length
-
-  const completed = (appts ?? []).filter((a) => a.status === 'completed')
-  const noShow = (appts ?? []).filter((a) => a.status === 'no_show')
-  const denom = completed.length + noShow.length
-  attendancePct.value = denom === 0 ? null : Math.round((completed.length / denom) * 100)
-
-  const pastCompleted = completed.slice().sort((a, b) => b.starts_at.localeCompare(a.starts_at))
-  lastVisit.value = pastCompleted[0]?.starts_at ?? null
-
-  kpiLoading.value = false
-}
-onMounted(loadKpis)
-watch(() => props.patient.id, loadKpis)
-
-function money(cents: number) {
-  return formatEur(cents)
-}
+const glanceFields = computed(() => [
+  { key: 'dob', label: t('Date of birth', 'Fecha de nacimiento'), value: props.patient.date_of_birth ? formatLongDate(props.patient.date_of_birth) : null },
+  { key: 'nif', label: t('National ID', 'DNI/NIE'), value: props.patient.national_id, mono: true },
+  { key: 'email', label: t('Email', 'Correo electrónico'), value: props.patient.email },
+  { key: 'practitioner', label: t('Practitioner', 'Profesional'), value: teamMemberName(props.patient.default_practitioner_id) },
+  { key: 'clinic', label: t('Clinic', 'Clínica'), value: store.clinics.find((c) => c.id === props.patient.clinic_id)?.name ?? null },
+  { key: 'referral', label: t('Referred by', 'Origen'), value: props.patient.referral_source },
+])
 
 // -- Recent activity -------------------------------------------------------
 interface ActivityItem { at: string; text: string; dot: string }
@@ -214,473 +328,155 @@ function relativeTime(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
-// -- Details edit form -------------------------------------------------
-const editing = ref(false)
-const saving = ref(false)
-const error = ref('')
-
-const firstName = ref(props.patient.first_name)
-const lastName = ref(props.patient.last_name ?? '')
-const dateOfBirth = ref(props.patient.date_of_birth ?? '')
-const email = ref(props.patient.email ?? '')
-const address = ref(props.patient.address ?? '')
-const postalCode = ref(props.patient.postal_code ?? '')
-const city = ref(props.patient.city ?? '')
-const country = ref(props.patient.country ?? '')
-const nationalId = ref(props.patient.national_id ?? '')
-const clinicId = ref(props.patient.clinic_id ?? '')
-const tagsInput = ref(props.patient.tags.join(', '))
-const occupation = ref(props.patient.occupation ?? '')
-const emergencyContact = ref(props.patient.emergency_contact ?? '')
-const referralSource = ref(props.patient.referral_source ?? '')
-const preferredLanguage = ref(props.patient.preferred_language)
-const defaultPractitionerId = ref(props.patient.default_practitioner_id ?? '')
-const invoiceEmailEnabled = ref(props.patient.invoice_email_enabled)
-const reminderChannel = ref(props.patient.reminder_channel)
-const confirmationChannel = ref(props.patient.confirmation_channel)
-const marketingChannels = ref<string[]>([...props.patient.marketing_channels])
-const status = ref(props.patient.status)
-const isMinor = ref(props.patient.is_minor)
-const doNotContact = ref(props.patient.do_not_contact)
-
-async function startEditing() {
-  firstName.value = props.patient.first_name
-  lastName.value = props.patient.last_name ?? ''
-  dateOfBirth.value = props.patient.date_of_birth ?? ''
-  email.value = props.patient.email ?? ''
-  address.value = props.patient.address ?? ''
-  postalCode.value = props.patient.postal_code ?? ''
-  city.value = props.patient.city ?? ''
-  country.value = props.patient.country ?? ''
-  nationalId.value = props.patient.national_id ?? ''
-  clinicId.value = props.patient.clinic_id ?? ''
-  tagsInput.value = props.patient.tags.join(', ')
-  occupation.value = props.patient.occupation ?? ''
-  emergencyContact.value = props.patient.emergency_contact ?? ''
-  referralSource.value = props.patient.referral_source ?? ''
-  preferredLanguage.value = props.patient.preferred_language
-  defaultPractitionerId.value = props.patient.default_practitioner_id ?? ''
-  invoiceEmailEnabled.value = props.patient.invoice_email_enabled
-  reminderChannel.value = props.patient.reminder_channel
-  confirmationChannel.value = props.patient.confirmation_channel
-  marketingChannels.value = [...props.patient.marketing_channels]
-  status.value = props.patient.status
-  isMinor.value = props.patient.is_minor
-  doNotContact.value = props.patient.do_not_contact
-  selectedTutor.value = null
-  if (props.patient.tutor_patient_id) {
-    const { data } = await supabase.from('patients').select('id, first_name, last_name').eq('id', props.patient.tutor_patient_id).maybeSingle()
-    if (data) selectedTutor.value = data
-  }
-  selectedReferredBy.value = null
-  if (props.patient.referred_by_patient_id) {
-    const { data } = await supabase.from('patients').select('id, first_name, last_name').eq('id', props.patient.referred_by_patient_id).maybeSingle()
-    if (data) selectedReferredBy.value = data
-  }
-  editing.value = true
+async function loadAll() {
+  await Promise.all([loadAppointments(), loadAttention(), loadPlan(), loadActivity()])
 }
+onMounted(async () => {
+  const { data } = await supabase.from('team_members').select('id, full_name').order('full_name')
+  teamMembers.value = data ?? []
+  await loadAll()
+})
+watch(() => props.patient.id, loadAll)
 
-const { fire } = useAutomations()
-
-async function save() {
-  error.value = ''
-  saving.value = true
-  const tags = tagsInput.value
-    .split(',')
-    .map((t) => t.trim())
-    .filter(Boolean)
-
-  const newReferredById = referralSource.value === 'Patient' ? (selectedReferredBy.value?.id ?? null) : null
-
-  const { error: updateError } = await supabase
-    .from('patients')
-    .update({
-      first_name: firstName.value,
-      last_name: lastName.value || null,
-      date_of_birth: dateOfBirth.value || null,
-      email: email.value || null,
-      address: address.value || null,
-      postal_code: postalCode.value || null,
-      city: city.value || null,
-      country: country.value || null,
-      national_id: nationalId.value || null,
-      clinic_id: clinicId.value || null,
-      tags,
-      occupation: occupation.value || null,
-      emergency_contact: emergencyContact.value || null,
-      referral_source: referralSource.value || null,
-      preferred_language: preferredLanguage.value,
-      default_practitioner_id: defaultPractitionerId.value || null,
-      invoice_email_enabled: invoiceEmailEnabled.value,
-      reminder_channel: reminderChannel.value,
-      confirmation_channel: confirmationChannel.value,
-      marketing_channels: marketingChannels.value,
-      status: status.value,
-      is_minor: isMinor.value,
-      do_not_contact: doNotContact.value,
-      tutor_patient_id: isMinor.value ? (selectedTutor.value?.id ?? null) : null,
-      referred_by_patient_id: newReferredById,
-    })
-    .eq('id', props.patient.id)
-
-  saving.value = false
-  if (updateError) {
-    error.value = updateError.message
-    showToast(updateError.message, 'error')
-    return
-  }
-  showToast(t('Patient saved', 'Paciente guardado'))
-  // Fires for the REFERRER, not this patient -- only on the transition into
-  // a newly-linked referrer, so re-saving the form without touching this
-  // field (or clearing it) never re-fires the thank-you campaign.
-  if (newReferredById && newReferredById !== props.patient.referred_by_patient_id) {
-    fire('patient.referred', { patientId: newReferredById })
-  }
-  editing.value = false
+function onDetailsUpdated() {
   emit('updated')
+  loadAll()
 }
-
-const inputClass = 'mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none'
-const labelClass = 'block text-[12px] font-medium text-ink-muted'
 </script>
 
 <template>
-  <div class="space-y-4">
-    <!-- KPI strip -->
-    <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-      <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-        <p class="text-[11.5px] text-ink-muted2">{{ t('Visits, 12 mo', 'Visitas, 12 meses') }}</p>
-        <p class="mt-1 font-mono text-[20px] font-semibold text-ink-900">{{ kpiLoading ? '—' : visits12mo }}</p>
-      </div>
-      <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-        <p class="text-[11.5px] text-ink-muted2">{{ t('Attendance', 'Asistencia') }}</p>
-        <p class="mt-1 font-mono text-[20px] font-semibold text-ink-900">{{ kpiLoading || attendancePct === null ? '—' : `${attendancePct}%` }}</p>
-      </div>
-      <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-        <p class="text-[11.5px] text-ink-muted2">{{ t('Last visit', 'Última visita') }}</p>
-        <p class="mt-1 text-[20px] font-semibold text-ink-900">
-          {{ kpiLoading ? '—' : lastVisit ? new Date(lastVisit).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '—' }}
-        </p>
-      </div>
-      <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-        <p class="text-[11.5px] text-ink-muted2">{{ t('Lifetime value', 'Valor histórico') }}</p>
-        <p class="mt-1 font-mono text-[20px] font-semibold text-ink-900">{{ financialSummaryLoading ? '—' : money(lifetimeCents) }}</p>
-      </div>
-    </div>
-
-    <!-- Patient details -->
-    <div class="rounded-card border border-line bg-surface p-5 shadow-card">
-      <div class="flex items-center justify-between">
-        <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Patient details', 'Datos del paciente') }}</p>
-        <UiIconBtn v-if="!editing" icon="pencil" :label="t('Edit', 'Editar')" @click="startEditing" />
-      </div>
-
-      <!-- Phone numbers are a separate one-to-many table (patient_contact_numbers),
-           not a scalar field on `patients` -- it manages its own add/remove and
-           saves immediately (no Save button), but the add/remove controls are only
-           shown while editing, matching every other field on this card. -->
-      <div class="mt-4 border-b border-line-divider pb-4">
-        <PatientsContactNumbersEditor :patient-id="patient.id" :editable="editing" />
-      </div>
-
-      <dl v-if="!editing" class="mt-4 grid grid-cols-3 gap-x-6 gap-y-4">
-        <div>
-          <dt class="text-[11.5px] text-ink-muted2">{{ t('Date of birth', 'Fecha de nacimiento') }}</dt>
-          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.date_of_birth ?? t('N/A', 'N/D') }}</dd>
-        </div>
-        <div>
-          <dt class="text-[11.5px] text-ink-muted2">{{ t('Email', 'Correo electrónico') }}</dt>
-          <dd class="mt-0.5 truncate text-[13.5px] text-ink-700">{{ patient.email ?? t('N/A', 'N/D') }}</dd>
-        </div>
-        <div>
-          <dt class="text-[11.5px] text-ink-muted2">{{ t('Address', 'Dirección') }}</dt>
-          <dd class="mt-0.5 text-[13.5px] text-ink-700">
-            <p class="truncate">{{ patient.address ?? t('N/A', 'N/D') }}</p>
-            <p v-if="patient.city || patient.postal_code || patient.country" class="truncate text-ink-muted">
-              {{ [patient.postal_code, patient.city].filter(Boolean).join(' ') }}{{ patient.country ? (patient.city || patient.postal_code ? ', ' : '') + patient.country : '' }}
-            </p>
-          </dd>
-        </div>
-        <div>
-          <dt class="text-[11.5px] text-ink-muted2">{{ t('National ID', 'DNI/NIE') }}</dt>
-          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.national_id ?? t('N/A', 'N/D') }}</dd>
-        </div>
-        <div>
-          <dt class="text-[11.5px] text-ink-muted2">{{ t('Occupation', 'Profesión') }}</dt>
-          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.occupation ?? t('N/A', 'N/D') }}</dd>
-        </div>
-        <div>
-          <dt class="text-[11.5px] text-ink-muted2">{{ t('Emergency contact', 'Contacto de emergencia') }}</dt>
-          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.emergency_contact ?? t('N/A', 'N/D') }}</dd>
-        </div>
-        <div>
-          <dt class="text-[11.5px] text-ink-muted2">{{ t('Referral source', 'Origen de la referencia') }}</dt>
-          <dd class="mt-0.5 text-[13.5px] text-ink-700">
-            {{ patient.referral_source ?? t('N/A', 'N/D') }}
-            <template v-if="patient.referral_source === 'Patient'">
-              &middot;
-              <NuxtLink v-if="patient.referred_by_patient_id" :to="`/patients/${patient.referred_by_patient_id}`" class="text-brand-text hover:underline">
-                {{ selectedReferredBy ? tutorName(selectedReferredBy) : t('View patient', 'Ver paciente') }}
-              </NuxtLink>
-              <span v-else class="text-danger-text">{{ t('No patient linked', 'Ningún paciente vinculado') }}</span>
-            </template>
-          </dd>
-        </div>
-        <div>
-          <dt class="text-[11.5px] text-ink-muted2">{{ t('Preferred language', 'Idioma preferido') }}</dt>
-          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ languageLabel(patient.preferred_language) }}</dd>
-        </div>
-        <div>
-          <dt class="text-[11.5px] text-ink-muted2">{{ t('Default practitioner', 'Profesional predeterminado') }}</dt>
-          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ teamMemberName(patient.default_practitioner_id) }}</dd>
-        </div>
-        <div>
-          <dt class="text-[11.5px] text-ink-muted2">{{ t('Clinic', 'Clínica') }}</dt>
-          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ clinicName(patient.clinic_id) }}</dd>
-        </div>
-        <div class="col-span-2">
-          <dt class="text-[11.5px] text-ink-muted2">{{ t('Tags', 'Etiquetas') }}</dt>
-          <dd class="mt-0.5 text-[13.5px] text-ink-700">
-            <span v-if="patient.tags.length === 0">{{ t('None', 'Ninguna') }}</span>
-            <span v-for="tag in patient.tags" :key="tag" class="mr-1 inline-block rounded-pill bg-chip-bg px-2 py-0.5 text-[11px] font-medium text-chip-text">
-              {{ tag }}
+  <div class="flex flex-col gap-4 xl:flex-row xl:items-start">
+    <!-- Main column: what needs doing, what is next, where they are, what
+         has happened. In that order, because that is the order the question
+         gets asked in. -->
+    <div class="flex min-w-0 flex-1 flex-col gap-4">
+      <!-- 1. Needs attention. Absent, not empty, when there is nothing. -->
+      <section v-if="attention.length > 0" aria-labelledby="ov-attention" class="rounded-card border border-line bg-surface shadow-card">
+        <h2 id="ov-attention" class="border-b border-line-divider px-4 py-3 text-[13.5px] font-semibold text-ink-700">
+          {{ t('Needs attention', 'Requiere atención') }}
+        </h2>
+        <ul class="divide-y divide-line-row">
+          <li v-for="row in attention" :key="row.key" class="flex flex-col gap-2.5 px-4 py-3 sm:flex-row sm:items-center sm:gap-3">
+            <span
+              aria-hidden="true"
+              class="flex h-8 w-8 shrink-0 items-center justify-center rounded-ctl"
+              :class="row.tone === 'danger' ? 'bg-danger-bg text-danger-text' : 'bg-warning-bg text-warning-text'"
+            >
+              <svg v-if="row.icon === 'money'" viewBox="0 0 16 16" fill="none" class="h-4 w-4">
+                <rect x="1.8" y="4" width="12.4" height="8" rx="1.6" stroke="currentColor" stroke-width="1.3" />
+                <circle cx="8" cy="8" r="1.8" stroke="currentColor" stroke-width="1.3" />
+              </svg>
+              <svg v-else viewBox="0 0 16 16" fill="none" class="h-4 w-4">
+                <path d="M4 2h5l3 3v9H4z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />
+                <path d="M9 2v3h3M6 9h4M6 11.5h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+              </svg>
             </span>
-          </dd>
-        </div>
-        <div>
-          <dt class="text-[11.5px] text-ink-muted2">{{ t('Status', 'Estado') }}</dt>
-          <dd class="mt-0.5"><UiPill :tone="patient.status === 'active' ? 'success' : 'neutral'">{{ patient.status === 'active' ? t('Active', 'Activo') : t('Inactive', 'Inactivo') }}</UiPill></dd>
-        </div>
-        <div v-if="patient.is_minor">
-          <dt class="text-[11.5px] text-ink-muted2">{{ t('Tutor', 'Tutor') }}</dt>
-          <dd class="mt-0.5 text-[13.5px] text-ink-700">
-            <NuxtLink v-if="patient.tutor_patient_id" :to="`/patients/${patient.tutor_patient_id}`" class="text-brand-text hover:underline">
-              {{ selectedTutor ? tutorName(selectedTutor) : t('View tutor', 'Ver tutor') }}
-            </NuxtLink>
-            <span v-else class="text-danger-text">{{ t('No tutor linked', 'Ningún tutor vinculado') }}</span>
-          </dd>
-        </div>
-        <div v-if="referredPatients.length > 0">
-          <dt class="text-[11.5px] text-ink-muted2">{{ t('Referred patients', 'Pacientes referidos') }}</dt>
-          <dd class="mt-0.5 flex flex-wrap gap-x-2 text-[13.5px] text-ink-700">
-            <NuxtLink v-for="r in referredPatients" :key="r.id" :to="`/patients/${r.id}`" class="text-brand-text hover:underline">{{ tutorName(r) }}</NuxtLink>
-          </dd>
-        </div>
-        <div>
-          <dt class="text-[11.5px] text-ink-muted2">{{ t('Communication flags', 'Alertas de comunicación') }}</dt>
-          <dd class="mt-0.5 flex flex-wrap gap-1">
-            <UiPill v-if="patient.is_minor" tone="brand">{{ t('Under age — no communications', 'Menor de edad — sin comunicaciones') }}</UiPill>
-            <UiPill v-if="patient.do_not_contact" tone="danger">{{ t('Do not contact', 'No contactar') }}</UiPill>
-            <span v-if="!patient.is_minor && !patient.do_not_contact" class="text-[13.5px] text-ink-700">{{ t('None', 'Ninguna') }}</span>
-          </dd>
-        </div>
-      </dl>
+            <p class="min-w-0 flex-1 text-[13.5px] text-ink-700">{{ row.sentence }}</p>
+            <button
+              type="button"
+              class="flex h-9 shrink-0 items-center justify-center rounded-ctl border border-line-control px-3 text-[13px] font-semibold text-ink-700 outline-none hover:border-line-controlHover focus-visible:shadow-focus"
+              @click="row.go()"
+            >
+              {{ row.action }}
+            </button>
+          </li>
+        </ul>
+      </section>
 
-      <form v-else class="mt-4 space-y-4" @submit.prevent="save">
-        <div class="grid grid-cols-3 gap-4">
-          <div>
-            <label :class="labelClass">{{ t('First name', 'Nombre') }}</label>
-            <input v-model="firstName" type="text" required :class="inputClass" />
-          </div>
-          <div>
-            <label :class="labelClass">{{ t('Last name', 'Apellidos') }}</label>
-            <input v-model="lastName" type="text" :class="inputClass" />
-          </div>
-          <div>
-            <label :class="labelClass">{{ t('Date of birth', 'Fecha de nacimiento') }}</label>
-            <input v-model="dateOfBirth" type="date" :class="inputClass" />
-          </div>
-          <div>
-            <label :class="labelClass">{{ t('Email', 'Correo electrónico') }}</label>
-            <input v-model="email" type="email" :class="inputClass" />
-          </div>
-          <div>
-            <label :class="labelClass">{{ t('Street address', 'Dirección') }}</label>
-            <input v-model="address" type="text" :class="inputClass" />
-          </div>
-          <div>
-            <label :class="labelClass">{{ t('Postal code', 'Código postal') }}</label>
-            <input v-model="postalCode" type="text" :class="inputClass" />
-          </div>
-          <div>
-            <label :class="labelClass">{{ t('City', 'Ciudad') }}</label>
-            <input v-model="city" type="text" :class="inputClass" />
-          </div>
-          <div>
-            <label :class="labelClass">{{ t('Country', 'País') }}</label>
-            <input v-model="country" type="text" :class="inputClass" />
-          </div>
-          <div>
-            <label :class="labelClass">{{ t('National ID', 'DNI/NIE') }}</label>
-            <input v-model="nationalId" type="text" :class="inputClass" />
-          </div>
-          <div>
-            <label :class="labelClass">{{ t('Occupation', 'Profesión') }}</label>
-            <input v-model="occupation" type="text" :class="inputClass" />
-          </div>
-          <div>
-            <label :class="labelClass">{{ t('Emergency contact', 'Contacto de emergencia') }}</label>
-            <input v-model="emergencyContact" type="text" :class="inputClass" />
-          </div>
-          <div>
-            <label :class="labelClass">{{ t('Referral source', 'Origen de la referencia') }}</label>
-            <select v-model="referralSource" :class="inputClass">
-              <option value="">{{ t('Not set', 'Sin especificar') }}</option>
-              <option v-for="s in referralSources" :key="s.id" :value="s.name">{{ s.name }}</option>
-              <!-- Preserves legacy freeform data that doesn't match a configured source. -->
-              <option v-if="referralSource && !referralSources.some((s) => s.name === referralSource)" :value="referralSource">{{ referralSource }}</option>
-            </select>
-            <div v-if="referralSource === 'Patient'" class="mt-2">
-              <label :class="labelClass">{{ t('Referred by (existing patient)', 'Referido por (paciente existente)') }}</label>
-              <div v-if="selectedReferredBy" class="mt-1 flex items-center gap-2">
-                <span class="text-[13px] text-ink-700">{{ tutorName(selectedReferredBy) }}</span>
-                <button type="button" class="text-[12px] text-danger-text hover:underline" @click="selectedReferredBy = null">{{ t('Remove', 'Quitar') }}</button>
-              </div>
-              <div v-else class="relative mt-1">
-                <input v-model="referredBySearch" type="text" :placeholder="t('Search patient by name…', 'Buscar paciente por nombre…')" :class="inputClass" />
-                <ul v-if="referredByResults.length > 0" class="absolute z-10 mt-1 w-full rounded-ctl border border-line bg-surface py-1 shadow-popover">
-                  <li v-for="p in referredByResults" :key="p.id">
-                    <button type="button" class="block w-full px-3 py-1.5 text-left text-[13px] text-ink-700 hover:bg-surface-subtle" @click="pickReferredBy(p)">
-                      {{ tutorName(p) }}
-                    </button>
-                  </li>
-                </ul>
-              </div>
+      <!-- 2. Next appointment -->
+      <section aria-labelledby="ov-next" class="rounded-card border border-line bg-surface p-4 shadow-card">
+        <h2 id="ov-next" class="text-[13.5px] font-semibold text-ink-700">{{ t('Next appointment', 'Próxima cita') }}</h2>
+
+        <div v-if="apptLoading" class="mt-3 flex items-center gap-3">
+          <UiSkeleton class="h-12 w-12 rounded-ctl" />
+          <UiSkeleton class="h-4 w-48 rounded-ctlSm" />
+        </div>
+
+        <template v-else-if="nextAppt">
+          <div class="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div class="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-ctl border border-line bg-surface-subtle2">
+              <span class="font-mono text-[16px] font-semibold leading-none text-ink-900">{{ dateBlock(nextAppt.starts_at).day }}</span>
+              <span class="mt-0.5 text-[10px] uppercase leading-none text-ink-muted2">{{ dateBlock(nextAppt.starts_at).month }}</span>
             </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-[15px] text-ink-900">
+                <span class="font-mono">{{ formatTime(nextAppt.starts_at) }}</span>
+                <span v-if="nextAppt.appointment_types?.name"> · {{ nextAppt.appointment_types.name }}</span>
+              </p>
+              <p v-if="whereLine(nextAppt)" class="text-[12.5px] text-ink-muted2">{{ whereLine(nextAppt) }}</p>
+            </div>
+            <UiPill :tone="nextAppt.confirmation_status === 'confirmed' ? 'success' : 'neutral'">
+              {{ nextAppt.confirmation_status === 'confirmed' ? t('Confirmed', 'Confirmada') : t('Not confirmed', 'Sin confirmar') }}
+            </UiPill>
           </div>
-          <div>
-            <label :class="labelClass">{{ t('Preferred language', 'Idioma preferido') }}</label>
-            <select v-model="preferredLanguage" :class="inputClass">
-              <option v-for="l in LANGUAGES" :key="l.code" :value="l.code">{{ l.label }}</option>
-            </select>
+
+          <div class="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              class="flex h-9 items-center rounded-ctl border border-line-control px-3 text-[13px] font-semibold text-ink-700 outline-none hover:border-line-controlHover focus-visible:shadow-focus"
+              @click="navigateTo('/calendar')"
+            >
+              {{ t('Reschedule', 'Reprogramar') }}
+            </button>
+            <button
+              type="button"
+              class="flex h-9 items-center rounded-ctl border border-line-control px-3 text-[13px] font-semibold text-ink-700 outline-none hover:border-line-controlHover focus-visible:shadow-focus"
+              @click="navigateTo(`/patients/${patient.id}?tab=appointments`)"
+            >
+              {{ t('Send confirmation', 'Enviar confirmación') }}
+            </button>
           </div>
-          <div>
-            <label :class="labelClass">{{ t('Default practitioner', 'Profesional predeterminado') }}</label>
-            <select v-model="defaultPractitionerId" :class="inputClass">
-              <option value="">{{ t('None', 'Ninguno') }}</option>
-              <option v-for="m in teamMembers" :key="m.id" :value="m.id">{{ m.full_name }}</option>
-            </select>
-          </div>
-          <div>
-            <label :class="labelClass">{{ t('Clinic', 'Clínica') }}</label>
-            <select v-model="clinicId" :class="inputClass">
-              <option value="">{{ t('No primary clinic', 'Sin clínica principal') }}</option>
-              <option v-for="clinic in store.clinics" :key="clinic.id" :value="clinic.id">{{ clinic.name }}</option>
-            </select>
-          </div>
-          <div class="col-span-3">
-            <label :class="labelClass">{{ t('Tags', 'Etiquetas') }}</label>
-            <input v-model="tagsInput" type="text" :placeholder="t('comma, separated, tags', 'etiquetas, separadas, por, comas')" :class="inputClass" />
-          </div>
-          <div>
-            <label :class="labelClass">{{ t('Status', 'Estado') }}</label>
-            <select v-model="status" :class="inputClass">
-              <option value="active">{{ t('Active', 'Activo') }}</option>
-              <option value="inactive">{{ t('Inactive', 'Inactivo') }}</option>
-            </select>
-          </div>
+        </template>
+
+        <p v-else class="mt-3 text-[13px] text-warning-text">{{ t('Nothing booked.', 'Nada reservado.') }}</p>
+
+        <!-- The footnote §4 asks for: the last visit, and how it was paid. -->
+        <p v-if="!apptLoading && lastVisitFootnote" class="mt-3 border-t border-line-divider pt-2.5 text-[12.5px] text-ink-muted">
+          {{ lastVisitFootnote }}
+        </p>
+      </section>
+
+      <!-- 3. Care plan -->
+      <section aria-labelledby="ov-plan" class="rounded-card border border-line bg-surface p-4 shadow-card">
+        <div class="flex items-center justify-between gap-2">
+          <h2 id="ov-plan" class="text-[13.5px] font-semibold text-ink-700">{{ t('Care plan', 'Plan de tratamiento') }}</h2>
+          <NuxtLink
+            :to="`/patients/${patient.id}?tab=clinical`"
+            class="text-[12.5px] font-medium text-brand-text outline-none hover:underline focus-visible:shadow-focus"
+          >
+            {{ t('Open', 'Abrir') }}
+          </NuxtLink>
         </div>
 
-        <div class="border-t border-line-divider pt-4">
-          <p class="text-[13px] font-semibold text-ink-700">{{ t('Under age & do not contact', 'Menor de edad y no contactar') }}</p>
-          <label class="mt-3 flex items-center gap-1.5 text-[13px] text-ink-600">
-            <input v-model="isMinor" type="checkbox" class="rounded border-line-control text-brand focus:ring-brand" />
-            {{ t('This patient is under age', 'Este paciente es menor de edad') }}
-          </label>
-          <div v-if="isMinor" class="mt-2.5 pl-5">
-            <label :class="labelClass">{{ t('Tutor (parent / guardian, must be an existing patient)', 'Tutor (padre/madre o tutor legal, debe ser un paciente existente)') }}</label>
-            <div v-if="selectedTutor" class="mt-1 flex items-center gap-2">
-              <span class="text-[13px] text-ink-700">{{ tutorName(selectedTutor) }}</span>
-              <button type="button" class="text-[12px] text-danger-text hover:underline" @click="selectedTutor = null">{{ t('Remove', 'Quitar') }}</button>
-            </div>
-            <div v-else class="relative mt-1">
-              <input v-model="tutorSearch" type="text" :placeholder="t('Search patient by name…', 'Buscar paciente por nombre…')" :class="inputClass" />
-              <ul v-if="tutorResults.length > 0" class="absolute z-10 mt-1 w-full rounded-ctl border border-line bg-surface py-1 shadow-popover">
-                <li v-for="t in tutorResults" :key="t.id">
-                  <button type="button" class="block w-full px-3 py-1.5 text-left text-[13px] text-ink-700 hover:bg-surface-subtle" @click="pickTutor(t)">
-                    {{ tutorName(t) }}
-                  </button>
-                </li>
-              </ul>
-            </div>
-            <p class="mt-1 text-[11px] text-ink-muted2">{{ t('While marked under age, no WhatsApp or email communications will be sent to this patient.', 'Mientras esté marcado como menor de edad, no se enviarán comunicaciones por WhatsApp o correo electrónico a este paciente.') }}</p>
+        <UiSkeleton v-if="planLoading" class="mt-3 h-4 w-40 rounded-ctlSm" />
+        <template v-else-if="plan">
+          <p class="mt-2.5 text-[14px] text-ink-900">{{ plan.name }}</p>
+          <p class="text-[12.5px] text-ink-muted2">
+            {{ t('Visit', 'Visita') }} {{ Math.min(planCompleted, plan.total_visits) }} {{ t('of', 'de') }} {{ plan.total_visits }}
+            <template v-if="planCadence"> · {{ planCadence }}</template>
+            <template v-if="plan.started_at"> · {{ t('since', 'desde') }} {{ formatLongDate(plan.started_at) }}</template>
+          </p>
+          <div class="mt-2 h-[6px] w-full overflow-hidden rounded-full bg-chip-bg2">
+            <div class="h-full rounded-full bg-brand" :style="{ width: `${planPercent}%` }" />
           </div>
-          <label class="mt-3 flex items-center gap-1.5 text-[13px] text-ink-600">
-            <input v-model="doNotContact" type="checkbox" class="rounded border-line-control text-brand focus:ring-brand" />
-            {{ t('Do not contact (blocks all communications and recalls)', 'No contactar (bloquea todas las comunicaciones y recordatorios)') }}
-          </label>
+          <div v-if="goalChips.length > 0" class="mt-3 flex flex-wrap gap-1.5">
+            <span v-for="goal in goalChips" :key="goal" class="rounded-pill bg-chip-bg px-2 py-0.5 text-[11.5px] text-chip-text">{{ goal }}</span>
+          </div>
+        </template>
+        <p v-else class="mt-3 text-[13px] text-ink-faint">{{ t('No plan set up for this patient yet.', 'Aún no hay plan para este paciente.') }}</p>
+      </section>
+
+      <!-- 4. Recent activity -->
+      <section aria-labelledby="ov-activity" class="rounded-card border border-line bg-surface p-4 shadow-card">
+        <div class="flex items-center justify-between gap-2">
+          <h2 id="ov-activity" class="text-[13.5px] font-semibold text-ink-700">{{ t('Recent activity', 'Actividad reciente') }}</h2>
+          <NuxtLink
+            :to="`/patients/${patient.id}?tab=appointments`"
+            class="text-[12.5px] font-medium text-brand-text outline-none hover:underline focus-visible:shadow-focus"
+          >
+            {{ t('View all', 'Ver todo') }}
+          </NuxtLink>
         </div>
-
-        <div class="border-t border-line-divider pt-4">
-          <p class="text-[13px] font-semibold text-ink-700">{{ t('Communication preferences', 'Preferencias de comunicación') }}</p>
-
-          <div class="mt-3">
-            <label :class="labelClass">{{ t('Marketing channels', 'Canales de marketing') }}</label>
-            <div class="mt-1.5 flex flex-wrap gap-4">
-              <label v-for="opt in MARKETING_CHANNEL_OPTIONS" :key="opt.value" class="flex items-center gap-1.5 text-[13px] text-ink-600">
-                <input v-model="marketingChannels" type="checkbox" :value="opt.value" class="rounded border-line-control text-brand focus:ring-brand" />
-                {{ opt.label }}
-              </label>
-            </div>
-          </div>
-
-          <div class="mt-3 grid grid-cols-2 gap-4">
-            <div>
-              <label :class="labelClass">{{ t('Reminder type', 'Tipo de recordatorio') }}</label>
-              <select v-model="reminderChannel" :class="inputClass">
-                <option v-for="opt in CHANNEL_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-              </select>
-            </div>
-            <div>
-              <label :class="labelClass">{{ t('Confirmation type', 'Tipo de confirmación') }}</label>
-              <select v-model="confirmationChannel" :class="inputClass">
-                <option v-for="opt in CHANNEL_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-              </select>
-            </div>
-          </div>
-
-          <label class="mt-3 flex items-center gap-1.5 text-[13px] text-ink-600">
-            <input v-model="invoiceEmailEnabled" type="checkbox" class="rounded border-line-control text-brand focus:ring-brand" />
-            {{ t('Email receipt when an appointment is processed', 'Enviar recibo por correo al procesar una cita') }}
-          </label>
-        </div>
-
-        <p v-if="error" class="text-[13px] text-danger-text">{{ error }}</p>
-        <div class="flex gap-2">
-          <UiBtn variant="primary" :disabled="saving" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}</UiBtn>
-          <UiBtn type="button" variant="ghost" @click="editing = false">{{ t('Cancel', 'Cancelar') }}</UiBtn>
-        </div>
-      </form>
-    </div>
-
-    <div v-if="!editing" class="grid grid-cols-2 gap-4">
-      <div class="rounded-card border border-line bg-surface p-5 shadow-card">
-        <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Communication preferences', 'Preferencias de comunicación') }}</p>
-        <div class="mt-3 space-y-2.5">
-          <div class="flex items-center justify-between gap-3">
-            <span class="text-[12.5px] text-ink-muted">{{ t('Reminders', 'Recordatorios') }}</span>
-            <UiPill tone="neutral">{{ channelLabel(patient.reminder_channel) }}</UiPill>
-          </div>
-          <div class="flex items-center justify-between gap-3">
-            <span class="text-[12.5px] text-ink-muted">{{ t('Confirmations', 'Confirmaciones') }}</span>
-            <UiPill tone="neutral">{{ channelLabel(patient.confirmation_channel) }}</UiPill>
-          </div>
-          <div class="flex items-center justify-between gap-3">
-            <span class="text-[12.5px] text-ink-muted">{{ t('Receipt email', 'Recibo por correo') }}</span>
-            <UiPill :tone="patient.invoice_email_enabled ? 'success' : 'neutral'">{{ patient.invoice_email_enabled ? t('Enabled', 'Activado') : t('Disabled', 'Desactivado') }}</UiPill>
-          </div>
-          <div class="flex items-start justify-between gap-3">
-            <span class="text-[12.5px] text-ink-muted">{{ t('Marketing', 'Marketing') }}</span>
-            <div class="flex flex-wrap justify-end gap-1">
-              <UiPill v-if="patient.marketing_channels.length === 0" tone="neutral">{{ t('None', 'Ninguno') }}</UiPill>
-              <UiPill v-for="ch in patient.marketing_channels" :key="ch" tone="brand">{{ channelLabel(ch) }}</UiPill>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="rounded-card border border-line bg-surface p-5 shadow-card">
-        <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Recent activity', 'Actividad reciente') }}</p>
         <div v-if="activityLoading" class="mt-3 space-y-2.5">
           <div v-for="i in 3" :key="i" class="flex items-center gap-2.5">
             <UiSkeleton class="h-[6px] w-[6px] shrink-0 rounded-full" />
@@ -689,13 +485,76 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
         </div>
         <p v-else-if="activity.length === 0" class="mt-3 text-[12.5px] text-ink-faint">{{ t('No recent activity.', 'Sin actividad reciente.') }}</p>
         <ul v-else class="mt-3 space-y-2.5">
-          <li v-for="(item, i) in activity" :key="i" class="flex items-center gap-2.5">
-            <span class="h-[6px] w-[6px] shrink-0 rounded-full" :class="item.dot" />
+          <li v-for="(item, i) in activity.slice(0, 5)" :key="i" class="flex items-center gap-2.5">
+            <span aria-hidden="true" class="h-[6px] w-[6px] shrink-0 rounded-full" :class="item.dot" />
             <span class="min-w-0 flex-1 truncate text-[12.5px] text-ink-600">{{ item.text }}</span>
             <span class="shrink-0 text-[11.5px] text-ink-faint">{{ relativeTime(item.at) }}</span>
           </li>
         </ul>
-      </div>
+      </section>
     </div>
+
+    <!-- Side column -->
+    <div class="flex w-full shrink-0 flex-col gap-4 xl:w-[356px]">
+      <section aria-labelledby="ov-clinical" class="rounded-card border border-line bg-surface p-4 shadow-card">
+        <div class="flex items-center justify-between gap-2">
+          <h2 id="ov-clinical" class="text-[13.5px] font-semibold text-ink-700">{{ t('Clinical snapshot', 'Resumen clínico') }}</h2>
+          <NuxtLink
+            :to="`/patients/${patient.id}?tab=clinical`"
+            class="text-[12.5px] font-medium text-brand-text outline-none hover:underline focus-visible:shadow-focus"
+          >
+            {{ t('Open', 'Abrir') }}
+          </NuxtLink>
+        </div>
+
+        <dl class="mt-3 space-y-2.5">
+          <div>
+            <dt class="text-[11.5px] text-ink-muted2">{{ t('Chief complaint', 'Motivo de consulta') }}</dt>
+            <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.chief_complaint || t('Not recorded', 'Sin registrar') }}</dd>
+          </div>
+          <div>
+            <dt class="text-[11.5px] text-ink-muted2">{{ t('Working diagnosis', 'Diagnóstico de trabajo') }}</dt>
+            <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.diagnosis || t('Not recorded', 'Sin registrar') }}</dd>
+          </div>
+        </dl>
+
+        <!-- A pill says there is something to read. The flags are free text,
+             so it cannot honestly say how many. -->
+        <div v-if="hasRedFlags || hasYellowFlags" class="mt-3 flex flex-wrap gap-1.5">
+          <UiPill v-if="hasRedFlags" tone="danger">{{ t('Red flags', 'Señales rojas') }}</UiPill>
+          <UiPill v-if="hasYellowFlags" tone="warning">{{ t('Yellow flags', 'Señales amarillas') }}</UiPill>
+        </div>
+      </section>
+
+      <section aria-labelledby="ov-details" class="rounded-card border border-line bg-surface p-4 shadow-card">
+        <h2 id="ov-details" class="text-[13.5px] font-semibold text-ink-700">{{ t('Patient details', 'Datos del paciente') }}</h2>
+        <dl class="mt-3 space-y-2.5">
+          <div v-for="field in glanceFields" :key="field.key">
+            <dt class="text-[11.5px] text-ink-muted2">{{ field.label }}</dt>
+            <dd class="mt-0.5 truncate text-[13.5px] text-ink-700" :class="field.mono ? 'font-mono text-[12.5px]' : ''">
+              {{ field.value || t('Not recorded', 'Sin registrar') }}
+            </dd>
+          </div>
+        </dl>
+        <button
+          v-if="can('patients_edit')"
+          type="button"
+          class="mt-3 flex h-9 w-full items-center justify-center rounded-ctl border border-line-control text-[13px] font-semibold text-ink-700 outline-none hover:border-line-controlHover focus-visible:shadow-focus"
+          @click="detailsOpen = true"
+        >
+          {{ t('Edit all details', 'Editar todos los datos') }}
+        </button>
+        <button
+          v-else
+          type="button"
+          class="mt-3 flex h-9 w-full items-center justify-center rounded-ctl border border-line-control text-[13px] font-semibold text-ink-700 outline-none hover:border-line-controlHover focus-visible:shadow-focus"
+          @click="detailsOpen = true"
+        >
+          {{ t('View all details', 'Ver todos los datos') }}
+        </button>
+      </section>
+    </div>
+
+    <PatientsDetailsDialog v-if="detailsOpen" :patient="patient" @close="detailsOpen = false" @updated="onDetailsUpdated" />
   </div>
 </template>

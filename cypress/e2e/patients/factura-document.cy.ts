@@ -60,6 +60,10 @@ describe('The factura document', () => {
           cy.login(account.email, account.password)
           cy.visit(`/patients/${patient.id}?tab=billing`)
 
+          // Facturas sit behind the Money tab's sub-nav now -- it exists so the
+          // account ledger gets the full width. Bonos stayed on screen because
+          // selling one is an everyday action; filing a fiscal document is not.
+          cy.contains('button', 'Facturas & receipts').click()
           cy.contains('Facturas').should('be.visible')
           cy.contains('F-2026-0007').should('be.visible')
           cy.contains('Bono 12 — €528.00 of €528.00 (12 of 12 sessions)').should('be.visible')
@@ -71,6 +75,8 @@ describe('The factura document', () => {
           // Once it is on the patient record the nudge goes.
           cy.task('db:setPatientNif', { patientId: patient.id, nationalId: '12345678Z' })
           cy.reload()
+          // A reload puts the Money tab back on its default sub-tab.
+          cy.contains('button', 'Facturas & receipts').click()
           cy.contains('F-2026-0007').should('be.visible')
           cy.contains("need the patient's NIF").should('not.exist')
         })

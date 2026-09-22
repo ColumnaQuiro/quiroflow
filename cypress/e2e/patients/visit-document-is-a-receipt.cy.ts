@@ -14,6 +14,10 @@ describe('The document for a visit', () => {
 
           // The ledger row, and the panel that takes money against it.
           cy.visit(`/patients/${patient.id}?tab=billing`)
+          // Facturas now sit behind the Money tab's sub-nav, which exists so the
+            // account ledger gets the full width. Bonos stayed on screen; the
+            // fiscal documents did not, because filing one is occasional.
+          cy.contains('button', 'Facturas & receipts').click()
           // The ledger names the charge a Receipt, while the Facturas card
           // right above it keeps its own name -- the whole point is that the
           // two documents are no longer called the same thing.

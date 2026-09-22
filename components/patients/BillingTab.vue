@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatEur } from '~/utils/billing'
+import { formatEur, formatLongDate } from '~/utils/billing'
 import { normalizeSearchTerm } from '~/utils/searchText'
 import { bonoOwedCents } from '~/utils/bonoOwed'
 import { settleInvoiceIfCovered } from '~/utils/settleInvoice'
@@ -1657,6 +1657,81 @@ async function logPayment(m: PatientMembershipRow, status: 'paid' | 'failed') {
   await loadAll()
 }
 
+
+// -- Money asks three questions, so the tab answers them in three places ---
+// "What do they owe right now", "what have they already got with us", and
+// "how do they pay". Those were one flat strip of figures, which meant
+// reading all of it to answer any of it.
+// Only the ledger and the documents swap; bonos and memberships stay
+// below both. The sub-nav exists to give the ledger the full width, and it
+// can do that without demoting the actions staff take every day.
+const subTab = ref<'ledger' | 'documents'>('ledger')
+
+/** The oldest unpaid charge -- "since when" is the useful half of "how much". */
+const oldestUnpaid = computed(() => {
+  const open = invoices.value
+    .filter((i) => i.status === 'unpaid' && !i.is_refund)
+    .slice()
+    .sort((a, b) => a.created_at.localeCompare(b.created_at))
+  return open[0] ?? null
+})
+
+// Which card, not just whether. See server/api/stripe/card-details -- read
+// live, because a reissued card changes its expiry under us and a stale
+// last-four is worse than none.
+interface CardDetails { brand: string; last4: string; expMonth: number; expYear: number }
+const cardDetails = ref<CardDetails | null>(null)
+async function loadCardDetails() {
+  cardDetails.value = null
+  if (!hasCard.value) return
+  try {
+    const res = await useStaffFetch<{ card: CardDetails | null }>('/api/stripe/card-details', {
+      method: 'POST',
+      body: { patientId: props.patientId },
+    })
+    cardDetails.value = res.card
+  } catch {
+    // Without billing_config, or with Stripe unreachable, the card still
+    // exists -- the screen just cannot name it.
+    cardDetails.value = null
+  }
+}
+watch(hasCard, loadCardDetails, { immediate: true })
+
+/** "Visa •••• 4242" -- brand capitalised the way the issuer writes it. */
+const cardLabel = computed(() => {
+  const card = cardDetails.value
+  if (!card) return null
+  const brand = card.brand.charAt(0).toUpperCase() + card.brand.slice(1)
+  return `${brand} •••• ${card.last4}`
+})
+const cardExpiry = computed(() => {
+  const card = cardDetails.value
+  if (!card) return null
+  return `${String(card.expMonth).padStart(2, '0')}/${String(card.expYear).slice(-2)}`
+})
+
+/**
+ * Where credit that has already been spent went. "The credit is gone" and
+ * "the credit paid for something" look identical in a balance, and the
+ * second is the one staff are usually trying to confirm.
+ */
+const appliedCreditNote = computed(() => {
+  const applied = ledgerCredits.value.filter((c) => c.amount_cents < 0 && c.invoice_id)
+  if (applied.length === 0) return null
+  const total = applied.reduce((sum, c) => sum + Math.abs(c.amount_cents), 0)
+  const refs = applied
+    .map((c) => invoices.value.find((i) => i.id === c.invoice_id)?.invoice_number)
+    .filter((n): n is string => !!n)
+  if (refs.length === 0) return `${money(total)} ${t('of credit has been applied to charges.', 'de crédito se ha aplicado a cargos.')}`
+  const shown = refs.slice(0, 2).join(', ')
+  const more = refs.length > 2 ? ` ${t('and', 'y')} ${refs.length - 2} ${t('more', 'más')}` : ''
+  return `${money(total)} ${t('of credit applied to', 'de crédito aplicado a')} ${shown}${more}.`
+})
+
+/** Bonos with sessions still on them -- what the patient already holds. */
+const activePurchases = computed(() => purchases.value.filter((p) => p.sessions_total - p.sessions_used > 0))
+
 function money(cents: number) {
   return formatEur(cents)
 }
@@ -1664,57 +1739,137 @@ function money(cents: number) {
 
 <template>
   <div class="space-y-4">
-    <!-- Summary strip -->
-    <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-      <div class="flex flex-wrap items-center gap-6">
-        <div>
-          <p class="text-[11.5px] text-ink-muted2">{{ t('Outstanding', 'Pendiente') }}</p>
-          <p class="mt-0.5 font-mono text-[16px] font-semibold" :class="outstandingCents > 0 ? 'text-danger-text' : 'text-ink-700'">{{ money(outstandingCents) }}</p>
+    <!-- Three questions, three places. Owed now is a danger surface because
+    it is the only one of the three that is a problem. -->
+    <div class="grid gap-4 lg:grid-cols-3">
+      <!-- 1. What do they owe right now -->
+      <section
+        aria-labelledby="money-owed"
+        class="rounded-card border p-4 shadow-card"
+        :class="outstandingCents > 0 ? 'border-danger-border bg-danger-bg' : 'border-line bg-surface'"
+      >
+        <h3 id="money-owed" class="text-[12px] font-semibold uppercase tracking-[.04em]" :class="outstandingCents > 0 ? 'text-danger-text' : 'text-ink-muted2'">
+          {{ t('Owed now', 'Debe ahora') }}
+        </h3>
+        <p class="mt-1 font-mono text-[24px] font-semibold" :class="outstandingCents > 0 ? 'text-danger-text' : 'text-ink-700'">
+          {{ money(outstandingCents) }}
+        </p>
+        <p v-if="oldestUnpaid" class="mt-0.5 text-[12px]" :class="outstandingCents > 0 ? 'text-danger-text' : 'text-ink-muted2'">
+          {{ t('Oldest unpaid', 'Más antiguo') }} <span class="font-mono">{{ oldestUnpaid.invoice_number }}</span>,
+          {{ formatLongDate(oldestUnpaid.created_at) }}
+        </p>
+        <p v-else class="mt-0.5 text-[12px] text-ink-muted2">{{ t('Nothing outstanding.', 'Nada pendiente.') }}</p>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <UiBtn variant="primary" size="sm" @click="activePanel === 'payment' ? (activePanel = null) : openTakePayment()">
+            {{ t('Take payment', 'Registrar pago') }}
+          </UiBtn>
         </div>
-        <div>
-          <p class="text-[11.5px] text-ink-muted2">{{ t('Available', 'Disponible') }}</p>
-          <p class="mt-0.5 font-mono text-[16px] font-semibold text-ink-700">{{ money(availableCents) }}</p>
-        </div>
-        <div>
-          <p class="text-[11.5px] text-ink-muted2">{{ t('Card on file', 'Tarjeta registrada') }}</p>
-          <p class="mt-0.5 text-[13px] font-medium text-ink-700">{{ hasCard ? t('On file', 'Registrada') : t('None', 'Ninguna') }}</p>
-        </div>
-        <div class="ml-auto flex items-center gap-2">
-          <UiBtn variant="secondary" size="sm" @click="activePanel = activePanel === 'credit' ? null : 'credit'">{{ t('Add credit', 'Añadir crédito') }}</UiBtn>
-          <UiBtn variant="primary" size="sm" @click="activePanel === 'payment' ? (activePanel = null) : openTakePayment()">{{ t('Take payment', 'Registrar pago') }}</UiBtn>
-          <UiBtn variant="secondary" size="sm" @click="showCardModal = true">{{ hasCard ? t('Replace card', 'Sustituir tarjeta') : t('Add card', 'Añadir tarjeta') }}</UiBtn>
-          <UiBtn variant="secondary" size="sm" :disabled="copyingCardLink" @click="copyCardLink">{{ copyingCardLink ? t('Copying…', 'Copiando…') : t('Copy card link', 'Copiar enlace de tarjeta') }}</UiBtn>
-          <UiBtn v-if="hasCard" variant="secondary" size="sm" :disabled="removingCard" @click="removeCard">{{ removingCard ? t('Removing…', 'Eliminando…') : t('Remove card', 'Eliminar tarjeta') }}</UiBtn>
-        </div>
-      </div>
+      </section>
 
-      <!-- The account's standing figures, which used to live in the record's
-           left rail and so were on screen while you read a clinical note.
-           Secondary to Outstanding/Available above, hence the smaller type:
-           those two answer "what do I do now", these four answer "what has
-           this patient's history been". -->
-      <dl class="mt-3 flex flex-wrap gap-x-6 gap-y-1 border-t border-line-divider pt-2.5">
-        <div class="flex items-baseline gap-1.5">
-          <dt class="text-[11.5px] text-ink-muted2">{{ t('Balance', 'Saldo') }}</dt>
-          <dd class="font-mono text-[12.5px]" :class="balanceCents < 0 ? 'text-danger-text' : 'text-ink-700'">{{ money(balanceCents) }}</dd>
-        </div>
-        <div class="flex items-baseline gap-1.5">
-          <!-- Bono money is the figure staff reach for, and the one
-               PracticeHub shows, so it is not folded into Credit: those are
-               different pots and they spend differently. -->
-          <dt class="text-[11.5px] text-ink-muted2">{{ t('In bonos', 'En bonos') }}</dt>
-          <dd class="font-mono text-[12.5px] text-ink-700">{{ money(bonoValueCents) }}</dd>
-        </div>
-        <div class="flex items-baseline gap-1.5">
-          <dt class="text-[11.5px] text-ink-muted2">{{ t('Credit', 'Crédito') }}</dt>
-          <dd class="font-mono text-[12.5px] text-ink-700">{{ money(creditLedgerCents) }}</dd>
-        </div>
-        <div class="flex items-baseline gap-1.5">
-          <dt class="text-[11.5px] text-ink-muted2">{{ t('Lifetime', 'Total histórico') }}</dt>
-          <dd class="font-mono text-[12.5px] text-ink-700">{{ money(lifetimeCents) }}</dd>
-        </div>
-      </dl>
+      <!-- 2. What have they already got with us -->
+      <section aria-labelledby="money-account" class="rounded-card border border-line bg-surface p-4 shadow-card">
+        <h3 id="money-account" class="text-[12px] font-semibold uppercase tracking-[.04em] text-ink-muted2">
+          {{ t('On account', 'En cuenta') }}
+        </h3>
+        <!-- Named, not just shown. "Available" is what this figure is called
+             everywhere else in the app, and an unlabelled number invites the
+             reader to guess which of the account's several totals it is. -->
+        <p class="mt-1 font-mono text-[24px] font-semibold text-ink-900">{{ money(availableCents) }}</p>
+        <p class="text-[11px] text-ink-muted2">{{ t('Available', 'Disponible') }}</p>
+        <!-- A real definition list, not prose. These four are the figures
+             other screens and specs address by name, and a sentence that
+             merely contains the words is not the same contract. -->
+        <dl class="mt-1.5 flex flex-wrap gap-x-5 gap-y-1">
+          <div class="flex items-baseline gap-1.5">
+            <dt class="text-[11px] text-ink-muted2">{{ t('Credit', 'Crédito') }}</dt>
+            <dd class="font-mono text-[12px] text-ink-700">{{ money(creditLedgerCents) }}</dd>
+          </div>
+          <div class="flex items-baseline gap-1.5">
+            <dt class="text-[11px] text-ink-muted2">{{ t('In bonos', 'En bonos') }}</dt>
+            <dd class="font-mono text-[12px] text-ink-700">{{ money(committedBonoCents) }}</dd>
+          </div>
+        </dl>
 
+        <ul v-if="activePurchases.length > 0" class="mt-3 space-y-2.5 border-t border-line-divider pt-2.5">
+          <li v-for="pkg in activePurchases" :key="pkg.id">
+            <div class="flex items-baseline justify-between gap-2">
+              <p class="min-w-0 truncate text-[12.5px] text-ink-700">{{ pkg.package_name }}</p>
+              <p class="shrink-0 font-mono text-[11.5px] text-ink-muted2">
+                {{ pkg.sessions_total - pkg.sessions_used }} {{ t('of', 'de') }} {{ pkg.sessions_total }}
+              </p>
+            </div>
+            <div class="mt-1 h-[4px] w-full overflow-hidden rounded-full bg-chip-bg2">
+              <div
+                class="h-full rounded-full bg-brand"
+                :style="{ width: `${Math.min(100, Math.round((pkg.sessions_used / Math.max(1, pkg.sessions_total)) * 100))}%` }"
+              />
+            </div>
+            <p class="mt-0.5 text-[11px] text-ink-faint">
+              {{ t('Bought', 'Comprado') }} {{ formatLongDate(pkg.purchased_at) }}
+            </p>
+          </li>
+        </ul>
+        <p v-else-if="creditLedgerCents === 0" class="mt-3 text-[12px] text-ink-faint">
+          {{ t('Nothing on account.', 'Nada en cuenta.') }}
+        </p>
+
+        <!-- Credit that has already been spent says where it went, because
+             "the credit is gone" and "the credit paid for something" look
+             identical in a balance. -->
+        <p v-if="appliedCreditNote" class="mt-2.5 border-t border-line-divider pt-2.5 text-[11.5px] text-ink-muted2">
+          {{ appliedCreditNote }}
+        </p>
+        <!-- The two figures that describe the account's history rather than
+             its state. They were in the strip this card replaced, and losing
+             them would have been a quiet regression. -->
+        <dl class="mt-2.5 flex flex-wrap gap-x-5 gap-y-1 border-t border-line-divider pt-2.5">
+          <div class="flex items-baseline gap-1.5">
+            <dt class="text-[11px] text-ink-muted2">{{ t('Balance', 'Saldo') }}</dt>
+            <dd class="font-mono text-[12px]" :class="balanceCents < 0 ? 'text-danger-text' : 'text-ink-700'">{{ money(balanceCents) }}</dd>
+          </div>
+          <div class="flex items-baseline gap-1.5">
+            <dt class="text-[11px] text-ink-muted2">{{ t('Lifetime', 'Total histórico') }}</dt>
+            <dd class="font-mono text-[12px] text-ink-700">{{ money(lifetimeCents) }}</dd>
+          </div>
+        </dl>
+
+        <div class="mt-3">
+          <UiBtn variant="secondary" size="sm" @click="activePanel = activePanel === 'credit' ? null : 'credit'">
+            {{ t('Add credit', 'Añadir crédito') }}
+          </UiBtn>
+        </div>
+      </section>
+
+      <!-- 3. How do they pay -->
+      <section aria-labelledby="money-how" class="rounded-card border border-line bg-surface p-4 shadow-card">
+        <h3 id="money-how" class="text-[12px] font-semibold uppercase tracking-[.04em] text-ink-muted2">
+          {{ t('How they pay', 'Cómo paga') }}
+        </h3>
+        <p class="mt-1 font-mono text-[15px] font-medium text-ink-900">
+          {{ cardLabel ?? (hasCard ? t('Card on file', 'Tarjeta registrada') : t('No card on file', 'Sin tarjeta')) }}
+        </p>
+        <p class="mt-0.5 text-[12px] text-ink-muted2">
+          <template v-if="cardExpiry">{{ t('Expires', 'Caduca') }} <span class="font-mono">{{ cardExpiry }}</span> · </template>
+          {{ hasCard
+            ? t('Charges and autopay can run against it.', 'Los cobros y la domiciliación pueden usarla.')
+            : t('Send the patient a link to add one.', 'Envía al paciente un enlace para añadirla.') }}
+        </p>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <UiBtn variant="secondary" size="sm" @click="showCardModal = true">
+            {{ hasCard ? t('Replace card', 'Sustituir tarjeta') : t('Add card', 'Añadir tarjeta') }}
+          </UiBtn>
+          <UiBtn variant="secondary" size="sm" :disabled="copyingCardLink" @click="copyCardLink">
+            {{ copyingCardLink ? t('Copying…', 'Copiando…') : t('Copy card link', 'Copiar enlace de tarjeta') }}
+          </UiBtn>
+          <UiBtn v-if="hasCard" variant="secondary" size="sm" :disabled="removingCard" @click="removeCard">
+            {{ removingCard ? t('Removing…', 'Eliminando…') : t('Remove card', 'Eliminar tarjeta') }}
+          </UiBtn>
+        </div>
+      </section>
+    </div>
+
+    <!-- The panels the cards above open. -->
+    <div v-if="activePanel" class="rounded-card border border-line bg-surface p-4 shadow-card">
       <div v-if="activePanel === 'credit'" class="mt-4 border-t border-line-divider pt-4">
         <form class="flex flex-wrap items-end gap-2" @submit.prevent="addCredit">
           <div>
@@ -1809,13 +1964,100 @@ function money(cents: number) {
       </div>
     </div>
 
+    <!-- One sub-nav, so the ledger gets the full width instead of sharing
+    it with two cards nobody was reading at the same time. -->
+    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-chip-border">
+      <nav class="flex gap-1 overflow-x-auto" :aria-label="t('Money sections', 'Secciones de dinero')">
+        <button
+          v-for="tab in [
+            { key: 'ledger', label: t('Account ledger', 'Libro de cuenta') },
+            { key: 'documents', label: t('Facturas & receipts', 'Facturas y recibos') },
+          ]"
+          :key="tab.key"
+          type="button"
+          class="h-9 shrink-0 px-3 text-[13px] outline-none focus-visible:shadow-focus"
+          :class="
+            subTab === tab.key
+              ? 'font-semibold text-ink-700 shadow-[inset_0_-2px_0_rgb(var(--color-brand))]'
+              : 'text-ink-muted hover:text-ink-600'
+          "
+          :aria-current="subTab === tab.key ? 'true' : undefined"
+          @click="subTab = tab.key as typeof subTab"
+        >
+          {{ tab.label }}
+        </button>
+      </nav>
+      <NuxtLink
+        :to="`/billing?patient=${patientId}`"
+        class="shrink-0 pb-1 text-[12.5px] font-medium text-brand-text outline-none hover:underline focus-visible:shadow-focus"
+      >
+        {{ t('All paperwork in Billing', 'Toda la documentación en Facturación') }} ↗
+      </NuxtLink>
+    </div>
+
+    <!-- The rule behind a missing button. A factura carries no delete and no
+    edit anywhere in this app, and an absence explains nothing on its own --
+    so it is said once, next to the documents it governs. Enforced in the
+    database too; this line is the explanation, not the guarantee. -->
+    <p v-show="subTab === 'documents'" class="text-[11.5px] leading-[1.6] text-ink-faint">
+      {{
+        t(
+          'Facturas are chain-signed fiscal records under VeriFactu and can never be edited or deleted — a mistake is corrected by issuing a factura rectificativa. Receipts are not fiscal documents and can still be removed.',
+          'Las facturas son registros fiscales firmados en cadena conforme a VeriFactu y no se pueden editar ni eliminar: un error se corrige emitiendo una factura rectificativa. Los recibos no son documentos fiscales y sí se pueden eliminar.',
+        )
+      }}
+    </p>
+
+    <template v-if="subTab === 'ledger'">
+    <!-- Account Ledger -->
+    <div v-if="ledgerLoading" class="rounded-card border border-line bg-surface shadow-card">
+      <div class="flex items-center justify-between border-b border-line-divider px-4 py-3">
+        <UiSkeleton class="h-4 w-32 rounded" />
+        <UiSkeleton class="h-4 w-4 rounded" />
+      </div>
+      <div class="space-y-3 p-4">
+        <div v-for="i in 4" :key="i" class="flex items-center justify-between gap-4">
+          <UiSkeleton class="h-3.5 w-16 rounded" />
+          <UiSkeleton class="h-3.5 flex-1 rounded" />
+          <UiSkeleton class="h-3.5 w-20 rounded" />
+        </div>
+      </div>
+    </div>
+    <PatientsAccountLedger
+      v-else
+      :patient-id="patientId"
+      :invoices="invoices"
+      :line-item-descriptions="lineItemDescriptions"
+      :payments="ledgerPayments"
+      :credits="ledgerCredits"
+      :package-sessions="ledgerPackageSessions"
+      :spendable-credit-cents="spendableCreditCents"
+      :outstanding-cents="outstandingCents"
+      :sending-invoice-id="sendingInvoiceId"
+      :send-result-invoice-id="sendResultInvoiceId"
+      :send-result-message="sendResultMessage"
+      :can-delete-invoices="can('financials_edit_all')"
+      :can-delete-payments="can('financials_edit_all') && can('payments_allocate')"
+      :can-write-off="can('financials_edit_all')"
+      :can-refund="can('financials_edit_all')"
+      @add-credit="activePanel = 'credit'"
+      @take-payment="activePanel === 'payment' ? (activePanel = null) : openTakePayment()"
+      @send-invoice="sendInvoiceEmail"
+      @delete-invoice="(id: string) => { const inv = invoices.find((i) => i.id === id); if (inv) deleteInvoice(inv) }"
+      @write-off-invoice="writeOffInvoice"
+      @delete-payment="(p: { paymentId: string; invoiceId: string | null; amountCents: number }) => deletePayment(p.paymentId, p.invoiceId, p.amountCents)"
+      @refund-invoice="(payload: { invoiceId: string | null; paymentId: string | null; amountCents: number; reason: string; method: string }) => createRefund(payload.invoiceId, payload.paymentId, payload.amountCents, payload.reason, payload.method)"
+      @credits-changed="onLedgerCreditsChanged"
+    />
+    </template>
+
     <!-- Stacked rather than side by side: each card carries a progress bar, a
     money breakdown and a row of actions, none of which fit legibly in half
     the width (and the old grid-cols-2 had no mobile fallback either). -->
     <div class="space-y-4">
       <!-- Facturas: what the patient has been given, as opposed to what they
       have been charged. Above the bonos because it is the fiscal record. -->
-      <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+      <div v-show="subTab === 'documents'" class="rounded-card border border-line bg-surface p-4 shadow-card">
         <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Facturas', 'Facturas') }}</p>
         <p class="mt-0.5 text-[12px] text-ink-muted2">
           {{ t('One per payment received. The charges above are what drives the balance.', 'Una por cada pago recibido. Los cargos de arriba son lo que mueve el saldo.') }}
@@ -1885,7 +2127,7 @@ function money(cents: number) {
         </ul>
       </div>
 
-      <!-- Packages / bonos -->
+      <!-- Packages / bonos -- always on screen; see the sub-nav comment. -->
       <div class="rounded-card border border-line bg-surface p-4 shadow-card">
         <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Packages / bonos', 'Bonos') }}</p>
         <div v-if="packagesLoading" class="mt-3 space-y-3">
@@ -2238,45 +2480,6 @@ function money(cents: number) {
       </div>
     </div>
 
-    <!-- Account Ledger -->
-    <div v-if="ledgerLoading" class="rounded-card border border-line bg-surface shadow-card">
-      <div class="flex items-center justify-between border-b border-line-divider px-4 py-3">
-        <UiSkeleton class="h-4 w-32 rounded" />
-        <UiSkeleton class="h-4 w-4 rounded" />
-      </div>
-      <div class="space-y-3 p-4">
-        <div v-for="i in 4" :key="i" class="flex items-center justify-between gap-4">
-          <UiSkeleton class="h-3.5 w-16 rounded" />
-          <UiSkeleton class="h-3.5 flex-1 rounded" />
-          <UiSkeleton class="h-3.5 w-20 rounded" />
-        </div>
-      </div>
-    </div>
-    <PatientsAccountLedger
-      v-else
-      :patient-id="patientId"
-      :invoices="invoices"
-      :line-item-descriptions="lineItemDescriptions"
-      :payments="ledgerPayments"
-      :credits="ledgerCredits"
-      :package-sessions="ledgerPackageSessions"
-      :spendable-credit-cents="spendableCreditCents"
-      :sending-invoice-id="sendingInvoiceId"
-      :send-result-invoice-id="sendResultInvoiceId"
-      :send-result-message="sendResultMessage"
-      :can-delete-invoices="can('financials_edit_all')"
-      :can-delete-payments="can('financials_edit_all') && can('payments_allocate')"
-      :can-write-off="can('financials_edit_all')"
-      :can-refund="can('financials_edit_all')"
-      @add-credit="activePanel = 'credit'"
-      @take-payment="activePanel === 'payment' ? (activePanel = null) : openTakePayment()"
-      @send-invoice="sendInvoiceEmail"
-      @delete-invoice="(id: string) => { const inv = invoices.find((i) => i.id === id); if (inv) deleteInvoice(inv) }"
-      @write-off-invoice="writeOffInvoice"
-      @delete-payment="(p: { paymentId: string; invoiceId: string | null; amountCents: number }) => deletePayment(p.paymentId, p.invoiceId, p.amountCents)"
-      @refund-invoice="(payload: { invoiceId: string | null; paymentId: string | null; amountCents: number; reason: string; method: string }) => createRefund(payload.invoiceId, payload.paymentId, payload.amountCents, payload.reason, payload.method)"
-      @credits-changed="onLedgerCreditsChanged"
-    />
 
     <PatientsStripeCardModal
       v-if="showCardModal"

@@ -41,7 +41,8 @@ describe('Lead ingest API', () => {
 
   it('files a Meta lead-ad submission into the lead, its attribution and its answers', () => {
     // The real payload shape, taken from the pinned sample in the n8n
-    // workflow this replaces.
+    // workflow this replaces. The shape is exact and is the point; every
+    // value standing in it is invented.
     post({
       first_name: 'Ruben',
       last_name: 'Almazan',
@@ -57,7 +58,7 @@ describe('Lead ingest API', () => {
       },
       answers: [
         { question: '¿Vives en Valencia o alrededores?', answer: 'si' },
-        { question: '¿Cuál sería el motivo de tu visita?', answer: 'Se me adormecen las dos manos' },
+        { question: '¿Cuál sería el motivo de tu visita?', answer: 'Me duele la zona lumbar al levantarme' },
         { question: '¿Qué tan pronto quieres ser atendido?', answer: '8' },
       ],
     }).then((res) => {
@@ -82,7 +83,7 @@ describe('Lead ingest API', () => {
         const qualification = events.find((e) => e.kind === 'qualification')
         expect(qualification, 'a qualification event').to.not.be.undefined
         expect(qualification!.body!.answers).to.have.length(3)
-        expect(qualification!.body!.answers[1]!.answer).to.contain('adormecen')
+        expect(qualification!.body!.answers[1]!.answer).to.contain('lumbar')
       })
     })
 

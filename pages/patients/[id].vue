@@ -234,7 +234,7 @@ const fullName = computed(() => [patient.value?.first_name, patient.value?.last_
             class="h-10 shrink-0 px-[11px] text-[13.5px] outline-none focus-visible:shadow-focus"
             :class="
               activeTab === tab.key
-                ? 'font-semibold text-ink-700 shadow-[inset_0_-2px_0_#4F46E5]'
+                ? 'font-semibold text-ink-700 shadow-[inset_0_-2px_0_rgb(var(--color-brand))]'
                 : 'text-ink-muted hover:text-ink-600'
             "
             :aria-current="activeTab === tab.key ? 'page' : undefined"

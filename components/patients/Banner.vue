@@ -141,12 +141,16 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
         <p class="mt-1 text-[12.5px] text-ink-muted">{{ identityLine }}</p>
       </div>
 
-      <!-- Desktop actions. Nothing destructive in the row; see the menu. -->
-      <div ref="menuRoot" class="relative hidden shrink-0 items-center gap-2 lg:flex">
+      <!-- Message and Book visit are desktop-only here, because the phone
+           has them at 46px in the row below. The overflow menu is NOT: it is
+           the only route to Archive, Merge, Delete and Take payment, and
+           hiding it below lg put all four out of reach on a phone, which is
+           what half this clinic's front desk actually uses. -->
+      <div ref="menuRoot" class="relative flex shrink-0 items-center gap-2">
         <button
           v-if="canContact"
           type="button"
-          class="flex h-[34px] items-center rounded-ctl border border-line-control bg-surface px-3.5 text-[13.5px] font-semibold text-ink-700 outline-none hover:border-line-controlHover focus-visible:shadow-focus"
+          class="hidden h-[34px] items-center rounded-ctl border border-line-control bg-surface px-3.5 text-[13.5px] font-semibold text-ink-700 outline-none hover:border-line-controlHover focus-visible:shadow-focus lg:flex"
           @click="$emit('message')"
         >
           {{ t('Message', 'Mensaje') }}
@@ -154,7 +158,7 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
         <button
           v-if="canBook"
           type="button"
-          class="flex h-[34px] items-center rounded-ctl bg-brand px-3.5 text-[13.5px] font-semibold text-white outline-none hover:bg-brand-hover focus-visible:shadow-focus"
+          class="hidden h-[34px] items-center rounded-ctl bg-brand px-3.5 text-[13.5px] font-semibold text-white outline-none hover:bg-brand-hover focus-visible:shadow-focus lg:flex"
           @click="$emit('book')"
         >
           {{ t('Book visit', 'Reservar visita') }}
@@ -165,7 +169,7 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
           type="button"
           :aria-label="t('More actions', 'Más acciones')"
           :aria-expanded="menuOpen"
-          class="flex h-[34px] w-[34px] items-center justify-center rounded-ctl border border-line-control bg-surface text-ink-muted outline-none hover:text-ink-700 focus-visible:shadow-focus"
+          class="flex h-11 w-11 items-center justify-center rounded-ctl border border-line-control bg-surface text-ink-muted outline-none hover:text-ink-700 focus-visible:shadow-focus lg:h-[34px] lg:w-[34px]"
           @click="menuOpen = !menuOpen"
         >
           <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" class="h-[18px] w-[18px]">
@@ -173,13 +177,13 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
           </svg>
         </button>
 
-        <div v-if="menuOpen" class="absolute right-0 top-[38px] z-20 w-[220px] rounded-card border border-line bg-surface py-1 shadow-popover">
+        <div v-if="menuOpen" class="absolute right-0 top-12 z-20 w-[220px] lg:top-[38px] rounded-card border border-line bg-surface py-1 shadow-popover">
           <!-- Taking a payment was a button in the rail; the rail is gone and
                this is where it went. Non-destructive, so it leads. -->
           <button
             v-if="canEdit"
             type="button"
-            class="block w-full px-3 py-2 text-left text-[13px] text-ink-700 outline-none hover:bg-surface-subtle focus-visible:bg-surface-subtle"
+            class="block w-full px-3 py-3 text-left text-[13px] text-ink-700 outline-none hover:bg-surface-subtle focus-visible:bg-surface-subtle lg:py-2"
             @click="closeMenu(false); $emit('charge')"
           >
             {{ t('Take payment', 'Cobrar') }}
@@ -188,7 +192,7 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
             v-if="canEdit"
             type="button"
             :disabled="archiving"
-            class="block w-full px-3 py-2 text-left text-[13px] text-ink-700 outline-none hover:bg-surface-subtle focus-visible:bg-surface-subtle disabled:text-ink-faint"
+            class="block w-full px-3 py-3 text-left text-[13px] text-ink-700 outline-none hover:bg-surface-subtle focus-visible:bg-surface-subtle disabled:text-ink-faint lg:py-2"
             @click="closeMenu(false); $emit('archive')"
           >
             {{ patient.status === 'active' ? t('Archive patient', 'Archivar paciente') : t('Unarchive patient', 'Desarchivar paciente') }}
@@ -196,7 +200,7 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
           <button
             v-if="canManageRecord"
             type="button"
-            class="block w-full px-3 py-2 text-left text-[13px] text-ink-700 outline-none hover:bg-surface-subtle focus-visible:bg-surface-subtle"
+            class="block w-full px-3 py-3 text-left text-[13px] text-ink-700 outline-none hover:bg-surface-subtle focus-visible:bg-surface-subtle lg:py-2"
             @click="closeMenu(false); $emit('merge')"
           >
             {{ t('Merge with another record', 'Fusionar con otra ficha') }}
@@ -207,7 +211,7 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
           <button
             v-if="canManageRecord"
             type="button"
-            class="block w-full px-3 py-2 text-left text-[13px] font-semibold text-danger-text outline-none hover:bg-danger-bg focus-visible:bg-danger-bg"
+            class="block w-full px-3 py-3 text-left text-[13px] font-semibold text-danger-text outline-none hover:bg-danger-bg focus-visible:bg-danger-bg lg:py-2"
             @click="closeMenu(false); $emit('remove')"
           >
             {{ t('Delete patient', 'Eliminar paciente') }}

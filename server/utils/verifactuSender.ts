@@ -258,9 +258,40 @@ export async function sendPendingRecords(
   // Matched by serie number, which is what the AEAT echoes back. A line with
   // no match is not silently dropped -- it is left for the next run to retry,
   // because a record we cannot confirm was accepted is a record still owed.
+  // The same rejection, every minute, is one fact and not fourteen hundred.
+  //
+  // Repeated transport errors were collapsed already; AEAT answers were not,
+  // on the reasoning that no two are redundant. That holds for DIFFERENT
+  // answers and fails badly for the same one: 21 records refused for the same
+  // field grew this table by 145 rows in ten minutes, and would have added
+  // thirty thousand a day. The same flood, wearing a different status.
+  //
+  // So an identical verdict on the same record refreshes its row. A verdict
+  // that CHANGES -- rejected then accepted, or a different error -- is always
+  // a new row, because that transition is the history worth keeping.
+  const { data: existing } = await supabase
+    .from('factura_record_submissions')
+    .select('id, factura_record_id, status, error_code')
+    .in('factura_record_id', built.attempts.map((a) => a.recordId))
+
   for (const attempt of built.attempts) {
     const line = parsed.lines.find((l) => l.serieNumber === attempt.serieNumber)
     if (!line?.estado) continue
+
+    const same = (existing ?? []).find(
+      (e) =>
+        e.factura_record_id === attempt.recordId &&
+        e.status === line.estado &&
+        (e.error_code ?? null) === (line.errorCode ?? null),
+    )
+    if (same) {
+      await supabase
+        .from('factura_record_submissions')
+        .update({ sent_at: sentAt, responded_at: new Date().toISOString(), wait_seconds: parsed.waitSeconds })
+        .eq('id', same.id)
+      continue
+    }
+
     await supabase.from('factura_record_submissions').insert({
       account_id: accountId,
       factura_record_id: attempt.recordId,

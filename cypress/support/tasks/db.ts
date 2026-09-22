@@ -1017,6 +1017,38 @@ async function usePackageSession(opts: {
   return row as { id: string }
 }
 
+/** A visit note against an appointment -- the only way a note can exist. */
+async function addVisitNote(opts: { accountId: string; appointmentId: string; body: string }) {
+  const row = unwrap(
+    await admin
+      .from('visit_notes')
+      .insert({ account_id: opts.accountId, appointment_id: opts.appointmentId, body: opts.body })
+      .select('id')
+      .single(),
+  )
+  return row as { id: string }
+}
+
+/** The clinical band's five free-text columns, none of which a spec could set. */
+async function setPatientClinical(opts: {
+  patientId: string
+  chiefComplaint?: string
+  diagnosis?: string
+  redFlags?: string
+  yellowFlags?: string
+  goals?: string
+}) {
+  const patch: Record<string, string> = {}
+  if (opts.chiefComplaint !== undefined) patch.chief_complaint = opts.chiefComplaint
+  if (opts.diagnosis !== undefined) patch.diagnosis = opts.diagnosis
+  if (opts.redFlags !== undefined) patch.red_flags = opts.redFlags
+  if (opts.yellowFlags !== undefined) patch.yellow_flags = opts.yellowFlags
+  if (opts.goals !== undefined) patch.goals = opts.goals
+  const { error } = await admin.from('patients').update(patch).eq('id', opts.patientId)
+  if (error) throw error
+  return null
+}
+
 /** The patient row itself, for assertions the UI does not display. */
 async function patientByName(opts: { accountId: string; firstName: string; lastName: string }) {
   const { data } = await admin
@@ -2063,6 +2095,8 @@ export const dbTasks = {
   'db:createFactura': createFactura,
   'db:setPatientNif': setPatientNif,
   'db:setPatientContactFlags': setPatientContactFlags,
+  'db:addVisitNote': addVisitNote,
+  'db:setPatientClinical': setPatientClinical,
   'db:createAccountCredit': createAccountCredit,
   'db:paymentsFor': paymentsFor,
   'db:facturasFor': facturasFor,

@@ -72,7 +72,7 @@ async function load() {
     fetchAllRows<PaymentRow>((f, t) =>
       supabase
         .from('payments')
-        .select('amount_cents, method, paid_at, invoice_id, patient_id, invoices(status)')
+        .select('amount_cents, method, paid_at, invoice_id, patient_id, invoices!payments_invoice_id_fkey(status)')
         .gte('paid_at', from.toISOString())
         .lte('paid_at', to.toISOString())
         .range(f, t),

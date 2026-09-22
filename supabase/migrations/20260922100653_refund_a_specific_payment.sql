@@ -11,6 +11,28 @@
 --
 -- Naming the payment fixes the cap (a refund cannot exceed the payment it
 -- refunds) and the method (it defaults to how the money came in).
+-- ---------------------------------------------------------------------
+-- This is the SECOND foreign key between invoices and payments, and that
+-- breaks every PostgREST embed between the two until each one says which
+-- relationship it means.
+--
+-- There was one (payments.invoice_id -> invoices.id), so `.select('...,
+-- invoices(status)')` from payments resolved on its own. With this column
+-- added, that same query fails at RUNTIME with
+--
+--   Could not embed because more than one relationship was found for
+--   'payments' and 'invoices'
+--
+-- and nothing catches it first: the select is a string, so typecheck and
+-- `npm run build` are both clean. It surfaces as an unhandled promise
+-- rejection that empties the patient balance, the dashboard income widgets
+-- and three reports at once -- three Cypress shards red on areas with
+-- nothing to do with refunds (account credit, visit summaries, navigation),
+-- which reads like an unrelated regression rather than like this.
+--
+-- The eight embeds that existed now name the constraint
+-- (`invoices!payments_invoice_id_fkey(status)`). Any NEW embed between these
+-- two tables has to do the same.
 alter table invoices add column refunds_payment_id uuid references payments(id) on delete set null;
 
 create index invoices_refunds_payment_idx on invoices (refunds_payment_id) where refunds_payment_id is not null;

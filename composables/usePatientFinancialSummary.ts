@@ -121,7 +121,13 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
         .from('package_purchase_shares')
         .select('package_purchases(id, package_name, sessions_total, sessions_used, price_cents, patients(first_name, last_name))')
         .eq('patient_id', currentId),
-      supabase.from('payments').select('amount_cents, method, invoice_id, package_purchase_id, external_reference, purpose, invoices(status)').eq('patient_id', currentId),
+      // The embed names its constraint because there are now TWO foreign keys
+      // between payments and invoices: invoices.refunds_payment_id points the
+      // other way, so a refund can say which payment it gives back. Without
+      // the hint PostgREST refuses the query outright and this composable
+      // returns nothing, which presents as every patient having no credit and
+      // no balance. See 20260922100653_refund_a_specific_payment.sql.
+      supabase.from('payments').select('amount_cents, method, invoice_id, package_purchase_id, external_reference, purpose, invoices!payments_invoice_id_fkey(status)').eq('patient_id', currentId),
     ])
 
     // A 'credit' payment against a VOIDED invoice is not money and never was:

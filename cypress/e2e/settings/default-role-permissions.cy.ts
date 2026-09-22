@@ -65,6 +65,7 @@ describe('Default role permissions', () => {
         expect(role.permissions.calendar_scope).to.eq('own')
         expect(role.permissions.patients_scope).to.eq('own')
         expect(role.permissions.reports_own_only).to.eq(true)
+        expect(role.permissions.docs_files_scope, 'own paperwork too').to.eq('own')
       })
 
       // Booking for whoever walks in is the job, so this one is deliberately
@@ -74,6 +75,10 @@ describe('Default role permissions', () => {
         expect(role.permissions.patients_scope).to.eq('all')
         expect(role.permissions.inbox_access).to.eq(true)
         expect(role.permissions.payments_allocate).to.eq(true)
+        // Chasing consent forms and insurance paperwork across the whole
+        // patient list IS the job, and this role authors nothing, so scoping
+        // documents by author would only break it.
+        expect(role.permissions.docs_files_scope).to.eq('all')
       })
     })
   })
@@ -89,6 +94,7 @@ describe('Default role permissions', () => {
         }
         expect(role.permissions.visit_notes_access).to.eq(true)
         expect(role.permissions.patients_scope).to.eq('all')
+        expect(role.permissions.docs_files_scope).to.eq('all')
       })
     })
   })

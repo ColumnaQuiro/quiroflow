@@ -221,6 +221,30 @@ async function setSubscriptionStripeIds(opts: { accountId: string; stripeCustome
   return { accountId, stripeCustomerId, stripeSubscriptionId }
 }
 
+/**
+ * A patient document with a chosen author -- `createdBy` is a team_members id,
+ * or left unset to seed the unattributed shape every PracticeHub-imported
+ * document has. That null case is the one worth seeding deliberately: it is
+ * what docs_files_scope has to keep visible.
+ */
+async function createPatientDoc(opts: { accountId: string; patientId: string; title: string; createdBy?: string }) {
+  const { accountId, patientId, title, createdBy } = opts
+  const doc = unwrap(
+    await admin
+      .from('patient_docs')
+      .insert({
+        account_id: accountId,
+        patient_id: patientId,
+        title,
+        fields: [],
+        created_by: createdBy ?? null,
+      })
+      .select('id')
+      .single(),
+  )
+  return { docId: doc.id as string }
+}
+
 async function createPatient(opts: {
   accountId: string
   clinicId: string
@@ -2056,6 +2080,7 @@ export const dbTasks = {
   'db:setExtraProfessionals': setExtraProfessionals,
   'db:setSubscriptionStripeIds': setSubscriptionStripeIds,
   'db:createPatient': createPatient,
+  'db:createPatientDoc': createPatientDoc,
   'db:patientByName': patientByName,
   'db:createAppointmentType': createAppointmentType,
   'db:createServiceProduct': createServiceProduct,

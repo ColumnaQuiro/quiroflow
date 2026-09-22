@@ -73,6 +73,13 @@ export interface RegistroAltaInput {
     taxExemptionCode: string | null
     recipientName: string | null
     recipientNif: string | null
+    /**
+     * The patient the factura is for, used when the factura carries no frozen
+     * recipient of its own -- which is the normal case, since the recipient is
+     * resolved at render time so a NIF collected next week appears on a
+     * document issued today.
+     */
+    patientName?: string | null
   }
   issuerName: string
   accountId: string
@@ -217,13 +224,21 @@ export function buildRegistroAlta(input: RegistroAltaInput): string {
   // Destinatarios is required for a full invoice and must be absent from a
   // simplificada, which is the whole point of the distinction: F2 is the one
   // that does not identify the customer.
+  //
+  // A recipient name is required once the block is present, and an empty one
+  // is refused: "1100 Valor o tipo incorrecto del campo.: NombreRazon". Every
+  // F1 and R1 this clinic has issued carries recipient_name NULL, because the
+  // name resolves from the patient when the document is rendered rather than
+  // being copied onto the factura -- so the sender has to resolve it the same
+  // way rather than sending the empty string it finds.
+  const recipientName = capped((factura.recipientName || factura.patientName || '').trim(), 120)
   const destinatarios =
-    record.invoiceType === 'F2'
+    record.invoiceType === 'F2' || !recipientName
       ? []
       : [
           '<sum1:Destinatarios>',
           '<sum1:IDDestinatario>',
-          L('NombreRazon', capped(factura.recipientName ?? '', 120)),
+          L('NombreRazon', recipientName),
           ...(factura.recipientNif ? [L('NIF', factura.recipientNif)] : []),
           '</sum1:IDDestinatario>',
           '</sum1:Destinatarios>',
@@ -238,7 +253,17 @@ export function buildRegistroAlta(input: RegistroAltaInput): string {
     L('FechaExpedicionFactura', aeatDate(record.issuedOn)),
     '</sum1:IDFactura>',
     L('NombreRazonEmisor', capped(issuerName, 120)),
-    ...(input.afterRejection ? [L('RechazoPrevio', 'S')] : []),
+    // Both, or neither. The AEAT refuses RechazoPrevio on its own:
+    //
+    //   1161  no podrá incluirse el campo RechazoPrevio con valor S si no se
+    //         ha informado del campo Subsanacion o tiene el valor N
+    //
+    // Which the record design says too, in RechazoPrevio's own description --
+    // "un nuevo registro de facturación de alta SUBSANADO tras haber sido
+    // rechazado". A resend after rejection is a subsanación that also happens
+    // to follow a rejection; it is not a third thing. #330 sent the second
+    // flag without the first and every retry was refused.
+    ...(input.afterRejection ? [L('Subsanacion', 'S'), L('RechazoPrevio', 'S')] : []),
     L('TipoFactura', record.invoiceType),
     L('DescripcionOperacion', capped(factura.description, 500)),
     ...destinatarios,

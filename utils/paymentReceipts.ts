@@ -7,7 +7,7 @@
 // 'credit' spends a patient's account balance. Those euros were received
 // earlier and recorded then, as their own payment with the real method --
 // cash, card -- and purpose 'on_account'. Counting the credit row as well
-// counts the same money twice: Adrian Oropeza handed over 115 EUR in cash on
+// counts the same money twice: Alonso Varela handed over 115 EUR in cash on
 // 16 Sep 2026, it was applied to his bono an hour later, and September read
 // 230 EUR for it. The same figure also appeared under a payment method called
 // "credit", beside Efectivo and Tarjeta, which is how it was noticed -- the

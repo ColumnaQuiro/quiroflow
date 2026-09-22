@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { parseVisitNote } from '~/utils/visitNote'
 // First version of the chiropractic exam-finding grid, replicating the
 // reference tool: pick a spine segment + side, an optional directional
 // modifier, then a finding code -- each click appends one line to
@@ -120,13 +121,12 @@ function clearAll() {
 function compileBody() {
   return [`Subjective: ${subjective.value}`, `Objective: ${objective.value}`, `Action: ${action.value}`, `Plan: ${plan.value}`].join('\n\n')
 }
+// The convention itself lives in utils/visitNote, so the pane that writes a
+// note and every screen that reads one share a single definition of what a
+// note is made of.
 function parseBody(body: string) {
   const sections: Record<string, string> = {}
-  for (const chunk of body.split('\n\n')) {
-    const idx = chunk.indexOf(':')
-    if (idx === -1) continue
-    sections[chunk.slice(0, idx).trim()] = chunk.slice(idx + 1).trim()
-  }
+  for (const section of parseVisitNote(body).sections) sections[section.label] = section.text
   return sections
 }
 

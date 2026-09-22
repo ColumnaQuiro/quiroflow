@@ -76,7 +76,13 @@ describe('A WhatsApp message from a stranger', () => {
     cy.seedStaffAccount().then((account) => {
       accountId = account.accountId
       clinicId = account.clinicId
-      phoneNumberId = `3879335${Date.now()}`.slice(0, 15)
+      // The shape the other WhatsApp specs use, and for a reason worth
+      // keeping: whatsapp_phone_number_id is uniquely indexed on accounts, so
+      // an id that does not actually vary per test makes the second beforeEach
+      // fail on a duplicate key. A truncated timestamp looks varied and is
+      // not -- slicing it to 15 chars kept only the digits that change once
+      // every hundred seconds.
+      phoneNumberId = `pnid-${Date.now()}-${Math.floor(Math.random() * 1e9)}`
       appSecret = 'a'.repeat(APP_SECRET_LENGTH)
       cy.task('db:setWhatsappPhoneNumberId', { accountId, phoneNumberId })
       cy.task('db:setWhatsappAppSecret', { accountId, appSecret })

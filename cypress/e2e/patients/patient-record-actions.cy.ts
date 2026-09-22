@@ -244,26 +244,30 @@ describe('The merged Attachments tab', () => {
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}?tab=attachments`)
 
-        // Both panels are here...
-        cy.contains('Docs').should('be.visible')
-        cy.contains('Files').should('be.visible')
+        // Both groups are here, under the names that say what each one is:
+        // a form is something the PATIENT has to act on, a file is something
+        // the clinic put there.
+        cy.contains('Forms sent to the patient').should('be.visible')
+        cy.contains('Files uploaded by the clinic').should('be.visible')
 
         // ...and neither announces itself twice to a sighted reader. The
         // section headings stay in the markup, screen-reader only, so the
         // groups are still named regions.
-        const visibleLeafCount = (word: string) =>
+        const visibleHeadingCount = (heading: string) =>
           cy.get('body').then(($b) =>
-            [...$b.find('*')].filter((e) => {
+            [...$b.find('p, h1, h2, h3')].filter((e) => {
               const el = e as HTMLElement
-              if (el.children.length) return false
-              if (el.textContent?.trim() !== word) return false
+              // The heading carries a count beside it, so match on the text
+              // it starts with rather than on an exact equality that the
+              // count would break.
+              if (!el.textContent?.trim().startsWith(heading)) return false
               const r = el.getBoundingClientRect()
               return r.width > 1 && r.height > 1
             }).length,
           )
 
-        visibleLeafCount('Files').should('eq', 1)
-        visibleLeafCount('Docs').should('eq', 1)
+        visibleHeadingCount('Forms sent to the patient').should('eq', 1)
+        visibleHeadingCount('Files uploaded by the clinic').should('eq', 1)
       })
     })
   })

@@ -227,7 +227,15 @@ async function setSubscriptionStripeIds(opts: { accountId: string; stripeCustome
  * document has. That null case is the one worth seeding deliberately: it is
  * what docs_files_scope has to keep visible.
  */
-async function createPatientDoc(opts: { accountId: string; patientId: string; title: string; createdBy?: string }) {
+async function createPatientDoc(opts: {
+  accountId: string
+  patientId: string
+  title: string
+  createdBy?: string
+  /** Marks the form as returned, so the row reads Completed rather than
+   *  Awaiting patient. */
+  completed?: boolean
+}) {
   const { accountId, patientId, title, createdBy } = opts
   const doc = unwrap(
     await admin
@@ -238,6 +246,7 @@ async function createPatientDoc(opts: { accountId: string; patientId: string; ti
         title,
         fields: [],
         created_by: createdBy ?? null,
+        ...(opts.completed ? { completed_at: new Date().toISOString() } : {}),
       })
       .select('id')
       .single(),
@@ -1030,6 +1039,32 @@ async function addVisitNote(opts: { accountId: string; appointmentId: string; bo
     await admin
       .from('visit_notes')
       .insert({ account_id: opts.accountId, appointment_id: opts.appointmentId, body: opts.body })
+      .select('id')
+      .single(),
+  )
+  return row as { id: string }
+}
+
+/** A file the clinic uploaded. No object is stored -- only the row. */
+async function createPatientFile(opts: {
+  accountId: string
+  patientId: string
+  fileName: string
+  fileType?: string
+  sizeBytes?: number
+  storagePath?: string
+}) {
+  const row = unwrap(
+    await admin
+      .from('patient_files')
+      .insert({
+        account_id: opts.accountId,
+        patient_id: opts.patientId,
+        file_name: opts.fileName,
+        file_type: opts.fileType ?? 'application/pdf',
+        size_bytes: opts.sizeBytes ?? 1024,
+        storage_path: opts.storagePath ?? `seed/${opts.patientId}/${opts.fileName}`,
+      })
       .select('id')
       .single(),
   )
@@ -2087,7 +2122,6 @@ export const dbTasks = {
   'db:setExtraProfessionals': setExtraProfessionals,
   'db:setSubscriptionStripeIds': setSubscriptionStripeIds,
   'db:createPatient': createPatient,
-  'db:createPatientDoc': createPatientDoc,
   'db:patientByName': patientByName,
   'db:createAppointmentType': createAppointmentType,
   'db:createServiceProduct': createServiceProduct,
@@ -2103,6 +2137,8 @@ export const dbTasks = {
   'db:setPatientNif': setPatientNif,
   'db:setPatientContactFlags': setPatientContactFlags,
   'db:setPatientTutor': setPatientTutor,
+  'db:createPatientDoc': createPatientDoc,
+  'db:createPatientFile': createPatientFile,
   'db:addVisitNote': addVisitNote,
   'db:setPatientClinical': setPatientClinical,
   'db:createAccountCredit': createAccountCredit,

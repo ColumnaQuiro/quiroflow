@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatShortDate } from '~/utils/billing'
 import type { Tables } from '~/types/database.types'
 import { sanitizeStorageFilename } from '~/utils/storageFilename'
 
@@ -16,6 +17,37 @@ const files = ref<PatientFile[]>([])
 const thumbUrls = ref<Record<string, string>>({})
 const loading = ref(true)
 const uploading = ref(false)
+// uploaded_by was written on every upload and read by nothing, so a file
+// nobody recognised had no one to ask about it.
+const uploaders = ref<Record<string, string>>({})
+async function loadUploaders() {
+  const { data } = await supabase.from('team_members').select('id, full_name')
+  const map: Record<string, string> = {}
+  for (const m of data ?? []) map[m.id] = m.full_name
+  uploaders.value = map
+}
+onMounted(loadUploaders)
+
+/** "469 KB · 22 sept · Dr Ruiz · PDF", minus whatever is unknown. */
+function fileMeta(file: PatientFile) {
+  return [
+    formatSize(file.size_bytes),
+    formatShortDate(file.created_at),
+    file.uploaded_by ? uploaders.value[file.uploaded_by] : null,
+    kindLabel(file),
+  ]
+    .filter(Boolean)
+    .join(' · ')
+}
+
+// Dropping onto the card is how people file things; the button stays for
+// everyone else.
+const dragging = ref(false)
+function onDrop(event: DragEvent) {
+  dragging.value = false
+  const dropped = event.dataTransfer?.files
+  if (dropped?.length) uploadFiles(dropped)
+}
 const error = ref('')
 const fileInput = ref<HTMLInputElement>()
 
@@ -125,6 +157,20 @@ async function view(file: Tables<'patient_files'>) {
   if (data?.signedUrl) window.open(data.signedUrl, '_blank')
 }
 
+/**
+ * Saves the file rather than opening it. Preview opens a viewer, which for
+ * a scan or an X-ray is usually what you want; Download is what you want
+ * when it has to go to an insurer or a consultant, and a viewer tab is a
+ * poor way to get there.
+ */
+async function download(file: Tables<'patient_files'>) {
+  if (!file.storage_path) return
+  const { data } = await supabase.storage
+    .from('patient-files')
+    .createSignedUrl(file.storage_path, 60 * 5, { download: file.file_name ?? true })
+  if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+}
+
 async function remove(file: Tables<'patient_files'>) {
   if (!confirm(`${t('Delete', 'Eliminar')} ${file.file_name}?`)) return
   if (file.storage_path) await supabase.storage.from('patient-files').remove([file.storage_path])
@@ -136,7 +182,10 @@ async function remove(file: Tables<'patient_files'>) {
 <template>
   <div class="rounded-card border border-line bg-surface shadow-card">
     <div class="flex items-center justify-between border-b border-line-divider px-4 py-3">
-      <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Files', 'Archivos') }}</p>
+      <p class="text-[13.5px] font-semibold text-ink-700">
+        {{ t('Files uploaded by the clinic', 'Archivos subidos por la clínica') }}
+        <span v-if="!loading" class="ml-1 font-normal text-ink-faint">{{ files.length }}</span>
+      </p>
       <label class="inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-white hover:bg-brand-hover">
         {{ uploading ? t('Uploading…', 'Subiendo…') : t('Upload file', 'Subir archivo') }}
         <input ref="fileInput" type="file" multiple class="hidden" :disabled="uploading" @change="(e) => uploadFiles((e.target as HTMLInputElement).files!)" />
@@ -154,7 +203,13 @@ async function remove(file: Tables<'patient_files'>) {
       </div>
     </div>
     <div v-else-if="files.length === 0" class="p-8 text-center text-[13px] text-ink-faint">{{ t('No files uploaded yet.', 'Aún no se han subido archivos.') }}</div>
-    <div v-else class="grid grid-cols-2 gap-4 p-4 sm:grid-cols-4">
+    <div
+      v-else
+      class="grid grid-cols-2 gap-4 p-4 sm:grid-cols-4"
+      @dragover.prevent="dragging = true"
+      @dragleave.prevent="dragging = false"
+      @drop.prevent="onDrop"
+    >
       <div v-for="file in files" :key="file.id" class="group overflow-hidden rounded-ctl border border-line-divider bg-surface">
         <div
           class="relative flex h-[104px] w-full items-center justify-center overflow-hidden bg-surface-subtle"
@@ -195,8 +250,8 @@ async function remove(file: Tables<'patient_files'>) {
           </span>
         </div>
         <div class="p-2.5">
-          <p class="truncate text-[12px] font-medium text-ink-700" :title="file.file_name">{{ file.file_name }}</p>
-          <p class="mt-0.5 text-[11px] text-ink-faint">{{ formatSize(file.size_bytes) }} &middot; {{ new Date(file.created_at).toLocaleDateString() }}</p>
+          <p class="truncate font-mono text-[12px] font-medium text-ink-700" :title="file.file_name">{{ file.file_name }}</p>
+          <p class="mt-0.5 truncate text-[11px] text-ink-faint" :title="fileMeta(file)">{{ fileMeta(file) }}</p>
           <div class="mt-1.5 flex items-center justify-between gap-1.5">
             <select
               v-model="file.visibility"
@@ -208,12 +263,29 @@ async function remove(file: Tables<'patient_files'>) {
               <option value="custom">{{ t('Custom', 'Personalizado') }}</option>
             </select>
             <div class="flex shrink-0 items-center gap-2">
-              <button v-if="file.storage_path" type="button" class="text-[11px] font-medium text-brand-text hover:text-brand-hover" @click="view(file)">{{ t('View', 'Ver') }}</button>
+              <button v-if="file.storage_path" type="button" class="text-[11px] font-medium text-brand-text outline-none hover:text-brand-hover focus-visible:shadow-focus" @click="view(file)">{{ t('Preview', 'Vista previa') }}</button>
+              <button v-if="file.storage_path" type="button" class="text-[11px] font-medium text-brand-text outline-none hover:text-brand-hover focus-visible:shadow-focus" @click="download(file)">{{ t('Download', 'Descargar') }}</button>
               <UiIconBtn icon="trash" tone="danger" :label="t('Delete', 'Eliminar')" @click="remove(file)" />
             </div>
           </div>
         </div>
       </div>
     </div>
+
+    <!-- Dropping onto the card is how people actually file things. The
+    button in the header stays, because a dropzone is invisible to anyone
+    who does not already know it is there. -->
+    <label
+      class="m-4 mt-0 flex cursor-pointer flex-col items-center justify-center rounded-ctl border border-dashed px-4 py-5 text-center transition-colors"
+      :class="dragging ? 'border-brand bg-brand-tint' : 'border-line-control bg-surface-subtle2'"
+      @dragover.prevent="dragging = true"
+      @dragleave.prevent="dragging = false"
+      @drop.prevent="onDrop"
+    >
+      <span class="text-[12.5px] text-ink-muted2">
+        {{ uploading ? t('Uploading…', 'Subiendo…') : t('Drop files here, or click to choose', 'Suelta archivos aquí, o haz clic para elegir') }}
+      </span>
+      <input type="file" multiple class="hidden" :disabled="uploading" @change="(e) => uploadFiles((e.target as HTMLInputElement).files!)" />
+    </label>
   </div>
 </template>

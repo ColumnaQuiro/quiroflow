@@ -15,6 +15,7 @@ interface InvoiceRow {
   created_at: string
   is_refund: boolean
   refunds_invoice_id: string | null
+  refunds_payment_id: string | null
 }
 interface PackagePurchaseRow {
   id: string
@@ -549,7 +550,7 @@ async function loadLedger() {
   const [{ data: inv }, { data: lines }, { data: pays }, { data: creds }] = await Promise.all([
     supabase
       .from('invoices')
-      .select('id, invoice_number, status, total_cents, created_at, is_refund, refunds_invoice_id')
+      .select('id, invoice_number, status, total_cents, created_at, is_refund, refunds_invoice_id, refunds_payment_id')
       .eq('patient_id', props.patientId)
       .order('created_at', { ascending: false }),
     supabase
@@ -819,10 +820,36 @@ async function refundableCentsFor(invoiceId: string): Promise<number> {
   return Math.max(0, paidCents - alreadyRefunded)
 }
 
-async function createRefund(invoiceId: string, amountCents: number, reason: string, method: string) {
-  const invoice = invoices.value.find((i) => i.id === invoiceId)
-  if (!invoice || amountCents <= 0) return
-  const maxRefundable = await refundableCentsFor(invoiceId)
+// The same lower-of-two-rooms rule the ledger uses to decide whether to offer
+// the action -- re-derived here rather than trusted from the payload, for the
+// reason refundableCentsFor exists: the cap is what stops money being returned
+// twice, so it has to hold on the write and not only in the UI.
+async function refundablePaymentCentsFor(paymentId: string): Promise<number> {
+  const { data: payment } = await supabase.from('payments').select('id, invoice_id, amount_cents, method').eq('id', paymentId).maybeSingle()
+  if (!payment || payment.amount_cents <= 0 || payment.method === 'write_off') return 0
+
+  const refundedAgainstPayment = invoices.value
+    .filter((i) => i.is_refund && i.refunds_payment_id === paymentId)
+    .reduce((sum, i) => sum + Math.abs(i.total_cents), 0)
+  const paymentRoom = payment.amount_cents - refundedAgainstPayment
+
+  // Money on account is not refundable this way -- its account_credits row
+  // would survive the refund and stay spendable. See the ledger's copy.
+  if (!payment.invoice_id) return 0
+
+  return Math.max(0, Math.min(paymentRoom, await refundableCentsFor(payment.invoice_id)))
+}
+
+// `paymentId` set means this refund names the single payment it gives back --
+// capped at that payment, and able to say exactly which factura it corrects.
+// Null means the older receipt-wide refund, which stays exactly as it was.
+async function createRefund(invoiceId: string | null, paymentId: string | null, amountCents: number, reason: string, method: string) {
+  if (amountCents <= 0) return
+  const invoice = invoiceId ? (invoices.value.find((i) => i.id === invoiceId) ?? null) : null
+  if (invoiceId && !invoice) return
+  if (!invoice && !paymentId) return
+
+  const maxRefundable = paymentId ? await refundablePaymentCentsFor(paymentId) : await refundableCentsFor(invoiceId!)
   if (amountCents > maxRefundable) return
 
   // Its own series, so a refund no longer consumes an invoice number.
@@ -838,7 +865,11 @@ async function createRefund(invoiceId: string, amountCents: number, reason: stri
       status: 'paid',
       total_cents: -amountCents,
       is_refund: true,
+      // Both, when there is a receipt behind the payment: the two caps read
+      // different columns, and a refund missing from either one is a refund
+      // the other cap will happily let you make a second time.
       refunds_invoice_id: invoiceId,
+      refunds_payment_id: paymentId,
     })
     .select('id')
     .single()
@@ -847,7 +878,7 @@ async function createRefund(invoiceId: string, amountCents: number, reason: stri
   await supabase.from('invoice_line_items').insert({
     account_id: store.accountId!,
     invoice_id: refund.id,
-    description: refundDescription(invoice.invoice_number, reason),
+    description: refundDescription(invoice?.invoice_number ?? null, reason),
     quantity: 1,
     price_cents: -amountCents,
   })
@@ -878,12 +909,19 @@ async function createRefund(invoiceId: string, amountCents: number, reason: stri
   // 'credit' is excluded on the way in -- spending account credit moves no
   // money and issues no factura -- so refunding it has nothing to rectify.
   if (refundPayment && method !== 'credit') {
-    // The factura(s) behind the invoice being refunded. Exactly one is the
-    // ordinary case: a visit paid in one go. Several means the visit was
-    // settled in parts, and no single document is "the" one being corrected --
-    // the rectificativa is still issued, it just names no predecessor.
-    const { data: originalPayments } = await supabase.from('payments').select('id').eq('invoice_id', invoiceId)
-    const originalIds = (originalPayments ?? []).map((p) => p.id)
+    // The factura(s) behind what is being refunded. Naming a payment resolves
+    // this exactly -- facturas carry payment_id -- which is the case the
+    // receipt-wide lookup has to give up on: a visit settled in parts has
+    // several documents behind it and no single "the" one being corrected, so
+    // the rectificativa was issued naming no predecessor. Refunding the card
+    // half of a split payment now corrects the card half's document.
+    let originalIds: string[] = []
+    if (paymentId) {
+      originalIds = [paymentId]
+    } else if (invoiceId) {
+      const { data: originalPayments } = await supabase.from('payments').select('id').eq('invoice_id', invoiceId)
+      originalIds = (originalPayments ?? []).map((p) => p.id)
+    }
     const { data: originalFacturas } = originalIds.length
       ? await supabase.from('facturas').select('id, number').in('payment_id', originalIds)
       : { data: [] as { id: string; number: string }[] }
@@ -2236,7 +2274,7 @@ function money(cents: number) {
       @delete-invoice="(id: string) => { const inv = invoices.find((i) => i.id === id); if (inv) deleteInvoice(inv) }"
       @write-off-invoice="writeOffInvoice"
       @delete-payment="(p: { paymentId: string; invoiceId: string | null; amountCents: number }) => deletePayment(p.paymentId, p.invoiceId, p.amountCents)"
-      @refund-invoice="(payload: { invoiceId: string; amountCents: number; reason: string; method: string }) => createRefund(payload.invoiceId, payload.amountCents, payload.reason, payload.method)"
+      @refund-invoice="(payload: { invoiceId: string | null; paymentId: string | null; amountCents: number; reason: string; method: string }) => createRefund(payload.invoiceId, payload.paymentId, payload.amountCents, payload.reason, payload.method)"
       @credits-changed="onLedgerCreditsChanged"
     />
 

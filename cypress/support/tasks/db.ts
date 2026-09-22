@@ -235,6 +235,8 @@ async function createPatient(opts: {
   /** Adds a contact number, which is what the lead-to-patient match reads. */
   phone?: string
   phoneCountryCode?: string
+  /** Whether invoices are emailed to them. Off by default, as in the schema. */
+  invoiceEmailEnabled?: boolean
 }) {
   const { accountId, clinicId, firstName, lastName, email, dateOfBirth, defaultPractitionerId } = opts
   const patient = unwrap(
@@ -248,6 +250,7 @@ async function createPatient(opts: {
         email: email ?? null,
         date_of_birth: dateOfBirth ?? null,
         default_practitioner_id: defaultPractitionerId ?? null,
+        ...(opts.invoiceEmailEnabled === undefined ? {} : { invoice_email_enabled: opts.invoiceEmailEnabled }),
       })
       .select('id, first_name, last_name')
       .single(),

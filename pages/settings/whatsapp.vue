@@ -122,6 +122,27 @@ function useForStaffNotify(t: Template) {
   staffNotifyTemplateLanguage.value = t.language
 }
 
+// Each id routes inbound messages to exactly one account, so the database
+// refuses one that another account already holds
+// (accounts_whatsapp_phone_number_id_key, accounts_instagram_user_id_key).
+// Its own words for that are a constraint name, which tells a clinic nothing
+// about what to do.
+function saveErrorMessage(error: { code?: string; message: string }) {
+  if (error.code === '23505' && error.message.includes('instagram_user_id')) {
+    return t(
+      'This Instagram account is already connected to another QuiroFlow account. Disconnect it there first.',
+      'Esta cuenta de Instagram ya está conectada a otra cuenta de QuiroFlow. Desconéctala allí primero.',
+    )
+  }
+  if (error.code === '23505' && error.message.includes('whatsapp_phone_number_id')) {
+    return t(
+      'This WhatsApp number is already connected to another QuiroFlow account. Disconnect it there first.',
+      'Este número de WhatsApp ya está conectado a otra cuenta de QuiroFlow. Desconéctalo allí primero.',
+    )
+  }
+  return error.message
+}
+
 async function save() {
   saving.value = true
   const update: TablesUpdate<'accounts'> = {
@@ -147,7 +168,7 @@ async function save() {
   const { error: updateError } = await supabase.from('accounts').update(update).eq('id', store.accountId!)
   saving.value = false
   if (updateError) {
-    showToast(updateError.message, 'error')
+    showToast(saveErrorMessage(updateError), 'error')
     return
   }
   // Its own endpoint, not part of the accounts update above, because the

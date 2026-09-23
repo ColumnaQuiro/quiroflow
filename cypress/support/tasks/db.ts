@@ -1618,6 +1618,16 @@ async function setInstagramAccount(opts: { accountId: string; instagramUserId: s
   return { ok: true }
 }
 
+/**
+ * Tries to give an account an Instagram id, returning the database's refusal
+ * rather than throwing, so a spec can assert that
+ * accounts_instagram_user_id_key keeps one id to one account.
+ */
+async function claimInstagramId(opts: { accountId: string; instagramUserId: string }) {
+  const { error } = await admin.from('accounts').update({ instagram_user_id: opts.instagramUserId }).eq('id', opts.accountId)
+  return { rejected: !!error, message: error?.message ?? null }
+}
+
 /** Every message stored on a channel, for asserting what a webhook did. */
 async function messagesOnChannel(opts: { accountId: string; channel: string }) {
   const { data } = await admin
@@ -2299,6 +2309,7 @@ export const dbTasks = {
   'db:sharePackageWith': sharePackageWith,
   'db:packageSessionEffects': packageSessionEffects,
   'db:insertDuplicateSession': insertDuplicateSession,
+  'db:claimInstagramId': claimInstagramId,
   'db:usePackageSession': usePackageSession,
   'db:createWhatsappMessage': createWhatsappMessage,
   'db:seedWhatsappReplyScenario': seedWhatsappReplyScenario,

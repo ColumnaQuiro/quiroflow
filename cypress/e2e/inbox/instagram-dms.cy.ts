@@ -235,6 +235,30 @@ describe('Instagram DMs in the Inbox', () => {
     stored().should((rows) => expect(rows).to.have.length(0))
   })
 
+  it('refuses a second account the Instagram id another one holds', () => {
+    // Two accounts sharing an id used to make the webhook match neither and
+    // drop every DM for both, silently. accounts_instagram_user_id_key is
+    // what stops it now; this is the proof it is there.
+    cy.seedStaffAccount().then((other) => {
+      cy.task<{ rejected: boolean; message: string | null }>('db:claimInstagramId', { accountId: other.accountId, instagramUserId: igUserId }).then((result) => {
+        expect(result.rejected, 'the second claim is refused').to.eq(true)
+        expect(result.message).to.contain('accounts_instagram_user_id_key')
+      })
+    })
+  })
+
+  it('tells a clinic when its Instagram account is connected elsewhere', () => {
+    // What the refusal looks like from Settings: a sentence about what to do,
+    // not the name of a database index.
+    cy.seedStaffAccount().then((other) => {
+      cy.login(other.email, other.password)
+      cy.visit('/settings/whatsapp')
+      cy.get('[data-test="instagram-user-id"]').clear().type(igUserId)
+      cy.contains('button', 'Save changes').should('not.be.disabled').click()
+      cy.contains('already connected to another QuiroFlow account').should('be.visible')
+    })
+  })
+
   it('ignores a DM addressed to an Instagram account that is not ours', () => {
     // A silent 200, not a refusal: an id we do not know is not ours to answer
     // for, and a 401 here would tell a forger which ids exist.

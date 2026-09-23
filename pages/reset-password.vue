@@ -2,6 +2,7 @@
 definePageMeta({ layout: false })
 
 const supabase = useSupabaseClient()
+const authPasswordError = useAuthPasswordError()
 const user = useSupabaseUser()
 const route = useRoute()
 
@@ -45,7 +46,7 @@ async function onSubmit() {
   const { error: updateError } = await supabase.auth.updateUser({ password: password.value })
   loading.value = false
   if (updateError) {
-    error.value = updateError.message
+    error.value = authPasswordError(updateError)
     return
   }
   done.value = true

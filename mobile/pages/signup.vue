@@ -1,5 +1,6 @@
 <script setup lang="ts">
 const supabase = useSupabaseClient()
+const authPasswordError = useAuthPasswordError()
 const email = ref('')
 const password = ref('')
 const error = ref('')
@@ -15,7 +16,7 @@ async function onSubmit() {
   })
   loading.value = false
   if (signUpError) {
-    error.value = signUpError.message
+    error.value = authPasswordError(signUpError)
     return
   }
   if (data.session) {

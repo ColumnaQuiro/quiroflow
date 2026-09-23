@@ -2,7 +2,7 @@
 import { formatEurFromAmount } from '~/utils/billing'
 import { Line } from 'vue-chartjs'
 import { computePresetRange, monthKeysInRange, rangeBounds } from '~/composables/useDateRangePresets'
-import { fetchAllRows } from '~/composables/useFetchAllRows'
+import { fetchAllRows, fetchByIds } from '~/composables/useFetchAllRows'
 import { isReceipt } from '~/utils/paymentReceipts'
 import { classifyPaymentForFilter } from '~/utils/incomeAttribution'
 
@@ -67,19 +67,7 @@ async function loadAppointmentsFor(inRangeInvoices: InvoiceRow[]) {
     return
   }
   // Postgrest puts `in` lists in the URL, so long ranges get chunked.
-  const CHUNK = 300
-  const chunks: string[][] = []
-  for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK))
-  const results = await Promise.all(
-    chunks.map((chunk) =>
-      supabase
-        .from('appointments')
-        .select('id, practitioner_id, clinic_id')
-        .in('id', chunk)
-        .then((r) => (r.data ?? []) as AppointmentRow[]),
-    ),
-  )
-  appointments.value = results.flat()
+  appointments.value = await fetchByIds<AppointmentRow>(ids, (chunk) => supabase.from('appointments').select('id, practitioner_id, clinic_id').in('id', chunk))
 }
 // The patients behind the payments in range -- the answer for money with no
 // appointment, which is most of what a bono or credit on account produces.
@@ -89,19 +77,7 @@ async function loadPatientsFor(inRangePayments: PaymentRow[]) {
     patients.value = []
     return
   }
-  const CHUNK = 300
-  const chunks: string[][] = []
-  for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK))
-  const results = await Promise.all(
-    chunks.map((chunk) =>
-      supabase
-        .from('patients')
-        .select('id, default_practitioner_id, clinic_id')
-        .in('id', chunk)
-        .then((r) => (r.data ?? []) as PatientRow[]),
-    ),
-  )
-  patients.value = results.flat()
+  patients.value = await fetchByIds<PatientRow>(ids, (chunk) => supabase.from('patients').select('id, default_practitioner_id, clinic_id').in('id', chunk))
 }
 
 onMounted(() => {

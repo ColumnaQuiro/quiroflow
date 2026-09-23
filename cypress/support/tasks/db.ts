@@ -304,6 +304,35 @@ async function createPatient(opts: {
   return patient as { id: string; first_name: string; last_name: string | null }
 }
 
+/**
+ * A clinic's worth of patients in a handful of inserts, for the specs that need
+ * a list longer than a URL can name by id (~215 uuids). Each gets a mobile
+ * number; the first `creditCount` also get 10 EUR on account. Ids come back
+ * in last-name order, which is `Crowd 000`, `Crowd 001`, ...
+ */
+async function seedManyPatients(opts: { accountId: string; clinicId: string; count: number; creditCount?: number }) {
+  const patients = unwrap(
+    await admin
+      .from('patients')
+      .insert(Array.from({ length: opts.count }, (_, i) => ({ account_id: opts.accountId, clinic_id: opts.clinicId, first_name: 'Crowd', last_name: String(i).padStart(3, '0') })))
+      .select('id, last_name'),
+  ) as { id: string; last_name: string }[]
+  patients.sort((a, b) => a.last_name.localeCompare(b.last_name))
+  assertOk(
+    await admin
+      .from('patient_contact_numbers')
+      .insert(patients.map((p, i) => ({ account_id: opts.accountId, patient_id: p.id, number: `6${String(i).padStart(8, '0')}`, country_code: 'ES' }))),
+  )
+  if (opts.creditCount) {
+    assertOk(
+      await admin
+        .from('account_credits')
+        .insert(patients.slice(0, opts.creditCount).map((p) => ({ account_id: opts.accountId, patient_id: p.id, amount_cents: 1000 }))),
+    )
+  }
+  return { patientIds: patients.map((p) => p.id) }
+}
+
 async function createAppointmentType(opts: {
   accountId: string
   name: string
@@ -900,8 +929,12 @@ async function createPackagePurchase(opts: {
   // What PracticeHub said was outstanding, for a migrated bono -- which has
   // no invoice at all, so this is the only record of the debt.
   owedCents?: number
+  // PracticeHub has deactivated the bono. Imported as history, keeping
+  // whatever was on its counter -- which is the state that used to read as a
+  // second live bono.
+  isClosed?: boolean
 }) {
-  const { accountId, patientId, packageName, sessionsTotal, sessionsUsed, priceCents, invoiceId, owedCents } = opts
+  const { accountId, patientId, packageName, sessionsTotal, sessionsUsed, priceCents, invoiceId, owedCents, isClosed } = opts
   const row = unwrap(
     await admin
       .from('package_purchases')
@@ -915,6 +948,7 @@ async function createPackagePurchase(opts: {
         purchased_at: new Date().toISOString(),
         ...(invoiceId ? { invoice_id: invoiceId } : {}),
         ...(owedCents === undefined ? {} : { owed_cents: owedCents }),
+        ...(isClosed === undefined ? {} : { is_closed: isClosed }),
       })
       .select('id, package_name, sessions_total, sessions_used, price_cents')
       .single(),
@@ -1341,9 +1375,9 @@ async function signWhatsappBody(opts: { body: string; appSecret: string }) {
 
 async function appointmentById(opts: { appointmentId: string }) {
   const row = unwrap(
-    await admin.from('appointments').select('id, status, confirmation_status, rescheduled').eq('id', opts.appointmentId).single(),
+    await admin.from('appointments').select('id, status, confirmation_status, rescheduled, starts_at, ends_at, room_id').eq('id', opts.appointmentId).single(),
   )
-  return row as { id: string; status: string; confirmation_status: string | null; rescheduled: boolean }
+  return row as { id: string; status: string; confirmation_status: string | null; rescheduled: boolean; starts_at: string; ends_at: string; room_id: string | null }
 }
 
 /**
@@ -2121,6 +2155,44 @@ async function makeSequenceDue(opts: { leadId: string }) {
   return { ok: true }
 }
 
+/**
+ * A busy week in two inserts: `count` patients, one 30-minute visit each,
+ * spread Monday-Friday from 09:00, plus the patients' ids in visit order.
+ * For the specs that need the calendar to load more than a URL's worth of
+ * ids at once.
+ */
+async function seedBusyWeek(opts: { accountId: string; clinicId: string; practitionerId: string; weekStartIso: string; count: number }) {
+  const patients = unwrap(
+    await admin
+      .from('patients')
+      .insert(Array.from({ length: opts.count }, (_, i) => ({ account_id: opts.accountId, clinic_id: opts.clinicId, first_name: 'Busy', last_name: `Patient ${String(i).padStart(3, '0')}` })))
+      .select('id, last_name'),
+  ) as { id: string; last_name: string }[]
+  patients.sort((a, b) => a.last_name.localeCompare(b.last_name))
+  const perDay = Math.ceil(opts.count / 5)
+  const rows = patients.map((p, i) => {
+    const day = Math.floor(i / perDay)
+    const slot = i % perDay
+    const start = new Date(opts.weekStartIso)
+    start.setDate(start.getDate() + day)
+    // Two visits per half hour from 09:00, so no slot holds more than the
+    // calendar's four lanes.
+    start.setHours(9, 0, 0, 0)
+    start.setMinutes(Math.floor(slot / 2) * 30)
+    return {
+      account_id: opts.accountId,
+      clinic_id: opts.clinicId,
+      patient_id: p.id,
+      practitioner_id: opts.practitionerId,
+      starts_at: start.toISOString(),
+      ends_at: new Date(start.getTime() + 30 * 60000).toISOString(),
+      status: 'booked',
+    }
+  })
+  assertOk(await admin.from('appointments').insert(rows))
+  return { patientIds: patients.map((p) => p.id) }
+}
+
 /** A patient's sticky clinical note -- the one every appointment shows. */
 async function setStickyNote(opts: { patientId: string; note: string | null }) {
   assertOk(await admin.from('patients').update({ sticky_note: opts.note }).eq('id', opts.patientId))
@@ -2263,6 +2335,7 @@ export const dbTasks = {
   'db:setExtraProfessionals': setExtraProfessionals,
   'db:setSubscriptionStripeIds': setSubscriptionStripeIds,
   'db:createPatient': createPatient,
+  'db:seedManyPatients': seedManyPatients,
   'db:patientByName': patientByName,
   'db:createAppointmentType': createAppointmentType,
   'db:createServiceProduct': createServiceProduct,
@@ -2315,6 +2388,7 @@ export const dbTasks = {
   'db:seedWhatsappReplyScenario': seedWhatsappReplyScenario,
   'db:createAppointment': createAppointment,
   'db:setStickyNote': setStickyNote,
+  'db:seedBusyWeek': seedBusyWeek,
   'db:createReschedule': createReschedule,
   'db:createWaitlistEntry': createWaitlistEntry,
   'db:waitlistEntryById': waitlistEntryById,

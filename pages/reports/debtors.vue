@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { fetchByIds } from '~/composables/useFetchAllRows'
 import { formatEur } from '~/utils/billing'
 import { bonoOwedCents, type BonoOwedPayment } from '~/utils/bonoOwed'
 interface PurchaseRow {
@@ -36,21 +37,19 @@ onMounted(async () => {
   const invoiceIds = purchases.value.map((x) => x.invoice_id).filter((x): x is string => !!x)
   const patientIds = [...new Set(purchases.value.map((x) => x.patient_id))]
 
-  const [{ data: invoices }, { data: patients }, { data: schedules }, { data: payments }] = await Promise.all([
-    invoiceIds.length > 0
-      ? supabase.from('invoices').select('id, status, total_cents').in('id', invoiceIds)
-      : Promise.resolve({ data: [] as InvoiceRow[] }),
-    patientIds.length > 0
-      ? supabase.from('patients').select('id, first_name, last_name').in('id', patientIds)
-      : Promise.resolve({ data: [] as PatientRow[] }),
+  // Every bono in the account, so its patients are several hundred ids --
+  // more than one URL holds (406 on the live account, 23 Sep 2026).
+  const [invoices, patients, { data: schedules }, { data: payments }] = await Promise.all([
+    fetchByIds<InvoiceRow>(invoiceIds, (chunk) => supabase.from('invoices').select('id, status, total_cents').in('id', chunk)),
+    fetchByIds(patientIds, (chunk) => supabase.from('patients').select('id, first_name, last_name').in('id', chunk)),
     supabase.from('payment_schedules').select('package_purchase_id, status').not('package_purchase_id', 'is', null),
     // Every bono payment, not just those on a sale invoice. A bono sold here
     // has no invoice at all now, and a migrated one never did -- its payments
     // are tied to the purchase directly.
     supabase.from('payments').select('invoice_id, amount_cents, package_purchase_id, external_reference, purpose'),
   ])
-  invoicesById.value = new Map((invoices ?? []).map((i) => [i.id, i as InvoiceRow]))
-  patientsById.value = new Map((patients ?? []).map((p2) => [p2.id, p2 as PatientRow]))
+  invoicesById.value = new Map(invoices.map((i) => [i.id, i]))
+  patientsById.value = new Map(patients.map((p2) => [p2.id, p2 as PatientRow]))
   schedulesByPurchase.value = new Map((schedules ?? []).map((s) => [s.package_purchase_id as string, s as ScheduleRow]))
   allPayments.value = (payments ?? []) as BonoOwedPayment[]
 

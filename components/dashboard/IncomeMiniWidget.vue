@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { fetchByIds } from '~/composables/useFetchAllRows'
 import { formatEur } from '~/utils/billing'
 import { classifyPaymentForFilter } from '~/utils/incomeAttribution'
 import { isReceipt } from '~/utils/paymentReceipts'
@@ -116,18 +117,13 @@ async function load() {
   prevPayments.value = prevPaymentRows.filter((row) => notVoid(row) && isReceipt(row.method))
   prevInvoices.value = prevInvoiceRows
 
-  const invoiceIds = inv.map((i) => i.id)
-  const allocations: { invoice_id: string | null; amount_cents: number }[] = []
   // Chunked: PostgREST puts an .in() list in the URL, and a busy month's
   // invoices make one long enough to be refused.
-  for (let start = 0; start < invoiceIds.length; start += 200) {
-    const chunk = invoiceIds.slice(start, start + 200)
-    const rows = await fetchAllRows<{ invoice_id: string | null; amount_cents: number }>((f, t) =>
+  invoicePayments.value = await fetchByIds(inv.map((i) => i.id), (chunk) =>
+    fetchAllRows<{ invoice_id: string | null; amount_cents: number }>((f, t) =>
       supabase.from('payments').select('invoice_id, amount_cents').in('invoice_id', chunk).range(f, t),
-    )
-    allocations.push(...rows)
-  }
-  invoicePayments.value = allocations
+    ).then((data) => ({ data, error: null })),
+  )
   loading.value = false
 }
 onMounted(load)

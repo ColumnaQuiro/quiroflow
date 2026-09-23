@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Tables } from '~/types/database.types'
 import { sanitizeSearchToken } from '~/utils/searchText'
-import { fetchAllRows } from '~/composables/useFetchAllRows'
+import { fetchAllRows, fetchByIds } from '~/composables/useFetchAllRows'
 
 type Recall = Tables<'recall_candidates'>
 type TeamMember = Pick<Tables<'team_members'>, 'id' | 'full_name'>
@@ -73,30 +73,33 @@ async function loadContactContext() {
     balanceByPatient.value = {}
     return
   }
-  const [{ data: logs }, { data: phones }, { data: balances }] = await Promise.all([
-    supabase
-      .from('contact_log')
-      .select('patient_id, action, created_at')
-      .in('patient_id', ids)
-      .order('created_at', { ascending: false }),
-    supabase.from('patients').select('id, has_phone').in('id', ids),
+  // fetchByIds, because the full fallback set is every candidate and grows
+  // past what one URL holds. Each patient's log rows land in the same chunk,
+  // so the newest-first order the loop below relies on survives the split.
+  const [logs, phones, balances] = await Promise.all([
+    fetchByIds(ids, (chunk) =>
+      supabase
+        .from('contact_log')
+        .select('patient_id, action, created_at')
+        .in('patient_id', chunk)
+        .order('created_at', { ascending: false }),
+    ),
+    fetchByIds(ids, (chunk) => supabase.from('patients').select('id, has_phone').in('id', chunk)),
     // Balances for just this page, rather than for every candidate as a
     // side effect of the list query -- see RECALL_COLUMNS.
-    supabase.from('patient_live_balances').select('patient_id, balance_cents').in('patient_id', ids),
+    fetchBalances(ids),
   ])
-  const balanceMap: Record<string, number> = {}
-  for (const b of balances ?? []) balanceMap[b.patient_id!] = b.balance_cents ?? 0
-  balanceByPatient.value = balanceMap
+  balanceByPatient.value = balances
   const map: Record<string, ContactLogRow> = {}
   const counts: Record<string, number> = {}
-  for (const row of logs ?? []) {
+  for (const row of logs) {
     if (!map[row.patient_id]) map[row.patient_id] = row
     counts[row.patient_id] = (counts[row.patient_id] ?? 0) + 1
   }
   lastActionByPatient.value = map
   actionCountByPatient.value = counts
   const phoneMap: Record<string, boolean> = {}
-  for (const p of phones ?? []) phoneMap[p.id] = p.has_phone
+  for (const p of phones) phoneMap[p.id] = p.has_phone
   hasPhoneByPatient.value = phoneMap
 }
 
@@ -381,7 +384,9 @@ const assignMenuOpen = ref(false)
 async function bulkAssignPractitioner(teamMemberId: string) {
   const ids = selectedRecalls.value.map((r) => r.patient_id!)
   if (ids.length === 0) return
-  await supabase.from('patients').update({ default_practitioner_id: teamMemberId }).in('id', ids)
+  // Select-all on the fallback set can be hundreds of patients -- one URL's
+  // worth at a time, or the whole update is refused and nothing says so.
+  await fetchByIds(ids, (chunk) => supabase.from('patients').update({ default_practitioner_id: teamMemberId }).in('id', chunk))
   for (const r of recalls.value) {
     if (ids.includes(r.patient_id!)) r.default_practitioner_id = teamMemberId
   }
@@ -403,21 +408,10 @@ function csvEscape(v: string) {
   return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
 }
 
-// patient_live_balances has no filter of its own to page against, so the id
-// list gets chunked to keep each request's URL a sane size -- same shape as
-// pages/patients/index.vue's balance lookup.
 async function fetchBalances(ids: string[]): Promise<Record<string, number>> {
-  if (ids.length === 0) return {}
-  const CHUNK = 300
-  const chunks: string[][] = []
-  for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK))
-  const results = await Promise.all(
-    chunks.map((chunk) => supabase.from('patient_live_balances').select('patient_id, balance_cents').in('patient_id', chunk)),
-  )
+  const rows = await fetchByIds(ids, (chunk) => supabase.from('patient_live_balances').select('patient_id, balance_cents').in('patient_id', chunk))
   const out: Record<string, number> = {}
-  for (const { data } of results) {
-    for (const b of data ?? []) out[b.patient_id!] = b.balance_cents ?? 0
-  }
+  for (const b of rows) out[b.patient_id!] = b.balance_cents ?? 0
   return out
 }
 

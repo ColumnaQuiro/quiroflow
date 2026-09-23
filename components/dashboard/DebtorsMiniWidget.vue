@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { fetchByIds } from '~/composables/useFetchAllRows'
 import { formatEur } from '~/utils/billing'
 import { bonoOwedCents, type BonoOwedPayment } from '~/utils/bonoOwed'
 defineProps<{ dateRange?: unknown; practitionerId?: string; clinicId?: string }>()
@@ -27,14 +28,14 @@ onMounted(async () => {
   purchases.value = (p as unknown as PurchaseRow[]) ?? []
   const invoiceIds = purchases.value.map((x) => x.invoice_id).filter((x): x is string => !!x)
 
-  const [{ data: invoices }, { data: schedules }, { data: payments }] = await Promise.all([
-    invoiceIds.length > 0 ? supabase.from('invoices').select('id, status, total_cents').in('id', invoiceIds) : Promise.resolve({ data: [] as InvoiceRow[] }),
+  const [invoices, { data: schedules }, { data: payments }] = await Promise.all([
+    fetchByIds<InvoiceRow>(invoiceIds, (chunk) => supabase.from('invoices').select('id, status, total_cents').in('id', chunk)),
     supabase.from('payment_schedules').select('package_purchase_id, status').not('package_purchase_id', 'is', null),
     // All of them: a bono sold here has no invoice now, and a migrated one
     // never had -- its payments hang off the purchase.
     supabase.from('payments').select('invoice_id, amount_cents, package_purchase_id, external_reference, purpose'),
   ])
-  invoicesById.value = new Map((invoices ?? []).map((i) => [i.id, i as InvoiceRow]))
+  invoicesById.value = new Map(invoices.map((i) => [i.id, i]))
   schedulesByPurchase.value = new Map((schedules ?? []).map((s) => [s.package_purchase_id as string, s as ScheduleRow]))
   allPayments.value = (payments ?? []) as BonoOwedPayment[]
   loading.value = false

@@ -291,9 +291,30 @@ export async function sendPendingRecords(
           (e.error_code ?? null) === (line.errorCode ?? null),
       )
       if (same) {
+        // error_message too, and it is not cosmetic. The row is matched on
+        // status and error_code, so the SAME code arriving with a DIFFERENT
+        // explanation refreshes this row -- and without this line it keeps the
+        // explanation it was created with, for ever.
+        //
+        // That happened on 23 Sep and cost a wrong diagnosis. Sixteen F1s were
+        // rejected 1239 for NIF:00000000T; the stand-in was then changed, they
+        // were rejected 1239 again for a different reason entirely, and the
+        // table still read "NIF:00000000T" -- a value the deployed code could
+        // no longer produce. Only the rectificativas showed the true message,
+        // and only because their code had changed from 1114, forcing a new
+        // row. Reading the table honestly meant comparing created_at against
+        // sent_at to work out that the text predated the code.
+        //
+        // The transport_error path a few lines down already updates it, so
+        // this was an inconsistency rather than a rule.
         await supabase
           .from('factura_record_submissions')
-          .update({ sent_at: sentAt, responded_at: new Date().toISOString(), wait_seconds: parsed.waitSeconds })
+          .update({
+            sent_at: sentAt,
+            responded_at: new Date().toISOString(),
+            wait_seconds: parsed.waitSeconds,
+            error_message: line.errorMessage,
+          })
           .eq('id', same.id)
         continue
       }

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { formatEur, formatLongWeekdayDate, formatShortDate, formatTime, formatWeekdayDate } from '~/utils/billing'
 import type { BusinessHours } from '~/utils/businessHours'
-import { dayKeyFor, hasBusinessHoursConfigured, practitionerWindowsForDay, unionWorkingWindows, windowsForDay, withinWindows } from '~/utils/businessHours'
+import { dayKeyFor, hasBusinessHoursConfigured, outsideWorkingHours, practitionerWindowsForDay, unionWorkingWindows, windowsForDay, withinWindows } from '~/utils/businessHours'
 import type { AppointmentTypeOverride } from '~/utils/appointmentOverrides'
 import { appointmentStage, matchesFilter, needsNextBookingFlag, STAGE_FILTERS, stageCounts, type AppointmentStage, type StageFilter } from '~/utils/appointmentStage'
 import { shortPatientName } from '~/utils/appointmentBlock'
@@ -367,14 +367,16 @@ async function loadAppointments(silent = false) {
   appointments.value = (data as unknown as AppointmentRow[]) ?? []
   const patientIds = [...new Set(appointments.value.map((a) => a.patient_id))]
   const appointmentIds = appointments.value.map((a) => a.id)
-  await Promise.all([loadLiveBalances(patientIds), loadFutureAppointmentIds(patientIds)])
+  // A failed lookup leaves the grid without its money and "Sin próxima"
+  // detail, not stuck on the skeleton: the appointments themselves loaded.
+  await Promise.all([loadLiveBalances(patientIds), loadFutureAppointmentIds(patientIds)]).catch((e) => console.error('calendar: balances / next visits failed', e))
   if (token !== loadToken) return
   loading.value = false
   // Second-rank detail -- the bono count, how often a visit was moved, the
   // waitlist offers standing on freed slots. The grid is usable without them,
   // so they fill in after it renders rather than holding it back for the
   // three sequential rounds fetchVisitPayments needs.
-  loadBlockDetails(token, appointmentIds, patientIds, rangeStart, rangeEnd)
+  loadBlockDetails(token, appointmentIds, patientIds, rangeStart, rangeEnd).catch((e) => console.error('calendar: block details failed', e))
 }
 
 // Bumped on every load, so a slow response for a range the user has already
@@ -396,14 +398,17 @@ interface WaitlistOffer {
 const waitlistOffers = ref<WaitlistOffer[]>([])
 
 async function loadBlockDetails(token: number, appointmentIds: string[], patientIds: string[], rangeStart: Date, rangeEnd: Date) {
-  const [payments, { data: packages }, { data: reschedules }, { data: offers }] = await Promise.all([
+  // Id lists go through fetchByIds: a whole-clinic week is several hundred
+  // appointments, and one .in() that long is refused with 414 -- which reads
+  // as "nothing found" and quietly blanks every bono and moved count.
+  const [payments, packages, reschedules, { data: offers }] = await Promise.all([
     fetchVisitPayments(appointmentIds),
-    patientIds.length
-      ? supabase.from('package_purchases').select('patient_id, package_name, sessions_total, sessions_used').in('patient_id', patientIds).order('purchased_at', { ascending: false })
-      : Promise.resolve({ data: [] as { patient_id: string; package_name: string; sessions_total: number; sessions_used: number }[] }),
-    appointmentIds.length
-      ? supabase.from('appointment_reschedules').select('appointment_id').in('appointment_id', appointmentIds)
-      : Promise.resolve({ data: [] as { appointment_id: string }[] }),
+    // Newest first inside each chunk; a chunk holds whole patients, so each
+    // patient's packs stay in order.
+    fetchByIds(patientIds, (chunk) =>
+      supabase.from('package_purchases').select('patient_id, package_name, sessions_total, sessions_used, is_closed').in('patient_id', chunk).order('purchased_at', { ascending: false }),
+    ),
+    fetchByIds(appointmentIds, (chunk) => supabase.from('appointment_reschedules').select('appointment_id').in('appointment_id', chunk)),
     supabase
       .from('waitlist_entries')
       .select('id, offered_starts_at, offered_ends_at, offered_room_id, offered_practitioner_id, offer_expires_at, patients(first_name, last_name)')
@@ -416,15 +421,16 @@ async function loadBlockDetails(token: number, appointmentIds: string[], patient
 
   visitPaymentById.value = payments
   // Newest pack with sessions left, per patient -- the one tomorrow's visit
-  // will draw from (bonoForVisit).
+  // will draw from (bonoForVisit). A bono PracticeHub has closed keeps the
+  // sessions that were on it and is not one of them.
   const active: typeof activePackageByPatient.value = {}
-  for (const p of packages ?? []) {
-    if (active[p.patient_id] || p.sessions_used >= p.sessions_total) continue
+  for (const p of packages) {
+    if (active[p.patient_id] || p.is_closed || p.sessions_used >= p.sessions_total) continue
     active[p.patient_id] = p
   }
   activePackageByPatient.value = active
   const moved: Record<string, number> = {}
-  for (const r of reschedules ?? []) moved[r.appointment_id] = (moved[r.appointment_id] ?? 0) + 1
+  for (const r of reschedules) moved[r.appointment_id] = (moved[r.appointment_id] ?? 0) + 1
   movedCountById.value = moved
   waitlistOffers.value = ((offers as unknown as WaitlistOffer[]) ?? []).filter((o) => o.offered_starts_at)
 }
@@ -441,9 +447,9 @@ async function loadLiveBalances(patientIds: string[]) {
     balanceByPatient.value = {}
     return
   }
-  const { data } = await supabase.from('patient_live_balances').select('patient_id, balance_cents').in('patient_id', patientIds)
+  const data = await fetchByIds(patientIds, (chunk) => supabase.from('patient_live_balances').select('patient_id, balance_cents').in('patient_id', chunk))
   const map: Record<string, number> = {}
-  for (const b of data ?? []) map[b.patient_id!] = b.balance_cents ?? 0
+  for (const b of data) map[b.patient_id!] = b.balance_cents ?? 0
   balanceByPatient.value = map
 }
 
@@ -457,14 +463,11 @@ async function loadFutureAppointmentIds(patientIds: string[]) {
     futureAppointmentIdsByPatient.value = {}
     return
   }
-  const { data } = await supabase
-    .from('appointments')
-    .select('id, patient_id')
-    .in('patient_id', patientIds)
-    .neq('status', 'cancelled')
-    .gt('starts_at', new Date().toISOString())
+  const data = await fetchByIds(patientIds, (chunk) =>
+    supabase.from('appointments').select('id, patient_id').in('patient_id', chunk).neq('status', 'cancelled').gt('starts_at', new Date().toISOString()),
+  )
   const map: Record<string, Set<string>> = {}
-  for (const a of data ?? []) {
+  for (const a of data) {
     ;(map[a.patient_id] ??= new Set()).add(a.id)
   }
   futureAppointmentIdsByPatient.value = map
@@ -620,7 +623,27 @@ function isWorkingTime(date: Date): boolean {
   const windows = workingWindowsFor(date)
   return windows === null || withinWindows(date.getHours() * 60 + date.getMinutes(), windows)
 }
-const businessHoursConfigured = computed(() => workingWindowsFor(anchorDate.value) !== null)
+// Whether a time is outside the hours of the practitioner an appointment
+// actually belongs to.
+//
+// isWorkingTime above answers what the GRID should hatch, and on anything but
+// a single practitioner's tab that is the union of everyone working -- an
+// hour is only closed when nobody works it. Right for shading, wrong for a
+// move: it says Wednesday 09:30 is open because Natacha works it, while the
+// appointment being dropped there belongs to Jordana, who does not. Lauren
+// McCoy was reassigned to Jordana and then moved twice inside her Wednesday
+// morning, and neither step said anything.
+//
+// teamMembers rather than clinicTeamMembers: a practitioner not assigned to
+// the clinic being viewed would otherwise fall back to the clinic's hours,
+// which is the same silent pass this is fixing.
+function apptOutsideWorkingHours(at: Date, practitionerId: string | null): boolean {
+  return outsideWorkingHours(
+    at,
+    store.currentClinic?.business_hours as BusinessHours | null | undefined,
+    (teamMembers.value.find((m) => m.id === practitionerId)?.business_hours ?? null) as BusinessHours | null,
+  )
+}
 
 // Closed stretches of one day as merged rects, so a closed morning is one
 // hatched band carrying one "Fuera de horario" label rather than a stack of
@@ -1015,12 +1038,17 @@ interface ReschedulingAppointment {
   appointmentTypeName: string | null
   startsAt: string
   endsAt: string
+  // Whose hours the slot about to be picked has to be checked against. The
+  // drag path reads it off the appointment row it is moving; this path has
+  // navigated away from that row, so it is carried.
+  practitionerId: string | null
 }
 const reschedulingAppointment = ref<ReschedulingAppointment | null>(null)
 
 function startReschedule(appt: {
   id: string
   patient_id: string
+  practitioner_id: string | null
   starts_at: string
   ends_at: string
   patients: { first_name: string; last_name: string | null } | null
@@ -1035,6 +1063,7 @@ function startReschedule(appt: {
     appointmentTypeName: appt.appointment_types?.name ?? null,
     startsAt: appt.starts_at,
     endsAt: appt.ends_at,
+    practitionerId: appt.practitioner_id,
   }
 }
 function cancelRescheduleMode() {
@@ -1059,8 +1088,8 @@ function pickRescheduleSlot(day: Date, time: string, roomId: string | null) {
   const newEndsAt = new Date(newStartsAt.getTime() + durationMs)
 
   if (
-    businessHoursConfigured.value &&
-    (!isWorkingTime(newStartsAt) || !isWorkingTime(new Date(newEndsAt.getTime() - 1)))
+    apptOutsideWorkingHours(newStartsAt, src.practitionerId) ||
+    apptOutsideWorkingHours(new Date(newEndsAt.getTime() - 1), src.practitionerId)
   ) {
     if (!confirm(t('This falls outside working hours. Move it anyway?', 'Esto queda fuera del horario de atención. ¿Moverla de todos modos?'))) return
   }
@@ -1113,8 +1142,8 @@ async function onAppointmentDragEnd(e: PointerEvent) {
   }
 
   if (
-    businessHoursConfigured.value &&
-    (!isWorkingTime(new Date(appt.starts_at)) || !isWorkingTime(new Date(new Date(appt.ends_at).getTime() - 1)))
+    apptOutsideWorkingHours(new Date(appt.starts_at), appt.practitioner_id) ||
+    apptOutsideWorkingHours(new Date(new Date(appt.ends_at).getTime() - 1), appt.practitioner_id)
   ) {
     if (!confirm(t('This falls outside working hours. Save it anyway?', 'Esto queda fuera del horario de atención. ¿Guardarlo de todos modos?'))) {
       revert()
@@ -1345,7 +1374,15 @@ function cellStart(cell: Cell): Date {
 function cellTimeLabel(cell: Cell) {
   return slotLabel(cell.min)
 }
+// Where in its column an event landed, in px from the top. Measured from
+// clientY rather than read off offsetY: offsetY is relative to whatever
+// element was hit, and is not set at all on some synthesised events -- a
+// tap came through as "Reservar NaN:NaN".
+function yInColumn(e: MouseEvent) {
+  return e.clientY - (e.currentTarget as HTMLElement).getBoundingClientRect().top
+}
 function snapMin(offsetY: number, hourPx: number) {
+  if (!Number.isFinite(offsetY)) return 0
   const m = Math.floor(((offsetY / hourPx) * 60) / SLOT_MIN.value) * SLOT_MIN.value
   return Math.min(Math.max(0, m), TOTAL_MIN - SLOT_MIN.value)
 }
@@ -1433,7 +1470,7 @@ function onColumnPointerMove(e: PointerEvent, dayKey: string, roomId: string, ho
     return
   }
   const col = colIndex(dayKey, roomId)
-  const min = snapMin(e.offsetY, hourPx)
+  const min = snapMin(yInColumn(e), hourPx)
   if (hoverCell.value?.col !== col || hoverCell.value?.min !== min) hoverCell.value = { col, min }
 }
 function onColumnPointerDown(e: PointerEvent) {
@@ -1446,7 +1483,7 @@ function onColumnPointerDown(e: PointerEvent) {
 function onColumnClick(e: MouseEvent, day: Date, roomId: string, hourPx: number) {
   // The cell under the pointer, not the nearest slot boundary: a click in the
   // lower half of 18:00-18:30 is a click on 18:00.
-  const cell = { col: colIndex(toDateKey(day), roomId), min: snapMin(e.offsetY, hourPx) }
+  const cell = { col: colIndex(toDateKey(day), roomId), min: snapMin(yInColumn(e), hourPx) }
   const time = slotLabel(cell.min)
   const room = roomId === '__none' ? null : roomId
   if (reschedulingAppointment.value) {
@@ -1851,7 +1888,12 @@ function showNowLineOn(day: Date) {
       </aside>
 
       <!-- Main content -->
-      <div ref="scrollAreaRef" class="flex min-w-0 flex-1 flex-col overflow-y-auto">
+      <!-- Each view below is its own scroller, both ways. The room and day
+           headers are sticky, and sticky only works against the element that
+           actually scrolls: while this div scrolled vertically and the views
+           only horizontally, the headers stuck to a box that never moved and
+           scrolled away with the grid. -->
+      <div ref="scrollAreaRef" class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <div v-if="loading" class="flex min-w-0 flex-1 p-3">
           <div v-for="col in 3" :key="col" class="flex-1 border-r border-line px-3 last:border-r-0">
             <UiSkeleton class="mb-4 h-4 w-24 rounded-ctlSm" />
@@ -1888,7 +1930,7 @@ function showNowLineOn(day: Date) {
           role="group"
           data-cy="calendar-grid"
           :aria-label="t('Calendar grid. Arrow keys move between slots; Enter books a free slot or opens an appointment.', 'Calendario. Las flechas mueven entre huecos; Intro reserva un hueco libre o abre una cita.')"
-          class="flex min-w-0 flex-1 flex-col outline-none"
+          class="flex min-h-0 min-w-0 flex-1 flex-col outline-none"
           @focus="onGridFocus"
           @blur="onGridBlur"
           @keydown="onGridKeydown"
@@ -1896,10 +1938,10 @@ function showNowLineOn(day: Date) {
           <span class="sr-only" aria-live="polite">{{ focusAnnouncement }}</span>
 
           <!-- Day view: room columns -->
-          <div v-if="viewMode === 'day'" class="min-w-0 flex-1 overflow-x-auto">
+          <div v-if="viewMode === 'day'" class="min-h-0 min-w-0 flex-1 overflow-auto" data-cy="grid-scroller">
             <div :style="{ minWidth: `${58 + dayColumns.length * 220}px` }">
               <div class="sticky top-0 z-30 flex bg-surface">
-                <div class="h-10 w-[58px] shrink-0 border-b border-r border-line"></div>
+                <div class="sticky left-0 z-10 h-10 w-[58px] shrink-0 border-b border-r border-line bg-surface"></div>
                 <div v-for="col in dayColumns" :key="col.id" class="flex h-10 flex-1 flex-col items-center justify-center border-b border-r border-line last:border-r-0">
                   <span class="text-[13px] font-semibold text-ink-900">{{ col.name }}</span>
                   <span v-if="roomPractitionerLabel(col.id)" class="text-[11.5px] leading-none text-ink-muted2">{{ roomPractitionerLabel(col.id) }}</span>
@@ -1907,7 +1949,9 @@ function showNowLineOn(day: Date) {
               </div>
 
               <div class="relative flex" :style="{ height: `${dayGridHeight}px` }">
-                <div class="relative w-[58px] shrink-0 border-r border-line">
+                <div class="sticky left-0 z-[25] w-[58px] shrink-0 border-r border-line bg-surface">
+                  <!-- In the gutter, which stays put when the rooms scroll sideways. -->
+                  <span v-if="showNowLine" class="pointer-events-none absolute left-1 z-10 -translate-y-1/2 rounded-full bg-danger-text px-1.5 py-px font-mono text-[10.5px] font-semibold leading-4 text-surface" data-cy="now-label" :style="{ top: `${nowLinePx}px` }">{{ formatTime(now) }}</span>
                   <span
                     v-for="h in hourMarks"
                     :key="h"
@@ -2033,7 +2077,6 @@ function showNowLineOn(day: Date) {
                 </div>
 
                 <div v-if="showNowLine" data-cy="now-line" class="pointer-events-none absolute left-0 right-0 z-20" :style="{ top: `${nowLinePx}px` }">
-                  <span class="absolute left-1 top-0 -translate-y-1/2 rounded-full bg-danger-text px-1.5 py-px font-mono text-[10.5px] font-semibold leading-4 text-surface" data-cy="now-label">{{ formatTime(now) }}</span>
                   <div class="absolute left-[58px] top-0 h-[9px] w-[9px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-danger-text"></div>
                   <div class="ml-[58px] h-0.5 -translate-y-1/2 bg-danger-text"></div>
                 </div>
@@ -2042,9 +2085,9 @@ function showNowLineOn(day: Date) {
           </div>
 
           <!-- Week view: day columns, each split into room sub-columns like Day view. -->
-          <div v-else class="min-w-0 flex-1 overflow-x-auto">
+          <div v-else class="min-h-0 min-w-0 flex-1 overflow-auto" data-cy="grid-scroller">
             <div class="flex" :style="{ minWidth: `${58 + visibleWeekDays.length * dayColumns.length * WEEK_ROOM_COL_PX}px` }">
-              <div class="sticky left-0 z-20 w-[58px] shrink-0 bg-surface">
+              <div class="sticky left-0 z-[25] w-[58px] shrink-0 bg-surface">
                 <div class="sticky top-0 z-30 border-b border-r border-line bg-surface" :style="{ height: `${WEEK_HEADER_PX}px` }"></div>
                 <div class="relative border-r border-line" :style="{ height: `${weekGridHeight}px` }">
                   <span v-if="showWeekNowLabel" class="pointer-events-none absolute left-1 z-20 -translate-y-1/2 rounded-full bg-danger-text px-1.5 py-px font-mono text-[10.5px] font-semibold leading-4 text-surface" data-cy="now-label" :style="{ top: `${nowLineWeekPx}px` }">{{ formatTime(now) }}</span>

@@ -33,6 +33,9 @@ export interface LadderInput {
   noNext: boolean
   /** The stage label as it will print, for sizing the pill. */
   pillText: string
+  /** The patient's name as it will print. The name outranks the label, so
+   *  the label gives way to its icon before the name would be cut. */
+  nameText?: string
   /** The money label as it will print ("Debe 45,00 €"). */
   owesText?: string
   bonoText?: string
@@ -66,6 +69,8 @@ const CHAR_PX = 6.2
 const textPx = (s: string | undefined, pad = 0) => Math.ceil((s?.length ?? 0) * CHAR_PX) + pad
 
 const NAME_MIN_PX = 56
+// The name is bolder and larger (13px semibold) than the detail text.
+const NAME_CHAR_PX = 7.4
 const META_MIN_PX = 64
 const NOTE_PX = 17
 const MOVED_PX = 26
@@ -97,12 +102,19 @@ export function blockLadder(input: LadderInput): Ladder {
   }
 
   const inner = input.width - 20 // padding + border
-  const pill: Ladder['pill'] = pillHidden ? 'none' : input.width >= PILL_LABEL_FROM_PX ? 'label' : 'icon'
-  const pillPx = pill === 'none' ? 0 : pill === 'icon' ? 18 : textPx(input.pillText, 26)
   const owesPx = input.owes ? textPx(input.owesText ?? 'Debe 00,00 €', 14) : 0
+  // Rank 1 before rank 2: the label is shown only if the whole name still
+  // fits beside it (and beside the money, on a one-line block). Spanish
+  // labels are long -- "Online · sin confirmar" -- and at iPad widths they
+  // used to leave "Sergio Nav…".
+  const namePx = input.nameText ? Math.ceil(input.nameText.length * NAME_CHAR_PX) : NAME_MIN_PX
+  const beside = compact && input.owes ? owesPx + GAP_PX : 0
+  const labelFits = inner - Math.max(namePx, NAME_MIN_PX) - beside - GAP_PX >= textPx(input.pillText, 26)
+  const pill: Ladder['pill'] = pillHidden ? 'none' : input.width >= PILL_LABEL_FROM_PX && labelFits ? 'label' : 'icon'
+  const pillPx = pill === 'none' ? 0 : pill === 'icon' ? 18 : textPx(input.pillText, 26)
 
   // Line one: name, [note], pill, and -- on a one-line block -- the money.
-  let line1 = inner - NAME_MIN_PX - (pillPx ? pillPx + GAP_PX : 0)
+  let line1 = inner - Math.max(namePx, NAME_MIN_PX) - (pillPx ? pillPx + GAP_PX : 0)
   if (compact && input.owes) line1 -= owesPx + GAP_PX
   const note = input.note && line1 >= NOTE_PX + GAP_PX
 

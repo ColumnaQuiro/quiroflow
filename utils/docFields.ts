@@ -6,6 +6,7 @@ export type DocFieldType =
   | 'checkbox'
   | 'date'
   | 'signature'
+  | 'drawable_image'
   | 'choice'
   | 'scale'
   | 'rating'
@@ -29,6 +30,17 @@ export interface DocField {
   // can never resolve a column name from client input, only match against
   // one of these known keys). Keep the two lists in sync by hand.
   patientField?: string
+  // 'drawable_image' only: the object key in the public `doc-images` bucket
+  // holding the diagram drawn on. A path rather than a URL, matching
+  // clinics.logo_storage_path -- the project's URL is rebuilt at render time,
+  // so a template written today survives the Supabase project moving.
+  //
+  // renderTemplateFields copies it onto every document made from the
+  // template, so a diagram object is referenced by each of them for as long
+  // as they exist. Nothing deletes one: replacing or removing a template's
+  // diagram leaves the old object exactly where the signed documents that
+  // already point at it expect to find it.
+  imagePath?: string
 }
 
 // Only fields a plain text/date patient column can sensibly hold both ends
@@ -73,6 +85,7 @@ export const FIELD_TYPES: { type: DocFieldType; label: string }[] = [
   { type: 'rating', label: 'Rating' },
   { type: 'date', label: 'Date' },
   { type: 'signature', label: 'Signature' },
+  { type: 'drawable_image', label: 'Drawable image' },
 ]
 
 // Static content blocks (heading/text) support {{field}} merge tokens in

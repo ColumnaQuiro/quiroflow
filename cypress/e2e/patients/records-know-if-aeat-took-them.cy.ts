@@ -162,7 +162,7 @@ describe('Records that know whether the AEAT took them', () => {
 
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}?tab=billing`)
-        sellBono('Bono E8 (4, 260,00 €)')
+        sellBono('Bono E8 (4, 260,00\u00a0€)')
 
         cy.task('db:facturaRecordsFor', { accountId: account.accountId }).then((records: any) => {
           // The stale one, carrying a number from a flood of retries.

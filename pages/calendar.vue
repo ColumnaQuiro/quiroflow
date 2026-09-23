@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { formatEur, formatLongWeekdayDate, formatShortDate, formatTime, formatWeekdayDate } from '~/utils/billing'
 import type { BusinessHours } from '~/utils/businessHours'
-import { dayKeyFor, hasBusinessHoursConfigured, practitionerWindowsForDay, unionWorkingWindows, windowsForDay, withinWindows } from '~/utils/businessHours'
+import { dayKeyFor, hasBusinessHoursConfigured, outsideWorkingHours, practitionerWindowsForDay, unionWorkingWindows, windowsForDay, withinWindows } from '~/utils/businessHours'
 import type { AppointmentTypeOverride } from '~/utils/appointmentOverrides'
 import { appointmentStage, matchesFilter, needsNextBookingFlag, STAGE_FILTERS, stageCounts, type AppointmentStage, type StageFilter } from '~/utils/appointmentStage'
 import { shortPatientName } from '~/utils/appointmentBlock'
@@ -620,7 +620,27 @@ function isWorkingTime(date: Date): boolean {
   const windows = workingWindowsFor(date)
   return windows === null || withinWindows(date.getHours() * 60 + date.getMinutes(), windows)
 }
-const businessHoursConfigured = computed(() => workingWindowsFor(anchorDate.value) !== null)
+// Whether a time is outside the hours of the practitioner an appointment
+// actually belongs to.
+//
+// isWorkingTime above answers what the GRID should hatch, and on anything but
+// a single practitioner's tab that is the union of everyone working -- an
+// hour is only closed when nobody works it. Right for shading, wrong for a
+// move: it says Wednesday 09:30 is open because Natacha works it, while the
+// appointment being dropped there belongs to Jordana, who does not. Lauren
+// McCoy was reassigned to Jordana and then moved twice inside her Wednesday
+// morning, and neither step said anything.
+//
+// teamMembers rather than clinicTeamMembers: a practitioner not assigned to
+// the clinic being viewed would otherwise fall back to the clinic's hours,
+// which is the same silent pass this is fixing.
+function apptOutsideWorkingHours(at: Date, practitionerId: string | null): boolean {
+  return outsideWorkingHours(
+    at,
+    store.currentClinic?.business_hours as BusinessHours | null | undefined,
+    (teamMembers.value.find((m) => m.id === practitionerId)?.business_hours ?? null) as BusinessHours | null,
+  )
+}
 
 // Closed stretches of one day as merged rects, so a closed morning is one
 // hatched band carrying one "Fuera de horario" label rather than a stack of
@@ -1015,12 +1035,17 @@ interface ReschedulingAppointment {
   appointmentTypeName: string | null
   startsAt: string
   endsAt: string
+  // Whose hours the slot about to be picked has to be checked against. The
+  // drag path reads it off the appointment row it is moving; this path has
+  // navigated away from that row, so it is carried.
+  practitionerId: string | null
 }
 const reschedulingAppointment = ref<ReschedulingAppointment | null>(null)
 
 function startReschedule(appt: {
   id: string
   patient_id: string
+  practitioner_id: string | null
   starts_at: string
   ends_at: string
   patients: { first_name: string; last_name: string | null } | null
@@ -1035,6 +1060,7 @@ function startReschedule(appt: {
     appointmentTypeName: appt.appointment_types?.name ?? null,
     startsAt: appt.starts_at,
     endsAt: appt.ends_at,
+    practitionerId: appt.practitioner_id,
   }
 }
 function cancelRescheduleMode() {
@@ -1059,8 +1085,8 @@ function pickRescheduleSlot(day: Date, time: string, roomId: string | null) {
   const newEndsAt = new Date(newStartsAt.getTime() + durationMs)
 
   if (
-    businessHoursConfigured.value &&
-    (!isWorkingTime(newStartsAt) || !isWorkingTime(new Date(newEndsAt.getTime() - 1)))
+    apptOutsideWorkingHours(newStartsAt, src.practitionerId) ||
+    apptOutsideWorkingHours(new Date(newEndsAt.getTime() - 1), src.practitionerId)
   ) {
     if (!confirm(t('This falls outside working hours. Move it anyway?', 'Esto queda fuera del horario de atención. ¿Moverla de todos modos?'))) return
   }
@@ -1113,8 +1139,8 @@ async function onAppointmentDragEnd(e: PointerEvent) {
   }
 
   if (
-    businessHoursConfigured.value &&
-    (!isWorkingTime(new Date(appt.starts_at)) || !isWorkingTime(new Date(new Date(appt.ends_at).getTime() - 1)))
+    apptOutsideWorkingHours(new Date(appt.starts_at), appt.practitioner_id) ||
+    apptOutsideWorkingHours(new Date(new Date(appt.ends_at).getTime() - 1), appt.practitioner_id)
   ) {
     if (!confirm(t('This falls outside working hours. Save it anyway?', 'Esto queda fuera del horario de atención. ¿Guardarlo de todos modos?'))) {
       revert()

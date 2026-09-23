@@ -486,6 +486,19 @@ async function createPayment(opts: {
   return row as { id: string }
 }
 
+/**
+ * `count` small cash payments for one patient in a single insert -- a ledger
+ * longer than one unpaged select() returns (Supabase stops at 1000 rows).
+ */
+async function seedManyPayments(opts: { accountId: string; patientId: string; count: number; amountCents?: number }) {
+  assertOk(
+    await admin
+      .from('payments')
+      .insert(Array.from({ length: opts.count }, () => ({ account_id: opts.accountId, patient_id: opts.patientId, amount_cents: opts.amountCents ?? 100, method: 'cash' }))),
+  )
+  return { ok: true }
+}
+
 async function settleImportedInvoices(opts: { accountId: string }) {
   const { data, error } = await admin.rpc('settle_imported_invoices', { p_account_id: opts.accountId })
   if (error) throw error
@@ -2348,6 +2361,7 @@ export const dbTasks = {
   'db:enableEmailConfirmations': enableEmailConfirmations,
   'db:createInvoice': createInvoice,
   'db:createPayment': createPayment,
+  'db:seedManyPayments': seedManyPayments,
   'db:nextInvoiceNumber': nextInvoiceNumber,
   'db:deleteInvoice': deleteInvoice,
   'db:paymentById': paymentById,

@@ -45,3 +45,26 @@ export async function fetchAllRows<T>(build: (from: number, to: number) => Promi
     }
   }
 }
+
+// An .in() filter over a long id list, split into requests the API gateway
+// will accept, results concatenated.
+//
+// A filter travels in the URL, and the gateway refuses a request line past
+// about 8 KB with 414 URI Too Long -- measured locally at ~215 uuids, where
+// 200 went through and 250 did not. A week of the whole clinic on the
+// calendar is several hundred appointments, and a refused request comes back
+// as `data: null`, which every caller reads as "nothing found": the week
+// simply lost its bono counts and payments without an error anywhere. 150
+// ids is ~5.5 KB, with room left for the rest of the query string.
+export async function fetchByIds<T>(ids: string[], build: (chunk: string[]) => PromiseLike<{ data: T[] | null; error: any }>, size = 150): Promise<T[]> {
+  if (ids.length === 0) return []
+  const chunks: string[][] = []
+  for (let i = 0; i < ids.length; i += size) chunks.push(ids.slice(i, i + size))
+  const results = await Promise.all(chunks.map((chunk) => build(chunk)))
+  const all: T[] = []
+  for (const { data, error } of results) {
+    if (error) throw error
+    all.push(...(data ?? []))
+  }
+  return all
+}

@@ -193,6 +193,28 @@ async function markAsPaid() {
 // and void the empty invoice, rather than voiding around the payment.
 const hasPayments = computed(() => payments.value.length > 0)
 
+// Refunding lives on the patient's Money tab, which owns the modal -- this
+// only takes you there with the receipt already selected.
+//
+// Not duplicated here on purpose: a refund writes a negative invoice, a
+// matching negative payment AND a VeriFactu rectificativa, and a second
+// implementation of that drifting from the first is a fiscal problem, not a
+// UI one.
+//
+// It is a button rather than nothing because this page was a dead end: on a
+// paid receipt the Void action is disabled with a tooltip telling staff to
+// "refund the payments first", and then offered no refund and no way to
+// reach one. It named an action it did not provide.
+const { can } = usePermission()
+const canRefund = computed(() => can('financials_edit_all'))
+const showRefund = computed(() => !!invoice.value && invoice.value.status !== 'void' && hasPayments.value && canRefund.value)
+
+function goToRefund() {
+  const patientId = (invoice.value as { patient_id?: string } | null)?.patient_id
+  if (!patientId) return
+  navigateTo(`/patients/${patientId}?tab=money&refund=${invoiceId}`)
+}
+
 async function voidInvoice() {
   if (hasPayments.value) {
     alert(
@@ -252,10 +274,13 @@ function formatDate(iso: string) {
             variant="ghost"
             size="sm"
             :disabled="hasPayments"
-            :title="hasPayments ? t('Refund or remove the payments on this receipt before voiding it', 'Reembolsa o elimina los pagos de este recibo antes de anularlo') : undefined"
+            :title="hasPayments ? t('Refund or remove the payments on this receipt before voiding it — use Refund, beside this button', 'Reembolsa o elimina los pagos de este recibo antes de anularlo — usa Reembolsar, junto a este botón') : undefined"
             @click="voidInvoice"
           >
             {{ t('Void receipt', 'Anular recibo') }}
+          </UiBtn>
+          <UiBtn v-if="showRefund" variant="ghost" size="sm" @click="goToRefund">
+            {{ t('Refund…', 'Reembolsar…') }}
           </UiBtn>
           <UiBtn variant="secondary" @click="backToBilling">&larr; {{ t('Back to billing', 'Volver a facturación') }}</UiBtn>
         </template>

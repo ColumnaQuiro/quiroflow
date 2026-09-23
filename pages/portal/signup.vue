@@ -2,6 +2,7 @@
 definePageMeta({ layout: false })
 
 const supabase = useSupabaseClient()
+const authPasswordError = useAuthPasswordError()
 const { code, clinicName, prefill, resolve, remember } = useClinicCode()
 const email = ref('')
 const password = ref('')
@@ -45,7 +46,7 @@ async function onSubmit() {
   })
   loading.value = false
   if (signUpError) {
-    error.value = signUpError.message
+    error.value = authPasswordError(signUpError)
     return
   }
   if (data.session) {

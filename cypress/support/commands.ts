@@ -12,21 +12,46 @@ export interface StaffAccount {
   roles: { id: string; name: string }[]
 }
 
-/** Note: cy.session() always leaves the browser on a blank page afterward -- always cy.visit() next. */
+/**
+ * Signs in through the app's own Supabase client rather than the login form.
+ *
+ * The form route cost two full SSR loads of /dashboard per call -- the
+ * redirect after submit, then the same page again to validate the session --
+ * before the test had visited the page it was actually about. At 200+ calls
+ * across the suite, most for a freshly created user so cy.session's cache
+ * never hits, that was minutes of every CI run spent rendering a dashboard
+ * no spec looked at. auth/login.cy.ts is what tests the form itself.
+ *
+ * The client is the one /login uses (pages/login.vue calls exactly this), so
+ * the cookies come out named and encoded exactly as a real sign-in writes
+ * them. Minting them in Node instead would mean guessing the cookie name,
+ * which @nuxtjs/supabase derives from the Supabase URL at BUILD time -- and CI
+ * builds with no URL at all.
+ *
+ * Note: cy.session() always leaves the browser on a blank page afterward --
+ * always cy.visit() next.
+ */
 Cypress.Commands.add('login', (email: string, password: string) => {
   cy.session(
     [email, password],
     () => {
       cy.visit('/login')
-      cy.get('#email').type(email)
-      cy.get('#password').type(password)
-      cy.contains('button', 'Sign in').click()
-      cy.location('pathname', { timeout: 15000 }).should('eq', '/dashboard')
+      // Hydrated, i.e. the Nuxt app and its plugins exist on the page.
+      cy.get('#__nuxt')
+        .should(($root) => {
+          expect(($root[0] as any).__vue_app__?.$nuxt?.$supabase?.client, 'Nuxt Supabase client').to.exist
+        })
+        .then(async ($root) => {
+          const { client } = ($root[0] as any).__vue_app__.$nuxt.$supabase
+          const { error } = await client.auth.signInWithPassword({ email, password })
+          if (error) throw new Error(`cy.login(${email}) failed: ${error.message}`)
+        })
     },
     {
       validate() {
-        cy.visit('/dashboard')
-        cy.location('pathname', { timeout: 15000 }).should('eq', '/dashboard')
+        cy.getCookies().should((cookies) => {
+          expect(cookies.some((c) => c.name.includes('auth-token')), 'Supabase auth cookie').to.equal(true)
+        })
       },
     },
   )

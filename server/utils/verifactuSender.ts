@@ -442,8 +442,21 @@ async function buildRecordsFor(
   const facturaIds = (records ?? []).map((r) => r.factura_id)
   const { data: facturas } = await supabase
     .from('facturas')
-    .select('id, patient_id, description, tax_base_cents, tax_rate_bp, tax_amount_cents, tax_exemption_code, recipient_name, recipient_nif')
+    .select('id, patient_id, description, tax_base_cents, tax_rate_bp, tax_amount_cents, tax_exemption_code, recipient_name, recipient_nif, rectifies_factura_id')
     .in('id', facturaIds)
+
+  // The factura each rectificativa corrects, identified by its own RECORD
+  // rather than by the factura row. FacturasRectificadas names the invoice the
+  // way the AEAT knows it -- emisor, serie, date -- and the record is what was
+  // actually transmitted under those three, so reading them from there cannot
+  // drift from what the AEAT holds.
+  const rectifiedIds = [...new Set((facturas ?? []).map((f) => f.rectifies_factura_id).filter(Boolean))] as string[]
+  const { data: rectified } = rectifiedIds.length
+    ? await supabase
+        .from('factura_records')
+        .select('factura_id, issuer_nif, serie_number, issued_on')
+        .in('factura_id', rectifiedIds)
+    : { data: [] as { factura_id: string; issuer_nif: string; serie_number: string; issued_on: string }[] }
 
   // The patient behind each factura, for the recipient name. A factura that
   // has not been delivered carries no frozen recipient -- the name resolves
@@ -501,6 +514,10 @@ async function buildRecordsFor(
           })(),
           patientNif: (patients ?? []).find((x) => x.id === f.patient_id)?.national_id ?? null,
         },
+        rectifies: (() => {
+          const o = (rectified ?? []).find((x) => x.factura_id === f.rectifies_factura_id)
+          return o ? { issuerNif: o.issuer_nif, serieNumber: o.serie_number, issuedOn: o.issued_on } : null
+        })(),
         issuerName: clinic?.legal_name || clinic?.name || '',
         accountId,
         indicadorMultiplesOt: (indicador as unknown as string) ?? 'S',

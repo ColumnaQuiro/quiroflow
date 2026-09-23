@@ -8,6 +8,26 @@
 // for COMPLETED appointments, found none, and so created an off-calendar one
 // — recorded against recepcion@example.test, the reception account that was
 // signed in, which is not a practitioner at all.
+/**
+ * The session's effects once it has actually been logged.
+ *
+ * Polled, because nothing on the page marks the moment the request is done.
+ * `cy.contains('Logging…').should('not.exist')` looked like it did, but it
+ * passes on its first try whenever it runs before Vue has re-rendered the
+ * button into its "Logging…" state -- and cy.task, which reads the database,
+ * is never retried. The handler makes four round trips (find the visit, claim
+ * the session, invent the visit, record the session), so the read regularly
+ * landed before them and found nothing: locally, 7 runs in 8 failed that way
+ * with retries off, and in CI it was the second most retried test.
+ */
+function sessionLogged(patientId: string, packagePurchaseId: string, attempt = 0): Cypress.Chainable<any> {
+  return cy.task<any>('db:packageSessionEffects', { patientId, packagePurchaseId }).then((effects) => {
+    if (effects.sessions.length > 0 || attempt >= 40) return cy.wrap(effects)
+    cy.wait(250)
+    return sessionLogged(patientId, packagePurchaseId, attempt + 1)
+  })
+}
+
 describe('Logging a bono session', () => {
   it('attaches to the visit the patient is in, rather than inventing one', () => {
     cy.seedStaffAccount().then((account) => {
@@ -37,9 +57,7 @@ describe('Logging a bono session', () => {
 
             cy.on('window:confirm', () => true)
             cy.contains('button', 'Log session').click()
-            cy.contains('Logging…').should('not.exist')
-
-            cy.task('db:packageSessionEffects', { patientId: patient.id, packagePurchaseId: purchase.id }).then((effects: any) => {
+            sessionLogged(patient.id, purchase.id).then((effects: any) => {
               expect(effects.sessions.length, 'one session').to.eq(1)
               // The visit he was actually in — no second appointment invented.
               expect(effects.sessions[0].appointment_id, 'attached to the real visit').to.eq(appt.id)
@@ -87,9 +105,7 @@ describe('Logging a bono session', () => {
 
             cy.on('window:confirm', () => true)
             cy.contains('button', 'Log session').click()
-            cy.contains('Logging…').should('not.exist')
-
-            cy.task('db:packageSessionEffects', { patientId: patient.id, packagePurchaseId: purchase.id }).then((effects: any) => {
+            sessionLogged(patient.id, purchase.id).then((effects: any) => {
               expect(effects.sessions.length, 'one session').to.eq(1)
               expect(effects.appointments.length, 'the visit was invented').to.eq(1)
             })
@@ -98,6 +114,49 @@ describe('Logging a bono session', () => {
               expect(effects.appointments[0].practitioner_id, 'credited to the patient’s practitioner').to.eq(practitioner.teamMemberId)
               expect(effects.appointments[0].practitioner_id, 'not whoever clicked').to.not.eq(account.teamMemberId)
             })
+          })
+        })
+      })
+    })
+  })
+
+  it('uses no session when the visit it needs cannot be recorded', () => {
+    // The visit insert's error used to be discarded: the session was then
+    // recorded against no visit and the bono was one session down, with
+    // nothing on screen to say so. Forced here, since nothing in a healthy
+    // stack makes that insert fail on demand.
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Sin', lastName: 'Visita' }).then((patient: any) => {
+        cy.task('db:createPackagePurchase', {
+          accountId: account.accountId,
+          patientId: patient.id,
+          packageName: 'Bono 12',
+          sessionsTotal: 12,
+          sessionsUsed: 0,
+          priceCents: 52800,
+        }).then((purchase: any) => {
+          cy.login(account.email, account.password)
+          cy.intercept('POST', '**/rest/v1/appointments*', {
+            statusCode: 400,
+            body: { code: '23502', message: 'forced by the spec', details: null, hint: null },
+          }).as('visitInsert')
+          cy.visit(`/patients/${patient.id}?tab=billing`)
+
+          const alerts: string[] = []
+          cy.on('window:confirm', () => true)
+          cy.on('window:alert', (text) => {
+            alerts.push(text)
+          })
+          cy.contains('button', 'Log session').click()
+          cy.wait('@visitInsert')
+
+          cy.wrap(alerts).should((seen) => {
+            expect(seen.join(' '), 'says it did not use a session').to.contain('no session was used')
+          })
+          cy.task<any>('db:packageSessionEffects', { patientId: patient.id, packagePurchaseId: purchase.id }).then((effects) => {
+            expect(effects.sessions.length, 'no session recorded').to.eq(0)
+            expect(effects.purchase.sessions_used, 'the claimed session given back').to.eq(0)
+            expect(effects.invoices.length, 'nothing charged').to.eq(0)
           })
         })
       })

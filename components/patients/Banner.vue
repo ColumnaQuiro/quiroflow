@@ -26,6 +26,8 @@ const props = defineProps<{
   archiving: boolean
   /** The patient's first number, from patient_contact_numbers. */
   primaryNumber: Tables<'patient_contact_numbers'> | null
+  /** For a minor: whoever messages actually go to. Null otherwise. */
+  tutor: { id: string; first_name: string; last_name: string | null } | null
 }>()
 
 defineEmits<{ message: []; book: []; charge: []; archive: []; merge: []; remove: []; photoUpdated: [] }>()
@@ -134,6 +136,18 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
                and renders nothing when neither is true. -->
           <UiBalancePill :available-cents="availableCents" :balance-cents="balanceCents" />
           <UiPill v-if="patient.is_minor" tone="brand">{{ t('Minor', 'Menor') }}</UiPill>
+          <!-- A minor has no Communications tab, which states the rule and
+               not where to act on it. This is where to act on it. -->
+          <NuxtLink
+            v-if="patient.is_minor && tutor"
+            :to="`/patients/${tutor.id}`"
+            class="text-[12px] font-medium text-brand-text outline-none hover:underline focus-visible:shadow-focus"
+          >
+            {{ t('Messages go to', 'Los mensajes van a') }} {{ [tutor.first_name, tutor.last_name].filter(Boolean).join(' ') }} ↗
+          </NuxtLink>
+          <span v-else-if="patient.is_minor" class="text-[12px] text-danger-text">
+            {{ t('No tutor linked', 'Sin tutor vinculado') }}
+          </span>
           <UiPill v-if="patient.do_not_contact" tone="danger">{{ t('Do not contact', 'No contactar') }}</UiPill>
           <UiPill v-if="patient.status !== 'active'" tone="neutral">{{ t('Archived', 'Archivado') }}</UiPill>
           <UiPill v-if="!canEdit" tone="neutral">{{ t('View only', 'Solo lectura') }}</UiPill>

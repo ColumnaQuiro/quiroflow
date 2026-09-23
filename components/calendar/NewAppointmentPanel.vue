@@ -533,13 +533,15 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>
-  <!-- No backdrop: the grid stays readable (and clickable) beside it. -->
+  <!-- No backdrop: the grid stays readable (and clickable) beside it.
+       z-50, above the help launcher (z-40) that would otherwise sit on the
+       Book button in the bottom-right corner. -->
   <div
     role="dialog"
     aria-modal="false"
     aria-labelledby="new-title"
     data-cy="create-sheet"
-    class="create-panel fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-line bg-surface shadow-popover sm:w-[520px]"
+    class="create-panel fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-line bg-surface shadow-popover sm:w-[520px]"
   >
     <div class="flex shrink-0 items-start justify-between gap-3 border-b border-line px-5 py-3.5 sm:px-6">
       <div class="flex min-w-0 flex-col">

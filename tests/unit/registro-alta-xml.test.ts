@@ -1,4 +1,5 @@
-import { aeatDate, aeatDateTime, buildRegistroAlta, type RegistroAltaInput } from '../../../utils/registroAlta'
+import { describe, it, expect } from 'vitest'
+import { aeatDate, aeatDateTime, buildRegistroAlta, type RegistroAltaInput } from '../../utils/registroAlta'
 
 // The XML the AEAT will actually read.
 //

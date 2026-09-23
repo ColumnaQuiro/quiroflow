@@ -1370,9 +1370,9 @@ async function signWhatsappBody(opts: { body: string; appSecret: string }) {
 
 async function appointmentById(opts: { appointmentId: string }) {
   const row = unwrap(
-    await admin.from('appointments').select('id, status, confirmation_status, rescheduled').eq('id', opts.appointmentId).single(),
+    await admin.from('appointments').select('id, status, confirmation_status, rescheduled, starts_at, ends_at, room_id').eq('id', opts.appointmentId).single(),
   )
-  return row as { id: string; status: string; confirmation_status: string | null; rescheduled: boolean }
+  return row as { id: string; status: string; confirmation_status: string | null; rescheduled: boolean; starts_at: string; ends_at: string; room_id: string | null }
 }
 
 /**
@@ -2150,6 +2150,44 @@ async function makeSequenceDue(opts: { leadId: string }) {
   return { ok: true }
 }
 
+/**
+ * A busy week in two inserts: `count` patients, one 30-minute visit each,
+ * spread Monday-Friday from 09:00, plus the patients' ids in visit order.
+ * For the specs that need the calendar to load more than a URL's worth of
+ * ids at once.
+ */
+async function seedBusyWeek(opts: { accountId: string; clinicId: string; practitionerId: string; weekStartIso: string; count: number }) {
+  const patients = unwrap(
+    await admin
+      .from('patients')
+      .insert(Array.from({ length: opts.count }, (_, i) => ({ account_id: opts.accountId, clinic_id: opts.clinicId, first_name: 'Busy', last_name: `Patient ${String(i).padStart(3, '0')}` })))
+      .select('id, last_name'),
+  ) as { id: string; last_name: string }[]
+  patients.sort((a, b) => a.last_name.localeCompare(b.last_name))
+  const perDay = Math.ceil(opts.count / 5)
+  const rows = patients.map((p, i) => {
+    const day = Math.floor(i / perDay)
+    const slot = i % perDay
+    const start = new Date(opts.weekStartIso)
+    start.setDate(start.getDate() + day)
+    // Two visits per half hour from 09:00, so no slot holds more than the
+    // calendar's four lanes.
+    start.setHours(9, 0, 0, 0)
+    start.setMinutes(Math.floor(slot / 2) * 30)
+    return {
+      account_id: opts.accountId,
+      clinic_id: opts.clinicId,
+      patient_id: p.id,
+      practitioner_id: opts.practitionerId,
+      starts_at: start.toISOString(),
+      ends_at: new Date(start.getTime() + 30 * 60000).toISOString(),
+      status: 'booked',
+    }
+  })
+  assertOk(await admin.from('appointments').insert(rows))
+  return { patientIds: patients.map((p) => p.id) }
+}
+
 /** A patient's sticky clinical note -- the one every appointment shows. */
 async function setStickyNote(opts: { patientId: string; note: string | null }) {
   assertOk(await admin.from('patients').update({ sticky_note: opts.note }).eq('id', opts.patientId))
@@ -2345,6 +2383,7 @@ export const dbTasks = {
   'db:seedWhatsappReplyScenario': seedWhatsappReplyScenario,
   'db:createAppointment': createAppointment,
   'db:setStickyNote': setStickyNote,
+  'db:seedBusyWeek': seedBusyWeek,
   'db:createReschedule': createReschedule,
   'db:createWaitlistEntry': createWaitlistEntry,
   'db:waitlistEntryById': waitlistEntryById,

@@ -83,6 +83,17 @@ export interface RegistroAltaInput {
     /** The patient's NIF, for the same reason as patientName. */
     patientNif?: string | null
   }
+  /**
+   * The factura this one corrects, for FacturasRectificadas. Set only on a
+   * rectificativa, and read from facturas.rectifies_factura_id -- which is
+   * populated when the refunded payment had exactly one factura behind it.
+   */
+  rectifies?: {
+    issuerNif: string
+    serieNumber: string
+    /** ISO date, as stored (YYYY-MM-DD). */
+    issuedOn: string
+  } | null
   issuerName: string
   accountId: string
   /**
@@ -102,7 +113,49 @@ export interface RegistroAltaInput {
    * correcting a record they DID register.
    */
   afterRejection?: boolean
+  /**
+   * Replace the destinatario with a fixed test identity.
+   *
+   * Set by the sender for every environment that is not production, because
+   * the endpoint is the ONLY thing `environment` changes -- the document is
+   * built identically for both, so real patients' names and NIFs were going
+   * to the AEAT's preproduction service. Named for what it does rather than
+   * for the environment, so the builder stays a pure function of its input
+   * and the decision sits with the caller that knows where it is sending.
+   *
+   * Only the recipient. Everything else in the record feeds the huella, or
+   * must match the certificate. See buildRegistroAlta.
+   */
+  anonymiseRecipient?: boolean
 }
+
+/**
+ * The stand-in destinatario, identified the way the schema identifies someone
+ * the AEAT cannot look up.
+ *
+ * The first attempt at this used a NIF -- 00000000T, chosen because 0 mod 23
+ * is T, so it satisfies the checksum. The AEAT refused all sixteen of them:
+ *
+ *   1239  Error en el bloque Destinatario.. El formato del NIF es incorrecto..
+ *         NIF:00000000T. NOMBRE_RAZON:Destinatario de pruebas.
+ *
+ * A valid checksum is not a valid NIF. The all-zero number is excluded
+ * outright, and anything else that passes the format check then has to exist
+ * in the census -- so there is no invented NIF that survives both, and
+ * borrowing a real one would put a real person on the record.
+ *
+ * IDOtro with IDType 07 is the schema's own answer to this. L7 calls it "No
+ * Censado": a recipient the AEAT has no record of, identified by something
+ * that is not a NIF. That is exactly what a stand-in is, so this says so
+ * rather than dressing it up as a taxpayer. CodigoPais ES is allowed here --
+ * IDOtroType forbids only ES together with IDType 01.
+ *
+ * What is lost: the AEAT no longer validates a NIF for us in preproduction,
+ * because there is no NIF to validate. That check is only available by
+ * sending a real person's, which is the thing this exists to avoid.
+ */
+export const TEST_DESTINATARIO_NAME = 'Destinatario de pruebas'
+export const TEST_DESTINATARIO_ID = { codigoPais: 'ES', idType: '07', id: 'PRUEBAS' }
 
 const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -233,8 +286,46 @@ export function buildRegistroAlta(input: RegistroAltaInput): string {
   // name resolves from the patient when the document is rendered rather than
   // being copied onto the factura -- so the sender has to resolve it the same
   // way rather than sending the empty string it finds.
-  const recipientName = capped((factura.recipientName || factura.patientName || '').trim(), 120)
-  const recipientNif = (factura.recipientNif || factura.patientNif || '').trim()
+  // Against the AEAT's PREPRODUCTION service the destinatario is substituted,
+  // because "test environment" and "test data" are not the same thing and only
+  // the first of them was ever true here. environment picks the endpoint and
+  // nothing else: the envelope is byte-identical either way, so 53 real
+  // patients' names -- and, once the NIF began resolving, their NIFs -- went to
+  // prewww1.aeat.es on invoices from a clinic, which says what they were
+  // treated for.
+  //
+  // Nothing filed there has fiscal effect, which is the question usually asked
+  // and the wrong one. There is no legal obligation covering a tax authority's
+  // test system, so the lawful basis that carries a real filing does not
+  // stretch to it, and a preproduction environment is not where a clinic's
+  // patient list belongs. It matters more once other clinics are on this.
+  //
+  // What is NOT substituted is deliberate. Amounts, dates, serie and the
+  // issuer's own NIF all feed factura_huella_input(), so changing them would
+  // invalidate the chain the test is there to exercise -- and the issuer NIF
+  // must match the certificate anyway. The recipient feeds nothing: the huella
+  // is IDEmisorFactura, NumSerieFactura, FechaExpedicionFactura, TipoFactura,
+  // CuotaTotal, ImporteTotal, the previous Huella and the timestamp. So this
+  // is the one field that can be replaced without weakening the test.
+  //
+  // 00000000T is a structurally valid NIF -- 0 mod 23 is T -- so the AEAT
+  // validates the shape of what it is given rather than waving it through.
+  const recipientName = input.anonymiseRecipient
+    ? TEST_DESTINATARIO_NAME
+    : capped((factura.recipientName || factura.patientName || '').trim(), 120)
+  const recipientNif = input.anonymiseRecipient ? '' : (factura.recipientNif || factura.patientNif || '').trim()
+
+  // NombreRazon then ONE of NIF or IDOtro -- PersonaFisicaJuridicaType is a
+  // choice, so sending both is refused by the schema.
+  const idDestinatario = input.anonymiseRecipient
+    ? [
+        '<sum1:IDOtro>',
+        L('CodigoPais', TEST_DESTINATARIO_ID.codigoPais),
+        L('IDType', TEST_DESTINATARIO_ID.idType),
+        L('ID', TEST_DESTINATARIO_ID.id),
+        '</sum1:IDOtro>',
+      ]
+    : [L('NIF', recipientNif)]
 
   // A destinatario needs a name AND an identifier. IDDestinatario carries
   // NombreRazon plus either NIF or IDOtro, and sending the name alone is
@@ -259,16 +350,56 @@ export function buildRegistroAlta(input: RegistroAltaInput): string {
   // leaving Destinatarios out lets the AEAT say so per record, which is more
   // useful than a fault that blames the envelope.
   const destinatarios =
-    record.invoiceType === 'F2' || !recipientName || !recipientNif
+    record.invoiceType === 'F2' || !recipientName || (!recipientNif && !input.anonymiseRecipient)
       ? []
       : [
           '<sum1:Destinatarios>',
           '<sum1:IDDestinatario>',
           L('NombreRazon', recipientName),
-          L('NIF', recipientNif),
+          ...idDestinatario,
           '</sum1:IDDestinatario>',
           '</sum1:Destinatarios>',
         ]
+
+  // A rectificativa must say HOW it corrects, and the AEAT rejects it outright
+  // when it does not:
+  //
+  //   1114  Si la factura es de tipo rectificativa, el campo TipoRectificativa
+  //         debe tener valor.
+  //
+  // "I" -- por diferencias -- because that is what issueRectificativa()
+  // produces: a factura whose base, cuota and total are NEGATIVE, carrying the
+  // amount going back rather than a restatement of the corrected invoice. "S"
+  // is the other shape, where the record's totals are the corrected invoice's
+  // new totals and ImporteRectificacion carries the ones it replaces. Sending
+  // "S" for a negative document would tell the AEAT the corrected factura is
+  // now worth minus what was refunded.
+  //
+  // ImporteRectificacion therefore has no place here: the schema describes it
+  // as the "Base y Cuota sustituida en las Facturas Rectificativas
+  // SUSTITUTIVAS", and there is nothing substituted.
+  const rectificativa = record.invoiceType.startsWith('R')
+    ? [
+        L('TipoRectificativa', 'I'),
+        // Which factura is being corrected. Named in full -- emisor, serie and
+        // date -- because that is how the AEAT identifies an invoice, the same
+        // triple as Encadenamiento. Omitted when the refund could not be traced
+        // to a single factura, which issueRectificativa() allows: better a
+        // rectificativa the AEAT holds without the back-reference than one it
+        // refuses.
+        ...(input.rectifies
+          ? [
+              '<sum1:FacturasRectificadas>',
+              '<sum1:IDFacturaRectificada>',
+              L('IDEmisorFactura', input.rectifies.issuerNif),
+              L('NumSerieFactura', input.rectifies.serieNumber),
+              L('FechaExpedicionFactura', aeatDate(input.rectifies.issuedOn)),
+              '</sum1:IDFacturaRectificada>',
+              '</sum1:FacturasRectificadas>',
+            ]
+          : []),
+      ]
+    : []
 
   return [
     '<sum1:RegistroAlta>',
@@ -291,6 +422,10 @@ export function buildRegistroAlta(input: RegistroAltaInput): string {
     // flag without the first and every retry was refused.
     ...(input.afterRejection ? [L('Subsanacion', 'S'), L('RechazoPrevio', 'S')] : []),
     L('TipoFactura', record.invoiceType),
+    // Order is not free: TipoRectificativa and FacturasRectificadas sit
+    // between TipoFactura and DescripcionOperacion in the XSD sequence, and
+    // an element out of order fails the schema rather than a validation.
+    ...rectificativa,
     L('DescripcionOperacion', capped(factura.description, 500)),
     ...destinatarios,
     '<sum1:Desglose>',

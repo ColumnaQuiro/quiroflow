@@ -5,7 +5,7 @@
 // day/week + check-in + privacy mode covers the rest of what PH offers.
 //
 // Redesign note: the old standalone "Flow Tracker" toggle + 3-column kanban
-// (CalendarFlowTracker, still used by pages/calendar.vue) is superseded here
+// (CalendarFlowTracker, since removed from pages/calendar.vue too) is superseded here
 // by the always-on 5-stage summary strip at the top of the worklist panel,
 // per the design handoff. It's driven by the same real fields the kanban
 // used (checked_in_at, flow_with_practitioner_at, visit_notes existence,

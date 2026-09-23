@@ -12,17 +12,19 @@
 // reason the dark theme needed no dark-specific CSS at all. This keeps it
 // that way.
 //
-// Scoped to growth/ deliberately. The rest of the app predates the token
-// system and has legitimate exceptions -- pages/inbox.vue paints WhatsApp's
-// own brand green, which is a fixed brand colour and correctly not a token.
-// Widen this only alongside the work to clean those up.
+// Scoped to growth/ and the calendar deliberately. The rest of the app
+// predates the token system and has legitimate exceptions -- pages/inbox.vue
+// paints WhatsApp's own brand green, which is a fixed brand colour and
+// correctly not a token. Widen this only alongside the work to clean those up,
+// as the calendar redesign did: its type and team colours come from data and
+// are tinted with color-mix() against a surface token, never a literal.
 
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const ROOTS = ['components/growth', 'pages/growth']
+const ROOTS = ['components/growth', 'pages/growth', 'components/calendar', 'pages/calendar.vue']
 
 // Hex colours, and the rgb()/hsl() forms that dodge a hex check. A CSS var
 // reference is what we WANT, so rgb(var(--x)) has to survive.
@@ -31,6 +33,7 @@ const FUNC = /\b(?:rgb|rgba|hsl|hsla)\(\s*(?!var\()/g
 
 function walk(dir) {
   const out = []
+  if (/\.(vue|ts)$/.test(dir)) return [dir]
   let entries
   try {
     entries = readdirSync(dir, { withFileTypes: true })
@@ -66,7 +69,7 @@ for (const dir of ROOTS) {
 }
 
 if (offences.length > 0) {
-  console.error(`check-theme-tokens: ${offences.length} hardcoded colour(s) in Growth screens:`)
+  console.error(`check-theme-tokens: ${offences.length} hardcoded colour(s) in themed screens:`)
   for (const o of offences) console.error(`  ${o.file}:${o.line}  ${o.snippet}\n    ${o.text}`)
   console.error('')
   console.error('Use a Tailwind theme token (bg-surface, text-ink-900, border-line,')
@@ -76,4 +79,4 @@ if (offences.length > 0) {
   process.exit(1)
 }
 
-console.log('Growth screens use theme tokens only -- no hardcoded colours.')
+console.log('Growth and calendar screens use theme tokens only -- no hardcoded colours.')

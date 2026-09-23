@@ -208,7 +208,7 @@ export async function sendPendingRecords(
   const blocked = transmissionBlockedBy({ config: effective, pendingCount: pending.length, readyAt })
   if (blocked) return { sent: 0, blocked, estadoEnvio: null }
 
-  const built = await buildRecordsFor(supabase, accountId, pending)
+  const built = await buildRecordsFor(supabase, accountId, pending, effective)
   if (built.registros.length === 0) return { sent: 0, blocked: 'nothing-to-send', estadoEnvio: null }
 
   // One envelope's worth, split out so a batch the AEAT refuses WHOLESALE can
@@ -420,6 +420,7 @@ async function buildRecordsFor(
   supabase: SupabaseClient<Database>,
   accountId: string,
   pending: PendingRecord[],
+  config: SenderConfig,
 ) {
   const ids = pending.map((p) => p.factura_record_id)
   const { data: records } = await supabase
@@ -441,8 +442,21 @@ async function buildRecordsFor(
   const facturaIds = (records ?? []).map((r) => r.factura_id)
   const { data: facturas } = await supabase
     .from('facturas')
-    .select('id, patient_id, description, tax_base_cents, tax_rate_bp, tax_amount_cents, tax_exemption_code, recipient_name, recipient_nif')
+    .select('id, patient_id, description, tax_base_cents, tax_rate_bp, tax_amount_cents, tax_exemption_code, recipient_name, recipient_nif, rectifies_factura_id')
     .in('id', facturaIds)
+
+  // The factura each rectificativa corrects, identified by its own RECORD
+  // rather than by the factura row. FacturasRectificadas names the invoice the
+  // way the AEAT knows it -- emisor, serie, date -- and the record is what was
+  // actually transmitted under those three, so reading them from there cannot
+  // drift from what the AEAT holds.
+  const rectifiedIds = [...new Set((facturas ?? []).map((f) => f.rectifies_factura_id).filter(Boolean))] as string[]
+  const { data: rectified } = rectifiedIds.length
+    ? await supabase
+        .from('factura_records')
+        .select('factura_id, issuer_nif, serie_number, issued_on')
+        .in('factura_id', rectifiedIds)
+    : { data: [] as { factura_id: string; issuer_nif: string; serie_number: string; issued_on: string }[] }
 
   // The patient behind each factura, for the recipient name. A factura that
   // has not been delivered carries no frozen recipient -- the name resolves
@@ -500,6 +514,10 @@ async function buildRecordsFor(
           })(),
           patientNif: (patients ?? []).find((x) => x.id === f.patient_id)?.national_id ?? null,
         },
+        rectifies: (() => {
+          const o = (rectified ?? []).find((x) => x.factura_id === f.rectifies_factura_id)
+          return o ? { issuerNif: o.issuer_nif, serieNumber: o.serie_number, issuedOn: o.issued_on } : null
+        })(),
         issuerName: clinic?.legal_name || clinic?.name || '',
         accountId,
         indicadorMultiplesOt: (indicador as unknown as string) ?? 'S',
@@ -507,6 +525,13 @@ async function buildRecordsFor(
         // again as an ordinary alta -- flagged, so the resend reads as
         // deliberate rather than as a duplicate.
         afterRejection: p?.last_status === 'Incorrecto',
+        // Anything that is not production gets a stand-in destinatario. The
+        // environment has only ever chosen the endpoint -- the document was
+        // built the same either way -- so real patients were being identified
+        // to the AEAT's test service. Defaulting on the NOT-production side is
+        // the safe direction: a mistake leaves preproduction holding a name
+        // nobody has, rather than production holding the wrong one.
+        anonymiseRecipient: config.environment !== 'production',
       }),
     )
 

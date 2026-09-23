@@ -17,6 +17,15 @@ name: CI
 on:
   pull_request:
 
+# A new push to a PR makes the run for its previous commit worthless: its
+# result describes code that is no longer the PR. Without this both run to
+# the end -- ~40 runner-minutes each, and on 2026-09-23 several branches ran
+# CI four or five times in a morning. Keyed on the PR, so only that PR's
+# runs cancel each other.
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   typecheck:
     runs-on: ubuntu-latest
@@ -60,7 +69,65 @@ jobs:
       # named error in the job that exists to catch it.
       - run: npm run build
 
+  # The app every Cypress shard runs against, built once. Each shard used to
+  # build it for itself -- the same ~60-90s on eight runners, every one of
+  # them competing with its own `supabase start` for the runner's two cores.
+  #
+  # The shards deliberately do NOT `needs:` this job. That would hold back
+  # their `supabase start` until the build finished, turning two things that
+  # overlap today into two things in series. They start Supabase straight
+  # away and pick the artifact up when it lands -- see "Wait for the app
+  # build" below.
+  #
+  # node-server, not the netlify preset production ships: that one emits a
+  # function bundle with no server to start. It is still far closer to
+  # production than the dev server the specs used to run against -- same
+  # bundling, same SSR path, no on-demand compilation. The typecheck job
+  # builds with the real preset, so the production output keeps its own gate.
+  # Env reaches the server at runtime (NUXT_PUBLIC_*), which is why building
+  # with no Supabase anywhere is fine.
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Restore node_modules
+        id: modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
+
+      - run: npm ci
+        if: steps.modules.outputs.cache-hit != 'true'
+
+      - name: Build the app the specs will run against
+        run: npm run build
+        env:
+          NITRO_PRESET: node-server
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e2e-app
+          path: .output
+          # `.output` is itself a dot-directory, and upload-artifact skips
+          # hidden paths unless told otherwise.
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
   cypress:
+    # Reading this run's artifacts and jobs while it is still in progress --
+    # see "Wait for the app build".
+    permissions:
+      actions: read
+      contents: read
     strategy:
       fail-fast: false
       # Manual sharding, no Cypress Cloud recording configured (that's what
@@ -94,7 +161,7 @@ jobs:
       # back.
       #
       # Cypress time per shard, measured against the built server (see the
-      # build step below) rather than estimated: growth-leads 2m41,
+      # `build` job above) rather than estimated: growth-leads 2m41,
       # growth-platform 2m16, patients 1m27, settings 50s, calendar 47s,
       # navigation 17s, the rest under 30s each.
       # Those numbers replace a set that had gone badly stale -- it claimed
@@ -142,8 +209,22 @@ jobs:
             specs: "cypress/e2e/growth/growth-lead*.cy.ts,cypress/e2e/growth/growth-inbox.cy.ts"
           - name: growth-platform
             specs: "cypress/e2e/growth/growth-receptionist*.cy.ts,cypress/e2e/growth/growth-reputation.cy.ts,cypress/e2e/growth/growth-dashboard-data.cy.ts,cypress/e2e/growth/growth-dashboard.cy.ts,cypress/e2e/growth/growth-automations.cy.ts,cypress/e2e/growth/growth-automation-builder.cy.ts,cypress/e2e/growth/growth-addon-entitlement.cy.ts,cypress/e2e/growth/growth-review-links.cy.ts,cypress/e2e/growth/growth-campaign-templates.cy.ts,cypress/e2e/growth/growth-email-metrics.cy.ts"
-          - name: patients-and-booking
-            specs: "cypress/e2e/patients/**,cypress/e2e/public-booking/**"
+          # Patients is split by first letter because it grew to 55 specs and
+          # 351s of Cypress on one runner, against 213s for the next-slowest --
+          # the whole run waited on it (run 35835560318, 2026-09-23). Cut at
+          # "p" on measured per-spec time: a-o 186s, the rest plus booking
+          # 165s.
+          #
+          # A character class rather than named files, because [a-o] and
+          # [!a-o] are complementary: every file in the folder matches exactly
+          # one of them, so a new patients spec still lands in a shard with no
+          # workflow edit, which is the property folder globs exist for. Move
+          # the letter to rebalance; check-e2e-shards.mjs proves the halves
+          # still cover the folder exactly once.
+          - name: patients-a-o
+            specs: "cypress/e2e/patients/[a-o]*.cy.ts"
+          - name: patients-p-z-and-booking
+            specs: "cypress/e2e/patients/[!a-o]*.cy.ts,cypress/e2e/public-booking/**"
           - name: auth-calendar-inbox
             specs: "cypress/e2e/auth/**,cypress/e2e/calendar/**,cypress/e2e/inbox/**"
     runs-on: ubuntu-latest
@@ -206,9 +287,28 @@ jobs:
         # and studio/postgres-meta/logflare/vector only serve the local
         # Studio UI, never the app itself. Local dev (plain `supabase
         # start`, no -x) still gets the full stack -- this only trims CI.
+        #
+        # Retried, because every shard pulls the same images from the same
+        # registries at the same moment and they rate-limit it: three runs on
+        # 2026-09-23 lost a shard to "toomanyrequests: Rate exceeded" before a
+        # single spec ran. The CLI's own pull retry gives up within seconds,
+        # and running it again straight away then failed on "port 54322
+        # already in use" -- the half-started stack was still holding it. So
+        # between attempts, `stop --no-backup` removes those containers and
+        # their volumes (a half-initialised database is not one to reuse),
+        # then backs off. Images that did pull stay in Docker, so a retry only
+        # fetches what was missing.
         run: |
-          nohup supabase start -x studio,edge-runtime,logflare,vector,mailpit,postgres-meta \
-            > /tmp/supabase-start.log 2>&1 &
+          cat > /tmp/supabase-start.sh <<'EOF'
+          for attempt in 1 2 3; do
+            echo "== supabase start, attempt $attempt of 3"
+            supabase start -x studio,edge-runtime,logflare,vector,mailpit,postgres-meta && exit 0
+            [ "$attempt" = 3 ] && exit 1
+            supabase stop --no-backup || true
+            sleep $((attempt * 20))
+          done
+          EOF
+          nohup bash /tmp/supabase-start.sh > /tmp/supabase-start.log 2>&1 &
           echo $! > /tmp/supabase-start.pid
 
       - name: Restore node_modules
@@ -261,28 +361,53 @@ jobs:
       # fatal.
       - run: npx cypress install
 
-      # Built here, in the window the backgrounded `supabase start` has
-      # already claimed. Cypress used to run against `nuxt dev`, which
-      # compiles each route the first time a spec visits it -- so every shard
-      # paid Vite's compile cost again, spec after spec. Measured on this
-      # suite, serving a build instead:
+      # Cypress compiles the specs against the root tsconfig.json, which
+      # extends .nuxt/tsconfig.json -- so without .nuxt/ every shard dies
+      # with "File './.nuxt/tsconfig.json' not found" before running a spec.
+      # It used to appear as a side effect: first of each shard's own
+      # `nuxt build`, then (once the build moved to its own job) of `npm ci`,
+      # whose postinstall runs `nuxt prepare`. A node_modules cache hit skips
+      # `npm ci`, so the first run with a warm cache failed every shard on
+      # every PR. Generated explicitly now, whatever the cache did. A few
+      # seconds, spent while the shard would be waiting for the build anyway.
+      - name: Generate .nuxt/ for the specs' tsconfig
+        run: npx nuxt prepare
+
+      # The specs run against a build, not `nuxt dev`, which compiled each
+      # route the first time a spec visited it -- so every shard paid Vite's
+      # compile cost again, spec after spec. Measured on this suite, serving
+      # a build instead:
       #
       #   navigation  1m06 -> 0m17     (walks every page; the best case)
       #   settings    1m27 -> 0m50
       #
-      # The build costs ~60-90s, which is roughly what the step below spends
-      # waiting for Postgres to come up anyway. Putting it here means the
-      # shard pays for it out of dead time rather than adding to the run.
-      #
-      # node-server, not the netlify preset production ships: that one emits
-      # a function bundle with no server to start. It is still far closer to
-      # production than the dev server was -- same bundling, same SSR path,
-      # no on-demand compilation. The typecheck job still builds with the
-      # real preset, so the production output keeps its own gate.
-      - name: Build the app the specs will run against
-        run: npm run build
+      # The build comes from the `build` job, which runs alongside this one
+      # rather than before it. download-artifact alone cannot wait: it fails
+      # at once if the artifact is not there yet. So poll the run's artifacts
+      # until it appears, and give up early if the build job has already
+      # failed rather than sitting out the timeout.
+      - name: Wait for the app build
         env:
-          NITRO_PRESET: node-server
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run="repos/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          for _ in $(seq 1 120); do
+            found="$(gh api "$run/artifacts?name=e2e-app" -q '.total_count')"
+            if [ "$found" != "0" ]; then exit 0; fi
+            build="$(gh api "$run/jobs" -q '.jobs[] | select(.name == "build") | .conclusion')"
+            if [ -n "$build" ] && [ "$build" != "success" ]; then
+              echo "::error::The build job finished as '$build' without uploading the app"
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "::error::The app build did not appear within 10 minutes"
+          exit 1
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: e2e-app
+          path: .output
 
       - name: Wait for Supabase and export its env vars
         run: |
@@ -291,13 +416,15 @@ jobs:
           # each workflow step runs in its own. Poll the pid, then let
           # `supabase status` be the actual health check -- the backgrounded
           # start's exit code isn't reachable from here either.
-          for _ in $(seq 1 300); do
+          # 480s rather than 300s: room for the start step's retries and
+          # their backoff on top of a normal ~90s start.
+          for _ in $(seq 1 480); do
             kill -0 "$pid" 2>/dev/null || break
             sleep 1
           done
           cat /tmp/supabase-start.log
           if kill -0 "$pid" 2>/dev/null; then
-            echo "::error::supabase start still running after 300s"
+            echo "::error::supabase start still running after 480s"
             exit 1
           fi
           if ! supabase status -o env > /tmp/supabase-status.env 2>&1; then
@@ -309,9 +436,9 @@ jobs:
             /tmp/supabase-status.env >> "$GITHUB_ENV"
 
       - name: Run Cypress (${{ matrix.shard.name }})
-        # The built server, not `nuxt dev` -- see the build step above. Env
-        # reaches it at runtime (NUXT_PUBLIC_*), which is why building before
-        # Supabase is up is fine.
+        # The built server from the `build` job, not `nuxt dev`. Env reaches
+        # it at runtime (NUXT_PUBLIC_*), which is why building with no Supabase
+        # anywhere is fine.
         run: npx start-server-and-test "node .output/server/index.mjs" http://localhost:3000 "cypress run --spec '${{ matrix.shard.specs }}'"
         env:
           CYPRESS_baseUrl: http://localhost:3000
@@ -372,14 +499,15 @@ jobs:
     # always(), or a failed dependency would skip this job rather than fail
     # it, and a skipped required check reads as "not failed" to some tooling.
     if: always()
-    needs: [typecheck, cypress]
+    needs: [typecheck, build, cypress]
     runs-on: ubuntu-latest
     steps:
       - name: Report whether every job passed
         run: |
           echo "typecheck: ${{ needs.typecheck.result }}"
+          echo "build:     ${{ needs.build.result }}"
           echo "cypress:   ${{ needs.cypress.result }}"
-          if [ "${{ needs.typecheck.result }}" != "success" ] || [ "${{ needs.cypress.result }}" != "success" ]; then
+          if [ "${{ needs.typecheck.result }}" != "success" ] || [ "${{ needs.build.result }}" != "success" ] || [ "${{ needs.cypress.result }}" != "success" ]; then
             echo "::error::CI did not pass"
             exit 1
           fi

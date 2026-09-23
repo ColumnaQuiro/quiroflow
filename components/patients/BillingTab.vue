@@ -4,7 +4,7 @@ import { normalizeSearchTerm } from '~/utils/searchText'
 import { bonoOwedCents } from '~/utils/bonoOwed'
 import { settleInvoiceIfCovered } from '~/utils/settleInvoice'
 
-const props = defineProps<{ patientId: string; openPaymentTrigger?: boolean }>()
+const props = defineProps<{ patientId: string; openPaymentTrigger?: boolean; refundInvoiceId?: string | null }>()
 const emit = defineEmits<{ paymentTriggerConsumed: [] }>()
 
 interface InvoiceRow {
@@ -2448,6 +2448,7 @@ function money(cents: number) {
       :can-delete-payments="can('financials_edit_all') && can('payments_allocate')"
       :can-write-off="can('financials_edit_all')"
       :can-refund="can('financials_edit_all')"
+      :open-refund-for-invoice-id="props.refundInvoiceId ?? null"
       @add-credit="activePanel = 'credit'"
       @take-payment="activePanel === 'payment' ? (activePanel = null) : openTakePayment()"
       @send-invoice="sendInvoiceEmail"

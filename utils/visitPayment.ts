@@ -85,3 +85,33 @@ export function resolveVisitPayment(input: VisitPaymentInput): VisitPayment {
     invoiceNumber: invoice.invoice_number,
   }
 }
+
+export interface VisitBono {
+  packageName: string
+  remaining: number
+  total: number
+  /** true once this visit has drawn its session; false while it is still to come. */
+  drawn: boolean
+}
+
+/**
+ * The bono a calendar block and the hover card name for a visit.
+ *
+ * A drawn session is resolveVisitPayment's own answer and is used as is. A
+ * visit that has not happened yet has drawn nothing, so resolveVisitPayment
+ * rightly says `none` -- but the front desk still wants to see "Bono 3/10" on
+ * tomorrow's block, because that is the pack the visit is going to come out
+ * of. So, and only while the visit is neither drawn nor charged, the
+ * patient's active pack stands in. A visit that was charged instead is paid
+ * the other way, and naming a bono beside it would say it was paid twice.
+ */
+export function bonoForVisit(
+  payment: VisitPayment,
+  activePackage: { package_name: string; sessions_total: number; sessions_used: number } | null | undefined,
+): VisitBono | null {
+  if (payment.kind === 'bono') return { packageName: payment.packageName, remaining: payment.remaining, total: payment.total, drawn: true }
+  if (payment.kind !== 'none' || !activePackage) return null
+  const remaining = Math.max(0, activePackage.sessions_total - activePackage.sessions_used)
+  if (remaining === 0) return null
+  return { packageName: activePackage.package_name, remaining, total: activePackage.sessions_total, drawn: false }
+}

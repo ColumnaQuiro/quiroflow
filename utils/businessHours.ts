@@ -59,3 +59,49 @@ export function practitionerWindowsForDay(
   if (!hasBusinessHoursConfigured(practitionerHours)) return clinicWindows
   return practitionerHours?.[dayKey] ?? []
 }
+
+function toHhmm(mins: number): string {
+  return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`
+}
+
+/** Overlapping or touching windows folded together, in order. */
+export function mergeWindows(windows: [string, string][]): [string, string][] {
+  const ranges = windows.map(([s, e]) => [toMinutes(s), toMinutes(e)] as [number, number]).sort((a, b) => a[0] - b[0])
+  const out: [number, number][] = []
+  for (const r of ranges) {
+    const last = out[out.length - 1]
+    if (last && r[0] <= last[1]) last[1] = Math.max(last[1], r[1])
+    else out.push([r[0], r[1]])
+  }
+  return out.map(([s, e]) => [toHhmm(s), toHhmm(e)])
+}
+
+// When ANYONE is working on a day -- what the calendar leaves un-hatched when
+// it is showing the whole clinic rather than one practitioner.
+//
+// Each practitioner contributes their own windows (practitionerWindowsForDay:
+// their schedule, or the clinic's for someone who never set one). Returns
+// null for "no restriction at all": if even one practitioner has no hours and
+// the clinic has none to lend them, nothing says when that person is off, and
+// hatching the day would claim a closure nobody configured -- the same
+// opt-in rule hasBusinessHoursConfigured applies to a single schedule.
+export function unionWorkingWindows(
+  date: Date,
+  clinicHours: BusinessHours | null | undefined,
+  practitionerHours: (BusinessHours | null | undefined)[],
+): [string, string][] | null {
+  const clinicConfigured = hasBusinessHoursConfigured(clinicHours)
+  const clinicWindows = windowsForDay(date, clinicHours)
+  if (practitionerHours.length === 0) return clinicConfigured ? clinicWindows : null
+  const all: [string, string][] = []
+  for (const hours of practitionerHours) {
+    if (!hasBusinessHoursConfigured(hours) && !clinicConfigured) return null
+    all.push(...practitionerWindowsForDay(clinicWindows, hours, dayKeyFor(date)))
+  }
+  return mergeWindows(all)
+}
+
+/** Whether `mins` (minutes since midnight) falls inside any window. */
+export function withinWindows(mins: number, windows: [string, string][]): boolean {
+  return windows.some(([s, e]) => mins >= toMinutes(s) && mins < toMinutes(e))
+}

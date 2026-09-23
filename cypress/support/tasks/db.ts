@@ -2322,7 +2322,72 @@ async function setCancellationFee(opts: { accountId: string; cents: number | nul
   return { ok: true }
 }
 
+// --- Two-factor login ------------------------------------------------------
+
+// RFC 6238 TOTP, the same computation an authenticator app does: HMAC-SHA1
+// over the 30-second step counter, dynamically truncated to six digits.
+function totpAt(secretBase32: string, time: number): string {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+  let bits = ''
+  for (const ch of secretBase32.replace(/=+$/, '').toUpperCase()) {
+    const v = alphabet.indexOf(ch)
+    if (v < 0) continue
+    bits += v.toString(2).padStart(5, '0')
+  }
+  const key = Buffer.alloc(Math.floor(bits.length / 8))
+  for (let i = 0; i < key.length; i++) key[i] = parseInt(bits.slice(i * 8, i * 8 + 8), 2)
+
+  const counter = Buffer.alloc(8)
+  counter.writeBigUInt64BE(BigInt(Math.floor(time / 1000 / 30)))
+  const hmac = createHmac('sha1', key).update(counter).digest()
+  const offset = hmac[hmac.length - 1] & 0x0f
+  const binary = (hmac.readUInt32BE(offset) & 0x7fffffff) % 1_000_000
+  return binary.toString().padStart(6, '0')
+}
+
+// `notCode`: wait for the next 30-second window when the current code is the
+// one just used -- a spec that enrols and then signs in straight away would
+// otherwise submit the same code twice, which proves nothing about the
+// second step and can be refused as a replay.
+async function totpCode({ secret, notCode }: { secret: string; notCode?: string }) {
+  let code = totpAt(secret, Date.now())
+  while (notCode && code === notCode) {
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+    code = totpAt(secret, Date.now())
+  }
+  return code
+}
+
+async function setRequireTwoFactor({ accountId, required }: { accountId: string; required: boolean }) {
+  assertOk(await admin.from('accounts').update({ require_two_factor: required }).eq('id', accountId))
+  return null
+}
+
+// What a stolen password gets on its own: a fresh password-only (aal1)
+// session going straight at PostgREST, the way an attacker would, with no
+// app and no redirect in the way.
+async function passwordOnlyReads({ email, password }: { email: string; password: string }) {
+  const client = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+  const { error: signInErr } = await client.auth.signInWithPassword({ email, password })
+  if (signInErr) throw signInErr
+  const [{ data: teamMembers }, { data: clinics }, { data: bootstrap }, { data: gate }] = await Promise.all([
+    client.from('team_members').select('id'),
+    client.from('clinics').select('id'),
+    client.rpc('get_my_bootstrap'),
+    client.rpc('get_my_two_factor_gate'),
+  ])
+  return {
+    teamMembers: (teamMembers ?? []).length,
+    clinics: (clinics ?? []).length,
+    bootstrapTeamMember: (bootstrap as { team_member: unknown } | null)?.team_member ?? null,
+    gate,
+  }
+}
+
 export const dbTasks = {
+  'totp:code': totpCode,
+  'db:setRequireTwoFactor': setRequireTwoFactor,
+  'db:passwordOnlyReads': passwordOnlyReads,
   'db:createStaffAccount': createStaffAccount,
   'db:createLead': createLead,
   'db:createLeadMessage': createLeadMessage,

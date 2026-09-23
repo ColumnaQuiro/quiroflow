@@ -40,7 +40,7 @@ const groups = computed(() => [
     items: [
       { to: '/settings/clinics', label: t('Clinics', 'Clínicas'), description: t('Locations your practice operates from.', 'Las sedes desde las que opera tu clínica.'), icon: ICONS.building },
       { to: '/settings/online-booking', label: t('Online Booking', 'Reserva online'), description: t('Per-clinic hours, booking window, patient eligibility, discount codes, layout, and language overrides.', 'Horarios por clínica, ventana de reserva, elegibilidad de pacientes, códigos de descuento, diseño y textos personalizados.'), icon: ICONS.globe },
-      { to: '/settings/team', label: t('Team Members', 'Miembros del equipo'), description: t('Staff accounts, roles, and invites.', 'Cuentas del personal, roles e invitaciones.'), icon: ICONS.users },
+      { to: '/settings/team', label: t('Team Members', 'Miembros del equipo'), description: t('Staff accounts, roles, invites, and two-factor login.', 'Cuentas del personal, roles, invitaciones y verificación en dos pasos.'), icon: ICONS.users },
       { to: '/settings/practitioners', label: t('Practitioners', 'Profesionales'), description: t('Link migrated names to real accounts, or invite them.', 'Vincula nombres migrados a cuentas reales, o invítalos.'), icon: ICONS.userCircle },
       { to: '/settings/roles', label: t('Roles & Permissions', 'Roles y permisos'), description: t('Control what each role can see and do.', 'Controla qué puede ver y hacer cada rol.'), icon: ICONS.lockClosed },
       { to: '/settings/appointment-types', label: t('Appointment Types', 'Tipos de cita'), description: t('Visit types, durations, colors, default price.', 'Tipos de visita, duraciones, colores, precio predeterminado.'), icon: ICONS.tag },

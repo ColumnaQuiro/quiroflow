@@ -302,6 +302,7 @@ export type Database = {
           factura_tax_rate_bp: number
           factura_tax_exemption_code: string | null
           slug: string
+          require_two_factor: boolean
           default_phone_country: string
           stripe_connect_account_id: string | null
           stripe_publishable_key: string | null
@@ -381,6 +382,7 @@ export type Database = {
           factura_tax_rate_bp?: number
           factura_tax_exemption_code?: string | null
           slug: string
+          require_two_factor?: boolean
           stripe_connect_account_id?: string | null
           stripe_publishable_key?: string | null
           stripe_secret_key?: string | null
@@ -459,6 +461,7 @@ export type Database = {
           factura_tax_rate_bp?: number
           factura_tax_exemption_code?: string | null
           slug?: string
+          require_two_factor?: boolean
           default_phone_country?: string
           stripe_connect_account_id?: string | null
           stripe_publishable_key?: string | null
@@ -5806,6 +5809,11 @@ export type Database = {
         }[]
       }
       get_my_bootstrap: { Args: never; Returns: Json }
+      get_my_two_factor_gate: { Args: never; Returns: string }
+      team_two_factor_status: {
+        Args: { p_account_id: string }
+        Returns: { team_member_id: string; enrolled: boolean }[]
+      }
       get_my_permissions: { Args: { target_account_id: string }; Returns: Json }
       get_patient_booking_info: { Args: never; Returns: Json }
       cancel_patient_appointment: { Args: { p_appointment_id: string }; Returns: Json }

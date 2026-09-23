@@ -3,6 +3,7 @@ definePageMeta({ layout: false })
 
 const route = useRoute()
 const supabase = useSupabaseClient()
+const authPasswordError = useAuthPasswordError()
 const t = useT()
 
 const email = ref('')
@@ -45,7 +46,7 @@ async function onSubmit() {
       await nextTick()
       emailField.value?.focus()
     } else {
-      formError.value = signUpError.message
+      formError.value = authPasswordError(signUpError)
     }
     return
   }

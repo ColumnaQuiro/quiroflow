@@ -182,13 +182,13 @@ jobs:
         shard:
           - name: settings
             specs: "cypress/e2e/settings/**"
-          - name: subscription-and-public
-            specs: "cypress/e2e/subscription/**,cypress/e2e/public/**"
-          - name: navigation
-            # dashboard rides along here rather than taking a shard of its own:
-            # both are "does an app page render the right thing", and a new
-            # shard is a whole extra CI job for two specs.
-            specs: "cypress/e2e/navigation/**,cypress/e2e/dashboard/**"
+          # Two shards until 2026-09-23, when they were the two quickest by far
+          # (navigation 49s, subscription+public 56s against 155s+ elsewhere);
+          # merged so their runner could take a third patients shard instead.
+          # dashboard rides along because it is the same kind of spec -- "does
+          # an app page render the right thing".
+          - name: navigation-subscription-public
+            specs: "cypress/e2e/navigation/**,cypress/e2e/dashboard/**,cypress/e2e/subscription/**,cypress/e2e/public/**"
           # Its own shard rather than folded into an existing one: Growth is
           # mid-build and this folder is the one still growing -- receptionist,
           # automations and reputation specs are still to come. scripts/
@@ -205,28 +205,34 @@ jobs:
           # check-e2e-shards.mjs fails until someone assigns it. That is the
           # trade for splitting a folder, and the failure is the point: the
           # alternative is a spec that never runs and says nothing.
-          - name: growth-leads
-            specs: "cypress/e2e/growth/growth-lead*.cy.ts,cypress/e2e/growth/growth-inbox.cy.ts"
+          # inbox/** rides with the growth lead specs rather than with auth and
+          # calendar, which made that shard one of the three slowest (155s).
+          # Measured 2026-09-23: leads 80s + inbox 43s.
+          - name: growth-leads-and-inbox
+            specs: "cypress/e2e/growth/growth-lead*.cy.ts,cypress/e2e/growth/growth-inbox.cy.ts,cypress/e2e/inbox/**"
           - name: growth-platform
             specs: "cypress/e2e/growth/growth-receptionist*.cy.ts,cypress/e2e/growth/growth-reputation.cy.ts,cypress/e2e/growth/growth-dashboard-data.cy.ts,cypress/e2e/growth/growth-dashboard.cy.ts,cypress/e2e/growth/growth-automations.cy.ts,cypress/e2e/growth/growth-automation-builder.cy.ts,cypress/e2e/growth/growth-addon-entitlement.cy.ts,cypress/e2e/growth/growth-review-links.cy.ts,cypress/e2e/growth/growth-campaign-templates.cy.ts,cypress/e2e/growth/growth-email-metrics.cy.ts"
-          # Patients is split by first letter because it grew to 55 specs and
-          # 351s of Cypress on one runner, against 213s for the next-slowest --
-          # the whole run waited on it (run 35835560318, 2026-09-23). Cut at
-          # "p" on measured per-spec time: a-o 186s, the rest plus booking
-          # 165s.
+          # Patients is split by first letter because it is the biggest folder
+          # by far: 57 specs, ~300s of Cypress, far more than any one runner
+          # should carry. Cut into three on measured per-spec time
+          # (2026-09-23): a-f 105s, g-p 109s, the rest plus booking 98s. It was
+          # cut in two (at "p") until those halves grew to 153s and 159s and
+          # were again the slowest shards.
           #
-          # A character class rather than named files, because [a-o] and
-          # [!a-o] are complementary: every file in the folder matches exactly
-          # one of them, so a new patients spec still lands in a shard with no
-          # workflow edit, which is the property folder globs exist for. Move
-          # the letter to rebalance; check-e2e-shards.mjs proves the halves
-          # still cover the folder exactly once.
-          - name: patients-a-o
-            specs: "cypress/e2e/patients/[a-o]*.cy.ts"
-          - name: patients-p-z-and-booking
-            specs: "cypress/e2e/patients/[!a-o]*.cy.ts,cypress/e2e/public-booking/**"
-          - name: auth-calendar-inbox
-            specs: "cypress/e2e/auth/**,cypress/e2e/calendar/**,cypress/e2e/inbox/**"
+          # Character classes rather than named files, because [a-f], [g-p]
+          # and [!a-p] are complementary: every file in the folder matches
+          # exactly one of them, so a new patients spec still lands in a shard
+          # with no workflow edit, which is the property folder globs exist
+          # for. Move the letters to rebalance; check-e2e-shards.mjs proves the
+          # three still cover the folder exactly once.
+          - name: patients-a-f
+            specs: "cypress/e2e/patients/[a-f]*.cy.ts"
+          - name: patients-g-p
+            specs: "cypress/e2e/patients/[g-p]*.cy.ts"
+          - name: patients-q-z-and-booking
+            specs: "cypress/e2e/patients/[!a-p]*.cy.ts,cypress/e2e/public-booking/**"
+          - name: auth-and-calendar
+            specs: "cypress/e2e/auth/**,cypress/e2e/calendar/**"
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -287,9 +293,28 @@ jobs:
         # and studio/postgres-meta/logflare/vector only serve the local
         # Studio UI, never the app itself. Local dev (plain `supabase
         # start`, no -x) still gets the full stack -- this only trims CI.
+        #
+        # Retried, because every shard pulls the same images from the same
+        # registries at the same moment and they rate-limit it: three runs on
+        # 2026-09-23 lost a shard to "toomanyrequests: Rate exceeded" before a
+        # single spec ran. The CLI's own pull retry gives up within seconds,
+        # and running it again straight away then failed on "port 54322
+        # already in use" -- the half-started stack was still holding it. So
+        # between attempts, `stop --no-backup` removes those containers and
+        # their volumes (a half-initialised database is not one to reuse),
+        # then backs off. Images that did pull stay in Docker, so a retry only
+        # fetches what was missing.
         run: |
-          nohup supabase start -x studio,edge-runtime,logflare,vector,mailpit,postgres-meta \
-            > /tmp/supabase-start.log 2>&1 &
+          cat > /tmp/supabase-start.sh <<'EOF'
+          for attempt in 1 2 3; do
+            echo "== supabase start, attempt $attempt of 3"
+            supabase start -x studio,edge-runtime,logflare,vector,mailpit,postgres-meta && exit 0
+            [ "$attempt" = 3 ] && exit 1
+            supabase stop --no-backup || true
+            sleep $((attempt * 20))
+          done
+          EOF
+          nohup bash /tmp/supabase-start.sh > /tmp/supabase-start.log 2>&1 &
           echo $! > /tmp/supabase-start.pid
 
       - name: Restore node_modules
@@ -342,6 +367,18 @@ jobs:
       # fatal.
       - run: npx cypress install
 
+      # Cypress compiles the specs against the root tsconfig.json, which
+      # extends .nuxt/tsconfig.json -- so without .nuxt/ every shard dies
+      # with "File './.nuxt/tsconfig.json' not found" before running a spec.
+      # It used to appear as a side effect: first of each shard's own
+      # `nuxt build`, then (once the build moved to its own job) of `npm ci`,
+      # whose postinstall runs `nuxt prepare`. A node_modules cache hit skips
+      # `npm ci`, so the first run with a warm cache failed every shard on
+      # every PR. Generated explicitly now, whatever the cache did. A few
+      # seconds, spent while the shard would be waiting for the build anyway.
+      - name: Generate .nuxt/ for the specs' tsconfig
+        run: npx nuxt prepare
+
       # The specs run against a build, not `nuxt dev`, which compiled each
       # route the first time a spec visited it -- so every shard paid Vite's
       # compile cost again, spec after spec. Measured on this suite, serving
@@ -385,13 +422,15 @@ jobs:
           # each workflow step runs in its own. Poll the pid, then let
           # `supabase status` be the actual health check -- the backgrounded
           # start's exit code isn't reachable from here either.
-          for _ in $(seq 1 300); do
+          # 480s rather than 300s: room for the start step's retries and
+          # their backoff on top of a normal ~90s start.
+          for _ in $(seq 1 480); do
             kill -0 "$pid" 2>/dev/null || break
             sleep 1
           done
           cat /tmp/supabase-start.log
           if kill -0 "$pid" 2>/dev/null; then
-            echo "::error::supabase start still running after 300s"
+            echo "::error::supabase start still running after 480s"
             exit 1
           fi
           if ! supabase status -o env > /tmp/supabase-status.env 2>&1; then

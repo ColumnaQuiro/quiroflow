@@ -1,12 +1,9 @@
 import type { AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
 import { ruleFiltersMatch } from '~/server/utils/evaluateAutomationFilters'
 import { runRuleActions } from '~/server/utils/runAutomationActions'
+import { offerExpiresAt as offerDeadline, waitlistEntryMatches } from '~/utils/waitlistOffer'
 
-// How long a waitlisted patient has to claim an offered slot before it's
-// released back to the pool (expire-cron.post.ts) and re-offered to the
-// next match. Short enough that a freed slot doesn't sit unusable for long,
-// long enough that someone can see a WhatsApp message and respond.
-export const WAITLIST_OFFER_TTL_HOURS = 2
+export { WAITLIST_OFFER_TTL_HOURS } from '~/utils/waitlistOffer'
 
 interface SlotToOffer {
   accountId: string
@@ -24,6 +21,12 @@ interface SlotToOffer {
 // entry that matches this freed slot, mark it offered, and notify them.
 // Returns true if an offer went out, false if no waiting entry matched.
 export async function offerNextWaitlistEntry(supabase: any, origin: string, slot: SlotToOffer): Promise<boolean> {
+  // Capped at 20 minutes before the slot (utils/waitlistOffer): a two-hour
+  // window on a slot starting in 50 minutes could be claimed after it began.
+  // A slot starting sooner than that is offered to nobody.
+  const expiresAt = offerDeadline(new Date(), new Date(slot.startsAt))
+  if (!expiresAt) return false
+
   const { data: candidates } = await supabase
     .from('waitlist_entries')
     .select('id, patient_id, appointment_type_id, practitioner_id')
@@ -34,15 +37,11 @@ export async function offerNextWaitlistEntry(supabase: any, origin: string, slot
 
   // First-come-first-served: oldest entry whose preference is either "any"
   // (null) or matches this exact slot's type/practitioner.
-  const match = (candidates ?? []).find(
-    (c: { appointment_type_id: string | null; practitioner_id: string | null }) =>
-      (!c.appointment_type_id || c.appointment_type_id === slot.appointmentTypeId) &&
-      (!c.practitioner_id || c.practitioner_id === slot.practitionerId),
-  )
+  const match = (candidates ?? []).find((c: { appointment_type_id: string | null; practitioner_id: string | null }) => waitlistEntryMatches(c, slot))
   if (!match) return false
 
   const claimToken = crypto.randomUUID()
-  const offerExpiresAt = new Date(Date.now() + WAITLIST_OFFER_TTL_HOURS * 60 * 60 * 1000).toISOString()
+  const offerExpiresAt = expiresAt.toISOString()
 
   // .eq('status', 'waiting') here is the guard against a race with another
   // concurrent offer pass matching the same entry twice -- if it's no longer

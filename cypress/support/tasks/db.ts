@@ -1364,6 +1364,18 @@ async function createAppointment(opts: {
   status?: string
   /** Arrived and with the practitioner, but not checked out yet. */
   checkedIn?: boolean
+  // The columns the calendar reads a visit's stage from
+  // (utils/appointmentStage). Each is written as given, so a spec can put a
+  // visit at any point of the flow without clicking through it.
+  confirmationStatus?: string | null
+  source?: string
+  checkedInAt?: string | null
+  flowWithPractitionerAt?: string | null
+  flowCheckoutAt?: string | null
+  appointmentTypeId?: string | null
+  roomId?: string | null
+  confirmationSentAt?: string | null
+  reminderSentAt?: string | null
 }) {
   const startsAt = new Date(opts.startsAt)
   const endsAt = new Date(startsAt.getTime() + (opts.durationMinutes ?? 30) * 60000)
@@ -1379,6 +1391,15 @@ async function createAppointment(opts: {
         ends_at: endsAt.toISOString(),
         status: opts.status ?? 'booked',
         ...(opts.checkedIn ? { checked_in_at: startsAt.toISOString(), flow_with_practitioner_at: startsAt.toISOString() } : {}),
+        ...(opts.confirmationStatus !== undefined ? { confirmation_status: opts.confirmationStatus } : {}),
+        ...(opts.source ? { source: opts.source } : {}),
+        ...(opts.checkedInAt !== undefined ? { checked_in_at: opts.checkedInAt } : {}),
+        ...(opts.flowWithPractitionerAt !== undefined ? { flow_with_practitioner_at: opts.flowWithPractitionerAt } : {}),
+        ...(opts.flowCheckoutAt !== undefined ? { flow_checkout_at: opts.flowCheckoutAt } : {}),
+        ...(opts.appointmentTypeId !== undefined ? { appointment_type_id: opts.appointmentTypeId } : {}),
+        ...(opts.roomId !== undefined ? { room_id: opts.roomId } : {}),
+        ...(opts.confirmationSentAt !== undefined ? { confirmation_sent_at: opts.confirmationSentAt } : {}),
+        ...(opts.reminderSentAt !== undefined ? { reminder_sent_at: opts.reminderSentAt } : {}),
       })
       .select('id, practitioner_id')
       .single(),
@@ -2090,6 +2111,100 @@ async function makeSequenceDue(opts: { leadId: string }) {
   return { ok: true }
 }
 
+/** A patient's sticky clinical note -- the one every appointment shows. */
+async function setStickyNote(opts: { patientId: string; note: string | null }) {
+  assertOk(await admin.from('patients').update({ sticky_note: opts.note }).eq('id', opts.patientId))
+  return { ok: true }
+}
+
+/** One appointment_reschedules row: the visit was moved once. */
+async function createReschedule(opts: { accountId: string; appointmentId: string; fromStartsAt: string; toStartsAt: string }) {
+  assertOk(
+    await admin.from('appointment_reschedules').insert({
+      account_id: opts.accountId,
+      appointment_id: opts.appointmentId,
+      from_starts_at: opts.fromStartsAt,
+      to_starts_at: opts.toStartsAt,
+    }),
+  )
+  return { ok: true }
+}
+
+/**
+ * A waitlist entry. `offered` puts it in the state offerNextWaitlistEntry
+ * leaves it in, holding a freed slot until offerExpiresAt.
+ */
+async function createWaitlistEntry(opts: {
+  accountId: string
+  clinicId: string
+  patientId: string
+  appointmentTypeId?: string | null
+  practitionerId?: string | null
+  status?: 'waiting' | 'offered'
+  createdAt?: string
+  offered?: { startsAt: string; endsAt: string; roomId: string | null; practitionerId: string | null; expiresAt: string }
+}) {
+  const row = unwrap(
+    await admin
+      .from('waitlist_entries')
+      .insert({
+        account_id: opts.accountId,
+        clinic_id: opts.clinicId,
+        patient_id: opts.patientId,
+        appointment_type_id: opts.appointmentTypeId ?? null,
+        practitioner_id: opts.practitionerId ?? null,
+        status: opts.status ?? 'waiting',
+        ...(opts.createdAt ? { created_at: opts.createdAt } : {}),
+        ...(opts.offered
+          ? {
+              offered_at: new Date().toISOString(),
+              offered_starts_at: opts.offered.startsAt,
+              offered_ends_at: opts.offered.endsAt,
+              offered_room_id: opts.offered.roomId,
+              offered_practitioner_id: opts.offered.practitionerId,
+              offer_expires_at: opts.offered.expiresAt,
+              claim_token: randomUUID(),
+            }
+          : {}),
+      })
+      .select('id')
+      .single(),
+  )
+  return row as { id: string }
+}
+
+/** A waitlist entry as it stands now -- status, and when its offer lapses. */
+async function waitlistEntryById(opts: { id: string }) {
+  return unwrap(await admin.from('waitlist_entries').select('id, status, offer_expires_at, offered_starts_at').eq('id', opts.id).single())
+}
+
+/** A room (calendar_resources row) in a clinic. */
+async function createRoom(opts: { accountId: string; clinicId: string; name: string }) {
+  const row = unwrap(
+    await admin.from('calendar_resources').insert({ account_id: opts.accountId, clinic_id: opts.clinicId, name: opts.name }).select('id').single(),
+  )
+  return row as { id: string }
+}
+
+/** A team member's own weekly hours (Settings -> Team). */
+async function setTeamMemberHours(opts: { teamMemberId: string; hours: Record<string, [string, string][]> | null }) {
+  assertOk(await admin.from('team_members').update({ business_hours: opts.hours }).eq('id', opts.teamMemberId))
+  return { ok: true }
+}
+
+/** A patient's invoices with their lines -- what a fee left behind. */
+async function invoicesFor(opts: { patientId: string }) {
+  const { data, error } = await admin.from('invoices').select('id, status, total_cents, invoice_line_items(description)').eq('patient_id', opts.patientId).order('created_at')
+  if (error) throw error
+  return data as { id: string; status: string; total_cents: number; invoice_line_items: { description: string }[] }[]
+}
+
+/** The account's cancellation fee (Settings -> Scheduling policies). */
+async function setCancellationFee(opts: { accountId: string; cents: number | null }) {
+  assertOk(await admin.from('accounts').update({ cancellation_fee_cents: opts.cents }).eq('id', opts.accountId))
+  return { ok: true }
+}
+
 export const dbTasks = {
   'db:createStaffAccount': createStaffAccount,
   'db:createLead': createLead,
@@ -2188,6 +2303,14 @@ export const dbTasks = {
   'db:createWhatsappMessage': createWhatsappMessage,
   'db:seedWhatsappReplyScenario': seedWhatsappReplyScenario,
   'db:createAppointment': createAppointment,
+  'db:setStickyNote': setStickyNote,
+  'db:createReschedule': createReschedule,
+  'db:createWaitlistEntry': createWaitlistEntry,
+  'db:waitlistEntryById': waitlistEntryById,
+  'db:createRoom': createRoom,
+  'db:setTeamMemberHours': setTeamMemberHours,
+  'db:setCancellationFee': setCancellationFee,
+  'db:invoicesFor': invoicesFor,
   'db:appointmentById': appointmentById,
   'db:inboundMessages': inboundMessages,
   'db:setWhatsappAppSecret': setWhatsappAppSecret,

@@ -72,6 +72,18 @@ export function formatTime(iso: string | Date): string {
   return date.toLocaleTimeString(LOCALE, { hour: '2-digit', minute: '2-digit', hour12: false })
 }
 
+/** "mié 23 sept" -- a day as the calendar names it in a header or a panel. */
+export function formatWeekdayDate(iso: string | Date): string {
+  const date = typeof iso === 'string' ? new Date(iso) : iso
+  return date.toLocaleDateString(LOCALE, { weekday: 'short', day: 'numeric', month: 'short' }).replace(',', '')
+}
+
+/** "miércoles, 23 sept" -- the day view's title. */
+export function formatLongWeekdayDate(iso: string | Date): string {
+  const date = typeof iso === 'string' ? new Date(iso) : iso
+  return date.toLocaleDateString(LOCALE, { weekday: 'long', day: 'numeric', month: 'short' })
+}
+
 /** The day and the month, split, for a two-line date block. */
 export function dateBlock(iso: string | Date): { day: string; month: string } {
   const date = typeof iso === 'string' ? new Date(iso) : iso

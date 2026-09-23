@@ -75,10 +75,10 @@ describe('Appointment booking and billing checkout', () => {
           // column-header row -- a real (if minor) sticky-header quirk, not a broken
           // click handler, so force past it rather than asserting on exact scroll offsets.
           cy.contains('Alice Anderson').click({ force: true })
-          cy.contains('h2', 'Edit Appointment').should('be.visible')
+          cy.get('[data-cy=appt-sheet]').should('be.visible')
 
-          cy.get('.fixed.inset-0.z-50').within(() => {
-            cy.contains('button', 'billing').click()
+          cy.get('[data-cy=appt-sheet]').within(() => {
+            cy.get('[data-cy=appt-tab-billing]').click()
             // Nothing is invoiced until someone says how the visit is paid --
             // see ensureInvoice(). "Charge this visit" is that decision (the
             // appointment type carries no price of its own here, so it isn't

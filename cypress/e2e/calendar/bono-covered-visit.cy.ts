@@ -47,10 +47,10 @@ describe('Taking a visit from a bono in the calendar', () => {
           cy.get('[aria-label="Previous"]').click()
           assertDayGridShows(bookedDay)
           cy.contains('Bea Bonocover').should('be.visible').click({ force: true })
-          cy.contains('h2', 'Edit Appointment').should('be.visible')
+          cy.get('[data-cy=appt-sheet]').should('be.visible')
 
-          cy.get('.fixed.inset-0.z-50').within(() => {
-            cy.contains('button', 'billing').click()
+          cy.get('[data-cy=appt-sheet]').within(() => {
+            cy.get('[data-cy=appt-tab-billing]').click()
             // Opening the tab used to raise an invoice eagerly, before anyone
             // had said how the visit would be paid -- which is how bono visits
             // ended up carrying a phantom debt. Nothing is billed until a

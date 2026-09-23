@@ -235,6 +235,9 @@ async function createPatientDoc(opts: {
   /** Marks the form as returned, so the row reads Completed rather than
    *  Awaiting patient. */
   completed?: boolean
+  /** Blocks of the form, in DocField shape. Left out, the document has none
+   *  -- which is all the tabs that only list documents need. */
+  fields?: unknown[]
 }) {
   const { accountId, patientId, title, createdBy } = opts
   const doc = unwrap(
@@ -244,14 +247,16 @@ async function createPatientDoc(opts: {
         account_id: accountId,
         patient_id: patientId,
         title,
-        fields: [],
+        fields: opts.fields ?? [],
         created_by: createdBy ?? null,
         ...(opts.completed ? { completed_at: new Date().toISOString() } : {}),
       })
-      .select('id')
+      // The token is what /doc/[token] is reached by, so a test of the
+      // patient-facing page needs it back rather than the row id.
+      .select('id, public_token')
       .single(),
   )
-  return { docId: doc.id as string }
+  return { docId: doc.id as string, publicToken: doc.public_token as string }
 }
 
 async function createPatient(opts: {
@@ -479,6 +484,19 @@ async function createPayment(opts: {
       .single(),
   )
   return row as { id: string }
+}
+
+/**
+ * `count` small cash payments for one patient in a single insert -- a ledger
+ * longer than one unpaged select() returns (Supabase stops at 1000 rows).
+ */
+async function seedManyPayments(opts: { accountId: string; patientId: string; count: number; amountCents?: number }) {
+  assertOk(
+    await admin
+      .from('payments')
+      .insert(Array.from({ length: opts.count }, () => ({ account_id: opts.accountId, patient_id: opts.patientId, amount_cents: opts.amountCents ?? 100, method: 'cash' }))),
+  )
+  return { ok: true }
 }
 
 async function settleImportedInvoices(opts: { accountId: string }) {
@@ -2343,6 +2361,7 @@ export const dbTasks = {
   'db:enableEmailConfirmations': enableEmailConfirmations,
   'db:createInvoice': createInvoice,
   'db:createPayment': createPayment,
+  'db:seedManyPayments': seedManyPayments,
   'db:nextInvoiceNumber': nextInvoiceNumber,
   'db:deleteInvoice': deleteInvoice,
   'db:paymentById': paymentById,

@@ -848,6 +848,12 @@ async function recordAeatSubmission(opts: {
   csv?: string
   errorCode?: string
   errorMessage?: string
+  /**
+   * How many times the AEAT has given this same answer. The sender reaches
+   * double figures by collapsing identical verdicts into one row over ten
+   * minutes; a test says so in one line.
+   */
+  repeats?: number
 }) {
   const { data, error } = await admin
     .from('factura_record_submissions')
@@ -859,11 +865,19 @@ async function recordAeatSubmission(opts: {
       aeat_csv: opts.csv ?? null,
       error_code: opts.errorCode ?? null,
       error_message: opts.errorMessage ?? null,
+      repeats: opts.repeats ?? 1,
       sent_at: new Date().toISOString(),
       responded_at: new Date().toISOString(),
     })
     .select('id, status, attempt')
     .single()
+  if (error) throw error
+  return data
+}
+
+/** Puts parked records back in the air, the way a person would. */
+async function releaseParkedRecords(opts: { accountId: string }) {
+  const { data, error } = await admin.rpc('factura_records_release_parked', { p_account_id: opts.accountId })
   if (error) throw error
   return data
 }
@@ -2389,6 +2403,7 @@ export const dbTasks = {
   'db:accountCount': accountCount,
   'db:awaitingAeatAs': awaitingAeatAs,
   'db:recordAeatSubmission': recordAeatSubmission,
+  'db:releaseParkedRecords': releaseParkedRecords,
   'db:verifyFacturaChainAs': verifyFacturaChainAs,
   'db:rebuildFacturaHuellas': rebuildFacturaHuellas,
   'db:tryMutateFacturaRecord': tryMutateFacturaRecord,

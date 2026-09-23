@@ -4,7 +4,12 @@ import { formatLongDate } from '~/utils/billing'
 // An invitation, not a warning. Info purple throughout: a trial with time
 // left on it is good news, and dressing it in amber makes a clinic think
 // something has gone wrong.
-const props = defineProps<{ daysLeft: number; totalDays: number; endsAt: string | null }>()
+//
+// `cardOnFile`: the owner has already been through Checkout, which carried the
+// trial over (checkoutTrialEnd), so the same countdown now ends in a first
+// payment rather than a lock. It says that instead of asking for the card
+// again.
+const props = defineProps<{ daysLeft: number; totalDays: number; endsAt: string | null; cardOnFile?: boolean }>()
 defineEmits<{ addCard: [], comparePlans: [] }>()
 
 const t = useT()
@@ -13,13 +18,21 @@ const percent = computed(() => Math.round((elapsed.value / props.totalDays) * 10
 </script>
 
 <template>
-  <div class="rounded-card border border-info-border bg-info-bg p-[18px]">
+  <div class="rounded-card border border-info-border bg-info-bg p-[18px]" data-test="trial-banner">
     <div class="flex flex-col gap-3.5 lg:flex-row lg:items-start lg:gap-4">
       <div class="flex-1">
         <h2 class="text-[16px] font-semibold text-ink-900">
           {{ daysLeft === 0 ? t('Your free trial ends today', 'Tu prueba gratuita termina hoy') : t(`${daysLeft} days left in your free trial`, `Te quedan ${daysLeft} días de prueba gratuita`) }}
         </h2>
-        <p class="mt-2 text-[13px] leading-[1.55] text-ink-700">
+        <p v-if="cardOnFile" class="mt-2 text-[13px] leading-[1.55] text-ink-700">
+          {{ t('Your card is on file and nothing has been charged yet.', 'Tu tarjeta está guardada y todavía no se ha cobrado nada.') }}
+          <template v-if="endsAt">
+            {{ t('The first payment is taken on', 'El primer pago será el') }}
+            <strong class="font-semibold text-ink-900">{{ formatLongDate(endsAt) }}</strong>,
+            {{ t('when the trial ends.', 'cuando termine la prueba.') }}
+          </template>
+        </p>
+        <p v-else class="mt-2 text-[13px] leading-[1.55] text-ink-700">
           <template v-if="endsAt">
             {{ t('Everything keeps working until', 'Todo sigue funcionando hasta el') }}
             <strong class="font-semibold text-ink-900">{{ formatLongDate(endsAt) }}</strong>.
@@ -35,6 +48,7 @@ const percent = computed(() => Math.round((elapsed.value / props.totalDays) * 10
       </div>
       <div class="flex flex-col gap-2.5 lg:flex-row lg:items-center">
         <button
+          v-if="!cardOnFile"
           type="button"
           class="flex h-11 items-center justify-center gap-1.5 rounded-ctl bg-brand px-3.5 text-[13.5px] font-semibold text-white outline-none hover:bg-brand-hover focus-visible:shadow-focus lg:h-[34px]"
           @click="$emit('addCard')"

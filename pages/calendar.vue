@@ -9,6 +9,7 @@ import { bonoForVisit, type VisitPayment } from '~/utils/visitPayment'
 import { effectivePriceCents } from '~/utils/appointmentOverrides'
 import { FILTER_DOT_CLASS, STAGE_TONE, STAGE_TONE_CLASS } from '~/composables/useAppointmentStage'
 import type { BlockView } from '~/components/calendar/AppointmentBlock.vue'
+import type { FlowRow } from '~/components/calendar/FlowTracker.vue'
 
 const START_HOUR = 8
 const END_HOUR = 20
@@ -162,7 +163,15 @@ const modalMode = ref<'create' | 'edit'>('create')
 const editingAppointment = ref<AppointmentRow | null>(null)
 // The open appointment is looked up by id in the live list, so a reload after
 // a step taken in the panel hands it the fresh row.
-const openAppointment = computed(() => (modalOpen.value && modalMode.value === 'edit' && editingAppointment.value ? (appointments.value.find((a) => a.id === editingAppointment.value!.id) ?? null) : null))
+const openAppointment = computed(() => {
+  if (!modalOpen.value || modalMode.value !== 'edit' || !editingAppointment.value) return null
+  const id = editingAppointment.value.id
+  // The flow tracker opens today's visits while the grid may be on another
+  // week, so today's own rows are the fallback.
+  return appointments.value.find((a) => a.id === id) ?? todayRows.value.find((a) => a.id === id) ?? null
+})
+/** The tab the appointment panel opens on; the flow tracker's "Cobrar" asks for Cobro. */
+const panelInitialTab = ref<'summary' | 'billing'>('summary')
 const prefill = ref<{ date: string; time: string; roomId: string } | null>(null)
 
 const blockModalOpen = ref(false)
@@ -177,6 +186,7 @@ const blockPrefill = ref<{ date: string; time: string; roomId: string } | null>(
 // hideCancelled, default on; flipped so the switch reads the way it acts.)
 const settings = reactive({
   privacyMode: false,
+  flowTracker: true,
   showAvailability: true,
   showCancelled: false,
   hideRescheduled: false,
@@ -184,6 +194,7 @@ const settings = reactive({
 })
 const displayToggles = computed<{ key: keyof typeof settings; label: string }[]>(() => [
   { key: 'privacyMode', label: t('Privacy mode', 'Modo privacidad') },
+  { key: 'flowTracker', label: t('Flow tracker', 'Seguimiento de flujo') },
   { key: 'showAvailability', label: t('Show availability', 'Mostrar disponibilidad') },
   { key: 'showCancelled', label: t('Show cancelled', 'Mostrar canceladas') },
   { key: 'hideRescheduled', label: t('Hide rescheduled', 'Ocultar reprogramadas') },
@@ -340,9 +351,13 @@ async function loadRooms() {
 
 // `silent` reloads without the skeleton: after a step in the open panel the
 // grid should update in place, not blink.
+const APPOINTMENT_SELECT =
+  'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, rescheduled, confirmation_status, confirmation_sent_at, reminder_sent_at, same_day_info_sent_at, created_at, deleted_at, note, source, patients(first_name, last_name, sticky_note), appointment_types(name, color, default_price_cents), team_members(full_name, color)'
+
 async function loadAppointments(silent = false) {
   if (!store.currentClinicId) {
     appointments.value = []
+    loadToday() // clears today's panels too
     return
   }
   if (!silent) loading.value = true
@@ -352,9 +367,7 @@ async function loadAppointments(silent = false) {
   const token = ++loadToken
   let query = supabase
     .from('appointments')
-    .select(
-      'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, rescheduled, confirmation_status, confirmation_sent_at, reminder_sent_at, same_day_info_sent_at, created_at, deleted_at, note, source, patients(first_name, last_name, sticky_note), appointment_types(name, color, default_price_cents), team_members(full_name, color)',
-    )
+    .select(APPOINTMENT_SELECT)
     .eq('clinic_id', store.currentClinicId)
     .gte('starts_at', rangeStart.toISOString())
     .lt('starts_at', rangeEnd.toISOString())
@@ -372,6 +385,12 @@ async function loadAppointments(silent = false) {
   await Promise.all([loadLiveBalances(patientIds), loadFutureAppointmentIds(patientIds)]).catch((e) => console.error('calendar: balances / next visits failed', e))
   if (token !== loadToken) return
   loading.value = false
+  // Every change on this page reloads through here, so today's panels
+  // (glance, flow tracker) stay in step with the grid without a caller each.
+  // Started once the grid has drawn, not beside its queries: the grid is
+  // what the desk is waiting for, and on a slow connection the extra
+  // requests held its skeleton up.
+  loadToday().catch((e) => console.error('calendar: today failed', e))
   // Second-rank detail -- the bono count, how often a visit was moved, the
   // waitlist offers standing on freed slots. The grid is usable without them,
   // so they fill in after it renders rather than holding it back for the
@@ -447,6 +466,136 @@ async function loadBlockDetails(token: number, appointmentIds: string[], patient
 const outstandingByPatient = ref<Record<string, number>>({})
 function owesCents(patientId: string) {
   return Math.max(0, outstandingByPatient.value[patientId] ?? 0)
+}
+
+// --- Today, whatever day the grid is on ---
+// "Today at a glance" and the flow tracker describe the real calendar day,
+// not the day or week the grid is navigated to, so they load on their own.
+// The glance mirrors PracticeHub's widget: "Booked" is every visit that
+// belonged to today at some point (including ones since moved to another
+// day), and the other four are a breakdown of that same total. The flow
+// tracker covers the whole clinic whichever practitioner tab is open: it is
+// who is in the building, and the building is shared.
+const todayRows = ref<AppointmentRow[]>([])
+const todayGlance = ref({ booked: 0, seen: 0, rescheduled: 0, cancelled: 0, missed: 0 })
+const todayOwedByPatient = ref<Record<string, number>>({})
+let todayToken = 0
+async function loadToday() {
+  const clinicId = store.currentClinicId
+  if (!clinicId) {
+    todayRows.value = []
+    todayGlance.value = { booked: 0, seen: 0, rescheduled: 0, cancelled: 0, missed: 0 }
+    return
+  }
+  const token = ++todayToken
+  const start = startOfDay(new Date())
+  const end = addDays(start, 1)
+  const [{ data: rows }, { data: moves }] = await Promise.all([
+    supabase.from('appointments').select(APPOINTMENT_SELECT).eq('clinic_id', clinicId).gte('starts_at', start.toISOString()).lt('starts_at', end.toISOString()).order('starts_at'),
+    supabase
+      .from('appointment_reschedules')
+      .select('appointment_id, to_starts_at')
+      .eq('account_id', store.accountId!)
+      .gte('from_starts_at', start.toISOString())
+      .lt('from_starts_at', end.toISOString()),
+  ])
+  if (token !== todayToken) return
+  // A deleted visit never happened; it is neither booked nor anyone's flow.
+  const live = ((rows as unknown as AppointmentRow[]) ?? []).filter((a) => !a.deleted_at)
+  const liveIds = new Set(live.map((a) => a.id))
+  const movedAway = new Set(
+    (moves ?? [])
+      .filter((m) => (m.to_starts_at < start.toISOString() || m.to_starts_at >= end.toISOString()) && !liveIds.has(m.appointment_id))
+      .map((m) => m.appointment_id),
+  )
+  todayGlance.value = {
+    booked: live.length + movedAway.size,
+    seen: live.filter((a) => a.status === 'completed').length,
+    rescheduled: movedAway.size,
+    cancelled: live.filter((a) => a.status === 'cancelled').length,
+    missed: live.filter((a) => a.status === 'no_show').length,
+  }
+  todayRows.value = live
+
+  // What each patient waiting to pay owes, for the tracker's "debe X €".
+  const paying = [...new Set(live.filter((a) => stageOf(a) === 'checkout').map((a) => a.patient_id))]
+  if (paying.length === 0) {
+    todayOwedByPatient.value = {}
+    return
+  }
+  const balances = await fetchByIds(paying, (chunk) => supabase.from('patient_live_balances').select('patient_id, outstanding_cents').in('patient_id', chunk))
+  if (token !== todayToken) return
+  const owed: Record<string, number> = {}
+  for (const b of balances) owed[b.patient_id!] = Math.max(0, b.outstanding_cents ?? 0)
+  todayOwedByPatient.value = owed
+}
+/** "32 %": whole numbers, es-ES spacing, of the day's Booked total. */
+function glancePct(count: number) {
+  const booked = todayGlance.value.booked
+  return `${booked > 0 ? Math.round((count / booked) * 100) : 0}\u00a0%`
+}
+const glanceRows = computed(() => [
+  { key: 'booked', label: t('Booked', 'Reservadas'), value: String(todayGlance.value.booked), tone: 'text-ink-900' },
+  { key: 'seen', label: t('Seen', 'Atendidas'), value: `${todayGlance.value.seen} (${glancePct(todayGlance.value.seen)})`, tone: 'text-success-text' },
+  { key: 'rescheduled', label: t('Rescheduled', 'Reprogramadas'), value: `${todayGlance.value.rescheduled} (${glancePct(todayGlance.value.rescheduled)})`, tone: 'text-warning-text' },
+  { key: 'cancelled', label: t('Cancelled', 'Canceladas'), value: `${todayGlance.value.cancelled} (${glancePct(todayGlance.value.cancelled)})`, tone: 'text-danger-text' },
+  { key: 'missed', label: t('Missed', 'Perdidas'), value: `${todayGlance.value.missed} (${glancePct(todayGlance.value.missed)})`, tone: 'text-ink-muted2' },
+])
+
+const flowRows = computed<FlowRow[]>(() =>
+  todayRows.value
+    .map((a) => ({ a, stage: stageOf(a) }))
+    .filter(({ stage }) => stage === 'arrived' || stage === 'withp' || stage === 'checkout')
+    .map(({ a, stage }) => {
+      const name = `${a.patients?.first_name ?? ''} ${a.patients?.last_name ?? ''}`.trim()
+      let sub = ''
+      if (stage === 'arrived') {
+        const arrived = formatTime(a.checked_in_at!)
+        const booked = formatTime(a.starts_at)
+        sub = t(`arrived ${arrived} · booked ${booked}`, `llegó ${arrived} · cita ${booked}`)
+      } else if (stage === 'withp') {
+        const since = formatTime(a.flow_with_practitioner_at!)
+        const who = firstName(a.team_members?.full_name)
+        sub = `${t(`since ${since}`, `desde ${since}`)}${who ? ` · ${who}` : ''}`
+      } else {
+        const owed = todayOwedByPatient.value[a.patient_id] ?? 0
+        const since = formatTime(a.flow_checkout_at!)
+        sub = owed > 0 ? t(`owes ${formatEur(owed)}`, `debe ${formatEur(owed)}`) : t(`since ${since}`, `desde ${since}`)
+      }
+      return { id: a.id, name, stage, sub }
+    }),
+)
+
+function findVisit(id: string) {
+  return appointments.value.find((a) => a.id === id) ?? todayRows.value.find((a) => a.id === id) ?? null
+}
+function openFromFlow(id: string, tab: 'summary' | 'billing' = 'summary') {
+  const appt = findVisit(id)
+  if (appt) openEditModal(appt, tab)
+}
+// The tracker's one step forward, the same writes the appointment panel's
+// primary button makes. From "Por cobrar" the next thing is taking the
+// money, so that opens the panel on Cobro instead of writing anything.
+const flowBusy = ref(false)
+async function advanceFromFlow(id: string) {
+  const appt = findVisit(id)
+  if (!appt || flowBusy.value) return
+  const stage = stageOf(appt)
+  if (stage === 'checkout') {
+    openEditModal(appt, 'billing')
+    return
+  }
+  const at = new Date().toISOString()
+  const values = stage === 'arrived' ? { flow_with_practitioner_at: at } : stage === 'withp' ? { flow_checkout_at: at } : null
+  if (!values) return
+  flowBusy.value = true
+  const { error } = await supabase.from('appointments').update(values).eq('id', id)
+  flowBusy.value = false
+  if (error) {
+    console.error('calendar: flow step failed', error)
+    return
+  }
+  await loadAppointments(true)
 }
 async function loadLiveBalances(patientIds: string[]) {
   if (patientIds.length === 0) {
@@ -900,8 +1049,9 @@ function showOverflowDay(day: Date) {
   anchorDate.value = day
   viewMode.value = 'day'
 }
-function openEditModal(appointment: AppointmentRow) {
+function openEditModal(appointment: AppointmentRow, tab: 'summary' | 'billing' = 'summary') {
   closeHoverCardNow()
+  panelInitialTab.value = tab
   editingAppointment.value = appointment
   modalMode.value = 'edit'
   modalOpen.value = true
@@ -1854,6 +2004,26 @@ function showNowLineOn(day: Date) {
           </div>
         </div>
 
+        <!-- Who is in the building and the step each needs next. Inside this
+             panel rather than as a column of its own: a 220px column took
+             that width from the grid, and at 1440px the room columns fell to
+             ~197px -- narrow enough that blocks started dropping the
+             clinical-note icon. Here it costs the grid nothing, and it comes
+             along into the off-canvas drawer below lg. -->
+        <div v-if="settings.flowTracker" data-cy="flow-tracker" :aria-label="t('Flow tracker', 'Seguimiento de flujo')" role="region" class="mx-3 mb-3">
+          <CalendarFlowTracker :rows="flowRows" :privacy="settings.privacyMode" @advance="advanceFromFlow" @open="openFromFlow" />
+        </div>
+
+        <div data-cy="today-glance" class="mx-3 mb-3 rounded-card border border-line bg-surface p-3">
+          <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">{{ t('Today at a glance', 'Hoy de un vistazo') }}</p>
+          <div class="mt-2 space-y-1.5">
+            <div v-for="row in glanceRows" :key="row.key" :data-cy="`glance-${row.key}`" class="flex items-center justify-between text-[12.5px]">
+              <span :class="row.key === 'booked' ? 'text-ink-600' : row.tone">{{ row.label }}</span>
+              <span class="font-mono text-[12.5px] font-medium" :class="row.tone">{{ row.value }}</span>
+            </div>
+          </div>
+        </div>
+
         <div class="mx-3 rounded-card border border-line bg-surface p-3">
           <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">{{ t('Display', 'Visualización') }}</p>
           <div class="mt-2 space-y-2.5">
@@ -2298,6 +2468,7 @@ function showNowLineOn(day: Date) {
       :appointment-types="appointmentTypes"
       :team-members="clinicTeamMembers"
       :overrides="overrides"
+      :initial-tab="panelInitialTab"
       @close="modalOpen = false"
       @changed="loadAppointments(true)"
       @reschedule="startReschedule(openAppointment!)"

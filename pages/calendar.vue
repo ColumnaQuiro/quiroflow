@@ -406,7 +406,7 @@ async function loadBlockDetails(token: number, appointmentIds: string[], patient
     // Newest first inside each chunk; a chunk holds whole patients, so each
     // patient's packs stay in order.
     fetchByIds(patientIds, (chunk) =>
-      supabase.from('package_purchases').select('patient_id, package_name, sessions_total, sessions_used').in('patient_id', chunk).order('purchased_at', { ascending: false }),
+      supabase.from('package_purchases').select('patient_id, package_name, sessions_total, sessions_used, is_closed').in('patient_id', chunk).order('purchased_at', { ascending: false }),
     ),
     fetchByIds(appointmentIds, (chunk) => supabase.from('appointment_reschedules').select('appointment_id').in('appointment_id', chunk)),
     supabase
@@ -421,10 +421,11 @@ async function loadBlockDetails(token: number, appointmentIds: string[], patient
 
   visitPaymentById.value = payments
   // Newest pack with sessions left, per patient -- the one tomorrow's visit
-  // will draw from (bonoForVisit).
+  // will draw from (bonoForVisit). A bono PracticeHub has closed keeps the
+  // sessions that were on it and is not one of them.
   const active: typeof activePackageByPatient.value = {}
   for (const p of packages) {
-    if (active[p.patient_id] || p.sessions_used >= p.sessions_total) continue
+    if (active[p.patient_id] || p.is_closed || p.sessions_used >= p.sessions_total) continue
     active[p.patient_id] = p
   }
   activePackageByPatient.value = active

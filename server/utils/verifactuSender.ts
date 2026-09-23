@@ -174,11 +174,21 @@ function postWithCertificate(
   })
 }
 
+// The fields of factura_records_awaiting_aeat this actually uses, not its
+// whole shape. `last_status` is deliberately absent: it is what the removed
+// `afterRejection` was computed from, and nothing here should be deciding what
+// to PUT IN a record based on the verdict on the last one.
 interface PendingRecord {
   factura_record_id: string
   sequence: number
   serie_number: string
-  last_status: string | null
+  /**
+   * The AEAT has refused this record identically ten times. Still owed --
+   * factura_records_awaiting_aeat goes on returning it, because it is -- but
+   * no longer offered, because nothing about resending an immutable record
+   * byte-for-byte makes the eleventh answer differ from the tenth.
+   */
+  parked: boolean
 }
 
 /**
@@ -191,9 +201,16 @@ export async function sendPendingRecords(
   supabase: SupabaseClient<Database>,
   accountId: string,
   config: SenderConfig,
-): Promise<{ sent: number; blocked: BlockedReason | null; estadoEnvio: string | null }> {
+): Promise<{ sent: number; parked: number; blocked: BlockedReason | null; estadoEnvio: string | null }> {
   const { data: pendingRaw } = await supabase.rpc('factura_records_awaiting_aeat', { p_account_id: accountId })
-  const pending = ((pendingRaw ?? []) as PendingRecord[]).slice(0, MAX_RECORDS_PER_SUBMISSION)
+
+  // Parked records are dropped HERE rather than by the query, so the thing
+  // that counts what is owed and the thing that decides what to send do not
+  // disagree about the word "outstanding". They are still owed; they are just
+  // not going out again until someone looks at them.
+  const owed = (pendingRaw ?? []) as PendingRecord[]
+  const parked = owed.filter((p) => p.parked).length
+  const pending = owed.filter((p) => !p.parked).slice(0, MAX_RECORDS_PER_SUBMISSION)
 
   const { data: readyAtRaw } = await supabase.rpc('factura_submission_ready_at', { p_account_id: accountId })
   const readyAt = new Date((readyAtRaw as unknown as string) ?? Date.now())
@@ -206,10 +223,10 @@ export async function sendPendingRecords(
   const effective: SenderConfig = stored ? { ...config, ...stored } : config
 
   const blocked = transmissionBlockedBy({ config: effective, pendingCount: pending.length, readyAt })
-  if (blocked) return { sent: 0, blocked, estadoEnvio: null }
+  if (blocked) return { sent: 0, parked, blocked, estadoEnvio: null }
 
   const built = await buildRecordsFor(supabase, accountId, pending, effective)
-  if (built.registros.length === 0) return { sent: 0, blocked: 'nothing-to-send', estadoEnvio: null }
+  if (built.registros.length === 0) return { sent: 0, parked, blocked: 'nothing-to-send', estadoEnvio: null }
 
   // One envelope's worth, split out so a batch the AEAT refuses WHOLESALE can
   // be sent again a record at a time -- see the caller below.
@@ -277,7 +294,7 @@ export async function sendPendingRecords(
     // a new row, because that transition is the history worth keeping.
     const { data: existing } = await supabase
       .from('factura_record_submissions')
-      .select('id, factura_record_id, status, error_code')
+      .select('id, factura_record_id, status, error_code, repeats')
       .in('factura_record_id', attempts.map((a) => a.recordId))
 
     for (const attempt of attempts) {
@@ -307,6 +324,13 @@ export async function sendPendingRecords(
         //
         // The transport_error path a few lines down already updates it, so
         // this was an inconsistency rather than a rule.
+        //
+        // `repeats` is the one thing the collapse would otherwise destroy.
+        // Folding identical verdicts into one row is what keeps this table
+        // readable, but it also erases how many times the AEAT has said the
+        // same thing -- and that count is the only honest signal for when to
+        // stop asking. Counting rows cannot recover it: a record stuck on
+        // 3002 for a day has exactly one 3002 row.
         await supabase
           .from('factura_record_submissions')
           .update({
@@ -314,6 +338,7 @@ export async function sendPendingRecords(
             responded_at: new Date().toISOString(),
             wait_seconds: parsed.waitSeconds,
             error_message: line.errorMessage,
+            repeats: (same.repeats ?? 1) + 1,
           })
           .eq('id', same.id)
         continue
@@ -362,7 +387,7 @@ export async function sendPendingRecords(
   // rather than isolate anything.
   const outcome = await submit(built.registros, built.attempts)
   if (!outcome.schemaFault || built.registros.length === 1) {
-    return { sent: outcome.sent, blocked: null, estadoEnvio: outcome.estadoEnvio }
+    return { sent: outcome.sent, parked, blocked: null, estadoEnvio: outcome.estadoEnvio }
   }
 
   let sent = 0
@@ -372,7 +397,7 @@ export async function sendPendingRecords(
     sent += one.sent
     estadoEnvio = one.estadoEnvio ?? estadoEnvio
   }
-  return { sent, blocked: null, estadoEnvio }
+  return { sent, parked, blocked: null, estadoEnvio }
 }
 
 /**
@@ -506,7 +531,6 @@ async function buildRecordsFor(
       .limit(1)
       .maybeSingle()
 
-    const p = pending.find((x) => x.factura_record_id === r.id)
     registros.push(
       buildRegistroAlta({
         record: {
@@ -542,10 +566,19 @@ async function buildRecordsFor(
         issuerName: clinic?.legal_name || clinic?.name || '',
         accountId,
         indicadorMultiplesOt: (indicador as unknown as string) ?? 'S',
-        // A record the AEAT rejected was never registered there, so it goes
-        // again as an ordinary alta -- flagged, so the resend reads as
-        // deliberate rather than as a duplicate.
-        afterRejection: p?.last_status === 'Incorrecto',
+        // Nothing is flagged on a resend, and the omission IS the fix.
+        //
+        // This passed `afterRejection: p?.last_status === 'Incorrecto'`, which
+        // put Subsanacion and RechazoPrevio on every record the AEAT had
+        // refused. That pair says "amend the registro you hold"; the AEAT held
+        // none of them, having rejected them, and answered 3002 "No existe el
+        // registro de facturación" -- itself an Incorrecto, which set the flag
+        // again on the next tick, and the one after. Twenty-two records
+        // reached a state no future attempt could get them out of.
+        //
+        // A rejected record was never registered, so it goes again as an
+        // ordinary alta carrying nothing. See `subsanacion` in registroAlta.ts
+        // for the flag that remains, and what it is actually for.
         // Anything that is not production gets a stand-in destinatario. The
         // environment has only ever chosen the endpoint -- the document was
         // built the same either way -- so real patients were being identified

@@ -77,9 +77,16 @@ export default defineEventHandler(async (event) => {
   // minute is the right place for it to be visible.
   const { data: expiring } = await supabase.rpc('verifactu_certificates_expiring', { p_within_days: 30 })
 
+  // Parked records, on every tick, beside the expiring certificate and for the
+  // same reason: under VERI*FACTU a record nobody is sending looks exactly
+  // like a record nobody owes. Parking stops the flood -- it must not also
+  // stop the reporting, or it becomes a quieter version of the bug it fixes.
+  const parked = (summary ?? []).reduce((n, row) => n + Number(row.parked ?? 0), 0)
+
   return {
     environment: config.environment,
     accountsOwing: owing.length,
+    ...(parked ? { parked } : {}),
     results,
     ...(expiring?.length
       ? { certificatesExpiring: expiring.map((c) => ({ account: c.account_id, daysLeft: c.days_left })) }

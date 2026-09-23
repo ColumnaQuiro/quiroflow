@@ -2123,6 +2123,7 @@ export type Database = {
           error_message: string | null
           factura_record_id: string
           id: string
+          repeats: number
           request_id: string | null
           responded_at: string | null
           sent_at: string | null
@@ -2138,6 +2139,7 @@ export type Database = {
           error_message?: string | null
           factura_record_id: string
           id?: string
+          repeats?: number
           request_id?: string | null
           responded_at?: string | null
           sent_at?: string | null
@@ -2148,6 +2150,7 @@ export type Database = {
           aeat_csv?: string | null
           error_code?: string | null
           error_message?: string | null
+          repeats?: number
           responded_at?: string | null
           sent_at?: string | null
           status?: string
@@ -5817,12 +5820,14 @@ export type Database = {
           attempts: number
           last_status: string | null
           last_error_code: string | null
+          parked: boolean
         }[]
       }
       factura_records_awaiting_aeat_summary: {
         Args: Record<string, never>
-        Returns: { account_id: string; outstanding: number; oldest_sequence: number }[]
+        Returns: { account_id: string; outstanding: number; parked: number; oldest_sequence: number }[]
       }
+      factura_records_release_parked: { Args: { p_account_id: string }; Returns: number }
       verifactu_certificates_expiring: {
         Args: { p_within_days?: number }
         Returns: { account_id: string; subject: string | null; not_after: string; days_left: number }[]

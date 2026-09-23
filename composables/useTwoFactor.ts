@@ -31,7 +31,9 @@ export function useTwoFactor() {
 
   async function gate(): Promise<TwoFactorGate> {
     const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
-    if (!aal || aal.currentLevel === 'aal2') return 'ok'
+    // No session at all: nothing to gate, and asking the database would ask
+    // it as anon -- which says 'ok' and would be remembered for this user.
+    if (!aal?.currentLevel || aal.currentLevel === 'aal2') return 'ok'
 
     // The session's own copy of the user's factors is enough to say "has
     // one": nextLevel is aal2 exactly when a verified factor is on it.

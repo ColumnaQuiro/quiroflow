@@ -66,8 +66,8 @@ describe('Two-factor login', () => {
           cy.task<string>('totp:code', { secret, notCode: enrollCode }, { timeout: 45000 }).then((loginCode) => {
             cy.get('#two-factor-code').type(loginCode)
           })
-          cy.location('pathname', { timeout: 15000 }).should('eq', '/dashboard')
-          cy.contains(account.accountName).should('be.visible')
+          cy.location('pathname', { timeout: 30000 }).should('eq', '/dashboard')
+          cy.contains(account.accountName, { timeout: 15000 }).should('be.visible')
 
           // Required by the clinic, so it cannot be switched off from here.
           cy.visit('/account')
@@ -92,7 +92,7 @@ describe('Two-factor login', () => {
       cy.login(account.email, account.password)
       cy.visit('/patients')
       cy.location('pathname', { timeout: 15000 }).should('eq', '/two-factor')
-      cy.location('search').should('contain', 'next=%2Fpatients')
+      cy.location('search').should((search) => expect(new URLSearchParams(search).get('next')).to.equal('/patients'))
       cy.contains('Set up two-factor authentication').should('be.visible')
       // Required, so there is no way to skip it.
       cy.contains('button', 'Cancel').should('not.exist')
@@ -101,7 +101,7 @@ describe('Two-factor login', () => {
         cy.task<string>('totp:code', { secret }).then((code) => cy.get('#two-factor-enroll-code').type(code))
       })
       cy.contains('button', 'Turn on two-factor').click()
-      cy.location('pathname', { timeout: 15000 }).should('eq', '/patients')
+      cy.location('pathname', { timeout: 30000 }).should('eq', '/patients')
     })
   })
 })

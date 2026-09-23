@@ -87,6 +87,7 @@ const ladder = computed(() =>
     moved: props.view.movedCount,
     noNext: props.view.noNext,
     pillText: pillText.value,
+    nameText: props.density === 'week' ? props.view.shortName : props.view.name,
     owesText: owesText.value,
     bonoText: bonoText.value,
   }),
@@ -95,6 +96,10 @@ const ladder = computed(() =>
 const week = computed(() => props.density === 'week')
 const typeColor = computed(() => props.view.typeColor || 'rgb(var(--color-brand))')
 const mix = (pct: number) => `color-mix(in srgb, ${typeColor.value} ${pct}%, rgb(var(--color-surface)))`
+// A finished visit keeps its type's colour, greyed and a shade deeper than
+// a live one (the .appt-block-done rule below). Dropping the colour entirely
+// made a morning of done visits one grey slab, with no telling an Ajuste
+// from a Primera visita.
 
 // Fill and border per stage. Only the type-tinted ones need inline style; the
 // rest are tokens.
@@ -103,8 +108,9 @@ const boxStyle = computed(() => {
     case 'pending':
     case 'online':
       return { background: 'rgb(var(--color-surface))', border: `1.5px dashed ${mix(80)}` }
-    case 'resched':
     case 'completed':
+      return { '--appt-type': typeColor.value }
+    case 'resched':
     case 'noshow':
     case 'cancelled':
       return {}
@@ -114,10 +120,10 @@ const boxStyle = computed(() => {
 })
 const boxClass = computed(() => {
   switch (props.view.stage) {
+    case 'completed':
+      return 'appt-block-done'
     case 'resched':
       return 'bg-warning-bg border-[1.5px] border-dashed border-warning-accent'
-    case 'completed':
-      return 'bg-surface-subtle border border-line'
     case 'noshow':
       return 'appt-block-struck border border-line-control'
     case 'cancelled':
@@ -192,7 +198,7 @@ const ariaLabel = computed(() =>
     </div>
 
     <div v-if="ladder.meta !== 'none' || ladder.owes === 'meta'" class="flex min-w-0 items-center gap-1.5 text-[11.5px] text-ink-muted" :class="ladder.wrap ? 'flex-wrap' : ''">
-      <span class="h-2 w-2 shrink-0 rounded-[2px]" :class="view.stage === 'completed' ? 'opacity-45' : ''" :style="{ background: typeColor }" />
+      <span class="h-2 w-2 shrink-0 rounded-[2px]" :class="view.stage === 'completed' ? 'opacity-70' : ''" :style="{ background: typeColor }" />
       <span v-if="ladder.meta !== 'none'" class="min-w-0 shrink truncate">{{ metaText }}</span>
       <span class="grow" />
       <span v-if="ladder.moved" class="inline-flex shrink-0 items-center gap-0.5" :title="t('Moved before', 'Movida antes')" data-cy="appt-block-moved">
@@ -220,6 +226,19 @@ const ariaLabel = computed(() =>
 </template>
 
 <style scoped>
+/* Done: the type's hue at less strength than a live visit (16% into the
+   surface), mixed into a base a step DEEPER than the surface -- the chip grey
+   in light, the page background in dark, where the chip grey is lighter than
+   the surface and would lift the block instead of settling it. */
+.appt-block-done {
+  --appt-done-base: var(--color-chip-bg);
+  background: color-mix(in srgb, var(--appt-type) 10%, rgb(var(--appt-done-base)));
+  border: 1px solid color-mix(in srgb, var(--appt-type) 22%, rgb(var(--color-line-control)));
+}
+[data-theme='dark'] .appt-block-done {
+  --appt-done-base: var(--color-surface-page);
+}
+
 /* A no-show keeps its slot visible but reads as "did not happen": stripes in
    two surface tokens, so it stays neutral in both themes -- red is reserved
    for money. */

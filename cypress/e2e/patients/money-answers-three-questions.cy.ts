@@ -77,7 +77,13 @@ describe('The Money tab', () => {
         // it is being raised separately rather than worked around here.
 
         cy.contains('On account').should('be.visible')
-        cy.contains('9 of 10').should('be.visible')
+        // "In bonos" and its amount, not a session count. The card used to
+        // list each bono -- name, sessions left, progress bar -- and that
+        // duplicated the Packages / bonos card now sitting directly below it.
+        // What belongs in a money summary is the money; "9 of 10" is the
+        // other card's answer and is asserted there.
+        cy.contains('In bonos').should('be.visible')
+        cy.contains('dd', '360,00').should('be.visible')
 
         cy.contains('How they pay').should('be.visible')
         cy.contains('No card on file').should('be.visible')

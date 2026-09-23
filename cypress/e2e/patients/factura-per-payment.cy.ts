@@ -52,8 +52,15 @@ describe('A factura for each payment', () => {
 
         // Wait for the ledger to load: the take-payment form is gated on there
         // being an unpaid invoice, and clicking before they arrive opens an
-        // empty panel.
-        cy.contains('55,00 €').should('exist')
+        // empty panel that cannot be recovered -- openTakePayment() prefills
+        // once, on the click.
+        //
+        // Waiting on the amount is no longer enough. "Owed now" shows 55,00 EUR
+        // too, from the composable, and that resolves before this tab's own
+        // invoice query -- so the sentinel was satisfied while unpaidInvoices
+        // was still empty and the Record button stayed disabled. The invoice
+        // NUMBER comes only from the query being waited for.
+        cy.contains('INV-').should('exist')
         cy.contains('button', 'Take payment').click()
         cy.contains('button', 'Record payment').parents('form').as('form')
         cy.get('@form').find('select').last().select('Credit on account (100,00 € available)')

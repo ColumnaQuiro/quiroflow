@@ -15,8 +15,8 @@ const props = defineProps<{
   isVip: boolean
   /** What the patient can spend today; see UiBalancePill. */
   availableCents: number
-  /** Negative when they owe. The pill reads only the owing side of it. */
-  balanceCents: number
+  /** What is unpaid; see UiBalancePill. Not the balance. */
+  outstandingCents: number
   clinicName: string | null
   practitionerName: string | null
   canContact: boolean
@@ -134,7 +134,7 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
           <!-- Money owed or money available, whichever applies -- the one
                figure the front desk glances at. UiBalancePill decides which,
                and renders nothing when neither is true. -->
-          <UiBalancePill :available-cents="availableCents" :balance-cents="balanceCents" />
+          <UiBalancePill :available-cents="availableCents" :outstanding-cents="outstandingCents" />
           <UiPill v-if="patient.is_minor" tone="brand">{{ t('Minor', 'Menor') }}</UiPill>
           <!-- A minor has no Communications tab, which states the rule and
                not where to act on it. This is where to act on it. -->

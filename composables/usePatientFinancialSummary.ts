@@ -3,6 +3,7 @@
 // which does not exist, and Xcode Cloud died on it. Nothing in CI compiles
 // the mobile app, so the only signal was a red cloud build four days later.
 import { bonoOwedCents } from '../utils/bonoOwed'
+import { outstandingCentsOf } from '../utils/owing'
 
 interface ActiveMembership {
   id: string
@@ -30,6 +31,13 @@ interface ActivePackage {
 interface FinancialState {
   loading: Ref<boolean>
   balanceCents: Ref<number>
+  // What the patient owes right now, read off their unpaid invoices rather
+  // than off the balance -- see utils/owing.ts. The balance answers how the
+  // account stands; this answers whether to ask them for money, and the two
+  // disagree wherever the money that settled a charge sits on somebody else's
+  // row (a family bono) or on no invoice at all (a bono sale, every imported
+  // PracticeHub payment).
+  outstandingCents: Ref<number>
   creditLedgerCents: Ref<number>
   // Everything the patient has ever actually paid. Already summed here to
   // get balanceCents -- exposed because the Money tab's "Lifetime" figure is
@@ -80,6 +88,7 @@ function stateFor(id: string | null | undefined): FinancialState {
     state = {
       loading: ref(true),
       balanceCents: ref(0),
+      outstandingCents: ref(0),
       creditLedgerCents: ref(0),
       lifetimeCents: ref(0),
       bonoValueCents: ref(0),
@@ -113,7 +122,7 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
       // Void invoices are filtered in JS rather than here: bonoValueCents
       // below needs the bono's own sale invoice, and telling "no invoice"
       // apart from "an invoice that was voided" needs the status in hand.
-      supabase.from('invoices').select('id, total_cents, status').eq('patient_id', currentId),
+      supabase.from('invoices').select('id, total_cents, status, is_refund').eq('patient_id', currentId),
       supabase.from('patient_memberships').select('id, membership_name, status').eq('patient_id', currentId).eq('status', 'active'),
       supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used, price_cents, invoice_id, owed_cents, is_closed').eq('patient_id', currentId).order('purchased_at', { ascending: false }),
       supabase.from('account_credits').select('amount_cents, external_reference, payment_id').eq('patient_id', currentId),
@@ -195,6 +204,11 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     // but computed live from invoices/payments rather than trusting that column, which
     // is only ever written at import time and never kept in sync afterward.
     state.balanceCents.value = paidCents - invoicedCents + balanceCreditCents + cutoverAdjustmentCents
+    // Every payment, allocated or not: outstandingCentsOf only reads the ones
+    // carrying an invoice_id, and a 'credit' payment against a void invoice is
+    // excluded above for reasons that do not apply here -- but passing the
+    // filtered list keeps the two figures reading the same money.
+    state.outstandingCents.value = outstandingCentsOf(invoices ?? [], countablePayments)
 
     state.activeMembership.value = memberships?.[0] ?? null
     // Packages are pure session-count tracking (name, sessions left) -- the
@@ -304,6 +318,7 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
   return {
     loading: computed(() => stateFor(id.value).loading.value),
     balanceCents: computed(() => stateFor(id.value).balanceCents.value),
+    outstandingCents: computed(() => stateFor(id.value).outstandingCents.value),
     creditLedgerCents: computed(() => stateFor(id.value).creditLedgerCents.value),
     lifetimeCents: computed(() => stateFor(id.value).lifetimeCents.value),
     bonoValueCents: computed(() => stateFor(id.value).bonoValueCents.value),

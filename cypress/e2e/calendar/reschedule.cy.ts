@@ -31,12 +31,12 @@ describe('Reschedule mode (cross-week move)', () => {
 
         // Open the appointment and enter reschedule mode instead of dragging.
         cy.contains('Alice Anderson').click({ force: true })
-        cy.contains('h2', 'Edit Appointment').should('be.visible')
-        cy.contains('button', 'Reschedule…').click()
+        cy.get('[data-cy=appt-sheet]').should('be.visible')
+        cy.get('[data-cy=move-appointment]').click()
 
-        // The modal closes and the picking banner takes its place -- the
+        // The panel closes and the picking banner takes its place -- the
         // whole point being that navigation still works from here.
-        cy.contains('h2', 'Edit Appointment').should('not.exist')
+        cy.get('[data-cy=appt-sheet]').should('not.exist')
         cy.contains('Rescheduling').should('be.visible')
         cy.contains('Alice Anderson').should('be.visible') // still on the original day, untouched so far
 

@@ -1,4 +1,5 @@
 import type { AppointmentStage, StageFilter } from '~/utils/appointmentStage'
+import { formatShortDate, formatTime } from '~/utils/billing'
 
 // The words and tones for each stage, in one place, so the block, the counts
 // row, the hover card and the appointment panel say the same thing about the
@@ -90,5 +91,60 @@ export function useStageLabels() {
     }
   }
 
-  return { stageLabel, filterLabel }
+  /** "hoy 10:00", or "16 sept 10:00" on any other day. */
+  function when(iso: string): string {
+    const d = new Date(iso)
+    const now = new Date()
+    const sameDay = d.toDateString() === now.toDateString()
+    return `${sameDay ? t('today', 'hoy') : formatShortDate(d)} ${formatTime(d)}`
+  }
+
+  /**
+   * The sentence the hover card and the panel print for a stage: a headline,
+   * and the one detail that explains it ("Recordatorio enviado hoy 10:00 ·
+   * sin respuesta", "había confirmado").
+   */
+  function stageLine(a: StageFacts, stage: AppointmentStage): { title: string; sub: string | null } {
+    const lastMessage = [a.reminder_sent_at, a.confirmation_sent_at].filter((x): x is string => !!x).sort().pop() ?? null
+    switch (stage) {
+      case 'pending':
+        return {
+          title: t('Unconfirmed', 'Sin confirmar'),
+          sub: lastMessage
+            ? a.reminder_sent_at === lastMessage
+              ? t(`Reminder sent ${when(lastMessage)} · no reply`, `Recordatorio enviado ${when(lastMessage)} · sin respuesta`)
+              : t(`Confirmation sent ${when(lastMessage)} · no reply`, `Confirmación enviada ${when(lastMessage)} · sin respuesta`)
+            : null,
+        }
+      case 'online':
+        return { title: t('Booked online · unconfirmed', 'Reservada online · sin confirmar'), sub: lastMessage ? t(`Message sent ${when(lastMessage)}`, `Mensaje enviado ${when(lastMessage)}`) : null }
+      case 'resched':
+        return { title: t('Wants to move it', 'Quiere cambiar la cita'), sub: t('Asked in reply to our message', 'Lo pidió al responder a nuestro mensaje') }
+      case 'confirmed':
+        return { title: t('Confirmed', 'Confirmada'), sub: null }
+      case 'arrived':
+        return {
+          title: t(`Arrived at ${formatTime(a.checked_in_at!)}`, `Llegó a las ${formatTime(a.checked_in_at!)}`),
+          sub: a.confirmation_status === 'confirmed' ? t('had confirmed', 'había confirmado') : null,
+        }
+      case 'withp':
+        return { title: t(`In session since ${formatTime(a.flow_with_practitioner_at!)}`, `En consulta desde las ${formatTime(a.flow_with_practitioner_at!)}`), sub: null }
+      case 'checkout':
+        return { title: t(`To pay since ${formatTime(a.flow_checkout_at!)}`, `Por cobrar desde las ${formatTime(a.flow_checkout_at!)}`), sub: null }
+      default:
+        return { title: stageLabel(stage), sub: null }
+    }
+  }
+
+  return { stageLabel, filterLabel, stageLine, when }
+}
+
+/** What stageLine reads off the appointment row. */
+export interface StageFacts {
+  confirmation_status: string | null
+  checked_in_at: string | null
+  flow_with_practitioner_at: string | null
+  flow_checkout_at: string | null
+  confirmation_sent_at: string | null
+  reminder_sent_at: string | null
 }

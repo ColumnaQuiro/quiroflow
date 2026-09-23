@@ -6,6 +6,7 @@ import type { AppointmentTypeOverride } from '~/utils/appointmentOverrides'
 import { appointmentStage, matchesFilter, needsNextBookingFlag, STAGE_FILTERS, stageCounts, type AppointmentStage, type StageFilter } from '~/utils/appointmentStage'
 import { shortPatientName } from '~/utils/appointmentBlock'
 import { bonoForVisit, type VisitPayment } from '~/utils/visitPayment'
+import { effectivePriceCents } from '~/utils/appointmentOverrides'
 import { FILTER_DOT_CLASS, STAGE_TONE, STAGE_TONE_CLASS } from '~/composables/useAppointmentStage'
 import type { BlockView } from '~/components/calendar/AppointmentBlock.vue'
 
@@ -87,6 +88,10 @@ interface AppointmentRow {
   deleted_at: string | null
   note: string | null
   source: string
+  confirmation_sent_at: string | null
+  reminder_sent_at: string | null
+  same_day_info_sent_at: string | null
+  created_at: string
   patients: { first_name: string; last_name: string | null; sticky_note: string | null } | null
   appointment_types: { name: string; color: string; default_price_cents: number } | null
   team_members: { full_name: string; color: string } | null
@@ -152,6 +157,9 @@ const loading = ref(true)
 const modalOpen = ref(false)
 const modalMode = ref<'create' | 'edit'>('create')
 const editingAppointment = ref<AppointmentRow | null>(null)
+// The open appointment is looked up by id in the live list, so a reload after
+// a step taken in the panel hands it the fresh row.
+const openAppointment = computed(() => (modalOpen.value && modalMode.value === 'edit' && editingAppointment.value ? (appointments.value.find((a) => a.id === editingAppointment.value!.id) ?? null) : null))
 const prefill = ref<{ date: string; time: string; roomId: string } | null>(null)
 
 const blockModalOpen = ref(false)
@@ -166,7 +174,6 @@ const blockPrefill = ref<{ date: string; time: string; roomId: string } | null>(
 // hideCancelled, default on; flipped so the switch reads the way it acts.)
 const settings = reactive({
   privacyMode: false,
-  flowTracker: true,
   showAvailability: true,
   showCancelled: false,
   hideRescheduled: false,
@@ -174,7 +181,6 @@ const settings = reactive({
 })
 const displayToggles = computed<{ key: keyof typeof settings; label: string }[]>(() => [
   { key: 'privacyMode', label: t('Privacy mode', 'Modo privacidad') },
-  { key: 'flowTracker', label: t('Flow tracker', 'Seguimiento de flujo') },
   { key: 'showAvailability', label: t('Show availability', 'Mostrar disponibilidad') },
   { key: 'showCancelled', label: t('Show cancelled', 'Mostrar canceladas') },
   { key: 'hideRescheduled', label: t('Hide rescheduled', 'Ocultar reprogramadas') },
@@ -329,12 +335,14 @@ async function loadRooms() {
   rooms.value = data ?? []
 }
 
-async function loadAppointments() {
+// `silent` reloads without the skeleton: after a step in the open panel the
+// grid should update in place, not blink.
+async function loadAppointments(silent = false) {
   if (!store.currentClinicId) {
     appointments.value = []
     return
   }
-  loading.value = true
+  if (!silent) loading.value = true
   const rangeStart = viewMode.value === 'day' ? startOfDay(anchorDate.value) : weekStart.value
   const rangeEnd = viewMode.value === 'day' ? addDays(rangeStart, 1) : addDays(rangeStart, 7)
 
@@ -342,7 +350,7 @@ async function loadAppointments() {
   let query = supabase
     .from('appointments')
     .select(
-      'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, rescheduled, confirmation_status, deleted_at, note, source, patients(first_name, last_name, sticky_note), appointment_types(name, color, default_price_cents), team_members(full_name, color)',
+      'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, rescheduled, confirmation_status, confirmation_sent_at, reminder_sent_at, same_day_info_sent_at, created_at, deleted_at, note, source, patients(first_name, last_name, sticky_note), appointment_types(name, color, default_price_cents), team_members(full_name, color)',
     )
     .eq('clinic_id', store.currentClinicId)
     .gte('starts_at', rangeStart.toISOString())
@@ -861,6 +869,7 @@ function showOverflowDay(day: Date) {
   viewMode.value = 'day'
 }
 function openEditModal(appointment: AppointmentRow) {
+  closeHoverCardNow()
   editingAppointment.value = appointment
   modalMode.value = 'edit'
   modalOpen.value = true
@@ -1205,45 +1214,21 @@ function handleAppointmentClick(appt: AppointmentRow) {
 
 const { fire } = useAutomations()
 
-async function toggleCheckedIn(appt: AppointmentRow | null) {
-  if (!appt) return
-  const next = appt.checked_in_at ? null : new Date().toISOString()
-  appt.checked_in_at = next
-  await supabase.from('appointments').update({ checked_in_at: next }).eq('id', appt.id)
-  if (next) fire('appointment.checked_in', { patientId: appt.patient_id, appointmentId: appt.id })
+// The visit's price with the practitioner's override, for "45 € al cobrar"
+// and for the Cobro tab.
+function priceFor(appt: AppointmentRow) {
+  if (!appt.appointment_type_id || !appt.appointment_types) return 0
+  return effectivePriceCents(appt.appointment_types.default_price_cents, appt.appointment_type_id, appt.practitioner_id ?? '', overrides.value)
+}
+function paymentFor(appt: AppointmentRow): VisitPayment {
+  return visitPaymentById.value[appt.id] ?? { kind: 'none' }
 }
 
-// Flow Tracker: Arrived (checked_in_at, already tracked elsewhere) -> With
-// Practitioner -> Awaiting Checkout -> Complete (marks the appointment
-// completed). Scoped to whatever's currently loaded (today, for the
-// default Day view), same as the rest of the calendar. Parameter typed to
-// match CalendarFlowTracker's own (narrower) FlowAppointment emit shape --
-// the object passed at runtime is always the full AppointmentRow (Vue props
-// aren't cloned), but the component only declares needing these fields.
-interface FlowAppointment {
-  id: string
-  checked_in_at: string | null
-  flow_with_practitioner_at: string | null
-  flow_checkout_at: string | null
-  status: string
-  patients: { first_name: string; last_name: string | null } | null
-}
-async function advanceFlow(appt: FlowAppointment, field: 'flow_with_practitioner_at' | 'flow_checkout_at') {
-  const now = new Date().toISOString()
-  appt[field] = now
-  const update = field === 'flow_with_practitioner_at' ? { flow_with_practitioner_at: now } : { flow_checkout_at: now }
-  await supabase.from('appointments').update(update).eq('id', appt.id)
-}
-async function completeFlow(appt: FlowAppointment) {
-  appt.status = 'completed'
-  await supabase.from('appointments').update({ status: 'completed' }).eq('id', appt.id)
-}
-
-// Hovering an appointment block shows patient/billing/changelog context
-// without opening the full edit modal. A short show delay avoids flicker
-// when the mouse just passes over a block; a short hide delay lets the
-// mouse travel from the block onto the popover itself without it
-// disappearing first.
+// Hovering a block (mouse only) or moving the keyboard's cell onto it shows
+// the read-only hover card. A short show delay avoids flicker when the mouse
+// just passes over. The card has no controls, so it takes no pointer events
+// and there is nothing to travel onto; on touch there is no card at all -- a
+// tap opens the panel, whose header says the same things.
 const hoveredAppt = ref<AppointmentRow | null>(null)
 const hoverPos = ref({ x: 0, y: 0 })
 const hoverCardEl = ref<any>(null)
@@ -1285,12 +1270,16 @@ watch(hoveredAppt, async (appt) => {
 })
 onUnmounted(() => hoverResizeObserver?.disconnect())
 
-function scheduleHoverCard(appt: AppointmentRow, event: MouseEvent) {
+function onBlockPointerEnter(appt: AppointmentRow, event: PointerEvent) {
+  if (event.pointerType !== 'mouse' || dragState.value || modalOpen.value) return
+  showHoverCardFor(appt, (event.currentTarget as HTMLElement).getBoundingClientRect(), 300)
+}
+function showHoverCardFor(appt: AppointmentRow, rect: DOMRect, delay: number) {
   if (hoverHideTimer) {
     clearTimeout(hoverHideTimer)
     hoverHideTimer = null
   }
-  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  if (hoverShowTimer) clearTimeout(hoverShowTimer)
   hoverShowTimer = setTimeout(() => {
     hoveredAppt.value = appt
     const spaceRight = window.innerWidth - rect.right
@@ -1303,22 +1292,13 @@ function scheduleHoverCard(appt: AppointmentRow, event: MouseEvent) {
     // Rough guess for the instant the card appears, before the resize
     // observer above has attached and measured anything real yet.
     hoverPos.value = { x: hoverX, y: Math.max(8, Math.min(rect.top, window.innerHeight - 380)) }
-  }, 500)
+  }, delay)
 }
 function cancelHoverShow() {
   if (hoverShowTimer) {
     clearTimeout(hoverShowTimer)
     hoverShowTimer = null
   }
-  hoverHideTimer = setTimeout(() => (hoveredAppt.value = null), 200)
-}
-function keepHoverCard() {
-  if (hoverHideTimer) {
-    clearTimeout(hoverHideTimer)
-    hoverHideTimer = null
-  }
-}
-function hideHoverCard() {
   hoverHideTimer = setTimeout(() => (hoveredAppt.value = null), 200)
 }
 // Dragging an appointment keeps the pointer over the calendar the whole
@@ -1416,6 +1396,22 @@ const selectedApptId = computed(() => {
   if (!gridHasFocus.value || !focusCell.value) return null
   return appointmentAtCell(focusCell.value)?.id ?? null
 })
+
+// Keyboard focus on a block shows the same card, straight away.
+watch(
+  () => selectedApptId.value,
+  (id) => {
+    if (!id) {
+      if (hoveredAppt.value && !hoverCell.value) closeHoverCardNow()
+      return
+    }
+    const appt = appointments.value.find((a) => a.id === id)
+    nextTick(() => {
+      const el = document.querySelector<HTMLElement>(`[data-appt-id="${id}"]`)
+      if (appt && el) showHoverCardFor(appt, el.getBoundingClientRect(), 0)
+    })
+  },
+)
 
 function onColumnPointerMove(e: PointerEvent, dayKey: string, roomId: string, hourPx: number) {
   if (e.pointerType !== 'mouse' || dragState.value) return
@@ -1790,13 +1786,6 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
         </div>
       </aside>
 
-      <!-- Hidden below lg -- a phone doesn't have the width to spare for a
-      third column alongside the info panel and the grid itself; the
-      Display toggle to turn this on lives in the info panel above. -->
-      <aside v-if="settings.flowTracker" class="hidden w-[220px] shrink-0 overflow-y-auto border-r border-line bg-surface-sidebar p-3 lg:block">
-        <CalendarFlowTracker :appointments="appointments" :privacy-mode="settings.privacyMode" @advance="advanceFlow" @complete="completeFlow" />
-      </aside>
-
       <!-- Main content -->
       <div ref="scrollAreaRef" class="flex min-w-0 flex-1 flex-col overflow-y-auto">
         <div v-if="loading" class="flex min-w-0 flex-1 p-3">
@@ -1921,8 +1910,8 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                       :style="columnStyle(appt, timeToPx(appt.starts_at, DAY_HOUR_PX) + 1, Math.max(0, durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) - 3))"
                       @pointerdown="startAppointmentDrag(appt, 'move', $event)"
                       @click.stop="handleAppointmentClick(appt)"
-                      @mouseenter="scheduleHoverCard(appt, $event)"
-                      @mouseleave="cancelHoverShow"
+                      @pointerenter="onBlockPointerEnter(appt, $event)"
+                      @pointerleave="cancelHoverShow"
                     >
                       <CalendarAppointmentBlock
                         :view="blockView(appt)"
@@ -2090,8 +2079,8 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                         :style="columnStyle(appt, timeToPx(appt.starts_at, WEEK_HOUR_PX), Math.max(0, durationToPx(appt.starts_at, appt.ends_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX) - 2))"
                         @pointerdown="startAppointmentDrag(appt, 'move', $event)"
                         @click.stop="handleAppointmentClick(appt)"
-                        @mouseenter="scheduleHoverCard(appt, $event)"
-                        @mouseleave="cancelHoverShow"
+                        @pointerenter="onBlockPointerEnter(appt, $event)"
+                        @pointerleave="cancelHoverShow"
                       >
                         <CalendarAppointmentBlock
                           :view="blockView(appt)"
@@ -2144,19 +2133,20 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
       @saved="onSaved"
     />
 
-    <CalendarAppointmentModal
-      v-if="modalOpen && modalMode === 'edit'"
-      mode="edit"
+    <CalendarAppointmentPanel
+      v-if="openAppointment"
+      :key="openAppointment.id"
+      :appointment="openAppointment"
+      :view="blockView(openAppointment)"
+      :payment="paymentFor(openAppointment)"
+      :price-cents="priceFor(openAppointment)"
       :rooms="rooms"
       :appointment-types="appointmentTypes"
-      :team-members="teamMembers"
-      :appointment="editingAppointment ?? undefined"
-      :prefill-date="prefill?.date"
-      :prefill-time="prefill?.time"
-      :prefill-room-id="prefill?.roomId"
+      :team-members="clinicTeamMembers"
+      :overrides="overrides"
       @close="modalOpen = false"
-      @saved="onSaved"
-      @reschedule="startReschedule(editingAppointment!)"
+      @changed="loadAppointments(true)"
+      @reschedule="startReschedule(openAppointment!)"
     />
 
     <CalendarRescheduleConfirmModal
@@ -2187,17 +2177,15 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
     <CashShiftModal v-if="cashShiftOpen" @close="cashShiftOpen = false" />
 
     <CalendarAppointmentHoverCard
-      v-if="hoveredAppt"
+      v-if="hoveredAppt && !modalOpen"
       ref="hoverCardEl"
       :appointment="hoveredAppt"
+      :view="blockView(hoveredAppt)"
       :room-name="hoveredRoomName"
-      class="fixed z-30"
+      :price-cents="priceFor(hoveredAppt)"
+      :paid="paymentFor(hoveredAppt).kind !== 'none'"
+      class="pointer-events-none fixed z-30"
       :style="{ left: `${hoverPos.x}px`, top: `${hoverPos.y}px` }"
-      @mouseenter="keepHoverCard"
-      @mouseleave="hideHoverCard"
-      @note-saved="loadAppointments"
-      @check-in="toggleCheckedIn(hoveredAppt)"
-      @reschedule="startReschedule(hoveredAppt)"
     />
   </div>
 </template>

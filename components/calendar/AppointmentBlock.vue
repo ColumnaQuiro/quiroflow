@@ -87,6 +87,7 @@ const ladder = computed(() =>
     moved: props.view.movedCount,
     noNext: props.view.noNext,
     pillText: pillText.value,
+    nameText: props.density === 'week' ? props.view.shortName : props.view.name,
     owesText: owesText.value,
     bonoText: bonoText.value,
   }),

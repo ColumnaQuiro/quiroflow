@@ -16,29 +16,31 @@ export function useVisitPayments() {
 async function fetchVisitPayments(supabase: ReturnType<typeof useSupabaseClient<Database>>, appointmentIds: string[]): Promise<Record<string, VisitPayment>> {
   if (appointmentIds.length === 0) return {}
 
-  const [{ data: sessions }, { data: invoices }] = await Promise.all([
-    supabase
-      .from('package_sessions')
-      .select('appointment_id, amount_cents, external_reference, package_purchases(package_name, sessions_total, sessions_used, external_reference)')
-      .in('appointment_id', appointmentIds),
-    supabase.from('invoices').select('id, appointment_id, invoice_number, total_cents, status').in('appointment_id', appointmentIds),
+  // Id lists go through fetchByIds: a calendar week can hold hundreds of
+  // visits, past what one URL carries.
+  const [sessions, invoices] = await Promise.all([
+    fetchByIds(appointmentIds, (chunk) =>
+      supabase
+        .from('package_sessions')
+        .select('appointment_id, amount_cents, external_reference, package_purchases(package_name, sessions_total, sessions_used, external_reference)')
+        .in('appointment_id', chunk),
+    ),
+    fetchByIds(appointmentIds, (chunk) => supabase.from('invoices').select('id, appointment_id, invoice_number, total_cents, status').in('appointment_id', chunk)),
   ])
 
-  const invoiceIds = (invoices ?? []).map((i) => i.id)
-  const { data: payments } = invoiceIds.length
-    ? await supabase.from('payments').select('id, invoice_id, method, amount_cents').in('invoice_id', invoiceIds).order('paid_at')
-    : { data: [] as { id: string; invoice_id: string | null; method: string; amount_cents: number }[] }
+  const invoiceIds = invoices.map((i) => i.id)
+  // Ordered by paid_at inside each chunk; a chunk holds whole invoices, so
+  // each invoice's payments stay in the order they were taken.
+  const payments = await fetchByIds(invoiceIds, (chunk) => supabase.from('payments').select('id, invoice_id, method, amount_cents').in('invoice_id', chunk).order('paid_at'))
 
-  const paymentIds = (payments ?? []).map((p) => p.id)
-  const { data: facturas } = paymentIds.length
-    ? await supabase.from('facturas').select('payment_id, number').in('payment_id', paymentIds)
-    : { data: [] as { payment_id: string | null; number: string }[] }
+  const paymentIds = payments.map((p) => p.id)
+  const facturas = await fetchByIds(paymentIds, (chunk) => supabase.from('facturas').select('payment_id, number').in('payment_id', chunk))
 
   const sessionByAppointment = new Map<string, any>()
-  for (const s of sessions ?? []) if (s.appointment_id) sessionByAppointment.set(s.appointment_id, s)
+  for (const s of sessions) if (s.appointment_id) sessionByAppointment.set(s.appointment_id, s)
 
   const paymentsByInvoice = new Map<string, { id: string; method: string; amount_cents: number }[]>()
-  for (const p of payments ?? []) {
+  for (const p of payments) {
     if (!p.invoice_id) continue
     const list = paymentsByInvoice.get(p.invoice_id) ?? []
     list.push(p)
@@ -46,12 +48,12 @@ async function fetchVisitPayments(supabase: ReturnType<typeof useSupabaseClient<
   }
 
   const facturaByPayment = new Map<string, string>()
-  for (const f of facturas ?? []) if (f.payment_id) facturaByPayment.set(f.payment_id, f.number)
+  for (const f of facturas) if (f.payment_id) facturaByPayment.set(f.payment_id, f.number)
 
   const resolved: Record<string, VisitPayment> = {}
   for (const id of appointmentIds) {
     const session = sessionByAppointment.get(id)
-    const invoice = (invoices ?? []).find((i) => i.appointment_id === id) ?? null
+    const invoice = invoices.find((i) => i.appointment_id === id) ?? null
     const invoicePayments = invoice ? (paymentsByInvoice.get(invoice.id) ?? []) : []
     resolved[id] = resolveVisitPayment({
       session: session ? { amount_cents: session.amount_cents, external_reference: session.external_reference } : null,

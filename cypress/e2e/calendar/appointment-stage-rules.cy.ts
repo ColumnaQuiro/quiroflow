@@ -171,6 +171,17 @@ describe('Block ladder', () => {
     expect(blockLadder({ ...base, density: 'week', stage: 'confirmed' }).pill, 'confirmed is the default in week').to.equal('none')
   })
 
+  it('shrinks the stage label to its icon before it would cut the name', () => {
+    // 215px is a room column on an iPad in landscape. "Online · sin
+    // confirmar" beside "Sergio Navarro" does not fit; the name wins.
+    const spanish = { ...base, width: 215, stage: 'online' as const, owes: false, note: false, pillText: 'Online · sin confirmar' }
+    expect(blockLadder({ ...spanish, nameText: 'Sergio Navarro' }).pill).to.equal('icon')
+    const pending = { ...spanish, stage: 'pending' as const, pillText: 'Sin confirmar' }
+    expect(blockLadder({ ...pending, nameText: 'Sergio Navarro' }).pill).to.equal('icon')
+    expect(blockLadder({ ...pending, nameText: 'Ana Gil' }).pill, 'a short name leaves room').to.equal('label')
+    expect(blockLadder({ ...spanish, width: 340, nameText: 'Sergio Navarro' }).pill, 'a wide column has room for both').to.equal('label')
+  })
+
   it('shows no pill on a finished visit', () => {
     expect(blockLadder({ ...base, stage: 'completed' }).pill).to.equal('none')
   })

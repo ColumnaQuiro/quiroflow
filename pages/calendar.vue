@@ -367,14 +367,16 @@ async function loadAppointments(silent = false) {
   appointments.value = (data as unknown as AppointmentRow[]) ?? []
   const patientIds = [...new Set(appointments.value.map((a) => a.patient_id))]
   const appointmentIds = appointments.value.map((a) => a.id)
-  await Promise.all([loadLiveBalances(patientIds), loadFutureAppointmentIds(patientIds)])
+  // A failed lookup leaves the grid without its money and "Sin próxima"
+  // detail, not stuck on the skeleton: the appointments themselves loaded.
+  await Promise.all([loadLiveBalances(patientIds), loadFutureAppointmentIds(patientIds)]).catch((e) => console.error('calendar: balances / next visits failed', e))
   if (token !== loadToken) return
   loading.value = false
   // Second-rank detail -- the bono count, how often a visit was moved, the
   // waitlist offers standing on freed slots. The grid is usable without them,
   // so they fill in after it renders rather than holding it back for the
   // three sequential rounds fetchVisitPayments needs.
-  loadBlockDetails(token, appointmentIds, patientIds, rangeStart, rangeEnd)
+  loadBlockDetails(token, appointmentIds, patientIds, rangeStart, rangeEnd).catch((e) => console.error('calendar: block details failed', e))
 }
 
 // Bumped on every load, so a slow response for a range the user has already
@@ -396,14 +398,17 @@ interface WaitlistOffer {
 const waitlistOffers = ref<WaitlistOffer[]>([])
 
 async function loadBlockDetails(token: number, appointmentIds: string[], patientIds: string[], rangeStart: Date, rangeEnd: Date) {
-  const [payments, { data: packages }, { data: reschedules }, { data: offers }] = await Promise.all([
+  // Id lists go through fetchByIds: a whole-clinic week is several hundred
+  // appointments, and one .in() that long is refused with 414 -- which reads
+  // as "nothing found" and quietly blanks every bono and moved count.
+  const [payments, packages, reschedules, { data: offers }] = await Promise.all([
     fetchVisitPayments(appointmentIds),
-    patientIds.length
-      ? supabase.from('package_purchases').select('patient_id, package_name, sessions_total, sessions_used').in('patient_id', patientIds).order('purchased_at', { ascending: false })
-      : Promise.resolve({ data: [] as { patient_id: string; package_name: string; sessions_total: number; sessions_used: number }[] }),
-    appointmentIds.length
-      ? supabase.from('appointment_reschedules').select('appointment_id').in('appointment_id', appointmentIds)
-      : Promise.resolve({ data: [] as { appointment_id: string }[] }),
+    // Newest first inside each chunk; a chunk holds whole patients, so each
+    // patient's packs stay in order.
+    fetchByIds(patientIds, (chunk) =>
+      supabase.from('package_purchases').select('patient_id, package_name, sessions_total, sessions_used').in('patient_id', chunk).order('purchased_at', { ascending: false }),
+    ),
+    fetchByIds(appointmentIds, (chunk) => supabase.from('appointment_reschedules').select('appointment_id').in('appointment_id', chunk)),
     supabase
       .from('waitlist_entries')
       .select('id, offered_starts_at, offered_ends_at, offered_room_id, offered_practitioner_id, offer_expires_at, patients(first_name, last_name)')
@@ -418,13 +423,13 @@ async function loadBlockDetails(token: number, appointmentIds: string[], patient
   // Newest pack with sessions left, per patient -- the one tomorrow's visit
   // will draw from (bonoForVisit).
   const active: typeof activePackageByPatient.value = {}
-  for (const p of packages ?? []) {
+  for (const p of packages) {
     if (active[p.patient_id] || p.sessions_used >= p.sessions_total) continue
     active[p.patient_id] = p
   }
   activePackageByPatient.value = active
   const moved: Record<string, number> = {}
-  for (const r of reschedules ?? []) moved[r.appointment_id] = (moved[r.appointment_id] ?? 0) + 1
+  for (const r of reschedules) moved[r.appointment_id] = (moved[r.appointment_id] ?? 0) + 1
   movedCountById.value = moved
   waitlistOffers.value = ((offers as unknown as WaitlistOffer[]) ?? []).filter((o) => o.offered_starts_at)
 }
@@ -441,9 +446,9 @@ async function loadLiveBalances(patientIds: string[]) {
     balanceByPatient.value = {}
     return
   }
-  const { data } = await supabase.from('patient_live_balances').select('patient_id, balance_cents').in('patient_id', patientIds)
+  const data = await fetchByIds(patientIds, (chunk) => supabase.from('patient_live_balances').select('patient_id, balance_cents').in('patient_id', chunk))
   const map: Record<string, number> = {}
-  for (const b of data ?? []) map[b.patient_id!] = b.balance_cents ?? 0
+  for (const b of data) map[b.patient_id!] = b.balance_cents ?? 0
   balanceByPatient.value = map
 }
 
@@ -457,14 +462,11 @@ async function loadFutureAppointmentIds(patientIds: string[]) {
     futureAppointmentIdsByPatient.value = {}
     return
   }
-  const { data } = await supabase
-    .from('appointments')
-    .select('id, patient_id')
-    .in('patient_id', patientIds)
-    .neq('status', 'cancelled')
-    .gt('starts_at', new Date().toISOString())
+  const data = await fetchByIds(patientIds, (chunk) =>
+    supabase.from('appointments').select('id, patient_id').in('patient_id', chunk).neq('status', 'cancelled').gt('starts_at', new Date().toISOString()),
+  )
   const map: Record<string, Set<string>> = {}
-  for (const a of data ?? []) {
+  for (const a of data) {
     ;(map[a.patient_id] ??= new Set()).add(a.id)
   }
   futureAppointmentIdsByPatient.value = map
@@ -1345,7 +1347,15 @@ function cellStart(cell: Cell): Date {
 function cellTimeLabel(cell: Cell) {
   return slotLabel(cell.min)
 }
+// Where in its column an event landed, in px from the top. Measured from
+// clientY rather than read off offsetY: offsetY is relative to whatever
+// element was hit, and is not set at all on some synthesised events -- a
+// tap came through as "Reservar NaN:NaN".
+function yInColumn(e: MouseEvent) {
+  return e.clientY - (e.currentTarget as HTMLElement).getBoundingClientRect().top
+}
 function snapMin(offsetY: number, hourPx: number) {
+  if (!Number.isFinite(offsetY)) return 0
   const m = Math.floor(((offsetY / hourPx) * 60) / SLOT_MIN.value) * SLOT_MIN.value
   return Math.min(Math.max(0, m), TOTAL_MIN - SLOT_MIN.value)
 }
@@ -1433,7 +1443,7 @@ function onColumnPointerMove(e: PointerEvent, dayKey: string, roomId: string, ho
     return
   }
   const col = colIndex(dayKey, roomId)
-  const min = snapMin(e.offsetY, hourPx)
+  const min = snapMin(yInColumn(e), hourPx)
   if (hoverCell.value?.col !== col || hoverCell.value?.min !== min) hoverCell.value = { col, min }
 }
 function onColumnPointerDown(e: PointerEvent) {
@@ -1446,7 +1456,7 @@ function onColumnPointerDown(e: PointerEvent) {
 function onColumnClick(e: MouseEvent, day: Date, roomId: string, hourPx: number) {
   // The cell under the pointer, not the nearest slot boundary: a click in the
   // lower half of 18:00-18:30 is a click on 18:00.
-  const cell = { col: colIndex(toDateKey(day), roomId), min: snapMin(e.offsetY, hourPx) }
+  const cell = { col: colIndex(toDateKey(day), roomId), min: snapMin(yInColumn(e), hourPx) }
   const time = slotLabel(cell.min)
   const room = roomId === '__none' ? null : roomId
   if (reschedulingAppointment.value) {

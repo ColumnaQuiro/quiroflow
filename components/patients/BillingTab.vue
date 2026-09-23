@@ -1797,7 +1797,12 @@ const appliedCreditNote = computed(() => {
 })
 
 /** Bonos with sessions still on them -- what the patient already holds. */
-const activePurchases = computed(() => purchases.value.filter((p) => p.sessions_total - p.sessions_used > 0))
+// Since the summary card stopped listing bonos, this is only asked whether
+// the patient has anything on account at all -- so a bono PracticeHub has
+// closed does not count, the same way its sessions do not count as money in
+// committedBonoCents. A closed bono and no credit reads "Nothing on account",
+// which is what the figures beside it say.
+const activePurchases = computed(() => purchases.value.filter((p) => !p.is_closed && p.sessions_total - p.sessions_used > 0))
 
 function money(cents: number) {
   return formatEur(cents)
@@ -1857,32 +1862,15 @@ function money(cents: number) {
           </div>
         </dl>
 
-        <ul v-if="activePurchases.length > 0" class="mt-3 space-y-2.5 border-t border-line-divider pt-2.5">
-          <li v-for="pkg in activePurchases" :key="pkg.id">
-            <div class="flex items-baseline justify-between gap-2">
-              <p class="min-w-0 truncate text-[12.5px] text-ink-700">
-                {{ pkg.package_name }}
-                <!-- Still listed, because the sessions on its counter are
-                     history worth seeing; not counted in the figures above,
-                     because PracticeHub has closed it. -->
-                <span v-if="pkg.is_closed" class="text-ink-faint">· {{ t('closed', 'cerrado') }}</span>
-              </p>
-              <p class="shrink-0 font-mono text-[11.5px] text-ink-muted2">
-                {{ pkg.sessions_total - pkg.sessions_used }} {{ t('of', 'de') }} {{ pkg.sessions_total }}
-              </p>
-            </div>
-            <div class="mt-1 h-[4px] w-full overflow-hidden rounded-full bg-chip-bg2">
-              <div
-                class="h-full rounded-full bg-brand"
-                :style="{ width: `${Math.min(100, Math.round((pkg.sessions_used / Math.max(1, pkg.sessions_total)) * 100))}%` }"
-              />
-            </div>
-            <p class="mt-0.5 text-[11px] text-ink-faint">
-              {{ t('Bought', 'Comprado') }} {{ formatLongDate(pkg.purchased_at) }}
-            </p>
-          </li>
-        </ul>
-        <p v-else-if="creditLedgerCents === 0" class="mt-3 text-[12px] text-ink-faint">
+        <!-- The bonos themselves are NOT listed here. This card used to
+             repeat each one -- name, sessions left, progress bar, purchase
+             date -- which was reasonable while the full Packages / bonos card
+             sat below the whole account ledger. Now that the bonos card is
+             directly underneath, the same bono appeared twice within a few
+             hundred pixels, with two progress bars, and read as a bug.
+             "In bonos" above is the part that belongs to a money summary;
+             how many sessions are left is the card below's job. -->
+        <p v-if="activePurchases.length === 0 && creditLedgerCents === 0" class="mt-3 text-[12px] text-ink-faint">
           {{ t('Nothing on account.', 'Nada en cuenta.') }}
         </p>
 

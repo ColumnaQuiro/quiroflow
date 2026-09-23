@@ -13,6 +13,17 @@ import { defineConfig } from 'vitest/config'
 // auto-imports. Anything that needs the database (cy.task), the server
 // (cy.request) or a page stays an e2e spec.
 export default defineConfig({
+  // Compile TypeScript without reading the root tsconfig.json. That file
+  // extends .nuxt/tsconfig.json, which only exists once `nuxt prepare` has
+  // run -- and in CI that happens as npm ci's postinstall, which a
+  // node_modules cache hit skips. Every test file then failed to load with
+  // "failed to resolve extends ./.nuxt/tsconfig.json" (the same trap #395
+  // fixed for Cypress). These tests import plain modules from utils/ and need
+  // none of Nuxt's paths or types, so there is nothing to read. A string,
+  // not an object: an object is merged with the file, which still reads it.
+  esbuild: {
+    tsconfigRaw: '{}',
+  },
   test: {
     include: ['tests/unit/**/*.test.ts'],
     environment: 'node',

@@ -117,6 +117,12 @@ const TAB_ALIASES: Record<string, string> = {
   files: 'attachments',
 }
 
+// /billing/<id>'s Refund button lands here: the ledger owns the refund modal,
+// because refunding issues a rectificativa and a negative payment and one
+// implementation of that is enough. Read once rather than kept in sync -- the
+// modal takes it from here and the query string can go stale harmlessly.
+const refundInvoiceId = computed(() => (route.query.refund as string) || null)
+
 const activeTab = computed({
   get: () => {
     const requested = (route.query.tab as string) ?? 'overview'
@@ -331,6 +337,7 @@ function onTabKeydown(event: KeyboardEvent) {
             v-else-if="activeTab === 'money'"
             :patient-id="patientId"
             :open-payment-trigger="chargeRequested"
+            :refund-invoice-id="refundInvoiceId"
             @payment-trigger-consumed="chargeRequested = false"
           />
 

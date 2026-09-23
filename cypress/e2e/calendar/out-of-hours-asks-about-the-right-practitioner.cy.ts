@@ -76,10 +76,15 @@ function seedMove(ownerHours: Record<string, [string, string][]>) {
   })
 }
 
-// The all-staff tab (no practitioner filter) is the default, and it is where
-// the union applied. Day view keeps the visit and the target slot in one
-// always-visible column.
+// The all-staff tab is where the union applied, so it is chosen explicitly.
+// It is not the default: with nothing stored, the calendar opens on the first
+// practitioner tab, and the tabs are ordered by name -- "Colega Cubre" before
+// "Test Owner" -- so it opened on the colleague, whose tab hides the owner's
+// appointment the test then looks for. Day view keeps the visit and the
+// target slot in one always-visible column.
 function enterRescheduleMode() {
+  cy.get('[data-testid=practitioner-tab-all]').click()
+  cy.get('[data-testid=practitioner-tab-all]').should('have.attr', 'aria-pressed', 'true')
   cy.contains('select', 'Work week').select('day')
   cy.contains('Lauren Movida').click({ force: true })
   cy.get('[data-cy=appt-sheet]').should('be.visible')

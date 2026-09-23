@@ -69,6 +69,8 @@ const panel = ref<HTMLElement | null>(null)
 useFocusTrap(panel, () => emit('close'))
 
 const tab = ref<'summary' | 'billing' | 'history'>('summary')
+// Cancelling is a step inside this panel, not a dialog on top of it.
+const step = ref<'main' | 'cancel'>('main')
 const busy = ref(false)
 const error = ref('')
 
@@ -309,17 +311,15 @@ const history = computed(() => {
 })
 
 // --- Footer actions ---------------------------------------------------------------
-// Cancellation/missed fees from Settings > Scheduling Policies, as before: the
-// configured fee, confirmed once.
-async function maybeApplyStatusFee(kind: 'cancelled' | 'no_show') {
-  const column = kind === 'cancelled' ? 'cancellation_fee_cents' : 'missed_appointment_fee_cents'
+// The missed-appointment fee from Settings > Scheduling Policies, as before:
+// the configured fee, confirmed once. (Cancelling asks about its own fee in
+// the cancel step.)
+async function maybeApplyStatusFee(kind: 'no_show') {
+  const column = 'missed_appointment_fee_cents'
   const { data: account } = await supabase.from('accounts').select(column).eq('id', store.accountId!).maybeSingle()
   const feeCents = (account as Record<string, number | null> | null)?.[column]
   if (!feeCents) return
-  const question =
-    kind === 'cancelled'
-      ? t(`Add the ${formatEur(feeCents)} cancellation fee to this patient's balance?`, `¿Añadir el cargo de cancelación de ${formatEur(feeCents)} a su saldo?`)
-      : t(`Add the ${formatEur(feeCents)} missed-appointment fee to this patient's balance?`, `¿Añadir el cargo por no presentarse de ${formatEur(feeCents)} a su saldo?`)
+  const question = t(`Add the ${formatEur(feeCents)} missed-appointment fee to this patient's balance?`, `¿Añadir el cargo por no presentarse de ${formatEur(feeCents)} a su saldo?`)
   if (!confirm(question)) return
   const { data: invoiceNumber } = await supabase.rpc('next_invoice_number', { p_account_id: store.accountId! })
   if (!invoiceNumber) return
@@ -332,17 +332,16 @@ async function maybeApplyStatusFee(kind: 'cancelled' | 'no_show') {
   await supabase.from('invoice_line_items').insert({
     account_id: store.accountId!,
     invoice_id: invoice.id,
-    description: kind === 'cancelled' ? 'Cancellation fee' : 'Missed appointment fee',
+    description: 'Missed appointment fee',
     quantity: 1,
     price_cents: feeCents,
   })
 }
-async function cancelAppointment() {
-  if (!confirm(t('Cancel this appointment?', '¿Cancelar esta cita?'))) return
-  if (!(await update({ status: 'cancelled' }))) return
-  fire('appointment.cancelled', { patientId: props.appointment.patient_id, appointmentId: props.appointment.id })
-  useStaffFetch('/api/waitlist/offer-next', { method: 'POST', body: { appointmentId: props.appointment.id } }).catch(() => {})
-  await maybeApplyStatusFee('cancelled')
+function cancelAppointment() {
+  step.value = 'cancel'
+}
+function onCancelled() {
+  emit('changed')
   emit('close')
 }
 async function markNoShow() {
@@ -370,11 +369,14 @@ const canAct = computed(() => props.appointment.status === 'booked')
     ref="panel"
     role="dialog"
     aria-modal="true"
-    aria-labelledby="appt-name"
+    :aria-labelledby="step === 'cancel' ? 'cancel-title' : 'appt-name'"
     data-cy="appt-sheet"
     tabindex="-1"
     class="appt-panel fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-line bg-surface shadow-popover outline-none sm:w-[560px]"
   >
+    <CalendarCancelStep v-if="step === 'cancel'" :appointment="appointment" :room-name="roomName" @back="step = 'main'" @close="emit('close')" @done="onCancelled" />
+
+    <template v-else>
     <!-- Header: the hover card's facts, in the same order. -->
     <div class="shrink-0 border-b border-line px-5 pt-3 sm:px-6">
       <div class="flex items-center justify-between">
@@ -576,6 +578,7 @@ const canAct = computed(() => props.appointment.status === 'booked')
       </template>
       <p v-else class="text-[13px] text-ink-muted">{{ stageLabel(stage) }}</p>
     </div>
+    </template>
   </div>
 </template>
 

@@ -192,6 +192,63 @@ describe('The RegistroAlta the AEAT will read', () => {
     expect(fromPatient).to.contain('<sum1:NIF>12345678Z</sum1:NIF>')
   })
 
+  it('sends a stand-in destinatario when it is not talking to production', () => {
+    // "Test environment" and "test data" were not the same thing: environment
+    // picks the endpoint and nothing else, so the document was built
+    // identically either way and 53 real patients were named to the AEAT's
+    // preproduction service, on invoices from a clinic.
+    const real = { ...base.factura, recipientName: 'Ana Ruiz', recipientNif: '12345678Z' }
+
+    const test = buildRegistroAlta({
+      ...base,
+      record: { ...base.record, invoiceType: 'F1' },
+      factura: real,
+      anonymiseRecipient: true,
+    })
+    expect(test).to.contain('<sum1:NombreRazon>Destinatario de pruebas</sum1:NombreRazon>')
+    expect(test).to.contain('<sum1:NIF>00000000T</sum1:NIF>')
+    expect(test).to.not.contain('Ana Ruiz')
+    expect(test).to.not.contain('12345678Z')
+
+    // A patient with nothing on file is still identified in test, rather than
+    // losing the Destinatarios block -- which is what the real-data rule does,
+    // and would mean the F1 path went untested for exactly those records.
+    const noDataOnFile = buildRegistroAlta({
+      ...base,
+      record: { ...base.record, invoiceType: 'F1' },
+      factura: { ...base.factura, recipientName: null, recipientNif: null, patientName: null, patientNif: null },
+      anonymiseRecipient: true,
+    })
+    expect(noDataOnFile).to.contain('<sum1:Destinatarios>')
+    expect(noDataOnFile).to.contain('<sum1:NIF>00000000T</sum1:NIF>')
+
+    // A simplificada names nobody in either environment: substituting a
+    // recipient onto an F2 would contradict the type.
+    const simplificada = buildRegistroAlta({ ...base, factura: real, anonymiseRecipient: true })
+    expect(simplificada).to.not.contain('Destinatarios')
+
+    // And production is untouched -- the real recipient, as before.
+    const prod = buildRegistroAlta({
+      ...base,
+      record: { ...base.record, invoiceType: 'F1' },
+      factura: real,
+    })
+    expect(prod).to.contain('<sum1:NombreRazon>Ana Ruiz</sum1:NombreRazon>')
+    expect(prod).to.contain('<sum1:NIF>12345678Z</sum1:NIF>')
+    expect(prod).to.not.contain('Destinatario de pruebas')
+  })
+
+  it('leaves the huella input untouched when it substitutes the destinatario', () => {
+    // The recipient is the one field that can be replaced without weakening
+    // the test, and this is why: factura_huella_input() is IDEmisorFactura,
+    // NumSerieFactura, FechaExpedicionFactura, TipoFactura, CuotaTotal,
+    // ImporteTotal, the previous Huella and the timestamp. None of it is the
+    // destinatario, so the chain the AEAT re-walks is identical either way.
+    const args = { ...base, record: { ...base.record, invoiceType: 'F1' as const }, factura: { ...base.factura, recipientName: 'Ana Ruiz', recipientNif: '12345678Z' } }
+    const strip = (xml: string) => xml.replace(/<sum1:Destinatarios>[\s\S]*?<\/sum1:Destinatarios>/, '')
+    expect(strip(buildRegistroAlta({ ...args, anonymiseRecipient: true }))).to.eq(strip(buildRegistroAlta(args)))
+  })
+
   it('flags a resend after rejection, and does not flag an ordinary one', () => {
     // A record the AEAT rejected was never registered there, so it goes back
     // as an ordinary alta -- with RechazoPrevio so the resend reads as

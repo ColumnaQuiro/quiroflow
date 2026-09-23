@@ -102,7 +102,29 @@ export interface RegistroAltaInput {
    * correcting a record they DID register.
    */
   afterRejection?: boolean
+  /**
+   * Replace the destinatario with a fixed test identity.
+   *
+   * Set by the sender for every environment that is not production, because
+   * the endpoint is the ONLY thing `environment` changes -- the document is
+   * built identically for both, so real patients' names and NIFs were going
+   * to the AEAT's preproduction service. Named for what it does rather than
+   * for the environment, so the builder stays a pure function of its input
+   * and the decision sits with the caller that knows where it is sending.
+   *
+   * Only the recipient. Everything else in the record feeds the huella, or
+   * must match the certificate. See buildRegistroAlta.
+   */
+  anonymiseRecipient?: boolean
 }
+
+/**
+ * The stand-in destinatario. A real-looking document with nobody real in it:
+ * the NIF is structurally valid (0 mod 23 = T) so the AEAT is still checking
+ * the shape of what it receives, and it is visibly not a person's.
+ */
+export const TEST_DESTINATARIO_NAME = 'Destinatario de pruebas'
+export const TEST_DESTINATARIO_NIF = '00000000T'
 
 const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -233,8 +255,36 @@ export function buildRegistroAlta(input: RegistroAltaInput): string {
   // name resolves from the patient when the document is rendered rather than
   // being copied onto the factura -- so the sender has to resolve it the same
   // way rather than sending the empty string it finds.
-  const recipientName = capped((factura.recipientName || factura.patientName || '').trim(), 120)
-  const recipientNif = (factura.recipientNif || factura.patientNif || '').trim()
+  // Against the AEAT's PREPRODUCTION service the destinatario is substituted,
+  // because "test environment" and "test data" are not the same thing and only
+  // the first of them was ever true here. environment picks the endpoint and
+  // nothing else: the envelope is byte-identical either way, so 53 real
+  // patients' names -- and, once the NIF began resolving, their NIFs -- went to
+  // prewww1.aeat.es on invoices from a clinic, which says what they were
+  // treated for.
+  //
+  // Nothing filed there has fiscal effect, which is the question usually asked
+  // and the wrong one. There is no legal obligation covering a tax authority's
+  // test system, so the lawful basis that carries a real filing does not
+  // stretch to it, and a preproduction environment is not where a clinic's
+  // patient list belongs. It matters more once other clinics are on this.
+  //
+  // What is NOT substituted is deliberate. Amounts, dates, serie and the
+  // issuer's own NIF all feed factura_huella_input(), so changing them would
+  // invalidate the chain the test is there to exercise -- and the issuer NIF
+  // must match the certificate anyway. The recipient feeds nothing: the huella
+  // is IDEmisorFactura, NumSerieFactura, FechaExpedicionFactura, TipoFactura,
+  // CuotaTotal, ImporteTotal, the previous Huella and the timestamp. So this
+  // is the one field that can be replaced without weakening the test.
+  //
+  // 00000000T is a structurally valid NIF -- 0 mod 23 is T -- so the AEAT
+  // validates the shape of what it is given rather than waving it through.
+  const recipientName = input.anonymiseRecipient
+    ? TEST_DESTINATARIO_NAME
+    : capped((factura.recipientName || factura.patientName || '').trim(), 120)
+  const recipientNif = input.anonymiseRecipient
+    ? TEST_DESTINATARIO_NIF
+    : (factura.recipientNif || factura.patientNif || '').trim()
 
   // A destinatario needs a name AND an identifier. IDDestinatario carries
   // NombreRazon plus either NIF or IDOtro, and sending the name alone is

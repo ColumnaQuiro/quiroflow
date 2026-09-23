@@ -21,6 +21,7 @@ const FIELD_TYPE_LABELS = computed<Record<DocFieldType, string>>(() => ({
   rating: t('Rating', 'Valoración'),
   date: t('Date', 'Fecha'),
   signature: t('Signature', 'Firma'),
+  drawable_image: t('Drawable image', 'Imagen para dibujar'),
 }))
 const MERGE_FIELD_LABELS = computed<Record<string, string>>(() => ({
   first_name: t('First name', 'Nombre'),
@@ -292,6 +293,13 @@ const showAddMenu = ref(false)
           </label>
         </div>
 
+        <DocImagePicker
+          v-if="field.type === 'drawable_image'"
+          :image-path="field.imagePath ?? null"
+          class="mt-2"
+          @update:image-path="(p) => update(i, { imagePath: p ?? undefined })"
+        />
+
         <div class="mt-2 flex items-center gap-3">
           <select
             v-if="STATIC_BLOCK_TYPES.includes(field.type)"
@@ -452,6 +460,13 @@ const showAddMenu = ref(false)
           <SignaturePad
             v-else-if="field.type === 'signature'"
             :model-value="field.value as string | null"
+            class="mt-1"
+            @update:model-value="(v) => update(i, { value: v })"
+          />
+          <DocImageDraw
+            v-else-if="field.type === 'drawable_image'"
+            :model-value="field.value as string | null"
+            :image-path="field.imagePath ?? null"
             class="mt-1"
             @update:model-value="(v) => update(i, { value: v })"
           />

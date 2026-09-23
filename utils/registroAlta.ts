@@ -103,16 +103,30 @@ export interface RegistroAltaInput {
    */
   indicadorMultiplesOt: string
   /**
-   * "S" when this record is going again after the AEAT rejected the previous
-   * attempt. The record itself is unchanged and keeps its huella; this only
-   * tells the AEAT the resend is deliberate rather than a duplicate.
+   * "S" when this record CORRECTS ONE THE AEAT ALREADY HOLDS -- Subsanacion
+   * and RechazoPrevio together, which is the only combination the AEAT
+   * accepts (1161: RechazoPrevio without Subsanacion is refused).
    *
-   * Only ever set from a stored submission whose status was 'Incorrecto'. A
-   * record rejected at the AEAT was never registered there, so it goes back
-   * as an ordinary alta with this flag -- not as a subsanación, which is for
-   * correcting a record they DID register.
+   * Named for what it asserts rather than for when it is sent, because the
+   * previous name -- afterRejection -- described an occasion, and the sender
+   * duly set it on every record the AEAT had rejected. That is precisely the
+   * case where it must NOT be set, and the mistake was self-preserving:
+   *
+   *   rejected -> "this is a subsanación" -> 3002 "No existe el registro de
+   *   facturación" -> which is itself Incorrecto -> so the flag stays on
+   *
+   * Twenty-two records reached a state where no future attempt could ever
+   * succeed, because each one told the AEAT to amend a record it had never
+   * registered. A rejected record was never registered: it goes again as an
+   * ordinary alta, carrying nothing.
+   *
+   * So this stays unset for a resend after rejection, and is for the case it
+   * names: amending a record the AEAT accepted. Nothing sets it today --
+   * accepted records leave the queue -- and it is kept because the 1161 rule
+   * above cost a day to learn and the next person to need a subsanación
+   * should not learn it again.
    */
-  afterRejection?: boolean
+  subsanacion?: boolean
   /**
    * Replace the destinatario with a fixed test identity.
    *
@@ -422,12 +436,13 @@ export function buildRegistroAlta(input: RegistroAltaInput): string {
     //   1161  no podrá incluirse el campo RechazoPrevio con valor S si no se
     //         ha informado del campo Subsanacion o tiene el valor N
     //
-    // Which the record design says too, in RechazoPrevio's own description --
-    // "un nuevo registro de facturación de alta SUBSANADO tras haber sido
-    // rechazado". A resend after rejection is a subsanación that also happens
-    // to follow a rejection; it is not a third thing. #330 sent the second
-    // flag without the first and every retry was refused.
-    ...(input.afterRejection ? [L('Subsanacion', 'S'), L('RechazoPrevio', 'S')] : []),
+    // #330 sent the second flag without the first and every retry was refused.
+    // The fix was to send both -- correct as far as it goes, and it made the
+    // pair reachable from a plain resend, which is what #420 then did. Read
+    // `subsanacion` above before setting this from anything: the two flags say
+    // "amend the record you hold", and a record the AEAT REJECTED is not one
+    // it holds.
+    ...(input.subsanacion ? [L('Subsanacion', 'S'), L('RechazoPrevio', 'S')] : []),
     L('TipoFactura', record.invoiceType),
     // Order is not free: TipoRectificativa and FacturasRectificadas sit
     // between TipoFactura and DescripcionOperacion in the XSD sequence, and

@@ -328,18 +328,17 @@ describe('The RegistroAlta the AEAT will read', () => {
     expect(strip(buildRegistroAlta({ ...args, anonymiseRecipient: true }))).to.eq(strip(buildRegistroAlta(args)))
   })
 
-  it('flags a resend after rejection, and does not flag an ordinary one', () => {
-    // A record the AEAT rejected was never registered there, so it goes back
-    // as an ordinary alta -- with RechazoPrevio so the resend reads as
-    // deliberate rather than as a duplicate.
-    expect(buildRegistroAlta(base)).to.not.contain('RechazoPrevio')
+  it('sends a subsanación with both flags, and an ordinary alta with neither', () => {
     // Both flags, never one. The AEAT refuses RechazoPrevio without
     // Subsanacion (1161), and every retry was rejected for it.
-    const resent = buildRegistroAlta({ ...base, afterRejection: true })
-    expect(resent).to.contain('<sum1:Subsanacion>S</sum1:Subsanacion>')
-    expect(resent).to.contain('<sum1:RechazoPrevio>S</sum1:RechazoPrevio>')
+    const amending = buildRegistroAlta({ ...base, subsanacion: true })
+    expect(amending).to.contain('<sum1:Subsanacion>S</sum1:Subsanacion>')
+    expect(amending).to.contain('<sum1:RechazoPrevio>S</sum1:RechazoPrevio>')
+
     expect(buildRegistroAlta(base)).to.not.contain('Subsanacion')
+    expect(buildRegistroAlta(base)).to.not.contain('RechazoPrevio')
   })
+
 
   it('sends no Signature, because transmitting is what replaces it', () => {
     // "Obligatorio para conservación y para requerimiento, pero no para

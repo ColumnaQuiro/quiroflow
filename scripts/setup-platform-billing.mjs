@@ -40,6 +40,15 @@ const stripe = new Stripe(KEY, { apiVersion: '2026-07-29.dahlia' })
 // rate under annual billing -- the Stripe price is that x12 on a yearly
 // interval, which is the shape `plans.annual_price_cents` already assumes
 // (see 0132_billing_plans_and_subscriptions.sql).
+//
+// These must match `plans` and `addons` exactly, which since 17 Sep 2026 means
+// 20260917141806_reprice_plans_and_growth.sql. This list went stale once
+// already: it kept the pre-reprice 59/119/199 catalogue after the database
+// moved to 49/99/149, so a re-run would have created prices at the OLD amounts
+// and printed SQL repointing `plans` at them -- quietly undoing the reprice --
+// and every run left the Stripe product descriptions (shown on Checkout and on
+// invoices) promising "up to 3" and "up to 6" practitioners at 29 EUR a seat.
+// Change a price here and in a migration together, or not at all.
 const CATALOGUE = [
   {
     id: 'starter',
@@ -47,26 +56,26 @@ const CATALOGUE = [
     name: 'QuiroFlow Solo',
     description:
       '1 practitioner, 1 site. Unlimited patients, unlimited admin users. Calendar with automatic room assignment, WhatsApp, online booking, recalls, campaigns, forms and billing.',
-    monthly: 5900,
-    annual: 5000,
+    monthly: 4900,
+    annual: 4400,
   },
   {
     id: 'pro',
     planId: 'pro',
     name: 'QuiroFlow Practice',
     description:
-      'Up to 3 practitioners, 1 site. Everything in Solo plus custom roles and permissions, and advanced reporting (PVA, retention, conversion). Extra practitioners €29/mo.',
-    monthly: 11900,
-    annual: 9900,
+      'Up to 4 practitioners, 1 site. Everything in Solo plus custom roles and permissions, and advanced reporting (PVA, retention, conversion). Extra practitioners €19/mo.',
+    monthly: 9900,
+    annual: 8900,
   },
   {
     id: 'clinic',
     planId: 'clinic',
     name: 'QuiroFlow Clinic',
     description:
-      'Up to 6 practitioners, unlimited sites. Everything in Practice plus multi-site, API access and webhooks, assisted migration and priority support. Extra practitioners €29/mo.',
-    monthly: 19900,
-    annual: 16900,
+      'Unlimited practitioners and sites. Everything in Practice plus the Growth add-on included, multi-site, API access and webhooks, assisted migration and priority support.',
+    monthly: 14900,
+    annual: 13400,
   },
   {
     // Growth is an add-on, not a plan -- it attaches to whichever plan the
@@ -85,21 +94,21 @@ const CATALOGUE = [
     addonId: 'growth',
     name: 'QuiroFlow Growth',
     description: 'Lead pipeline, AI receptionist, campaign automations and reputation. An add-on for any plan.',
-    monthly: 4900,
-    annual: 3900,
+    monthly: 3900,
+    annual: 3500,
   },
   {
     id: 'extra-professional',
     planId: null,
     name: 'QuiroFlow extra practitioner',
     description: 'One additional practitioner seat beyond those included in the plan.',
-    // Deliberately the same 29 EUR either way, unlike the plans themselves --
+    // Deliberately the same 19 EUR either way, unlike the plans themselves --
     // `plans.extra_professional_price_cents` is a single column that
     // pages/subscription.vue reads for BOTH intervals, so an annual seat
-    // priced any lower would be quoted at 29 EUR in the picker and billed at
-    // less than that. The earlier 25 EUR annual price did exactly that.
-    monthly: 2900,
-    annual: 2900,
+    // priced any lower would be quoted at 19 EUR in the picker and billed at
+    // less than that. The earlier 25-against-29 EUR annual price did exactly that.
+    monthly: 1900,
+    annual: 1900,
   },
 ]
 

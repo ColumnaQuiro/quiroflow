@@ -2,6 +2,7 @@
 import { planIncludesGrowth } from '~/utils/growthPlans'
 import {
   bytesToGb,
+  checkoutTrialEnd,
   formatEur,
   formatLongDate,
   nextChargeTotal,
@@ -290,6 +291,11 @@ const recentPayments = computed(() => payments.value.slice(0, 3))
 
 const MAX_ATTEMPTS = 20
 const activating = ref(false)
+// When the checkout just completed carried the trial over, the date its first
+// charge lands on -- the same rule subscribe.post.ts applied to build it.
+// Captured once, on return, because the webhook will rewrite the row it is
+// read from while the poll runs.
+const activatingFirstChargeOn = ref<string | null>(null)
 const attempt = ref(0)
 const secondsToNext = ref(3)
 let pollTimer: ReturnType<typeof setTimeout> | undefined
@@ -312,7 +318,10 @@ async function pollForActivation() {
   attempt.value += 1
   await loadSubscription()
   if (subscription.value?.stripe_subscription_id) {
-    await loadBillingInfo()
+    // The account store too, not only this page's copy of the row: it is what
+    // the banner on every other page reads, and it would otherwise go on
+    // asking for the card just added until a hard refresh.
+    await Promise.all([loadBillingInfo(), store.load()])
     stopPolling()
     router.replace({ query: {} })
     return
@@ -353,6 +362,7 @@ onMounted(async () => {
   loading.value = false
 
   if (route.query.checkout === 'success' && !subscription.value?.stripe_subscription_id) {
+    activatingFirstChargeOn.value = checkoutTrialEnd(subscription.value) ? subscription.value?.trial_ends_at ?? null : null
     activating.value = true
     pollForActivation()
   }
@@ -473,6 +483,7 @@ async function addPaymentMethod() {
           v-if="activating"
           class="mt-4"
           :amount-cents="nextChargeCents"
+          :first-charge-on="activatingFirstChargeOn"
           :attempt="attempt"
           :max-attempts="MAX_ATTEMPTS"
           :seconds-to-next="secondsToNext"
@@ -507,6 +518,7 @@ async function addPaymentMethod() {
               :days-left="store.trialDaysLeft"
               :total-days="30"
               :ends-at="subscription.trial_ends_at"
+              :card-on-file="!!subscription.stripe_subscription_id"
               @add-card="addPaymentMethod"
               @compare-plans="changingPlan = true"
             />

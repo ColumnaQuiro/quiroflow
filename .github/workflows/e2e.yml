@@ -60,7 +60,65 @@ jobs:
       # named error in the job that exists to catch it.
       - run: npm run build
 
+  # The app every Cypress shard runs against, built once. Each shard used to
+  # build it for itself -- the same ~60-90s on eight runners, every one of
+  # them competing with its own `supabase start` for the runner's two cores.
+  #
+  # The shards deliberately do NOT `needs:` this job. That would hold back
+  # their `supabase start` until the build finished, turning two things that
+  # overlap today into two things in series. They start Supabase straight
+  # away and pick the artifact up when it lands -- see "Wait for the app
+  # build" below.
+  #
+  # node-server, not the netlify preset production ships: that one emits a
+  # function bundle with no server to start. It is still far closer to
+  # production than the dev server the specs used to run against -- same
+  # bundling, same SSR path, no on-demand compilation. The typecheck job
+  # builds with the real preset, so the production output keeps its own gate.
+  # Env reaches the server at runtime (NUXT_PUBLIC_*), which is why building
+  # with no Supabase anywhere is fine.
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Restore node_modules
+        id: modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
+
+      - run: npm ci
+        if: steps.modules.outputs.cache-hit != 'true'
+
+      - name: Build the app the specs will run against
+        run: npm run build
+        env:
+          NITRO_PRESET: node-server
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e2e-app
+          path: .output
+          # `.output` is itself a dot-directory, and upload-artifact skips
+          # hidden paths unless told otherwise.
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
   cypress:
+    # Reading this run's artifacts and jobs while it is still in progress --
+    # see "Wait for the app build".
+    permissions:
+      actions: read
+      contents: read
     strategy:
       fail-fast: false
       # Manual sharding, no Cypress Cloud recording configured (that's what
@@ -94,7 +152,7 @@ jobs:
       # back.
       #
       # Cypress time per shard, measured against the built server (see the
-      # build step below) rather than estimated: growth-leads 2m41,
+      # `build` job above) rather than estimated: growth-leads 2m41,
       # growth-platform 2m16, patients 1m27, settings 50s, calendar 47s,
       # navigation 17s, the rest under 30s each.
       # Those numbers replace a set that had gone badly stale -- it claimed
@@ -275,28 +333,41 @@ jobs:
       # fatal.
       - run: npx cypress install
 
-      # Built here, in the window the backgrounded `supabase start` has
-      # already claimed. Cypress used to run against `nuxt dev`, which
-      # compiles each route the first time a spec visits it -- so every shard
-      # paid Vite's compile cost again, spec after spec. Measured on this
-      # suite, serving a build instead:
+      # The specs run against a build, not `nuxt dev`, which compiled each
+      # route the first time a spec visited it -- so every shard paid Vite's
+      # compile cost again, spec after spec. Measured on this suite, serving
+      # a build instead:
       #
       #   navigation  1m06 -> 0m17     (walks every page; the best case)
       #   settings    1m27 -> 0m50
       #
-      # The build costs ~60-90s, which is roughly what the step below spends
-      # waiting for Postgres to come up anyway. Putting it here means the
-      # shard pays for it out of dead time rather than adding to the run.
-      #
-      # node-server, not the netlify preset production ships: that one emits
-      # a function bundle with no server to start. It is still far closer to
-      # production than the dev server was -- same bundling, same SSR path,
-      # no on-demand compilation. The typecheck job still builds with the
-      # real preset, so the production output keeps its own gate.
-      - name: Build the app the specs will run against
-        run: npm run build
+      # The build comes from the `build` job, which runs alongside this one
+      # rather than before it. download-artifact alone cannot wait: it fails
+      # at once if the artifact is not there yet. So poll the run's artifacts
+      # until it appears, and give up early if the build job has already
+      # failed rather than sitting out the timeout.
+      - name: Wait for the app build
         env:
-          NITRO_PRESET: node-server
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run="repos/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          for _ in $(seq 1 120); do
+            found="$(gh api "$run/artifacts?name=e2e-app" -q '.total_count')"
+            if [ "$found" != "0" ]; then exit 0; fi
+            build="$(gh api "$run/jobs" -q '.jobs[] | select(.name == "build") | .conclusion')"
+            if [ -n "$build" ] && [ "$build" != "success" ]; then
+              echo "::error::The build job finished as '$build' without uploading the app"
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "::error::The app build did not appear within 10 minutes"
+          exit 1
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: e2e-app
+          path: .output
 
       - name: Wait for Supabase and export its env vars
         run: |
@@ -323,9 +394,9 @@ jobs:
             /tmp/supabase-status.env >> "$GITHUB_ENV"
 
       - name: Run Cypress (${{ matrix.shard.name }})
-        # The built server, not `nuxt dev` -- see the build step above. Env
-        # reaches it at runtime (NUXT_PUBLIC_*), which is why building before
-        # Supabase is up is fine.
+        # The built server from the `build` job, not `nuxt dev`. Env reaches
+        # it at runtime (NUXT_PUBLIC_*), which is why building with no Supabase
+        # anywhere is fine.
         run: npx start-server-and-test "node .output/server/index.mjs" http://localhost:3000 "cypress run --spec '${{ matrix.shard.specs }}'"
         env:
           CYPRESS_baseUrl: http://localhost:3000
@@ -386,14 +457,15 @@ jobs:
     # always(), or a failed dependency would skip this job rather than fail
     # it, and a skipped required check reads as "not failed" to some tooling.
     if: always()
-    needs: [typecheck, cypress]
+    needs: [typecheck, build, cypress]
     runs-on: ubuntu-latest
     steps:
       - name: Report whether every job passed
         run: |
           echo "typecheck: ${{ needs.typecheck.result }}"
+          echo "build:     ${{ needs.build.result }}"
           echo "cypress:   ${{ needs.cypress.result }}"
-          if [ "${{ needs.typecheck.result }}" != "success" ] || [ "${{ needs.cypress.result }}" != "success" ]; then
+          if [ "${{ needs.typecheck.result }}" != "success" ] || [ "${{ needs.build.result }}" != "success" ] || [ "${{ needs.cypress.result }}" != "success" ]; then
             echo "::error::CI did not pass"
             exit 1
           fi

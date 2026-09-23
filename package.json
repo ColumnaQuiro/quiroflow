@@ -14,7 +14,7 @@
     "check:e2e-shards": "./scripts/with-node.sh node scripts/check-e2e-shards.mjs",
     "check:theme-tokens": "./scripts/with-node.sh node scripts/check-theme-tokens.mjs",
     "check:rls-initplan": "./scripts/with-node.sh node scripts/check-rls-initplan.mjs",
-    "preflight": "npm run check:migrations && npm run check:migration-compatibility && npm run check:e2e-shards && npm run check:theme-tokens && npm run check:rls-initplan && ./scripts/with-node.sh nuxi typecheck",
+    "preflight": "npm run check:migrations && npm run check:migration-compatibility && npm run check:e2e-shards && npm run check:theme-tokens && npm run check:rls-initplan && npm run test:unit && ./scripts/with-node.sh nuxi typecheck",
     "postinstall": "./scripts/with-node.sh nuxt prepare",
     "test:e2e": "start-server-and-test dev http://localhost:3000 'cypress run'",
     "test:e2e:local": "./scripts/e2e-local.sh",
@@ -23,7 +23,8 @@
     "cypress:open": "cypress open",
     "supabase:test:reset": "supabase db reset",
     "prepare": "husky",
-    "apply:migrations": "./scripts/with-node.sh node scripts/apply-migrations.mjs"
+    "apply:migrations": "./scripts/with-node.sh node scripts/apply-migrations.mjs",
+    "test:unit": "./scripts/with-node.sh vitest run"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.124.0",
@@ -62,6 +63,7 @@
     "playwright": "^1.62.1",
     "start-server-and-test": "^3.0.12",
     "typescript": "5.7",
+    "vitest": "^5.0.1",
     "vue-tsc": "^3.3.10",
     "ws": "^8.21.3"
   }

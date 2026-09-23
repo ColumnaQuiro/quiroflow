@@ -1,4 +1,5 @@
-import { findMisreferencedPatients } from '../../../utils/practicehubReferences'
+import { describe, it, expect } from 'vitest'
+import { findMisreferencedPatients } from '../../utils/practicehubReferences'
 
 // PracticeHub's CSV export puts a patient's custom reference -- a DNI, an NIE,
 // a passport -- in the "Patient Number" column whenever they have one, and the

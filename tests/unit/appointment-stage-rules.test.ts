@@ -1,7 +1,8 @@
-import { appointmentStage, isUnconfirmedStage, matchesFilter, needsNextBookingFlag, nextStep, stageCounts, trackIndex, type StageInput } from '../../../utils/appointmentStage'
-import { blockLadder, shortPatientName, type LadderInput } from '../../../utils/appointmentBlock'
-import { mergeWindows, unionWorkingWindows } from '../../../utils/businessHours'
-import { bonoForVisit } from '../../../utils/visitPayment'
+import { describe, it, expect } from 'vitest'
+import { appointmentStage, isUnconfirmedStage, matchesFilter, needsNextBookingFlag, nextStep, stageCounts, trackIndex, type StageInput } from '../../utils/appointmentStage'
+import { blockLadder, shortPatientName, type LadderInput } from '../../utils/appointmentBlock'
+import { mergeWindows, unionWorkingWindows } from '../../utils/businessHours'
+import { bonoForVisit } from '../../utils/visitPayment'
 
 // Unit-style: no cy.visit, no seeding -- same shape as visit-payment-rules.
 // These are the rules every calendar surface reads a visit's stage, its

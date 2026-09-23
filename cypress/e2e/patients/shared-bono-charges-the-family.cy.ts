@@ -41,12 +41,21 @@ describe('Logging a session from a shared bono', () => {
             cy.login(account.email, account.password)
             cy.visit(`/patients/${child.id}?tab=billing`)
 
+            // The bono is on her page because it is shared with her, with the
+            // one session still on it.
+            cy.contains('[data-cy="bono-card"]', 'Bono 12').should('be.visible')
+            cy.contains('1 of 12 sessions left').should('be.visible')
+
             // The child draws the twelfth session. Her own balance is 0, well
             // under the 44 EUR this costs, so the per-patient check this
             // replaces would have billed her for it.
-            cy.contains('[data-cy="bono-card"]', 'Bono 12').within(() => {
-              cy.contains('button', 'Log session').click()
-            })
+            cy.on('window:confirm', () => true)
+            cy.contains('button', 'Log session').click()
+
+            // The counter is the visible half of the write, and waiting for it
+            // is what stops the query below racing the click -- the charge is
+            // several round trips after the button.
+            cy.contains('0 of 12 sessions left', { timeout: 15000 }).should('be.visible')
 
             cy.task('db:invoicesFor', { patientId: child.id }).then((invoices: any) => {
               expect(invoices, 'one charge for the visit just logged').to.have.length(1)
@@ -86,9 +95,13 @@ describe('Logging a session from a shared bono', () => {
             cy.login(account.email, account.password)
             cy.visit(`/patients/${child.id}?tab=billing`)
 
-            cy.contains('[data-cy="bono-card"]', 'Bono 12').within(() => {
-              cy.contains('button', 'Log session').click()
-            })
+            cy.contains('[data-cy="bono-card"]', 'Bono 12').should('be.visible')
+            cy.contains('12 of 12 sessions left').should('be.visible')
+
+            cy.on('window:confirm', () => true)
+            cy.contains('button', 'Log session').click()
+
+            cy.contains('11 of 12 sessions left', { timeout: 15000 }).should('be.visible')
 
             cy.task('db:invoicesFor', { patientId: child.id }).then((invoices: any) => {
               expect(invoices, 'one charge for the visit just logged').to.have.length(1)

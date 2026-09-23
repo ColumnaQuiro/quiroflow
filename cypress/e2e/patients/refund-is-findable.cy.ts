@@ -37,7 +37,12 @@ describe('Finding the refund', () => {
 
       // Collapsed. Nothing has been clicked open, which is the whole point --
       // this used to require knowing the detail panel was there.
-      cy.contains('tr', 'Receipt').should('be.visible').find('button').contains('Refund…').should('be.visible')
+      //
+      // Scrolled to first: the ledger sits below the bonos and memberships
+      // now, so the row starts off-screen at 900px. Only the VERTICAL
+      // position changes -- the two horizontal measurements below are
+      // viewport-relative and still mean exactly what they meant.
+      cy.contains('tr', 'Receipt').scrollIntoView().should('be.visible').find('button').contains('Refund…').should('be.visible')
 
       // Visible in the sense that matters: the action column is the eighth in
       // a table that was already using the full width, so "renders" is not the
@@ -88,7 +93,7 @@ describe('Finding the refund', () => {
           cy.contains('button', 'Void receipt').should('not.be.disabled')
 
           cy.visit(`/patients/${patient.id}?tab=money`)
-          cy.contains('tr', 'Receipt').should('be.visible')
+          cy.contains('tr', 'Receipt').scrollIntoView().should('be.visible')
           cy.contains('button', 'Refund…').should('not.exist')
         })
       })

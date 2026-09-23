@@ -106,3 +106,41 @@ export function openNewAppointmentPanel(practitionerName: string = SEEDED_PRACTI
 export function assertDayGridShows(day: Date) {
   cy.get('[data-cal-col]').first().should('have.attr', 'data-day-key', dateInputValue(day))
 }
+
+/** Today at hh:mm in the browser's own timezone, as an ISO instant. */
+export function todayAt(h: number, m = 0): string {
+  const d = new Date()
+  d.setHours(h, m, 0, 0)
+  return d.toISOString()
+}
+
+/**
+ * A patient and one visit with them today, for the specs that need a visit
+ * in a particular stage. `extra` goes straight to db:createAppointment
+ * (confirmationStatus, checkedInAt, status, source, ...).
+ */
+export function seedVisit(
+  account: { accountId: string; clinicId: string; teamMemberId: string },
+  roomId: string | null,
+  first: string,
+  last: string,
+  h: number,
+  m: number,
+  extra: Record<string, unknown> = {},
+): Cypress.Chainable<{ patientId: string; appointmentId: string }> {
+  return cy
+    .task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: first, lastName: last })
+    .then((patient) =>
+      cy
+        .task<{ id: string }>('db:createAppointment', {
+          accountId: account.accountId,
+          clinicId: account.clinicId,
+          patientId: patient.id,
+          practitionerId: account.teamMemberId,
+          roomId,
+          startsAt: todayAt(h, m),
+          ...extra,
+        })
+        .then((appt) => ({ patientId: patient.id, appointmentId: appt.id })),
+    )
+}

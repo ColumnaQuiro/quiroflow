@@ -49,10 +49,10 @@ describe('A visit the bono already paid for', () => {
         assertDayGridShows(bookedDay)
 
         cy.contains('Prue Prepaid').click({ force: true })
-        cy.contains('h2', 'Edit Appointment').should('be.visible')
+        cy.get('[data-cy=appt-sheet]').should('be.visible')
 
-        cy.get('.fixed.inset-0.z-50').within(() => {
-          cy.contains('button', 'billing').click()
+        cy.get('[data-cy=appt-sheet]').within(() => {
+          cy.get('[data-cy=appt-tab-billing]').click()
           // Draw the visit from the bono, which is what reception does.
           cy.contains('button', 'Use Bono mantenimiento').click()
 

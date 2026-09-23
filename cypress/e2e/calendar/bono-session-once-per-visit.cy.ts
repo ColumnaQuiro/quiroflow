@@ -50,17 +50,17 @@ describe('A visit drawing on a bono', () => {
           cy.get('[aria-label="Previous"]').click()
           assertDayGridShows(bookedDay)
           cy.contains('Adri Doblecl').should('be.visible').click({ force: true })
-          cy.contains('h2', 'Edit Appointment').should('be.visible')
+          cy.get('[data-cy=appt-sheet]').should('be.visible')
 
-          cy.get('.fixed.inset-0.z-50').within(() => {
-            cy.contains('button', 'billing').click()
+          cy.get('[data-cy=appt-sheet]').within(() => {
+            cy.get('[data-cy=appt-tab-billing]').click()
             cy.contains('button', 'Use Bono 12', { timeout: 15000 }).click()
             cy.contains('Covered by', { timeout: 15000 }).should('be.visible')
 
             // Leave the tab and come back -- the route reception took to a
             // second press. The panel must not offer the bono again.
-            cy.contains('button', 'details').click()
-            cy.contains('button', 'billing').click()
+            cy.get('[data-cy=appt-tab-summary]').click()
+            cy.get('[data-cy=appt-tab-billing]').click()
             cy.contains('Covered by', { timeout: 15000 }).should('be.visible')
             cy.contains('button', 'Use Bono 12').should('not.exist')
           })

@@ -41,10 +41,10 @@ describe('Splitting an appointment payment across methods', () => {
           assertDayGridShows(bookedDay)
           cy.contains('Priya Partpay').should('be.visible')
           cy.contains('Priya Partpay').click({ force: true })
-          cy.contains('h2', 'Edit Appointment').should('be.visible')
+          cy.get('[data-cy=appt-sheet]').should('be.visible')
 
-          cy.get('.fixed.inset-0.z-50').within(() => {
-            cy.contains('button', 'billing').click()
+          cy.get('[data-cy=appt-sheet]').within(() => {
+            cy.get('[data-cy=appt-tab-billing]').click()
             // The visit isn't invoiced until someone says so -- see
             // ensureInvoice(); this is that decision.
             cy.contains('button', 'Charge this visit').click()

@@ -49,22 +49,23 @@ describe('An appointment covered by a bono', () => {
         cy.get('[aria-label="Previous"]').click()
         assertDayGridShows(bookedDay)
         cy.contains('Marta Cubierta').should('be.visible').click({ force: true })
-        cy.contains('h2', 'Edit Appointment').should('be.visible')
+        cy.get('[data-cy=appt-sheet]').should('be.visible')
 
-        cy.get('.fixed.inset-0.z-50').within(() => {
-          // The €55 type against a €40 bono used to read as a debt.
+        cy.get('[data-cy=appt-sheet]').within(() => {
+          // The €55 type against a €40 bono used to read as a debt. The
+          // visit is charged at the bono's rate, and the panel says so.
           cy.contains('patient owes the difference').should('not.exist')
-          cy.contains('Covered by package at 40,00 € (3 sessions left after this one)').should('be.visible')
+          cy.contains('[data-cy=visit-money]', 'Bono mantenimiento').should('contain.text', '4 of 12 left')
+          cy.contains('[data-cy=visit-money]', 'uses 1 session at 40,00 €').should('be.visible')
           // And what she is holding, which this screen never said at all.
-          cy.contains('160,00 € available').should('be.visible')
-          // Her only booking is the one being edited, so she is about to fall
-          // out of the schedule. That warning now lives here, on the tab about
-          // the booking, instead of at the bottom of Billing.
-          cy.contains('No future appointment — this patient will show up in Recalls automatically.').should('be.visible')
+          cy.contains('[data-cy=patient-balance]', '160,00 € available').should('be.visible')
+          // Her only booking is the one open, so she is about to fall out of
+          // the schedule: the header says so, beside her visit count.
+          cy.contains('[data-cy=appt-sheet-facts]', 'no next visit').should('be.visible')
 
           // Billing offers the bono first, at its own rate, and demotes the
           // walk-in price -- the reverse of what it used to do.
-          cy.contains('button', 'billing').click()
+          cy.get('[data-cy=appt-tab-billing]').click()
           cy.contains('Not charged yet').should('be.visible')
           cy.contains('button', 'Use Bono mantenimiento — 40,00 €').should('be.visible')
           cy.contains('button', 'Charge 55,00 € instead').should('be.visible')

@@ -37,7 +37,13 @@ describe('Logging a bono session', () => {
 
             cy.on('window:confirm', () => true)
             cy.contains('button', 'Log session').click()
-            cy.contains('Logging…').should('not.exist')
+            // Wait for the finished write, not for "Logging…" to be absent:
+            // useSession() looks up today's visit BEFORE it shows "Logging…",
+            // so that assertion passed at once and the effects below were read
+            // while the session was still being written -- a race that failed
+            // this spec on some runs and not others. The pack reads one fewer
+            // left only after the whole write has reloaded.
+            cy.contains('11 of 12 sessions left', { timeout: 15000 }).should('exist')
 
             cy.task('db:packageSessionEffects', { patientId: patient.id, packagePurchaseId: purchase.id }).then((effects: any) => {
               expect(effects.sessions.length, 'one session').to.eq(1)
@@ -87,7 +93,13 @@ describe('Logging a bono session', () => {
 
             cy.on('window:confirm', () => true)
             cy.contains('button', 'Log session').click()
-            cy.contains('Logging…').should('not.exist')
+            // Wait for the finished write, not for "Logging…" to be absent:
+            // useSession() looks up today's visit BEFORE it shows "Logging…",
+            // so that assertion passed at once and the effects below were read
+            // while the session was still being written -- a race that failed
+            // this spec on some runs and not others. The pack reads one fewer
+            // left only after the whole write has reloaded.
+            cy.contains('11 of 12 sessions left', { timeout: 15000 }).should('exist')
 
             cy.task('db:packageSessionEffects', { patientId: patient.id, packagePurchaseId: purchase.id }).then((effects: any) => {
               expect(effects.sessions.length, 'one session').to.eq(1)

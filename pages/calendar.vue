@@ -120,6 +120,9 @@ const viewMode = ref<'day' | 'workweek' | 'week'>('workweek')
 onMounted(() => {
   const stored = localStorage.getItem(CALENDAR_VIEW_MODE_KEY)
   if (stored === 'day' || stored === 'workweek' || stored === 'week') viewMode.value = stored
+  // A phone that has never chosen gets the day, which is the agenda there --
+  // a week of room columns does not fit 375px.
+  else if (window.matchMedia('(max-width: 767px)').matches) viewMode.value = 'day'
 })
 watch(viewMode, (v) => localStorage.setItem(CALENDAR_VIEW_MODE_KEY, v))
 // PracticeHub never shows a merged "all practitioners" calendar -- with
@@ -1578,18 +1581,71 @@ function freedSlotUntil(o: WaitlistOffer) {
   return o.offer_expires_at ? t(`replies by ${formatTime(o.offer_expires_at)}`, `responde antes de las ${formatTime(o.offer_expires_at)}`) : ''
 }
 
-// Current-time indicator (day view only, per spec).
+// --- Phone: the day as a one-column agenda ---
+// Below md the day view is PhoneAgenda instead of the room grid. Its
+// "Mis citas / Toda la clínica" switch is the practitioner filter, reduced to
+// the two choices that make sense on a phone.
+const isPhone = useMediaQuery('(max-width: 767px)')
+const showAgenda = computed(() => isPhone.value && viewMode.value === 'day')
+const myPractitionerId = computed(() => (clinicTeamMembers.value.some((m) => m.id === store.teamMember?.id) ? store.teamMember!.id : null))
+const agendaScope = computed<'mine' | 'all'>(() => (myPractitionerId.value && practitionerFilter.value === myPractitionerId.value ? 'mine' : 'all'))
+function setAgendaScope(scope: 'mine' | 'all') {
+  practitionerFilter.value = scope === 'mine' && myPractitionerId.value ? myPractitionerId.value : ALL_PRACTITIONERS
+}
+// Arriving on the agenda with some other practitioner's tab selected: pick
+// the phone's own meaning -- my day if I have one, else the clinic's.
+watch([showAgenda, () => clinicTeamMembers.value.length], ([on]) => {
+  if (!on || !clinicTeamMembers.value.length) return
+  if (practitionerFilter.value !== ALL_PRACTITIONERS && practitionerFilter.value !== myPractitionerId.value) setAgendaScope(myPractitionerId.value ? 'mine' : 'all')
+})
+const agendaItems = computed(() => {
+  const key = toDateKey(anchorDate.value)
+  return appointments.value
+    .filter((a) => toDateKey(new Date(a.starts_at)) === key && isApptVisible(a))
+    .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
+    .map((a) => ({ id: a.id, startsAt: a.starts_at, endsAt: a.ends_at, view: blockView(a), stickyNote: a.patients?.sticky_note?.trim() || null }))
+})
+const agendaCounts = computed(() => {
+  const c = dayHeaderCounts(anchorDate.value)
+  return { unconfirmed: c.unconfirmed, owe: c.owe, waiting: rangeCounts.value.counts.arrived }
+})
+function openAgendaItem(id: string) {
+  const appt = appointments.value.find((a) => a.id === id)
+  if (appt) openEditModal(appt)
+}
+
+// "Now": a red line across today, in every view, that moves with the clock.
+// Red is otherwise kept for money on this calendar; the now-line is the one
+// deliberate exception, because it has to be found at a glance across a
+// screen full of tinted blocks.
 const now = ref(new Date())
 let nowTimer: ReturnType<typeof setInterval> | null = null
+// A tab left in the background can go minutes without its timers firing;
+// catch up the moment it is looked at again.
+function tickNow() {
+  now.value = new Date()
+}
+function onVisible() {
+  if (document.visibilityState === 'visible') tickNow()
+}
 onMounted(() => {
-  nowTimer = setInterval(() => (now.value = new Date()), 30000)
+  nowTimer = setInterval(tickNow, 30000)
+  document.addEventListener('visibilitychange', onVisible)
 })
 onUnmounted(() => {
   if (nowTimer) clearInterval(nowTimer)
+  document.removeEventListener('visibilitychange', onVisible)
 })
 const nowWithinHours = computed(() => now.value.getHours() >= START_HOUR && now.value.getHours() < END_HOUR)
 const showNowLine = computed(() => viewMode.value === 'day' && isSameDate(now.value, anchorDate.value) && nowWithinHours.value)
 const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.value))
+// Week views: the line runs across today's room columns only, and the time
+// sits in the gutter when today is one of the days shown.
+const showWeekNowLabel = computed(() => viewMode.value !== 'day' && nowWithinHours.value && visibleWeekDays.value.some((d) => isSameDate(d, now.value)))
+const nowLineWeekPx = computed(() => timeToPx(now.value.toISOString(), WEEK_HOUR_PX.value))
+function showNowLineOn(day: Date) {
+  return nowWithinHours.value && isSameDate(day, now.value)
+}
 </script>
 
 <template>
@@ -1634,7 +1690,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
 
     <!-- One tab per practitioner, plus the whole clinic and the visits with
          no practitioner at all. -->
-    <div v-if="clinicTeamMembers.length > 0" data-testid="practitioner-tabs" class="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b border-line bg-surface px-4 lg:px-6 [@media(pointer:coarse)]:h-12">
+    <div v-if="clinicTeamMembers.length > 0 && !showAgenda" data-testid="practitioner-tabs" class="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b border-line bg-surface px-4 lg:px-6 [@media(pointer:coarse)]:h-12">
       <button
         type="button"
         data-testid="practitioner-tab-all"
@@ -1669,7 +1725,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
         {{ t('No practitioner', 'Sin profesional') }}
       </button>
     </div>
-    <div v-else class="flex h-9 shrink-0 items-center border-b border-line bg-surface px-6 text-[12.5px] text-ink-faint">
+    <div v-else-if="!showAgenda" class="flex h-9 shrink-0 items-center border-b border-line bg-surface px-6 text-[12.5px] text-ink-faint">
       No practitioners are assigned to this clinic yet.
     </div>
 
@@ -1688,7 +1744,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
          does not match, so the day keeps its shape while one kind stands out.
          This is what "Today at a glance" used to be, moved to where the eye
          already is and made to do something. -->
-    <div v-if="store.currentClinicId && !loading" data-cy="day-counts" class="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-line bg-surface px-4 py-1.5 lg:px-6">
+    <div v-if="store.currentClinicId && !loading && !showAgenda" data-cy="day-counts" class="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-line bg-surface px-4 py-1.5 lg:px-6">
       <span class="shrink-0 pr-1 text-[13px] text-ink-muted" data-cy="day-counts-total"><strong class="font-semibold text-ink-900">{{ rangeCounts.total }}</strong> {{ countsNoun }}</span>
       <button
         v-for="c in countChips"
@@ -1808,6 +1864,20 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
         <div v-else-if="!store.currentClinicId" class="p-6 text-[13px] text-ink-faint">
           {{ t('No clinic selected.', 'Ninguna clínica seleccionada.') }}
         </div>
+
+        <CalendarPhoneAgenda
+          v-else-if="showAgenda"
+          :items="agendaItems"
+          :scope="agendaScope"
+          :can-scope-mine="!!myPractitionerId"
+          :counts="agendaCounts"
+          :privacy="settings.privacyMode"
+          :now="now"
+          :is-today="isSameDate(anchorDate, now)"
+          @open="openAgendaItem"
+          @scope="setAgendaScope"
+          @create="openCreateModal()"
+        />
 
         <!-- The grid takes keyboard focus as one stop; arrow keys then move a
              cell cursor across rooms, days and slots (onGridKeydown). -->
@@ -1962,9 +2032,10 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                   </template>
                 </div>
 
-                <div v-if="showNowLine" class="pointer-events-none absolute left-0 right-0 z-20" :style="{ top: `${nowLinePx}px` }">
-                  <div class="absolute left-0 top-0 h-[7px] w-[7px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand"></div>
-                  <div class="h-0.5 w-full bg-brand"></div>
+                <div v-if="showNowLine" data-cy="now-line" class="pointer-events-none absolute left-0 right-0 z-20" :style="{ top: `${nowLinePx}px` }">
+                  <span class="absolute left-1 top-0 -translate-y-1/2 rounded-full bg-danger-text px-1.5 py-px font-mono text-[10.5px] font-semibold leading-4 text-surface" data-cy="now-label">{{ formatTime(now) }}</span>
+                  <div class="absolute left-[58px] top-0 h-[9px] w-[9px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-danger-text"></div>
+                  <div class="ml-[58px] h-0.5 -translate-y-1/2 bg-danger-text"></div>
                 </div>
               </div>
             </div>
@@ -1976,6 +2047,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
               <div class="sticky left-0 z-20 w-[58px] shrink-0 bg-surface">
                 <div class="sticky top-0 z-30 border-b border-r border-line bg-surface" :style="{ height: `${WEEK_HEADER_PX}px` }"></div>
                 <div class="relative border-r border-line" :style="{ height: `${weekGridHeight}px` }">
+                  <span v-if="showWeekNowLabel" class="pointer-events-none absolute left-1 z-20 -translate-y-1/2 rounded-full bg-danger-text px-1.5 py-px font-mono text-[10.5px] font-semibold leading-4 text-surface" data-cy="now-label" :style="{ top: `${nowLineWeekPx}px` }">{{ formatTime(now) }}</span>
                   <span
                     v-for="h in hourMarks"
                     :key="h"
@@ -2025,6 +2097,10 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                 </div>
 
                 <div class="relative flex" :style="{ height: `${weekGridHeight}px` }">
+                  <div v-if="showNowLineOn(day)" data-cy="now-line" class="pointer-events-none absolute inset-x-0 z-20" :style="{ top: `${nowLineWeekPx}px` }">
+                    <div class="absolute left-0 top-0 h-[7px] w-[7px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-danger-text"></div>
+                    <div class="h-0.5 -translate-y-1/2 bg-danger-text"></div>
+                  </div>
                   <div
                     v-for="col in dayColumns"
                     :key="col.id"

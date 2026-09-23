@@ -12,7 +12,7 @@ import type { Database } from '~/types/database.types'
 type AppointmentUpdate = Database['public']['Tables']['appointments']['Update']
 
 // An existing appointment, opened. Replaces the calendar's use of
-// AppointmentModal's edit mode, whose Status dropdown made every change of
+// the old AppointmentModal's edit mode, whose Status dropdown made every change of
 // state -- arrived, cancelled, no-show -- the same anonymous select, and
 // whose form showed the time and room fields first although they are the
 // thing least often changed once a visit exists.
@@ -55,6 +55,14 @@ const props = defineProps<{
   priceCents: number
   /** The tab to open on: the flow tracker's "Cobrar" opens straight on Cobro. */
   initialTab?: 'summary' | 'billing' | 'history'
+  /**
+   * Hide "Mover…". It hands the visit to the calendar's reschedule mode,
+   * which only exists on the calendar, so elsewhere (the practitioner's day)
+   * it goes; "Cambiar" still edits the time inline there. Phrased as a
+   * negative on purpose: Vue reads an absent boolean prop as false, so the
+   * calendar -- which passes nothing -- keeps the button.
+   */
+  noMove?: boolean
 }>()
 const emit = defineEmits<{ close: []; changed: []; reschedule: [] }>()
 
@@ -579,7 +587,7 @@ const canAct = computed(() => props.appointment.status === 'booked')
           {{ t('No-show', 'No vino') }}
         </button>
         <span class="grow" />
-        <button type="button" data-cy="move-appointment" :disabled="busy" class="flex h-11 items-center gap-1.5 rounded-ctl border border-line-control px-3.5 text-[13.5px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="emit('reschedule')">
+        <button v-if="!noMove" type="button" data-cy="move-appointment" :disabled="busy" class="flex h-11 items-center gap-1.5 rounded-ctl border border-line-control px-3.5 text-[13.5px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="emit('reschedule')">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h14l-4-4M20 16H6l4 4" /></svg>
           {{ t('Move…', 'Mover…') }}
         </button>

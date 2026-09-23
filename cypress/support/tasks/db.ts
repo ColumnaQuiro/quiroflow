@@ -1407,9 +1407,9 @@ async function signWhatsappBody(opts: { body: string; appSecret: string }) {
 
 async function appointmentById(opts: { appointmentId: string }) {
   const row = unwrap(
-    await admin.from('appointments').select('id, status, confirmation_status, rescheduled, starts_at, ends_at, room_id').eq('id', opts.appointmentId).single(),
+    await admin.from('appointments').select('id, status, confirmation_status, rescheduled, starts_at, ends_at, room_id, checked_in_at').eq('id', opts.appointmentId).single(),
   )
-  return row as { id: string; status: string; confirmation_status: string | null; rescheduled: boolean; starts_at: string; ends_at: string; room_id: string | null }
+  return row as { id: string; status: string; confirmation_status: string | null; rescheduled: boolean; starts_at: string; ends_at: string; room_id: string | null; checked_in_at: string | null }
 }
 
 /**

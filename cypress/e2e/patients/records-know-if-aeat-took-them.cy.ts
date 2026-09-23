@@ -238,4 +238,90 @@ describe('Records that know whether the AEAT took them', () => {
       })
     })
   })
+
+  it('parks a record the AEAT keeps refusing, and still counts it as owed', () => {
+    // There was no terminal state: awaiting_aeat returned every unacknowledged
+    // record with no cap, and the sender runs every minute, so a record the
+    // AEAT would never accept was offered 1,440 times a day. R-2026-0004
+    // reached attempt 148 in production.
+    //
+    // What makes parking delicate is that a parked record is STILL OWED. The
+    // temptation is to filter it out of "what is outstanding", which would
+    // answer the compliance question with a number that excludes exactly the
+    // records someone needs to see. So it stays in the list, flagged -- the
+    // sender is what declines to send it.
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Envio', lastName: 'Tres' }).then((patient: any) => {
+        cy.task('db:createPackageTemplate', { accountId: account.accountId, name: 'Bono E6', sessionCount: 4, priceCents: 24000 })
+        cy.task('db:createPackageTemplate', { accountId: account.accountId, name: 'Bono E7', sessionCount: 4, priceCents: 25000 })
+
+        cy.login(account.email, account.password)
+        cy.visit(`/patients/${patient.id}?tab=billing`)
+        sellBono('Bono E6 (4, 240,00 €)')
+        sellBono('Bono E7 (4, 250,00 €)')
+
+        cy.task('db:facturaRecordsFor', { accountId: account.accountId }).then((records: any) => {
+          const [stubborn, transient] = records
+
+          // Nine identical refusals is not yet enough. A record can be refused
+          // for its PREDECESSOR's state -- Encadenamiento -- and starts working
+          // the moment the one before it is accepted, so the count buys time
+          // for that rather than parking on the error code.
+          cy.task('db:recordAeatSubmission', {
+            accountId: account.accountId,
+            facturaRecordId: stubborn.id,
+            status: 'Incorrecto',
+            errorCode: '3002',
+            errorMessage: 'No existe el registro de facturación.',
+            repeats: 9,
+          })
+
+          // An outage is not a verdict. However long it lasts, the AEAT never
+          // judged the record, so it must not retire.
+          cy.task('db:recordAeatSubmission', {
+            accountId: account.accountId,
+            facturaRecordId: transient.id,
+            status: 'transport_error',
+            errorMessage: 'socket hang up',
+            repeats: 40,
+          })
+
+          cy.task('db:awaitingAeat', { accountId: account.accountId }).then((outstanding: any) => {
+            expect(outstanding, 'both still owed').to.have.length(2)
+            expect(outstanding.every((r: any) => r.parked === false), 'nine refusals is not ten').to.be.true
+          })
+
+          // The tenth.
+          cy.task('db:recordAeatSubmission', {
+            accountId: account.accountId,
+            facturaRecordId: stubborn.id,
+            attempt: 2,
+            status: 'Incorrecto',
+            errorCode: '3002',
+            errorMessage: 'No existe el registro de facturación.',
+            repeats: 10,
+          })
+
+          cy.task('db:awaitingAeat', { accountId: account.accountId }).then((outstanding: any) => {
+            expect(outstanding, 'a parked record is still outstanding').to.have.length(2)
+            const parked = outstanding.filter((r: any) => r.parked)
+            expect(parked, 'only the refused one parks').to.have.length(1)
+            expect(parked[0].factura_record_id).to.eq(stubborn.id)
+            expect(parked[0].last_error_code).to.eq('3002')
+          })
+
+          // Parking does not clear itself, and a deploy does not clear it
+          // either: "the code changed" is not evidence that THIS record will
+          // now be accepted. Someone decides, and says so.
+          cy.task('db:releaseParkedRecords', { accountId: account.accountId }).then((released: any) => {
+            expect(released, 'one submission released').to.eq(1)
+          })
+
+          cy.task('db:awaitingAeat', { accountId: account.accountId }).then((outstanding: any) => {
+            expect(outstanding.every((r: any) => r.parked === false), 'released, and in the air again').to.be.true
+          })
+        })
+      })
+    })
+  })
 })

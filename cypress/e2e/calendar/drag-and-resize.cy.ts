@@ -51,6 +51,9 @@ describe('Dragging a block', () => {
             drag(cy.contains('[data-cy=appt-block]', 'Alargar Estirada').find('.cursor-ns-resize'), px / 2)
             cy.contains('h2', 'Rescheduling Appointment').should('be.visible')
             cy.contains('button', 'Confirm').click()
+            // The dialog closes once the write has landed; reading the row
+            // before that races the update (as the move step above waits too).
+            cy.contains('h2', 'Rescheduling Appointment').should('not.exist')
             cy.task<{ starts_at: string; ends_at: string }>('db:appointmentById', { appointmentId: stretched }).then((a) => {
               expect(new Date(a.starts_at).getTime(), 'start unchanged').to.eq(new Date(todayAt(14, 0)).getTime())
               expect(new Date(a.ends_at).getTime(), 'half an hour longer').to.eq(new Date(todayAt(15, 0)).getTime())

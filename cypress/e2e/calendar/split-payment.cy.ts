@@ -22,19 +22,19 @@ describe('Splitting an appointment payment across methods', () => {
           cy.contains('select', 'Work week').select('day')
           openNewAppointmentPanel()
 
-          cy.get('.fixed.inset-0.z-50').within(() => {
-            cy.get('input[placeholder="Search by name, phone, or email…"]').type('Priya')
-            cy.contains('li', 'Priya Partpay').click()
-            cy.get('select').eq(0).should('contain.text', 'Consultation').select('Consultation (30 min)')
+          cy.get('[data-cy=create-sheet]').within(() => {
+            cy.get('[data-cy=create-patient-search]').type('Priya')
+            cy.contains('[data-cy=create-patient-result]', 'Priya Partpay').click()
+            cy.contains('[data-cy=create-type]', 'Consultation').click()
             // Named explicitly rather than left to the panel's prefill. An
             // appointment with no practitioner is filtered out of every
             // practitioner tab by loadAppointments() and so never reaches
             // the grid -- see openNewAppointmentPanel().
-            cy.contains('label', 'Practitioner').parent().find('select').select(SEEDED_PRACTITIONER)
+            cy.contains('[data-cy=create-practitioner]', SEEDED_PRACTITIONER).click()
             cy.get('input[type="date"]').clear().type(dateInputValue(bookedDay))
-            cy.contains('button', /^Create$/).click()
+            cy.get('[data-cy=create-submit]').click()
           })
-          cy.get('.fixed.inset-0.z-50').should('not.exist')
+          cy.get('[data-cy=create-sheet]').should('not.exist')
           // Booked for yesterday, so step the calendar back a day to see
           // it -- and check the grid actually got there before reading it.
           cy.get('[aria-label="Previous"]').click()

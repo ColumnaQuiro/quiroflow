@@ -24,8 +24,8 @@ describe('The new-patient phone field', () => {
       cy.contains('select', 'Work week').select('day')
       openNewAppointmentPanel()
 
-      cy.get('.fixed.inset-0.z-50').within(() => {
-        cy.contains('button', 'New Patient').click()
+      cy.get('[data-cy=create-sheet]').within(() => {
+        cy.get('[data-cy=create-new-patient]').click()
 
         cy.get('input[type="tel"]').should('be.visible').then(($input) => {
           const box = $input[0].getBoundingClientRect()
@@ -35,7 +35,7 @@ describe('The new-patient phone field', () => {
 
           // And it stays inside the panel: overflowing the right edge is what
           // made the remaining sliver unreachable rather than merely small.
-          const panel = $input[0].closest('.max-w-lg')!.getBoundingClientRect()
+          const panel = $input[0].closest('[data-cy=create-sheet]')!.getBoundingClientRect()
           expect(box.right, 'phone input right edge vs panel').to.be.at.most(Math.ceil(panel.right))
         })
 

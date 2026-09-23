@@ -36,15 +36,15 @@ describe('An appointment covered by a bono', () => {
         cy.contains('select', 'Work week').select('day')
         openNewAppointmentPanel()
 
-        cy.get('.fixed.inset-0.z-50').within(() => {
-          cy.get('input[placeholder="Search by name, phone, or email…"]').type('Marta')
-          cy.contains('li', 'Marta Cubierta').click()
-          cy.get('select').eq(0).should('contain.text', 'Ajuste Quiropractico').select('Ajuste Quiropractico (15 min)')
-          cy.contains('label', 'Practitioner').parent().find('select').select(SEEDED_PRACTITIONER)
+        cy.get('[data-cy=create-sheet]').within(() => {
+          cy.get('[data-cy=create-patient-search]').type('Marta')
+          cy.contains('[data-cy=create-patient-result]', 'Marta Cubierta').click()
+          cy.contains('[data-cy=create-type]', 'Ajuste Quiropractico').click()
+          cy.contains('[data-cy=create-practitioner]', SEEDED_PRACTITIONER).click()
           cy.get('input[type="date"]').clear().type(dateInputValue(bookedDay))
-          cy.contains('button', /^Create$/).click()
+          cy.get('[data-cy=create-submit]').click()
         })
-        cy.get('.fixed.inset-0.z-50').should('not.exist')
+        cy.get('[data-cy=create-sheet]').should('not.exist')
 
         cy.get('[aria-label="Previous"]').click()
         assertDayGridShows(bookedDay)

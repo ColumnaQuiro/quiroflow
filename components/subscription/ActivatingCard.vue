@@ -1,10 +1,22 @@
 <script setup lang="ts">
-import { formatEur } from '~/utils/billing'
+import { formatEur, formatLongDate } from '~/utils/billing'
 
 // Back from Stripe checkout before the webhook has landed. The money is
 // already gone from the customer's side, so the copy leads with that and says
 // plainly that leaving the page costs nothing.
-defineProps<{ amountCents: number | null; attempt: number; maxAttempts: number; secondsToNext: number; supportEmail: string }>()
+//
+// Unless the checkout carried a trial over (checkoutTrialEnd): then nothing
+// has been taken, and `firstChargeOn` is the day something will be. Saying
+// "payment received" to a clinic that has not paid would send it looking for
+// a charge on its statement that is not there.
+defineProps<{
+  amountCents: number | null
+  firstChargeOn?: string | null
+  attempt: number
+  maxAttempts: number
+  secondsToNext: number
+  supportEmail: string
+}>()
 defineEmits<{ refresh: [] }>()
 
 const t = useT()
@@ -21,12 +33,21 @@ const t = useT()
       <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-center gap-2.5">
           <h2 class="text-[16px] font-semibold text-ink-900">
-            {{ t('Payment received — activating your plan', 'Pago recibido: activando tu plan') }}
+            {{
+              firstChargeOn
+                ? t('Card saved — activating your plan', 'Tarjeta guardada: activando tu plan')
+                : t('Payment received — activating your plan', 'Pago recibido: activando tu plan')
+            }}
           </h2>
           <SubscriptionPill tone="success">{{ t('Activating', 'Activando') }}</SubscriptionPill>
         </div>
         <p class="mt-2 text-[13.5px] leading-[1.55] text-ink-500">
-          <template v-if="amountCents !== null">
+          <template v-if="firstChargeOn">
+            {{ t('Nothing has been charged yet — the first payment is taken on', 'Todavía no se ha cobrado nada: el primer pago será el') }}
+            <strong class="font-semibold">{{ formatLongDate(firstChargeOn) }}</strong>,
+            {{ t('when your free trial ends.', 'cuando termine tu prueba gratuita.') }}
+          </template>
+          <template v-else-if="amountCents !== null">
             {{ t('Stripe has taken', 'Stripe ha cobrado') }} <strong class="font-mono font-semibold">{{ formatEur(amountCents) }}</strong>.
           </template>
           {{

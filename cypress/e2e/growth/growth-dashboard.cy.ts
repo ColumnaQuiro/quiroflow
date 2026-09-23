@@ -23,11 +23,21 @@ describe('Growth dashboard', () => {
     cy.visit('/growth?growth=0')
 
     cy.contains('The AI receptionist books patients while you are adjusting').should('be.visible')
-    cy.contains('a', 'Start 14-day trial').should('have.attr', 'href', '/subscription')
+    cy.contains('a', 'Add Growth').should('have.attr', 'href', '/subscription')
     cy.contains('a', 'Talk to us').should('be.visible')
+
+    // Prices come from the catalogue billing charges against, not from copy
+    // on this card. It quoted 49/month and 39 annual ("save 20%") for a
+    // week after the reprice made them 39 and 35, because it kept its own.
+    cy.contains('Annual · save 10%').should('be.visible')
+    cy.contains('420,00 € billed yearly').should('be.visible')
+    cy.contains('No card required').should('not.exist')
 
     // The plan delta has to be honest about what the clinic already pays for.
     cy.contains('What changes, and what does not').scrollIntoView().should('be.visible')
+    cy.contains('th', 'Clinic').should('contain', '149,00')
+    cy.contains('th', 'Your plan + Growth').should('contain', '+39,00')
+    cy.contains('You are on Clinic today').should('not.exist')
     cy.contains('td', 'Campaigns').scrollIntoView().should('be.visible')
     cy.contains('Already included in every plan').scrollIntoView().should('be.visible')
 

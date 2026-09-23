@@ -54,6 +54,7 @@ export const useAccountStore = defineStore('account', {
     growthAddon: false,
     planId: null as string | null,
     comped: false,
+    hasStripeSubscription: false,
     loaded: false,
     loading: false,
   }),
@@ -79,6 +80,13 @@ export const useAccountStore = defineStore('account', {
     trialDaysLeft: (state) => {
       if (state.subscriptionStatus !== 'trialing' || !state.trialEndsAt) return null
       return Math.max(0, Math.ceil((new Date(state.trialEndsAt).getTime() - Date.now()) / 86400000))
+    },
+    // Still trialing AND nothing will be charged when it ends. An owner who
+    // added a card mid-trial is also 'trialing' -- the trial carries over into
+    // Stripe -- but asking them to "upgrade now" is asking for what they have
+    // already done.
+    trialAwaitingCard(): boolean {
+      return this.trialDaysLeft !== null && !this.comped && !this.hasStripeSubscription
     },
   },
   actions: {
@@ -109,7 +117,7 @@ export const useAccountStore = defineStore('account', {
         account: { name: string; slug: string; whatsapp_confirmation_template_name: string | null; whatsapp_recall_template_name: string | null; scheduling_policy_fee_cents: number | null; default_phone_country: string | null } | null
         clinics: Clinic[]
         permissions: Record<string, PermissionValue>
-        subscription: { status: string; trial_ends_at: string | null; growth_addon?: boolean; plan_id?: string | null; comped?: boolean } | null
+        subscription: { status: string; trial_ends_at: string | null; growth_addon?: boolean; plan_id?: string | null; comped?: boolean; has_stripe_subscription?: boolean } | null
       }
       const teamMember = bootstrap.team_member
 
@@ -145,6 +153,7 @@ export const useAccountStore = defineStore('account', {
       this.growthAddon = subscription?.growth_addon ?? false
       this.planId = subscription?.plan_id ?? null
       this.comped = subscription?.comped ?? false
+      this.hasStripeSubscription = subscription?.has_stripe_subscription ?? false
       if (!this.currentClinicId && this.clinics.length > 0) {
         const stored = import.meta.server ? null : localStorage.getItem(CURRENT_CLINIC_STORAGE_KEY)
         this.currentClinicId = (stored && this.clinics.some((c) => c.id === stored)) ? stored : this.clinics[0].id
@@ -175,6 +184,7 @@ export const useAccountStore = defineStore('account', {
       this.growthAddon = false
       this.planId = null
       this.comped = false
+      this.hasStripeSubscription = false
       this.loaded = false
       this.loading = false
     },

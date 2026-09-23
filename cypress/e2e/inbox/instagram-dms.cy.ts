@@ -74,7 +74,15 @@ describe('Instagram DMs in the Inbox', () => {
     cy.seedStaffAccount().then((account) => {
       accountId = account.accountId
       staff = { email: account.email, password: account.password }
-      igUserId = `1784140${Date.now()}`.slice(0, 17)
+      // Unique per test, and it has to be: the webhook finds the clinic by
+      // this id with .maybeSingle(), so two accounts sharing it resolve to
+      // neither and the DM is silently skipped. It used to be
+      // `1784140${Date.now()}`.slice(0, 17) -- 20 characters cut to 17, which
+      // dropped the milliseconds, so the id changed once a second while
+      // these tests start well under a second apart. Consecutive tests
+      // collided, failed, and passed on retry a second later: most of the
+      // retries in CI. 17 digits still, the length of a real one.
+      igUserId = `17${Date.now()}${String(Math.floor(Math.random() * 100)).padStart(2, '0')}`
       appSecret = 'a'.repeat(APP_SECRET_LENGTH)
       cy.task('db:setInstagramAccount', { accountId, instagramUserId: igUserId })
       cy.task('db:setWhatsappAppSecret', { accountId, appSecret })

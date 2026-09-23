@@ -342,6 +342,18 @@ jobs:
       # fatal.
       - run: npx cypress install
 
+      # Cypress compiles the specs against the root tsconfig.json, which
+      # extends .nuxt/tsconfig.json -- so without .nuxt/ every shard dies
+      # with "File './.nuxt/tsconfig.json' not found" before running a spec.
+      # It used to appear as a side effect: first of each shard's own
+      # `nuxt build`, then (once the build moved to its own job) of `npm ci`,
+      # whose postinstall runs `nuxt prepare`. A node_modules cache hit skips
+      # `npm ci`, so the first run with a warm cache failed every shard on
+      # every PR. Generated explicitly now, whatever the cache did. A few
+      # seconds, spent while the shard would be waiting for the build anyway.
+      - name: Generate .nuxt/ for the specs' tsconfig
+        run: npx nuxt prepare
+
       # The specs run against a build, not `nuxt dev`, which compiled each
       # route the first time a spec visited it -- so every shard paid Vite's
       # compile cost again, spec after spec. Measured on this suite, serving

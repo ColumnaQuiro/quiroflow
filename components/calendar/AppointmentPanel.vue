@@ -53,6 +53,8 @@ const props = defineProps<{
   teamMembers: MemberOption[]
   overrides: AppointmentTypeOverride[]
   priceCents: number
+  /** The tab to open on: the flow tracker's "Cobrar" opens straight on Cobro. */
+  initialTab?: 'summary' | 'billing' | 'history'
 }>()
 const emit = defineEmits<{ close: []; changed: []; reschedule: [] }>()
 
@@ -71,7 +73,7 @@ useFocusTrap(panel, () => emit('close'))
 // under the thumb, instead of halfway down the summary (canvas: PhoneAppointment).
 const isPhone = useMediaQuery('(max-width: 639px)')
 
-const tab = ref<'summary' | 'billing' | 'history'>('summary')
+const tab = ref<'summary' | 'billing' | 'history'>(props.initialTab ?? 'summary')
 // Cancelling is a step inside this panel, not a dialog on top of it.
 const step = ref<'main' | 'cancel'>('main')
 const busy = ref(false)

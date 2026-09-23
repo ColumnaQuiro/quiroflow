@@ -1428,6 +1428,8 @@ async function createAppointment(opts: {
   roomId?: string | null
   confirmationSentAt?: string | null
   reminderSentAt?: string | null
+  /** Soft-deleted, as the panel's Delete leaves it. */
+  deletedAt?: string | null
 }) {
   const startsAt = new Date(opts.startsAt)
   const endsAt = new Date(startsAt.getTime() + (opts.durationMinutes ?? 30) * 60000)
@@ -1452,6 +1454,7 @@ async function createAppointment(opts: {
         ...(opts.roomId !== undefined ? { room_id: opts.roomId } : {}),
         ...(opts.confirmationSentAt !== undefined ? { confirmation_sent_at: opts.confirmationSentAt } : {}),
         ...(opts.reminderSentAt !== undefined ? { reminder_sent_at: opts.reminderSentAt } : {}),
+        ...(opts.deletedAt !== undefined ? { deleted_at: opts.deletedAt } : {}),
       })
       .select('id, practitioner_id')
       .single(),

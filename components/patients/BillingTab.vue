@@ -1490,7 +1490,7 @@ async function useSession(purchase: PackagePurchaseRow) {
       // booked. Only then is one invented -- no appointment type to take a
       // duration from, so the schema's own default stands in.
       const ends = new Date(now.getTime() + 30 * 60000)
-      const { data: appointment } = await supabase
+      const { data: appointment, error: appointmentError } = await supabase
         .from('appointments')
         .insert({
           account_id: store.accountId,
@@ -1509,7 +1509,29 @@ async function useSession(purchase: PackagePurchaseRow) {
         })
         .select('id')
         .single()
-      appointmentId = appointment?.id ?? null
+      if (appointmentError || !appointment) {
+        // Stop rather than carry on with no visit. Carrying on is what this
+        // used to do: the error was discarded, the session was recorded with
+        // appointment_id null, and the patient's bono lost a session that
+        // belonged to no visit, with nothing on screen to say so. The session
+        // was already claimed above, so give it back -- compare-and-set on the
+        // count just written, so a concurrent draw is not undone with it.
+        await supabase
+          .from('package_purchases')
+          .update({ sessions_used: purchase.sessions_used })
+          .eq('id', purchase.id)
+          .eq('sessions_used', purchase.sessions_used + 1)
+        const detail = appointmentError ? ` (${appointmentError.message})` : ''
+        alert(
+          t(
+            `The visit could not be recorded, so no session was used. Try again.${detail}`,
+            `No se pudo registrar la visita, así que no se ha usado ninguna sesión. Inténtalo de nuevo.${detail}`,
+          ),
+        )
+        await loadAll()
+        return
+      }
+      appointmentId = appointment.id
       usedAt = now.toISOString()
     } else if (visit?.unpaidInvoice) {
       // One visit, one charge. The bono paid for it, so the invoice raised

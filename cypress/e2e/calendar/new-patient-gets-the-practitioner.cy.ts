@@ -20,16 +20,16 @@ describe('A patient created while booking', () => {
       cy.contains('select', 'Work week').select('day')
       openNewAppointmentPanel()
 
-      cy.get('.fixed.inset-0.z-50').within(() => {
-        cy.contains('button', 'New Patient').click()
+      cy.get('[data-cy=create-sheet]').within(() => {
+        cy.get('[data-cy=create-new-patient]').click()
         cy.get('input[placeholder="First name"]').type('Nueva')
         cy.get('input[placeholder="Last name"]').type('Asignada')
-        cy.get('select').eq(0).should('contain.text', 'Consultation').select('Consultation (30 min)')
-        cy.contains('label', 'Practitioner').parent().find('select').select(SEEDED_PRACTITIONER)
+        cy.contains('[data-cy=create-type]', 'Consultation').click()
+        cy.contains('[data-cy=create-practitioner]', SEEDED_PRACTITIONER).click()
         cy.get('input[type="date"]').clear().type(dateInputValue(yesterday()))
-        cy.contains('button', /^Create$/).click()
+        cy.get('[data-cy=create-submit]').click()
       })
-      cy.get('.fixed.inset-0.z-50').should('not.exist')
+      cy.get('[data-cy=create-sheet]').should('not.exist')
 
       // Assigned in the database, not merely displayed somewhere -- this is
       // the field the dashboard's Total patients counts, and the one the
@@ -50,16 +50,16 @@ describe('A patient created while booking', () => {
       cy.contains('select', 'Work week').select('day')
       openNewAppointmentPanel()
 
-      cy.get('.fixed.inset-0.z-50').within(() => {
-        cy.contains('button', 'New Patient').click()
+      cy.get('[data-cy=create-sheet]').within(() => {
+        cy.get('[data-cy=create-new-patient]').click()
         cy.get('input[placeholder="First name"]').type('Sin')
         cy.get('input[placeholder="Last name"]').type('Practicante')
-        cy.get('select').eq(0).should('contain.text', 'Consultation').select('Consultation (30 min)')
-        cy.contains('label', 'Practitioner').parent().find('select').select('Unassigned')
+        cy.contains('[data-cy=create-type]', 'Consultation').click()
+        cy.contains('[data-cy=create-practitioner]', 'No practitioner').click()
         cy.get('input[type="date"]').clear().type(dateInputValue(yesterday()))
-        cy.contains('button', /^Create$/).click()
+        cy.get('[data-cy=create-submit]').click()
       })
-      cy.get('.fixed.inset-0.z-50').should('not.exist')
+      cy.get('[data-cy=create-sheet]').should('not.exist')
 
       // Empty is the honest answer when nobody was named -- better than
       // guessing, which is how a wrong default would spread silently.

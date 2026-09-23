@@ -12,7 +12,7 @@
  */
 export const SEEDED_PRACTITIONER = 'Test Owner'
 
-const PATIENT_SEARCH = 'input[placeholder="Search by name, phone, or email…"]'
+const PATIENT_SEARCH = '[data-cy=create-patient-search]'
 
 function pad(n: number) {
   return String(n).padStart(2, '0')

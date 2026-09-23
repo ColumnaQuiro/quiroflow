@@ -304,6 +304,35 @@ async function createPatient(opts: {
   return patient as { id: string; first_name: string; last_name: string | null }
 }
 
+/**
+ * A clinic's worth of patients in a handful of inserts, for the specs that need
+ * a list longer than a URL can name by id (~215 uuids). Each gets a mobile
+ * number; the first `creditCount` also get 10 EUR on account. Ids come back
+ * in last-name order, which is `Crowd 000`, `Crowd 001`, ...
+ */
+async function seedManyPatients(opts: { accountId: string; clinicId: string; count: number; creditCount?: number }) {
+  const patients = unwrap(
+    await admin
+      .from('patients')
+      .insert(Array.from({ length: opts.count }, (_, i) => ({ account_id: opts.accountId, clinic_id: opts.clinicId, first_name: 'Crowd', last_name: String(i).padStart(3, '0') })))
+      .select('id, last_name'),
+  ) as { id: string; last_name: string }[]
+  patients.sort((a, b) => a.last_name.localeCompare(b.last_name))
+  assertOk(
+    await admin
+      .from('patient_contact_numbers')
+      .insert(patients.map((p, i) => ({ account_id: opts.accountId, patient_id: p.id, number: `6${String(i).padStart(8, '0')}`, country_code: 'ES' }))),
+  )
+  if (opts.creditCount) {
+    assertOk(
+      await admin
+        .from('account_credits')
+        .insert(patients.slice(0, opts.creditCount).map((p) => ({ account_id: opts.accountId, patient_id: p.id, amount_cents: 1000 }))),
+    )
+  }
+  return { patientIds: patients.map((p) => p.id) }
+}
+
 async function createAppointmentType(opts: {
   accountId: string
   name: string
@@ -2263,6 +2292,7 @@ export const dbTasks = {
   'db:setExtraProfessionals': setExtraProfessionals,
   'db:setSubscriptionStripeIds': setSubscriptionStripeIds,
   'db:createPatient': createPatient,
+  'db:seedManyPatients': seedManyPatients,
   'db:patientByName': patientByName,
   'db:createAppointmentType': createAppointmentType,
   'db:createServiceProduct': createServiceProduct,

@@ -5635,6 +5635,14 @@ export type Database = {
           },
         ]
       }
+      package_share_edges: {
+        Row: {
+          a: string | null
+          account_id: string | null
+          b: string | null
+        }
+        Relationships: []
+      }
       patient_live_balances: {
         Row: {
           account_id: string | null
@@ -5886,6 +5894,11 @@ export type Database = {
           team_member_id: string
         }[]
       }
+      patient_family_balance_cents: {
+        Args: { p_patient_id: string }
+        Returns: number
+      }
+      patient_family_members: { Args: { p_patient_id: string }; Returns: string[] }
       permission_scope: {
         Args: { perm_key: string; target_account_id: string }
         Returns: string

@@ -228,7 +228,9 @@ async function usePackageSession(pkg: { id: string; package_name: string; sessio
           patient_id: appointment.value.patient_id,
           appointment_id: appointmentId,
           invoice_number: chargeNumber,
-          status: balanceCents.value >= perSessionCents ? 'paid' : 'unpaid',
+          // The FAMILY's balance, not this patient's: on a shared bono the
+          // money sits on the owner's record. See bonoVisitChargeStatus().
+          status: await bonoVisitChargeStatus(supabase, appointment.value.patient_id, perSessionCents, balanceCents.value),
           total_cents: perSessionCents,
         } as never)
         .select('id')

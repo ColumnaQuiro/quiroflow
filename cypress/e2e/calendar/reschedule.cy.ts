@@ -15,18 +15,18 @@ describe('Reschedule mode (cross-week move)', () => {
 
         openNewAppointmentPanel()
 
-        cy.get('.fixed.inset-0.z-50').within(() => {
-          cy.get('input[placeholder="Search by name, phone, or email…"]').type('Alice')
-          cy.contains('li', 'Alice Anderson').click()
-          cy.get('select').eq(0).should('contain.text', 'Consultation').select('Consultation (30 min)')
+        cy.get('[data-cy=create-sheet]').within(() => {
+          cy.get('[data-cy=create-patient-search]').type('Alice')
+          cy.contains('[data-cy=create-patient-result]', 'Alice Anderson').click()
+          cy.contains('[data-cy=create-type]', 'Consultation').click()
           // Named explicitly rather than left to the panel's prefill. An
           // appointment with no practitioner is filtered out of every
           // practitioner tab by loadAppointments() and so never reaches the
           // grid -- see openNewAppointmentPanel().
-          cy.contains('label', 'Practitioner').parent().find('select').select(SEEDED_PRACTITIONER)
-          cy.contains('button', /^Create$/).click()
+          cy.contains('[data-cy=create-practitioner]', SEEDED_PRACTITIONER).click()
+          cy.get('[data-cy=create-submit]').click()
         })
-        cy.get('.fixed.inset-0.z-50').should('not.exist')
+        cy.get('[data-cy=create-sheet]').should('not.exist')
         cy.contains('Alice Anderson').should('be.visible')
 
         // Open the appointment and enter reschedule mode instead of dragging.

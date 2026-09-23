@@ -43,7 +43,7 @@ describe('Appointments with no practitioner', () => {
         cy.visit('/calendar')
         cy.contains('select', 'Work week').select('day')
 
-        cy.clickUntil('button:contains("New Appointment")', 'input[placeholder="Search by name, phone, or email…"]')
+        cy.clickUntil('button:contains("New Appointment")', '[data-cy=create-patient-search]')
 
         // The panel is open *and* the reference data is still in flight --
         // the precondition the bug needed, so assert it rather than hope for
@@ -53,21 +53,18 @@ describe('Appointments with no practitioner', () => {
 
         cy.wait('@teamMemberClinics')
 
-        cy.get('.fixed.inset-0.z-50').within(() => {
-          // The fix: the Practitioner select follows the prefill in once it
+        cy.get('[data-cy=create-sheet]').within(() => {
+          // The fix: the practitioner choice follows the prefill in once it
           // lands, with the user never touching it. Before it, this stayed on
-          // "Unassigned" however long the panel was open. Selects in this
-          // form, in order: Appointment Type, Room, Practitioner, Repeat.
-          cy.get('select').eq(2).find('option:selected').should('have.text', 'Dana Practitioner')
+          // "No practitioner" however long the panel was open.
+          cy.contains('[data-cy=create-practitioner]', 'Dana Practitioner').should('have.attr', 'aria-checked', 'true')
 
-          cy.get('input[placeholder="Search by name, phone, or email…"]').type('Alice')
-          cy.contains('li', 'Alice Anderson').click()
-          cy.get('select').eq(0).should('contain.text', 'Consultation').select('Consultation (30 min)')
-          // Exact match -- 'Create' alone hits the "Create Appointment" tab
-          // label, which is also a button and earlier in the DOM.
-          cy.contains('button', /^Create$/).click()
+          cy.get('[data-cy=create-patient-search]').type('Alice')
+          cy.contains('[data-cy=create-patient-result]', 'Alice Anderson').click()
+          cy.contains('[data-cy=create-type]', 'Consultation').click()
+          cy.get('[data-cy=create-submit]').click()
         })
-        cy.get('.fixed.inset-0.z-50').should('not.exist')
+        cy.get('[data-cy=create-sheet]').should('not.exist')
 
         // The point of all of the above: it lands on the practitioner's own
         // tab, which is the only place this calendar can show it.

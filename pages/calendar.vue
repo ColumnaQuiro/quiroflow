@@ -1382,9 +1382,17 @@ function cellIsFree(cell: Cell): boolean {
 // What the ghost is drawn on: the keyboard's cell while the grid has focus,
 // otherwise whatever the pointer is over.
 const ghostCell = computed<Cell | null>(() => (gridHasFocus.value && focusCell.value) || hoverCell.value)
+// While the create panel is open, the slot it is booking is marked solid on
+// the grid -- it has no backdrop, so the two are read side by side.
+function createGhostFor(dayKey: string, roomId: string) {
+  if (!modalOpen.value || modalMode.value !== 'create' || !prefill.value) return null
+  if (prefill.value.date !== dayKey || (prefill.value.roomId || '__none') !== roomId) return null
+  const [h, m] = prefill.value.time.split(':').map(Number)
+  return { min: h * 60 + m - START_HOUR * 60, label: prefill.value.time }
+}
 function ghostFor(dayKey: string, roomId: string) {
   const cell = ghostCell.value
-  if (!cell || reschedulingAppointment.value) return null
+  if (!cell || reschedulingAppointment.value || (modalOpen.value && modalMode.value === 'create')) return null
   const c = gridColumns.value[cell.col]
   if (!c || c.dayKey !== dayKey || c.roomId !== roomId) return null
   if (appointmentAtCell(cell)) return null
@@ -1939,6 +1947,16 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                       + {{ t(`Book ${g.label}`, `Reservar ${g.label}`) }}<span class="font-normal text-ink-muted"> · {{ t('Enter', 'Intro') }}</span>
                     </div>
                   </template>
+                  <template v-for="g in [createGhostFor(toDateKey(anchorDate), col.id)]" :key="`new-${col.id}`">
+                    <div
+                      v-if="g"
+                      data-cy="create-ghost"
+                      class="pointer-events-none absolute left-1 right-1 z-[15] flex items-center rounded-ctl bg-brand px-2.5 text-[13px] font-semibold text-surface shadow-[0_0_0_3px_rgb(var(--color-brand-tint))]"
+                      :style="{ top: `${(g.min / 60) * DAY_HOUR_PX + 1}px`, height: `${(SLOT_MIN / 60) * DAY_HOUR_PX - 3}px` }"
+                    >
+                      {{ t(`New appointment · ${g.label}`, `Nueva cita · ${g.label}`) }}
+                    </div>
+                  </template>
                   <template v-for="r in [focusRectFor(toDateKey(anchorDate), col.id, DAY_HOUR_PX)]" :key="`focus-${col.id}`">
                     <div v-if="r" data-grid-focus class="pointer-events-none absolute left-0.5 right-0.5 z-[16] rounded-ctl ring-2 ring-inset ring-brand/60" :style="{ top: `${r.top}px`, height: `${r.height}px` }" />
                   </template>
@@ -2108,6 +2126,16 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                         + {{ g.label }}
                       </div>
                     </template>
+                    <template v-for="g in [createGhostFor(toDateKey(day), col.id)]" :key="`new-${toDateKey(day)}-${col.id}`">
+                      <div
+                        v-if="g"
+                        data-cy="create-ghost"
+                        class="pointer-events-none absolute left-0.5 right-0.5 z-[15] flex items-center overflow-hidden whitespace-nowrap rounded-[6px] bg-brand px-1 text-[11px] font-semibold text-surface"
+                        :style="{ top: `${(g.min / 60) * WEEK_HOUR_PX}px`, height: `${(SLOT_MIN / 60) * WEEK_HOUR_PX - 2}px` }"
+                      >
+                        {{ g.label }}
+                      </div>
+                    </template>
                     <template v-for="r in [focusRectFor(toDateKey(day), col.id, WEEK_HOUR_PX)]" :key="`focus-${toDateKey(day)}-${col.id}`">
                       <div v-if="r" data-grid-focus class="pointer-events-none absolute left-0 right-0 z-[16] rounded-[6px] ring-2 ring-inset ring-brand/60" :style="{ top: `${r.top}px`, height: `${r.height}px` }" />
                     </template>
@@ -2129,6 +2157,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
       :prefill-time="prefill?.time"
       :prefill-room-id="prefill?.roomId"
       :prefill-practitioner-id="prefillPractitionerId"
+      :slot-minutes="SLOT_MIN"
       @close="modalOpen = false"
       @saved="onSaved"
     />

@@ -48,6 +48,8 @@ export async function handleInstagramEntries(
 ): Promise<{ stored: number; unverified: number }> {
   let stored = 0
   let unverified = 0
+  // One log line per shared id per delivery, not one per DM in it.
+  const alreadyReported = new Set<string>()
 
   for (const entry of entries) {
     for (const event of entry.messaging ?? []) {
@@ -63,11 +65,35 @@ export async function handleInstagramEntries(
       const igUserId = event.recipient?.id
       if (!senderId || !igUserId) continue
 
-      const { data: account } = await supabase
+      // Deliberately not .maybeSingle(), for the reason the WhatsApp path
+      // gives in webhook.post.ts: it returns NULL for two matching rows just
+      // as it does for none, so two accounts sharing an Instagram id used to
+      // land in the unknown-id skip below -- DMs stopping for BOTH clinics
+      // with nothing logged. accounts_instagram_user_id_key now makes two
+      // rows impossible; this stays because "impossible" is what was believed
+      // before, and an index can be dropped or left out of a restore without
+      // announcing itself.
+      const { data: matches, error: lookupError } = await supabase
         .from('accounts')
         .select('id, instagram_user_id, instagram_access_token')
         .eq('instagram_user_id', igUserId)
-        .maybeSingle()
+        .limit(2)
+      if (lookupError) {
+        console.error(`[instagram] could not look up the account for Instagram id ${igUserId}: ${lookupError.message}`)
+        continue
+      }
+      if (matches.length > 1) {
+        if (!alreadyReported.has(igUserId)) {
+          alreadyReported.add(igUserId)
+          console.error(
+            `[instagram] Instagram id ${igUserId} is claimed by ${matches.length} accounts (${matches.map((a) => a.id).join(', ')}). ` +
+              'Dropping this DM: there is no way to tell which clinic it belongs to. Instagram DMs are DOWN for every account sharing it ' +
+              'until one of them is cleared -- accounts_instagram_user_id_key should have prevented this, so check it still exists.',
+          )
+        }
+        continue
+      }
+      const account = matches[0]
       // A silent skip rather than an error: an id we do not know is not ours
       // to answer for, and saying so would tell a forger which ids exist.
       if (!account) continue

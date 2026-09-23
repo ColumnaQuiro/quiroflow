@@ -164,7 +164,7 @@ const effectivePrice = computed(() =>
 
 // Only loads once a patient is actually selected -- usePatientFinancialSummary
 // no-ops on an empty id, and re-fetches automatically as patientId changes.
-const { loading: bonoLoading, balanceCents, availableCents, activePackages } = usePatientFinancialSummary(patientId)
+const { loading: bonoLoading, balanceCents, outstandingCents, availableCents, activePackages } = usePatientFinancialSummary(patientId)
 
 // Whether this patient has any OTHER future booking. It used to sit at the
 // bottom of the Billing tab, which is where nobody looking at a booking would
@@ -383,7 +383,7 @@ async function remove() {
             <NuxtLink :to="`/patients/${patientId}`" target="_blank" class="ml-2 text-brand-text hover:text-brand-hover">{{ t('View patient →', 'Ver paciente →') }}</NuxtLink>
           </p>
           <div v-if="patientId && !bonoLoading" class="mt-2 flex flex-wrap items-center gap-2">
-            <UiBalancePill :available-cents="availableCents" :balance-cents="balanceCents" />
+            <UiBalancePill :available-cents="availableCents" :outstanding-cents="outstandingCents" />
             <BonoStatusBadge :tone="bonoStatus.tone" :label="bonoStatus.label" />
           </div>
           <p v-if="patientId && hasFutureAppointment === false" class="mt-2 text-[12.5px] font-medium text-danger-text">

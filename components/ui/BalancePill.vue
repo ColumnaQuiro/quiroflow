@@ -37,8 +37,15 @@ import { formatEur } from '~/utils/billing'
 const props = defineProps<{
   /** Loose credit + unused bono value less bono debt -- what they can spend. */
   availableCents: number
-  /** Negative when the patient owes; only the owing side is read from it. */
-  balanceCents: number
+  /**
+   * What is actually unpaid -- their own invoices, less anything allocated to
+   * them (utils/owing.ts). This used to be the balance, negated: paid minus
+   * invoiced over the patient's whole history. That is a different question,
+   * and it answered this one wrongly wherever the money sat on another row --
+   * a child on a parent's bono read "174,00 EUR due" for visits the parent had
+   * paid for and the settlement had marked paid.
+   */
+  outstandingCents: number
 }>()
 
 const t = useT()
@@ -47,10 +54,10 @@ const label = computed(() => {
   if (props.availableCents > 0) {
     return `${formatEur(props.availableCents)} ${t('available', 'disponible')}`
   }
-  return `${formatEur(Math.abs(props.balanceCents))} ${t('due', 'pendiente')}`
+  return `${formatEur(props.outstandingCents)} ${t('due', 'pendiente')}`
 })
 const tone = computed(() => (props.availableCents > 0 ? 'success' : 'danger'))
-const show = computed(() => props.availableCents > 0 || props.balanceCents < 0)
+const show = computed(() => props.availableCents > 0 || props.outstandingCents > 0)
 </script>
 
 <template>

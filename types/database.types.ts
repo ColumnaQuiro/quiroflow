@@ -5639,6 +5639,7 @@ export type Database = {
         Row: {
           account_id: string | null
           balance_cents: number | null
+          outstanding_cents: number | null
           patient_id: string | null
         }
         Relationships: [

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { AppointmentPanelInputs } from '~/composables/useAppointmentPanelLoader'
 // PracticeHub's "Practitioner Dashboard" is a chronological worklist of a
 // practitioner's own day, click a patient to jump straight into charting.
 // Not built: PH's grid mode (patients currently "with practitioner") --
@@ -57,8 +58,11 @@ const appointments = ref<AppointmentRow[]>([])
 const chartedAppointmentIds = ref<Set<string>>(new Set())
 const loading = ref(true)
 
-const modalOpen = ref(false)
-const editingAppointment = ref<AppointmentRow | null>(null)
+// The visit's details, money and history open in the same panel the calendar
+// uses (CalendarAppointmentPanel), loaded for this one visit. Clinical notes
+// are not in it: they are the charting pane beside the list.
+const { load: loadPanel } = useAppointmentPanelLoader()
+const panelInputs = ref<AppointmentPanelInputs | null>(null)
 
 function toDateKey(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -186,12 +190,12 @@ async function selectAppointment(appointment: AppointmentRow) {
     await supabase.from('appointments').update({ flow_with_practitioner_at: now }).eq('id', appointment.id)
   }
 }
-function openEditModal(appointment: AppointmentRow) {
-  editingAppointment.value = appointment
-  modalOpen.value = true
+async function openEditModal(appointment: AppointmentRow) {
+  panelInputs.value = await loadPanel(appointment.id)
 }
-async function onSaved() {
-  modalOpen.value = false
+async function onPanelChanged() {
+  const id = panelInputs.value?.appointment.id
+  if (id) panelInputs.value = await loadPanel(id)
   await loadDay()
 }
 
@@ -384,8 +388,10 @@ const headerMeta = computed(() => {
               </div>
               <button
                 type="button"
-                class="pointer-events-none absolute right-2.5 top-2.5 opacity-0 group-hover:pointer-events-auto group-hover:opacity-100"
-                :title="t('Edit appointment', 'Editar cita')"
+                data-cy="practitioner-open-appointment"
+                class="pointer-events-none absolute right-1 top-1 flex h-8 w-8 items-center justify-center rounded-ctlSm opacity-0 focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100 [@media(pointer:coarse)]:pointer-events-auto [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11 [@media(pointer:coarse)]:opacity-100"
+                :title="t('Appointment details', 'Detalles de la cita')"
+                :aria-label="t('Appointment details', 'Detalles de la cita')"
                 @click.stop="openEditModal(a)"
               >
                 <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" class="text-ink-faint hover:text-ink-600">
@@ -445,16 +451,20 @@ const headerMeta = computed(() => {
       </div>
     </div>
 
-    <CalendarAppointmentModal
-      v-if="modalOpen"
-      mode="edit"
+    <CalendarAppointmentPanel
+      v-if="panelInputs"
+      :key="panelInputs.appointment.id"
+      :appointment="panelInputs.appointment"
+      :view="panelInputs.view"
+      :payment="panelInputs.payment"
+      :price-cents="panelInputs.priceCents"
       :rooms="rooms"
       :appointment-types="appointmentTypes"
       :team-members="teamMembers"
-      :appointment="editingAppointment ?? undefined"
-      initial-tab="notes"
-      @close="modalOpen = false"
-      @saved="onSaved"
+      :overrides="panelInputs.overrides"
+      no-move
+      @close="panelInputs = null"
+      @changed="onPanelChanged"
     />
   </div>
 </template>

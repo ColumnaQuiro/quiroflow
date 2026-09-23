@@ -119,12 +119,30 @@ export interface RegistroAltaInput {
 }
 
 /**
- * The stand-in destinatario. A real-looking document with nobody real in it:
- * the NIF is structurally valid (0 mod 23 = T) so the AEAT is still checking
- * the shape of what it receives, and it is visibly not a person's.
+ * The stand-in destinatario. A real-looking document with nobody real in it.
+ *
+ * It was 00000000T, on the reasoning that the check letter is right -- 0 mod
+ * 23 is T -- and that this made the value structurally valid. The AEAT
+ * disagreed, by name, on all sixteen records that carried it:
+ *
+ *   1239  Error en el bloque Destinatario.. El formato del NIF es incorrecto..
+ *         NIF:00000000T. NOMBRE_RAZON:Destinatario de pruebas.
+ *
+ * A correct check letter is necessary and not sufficient: a document number
+ * of all zeros is refused whatever letter follows it. 12345678Z carries the
+ * same arithmetic (12345678 mod 23 = 14 = Z) over a number that is shaped
+ * like a real one, and is the example NIF this repo's own fixtures already
+ * use.
+ *
+ * What is NOT established is whether the AEAT also checks the NIF against the
+ * census. No recipient NIF has ever been accepted by this endpoint -- every
+ * record registered so far is an F2 simplificada, which carries no
+ * Destinatarios at all -- so there is no evidence either way in what we have
+ * received. If it does check, this earns a different error per record rather
+ * than the whole envelope, which is what #380 bought.
  */
 export const TEST_DESTINATARIO_NAME = 'Destinatario de pruebas'
-export const TEST_DESTINATARIO_NIF = '00000000T'
+export const TEST_DESTINATARIO_NIF = '12345678Z'
 
 const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -277,8 +295,10 @@ export function buildRegistroAlta(input: RegistroAltaInput): string {
   // CuotaTotal, ImporteTotal, the previous Huella and the timestamp. So this
   // is the one field that can be replaced without weakening the test.
   //
-  // 00000000T is a structurally valid NIF -- 0 mod 23 is T -- so the AEAT
-  // validates the shape of what it is given rather than waving it through.
+  // The stand-in is shaped like a real NIF rather than obviously blank, so the
+  // AEAT validates what it is given rather than waving it through -- which it
+  // does: the first attempt at this used 00000000T and was refused by format
+  // on every record. See TEST_DESTINATARIO_NIF.
   const recipientName = input.anonymiseRecipient
     ? TEST_DESTINATARIO_NAME
     : capped((factura.recipientName || factura.patientName || '').trim(), 120)

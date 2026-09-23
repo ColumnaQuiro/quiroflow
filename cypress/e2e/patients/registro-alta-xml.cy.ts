@@ -1,4 +1,11 @@
-import { aeatDate, aeatDateTime, buildRegistroAlta, type RegistroAltaInput } from '../../../utils/registroAlta'
+import {
+  TEST_DESTINATARIO_NAME,
+  TEST_DESTINATARIO_NIF,
+  aeatDate,
+  aeatDateTime,
+  buildRegistroAlta,
+  type RegistroAltaInput,
+} from '../../../utils/registroAlta'
 
 // The XML the AEAT will actually read.
 //
@@ -192,12 +199,38 @@ describe('The RegistroAlta the AEAT will read', () => {
     expect(fromPatient).to.contain('<sum1:NIF>12345678Z</sum1:NIF>')
   })
 
+  it('uses a stand-in NIF the AEAT will accept the format of', () => {
+    // The first version of this was 00000000T, chosen because the check letter
+    // is right -- 0 mod 23 is T. That is necessary and it is not sufficient,
+    // and the AEAT said so by name on all sixteen records that carried it:
+    //
+    //   1239  Error en el bloque Destinatario.. El formato del NIF es
+    //         incorrecto.. NIF:00000000T. NOMBRE_RAZON:Destinatario de pruebas.
+    //
+    // So the arithmetic is asserted here, and so is the part that was missed:
+    // a document number of all zeros is refused whatever letter follows it.
+    const LETTERS = 'TRWAGMYFPDXBNJZSQVHLCKE'
+    const digits = TEST_DESTINATARIO_NIF.slice(0, 8)
+    const letter = TEST_DESTINATARIO_NIF.slice(8)
+
+    expect(TEST_DESTINATARIO_NIF).to.match(/^\d{8}[A-Z]$/)
+    expect(letter).to.eq(LETTERS[Number(digits) % 23])
+    expect(Number(digits)).to.be.greaterThan(0)
+
+    // And it must not collide with any NIF the fixtures use as a real one, or
+    // "the real recipient did not leak" would pass while proving nothing.
+    expect(TEST_DESTINATARIO_NIF).to.not.eq('87654321X')
+  })
+
   it('sends a stand-in destinatario when it is not talking to production', () => {
     // "Test environment" and "test data" were not the same thing: environment
     // picks the endpoint and nothing else, so the document was built
     // identically either way and 53 real patients were named to the AEAT's
     // preproduction service, on invoices from a clinic.
-    const real = { ...base.factura, recipientName: 'Ana Ruiz', recipientNif: '12345678Z' }
+    // Deliberately NOT the stand-in's own NIF: if the fixture and the
+    // substitute share a value, "the real one did not leak" passes without
+    // testing anything.
+    const real = { ...base.factura, recipientName: 'Ana Ruiz', recipientNif: '87654321X' }
 
     const test = buildRegistroAlta({
       ...base,
@@ -205,10 +238,10 @@ describe('The RegistroAlta the AEAT will read', () => {
       factura: real,
       anonymiseRecipient: true,
     })
-    expect(test).to.contain('<sum1:NombreRazon>Destinatario de pruebas</sum1:NombreRazon>')
-    expect(test).to.contain('<sum1:NIF>00000000T</sum1:NIF>')
+    expect(test).to.contain(`<sum1:NombreRazon>${TEST_DESTINATARIO_NAME}</sum1:NombreRazon>`)
+    expect(test).to.contain(`<sum1:NIF>${TEST_DESTINATARIO_NIF}</sum1:NIF>`)
     expect(test).to.not.contain('Ana Ruiz')
-    expect(test).to.not.contain('12345678Z')
+    expect(test).to.not.contain('87654321X')
 
     // A patient with nothing on file is still identified in test, rather than
     // losing the Destinatarios block -- which is what the real-data rule does,
@@ -220,7 +253,7 @@ describe('The RegistroAlta the AEAT will read', () => {
       anonymiseRecipient: true,
     })
     expect(noDataOnFile).to.contain('<sum1:Destinatarios>')
-    expect(noDataOnFile).to.contain('<sum1:NIF>00000000T</sum1:NIF>')
+    expect(noDataOnFile).to.contain(`<sum1:NIF>${TEST_DESTINATARIO_NIF}</sum1:NIF>`)
 
     // A simplificada names nobody in either environment: substituting a
     // recipient onto an F2 would contradict the type.
@@ -234,8 +267,8 @@ describe('The RegistroAlta the AEAT will read', () => {
       factura: real,
     })
     expect(prod).to.contain('<sum1:NombreRazon>Ana Ruiz</sum1:NombreRazon>')
-    expect(prod).to.contain('<sum1:NIF>12345678Z</sum1:NIF>')
-    expect(prod).to.not.contain('Destinatario de pruebas')
+    expect(prod).to.contain('<sum1:NIF>87654321X</sum1:NIF>')
+    expect(prod).to.not.contain(TEST_DESTINATARIO_NAME)
   })
 
   it('leaves the huella input untouched when it substitutes the destinatario', () => {

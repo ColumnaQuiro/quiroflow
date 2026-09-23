@@ -29,6 +29,11 @@ interface PackagePurchaseRow {
   // imported (0174). Null on a bono created here, where the invoice is the
   // record of what is owed.
   owed_cents: number | null
+  // PracticeHub has deactivated this bono. It keeps whatever was on its
+  // counter, and it is still listed here -- the visits it paid for are real
+  // history -- but it is not money the patient can draw on and no session
+  // comes off it. See the is_closed migration.
+  is_closed?: boolean
   // Set only for a bono shared TO this patient (they're a beneficiary, not
   // the owner) -- see loadPackages(). Owner-only actions (Share, Delete,
   // collecting payment against the owner's own invoice) are hidden for
@@ -637,14 +642,14 @@ async function loadPackages() {
   // "Take payment") and purchased_at (for sort order), neither of which
   // that composable's activePackages carries.
   const [{ data: pkgPurchases }, { data: sch }, { data: shares }] = await Promise.all([
-    supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used, price_cents, purchased_at, invoice_id, owed_cents').eq('patient_id', props.patientId).order('purchased_at', { ascending: false }),
+    supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used, price_cents, purchased_at, invoice_id, owed_cents, is_closed').eq('patient_id', props.patientId).order('purchased_at', { ascending: false }),
     supabase
       .from('payment_schedules')
       .select('id, package_purchase_id, patient_membership_id, interval, interval_count, installments_total, installments_paid, status')
       .eq('patient_id', props.patientId),
     supabase
       .from('package_purchase_shares')
-      .select('package_purchases(id, package_name, sessions_total, sessions_used, price_cents, purchased_at, invoice_id, owed_cents, patients(first_name, last_name))')
+      .select('package_purchases(id, package_name, sessions_total, sessions_used, price_cents, purchased_at, invoice_id, owed_cents, is_closed, patients(first_name, last_name))')
       .eq('patient_id', props.patientId),
   ])
   const sharedPurchases = (shares ?? [])
@@ -981,9 +986,14 @@ const outstandingCents = computed(() => (balanceCents.value < 0 ? -balanceCents.
  * bono has EUR 100 to spend, not nothing. Netting off what is still owed
  * leaves only the part their money has already bought.
  */
+// Bonos PracticeHub has closed are left out for the same reason shared ones
+// are: the sessions still on their counter are not value anyone can spend.
+// They stay in the card below, marked closed, because the visits they paid for
+// are real and a bono that vanishes is harder to explain than one that says
+// what it is.
 const committedBonoCents = computed(() =>
   purchases.value
-    .filter((p) => !p.shared)
+    .filter((p) => !p.shared && !p.is_closed)
     .reduce((sum, p) => sum + Math.max(0, packageRemainingValueCents(p) - packageOwedCents(p)), 0),
 )
 
@@ -1430,6 +1440,11 @@ async function findUncoveredVisitToday(): Promise<UncoveredVisit | null> {
 
 async function useSession(purchase: PackagePurchaseRow) {
   if (purchase.sessions_used >= purchase.sessions_total || loggingSessionFor.value) return
+  // The button is disabled for a closed bono, but the counter is not what
+  // makes it unusable -- a closed bono keeps whatever sessions were left on it
+  // -- so nothing here would otherwise stop a stale copy of the row from
+  // drawing one.
+  if (purchase.is_closed) return
   if (!store.accountId || !store.currentClinicId) return
 
   // What the patient actually paid per visit when they bought the bono, not
@@ -1782,7 +1797,12 @@ const appliedCreditNote = computed(() => {
 })
 
 /** Bonos with sessions still on them -- what the patient already holds. */
-const activePurchases = computed(() => purchases.value.filter((p) => p.sessions_total - p.sessions_used > 0))
+// Since the summary card stopped listing bonos, this is only asked whether
+// the patient has anything on account at all -- so a bono PracticeHub has
+// closed does not count, the same way its sessions do not count as money in
+// committedBonoCents. A closed bono and no credit reads "Nothing on account",
+// which is what the figures beside it say.
+const activePurchases = computed(() => purchases.value.filter((p) => !p.is_closed && p.sessions_total - p.sessions_used > 0))
 
 function money(cents: number) {
   return formatEur(cents)
@@ -2036,11 +2056,14 @@ function money(cents: number) {
         </div>
         <template v-else>
         <div class="mt-3 space-y-3">
-          <div v-for="p in purchases" :key="p.id" class="rounded-ctl border border-line-divider p-3.5">
+          <!-- data-cy so the specs can scope to one bono's card by name;
+               everything in here is styling classes otherwise. -->
+          <div v-for="p in purchases" :key="p.id" data-cy="bono-card" class="rounded-ctl border border-line-divider p-3.5">
             <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
               <div class="flex min-w-0 items-center gap-2">
                 <p class="truncate text-[13.5px] font-semibold text-ink-800">{{ p.package_name }}</p>
-                <UiPill v-if="p.shared" tone="info">{{ p.ownerName ? t(`Shared by ${p.ownerName}`, `Compartido por ${p.ownerName}`) : t('Shared', 'Compartido') }}</UiPill>
+                <UiPill v-if="p.is_closed" tone="neutral">{{ t('Closed', 'Cerrado') }}</UiPill>
+                <UiPill v-else-if="p.shared" tone="info">{{ p.ownerName ? t(`Shared by ${p.ownerName}`, `Compartido por ${p.ownerName}`) : t('Shared', 'Compartido') }}</UiPill>
                 <UiPill v-else-if="packageOwedCents(p) > 0" tone="danger">{{ money(packageOwedCents(p)) }} {{ t('owed', 'pendiente') }}</UiPill>
                 <UiPill v-else tone="success">{{ t('Paid', 'Pagado') }}</UiPill>
               </div>
@@ -2051,7 +2074,12 @@ function money(cents: number) {
               <p class="shrink-0 text-[12px] text-ink-muted2">
                 <span class="font-semibold text-ink-700">{{ p.sessions_total - p.sessions_used }}</span>
                 {{ t('of', 'de') }} {{ p.sessions_total }} {{ t('sessions left', 'sesiones restantes') }}
-                <template v-if="!p.shared">
+                <!-- No "worth" figure on a closed bono: the sessions left on
+                it are a fact about its counter, the euros are a claim about
+                what the patient can spend, and PracticeHub says they cannot
+                spend these. Printing both is how the two figures above came
+                to disagree. -->
+                <template v-if="!p.shared && !p.is_closed">
                   <span class="px-1 text-ink-faint3">&middot;</span>
                   {{ t('worth', 'valor') }}
                   <span class="font-semibold text-ink-700">{{ money(packageRemainingValueCents(p)) }}</span>
@@ -2083,7 +2111,7 @@ function money(cents: number) {
             four different colors, which read as decoration rather than
             controls. -->
             <div class="mt-3 flex flex-wrap items-center gap-1.5 border-t border-line-divider pt-3">
-              <UiBtn size="sm" variant="primary" :disabled="p.sessions_used >= p.sessions_total || loggingSessionFor !== null" @click="useSession(p)">
+              <UiBtn size="sm" variant="primary" :disabled="p.is_closed || p.sessions_used >= p.sessions_total || loggingSessionFor !== null" @click="useSession(p)">
                 {{ loggingSessionFor === p.id ? t('Logging…', 'Registrando…') : t('Log session', 'Registrar sesión') }}
               </UiBtn>
               <!-- Everything below manages the PURCHASE itself (its invoice,

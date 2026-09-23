@@ -115,11 +115,11 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
       // apart from "an invoice that was voided" needs the status in hand.
       supabase.from('invoices').select('id, total_cents, status').eq('patient_id', currentId),
       supabase.from('patient_memberships').select('id, membership_name, status').eq('patient_id', currentId).eq('status', 'active'),
-      supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used, price_cents, invoice_id, owed_cents').eq('patient_id', currentId).order('purchased_at', { ascending: false }),
+      supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used, price_cents, invoice_id, owed_cents, is_closed').eq('patient_id', currentId).order('purchased_at', { ascending: false }),
       supabase.from('account_credits').select('amount_cents, external_reference, payment_id').eq('patient_id', currentId),
       supabase
         .from('package_purchase_shares')
-        .select('package_purchases(id, package_name, sessions_total, sessions_used, price_cents, patients(first_name, last_name))')
+        .select('package_purchases(id, package_name, sessions_total, sessions_used, price_cents, is_closed, patients(first_name, last_name))')
         .eq('patient_id', currentId),
       // The embed names its constraint because there are now TWO foreign keys
       // between payments and invoices: invoices.refunds_payment_id points the
@@ -213,7 +213,16 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
         shared: true,
         ownerName: owner ? `${owner.first_name} ${owner.last_name ?? ''}`.trim() : undefined,
       }))
-    state.activePackages.value = [...(packages ?? []), ...sharedPackages].filter((p) => p.sessions_used < p.sessions_total)
+    // Sessions left is not the only thing that makes a bono live: a bono
+    // PracticeHub has closed keeps whatever was on its counter when it was
+    // closed, and the importer brings it in that way on purpose, as history.
+    // Counting it here offered its sessions to the calendar and its remaining
+    // value to bonoValueCents below -- Paqui Cortes' August bono, closed in
+    // PracticeHub and re-issued in September, showed as a second live bono
+    // worth 440 EUR she could draw on. See the is_closed migration.
+    state.activePackages.value = [...(packages ?? []), ...sharedPackages].filter(
+      (p) => !p.is_closed && p.sessions_used < p.sessions_total,
+    )
 
     // sessions_left x the bono's own per-session rate, with the same rounding
     // useSession() bills a visit at, so this figure and the session it pays for

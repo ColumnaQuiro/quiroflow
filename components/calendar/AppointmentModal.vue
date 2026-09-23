@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { BusinessHours } from '~/utils/businessHours'
-import { dayKeyFor, hasBusinessHoursConfigured, practitionerWindowsForDay, windowsForDay } from '~/utils/businessHours'
+import { outsideWorkingHours as outsideHoursFor } from '~/utils/businessHours'
 import { computeBonoStatus } from '~/utils/bonoStatus'
 import { effectiveDuration, effectivePriceCents, type AppointmentTypeOverride } from '~/utils/appointmentOverrides'
 import { normalizeSearchTerm } from '~/utils/searchText'
@@ -67,20 +67,19 @@ const patientQuery = ref('')
 const roomId = ref(props.appointment?.room_id ?? props.prefillRoomId ?? props.rooms[0]?.id ?? '')
 const practitionerId = ref(props.appointment?.practitioner_id ?? '')
 
-// Working hours for the practitioner picked in this form -- their own
+// Working hours for the practitioner picked in THIS form -- their own
 // schedule (Settings -> Team) is authoritative, with the clinic's standing in
-// only for someone who has never set any. Matches the calendar grid.
+// only for someone who has never set any.
+//
+// The window matching itself now lives in utils/businessHours, because the
+// calendar needs the same question asked of the same practitioner and had
+// been asking it of whichever tab was open instead.
 function outsideWorkingHours(at: Date): boolean {
-  const clinicHours = store.currentClinic?.business_hours as BusinessHours | null | undefined
-  const practitionerHours = (props.teamMembers.find((m) => m.id === practitionerId.value)?.business_hours ?? null) as BusinessHours | null
-  if (!hasBusinessHoursConfigured(clinicHours) && !hasBusinessHoursConfigured(practitionerHours)) return false
-  const windows = practitionerWindowsForDay(windowsForDay(at, clinicHours), practitionerHours, dayKeyFor(at))
-  const mins = at.getHours() * 60 + at.getMinutes()
-  return !windows.some(([s, e]) => {
-    const [sh, sm] = s.split(':').map(Number)
-    const [eh, em] = e.split(':').map(Number)
-    return mins >= sh * 60 + sm && mins < eh * 60 + em
-  })
+  return outsideHoursFor(
+    at,
+    store.currentClinic?.business_hours as BusinessHours | null | undefined,
+    (props.teamMembers.find((m) => m.id === practitionerId.value)?.business_hours ?? null) as BusinessHours | null,
+  )
 }
 const appointmentTypeId = ref(props.appointment?.appointment_type_id ?? '')
 const date = ref(props.appointment ? toDateInput(props.appointment.starts_at) : (props.prefillDate ?? toDateInput(new Date().toISOString())))

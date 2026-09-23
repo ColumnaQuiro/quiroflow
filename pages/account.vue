@@ -1,5 +1,6 @@
 <script setup lang="ts">
 const supabase = useSupabaseClient()
+const authPasswordError = useAuthPasswordError()
 const user = useSupabaseUser()
 const store = useAccountStore()
 const { preference: themePreference, setPreference: setThemePreference } = useTheme()
@@ -86,7 +87,7 @@ async function changePassword() {
   const { error } = await supabase.auth.updateUser({ password: newPassword.value })
   savingPassword.value = false
   if (error) {
-    showToast(error.message, 'error')
+    showToast(authPasswordError(error), 'error')
     return
   }
   newPassword.value = ''

@@ -49,6 +49,14 @@ const props = defineProps<{
   canDeletePayments: boolean
   canWriteOff: boolean
   canRefund: boolean
+  /**
+   * A receipt to open the refund modal for straight away, from
+   * /billing/<id>'s Refund button. The receipt page deliberately does not
+   * refund on its own: this modal issues a rectificativa and a matching
+   * negative payment, and a second copy of that is the last thing fiscal
+   * code needs. So it sends people here instead.
+   */
+  openRefundForInvoiceId?: string | null
 }>()
 const emit = defineEmits<{
   addCredit: []
@@ -425,6 +433,23 @@ function openPaymentRefundModal(paymentId: string, invoiceId: string | null, max
   refundMethod.value = method || defaultMethod.value
 }
 
+// Waits for `rows`, which are derived from invoices/payments loaded by the
+// parent -- landing here from a deep link means arriving before they exist.
+// Refuses silently if the receipt turns out not to be refundable after all
+// (already refunded, voided, or no longer visible to this reader) rather than
+// opening a modal capped at zero.
+watch(
+  [() => props.openRefundForInvoiceId, rows],
+  ([invoiceId]) => {
+    if (!invoiceId || !props.canRefund || refundModalOpen.value) return
+    const row = rows.value.find((r) => r.invoiceId === invoiceId && !r.isRefund)
+    if (!row || (row.refundableCents ?? 0) <= 0) return
+    expandedKey.value = row.key
+    openRefundModal(invoiceId, row.refundableCents ?? 0)
+  },
+  { immediate: true },
+)
+
 function closeRefundModal() {
   refundModalOpen.value = false
   refundModalInvoiceId.value = null
@@ -602,6 +627,9 @@ async function sendStatement() {
             <th class="px-2 py-2 text-right">{{ t('Debit', 'Debe') }}</th>
             <th class="px-2 py-2 text-right">{{ t('Credit', 'Haber') }}</th>
             <th class="px-4 py-2 text-right">{{ t('Balance', 'Saldo') }}</th>
+            <!-- Refund used to live only inside the expanded row, which meant
+                 a collapsed ledger showed no sign it was there at all. -->
+            <th class="w-[92px] px-2 py-2"></th>
           </tr>
         </thead>
         <tbody class="divide-y divide-line-row">
@@ -625,9 +653,21 @@ async function sendStatement() {
                 {{ row.noMoneyMoved ? '—' : row.creditCents > 0 ? money(row.creditCents) : '' }}
               </td>
               <td class="px-4 text-right font-mono" :class="row.balanceTone === 'danger' ? 'text-danger-text' : 'text-ink-muted'">{{ row.balanceText }}</td>
+              <td class="px-2 text-right">
+                <!-- .stop, or the click toggles the row open underneath the
+                     modal it just opened. -->
+                <button
+                  v-if="canRefund && !row.isRefund && (row.refundableCents ?? 0) > 0"
+                  type="button"
+                  class="text-[12px] text-ink-faint hover:text-danger-text"
+                  @click.stop="openRefundModal(row.invoiceId!, row.refundableCents ?? 0)"
+                >
+                  {{ t('Refund…', 'Reembolsar…') }}
+                </button>
+              </td>
             </tr>
             <tr v-if="expandedKey === row.key">
-              <td colspan="7" class="bg-surface-subtle px-8 py-3">
+              <td colspan="8" class="bg-surface-subtle px-8 py-3">
                 <dl class="grid grid-cols-2 gap-x-6 gap-y-1 text-[12px]">
                   <template v-for="(d, i) in row.detail" :key="i">
                     <dt class="text-ink-faint">{{ d.label }}</dt>

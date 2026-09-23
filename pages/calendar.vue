@@ -1,8 +1,13 @@
 <script setup lang="ts">
-import { formatEur } from '~/utils/billing'
+import { formatEur, formatLongWeekdayDate, formatShortDate, formatTime, formatWeekdayDate } from '~/utils/billing'
 import type { BusinessHours } from '~/utils/businessHours'
-import { dayKeyFor, hasBusinessHoursConfigured, practitionerWindowsForDay, windowsForDay } from '~/utils/businessHours'
+import { dayKeyFor, hasBusinessHoursConfigured, practitionerWindowsForDay, unionWorkingWindows, windowsForDay, withinWindows } from '~/utils/businessHours'
 import type { AppointmentTypeOverride } from '~/utils/appointmentOverrides'
+import { appointmentStage, matchesFilter, needsNextBookingFlag, STAGE_FILTERS, stageCounts, type AppointmentStage, type StageFilter } from '~/utils/appointmentStage'
+import { shortPatientName } from '~/utils/appointmentBlock'
+import { bonoForVisit, type VisitPayment } from '~/utils/visitPayment'
+import { FILTER_DOT_CLASS, STAGE_TONE, STAGE_TONE_CLASS } from '~/composables/useAppointmentStage'
+import type { BlockView } from '~/components/calendar/AppointmentBlock.vue'
 
 const START_HOUR = 8
 const END_HOUR = 20
@@ -19,7 +24,7 @@ const TOTAL_MIN = (END_HOUR - START_HOUR) * 60
 const DAY_HOUR_PX_MIN = 127
 const WEEK_HOUR_PX_MIN = 81
 const DAY_HEADER_PX = 40 // h-10 room-header row, excluded from available grid height
-const WEEK_HEADER_PX = 52 // h-6 day-label row + h-7 room-label row (week view now has room sub-columns per day, like Day view)
+const WEEK_HEADER_PX = 70 // day label + per-day counts + room-label rows (week view has room sub-columns per day, like Day view)
 const WEEK_ROOM_COL_PX = 128 // min width per room sub-column
 
 const scrollAreaRef = ref<HTMLElement | null>(null)
@@ -37,15 +42,12 @@ onUnmounted(() => scrollAreaObserver?.disconnect())
 const DAY_HOUR_PX = computed(() => Math.max(DAY_HOUR_PX_MIN, Math.floor((scrollAreaHeight.value - DAY_HEADER_PX) / (END_HOUR - START_HOUR))))
 const WEEK_HOUR_PX = computed(() => Math.max(WEEK_HOUR_PX_MIN, Math.floor((scrollAreaHeight.value - WEEK_HEADER_PX) / (END_HOUR - START_HOUR))))
 
-// The status dot, name, and balance icon are one single line (not stacked
-// rows), so a short appointment's floor only needs to fit that one line --
-// close to a real 15min slot's natural height at the clinic's own slot
-// size, instead of forcing every short appointment to visually occupy ~2
-// grid rows just to fit a taller multi-row card. Blocks below this height
-// use tighter padding so the single line still fits comfortably.
+// A short appointment's floor only needs to fit one line: below 40px a
+// block collapses to name, stage and money on a single row (utils/
+// appointmentBlock), close to a real 15min slot's natural height, instead of
+// forcing every short appointment to occupy ~2 grid rows.
 const DAY_MIN_BLOCK_PX = 22
 const WEEK_MIN_BLOCK_PX = 18
-const BLOCK_DROP_ROW3_BELOW = 34
 // Availability/unavailable bands only need to fit a centered one-line label.
 const DAY_MIN_AVAILABILITY_PX = 20
 const WEEK_MIN_AVAILABILITY_PX = 16
@@ -85,12 +87,13 @@ interface AppointmentRow {
   deleted_at: string | null
   note: string | null
   source: string
-  patients: { first_name: string; last_name: string | null } | null
+  patients: { first_name: string; last_name: string | null; sticky_note: string | null } | null
   appointment_types: { name: string; color: string; default_price_cents: number } | null
   team_members: { full_name: string; color: string } | null
 }
 
 const supabase = useSupabaseClient()
+const { fetchVisitPayments } = useVisitPayments()
 const store = useAccountStore()
 const { can } = usePermission()
 const t = useT()
@@ -128,6 +131,13 @@ const CALENDAR_PRACTITIONER_KEY = 'quiroflow-calendar-practitioner'
 // the number above it and the appointment looks lost. This filter value is
 // the tab that shows them.
 const UNASSIGNED_PRACTITIONER = '__unassigned'
+// The whole clinic at once. It was left out on purpose while two
+// practitioners double-booked into one room stacked into an unreadable pile;
+// overlapping visits now split into side-by-side lanes (assignOverlapLayout),
+// and the front desk's real question -- "who is in the building, who still
+// owes" -- is about everyone, not one practitioner. Opt-in: the calendar still
+// opens on the last tab used, or the first practitioner.
+const ALL_PRACTITIONERS = '__all'
 const practitionerFilter = ref('')
 const anchorDate = ref(new Date())
 const rooms = ref<Room[]>([])
@@ -149,23 +159,26 @@ const editingBlock = ref<AvailabilityBlock | null>(null)
 const blockPrefill = ref<{ date: string; time: string; roomId: string } | null>(null)
 
 // "Display" toggles in the left panel, per the redesign spec.
+//
+// Cancelled visits leave the grid: the slot they held is free, and a struck-
+// through block sitting in it reads as "taken". showCancelled brings them
+// back for the times someone needs to see what was there. (It was
+// hideCancelled, default on; flipped so the switch reads the way it acts.)
 const settings = reactive({
   privacyMode: false,
   flowTracker: true,
   showAvailability: true,
-  hideCancelled: true,
+  showCancelled: false,
   hideRescheduled: false,
   hideDeleted: true,
-  compactRows: false,
 })
 const displayToggles = computed<{ key: keyof typeof settings; label: string }[]>(() => [
   { key: 'privacyMode', label: t('Privacy mode', 'Modo privacidad') },
   { key: 'flowTracker', label: t('Flow tracker', 'Seguimiento de flujo') },
   { key: 'showAvailability', label: t('Show availability', 'Mostrar disponibilidad') },
-  { key: 'hideCancelled', label: t('Hide cancelled', 'Ocultar canceladas') },
+  { key: 'showCancelled', label: t('Show cancelled', 'Mostrar canceladas') },
   { key: 'hideRescheduled', label: t('Hide rescheduled', 'Ocultar reprogramadas') },
   { key: 'hideDeleted', label: t('Hide deleted', 'Ocultar eliminadas') },
-  { key: 'compactRows', label: t('Compact rows', 'Filas compactas') },
 ])
 
 function pad(n: number) {
@@ -211,12 +224,9 @@ const weekDays = computed(() => Array.from({ length: 7 }, (_, i) => addDays(week
 const visibleWeekDays = computed(() => (viewMode.value === 'workweek' ? weekDays.value.slice(0, 5) : weekDays.value))
 
 const rangeLabel = computed(() => {
-  if (viewMode.value === 'day') {
-    return anchorDate.value.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' })
-  }
+  if (viewMode.value === 'day') return formatLongWeekdayDate(anchorDate.value)
   const days = visibleWeekDays.value
-  const end = days[days.length - 1]
-  return `${weekStart.value.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${end.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`
+  return `${formatShortDate(weekStart.value)} – ${formatShortDate(days[days.length - 1])}`
 })
 function stepDate(dir: -1 | 1) {
   anchorDate.value = addDays(anchorDate.value, viewMode.value === 'day' ? dir : dir * 7)
@@ -286,10 +296,11 @@ function ensureValidPractitionerFilter() {
   // from -- otherwise switching to a clinic with no practitioners would strand
   // the calendar on a filter nothing can clear.
   const unassignedSelectable = clinicTeamMembers.value.length > 0
-  if (practitionerFilter.value === UNASSIGNED_PRACTITIONER && unassignedSelectable) return
+  const pseudo = (v: string) => (v === UNASSIGNED_PRACTITIONER || v === ALL_PRACTITIONERS) && unassignedSelectable
+  if (pseudo(practitionerFilter.value)) return
   if (clinicTeamMembers.value.some((m) => m.id === practitionerFilter.value)) return
   const stored = localStorage.getItem(CALENDAR_PRACTITIONER_KEY) ?? ''
-  const restorable = (stored === UNASSIGNED_PRACTITIONER && unassignedSelectable) || clinicTeamMembers.value.some((m) => m.id === stored)
+  const restorable = pseudo(stored) || clinicTeamMembers.value.some((m) => m.id === stored)
   practitionerFilter.value = (restorable ? stored : '') || (clinicTeamMembers.value[0]?.id ?? '')
 }
 watch(practitionerFilter, (v) => {
@@ -299,7 +310,11 @@ watch(practitionerFilter, (v) => {
 // What the create forms should prefill their Practitioner select with. The
 // unassigned tab is a filter, not a team member, so it prefills as no choice
 // rather than as an id that matches no option (and no row in team_members).
-const prefillPractitionerId = computed(() => (practitionerFilter.value === UNASSIGNED_PRACTITIONER ? '' : practitionerFilter.value))
+const prefillPractitionerId = computed(() =>
+  practitionerFilter.value === UNASSIGNED_PRACTITIONER || practitionerFilter.value === ALL_PRACTITIONERS ? '' : practitionerFilter.value,
+)
+/** One real practitioner's tab is open (not "everyone", not "no practitioner"). */
+const singlePractitionerId = computed(() => (clinicTeamMembers.value.some((m) => m.id === practitionerFilter.value) ? practitionerFilter.value : null))
 
 async function loadRooms() {
   if (!store.currentClinicId) {
@@ -323,26 +338,93 @@ async function loadAppointments() {
   const rangeStart = viewMode.value === 'day' ? startOfDay(anchorDate.value) : weekStart.value
   const rangeEnd = viewMode.value === 'day' ? addDays(rangeStart, 1) : addDays(rangeStart, 7)
 
+  const token = ++loadToken
   let query = supabase
     .from('appointments')
     .select(
-      'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, rescheduled, confirmation_status, deleted_at, note, source, patients(first_name, last_name), appointment_types(name, color, default_price_cents), team_members(full_name, color)',
+      'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, rescheduled, confirmation_status, deleted_at, note, source, patients(first_name, last_name, sticky_note), appointment_types(name, color, default_price_cents), team_members(full_name, color)',
     )
     .eq('clinic_id', store.currentClinicId)
     .gte('starts_at', rangeStart.toISOString())
     .lt('starts_at', rangeEnd.toISOString())
     .order('starts_at')
   if (practitionerFilter.value === UNASSIGNED_PRACTITIONER) query = query.is('practitioner_id', null)
-  else if (practitionerFilter.value) query = query.eq('practitioner_id', practitionerFilter.value)
+  else if (practitionerFilter.value && practitionerFilter.value !== ALL_PRACTITIONERS) query = query.eq('practitioner_id', practitionerFilter.value)
   const { data } = await query
+  if (token !== loadToken) return
 
   appointments.value = (data as unknown as AppointmentRow[]) ?? []
   const patientIds = [...new Set(appointments.value.map((a) => a.patient_id))]
+  const appointmentIds = appointments.value.map((a) => a.id)
   await Promise.all([loadLiveBalances(patientIds), loadFutureAppointmentIds(patientIds)])
+  if (token !== loadToken) return
   loading.value = false
+  // Second-rank detail -- the bono count, how often a visit was moved, the
+  // waitlist offers standing on freed slots. The grid is usable without them,
+  // so they fill in after it renders rather than holding it back for the
+  // three sequential rounds fetchVisitPayments needs.
+  loadBlockDetails(token, appointmentIds, patientIds, rangeStart, rangeEnd)
 }
 
+// Bumped on every load, so a slow response for a range the user has already
+// navigated away from cannot land on top of the current one.
+let loadToken = 0
+
+const visitPaymentById = ref<Record<string, VisitPayment>>({})
+const activePackageByPatient = ref<Record<string, { package_name: string; sessions_total: number; sessions_used: number }>>({})
+const movedCountById = ref<Record<string, number>>({})
+interface WaitlistOffer {
+  id: string
+  offered_starts_at: string
+  offered_ends_at: string | null
+  offered_room_id: string | null
+  offered_practitioner_id: string | null
+  offer_expires_at: string | null
+  patients: { first_name: string; last_name: string | null } | null
+}
+const waitlistOffers = ref<WaitlistOffer[]>([])
+
+async function loadBlockDetails(token: number, appointmentIds: string[], patientIds: string[], rangeStart: Date, rangeEnd: Date) {
+  const [payments, { data: packages }, { data: reschedules }, { data: offers }] = await Promise.all([
+    fetchVisitPayments(appointmentIds),
+    patientIds.length
+      ? supabase.from('package_purchases').select('patient_id, package_name, sessions_total, sessions_used').in('patient_id', patientIds).order('purchased_at', { ascending: false })
+      : Promise.resolve({ data: [] as { patient_id: string; package_name: string; sessions_total: number; sessions_used: number }[] }),
+    appointmentIds.length
+      ? supabase.from('appointment_reschedules').select('appointment_id').in('appointment_id', appointmentIds)
+      : Promise.resolve({ data: [] as { appointment_id: string }[] }),
+    supabase
+      .from('waitlist_entries')
+      .select('id, offered_starts_at, offered_ends_at, offered_room_id, offered_practitioner_id, offer_expires_at, patients(first_name, last_name)')
+      .eq('clinic_id', store.currentClinicId!)
+      .eq('status', 'offered')
+      .gte('offered_starts_at', rangeStart.toISOString())
+      .lt('offered_starts_at', rangeEnd.toISOString()),
+  ])
+  if (token !== loadToken) return
+
+  visitPaymentById.value = payments
+  // Newest pack with sessions left, per patient -- the one tomorrow's visit
+  // will draw from (bonoForVisit).
+  const active: typeof activePackageByPatient.value = {}
+  for (const p of packages ?? []) {
+    if (active[p.patient_id] || p.sessions_used >= p.sessions_total) continue
+    active[p.patient_id] = p
+  }
+  activePackageByPatient.value = active
+  const moved: Record<string, number> = {}
+  for (const r of reschedules ?? []) moved[r.appointment_id] = (moved[r.appointment_id] ?? 0) + 1
+  movedCountById.value = moved
+  waitlistOffers.value = ((offers as unknown as WaitlistOffer[]) ?? []).filter((o) => o.offered_starts_at)
+}
+
+// patient_live_balances: negative when the patient owes. Only the owing side
+// is ever drawn on the calendar -- a credit balance is not the front desk's
+// problem at a glance, and it lives in the hover card and the panel.
 const balanceByPatient = ref<Record<string, number>>({})
+function owesCents(patientId: string) {
+  return Math.max(0, -(balanceByPatient.value[patientId] ?? 0))
+}
 async function loadLiveBalances(patientIds: string[]) {
   if (patientIds.length === 0) {
     balanceByPatient.value = {}
@@ -402,69 +484,18 @@ async function loadAvailabilityBlocks() {
   availabilityBlocks.value = data ?? []
 }
 
-// "Today at a glance" always reflects the real calendar day (not whatever
-// day/week the grid below happens to be navigated to), so it's loaded
-// independently of the main grid's date range. Mirrors PracticeHub's own
-// widget: "Booked" is the total universe of appointments that belonged to
-// today at some point (including ones since dragged away), and the other
-// four are a status breakdown of that same universe, each shown as a
-// percentage of Booked -- a reschedule-away is its own bucket rather than
-// falling out of the day's numbers entirely once it moves.
-const todayGlance = ref({ booked: 0, seen: 0, rescheduled: 0, cancelled: 0, missed: 0 })
-async function loadTodayGlance() {
-  if (!store.currentClinicId) {
-    todayGlance.value = { booked: 0, seen: 0, rescheduled: 0, cancelled: 0, missed: 0 }
-    return
-  }
-  const start = startOfDay(new Date())
-  const end = addDays(start, 1)
-  const [{ data: currentRows }, { data: rescheduleRows }] = await Promise.all([
-    supabase
-      .from('appointments')
-      .select('id, status')
-      .eq('clinic_id', store.currentClinicId)
-      .gte('starts_at', start.toISOString())
-      .lt('starts_at', end.toISOString()),
-    supabase
-      .from('appointment_reschedules')
-      .select('appointment_id, to_starts_at')
-      .eq('account_id', store.accountId!)
-      .gte('from_starts_at', start.toISOString())
-      .lt('from_starts_at', end.toISOString()),
-  ])
-  const rows = currentRows ?? []
-  const currentIds = new Set(rows.map((r) => r.id))
-  const rescheduledAwayIds = new Set(
-    (rescheduleRows ?? [])
-      .filter((r) => (r.to_starts_at < start.toISOString() || r.to_starts_at >= end.toISOString()) && !currentIds.has(r.appointment_id))
-      .map((r) => r.appointment_id),
-  )
-
-  const seen = rows.filter((r) => r.status === 'completed').length
-  const cancelled = rows.filter((r) => r.status === 'cancelled').length
-  const missed = rows.filter((r) => r.status === 'no_show').length
-  const rescheduled = rescheduledAwayIds.size
-  const booked = rows.length + rescheduled
-  todayGlance.value = { booked, seen, rescheduled, cancelled, missed }
-}
-function glancePct(count: number) {
-  return todayGlance.value.booked > 0 ? ((count / todayGlance.value.booked) * 100).toFixed(1) : '0.0'
-}
-
 onMounted(async () => {
   await loadReferenceData()
   ensureValidPractitionerFilter()
   await loadRooms()
   await loadAppointments()
   await loadAvailabilityBlocks()
-  await loadTodayGlance()
 })
 watch(() => store.currentClinicId, async () => {
   ensureValidPractitionerFilter()
   await loadRooms()
   await loadAppointments()
   await loadAvailabilityBlocks()
-  await loadTodayGlance()
 })
 watch([viewMode, anchorDate, practitionerFilter], async () => {
   await loadAppointments()
@@ -482,9 +513,12 @@ function blockLabel(block: AvailabilityBlock) {
 
 function blocksForRoom(roomId: string) {
   if (!settings.showAvailability) return []
-  return availabilityBlocks.value.filter(
-    (b) => (b.room_id === roomId || b.room_id === null) && (b.practitioner_id === null || b.practitioner_id === practitionerFilter.value),
-  )
+  return availabilityBlocks.value.filter((b) => (b.room_id === roomId || b.room_id === null) && blockAppliesToFilter(b))
+}
+// A practitioner's own block shows on their tab and on the whole-clinic one,
+// where its label ("Bloqueado para Marta") says whose it is.
+function blockAppliesToFilter(b: AvailabilityBlock) {
+  return b.practitioner_id === null || b.practitioner_id === practitionerFilter.value || practitionerFilter.value === ALL_PRACTITIONERS
 }
 function openBlockCreateModal(roomId?: string) {
   blockPrefill.value = { date: toDateKey(anchorDate.value), time: '09:00', roomId: roomId ?? '' }
@@ -501,7 +535,7 @@ async function onBlockSaved() {
 }
 
 function isApptVisible(appt: AppointmentRow) {
-  if (appt.status === 'cancelled' && settings.hideCancelled) return false
+  if (appt.status === 'cancelled' && !settings.showCancelled) return false
   if (appt.rescheduled && settings.hideRescheduled) return false
   if (appt.deleted_at && settings.hideDeleted) return false
   return true
@@ -528,13 +562,6 @@ function durationToPx(startIso: string, endIso: string, hourPx: number, minFloor
   const mins = (new Date(endIso).getTime() - new Date(startIso).getTime()) / 60000
   return Math.max(minFloor, (mins / 60) * hourPx)
 }
-function pxToTime(px: number, hourPx: number) {
-  const totalMin = (px / hourPx) * 60
-  const snapped = Math.round(totalMin / SLOT_MIN.value) * SLOT_MIN.value
-  const h = START_HOUR + Math.floor(snapped / 60)
-  const m = snapped % 60
-  return `${pad(h)}:${pad(m)}`
-}
 
 const dayGridHeight = computed(() => (END_HOUR - START_HOUR) * DAY_HOUR_PX.value)
 const weekGridHeight = computed(() => (END_HOUR - START_HOUR) * WEEK_HOUR_PX.value)
@@ -559,126 +586,125 @@ const slotMarks = computed(() => {
   return marks
 })
 
-// The grid is one tab per practitioner, so "working hours" here means the
-// hours of the practitioner whose tab is open -- their own schedule
-// (Settings -> Team), which is authoritative. The clinic's hours only stand
-// in for someone who has never set any.
-const selectedPractitionerHours = computed<BusinessHours | null>(
-  () => clinicTeamMembers.value.find((m) => m.id === practitionerFilter.value)?.business_hours ?? null,
-)
-
-const businessHoursConfigured = computed(
-  () => hasBusinessHoursConfigured(store.currentClinic?.business_hours) || hasBusinessHoursConfigured(selectedPractitionerHours.value),
-)
-
-// Windows the selected practitioner actually works on a given day.
-function workingWindowsFor(date: Date): [string, string][] {
+// Which hours are hatched as "nobody working".
+//
+// On one practitioner's tab that is their own schedule (Settings -> Team),
+// with the clinic's hours standing in only for someone who never set any. On
+// the whole-clinic and no-practitioner tabs it is the union of everyone
+// assigned here: an hour is only closed if NO ONE works it. null means
+// "unrestricted" -- nobody configured anything that could close an hour --
+// and then nothing is hatched, same opt-in rule as before.
+function workingWindowsFor(date: Date): [string, string][] | null {
   const clinicHours = store.currentClinic?.business_hours as BusinessHours | null | undefined
-  return practitionerWindowsForDay(windowsForDay(date, clinicHours), selectedPractitionerHours.value, dayKeyFor(date))
+  const pid = singlePractitionerId.value
+  if (pid) {
+    const hours = clinicTeamMembers.value.find((m) => m.id === pid)?.business_hours ?? null
+    if (!hasBusinessHoursConfigured(clinicHours) && !hasBusinessHoursConfigured(hours)) return null
+    return practitionerWindowsForDay(windowsForDay(date, clinicHours), hours, dayKeyFor(date))
+  }
+  return unionWorkingWindows(date, clinicHours, clinicTeamMembers.value.map((m) => m.business_hours))
 }
 
 function isWorkingTime(date: Date): boolean {
-  const mins = date.getHours() * 60 + date.getMinutes()
-  return workingWindowsFor(date).some(([start, end]) => {
-    const [sh, sm] = start.split(':').map(Number)
-    const [eh, em] = end.split(':').map(Number)
-    return mins >= sh * 60 + sm && mins < eh * 60 + em
-  })
+  const windows = workingWindowsFor(date)
+  return windows === null || withinWindows(date.getHours() * 60 + date.getMinutes(), windows)
 }
+const businessHoursConfigured = computed(() => workingWindowsFor(anchorDate.value) !== null)
 
-// Slots outside those working hours are shaded in the grid background; if
-// neither the clinic nor the practitioner ever set hours, nothing is shaded
-// -- opt-in, not "closed every day" by default.
-function slotIsOpen(index: number, forDate: Date) {
-  if (!businessHoursConfigured.value) return true
-  const totalMin = index * SLOT_MIN.value
-  const slotDate = new Date(forDate)
-  slotDate.setHours(START_HOUR + Math.floor(totalMin / 60), totalMin % 60, 0, 0)
-  return isWorkingTime(slotDate)
-}
-// Closed-hours shading is still computed at the clinic's slot granularity
-// (so a lunch break that ends at :30 shades correctly) even though the
-// visible grid lines are hourly now.
+// Closed stretches of one day as merged rects, so a closed morning is one
+// hatched band carrying one "Fuera de horario" label rather than a stack of
+// slot-sized stripes. Worked out at the clinic's slot size, so a lunch break
+// ending at :30 still hatches correctly.
 function closedSlotRects(forDate: Date, hourPx: number) {
-  const totalSlots = TOTAL_MIN / SLOT_MIN.value
+  const windows = workingWindowsFor(forDate)
+  if (windows === null) return []
   const slotPx = (SLOT_MIN.value / 60) * hourPx
   const rects: { top: number; height: number }[] = []
-  for (let i = 0; i < totalSlots; i++) {
-    if (!slotIsOpen(i, forDate)) rects.push({ top: i * slotPx, height: slotPx })
+  for (let m = 0; m < TOTAL_MIN; m += SLOT_MIN.value) {
+    if (withinWindows(START_HOUR * 60 + m, windows)) continue
+    const top = (m / 60) * hourPx
+    const last = rects[rects.length - 1]
+    if (last && Math.abs(last.top + last.height - top) < 0.5) last.height += slotPx
+    else rects.push({ top, height: slotPx })
   }
   return rects
 }
 
-// The block palette collapses onto these visual states; a patient-confirmed
-// booking gets its own "Confirmed" state instead of falling back to plain
-// "Booked", and a reschedule request gets its own "Wants to reschedule"
-// state instead of collapsing into "Unconfirmed", so staff can see who's
-// actually replied -- and how -- without opening each appointment.
-type VisualStatus = 'booked' | 'confirmed' | 'completed' | 'unconfirmed' | 'reschedule_requested' | 'no_show' | 'cancelled'
-function appointmentVisualStatus(appt: AppointmentRow): VisualStatus {
-  if (appt.status === 'completed') return 'completed'
-  if (appt.status === 'no_show') return 'no_show'
-  if (appt.status === 'cancelled') return 'cancelled'
-  if (appt.status === 'booked' && appt.confirmation_status === 'reschedule_requested') return 'reschedule_requested'
-  if (appt.status === 'booked' && appt.confirmation_status === 'pending') return 'unconfirmed'
-  if (appt.status === 'booked' && appt.confirmation_status === 'confirmed') return 'confirmed'
-  return 'booked'
-}
-// Tailwind classes rather than inline hex -- these map 1:1 onto the
-// existing brand/success/warning/info/danger tokens in tailwind.config.ts,
-// which already carry the exact hex values from the redesign spec.
-const STATUS_STYLES: Record<VisualStatus, { dotClass: string; labelEn: string; labelEs: string; pillTone: 'brand' | 'success' | 'warning' | 'info' | 'danger' | 'neutral' }> = {
-  booked: { dotClass: 'bg-brand', labelEn: 'Booked', labelEs: 'Reservada', pillTone: 'brand' },
-  confirmed: { dotClass: 'bg-success-accent', labelEn: 'Confirmed', labelEs: 'Confirmada', pillTone: 'success' },
-  completed: { dotClass: 'bg-success-accent', labelEn: 'Completed', labelEs: 'Completada', pillTone: 'success' },
-  unconfirmed: { dotClass: 'bg-warning-accent', labelEn: 'Unconfirmed', labelEs: 'Sin confirmar', pillTone: 'warning' },
-  reschedule_requested: { dotClass: 'bg-info-accent', labelEn: 'Wants to reschedule', labelEs: 'Quiere cambiar la cita', pillTone: 'info' },
-  no_show: { dotClass: 'bg-danger-text', labelEn: 'No-show', labelEs: 'No presentado', pillTone: 'danger' },
-  cancelled: { dotClass: 'bg-ink-faint3', labelEn: 'Cancelled', labelEs: 'Cancelada', pillTone: 'neutral' },
-}
-const statusLegend = computed(() =>
-  (Object.keys(STATUS_STYLES) as VisualStatus[]).map((key) => ({
-    key,
-    ...STATUS_STYLES[key],
-    label: t(STATUS_STYLES[key].labelEn, STATUS_STYLES[key].labelEs),
-  })),
-)
-
-function dotClass(appt: AppointmentRow) {
-  return STATUS_STYLES[appointmentVisualStatus(appt)].dotClass
-}
-function nameClass(appt: AppointmentRow) {
-  return appointmentVisualStatus(appt) === 'no_show' ? 'text-danger-text' : 'text-ink-900'
-}
-function formatCredit(cents: number) {
-  return `${formatEur(cents)}`
+// --- Stage, block, counts ---
+// One stage per appointment, from utils/appointmentStage -- the block, the
+// counts row and the day headers all read it from there.
+function stageOf(appt: AppointmentRow): AppointmentStage {
+  return appointmentStage(appt)
 }
 
-function hexToRgba(hex: string, alpha: number) {
-  const h = hex.replace('#', '')
-  const r = parseInt(h.substring(0, 2), 16)
-  const g = parseInt(h.substring(2, 4), 16)
-  const b = parseInt(h.substring(4, 6), 16)
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+function firstName(full: string | null | undefined) {
+  return (full ?? '').trim().split(/\s+/)[0] || null
 }
 
-// Block color comes from the appointment type's own color (so editing a
-// type's color actually shows up on the calendar, and a Massage and an
-// Adjustment don't look identical just because both are "booked") -- status
-// is conveyed through the small dot + text style instead of the block color.
-const { resolved: resolvedTheme } = useTheme()
-function appointmentColorStyle(appt: AppointmentRow) {
-  const color = appt.appointment_types?.color || '#4C6FEB'
-  // Full-saturation hex borders read as neon/oversaturated against a dark
-  // page background even though they look fine on a light one -- dimmed a
-  // touch in dark mode only, same color hue, just less harsh.
-  const borderAlpha = resolvedTheme.value === 'dark' ? 0.7 : 1
+function blockView(appt: AppointmentRow): BlockView {
+  const stage = stageOf(appt)
+  const payment = visitPaymentById.value[appt.id] ?? { kind: 'none' as const }
   return {
-    borderColor: hexToRgba(color, borderAlpha),
-    borderLeftColor: hexToRgba(color, borderAlpha),
-    backgroundColor: hexToRgba(color, appt.status === 'cancelled' ? 0.12 : 0.32),
+    id: appt.id,
+    name: `${appt.patients?.first_name ?? ''} ${appt.patients?.last_name ?? ''}`.trim(),
+    shortName: shortPatientName(appt.patients?.first_name, appt.patients?.last_name),
+    stage,
+    arrivedAt: appt.checked_in_at ? formatTime(appt.checked_in_at) : null,
+    timeLabel: formatTime(appt.starts_at),
+    typeName: appt.appointment_types?.name ?? null,
+    typeColor: appt.appointment_types?.color ?? null,
+    practitionerName: firstName(appt.team_members?.full_name),
+    owesCents: owesCents(appt.patient_id),
+    bono: bonoForVisit(payment, activePackageByPatient.value[appt.patient_id]),
+    hasNote: !!appt.patients?.sticky_note?.trim(),
+    movedCount: movedCountById.value[appt.id] ?? 0,
+    noNext: needsNextBookingFlag(stage, appt.starts_at, hasFutureAppointment(appt), now.value),
   }
 }
+
+// The counts row's toggle. One at a time: it answers "show me who is X", and
+// everything else dims rather than disappears, so the day keeps its shape.
+const stageFilter = ref<StageFilter | null>(null)
+function isDimmed(appt: AppointmentRow) {
+  return !!stageFilter.value && !matchesFilter(stageFilter.value, stageOf(appt), owesCents(appt.patient_id))
+}
+function toggleStageFilter(f: StageFilter) {
+  stageFilter.value = stageFilter.value === f ? null : f
+}
+
+function countsFor(rows: AppointmentRow[]) {
+  return stageCounts(rows.filter((a) => !a.deleted_at).map((a) => ({ stage: stageOf(a), patientId: a.patient_id, owesCents: owesCents(a.patient_id) })))
+}
+// The row above the grid covers what the grid shows: the day in Day view,
+// the visible days otherwise.
+const rangeCounts = computed(() => {
+  const keys = new Set((viewMode.value === 'day' ? [anchorDate.value] : visibleWeekDays.value).map(toDateKey))
+  return countsFor(appointments.value.filter((a) => keys.has(toDateKey(new Date(a.starts_at)))))
+})
+const { stageLabel, filterLabel } = useStageLabels()
+const countChips = computed(() =>
+  STAGE_FILTERS.map((f) => ({
+    key: f,
+    n: rangeCounts.value.counts[f],
+    label: f === 'owes' ? `${filterLabel(f)} · ${formatEur(rangeCounts.value.owedCents)}` : filterLabel(f),
+  })).filter((c) => c.n > 0 || stageFilter.value === c.key),
+)
+/** The words after the bold total: "citas hoy". */
+const countsNoun = computed(() => {
+  const one = rangeCounts.value.total === 1
+  const today = viewMode.value === 'day' && isSameDate(anchorDate.value, new Date())
+  const noun = t(one ? 'appointment' : 'appointments', one ? 'cita' : 'citas')
+  return today ? `${noun} ${t('today', 'hoy')}` : noun
+})
+function dayHeaderCounts(day: Date) {
+  const key = toDateKey(day)
+  const c = countsFor(appointments.value.filter((a) => toDateKey(new Date(a.starts_at)) === key)).counts
+  return { unconfirmed: c.pending, owe: c.owes }
+}
+
+// Stage key for the side panel: one row per stage, drawn with the same pill
+// the blocks use.
+const STAGE_KEY: AppointmentStage[] = ['pending', 'online', 'resched', 'confirmed', 'arrived', 'withp', 'checkout', 'completed', 'noshow']
 
 // Equal-width column positioning for an overlapping block: each lane gets
 // an even fraction of the column's width (_totalCols-wide), at its natural
@@ -697,43 +723,15 @@ function columnStyle(block: LayoutBlock, top: number, height: number) {
   }
 }
 
-function openCreateModal(roomId?: string, clickY?: number) {
-  const time = clickY !== undefined ? pxToTime(clickY, DAY_HOUR_PX.value) : '09:00'
-  if (reschedulingAppointment.value) {
-    pickRescheduleSlot(anchorDate.value, time, roomId ?? null)
-    return
-  }
-  prefill.value = { date: toDateKey(anchorDate.value), time, roomId: roomId ?? '' }
-  modalMode.value = 'create'
-  editingAppointment.value = null
-  modalOpen.value = true
+function openCreateModal() {
+  openCreateAt(anchorDate.value, '09:00', null)
 }
 function openCreateModalForDay(day: Date) {
   if (reschedulingAppointment.value) {
     pickRescheduleSlot(day, '09:00', null)
     return
   }
-  prefill.value = { date: toDateKey(day), time: '09:00', roomId: '' }
-  modalMode.value = 'create'
-  editingAppointment.value = null
-  modalOpen.value = true
-}
-function openCreateModalForDayAtY(day: Date, clickY: number) {
-  prefill.value = { date: toDateKey(day), time: pxToTime(clickY, WEEK_HOUR_PX.value), roomId: '' }
-  modalMode.value = 'create'
-  editingAppointment.value = null
-  modalOpen.value = true
-}
-function openCreateModalForRoomOnDayAtY(day: Date, roomId: string, clickY: number) {
-  const time = pxToTime(clickY, WEEK_HOUR_PX.value)
-  if (reschedulingAppointment.value) {
-    pickRescheduleSlot(day, time, roomId === '__none' ? null : roomId)
-    return
-  }
-  prefill.value = { date: toDateKey(day), time, roomId: roomId === '__none' ? '' : roomId }
-  modalMode.value = 'create'
-  editingAppointment.value = null
-  modalOpen.value = true
+  openCreateAt(day, '09:00', null)
 }
 
 interface LaidOutAppointment extends AppointmentRow {
@@ -849,7 +847,7 @@ function blocksForRoomOnDay(day: Date, roomId: string) {
   return availabilityBlocks.value.filter(
     (b) =>
       (b.room_id === roomId || b.room_id === null) &&
-      (b.practitioner_id === null || b.practitioner_id === practitionerFilter.value) &&
+      blockAppliesToFilter(b) &&
       new Date(b.starts_at).getTime() < dayEnd &&
       new Date(b.ends_at).getTime() > dayStart,
   )
@@ -870,7 +868,6 @@ function openEditModal(appointment: AppointmentRow) {
 async function onSaved() {
   modalOpen.value = false
   await loadAppointments()
-  await loadTodayGlance()
 }
 
 // --- Drag-to-move / drag-to-resize ---
@@ -903,7 +900,7 @@ function hourPxForView() {
   return viewMode.value === 'day' ? DAY_HOUR_PX.value : WEEK_HOUR_PX.value
 }
 // Inverse of timeToPx, but returns a raw (signed, snapped) minute delta for
-// drag math instead of an absolute "HH:MM" -- pxToTime always measures from
+// drag math instead of an absolute "HH:MM" -- snapMin always measures from
 // the grid's top and can't represent a negative offset.
 function pxToMinutesSinceStart(px: number, hourPx: number) {
   const totalMin = (px / hourPx) * 60
@@ -1240,7 +1237,6 @@ async function advanceFlow(appt: FlowAppointment, field: 'flow_with_practitioner
 async function completeFlow(appt: FlowAppointment) {
   appt.status = 'completed'
   await supabase.from('appointments').update({ status: 'completed' }).eq('id', appt.id)
-  await loadTodayGlance()
 }
 
 // Hovering an appointment block shows patient/billing/changelog context
@@ -1341,30 +1337,241 @@ function closeHoverCardNow() {
 }
 const hoveredRoomName = computed(() => rooms.value.find((r) => r.id === hoveredAppt.value?.room_id)?.name ?? null)
 
-// The credit/no-future-appointment icons live inside each appointment
-// block's own `overflow-hidden` (needed to clip content to its rounded
-// corners) -- a plain CSS group-hover tooltip positioned via bottom-full
-// never actually became visible, since it was clipped away the instant it
-// tried to escape the block's bounds. Same fixed-position-computed-from-
-// the-hovered-element approach as the appointment hover card above sidesteps
-// that entirely.
-const iconTooltip = ref<{ text: string; x: number; y: number } | null>(null)
-let iconTooltipTimer: ReturnType<typeof setTimeout> | null = null
-function scheduleIconTooltip(event: MouseEvent, text: string) {
-  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-  iconTooltipTimer = setTimeout(() => {
-    // Centered on the icon via -translate-x-1/2, but clamped so it doesn't
-    // run off either edge of the viewport near the calendar's own edges.
-    const x = Math.min(Math.max(rect.left + rect.width / 2, 100), window.innerWidth - 100)
-    iconTooltip.value = { text, x, y: rect.top }
-  }, 2000)
+// --- Empty slots: hover, keyboard focus, touch ---
+// Every column on screen, left to right: rooms in Day view, day x room in the
+// week views. A cell is (column, minute since START_HOUR), one slot tall.
+const gridColumns = computed(() => {
+  const days = viewMode.value === 'day' ? [anchorDate.value] : visibleWeekDays.value
+  return days.flatMap((day) => dayColumns.value.map((c) => ({ day, dayKey: toDateKey(day), roomId: c.id, roomName: c.name })))
+})
+interface Cell { col: number; min: number }
+const focusCell = ref<Cell | null>(null)
+const hoverCell = ref<Cell | null>(null)
+const gridHasFocus = ref(false)
+let lastPointerType = 'mouse'
+
+function colIndex(dayKey: string, roomId: string) {
+  return gridColumns.value.findIndex((c) => c.dayKey === dayKey && c.roomId === roomId)
 }
-function cancelIconTooltip() {
-  if (iconTooltipTimer) {
-    clearTimeout(iconTooltipTimer)
-    iconTooltipTimer = null
+function cellStart(cell: Cell): Date {
+  const c = gridColumns.value[cell.col]
+  const d = new Date(c.day)
+  d.setHours(START_HOUR, cell.min, 0, 0)
+  return d
+}
+function cellTimeLabel(cell: Cell) {
+  return slotLabel(cell.min)
+}
+function snapMin(offsetY: number, hourPx: number) {
+  const m = Math.floor(((offsetY / hourPx) * 60) / SLOT_MIN.value) * SLOT_MIN.value
+  return Math.min(Math.max(0, m), TOTAL_MIN - SLOT_MIN.value)
+}
+
+// The visible appointment covering a cell, if any -- what Enter opens.
+function appointmentAtCell(cell: Cell): AppointmentRow | null {
+  const c = gridColumns.value[cell.col]
+  if (!c) return null
+  const at = cellStart(cell).getTime()
+  return (
+    appointments.value.find(
+      (a) =>
+        isApptVisible(a) &&
+        a.status !== 'cancelled' &&
+        (a.room_id ?? '__none') === c.roomId &&
+        toDateKey(new Date(a.starts_at)) === c.dayKey &&
+        new Date(a.starts_at).getTime() <= at &&
+        new Date(a.ends_at).getTime() > at,
+    ) ?? null
+  )
+}
+// Free = nothing booked or blocked across the slot, and somebody works then.
+// Hatched hours still take a click (with the out-of-hours confirm), but the
+// grid does not invite one there.
+function cellIsFree(cell: Cell): boolean {
+  const c = gridColumns.value[cell.col]
+  if (!c) return false
+  const start = cellStart(cell).getTime()
+  const end = start + SLOT_MIN.value * 60000
+  const overlaps = (s: string, e: string) => new Date(s).getTime() < end && new Date(e).getTime() > start
+  if (appointments.value.some((a) => isApptVisible(a) && a.status !== 'cancelled' && (a.room_id ?? '__none') === c.roomId && overlaps(a.starts_at, a.ends_at))) return false
+  if (blocksForRoomOnDay(c.day, c.roomId).some((b) => overlaps(b.starts_at, b.ends_at))) return false
+  if (freedSlotsFor(c.dayKey, c.roomId).some((f) => overlaps(f.offered_starts_at, f.offered_ends_at ?? f.offered_starts_at))) return false
+  return isWorkingTime(new Date(start))
+}
+
+// What the ghost is drawn on: the keyboard's cell while the grid has focus,
+// otherwise whatever the pointer is over.
+const ghostCell = computed<Cell | null>(() => (gridHasFocus.value && focusCell.value) || hoverCell.value)
+function ghostFor(dayKey: string, roomId: string) {
+  const cell = ghostCell.value
+  if (!cell || reschedulingAppointment.value) return null
+  const c = gridColumns.value[cell.col]
+  if (!c || c.dayKey !== dayKey || c.roomId !== roomId) return null
+  if (appointmentAtCell(cell)) return null
+  return { min: cell.min, free: cellIsFree(cell), label: cellTimeLabel(cell) }
+}
+// The appointment under the keyboard's cell is "selected": ringed, and the
+// one Enter opens.
+const selectedApptId = computed(() => {
+  if (!gridHasFocus.value || !focusCell.value) return null
+  return appointmentAtCell(focusCell.value)?.id ?? null
+})
+
+function onColumnPointerMove(e: PointerEvent, dayKey: string, roomId: string, hourPx: number) {
+  if (e.pointerType !== 'mouse' || dragState.value) return
+  // Only the bare column: over a block or a band the pointer is on that, not
+  // on a free slot.
+  if (e.target !== e.currentTarget) {
+    hoverCell.value = null
+    return
   }
-  iconTooltip.value = null
+  const col = colIndex(dayKey, roomId)
+  const min = snapMin(e.offsetY, hourPx)
+  if (hoverCell.value?.col !== col || hoverCell.value?.min !== min) hoverCell.value = { col, min }
+}
+function onColumnPointerDown(e: PointerEvent) {
+  lastPointerType = e.pointerType
+}
+
+// A tap on touch shows the ghost first and books on the second tap on the
+// same cell, so a finger resting on the grid while scrolling does not open a
+// form. A mouse click books straight away, as it always has.
+function onColumnClick(e: MouseEvent, day: Date, roomId: string, hourPx: number) {
+  // The cell under the pointer, not the nearest slot boundary: a click in the
+  // lower half of 18:00-18:30 is a click on 18:00.
+  const cell = { col: colIndex(toDateKey(day), roomId), min: snapMin(e.offsetY, hourPx) }
+  const time = slotLabel(cell.min)
+  const room = roomId === '__none' ? null : roomId
+  if (reschedulingAppointment.value) {
+    pickRescheduleSlot(day, time, room)
+    return
+  }
+  if (lastPointerType === 'touch' || lastPointerType === 'pen') {
+    const same = focusCell.value?.col === cell.col && focusCell.value?.min === cell.min && gridHasFocus.value
+    focusCell.value = cell
+    gridHasFocus.value = true
+    if (!same) return
+  }
+  // Arrow keys carry on from wherever the mouse last booked.
+  focusCell.value = cell
+  openCreateAt(day, time, room)
+}
+
+function openCreateAt(day: Date, time: string, roomId: string | null) {
+  prefill.value = { date: toDateKey(day), time, roomId: roomId ?? '' }
+  modalMode.value = 'create'
+  editingAppointment.value = null
+  modalOpen.value = true
+}
+
+const gridRef = ref<HTMLElement | null>(null)
+// Only KEYBOARD focus draws the focus cell. A mouse click also focuses the
+// grid (it is tabbable), and drawing a ghost at the keyboard's cell then would
+// fight the one under the pointer.
+function onGridFocus() {
+  if (!gridRef.value?.matches(':focus-visible')) return
+  activateKeyboardFocus()
+}
+function activateKeyboardFocus() {
+  gridHasFocus.value = true
+  if (!focusCell.value) {
+    // Start where the day is: now, if it is on screen, else the first hour
+    // anybody works.
+    const nowMin = now.value.getHours() * 60 + now.value.getMinutes() - START_HOUR * 60
+    const onScreen = gridColumns.value.findIndex((c) => isSameDate(c.day, now.value))
+    const min = onScreen >= 0 && nowMin >= 0 && nowMin < TOTAL_MIN ? Math.floor(nowMin / SLOT_MIN.value) * SLOT_MIN.value : 0
+    focusCell.value = { col: Math.max(0, onScreen), min }
+  }
+}
+function onGridBlur(e: FocusEvent) {
+  if (gridRef.value?.contains(e.relatedTarget as Node | null)) return
+  gridHasFocus.value = false
+}
+function onGridKeydown(e: KeyboardEvent) {
+  if (!gridHasFocus.value && e.key.startsWith('Arrow')) {
+    e.preventDefault()
+    activateKeyboardFocus()
+    return
+  }
+  const cell = focusCell.value
+  if (!cell) return
+  const lastCol = gridColumns.value.length - 1
+  const lastMin = TOTAL_MIN - SLOT_MIN.value
+  let next: Cell | null = null
+  switch (e.key) {
+    case 'ArrowUp':
+      next = { col: cell.col, min: Math.max(0, cell.min - SLOT_MIN.value) }
+      break
+    case 'ArrowDown':
+      next = { col: cell.col, min: Math.min(lastMin, cell.min + SLOT_MIN.value) }
+      break
+    case 'ArrowLeft':
+      next = { col: Math.max(0, cell.col - 1), min: cell.min }
+      break
+    case 'ArrowRight':
+      next = { col: Math.min(lastCol, cell.col + 1), min: cell.min }
+      break
+    case 'Enter':
+    case ' ': {
+      e.preventDefault()
+      const appt = appointmentAtCell(cell)
+      if (appt) handleAppointmentClick(appt)
+      else {
+        const c = gridColumns.value[cell.col]
+        if (reschedulingAppointment.value) pickRescheduleSlot(c.day, slotLabel(cell.min), c.roomId === '__none' ? null : c.roomId)
+        else openCreateAt(c.day, slotLabel(cell.min), c.roomId === '__none' ? null : c.roomId)
+      }
+      return
+    }
+    case 'Escape':
+      gridRef.value?.blur()
+      return
+    default:
+      return
+  }
+  e.preventDefault()
+  focusCell.value = next
+  nextTick(() => document.querySelector('[data-grid-focus]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }))
+}
+// Read out by screen readers as the focus moves.
+const focusAnnouncement = computed(() => {
+  const cell = focusCell.value
+  if (!gridHasFocus.value || !cell) return ''
+  const c = gridColumns.value[cell.col]
+  if (!c) return ''
+  const appt = appointmentAtCell(cell)
+  const where = `${viewMode.value === 'day' ? '' : `${formatWeekdayDate(c.day)}, `}${c.roomName}, ${cellTimeLabel(cell)}`
+  if (appt) return `${where}: ${blockView(appt).name}, ${stageLabel(stageOf(appt), appt.checked_in_at ? formatTime(appt.checked_in_at) : null)}`
+  return `${where}: ${cellIsFree(cell) ? t('free', 'libre') : t('unavailable', 'no disponible')}`
+})
+// Where the keyboard's cell sits in its column, for the focus ring.
+function focusRectFor(dayKey: string, roomId: string, hourPx: number) {
+  const cell = focusCell.value
+  if (!gridHasFocus.value || !cell) return null
+  const c = gridColumns.value[cell.col]
+  if (!c || c.dayKey !== dayKey || c.roomId !== roomId) return null
+  return { top: (cell.min / 60) * hourPx, height: (SLOT_MIN.value / 60) * hourPx }
+}
+
+// A slot freed by a cancellation and offered to the waitlist. It is not free
+// -- someone has until the offer expires to take it -- so it is drawn where
+// the cancelled visit was, naming who has it and until when.
+function freedSlotsFor(dayKey: string, roomId: string) {
+  const nowMs = now.value.getTime()
+  return waitlistOffers.value.filter(
+    (o) =>
+      (o.offered_room_id ?? '__none') === roomId &&
+      toDateKey(new Date(o.offered_starts_at)) === dayKey &&
+      (!o.offer_expires_at || new Date(o.offer_expires_at).getTime() > nowMs) &&
+      (practitionerFilter.value === ALL_PRACTITIONERS || !o.offered_practitioner_id || o.offered_practitioner_id === practitionerFilter.value),
+  )
+}
+function freedSlotLabel(o: WaitlistOffer) {
+  const who = `${o.patients?.first_name ?? ''} ${o.patients?.last_name ?? ''}`.trim() || t('the waitlist', 'la lista de espera')
+  return t(`Slot offered to ${who}`, `Hueco ofrecido a ${who}`)
+}
+function freedSlotUntil(o: WaitlistOffer) {
+  return o.offer_expires_at ? t(`replies by ${formatTime(o.offer_expires_at)}`, `responde antes de las ${formatTime(o.offer_expires_at)}`) : ''
 }
 
 // Current-time indicator (day view only, per spec).
@@ -1387,18 +1594,18 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
       <div class="flex items-center gap-4">
         <h1 class="text-[18px] font-[640] tracking-tightTitle text-ink-900">{{ t('Calendar', 'Calendario') }}</h1>
         <div class="flex items-center gap-1">
-          <button type="button" :aria-label="t('Previous', 'Anterior')" class="flex h-[26px] w-[26px] items-center justify-center rounded-ctlSm border border-line-control text-ink-500 hover:border-line-controlHover hover:bg-surface-subtle" @click="stepDate(-1)">
+          <button type="button" :aria-label="t('Previous', 'Anterior')" class="flex h-[26px] w-[26px] items-center justify-center rounded-ctlSm border border-line-control text-ink-500 hover:border-line-controlHover hover:bg-surface-subtle [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11" @click="stepDate(-1)">
             <svg width="7" height="11" viewBox="0 0 7 11" fill="none"><path d="M6 1L1 5.5L6 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
           </button>
-          <button type="button" class="flex h-[26px] items-center rounded-ctlSm border border-line-control px-2.5 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover hover:bg-surface-subtle" @click="goToday">{{ t('Today', 'Hoy') }}</button>
-          <button type="button" :aria-label="t('Next', 'Siguiente')" class="flex h-[26px] w-[26px] items-center justify-center rounded-ctlSm border border-line-control text-ink-500 hover:border-line-controlHover hover:bg-surface-subtle" @click="stepDate(1)">
+          <button type="button" class="flex h-[26px] items-center rounded-ctlSm border border-line-control px-2.5 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover hover:bg-surface-subtle [@media(pointer:coarse)]:h-11" @click="goToday">{{ t('Today', 'Hoy') }}</button>
+          <button type="button" :aria-label="t('Next', 'Siguiente')" class="flex h-[26px] w-[26px] items-center justify-center rounded-ctlSm border border-line-control text-ink-500 hover:border-line-controlHover hover:bg-surface-subtle [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11" @click="stepDate(1)">
             <svg width="7" height="11" viewBox="0 0 7 11" fill="none"><path d="M1 1L6 5.5L1 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
           </button>
         </div>
         <span class="text-[13.5px] font-[560] text-ink-700">{{ rangeLabel }}</span>
       </div>
       <div class="flex flex-wrap items-center gap-2">
-        <select v-model="viewMode" class="h-[26px] rounded-ctlSm border border-line-control bg-surface px-2 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover focus:border-brand focus:outline-none">
+        <select v-model="viewMode" :aria-label="t('View', 'Vista')" class="h-[26px] rounded-ctlSm border border-line-control bg-surface px-2 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover focus:border-brand focus:outline-none [@media(pointer:coarse)]:h-11">
           <option value="day">{{ t('Day', 'Día') }}</option>
           <option value="workweek">{{ t('Work week', 'Semana laboral') }}</option>
           <option value="week">{{ t('Week', 'Semana') }}</option>
@@ -1406,13 +1613,13 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
         <UiBtn v-if="can('payments_allocate')" variant="secondary" size="sm" @click="cashShiftOpen = true">{{ t('Cash Shift', 'Turno de Caja') }}</UiBtn>
         <UiBtn variant="secondary" size="sm" @click="openBlockCreateModal()">{{ t('Block time', 'Bloquear horario') }}</UiBtn>
         <UiBtn variant="primary" size="sm" @click="openCreateModal()">{{ t('+ New Appointment', '+ Nueva Cita') }}</UiBtn>
-        <!-- The mini-calendar/stats/legend panel is a fixed 238px column at
-        lg+ (below), but that plus the optional flow-tracker column would eat
+        <!-- The mini-calendar/display panel is a fixed 238px column at lg+
+        (below), but that plus the optional flow-tracker column would eat
         most of a phone's width -- so below lg it's an off-canvas drawer
         instead, reached from here. -->
         <button
           type="button"
-          class="flex h-[26px] items-center gap-1 rounded-ctlSm border border-line-control px-2.5 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover hover:bg-surface-subtle lg:hidden"
+          class="flex h-[26px] items-center gap-1 rounded-ctlSm border border-line-control px-2.5 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover hover:bg-surface-subtle lg:hidden [@media(pointer:coarse)]:h-11"
           @click="mobileInfoOpen = true"
         >
           <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="7" cy="7" r="5.3" /><path d="M7 6.3v3.4M7 4.3v.15" stroke-linecap="round" /></svg>
@@ -1421,18 +1628,28 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
       </div>
     </header>
 
-    <!-- One tab per practitioner, PracticeHub-style -- there is no merged
-         "all practitioners" view, since two practitioners double-booked into
-         the same room at overlapping times would otherwise render as an
-         unreadable stack of superimposed cards. -->
-    <div v-if="clinicTeamMembers.length > 0" data-testid="practitioner-tabs" class="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b border-line bg-surface px-6">
+    <!-- One tab per practitioner, plus the whole clinic and the visits with
+         no practitioner at all. -->
+    <div v-if="clinicTeamMembers.length > 0" data-testid="practitioner-tabs" class="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b border-line bg-surface px-4 lg:px-6 [@media(pointer:coarse)]:h-12">
+      <button
+        type="button"
+        data-testid="practitioner-tab-all"
+        class="h-[26px] shrink-0 rounded-ctlSm px-3 text-[12.5px] font-medium transition-colors [@media(pointer:coarse)]:h-11"
+        :class="practitionerFilter === ALL_PRACTITIONERS ? 'bg-brand text-white' : 'text-ink-600 hover:bg-surface-subtle'"
+        :aria-pressed="practitionerFilter === ALL_PRACTITIONERS"
+        @click="practitionerFilter = ALL_PRACTITIONERS"
+      >
+        {{ t('Whole clinic', 'Toda la clínica') }}
+      </button>
+      <span class="mx-1 h-4 w-px shrink-0 bg-line" aria-hidden="true" />
       <button
         v-for="m in clinicTeamMembers"
         :key="m.id"
         type="button"
         data-testid="practitioner-tab"
-        class="h-[26px] shrink-0 rounded-ctlSm px-3 text-[12.5px] font-medium transition-colors"
+        class="flex h-[26px] shrink-0 items-center gap-1.5 rounded-ctlSm px-3 text-[12.5px] font-medium transition-colors [@media(pointer:coarse)]:h-11"
         :class="practitionerFilter === m.id ? 'bg-brand text-white' : 'text-ink-600 hover:bg-surface-subtle'"
+        :aria-pressed="practitionerFilter === m.id"
         @click="practitionerFilter = m.id"
       >
         {{ m.full_name }}
@@ -1440,8 +1657,9 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
       <button
         type="button"
         data-testid="practitioner-tab-unassigned"
-        class="h-[26px] shrink-0 rounded-ctlSm px-3 text-[12.5px] font-medium transition-colors"
+        class="h-[26px] shrink-0 rounded-ctlSm px-3 text-[12.5px] font-medium transition-colors [@media(pointer:coarse)]:h-11"
         :class="practitionerFilter === UNASSIGNED_PRACTITIONER ? 'bg-brand text-white' : 'text-ink-faint hover:bg-surface-subtle'"
+        :aria-pressed="practitionerFilter === UNASSIGNED_PRACTITIONER"
         @click="practitionerFilter = UNASSIGNED_PRACTITIONER"
       >
         {{ t('No practitioner', 'Sin profesional') }}
@@ -1462,27 +1680,57 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
       </button>
     </div>
 
+    <!-- The day, counted. Each chip is a filter: it dims every block that
+         does not match, so the day keeps its shape while one kind stands out.
+         This is what "Today at a glance" used to be, moved to where the eye
+         already is and made to do something. -->
+    <div v-if="store.currentClinicId && !loading" data-cy="day-counts" class="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-line bg-surface px-4 py-1.5 lg:px-6">
+      <span class="shrink-0 pr-1 text-[13px] text-ink-muted" data-cy="day-counts-total"><strong class="font-semibold text-ink-900">{{ rangeCounts.total }}</strong> {{ countsNoun }}</span>
+      <button
+        v-for="c in countChips"
+        :key="c.key"
+        type="button"
+        :data-cy="`day-filter-${c.key}`"
+        :aria-pressed="stageFilter === c.key"
+        class="flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] transition-colors [@media(pointer:coarse)]:h-11"
+        :class="stageFilter === c.key ? 'border-[1.5px] border-brand bg-brand-tint text-brand-text' : 'border border-line-control bg-surface text-ink-700 hover:border-line-controlHover'"
+        @click="toggleStageFilter(c.key)"
+      >
+        <span class="h-2 w-2 shrink-0 rounded-full" :class="FILTER_DOT_CLASS[c.key]" aria-hidden="true" />
+        <strong class="font-semibold">{{ c.n }}</strong>{{ c.label }}
+      </button>
+      <span class="grow" />
+      <button
+        v-if="stageFilter"
+        type="button"
+        data-cy="day-filter-clear"
+        class="h-9 shrink-0 rounded-full px-3 text-[13px] font-medium text-brand-text hover:bg-brand-tint [@media(pointer:coarse)]:h-11"
+        @click="stageFilter = null"
+      >
+        {{ t('Show all', 'Ver todas') }}
+      </button>
+    </div>
+
     <div class="flex flex-1 overflow-hidden">
       <div v-if="mobileInfoOpen" class="fixed inset-0 z-30 bg-black/40 lg:hidden" @click="mobileInfoOpen = false" />
 
-      <!-- Left panel: mini month, glance stats, display toggles, status key.
-      Off-canvas below lg (see the Info button above); a permanent column
-      at lg+. -->
+      <!-- Left panel: mini month, display toggles, stage key. Off-canvas
+      below lg (see the Info button above); a permanent column at lg+. -->
       <aside
         class="fixed inset-y-0 left-0 z-40 w-[280px] shrink-0 overflow-y-auto border-r border-line bg-surface-sidebar transition-transform duration-200 lg:static lg:z-auto lg:w-[238px] lg:translate-x-0"
         :class="mobileInfoOpen ? 'translate-x-0' : '-translate-x-full'"
       >
         <div class="flex items-center justify-between px-3 pt-3 lg:hidden">
           <span class="text-[12.5px] font-[640] text-ink-900">{{ t('Calendar info', 'Info del calendario') }}</span>
-          <button type="button" class="flex h-6 w-6 items-center justify-center rounded-ctlSm text-ink-muted2 hover:bg-surface-subtle" @click="mobileInfoOpen = false">
+          <button type="button" :aria-label="t('Close', 'Cerrar')" class="flex h-11 w-11 items-center justify-center rounded-ctlSm text-ink-muted2 hover:bg-surface-subtle" @click="mobileInfoOpen = false">
             <svg width="13" height="13" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2 2l10 10M12 2L2 12" /></svg>
           </button>
         </div>
         <div class="m-3 rounded-card border border-line bg-surface p-3">
           <div class="flex items-center justify-between">
-            <button type="button" class="rounded-ctlSm p-1 text-ink-faint hover:bg-surface-subtle hover:text-ink-600" @click="miniBase = addMonths(miniBase, -1)">‹</button>
+            <button type="button" :aria-label="t('Previous month', 'Mes anterior')" class="rounded-ctlSm p-1 text-ink-faint hover:bg-surface-subtle hover:text-ink-600" @click="miniBase = addMonths(miniBase, -1)">‹</button>
             <span class="text-[12.5px] font-[640] text-ink-900">{{ miniMonthLabel }}</span>
-            <button type="button" class="rounded-ctlSm p-1 text-ink-faint hover:bg-surface-subtle hover:text-ink-600" @click="miniBase = addMonths(miniBase, 1)">›</button>
+            <button type="button" :aria-label="t('Next month', 'Mes siguiente')" class="rounded-ctlSm p-1 text-ink-faint hover:bg-surface-subtle hover:text-ink-600" @click="miniBase = addMonths(miniBase, 1)">›</button>
           </div>
           <div class="mt-2 grid grid-cols-7 gap-y-1 text-center">
             <span v-for="d in miniWeekdayAbbrevs" :key="d" class="text-[10px] font-medium uppercase text-ink-faint">{{ d }}</span>
@@ -1504,31 +1752,6 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
         </div>
 
         <div class="mx-3 rounded-card border border-line bg-surface p-3">
-          <div class="space-y-1.5">
-            <div class="flex items-center justify-between text-[12.5px]">
-              <span class="text-ink-600">{{ t('Booked', 'Reservadas') }}</span>
-              <span class="font-mono text-[12.5px] font-medium text-ink-900">{{ todayGlance.booked }}</span>
-            </div>
-            <div class="flex items-center justify-between text-[12.5px]">
-              <span class="text-success-text">{{ t('Seen', 'Atendidas') }}</span>
-              <span class="font-mono text-[12.5px] font-medium text-success-text">{{ todayGlance.seen }} ({{ glancePct(todayGlance.seen) }}%)</span>
-            </div>
-            <div class="flex items-center justify-between text-[12.5px]">
-              <span class="text-warning-text">{{ t('Rescheduled', 'Reprogramadas') }}</span>
-              <span class="font-mono text-[12.5px] font-medium text-warning-text">{{ todayGlance.rescheduled }} ({{ glancePct(todayGlance.rescheduled) }}%)</span>
-            </div>
-            <div class="flex items-center justify-between text-[12.5px]">
-              <span class="text-danger-text">{{ t('Cancelled', 'Canceladas') }}</span>
-              <span class="font-mono text-[12.5px] font-medium text-danger-text">{{ todayGlance.cancelled }} ({{ glancePct(todayGlance.cancelled) }}%)</span>
-            </div>
-            <div class="flex items-center justify-between text-[12.5px]">
-              <span class="text-ink-muted2">{{ t('Missed', 'Perdidas') }}</span>
-              <span class="font-mono text-[12.5px] font-medium text-ink-muted2">{{ todayGlance.missed }} ({{ glancePct(todayGlance.missed) }}%)</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="mx-3 mt-3 rounded-card border border-line bg-surface p-3">
           <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">{{ t('Display', 'Visualización') }}</p>
           <div class="mt-2 space-y-2.5">
             <div v-for="toggle in displayToggles" :key="toggle.key" class="flex items-center justify-between gap-2">
@@ -1537,6 +1760,8 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                 type="button"
                 role="switch"
                 :aria-checked="settings[toggle.key]"
+                :aria-label="toggle.label"
+                :data-cy="`display-${toggle.key}`"
                 class="relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors"
                 :class="settings[toggle.key] ? 'bg-brand' : 'bg-toggle-off'"
                 @click="settings[toggle.key] = !settings[toggle.key]"
@@ -1548,11 +1773,18 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
         </div>
 
         <div class="m-3 rounded-card border border-line bg-surface p-3">
-          <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">{{ t('Status key', 'Leyenda de estados') }}</p>
+          <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">{{ t('Stage key', 'Leyenda de estados') }}</p>
+          <p class="mt-1 text-[11.5px] leading-snug text-ink-muted">{{ t('Dashed border: not confirmed yet. Red: money owed.', 'Borde discontinuo: sin confirmar. Rojo: dinero pendiente.') }}</p>
           <div class="mt-2 space-y-1.5">
-            <div v-for="item in statusLegend" :key="item.key" class="flex items-center gap-2 text-[12.5px] text-ink-600">
-              <span class="h-[7px] w-[7px] shrink-0 rounded-full" :class="item.dotClass" />
-              {{ item.label }}
+            <div v-for="stage in STAGE_KEY" :key="stage" class="flex items-center gap-2 text-[12.5px] text-ink-600">
+              <span
+                class="h-3 w-4 shrink-0 rounded-[3px]"
+                :class="['pending', 'online'].includes(stage) ? 'border-[1.5px] border-dashed border-ink-faint' : stage === 'resched' ? 'border-[1.5px] border-dashed border-warning-accent bg-warning-bg' : stage === 'completed' ? 'border border-line bg-surface-subtle' : stage === 'noshow' ? 'border border-line-control bg-chip-bg' : 'border border-line-control bg-brand-tint'"
+                aria-hidden="true"
+              />
+              <span class="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-semibold" :class="STAGE_TONE_CLASS[STAGE_TONE[stage]]">
+                <CalendarStageIcon :stage="stage" />{{ stageLabel(stage) }}
+              </span>
             </div>
           </div>
         </div>
@@ -1580,277 +1812,126 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
           {{ t('No clinic selected.', 'Ninguna clínica seleccionada.') }}
         </div>
 
-        <!-- Day view: room columns -->
-        <div v-else-if="viewMode === 'day'" class="min-w-0 flex-1 overflow-x-auto">
-          <div :style="{ minWidth: `${58 + dayColumns.length * 220}px` }">
-            <div class="sticky top-0 z-30 flex bg-surface">
-              <div class="h-10 w-[58px] shrink-0 border-b border-r border-line"></div>
-              <div v-for="col in dayColumns" :key="col.id" class="flex h-10 flex-1 flex-col items-center justify-center border-b border-r border-line last:border-r-0">
-                <span class="text-[13px] font-semibold text-ink-900">{{ col.name }}</span>
-                <span v-if="roomPractitionerLabel(col.id)" class="text-[11.5px] leading-none text-ink-muted2">{{ roomPractitionerLabel(col.id) }}</span>
-              </div>
-            </div>
+        <!-- The grid takes keyboard focus as one stop; arrow keys then move a
+             cell cursor across rooms, days and slots (onGridKeydown). -->
+        <div
+          v-else
+          ref="gridRef"
+          tabindex="0"
+          role="group"
+          data-cy="calendar-grid"
+          :aria-label="t('Calendar grid. Arrow keys move between slots; Enter books a free slot or opens an appointment.', 'Calendario. Las flechas mueven entre huecos; Intro reserva un hueco libre o abre una cita.')"
+          class="flex min-w-0 flex-1 flex-col outline-none"
+          @focus="onGridFocus"
+          @blur="onGridBlur"
+          @keydown="onGridKeydown"
+        >
+          <span class="sr-only" aria-live="polite">{{ focusAnnouncement }}</span>
 
-            <div class="relative flex" :style="{ height: `${dayGridHeight}px` }">
-              <div class="relative w-[58px] shrink-0 border-r border-line">
-                <span
-                  v-for="h in hourMarks"
-                  :key="h"
-                  class="pointer-events-none absolute left-0 right-0 px-2 font-mono text-[11px] text-ink-faint"
-                  :style="{ top: `${Math.max(0, (h - START_HOUR) * DAY_HOUR_PX - 7)}px` }"
-                >
-                  {{ hourLabel(h) }}
-                </span>
-                <span
-                  v-for="m in slotMarks"
-                  :key="`slot-label-${m}`"
-                  class="pointer-events-none absolute left-0 right-0 px-2 font-mono text-[9.5px] text-ink-faint2"
-                  :style="{ top: `${Math.max(0, (m / 60) * DAY_HOUR_PX - 6)}px` }"
-                >
-                  {{ slotLabel(m) }}
-                </span>
-              </div>
-
-              <div
-                v-for="col in dayColumns"
-                :key="col.id"
-                data-cal-col
-                :data-room-id="col.id"
-                :data-day-key="toDateKey(anchorDate)"
-                class="relative flex-1 cursor-pointer border-r border-line last:border-r-0"
-                @click="openCreateModal(col.id === '__none' ? undefined : col.id, $event.offsetY)"
-              >
-                <div v-for="m in slotMarks" :key="`slot-${m}`" class="pointer-events-none absolute left-0 right-0 border-t border-line" :style="{ top: `${(m / 60) * DAY_HOUR_PX}px` }" />
-                <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-line-control" :style="{ top: `${(h - START_HOUR) * DAY_HOUR_PX}px` }" />
-                <div v-for="rect in closedSlotRects(anchorDate, DAY_HOUR_PX)" :key="rect.top" class="pointer-events-none absolute left-0 right-0 bg-line-row2" :style="{ top: `${rect.top}px`, height: `${rect.height}px` }" />
-
-                <div
-                  v-for="block in blocksForRoom(col.id)"
-                  :key="block.id"
-                  class="absolute left-0 right-0 z-0 flex cursor-pointer items-center justify-center overflow-hidden bg-[repeating-linear-gradient(135deg,#F4F5F8,#F4F5F8_6px,#EBECF1_6px,#EBECF1_12px)] font-mono text-[10.5px] text-ink-muted2"
-                  :style="{ top: `${timeToPx(block.starts_at, DAY_HOUR_PX)}px`, height: `${durationToPx(block.starts_at, block.ends_at, DAY_HOUR_PX, DAY_MIN_AVAILABILITY_PX)}px` }"
-                  @click.stop="openBlockEditModal(block)"
-                >
-                  {{ blockLabel(block) }}
-                </div>
-
-                <template v-for="(appt, i) in layoutForRoom(col.id)" :key="isOverflowBlock(appt) ? `overflow-${col.id}-${i}` : appt.id">
-                  <div
-                    v-if="isOverflowBlock(appt)"
-                    class="absolute flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[10.5px] font-medium text-ink-muted2 shadow-card"
-                    :title="`${appt.count} ${appt.count === 1 ? t('more appointment', 'cita más') : t('more appointments', 'citas más')} ${t('at this time', 'a esta hora')}`"
-                    :style="columnStyle(appt, timeToPx(appt.starts_at, DAY_HOUR_PX), OVERFLOW_CHIP_PX)"
-                  >
-                    +{{ appt.count }} {{ t('more', 'más') }}
-                  </div>
-                  <div
-                    v-else
-                    class="absolute scroll-mt-10 overflow-hidden rounded-[7px] border border-l-[3px] shadow-card"
-                    :class="appt.status === 'booked' ? 'cursor-grab active:cursor-grabbing' : ''"
-                    :style="{
-                      ...appointmentColorStyle(appt),
-                      ...columnStyle(
-                        appt,
-                        timeToPx(appt.starts_at, DAY_HOUR_PX),
-                        Math.max(0, durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) - 3),
-                      ),
-                    }"
-                    @pointerdown="startAppointmentDrag(appt, 'move', $event)"
-                    @click.stop="handleAppointmentClick(appt)"
-                    @mouseenter="scheduleHoverCard(appt, $event)"
-                    @mouseleave="cancelHoverShow"
-                  >
-                    <div
-                      class="flex h-full flex-col justify-start gap-0.5 px-2"
-                      :class="durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) < BLOCK_DROP_ROW3_BELOW || settings.compactRows ? 'py-[2px]' : 'py-1'"
-                    >
-                      <div class="flex items-center gap-1.5">
-                        <span class="flex h-[10px] w-[10px] shrink-0 items-center justify-center rounded-full bg-ink-faint3/50">
-                          <span class="h-[6px] w-[6px] shrink-0 rounded-full" :class="dotClass(appt)" />
-                        </span>
-                        <p class="min-w-0 flex-1 truncate text-[12.5px] font-semibold" :class="[nameClass(appt), { 'blur-sm select-none': settings.privacyMode, 'line-through opacity-70': appt.status === 'cancelled' || appt.status === 'completed' }]">
-                          {{ appt.patients?.first_name }} {{ appt.patients?.last_name }}
-                        </p>
-                        <span
-                          v-if="(balanceByPatient[appt.patient_id] ?? 0) > 0"
-                          class="relative flex h-[15px] w-[15px] shrink-0 items-center justify-center"
-                          @mouseenter="scheduleIconTooltip($event, `${t('Patient in credit', 'Paciente con saldo a favor')} (${formatCredit(balanceByPatient[appt.patient_id] ?? 0)})`)"
-                          @mouseleave="cancelIconTooltip"
-                        >
-                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" class="text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.5)]">
-                            <path d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-                          </svg>
-                        </span>
-                        <span
-                          v-if="!hasFutureAppointment(appt)"
-                          class="relative flex h-[15px] w-[15px] shrink-0 items-center justify-center"
-                          @mouseenter="scheduleIconTooltip($event, t('No future appointment', 'Sin cita futura'))"
-                          @mouseleave="cancelIconTooltip"
-                        >
-                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" class="text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.5)]">
-                            <path d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5A2.25 2.25 0 015.25 5.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0V11.25A2.25 2.25 0 015.25 9h13.5a2.25 2.25 0 012.25 2.25v7.5M9.75 13.5l4.5 4.5m0-4.5l-4.5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-                          </svg>
-                        </span>
-                      </div>
-                    </div>
-                    <div
-                      v-if="appt.status === 'booked'"
-                      class="absolute inset-x-0 bottom-0 h-[6px] cursor-ns-resize"
-                      @pointerdown.stop="startAppointmentDrag(appt, 'resize', $event)"
-                    ></div>
-                  </div>
-                </template>
-              </div>
-
-              <div v-if="showNowLine" class="pointer-events-none absolute left-0 right-0 z-20" :style="{ top: `${nowLinePx}px` }">
-                <div class="absolute left-0 top-0 h-[7px] w-[7px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-danger-text"></div>
-                <div class="h-px w-full bg-danger-text"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Week view: day columns, each split into room sub-columns like Day view,
-             rather than one shared column per day (which forced every room's
-             appointments into the same lane-splitting and truncated names down
-             to a few characters even when nothing was genuinely double-booked). -->
-        <div v-else class="min-w-0 flex-1 overflow-x-auto">
-          <div class="flex" :style="{ minWidth: `${58 + visibleWeekDays.length * dayColumns.length * WEEK_ROOM_COL_PX}px` }">
-            <div class="sticky left-0 z-20 w-[58px] shrink-0 bg-surface">
-              <div class="sticky top-0 z-30 h-[52px] border-b border-r border-line bg-surface"></div>
-              <div class="relative border-r border-line" :style="{ height: `${weekGridHeight}px` }">
-                <span
-                  v-for="h in hourMarks"
-                  :key="h"
-                  class="pointer-events-none absolute left-0 right-0 px-2 font-mono text-[11px] text-ink-faint"
-                  :style="{ top: `${Math.max(0, (h - START_HOUR) * WEEK_HOUR_PX - 7)}px` }"
-                >
-                  {{ hourLabel(h) }}
-                </span>
-                <span
-                  v-for="m in slotMarks"
-                  :key="`slot-label-${m}`"
-                  class="pointer-events-none absolute left-0 right-0 px-2 font-mono text-[9px] text-ink-faint2"
-                  :style="{ top: `${Math.max(0, (m / 60) * WEEK_HOUR_PX - 5)}px` }"
-                >
-                  {{ slotLabel(m) }}
-                </span>
-              </div>
-            </div>
-
-            <div v-for="day in visibleWeekDays" :key="toDateKey(day)" class="flex flex-1 flex-col border-r border-line last:border-r-0">
-              <div class="sticky top-0 z-30 bg-surface">
-                <div
-                  class="relative flex h-6 items-center justify-center gap-1 border-b border-line"
-                  :class="isSameDate(day, new Date()) ? 'bg-brand-tintDeep' : ''"
-                >
-                  <span class="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-muted2">{{ day.toLocaleDateString(undefined, { weekday: 'short' }) }}</span>
-                  <span class="text-[12.5px] font-medium" :class="isSameDate(day, new Date()) ? 'text-brand-text' : 'text-ink-900'">{{ day.getDate() }}</span>
-                  <button type="button" class="absolute right-1 top-0.5 text-[11px] text-ink-faint hover:text-brand-text" @click.stop="openCreateModalForDay(day)">+</button>
-                </div>
-                <div class="flex h-[26px] border-b border-line">
-                  <div
-                    v-for="col in dayColumns"
-                    :key="col.id"
-                    class="flex flex-1 items-center justify-center truncate border-r border-line-divider px-1 text-[10.5px] font-medium text-ink-muted2 last:border-r-0"
-                    :style="{ minWidth: `${WEEK_ROOM_COL_PX}px` }"
-                  >
-                    {{ col.name }}
-                  </div>
+          <!-- Day view: room columns -->
+          <div v-if="viewMode === 'day'" class="min-w-0 flex-1 overflow-x-auto">
+            <div :style="{ minWidth: `${58 + dayColumns.length * 220}px` }">
+              <div class="sticky top-0 z-30 flex bg-surface">
+                <div class="h-10 w-[58px] shrink-0 border-b border-r border-line"></div>
+                <div v-for="col in dayColumns" :key="col.id" class="flex h-10 flex-1 flex-col items-center justify-center border-b border-r border-line last:border-r-0">
+                  <span class="text-[13px] font-semibold text-ink-900">{{ col.name }}</span>
+                  <span v-if="roomPractitionerLabel(col.id)" class="text-[11.5px] leading-none text-ink-muted2">{{ roomPractitionerLabel(col.id) }}</span>
                 </div>
               </div>
 
-              <div class="relative flex" :style="{ height: `${weekGridHeight}px` }">
+              <div class="relative flex" :style="{ height: `${dayGridHeight}px` }">
+                <div class="relative w-[58px] shrink-0 border-r border-line">
+                  <span
+                    v-for="h in hourMarks"
+                    :key="h"
+                    class="pointer-events-none absolute left-0 right-0 px-2 font-mono text-[11px] text-ink-faint"
+                    :style="{ top: `${Math.max(0, (h - START_HOUR) * DAY_HOUR_PX - 7)}px` }"
+                  >
+                    {{ hourLabel(h) }}
+                  </span>
+                  <span
+                    v-for="m in slotMarks"
+                    :key="`slot-label-${m}`"
+                    class="pointer-events-none absolute left-0 right-0 px-2 font-mono text-[9.5px] text-ink-faint2"
+                    :style="{ top: `${Math.max(0, (m / 60) * DAY_HOUR_PX - 6)}px` }"
+                  >
+                    {{ slotLabel(m) }}
+                  </span>
+                </div>
+
                 <div
                   v-for="col in dayColumns"
                   :key="col.id"
                   data-cal-col
                   :data-room-id="col.id"
-                  :data-day-key="toDateKey(day)"
-                  class="relative flex-1 cursor-pointer border-r border-line-divider last:border-r-0"
-                  :style="{ minWidth: `${WEEK_ROOM_COL_PX}px` }"
-                  @click="openCreateModalForRoomOnDayAtY(day, col.id, $event.offsetY)"
+                  :data-day-key="toDateKey(anchorDate)"
+                  class="relative flex-1 cursor-pointer border-r border-line last:border-r-0"
+                  @pointerdown="onColumnPointerDown"
+                  @pointermove="onColumnPointerMove($event, toDateKey(anchorDate), col.id, DAY_HOUR_PX)"
+                  @pointerleave="hoverCell = null"
+                  @click="onColumnClick($event, anchorDate, col.id, DAY_HOUR_PX)"
                 >
-                  <div v-for="m in slotMarks" :key="`slot-${m}`" class="pointer-events-none absolute left-0 right-0 border-t border-line" :style="{ top: `${(m / 60) * WEEK_HOUR_PX}px` }" />
-                  <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-line-control" :style="{ top: `${(h - START_HOUR) * WEEK_HOUR_PX}px` }" />
-                  <div v-for="rect in closedSlotRects(day, WEEK_HOUR_PX)" :key="rect.top" class="pointer-events-none absolute left-0 right-0 bg-line-row2" :style="{ top: `${rect.top}px`, height: `${rect.height}px` }" />
+                  <div v-for="rect in closedSlotRects(anchorDate, DAY_HOUR_PX)" :key="rect.top" data-cy="closed-hours" class="cal-hatch pointer-events-none absolute left-0 right-0 flex items-start px-2 pt-1.5 text-[12px] text-ink-muted" :style="{ top: `${rect.top}px`, height: `${rect.height}px` }">
+                    <span v-if="rect.height >= 28">{{ t('Nobody working', 'Fuera de horario') }}</span>
+                  </div>
+                  <div v-for="m in slotMarks" :key="`slot-${m}`" class="pointer-events-none absolute left-0 right-0 border-t border-dashed border-line-divider" :style="{ top: `${(m / 60) * DAY_HOUR_PX}px` }" />
+                  <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-line" :style="{ top: `${(h - START_HOUR) * DAY_HOUR_PX}px` }" />
 
-                  <!--
-                    Clickable, exactly as in Day view above -- this is the only
-                    way to reach the block's Remove button, and `workweek` is
-                    the default view, so while this was `pointer-events-none`
-                    a block could not be removed at all without first switching
-                    to Day. Worse than inert: the click fell through to the
-                    cell underneath and opened New Appointment on a slot that
-                    was deliberately blocked off.
-                  -->
                   <div
-                    v-for="block in blocksForRoomOnDay(day, col.id)"
+                    v-for="block in blocksForRoom(col.id)"
                     :key="block.id"
-                    class="absolute left-0 right-0 z-0 flex cursor-pointer items-center justify-center overflow-hidden bg-[repeating-linear-gradient(135deg,#F4F5F8,#F4F5F8_6px,#EBECF1_6px,#EBECF1_12px)] font-mono text-[10px] text-ink-muted2"
-                    :style="{ top: `${timeToPx(block.starts_at, WEEK_HOUR_PX)}px`, height: `${durationToPx(block.starts_at, block.ends_at, WEEK_HOUR_PX, WEEK_MIN_AVAILABILITY_PX)}px` }"
-                    :title="blockLabel(block)"
+                    class="cal-blocked absolute left-1 right-1 z-0 flex cursor-pointer items-center justify-center gap-1.5 overflow-hidden rounded-ctl border border-line text-[12px] text-ink-muted"
+                    :style="{ top: `${timeToPx(block.starts_at, DAY_HOUR_PX) + 1}px`, height: `${durationToPx(block.starts_at, block.ends_at, DAY_HOUR_PX, DAY_MIN_AVAILABILITY_PX) - 3}px` }"
                     @click.stop="openBlockEditModal(block)"
                   >
-                    {{ t('Blocked', 'Bloqueado') }}
+                    <strong class="font-semibold text-ink-700">{{ blockLabel(block) }}</strong>
                   </div>
 
-                  <template v-for="(appt, i) in layoutForRoomOnDay(day, col.id)" :key="isOverflowBlock(appt) ? `overflow-${toDateKey(day)}-${col.id}-${i}` : appt.id">
-                    <button
+                  <div
+                    v-for="o in freedSlotsFor(toDateKey(anchorDate), col.id)"
+                    :key="o.id"
+                    data-cy="freed-slot"
+                    role="note"
+                    class="absolute left-1 right-1 z-[5] flex cursor-default items-center gap-1.5 overflow-hidden rounded-ctl border-[1.5px] border-dashed border-success-accent bg-success-bg px-2.5 text-[12px] text-success-text"
+                    :style="{ top: `${timeToPx(o.offered_starts_at, DAY_HOUR_PX) + 1}px`, height: `${durationToPx(o.offered_starts_at, o.offered_ends_at ?? o.offered_starts_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) - 3}px` }"
+                    @click.stop
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0" aria-hidden="true"><path d="M4 12h16M14 6l6 6-6 6" /></svg>
+                    <strong class="truncate font-semibold">{{ freedSlotLabel(o) }}</strong>
+                    <span class="truncate text-ink-muted">· {{ freedSlotUntil(o) }}</span>
+                  </div>
+
+                  <template v-for="(appt, i) in layoutForRoom(col.id)" :key="isOverflowBlock(appt) ? `overflow-${col.id}-${i}` : appt.id">
+                    <div
                       v-if="isOverflowBlock(appt)"
-                      type="button"
-                      class="absolute flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[10px] font-medium text-ink-muted2 shadow-card hover:border-line-controlHover"
-                      :title="`${appt.count} ${appt.count === 1 ? t('more appointment', 'cita más') : t('more appointments', 'citas más')} ${t('at this time -- click to see them all in Day view', 'a esta hora -- haz clic para verlas todas en la vista Día')}`"
-                      :style="columnStyle(appt, timeToPx(appt.starts_at, WEEK_HOUR_PX), OVERFLOW_CHIP_PX)"
-                      @click.stop="showOverflowDay(day)"
+                      class="absolute flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[10.5px] font-medium text-ink-muted2 shadow-card"
+                      :title="`${appt.count} ${appt.count === 1 ? t('more appointment', 'cita más') : t('more appointments', 'citas más')} ${t('at this time', 'a esta hora')}`"
+                      :style="columnStyle(appt, timeToPx(appt.starts_at, DAY_HOUR_PX), OVERFLOW_CHIP_PX)"
                     >
-                      +{{ appt.count }}
-                    </button>
+                      +{{ appt.count }} {{ t('more', 'más') }}
+                    </div>
                     <div
                       v-else
-                      class="absolute flex flex-col justify-start overflow-hidden rounded-[7px] border border-l-[3px] px-1.5 py-0.5 shadow-card"
-                      :class="appt.status === 'booked' ? 'cursor-grab active:cursor-grabbing' : ''"
-                      :style="{
-                        ...appointmentColorStyle(appt),
-                        ...columnStyle(
-                          appt,
-                          timeToPx(appt.starts_at, WEEK_HOUR_PX),
-                          Math.max(0, durationToPx(appt.starts_at, appt.ends_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX) - 2),
-                        ),
-                      }"
+                      data-cy="appt-block"
+                      :data-appt-id="appt.id"
+                      :data-stage="stageOf(appt)"
+                      :data-dimmed="isDimmed(appt) || undefined"
+                      class="absolute scroll-mt-10"
+                      :class="appt.status === 'booked' ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'"
+                      :style="columnStyle(appt, timeToPx(appt.starts_at, DAY_HOUR_PX) + 1, Math.max(0, durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) - 3))"
                       @pointerdown="startAppointmentDrag(appt, 'move', $event)"
                       @click.stop="handleAppointmentClick(appt)"
                       @mouseenter="scheduleHoverCard(appt, $event)"
                       @mouseleave="cancelHoverShow"
                     >
-                      <div class="flex items-center gap-1">
-                        <span class="flex h-[9px] w-[9px] shrink-0 items-center justify-center rounded-full bg-ink-faint3/50">
-                          <span class="h-[5px] w-[5px] shrink-0 rounded-full" :class="dotClass(appt)" />
-                        </span>
-                        <p class="min-w-0 flex-1 truncate text-[11px] font-semibold" :class="[nameClass(appt), { 'blur-sm select-none': settings.privacyMode, 'line-through opacity-70': appt.status === 'cancelled' || appt.status === 'completed' }]">
-                          {{ appt.patients?.first_name }} {{ appt.patients?.last_name }}
-                        </p>
-                        <span
-                          v-if="(balanceByPatient[appt.patient_id] ?? 0) > 0"
-                          class="relative flex h-[14px] w-[14px] shrink-0 items-center justify-center"
-                          @mouseenter="scheduleIconTooltip($event, `${t('Patient in credit', 'Paciente con saldo a favor')} (${formatCredit(balanceByPatient[appt.patient_id] ?? 0)})`)"
-                          @mouseleave="cancelIconTooltip"
-                        >
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" class="text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.5)]">
-                            <path d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-                          </svg>
-                        </span>
-                        <span
-                          v-if="!hasFutureAppointment(appt)"
-                          class="relative flex h-[14px] w-[14px] shrink-0 items-center justify-center"
-                          @mouseenter="scheduleIconTooltip($event, t('No future appointment', 'Sin cita futura'))"
-                          @mouseleave="cancelIconTooltip"
-                        >
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" class="text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.5)]">
-                            <path d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5A2.25 2.25 0 015.25 5.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0V11.25A2.25 2.25 0 015.25 9h13.5a2.25 2.25 0 012.25 2.25v7.5M9.75 13.5l4.5 4.5m0-4.5l-4.5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-                          </svg>
-                        </span>
-                      </div>
+                      <CalendarAppointmentBlock
+                        :view="blockView(appt)"
+                        density="day"
+                        :height="Math.max(0, durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) - 3)"
+                        :selected="selectedApptId === appt.id"
+                        :dim="isDimmed(appt)"
+                        :privacy="settings.privacyMode"
+                      />
                       <div
                         v-if="appt.status === 'booked'"
                         class="absolute inset-x-0 bottom-0 h-[6px] cursor-ns-resize"
@@ -1858,6 +1939,190 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                       ></div>
                     </div>
                   </template>
+
+                  <template v-for="g in [ghostFor(toDateKey(anchorDate), col.id)]" :key="`ghost-${col.id}`">
+                    <div
+                      v-if="g && g.free"
+                      data-cy="slot-ghost"
+                      class="pointer-events-none absolute left-1 right-1 z-[15] flex items-center gap-1.5 rounded-ctl border-2 border-brand bg-surface px-2.5 text-[13px] font-semibold text-brand-text"
+                      :style="{ top: `${(g.min / 60) * DAY_HOUR_PX + 1}px`, height: `${(SLOT_MIN / 60) * DAY_HOUR_PX - 3}px` }"
+                    >
+                      + {{ t(`Book ${g.label}`, `Reservar ${g.label}`) }}<span class="font-normal text-ink-muted"> · {{ t('Enter', 'Intro') }}</span>
+                    </div>
+                  </template>
+                  <template v-for="r in [focusRectFor(toDateKey(anchorDate), col.id, DAY_HOUR_PX)]" :key="`focus-${col.id}`">
+                    <div v-if="r" data-grid-focus class="pointer-events-none absolute left-0.5 right-0.5 z-[16] rounded-ctl ring-2 ring-inset ring-brand/60" :style="{ top: `${r.top}px`, height: `${r.height}px` }" />
+                  </template>
+                </div>
+
+                <div v-if="showNowLine" class="pointer-events-none absolute left-0 right-0 z-20" :style="{ top: `${nowLinePx}px` }">
+                  <div class="absolute left-0 top-0 h-[7px] w-[7px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand"></div>
+                  <div class="h-0.5 w-full bg-brand"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Week view: day columns, each split into room sub-columns like Day view. -->
+          <div v-else class="min-w-0 flex-1 overflow-x-auto">
+            <div class="flex" :style="{ minWidth: `${58 + visibleWeekDays.length * dayColumns.length * WEEK_ROOM_COL_PX}px` }">
+              <div class="sticky left-0 z-20 w-[58px] shrink-0 bg-surface">
+                <div class="sticky top-0 z-30 border-b border-r border-line bg-surface" :style="{ height: `${WEEK_HEADER_PX}px` }"></div>
+                <div class="relative border-r border-line" :style="{ height: `${weekGridHeight}px` }">
+                  <span
+                    v-for="h in hourMarks"
+                    :key="h"
+                    class="pointer-events-none absolute left-0 right-0 px-2 font-mono text-[11px] text-ink-faint"
+                    :style="{ top: `${Math.max(0, (h - START_HOUR) * WEEK_HOUR_PX - 7)}px` }"
+                  >
+                    {{ hourLabel(h) }}
+                  </span>
+                  <span
+                    v-for="m in slotMarks"
+                    :key="`slot-label-${m}`"
+                    class="pointer-events-none absolute left-0 right-0 px-2 font-mono text-[9px] text-ink-faint2"
+                    :style="{ top: `${Math.max(0, (m / 60) * WEEK_HOUR_PX - 5)}px` }"
+                  >
+                    {{ slotLabel(m) }}
+                  </span>
+                </div>
+              </div>
+
+              <div v-for="day in visibleWeekDays" :key="toDateKey(day)" class="flex flex-1 flex-col border-r border-line last:border-r-0">
+                <div class="sticky top-0 z-30 bg-surface">
+                  <div
+                    class="relative flex h-6 items-center justify-center gap-1"
+                    :class="isSameDate(day, new Date()) ? 'bg-brand-tintDeep' : ''"
+                  >
+                    <span class="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-muted2">{{ formatWeekdayDate(day).split(' ')[0] }}</span>
+                    <span class="text-[12.5px] font-medium" :class="isSameDate(day, new Date()) ? 'text-brand-text' : 'text-ink-900'">{{ day.getDate() }}</span>
+                    <button type="button" :aria-label="t('New appointment on this day', 'Nueva cita este día')" class="absolute right-1 top-0.5 text-[11px] text-ink-faint hover:text-brand-text" @click.stop="openCreateModalForDay(day)">+</button>
+                  </div>
+                  <!-- Per-day counts: the two that need someone to act. -->
+                  <div class="flex h-[18px] items-center justify-center gap-2 border-b border-line text-[10.5px] text-ink-muted" data-cy="day-header-counts" :class="isSameDate(day, new Date()) ? 'bg-brand-tintDeep' : ''">
+                    <template v-for="c in [dayHeaderCounts(day)]" :key="`c-${toDateKey(day)}`">
+                      <span v-if="c.unconfirmed > 0" class="inline-flex items-center gap-1 text-warning-text"><span class="h-1.5 w-1.5 rounded-full bg-warning-accent" />{{ t(`${c.unconfirmed} unconfirmed`, `${c.unconfirmed} sin confirmar`) }}</span>
+                      <span v-if="c.owe > 0" class="inline-flex items-center gap-1 text-danger-text"><span class="h-1.5 w-1.5 rounded-full bg-danger-text" />{{ t(`${c.owe} owe`, `${c.owe} deben`) }}</span>
+                    </template>
+                  </div>
+                  <div class="flex h-[26px] border-b border-line">
+                    <div
+                      v-for="col in dayColumns"
+                      :key="col.id"
+                      class="flex flex-1 items-center justify-center truncate border-r border-line-divider px-1 text-[10.5px] font-medium text-ink-muted2 last:border-r-0"
+                      :style="{ minWidth: `${WEEK_ROOM_COL_PX}px` }"
+                    >
+                      {{ col.name }}
+                    </div>
+                  </div>
+                </div>
+
+                <div class="relative flex" :style="{ height: `${weekGridHeight}px` }">
+                  <div
+                    v-for="col in dayColumns"
+                    :key="col.id"
+                    data-cal-col
+                    :data-room-id="col.id"
+                    :data-day-key="toDateKey(day)"
+                    class="relative flex-1 cursor-pointer border-r border-line-divider last:border-r-0"
+                    :style="{ minWidth: `${WEEK_ROOM_COL_PX}px` }"
+                    @pointerdown="onColumnPointerDown"
+                    @pointermove="onColumnPointerMove($event, toDateKey(day), col.id, WEEK_HOUR_PX)"
+                    @pointerleave="hoverCell = null"
+                    @click="onColumnClick($event, day, col.id, WEEK_HOUR_PX)"
+                  >
+                    <div v-for="rect in closedSlotRects(day, WEEK_HOUR_PX)" :key="rect.top" data-cy="closed-hours" class="cal-hatch pointer-events-none absolute left-0 right-0" :style="{ top: `${rect.top}px`, height: `${rect.height}px` }" />
+                    <div v-for="m in slotMarks" :key="`slot-${m}`" class="pointer-events-none absolute left-0 right-0 border-t border-dashed border-line-divider" :style="{ top: `${(m / 60) * WEEK_HOUR_PX}px` }" />
+                    <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-line" :style="{ top: `${(h - START_HOUR) * WEEK_HOUR_PX}px` }" />
+
+                    <!--
+                      Clickable, exactly as in Day view above -- this is the only
+                      way to reach the block's Remove button, and `workweek` is
+                      the default view, so while this was `pointer-events-none`
+                      a block could not be removed at all without first switching
+                      to Day. Worse than inert: the click fell through to the
+                      cell underneath and opened New Appointment on a slot that
+                      was deliberately blocked off.
+                    -->
+                    <div
+                      v-for="block in blocksForRoomOnDay(day, col.id)"
+                      :key="block.id"
+                      class="cal-blocked absolute left-0.5 right-0.5 z-0 flex cursor-pointer items-center justify-center overflow-hidden rounded-[6px] border border-line font-mono text-[10px] text-ink-muted2"
+                      :style="{ top: `${timeToPx(block.starts_at, WEEK_HOUR_PX)}px`, height: `${durationToPx(block.starts_at, block.ends_at, WEEK_HOUR_PX, WEEK_MIN_AVAILABILITY_PX)}px` }"
+                      :title="blockLabel(block)"
+                      @click.stop="openBlockEditModal(block)"
+                    >
+                      {{ t('Blocked', 'Bloqueado') }}
+                    </div>
+
+                    <div
+                      v-for="o in freedSlotsFor(toDateKey(day), col.id)"
+                      :key="o.id"
+                      data-cy="freed-slot"
+                      role="note"
+                      class="absolute left-0.5 right-0.5 z-[5] flex cursor-default items-center overflow-hidden rounded-[6px] border-[1.5px] border-dashed border-success-accent bg-success-bg px-1 text-[10.5px] font-semibold text-success-text"
+                      :title="`${freedSlotLabel(o)} · ${freedSlotUntil(o)}`"
+                      :style="{ top: `${timeToPx(o.offered_starts_at, WEEK_HOUR_PX)}px`, height: `${durationToPx(o.offered_starts_at, o.offered_ends_at ?? o.offered_starts_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX) - 2}px` }"
+                      @click.stop
+                    >
+                      <span class="truncate">{{ freedSlotLabel(o) }}</span>
+                    </div>
+
+                    <template v-for="(appt, i) in layoutForRoomOnDay(day, col.id)" :key="isOverflowBlock(appt) ? `overflow-${toDateKey(day)}-${col.id}-${i}` : appt.id">
+                      <button
+                        v-if="isOverflowBlock(appt)"
+                        type="button"
+                        class="absolute flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[10px] font-medium text-ink-muted2 shadow-card hover:border-line-controlHover"
+                        :title="`${appt.count} ${appt.count === 1 ? t('more appointment', 'cita más') : t('more appointments', 'citas más')} ${t('at this time -- click to see them all in Day view', 'a esta hora -- haz clic para verlas todas en la vista Día')}`"
+                        :style="columnStyle(appt, timeToPx(appt.starts_at, WEEK_HOUR_PX), OVERFLOW_CHIP_PX)"
+                        @click.stop="showOverflowDay(day)"
+                      >
+                        +{{ appt.count }}
+                      </button>
+                      <div
+                        v-else
+                        data-cy="appt-block"
+                        :data-appt-id="appt.id"
+                        :data-stage="stageOf(appt)"
+                      :data-dimmed="isDimmed(appt) || undefined"
+                        class="absolute"
+                        :class="appt.status === 'booked' ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'"
+                        :style="columnStyle(appt, timeToPx(appt.starts_at, WEEK_HOUR_PX), Math.max(0, durationToPx(appt.starts_at, appt.ends_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX) - 2))"
+                        @pointerdown="startAppointmentDrag(appt, 'move', $event)"
+                        @click.stop="handleAppointmentClick(appt)"
+                        @mouseenter="scheduleHoverCard(appt, $event)"
+                        @mouseleave="cancelHoverShow"
+                      >
+                        <CalendarAppointmentBlock
+                          :view="blockView(appt)"
+                          density="week"
+                          :height="Math.max(0, durationToPx(appt.starts_at, appt.ends_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX) - 2)"
+                          :selected="selectedApptId === appt.id"
+                          :dim="isDimmed(appt)"
+                          :privacy="settings.privacyMode"
+                        />
+                        <div
+                          v-if="appt.status === 'booked'"
+                          class="absolute inset-x-0 bottom-0 h-[6px] cursor-ns-resize"
+                          @pointerdown.stop="startAppointmentDrag(appt, 'resize', $event)"
+                        ></div>
+                      </div>
+                    </template>
+
+                    <template v-for="g in [ghostFor(toDateKey(day), col.id)]" :key="`ghost-${toDateKey(day)}-${col.id}`">
+                      <div
+                        v-if="g && g.free"
+                        data-cy="slot-ghost"
+                        class="pointer-events-none absolute left-0.5 right-0.5 z-[15] flex items-center overflow-hidden whitespace-nowrap rounded-[6px] border-2 border-brand bg-surface px-1 text-[11px] font-semibold text-brand-text"
+                        :style="{ top: `${(g.min / 60) * WEEK_HOUR_PX}px`, height: `${(SLOT_MIN / 60) * WEEK_HOUR_PX - 2}px` }"
+                      >
+                        + {{ g.label }}
+                      </div>
+                    </template>
+                    <template v-for="r in [focusRectFor(toDateKey(day), col.id, WEEK_HOUR_PX)]" :key="`focus-${toDateKey(day)}-${col.id}`">
+                      <div v-if="r" data-grid-focus class="pointer-events-none absolute left-0 right-0 z-[16] rounded-[6px] ring-2 ring-inset ring-brand/60" :style="{ top: `${r.top}px`, height: `${r.height}px` }" />
+                    </template>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1934,13 +2199,18 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
       @check-in="toggleCheckedIn(hoveredAppt)"
       @reschedule="startReschedule(hoveredAppt)"
     />
-
-    <div
-      v-if="iconTooltip"
-      class="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-[calc(100%+6px)] whitespace-nowrap rounded-ctlSm bg-ink-900 px-2 py-1 text-[11px] font-medium text-white shadow-popover"
-      :style="{ left: `${iconTooltip.x}px`, top: `${iconTooltip.y}px` }"
-    >
-      {{ iconTooltip.text }}
-    </div>
   </div>
 </template>
+
+<style scoped>
+/* Hours nobody works: diagonal stripes in two surface tokens, so they read
+   as "not bookable" in both themes without borrowing a status colour. */
+.cal-hatch {
+  background: repeating-linear-gradient(135deg, rgb(var(--color-chip-bg)) 0 5px, rgb(var(--color-surface-subtle)) 5px 11px);
+}
+/* A deliberate block (training, lunch) -- the same stripes, a touch stronger,
+   with an outline, so it reads as placed rather than as the day's edge. */
+.cal-blocked {
+  background: repeating-linear-gradient(135deg, rgb(var(--color-chip-bg)) 0 6px, rgb(var(--color-surface)) 6px 12px);
+}
+</style>

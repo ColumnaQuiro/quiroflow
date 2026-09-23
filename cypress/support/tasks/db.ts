@@ -2192,6 +2192,13 @@ async function setTeamMemberHours(opts: { teamMemberId: string; hours: Record<st
   return { ok: true }
 }
 
+/** A patient's invoices with their lines -- what a fee left behind. */
+async function invoicesFor(opts: { patientId: string }) {
+  const { data, error } = await admin.from('invoices').select('id, status, total_cents, invoice_line_items(description)').eq('patient_id', opts.patientId).order('created_at')
+  if (error) throw error
+  return data as { id: string; status: string; total_cents: number; invoice_line_items: { description: string }[] }[]
+}
+
 /** The account's cancellation fee (Settings -> Scheduling policies). */
 async function setCancellationFee(opts: { accountId: string; cents: number | null }) {
   assertOk(await admin.from('accounts').update({ cancellation_fee_cents: opts.cents }).eq('id', opts.accountId))
@@ -2303,6 +2310,7 @@ export const dbTasks = {
   'db:createRoom': createRoom,
   'db:setTeamMemberHours': setTeamMemberHours,
   'db:setCancellationFee': setCancellationFee,
+  'db:invoicesFor': invoicesFor,
   'db:appointmentById': appointmentById,
   'db:inboundMessages': inboundMessages,
   'db:setWhatsappAppSecret': setWhatsappAppSecret,

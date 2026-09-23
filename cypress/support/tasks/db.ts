@@ -1374,6 +1374,8 @@ async function createAppointment(opts: {
   flowCheckoutAt?: string | null
   appointmentTypeId?: string | null
   roomId?: string | null
+  confirmationSentAt?: string | null
+  reminderSentAt?: string | null
 }) {
   const startsAt = new Date(opts.startsAt)
   const endsAt = new Date(startsAt.getTime() + (opts.durationMinutes ?? 30) * 60000)
@@ -1396,6 +1398,8 @@ async function createAppointment(opts: {
         ...(opts.flowCheckoutAt !== undefined ? { flow_checkout_at: opts.flowCheckoutAt } : {}),
         ...(opts.appointmentTypeId !== undefined ? { appointment_type_id: opts.appointmentTypeId } : {}),
         ...(opts.roomId !== undefined ? { room_id: opts.roomId } : {}),
+        ...(opts.confirmationSentAt !== undefined ? { confirmation_sent_at: opts.confirmationSentAt } : {}),
+        ...(opts.reminderSentAt !== undefined ? { reminder_sent_at: opts.reminderSentAt } : {}),
       })
       .select('id, practitioner_id')
       .single(),

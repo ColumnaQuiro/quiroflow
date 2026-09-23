@@ -1,6 +1,7 @@
-import { resolveVisitPayment } from '../../../utils/visitPayment'
+import { describe, it, expect } from 'vitest'
+import { resolveVisitPayment } from '../../utils/visitPayment'
 
-// Unit-style: no cy.visit, no seeding. Same shape as verifactu-soap.cy.ts --
+// Unit-style: no browser, no seeding. Same shape as verifactu-soap.test.ts --
 // these are rules about which of four tables answers "how was this visit
 // paid for", and they are worth pinning without the cost of a browser.
 describe('How a visit was paid', () => {

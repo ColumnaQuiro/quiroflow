@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest'
 import {
   MONTHS_PER_YEAR,
   formatEur,
@@ -9,13 +10,13 @@ import {
   seatAllowance,
   subscriptionState,
   type PlanPricing,
-} from '../../../utils/billing'
+} from '../../utils/billing'
 
 // The arithmetic and the state map behind /subscription.
 //
-// No cy.visit here -- these are pure functions, and the same pattern
-// verifactu-soap.cy.ts uses. They run in the existing subscription shard, so
-// the rules are checked on every PR without adding a second test runner.
+// No browser here -- these are pure functions, the same pattern
+// verifactu-soap.test.ts uses. They run under Vitest in `npm run preflight`,
+// so the rules are checked on every PR without a Cypress shard paying for it.
 
 const PRACTICE: PlanPricing = {
   monthlyPriceCents: 9900,

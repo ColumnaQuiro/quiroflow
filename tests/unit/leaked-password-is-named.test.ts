@@ -1,12 +1,13 @@
+import { describe, it, expect } from 'vitest'
 import { AuthWeakPasswordError, AuthApiError } from '@supabase/supabase-js'
-import { passwordRejection } from '../../../utils/passwordRejection'
+import { passwordRejection } from '../../utils/passwordRejection'
 
 // Telling someone their password is in a breach list, rather than that it is
 // "weak and easy to guess".
 //
-// No cy.visit here -- passwordRejection is a pure function, the same pattern
-// billing-rules.cy.ts and verifactu-soap.cy.ts use. It runs in the existing
-// auth shard, so the mapping is checked on every PR without a second runner.
+// No browser here -- passwordRejection is a pure function, the same pattern
+// billing-rules.test.ts and verifactu-soap.test.ts use. It runs under Vitest
+// in `npm run preflight`, so the mapping is checked on every PR.
 //
 // Built from REAL AuthWeakPasswordError instances rather than hand-written
 // lookalikes. The whole point of this function is that it matches auth-js's

@@ -1,5 +1,6 @@
-import { SIF_PRODUCER, SIF_PRODUCER_IDENTIFIED } from '../../../utils/sifIdentity'
-import { MAX_RECORDS_PER_SUBMISSION, transmissionBlockedBy } from '../../../utils/verifactuSoap'
+import { describe, it, expect } from 'vitest'
+import { SIF_PRODUCER, SIF_PRODUCER_IDENTIFIED } from '../../utils/sifIdentity'
+import { MAX_RECORDS_PER_SUBMISSION, transmissionBlockedBy } from '../../utils/verifactuSoap'
 
 // Whether anything may go out at all.
 //

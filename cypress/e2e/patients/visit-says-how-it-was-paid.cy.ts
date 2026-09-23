@@ -5,7 +5,7 @@
 // settling it, and any factura those produced. A row that said only
 // "Completed" sent whoever asked into the Money tab to work it out.
 //
-// The rules themselves are unit-tested in visit-payment-rules.cy.ts. This
+// The rules themselves are unit-tested in tests/unit/visit-payment-rules.test.ts. This
 // spec is about the wiring: that the four queries find the right rows and
 // the right phrase reaches the right visit.
 describe('A visit says how it was paid', () => {

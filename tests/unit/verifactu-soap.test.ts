@@ -1,11 +1,12 @@
-import { buildRegistroAlta, type RegistroAltaInput } from '../../../utils/registroAlta'
+import { describe, it, expect } from 'vitest'
+import { buildRegistroAlta, type RegistroAltaInput } from '../../utils/registroAlta'
 import {
   MAX_RECORDS_PER_SUBMISSION,
   VERIFACTU_ENDPOINTS,
   buildRegFactuEnvelope,
   parseVerifactuResponse,
   verifactuEndpoint,
-} from '../../../utils/verifactuSoap'
+} from '../../utils/verifactuSoap'
 
 // The envelope out and the answer back.
 //

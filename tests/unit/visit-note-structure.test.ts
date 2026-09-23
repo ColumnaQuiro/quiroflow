@@ -1,4 +1,5 @@
-import { parseVisitNote, visitNotePreview } from '../../../utils/visitNote'
+import { describe, it, expect } from 'vitest'
+import { parseVisitNote, visitNotePreview } from '../../utils/visitNote'
 
 // Unit-style: no cy.visit, no seeding. A visit note is one text column that
 // the charting pane writes in four labelled sections. That convention lived

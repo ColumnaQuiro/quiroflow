@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { formatEur } from '~/utils/billing'
 import type { Tables } from '~/types/database.types'
-import { fetchAllRows } from '~/composables/useFetchAllRows'
+import { fetchAllRows, fetchByIds } from '~/composables/useFetchAllRows'
 import { normalizeSearchTerm, sanitizeSearchToken } from '~/utils/searchText'
 
 type Patient = Pick<
@@ -25,8 +25,6 @@ const store = useAccountStore()
 const t = useT()
 
 const PAGE_SIZE = 50
-/** A uuid nothing can match, so "no results" stays an empty page not every page. */
-const NO_MATCH_ID = '00000000-0000-0000-0000-000000000000'
 
 interface TeamMemberOption { id: string; full_name: string }
 interface CarePlanInfo { name: string; totalVisits: number; completed: number }
@@ -91,13 +89,7 @@ async function loadPatients() {
   let query = supabase.from('patients').select(selectCols, { count: 'exact' })
 
   if (store.currentClinicId) query = query.eq('clinic_id', store.currentClinicId)
-  // balance_cents lives on a live-computed view (patient_live_balances), not
-  // a column on patients -- narrow to matching ids first, same trick already
-  // used below for the single-token phone search.
-  if (balanceFilter.value !== 'any') {
-    const ids = await balanceMatchIds(balanceFilter.value)
-    query = query.in('id', ids.length > 0 ? ids : [NO_MATCH_ID])
-  }
+  if (balanceFilter.value !== 'any') query = applyBalanceFilter(query, balanceFilter.value)
   if (missingContact.value === 'email') query = query.or('email.is.null,email.eq.')
   if (missingContact.value === 'phone') query = query.eq('has_phone', false)
   if (practitionerFilter.value) query = query.eq('default_practitioner_id', practitionerFilter.value)
@@ -108,22 +100,7 @@ async function loadPatients() {
   // Each word must match somewhere in first/last name/email/phone -- chaining
   // .or() calls ANDs the groups together, so "john 612" matches a John whose
   // phone contains "612" regardless of which word landed in which field.
-  // Phone numbers live on a separate table (patient_contact_numbers), so
-  // each token gets its own lookup there alongside the name/email match --
-  // the placeholder promises "Name, phone or email" for any word typed, not
-  // just a lone one.
-  const tokens = search.value.trim().split(/\s+/).map(sanitizeSearchToken).filter(Boolean)
-  for (const token of tokens) {
-    const { data: phoneMatches } = await supabase
-      .from('patient_contact_numbers')
-      .select('patient_id')
-      .ilike('number', `%${token}%`)
-    const phoneIds = [...new Set((phoneMatches ?? []).map((m) => m.patient_id))]
-    const idClause = phoneIds.length > 0 ? `,id.in.(${phoneIds.join(',')})` : ''
-    query = query.or(
-      `search_name.ilike.%${normalizeSearchTerm(token)}%,email.ilike.%${token}%,national_id.ilike.%${token}%${idClause}`,
-    )
-  }
+  for (const token of searchTokens()) query = query.or(searchClause(token))
 
   const from = (page.value - 1) * PAGE_SIZE
   const to = from + PAGE_SIZE - 1
@@ -244,33 +221,28 @@ watch(() => store.currentClinicId, () => goToPage(1))
 function csvEscape(v: string) {
   return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
 }
-// patient_live_balances has no filters of its own to page against --
-// chunking a plain .in() keeps each request's id list a sane size rather
-// than sending a single query with 1000+ ids.
-/**
- * The ids matching a balance filter. Shared by the table and the CSV so an
- * export cannot disagree with what is on screen -- they used to hold two
- * copies of the `.lt('balance_cents', 0)` query.
- */
-async function balanceMatchIds(filter: 'owing' | 'credit'): Promise<string[]> {
-  const query = supabase.from('patient_live_balances').select('patient_id')
-  const { data } = await (filter === 'owing' ? query.lt('balance_cents', 0) : query.gt('balance_cents', 0))
-  return (data ?? []).map((r) => r.patient_id!)
+// Balance and phone are not columns on patients, but they filter as if they
+// were: live_balance_cents and phone_numbers_text are computed fields
+// (20260923150000). Both used to be id lists fetched first and sent back as
+// `id=in.(...)`, which stops fitting in a URL at ~215 ids -- and the
+// gateway's 414 reaches supabase-js as `data: null`, so the list just came
+// up empty. Production had 221 patients in credit when that was found.
+// Shared by the table and the CSV so an export cannot disagree with what is
+// on screen.
+function applyBalanceFilter<Q extends { lt: any; gt: any }>(query: Q, filter: 'owing' | 'credit'): Q {
+  return filter === 'owing' ? query.lt('live_balance_cents', 0) : query.gt('live_balance_cents', 0)
+}
+function searchTokens() {
+  return search.value.trim().split(/\s+/).map(sanitizeSearchToken).filter(Boolean)
+}
+function searchClause(token: string) {
+  return `search_name.ilike.%${normalizeSearchTerm(token)}%,email.ilike.%${token}%,national_id.ilike.%${token}%,phone_numbers_text.ilike.%${token}%`
 }
 
 async function fetchBalances(ids: string[]): Promise<Record<string, number>> {
+  const rows = await fetchByIds(ids, (chunk) => supabase.from('patient_live_balances').select('patient_id, balance_cents').in('patient_id', chunk))
   const result: Record<string, number> = {}
-  const CHUNK = 300
-  const chunks: string[][] = []
-  for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK))
-  // The chunks are independent, so they go out together -- a full-export id
-  // list used to walk them one awaited request at a time.
-  const results = await Promise.all(
-    chunks.map((chunk) => supabase.from('patient_live_balances').select('patient_id, balance_cents').in('patient_id', chunk)),
-  )
-  for (const { data } of results) {
-    for (const b of data ?? []) result[b.patient_id!] = b.balance_cents ?? 0
-  }
+  for (const b of rows) result[b.patient_id!] = b.balance_cents ?? 0
   return result
 }
 
@@ -281,32 +253,19 @@ async function exportCsv() {
       'id, first_name, last_name, tags, email, status, is_minor, do_not_contact' +
       (carePlanFilter.value === 'on' ? ', care_plans!inner(id)' : '')
 
-    const balanceIds = balanceFilter.value === 'any' ? null : await balanceMatchIds(balanceFilter.value)
-
-    // Computed once (not per page) -- same phone-lookup-per-token approach
-    // as loadPatients() above, so an exported CSV matches what's on screen.
-    const tokens = search.value.trim().split(/\s+/).map(sanitizeSearchToken).filter(Boolean)
-    const tokenIdClauses = await Promise.all(
-      tokens.map(async (token) => {
-        const { data: phoneMatches } = await supabase.from('patient_contact_numbers').select('patient_id').ilike('number', `%${token}%`)
-        const phoneIds = [...new Set((phoneMatches ?? []).map((m) => m.patient_id))]
-        return { token, idClause: phoneIds.length > 0 ? `,id.in.(${phoneIds.join(',')})` : '' }
-      }),
-    )
+    const tokens = searchTokens()
 
     const rows = await fetchAllRows<Patient & { tags: string[] }>((from, to) => {
       let q = supabase.from('patients').select(selectCols) as any
       if (store.currentClinicId) q = q.eq('clinic_id', store.currentClinicId)
-      if (balanceIds) q = q.in('id', balanceIds.length > 0 ? balanceIds : [NO_MATCH_ID])
+      if (balanceFilter.value !== 'any') q = applyBalanceFilter(q, balanceFilter.value)
       if (missingContact.value === 'email') q = q.or('email.is.null,email.eq.')
       if (missingContact.value === 'phone') q = q.eq('has_phone', false)
       if (practitionerFilter.value) q = q.eq('default_practitioner_id', practitionerFilter.value)
       if (statusFilter.value !== 'any') q = q.eq('status', statusFilter.value)
       if (doNotContactFilter.value) q = q.eq('do_not_contact', true)
       if (minorsFilter.value) q = q.eq('is_minor', true)
-      for (const { token, idClause } of tokenIdClauses) {
-        q = q.or(`search_name.ilike.%${normalizeSearchTerm(token)}%,email.ilike.%${token}%,national_id.ilike.%${token}%${idClause}`)
-      }
+      for (const token of tokens) q = q.or(searchClause(token))
       return q.order('first_name').range(from, to)
     })
 

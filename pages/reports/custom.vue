@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Bar, Line } from 'vue-chartjs'
 import { computePresetRange, monthKeysInRange, rangeBounds, type DateRange } from '~/composables/useDateRangePresets'
-import { fetchAllRows } from '~/composables/useFetchAllRows'
+import { fetchAllRows, fetchByIds } from '~/composables/useFetchAllRows'
 import { isReceipt } from '~/utils/paymentReceipts'
 
 // Deliberately not `Tables<'custom_reports'>` -- that type's `config: Json`
@@ -86,21 +86,8 @@ function monthKeyFor(iso: string) {
 
 // Postgrest puts `in` lists in the URL, so a wide date range's worth of
 // appointment ids gets chunked rather than sent as one oversized request.
-async function fetchAppointmentsByIds(ids: string[]): Promise<{ id: string; practitioner_id: string | null }[]> {
-  if (ids.length === 0) return []
-  const CHUNK = 300
-  const chunks: string[][] = []
-  for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK))
-  const results = await Promise.all(
-    chunks.map((chunk) =>
-      supabase
-        .from('appointments')
-        .select('id, practitioner_id')
-        .in('id', chunk)
-        .then((r) => (r.data ?? []) as { id: string; practitioner_id: string | null }[]),
-    ),
-  )
-  return results.flat()
+function fetchAppointmentsByIds(ids: string[]): Promise<{ id: string; practitioner_id: string | null }[]> {
+  return fetchByIds(ids, (chunk) => supabase.from('appointments').select('id, practitioner_id').in('id', chunk))
 }
 const WEEKDAY_LABELS = computed(() => [
   t('Mon', 'lun'),

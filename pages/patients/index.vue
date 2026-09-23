@@ -230,7 +230,12 @@ function csvEscape(v: string) {
 // Shared by the table and the CSV so an export cannot disagree with what is
 // on screen.
 function applyBalanceFilter<Q extends { lt: any; gt: any }>(query: Q, filter: 'owing' | 'credit'): Q {
-  return filter === 'owing' ? query.lt('live_balance_cents', 0) : query.gt('live_balance_cents', 0)
+  // Owing asks the invoices (live_outstanding_cents); In credit asks the
+  // balance, which is what being in credit means. They are deliberately two
+  // different columns: a patient on a family bono has a negative balance and
+  // owes nothing, so filtering "Owing" on the balance listed 49 patients where
+  // 10 owe. See utils/owing.ts.
+  return filter === 'owing' ? query.gt('live_outstanding_cents', 0) : query.gt('live_balance_cents', 0)
 }
 function searchTokens() {
   return search.value.trim().split(/\s+/).map(sanitizeSearchToken).filter(Boolean)

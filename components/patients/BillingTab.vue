@@ -76,7 +76,12 @@ const { can } = usePermission()
 const { fire } = useAutomations()
 const t = useT()
 
-const { balanceCents, creditLedgerCents, bonoValueCents, lifetimeCents, refresh: refreshCreditSummary } =
+// outstandingCents is what "Owed now" shows. It was computed here as
+// -balanceCents, which made this one card contradict itself: it printed
+// "174,00 EUR" directly above "Nothing outstanding.", because oldestUnpaid
+// below was already reading invoice status while the figure above it was
+// reading paid-minus-invoiced. See utils/owing.ts.
+const { balanceCents, outstandingCents, creditLedgerCents, bonoValueCents, lifetimeCents, refresh: refreshCreditSummary } =
   usePatientFinancialSummary(() => props.patientId)
 const { issueFactura, issueRectificativa } = useFacturas()
 const { methods: paymentMethods, ensureLoaded: ensurePaymentMethodsLoaded, defaultMethod } = usePaymentMethods()
@@ -975,7 +980,6 @@ async function createRefund(invoiceId: string | null, paymentId: string | null, 
 
 const hasCard = computed(() => !!stripeCustomer.value?.default_payment_method_id)
 const unpaidInvoices = computed(() => invoices.value.filter((i) => i.status === 'unpaid'))
-const outstandingCents = computed(() => (balanceCents.value < 0 ? -balanceCents.value : 0))
 
 /**
  * Bono value the patient's own money is actually tied up in.

@@ -85,7 +85,7 @@ watch(
 
 // Only the two figures the banner's pill reads; the rest of the account's
 // money is Billing's own business and is loaded there.
-const { balanceCents, availableCents } = usePatientFinancialSummary(patientId)
+const { outstandingCents, availableCents } = usePatientFinancialSummary(patientId)
 
 const isVip = computed(() => !!patient.value?.tags.some((tag) => tag.toUpperCase() === 'VIP'))
 
@@ -256,7 +256,7 @@ function onTabKeydown(event: KeyboardEvent) {
         :patient="patient"
         :is-vip="isVip"
         :available-cents="availableCents"
-        :balance-cents="balanceCents"
+        :outstanding-cents="outstandingCents"
         :clinic-name="clinicName"
         :practitioner-name="practitionerName"
         :can-contact="canContact"

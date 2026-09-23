@@ -1994,183 +1994,19 @@ function money(cents: number) {
       </div>
     </div>
 
-    <!-- One sub-nav, so the ledger gets the full width instead of sharing
-    it with two cards nobody was reading at the same time. -->
-    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-chip-border">
-      <nav class="flex gap-1 overflow-x-auto" :aria-label="t('Money sections', 'Secciones de dinero')">
-        <button
-          v-for="tab in [
-            { key: 'ledger', label: t('Account ledger', 'Libro de cuenta') },
-            { key: 'documents', label: t('Facturas & receipts', 'Facturas y recibos') },
-          ]"
-          :key="tab.key"
-          type="button"
-          class="h-9 shrink-0 px-3 text-[13px] outline-none focus-visible:shadow-focus"
-          :class="
-            subTab === tab.key
-              ? 'font-semibold text-ink-700 shadow-[inset_0_-2px_0_rgb(var(--color-brand))]'
-              : 'text-ink-muted hover:text-ink-600'
-          "
-          :aria-current="subTab === tab.key ? 'true' : undefined"
-          @click="subTab = tab.key as typeof subTab"
-        >
-          {{ tab.label }}
-        </button>
-      </nav>
-      <NuxtLink
-        :to="`/billing?patient=${patientId}`"
-        class="shrink-0 pb-1 text-[12.5px] font-medium text-brand-text outline-none hover:underline focus-visible:shadow-focus"
-      >
-        {{ t('All paperwork in Billing', 'Toda la documentación en Facturación') }} ↗
-      </NuxtLink>
-    </div>
+    <!-- Bonos and memberships first, then the ledger.
 
-    <!-- The rule behind a missing button. A factura carries no delete and no
-    edit anywhere in this app, and an absence explains nothing on its own --
-    so it is said once, next to the documents it governs. Enforced in the
-    database too; this line is the explanation, not the guarantee. -->
-    <p v-show="subTab === 'documents'" class="text-[11.5px] leading-[1.6] text-ink-faint">
-      {{
-        t(
-          'Facturas are chain-signed fiscal records under VeriFactu and can never be edited or deleted — a mistake is corrected by issuing a factura rectificativa. Receipts are not fiscal documents and can still be removed.',
-          'Las facturas son registros fiscales firmados en cadena conforme a VeriFactu y no se pueden editar ni eliminar: un error se corrige emitiendo una factura rectificativa. Los recibos no son documentos fiscales y sí se pueden eliminar.',
-        )
-      }}
-    </p>
+    These two are what the front desk reaches for at the counter -- how many
+    sessions are left, is the membership still active -- and they sat under a
+    ledger that grows a row per visit, so answering "how many left?" meant
+    scrolling past a year of history every time. The ledger is the thing you
+    go looking for; these are the things you glance at.
 
-    <template v-if="subTab === 'ledger'">
-    <!-- Account Ledger -->
-    <div v-if="ledgerLoading" class="rounded-card border border-line bg-surface shadow-card">
-      <div class="flex items-center justify-between border-b border-line-divider px-4 py-3">
-        <UiSkeleton class="h-4 w-32 rounded" />
-        <UiSkeleton class="h-4 w-4 rounded" />
-      </div>
-      <div class="space-y-3 p-4">
-        <div v-for="i in 4" :key="i" class="flex items-center justify-between gap-4">
-          <UiSkeleton class="h-3.5 w-16 rounded" />
-          <UiSkeleton class="h-3.5 flex-1 rounded" />
-          <UiSkeleton class="h-3.5 w-20 rounded" />
-        </div>
-      </div>
-    </div>
-    <!-- A failed load is shown as a failure, never as an empty ledger: see
-         loadLedger(). Retry rather than a reload, because the rest of the tab
-         is fine and loadAll() is what has to run again. -->
-    <div v-else-if="ledgerError" class="rounded-card border border-line bg-surface shadow-card">
-      <div class="flex items-center justify-between border-b border-line-divider px-4 py-3">
-        <h3 class="text-[13px] font-semibold text-ink-700">{{ t('Account Ledger', 'Extracto de cuenta') }}</h3>
-      </div>
-      <div class="p-8 text-center">
-        <p class="text-[13px] text-danger-text">{{ t("Couldn't load this patient's transactions.", 'No se pudieron cargar las transacciones de este paciente.') }}</p>
-        <p class="mt-1 font-mono text-[11.5px] text-ink-faint">{{ ledgerError }}</p>
-        <UiBtn variant="secondary" size="sm" class="mt-3" @click="loadAll()">{{ t('Try again', 'Reintentar') }}</UiBtn>
-      </div>
-    </div>
-    <PatientsAccountLedger
-      v-else
-      :patient-id="patientId"
-      :invoices="invoices"
-      :line-item-descriptions="lineItemDescriptions"
-      :payments="ledgerPayments"
-      :credits="ledgerCredits"
-      :package-sessions="ledgerPackageSessions"
-      :spendable-credit-cents="spendableCreditCents"
-      :outstanding-cents="outstandingCents"
-      :sending-invoice-id="sendingInvoiceId"
-      :send-result-invoice-id="sendResultInvoiceId"
-      :send-result-message="sendResultMessage"
-      :can-delete-invoices="can('financials_edit_all')"
-      :can-delete-payments="can('financials_edit_all') && can('payments_allocate')"
-      :can-write-off="can('financials_edit_all')"
-      :can-refund="can('financials_edit_all')"
-      @add-credit="activePanel = 'credit'"
-      @take-payment="activePanel === 'payment' ? (activePanel = null) : openTakePayment()"
-      @send-invoice="sendInvoiceEmail"
-      @delete-invoice="(id: string) => { const inv = invoices.find((i) => i.id === id); if (inv) deleteInvoice(inv) }"
-      @write-off-invoice="writeOffInvoice"
-      @delete-payment="(p: { paymentId: string; invoiceId: string | null; amountCents: number }) => deletePayment(p.paymentId, p.invoiceId, p.amountCents)"
-      @refund-invoice="(payload: { invoiceId: string | null; paymentId: string | null; amountCents: number; reason: string; method: string }) => createRefund(payload.invoiceId, payload.paymentId, payload.amountCents, payload.reason, payload.method)"
-      @credits-changed="onLedgerCreditsChanged"
-    />
-    </template>
-
-    <!-- Stacked rather than side by side: each card carries a progress bar, a
-    money breakdown and a row of actions, none of which fit legibly in half
-    the width (and the old grid-cols-2 had no mobile fallback either). -->
+    They stay outside the sub-nav below because they belong to both halves of
+    it: a bono is as relevant next to the receipts as it is next to the
+    ledger. -->
     <div class="space-y-4">
-      <!-- Facturas: what the patient has been given, as opposed to what they
-      have been charged. Above the bonos because it is the fiscal record. -->
-      <div v-show="subTab === 'documents'" class="rounded-card border border-line bg-surface p-4 shadow-card">
-        <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Facturas', 'Facturas') }}</p>
-        <p class="mt-0.5 text-[12px] text-ink-muted2">
-          {{ t('One per payment received. The charges above are what drives the balance.', 'Una por cada pago recibido. Los cargos de arriba son lo que mueve el saldo.') }}
-        </p>
-
-        <p v-if="facturasMissingNif.length > 0" class="mt-2 rounded-ctl border border-amber-border bg-amber-bg px-2.5 py-1.5 text-[12px] text-amber-text">
-          {{
-            t(
-              `${facturasMissingNif.length} of these need the patient's NIF. Add it on the Overview tab and they will pick it up.`,
-              `${facturasMissingNif.length} de estas necesitan el NIF del paciente. Añádelo en la pestaña Resumen y se actualizarán solas.`,
-            )
-          }}
-        </p>
-
-        <p v-if="facturas.length === 0" class="mt-3 text-[12.5px] text-ink-faint">
-          {{ t('None yet — the next payment will issue one.', 'Ninguna todavía: el próximo pago generará una.') }}
-        </p>
-        <ul v-else class="mt-3 space-y-2">
-          <li v-for="f in facturas" :key="f.id" class="flex flex-wrap items-baseline justify-between gap-2 rounded-ctl border border-line-divider p-3">
-            <div class="min-w-0">
-              <p class="font-mono text-[12.5px] font-medium text-ink-900">
-                {{ f.number }}
-                <span v-if="f.kind === 'simplified'" class="ml-1 rounded-ctlSm bg-chip-bg px-1.5 py-0.5 font-sans text-[10.5px] text-chip-text">
-                  {{ t('simplified', 'simplificada') }}
-                </span>
-                <!-- Money going back, in a series of its own. Marked here so a
-                     negative amount in this list reads as a correction rather
-                     than as a sale somebody typed wrong. -->
-                <span v-else-if="f.kind === 'rectificativa'" class="ml-1 rounded-ctlSm bg-amber-bg px-1.5 py-0.5 font-sans text-[10.5px] text-amber-text">
-                  {{ t('rectifying', 'rectificativa') }}
-                </span>
-                <!--
-                  Its payment has since been deleted. The document stays on the
-                  series -- it was issued, and a correlative series cannot have
-                  holes punched in it -- but it now documents money that is no
-                  longer recorded, which needs resolving rather than ignoring.
-                -->
-                <span v-if="!f.payment_id" class="ml-1 rounded-ctlSm bg-warning-bg px-1.5 py-0.5 font-sans text-[10.5px] text-warning-text">
-                  {{ t('payment removed', 'pago eliminado') }}
-                </span>
-              </p>
-              <p class="truncate text-[12.5px] text-ink-muted2">{{ f.description }}</p>
-              <p class="text-[11.5px] text-ink-faint">{{ new Date(f.issued_at).toLocaleDateString() }}</p>
-            </div>
-            <div class="flex items-center gap-2">
-              <span class="font-mono text-[13px] text-ink-900">{{ money(f.amount_cents) }}</span>
-              <a
-                :href="`/api/facturas/${f.id}/pdf`"
-                target="_blank"
-                rel="noopener"
-                class="text-[12px] font-medium text-brand-text hover:text-brand-hover"
-              >
-                {{ t('PDF', 'PDF') }}
-              </a>
-              <span v-if="facturaSendResult[f.id]" class="text-[12px] text-ink-faint">{{ facturaSendResult[f.id] }}</span>
-              <button
-                v-else
-                type="button"
-                class="text-[12px] font-medium text-brand-text hover:text-brand-hover disabled:opacity-50"
-                :disabled="sendingFacturaId === f.id"
-                @click="sendFactura(f.id)"
-              >
-                {{ sendingFacturaId === f.id ? t('Sending…', 'Enviando…') : t('Send', 'Enviar') }}
-              </button>
-            </div>
-          </li>
-        </ul>
-      </div>
-
-      <!-- Packages / bonos -- always on screen; see the sub-nav comment. -->
+      <!-- Packages / bonos -- always on screen, above the sub-nav. -->
       <div class="rounded-card border border-line bg-surface p-4 shadow-card">
         <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Packages / bonos', 'Bonos') }}</p>
         <div v-if="packagesLoading" class="mt-3 space-y-3">
@@ -2520,6 +2356,184 @@ function money(cents: number) {
           <UiBtn size="sm" variant="secondary" :disabled="!activateMembershipId || activatingMembership" @click="activateMembership">{{ activatingMembership ? t('Activating…', 'Activando…') : t('Activate', 'Activar') }}</UiBtn>
         </form>
         </template>
+      </div>
+    </div>
+
+    <!-- One sub-nav, so the ledger gets the full width instead of sharing
+    it with two cards nobody was reading at the same time. -->
+    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-chip-border">
+      <nav class="flex gap-1 overflow-x-auto" :aria-label="t('Money sections', 'Secciones de dinero')">
+        <button
+          v-for="tab in [
+            { key: 'ledger', label: t('Account ledger', 'Libro de cuenta') },
+            { key: 'documents', label: t('Facturas & receipts', 'Facturas y recibos') },
+          ]"
+          :key="tab.key"
+          type="button"
+          class="h-9 shrink-0 px-3 text-[13px] outline-none focus-visible:shadow-focus"
+          :class="
+            subTab === tab.key
+              ? 'font-semibold text-ink-700 shadow-[inset_0_-2px_0_rgb(var(--color-brand))]'
+              : 'text-ink-muted hover:text-ink-600'
+          "
+          :aria-current="subTab === tab.key ? 'true' : undefined"
+          @click="subTab = tab.key as typeof subTab"
+        >
+          {{ tab.label }}
+        </button>
+      </nav>
+      <NuxtLink
+        :to="`/billing?patient=${patientId}`"
+        class="shrink-0 pb-1 text-[12.5px] font-medium text-brand-text outline-none hover:underline focus-visible:shadow-focus"
+      >
+        {{ t('All paperwork in Billing', 'Toda la documentación en Facturación') }} ↗
+      </NuxtLink>
+    </div>
+
+    <!-- The rule behind a missing button. A factura carries no delete and no
+    edit anywhere in this app, and an absence explains nothing on its own --
+    so it is said once, next to the documents it governs. Enforced in the
+    database too; this line is the explanation, not the guarantee. -->
+    <p v-show="subTab === 'documents'" class="text-[11.5px] leading-[1.6] text-ink-faint">
+      {{
+        t(
+          'Facturas are chain-signed fiscal records under VeriFactu and can never be edited or deleted — a mistake is corrected by issuing a factura rectificativa. Receipts are not fiscal documents and can still be removed.',
+          'Las facturas son registros fiscales firmados en cadena conforme a VeriFactu y no se pueden editar ni eliminar: un error se corrige emitiendo una factura rectificativa. Los recibos no son documentos fiscales y sí se pueden eliminar.',
+        )
+      }}
+    </p>
+
+    <template v-if="subTab === 'ledger'">
+    <!-- Account Ledger -->
+    <div v-if="ledgerLoading" class="rounded-card border border-line bg-surface shadow-card">
+      <div class="flex items-center justify-between border-b border-line-divider px-4 py-3">
+        <UiSkeleton class="h-4 w-32 rounded" />
+        <UiSkeleton class="h-4 w-4 rounded" />
+      </div>
+      <div class="space-y-3 p-4">
+        <div v-for="i in 4" :key="i" class="flex items-center justify-between gap-4">
+          <UiSkeleton class="h-3.5 w-16 rounded" />
+          <UiSkeleton class="h-3.5 flex-1 rounded" />
+          <UiSkeleton class="h-3.5 w-20 rounded" />
+        </div>
+      </div>
+    </div>
+    <!-- A failed load is shown as a failure, never as an empty ledger: see
+         loadLedger(). Retry rather than a reload, because the rest of the tab
+         is fine and loadAll() is what has to run again. -->
+    <div v-else-if="ledgerError" class="rounded-card border border-line bg-surface shadow-card">
+      <div class="flex items-center justify-between border-b border-line-divider px-4 py-3">
+        <h3 class="text-[13px] font-semibold text-ink-700">{{ t('Account Ledger', 'Extracto de cuenta') }}</h3>
+      </div>
+      <div class="p-8 text-center">
+        <p class="text-[13px] text-danger-text">{{ t("Couldn't load this patient's transactions.", 'No se pudieron cargar las transacciones de este paciente.') }}</p>
+        <p class="mt-1 font-mono text-[11.5px] text-ink-faint">{{ ledgerError }}</p>
+        <UiBtn variant="secondary" size="sm" class="mt-3" @click="loadAll()">{{ t('Try again', 'Reintentar') }}</UiBtn>
+      </div>
+    </div>
+    <PatientsAccountLedger
+      v-else
+      :patient-id="patientId"
+      :invoices="invoices"
+      :line-item-descriptions="lineItemDescriptions"
+      :payments="ledgerPayments"
+      :credits="ledgerCredits"
+      :package-sessions="ledgerPackageSessions"
+      :spendable-credit-cents="spendableCreditCents"
+      :outstanding-cents="outstandingCents"
+      :sending-invoice-id="sendingInvoiceId"
+      :send-result-invoice-id="sendResultInvoiceId"
+      :send-result-message="sendResultMessage"
+      :can-delete-invoices="can('financials_edit_all')"
+      :can-delete-payments="can('financials_edit_all') && can('payments_allocate')"
+      :can-write-off="can('financials_edit_all')"
+      :can-refund="can('financials_edit_all')"
+      @add-credit="activePanel = 'credit'"
+      @take-payment="activePanel === 'payment' ? (activePanel = null) : openTakePayment()"
+      @send-invoice="sendInvoiceEmail"
+      @delete-invoice="(id: string) => { const inv = invoices.find((i) => i.id === id); if (inv) deleteInvoice(inv) }"
+      @write-off-invoice="writeOffInvoice"
+      @delete-payment="(p: { paymentId: string; invoiceId: string | null; amountCents: number }) => deletePayment(p.paymentId, p.invoiceId, p.amountCents)"
+      @refund-invoice="(payload: { invoiceId: string | null; paymentId: string | null; amountCents: number; reason: string; method: string }) => createRefund(payload.invoiceId, payload.paymentId, payload.amountCents, payload.reason, payload.method)"
+      @credits-changed="onLedgerCreditsChanged"
+    />
+    </template>
+
+    <!-- Stacked rather than side by side: each card carries a progress bar, a
+    money breakdown and a row of actions, none of which fit legibly in half
+    the width (and the old grid-cols-2 had no mobile fallback either). -->
+    <div class="space-y-4">
+      <!-- Facturas: what the patient has been given, as opposed to what they
+      have been charged. Behind the sub-nav with the ledger, because both are
+      history you go looking for rather than something you glance at. -->
+      <div v-show="subTab === 'documents'" class="rounded-card border border-line bg-surface p-4 shadow-card">
+        <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Facturas', 'Facturas') }}</p>
+        <p class="mt-0.5 text-[12px] text-ink-muted2">
+          {{ t('One per payment received. The charges above are what drives the balance.', 'Una por cada pago recibido. Los cargos de arriba son lo que mueve el saldo.') }}
+        </p>
+
+        <p v-if="facturasMissingNif.length > 0" class="mt-2 rounded-ctl border border-amber-border bg-amber-bg px-2.5 py-1.5 text-[12px] text-amber-text">
+          {{
+            t(
+              `${facturasMissingNif.length} of these need the patient's NIF. Add it on the Overview tab and they will pick it up.`,
+              `${facturasMissingNif.length} de estas necesitan el NIF del paciente. Añádelo en la pestaña Resumen y se actualizarán solas.`,
+            )
+          }}
+        </p>
+
+        <p v-if="facturas.length === 0" class="mt-3 text-[12.5px] text-ink-faint">
+          {{ t('None yet — the next payment will issue one.', 'Ninguna todavía: el próximo pago generará una.') }}
+        </p>
+        <ul v-else class="mt-3 space-y-2">
+          <li v-for="f in facturas" :key="f.id" class="flex flex-wrap items-baseline justify-between gap-2 rounded-ctl border border-line-divider p-3">
+            <div class="min-w-0">
+              <p class="font-mono text-[12.5px] font-medium text-ink-900">
+                {{ f.number }}
+                <span v-if="f.kind === 'simplified'" class="ml-1 rounded-ctlSm bg-chip-bg px-1.5 py-0.5 font-sans text-[10.5px] text-chip-text">
+                  {{ t('simplified', 'simplificada') }}
+                </span>
+                <!-- Money going back, in a series of its own. Marked here so a
+                     negative amount in this list reads as a correction rather
+                     than as a sale somebody typed wrong. -->
+                <span v-else-if="f.kind === 'rectificativa'" class="ml-1 rounded-ctlSm bg-amber-bg px-1.5 py-0.5 font-sans text-[10.5px] text-amber-text">
+                  {{ t('rectifying', 'rectificativa') }}
+                </span>
+                <!--
+                  Its payment has since been deleted. The document stays on the
+                  series -- it was issued, and a correlative series cannot have
+                  holes punched in it -- but it now documents money that is no
+                  longer recorded, which needs resolving rather than ignoring.
+                -->
+                <span v-if="!f.payment_id" class="ml-1 rounded-ctlSm bg-warning-bg px-1.5 py-0.5 font-sans text-[10.5px] text-warning-text">
+                  {{ t('payment removed', 'pago eliminado') }}
+                </span>
+              </p>
+              <p class="truncate text-[12.5px] text-ink-muted2">{{ f.description }}</p>
+              <p class="text-[11.5px] text-ink-faint">{{ new Date(f.issued_at).toLocaleDateString() }}</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="font-mono text-[13px] text-ink-900">{{ money(f.amount_cents) }}</span>
+              <a
+                :href="`/api/facturas/${f.id}/pdf`"
+                target="_blank"
+                rel="noopener"
+                class="text-[12px] font-medium text-brand-text hover:text-brand-hover"
+              >
+                {{ t('PDF', 'PDF') }}
+              </a>
+              <span v-if="facturaSendResult[f.id]" class="text-[12px] text-ink-faint">{{ facturaSendResult[f.id] }}</span>
+              <button
+                v-else
+                type="button"
+                class="text-[12px] font-medium text-brand-text hover:text-brand-hover disabled:opacity-50"
+                :disabled="sendingFacturaId === f.id"
+                @click="sendFactura(f.id)"
+              >
+                {{ sendingFacturaId === f.id ? t('Sending…', 'Enviando…') : t('Send', 'Enviar') }}
+              </button>
+            </div>
+          </li>
+        </ul>
       </div>
     </div>
 

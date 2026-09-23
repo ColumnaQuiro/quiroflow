@@ -938,6 +938,22 @@ async function callPublicBookingAsAnon(args: Record<string, unknown>) {
   return { error: error?.message ?? null }
 }
 
+/**
+ * Calls any RPC with the ANON key, to prove a door is shut.
+ *
+ * The service-role client would prove nothing here: it is allowed through by
+ * design. This is the caller these functions are being closed to -- anyone
+ * holding the publishable key, which is in the page source of every clinic's
+ * booking widget.
+ */
+async function callRpcAsAnon(opts: { fn: string; args?: Record<string, unknown> }) {
+  const anon = createClient(SUPABASE_URL, ANON_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+  const { error } = await anon.rpc(opts.fn, (opts.args ?? {}) as never)
+  return { error: error?.message ?? null, code: (error as { code?: string } | null)?.code ?? null }
+}
+
 /** Gives a second patient the run of someone else's bono -- a family sharing one. */
 async function sharePackageWith(opts: { accountId: string; packagePurchaseId: string; patientId: string }) {
   const row = unwrap(
@@ -2164,6 +2180,7 @@ export const dbTasks = {
   'db:createImportedPayment': createImportedPayment,
   'db:createPackagePurchase': createPackagePurchase,
   'db:callPublicBookingAsAnon': callPublicBookingAsAnon,
+  'db:callRpcAsAnon': callRpcAsAnon,
   'db:sharePackageWith': sharePackageWith,
   'db:packageSessionEffects': packageSessionEffects,
   'db:insertDuplicateSession': insertDuplicateSession,

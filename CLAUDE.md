@@ -118,6 +118,81 @@ SUPABASE_DB_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npm run 
 symptom that reproduces in the browser but not under `npm run test:e2e:local`
 is this until proven otherwise.
 
+## A new `patient_id` column has to be added to `merge_patients` as well
+
+`patients` is the hub of twenty-three foreign keys and nineteen of them are
+`on delete cascade`, so deleting a patient row takes most of the database's
+idea of that person with it. That is intended. What is easy to miss is that
+**`merge_patients` (`0160_merge_patients.sql`) ends by deleting a row**, and
+it is therefore subject to exactly the same cascade:
+
+```sql
+-- Nothing points at the duplicate any more, so the cascade has nothing left
+-- to take.
+delete from patients where id = p_duplicate_id;
+```
+
+That comment is only true for the tables listed above it, by hand, one
+`update … set patient_id = p_survivor_id` each. A table added to `patients`
+later and not added there is silently destroyed by every merge — and a merge
+is the one operation whose entire promise is that nothing is lost.
+
+It had already happened twice by 22 Sep 2026. `payments` gained its
+`patient_id` after 0160 was written, so merging a duplicate deleted every
+payment on it, **reported success, and showed nothing on screen**:
+
+```
+payments_before_on_duplicate | 2
+merged                       | t
+payments_on_survivor_after   | 0
+payments_still_anywhere      | 0
+```
+
+`facturas` was missing from the list too, but failed loudly instead of
+quietly, because `factura_records.factura_id` is `RESTRICT` — so merging
+anyone who had ever been handed a factura was impossible rather than
+destructive, with a foreign-key error naming a table the front desk has never
+heard of. Both are moved now, and a guard before the delete raises rather than
+letting payments go.
+
+So: **adding a `patient_id` column is two changes, not one.** The migration
+that adds it, and the line in `merge_patients` that moves it. The cheapest way
+to check the list is still current:
+
+```sql
+select rel.relname,
+       case when (select prosrc from pg_proc where proname='merge_patients')
+                 ~ ('update ' || rel.relname || ' set') then 'moved' else 'NOT MOVED' end
+from pg_constraint con
+join pg_class rel on rel.oid = con.conrelid
+join pg_class p on p.oid = con.confrelid
+where con.contype = 'f' and p.relname = 'patients' and rel.relname <> 'patients';
+```
+
+**`facturas.patient_id` is `ON DELETE RESTRICT`, deliberately.** Everything
+else keyed to a patient cascades; this one does not, because a factura is a
+chain-signed fiscal record under VERI*FACTU and outlives the patient row. It
+was `CASCADE` until 22 Sep 2026 and was saved only by `factura_records` being
+`RESTRICT` one table further down — a real guarantee, but resting on a second
+table's constraint and on the invariant that every factura has a record.
+`components/patients/DeleteDialog.vue` refuses before the database is reached
+and offers Archive; the constraint is the floor under that, for the paths that
+do not go through the dialog.
+
+Moving a factura between two records of the same person is safe:
+`factura_huella_input` hashes IDEmisorFactura, NumSerieFactura,
+FechaExpedicionFactura, TipoFactura, CuotaTotal, ImporteTotal, the previous
+huella and FechaHoraHusoGenRegistro. **The patient is not among them**, so
+repointing `patient_id` changes no hashed field and `factura_records` — keyed
+by factura and account, not by patient — is not touched at all.
+
+Deleting an `accounts` row is a separate question and nothing in the
+application does it: `/api/account/delete.post.ts` removes the *auth user*,
+and `patients.user_id` is `on delete set null`, so the clinical record and its
+legal retention survive. A hand-run `delete from accounts` on an account
+holding facturas is refused — by the `factura_records` append-only trigger, on
+the `account_id` cascade — and was before this change too.
+
 ## Deploying — a published release, via GitHub Actions
 
 **Merging does not deploy.** `.github/workflows/deploy.yml` runs when a

@@ -67,6 +67,9 @@ const { availableCents, activePackages, refresh: refreshMoney } = usePatientFina
 
 const panel = ref<HTMLElement | null>(null)
 useFocusTrap(panel, () => emit('close'))
+// On a phone the panel is full screen and the next step lives in the footer,
+// under the thumb, instead of halfway down the summary (canvas: PhoneAppointment).
+const isPhone = useMediaQuery('(max-width: 639px)')
 
 const tab = ref<'summary' | 'billing' | 'history'>('summary')
 // Cancelling is a step inside this panel, not a dialog on top of it.
@@ -470,7 +473,7 @@ const canAct = computed(() => props.appointment.status === 'booked')
           <p v-if="onTrack && stageLine(appointment, stage).sub" class="mt-2 text-[12.5px] text-ink-muted">{{ stageLine(appointment, stage).title }} · {{ stageLine(appointment, stage).sub }}</p>
 
           <div v-if="next || undoable || isUnconfirmedStage(stage)" class="mt-3 flex flex-wrap items-center gap-2">
-            <button v-if="next" type="button" data-cy="advance-stage" :data-next="next" :disabled="busy" class="flex h-11 items-center gap-2 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface hover:bg-brand-hover disabled:opacity-60" @click="advance">
+            <button v-if="next && !isPhone" type="button" data-cy="advance-stage" :data-next="next" :disabled="busy" class="flex h-11 items-center gap-2 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface hover:bg-brand-hover disabled:opacity-60" @click="advance">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
               {{ nextLabel }}
             </button>
@@ -558,6 +561,9 @@ const canAct = computed(() => props.appointment.status === 'booked')
 
     <!-- Footer: the consequential actions, each its own button. -->
     <div class="appt-panel-footer flex shrink-0 flex-wrap items-center gap-2 border-t border-line bg-surface px-5 py-3 sm:px-6">
+      <button v-if="next && isPhone" type="button" data-cy="advance-stage" :data-next="next" :disabled="busy" class="flex h-12 w-full items-center justify-center gap-2 rounded-ctl bg-brand text-[15px] font-bold text-surface disabled:opacity-60" @click="advance">
+        {{ nextLabel }}
+      </button>
       <template v-if="canAct">
         <button type="button" data-cy="cancel-appointment" :disabled="busy" class="h-11 rounded-ctl border border-line-control px-3.5 text-[13.5px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="cancelAppointment">{{ t('Cancel appointment…', 'Cancelar cita…') }}</button>
         <button

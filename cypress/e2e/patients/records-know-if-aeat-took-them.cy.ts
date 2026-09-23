@@ -252,13 +252,13 @@ describe('Records that know whether the AEAT took them', () => {
     // sender is what declines to send it.
     cy.seedStaffAccount().then((account) => {
       cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Envio', lastName: 'Tres' }).then((patient: any) => {
-        cy.task('db:createPackageTemplate', { accountId: account.accountId, name: 'Bono E6', sessionCount: 4, priceCents: 24000 })
-        cy.task('db:createPackageTemplate', { accountId: account.accountId, name: 'Bono E7', sessionCount: 4, priceCents: 25000 })
+        cy.task('db:createPackageTemplate', { accountId: account.accountId, name: 'Bono E10', sessionCount: 4, priceCents: 28000 })
+        cy.task('db:createPackageTemplate', { accountId: account.accountId, name: 'Bono E11', sessionCount: 4, priceCents: 29000 })
 
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}?tab=billing`)
-        sellBono('Bono E6 (4, 240,00 €)')
-        sellBono('Bono E7 (4, 250,00 €)')
+        sellBono('Bono E10 (4, 280,00 €)')
+        sellBono('Bono E11 (4, 290,00 €)')
 
         cy.task('db:facturaRecordsFor', { accountId: account.accountId }).then((records: any) => {
           const [stubborn, transient] = records

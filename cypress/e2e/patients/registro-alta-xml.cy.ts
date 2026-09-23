@@ -206,9 +206,18 @@ describe('The RegistroAlta the AEAT will read', () => {
       anonymiseRecipient: true,
     })
     expect(test).to.contain('<sum1:NombreRazon>Destinatario de pruebas</sum1:NombreRazon>')
-    expect(test).to.contain('<sum1:NIF>00000000T</sum1:NIF>')
     expect(test).to.not.contain('Ana Ruiz')
     expect(test).to.not.contain('12345678Z')
+
+    // IDOtro, not NIF. The first version of this invented a NIF that passes
+    // the checksum -- 00000000T -- and the AEAT refused all sixteen records
+    // carrying it with "1239 El formato del NIF es incorrecto". IDType 07 is
+    // the schema's own word for a recipient the AEAT has no record of, which
+    // is what a stand-in is.
+    expect(test).to.contain('<sum1:IDOtro>')
+    expect(test).to.contain('<sum1:IDType>07</sum1:IDType>')
+    expect(test).to.contain('<sum1:ID>PRUEBAS</sum1:ID>')
+    expect(test, 'NIF and IDOtro are a choice, never both').to.not.contain('<sum1:NIF>0')
 
     // A patient with nothing on file is still identified in test, rather than
     // losing the Destinatarios block -- which is what the real-data rule does,
@@ -220,7 +229,7 @@ describe('The RegistroAlta the AEAT will read', () => {
       anonymiseRecipient: true,
     })
     expect(noDataOnFile).to.contain('<sum1:Destinatarios>')
-    expect(noDataOnFile).to.contain('<sum1:NIF>00000000T</sum1:NIF>')
+    expect(noDataOnFile).to.contain('<sum1:IDType>07</sum1:IDType>')
 
     // A simplificada names nobody in either environment: substituting a
     // recipient onto an F2 would contradict the type.
@@ -236,6 +245,58 @@ describe('The RegistroAlta the AEAT will read', () => {
     expect(prod).to.contain('<sum1:NombreRazon>Ana Ruiz</sum1:NombreRazon>')
     expect(prod).to.contain('<sum1:NIF>12345678Z</sum1:NIF>')
     expect(prod).to.not.contain('Destinatario de pruebas')
+  })
+
+  it('says how a rectificativa corrects, and which factura it corrects', () => {
+    // Without TipoRectificativa the AEAT refuses the record outright:
+    //
+    //   1114  Si la factura es de tipo rectificativa, el campo
+    //         TipoRectificativa debe tener valor.
+    //
+    // All five rectificativas this clinic has issued were rejected for it.
+    const rect = buildRegistroAlta({
+      ...base,
+      record: { ...base.record, invoiceType: 'R1', serieNumber: 'R-2026-0001', importeTotalCents: -5500 },
+      factura: { ...base.factura, taxBaseCents: -5500 },
+      rectifies: { issuerNif: 'B16365504', serieNumber: 'F-2026-0006', issuedOn: '2026-09-15' },
+    })
+
+    // "I", por diferencias, because issueRectificativa() produces a NEGATIVE
+    // document carrying what goes back. "S" would say the corrected factura's
+    // new total is minus the refund, which is a different and false claim --
+    // and would oblige ImporteRectificacion, the totals being substituted.
+    expect(rect).to.contain('<sum1:TipoRectificativa>I</sum1:TipoRectificativa>')
+    expect(rect, 'nothing is substituted').to.not.contain('ImporteRectificacion')
+
+    // The corrected invoice named the way the AEAT identifies one: emisor,
+    // serie and date, the same triple as Encadenamiento.
+    expect(rect).to.contain('<sum1:FacturasRectificadas>')
+    expect(rect).to.contain('<sum1:NumSerieFactura>F-2026-0006</sum1:NumSerieFactura>')
+    expect(rect).to.contain('<sum1:FechaExpedicionFactura>15-09-2026</sum1:FechaExpedicionFactura>')
+
+    // Order is checked by the schema, not by a validation: TipoRectificativa
+    // and FacturasRectificadas sit between TipoFactura and
+    // DescripcionOperacion, and out of order the whole envelope fails.
+    const at = (tag: string) => rect.indexOf(`<sum1:${tag}>`)
+    expect(at('TipoFactura')).to.be.lessThan(at('TipoRectificativa'))
+    expect(at('TipoRectificativa')).to.be.lessThan(at('FacturasRectificadas'))
+    expect(at('FacturasRectificadas')).to.be.lessThan(at('DescripcionOperacion'))
+
+    // A refund that could not be traced to a single factura still goes, with
+    // the type and without the back-reference -- a rectificativa the AEAT
+    // holds beats one it refuses.
+    const untraced = buildRegistroAlta({
+      ...base,
+      record: { ...base.record, invoiceType: 'R1' },
+      rectifies: null,
+    })
+    expect(untraced).to.contain('<sum1:TipoRectificativa>I</sum1:TipoRectificativa>')
+    expect(untraced).to.not.contain('FacturasRectificadas')
+
+    // None of it appears on an ordinary factura.
+    const ordinary = buildRegistroAlta({ ...base, record: { ...base.record, invoiceType: 'F1' } })
+    expect(ordinary).to.not.contain('TipoRectificativa')
+    expect(ordinary).to.not.contain('FacturasRectificadas')
   })
 
   it('leaves the huella input untouched when it substitutes the destinatario', () => {

@@ -1861,7 +1861,12 @@ function showNowLineOn(day: Date) {
       </aside>
 
       <!-- Main content -->
-      <div ref="scrollAreaRef" class="flex min-w-0 flex-1 flex-col overflow-y-auto">
+      <!-- Each view below is its own scroller, both ways. The room and day
+           headers are sticky, and sticky only works against the element that
+           actually scrolls: while this div scrolled vertically and the views
+           only horizontally, the headers stuck to a box that never moved and
+           scrolled away with the grid. -->
+      <div ref="scrollAreaRef" class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <div v-if="loading" class="flex min-w-0 flex-1 p-3">
           <div v-for="col in 3" :key="col" class="flex-1 border-r border-line px-3 last:border-r-0">
             <UiSkeleton class="mb-4 h-4 w-24 rounded-ctlSm" />
@@ -1898,7 +1903,7 @@ function showNowLineOn(day: Date) {
           role="group"
           data-cy="calendar-grid"
           :aria-label="t('Calendar grid. Arrow keys move between slots; Enter books a free slot or opens an appointment.', 'Calendario. Las flechas mueven entre huecos; Intro reserva un hueco libre o abre una cita.')"
-          class="flex min-w-0 flex-1 flex-col outline-none"
+          class="flex min-h-0 min-w-0 flex-1 flex-col outline-none"
           @focus="onGridFocus"
           @blur="onGridBlur"
           @keydown="onGridKeydown"
@@ -1906,10 +1911,10 @@ function showNowLineOn(day: Date) {
           <span class="sr-only" aria-live="polite">{{ focusAnnouncement }}</span>
 
           <!-- Day view: room columns -->
-          <div v-if="viewMode === 'day'" class="min-w-0 flex-1 overflow-x-auto">
+          <div v-if="viewMode === 'day'" class="min-h-0 min-w-0 flex-1 overflow-auto" data-cy="grid-scroller">
             <div :style="{ minWidth: `${58 + dayColumns.length * 220}px` }">
               <div class="sticky top-0 z-30 flex bg-surface">
-                <div class="h-10 w-[58px] shrink-0 border-b border-r border-line"></div>
+                <div class="sticky left-0 z-10 h-10 w-[58px] shrink-0 border-b border-r border-line bg-surface"></div>
                 <div v-for="col in dayColumns" :key="col.id" class="flex h-10 flex-1 flex-col items-center justify-center border-b border-r border-line last:border-r-0">
                   <span class="text-[13px] font-semibold text-ink-900">{{ col.name }}</span>
                   <span v-if="roomPractitionerLabel(col.id)" class="text-[11.5px] leading-none text-ink-muted2">{{ roomPractitionerLabel(col.id) }}</span>
@@ -1917,7 +1922,9 @@ function showNowLineOn(day: Date) {
               </div>
 
               <div class="relative flex" :style="{ height: `${dayGridHeight}px` }">
-                <div class="relative w-[58px] shrink-0 border-r border-line">
+                <div class="sticky left-0 z-[25] w-[58px] shrink-0 border-r border-line bg-surface">
+                  <!-- In the gutter, which stays put when the rooms scroll sideways. -->
+                  <span v-if="showNowLine" class="pointer-events-none absolute left-1 z-10 -translate-y-1/2 rounded-full bg-danger-text px-1.5 py-px font-mono text-[10.5px] font-semibold leading-4 text-surface" data-cy="now-label" :style="{ top: `${nowLinePx}px` }">{{ formatTime(now) }}</span>
                   <span
                     v-for="h in hourMarks"
                     :key="h"
@@ -2043,7 +2050,6 @@ function showNowLineOn(day: Date) {
                 </div>
 
                 <div v-if="showNowLine" data-cy="now-line" class="pointer-events-none absolute left-0 right-0 z-20" :style="{ top: `${nowLinePx}px` }">
-                  <span class="absolute left-1 top-0 -translate-y-1/2 rounded-full bg-danger-text px-1.5 py-px font-mono text-[10.5px] font-semibold leading-4 text-surface" data-cy="now-label">{{ formatTime(now) }}</span>
                   <div class="absolute left-[58px] top-0 h-[9px] w-[9px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-danger-text"></div>
                   <div class="ml-[58px] h-0.5 -translate-y-1/2 bg-danger-text"></div>
                 </div>
@@ -2052,9 +2058,9 @@ function showNowLineOn(day: Date) {
           </div>
 
           <!-- Week view: day columns, each split into room sub-columns like Day view. -->
-          <div v-else class="min-w-0 flex-1 overflow-x-auto">
+          <div v-else class="min-h-0 min-w-0 flex-1 overflow-auto" data-cy="grid-scroller">
             <div class="flex" :style="{ minWidth: `${58 + visibleWeekDays.length * dayColumns.length * WEEK_ROOM_COL_PX}px` }">
-              <div class="sticky left-0 z-20 w-[58px] shrink-0 bg-surface">
+              <div class="sticky left-0 z-[25] w-[58px] shrink-0 bg-surface">
                 <div class="sticky top-0 z-30 border-b border-r border-line bg-surface" :style="{ height: `${WEEK_HEADER_PX}px` }"></div>
                 <div class="relative border-r border-line" :style="{ height: `${weekGridHeight}px` }">
                   <span v-if="showWeekNowLabel" class="pointer-events-none absolute left-1 z-20 -translate-y-1/2 rounded-full bg-danger-text px-1.5 py-px font-mono text-[10.5px] font-semibold leading-4 text-surface" data-cy="now-label" :style="{ top: `${nowLineWeekPx}px` }">{{ formatTime(now) }}</span>

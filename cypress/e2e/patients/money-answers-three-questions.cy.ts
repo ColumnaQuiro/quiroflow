@@ -109,9 +109,14 @@ describe('The Money tab', () => {
         // row without having read the note.
         // Singular or plural -- the footer counts, and one row says
         // "1 movement".
-        cy.contains(/\d+ movements?/).should('be.visible')
-        cy.contains('the money moved when the bono was bought').should('be.visible')
-        cy.contains('Outstanding').should('be.visible')
+        //
+        // Scrolled to first: the ledger sits below the bonos and memberships
+        // now, so its footer is off-screen on a 900px viewport. be.visible
+        // without this asserts where the page happens to be scrolled to, not
+        // whether the footer is there.
+        cy.contains(/\d+ movements?/).scrollIntoView().should('be.visible')
+        cy.contains('the money moved when the bono was bought').scrollIntoView().should('be.visible')
+        cy.contains('Outstanding').scrollIntoView().should('be.visible')
       })
     })
   })

@@ -38,7 +38,12 @@ describe('A bono closed in PracticeHub', () => {
         cy.visit(`/patients/${patient.id}?tab=billing`)
 
         // Only the live bono is money. 840 is the figure this used to show.
-        cy.contains('dt', 'In bonos').parent().should('contain', '400,00 €')
+        //
+        // \u00a0 because money() formats through Intl, which puts a
+        // non-breaking space before the euro sign -- an ordinary space here
+        // matches nothing and the assertion times out. The pill below goes
+        // through formatEur, which uses a plain one.
+        cy.contains('dt', 'In bonos').parent().should('contain', '400,00\u00a0€')
         cy.contains('400,00 € available').should('be.visible')
         cy.contains('840,00 € available').should('not.exist')
 
@@ -81,8 +86,8 @@ describe('A bono closed in PracticeHub', () => {
         // EUR still sitting on the counter, and the bono's own button is
         // disabled rather than offering its eleven remaining sessions.
         cy.contains('Bono cerrado').should('be.visible')
-        cy.contains('dt', 'In bonos').parent().should('contain', '0,00 €')
-        cy.contains('440,00 €').should('not.exist')
+        cy.contains('dt', 'In bonos').parent().should('contain', '0,00\u00a0€')
+        cy.contains('440,00\u00a0€').should('not.exist')
         cy.contains('button', 'Log session').should('be.disabled')
       })
     })

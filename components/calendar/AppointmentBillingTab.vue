@@ -347,11 +347,21 @@ async function usePackageSession(pkg: { id: string; package_name: string; sessio
   // 0 + 1, so the bono recorded one session while paying for two.
   const { data: bono } = await supabase
     .from('package_purchases')
-    .select('id, patient_id, package_name, sessions_used, sessions_total, price_cents')
+    .select('id, patient_id, package_name, sessions_used, sessions_total, price_cents, is_closed')
     .eq('id', pkg.id)
     .maybeSingle()
   if (!bono || bono.sessions_used >= bono.sessions_total) {
     error.value = t('That bono has no sessions left.', 'Ese bono no tiene sesiones restantes.')
+    savingPayment.value = false
+    await refreshSummary()
+    return
+  }
+  // A bono PracticeHub has closed is not offered here -- activePackages
+  // leaves it out -- but its counter still has sessions on it, so the check
+  // above would wave it through if a stale copy of the list ever reached this
+  // far.
+  if (bono.is_closed) {
+    error.value = t('That bono is closed and cannot be used.', 'Ese bono está cerrado y no se puede usar.')
     savingPayment.value = false
     await refreshSummary()
     return

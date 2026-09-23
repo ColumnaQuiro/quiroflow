@@ -275,7 +275,7 @@ watch(patientQuery, (q) => {
     const [{ data: waiting }, { data: packs }, { data: visits }, { data: phones }] = ids.length
       ? await Promise.all([
           supabase.from('waitlist_entries').select('patient_id').in('patient_id', ids).eq('status', 'waiting'),
-          supabase.from('package_purchases').select('patient_id, sessions_total, sessions_used').in('patient_id', ids),
+          supabase.from('package_purchases').select('patient_id, sessions_total, sessions_used, is_closed').in('patient_id', ids),
           supabase.from('appointments').select('patient_id, starts_at, appointment_types(name)').in('patient_id', ids).eq('status', 'completed').order('starts_at', { ascending: false }).limit(200),
           supabase.from('patient_contact_numbers').select('patient_id, number').in('patient_id', ids),
         ])
@@ -284,7 +284,9 @@ watch(patientQuery, (q) => {
     const waitingIds = new Set((waiting ?? []).map((w: { patient_id: string }) => w.patient_id))
     searchResults.value = rows.map((r) => {
       const last = (visits as { patient_id: string; starts_at: string; appointment_types: { name: string } | null }[] | null)?.find((v) => v.patient_id === r.id)
-      const pack = (packs as { patient_id: string; sessions_total: number; sessions_used: number }[] | null)?.find((p) => p.patient_id === r.id && p.sessions_used < p.sessions_total)
+      const pack = (packs as { patient_id: string; sessions_total: number; sessions_used: number; is_closed: boolean }[] | null)?.find(
+        (p) => p.patient_id === r.id && !p.is_closed && p.sessions_used < p.sessions_total,
+      )
       const phone = (phones as { patient_id: string; number: string }[] | null)?.find((p) => p.patient_id === r.id)?.number
       const flags: string[] = []
       if (waitingIds.has(r.id)) flags.push(t('On waitlist', 'En espera'))

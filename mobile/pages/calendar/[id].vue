@@ -147,11 +147,19 @@ async function usePackageSession(pkg: { id: string; package_name: string; sessio
     // must not both succeed.
     const { data: bono } = await supabase
       .from('package_purchases')
-      .select('id, package_name, sessions_used, sessions_total, price_cents')
+      .select('id, package_name, sessions_used, sessions_total, price_cents, is_closed')
       .eq('id', pkg.id)
       .maybeSingle()
     if (!bono || bono.sessions_used >= bono.sessions_total) {
       error.value = 'That bono has no sessions left.'
+      saving.value = false
+      return
+    }
+    // Closed in PracticeHub: the sessions left on its counter are history,
+    // not credit. The list this came from already leaves it out; this is the
+    // same backstop the web side has.
+    if (bono.is_closed) {
+      error.value = 'That bono is closed and cannot be used.'
       saving.value = false
       return
     }

@@ -66,11 +66,17 @@ export default defineEventHandler(async (event) => {
     // Meta. toE164Loose recognises a number that already starts with the
     // country's dial code and leaves it alone.
     //
-    // The account's own default country rather than a hardcoded 'ES',
-    // because the fallback branch is the one that decides whose country a
-    // bare local number belongs to, and getting that wrong sends the message
-    // to a stranger.
-    const e164 = toE164Loose(lead.phone, account.default_phone_country ?? 'ES')
+    // But that recognition only works for the account's OWN dial code, and a
+    // lead's phone can belong to any country -- whatsappLeads.ts stores it as
+    // already-international digits with no ambiguity to resolve, which is
+    // exactly what prepending "+" back on before calling toE164Loose tells
+    // it. Passed bare, a non-Spanish number ("5491131571300", Argentina)
+    // doesn't start with the account's dial code either, so it fell through
+    // to toE164 and got "34" prepended anyway -- "345491131571300", which
+    // matched no row in whatsapp_messages, so the 24h window check found no
+    // last-inbound message and refused every reply to a foreign lead as
+    // "more than 24h" regardless of how recently they had written in.
+    const e164 = toE164Loose(`+${lead.phone}`, account.default_phone_country ?? 'ES')
     if (!e164) throw createError({ statusCode: 400, statusMessage: "This lead's phone number could not be formatted for WhatsApp" })
     to = e164
   }

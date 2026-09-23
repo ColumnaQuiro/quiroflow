@@ -78,6 +78,11 @@ interface Candidate {
   // reference yet -- applying it writes the reference so the match stops
   // depending on the date.
   needsReferenceStamp: boolean
+  // PracticeHub's `active` flag disagrees with what is stored, which is what
+  // a bono closed (or re-opened) since it was imported looks like. Applying it
+  // writes is_closed, and a closed bono then stops offering its sessions and
+  // stops counting as money the patient can draw on.
+  needsClosedStamp: boolean
   // The other patients PracticeHub has subscribed to this bono -- a family
   // bono the whole household draws sessions from. Owner excluded.
   sharedWith: { id: string; name: string }[]
@@ -103,6 +108,10 @@ interface LocalBono {
   // has moved since. Null on a bono imported before 0174 -- which is all of
   // them on this account, and why the first re-run backfills every one.
   owedCents: number | null
+  // Whether the row here already says PracticeHub has closed this bono, so a
+  // re-run can tell that PracticeHub has since closed one that was live when
+  // it was imported.
+  isClosed: boolean
 }
 
 const stage = ref<'connect' | 'loading' | 'preview' | 'applying' | 'done' | 'error'>('connect')
@@ -460,7 +469,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     for (let page = 0; ; page++) {
       const { data } = await supabase
         .from('package_purchases')
-        .select('id, patient_id, purchased_at, external_reference, invoice_id, package_name, price_cents, sessions_used, sessions_total, owed_cents')
+        .select('id, patient_id, purchased_at, external_reference, invoice_id, package_name, price_cents, sessions_used, sessions_total, owed_cents, is_closed')
         .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
       for (const row of data ?? []) {
         if (row.external_reference) purchaseByRef.set(row.external_reference, row.id)
@@ -473,6 +482,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
           sessionsUsed: row.sessions_used ?? 0,
           sessionsTotal: row.sessions_total ?? 0,
           owedCents: row.owed_cents,
+          isClosed: row.is_closed ?? false,
           purchasedAt: String(row.purchased_at),
           reference: row.external_reference ?? null,
           visitRows: 0,
@@ -794,10 +804,14 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       // there was a column to put it in.
       const storedOwed = existingLocal?.owedCents ?? null
       const needsOwedStamp = existingPurchaseId !== null && storedOwed !== owedCents
+      // Deactivating a bono is a thing PracticeHub does after the fact -- it
+      // is how a spent bono is retired and how a mis-sold one is cancelled --
+      // so this is checked on every re-run rather than only at insert.
+      const needsClosedStamp = existingPurchaseId !== null && (existingLocal?.isClosed ?? false) !== !isActive
 
       // Nothing left to do: the bono is here, its household is attached, its
       // counters match PracticeHub and so does its outstanding figure.
-      if (existingPurchaseId && !needsShares && !needsReferenceStamp && !counterSync && !needsOwedStamp) continue
+      if (existingPurchaseId && !needsShares && !needsReferenceStamp && !counterSync && !needsOwedStamp && !needsClosedStamp) continue
 
       built.push({
         phPackageId: pkg.id,
@@ -821,6 +835,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         usedAheadOfPracticeHub,
         existingPurchaseId,
         needsReferenceStamp,
+        needsClosedStamp,
         sharedWith: missingShares,
         status: 'pending',
       })
@@ -976,6 +991,9 @@ async function applyFixes() {
           purchased_at: c.created,
           external_reference: externalRef,
           owed_cents: c.owedCents,
+          // A closed bono is imported as history (see the branches above) and
+          // has to arrive saying so, or its leftover sessions read as live.
+          is_closed: !c.isActive,
         })
         .select('id')
         .single()
@@ -993,6 +1011,23 @@ async function applyFixes() {
     // counterSync above already carries it when there is other work to do.
     if (c.repairOnly && !c.counterSync && purchaseId) {
       await supabase.from('package_purchases').update({ owed_cents: c.owedCents }).eq('id', purchaseId)
+    }
+
+    // PracticeHub has closed (or re-opened) a bono that is already here. Sent
+    // on its own rather than folded into counterSync, which is null whenever
+    // the counters themselves still agree -- and they do for exactly the case
+    // this is for: a bono deactivated with sessions left untouched on it.
+    if (c.repairOnly && c.needsClosedStamp && purchaseId) {
+      const { error: closedError } = await supabase
+        .from('package_purchases')
+        .update({ is_closed: !c.isActive })
+        .eq('id', purchaseId)
+      if (closedError) {
+        c.status = 'error'
+        c.errorMessage = closedError.message
+        progress.value = { done: progress.value.done + 1, total: toApply.length }
+        continue
+      }
     }
 
     // Bring an already-imported bono up to what PracticeHub says now. Only the

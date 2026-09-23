@@ -399,8 +399,8 @@ async function loadBlockDetails(token: number, appointmentIds: string[], patient
   const [payments, { data: packages }, { data: reschedules }, { data: offers }] = await Promise.all([
     fetchVisitPayments(appointmentIds),
     patientIds.length
-      ? supabase.from('package_purchases').select('patient_id, package_name, sessions_total, sessions_used').in('patient_id', patientIds).order('purchased_at', { ascending: false })
-      : Promise.resolve({ data: [] as { patient_id: string; package_name: string; sessions_total: number; sessions_used: number }[] }),
+      ? supabase.from('package_purchases').select('patient_id, package_name, sessions_total, sessions_used, is_closed').in('patient_id', patientIds).order('purchased_at', { ascending: false })
+      : Promise.resolve({ data: [] as { patient_id: string; package_name: string; sessions_total: number; sessions_used: number; is_closed: boolean }[] }),
     appointmentIds.length
       ? supabase.from('appointment_reschedules').select('appointment_id').in('appointment_id', appointmentIds)
       : Promise.resolve({ data: [] as { appointment_id: string }[] }),
@@ -416,10 +416,11 @@ async function loadBlockDetails(token: number, appointmentIds: string[], patient
 
   visitPaymentById.value = payments
   // Newest pack with sessions left, per patient -- the one tomorrow's visit
-  // will draw from (bonoForVisit).
+  // will draw from (bonoForVisit). A bono PracticeHub has closed keeps the
+  // sessions that were on it and is not one of them.
   const active: typeof activePackageByPatient.value = {}
   for (const p of packages ?? []) {
-    if (active[p.patient_id] || p.sessions_used >= p.sessions_total) continue
+    if (active[p.patient_id] || p.is_closed || p.sessions_used >= p.sessions_total) continue
     active[p.patient_id] = p
   }
   activePackageByPatient.value = active

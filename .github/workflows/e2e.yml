@@ -287,9 +287,28 @@ jobs:
         # and studio/postgres-meta/logflare/vector only serve the local
         # Studio UI, never the app itself. Local dev (plain `supabase
         # start`, no -x) still gets the full stack -- this only trims CI.
+        #
+        # Retried, because every shard pulls the same images from the same
+        # registries at the same moment and they rate-limit it: three runs on
+        # 2026-09-23 lost a shard to "toomanyrequests: Rate exceeded" before a
+        # single spec ran. The CLI's own pull retry gives up within seconds,
+        # and running it again straight away then failed on "port 54322
+        # already in use" -- the half-started stack was still holding it. So
+        # between attempts, `stop --no-backup` removes those containers and
+        # their volumes (a half-initialised database is not one to reuse),
+        # then backs off. Images that did pull stay in Docker, so a retry only
+        # fetches what was missing.
         run: |
-          nohup supabase start -x studio,edge-runtime,logflare,vector,mailpit,postgres-meta \
-            > /tmp/supabase-start.log 2>&1 &
+          cat > /tmp/supabase-start.sh <<'EOF'
+          for attempt in 1 2 3; do
+            echo "== supabase start, attempt $attempt of 3"
+            supabase start -x studio,edge-runtime,logflare,vector,mailpit,postgres-meta && exit 0
+            [ "$attempt" = 3 ] && exit 1
+            supabase stop --no-backup || true
+            sleep $((attempt * 20))
+          done
+          EOF
+          nohup bash /tmp/supabase-start.sh > /tmp/supabase-start.log 2>&1 &
           echo $! > /tmp/supabase-start.pid
 
       - name: Restore node_modules
@@ -397,13 +416,15 @@ jobs:
           # each workflow step runs in its own. Poll the pid, then let
           # `supabase status` be the actual health check -- the backgrounded
           # start's exit code isn't reachable from here either.
-          for _ in $(seq 1 300); do
+          # 480s rather than 300s: room for the start step's retries and
+          # their backoff on top of a normal ~90s start.
+          for _ in $(seq 1 480); do
             kill -0 "$pid" 2>/dev/null || break
             sleep 1
           done
           cat /tmp/supabase-start.log
           if kill -0 "$pid" 2>/dev/null; then
-            echo "::error::supabase start still running after 300s"
+            echo "::error::supabase start still running after 480s"
             exit 1
           fi
           if ! supabase status -o env > /tmp/supabase-status.env 2>&1; then

@@ -144,6 +144,62 @@ describe('Records that know whether the AEAT took them', () => {
     })
   })
 
+  it('reports the most recent verdict, not the highest attempt number', () => {
+    // What is owed was always right; WHY was not. The row was picked with
+    // `order by attempt desc`, which held only while every attempt inserted a
+    // row. Once repeated identical verdicts began collapsing into the
+    // existing row, the attempt number stopped tracking time: it is assigned
+    // from the row count at insert, and a collapsed row keeps the number it
+    // was first written with.
+    //
+    // In production that left 24 of 26 outstanding records reporting 1100 and
+    // 1161 -- errors last raised before #375 fixed them -- while the answers
+    // the AEAT gave that morning sat in rows with LOWER attempt numbers and
+    // could not be seen. The reason is the only thing this is read for.
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Envio', lastName: 'Cinco' }).then((patient: any) => {
+        cy.task('db:createPackageTemplate', { accountId: account.accountId, name: 'Bono E8', sessionCount: 4, priceCents: 26000 })
+
+        cy.login(account.email, account.password)
+        cy.visit(`/patients/${patient.id}?tab=billing`)
+        sellBono('Bono E8 (4, 260,00\u00a0€)')
+
+        cy.task('db:facturaRecordsFor', { accountId: account.accountId }).then((records: any) => {
+          // The stale one, carrying a number from a flood of retries.
+          cy.task('db:recordAeatSubmission', {
+            accountId: account.accountId,
+            facturaRecordId: records[0].id,
+            attempt: 41,
+            status: 'Incorrecto',
+            errorCode: '1100',
+            errorMessage: 'Valor o tipo incorrecto del campo.: NombreRazon',
+          })
+
+          // Then today's answer, written after the collapsing began, so its
+          // attempt number is lower than the relic above it.
+          cy.task('db:recordAeatSubmission', {
+            accountId: account.accountId,
+            facturaRecordId: records[0].id,
+            attempt: 2,
+            status: 'Incorrecto',
+            errorCode: '1239',
+            errorMessage: 'Error en el bloque Destinatario.. El formato del NIF es incorrecto.',
+          })
+
+          cy.task('db:awaitingAeat', { accountId: account.accountId }).then((outstanding: any) => {
+            expect(outstanding).to.have.length(1)
+            expect(outstanding[0].last_error_code, 'the newest answer, not the biggest number').to.eq('1239')
+
+            // And attempts counts the rows rather than reading one of them --
+            // the same collapsing that broke the ordering also stopped the
+            // stored number from counting anything.
+            expect(outstanding[0].attempts).to.eq(2)
+          })
+        })
+      })
+    })
+  })
+
   it('keeps the transmission log out of reach of another clinic', () => {
     // factura_records_awaiting_aeat is security definer and takes an
     // account_id, which is the same shape that leaked the chain verifier

@@ -9,7 +9,7 @@ import type { BlockView } from '~/components/calendar/AppointmentBlock.vue'
 //   between patients, or the front desk's whole-clinic view.
 // - Visits already done collapse into one row -- by afternoon they are most
 //   of the list and none of what anyone is looking for.
-// - A line marks now.
+// - A red line marks now, as on the grid.
 // - The next patient's sticky note shows inline, under their block: what
 //   needs saying before they are in the room, without opening anything.
 // - A tap opens the appointment, full screen. There is no hover card on
@@ -111,8 +111,8 @@ const heightFor = (i: AgendaItem) => {
 
       <template v-for="(i, idx) in rest" :key="i.id">
         <li v-if="idx === nowIndex" class="flex items-center gap-2.5" data-cy="agenda-now">
-          <span class="w-11 shrink-0 font-mono text-[12px] font-semibold text-brand-text">{{ formatTime(now) }}</span>
-          <span class="h-0.5 flex-1 rounded bg-brand" />
+          <span class="w-11 shrink-0 font-mono text-[12px] font-semibold text-danger-text">{{ formatTime(now) }}</span>
+          <span class="h-0.5 flex-1 rounded bg-danger-text" />
         </li>
         <li class="flex items-start gap-2.5">
           <span class="w-11 shrink-0 pt-1.5 font-mono text-[12px] text-ink-muted">{{ formatTime(i.startsAt) }}</span>
@@ -127,8 +127,8 @@ const heightFor = (i: AgendaItem) => {
         </li>
       </template>
       <li v-if="nowIndex === rest.length && rest.length" class="flex items-center gap-2.5" data-cy="agenda-now">
-        <span class="w-11 shrink-0 font-mono text-[12px] font-semibold text-brand-text">{{ formatTime(now) }}</span>
-        <span class="h-0.5 flex-1 rounded bg-brand" />
+        <span class="w-11 shrink-0 font-mono text-[12px] font-semibold text-danger-text">{{ formatTime(now) }}</span>
+        <span class="h-0.5 flex-1 rounded bg-danger-text" />
       </li>
       <li v-if="!items.length" class="py-10 text-center text-[14px] text-ink-muted">{{ t('Nothing booked this day.', 'No hay citas este día.') }}</li>
     </ol>

@@ -1614,18 +1614,38 @@ function openAgendaItem(id: string) {
   if (appt) openEditModal(appt)
 }
 
-// Current-time indicator (day view only, per spec).
+// "Now": a red line across today, in every view, that moves with the clock.
+// Red is otherwise kept for money on this calendar; the now-line is the one
+// deliberate exception, because it has to be found at a glance across a
+// screen full of tinted blocks.
 const now = ref(new Date())
 let nowTimer: ReturnType<typeof setInterval> | null = null
+// A tab left in the background can go minutes without its timers firing;
+// catch up the moment it is looked at again.
+function tickNow() {
+  now.value = new Date()
+}
+function onVisible() {
+  if (document.visibilityState === 'visible') tickNow()
+}
 onMounted(() => {
-  nowTimer = setInterval(() => (now.value = new Date()), 30000)
+  nowTimer = setInterval(tickNow, 30000)
+  document.addEventListener('visibilitychange', onVisible)
 })
 onUnmounted(() => {
   if (nowTimer) clearInterval(nowTimer)
+  document.removeEventListener('visibilitychange', onVisible)
 })
 const nowWithinHours = computed(() => now.value.getHours() >= START_HOUR && now.value.getHours() < END_HOUR)
 const showNowLine = computed(() => viewMode.value === 'day' && isSameDate(now.value, anchorDate.value) && nowWithinHours.value)
 const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.value))
+// Week views: the line runs across today's room columns only, and the time
+// sits in the gutter when today is one of the days shown.
+const showWeekNowLabel = computed(() => viewMode.value !== 'day' && nowWithinHours.value && visibleWeekDays.value.some((d) => isSameDate(d, now.value)))
+const nowLineWeekPx = computed(() => timeToPx(now.value.toISOString(), WEEK_HOUR_PX.value))
+function showNowLineOn(day: Date) {
+  return nowWithinHours.value && isSameDate(day, now.value)
+}
 </script>
 
 <template>
@@ -2012,9 +2032,10 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                   </template>
                 </div>
 
-                <div v-if="showNowLine" class="pointer-events-none absolute left-0 right-0 z-20" :style="{ top: `${nowLinePx}px` }">
-                  <div class="absolute left-0 top-0 h-[7px] w-[7px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand"></div>
-                  <div class="h-0.5 w-full bg-brand"></div>
+                <div v-if="showNowLine" data-cy="now-line" class="pointer-events-none absolute left-0 right-0 z-20" :style="{ top: `${nowLinePx}px` }">
+                  <span class="absolute left-1 top-0 -translate-y-1/2 rounded-full bg-danger-text px-1.5 py-px font-mono text-[10.5px] font-semibold leading-4 text-surface" data-cy="now-label">{{ formatTime(now) }}</span>
+                  <div class="absolute left-[58px] top-0 h-[9px] w-[9px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-danger-text"></div>
+                  <div class="ml-[58px] h-0.5 -translate-y-1/2 bg-danger-text"></div>
                 </div>
               </div>
             </div>
@@ -2026,6 +2047,7 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
               <div class="sticky left-0 z-20 w-[58px] shrink-0 bg-surface">
                 <div class="sticky top-0 z-30 border-b border-r border-line bg-surface" :style="{ height: `${WEEK_HEADER_PX}px` }"></div>
                 <div class="relative border-r border-line" :style="{ height: `${weekGridHeight}px` }">
+                  <span v-if="showWeekNowLabel" class="pointer-events-none absolute left-1 z-20 -translate-y-1/2 rounded-full bg-danger-text px-1.5 py-px font-mono text-[10.5px] font-semibold leading-4 text-surface" data-cy="now-label" :style="{ top: `${nowLineWeekPx}px` }">{{ formatTime(now) }}</span>
                   <span
                     v-for="h in hourMarks"
                     :key="h"
@@ -2075,6 +2097,10 @@ const nowLinePx = computed(() => timeToPx(now.value.toISOString(), DAY_HOUR_PX.v
                 </div>
 
                 <div class="relative flex" :style="{ height: `${weekGridHeight}px` }">
+                  <div v-if="showNowLineOn(day)" data-cy="now-line" class="pointer-events-none absolute inset-x-0 z-20" :style="{ top: `${nowLineWeekPx}px` }">
+                    <div class="absolute left-0 top-0 h-[7px] w-[7px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-danger-text"></div>
+                    <div class="h-0.5 -translate-y-1/2 bg-danger-text"></div>
+                  </div>
                   <div
                     v-for="col in dayColumns"
                     :key="col.id"

@@ -144,18 +144,31 @@ export interface RegistroAltaInput {
  * in the census -- so there is no invented NIF that survives both, and
  * borrowing a real one would put a real person on the record.
  *
- * IDOtro with IDType 07 is the schema's own answer to this. L7 calls it "No
- * Censado": a recipient the AEAT has no record of, identified by something
- * that is not a NIF. That is exactly what a stand-in is, so this says so
- * rather than dressing it up as a taxpayer. CodigoPais ES is allowed here --
- * IDOtroType forbids only ES together with IDType 01.
+ * IDOtro with IDType 07 was the second attempt, on the reading that L7's "No
+ * Censado" is the schema's own word for a recipient the AEAT cannot look up.
+ * It refused that too, naming the value again:
  *
- * What is lost: the AEAT no longer validates a NIF for us in preproduction,
- * because there is no NIF to validate. That check is only available by
- * sending a real person's, which is the thing this exists to avoid.
+ *   1239  Error en el bloque Destinatario.. El campo ID no contiene un NIF
+ *         con formato correcto.  ID:PRUEBAS
+ *
+ * So the ID under IDType 07 must ALSO be NIF-shaped, at least for CodigoPais
+ * ES. Between the two attempts the position is: this block requires something
+ * NIF-shaped whichever field carries it, an invented one fails format or the
+ * census, and a real person's is the thing being avoided.
+ *
+ * Which leaves the one NIF that is real, passes both checks, and belongs to
+ * nobody who needs protecting: the obligado's own. It is already in every
+ * record as IDEmisorFactura, and a company's tax identifier is not personal
+ * data. Taken from record.issuerNif rather than written down here, so it
+ * stays correct for any clinic rather than only this one.
+ *
+ * The risk this carries, stated plainly because it is untested: a destinatario
+ * equal to the emisor may read to the AEAT as self-invoicing and draw a rule
+ * of its own. If it does, it says so per record -- #380 made that cheap -- and
+ * the fallback is to accept that F1 and R1 cannot be exercised against
+ * preproduction without a real recipient.
  */
 export const TEST_DESTINATARIO_NAME = 'Destinatario de pruebas'
-export const TEST_DESTINATARIO_ID = { codigoPais: 'ES', idType: '07', id: 'PRUEBAS' }
 
 const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -308,24 +321,18 @@ export function buildRegistroAlta(input: RegistroAltaInput): string {
   // CuotaTotal, ImporteTotal, the previous Huella and the timestamp. So this
   // is the one field that can be replaced without weakening the test.
   //
-  // 00000000T is a structurally valid NIF -- 0 mod 23 is T -- so the AEAT
-  // validates the shape of what it is given rather than waving it through.
   const recipientName = input.anonymiseRecipient
     ? TEST_DESTINATARIO_NAME
     : capped((factura.recipientName || factura.patientName || '').trim(), 120)
-  const recipientNif = input.anonymiseRecipient ? '' : (factura.recipientNif || factura.patientNif || '').trim()
+  // The stand-in identifies itself with the OBLIGADO's own NIF -- see
+  // TEST_DESTINATARIO_NAME for why nothing else survives.
+  const recipientNif = input.anonymiseRecipient
+    ? record.issuerNif
+    : (factura.recipientNif || factura.patientNif || '').trim()
 
   // NombreRazon then ONE of NIF or IDOtro -- PersonaFisicaJuridicaType is a
   // choice, so sending both is refused by the schema.
-  const idDestinatario = input.anonymiseRecipient
-    ? [
-        '<sum1:IDOtro>',
-        L('CodigoPais', TEST_DESTINATARIO_ID.codigoPais),
-        L('IDType', TEST_DESTINATARIO_ID.idType),
-        L('ID', TEST_DESTINATARIO_ID.id),
-        '</sum1:IDOtro>',
-      ]
-    : [L('NIF', recipientNif)]
+  const idDestinatario = [L('NIF', recipientNif)]
 
   // A destinatario needs a name AND an identifier. IDDestinatario carries
   // NombreRazon plus either NIF or IDOtro, and sending the name alone is

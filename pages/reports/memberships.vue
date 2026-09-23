@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { fetchByIds } from '~/composables/useFetchAllRows'
 import { formatEur } from '~/utils/billing'
 interface MembershipRow {
   id: string
@@ -34,37 +35,34 @@ onMounted(async () => {
   const ids = memberships.value.map((x) => x.id)
   const patientIds = [...new Set(memberships.value.map((x) => x.patient_id))]
 
-  const [{ data: p }, { data: patients }, { data: schedules }] = await Promise.all([
-    ids.length > 0
-      ? supabase.from('membership_payments').select('id, patient_membership_id, period_start, amount_cents, status').in('patient_membership_id', ids)
-      : Promise.resolve({ data: [] as PaymentRow[] }),
-    patientIds.length > 0
-      ? supabase.from('patients').select('id, first_name, last_name').in('id', patientIds)
-      : Promise.resolve({ data: [] as PatientRow[] }),
-    ids.length > 0
-      ? supabase.from('payment_schedules').select('id, patient_membership_id').in('patient_membership_id', ids)
-      : Promise.resolve({ data: [] as { id: string; patient_membership_id: string | null }[] }),
+  // Every membership in the account, so the id lists grow with the clinic --
+  // fetchByIds keeps each one inside what a URL can hold.
+  const [p, patients, schedules] = await Promise.all([
+    fetchByIds<PaymentRow>(ids, (chunk) =>
+      supabase.from('membership_payments').select('id, patient_membership_id, period_start, amount_cents, status').in('patient_membership_id', chunk),
+    ),
+    fetchByIds(patientIds, (chunk) => supabase.from('patients').select('id, first_name, last_name').in('id', chunk)),
+    fetchByIds(ids, (chunk) => supabase.from('payment_schedules').select('id, patient_membership_id').in('patient_membership_id', chunk)),
   ])
-  patientsById.value = new Map((patients ?? []).map((pt) => [pt.id, pt as PatientRow]))
+  patientsById.value = new Map(patients.map((pt) => [pt.id, pt as PatientRow]))
 
-  const scheduleIds = (schedules ?? []).map((s) => s.id)
-  const scheduleToMembership = new Map((schedules ?? []).map((s) => [s.id, s.patient_membership_id as string]))
-  const { data: stripeEvents } =
-    scheduleIds.length > 0
-      ? await supabase.from('stripe_payment_events').select('id, payment_schedule_id, period_start, amount_cents, status').in('payment_schedule_id', scheduleIds)
-      : { data: [] as { id: string; payment_schedule_id: string; period_start: string; amount_cents: number; status: string }[] }
+  const scheduleIds = schedules.map((s) => s.id)
+  const scheduleToMembership = new Map(schedules.map((s) => [s.id, s.patient_membership_id as string]))
+  const stripeEvents = await fetchByIds(scheduleIds, (chunk) =>
+    supabase.from('stripe_payment_events').select('id, payment_schedule_id, period_start, amount_cents, status').in('payment_schedule_id', chunk),
+  )
 
   // Merge manual (membership_payments) and Stripe-collected (stripe_payment_events)
   // charges into one list so revenue/failure stats and the "last payment"
   // column don't need to know which billing path produced each row.
-  const stripeAsPayments: PaymentRow[] = (stripeEvents ?? []).map((e) => ({
+  const stripeAsPayments: PaymentRow[] = stripeEvents.map((e) => ({
     id: `stripe-${e.id}`,
     patient_membership_id: scheduleToMembership.get(e.payment_schedule_id) ?? '',
     period_start: e.period_start,
     amount_cents: e.amount_cents,
     status: e.status,
   }))
-  payments.value = [...(p ?? []), ...stripeAsPayments]
+  payments.value = [...p, ...stripeAsPayments]
 
   loading.value = false
 })

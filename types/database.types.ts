@@ -3010,6 +3010,7 @@ export type Database = {
           external_reference: string | null
           id: string
           invoice_id: string | null
+          is_closed: boolean
           owed_cents: number | null
           package_id: string | null
           package_name: string
@@ -3025,6 +3026,7 @@ export type Database = {
           external_reference?: string | null
           id?: string
           invoice_id?: string | null
+          is_closed?: boolean
           owed_cents?: number | null
           package_id?: string | null
           package_name: string
@@ -3040,6 +3042,7 @@ export type Database = {
           external_reference?: string | null
           id?: string
           invoice_id?: string | null
+          is_closed?: boolean
           owed_cents?: number | null
           package_id?: string | null
           package_name?: string

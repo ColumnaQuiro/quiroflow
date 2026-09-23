@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { formatEur } from '~/utils/billing'
-import { fetchAllRows } from '~/composables/useFetchAllRows'
+import { fetchAllRows, fetchByIds } from '~/composables/useFetchAllRows'
 
 interface InvoiceRow {
   id: string
@@ -133,12 +133,14 @@ async function loadOutstanding() {
   const ids = rows.map((r) => r.id)
 
   const paidByInvoice: Record<string, number> = {}
-  if (ids.length > 0) {
-    const pays = await fetchAllRows<{ invoice_id: string | null; amount_cents: number }>((from, to) =>
-      supabase.from('payments').select('invoice_id, amount_cents').in('invoice_id', ids).range(from, to),
-    )
-    for (const p of pays) if (p.invoice_id) paidByInvoice[p.invoice_id] = (paidByInvoice[p.invoice_id] ?? 0) + p.amount_cents
-  }
+  // By chunk as well as by page: every unpaid invoice in the account is more
+  // ids than one URL holds long before it is more rows than one page.
+  const pays = await fetchByIds(ids, (chunk) =>
+    fetchAllRows<{ invoice_id: string | null; amount_cents: number }>((from, to) =>
+      supabase.from('payments').select('invoice_id, amount_cents').in('invoice_id', chunk).range(from, to),
+    ).then((data) => ({ data, error: null })),
+  )
+  for (const p of pays) if (p.invoice_id) paidByInvoice[p.invoice_id] = (paidByInvoice[p.invoice_id] ?? 0) + p.amount_cents
 
   outstandingCents.value = rows.reduce((sum, r) => sum + Math.max(0, r.total_cents - (paidByInvoice[r.id] ?? 0)), 0)
   outstandingCount.value = rows.length

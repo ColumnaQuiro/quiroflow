@@ -210,15 +210,16 @@ describe('The RegistroAlta the AEAT will read', () => {
     expect(test).to.not.contain('Ana Ruiz')
     expect(test).to.not.contain('12345678Z')
 
-    // IDOtro, not NIF. The first version of this invented a NIF that passes
-    // the checksum -- 00000000T -- and the AEAT refused all sixteen records
-    // carrying it with "1239 El formato del NIF es incorrecto". IDType 07 is
-    // the schema's own word for a recipient the AEAT has no record of, which
-    // is what a stand-in is.
-    expect(test).to.contain('<sum1:IDOtro>')
-    expect(test).to.contain('<sum1:IDType>07</sum1:IDType>')
-    expect(test).to.contain('<sum1:ID>PRUEBAS</sum1:ID>')
-    expect(test, 'NIF and IDOtro are a choice, never both').to.not.contain('<sum1:NIF>0')
+    // The obligado's own NIF, and it is the third thing tried here. An
+    // invented NIF (00000000T) was refused on format; IDOtro with IDType 07
+    // was refused too, because the ID under it must ALSO be NIF-shaped:
+    //
+    //   1239  El campo ID no contiene un NIF con formato correcto. ID:PRUEBAS
+    //
+    // The issuer's is the only NIF that is real, passes both format and the
+    // census, and belongs to nobody who needs protecting.
+    expect(test).to.contain(`<sum1:NIF>${base.record.issuerNif}</sum1:NIF>`)
+    expect(test, 'NIF and IDOtro are a choice, never both').to.not.contain('IDOtro')
 
     // A patient with nothing on file is still identified in test, rather than
     // losing the Destinatarios block -- which is what the real-data rule does,
@@ -230,7 +231,23 @@ describe('The RegistroAlta the AEAT will read', () => {
       anonymiseRecipient: true,
     })
     expect(noDataOnFile).to.contain('<sum1:Destinatarios>')
-    expect(noDataOnFile).to.contain('<sum1:IDType>07</sum1:IDType>')
+    expect(noDataOnFile).to.contain(`<sum1:NIF>${base.record.issuerNif}</sum1:NIF>`)
+
+    // The stand-in follows the record's own issuer rather than a value written
+    // down once, so a second clinic identifies itself rather than this one.
+    const otherClinic = buildRegistroAlta({
+      ...base,
+      record: { ...base.record, invoiceType: 'F1', issuerNif: 'B99999999' },
+      factura: real,
+      anonymiseRecipient: true,
+    })
+    // Scoped to the Destinatarios block on purpose: the original issuer's NIF
+    // legitimately remains elsewhere in the document -- RegistroAnterior names
+    // the predecessor's issuer, and SistemaInformatico names the software's
+    // producer. Asserting its absence from the whole record fails on both.
+    const destinatariosOf = (xml: string) => xml.match(/<sum1:Destinatarios>[\s\S]*?<\/sum1:Destinatarios>/)?.[0] ?? ''
+    expect(destinatariosOf(otherClinic)).to.contain('<sum1:NIF>B99999999</sum1:NIF>')
+    expect(destinatariosOf(otherClinic)).to.not.contain(base.record.issuerNif)
 
     // A simplificada names nobody in either environment: substituting a
     // recipient onto an F2 would contradict the type.

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { fetchByIds } from '~/composables/useFetchAllRows'
 import { normalizeSearchTerm } from '~/utils/searchText'
 import { CHANNEL_LABEL } from '~/composables/useGrowthConversations'
 
@@ -143,9 +144,11 @@ async function load(opts: { silent?: boolean } = {}) {
 
   const patientIds = [...new Set(messages.value.map((m) => m.patient_id).filter((id): id is string => !!id))]
   if (patientIds.length > 0) {
-    const { data: matchedPatients } = await supabase.from('patients').select('id, first_name, last_name').in('id', patientIds)
+    // Up to 2,000 messages' worth of patients -- past one URL's worth on the
+    // live account, where every conversation then showed as "Unknown".
+    const matchedPatients = await fetchByIds(patientIds, (chunk) => supabase.from('patients').select('id, first_name, last_name').in('id', chunk))
     const names: Record<string, string> = {}
-    for (const p of matchedPatients ?? []) names[p.id] = `${p.first_name} ${p.last_name ?? ''}`.trim()
+    for (const p of matchedPatients) names[p.id] = `${p.first_name} ${p.last_name ?? ''}`.trim()
     patientNames.value = names
   }
   if (!opts.silent) loading.value = false

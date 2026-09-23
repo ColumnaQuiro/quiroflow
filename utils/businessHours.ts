@@ -105,3 +105,29 @@ export function unionWorkingWindows(
 export function withinWindows(mins: number, windows: [string, string][]): boolean {
   return windows.some(([s, e]) => mins >= toMinutes(s) && mins < toMinutes(e))
 }
+
+// Is this instant outside the hours ONE named practitioner works?
+//
+// Their own schedule if they have one, the clinic's if they never set any
+// (practitionerWindowsForDay above), and false -- "not outside" -- when
+// neither is configured, so the check stays opt-in until a clinic fills hours
+// in.
+//
+// It lives here because three callers need this exact question and two of
+// them had their own copy of it: the appointment modal, the new-appointment
+// panel, and the calendar's drag/reschedule. The calendar's version asked it
+// of whichever practitioner's TAB was open -- or, on a room or all-staff tab,
+// of the UNION of everyone working that day -- rather than of the
+// practitioner the appointment belongs to. Those are different questions, and
+// on a shared grid they routinely disagree: Lauren McCoy sat in Jordana's
+// Wednesday morning, which Jordana does not work, because Natacha does, and
+// neither the reassignment nor the move that followed said a word.
+export function outsideWorkingHours(
+  at: Date,
+  clinicHours: BusinessHours | null | undefined,
+  practitionerHours: BusinessHours | null | undefined,
+): boolean {
+  if (!hasBusinessHoursConfigured(clinicHours) && !hasBusinessHoursConfigured(practitionerHours)) return false
+  const windows = practitionerWindowsForDay(windowsForDay(at, clinicHours), practitionerHours, dayKeyFor(at))
+  return !withinWindows(at.getHours() * 60 + at.getMinutes(), windows)
+}

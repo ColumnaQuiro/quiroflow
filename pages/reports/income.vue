@@ -4,7 +4,7 @@ import { classifyPaymentForFilter } from '~/utils/incomeAttribution'
 import { isReceipt } from '~/utils/paymentReceipts'
 import { Line, Bar } from 'vue-chartjs'
 import { computePresetRange, monthKeysInRange, rangeBounds } from '~/composables/useDateRangePresets'
-import { fetchAllRows } from '~/composables/useFetchAllRows'
+import { fetchAllRows, fetchByIds } from '~/composables/useFetchAllRows'
 
 interface PaymentRow { amount_cents: number; method: string; paid_at: string; invoice_id: string | null; patient_id: string | null; invoices?: { status: string } | null }
 interface InvoiceRow { id: string; total_cents: number; status: string; appointment_id: string | null; patient_id: string | null }
@@ -47,21 +47,10 @@ function eur(cents: number) {
 // on this page. Payments can settle against an invoice raised outside the
 // range, so this scopes by the payments' invoice ids rather than by
 // invoice date. Postgrest puts `in` lists in the URL, hence the chunking.
-async function fetchLineItemsFor(invoiceIds: string[]): Promise<LineItemRow[]> {
-  if (invoiceIds.length === 0) return []
-  const CHUNK = 300
-  const chunks: string[][] = []
-  for (let i = 0; i < invoiceIds.length; i += CHUNK) chunks.push(invoiceIds.slice(i, i + CHUNK))
-  const results = await Promise.all(
-    chunks.map((ids) =>
-      supabase
-        .from('invoice_line_items')
-        .select('invoice_id, price_cents, quantity, service_id, package_purchase_id')
-        .in('invoice_id', ids)
-        .then((r) => (r.data ?? []) as LineItemRow[]),
-    ),
+function fetchLineItemsFor(invoiceIds: string[]): Promise<LineItemRow[]> {
+  return fetchByIds(invoiceIds, (ids) =>
+    supabase.from('invoice_line_items').select('invoice_id, price_cents, quantity, service_id, package_purchase_id').in('invoice_id', ids),
   )
-  return results.flat()
 }
 
 async function load() {
@@ -103,16 +92,11 @@ async function load() {
   // outstanding has to see that money or it reports a debt already paid.
   // Chunked: PostgREST puts an .in() list in the URL, and a busy month's
   // invoices make one long enough to be refused.
-  const invoiceIds = inv.map((i) => i.id)
-  const allocations: { invoice_id: string | null; amount_cents: number }[] = []
-  for (let start = 0; start < invoiceIds.length; start += 200) {
-    const chunk = invoiceIds.slice(start, start + 200)
-    const rows = await fetchAllRows<{ invoice_id: string | null; amount_cents: number }>((f, t) =>
+  invoicePayments.value = await fetchByIds(inv.map((i) => i.id), (chunk) =>
+    fetchAllRows<{ invoice_id: string | null; amount_cents: number }>((f, t) =>
       supabase.from('payments').select('invoice_id, amount_cents').in('invoice_id', chunk).range(f, t),
-    )
-    allocations.push(...rows)
-  }
-  invoicePayments.value = allocations
+    ).then((data) => ({ data, error: null })),
+  )
 
   // What each line was for. Fetched by id rather than wholesale: the
   // appointments table is thousands of rows and this only needs the ones
@@ -121,18 +105,11 @@ async function load() {
   const purchaseIds = [...new Set(lineItems.value.map((li) => li.package_purchase_id).filter((id): id is string => !!id))]
   const appointmentIds = [...new Set(inv.map((i) => i.appointment_id).filter((id): id is string => !!id))]
   const [pur, pkg, apptTypes, appts] = await Promise.all([
-    purchaseIds.length
-      ? fetchAllRows<{ id: string; package_id: string | null; package_name: string }>((f, t) =>
-          supabase.from('package_purchases').select('id, package_id, package_name').in('id', purchaseIds).range(f, t),
-        )
-      : Promise.resolve([] as { id: string; package_id: string | null; package_name: string }[]),
+    // One row per id, so a chunk never reaches the 1000-row cap.
+    fetchByIds(purchaseIds, (chunk) => supabase.from('package_purchases').select('id, package_id, package_name').in('id', chunk)),
     supabase.from('packages').select('id, name').then((r) => r.data ?? []),
     supabase.from('appointment_types').select('id, name').then((r) => r.data ?? []),
-    appointmentIds.length
-      ? fetchAllRows<{ id: string; appointment_type_id: string | null }>((f, t) =>
-          supabase.from('appointments').select('id, appointment_type_id').in('id', appointmentIds).range(f, t),
-        )
-      : Promise.resolve([] as { id: string; appointment_type_id: string | null }[]),
+    fetchByIds(appointmentIds, (chunk) => supabase.from('appointments').select('id, appointment_type_id').in('id', chunk)),
   ])
   purchases.value = pur
   packages.value = pkg

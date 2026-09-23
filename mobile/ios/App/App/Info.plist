@@ -51,6 +51,32 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<!-- Required from the iOS 27 SDK onward: a build made with it and no
+	     UIApplicationSceneManifest fails to launch entirely with
+	     "Application failed to launch: UIScene life cycle is required for
+	     apps built with this SDK." UISceneStoryboardFile points at the same
+	     Main.storyboard the old UIMainStoryboardFile key above already
+	     used, so SceneDelegate (App/SceneDelegate.swift) just receives the
+	     window UIKit builds from it -- no UI change. -->
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneConfigurationName</key>
+					<string>Default Configuration</string>
+					<key>UISceneDelegateClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
+					<key>UISceneStoryboardFile</key>
+					<string>Main</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
 	<!-- The app only ever talks HTTPS/TLS to Supabase, WhatsApp Cloud API,
 	     Stripe, and Resend -- no custom/proprietary encryption -- so it
 	     qualifies for Apple's standard exemption. Without this key, every

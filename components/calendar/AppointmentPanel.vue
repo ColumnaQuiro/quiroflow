@@ -4,6 +4,7 @@ import type { BusinessHours } from '~/utils/businessHours'
 import { dayKeyFor, hasBusinessHoursConfigured, practitionerWindowsForDay, windowsForDay, withinWindows } from '~/utils/businessHours'
 import { effectiveDuration, type AppointmentTypeOverride } from '~/utils/appointmentOverrides'
 import { hasArrived, isUnconfirmedStage, nextStep, STAGE_TRACK, trackIndex } from '~/utils/appointmentStage'
+import { matchingMove, parseActivitySummary, type ActivityChange } from '~/utils/appointmentActivity'
 import type { VisitPayment } from '~/utils/visitPayment'
 import type { BlockView } from '~/components/calendar/AppointmentBlock.vue'
 import type { StageFacts } from '~/composables/useAppointmentStage'
@@ -12,7 +13,7 @@ import type { Database } from '~/types/database.types'
 type AppointmentUpdate = Database['public']['Tables']['appointments']['Update']
 
 // An existing appointment, opened. Replaces the calendar's use of
-// AppointmentModal's edit mode, whose Status dropdown made every change of
+// the old AppointmentModal's edit mode, whose Status dropdown made every change of
 // state -- arrived, cancelled, no-show -- the same anonymous select, and
 // whose form showed the time and room fields first although they are the
 // thing least often changed once a visit exists.
@@ -55,6 +56,14 @@ const props = defineProps<{
   priceCents: number
   /** The tab to open on: the flow tracker's "Cobrar" opens straight on Cobro. */
   initialTab?: 'summary' | 'billing' | 'history'
+  /**
+   * Hide "Mover…". It hands the visit to the calendar's reschedule mode,
+   * which only exists on the calendar, so elsewhere (the practitioner's day)
+   * it goes; "Cambiar" still edits the time inline there. Phrased as a
+   * negative on purpose: Vue reads an absent boolean prop as false, so the
+   * calendar -- which passes nothing -- keeps the button.
+   */
+  noMove?: boolean
 }>()
 const emit = defineEmits<{ close: []; changed: []; reschedule: [] }>()
 
@@ -303,12 +312,107 @@ const messages = computed(() =>
     { at: props.appointment.same_day_info_sent_at, label: t('Same-day info', 'Info del día') },
   ].filter((m): m is { at: string; label: string } => !!m.at),
 )
+// Who changed what: audit_logs, written by fn_audit_log for every change to
+// the status, time, practitioner, room or type (utils/appointmentActivity).
+// It was the old hover card's "Recent activity"; the card became read-only
+// and one-beat, so the trail lives here now, where there is room for it.
+interface ActivityRow {
+  summary: string
+  created_at: string
+  team_members: { full_name: string } | null
+}
+const activity = ref<ActivityRow[]>([])
+async function loadActivity() {
+  const id = props.appointment.id
+  const { data } = await supabase
+    .from('audit_logs')
+    .select('summary, created_at, team_members(full_name)')
+    .eq('entity_type', 'appointment')
+    .eq('entity_id', id)
+    .order('created_at', { ascending: true })
+  if (props.appointment.id !== id) return
+  activity.value = (data as unknown as ActivityRow[]) ?? []
+}
+// Every write in this panel comes back as a new appointment prop, so a change
+// to any logged field reloads the trail.
+watch(
+  () => [props.appointment.id, props.appointment.status, props.appointment.starts_at, props.appointment.room_id, props.appointment.practitioner_id, props.appointment.appointment_type_id].join('|'),
+  () => loadActivity().catch((e) => console.error('appointment panel: activity failed', e)),
+  { immediate: true },
+)
+
+function statusChangeText(from: string, to: string) {
+  switch (to) {
+    case 'cancelled':
+      return t('Cancelled', 'Cancelada')
+    case 'no_show':
+      return t('Marked no-show', 'Marcada como no vino')
+    case 'completed':
+      return t('Marked done', 'Marcada como hecha')
+    case 'booked':
+      return t('Restored', 'Reactivada')
+    default:
+      return t(`Status: ${from} → ${to}`, `Estado: ${from} → ${to}`)
+  }
+}
+function activityText(change: ActivityChange): string {
+  switch (change.kind) {
+    case 'status':
+      return statusChangeText(change.from, change.to)
+    case 'time':
+      return t('Time changed', 'Hora cambiada')
+    case 'practitioner':
+      return t('Practitioner changed', 'Profesional cambiado')
+    case 'room':
+      return t('Room changed', 'Sala cambiada')
+    case 'type':
+      return t('Type changed', 'Tipo cambiado')
+    case 'deleted':
+      return t('Deleted', 'Eliminada')
+    case 'other':
+      return change.text
+    default:
+      return ''
+  }
+}
+
+interface HistoryEvent {
+  at: string
+  text: string
+  /** Who did it, when the audit trail knows. */
+  who?: string
+}
 const history = computed(() => {
   const a = props.appointment
-  const events: { at: string; text: string }[] = [{ at: a.created_at, text: a.source === 'online' ? t('Booked online', 'Reservada online') : t('Booked', 'Reservada') }]
+  // No team member on an audit row: nobody signed in made it. For the
+  // booking itself on an online visit that is the patient; otherwise the
+  // importer or an automation.
+  const whoOf = (row: ActivityRow, booking = false) =>
+    row.team_members?.full_name ?? (booking && a.source === 'online' ? t('The patient, online', 'El paciente, online') : t('System', 'Sistema'))
+
+  const created = activity.value.find((r) => parseActivitySummary(r.summary).some((c) => c.kind === 'created'))
+  const events: HistoryEvent[] = [{ at: a.created_at, text: a.source === 'online' ? t('Booked online', 'Reservada online') : t('Booked', 'Reservada'), who: created ? whoOf(created, true) : undefined }]
   for (const m of messages.value) events.push({ at: m.at, text: t(`${m.label} sent`, `${m.label} enviada`) })
-  for (const r of facts.value?.reschedules ?? [])
-    events.push({ at: r.at, text: t(`Moved from ${formatWeekdayDate(r.from)} ${formatTime(r.from)} to ${formatWeekdayDate(r.to)} ${formatTime(r.to)}`, `Movida del ${formatWeekdayDate(r.from)} ${formatTime(r.from)} al ${formatWeekdayDate(r.to)} ${formatTime(r.to)}`) })
+  const moves = (facts.value?.reschedules ?? []).map((r) => {
+    const ev: HistoryEvent = { at: r.at, text: t(`Moved from ${formatWeekdayDate(r.from)} ${formatTime(r.from)} to ${formatWeekdayDate(r.to)} ${formatTime(r.to)}`, `Movida del ${formatWeekdayDate(r.from)} ${formatTime(r.from)} al ${formatWeekdayDate(r.to)} ${formatTime(r.to)}`) }
+    events.push(ev)
+    return ev
+  })
+  for (const row of activity.value) {
+    for (const change of parseActivitySummary(row.summary)) {
+      if (change.kind === 'created') continue
+      // A move already printed from appointment_reschedules, with its exact
+      // times: the audit row only says who made it.
+      if (change.kind === 'time') {
+        const move = matchingMove(row.created_at, moves)
+        if (move) {
+          move.who = whoOf(row)
+          continue
+        }
+      }
+      events.push({ at: row.created_at, text: activityText(change), who: whoOf(row) })
+    }
+  }
   if (a.checked_in_at) events.push({ at: a.checked_in_at, text: t('Arrived', 'Llegó') })
   if (a.flow_with_practitioner_at) events.push({ at: a.flow_with_practitioner_at, text: t('Into session', 'Pasó a consulta') })
   if (a.flow_checkout_at) events.push({ at: a.flow_checkout_at, text: t('To checkout', 'Pasó a cobro') })
@@ -556,7 +660,10 @@ const canAct = computed(() => props.appointment.status === 'booked')
       <ol v-else class="flex flex-col" data-cy="appt-history">
         <li v-for="(e, i) in history" :key="i" class="flex gap-3 border-b border-line-divider py-2.5 text-[13px] last:border-b-0">
           <span class="w-[118px] shrink-0 font-mono text-[12px] text-ink-muted">{{ formatShortDate(e.at) }} {{ formatTime(e.at) }}</span>
-          <span class="text-ink-700">{{ e.text }}</span>
+          <span class="min-w-0 text-ink-700">
+            {{ e.text }}
+            <span v-if="e.who" data-cy="appt-history-who" class="text-ink-muted"> · {{ e.who }}</span>
+          </span>
         </li>
       </ol>
     </div>
@@ -579,7 +686,7 @@ const canAct = computed(() => props.appointment.status === 'booked')
           {{ t('No-show', 'No vino') }}
         </button>
         <span class="grow" />
-        <button type="button" data-cy="move-appointment" :disabled="busy" class="flex h-11 items-center gap-1.5 rounded-ctl border border-line-control px-3.5 text-[13.5px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="emit('reschedule')">
+        <button v-if="!noMove" type="button" data-cy="move-appointment" :disabled="busy" class="flex h-11 items-center gap-1.5 rounded-ctl border border-line-control px-3.5 text-[13.5px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="emit('reschedule')">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h14l-4-4M20 16H6l4 4" /></svg>
           {{ t('Move…', 'Mover…') }}
         </button>

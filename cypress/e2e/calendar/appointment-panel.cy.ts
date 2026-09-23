@@ -146,6 +146,17 @@ describe('Opening a visit', () => {
       cy.contains('select', 'Work week').select('day')
       block('Sergio Navarro').click()
       cy.get('[data-cy=visit-note]').should('have.value', 'Viene por molestia cervical.')
+
+      // The history says who did what (audit_logs): the seeded booking was
+      // nobody signed in, the time change and the no-show were this user.
+      cy.get('[data-cy=appt-sheet]').within(() => {
+        cy.get('[data-cy=appt-tab-history]').click()
+        cy.contains('[data-cy=appt-history] li', 'Marked no-show').should('contain.text', 'Test Owner')
+        cy.contains('[data-cy=appt-history] li', 'Time changed').should('contain.text', 'Test Owner')
+        cy.contains('[data-cy=appt-history] li', 'Booked').should('contain.text', 'System')
+        // Confirming and arriving are not audited fields: no owner is claimed for them.
+        cy.contains('[data-cy=appt-history] li', 'Reminder sent').find('[data-cy=appt-history-who]').should('not.exist')
+      })
     })
   })
 })

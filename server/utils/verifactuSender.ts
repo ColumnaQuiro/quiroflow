@@ -211,106 +211,147 @@ export async function sendPendingRecords(
   const built = await buildRecordsFor(supabase, accountId, pending)
   if (built.registros.length === 0) return { sent: 0, blocked: 'nothing-to-send', estadoEnvio: null }
 
-  const envelope = buildRegFactuEnvelope({ obligado: built.obligado, registros: built.registros })
-  const sentAt = new Date().toISOString()
+  // One envelope's worth, split out so a batch the AEAT refuses WHOLESALE can
+  // be sent again a record at a time -- see the caller below.
+  const submit = async (
+    registros: string[],
+    attempts: { recordId: string; attempt: number; serieNumber: string }[],
+  ): Promise<{ sent: number; estadoEnvio: string | null; schemaFault: boolean }> => {
+    const envelope = buildRegFactuEnvelope({ obligado: built.obligado, registros })
+    const sentAt = new Date().toISOString()
 
-  let responseXml: string
-  let httpStatus = 0
-  try {
-    const res = await postWithCertificate(
-      verifactuEndpoint(effective.environment, effective.certificateType ?? 'representative'),
-      envelope,
-      effective,
-    )
-    httpStatus = res.status
-    responseXml = res.body
-  } catch (err) {
-    // Nothing was judged, so nothing is known about the payload. Recorded as
-    // its own status precisely so it is not mistaken for a rejection, and so
-    // it does not set a pace that holds the retry back.
-    await recordAttempts(supabase, accountId, built.attempts, {
-      status: 'transport_error',
-      sentAt,
-      errorMessage: err instanceof Error ? err.message : String(err),
-    })
-    return { sent: 0, blocked: null, estadoEnvio: null }
-  }
-
-  const parsed = parseVerifactuResponse(responseXml)
-
-  // A response with no EstadoEnvio is not a VERI*FACTU response: an error
-  // page, a refusal, a gateway. Previously this fell through the per-record
-  // loop, matched nothing, wrote nothing, and left the records owed with no
-  // record of having tried -- indistinguishable from never having run.
-  //
-  // Recorded as a transport error, because that is what it is: the payload
-  // was never judged. The status and the first of the body go in the message,
-  // since the whole point is that somebody can read what came back.
-  if (!parsed.estadoEnvio) {
-    await recordAttempts(supabase, accountId, built.attempts, {
-      status: 'transport_error',
-      sentAt,
-      errorMessage: `HTTP ${httpStatus}: response was not a VERI*FACTU answer: ${responseXml.slice(0, 300)}`,
-    })
-    return { sent: 0, blocked: null, estadoEnvio: null }
-  }
-
-  // Matched by serie number, which is what the AEAT echoes back. A line with
-  // no match is not silently dropped -- it is left for the next run to retry,
-  // because a record we cannot confirm was accepted is a record still owed.
-  // The same rejection, every minute, is one fact and not fourteen hundred.
-  //
-  // Repeated transport errors were collapsed already; AEAT answers were not,
-  // on the reasoning that no two are redundant. That holds for DIFFERENT
-  // answers and fails badly for the same one: 21 records refused for the same
-  // field grew this table by 145 rows in ten minutes, and would have added
-  // thirty thousand a day. The same flood, wearing a different status.
-  //
-  // So an identical verdict on the same record refreshes its row. A verdict
-  // that CHANGES -- rejected then accepted, or a different error -- is always
-  // a new row, because that transition is the history worth keeping.
-  const { data: existing } = await supabase
-    .from('factura_record_submissions')
-    .select('id, factura_record_id, status, error_code')
-    .in('factura_record_id', built.attempts.map((a) => a.recordId))
-
-  for (const attempt of built.attempts) {
-    const line = parsed.lines.find((l) => l.serieNumber === attempt.serieNumber)
-    if (!line?.estado) continue
-
-    const same = (existing ?? []).find(
-      (e) =>
-        e.factura_record_id === attempt.recordId &&
-        e.status === line.estado &&
-        (e.error_code ?? null) === (line.errorCode ?? null),
-    )
-    if (same) {
-      await supabase
-        .from('factura_record_submissions')
-        .update({ sent_at: sentAt, responded_at: new Date().toISOString(), wait_seconds: parsed.waitSeconds })
-        .eq('id', same.id)
-      continue
+    let responseXml: string
+    let httpStatus = 0
+    try {
+      const res = await postWithCertificate(
+        verifactuEndpoint(effective.environment, effective.certificateType ?? 'representative'),
+        envelope,
+        effective,
+      )
+      httpStatus = res.status
+      responseXml = res.body
+    } catch (err) {
+      // Nothing was judged, so nothing is known about the payload. Recorded as
+      // its own status precisely so it is not mistaken for a rejection, and so
+      // it does not set a pace that holds the retry back.
+      await recordAttempts(supabase, accountId, attempts, {
+        status: 'transport_error',
+        sentAt,
+        errorMessage: err instanceof Error ? err.message : String(err),
+      })
+      return { sent: 0, estadoEnvio: null, schemaFault: false }
     }
 
-    await supabase.from('factura_record_submissions').insert({
-      account_id: accountId,
-      factura_record_id: attempt.recordId,
-      attempt: attempt.attempt,
-      status: line.estado,
-      aeat_csv: parsed.csv,
-      error_code: line.errorCode,
-      error_message: line.errorMessage,
-      wait_seconds: parsed.waitSeconds,
-      sent_at: sentAt,
-      responded_at: new Date().toISOString(),
-    })
+    const parsed = parseVerifactuResponse(responseXml)
+
+    // A response with no EstadoEnvio is not a VERI*FACTU response: an error
+    // page, a refusal, a gateway. Previously this fell through the per-record
+    // loop, matched nothing, wrote nothing, and left the records owed with no
+    // record of having tried -- indistinguishable from never having run.
+    //
+    // Recorded as a transport error, because that is what it is: the payload
+    // was never judged. The status and the first of the body go in the message,
+    // since the whole point is that somebody can read what came back.
+    if (!parsed.estadoEnvio) {
+      await recordAttempts(supabase, accountId, attempts, {
+        status: 'transport_error',
+        sentAt,
+        errorMessage: `HTTP ${httpStatus}: response was not a VERI*FACTU answer: ${responseXml.slice(0, 300)}`,
+      })
+      return { sent: 0, estadoEnvio: null, schemaFault: true }
+    }
+
+    // Matched by serie number, which is what the AEAT echoes back. A line with
+    // no match is not silently dropped -- it is left for the next run to retry,
+    // because a record we cannot confirm was accepted is a record still owed.
+    // The same rejection, every minute, is one fact and not fourteen hundred.
+    //
+    // Repeated transport errors were collapsed already; AEAT answers were not,
+    // on the reasoning that no two are redundant. That holds for DIFFERENT
+    // answers and fails badly for the same one: 21 records refused for the same
+    // field grew this table by 145 rows in ten minutes, and would have added
+    // thirty thousand a day. The same flood, wearing a different status.
+    //
+    // So an identical verdict on the same record refreshes its row. A verdict
+    // that CHANGES -- rejected then accepted, or a different error -- is always
+    // a new row, because that transition is the history worth keeping.
+    const { data: existing } = await supabase
+      .from('factura_record_submissions')
+      .select('id, factura_record_id, status, error_code')
+      .in('factura_record_id', attempts.map((a) => a.recordId))
+
+    for (const attempt of attempts) {
+      const line = parsed.lines.find((l) => l.serieNumber === attempt.serieNumber)
+      if (!line?.estado) continue
+
+      const same = (existing ?? []).find(
+        (e) =>
+          e.factura_record_id === attempt.recordId &&
+          e.status === line.estado &&
+          (e.error_code ?? null) === (line.errorCode ?? null),
+      )
+      if (same) {
+        await supabase
+          .from('factura_record_submissions')
+          .update({ sent_at: sentAt, responded_at: new Date().toISOString(), wait_seconds: parsed.waitSeconds })
+          .eq('id', same.id)
+        continue
+      }
+
+      await supabase.from('factura_record_submissions').insert({
+        account_id: accountId,
+        factura_record_id: attempt.recordId,
+        attempt: attempt.attempt,
+        status: line.estado,
+        aeat_csv: parsed.csv,
+        error_code: line.errorCode,
+        error_message: line.errorMessage,
+        wait_seconds: parsed.waitSeconds,
+        sent_at: sentAt,
+        responded_at: new Date().toISOString(),
+      })
+    }
+
+    return {
+      sent: parsed.lines.filter((l) => l.estado === 'Correcto' || l.estado === 'AceptadoConErrores').length,
+      estadoEnvio: parsed.estadoEnvio,
+      schemaFault: false,
+    }
   }
 
-  return {
-    sent: parsed.lines.filter((l) => l.estado === 'Correcto' || l.estado === 'AceptadoConErrores').length,
-    blocked: null,
-    estadoEnvio: parsed.estadoEnvio,
+  // A schema fault condemns the ENVELOPE, not every record inside it. The AEAT
+  // validates the document before it judges anything in it, so one malformed
+  // registro is answered with a SOAP Fault and NOTHING is evaluated -- the
+  // valid records batched alongside it are refused for a defect they do not
+  // have.
+  //
+  // #379 fixed the one that caused this: a Destinatarios block carrying a name
+  // and no NIF. It took 27 records off the air when 22 were wrong, and among
+  // the five it had no business touching were F2 simplificadas, which carry no
+  // Destinatarios at all. The field is fixed; the amplification is not, and it
+  // is the part that turns the next such mistake into an outage.
+  //
+  // So when the envelope comes back unjudged, send them again one at a time.
+  // Nothing in a fault says WHICH record was malformed, so letting each earn
+  // its own answer is also the only way to find out. The blast radius becomes
+  // one record instead of the queue.
+  //
+  // Only on THIS outcome: a genuine transport failure means the service was
+  // never reached, and retrying it once per record would multiply an outage
+  // rather than isolate anything.
+  const outcome = await submit(built.registros, built.attempts)
+  if (!outcome.schemaFault || built.registros.length === 1) {
+    return { sent: outcome.sent, blocked: null, estadoEnvio: outcome.estadoEnvio }
   }
+
+  let sent = 0
+  let estadoEnvio: string | null = null
+  for (let i = 0; i < built.registros.length; i++) {
+    const one = await submit([built.registros[i]], [built.attempts[i]])
+    sent += one.sent
+    estadoEnvio = one.estadoEnvio ?? estadoEnvio
+  }
+  return { sent, blocked: null, estadoEnvio }
 }
 
 /**

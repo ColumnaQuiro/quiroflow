@@ -2,6 +2,7 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { stripeForPlatformBilling } from '~/server/utils/platformBillingStripe'
 import { planIncludesGrowth } from '~/utils/growthPlans'
+import { checkoutTrialEnd } from '~/utils/billing'
 
 // Starts a brand-new platform subscription (redirect to Stripe Checkout to
 // collect a card) or changes an existing one's plan/interval/seat count in
@@ -92,7 +93,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: subscription } = await serviceRole
     .from('subscriptions')
-    .select('stripe_customer_id, stripe_subscription_id')
+    .select('stripe_customer_id, stripe_subscription_id, status, trial_ends_at, comped')
     .eq('account_id', teamMember.account_id)
     .maybeSingle()
 
@@ -166,6 +167,14 @@ export default defineEventHandler(async (event) => {
     data: { user },
   } = await supabase.auth.getUser()
 
+  // A clinic still inside its free trial keeps the rest of it: the card goes
+  // on file now and the first charge lands when the trial ends, which is what
+  // the subscription page has always told them. See checkoutTrialEnd for when
+  // it charges straight away instead. The webhook then mirrors Stripe's
+  // `trialing` status and trial_end back onto the row, so the date the page
+  // shows is the one Stripe will bill on.
+  const trialEnd = checkoutTrialEnd(subscription)
+
   const origin = getRequestURL(event).origin
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
@@ -190,6 +199,7 @@ export default defineEventHandler(async (event) => {
     subscription_data: {
       metadata: { account_id: teamMember.account_id },
       ...(defaultTaxRates ? { default_tax_rates: defaultTaxRates } : {}),
+      ...(trialEnd ? { trial_end: trialEnd } : {}),
     },
     success_url: `${origin}/subscription?checkout=success`,
     cancel_url: `${origin}/subscription`,

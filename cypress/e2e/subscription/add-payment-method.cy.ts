@@ -64,6 +64,38 @@ describe('Adding a payment method', () => {
     })
   })
 
+  // Checkout now carries the trial over: the card goes on file mid-trial and
+  // the first charge lands when the trial ends, so the row stays 'trialing'
+  // with a Stripe subscription behind it. Both banners used to go on asking
+  // for the card regardless -- the amber one on every page with "Upgrade
+  // now", and the trial card here with "Add a card before then".
+  it('stops asking for a card once a trialing account has put one on file', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.login(account.email, account.password)
+      cy.visit('/subscription')
+
+      // Before: a plain trial is asked, in both places.
+      cy.contains('a', 'Upgrade now').should('be.visible')
+      cy.get('[data-test="trial-banner"]').within(() => {
+        cy.contains('button', 'Add payment method').should('be.visible')
+      })
+
+      cy.task('db:setSubscriptionStripeIds', {
+        accountId: account.accountId,
+        stripeCustomerId: 'cus_test_stub',
+        stripeSubscriptionId: 'sub_test_stub',
+      })
+      cy.reload()
+
+      cy.get('[data-test="trial-banner"]').within(() => {
+        cy.contains('Your card is on file and nothing has been charged yet.').should('be.visible')
+        cy.contains('The first payment is taken on').should('be.visible')
+        cy.contains('button', 'Add payment method').should('not.exist')
+      })
+      cy.contains('a', 'Upgrade now').should('not.exist')
+    })
+  })
+
   // The other half. Even where the portal IS the right call, a failure used
   // to navigate the browser to a mailto: -- so a refusal, a misconfigured
   // deployment and a network blip all looked like "this button writes an

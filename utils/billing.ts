@@ -151,6 +151,51 @@ export function nextChargeTotal(
   return subscription.interval === 'annual' ? perMonth * MONTHS_PER_YEAR : perMonth
 }
 
+/**
+ * How much cheaper a month is on annual billing, as a whole percentage --
+ * "save 10%". Rounded rather than floored so 39 -> 35 reads as the 10% it
+ * nearly is, not 11% or 9%.
+ */
+export function annualSavingPercent(pricing: AddonPricing): number {
+  if (pricing.monthlyPriceCents <= 0) return 0
+  return Math.round(((pricing.monthlyPriceCents - pricing.annualPriceCents) / pricing.monthlyPriceCents) * 100)
+}
+
+/**
+ * Stripe refuses a Checkout Session whose `subscription_data.trial_end` is
+ * less than 48 hours away. Half a day of headroom on top, so a trial that is
+ * just over the line when the owner opens /subscription is not under it by
+ * the time they press the button.
+ */
+export const CHECKOUT_MIN_TRIAL_SECONDS = 60 * 60 * 60
+
+/**
+ * When the Stripe subscription started from Checkout should first charge, as
+ * the Unix timestamp Checkout's `trial_end` takes -- or null to charge now.
+ *
+ * The trial the clinic is already on carries over. The subscription page
+ * tells a trialing owner to "add a card before then and nothing is
+ * interrupted" and that the first payment "lands on" the trial's end date;
+ * without this, Checkout billed the moment the card went in, and a clinic
+ * adding one on day 3 of 30 paid that day and forfeited the other 27.
+ *
+ * Null (charge now) when there is no trial left to keep: the row is locked or
+ * cancelled, the date has passed, or it is inside Stripe's 48-hour floor --
+ * the last day or two of a trial is the one case where adding a card still
+ * starts billing immediately. Never for a comped account, which carries
+ * status 'trialing' with no real trial behind it.
+ */
+export function checkoutTrialEnd(
+  row: { status: string; trial_ends_at: string | null; comped: boolean } | null | undefined,
+  now: Date = new Date(),
+): number | null {
+  if (!row || row.comped || row.status !== 'trialing' || !row.trial_ends_at) return null
+  const endsAt = Math.floor(new Date(row.trial_ends_at).getTime() / 1000)
+  if (!Number.isFinite(endsAt)) return null
+  const nowSeconds = Math.floor(now.getTime() / 1000)
+  return endsAt - nowSeconds >= CHECKOUT_MIN_TRIAL_SECONDS ? endsAt : null
+}
+
 /** The six states a subscription can be in, as the UI names them. */
 export type SubscriptionState = 'trialing' | 'active' | 'past_due' | 'locked' | 'canceled' | 'comped'
 

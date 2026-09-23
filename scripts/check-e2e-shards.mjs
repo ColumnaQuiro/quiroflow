@@ -57,12 +57,23 @@ function specsOnDisk(dir = e2eDir) {
   return out
 }
 
-// Only the two constructs the matrix uses: `**` for any depth, `*` for any
-// run of characters inside one path segment. Deliberately not a glob library
-// -- this needs no dependency, and the workflow documents the shape it takes.
+// Only the constructs the matrix uses: `**` for any depth, `*` for any run of
+// characters inside one path segment, and a character class `[a-o]` or its
+// negation `[!a-o]` for one character (which is how patients is split in two).
+// Deliberately not a glob library -- this needs no dependency, and the
+// workflow documents the shape it takes.
 function globToRegExp(glob) {
-  const escaped = glob.replace(/[.+^${}()|[\]\\]/g, '\\$&')
-  const pattern = escaped.replace(/\*\*/g, '\u0000').replace(/\*/g, '[^/]*').replace(/\u0000/g, '.*')
+  const classes = []
+  const withoutClasses = glob.replace(/\[(!?)([^\]]+)\]/g, (_, negated, body) => {
+    classes.push(negated ? `[^/${body}]` : `[${body}]`)
+    return `\u0001${classes.length - 1}\u0001`
+  })
+  const escaped = withoutClasses.replace(/[.+^${}()|[\]\\]/g, '\\$&')
+  const pattern = escaped
+    .replace(/\*\*/g, '\u0000')
+    .replace(/\*/g, '[^/]*')
+    .replace(/\u0000/g, '.*')
+    .replace(/\u0001(\d+)\u0001/g, (_, i) => classes[Number(i)])
   return new RegExp(`^${pattern}$`)
 }
 

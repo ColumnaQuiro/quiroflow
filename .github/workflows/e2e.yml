@@ -142,8 +142,22 @@ jobs:
             specs: "cypress/e2e/growth/growth-lead*.cy.ts,cypress/e2e/growth/growth-inbox.cy.ts"
           - name: growth-platform
             specs: "cypress/e2e/growth/growth-receptionist*.cy.ts,cypress/e2e/growth/growth-reputation.cy.ts,cypress/e2e/growth/growth-dashboard-data.cy.ts,cypress/e2e/growth/growth-dashboard.cy.ts,cypress/e2e/growth/growth-automations.cy.ts,cypress/e2e/growth/growth-automation-builder.cy.ts,cypress/e2e/growth/growth-addon-entitlement.cy.ts,cypress/e2e/growth/growth-review-links.cy.ts,cypress/e2e/growth/growth-campaign-templates.cy.ts,cypress/e2e/growth/growth-email-metrics.cy.ts"
-          - name: patients-and-booking
-            specs: "cypress/e2e/patients/**,cypress/e2e/public-booking/**"
+          # Patients is split by first letter because it grew to 55 specs and
+          # 351s of Cypress on one runner, against 213s for the next-slowest --
+          # the whole run waited on it (run 35835560318, 2026-09-23). Cut at
+          # "p" on measured per-spec time: a-o 186s, the rest plus booking
+          # 165s.
+          #
+          # A character class rather than named files, because [a-o] and
+          # [!a-o] are complementary: every file in the folder matches exactly
+          # one of them, so a new patients spec still lands in a shard with no
+          # workflow edit, which is the property folder globs exist for. Move
+          # the letter to rebalance; check-e2e-shards.mjs proves the halves
+          # still cover the folder exactly once.
+          - name: patients-a-o
+            specs: "cypress/e2e/patients/[a-o]*.cy.ts"
+          - name: patients-p-z-and-booking
+            specs: "cypress/e2e/patients/[!a-o]*.cy.ts,cypress/e2e/public-booking/**"
           - name: auth-calendar-inbox
             specs: "cypress/e2e/auth/**,cypress/e2e/calendar/**,cypress/e2e/inbox/**"
     runs-on: ubuntu-latest

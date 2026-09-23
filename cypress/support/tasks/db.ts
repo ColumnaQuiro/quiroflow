@@ -235,6 +235,9 @@ async function createPatientDoc(opts: {
   /** Marks the form as returned, so the row reads Completed rather than
    *  Awaiting patient. */
   completed?: boolean
+  /** Blocks of the form, in DocField shape. Left out, the document has none
+   *  -- which is all the tabs that only list documents need. */
+  fields?: unknown[]
 }) {
   const { accountId, patientId, title, createdBy } = opts
   const doc = unwrap(
@@ -244,14 +247,16 @@ async function createPatientDoc(opts: {
         account_id: accountId,
         patient_id: patientId,
         title,
-        fields: [],
+        fields: opts.fields ?? [],
         created_by: createdBy ?? null,
         ...(opts.completed ? { completed_at: new Date().toISOString() } : {}),
       })
-      .select('id')
+      // The token is what /doc/[token] is reached by, so a test of the
+      // patient-facing page needs it back rather than the row id.
+      .select('id, public_token')
       .single(),
   )
-  return { docId: doc.id as string }
+  return { docId: doc.id as string, publicToken: doc.public_token as string }
 }
 
 async function createPatient(opts: {

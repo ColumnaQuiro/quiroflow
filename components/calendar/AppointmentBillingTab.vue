@@ -17,7 +17,7 @@ const { fire } = useAutomations()
 const { issueFactura } = useFacturas()
 const t = useT()
 
-const { loading: summaryLoading, balanceCents, availableCents, creditLedgerCents, bonoValueCents, activeMembership, activePackages, refresh: refreshSummary } = usePatientFinancialSummary(
+const { loading: summaryLoading, balanceCents, outstandingCents, availableCents, creditLedgerCents, bonoValueCents, activeMembership, activePackages, refresh: refreshSummary } = usePatientFinancialSummary(
   () => props.patientId,
 )
 
@@ -604,7 +604,7 @@ async function recordPayment() {
       <div v-else class="space-y-1.5">
         <p class="flex items-center gap-1.5">
           <span class="text-ink-muted2">{{ t('Balance:', 'Saldo:') }}</span>
-          <UiBalancePill :available-cents="availableCents" :balance-cents="balanceCents" />
+          <UiBalancePill :available-cents="availableCents" :outstanding-cents="outstandingCents" />
           <span v-if="balanceCents === 0" class="font-medium text-ink-700">€0.00</span>
         </p>
         <p v-if="activeMembership">

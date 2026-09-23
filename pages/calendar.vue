@@ -435,22 +435,28 @@ async function loadBlockDetails(token: number, appointmentIds: string[], patient
   waitlistOffers.value = ((offers as unknown as WaitlistOffer[]) ?? []).filter((o) => o.offered_starts_at)
 }
 
-// patient_live_balances: negative when the patient owes. Only the owing side
-// is ever drawn on the calendar -- a credit balance is not the front desk's
-// problem at a glance, and it lives in the hover card and the panel.
-const balanceByPatient = ref<Record<string, number>>({})
+// patient_live_balances.outstanding_cents: what the patient has unpaid. Only
+// the owing side is ever drawn on the calendar -- a credit balance is not the
+// front desk's problem at a glance, and it lives in the hover card and the
+// panel.
+//
+// Not -balance_cents, which is what this read before. The balance is
+// paid-minus-invoiced over the patient's whole history, so a child on a
+// parent's bono carried a red badge for visits the parent had paid for: 49
+// patients wore one, 10 owed anything. See utils/owing.ts.
+const outstandingByPatient = ref<Record<string, number>>({})
 function owesCents(patientId: string) {
-  return Math.max(0, -(balanceByPatient.value[patientId] ?? 0))
+  return Math.max(0, outstandingByPatient.value[patientId] ?? 0)
 }
 async function loadLiveBalances(patientIds: string[]) {
   if (patientIds.length === 0) {
-    balanceByPatient.value = {}
+    outstandingByPatient.value = {}
     return
   }
-  const data = await fetchByIds(patientIds, (chunk) => supabase.from('patient_live_balances').select('patient_id, balance_cents').in('patient_id', chunk))
+  const data = await fetchByIds(patientIds, (chunk) => supabase.from('patient_live_balances').select('patient_id, outstanding_cents').in('patient_id', chunk))
   const map: Record<string, number> = {}
-  for (const b of data) map[b.patient_id!] = b.balance_cents ?? 0
-  balanceByPatient.value = map
+  for (const b of data) map[b.patient_id!] = b.outstanding_cents ?? 0
+  outstandingByPatient.value = map
 }
 
 // Which of today's/this-view's appointments' patients have some OTHER

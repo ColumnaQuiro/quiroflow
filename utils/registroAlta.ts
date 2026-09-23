@@ -80,6 +80,8 @@ export interface RegistroAltaInput {
      * document issued today.
      */
     patientName?: string | null
+    /** The patient's NIF, for the same reason as patientName. */
+    patientNif?: string | null
   }
   issuerName: string
   accountId: string
@@ -232,14 +234,38 @@ export function buildRegistroAlta(input: RegistroAltaInput): string {
   // being copied onto the factura -- so the sender has to resolve it the same
   // way rather than sending the empty string it finds.
   const recipientName = capped((factura.recipientName || factura.patientName || '').trim(), 120)
+  const recipientNif = (factura.recipientNif || factura.patientNif || '').trim()
+
+  // A destinatario needs a name AND an identifier. IDDestinatario carries
+  // NombreRazon plus either NIF or IDOtro, and sending the name alone is
+  // refused by the schema itself rather than by a per-record verdict:
+  //
+  //   SOAP Fault, HTTP 200
+  //   Codigo[4102]. El XML no cumple el esquema.
+  //   Falta informar campo obligatorio.: NIF
+  //
+  // A fault rejects the whole envelope, so one unidentifiable recipient
+  // stops every other record in the batch. Hence the block goes in only when
+  // both halves are present.
+  //
+  // The NIF resolves from the patient for the same reason the name does: the
+  // factura freezes a recipient only once delivered, so before that both live
+  // on the patient -- which is what loadFacturaDocumentData has always done
+  // when rendering the document.
+  //
+  // What remains when a patient has no NIF on file is not a serialisation
+  // problem. A factura completa must identify its recipient (RD 1619/2012
+  // art. 6), so such a factura should not have been F1 -- and the sender
+  // leaving Destinatarios out lets the AEAT say so per record, which is more
+  // useful than a fault that blames the envelope.
   const destinatarios =
-    record.invoiceType === 'F2' || !recipientName
+    record.invoiceType === 'F2' || !recipientName || !recipientNif
       ? []
       : [
           '<sum1:Destinatarios>',
           '<sum1:IDDestinatario>',
           L('NombreRazon', recipientName),
-          ...(factura.recipientNif ? [L('NIF', factura.recipientNif)] : []),
+          L('NIF', recipientNif),
           '</sum1:IDDestinatario>',
           '</sum1:Destinatarios>',
         ]

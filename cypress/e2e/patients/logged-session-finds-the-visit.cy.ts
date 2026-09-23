@@ -35,8 +35,8 @@ describe('Logging a bono session', () => {
             cy.login(account.email, account.password)
             cy.visit(`/patients/${patient.id}?tab=billing`)
 
-            cy.contains('button', 'Log session').click()
             cy.on('window:confirm', () => true)
+            cy.contains('button', 'Log session').click()
             cy.contains('Logging…').should('not.exist')
 
             cy.task('db:packageSessionEffects', { patientId: patient.id, packagePurchaseId: purchase.id }).then((effects: any) => {
@@ -85,8 +85,8 @@ describe('Logging a bono session', () => {
             cy.login(account.email, account.password)
             cy.visit(`/patients/${patient.id}?tab=billing`)
 
-            cy.contains('button', 'Log session').click()
             cy.on('window:confirm', () => true)
+            cy.contains('button', 'Log session').click()
             cy.contains('Logging…').should('not.exist')
 
             cy.task('db:packageSessionEffects', { patientId: patient.id, packagePurchaseId: purchase.id }).then((effects: any) => {

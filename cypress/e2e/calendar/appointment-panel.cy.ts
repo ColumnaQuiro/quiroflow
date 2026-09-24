@@ -105,6 +105,9 @@ describe('Opening a visit', () => {
         cy.get('[data-cy=advance-stage]').click()
         cy.get('[data-cy=advance-stage]').should('have.attr', 'data-next', 'charge').click()
         cy.get('[data-cy=appt-tab-billing]').should('have.attr', 'aria-selected', 'true')
+        // Chargeable because she has checked in -- not because 10:30 has
+        // passed. Before 10:30 on the runner's clock this is an early
+        // arrival, which used to be refused with "hasn't happened yet".
         cy.contains('Not charged yet').should('be.visible')
       })
     })

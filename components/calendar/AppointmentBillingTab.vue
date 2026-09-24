@@ -91,9 +91,13 @@ const balanceDueCents = computed(() =>
   invoice.value?.status === 'paid' ? 0 : (invoice.value?.total_cents ?? 0) - paidCents.value,
 )
 
+// A patient who has checked in is being seen, whatever the clock says about
+// the slot. Early arrivals are routine -- in at 10:16 for 10:30, treated, and
+// at the desk by 10:25 -- and going by starts_at alone told reception "no
+// receipt until it happens" and refused to charge a visit that had happened.
 async function loadAppointmentTiming() {
-  const { data } = await supabase.from('appointments').select('starts_at').eq('id', props.appointmentId).maybeSingle()
-  appointmentIsUpcoming.value = !!data && new Date(data.starts_at) > new Date()
+  const { data } = await supabase.from('appointments').select('starts_at, checked_in_at').eq('id', props.appointmentId).maybeSingle()
+  appointmentIsUpcoming.value = !!data && !data.checked_in_at && new Date(data.starts_at) > new Date()
 }
 
 // Reads the invoice for this appointment, if someone has raised one. Opening

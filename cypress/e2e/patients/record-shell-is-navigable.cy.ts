@@ -19,7 +19,7 @@ describe('Moving around the patient record', () => {
         cy.contains('button', 'Overview').should('have.attr', 'aria-selected', 'true').and('have.attr', 'tabindex', '0')
         // Every other tab is out of the tab order, which is what makes it
         // one stop rather than six.
-        cy.contains('button', 'Money').should('have.attr', 'tabindex', '-1')
+        cy.contains('[role=tab]', 'Money').should('have.attr', 'tabindex', '-1')
 
         cy.contains('button', 'Overview').focus().type('{rightarrow}')
         cy.contains('button', 'Clinical').should('have.attr', 'aria-selected', 'true')
@@ -46,7 +46,7 @@ describe('Moving around the patient record', () => {
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}?tab=money`)
         cy.get('[role="tabpanel"]').should('have.attr', 'aria-labelledby', 'tab-money')
-        cy.contains('button', 'Money').should('have.attr', 'aria-controls', 'panel-money')
+        cy.contains('[role=tab]', 'Money').should('have.attr', 'aria-controls', 'panel-money')
       })
     })
   })

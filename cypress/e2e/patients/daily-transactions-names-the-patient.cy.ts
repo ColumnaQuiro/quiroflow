@@ -1,0 +1,100 @@
+// The day sheet is read at the end of the day against the drawer and the card
+// terminal, so every row has to be attributable to someone. Two columns were
+// not.
+//
+// The Patient column reached the patient through the payment's INVOICE, and
+// a payment that settles no particular charge has none: a bono purchase, an
+// on-account top-up, and all 3,262 payments imported from PracticeHub. Those
+// rows read "Unknown" and linked to /patients/undefined -- so every day
+// before mid-September 2026 was a full page of "Unknown", and reception had
+// no way to tell whose €240 was in the drawer.
+//
+// The Practitioner column had the opposite shape of bug: the appointments it
+// reads were only fetched when a practitioner or clinic FILTER was set, so
+// the default view of the page said "Unassigned" on every row regardless of
+// who had actually seen the patient.
+describe('The day sheet attributes every row', () => {
+  it('names the patient on a payment that settles no invoice, and links to them', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:createPatient', {
+        accountId: account.accountId,
+        clinicId: account.clinicId,
+        firstName: 'Amparo',
+        lastName: 'Bonos',
+      }).then((patient: any) => {
+        // A bono raises no invoice -- its price sits on the purchase and
+        // payments come off it -- which is exactly the shape that used to
+        // lose its patient.
+        cy.task('db:createPayment', {
+          accountId: account.accountId,
+          patientId: patient.id,
+          amountCents: 24000,
+          method: 'card',
+          purpose: 'bono',
+        })
+
+        cy.login(account.email, account.password)
+        cy.visit('/reports/daily-transactions')
+        cy.contains('Net collected').should('be.visible')
+
+        cy.contains('td', 'Amparo Bonos')
+          .should('be.visible')
+          .find('a')
+          // The href is half the point: the name used to render "Unknown"
+          // over a link to /patients/undefined, which 404s.
+          .should('have.attr', 'href', `/patients/${patient.id}`)
+
+        cy.contains('td', 'Unknown').should('not.exist')
+        // The Receipt column is right to stay empty here -- there is no
+        // invoice to name. That was never the broken part.
+        cy.contains('td', '—').should('be.visible')
+      })
+    })
+  })
+
+  it('names the practitioner without waiting for a filter to be picked', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:createPatient', {
+        accountId: account.accountId,
+        clinicId: account.clinicId,
+        firstName: 'Nuria',
+        lastName: 'Visita',
+      }).then((patient: any) => {
+        cy.task('db:createAppointment', {
+          accountId: account.accountId,
+          clinicId: account.clinicId,
+          patientId: patient.id,
+          startsAt: new Date().toISOString(),
+          practitionerId: account.teamMemberId,
+        }).then((appointment: any) => {
+          cy.task('db:createInvoice', {
+            accountId: account.accountId,
+            patientId: patient.id,
+            invoiceNumber: 'F-9001',
+            totalCents: 5500,
+            appointmentId: appointment.id,
+          }).then((invoice: any) => {
+            cy.task('db:createPayment', {
+              accountId: account.accountId,
+              patientId: patient.id,
+              invoiceId: invoice.id,
+              amountCents: 5500,
+              method: 'cash',
+              purpose: 'visit',
+            })
+
+            cy.login(account.email, account.password)
+            cy.visit('/reports/daily-transactions')
+            cy.contains('Net collected').should('be.visible')
+
+            // No filter touched. This is the page as it opens.
+            cy.contains('tr', 'Nuria Visita').within(() => {
+              cy.contains('td', 'Test Owner').should('be.visible')
+              cy.contains('td', 'Unassigned').should('not.exist')
+            })
+          })
+        })
+      })
+    })
+  })
+})

@@ -2,12 +2,20 @@
 import { formatEur } from '~/utils/billing'
 import { rangeBounds } from '~/composables/useDateRangePresets'
 import { isReceipt } from '~/utils/paymentReceipts'
+import { fetchByIds } from '~/composables/useFetchAllRows'
 
 interface PaymentRow {
   id: string
   amount_cents: number
   method: string
   paid_at: string
+  // Never null, and the reason the Patient column works for a payment that
+  // settles no invoice. This page used to reach the patient through the
+  // invoice, so a bono purchase or an on-account top-up -- neither of which
+  // raises one -- rendered "Unknown" and linked to /patients/undefined. So
+  // did all 3,262 payments imported from PracticeHub, which carry no invoice
+  // either: every day before mid-September was a page of "Unknown".
+  patient_id: string
   invoice_id: string | null
   invoices?: { status: string } | null
 }
@@ -50,7 +58,7 @@ async function load() {
 
   const { data: p } = await supabase
     .from('payments')
-    .select('id, amount_cents, method, paid_at, invoice_id, invoices!payments_invoice_id_fkey(status)')
+    .select('id, amount_cents, method, paid_at, patient_id, invoice_id, invoices!payments_invoice_id_fkey(status)')
     .gte('paid_at', from.toISOString())
     .lte('paid_at', to.toISOString())
     .order('paid_at')
@@ -59,28 +67,27 @@ async function load() {
   payments.value = (p ?? []).filter((row) => row.invoices?.status !== 'void')
 
   const invoiceIds = [...new Set(payments.value.map((row) => row.invoice_id).filter((id): id is string => !!id))]
-  const { data: inv } = invoiceIds.length > 0
-    ? await supabase.from('invoices').select('id, invoice_number, patient_id, is_refund, appointment_id').in('id', invoiceIds)
-    : { data: [] as InvoiceRow[] }
-  invoices.value = inv ?? []
+  invoices.value = await fetchByIds<InvoiceRow>(invoiceIds, (ids) =>
+    supabase.from('invoices').select('id, invoice_number, patient_id, is_refund, appointment_id').in('id', ids),
+  )
 
-  const patientIds = [...new Set(invoices.value.map((row) => row.patient_id))]
-  const { data: pat } = patientIds.length > 0
-    ? await supabase.from('patients').select('id, first_name, last_name').in('id', patientIds)
-    : { data: [] as PatientRow[] }
-  patients.value = pat ?? []
+  // Off the payments, not off the invoices they settle. Half this page's
+  // rows settle no invoice at all, and those are exactly the ones whose
+  // patient went missing when the list was built the other way round.
+  const patientIds = [...new Set(payments.value.map((row) => row.patient_id))]
+  patients.value = await fetchByIds<PatientRow>(patientIds, (ids) =>
+    supabase.from('patients').select('id, first_name, last_name').in('id', ids),
+  )
 
-  // Practitioner/clinic filters key off the invoice's linked appointment,
-  // same as reports/income.vue -- neither payments nor invoices carry
-  // those columns directly. Only fetched when a filter is actually set,
-  // same reasoning as income.vue's loadAppointments.
-  if (practitionerFilter.value || clinicFilter.value) {
-    const appointmentIds = [...new Set(invoices.value.map((row) => row.appointment_id).filter((id): id is string => !!id))]
-    const { data: appt } = appointmentIds.length > 0
-      ? await supabase.from('appointments').select('id, practitioner_id, clinic_id').in('id', appointmentIds)
-      : { data: [] as AppointmentRow[] }
-    appointments.value = appt ?? []
-  }
+  // The practitioner comes from the invoice's linked appointment, same as
+  // reports/income.vue -- neither payments nor invoices carry the column
+  // directly. Fetched on every load, not only when a filter is set: the
+  // Practitioner COLUMN reads the same map, so skipping this left every row
+  // on the page saying "Unassigned" until someone happened to pick a filter.
+  const appointmentIds = [...new Set(invoices.value.map((row) => row.appointment_id).filter((id): id is string => !!id))]
+  appointments.value = await fetchByIds<AppointmentRow>(appointmentIds, (ids) =>
+    supabase.from('appointments').select('id, practitioner_id, clinic_id').in('id', ids),
+  )
 
   loading.value = false
 }
@@ -119,6 +126,11 @@ const filteredPayments = computed(() =>
   }),
 )
 
+// payments.patient_id is not null, so the only way this misses now is a
+// patient row the reader cannot see -- a practitioner scoped to their own
+// patients reading a colleague's takings. That is the case "Unknown" is
+// actually for; it used to mean "this payment has no invoice", which was
+// most of them.
 function patientName(patientId: string) {
   const p = patientById.value.get(patientId)
   return p ? `${p.first_name} ${p.last_name ?? ''}`.trim() : t('Unknown', 'Desconocido')
@@ -218,8 +230,8 @@ const { ensureLoaded: ensurePaymentMethodsLoaded, labelFor: labelForMethod } = u
               <tr v-for="row in filteredPayments" :key="row.id">
                 <td class="px-4 py-2.5 text-ink-muted2">{{ time(row.paid_at) }}</td>
                 <td class="px-4 py-2.5 text-ink-900">
-                  <NuxtLink :to="`/patients/${invoiceFor(row)?.patient_id}`" class="hover:text-brand-text">
-                    {{ patientName(invoiceFor(row)?.patient_id ?? '') }}
+                  <NuxtLink :to="`/patients/${row.patient_id}`" class="hover:text-brand-text">
+                    {{ patientName(row.patient_id) }}
                   </NuxtLink>
                 </td>
                 <td class="px-4 py-2.5 text-ink-muted2">

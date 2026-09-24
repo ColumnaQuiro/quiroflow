@@ -98,25 +98,17 @@ async function loadBadges() {
   // cannot see the nav item and now cannot reach the page -- was still
   // pulling 500 patient messages into their browser on every page load to
   // compute a badge they never see.
+  // Only for someone who can open the Inbox. Conversations unread by ME
+  // (inbox_reads is per person) and not archived by me -- exactly the Inbox's
+  // own "Unread" count. It used to pull the last 500 messages and guess.
   if (can('inbox_access')) {
     supabase
-      .from('whatsapp_messages')
-      .select('patient_id, phone_number, direction, created_at')
-      .order('created_at', { ascending: false })
-      .limit(500)
-      .then(({ data }) => {
-        // A conversation counts as unread when the most recent message in it
-        // is inbound (the patient sent last, staff hasn't replied since) --
-        // no separate read/unread tracking exists yet, so this is derived.
-        const seen = new Set<string>()
-        let unread = 0
-        for (const m of data ?? []) {
-          const key = m.patient_id ?? m.phone_number ?? ''
-          if (!key || seen.has(key)) continue
-          seen.add(key)
-          if (m.direction === 'inbound') unread++
-        }
-        if (token === badgeToken) inboxUnreadCount.value = unread
+      .from('inbox_conversations')
+      .select('conversation_key', { count: 'exact', head: true })
+      .eq('unread_for_me', true)
+      .eq('my_archived', false)
+      .then(({ count }) => {
+        if (token === badgeToken) inboxUnreadCount.value = count ?? 0
       })
   }
 
@@ -251,7 +243,7 @@ function groupOpen(group: { id: string; items: NavItem[] }) {
 function badgeText(item: NavItem): string | null {
   if (item.badge === 'myday' && myDayCount.value > 0) return t(`${myDayCount.value} today`, `${myDayCount.value} hoy`)
   if (item.badge === 'recalls' && recallsCount.value > 0) return t(`${recallsCount.value} to contact`, `${recallsCount.value} por contactar`)
-  if (item.badge === 'inbox' && inboxUnreadCount.value > 0) return t(`${inboxUnreadCount.value} awaiting reply`, `${inboxUnreadCount.value} sin responder`)
+  if (item.badge === 'inbox' && inboxUnreadCount.value > 0) return t(`${inboxUnreadCount.value} unread`, `${inboxUnreadCount.value} sin leer`)
   if (item.badge === 'campaigns' && campaignsActive.value) return t('running', 'activas')
   return null
 }

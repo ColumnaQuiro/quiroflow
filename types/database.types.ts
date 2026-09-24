@@ -14,6 +14,51 @@ export type Database = {
   }
   public: {
     Tables: {
+      inbox_assignments: {
+        Row: {
+          account_id: string
+          assigned_at: string
+          assigned_by: string | null
+          conversation_key: string
+          team_member_id: string
+        }
+        Insert: {
+          account_id: string
+          assigned_at?: string
+          assigned_by?: string | null
+          conversation_key: string
+          team_member_id: string
+        }
+        Update: {
+          account_id?: string
+          assigned_at?: string
+          assigned_by?: string | null
+          conversation_key?: string
+          team_member_id?: string
+        }
+        Relationships: []
+      }
+      inbox_reads: {
+        Row: {
+          account_id: string
+          conversation_key: string
+          last_read_at: string
+          team_member_id: string
+        }
+        Insert: {
+          account_id: string
+          conversation_key: string
+          last_read_at?: string
+          team_member_id: string
+        }
+        Update: {
+          account_id?: string
+          conversation_key?: string
+          last_read_at?: string
+          team_member_id?: string
+        }
+        Relationships: []
+      }
       account_credits: {
         Row: {
           account_id: string
@@ -5637,6 +5682,32 @@ export type Database = {
       }
     }
     Views: {
+      inbox_conversations: {
+        Row: {
+          account_id: string | null
+          assigned_to: string | null
+          conversation_key: string | null
+          external_contact_id: string | null
+          first_name: string | null
+          last_at: string | null
+          last_body: string | null
+          last_channel: string | null
+          last_direction: string | null
+          last_inbound_at: string | null
+          last_media_type: string | null
+          last_name: string | null
+          last_status: string | null
+          last_template_name: string | null
+          my_archived: boolean | null
+          my_label_ids: string[] | null
+          my_last_read_at: string | null
+          patient_id: string | null
+          phone_number: string | null
+          search_name: string | null
+          unread_for_me: boolean | null
+        }
+        Relationships: []
+      }
       care_plan_continuity_alerts: {
         Row: {
           account_id: string | null
@@ -5751,6 +5822,10 @@ export type Database = {
       }
     }
     Functions: {
+      link_inbox_conversation: {
+        Args: { p_phone_number: string; p_patient_id: string }
+        Returns: number
+      }
       clinic_location_allowance: {
         Args: { target_account_id: string }
         Returns: number

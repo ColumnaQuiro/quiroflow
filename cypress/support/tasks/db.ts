@@ -1335,6 +1335,9 @@ async function createWhatsappMessage(opts: {
   templateName?: string
   /** ISO timestamp, so a thread can be seeded in a deliberate order. */
   createdAt?: string
+  /** 'instagram' with an externalContactId for a DM; WhatsApp otherwise. */
+  channel?: string
+  externalContactId?: string
 }) {
   const { accountId, patientId, phoneNumber, direction, bodyPreview } = opts
   const row = unwrap(
@@ -1351,6 +1354,8 @@ async function createWhatsappMessage(opts: {
         ...(opts.errorCode ? { error_code: opts.errorCode } : {}),
         ...(opts.templateName ? { template_name: opts.templateName } : {}),
         ...(opts.createdAt ? { created_at: opts.createdAt } : {}),
+        ...(opts.channel ? { channel: opts.channel } : {}),
+        ...(opts.externalContactId ? { external_contact_id: opts.externalContactId } : {}),
       })
       .select('id, channel')
       .single(),
@@ -2445,6 +2450,47 @@ async function setTeamMemberHours(opts: { teamMemberId: string; hours: Record<st
   return { ok: true }
 }
 
+/** Many patients, each with one inbound WhatsApp message a minute apart --
+ *  enough conversations to page the Inbox. Newest first in the returned list. */
+async function seedInboxConversations(opts: { accountId: string; clinicId: string; count: number; prefix?: string }) {
+  const prefix = opts.prefix ?? 'Paged'
+  const patients = unwrap(
+    await admin
+      .from('patients')
+      .insert(Array.from({ length: opts.count }, (_, i) => ({ account_id: opts.accountId, clinic_id: opts.clinicId, first_name: prefix, last_name: `N${String(i).padStart(3, '0')}` })))
+      .select('id, last_name'),
+  ) as { id: string; last_name: string }[]
+  const base = Date.now() - 2 * 60 * 60 * 1000
+  assertOk(
+    await admin.from('whatsapp_messages').insert(
+      patients.map((p, i) => ({
+        account_id: opts.accountId,
+        patient_id: p.id,
+        phone_number: `+3460${String(1000000 + i)}`,
+        direction: 'inbound',
+        status: 'received',
+        body_preview: `Mensaje ${p.last_name}`,
+        created_at: new Date(base + i * 60000).toISOString(),
+      })),
+    ),
+  )
+  return patients.map((p) => p.id).reverse()
+}
+
+/** Who an Inbox conversation is assigned to, read back. */
+async function inboxAssignment(opts: { accountId: string; conversationKey: string }) {
+  const { data, error } = await admin.from('inbox_assignments').select('team_member_id').eq('account_id', opts.accountId).eq('conversation_key', opts.conversationKey).maybeSingle()
+  if (error) throw error
+  return data?.team_member_id ?? null
+}
+
+/** Every WhatsApp message from a number, with the patient it is on. */
+async function messagesFromNumber(opts: { accountId: string; phoneNumber: string }) {
+  const { data, error } = await admin.from('whatsapp_messages').select('id, patient_id').eq('account_id', opts.accountId).eq('phone_number', opts.phoneNumber)
+  if (error) throw error
+  return data ?? []
+}
+
 /** A clinic as Settings -> Clinics leaves it, or null once deleted. */
 async function clinicRow(opts: { clinicId: string }) {
   const { data, error } = await admin
@@ -2670,6 +2716,9 @@ export const dbTasks = {
   'db:recallState': recallState,
   'db:teamMemberById': teamMemberById,
   'db:clinicRow': clinicRow,
+  'db:seedInboxConversations': seedInboxConversations,
+  'db:inboxAssignment': inboxAssignment,
+  'db:messagesFromNumber': messagesFromNumber,
   'db:setAppointmentStatus': setAppointmentStatus,
   'db:setCancellationFee': setCancellationFee,
   'db:invoicesFor': invoicesFor,

@@ -44,6 +44,50 @@ export function splitDialPrefix(input: string, fallbackCountryCode: string): { c
   return { countryCode: match.code, number: local }
 }
 
+// Is this plausibly a phone number, rather than something typed to get past a
+// `required` attribute?
+//
+// `required` and type="tel" together accept one character: a patient booked
+// online on 24 Sep 2026 having picked +34 and typed "6", and the clinic had a
+// confirmed appointment with no way to reach the person who made it. Nothing
+// downstream can recover from that -- toE164 happily builds "346", WhatsApp
+// accepts the send and it goes nowhere.
+//
+// Measured against the length of the NATIONAL number, after stripping any
+// dial prefix the typist included, so "+34 600 123 456" and "600 123 456" are
+// judged the same way.
+//
+// Spain gets an exact length because it is where this clinic's patients are
+// and the rule is unambiguous: every Spanish number, mobile or landline, is
+// nine digits. The leading digit is deliberately NOT checked -- the field
+// says "móvil", but a patient who gives their landline should still get an
+// appointment.
+//
+// Everywhere else gets a floor and a ceiling instead of a per-country length.
+// Ninety countries' numbering plans is not a list this repo can keep honest,
+// and countries.ts already records what over-confident guessing costs: a
+// Belgian number rendered as a real Spanish one belonging to somebody else.
+// A wrong guess here would refuse a real patient at the last step of a
+// booking, which is worse than admitting an implausible number.
+//
+// create_public_booking re-states these same three rules in SQL, because the
+// RPC is security definer and anon can call it without going near the form.
+// Keep the two in step by hand.
+export const MIN_PHONE_DIGITS = 6
+export const MAX_PHONE_DIGITS = 15
+export const ES_PHONE_DIGITS = 9
+
+export function looksLikePhoneNumber(input: string, countryCode: string): boolean {
+  // The country the NUMBER names, not the one the dropdown happens to show:
+  // a patient who leaves it on Spain and pastes "+44 7700 900123" is giving
+  // a British number, and judging that by Spain's nine digits would refuse a
+  // real one.
+  const { countryCode: resolved, number } = splitDialPrefix(input.trim(), countryCode)
+  const digits = number.replace(/\D/g, '')
+  if (resolved === 'ES') return digits.length === ES_PHONE_DIGITS
+  return digits.length >= MIN_PHONE_DIGITS && digits.length <= MAX_PHONE_DIGITS
+}
+
 // Best-effort E.164 normalization -- stored numbers are inconsistent
 // (some already "+34 600123456" from online booking, some bare local
 // digits with a separate country_code from the CSV import). Meta's Cloud

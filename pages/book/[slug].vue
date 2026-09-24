@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { COUNTRIES_BY_NAME } from '~/utils/countries'
+import { looksLikePhoneNumber } from '~/utils/phone'
 import { effectiveDuration, effectivePriceCents, type AppointmentTypeOverride } from '~/utils/appointmentOverrides'
 import { practitionerWindowsForDay } from '~/utils/businessHours'
 
@@ -550,9 +551,26 @@ const lastBooking = ref<{ appointmentId: string; typeName: string; valueEur: num
 const invoiceId = ref('')
 const paymentRequiredCents = ref(0)
 
+// Only after the patient has tried to submit, or left the field. Marking the
+// number wrong while it is still being typed calls every number wrong for the
+// first eight digits of it.
+const phoneChecked = ref(false)
+const phoneError = computed(() => {
+  if (!phoneChecked.value || looksLikePhoneNumber(phoneNumber.value, dialCode.value)) return ''
+  return dialCode.value === 'ES'
+    ? 'Un número español tiene 9 dígitos. Revíselo, por favor.'
+    : 'Ese número no parece completo. Revíselo, por favor.'
+})
+
 async function submitBooking() {
   if (!selectedSlot.value) return
   submitError.value = ''
+  // Caught here as well as in create_public_booking. The RPC is the rule --
+  // it is security definer and anon can call it without the form -- but
+  // being told at the last step by a raised exception, in English, is not
+  // how anyone should find out they mistyped their own number.
+  phoneChecked.value = true
+  if (!looksLikePhoneNumber(phoneNumber.value, dialCode.value)) return
   submitting.value = true
   const { data, error } = await supabase.rpc('create_public_booking', {
     p_account_slug: slug,
@@ -942,8 +960,17 @@ if (import.meta.client) {
                     <select v-model="dialCode" class="rounded-ctl border border-line-control px-2 py-2 text-sm">
                       <option v-for="c in COUNTRIES_BY_NAME" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }} {{ c.name }}</option>
                     </select>
-                    <input v-model="phoneNumber" type="tel" required placeholder="Su número de móvil" class="w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
+                    <input
+                      v-model="phoneNumber"
+                      type="tel"
+                      required
+                      placeholder="Su número de móvil"
+                      class="w-full rounded-ctl border px-3 py-2 text-sm focus:outline-none focus:ring-1"
+                      :class="phoneError ? 'border-danger-border focus:border-danger-border focus:ring-danger-border' : 'border-line-control focus:border-brand focus:ring-brand'"
+                      @blur="phoneChecked = true"
+                    />
                   </div>
+                  <p v-if="phoneError" class="mt-1 text-sm text-danger-text">{{ phoneError }}</p>
                 </div>
               </div>
               <div class="mt-4">

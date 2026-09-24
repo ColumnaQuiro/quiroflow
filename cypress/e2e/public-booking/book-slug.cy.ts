@@ -201,6 +201,49 @@ describe('Public online booking', () => {
     })
   })
 
+  // create_public_booking refuses this too, and that is the actual rule --
+  // but being told by a raised exception, in English, after pressing Reservar
+  // is not how anyone should find out they mistyped their own number.
+  it('says so in the form when the number is not a number', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:enableOnlineBooking', { clinicId: account.clinicId })
+      cy.task('db:createAppointmentType', {
+        accountId: account.accountId,
+        name: 'Consultation',
+        durationMinutes: 30,
+        onlineBookingEnabled: true,
+      }).then(() => {
+        cy.visit(`/book/${account.accountSlug}`)
+        selectBookableDayWithSlots()
+        cy.contains('button', /^\d{2}:\d{2}$/).first().click()
+
+        cy.contains('Introduzca sus datos').should('be.visible')
+        cy.contains('label', 'Nombre *').parent().find('input').type('Numero')
+        cy.contains('label', 'Correo electrónico *').parent().find('input').type('numero@example.test')
+        // What the patient on 24 Sep 2026 actually typed. `required` and
+        // type="tel" between them accept it.
+        const phone = () => cy.contains('label', 'Número de móvil *').parent().find('input[type="tel"]')
+        phone().type('6')
+
+        // Nothing said yet -- marking a number wrong while it is being typed
+        // calls every number wrong for its first eight digits.
+        cy.contains('9 dígitos').should('not.exist')
+
+        cy.contains('button', 'Reservar cita').click()
+        // In Spanish, beside the field. The RPC refuses this too, but its
+        // message is an English exception at the bottom of the form.
+        cy.contains('Un número español tiene 9 dígitos. Revíselo, por favor.').should('be.visible')
+        // Not sent, and no appointment made behind the message.
+        cy.contains('¡Cita reservada!').should('not.exist')
+
+        phone().type('00111005')
+        cy.contains('9 dígitos').should('not.exist')
+        cy.contains('button', 'Reservar cita').click()
+        cy.contains('¡Cita reservada!', { timeout: 15000 }).should('be.visible')
+      })
+    })
+  })
+
   it('shows a not-available message for an unknown clinic slug', () => {
     cy.visit('/book/no-such-clinic-slug-xyz')
     cy.contains('La reserva online no está disponible para esta clínica.').should('be.visible')

@@ -56,6 +56,75 @@ describe('Booking without a way to reach the patient', () => {
     })
   })
 
+  // Non-empty was the whole test. On 24 Sep 2026 someone picked +34 and typed
+  // "6", which `required` and type="tel" both accept, and the clinic got a
+  // confirmed appointment with no way to ring the person who made it.
+  describe('with a number that is not one', () => {
+    it('is refused for a single digit, which is what actually happened', () => {
+      cy.get('@acct').then((account: any) => {
+        cy.get('@typeId').then((type: any) => {
+          book({ p_phone: '6' }, account, type.id).then((r) => {
+            expect(r.error, 'the booking was refused').to.contain('does not look right')
+          })
+        })
+      })
+    })
+
+    it('is refused for a dial prefix with nothing behind it', () => {
+      cy.get('@acct').then((account: any) => {
+        cy.get('@typeId').then((type: any) => {
+          book({ p_phone: '+34' }, account, type.id).then((r) => {
+            expect(r.error, 'the booking was refused').to.contain('does not look right')
+          })
+        })
+      })
+    })
+
+    it('is refused for a Spanish number of the wrong length', () => {
+      cy.get('@acct').then((account: any) => {
+        cy.get('@typeId').then((type: any) => {
+          book({ p_phone: '60012345' }, account, type.id).then((r) => {
+            expect(r.error, 'eight digits is not a Spanish number').to.contain('does not look right')
+          })
+        })
+      })
+    })
+
+    it('still takes a Spanish number written with its own +34', () => {
+      cy.get('@acct').then((account: any) => {
+        cy.get('@typeId').then((type: any) => {
+          book({ p_phone: '+34 600 123 456' }, account, type.id).then((r) => {
+            expect(r.error, 'the prefix is the same number, not extra digits').to.eq(null)
+          })
+        })
+      })
+    })
+
+    it('still takes a shorter number from a country where that is the whole number', () => {
+      // Eight digits is a complete Norwegian number and two of this clinic's
+      // patients have one. Spain's nine is not a rule to apply everywhere.
+      cy.get('@acct').then((account: any) => {
+        cy.get('@typeId').then((type: any) => {
+          book({ p_phone: '40612345', p_country_code: 'NO' }, account, type.id).then((r) => {
+            expect(r.error, 'a real Norwegian number goes through').to.eq(null)
+          })
+        })
+      })
+    })
+
+    it('still takes a foreign number pasted with the selector left on Spain', () => {
+      // A normal thing to do, and judging it by Spain's nine digits would
+      // refuse a real number at the last step of a booking.
+      cy.get('@acct').then((account: any) => {
+        cy.get('@typeId').then((type: any) => {
+          book({ p_phone: '+447700900123' }, account, type.id).then((r) => {
+            expect(r.error, 'judged by the country the number names').to.eq(null)
+          })
+        })
+      })
+    })
+  })
+
   it('is refused with no email, which also keeps it off a stranger\'s record', () => {
     // An empty email is not just missing data. The patient lookup matches on
     // lower(email) = lower(trim(p_email)), so an empty one matches the first

@@ -24,7 +24,7 @@ import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const ROOTS = ['components/growth', 'pages/growth', 'components/calendar', 'pages/calendar.vue', 'pages/account.vue', 'components/ui/ConfirmDialog.vue']
+const ROOTS = ['components/growth', 'pages/growth', 'components/calendar', 'pages/calendar.vue', 'pages/account.vue', 'components/ui/ConfirmDialog.vue', 'pages/recalls.vue']
 
 // Hex colours, and the rgb()/hsl() forms that dodge a hex check. A CSS var
 // reference is what we WANT, so rgb(var(--x)) has to survive.

@@ -700,6 +700,19 @@ async function runWhatsAppAction(
     phone_number: to,
   })
 
+  // A recall that went out is outreach, the same as one a person sends from
+  // the Recalls page (api/whatsapp/send.post.ts logs those). Without this the
+  // page's "Último contacto" said "Aún sin contacto" for a patient an
+  // automation had just messaged -- and "Sin contactar" offered them again.
+  if (wamid && purpose === 'recall' && recipient.patient?.id) {
+    await supabase.from('contact_log').insert({
+      account_id: accountId,
+      patient_id: recipient.patient.id,
+      action: 'sent_whatsapp',
+      note: `Automation · template: ${templateName}`,
+    })
+  }
+
   // A confirmation/reminder template carries the Confirmar/Cambiar/Cancelar
   // reply buttons, so the appointment has to be marked 'pending' before it
   // goes out -- the webhook resolves "which appointment is this reply about"

@@ -14,13 +14,26 @@ async function tryAccept(token: string) {
   const { error } = await supabase.rpc('accept_invite', { p_token: token })
   if (error) {
     state.value = 'error'
-    errorMessage.value = error.message
+    // PT402 is the seat trigger (enforce_practitioner_seats). Its own message
+    // is written for the owner -- "add a seat on the Subscription page" --
+    // and the person reading this page is the one being invited, who has no
+    // Subscription page. The token is kept, so opening this page again once
+    // the owner has made room joins them.
+    errorMessage.value =
+      error.code === 'PT402'
+        ? "This practice's plan has no free practitioner seat, so the invite can't be accepted yet. Ask the person who invited you to add a seat, or to invite you as front desk instead — then open your invite link again."
+        : error.message
     return
   }
   localStorage.removeItem('pending_invite_token')
   store.reset()
   await store.load()
   await navigateTo('/dashboard')
+}
+
+async function startOwnPractice() {
+  localStorage.removeItem('pending_invite_token')
+  await navigateTo('/onboarding')
 }
 
 onMounted(async () => {
@@ -84,6 +97,18 @@ watch(user, async (value) => {
 
       <template v-else>
         <p class="text-sm text-danger-text">{{ errorMessage }}</p>
+        <!-- The way out. Someone can reach this page from the sign-up
+             middleware with an invite that will never work (used, revoked),
+             and before this there was no path from it to anything else. -->
+        <button
+          v-if="user"
+          type="button"
+          class="mt-4 text-sm font-medium text-brand hover:text-brand-hover"
+          data-test="join-start-own-practice"
+          @click="startOwnPractice"
+        >
+          Set up my own practice instead
+        </button>
       </template>
     </div>
   </div>

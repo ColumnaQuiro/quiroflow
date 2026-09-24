@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { planIncludesGrowth } from '~/utils/growthPlans'
 import {
+  planLimitsWaived,
   bytesToGb,
   checkoutTrialEnd,
   formatEur,
@@ -153,6 +154,10 @@ const state = computed(() =>
   subscription.value ? subscriptionState(subscription.value.status, subscription.value.comped) : 'locked',
 )
 const comped = computed(() => state.value === 'comped')
+// No practitioner or location cap: comped, or a trial with no card yet. The
+// database lifts them on the same rule, so the usage card cannot claim a
+// limit that the seat trigger does not enforce.
+const limitsWaived = computed(() => planLimitsWaived(subscription.value))
 const interval = computed<'monthly' | 'annual'>(() =>
   subscription.value?.billing_interval === 'annual' ? 'annual' : 'monthly',
 )
@@ -231,7 +236,7 @@ const planLineItems = computed(() => {
 })
 
 const seatCeiling = computed(() =>
-  seatAllowance(subscription.value?.plans?.included_professionals, subscription.value?.extra_professionals ?? 0, comped.value),
+  seatAllowance(subscription.value?.plans?.included_professionals, subscription.value?.extra_professionals ?? 0, limitsWaived.value),
 )
 
 const billingDay = computed(() => {
@@ -569,9 +574,12 @@ async function addPaymentMethod() {
               :storage-gb="bytesToGb(usage?.storage_bytes ?? 0)"
               :storage-allowance-gb="comped ? null : (subscription.plans?.included_storage_gb ?? null)"
               :clinic-count="store.clinics.length"
-              :clinic-allowance="comped ? null : (subscription.plans?.included_clinics ?? null)"
+              :clinic-allowance="limitsWaived ? null : (subscription.plans?.included_clinics ?? null)"
               :clinic-names="store.clinics.map((c) => c.name)"
               :comped="comped"
+              :open-trial="limitsWaived && !comped"
+              :plan-name="subscription.plans?.name ?? null"
+              :plan-seats="subscription.plans?.included_professionals ?? null"
             />
 
             <SubscriptionCard v-if="!comped">

@@ -97,4 +97,39 @@ describe('Signup and onboarding', () => {
       expect(withPortugal, 'a country select showing Portugal').to.not.equal(undefined)
     })
   })
+
+  // Every owner used to be made a practitioner. Right for a chiropractor who
+  // owns the clinic, so yes stays the default -- wrong for a practice run by a
+  // manager, who then had a calendar column, a bookable slot and the plan's
+  // one included seat spent on someone who treats nobody.
+  it('asks whether the owner sees patients, and a manager is not made a practitioner', () => {
+    const email = `signup-mgr-${Date.now()}-${Math.floor(Math.random() * 100000)}@example.test`
+
+    cy.visit('/signup')
+    cy.get('#email').type(email)
+    cy.get('#password').type('Test1234!')
+    cy.contains('button', 'Create account').click()
+    cy.location('pathname', { timeout: 15000 }).should('eq', '/onboarding')
+
+    cy.get('[data-test="owner-treats-yes"]').should('have.attr', 'aria-checked', 'true')
+    cy.get('[data-test="owner-treats-no"]').click().should('have.attr', 'aria-checked', 'true')
+
+    cy.get('#owner-name').type(faker.person.fullName())
+    cy.get('#account-name').type(`${faker.company.name()} Clinic`)
+    cy.get('#clinic-name').type(faker.location.city())
+    cy.contains('button', 'Create practice').click()
+    cy.contains('h1', 'Make QuiroFlow yours', { timeout: 15000 }).should('be.visible')
+
+    cy.task('db:ownerIsPractitioner', { email }).should('eq', false)
+
+    // Back keeps the answer, and changing it there reaches the account too --
+    // that path edits the rows rather than re-running the RPC.
+    cy.contains('button', 'Back').click()
+    cy.get('[data-test="owner-treats-no"]').should('have.attr', 'aria-checked', 'true')
+    cy.get('[data-test="owner-treats-yes"]').click()
+    cy.contains('button', 'Save and continue').click()
+    cy.contains('h1', 'Make QuiroFlow yours', { timeout: 15000 }).should('be.visible')
+
+    cy.task('db:ownerIsPractitioner', { email }).should('eq', true)
+  })
 })

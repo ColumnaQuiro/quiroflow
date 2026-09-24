@@ -6,6 +6,7 @@ import {
   formatLongDate,
   meterPercent,
   nextChargeTotal,
+  planLimitsWaived,
   pricePerMonth,
   seatAllowance,
   subscriptionState,
@@ -124,5 +125,24 @@ describe('es-ES formatting', () => {
     expect(meterPercent(20, 100)).to.eq(20)
     expect(meterPercent(140, 100), 'over the allowance still reads as full').to.eq(100)
     expect(meterPercent(20, null), 'no allowance, no meter').to.eq(null)
+  })
+})
+
+describe('Plan limits during the free trial', () => {
+  // The same rule as practitioner_seat_allowance() and
+  // clinic_location_allowance() in 20260924100032. The usage card prints a
+  // limit only where the database enforces one.
+  it('waives them for a trial nobody has put a card on yet', () => {
+    expect(planLimitsWaived({ status: 'trialing', comped: false, stripe_subscription_id: null })).to.eq(true)
+  })
+
+  it('applies them once the trial carries a Stripe subscription, or has ended', () => {
+    expect(planLimitsWaived({ status: 'trialing', comped: false, stripe_subscription_id: 'sub_1' })).to.eq(false)
+    expect(planLimitsWaived({ status: 'active', comped: false, stripe_subscription_id: 'sub_1' })).to.eq(false)
+    expect(planLimitsWaived({ status: 'locked', comped: false, stripe_subscription_id: null })).to.eq(false)
+  })
+
+  it('waives them for a comped account whatever its status says', () => {
+    expect(planLimitsWaived({ status: 'active', comped: true, stripe_subscription_id: null })).to.eq(true)
   })
 })

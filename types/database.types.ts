@@ -5747,6 +5747,7 @@ export type Database = {
               p_owner_name?: string
               p_referred_by_slug?: string
               p_default_phone_country?: string
+              p_owner_is_practitioner?: boolean
             }
             Returns: {
               account_id: string

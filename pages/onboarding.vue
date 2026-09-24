@@ -11,6 +11,12 @@ const { preference: themePreference, setPreference: setThemePreference } = useTh
 const { preference: langPreference, setPreference: setLangPreference } = useLang()
 
 const ownerName = ref('')
+// Whether the owner treats patients. Yes for most practices signing up -- a
+// chiropractor who owns the clinic -- and yes is what puts them in the
+// calendar and on the booking page straight away. A practice run by a
+// manager says no, and keeps the plan's included seat for the first
+// practitioner they invite.
+const ownerIsPractitioner = ref(true)
 const accountName = ref('')
 const clinicName = ref('')
 // The country every phone number defaults to from here on -- the manual
@@ -68,6 +74,7 @@ async function createPractice() {
     p_owner_name: ownerName.value,
     p_referred_by_slug: localStorage.getItem('signup_referred_by') || null,
     p_default_phone_country: phoneCountry.value,
+    p_owner_is_practitioner: ownerIsPractitioner.value,
   })
   if (rpcError) return rpcError.message
   localStorage.removeItem('signup_referred_by')
@@ -104,7 +111,7 @@ async function updatePractice() {
 
   const { error: memberError } = await supabase
     .from('team_members')
-    .update({ full_name: ownerName.value })
+    .update({ full_name: ownerName.value, is_practitioner: ownerIsPractitioner.value })
     .eq('id', store.teamMember!.id)
   if (memberError) return memberError.message
 
@@ -246,6 +253,32 @@ const LAUNCH_CARDS = computed(() => [
         <OnboardingFormField id="owner-name" :label="t('Your name', 'Tu nombre')">
           <OnboardingTextInput id="owner-name" v-model="ownerName" autocomplete="name" required :readonly="loading" placeholder="Alba Esteve" />
         </OnboardingFormField>
+
+        <div>
+          <p class="mb-1.5 text-[14px] font-medium text-ink-700">
+            {{ t('Do you see patients yourself?', '¿Atiendes pacientes tú?') }}
+          </p>
+          <OnboardingTileGroup :label="t('Do you see patients yourself?', '¿Atiendes pacientes tú?')" :columns="2">
+            <OnboardingSelectTile
+              v-for="opt in [true, false]"
+              :key="String(opt)"
+              layout="inline"
+              :selected="ownerIsPractitioner === opt"
+              :data-test="opt ? 'owner-treats-yes' : 'owner-treats-no'"
+              @click="ownerIsPractitioner = opt"
+            >
+              <span class="min-w-0 flex-1">
+                <span class="block text-[13.5px] font-semibold text-ink-700">
+                  {{ opt ? t('Yes, I treat patients', 'Sí, atiendo pacientes') : t('No, I run the practice', 'No, gestiono la consulta') }}
+                </span>
+                <span class="mt-0.5 block text-[12px] text-ink-muted">
+                  {{ opt ? t('You get a column in the calendar', 'Tendrás tu columna en la agenda') : t('Invite the practitioners later', 'Invita a los profesionales después') }}
+                </span>
+              </span>
+              <OnboardingTileCheck :selected="ownerIsPractitioner === opt" />
+            </OnboardingSelectTile>
+          </OnboardingTileGroup>
+        </div>
 
         <OnboardingFormField id="account-name" :label="t('Practice name', 'Nombre de la consulta')">
           <OnboardingTextInput id="account-name" v-model="accountName" required :readonly="loading" :placeholder="t('Your practice name', 'Nombre de tu consulta')" />

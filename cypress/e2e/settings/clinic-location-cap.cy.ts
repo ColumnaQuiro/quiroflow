@@ -30,8 +30,14 @@ describe('Clinic location cap', () => {
       cy.get('input[placeholder="Valencia"]').type('Second Location')
       cy.contains('button', 'Add Clinic').click()
 
-      cy.contains('Second Location').should('exist')
+      // Each clinic's name is an editable input in the table, so it is a
+      // value to read, not text cy.contains can find.
+      cy.get('table input').should(($inputs) => {
+        expect([...$inputs].map((el) => (el as HTMLInputElement).value)).to.include('Second Location')
+      })
       cy.contains('all of them are in use').should('not.exist')
+      // The add form clears once the row is in.
+      cy.get('input[placeholder="Valencia"]').should('have.value', '')
     })
   })
 })

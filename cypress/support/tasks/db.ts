@@ -164,6 +164,16 @@ async function createInvite(opts: { accountId: string; email: string; roleName?:
   return { token: invite.token as string }
 }
 
+/** Whether the account owner signed up as this email is a practitioner. */
+async function ownerIsPractitioner(opts: { email: string }) {
+  const { data: users, error } = await admin.auth.admin.listUsers({ perPage: 1000 })
+  if (error) throw error
+  const user = users.users.find((u) => u.email === opts.email)
+  if (!user) throw new Error(`No user ${opts.email}`)
+  const member = unwrap(await admin.from('team_members').select('is_practitioner').eq('user_id', user.id).eq('is_owner', true).single())
+  return member.is_practitioner as boolean
+}
+
 /** The attribution row a public booking recorded, if any -- keyed by account since the spec does not know the appointment id. */
 async function bookingAttribution(opts: { accountId: string }) {
   const { data } = await admin
@@ -2493,6 +2503,7 @@ export const dbTasks = {
   'db:setSubscriptionStripeIds': setSubscriptionStripeIds,
   'db:createLoneUser': createLoneUser,
   'db:createInvite': createInvite,
+  'db:ownerIsPractitioner': ownerIsPractitioner,
   'db:createPatient': createPatient,
   'db:seedManyPatients': seedManyPatients,
   'db:patientByName': patientByName,

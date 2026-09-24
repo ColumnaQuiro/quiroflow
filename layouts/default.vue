@@ -80,21 +80,22 @@ const contactHref = 'mailto:hola@quiroflow.com'
         which not every page even has) so the account menu has one home
         instead of living in the sidebar, where it permanently cost a row of
         vertical space on every screen. -->
-        <div class="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-line bg-surface px-4">
+        <div class="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-line bg-surface px-4 touch:h-12">
           <div class="flex min-w-0 items-center gap-2">
             <!-- The sidebar is an off-canvas drawer below lg (AppSidebar.vue),
             so this is the only way to reach it on a phone or narrow tablet. -->
             <button
               type="button"
-              class="flex h-7 w-7 shrink-0 items-center justify-center rounded-ctl border border-line-control bg-chip-bg text-ink-muted hover:bg-surface-subtle lg:hidden"
-              :title="t('Open menu', 'Abrir menú')"
+              class="flex h-7 w-7 shrink-0 items-center justify-center rounded-ctl border border-line-control bg-chip-bg text-ink-muted hover:bg-surface-subtle touch:h-11 touch:w-11 lg:hidden"
+              data-cy="open-sidebar"
+              :aria-label="t('Open menu', 'Abrir menú')"
               @click="mobileSidebarOpen = true"
             >
               <svg width="14" height="14" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1.5 3.5h11M1.5 7h11M1.5 10.5h11" /></svg>
             </button>
             <button
               type="button"
-              class="flex h-7 w-7 shrink-0 items-center justify-center rounded-ctl border border-line-control bg-chip-bg text-left text-[13px] text-ink-muted hover:bg-surface-subtle lg:w-64 lg:justify-start lg:gap-2 lg:px-2.5"
+              class="flex h-7 w-7 shrink-0 items-center justify-center rounded-ctl border border-line-control bg-chip-bg text-left text-[13px] text-ink-muted hover:bg-surface-subtle touch:h-11 touch:min-w-11 lg:w-64 lg:justify-start lg:gap-2 lg:px-2.5"
               :title="t('Search or jump to (⌘K)', 'Buscar o ir a (⌘K)')"
               @click="paletteOpen = true"
             >

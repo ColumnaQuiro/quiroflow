@@ -14,11 +14,20 @@ export interface TeamMember {
 
 export type PermissionValue = boolean | 'all' | 'own' | 'none'
 
-// Same localStorage convention as useTheme/useLang -- remembers which
-// clinic a team member was last looking at across reloads. Scoped to
-// whatever ends up in this.clinics (account-scoped) before being trusted,
-// so a stale id from a previous account/browser profile can't leak in.
+// Remembers which clinic a team member was last looking at across reloads.
+// Scoped to whatever ends up in this.clinics (account-scoped) before being
+// trusted, so a stale id from a previous account/browser profile can't leak
+// in.
+//
+// A cookie, not only localStorage. A full page load runs load() on the
+// server, where localStorage does not exist, so the server picked clinics[0]
+// -- and the client, receiving the store already loaded, never looked again:
+// every reload quietly switched a two-clinic account back to whichever clinic
+// the database happened to list first. The cookie reaches the server;
+// localStorage is still read as a fallback so an existing choice survives the
+// change.
 const CURRENT_CLINIC_STORAGE_KEY = 'quiroflow-current-clinic-id'
+const CLINIC_COOKIE_OPTIONS = { maxAge: 60 * 60 * 24 * 365, sameSite: 'lax' as const }
 
 export interface Clinic {
   id: string
@@ -98,6 +107,9 @@ export const useAccountStore = defineStore('account', {
       this.loading = true
       const supabase = useSupabaseClient()
       const user = useSupabaseUser()
+      // Before the first await: on the server, useCookie needs the request
+      // context, which an await drops.
+      const clinicCookie = useCookie<string | null>(CURRENT_CLINIC_STORAGE_KEY, CLINIC_COOKIE_OPTIONS)
 
       if (!user.value) {
         this.teamMember = null
@@ -150,7 +162,9 @@ export const useAccountStore = defineStore('account', {
       this.schedulingPolicyFeeCents = account?.scheduling_policy_fee_cents ?? null
       this.defaultPhoneCountry = account?.default_phone_country || 'ES'
       this.requireTwoFactor = account?.require_two_factor ?? false
-      this.clinics = (clinics as Clinic[]) ?? []
+      // By name, so the menu and the default clinic are the same on every
+      // load -- the bootstrap returns them in no particular order.
+      this.clinics = ((clinics as Clinic[]) ?? []).slice().sort((a, b) => a.name.localeCompare(b.name, 'es'))
       this.permissions = (permissions as Record<string, PermissionValue>) ?? {}
       this.subscriptionStatus = subscription?.status ?? null
       this.trialEndsAt = subscription?.trial_ends_at ?? null
@@ -159,7 +173,7 @@ export const useAccountStore = defineStore('account', {
       this.comped = subscription?.comped ?? false
       this.hasStripeSubscription = subscription?.has_stripe_subscription ?? false
       if (!this.currentClinicId && this.clinics.length > 0) {
-        const stored = import.meta.server ? null : localStorage.getItem(CURRENT_CLINIC_STORAGE_KEY)
+        const stored = clinicCookie.value || (import.meta.server ? null : localStorage.getItem(CURRENT_CLINIC_STORAGE_KEY))
         this.currentClinicId = (stored && this.clinics.some((c) => c.id === stored)) ? stored : this.clinics[0].id
       }
 
@@ -168,9 +182,10 @@ export const useAccountStore = defineStore('account', {
     },
     // The only place currentClinicId should be written to after initial
     // load -- routes through here (not a direct state.currentClinicId =
-    // assignment) so the switcher's choice also persists to localStorage.
+    // assignment) so the switcher's choice also persists across reloads.
     setCurrentClinic(id: string) {
       this.currentClinicId = id
+      useCookie<string | null>(CURRENT_CLINIC_STORAGE_KEY, CLINIC_COOKIE_OPTIONS).value = id
       if (!import.meta.server) localStorage.setItem(CURRENT_CLINIC_STORAGE_KEY, id)
     },
     reset() {

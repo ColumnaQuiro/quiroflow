@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { formatEur } from '~/utils/billing'
-import { classifyPaymentForFilter } from '~/utils/incomeAttribution'
+import { classifyPaymentForFilter, practitionerForPayment } from '~/utils/incomeAttribution'
 import { isReceipt } from '~/utils/paymentReceipts'
 import { Line, Bar } from 'vue-chartjs'
 import { computePresetRange, monthKeysInRange, rangeBounds } from '~/composables/useDateRangePresets'
@@ -98,45 +98,45 @@ async function load() {
     ).then((data) => ({ data, error: null })),
   )
 
-  // What each line was for. Fetched by id rather than wholesale: the
-  // appointments table is thousands of rows and this only needs the ones
-  // behind invoices in range, which is why the practitioner filter loads it
-  // separately and only when set.
+  // What each line was for, and whose money it is. Both fetched by id rather
+  // than wholesale: the appointments table is thousands of rows and this only
+  // needs the ones behind invoices in range.
+  //
+  // One appointments query, not two. The practitioner/clinic columns used to
+  // be loaded separately, from the WHOLE table, and only when a filter was
+  // set -- on the reasoning that with no filter they were "fetched and never
+  // read". They are read: byPractitioner below reads the same maps on every
+  // render, filter or no filter, so the breakdown had nothing to attribute
+  // with and put the entire month under "Sin asignar". Asking for two more
+  // columns on a query that was already being made costs nothing and serves
+  // both.
   const purchaseIds = [...new Set(lineItems.value.map((li) => li.package_purchase_id).filter((id): id is string => !!id))]
   const appointmentIds = [...new Set(inv.map((i) => i.appointment_id).filter((id): id is string => !!id))]
-  const [pur, pkg, apptTypes, appts] = await Promise.all([
+  // The fallback for money with no appointment behind it -- a bono, money on
+  // account, a quick invoice. Scoped to the payments actually on screen
+  // rather than every patient the clinic has.
+  const patientIds = [...new Set(payments.value.map((row) => row.patient_id).filter((id): id is string => !!id))]
+  const [pur, pkg, apptTypes, appts, pats] = await Promise.all([
     // One row per id, so a chunk never reaches the 1000-row cap.
     fetchByIds(purchaseIds, (chunk) => supabase.from('package_purchases').select('id, package_id, package_name').in('id', chunk)),
     supabase.from('packages').select('id, name').then((r) => r.data ?? []),
     supabase.from('appointment_types').select('id, name').then((r) => r.data ?? []),
-    fetchByIds(appointmentIds, (chunk) => supabase.from('appointments').select('id, appointment_type_id').in('id', chunk)),
+    fetchByIds<AppointmentRow & { appointment_type_id: string | null }>(appointmentIds, (chunk) =>
+      supabase.from('appointments').select('id, appointment_type_id, practitioner_id, clinic_id').in('id', chunk),
+    ),
+    fetchByIds<PatientRow>(patientIds, (chunk) => supabase.from('patients').select('id, default_practitioner_id, clinic_id').in('id', chunk)),
   ])
   purchases.value = pur
   packages.value = pkg
   appointmentTypes.value = apptTypes
+  appointments.value = appts
+  patients.value = pats
   const typeByAppointment = new Map(appts.map((a) => [a.id, a.appointment_type_id]))
   invoiceAppointmentTypes.value = inv
     .filter((i) => i.appointment_id)
     .map((i) => ({ invoice_id: i.id, appointment_type_id: typeByAppointment.get(i.appointment_id!) ?? null }))
 
-  // Appointments and patients are only consulted to resolve a
-  // practitioner/clinic filter -- with no filter set, which is how the page
-  // first renders, both tables were fetched and never read.
-  if (practitionerFilter.value || clinicFilter.value) await loadAttribution()
   loading.value = false
-}
-
-const appointmentsLoaded = ref(false)
-async function loadAttribution() {
-  if (appointmentsLoaded.value) return
-  const [appts, pats] = await Promise.all([
-    fetchAllRows<AppointmentRow>((f, t) => supabase.from('appointments').select('id, practitioner_id, clinic_id').range(f, t)),
-    // The fallback for money with no appointment behind it.
-    fetchAllRows<PatientRow>((f, t) => supabase.from('patients').select('id, default_practitioner_id, clinic_id').range(f, t)),
-  ])
-  appointments.value = appts
-  patients.value = pats
-  appointmentsLoaded.value = true
 }
 
 onMounted(() => {
@@ -145,15 +145,8 @@ onMounted(() => {
   ensurePaymentMethodsLoaded()
 })
 watch(range, load)
-// Filtering is client-side against appointmentById, so the map has to exist
-// before the filtered totals mean anything -- hold the loading state until
-// it does rather than flashing an empty report.
-watch([practitionerFilter, clinicFilter], async () => {
-  if (appointmentsLoaded.value || (!practitionerFilter.value && !clinicFilter.value)) return
-  loading.value = true
-  await loadAttribution()
-  loading.value = false
-})
+// No watcher on the filters: they are applied client-side against maps this
+// load() has already built, so changing one re-computes rather than refetches.
 
 const appointmentById = computed(() => new Map(appointments.value.map((a) => [a.id, a])))
 const patientById = computed(() => new Map(patients.value.map((p) => [p.id, p])))
@@ -294,12 +287,21 @@ const barChartOptions = { responsive: true, maintainAspectRatio: false, scales: 
 
 const memberById = computed(() => new Map(teamMembers.value.map((m) => [m.id, m.full_name])))
 
+// The same chain the filter above applies, via practitionerForPayment --
+// appointment first, then the patient's own practitioner. This used to stop
+// at the appointment, so money with no visit behind it (a bono, money on
+// account, a quick invoice) all landed in "Sin asignar": 13,164 EUR of
+// September 2026's 16,711, while filtering to a practitioner counted those
+// same euros. The two read the same payments and must not disagree about
+// whose they are.
 const byPractitioner = computed(() => {
   const totals = new Map<string, number>()
   for (const p of receipts.value) {
-    const invoice = p.invoice_id ? invoiceById.value.get(p.invoice_id) : undefined
-    const appt = invoice?.appointment_id ? appointmentById.value.get(invoice.appointment_id) : undefined
-    const practitionerId = appt?.practitioner_id ?? null
+    const appointmentId = appointmentIdOf(p.invoice_id)
+    const practitionerId = practitionerForPayment({
+      appointment: appointmentId ? (appointmentById.value.get(appointmentId) ?? null) : null,
+      patient: p.patient_id ? (patientById.value.get(p.patient_id) ?? null) : null,
+    })
     const label = practitionerId ? (memberById.value.get(practitionerId) ?? t('Unknown', 'Desconocido')) : t('Unassigned', 'Sin asignar')
     totals.set(label, (totals.get(label) ?? 0) + p.amount_cents)
   }

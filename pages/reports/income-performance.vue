@@ -4,7 +4,7 @@ import { Line } from 'vue-chartjs'
 import { computePresetRange, monthKeysInRange, rangeBounds } from '~/composables/useDateRangePresets'
 import { fetchAllRows, fetchByIds } from '~/composables/useFetchAllRows'
 import { isReceipt } from '~/utils/paymentReceipts'
-import { classifyPaymentForFilter } from '~/utils/incomeAttribution'
+import { classifyPaymentForFilter, practitionerForPayment } from '~/utils/incomeAttribution'
 
 interface PaymentRow { amount_cents: number; method: string; paid_at: string; invoice_id: string | null; patient_id: string | null; invoices?: { status: string } | null }
 interface InvoiceRow { id: string; appointment_id: string | null }
@@ -121,10 +121,16 @@ const monthKeys = computed(() => monthKeysInRange(range.value))
 // places a bono or money on account instead of dropping it into __unassigned
 // -- that bucket held 8,748 EUR of September against 919 attributed.
 function practitionerFor(payment: PaymentRow): string {
-  const appt = appointmentFor(payment)
-  if (appt?.practitioner_id) return appt.practitioner_id
-  const patient = payment.patient_id ? patientById.value.get(payment.patient_id) : undefined
-  return patient?.default_practitioner_id ?? '__unassigned'
+  // Shared with reports/income.vue's breakdown, which had its own copy of
+  // this chain that stopped at the appointment. Two screens answering "whose
+  // money is this" differently is how the same euros read as one
+  // practitioner's here and as "Sin asignar" there.
+  return (
+    practitionerForPayment({
+      appointment: appointmentFor(payment) ?? null,
+      patient: (payment.patient_id ? patientById.value.get(payment.patient_id) : undefined) ?? null,
+    }) ?? '__unassigned'
+  )
 }
 
 const series = computed(() => {

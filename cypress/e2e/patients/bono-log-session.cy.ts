@@ -102,7 +102,13 @@ describe('Logging a bono session', () => {
           cy.get('input[type="date"]').type(chosenStr)
           cy.contains('button', 'Log on this date').click()
 
-          cy.contains('11 of 12 sessions left', { timeout: 15000 }).should('be.visible')
+          // contain.text on the card rather than be.visible on the line:
+          // opening and then closing the date panel moves this card, and the
+          // counter ends up clipped by an ancestor's overflow at that scroll
+          // position -- be.visible does not scroll, so it fails on an element
+          // that is on screen and correct. What is being asserted is that the
+          // counter came down, which contain.text says exactly.
+          cy.get('[data-cy="bono-card"]', { timeout: 15000 }).should('contain.text', '11 of 12 sessions left')
 
           cy.task('db:packageSessionEffects', { patientId: patient.id, packagePurchaseId: purchase.id }).then((eff: any) => {
             expect(eff.purchase.sessions_used, 'sessions used').to.eq(1)

@@ -130,31 +130,41 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
         .from('package_purchase_shares')
         .select('package_purchases(id, package_name, sessions_total, sessions_used, price_cents, is_closed, patients(first_name, last_name))')
         .eq('patient_id', currentId),
-      // The embed names its constraint because there are now TWO foreign keys
-      // between payments and invoices: invoices.refunds_payment_id points the
-      // other way, so a refund can say which payment it gives back. Without
-      // the hint PostgREST refuses the query outright and this composable
-      // returns nothing, which presents as every patient having no credit and
-      // no balance. See 20260922100653_refund_a_specific_payment.sql.
-      supabase.from('payments').select('amount_cents, method, invoice_id, package_purchase_id, external_reference, purpose, invoices!payments_invoice_id_fkey(status)').eq('patient_id', currentId),
+      // No invoice join any more -- it existed only for the void-invoice
+      // credit-on-void check, which the 'credit' exclusion below now does
+      // unconditionally, invoice status or not.
+      supabase.from('payments').select('amount_cents, method, invoice_id, package_purchase_id, external_reference, purpose').eq('patient_id', currentId),
     ])
 
-    // A 'credit' payment against a VOIDED invoice is not money and never was:
-    // it recorded a patient spending account credit, and the charge it settled
-    // has since been cancelled. Counting it while the void invoice's debit is
-    // dropped just above (.neq('status', 'void')) inflates the balance by the
-    // payment amount -- 2,338.33 EUR across 44 patients when the historical
-    // bono-session invoices were voided in bulk.
+    // A 'credit' payment is not money and never was: it records a patient
+    // directing account credit they already hold towards something (a bono,
+    // a membership), and the euros it represents were counted once already,
+    // when that credit came in. It used to be excluded only when its invoice
+    // was void -- but most bonos and memberships raise no invoice at all
+    // (0161, 0155), so a credit-method payment against one of THOSE was
+    // still being counted as new money, every time.
     //
-    // Cash and card payments on a void invoice are deliberately still counted.
-    // There the money really was collected and the charge really was cancelled,
-    // so the clinic really does owe it back and the resulting credit is honest
-    // -- that is the case pages/billing/[id].vue now refuses to create, and
-    // hiding it here would bury real over-collection instead of surfacing it.
-    const countablePayments = (payments ?? []).filter((p) => {
-      const status = (p as unknown as { invoices: { status: string } | null }).invoices?.status
-      return !(p.method === 'credit' && status === 'void')
-    })
+    // That is invisible for credit added through "Add Credit": the matching
+    // account_credits row (20260916160000) has a payment_id and drops out of
+    // balanceCreditCents below, so the spend's extra +paidCents and the
+    // credit-being-spent's -balanceCreditCents cancel and the total is right
+    // by accident. It stops being invisible the moment the credit being spent
+    // was never its own account_credits row to begin with -- an imported
+    // PracticeHub payment sitting on the account unallocated, which is the
+    // normal shape for one (see 20260923094340). There the spend's
+    // +paidCents has nothing of its own to cancel: Teresa Davis had EUR 240
+    // of exactly that kind of credit, spent it on a Bono mantenimiento, and
+    // the ledger came out EUR 240 ahead of itself -- the same "written down
+    // twice" bug 20260916160000 fixed for adding credit, mirrored on the
+    // spending side.
+    //
+    // Cash and card payments on a void invoice are still counted regardless
+    // of method. There the money really was collected and the charge really
+    // was cancelled, so the clinic really does owe it back and the resulting
+    // credit is honest -- that is the case pages/billing/[id].vue now refuses
+    // to create, and hiding it here would bury real over-collection instead
+    // of surfacing it. Only 'credit' itself, unconditionally, is never money.
+    const countablePayments = (payments ?? []).filter((p) => p.method !== 'credit')
 
     const paidCents = countablePayments.reduce((sum, p) => sum + p.amount_cents, 0)
     state.lifetimeCents.value = paidCents
@@ -204,11 +214,13 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     // but computed live from invoices/payments rather than trusting that column, which
     // is only ever written at import time and never kept in sync afterward.
     state.balanceCents.value = paidCents - invoicedCents + balanceCreditCents + cutoverAdjustmentCents
-    // Every payment, allocated or not: outstandingCentsOf only reads the ones
-    // carrying an invoice_id, and a 'credit' payment against a void invoice is
-    // excluded above for reasons that do not apply here -- but passing the
-    // filtered list keeps the two figures reading the same money.
-    state.outstandingCents.value = outstandingCentsOf(invoices ?? [], countablePayments)
+    // Every payment, credit included -- deliberately NOT countablePayments.
+    // outstandingCentsOf needs both readings of a 'credit' payment and makes
+    // the distinction itself: it settles the invoice it was applied to, so it
+    // counts towards that invoice, while staying out of the money term because
+    // it is not money arriving. Handing it the filtered list instead would
+    // report a part-credit-settled invoice as wholly unpaid.
+    state.outstandingCents.value = outstandingCentsOf(invoices ?? [], payments ?? [])
 
     state.activeMembership.value = memberships?.[0] ?? null
     // Packages are pure session-count tracking (name, sessions left) -- the

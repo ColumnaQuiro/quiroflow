@@ -68,6 +68,62 @@ describe('Logging a bono session', () => {
     })
   })
 
+  it('records the visit on the day it happened, not the day it was typed in', () => {
+    // Catching up on a session nobody logged at the time. "Log session" is
+    // still one click on today; this is the other button, and the date it
+    // records has to be the one picked rather than now -- a visit filed under
+    // the wrong day is a visit the practitioner is not paid for on the right
+    // one, and the bono's own history stops matching the calendar.
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Berta', lastName: 'Backdate' }).then((patient: any) => {
+        cy.task('db:createPackagePurchase', {
+          accountId: account.accountId,
+          patientId: patient.id,
+          packageName: 'Bono 12',
+          sessionsTotal: 12,
+          sessionsUsed: 0,
+          priceCents: 52800,
+        }).then((purchase: any) => {
+          cy.login(account.email, account.password)
+          cy.visit(`/patients/${patient.id}?tab=billing`)
+
+          cy.contains('12 of 12 sessions left').should('be.visible')
+
+          const chosen = new Date()
+          chosen.setDate(chosen.getDate() - 6)
+          const chosenStr = `${chosen.getFullYear()}-${String(chosen.getMonth() + 1).padStart(2, '0')}-${String(chosen.getDate()).padStart(2, '0')}`
+
+          cy.on('window:confirm', () => true)
+          cy.contains('button', 'Another date').click()
+          // No .clear() first: typing YYYY-MM-DD into a native date input
+          // replaces the value outright, and clearing one is the part that
+          // behaves differently across browsers. The field is the only date
+          // input on this tab and only exists while the panel is open.
+          cy.get('input[type="date"]').type(chosenStr)
+          cy.contains('button', 'Log on this date').click()
+
+          // contain.text on the card rather than be.visible on the line:
+          // opening and then closing the date panel moves this card, and the
+          // counter ends up clipped by an ancestor's overflow at that scroll
+          // position -- be.visible does not scroll, so it fails on an element
+          // that is on screen and correct. What is being asserted is that the
+          // counter came down, which contain.text says exactly.
+          cy.get('[data-cy="bono-card"]', { timeout: 15000 }).should('contain.text', '11 of 12 sessions left')
+
+          cy.task('db:packageSessionEffects', { patientId: patient.id, packagePurchaseId: purchase.id }).then((eff: any) => {
+            expect(eff.purchase.sessions_used, 'sessions used').to.eq(1)
+            // Both records carry the picked day, not today. Noon local time,
+            // so converting to UTC cannot land it on the day before.
+            expect(eff.appointments, 'one appointment created').to.have.length(1)
+            expect(eff.appointments[0].starts_at.slice(0, 10), 'the visit is on the chosen day').to.eq(chosenStr)
+            expect(eff.sessions, 'the visit recorded on the bono').to.have.length(1)
+            expect(eff.sessions[0].used_at.slice(0, 10), 'the bono says so too').to.eq(chosenStr)
+          })
+        })
+      })
+    })
+  })
+
   it('does not let a bono go past its session count', () => {
     cy.seedStaffAccount().then((account) => {
       cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Fina', lastName: 'Finished' }).then((patient: any) => {

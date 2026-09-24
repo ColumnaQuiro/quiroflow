@@ -52,6 +52,7 @@ const supabase = useSupabaseClient()
 const store = useAccountStore()
 const { fire } = useAutomations()
 const { issueFactura } = useFacturas()
+const { phoneProblem } = usePhoneValidation()
 const t = useT()
 
 const activeTab = ref<'create' | 'availability'>('create')
@@ -318,6 +319,12 @@ const newPatientLastName = ref('')
 const newPatientEmail = ref('')
 const newPatientPhone = ref('')
 const newPatientPhoneCountry = ref(store.defaultPhoneCountry)
+const newPatientPhoneError = ref('')
+// Cleared as the number is corrected, so it is never a complaint about a
+// value that has since been changed.
+watch([newPatientPhone, newPatientPhoneCountry], () => {
+  newPatientPhoneError.value = ''
+})
 // "Nuevo paciente «mar»": what was typed becomes the name to start from.
 function startNewPatient() {
   const q = patientQuery.value.trim()
@@ -390,6 +397,15 @@ const cta = computed(() => {
 async function save() {
   error.value = ''
   if (!canBook.value) return
+  // Checked before anything is written. The number goes in as a second
+  // statement after the patient row, so a bad one let through here would
+  // leave a patient created and the desk unable to tell whether the number
+  // was filed. The field stays optional -- a walk-in who will not give a
+  // number still gets booked.
+  if (patientMode.value === 'new') {
+    newPatientPhoneError.value = phoneProblem(newPatientPhone.value, newPatientPhoneCountry.value)
+    if (newPatientPhoneError.value) return
+  }
   saving.value = true
 
   let patientId = selectedPatient.value?.id ?? ''
@@ -622,6 +638,11 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
               </select>
               <input v-model="newPatientPhone" type="tel" :placeholder="t('Phone', 'Teléfono')" class="h-11 min-w-0 flex-1 rounded-ctl border border-line-control bg-surface px-3 text-[13.5px] text-ink-700 focus:border-brand focus:outline-none" />
             </div>
+            <!-- Beside the field, not in the panel's general error slot at the
+            bottom: this body scrolls, the phone is near the top of it, and a
+            message down by the Book button can be off-screen at the moment it
+            appears. -->
+            <p v-if="newPatientPhoneError" class="col-span-2 text-[12.5px] text-danger-text">{{ newPatientPhoneError }}</p>
             <button type="button" class="col-span-2 justify-self-start text-[12.5px] font-semibold text-brand-text" @click="clearPatient">{{ t('Search existing patients instead', 'Buscar un paciente existente') }}</button>
           </div>
         </section>

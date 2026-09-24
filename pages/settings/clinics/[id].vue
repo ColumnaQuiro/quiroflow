@@ -107,6 +107,9 @@ async function loadContext() {
 onMounted(load)
 
 const dirty = computed(() => !!form.value && JSON.stringify(form.value) !== original.value)
+// Closures are whole days in the zone the clinic is saved in, not one still
+// being chosen above.
+const savedTimezone = computed(() => (original.value ? (JSON.parse(original.value) as Form).timezone : 'Europe/Madrid'))
 const problems = computed(() => (form.value ? hoursProblems(form.value.business_hours) : {}))
 const withOwnHours = computed(() => practitioners.value.filter((p) => p.ownHours))
 const withoutOwnHours = computed(() => practitioners.value.filter((p) => !p.ownHours))
@@ -260,6 +263,7 @@ const SECTIONS = computed(() => [
   { id: 'sede', label: t('The location', 'La sede') },
   { id: 'contacto', label: t('Contact', 'Contacto') },
   { id: 'horario', label: t('Hours', 'Horario') },
+  { id: 'cierres', label: t('Closures', 'Cierres') },
   { id: 'zona', label: t('Time zone', 'Zona horaria') },
   { id: 'fiscal', label: t('Billing details', 'Datos fiscales'), flag: fiscalIncomplete.value },
   { id: 'logo', label: t('Logo', 'Logotipo') },
@@ -359,7 +363,7 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
                   <span v-if="emailBad" class="text-[12.5px] font-semibold text-danger-text">{{ t('That does not look like an email address.', 'Eso no parece un email.') }}</span>
                 </label>
               </div>
-              <p :class="hint">{{ t('Shown to patients once they have booked online, and at the foot of confirmation and reminder emails. Leave them empty to show nothing.', 'Se muestran al paciente cuando reserva online y al pie de los emails de confirmación y recordatorio. Déjalos vacíos para no mostrar nada.') }}</p>
+              <p :class="hint">{{ t('Shown to patients once they have booked online and at the foot of confirmation and reminder emails, and available to WhatsApp templates and automated emails as "Clinic phone" and "Clinic address". Leave them empty to show nothing.', 'Se muestran al paciente cuando reserva online y al pie de los emails de confirmación y recordatorio, y tus plantillas de WhatsApp y emails automáticos pueden usarlos como «Teléfono de la clínica» y «Dirección de la clínica». Déjalos vacíos para no mostrar nada.') }}</p>
             </section>
 
             <!-- Horario -->
@@ -389,6 +393,15 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
                   <NuxtLink to="/settings/team" class="font-semibold text-brand-text hover:underline">{{ t('See hours in Team Members', 'Ver horarios en Miembros del equipo') }}</NuxtLink>
                 </span>
               </div>
+            </section>
+
+            <!-- Cierres y festivos -->
+            <section id="cierres" aria-labelledby="h-cierres" class="flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg-surface p-6">
+              <div class="flex flex-col gap-1">
+                <h2 id="h-cierres" class="text-[16px] font-bold text-ink-900">{{ t('Holidays and closures', 'Cierres y festivos') }}</h2>
+                <p class="text-[13px] text-ink-muted">{{ t('Whole days the location is shut, for everyone. Shown in the calendar and taken out of online booking. Saved as soon as it is added.', 'Días enteros en que la sede cierra, para todo el equipo. Se ven en el calendario y salen de la reserva online. Se guarda al añadirlo.') }}</p>
+              </div>
+              <SettingsClinicClosures :clinic-id="clinicId" :timezone="savedTimezone" />
             </section>
 
             <!-- Zona horaria y calendario -->

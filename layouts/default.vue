@@ -18,6 +18,14 @@ const route = useRoute()
 const router = useRouter()
 const showDenied = ref(route.query.denied === '1')
 
+// The router's own route, not useRoute(). In a layout, useRoute() is the route
+// of the page on screen, and it only moves once the next page has rendered.
+// The lock screen renders no page at all, so on "Choose a plan" the address
+// changed to /subscription, the page never rendered, the route never moved,
+// and the lock screen stayed -- a locked owner could not reach the one page
+// that lets them pay.
+const currentPath = computed(() => router.currentRoute.value.path)
+
 // Used to live in the sidebar, costing it a full row of width every screen
 // for a control that's really about the whole app, not sidebar navigation --
 // moved to this persistent top bar instead, alongside the account menu.
@@ -55,7 +63,7 @@ const contactHref = 'mailto:hola@quiroflow.com'
   subscription, the portal for a lapsed one), and every API it calls is gated
   on requireTeamMember rather than requireActiveAccount, so all of them keep
   working while the account is locked. -->
-  <div v-if="store.isBillingLocked && route.path !== '/subscription'" class="flex h-screen items-center justify-center bg-surface-page px-6">
+  <div v-if="store.isBillingLocked && currentPath !== '/subscription'" class="flex h-screen items-center justify-center bg-surface-page px-6">
     <div class="max-w-sm text-center">
       <h1 class="text-lg font-semibold text-gray-900">Account locked</h1>
       <p class="mt-2 text-sm text-gray-600">This QuiroFlow account is locked pending payment.</p>

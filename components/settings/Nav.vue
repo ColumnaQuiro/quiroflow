@@ -71,8 +71,10 @@ const groups = computed(() =>
   allGroups.value.map((group) => ({ ...group, items: group.items.filter((item) => !item.perm || can(item.perm)) })).filter((group) => group.items.length > 0),
 )
 
+// A section stays lit on its own detail pages -- Clinics on
+// /settings/clinics/<id>, Roles on /settings/roles/<id>.
 function isActive(to: string) {
-  return route.path === to
+  return route.path === to || route.path.startsWith(`${to}/`)
 }
 
 // This component is embedded identically at the top of ~29 settings pages

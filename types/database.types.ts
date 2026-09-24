@@ -1670,45 +1670,54 @@ export type Database = {
       clinics: {
         Row: {
           account_id: string
+          archived_at: string | null
           address: string | null
           business_hours: Json
           created_at: string
+          email: string | null
           id: string
           invoice_footer_text: string | null
           legal_name: string | null
           logo_storage_path: string | null
           name: string
           online_booking_enabled: boolean
+          phone: string | null
           slot_duration_minutes: number
           tax_id: string | null
           timezone: string
         }
         Insert: {
           account_id: string
+          archived_at?: string | null
           address?: string | null
           business_hours?: Json
           created_at?: string
+          email?: string | null
           id?: string
           invoice_footer_text?: string | null
           legal_name?: string | null
           logo_storage_path?: string | null
           name: string
           online_booking_enabled?: boolean
+          phone?: string | null
           slot_duration_minutes?: number
           tax_id?: string | null
           timezone?: string
         }
         Update: {
           account_id?: string
+          archived_at?: string | null
           address?: string | null
           business_hours?: Json
           created_at?: string
+          email?: string | null
           id?: string
           invoice_footer_text?: string | null
           legal_name?: string | null
           logo_storage_path?: string | null
           name?: string
           online_booking_enabled?: boolean
+          phone?: string | null
           slot_duration_minutes?: number
           tax_id?: string | null
           timezone?: string
@@ -5742,6 +5751,10 @@ export type Database = {
       }
     }
     Functions: {
+      clinic_location_allowance: {
+        Args: { target_account_id: string }
+        Returns: number
+      }
       accept_invite: {
         Args: { p_token: string }
         Returns: {

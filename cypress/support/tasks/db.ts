@@ -2445,6 +2445,23 @@ async function setTeamMemberHours(opts: { teamMemberId: string; hours: Record<st
   return { ok: true }
 }
 
+/** A clinic as Settings -> Clinics leaves it, or null once deleted. */
+async function clinicRow(opts: { clinicId: string }) {
+  const { data, error } = await admin
+    .from('clinics')
+    .select('id, name, address, phone, email, business_hours, timezone, slot_duration_minutes, legal_name, tax_id, invoice_footer_text, online_booking_enabled, archived_at')
+    .eq('id', opts.clinicId)
+    .maybeSingle()
+  if (error) throw error
+  return data ?? null
+}
+
+/** Moves an appointment to a status directly -- cancelling one, say, so its clinic can be archived. */
+async function setAppointmentStatus(opts: { appointmentId: string; status: string }) {
+  assertOk(await admin.from('appointments').update({ status: opts.status }).eq('id', opts.appointmentId))
+  return { ok: true }
+}
+
 /** What /account saves on a team member, read back. */
 async function teamMemberById(opts: { teamMemberId: string }) {
   const row = unwrap(
@@ -2652,6 +2669,8 @@ export const dbTasks = {
   'db:addClinic': addClinic,
   'db:recallState': recallState,
   'db:teamMemberById': teamMemberById,
+  'db:clinicRow': clinicRow,
+  'db:setAppointmentStatus': setAppointmentStatus,
   'db:setCancellationFee': setCancellationFee,
   'db:invoicesFor': invoicesFor,
   'db:appointmentById': appointmentById,

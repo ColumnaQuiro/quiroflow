@@ -10,6 +10,8 @@ interface BookingClinic {
   id: string
   name: string
   address: string | null
+  phone?: string | null
+  email?: string | null
   business_hours: Record<string, [string, string][]>
   logo_storage_path: string | null
 }
@@ -1006,6 +1008,16 @@ if (import.meta.client) {
             {{ confirmation ? new Date(confirmation.starts_at).toLocaleString('es-ES', { dateStyle: 'full', timeStyle: 'short' }) : '' }}
           </p>
           <p class="mt-1 text-sm text-ink-muted">{{ teamMember?.full_name }} · {{ clinic?.name }}</p>
+          <!-- How to reach this location if plans change -- its own phone
+               and email from Settings -> Clinics, each only when set. -->
+          <div v-if="clinic?.address || clinic?.phone || clinic?.email" class="mt-3 flex flex-col gap-0.5 text-sm text-ink-muted" data-cy="booking-clinic-contact">
+            <span v-if="clinic?.address" class="whitespace-pre-line">{{ clinic?.address }}</span>
+            <span v-if="clinic?.phone || clinic?.email">
+              <a v-if="clinic?.phone" :href="`tel:${(clinic?.phone ?? '').replace(/\s+/g, '')}`" class="font-medium text-brand-text hover:underline">{{ clinic?.phone }}</a>
+              <template v-if="clinic?.phone && clinic?.email"> · </template>
+              <a v-if="clinic?.email" :href="`mailto:${clinic?.email ?? ''}`" class="font-medium text-brand-text hover:underline">{{ clinic?.email }}</a>
+            </span>
+          </div>
           <p v-if="discountAppliedCents > 0" class="mt-1 text-sm text-success-text">Descuento aplicado: {{ formatPrice(discountAppliedCents) }}</p>
           <p
             v-if="info.account.appointment_confirmation_enabled && info.account.appointment_confirmation_channels.includes('email')"

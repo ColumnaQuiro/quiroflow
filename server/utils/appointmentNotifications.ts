@@ -6,8 +6,9 @@ import { sendPushToPatients } from './pushNotifications'
 // The server runs in UTC, so formatting a UTC Date with toLocaleString and no
 // timeZone renders the UTC wall-clock time, not the clinic's -- a booking at
 // 16:00 Madrid time (CEST, UTC+2) would render as "14:00" in a confirmation/
-// reminder message. There's no per-account timezone column yet, so this is
-// hardcoded the same way same-day-cron.post.ts hardcodes it.
+// reminder message. Each message is formatted in its own clinic's timezone
+// (clinics.timezone, set on the clinic's settings page); this is only the
+// fallback for an appointment whose clinic could not be read.
 const CLINIC_TIMEZONE = 'Europe/Madrid'
 
 // Automatic appointment confirmation/reminder sends (Settings > Communication
@@ -33,13 +34,18 @@ interface AppointmentContext {
   patientIsMinor: boolean
   patientDoNotContact: boolean
   patientPhone: string | null
+  clinicName: string
+  clinicAddress: string | null
+  clinicPhone: string | null
+  clinicEmail: string | null
+  clinicTimezone: string
 }
 
 async function loadAppointmentContext(supabase: any, appointmentId: string): Promise<AppointmentContext | null> {
   const { data } = await supabase
     .from('appointments')
     .select(
-      'id, account_id, patient_id, starts_at, team_members(full_name), appointment_types(name), patients(first_name, last_name, email, preferred_language, is_minor, do_not_contact)',
+      'id, account_id, patient_id, starts_at, team_members(full_name), appointment_types(name), patients(first_name, last_name, email, preferred_language, is_minor, do_not_contact), clinics(name, address, phone, email, timezone)',
     )
     .eq('id', appointmentId)
     .maybeSingle()
@@ -63,19 +69,27 @@ async function loadAppointmentContext(supabase: any, appointmentId: string): Pro
     patientIsMinor: !!data.patients.is_minor,
     patientDoNotContact: !!data.patients.do_not_contact,
     patientPhone,
+    clinicName: data.clinics?.name ?? '',
+    clinicAddress: data.clinics?.address ?? null,
+    clinicPhone: data.clinics?.phone ?? null,
+    clinicEmail: data.clinics?.email ?? null,
+    clinicTimezone: data.clinics?.timezone || CLINIC_TIMEZONE,
   }
 }
 
 function mergeText(template: string, ctx: AppointmentContext, escape = false): string {
   const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
   const wrap = (s: string) => (escape ? escapeHtml(s) : s)
-  const appointmentDate = new Date(ctx.startsAt).toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: CLINIC_TIMEZONE })
+  const appointmentDate = new Date(ctx.startsAt).toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: ctx.clinicTimezone })
   return template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => {
     if (key === 'first_name') return wrap(ctx.patientFirstName)
     if (key === 'last_name') return wrap(ctx.patientLastName ?? '')
     if (key === 'next_appointment') return wrap(appointmentDate)
     if (key === 'practitioner_name') return wrap(ctx.practitionerName)
     if (key === 'appointment_type_name') return wrap(ctx.appointmentTypeName)
+    if (key === 'clinic_name') return wrap(ctx.clinicName)
+    if (key === 'clinic_address') return wrap(ctx.clinicAddress ?? '')
+    if (key === 'clinic_phone') return wrap(ctx.clinicPhone ?? '')
     return ''
   })
 }
@@ -135,8 +149,8 @@ export async function resolveTemplateVariant(
 // to the patient's first name rather than '' to keep the send from failing.
 function resolveWhatsAppVariables(bodyText: string, ctx: AppointmentContext): string[] {
   const start = new Date(ctx.startsAt)
-  const dateOnly = start.toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', timeZone: CLINIC_TIMEZONE })
-  const timeOnly = start.toLocaleString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: CLINIC_TIMEZONE })
+  const dateOnly = start.toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', timeZone: ctx.clinicTimezone })
+  const timeOnly = start.toLocaleString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: ctx.clinicTimezone })
   const guesses = [ctx.patientFirstName, dateOnly, timeOnly, ctx.appointmentTypeName, ctx.practitionerName]
   const slots = new Set<string>()
   for (const m of bodyText.matchAll(/\{\{(\d+)\}\}/g)) slots.add(m[1])
@@ -149,8 +163,8 @@ function resolveWhatsAppVariables(bodyText: string, ctx: AppointmentContext): st
 // then when/with whom.
 function resolveStaffNotifyVariables(bodyText: string, ctx: AppointmentContext, patientName: string): string[] {
   const start = new Date(ctx.startsAt)
-  const dateOnly = start.toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', timeZone: CLINIC_TIMEZONE })
-  const timeOnly = start.toLocaleString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: CLINIC_TIMEZONE })
+  const dateOnly = start.toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', timeZone: ctx.clinicTimezone })
+  const timeOnly = start.toLocaleString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: ctx.clinicTimezone })
   const guesses = [patientName, ctx.patientPhone ?? '', dateOnly, timeOnly, ctx.practitionerName, ctx.appointmentTypeName]
   const slots = new Set<string>()
   for (const m of bodyText.matchAll(/\{\{(\d+)\}\}/g)) slots.add(m[1])
@@ -252,12 +266,30 @@ async function sendWhatsApp(
   }
 }
 
+// Where the appointment is and how to reach it, under the clinic's own text:
+// the location's name, address, phone and email from its settings page, each
+// only when filled in. Nothing at all when none are.
+function clinicFooter(ctx: AppointmentContext): string {
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+  const lines: string[] = []
+  if (ctx.clinicName) lines.push(`<strong style="color:#1F1F2B;">${esc(ctx.clinicName)}</strong>`)
+  if (ctx.clinicAddress) lines.push(esc(ctx.clinicAddress).replace(/\n/g, '<br>'))
+  const reach = [
+    ctx.clinicPhone ? `<a href="tel:${esc(ctx.clinicPhone.replace(/\s+/g, ''))}" style="color:#4F46E5;">${esc(ctx.clinicPhone)}</a>` : '',
+    ctx.clinicEmail ? `<a href="mailto:${esc(ctx.clinicEmail)}" style="color:#4F46E5;">${esc(ctx.clinicEmail)}</a>` : '',
+  ].filter(Boolean)
+  if (reach.length) lines.push(reach.join(' · '))
+  // A name alone says nothing the email above has not already said.
+  if (!ctx.clinicAddress && reach.length === 0) return ''
+  return `<div style="padding:16px 32px 24px;border-top:1px solid #E4E4EA;font-size:13px;line-height:1.6;color:#6B6B78;">${lines.join('<br>')}</div>`
+}
+
 async function sendEmail(ctx: AppointmentContext, subject: string, body: string): Promise<void> {
   if (!ctx.patientEmail) return
   const html = `
     <div style="background:#F4F4F6;padding:40px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
       <div style="max-width:560px;margin:0 auto;background:#FFFFFF;border-radius:14px;border:1px solid #E4E4EA;overflow:hidden;">
-        <div style="padding:24px 32px 32px;font-size:14px;line-height:1.6;color:#4A4A57;">${mergeText(body, ctx, true)}</div>
+        <div style="padding:24px 32px 32px;font-size:14px;line-height:1.6;color:#4A4A57;">${mergeText(body, ctx, true)}</div>${clinicFooter(ctx)}
       </div>
     </div>
   `
@@ -386,7 +418,7 @@ export async function notifyStaffOfOnlineBooking(supabase: any, accountId: strin
   const ctx = await loadAppointmentContext(supabase, appointmentId)
   if (!ctx) return
 
-  const when = new Date(ctx.startsAt).toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: CLINIC_TIMEZONE })
+  const when = new Date(ctx.startsAt).toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: ctx.clinicTimezone })
   const patientName = [ctx.patientFirstName, ctx.patientLastName].filter(Boolean).join(' ')
   const summary = `Nueva reserva online: ${patientName}${ctx.patientPhone ? ` (${ctx.patientPhone})` : ''} con ${ctx.practitionerName || 'un profesional'} el ${when}${ctx.appointmentTypeName ? ` (${ctx.appointmentTypeName})` : ''}.`
 

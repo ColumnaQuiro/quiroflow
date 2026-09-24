@@ -21,7 +21,8 @@ const rules: Rule[] = [
   { test: (p) => p === '/settings/team' || p === '/settings/practitioners', check: (s) => can(s, 'settings_access') && can(s, 'team_admin') },
   { test: (p) => p === '/settings/roles' || p.startsWith('/settings/roles/'), check: (s) => can(s, 'settings_access') && can(s, 'roles_admin') },
   {
-    test: (p) => ['/settings/clinics', '/settings/appointment-types', '/settings/rooms', '/settings/referral-sources', '/settings/app'].includes(p),
+    // /settings/clinics/<id> is one clinic's own page, under the same key as the list.
+    test: (p) => ['/settings/clinics', '/settings/appointment-types', '/settings/rooms', '/settings/referral-sources', '/settings/app'].includes(p) || p.startsWith('/settings/clinics/'),
     check: (s) => can(s, 'settings_access') && can(s, 'clinic_config'),
   },
   {

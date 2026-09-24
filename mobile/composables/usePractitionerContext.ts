@@ -39,7 +39,7 @@ export function usePractitionerContext() {
       loading.value = false
       return
     }
-    const { data: clinics } = await supabase.from('clinics').select('id').eq('account_id', teamMember.account_id).order('name').limit(1)
+    const { data: clinics } = await supabase.from('clinics').select('id').eq('account_id', teamMember.account_id).is('archived_at', null).order('name').limit(1)
     context.value = {
       teamMemberId: teamMember.id,
       accountId: teamMember.account_id,

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { BusinessHours } from '~/utils/businessHours'
+import { WEEK, dayRangesText } from '~/utils/clinicHours'
 import { formatEur } from '~/utils/billing'
 import type { Tables, TablesUpdate } from '~/types/database.types'
 
@@ -142,62 +144,37 @@ function embedSnippet(slug: string) {
   return `<div data-quiroflow-booking data-slug="${slug}"></div>\n<script src="${origin}/embed.js" async><\/script>`
 }
 
-// --- Clinics & Hours: per-clinic enable toggle + business hours ---
-// business_hours narrowed away from Supabase's recursive Json type here --
-// it blows up Vue's template type-checker (TS2589) when combined with v-for.
-type BookingClinic = Omit<Tables<'clinics'>, 'business_hours'> & { business_hours: Record<string, [string, string][]> }
-type Windows = [string, string][]
-const WEEKDAYS = computed(() => [
-  { key: 'mon', label: t('Mon', 'Lun') },
-  { key: 'tue', label: t('Tue', 'Mar') },
-  { key: 'wed', label: t('Wed', 'Mié') },
-  { key: 'thu', label: t('Thu', 'Jue') },
-  { key: 'fri', label: t('Fri', 'Vie') },
-  { key: 'sat', label: t('Sat', 'Sáb') },
-  { key: 'sun', label: t('Sun', 'Dom') },
-])
+// --- Clinics & Hours: per-clinic enable toggle ---
+// The hours themselves are edited on each clinic's own page
+// (Settings -> Clinics -> <clinic>): they are the calendar's and the API's too,
+// not only online booking's, and editing one object in two places is how the
+// two copies of a form drift. Shown here read-only, next to the switch.
+type BookingClinic = Pick<Tables<'clinics'>, 'id' | 'name' | 'online_booking_enabled'> & { business_hours: BusinessHours | null }
 
 const bookingClinics = ref<BookingClinic[]>([])
-const openClinicId = ref<string | null>(null)
-const editHours = ref<Record<string, Windows>>({})
-const editEnabled = ref(false)
-const savingHours = ref(false)
+const savingClinicId = ref<string | null>(null)
 const hoursError = ref('')
 
 async function loadBookingClinics() {
-  const { data } = await supabase.from('clinics').select('*').order('name')
+  const { data } = await supabase.from('clinics').select('id, name, online_booking_enabled, business_hours').is('archived_at', null).order('name')
   bookingClinics.value = (data as unknown as BookingClinic[]) ?? []
 }
 onMounted(loadBookingClinics)
 
-function openBookingEditor(c: BookingClinic) {
-  openClinicId.value = openClinicId.value === c.id ? null : c.id
-  if (openClinicId.value === c.id) {
-    editEnabled.value = c.online_booking_enabled
-    const hours = (c.business_hours as Record<string, Windows>) ?? {}
-    editHours.value = Object.fromEntries(WEEKDAYS.value.map((d) => [d.key, hours[d.key] ? hours[d.key].map((w) => [...w] as [string, string]) : []]))
-  }
-}
-
-function addWindow(day: string) {
-  editHours.value[day].push(['09:00', '17:00'])
-}
-function removeWindow(day: string, i: number) {
-  editHours.value[day].splice(i, 1)
-}
-
-async function saveBooking(clinicId: string) {
-  savingHours.value = true
-  const { error: updateError } = await supabase
-    .from('clinics')
-    .update({ online_booking_enabled: editEnabled.value, business_hours: editHours.value })
-    .eq('id', clinicId)
-  savingHours.value = false
-  if (!updateError) {
-    await loadBookingClinics()
-  } else {
+async function setBookingEnabled(c: BookingClinic, enabled: boolean) {
+  hoursError.value = ''
+  savingClinicId.value = c.id
+  const { error: updateError } = await supabase.from('clinics').update({ online_booking_enabled: enabled }).eq('id', c.id)
+  savingClinicId.value = null
+  if (updateError) {
     hoursError.value = updateError.message
+    return
   }
+  c.online_booking_enabled = enabled
+}
+
+function hoursLines(c: BookingClinic) {
+  return WEEK.map((d) => ({ key: d.key, label: t(d.en.slice(0, 3), d.es.slice(0, 3)), text: dayRangesText(c.business_hours, d.key, t('and', 'y')) }))
 }
 
 // --- Bookable Entities: eligibility / bypass / max-days / deposit per type ---
@@ -421,38 +398,24 @@ const OVERRIDABLE_STRINGS = [
 
           <!-- Clinics & Hours -->
           <div v-else-if="activeTab === 'hours'" class="mt-4 space-y-2">
-            <div v-for="c in bookingClinics" :key="c.id" class="rounded-card border border-line bg-surface shadow-card">
-              <button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left" @click="openBookingEditor(c)">
+            <div v-for="c in bookingClinics" :key="c.id" class="rounded-card border border-line bg-surface p-4 shadow-card" data-cy="booking-clinic" :data-clinic-id="c.id">
+              <div class="flex flex-wrap items-center justify-between gap-3">
                 <span class="text-[13.5px] font-[560] text-ink-700">{{ c.name }}</span>
-                <UiPill :tone="c.online_booking_enabled ? 'success' : 'neutral'">{{ c.online_booking_enabled ? t('Enabled', 'Activada') : t('Disabled', 'Desactivada') }}</UiPill>
-              </button>
-
-              <div v-if="openClinicId === c.id" class="border-t border-line-divider p-4">
                 <label class="flex items-center gap-2.5 text-[13px] text-ink-600">
-                  <SettingsToggle v-model="editEnabled" />
-                  {{ t('Enable online booking for this clinic', 'Activar la reserva online para esta clínica') }}
+                  <SettingsToggle :model-value="c.online_booking_enabled" :disabled="savingClinicId === c.id" data-cy="booking-clinic-toggle" @update:model-value="setBookingEnabled(c, $event)" />
+                  {{ t('Online booking', 'Reserva online') }}
                 </label>
-
-                <div class="mt-4 space-y-2">
-                  <p class="text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">{{ t('Business hours', 'Horario comercial') }}</p>
-                  <div v-for="d in WEEKDAYS" :key="d.key" class="flex items-start gap-3 text-[13px]">
-                    <span class="w-10 pt-1.5 text-ink-muted2">{{ d.label }}</span>
-                    <div class="flex-1 space-y-1.5">
-                      <p v-if="editHours[d.key].length === 0" class="pt-1.5 text-ink-faint">{{ t('Closed', 'Cerrado') }}</p>
-                      <div v-for="(w, i) in editHours[d.key]" :key="i" class="flex items-center gap-2">
-                        <input v-model="w[0]" type="time" class="h-8 rounded-ctl border border-line-control bg-surface px-2 text-[13px]" />
-                        <span class="text-ink-faint">–</span>
-                        <input v-model="w[1]" type="time" class="h-8 rounded-ctl border border-line-control bg-surface px-2 text-[13px]" />
-                        <button type="button" class="text-ink-faint hover:text-danger-text" @click="removeWindow(d.key, i)">✕</button>
-                      </div>
-                      <button type="button" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover" @click="addWindow(d.key)">{{ t('+ Add hours', '+ Añadir horario') }}</button>
-                    </div>
-                  </div>
-                </div>
-
-                <UiBtn variant="primary" class="mt-4" :disabled="savingHours" @click="saveBooking(c.id)">
-                  {{ savingHours ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}
-                </UiBtn>
+              </div>
+              <div class="mt-3 flex flex-wrap items-end justify-between gap-3">
+                <dl class="grid grid-cols-[48px_1fr] gap-x-2 gap-y-0.5 text-[12.5px]" data-cy="booking-clinic-hours">
+                  <template v-for="d in hoursLines(c)" :key="d.key">
+                    <dt class="text-ink-muted2">{{ d.label }}</dt>
+                    <dd :class="d.text ? 'text-ink-700' : 'text-ink-faint'">{{ d.text ?? t('Closed', 'Cerrado') }}</dd>
+                  </template>
+                </dl>
+                <NuxtLink :to="`/settings/clinics/${c.id}#horario`" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover" data-cy="booking-clinic-edit-hours">
+                  {{ t('Edit hours in the clinic', 'Editar el horario en la sede') }}
+                </NuxtLink>
               </div>
             </div>
             <p v-if="bookingClinics.length === 0" class="px-4 py-6 text-center text-[13px] text-ink-faint">{{ t('No clinics yet.', 'Todavía no hay clínicas.') }}</p>

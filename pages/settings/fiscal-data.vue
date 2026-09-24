@@ -53,7 +53,7 @@ async function save() {
         <SettingsNav />
         <div class="min-w-0 max-w-[660px] flex-1">
           <p class="text-[13px] text-ink-muted2">
-            {{ t('Legal name, tax ID, and address shown on facturas and receipts, plus a footer note printed at the bottom of both. Required for a factura to be fiscally valid.', 'Nombre legal, NIF/CIF y dirección que aparecen en facturas y recibos, además de una nota de pie impresa al final de ambos. Necesarios para que una factura sea fiscalmente válida.') }}
+            {{ t('Legal name, tax ID, and address shown on facturas and receipts, plus a footer note printed at the bottom of both. Required for a factura to be fiscally valid. Changes apply to facturas issued from now on; a factura already issued keeps the details it was issued with.', 'Nombre legal, NIF/CIF y dirección que aparecen en facturas y recibos, además de una nota de pie impresa al final de ambos. Necesarios para que una factura sea fiscalmente válida. Los cambios se aplican a las facturas que se emitan a partir de ahora; una factura ya emitida conserva los datos con los que se emitió.') }}
           </p>
 
           <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">

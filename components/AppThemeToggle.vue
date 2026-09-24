@@ -1,12 +1,13 @@
 <script setup lang="ts">
-// Quick access next to the account menu -- the full picker (with
-// descriptions) still lives on /account, this is just the fast path so
-// switching doesn't need a page navigation. See composables/useTheme.ts.
+// The theme switch, beside the account menu -- the only place the theme is
+// chosen now (/account no longer repeats it). See composables/useTheme.ts.
 // `resolved` is deliberately not read here. Which icon to show is decided in
 // CSS off the data-theme attribute instead -- see the style block below for
 // why.
 const { preference, setPreference } = useTheme()
 const t = useT()
+const supabase = useSupabaseClient()
+const store = useAccountStore()
 
 const open = ref(false)
 const menuRef = ref<HTMLElement | null>(null)
@@ -23,9 +24,17 @@ function onDocumentClick(e: MouseEvent) {
 onMounted(() => document.addEventListener('click', onDocumentClick))
 onUnmounted(() => document.removeEventListener('click', onDocumentClick))
 
-function choose(value: 'light' | 'dark' | 'system') {
+// Saved to the team member as well as the browser. The account store
+// re-applies team_members.theme_preference on every load (stores/account.ts),
+// so a choice kept only in localStorage would be undone by the next reload --
+// and would not follow the person to their other devices.
+async function choose(value: 'light' | 'dark' | 'system') {
   setPreference(value)
   open.value = false
+  const tm = store.teamMember
+  if (!tm || tm.theme_preference === value) return
+  tm.theme_preference = value
+  await supabase.from('team_members').update({ theme_preference: value }).eq('id', tm.id)
 }
 </script>
 
@@ -35,6 +44,8 @@ function choose(value: 'light' | 'dark' | 'system') {
       type="button"
       class="flex h-7 w-7 items-center justify-center rounded-ctl border border-line-control bg-chip-bg text-ink-muted hover:bg-surface-subtle"
       :title="t('Appearance', 'Apariencia')"
+      :aria-label="t('Appearance', 'Apariencia')"
+      data-cy="theme-toggle"
       @click="open = !open"
     >
       <svg class="theme-icon theme-icon--dark" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
@@ -50,6 +61,7 @@ function choose(value: 'light' | 'dark' | 'system') {
         v-for="opt in options"
         :key="opt.value"
         type="button"
+        :data-cy="`theme-option-${opt.value}`"
         class="flex w-full items-center justify-between px-3 py-1.5 text-left text-[13px]"
         :class="preference === opt.value ? 'font-medium text-brand-text' : 'text-ink-500 hover:bg-surface-subtle'"
         @click="choose(opt.value)"

@@ -134,4 +134,40 @@ describe('Booking from the create panel', () => {
       cy.get('[data-cy=create-sheet]').should('not.exist')
     })
   })
+
+  // The number a new patient is created with here goes in as a SECOND
+  // statement after the patient row, so a bad one let through would leave a
+  // patient created and the desk unable to tell whether it was filed. The
+  // field stays optional -- a walk-in who will not give a number still gets
+  // booked; this only says that something typed into it has to be a number.
+  it('refuses a new patient whose phone is not a phone number', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:createAppointmentType', { accountId: account.accountId, name: 'Ajuste', durationMinutes: 30 })
+      cy.login(account.email, account.password)
+      cy.visit('/calendar')
+      cy.contains('select', 'Work week').select('day')
+      openNewAppointmentPanel()
+
+      cy.get('[data-cy=create-sheet]').within(() => {
+        cy.get('[data-cy=create-patient-search]').type('Telefono Malo')
+        cy.get('[data-cy=create-new-patient]').click()
+        cy.get('input[type="tel"]').type('6')
+        cy.contains('[data-cy=create-type]', 'Ajuste').click()
+        cy.get('[data-cy=create-submit]').click()
+
+        cy.contains('A Spanish number has 9 digits.').should('be.visible')
+      })
+      // Refused before anything was written: the panel is still open and no
+      // block landed on the grid.
+      cy.get('[data-cy=create-sheet]').should('exist')
+      cy.get('[data-cy=appt-block]').should('not.exist')
+
+      cy.get('[data-cy=create-sheet]').within(() => {
+        cy.get('input[type="tel"]').clear().type('600123456')
+        cy.get('[data-cy=create-submit]').click()
+      })
+      cy.get('[data-cy=create-sheet]').should('not.exist')
+      cy.contains('[data-cy=appt-block]', 'Telefono').should('exist')
+    })
+  })
 })

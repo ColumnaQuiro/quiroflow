@@ -42,13 +42,26 @@ export interface OwingInvoice {
 export interface OwingPayment {
   invoice_id: string | null
   amount_cents: number
+  method?: string | null
 }
 
 export function outstandingCentsOf(invoices: OwingInvoice[], payments: OwingPayment[]): number {
   const allocated = new Map<string, number>()
   let paidCents = 0
   for (const p of payments) {
-    paidCents += p.amount_cents
+    // Allocation and the money term treat a 'credit' payment differently, and
+    // both readings are right.
+    //
+    // Against a particular invoice it really did settle that charge, wholly or
+    // in part, so it belongs in `allocated` -- a 50,00 invoice half paid out of
+    // credit owes 25,00, not 50,00.
+    //
+    // It is not money arriving, though: it moves euros the patient already
+    // handed over, counted once when they did (see
+    // 20260924095218_credit_payment_is_never_money.sql). Adding it to paidCents
+    // as well would let spending credit on a BONO shrink the money term and
+    // quietly cancel an unpaid invoice it never touched.
+    if (p.method !== 'credit') paidCents += p.amount_cents
     if (!p.invoice_id) continue
     allocated.set(p.invoice_id, (allocated.get(p.invoice_id) ?? 0) + p.amount_cents)
   }

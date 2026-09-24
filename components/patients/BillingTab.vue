@@ -1380,6 +1380,27 @@ async function unlinkPayment(paymentId: string) {
 // bono had already paid for; see 0161 for the ledger side of undoing it.
 const loggingSessionFor = ref<string | null>(null)
 
+// Which bono's "Log session" panel is open, and the date staff picked in it.
+// Defaults to today so the common case (logging the visit that just
+// happened) needs no extra click -- the date field only matters for
+// catching up on a session from an earlier day.
+const logSessionForId = ref<string | null>(null)
+const logSessionDate = ref('')
+
+function todayDateStr(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function openLogSession(purchase: PackagePurchaseRow) {
+  if (logSessionForId.value === purchase.id) {
+    logSessionForId.value = null
+    return
+  }
+  logSessionForId.value = purchase.id
+  logSessionDate.value = todayDateStr()
+}
+
 interface UncoveredVisit {
   id: string
   starts_at: string
@@ -1442,7 +1463,7 @@ async function findUncoveredVisitToday(): Promise<UncoveredVisit | null> {
   }
 }
 
-async function useSession(purchase: PackagePurchaseRow) {
+async function useSession(purchase: PackagePurchaseRow, dateStr: string = todayDateStr()) {
   if (purchase.sessions_used >= purchase.sessions_total || loggingSessionFor.value) return
   // The button is disabled for a closed bono, but the counter is not what
   // makes it unusable -- a closed bono keeps whatever sessions were left on it
@@ -1456,7 +1477,13 @@ async function useSession(purchase: PackagePurchaseRow) {
   // usePackageSession() reprices a package-covered visit to.
   const perSessionCents = Math.round(purchase.price_cents / purchase.sessions_total)
 
-  const visit = await findUncoveredVisitToday()
+  // findUncoveredVisitToday only ever looks at today's calendar (it starts
+  // from midnight today), so it has nothing useful to say for a backdated
+  // entry -- staff catching up on a session from an earlier day is always
+  // recording a visit that was never booked here, the same as the
+  // "genuinely off-calendar" branch below already handles.
+  const isToday = dateStr === todayDateStr()
+  const visit = isToday ? await findUncoveredVisitToday() : null
   const visitLabel = visit
     ? `${visit.typeName ?? t('Visit', 'Visita')} · ${new Date(visit.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
     : null
@@ -1474,12 +1501,18 @@ async function useSession(purchase: PackagePurchaseRow) {
         `This uses one session against that visit and charges ${money(perSessionCents)} against the bono the patient already paid for.${voidNote}`,
         `Esto consume una sesión de esa visita y carga ${money(perSessionCents)} contra el bono que el paciente ya pagó.${voidNote}`,
       )
-    : t(
-        'No completed visit today has this bono against it, so a visit will be recorded now, charged against the bono the patient already paid for.',
-        'Ninguna visita completada de hoy tiene este bono asociado, así que se registrará una visita ahora, cargada contra el bono que el paciente ya pagó.',
-      )
+    : isToday
+      ? t(
+          'No completed visit today has this bono against it, so a visit will be recorded now, charged against the bono the patient already paid for.',
+          'Ninguna visita completada de hoy tiene este bono asociado, así que se registrará una visita ahora, cargada contra el bono que el paciente ya pagó.',
+        )
+      : t(
+          `A visit will be recorded on ${dateStr}, charged against the bono the patient already paid for.`,
+          `Se registrará una visita el ${dateStr}, cargada contra el bono que el paciente ya pagó.`,
+        )
   const target = visitLabel ? ` ${t('against', 'contra')} ${visitLabel}` : ''
-  if (!confirm(`${t('Log a session for', 'Registrar una sesión de')} ${money(perSessionCents)}${target} ${t('from', 'de')} "${purchase.package_name}"? ${body}`)) return
+  const when = isToday ? '' : ` ${t('on', 'el')} ${dateStr}`
+  if (!confirm(`${t('Log a session for', 'Registrar una sesión de')} ${money(perSessionCents)}${target}${when} ${t('from', 'de')} "${purchase.package_name}"? ${body}`)) return
 
   loggingSessionFor.value = purchase.id
   try {
@@ -1501,14 +1534,18 @@ async function useSession(purchase: PackagePurchaseRow) {
     }
 
     const now = new Date()
+    // The invented appointment's own clock: "now" for the common case, noon
+    // on the picked day for a backdated entry -- noon rather than midnight
+    // so a timezone conversion can never push it onto the day before.
+    const visitTime = isToday ? now : new Date(`${dateStr}T12:00:00`)
     let appointmentId = visit?.id ?? null
-    let usedAt = visit?.starts_at ?? now.toISOString()
+    let usedAt = visit?.starts_at ?? visitTime.toISOString()
 
     if (!appointmentId) {
       // Genuinely off-calendar: a visit that happened without ever being
       // booked. Only then is one invented -- no appointment type to take a
       // duration from, so the schema's own default stands in.
-      const ends = new Date(now.getTime() + 30 * 60000)
+      const ends = new Date(visitTime.getTime() + 30 * 60000)
       const { data: appointment, error: appointmentError } = await supabase
         .from('appointments')
         .insert({
@@ -1522,7 +1559,7 @@ async function useSession(purchase: PackagePurchaseRow) {
           // treating practitioner's income. The signed-in member is only the
           // last resort, for a patient with nobody assigned.
           practitioner_id: patientDefaultPractitionerId.value ?? store.teamMember?.id ?? null,
-          starts_at: now.toISOString(),
+          starts_at: visitTime.toISOString(),
           ends_at: ends.toISOString(),
           status: 'completed',
         })
@@ -1551,7 +1588,7 @@ async function useSession(purchase: PackagePurchaseRow) {
         return
       }
       appointmentId = appointment.id
-      usedAt = now.toISOString()
+      usedAt = visitTime.toISOString()
     } else if (visit?.unpaidInvoice) {
       // One visit, one charge. The bono paid for it, so the invoice raised
       // against it goes -- void rather than deleted, keeping the number in
@@ -1610,6 +1647,7 @@ async function useSession(purchase: PackagePurchaseRow) {
     // the campaigns hanging off those events (review requests, confirmations)
     // would message the patient about it days late.
     await loadAll()
+    logSessionForId.value = null
   } finally {
     loggingSessionFor.value = null
   }
@@ -2117,8 +2155,8 @@ function money(cents: number) {
             four different colors, which read as decoration rather than
             controls. -->
             <div class="mt-3 flex flex-wrap items-center gap-1.5 border-t border-line-divider pt-3">
-              <UiBtn size="sm" variant="primary" :disabled="p.is_closed || p.sessions_used >= p.sessions_total || loggingSessionFor !== null" @click="useSession(p)">
-                {{ loggingSessionFor === p.id ? t('Logging…', 'Registrando…') : t('Log session', 'Registrar sesión') }}
+              <UiBtn size="sm" variant="primary" :disabled="p.is_closed || p.sessions_used >= p.sessions_total || loggingSessionFor !== null" @click="openLogSession(p)">
+                {{ loggingSessionFor === p.id ? t('Logging…', 'Registrando…') : t('Log session', 'Registrar sesión') }}…
               </UiBtn>
               <!-- Everything below manages the PURCHASE itself (its invoice,
               who it's shared with, deleting it) -- only the owner's own card
@@ -2137,6 +2175,22 @@ function money(cents: number) {
                 </UiBtn>
                 <UiIconBtn v-if="can('billing_config')" icon="trash" tone="danger" class="ml-auto" :label="t('Delete', 'Eliminar')" @click="deletePackagePurchase(p)" />
               </template>
+            </div>
+
+            <!-- Defaults to today, so the common case (the session that just
+            happened) is one click. The date only needs changing to catch up
+            on a visit from an earlier day -- see useSession's isToday branch
+            for what changes once it's not today. -->
+            <div v-if="logSessionForId === p.id" class="mt-2.5 rounded-ctl border border-line-divider bg-surface-subtle p-2.5">
+              <div class="flex flex-wrap items-end gap-2">
+                <div>
+                  <label class="block text-[11px] text-ink-muted">{{ t('Date', 'Fecha') }}</label>
+                  <input v-model="logSessionDate" type="date" :max="todayDateStr()" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]" />
+                </div>
+                <UiBtn size="sm" variant="primary" :disabled="!logSessionDate || loggingSessionFor !== null" @click="useSession(p, logSessionDate)">
+                  {{ loggingSessionFor === p.id ? t('Logging…', 'Registrando…') : t('Log session', 'Registrar sesión') }}
+                </UiBtn>
+              </div>
             </div>
 
             <div v-if="openSharesPackageId === p.id" class="mt-2.5 rounded-ctl border border-line-divider bg-surface-subtle p-2.5">

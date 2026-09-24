@@ -101,4 +101,32 @@ describe('What a patient owes', () => {
     const payments: OwingPayment[] = [{ invoice_id: 'a', amount_cents: 10000 }]
     expect(outstandingCentsOf(invoices, payments)).toBe(0)
   })
+
+  it('still owes the rest of an invoice that credit only part-settled', () => {
+    // 22,00 of credit put against a 44,00 charge. The credit payment is not
+    // money arriving -- it moves euros counted when they came in -- but it did
+    // settle half this charge, so the remainder is what is owed.
+    const invoices = [invoice({ id: 'a', total_cents: 4400 })]
+    const payments: OwingPayment[] = [
+      { invoice_id: null, amount_cents: 2200, method: 'card' },
+      { invoice_id: 'a', amount_cents: 2200, method: 'credit' },
+    ]
+    expect(outstandingCentsOf(invoices, payments)).toBe(2200)
+  })
+
+  it('does not let credit spent on a bono cancel an unpaid invoice', () => {
+    // Teresa Davis's shape: money on account that never became an
+    // account_credits row, then spent on a bono -- which raises no invoice, so
+    // the credit payment carries none either. Counting it as money arriving
+    // would read her 44,00 charge as settled by a bono she bought instead.
+    const invoices = [invoice({ id: 'a', total_cents: 4400 })]
+    const payments: OwingPayment[] = [
+      { invoice_id: null, amount_cents: 4400, method: 'card' },
+      { invoice_id: null, amount_cents: 4400, method: 'credit' },
+    ]
+    // The card payment alone covers the charge, so nothing is owed either way;
+    // what matters is that it is the CARD money doing it.
+    expect(outstandingCentsOf(invoices, payments)).toBe(0)
+    expect(outstandingCentsOf(invoices, [{ invoice_id: null, amount_cents: 4400, method: 'credit' }])).toBe(4400)
+  })
 })

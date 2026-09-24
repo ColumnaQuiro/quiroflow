@@ -247,15 +247,18 @@ const rows = computed<LedgerRow[]>(() => {
     return Math.max(0, Math.min(paymentRoom, paidForInvoice - refundedAgainstInvoice))
   }
 
-  // Same rule as usePatientFinancialSummary: a 'credit' payment against a
-  // voided invoice is not money. Its invoice contributes no debit (see
-  // debitCents above), so leaving the payment in the Credit column shows a
-  // credit line with nothing facing it and a running balance that disagrees
-  // with the summary strip. Cash/card on a void invoice still shows -- that is
-  // real money collected against a cancelled charge, and it should be visible.
-  const countablePayments = props.payments.filter(
-    (p) => !(p.method === 'credit' && props.invoices.find((i) => i.id === p.invoice_id)?.status === 'void'),
-  )
+  // Same rule as usePatientFinancialSummary, unconditionally now: a 'credit'
+  // payment is never money, void invoice or not, because most of what it pays
+  // for (a bono, a membership) raises no invoice at all to be void or
+  // otherwise -- see that composable for why the narrower, invoice-only
+  // version of this rule still let a credit-method payment inflate the
+  // running balance whenever the credit being spent was never its own
+  // account_credits row (Teresa Davis, EUR 240, 24 Sep 2026). Leaving the
+  // payment in the Credit column here shows a credit line with nothing
+  // facing it and a running balance that disagrees with the summary strip;
+  // what actually happened is still visible, on its own account_credits row
+  // a few lines below ("Applied to ..."), which this filter does not touch.
+  const countablePayments = props.payments.filter((p) => p.method !== 'credit')
 
   const paymentRows: LedgerRow[] = countablePayments.map((p) => ({
     key: `payment-${p.id}`,

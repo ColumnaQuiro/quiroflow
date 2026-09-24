@@ -121,6 +121,7 @@ export const NOT_SWEPT_HERE: Record<string, string> = {
   '/card-saved': 'Stripe redirect landing page, reached only after a real card setup',
   '/join': 'needs a live invite token; the invite flow is covered by rbac-roles.cy.ts',
   '/reset-password': 'needs a live password-recovery token from an email',
+  '/two-factor': 'only shown to a session owing an authenticator code; covered by cypress/e2e/auth/two-factor.cy.ts',
   '/legal/privacy': 'static legal copy, no app behaviour',
   '/legal/terms': 'static legal copy, no app behaviour',
   '/settings/patient-app': 'redirects to /settings/app; asserted in settings/app-store-links.cy.ts',

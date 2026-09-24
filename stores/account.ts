@@ -46,6 +46,9 @@ export const useAccountStore = defineStore('account', {
     // fallback. Hardcoded 'ES' everywhere before this, which quietly made
     // every number Spanish for any clinic that isn't.
     defaultPhoneCountry: 'ES' as string,
+    // The clinic requires every team member to sign in with an
+    // authenticator-app code (Settings > Team Members).
+    requireTwoFactor: false,
     clinics: [] as Clinic[],
     currentClinicId: null as string | null,
     permissions: {} as Record<string, PermissionValue>,
@@ -114,7 +117,7 @@ export const useAccountStore = defineStore('account', {
       const { data: boot } = await supabase.rpc('get_my_bootstrap')
       const bootstrap = (boot ?? {}) as unknown as {
         team_member: TeamMember | null
-        account: { name: string; slug: string; whatsapp_confirmation_template_name: string | null; whatsapp_recall_template_name: string | null; scheduling_policy_fee_cents: number | null; default_phone_country: string | null } | null
+        account: { name: string; slug: string; whatsapp_confirmation_template_name: string | null; whatsapp_recall_template_name: string | null; scheduling_policy_fee_cents: number | null; default_phone_country: string | null; require_two_factor?: boolean } | null
         clinics: Clinic[]
         permissions: Record<string, PermissionValue>
         subscription: { status: string; trial_ends_at: string | null; growth_addon?: boolean; plan_id?: string | null; comped?: boolean; has_stripe_subscription?: boolean } | null
@@ -146,6 +149,7 @@ export const useAccountStore = defineStore('account', {
       this.whatsappRecallTemplateName = account?.whatsapp_recall_template_name ?? ''
       this.schedulingPolicyFeeCents = account?.scheduling_policy_fee_cents ?? null
       this.defaultPhoneCountry = account?.default_phone_country || 'ES'
+      this.requireTwoFactor = account?.require_two_factor ?? false
       this.clinics = (clinics as Clinic[]) ?? []
       this.permissions = (permissions as Record<string, PermissionValue>) ?? {}
       this.subscriptionStatus = subscription?.status ?? null
@@ -176,6 +180,7 @@ export const useAccountStore = defineStore('account', {
       this.whatsappConfirmationTemplateName = ''
       this.whatsappRecallTemplateName = ''
       this.schedulingPolicyFeeCents = null
+      this.requireTwoFactor = false
       this.clinics = []
       this.currentClinicId = null
       this.permissions = {}

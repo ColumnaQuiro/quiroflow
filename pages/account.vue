@@ -95,6 +95,37 @@ async function changePassword() {
   showToast('Password updated.')
 }
 
+// Two-factor login. Each person sets it up on their own login, the way
+// PracticeHub does it; a clinic can also require it of everyone (Settings >
+// Team Members), in which case it cannot be removed here.
+const twoFactor = useTwoFactor()
+const twoFactorEnabled = ref<boolean | null>(null)
+const settingUpTwoFactor = ref(false)
+const removingTwoFactor = ref(false)
+
+onMounted(async () => {
+  twoFactorEnabled.value = await twoFactor.isEnabled()
+})
+
+function onTwoFactorEnabled() {
+  settingUpTwoFactor.value = false
+  twoFactorEnabled.value = true
+  showToast(t('Two-factor authentication is on.', 'La verificación en dos pasos está activada.'))
+}
+
+async function removeTwoFactor() {
+  if (!confirm(t('Turn off two-factor authentication? Signing in will only need your password.', '¿Desactivar la verificación en dos pasos? Para iniciar sesión solo necesitarás tu contraseña.'))) return
+  removingTwoFactor.value = true
+  const failure = await twoFactor.remove()
+  removingTwoFactor.value = false
+  if (failure) {
+    showToast(failure, 'error')
+    return
+  }
+  twoFactorEnabled.value = false
+  showToast(t('Two-factor authentication is off.', 'La verificación en dos pasos está desactivada.'))
+}
+
 const deletingAccount = ref(false)
 async function deleteAccount() {
   if (!confirm("Delete your account? This signs you out and revokes your login immediately. This can't be undone by you -- an owner would need to re-invite you to come back.")) return
@@ -215,6 +246,32 @@ async function deleteAccount() {
         </UiBtn>
       </div>
     </form>
+
+    <div class="space-y-3 rounded-card border border-line bg-surface p-4 shadow-card" data-testid="two-factor-card">
+      <div class="flex items-center justify-between gap-3">
+        <h2 class="text-sm font-semibold text-ink-900">{{ t('Two-Factor Authentication', 'Verificación en Dos Pasos') }}</h2>
+        <UiPill v-if="twoFactorEnabled" tone="success">{{ t('On', 'Activada') }}</UiPill>
+        <UiPill v-else-if="twoFactorEnabled === false" tone="neutral">{{ t('Off', 'Desactivada') }}</UiPill>
+      </div>
+      <p class="text-[12.5px] text-ink-muted2">
+        {{ t('Ask for a 6-digit code from an authenticator app on your phone every time you sign in, so a stolen password is not enough on its own.', 'Pide un código de 6 dígitos de una app de autenticación en tu móvil cada vez que inicias sesión, para que una contraseña robada no baste por sí sola.') }}
+      </p>
+
+      <AuthTwoFactorEnroll v-if="settingUpTwoFactor" @enabled="onTwoFactorEnabled" @cancel="settingUpTwoFactor = false" />
+
+      <template v-else-if="twoFactorEnabled">
+        <p v-if="store.requireTwoFactor" class="text-[12.5px] text-ink-muted">
+          {{ t('Your clinic requires two-factor authentication, so it stays on.', 'Tu clínica exige la verificación en dos pasos, así que permanece activada.') }}
+        </p>
+        <UiBtn v-else type="button" variant="secondary" :disabled="removingTwoFactor" @click="removeTwoFactor">
+          {{ removingTwoFactor ? t('Turning off…', 'Desactivando…') : t('Turn off', 'Desactivar') }}
+        </UiBtn>
+      </template>
+
+      <UiBtn v-else-if="twoFactorEnabled === false" type="button" variant="primary" @click="settingUpTwoFactor = true">
+        {{ t('Set up two-factor', 'Configurar verificación en dos pasos') }}
+      </UiBtn>
+    </div>
 
     <div class="space-y-3 rounded-card border border-danger-border bg-danger-bg p-4">
       <h2 class="text-sm font-semibold text-danger-text">Delete Account</h2>

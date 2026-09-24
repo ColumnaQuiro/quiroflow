@@ -414,7 +414,12 @@ async function addPaymentMethod() {
   // that does not whenever Stripe is unreachable or unconfigured, and would be
   // sent to Checkout to buy a subscription it already has. stripe_customer_id
   // is the same fact portal-session itself gates on, read from our own table.
-  if (sub?.stripe_customer_id) {
+  //
+  // Except once that subscription has ended. The customer survives a
+  // cancellation, but the portal can only manage a subscription, never start
+  // one -- so a cancelled account sent there had a card form and nothing to
+  // attach it to. Checkout reuses the same customer (subscribe.post.ts).
+  if (sub?.stripe_customer_id && state.value !== 'canceled') {
     openStripePortal()
     return
   }
@@ -649,7 +654,7 @@ async function addPaymentMethod() {
                  who cannot reach "Cancel subscription" because of that has no
                  way out of a plan they are paying for. -->
             <SubscriptionStripeHandoffCard
-              v-if="subscription.stripe_subscription_id"
+              v-if="subscription.stripe_subscription_id && state !== 'canceled'"
               :customer-since="subscription.created_at"
               :access-ends-at="billingInfo?.nextPaymentDate ?? null"
               @portal="openStripePortal"

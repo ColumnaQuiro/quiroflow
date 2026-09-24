@@ -1,3 +1,5 @@
+import type { TwoFactorGate } from './useTwoFactor'
+
 export interface IdentityPatient {
   id: string
   first_name: string
@@ -22,7 +24,12 @@ export function useIdentity() {
 
   const patient = ref<IdentityPatient | null>(null)
   const teamMember = ref<IdentityTeamMember | null>(null)
+  // Not 'ok' while this login still owes an authenticator code -- see
+  // useTwoFactor. Callers show the code prompt (or the set-up) instead of
+  // treating the person as unlinked.
+  const twoFactor = ref<TwoFactorGate>('ok')
   const loading = ref(true)
+  const { gate } = useTwoFactor()
 
   async function queryIdentity(userId: string) {
     const [{ data: p }, { data: tm }] = await Promise.all([
@@ -40,6 +47,18 @@ export function useIdentity() {
       return
     }
     loading.value = true
+    // Before any read. Until the code is in, the database hides this
+    // person's patients AND team_members rows, and "neither" is what sends
+    // the claim_patient_profile() call below looking for a patients row to
+    // link to them -- a staff member must never be claimed as a patient
+    // because their second factor was pending.
+    twoFactor.value = await gate()
+    if (twoFactor.value !== 'ok') {
+      patient.value = null
+      teamMember.value = null
+      loading.value = false
+      return
+    }
     // Right after a sign-in transition, the reactive `user` can update a tick
     // before the client's internal session (and thus the auth header on
     // subsequent requests) has fully settled -- querying immediately can
@@ -80,5 +99,5 @@ export function useIdentity() {
 
   watch(user, load, { immediate: true })
 
-  return { patient, teamMember, loading, reload: load }
+  return { patient, teamMember, twoFactor, loading, reload: load }
 }

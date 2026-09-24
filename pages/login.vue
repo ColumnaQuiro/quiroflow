@@ -2,6 +2,7 @@
 definePageMeta({ layout: false })
 
 const supabase = useSupabaseClient()
+const { gate } = useTwoFactor()
 const email = ref('')
 const password = ref('')
 const error = ref('')
@@ -14,12 +15,18 @@ async function onSubmit() {
     email: email.value,
     password: password.value,
   })
-  loading.value = false
   if (signInError) {
+    loading.value = false
     error.value = signInError.message
     return
   }
-  await navigateTo('/dashboard')
+  // Asked here rather than left to middleware/account.global.ts: straight
+  // after signInWithPassword, useSupabaseUser() has not caught up yet, so the
+  // middleware sees nobody signed in and waves /dashboard through without
+  // ever reaching its two-factor check. The session itself is already here.
+  const twoFactor = await gate()
+  loading.value = false
+  await navigateTo(twoFactor === 'ok' ? '/dashboard' : '/two-factor')
 }
 </script>
 

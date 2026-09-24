@@ -193,6 +193,41 @@ legal retention survive. A hand-run `delete from accounts` on an account
 holding facturas is refused — by the `factura_records` append-only trigger, on
 the `account_id` cascade — and was before this change too.
 
+## Two-factor login is enforced by the database, one table at a time
+
+Two-factor login (an authenticator-app code after the password; set up per
+person in Account Settings, optionally required per clinic in Settings →
+Team Members) is Supabase Auth's own TOTP MFA. What makes it more than a
+redirect is `20260923174910_two_factor_login.sql`: every table carries a
+**restrictive** policy, `"two factor when required"`, that refuses a
+password-only (`aal1`) session whenever two-factor applies to that person.
+A stolen password used straight against PostgREST gets empty results, not
+the clinic's patients.
+
+That migration covered the tables that existed when it ran. **A new table
+needs one more line in its own migration**, or a password alone reads it:
+
+```sql
+select public.require_two_factor_on('public.my_new_table');
+```
+
+`npm run check:rls-two-factor` (part of `preflight`) fails a migration that
+enables RLS on a table without it. Security-definer RPCs bypass RLS, so the
+restrictive policies do not reach them; `get_my_bootstrap` checks
+`mfa_satisfied()` itself, and a new definer RPC that returns clinic data
+should too.
+
+The app side reads `get_my_two_factor_gate()` **before** anything else
+(`middleware/account.global.ts`, and `useIdentity` on mobile). Order
+matters: under a pending second factor every read comes back empty, and an
+empty `team_members` read otherwise means "send them to onboarding" on web
+and "claim them as a patient" on mobile.
+
+A clinic that has locked itself out (owner lost their phone, no other
+admin) is recovered with the service role: delete the owner's row from
+`auth.mfa_factors`, or `update accounts set require_two_factor = false`.
+The guard trigger lets both through when there is no `auth.uid()`.
+
 ## Deploying — a published release, via GitHub Actions
 
 **Merging does not deploy.** `.github/workflows/deploy.yml` runs when a

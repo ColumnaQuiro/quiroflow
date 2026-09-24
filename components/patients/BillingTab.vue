@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { formatEur, formatLongDate } from '~/utils/billing'
+import { formatEur, formatLongDate, formatShortDate } from '~/utils/billing'
 import { normalizeSearchTerm } from '~/utils/searchText'
 import { bonoOwedCents } from '~/utils/bonoOwed'
 import { settleInvoiceIfCovered } from '~/utils/settleInvoice'
+import { loadUnloggedVisits, localDateStr, type LogSessionChoice, type UnloggedVisit } from '~/utils/unloggedVisits'
 
 const props = defineProps<{ patientId: string; openPaymentTrigger?: boolean; refundInvoiceId?: string | null }>()
 const emit = defineEmits<{ paymentTriggerConsumed: [] }>()
@@ -704,7 +705,7 @@ async function loadAll() {
   // everything back in sync afterward, so this stays a single entry point --
   // it just fans out to independently-resolving loaders instead of one
   // Promise.all gating a single `loading` flag.
-  await Promise.all([loadLedger(), loadPackages(), loadMemberships(), loadCard(), ensureBillingTemplatesLoaded()])
+  await Promise.all([loadLedger(), loadPackages(), loadMemberships(), loadCard(), ensureBillingTemplatesLoaded(), loadUnlogged()])
 }
 
 // AccountLedger's own transfer-credit action mutates account_credits
@@ -1380,89 +1381,43 @@ async function unlinkPayment(paymentId: string) {
 // bono had already paid for; see 0161 for the ledger side of undoing it.
 const loggingSessionFor = ref<string | null>(null)
 
-// Which bono's "Another date" panel is open, and the date picked in it.
-// "Log session" itself stays a single click on today -- this is only the
-// catching-up path, for a visit from an earlier day that never got logged.
-const logSessionForId = ref<string | null>(null)
-const logSessionDate = ref('')
-
-function todayDateStr(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+// Visits nothing has paid for yet -- no bono session, no paid receipt. The
+// Log session dialog offers these as what the session is for, and the bono
+// card says when there are any, so a visit that went unlogged is visible
+// the next time anyone opens the patient rather than only when they happen
+// to look for it. See utils/unloggedVisits.ts.
+const unloggedVisits = ref<UnloggedVisit[]>([])
+const loadingUnlogged = ref(false)
+async function loadUnlogged() {
+  loadingUnlogged.value = true
+  try {
+    unloggedVisits.value = await loadUnloggedVisits(supabase, props.patientId)
+  } finally {
+    loadingUnlogged.value = false
+  }
 }
 
+// The bono the Log session dialog is open for.
+const logDialogFor = ref<PackagePurchaseRow | null>(null)
 function openLogSession(purchase: PackagePurchaseRow) {
-  if (logSessionForId.value === purchase.id) {
-    logSessionForId.value = null
-    return
-  }
-  logSessionForId.value = purchase.id
-  logSessionDate.value = todayDateStr()
+  logDialogFor.value = purchase
+  // Fresh, not the copy from page load: someone may have checked the patient
+  // in, or logged a session from the calendar, since.
+  loadUnlogged()
 }
-
-interface UncoveredVisit {
-  id: string
-  starts_at: string
-  practitionerId: string | null
-  typeName: string | null
-  unpaidInvoice: { id: string; invoice_number: string | null; total_cents: number } | null
-}
-
-// The visit this session most likely belongs to: an appointment today that
-// the patient has arrived for and that no bono session covers yet.
-//
-// Without this the flow always invented an appointment, even when the real
-// one was sitting on the calendar. That is how a patient ended up billed
-// twice for one visit -- his Informe Quiropractico was invoiced at its EUR 60
-// list price, and 53 seconds later a session was logged here against a
-// brand-new typeless placeholder, so he owed EUR 60 AND was down a session
-// for a visit that never happened.
-async function findUncoveredVisitToday(): Promise<UncoveredVisit | null> {
-  const dayStart = new Date()
-  dayStart.setHours(0, 0, 0, 0)
-
-  // Completed OR already in the room. Only 'completed' counted before, and
-  // that is not the order a front desk works in: Tomas Berenguer's session
-  // was logged at 17:55:21 while he was still with the practitioner -- he was
-  // checked out at 17:56:23, 62 seconds later. Finding nothing, this invented
-  // an off-calendar visit, so his real 60 EUR appointment was charged AND a
-  // 44 EUR session came off his bono for the same visit.
-  //
-  // Checked in is the safe widening: the patient is here, the visit is
-  // happening. A booking later today that nobody has arrived for is still
-  // ignored, which is what stops a session being spent in advance.
-  const { data: appts } = await supabase
-    .from('appointments')
-    .select('id, starts_at, practitioner_id, appointment_types(name)')
-    .eq('patient_id', props.patientId)
-    .neq('status', 'cancelled')
-    .or('status.eq.completed,checked_in_at.not.is.null')
-    .is('deleted_at', null)
-    .gte('starts_at', dayStart.toISOString())
-    .order('starts_at', { ascending: false })
-  if (!appts || appts.length === 0) return null
-
-  const ids = appts.map((a) => a.id)
-  const [{ data: covered }, { data: invoices }] = await Promise.all([
-    supabase.from('package_sessions').select('appointment_id').in('appointment_id', ids),
-    supabase.from('invoices').select('id, invoice_number, total_cents, status, appointment_id').in('appointment_id', ids).eq('status', 'unpaid'),
-  ])
-  const coveredIds = new Set((covered ?? []).map((c) => c.appointment_id))
-
-  const match = appts.find((a) => !coveredIds.has(a.id))
-  if (!match) return null
-
-  const invoice = (invoices ?? []).find((i) => i.appointment_id === match.id) ?? null
-  return {
-    id: match.id,
-    starts_at: match.starts_at,
-    practitionerId: match.practitioner_id ?? null,
-    typeName: (match.appointment_types as { name: string } | null)?.name ?? null,
-    unpaidInvoice: invoice ? { id: invoice.id, invoice_number: invoice.invoice_number, total_cents: invoice.total_cents } : null,
+async function onLogSessionConfirm(choice: LogSessionChoice) {
+  if (!logDialogFor.value) return
+  try {
+    await useSession(logDialogFor.value, choice)
+  } finally {
+    // Closed on the failure paths too: each of them has already said why and
+    // reloaded, and the dialog's copy of the bono is stale after a refused
+    // claim.
+    logDialogFor.value = null
   }
 }
 
-async function useSession(purchase: PackagePurchaseRow, dateStr: string = todayDateStr()) {
+async function useSession(purchase: PackagePurchaseRow, choice: LogSessionChoice) {
   if (purchase.sessions_used >= purchase.sessions_total || loggingSessionFor.value) return
   // The button is disabled for a closed bono, but the counter is not what
   // makes it unusable -- a closed bono keeps whatever sessions were left on it
@@ -1476,42 +1431,12 @@ async function useSession(purchase: PackagePurchaseRow, dateStr: string = todayD
   // usePackageSession() reprices a package-covered visit to.
   const perSessionCents = Math.round(purchase.price_cents / purchase.sessions_total)
 
-  // findUncoveredVisitToday only ever looks at today's calendar (it starts
-  // from midnight today), so it has nothing useful to say for a backdated
-  // entry -- staff catching up on a session from an earlier day is always
-  // recording a visit that was never booked here, the same as the
-  // "genuinely off-calendar" branch below already handles.
-  const isToday = dateStr === todayDateStr()
-  const visit = isToday ? await findUncoveredVisitToday() : null
-  const visitLabel = visit
-    ? `${visit.typeName ?? t('Visit', 'Visita')} · ${new Date(visit.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-    : null
-  // Voiding is offered here rather than left for someone to notice later:
-  // the invoice and the session are two records of one visit, and whoever is
-  // standing at the desk is the only person who knows they are the same one.
-  const voidNote = visit?.unpaidInvoice
-    ? ` ${t(
-        `${visit.unpaidInvoice.invoice_number ?? 'The unpaid invoice'} for ${money(visit.unpaidInvoice.total_cents)} on that visit will be voided, since the bono covers it.`,
-        `Se anulará ${visit.unpaidInvoice.invoice_number ?? 'la factura pendiente'} de ${money(visit.unpaidInvoice.total_cents)} de esa visita, ya que el bono la cubre.`,
-      )}`
-    : ''
-  const body = visit
-    ? t(
-        `This uses one session against that visit and charges ${money(perSessionCents)} against the bono the patient already paid for.${voidNote}`,
-        `Esto consume una sesión de esa visita y carga ${money(perSessionCents)} contra el bono que el paciente ya pagó.${voidNote}`,
-      )
-    : isToday
-      ? t(
-          'No completed visit today has this bono against it, so a visit will be recorded now, charged against the bono the patient already paid for.',
-          'Ninguna visita completada de hoy tiene este bono asociado, así que se registrará una visita ahora, cargada contra el bono que el paciente ya pagó.',
-        )
-      : t(
-          `A visit will be recorded on ${dateStr}, charged against the bono the patient already paid for.`,
-          `Se registrará una visita el ${dateStr}, cargada contra el bono que el paciente ya pagó.`,
-        )
-  const target = visitLabel ? ` ${t('against', 'contra')} ${visitLabel}` : ''
-  const when = isToday ? '' : ` ${t('on', 'el')} ${dateStr}`
-  if (!confirm(`${t('Log a session for', 'Registrar una sesión de')} ${money(perSessionCents)}${target}${when} ${t('from', 'de')} "${purchase.package_name}"? ${body}`)) return
+  // The dialog is the confirmation: it has already said which visit, how many
+  // sessions are left afterwards and what is charged. A visit from the
+  // calendar is used as it stands; only "not on the calendar" invents one.
+  const visit = choice.kind === 'visit' ? choice.visit : null
+  const dateStr = choice.kind === 'new' ? choice.dateStr : localDateStr(new Date(choice.visit.starts_at))
+  const isToday = dateStr === localDateStr()
 
   loggingSessionFor.value = purchase.id
   try {
@@ -1591,7 +1516,7 @@ async function useSession(purchase: PackagePurchaseRow, dateStr: string = todayD
     } else if (visit?.unpaidInvoice) {
       // One visit, one charge. The bono paid for it, so the invoice raised
       // against it goes -- void rather than deleted, keeping the number in
-      // the books. Safe to void unconditionally: findUncoveredVisitToday
+      // the books. Safe to void unconditionally: loadUnloggedVisits
       // only returns an unpaid one, and 'void invoice keeps payments'
       // (#169) is about invoices that have some.
       await supabase.from('invoices').update({ status: 'void' }).eq('id', visit.unpaidInvoice.id)
@@ -1646,7 +1571,6 @@ async function useSession(purchase: PackagePurchaseRow, dateStr: string = todayD
     // the campaigns hanging off those events (review requests, confirmations)
     // would message the patient about it days late.
     await loadAll()
-    logSessionForId.value = null
   } finally {
     loggingSessionFor.value = null
   }
@@ -2154,21 +2078,18 @@ function money(cents: number) {
             four different colors, which read as decoration rather than
             controls. -->
             <div class="mt-3 flex flex-wrap items-center gap-1.5 border-t border-line-divider pt-3">
-              <UiBtn size="sm" variant="primary" :disabled="p.is_closed || p.sessions_used >= p.sessions_total || loggingSessionFor !== null" @click="useSession(p)">
-                {{ loggingSessionFor === p.id ? t('Logging…', 'Registrando…') : t('Log session', 'Registrar sesión') }}
-              </UiBtn>
-              <!-- Deliberately a second control rather than a date field in
-              front of the one above. Logging the session that just happened is
-              the everyday action and it stays one click; picking a date is for
-              catching up on an earlier day, which is rare enough to be worth a
-              step of its own. -->
+              <!-- One button, and the dialog behind it asks which visit. It
+              used to be two -- "Log session" for today and "Another date" for
+              catching up -- and the second could not see the calendar, so it
+              invented a visit beside the real one. -->
               <UiBtn
                 size="sm"
-                variant="secondary"
+                variant="primary"
+                data-cy="log-session-open"
                 :disabled="p.is_closed || p.sessions_used >= p.sessions_total || loggingSessionFor !== null"
                 @click="openLogSession(p)"
               >
-                {{ t('Another date', 'Otra fecha') }}…
+                {{ loggingSessionFor === p.id ? t('Logging…', 'Registrando…') : t('Log session', 'Registrar sesión') }}…
               </UiBtn>
               <!-- Everything below manages the PURCHASE itself (its invoice,
               who it's shared with, deleting it) -- only the owner's own card
@@ -2189,23 +2110,22 @@ function money(cents: number) {
               </template>
             </div>
 
-            <!-- Capped at today: a session is a visit that has happened, and
-            a future one would draw the bono down for something nobody has
-            had yet. The confirm button is worded differently from "Log
-            session" above on purpose -- two buttons reading the same thing,
-            one of them only sometimes on screen, is a trap for whoever writes
-            the next test against this card. -->
-            <div v-if="logSessionForId === p.id" class="mt-2.5 rounded-ctl border border-line-divider bg-surface-subtle p-2.5">
-              <div class="flex flex-wrap items-end gap-2">
-                <div>
-                  <label class="block text-[11px] text-ink-muted">{{ t('Date', 'Fecha') }}</label>
-                  <input v-model="logSessionDate" type="date" :max="todayDateStr()" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]" />
-                </div>
-                <UiBtn size="sm" variant="primary" :disabled="!logSessionDate || loggingSessionFor !== null" @click="useSession(p, logSessionDate)">
-                  {{ loggingSessionFor === p.id ? t('Logging…', 'Registrando…') : t('Log on this date', 'Registrar en esta fecha') }}
-                </UiBtn>
-              </div>
-            </div>
+            <!-- A visit that happened and that nothing paid for is the thing
+            that goes unnoticed: Teresa Davis's 15 Sep visit sat with no
+            session and no receipt for nine days. Said here, on the card the
+            fix starts from, rather than left for someone to go looking. -->
+            <p
+              v-if="unloggedVisits.length > 0 && !p.is_closed && p.sessions_used < p.sessions_total"
+              data-cy="bono-unlogged-visits"
+              class="mt-2.5 rounded-ctl bg-warning-bg px-2.5 py-2 text-[12px] text-warning-text"
+            >
+              {{
+                unloggedVisits.length === 1
+                  ? t(`1 visit has no session or payment: ${formatShortDate(unloggedVisits[0].starts_at)}.`, `1 visita no tiene sesión ni pago: ${formatShortDate(unloggedVisits[0].starts_at)}.`)
+                  : t(`${unloggedVisits.length} visits have no session or payment.`, `${unloggedVisits.length} visitas no tienen sesión ni pago.`)
+              }}
+              <button type="button" class="ml-1 font-semibold underline" @click="openLogSession(p)">{{ t('Log it', 'Registrarla') }}</button>
+            </p>
 
             <div v-if="openSharesPackageId === p.id" class="mt-2.5 rounded-ctl border border-line-divider bg-surface-subtle p-2.5">
               <ul v-if="shares[p.id]?.length" class="space-y-1">
@@ -2657,6 +2577,19 @@ function money(cents: number) {
       :patient-id="patientId"
       @close="showCardModal = false"
       @saved="showCardModal = false; loadAll()"
+    />
+
+    <PatientsLogSessionDialog
+      v-if="logDialogFor"
+      :bono-name="logDialogFor.package_name"
+      :sessions-used="logDialogFor.sessions_used"
+      :sessions-total="logDialogFor.sessions_total"
+      :per-session-cents="Math.round(logDialogFor.price_cents / logDialogFor.sessions_total)"
+      :visits="unloggedVisits"
+      :loading="loadingUnlogged"
+      :busy="loggingSessionFor !== null"
+      @confirm="onLogSessionConfirm"
+      @cancel="logDialogFor = null"
     />
   </div>
 </template>

@@ -8,6 +8,10 @@
 // is typed (case-insensitive). For the one or two actions on the app that
 // cannot be undone by the person taking them.
 //
+// `disabled`: the confirm button stays disabled until the caller says the
+// form in the slot is complete -- for a dialog that asks for a choice rather
+// than only a yes.
+//
 // Focus is trapped inside while open and Escape cancels (useFocusTrap), and
 // the safe button takes focus first, so Enter on arrival does nothing harmful.
 
@@ -19,8 +23,9 @@ const props = withDefaults(
     tone?: 'danger' | 'neutral'
     confirmWord?: string | null
     busy?: boolean
+    disabled?: boolean
   }>(),
-  { tone: 'neutral', confirmWord: null, busy: false },
+  { tone: 'neutral', confirmWord: null, busy: false, disabled: false },
 )
 const emit = defineEmits<{ confirm: []; cancel: [] }>()
 const t = useT()
@@ -31,7 +36,7 @@ useFocusTrap(panel, () => emit('cancel'))
 onMounted(() => cancelBtn.value?.focus())
 
 const typed = ref('')
-const locked = computed(() => !!props.confirmWord && typed.value.trim().toUpperCase() !== props.confirmWord.toUpperCase())
+const locked = computed(() => props.disabled || (!!props.confirmWord && typed.value.trim().toUpperCase() !== props.confirmWord.toUpperCase()))
 const titleId = `confirm-${Math.random().toString(36).slice(2, 9)}`
 
 function confirm() {

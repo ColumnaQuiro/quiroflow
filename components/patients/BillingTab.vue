@@ -1380,10 +1380,9 @@ async function unlinkPayment(paymentId: string) {
 // bono had already paid for; see 0161 for the ledger side of undoing it.
 const loggingSessionFor = ref<string | null>(null)
 
-// Which bono's "Log session" panel is open, and the date staff picked in it.
-// Defaults to today so the common case (logging the visit that just
-// happened) needs no extra click -- the date field only matters for
-// catching up on a session from an earlier day.
+// Which bono's "Another date" panel is open, and the date picked in it.
+// "Log session" itself stays a single click on today -- this is only the
+// catching-up path, for a visit from an earlier day that never got logged.
 const logSessionForId = ref<string | null>(null)
 const logSessionDate = ref('')
 
@@ -2155,8 +2154,21 @@ function money(cents: number) {
             four different colors, which read as decoration rather than
             controls. -->
             <div class="mt-3 flex flex-wrap items-center gap-1.5 border-t border-line-divider pt-3">
-              <UiBtn size="sm" variant="primary" :disabled="p.is_closed || p.sessions_used >= p.sessions_total || loggingSessionFor !== null" @click="openLogSession(p)">
-                {{ loggingSessionFor === p.id ? t('Logging…', 'Registrando…') : t('Log session', 'Registrar sesión') }}…
+              <UiBtn size="sm" variant="primary" :disabled="p.is_closed || p.sessions_used >= p.sessions_total || loggingSessionFor !== null" @click="useSession(p)">
+                {{ loggingSessionFor === p.id ? t('Logging…', 'Registrando…') : t('Log session', 'Registrar sesión') }}
+              </UiBtn>
+              <!-- Deliberately a second control rather than a date field in
+              front of the one above. Logging the session that just happened is
+              the everyday action and it stays one click; picking a date is for
+              catching up on an earlier day, which is rare enough to be worth a
+              step of its own. -->
+              <UiBtn
+                size="sm"
+                variant="secondary"
+                :disabled="p.is_closed || p.sessions_used >= p.sessions_total || loggingSessionFor !== null"
+                @click="openLogSession(p)"
+              >
+                {{ t('Another date', 'Otra fecha') }}…
               </UiBtn>
               <!-- Everything below manages the PURCHASE itself (its invoice,
               who it's shared with, deleting it) -- only the owner's own card
@@ -2177,10 +2189,12 @@ function money(cents: number) {
               </template>
             </div>
 
-            <!-- Defaults to today, so the common case (the session that just
-            happened) is one click. The date only needs changing to catch up
-            on a visit from an earlier day -- see useSession's isToday branch
-            for what changes once it's not today. -->
+            <!-- Capped at today: a session is a visit that has happened, and
+            a future one would draw the bono down for something nobody has
+            had yet. The confirm button is worded differently from "Log
+            session" above on purpose -- two buttons reading the same thing,
+            one of them only sometimes on screen, is a trap for whoever writes
+            the next test against this card. -->
             <div v-if="logSessionForId === p.id" class="mt-2.5 rounded-ctl border border-line-divider bg-surface-subtle p-2.5">
               <div class="flex flex-wrap items-end gap-2">
                 <div>
@@ -2188,7 +2202,7 @@ function money(cents: number) {
                   <input v-model="logSessionDate" type="date" :max="todayDateStr()" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]" />
                 </div>
                 <UiBtn size="sm" variant="primary" :disabled="!logSessionDate || loggingSessionFor !== null" @click="useSession(p, logSessionDate)">
-                  {{ loggingSessionFor === p.id ? t('Logging…', 'Registrando…') : t('Log session', 'Registrar sesión') }}
+                  {{ loggingSessionFor === p.id ? t('Logging…', 'Registrando…') : t('Log on this date', 'Registrar en esta fecha') }}
                 </UiBtn>
               </div>
             </div>

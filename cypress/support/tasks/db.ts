@@ -1063,11 +1063,14 @@ async function sharePackageWith(opts: { accountId: string; packagePurchaseId: st
 async function packageSessionEffects(opts: { patientId: string; packagePurchaseId: string }) {
   const { patientId, packagePurchaseId } = opts
   const purchase = unwrap(await admin.from('package_purchases').select('sessions_used').eq('id', packagePurchaseId).single())
-  const appointments = unwrap(await admin.from('appointments').select('id, status, practitioner_id').eq('patient_id', patientId))
+  // starts_at and used_at are here for the backdating case: a session logged
+  // for an earlier day has to be filed under that day in BOTH records, and
+  // the only way to tell that from a session logged today is to read them.
+  const appointments = unwrap(await admin.from('appointments').select('id, status, practitioner_id, starts_at').eq('patient_id', patientId))
   const invoices = unwrap(await admin.from('invoices').select('id, status, total_cents, appointment_id').eq('patient_id', patientId))
   const credits = unwrap(await admin.from('account_credits').select('amount_cents, reason').eq('patient_id', patientId))
   const sessions = unwrap(
-    await admin.from('package_sessions').select('amount_cents, appointment_id, package_purchase_id').eq('patient_id', patientId),
+    await admin.from('package_sessions').select('amount_cents, appointment_id, package_purchase_id, used_at').eq('patient_id', patientId),
   )
   const invoiceIds = (invoices as { id: string }[]).map((i) => i.id)
   const payments = invoiceIds.length

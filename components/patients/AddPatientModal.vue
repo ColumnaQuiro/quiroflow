@@ -7,6 +7,7 @@ const emit = defineEmits<{ close: []; created: [id: string] }>()
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+const { phoneProblem } = usePhoneValidation()
 
 const firstName = ref('')
 const lastName = ref('')
@@ -50,6 +51,16 @@ onMounted(async () => {
 
 async function onSubmit() {
   error.value = ''
+  // Before the patient row is written, not after: the number is inserted in
+  // a second statement below, so letting a bad one through here would leave
+  // a patient created and their number silently missing -- or worse, stored
+  // as typed. The field stays optional; this only says that something typed
+  // into it has to be a number.
+  const phoneError = phoneProblem(phoneNumber.value, phoneCountry.value)
+  if (phoneError) {
+    error.value = phoneError
+    return
+  }
   saving.value = true
 
   const tags = tagsInput.value

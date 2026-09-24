@@ -259,6 +259,32 @@ async function createPatientDoc(opts: {
   return { docId: doc.id as string, publicToken: doc.public_token as string }
 }
 
+/**
+ * Puts a diagram in the public `doc-images` bucket and hands back the object
+ * key a `drawable_image` block stores. Seeded as a real upload rather than a
+ * made-up path because the block takes its height from the rendered image,
+ * so a 404 would leave the canvas the wrong size to test -- and because the
+ * bucket being publicly readable is the thing that lets /doc/[token] show it
+ * to a patient who isn't signed in.
+ */
+/** The blocks of a document as they were actually stored, for asserting that
+ *  what the patient drew survived the round trip through
+ *  save_public_patient_doc rather than only existing on the canvas. */
+async function patientDocFields(opts: { docId: string }) {
+  const doc = unwrap(await admin.from('patient_docs').select('fields, completed_at').eq('id', opts.docId).single())
+  return { fields: (doc.fields ?? []) as any[], completedAt: doc.completed_at as string | null }
+}
+
+async function uploadDocImage(opts: { accountId: string; width?: number; height?: number }) {
+  const path = `${opts.accountId}/${randomUUID()}-diagram.svg`
+  // An SVG of a known size, so the box the canvas is stretched over is a
+  // number the spec can assert stroke coordinates against.
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${opts.width ?? 300}" height="${opts.height ?? 400}" viewBox="0 0 ${opts.width ?? 300} ${opts.height ?? 400}"><rect width="100%" height="100%" fill="#e5e7eb"/></svg>`
+  const { error } = await admin.storage.from('doc-images').upload(path, Buffer.from(svg), { contentType: 'image/svg+xml' })
+  if (error) throw error
+  return path
+}
+
 async function createPatient(opts: {
   accountId: string
   clinicId: string
@@ -1407,9 +1433,9 @@ async function signWhatsappBody(opts: { body: string; appSecret: string }) {
 
 async function appointmentById(opts: { appointmentId: string }) {
   const row = unwrap(
-    await admin.from('appointments').select('id, status, confirmation_status, rescheduled, starts_at, ends_at, room_id').eq('id', opts.appointmentId).single(),
+    await admin.from('appointments').select('id, status, confirmation_status, rescheduled, starts_at, ends_at, room_id, checked_in_at').eq('id', opts.appointmentId).single(),
   )
-  return row as { id: string; status: string; confirmation_status: string | null; rescheduled: boolean; starts_at: string; ends_at: string; room_id: string | null }
+  return row as { id: string; status: string; confirmation_status: string | null; rescheduled: boolean; starts_at: string; ends_at: string; room_id: string | null; checked_in_at: string | null }
 }
 
 /**
@@ -2453,6 +2479,8 @@ export const dbTasks = {
   'db:setPatientContactFlags': setPatientContactFlags,
   'db:setPatientTutor': setPatientTutor,
   'db:createPatientDoc': createPatientDoc,
+  'db:uploadDocImage': uploadDocImage,
+  'db:patientDocFields': patientDocFields,
   'db:createPatientFile': createPatientFile,
   'db:addVisitNote': addVisitNote,
   'db:setPatientClinical': setPatientClinical,

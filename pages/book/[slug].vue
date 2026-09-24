@@ -595,7 +595,7 @@ async function submitBooking() {
     booking_value: effectivePrice.value ? effectivePrice.value / 100 : 0,
     booking_currency: 'EUR',
   })
-  // Fire-and-forget, same as the staff-booking side (AppointmentModal.vue) --
+  // Fire-and-forget, same as the staff-booking side (NewAppointmentPanel.vue) --
   // a failed confirmation send should never block the success screen the
   // patient is about to see.
   $fetch('/api/public-booking/send-confirmation', { method: 'POST', body: { accountSlug: slug, appointmentId: result.appointment_id } }).catch(() => {})

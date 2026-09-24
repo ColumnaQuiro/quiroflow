@@ -778,7 +778,7 @@ async function paymentsFor(opts: { patientId: string }) {
 async function facturasFor(opts: { patientId: string }) {
   const { data, error } = await admin
     .from('facturas')
-    .select('id, number, kind, description, amount_cents, tax_base_cents, tax_rate_bp, tax_amount_cents, tax_exemption_code, recipient_nif, payment_id, created_by, rectifies_factura_id')
+    .select('id, number, kind, description, amount_cents, tax_base_cents, tax_rate_bp, tax_amount_cents, tax_exemption_code, recipient_nif, payment_id, created_by, rectifies_factura_id, issuer_clinic_id, issuer_name, issuer_legal_name, issuer_address, issuer_tax_id, issuer_footer_text')
     .eq('patient_id', opts.patientId)
     .order('issued_at')
   if (error) throw error
@@ -976,10 +976,50 @@ async function releaseParkedRecords(opts: { accountId: string }) {
 }
 
 /** The registro de facturación chain for an account, oldest first. */
+// A clinic's fiscal header, as Settings -> Clinics / Fiscal Data would leave
+// it. Written directly so a spec can change it between two renders of the
+// same document.
+async function updateClinic(opts: { clinicId: string; name?: string; legalName?: string | null; address?: string | null; taxId?: string | null; footerText?: string | null }) {
+  assertOk(
+    await admin
+      .from('clinics')
+      .update({
+        ...(opts.name !== undefined ? { name: opts.name } : {}),
+        ...(opts.legalName !== undefined ? { legal_name: opts.legalName } : {}),
+        ...(opts.address !== undefined ? { address: opts.address } : {}),
+        ...(opts.taxId !== undefined ? { tax_id: opts.taxId } : {}),
+        ...(opts.footerText !== undefined ? { invoice_footer_text: opts.footerText } : {}),
+      })
+      .eq('id', opts.clinicId),
+  )
+  return null
+}
+
+// A second location on the same account. Goes through
+// enforce_clinic_location_cap like any insert; a seeded account is on its
+// free trial, which has no cap.
+async function createClinic(opts: { accountId: string; name: string; address?: string | null; taxId?: string | null; legalName?: string | null }) {
+  const row = unwrap(
+    await admin
+      .from('clinics')
+      .insert({ account_id: opts.accountId, name: opts.name, address: opts.address ?? null, tax_id: opts.taxId ?? null, legal_name: opts.legalName ?? null })
+      .select('id')
+      .single(),
+  )
+  return row as { id: string }
+}
+
+// Tries to rewrite an issued factura's issuer, and reports what the database
+// said rather than throwing, so a spec can assert the refusal.
+async function tryChangeFacturaIssuer(opts: { facturaId: string; address: string }) {
+  const { error } = await admin.from('facturas').update({ issuer_address: opts.address }).eq('id', opts.facturaId)
+  return { error: error?.message ?? null }
+}
+
 async function facturaRecordsFor(opts: { accountId: string }) {
   const { data, error } = await admin
     .from('factura_records')
-    .select('id, sequence, factura_id, record_type, invoice_type, serie_number, cuota_total_cents, importe_total_cents, previous_huella, huella, huella_spec_version')
+    .select('id, sequence, factura_id, record_type, invoice_type, serie_number, issuer_nif, cuota_total_cents, importe_total_cents, previous_huella, huella, huella_spec_version')
     .eq('account_id', opts.accountId)
     .order('sequence')
   if (error) throw error
@@ -2571,6 +2611,9 @@ export const dbTasks = {
   'db:createFacturaWithoutTax': createFacturaWithoutTax,
   'db:huellaFor': huellaFor,
   'db:facturaRecordsFor': facturaRecordsFor,
+  'db:updateClinic': updateClinic,
+  'db:createClinic': createClinic,
+  'db:tryChangeFacturaIssuer': tryChangeFacturaIssuer,
   'db:verifyFacturaChain': verifyFacturaChain,
   'db:awaitingAeat': awaitingAeat,
   'db:indicadorMultiplesOt': indicadorMultiplesOt,

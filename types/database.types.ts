@@ -2224,6 +2224,13 @@ export type Database = {
           recipient_address: string | null
           recipient_name: string | null
           recipient_nif: string | null
+          issuer_address: string | null
+          issuer_clinic_id: string | null
+          issuer_footer_text: string | null
+          issuer_legal_name: string | null
+          issuer_logo_storage_path: string | null
+          issuer_name: string | null
+          issuer_tax_id: string | null
         }
         Insert: {
           account_id: string
@@ -2245,6 +2252,13 @@ export type Database = {
           recipient_address?: string | null
           recipient_name?: string | null
           recipient_nif?: string | null
+          issuer_address?: string | null
+          issuer_clinic_id?: string | null
+          issuer_footer_text?: string | null
+          issuer_legal_name?: string | null
+          issuer_logo_storage_path?: string | null
+          issuer_name?: string | null
+          issuer_tax_id?: string | null
         }
         Update: {
           account_id?: string
@@ -2266,6 +2280,13 @@ export type Database = {
           recipient_address?: string | null
           recipient_name?: string | null
           recipient_nif?: string | null
+          issuer_address?: string | null
+          issuer_clinic_id?: string | null
+          issuer_footer_text?: string | null
+          issuer_legal_name?: string | null
+          issuer_logo_storage_path?: string | null
+          issuer_name?: string | null
+          issuer_tax_id?: string | null
         }
         Relationships: [
           {

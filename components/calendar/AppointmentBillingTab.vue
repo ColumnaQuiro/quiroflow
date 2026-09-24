@@ -91,9 +91,16 @@ const balanceDueCents = computed(() =>
   invoice.value?.status === 'paid' ? 0 : (invoice.value?.total_cents ?? 0) - paidCents.value,
 )
 
+// A patient who has checked in is a visit that is happening, whatever the
+// clock says about its booked start. Going by starts_at alone, a 10:30
+// patient who arrived at 10:10, was seen early and reached "To pay" at 10:25
+// could not be charged: the panel's "Charge" button opened this tab on "this
+// appointment hasn't happened yet" until 10:30 came round. The rule exists to
+// stop a FUTURE booking being invoiced just by looking at it, and a patient
+// standing at the desk is not that.
 async function loadAppointmentTiming() {
-  const { data } = await supabase.from('appointments').select('starts_at').eq('id', props.appointmentId).maybeSingle()
-  appointmentIsUpcoming.value = !!data && new Date(data.starts_at) > new Date()
+  const { data } = await supabase.from('appointments').select('starts_at, checked_in_at').eq('id', props.appointmentId).maybeSingle()
+  appointmentIsUpcoming.value = !!data && !data.checked_in_at && new Date(data.starts_at) > new Date()
 }
 
 // Reads the invoice for this appointment, if someone has raised one. Opening

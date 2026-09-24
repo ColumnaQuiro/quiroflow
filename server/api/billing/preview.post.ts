@@ -1,6 +1,6 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
-import { stripeForPlatformBilling } from '~/server/utils/platformBillingStripe'
+import { retrieveChangeableSubscription, stripeForPlatformBilling } from '~/server/utils/platformBillingStripe'
 
 export interface PreviewResult {
   // Whether there's anything to preview at all -- a brand-new subscription
@@ -65,7 +65,14 @@ export default defineEventHandler(async (event): Promise<PreviewResult> => {
   const taxRateId = config.stripePlatformBillingTaxRateId || null
   const defaultTaxRates = taxRateId ? [taxRateId] : undefined
 
-  const current = await stripe.subscriptions.retrieve(subscription.stripe_subscription_id)
+  // A cancelled subscription has nothing to prorate against: the change will
+  // go through Checkout at the sticker price, exactly like a first purchase.
+  // subscribe.post.ts makes the same call with the same helper, so the two
+  // cannot disagree about which path a change takes.
+  const current = await retrieveChangeableSubscription(stripe, subscription.stripe_subscription_id)
+  if (!current) {
+    return { previewable: false }
+  }
   const { data: allPlans } = await serviceRole.from('plans').select('stripe_monthly_price_id, stripe_annual_price_id, stripe_extra_professional_monthly_price_id, stripe_extra_professional_annual_price_id')
   const allPlanPriceIds = new Set((allPlans ?? []).flatMap((p) => [p.stripe_monthly_price_id, p.stripe_annual_price_id].filter(Boolean)))
   const addOnPriceIds = new Set((allPlans ?? []).flatMap((p) => [p.stripe_extra_professional_monthly_price_id, p.stripe_extra_professional_annual_price_id].filter(Boolean)))
@@ -89,7 +96,7 @@ export default defineEventHandler(async (event): Promise<PreviewResult> => {
 
   const preview = await stripe.invoices.createPreview({
     customer: subscription.stripe_customer_id ?? undefined,
-    subscription: subscription.stripe_subscription_id,
+    subscription: current.id,
     subscription_details: {
       items,
       proration_behavior: 'create_prorations',

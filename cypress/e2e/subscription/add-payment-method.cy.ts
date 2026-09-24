@@ -64,6 +64,37 @@ describe('Adding a payment method', () => {
     })
   })
 
+  // A cancellation keeps the Stripe customer, so "has a customer" no longer
+  // means "has something the portal can manage". The portal cannot start a
+  // subscription, only manage one -- a cancelled account sent there had a
+  // card form and nothing to attach it to, and no other way back in.
+  it('sends a cancelled account to Checkout to pay again, not to the portal', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:setSubscriptionStripeIds', {
+        accountId: account.accountId,
+        stripeCustomerId: 'cus_test_stub',
+        stripeSubscriptionId: 'sub_test_stub',
+      })
+      cy.setSubscriptionStatus(account.accountId, 'canceled')
+
+      cy.login(account.email, account.password)
+      cy.visit('/subscription')
+      stubBoth()
+
+      // Nothing left to cancel or manage in Stripe, so the card that hands
+      // over to it for both is gone from Billing. Checked first: the click
+      // below navigates away.
+      cy.contains('button', 'Billing').click()
+      cy.contains('No billing details yet').should('be.visible')
+      cy.contains('Card and billing data live in Stripe').should('not.exist')
+      cy.contains('button', 'Plan').click()
+
+      cy.contains('button', /payment method/i).click()
+      cy.wait('@checkout')
+      cy.get('@portal.all').should('have.length', 0)
+    })
+  })
+
   // Checkout now carries the trial over: the card goes on file mid-trial and
   // the first charge lands when the trial ends, so the row stays 'trialing'
   // with a Stripe subscription behind it. Both banners used to go on asking

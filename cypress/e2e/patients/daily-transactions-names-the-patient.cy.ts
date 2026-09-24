@@ -148,6 +148,59 @@ describe('The day sheet attributes every row', () => {
     })
   })
 
+  // A bono, a refund and money on account have no appointment by design, so
+  // the column that read the visit had nothing to read and said "Sin
+  // asignar". On 24 Sep 2026 that was three of nine rows on a day the clinic
+  // knew perfectly well whose patients they were.
+  it('names the practitioner for money with no visit behind it, and keeps it under their filter', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:createPatient', {
+        accountId: account.accountId,
+        clinicId: account.clinicId,
+        firstName: 'Bono',
+        lastName: 'Sinvisita',
+        defaultPractitionerId: account.teamMemberId,
+      }).then((patient: any) => {
+        cy.task('db:createPayment', {
+          accountId: account.accountId,
+          patientId: patient.id,
+          amountCents: 24000,
+          method: 'card',
+          purpose: 'bono',
+        })
+
+        cy.login(account.email, account.password)
+        cy.visit('/reports/daily-transactions')
+        cy.contains('Net collected').should('be.visible')
+
+        cy.contains('tr', 'Bono Sinvisita').should('contain.text', 'Test Owner').and('not.contain.text', 'Unassigned')
+
+        // And filtering to them keeps it. The old filter required an
+        // appointment and dropped anything without one, so a practitioner
+        // filtering their own day lost every bono they had sold -- the rows
+        // least likely to be missed, because what remains still adds up to
+        // something.
+        cy.contains('select', 'All practitioners').select('Test Owner')
+        cy.contains('tr', 'Bono Sinvisita').should('be.visible')
+      })
+    })
+  })
+
+  it('still says unassigned when the patient has no practitioner either', () => {
+    // The fallback is an attribution, not an invention.
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Nadie', lastName: 'Suyo' }).then((patient: any) => {
+        cy.task('db:createPayment', { accountId: account.accountId, patientId: patient.id, amountCents: 3000, method: 'cash', purpose: 'bono' })
+
+        cy.login(account.email, account.password)
+        cy.visit('/reports/daily-transactions')
+        cy.contains('Net collected').should('be.visible')
+
+        cy.contains('tr', 'Nadie Suyo').should('contain.text', 'Unassigned')
+      })
+    })
+  })
+
   it('leaves an imported payment blank rather than inventing what it was for', () => {
     // Every payment that came from PracticeHub has no purpose -- 3,288 of
     // them. A dash says "not recorded"; anything else would be a claim

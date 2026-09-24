@@ -3,6 +3,7 @@ import { formatEur } from '~/utils/billing'
 import { rangeBounds } from '~/composables/useDateRangePresets'
 import { isReceipt } from '~/utils/paymentReceipts'
 import { fetchByIds } from '~/composables/useFetchAllRows'
+import { classifyPaymentForFilter, practitionerForPayment } from '~/utils/incomeAttribution'
 
 interface PaymentRow {
   id: string
@@ -23,7 +24,10 @@ interface PaymentRow {
   invoices?: { status: string } | null
 }
 interface InvoiceRow { id: string; invoice_number: string; patient_id: string; is_refund: boolean; appointment_id: string | null }
-interface PatientRow { id: string; first_name: string; last_name: string | null }
+// default_practitioner_id and clinic_id are here for attribution, not for
+// display: they are what answers "whose money is this" for a payment with no
+// visit behind it. See utils/incomeAttribution.
+interface PatientRow { id: string; first_name: string; last_name: string | null; default_practitioner_id: string | null; clinic_id: string | null }
 interface AppointmentRow { id: string; practitioner_id: string | null; clinic_id: string | null }
 interface TeamMemberRow { id: string; full_name: string }
 
@@ -79,7 +83,7 @@ async function load() {
   // patient went missing when the list was built the other way round.
   const patientIds = [...new Set(payments.value.map((row) => row.patient_id))]
   patients.value = await fetchByIds<PatientRow>(patientIds, (ids) =>
-    supabase.from('patients').select('id, first_name, last_name').in('id', ids),
+    supabase.from('patients').select('id, first_name, last_name, default_practitioner_id, clinic_id').in('id', ids),
   )
 
   // The practitioner comes from the invoice's linked appointment, same as
@@ -118,15 +122,21 @@ function apptFor(payment: PaymentRow) {
   const invoice = payment.invoice_id ? invoiceById.value.get(payment.invoice_id) : undefined
   return invoice?.appointment_id ? appointmentById.value.get(invoice.appointment_id) : undefined
 }
+// The same rule reports/income.vue filters by, rather than this page's own
+// copy. The old one required an appointment and dropped anything without one,
+// so filtering the day sheet to a practitioner hid every bono they had sold
+// and every refund they had given -- the rows least likely to be noticed
+// missing, because the ones that remain still add up to something.
 const filteredPayments = computed(() =>
-  payments.value.filter((row) => {
-    if (!practitionerFilter.value && !clinicFilter.value) return true
-    const appt = apptFor(row)
-    if (!appt) return false
-    if (practitionerFilter.value && appt.practitioner_id !== practitionerFilter.value) return false
-    if (clinicFilter.value && appt.clinic_id !== clinicFilter.value) return false
-    return true
-  }),
+  payments.value.filter(
+    (row) =>
+      classifyPaymentForFilter({
+        practitionerId: practitionerFilter.value || undefined,
+        clinicId: clinicFilter.value || undefined,
+        appointment: apptFor(row) ?? null,
+        patient: patientById.value.get(row.patient_id) ?? null,
+      }) === 'matches',
+  ),
 )
 
 // payments.patient_id is not null, so the only way this misses now is a
@@ -138,9 +148,24 @@ function patientName(patientId: string) {
   const p = patientById.value.get(patientId)
   return p ? `${p.first_name} ${p.last_name ?? ''}`.trim() : t('Unknown', 'Desconocido')
 }
+// Whose money this is, by the same chain Income answers with: the visit when
+// there is one, the patient's own practitioner when there is not.
+//
+// It used to stop at the visit, so a bono, a refund and money on account --
+// none of which has an appointment by design -- all read "Sin asignar" on a
+// day the clinic knew perfectly well whose patients they were. On 24 Sep 2026
+// that was three of nine rows, and all three patients had a practitioner.
+//
+// This makes the column an attribution rather than a record of who performed
+// the visit: a bono sold by one practitioner to another's patient counts to
+// the patient's. That is the trade Income already made, and one word meaning
+// two things on two money screens was worse than either meaning alone.
 function practitionerName(payment: PaymentRow) {
-  const appt = apptFor(payment)
-  return appt?.practitioner_id ? (memberById.value.get(appt.practitioner_id) ?? t('Unknown', 'Desconocido')) : t('Unassigned', 'Sin asignar')
+  const practitionerId = practitionerForPayment({
+    appointment: apptFor(payment) ?? null,
+    patient: patientById.value.get(payment.patient_id) ?? null,
+  })
+  return practitionerId ? (memberById.value.get(practitionerId) ?? t('Unknown', 'Desconocido')) : t('Unassigned', 'Sin asignar')
 }
 function time(iso: string) {
   const d = new Date(iso)

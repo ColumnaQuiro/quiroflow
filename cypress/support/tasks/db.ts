@@ -133,6 +133,37 @@ async function createTeamMemberWithRole(opts: {
   return { email, password, userId, teamMemberId: teamMember.id as string }
 }
 
+/**
+ * Someone with a login and no practice yet -- the state an invited colleague
+ * is in between signing up and accepting their invite.
+ */
+async function createLoneUser(opts: { email: string; password: string }) {
+  const { data, error } = await admin.auth.admin.createUser({ email: opts.email, password: opts.password, email_confirm: true })
+  if (error) throw error
+  return { email: opts.email, password: opts.password, userId: data.user!.id }
+}
+
+/** An invite to a practice, as Settings > Team writes one; returns its token. */
+async function createInvite(opts: { accountId: string; email: string; roleName?: string }) {
+  const roleName = opts.roleName ?? 'Practitioner'
+  const role = unwrap(
+    await admin.from('account_roles').select('id').eq('account_id', opts.accountId).eq('name', roleName).single(),
+  )
+  const invite = unwrap(
+    await admin
+      .from('account_invites')
+      .insert({
+        account_id: opts.accountId,
+        email: opts.email,
+        role: roleName === 'Front Desk' ? 'front_desk' : 'practitioner',
+        role_id: role.id,
+      })
+      .select('token')
+      .single(),
+  )
+  return { token: invite.token as string }
+}
+
 /** The attribution row a public booking recorded, if any -- keyed by account since the spec does not know the appointment id. */
 async function bookingAttribution(opts: { accountId: string }) {
   const { data } = await admin
@@ -2460,6 +2491,8 @@ export const dbTasks = {
   'db:setComped': setComped,
   'db:setExtraProfessionals': setExtraProfessionals,
   'db:setSubscriptionStripeIds': setSubscriptionStripeIds,
+  'db:createLoneUser': createLoneUser,
+  'db:createInvite': createInvite,
   'db:createPatient': createPatient,
   'db:seedManyPatients': seedManyPatients,
   'db:patientByName': patientByName,

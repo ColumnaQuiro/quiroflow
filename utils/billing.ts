@@ -258,18 +258,31 @@ export function subscriptionState(status: string, comped: boolean): Subscription
 }
 
 /**
+ * Whether the plan's practitioner and location caps are lifted: a comped
+ * account, or a free trial nobody has put a card on yet. The same rule as
+ * practitioner_seat_allowance() and clinic_location_allowance() in the
+ * database (20260924100032), so the page never prints a limit the database
+ * does not enforce, or the reverse.
+ */
+export function planLimitsWaived(row: { status: string; comped: boolean; stripe_subscription_id: string | null } | null | undefined): boolean {
+  if (!row) return false
+  return row.comped || (row.status === 'trialing' && !row.stripe_subscription_id)
+}
+
+/**
  * Seat ceiling for a plan, or null for "no limit".
  *
- * Comped accounts genuinely have no ceiling -- practitioner_seat_allowance()
- * returns null for them -- so printing "3 of 1 seats in use" claimed a limit
- * that does not exist.
+ * Comped accounts and open trials genuinely have no ceiling --
+ * practitioner_seat_allowance() returns null for them -- so printing "3 of 1
+ * seats in use" claimed a limit that does not exist. `waived` is
+ * planLimitsWaived().
  */
 export function seatAllowance(
   includedProfessionals: number | null | undefined,
   extraProfessionals: number,
-  comped: boolean,
+  waived: boolean,
 ): number | null {
-  if (comped) return null
+  if (waived) return null
   if (includedProfessionals === null || includedProfessionals === undefined) return null
   return includedProfessionals + extraProfessionals
 }

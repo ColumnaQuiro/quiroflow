@@ -17,6 +17,13 @@ const props = defineProps<{
   clinicAllowance: number | null
   clinicNames: string[]
   comped: boolean
+  // A free trial with no card on it yet: the whole team and every location
+  // can be tried, and the plan's limits start when a plan is paid for. Said
+  // so here, because "no seat limit on this account" would promise it for
+  // good.
+  openTrial?: boolean
+  planName?: string | null
+  planSeats?: number | null
 }>()
 
 const t = useT()
@@ -50,7 +57,16 @@ const seatsFree = computed(() => (props.seatAllowance === null ? null : props.se
         </div>
         <p class="mt-2 text-[12px] leading-[1.5] text-ink-muted">
           <span v-if="practitionerNames.length">{{ practitionerNames.join(', ') }}. </span>
-          <template v-if="comped || seatAllowance === null">{{ t('No seat limit on this account.', 'Sin límite de plazas en esta cuenta.') }}</template>
+          <template v-if="openTrial">
+            {{ t('No seat limit during your free trial.', 'Sin límite de plazas durante la prueba gratuita.') }}
+            <template v-if="planName && planSeats !== null && planSeats !== undefined">
+              {{ t(
+                `${planName} covers ${planSeats} once you subscribe — pick the plan that fits the team.`,
+                `${planName} incluye ${planSeats} al suscribirte: elige el plan que encaje con tu equipo.`,
+              ) }}
+            </template>
+          </template>
+          <template v-else-if="comped || seatAllowance === null">{{ t('No seat limit on this account.', 'Sin límite de plazas en esta cuenta.') }}</template>
           <template v-else-if="seatsFree !== null && seatsFree > 0 && extraSeatPriceCents">
             {{ t(`${seatsFree} free — add another for`, `${seatsFree} libre(s) — añade otra por`) }} {{ formatEur(extraSeatPriceCents) }}{{ t('/mo + IVA.', '/mes + IVA.') }}
           </template>
@@ -85,7 +101,8 @@ const seatsFree = computed(() => (props.seatAllowance === null ? null : props.se
           <span v-if="clinicNames.length === 1" class="font-normal text-ink-muted"> — {{ clinicNames[0] }}</span>
         </p>
         <p class="mt-2 text-[12px] leading-[1.5] text-ink-muted">
-          <template v-if="clinicAllowance === null">{{ t('Add as many clinics as you need.', 'Añade tantas clínicas como necesites.') }}</template>
+          <template v-if="openTrial">{{ t('Add as many as you like during your free trial.', 'Añade tantas como quieras durante la prueba gratuita.') }}</template>
+          <template v-else-if="clinicAllowance === null">{{ t('Add as many clinics as you need.', 'Añade tantas clínicas como necesites.') }}</template>
           <template v-else>{{ t('A second clinic needs the Clinic plan.', 'Una segunda clínica requiere el plan Clinic.') }}</template>
         </p>
       </div>

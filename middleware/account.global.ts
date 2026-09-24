@@ -64,17 +64,23 @@ export default defineNuxtRouteMiddleware(async (to) => {
 
   // A team member invite was accepted mid-signup (email confirmation breaks
   // the query-string chain), so pick up the pending token here instead.
+  //
+  // If accepting it fails, the person goes to /join, which says why and keeps
+  // the token for another try. This used to throw the token away and fall
+  // through to the onboarding redirect below -- so a colleague whose invite
+  // was refused (the practice had no free seat, say) was silently asked to
+  // create a clinic of their own, and anyone who did ended up in a second,
+  // separate account while the owner wondered why nobody had joined.
   if (!hasAccount && import.meta.client) {
     const token = localStorage.getItem('pending_invite_token')
     if (token) {
       const supabase = useSupabaseClient()
       const { error } = await supabase.rpc('accept_invite', { p_token: token })
+      if (error) return navigateTo('/join')
       localStorage.removeItem('pending_invite_token')
-      if (!error) {
-        store.reset()
-        await store.load()
-        hasAccount = !!store.teamMember
-      }
+      store.reset()
+      await store.load()
+      hasAccount = !!store.teamMember
     }
   }
 

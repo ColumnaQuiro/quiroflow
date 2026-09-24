@@ -9,6 +9,7 @@ const props = defineProps<{ appointmentId: string }>()
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const { can } = usePermission()
 const t = useT()
 
 const notes = ref<VisitNote[]>([])
@@ -110,9 +111,15 @@ async function removeNote(id: string) {
             <!-- Always present rather than revealed on hover: this is a
             touch-heavy screen (a practitioner charting mid-visit, often on a
             tablet), and a hover-only control is unreachable there. -->
+            <!-- Gated the way patients/VisitNotesTab.vue gated them: RLS
+            (0046) already refuses an edit without visit_notes_edit and a
+            delete without visit_notes_delete, but it refuses them silently --
+            the button just does nothing. The default Practitioner role has
+            edit and NOT delete, so this is the ordinary case, not an exotic
+            one. -->
             <div class="flex shrink-0 items-center gap-1.5">
-              <UiIconBtn icon="pencil" :label="t('Edit', 'Editar')" @click="startEdit(note)" />
-              <UiIconBtn icon="trash" tone="danger" :label="t('Delete', 'Eliminar')" @click="removeNote(note.id)" />
+              <UiIconBtn v-if="can('visit_notes_edit')" icon="pencil" :label="t('Edit', 'Editar')" @click="startEdit(note)" />
+              <UiIconBtn v-if="can('visit_notes_delete')" icon="trash" tone="danger" :label="t('Delete', 'Eliminar')" @click="removeNote(note.id)" />
             </div>
           </div>
         </template>

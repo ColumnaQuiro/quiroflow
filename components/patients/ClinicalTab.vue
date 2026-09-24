@@ -225,10 +225,26 @@ const goalChips = computed(() =>
                 {{ parseVisitNote(note.body).preamble }}
               </p>
 
-              <p class="mt-2.5 border-t border-line-divider pt-2 text-[11.5px] text-ink-faint">
-                {{ authorOf(note) ?? t('Author not recorded', 'Autor sin registrar') }} ·
-                {{ formatLongDate(note.created_at) }}
-              </p>
+              <div class="mt-2.5 flex items-center justify-between gap-3 border-t border-line-divider pt-2">
+                <p class="min-w-0 text-[11.5px] text-ink-faint">
+                  {{ authorOf(note) ?? t('Author not recorded', 'Autor sin registrar') }} ·
+                  {{ formatLongDate(note.created_at) }}
+                </p>
+                <!-- The same charting panel "Add note" opens, pointed at THIS
+                     note's visit rather than the newest one. Routing the edit
+                     through it rather than giving this tab a second textarea
+                     keeps one editor for a visit note across the app -- the
+                     calendar and My Day open the same component. -->
+                <UiBtn
+                  v-if="can('visit_notes_edit')"
+                  variant="ghost"
+                  size="sm"
+                  class="shrink-0"
+                  @click="notesAppointmentId = note.appointment_id"
+                >
+                  {{ t('Edit', 'Editar') }}
+                </UiBtn>
+              </div>
             </div>
           </li>
         </ul>
@@ -269,7 +285,10 @@ const goalChips = computed(() =>
       </div>
     </div>
 
-    <div v-if="notesAppointmentId" class="fixed inset-0 z-20 flex items-center justify-center bg-ink-900/40 p-4" @click.self="notesAppointmentId = null">
+    <!-- Reloads on the way out, the same as the ✕ does. Without it, editing a
+         note and then dismissing by clicking the backdrop left the list
+         showing the text that had just been replaced. -->
+    <div v-if="notesAppointmentId" class="fixed inset-0 z-20 flex items-center justify-center bg-ink-900/40 p-4" @click.self="notesAppointmentId = null; load()">
       <div class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-card bg-surface p-6 shadow-drawer">
         <div class="flex items-center justify-between">
           <h2 class="text-[15px] font-semibold text-ink-900">{{ t('Visit notes', 'Notas de la visita') }}</h2>

@@ -3798,6 +3798,8 @@ export type Database = {
           postal_code: string | null
           preferred_language: string
           recall_priority: boolean
+          recall_snoozed_until: string | null
+          recall_dismissed_at: string | null
           recall_status: string
           red_flags: string | null
           referral_source: string | null
@@ -3845,6 +3847,8 @@ export type Database = {
           postal_code?: string | null
           preferred_language?: string
           recall_priority?: boolean
+          recall_snoozed_until?: string | null
+          recall_dismissed_at?: string | null
           recall_status?: string
           red_flags?: string | null
           referral_source?: string | null
@@ -3892,6 +3896,8 @@ export type Database = {
           postal_code?: string | null
           preferred_language?: string
           recall_priority?: boolean
+          recall_snoozed_until?: string | null
+          recall_dismissed_at?: string | null
           recall_status?: string
           red_flags?: string | null
           referral_source?: string | null
@@ -5667,12 +5673,14 @@ export type Database = {
         Row: {
           account_id: string | null
           balance_cents: number | null
+          clinic_id: string | null
           days_since_last_appointment: number | null
           default_practitioner_id: string | null
           email: string | null
           first_name: string | null
           last_appointment_at: string | null
           last_name: string | null
+          last_no_show_at: string | null
           patient_id: string | null
           preferred_language: string | null
           recall_priority: boolean | null
@@ -5694,6 +5702,22 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      recall_parked: {
+        Row: {
+          account_id: string | null
+          clinic_id: string | null
+          days_since_last_appointment: number | null
+          default_practitioner_id: string | null
+          first_name: string | null
+          last_appointment_at: string | null
+          last_name: string | null
+          parked_as: string | null
+          patient_id: string | null
+          recall_dismissed_at: string | null
+          recall_snoozed_until: string | null
+        }
+        Relationships: []
       }
     }
     Functions: {

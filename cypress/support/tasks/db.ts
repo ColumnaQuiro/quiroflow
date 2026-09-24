@@ -376,6 +376,25 @@ async function createPatient(opts: {
   return patient as { id: string; first_name: string; last_name: string | null }
 }
 
+/** A patient's place in the recall queue, set directly or read back. */
+async function setRecallState(opts: { patientId: string; status?: 'active' | 'dismissed'; dismissedAt?: string | null; snoozedUntil?: string | null }) {
+  assertOk(
+    await admin
+      .from('patients')
+      .update({
+        ...(opts.status ? { recall_status: opts.status } : {}),
+        ...(opts.dismissedAt !== undefined ? { recall_dismissed_at: opts.dismissedAt } : {}),
+        ...(opts.snoozedUntil !== undefined ? { recall_snoozed_until: opts.snoozedUntil } : {}),
+      })
+      .eq('id', opts.patientId),
+  )
+  return { ok: true }
+}
+async function recallState(opts: { patientId: string }) {
+  const row = unwrap(await admin.from('patients').select('recall_status, recall_dismissed_at, recall_snoozed_until, recall_priority').eq('id', opts.patientId).single())
+  return row as { recall_status: string; recall_dismissed_at: string | null; recall_snoozed_until: string | null; recall_priority: boolean }
+}
+
 /**
  * A clinic's worth of patients in a handful of inserts, for the specs that need
  * a list longer than a URL can name by id (~215 uuids). Each gets a mobile
@@ -2579,6 +2598,8 @@ export const dbTasks = {
   'db:waitlistEntryById': waitlistEntryById,
   'db:createRoom': createRoom,
   'db:setTeamMemberHours': setTeamMemberHours,
+  'db:setRecallState': setRecallState,
+  'db:recallState': recallState,
   'db:teamMemberById': teamMemberById,
   'db:setCancellationFee': setCancellationFee,
   'db:invoicesFor': invoicesFor,

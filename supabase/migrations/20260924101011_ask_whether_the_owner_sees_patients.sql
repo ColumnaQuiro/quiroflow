@@ -24,6 +24,14 @@
 
 drop function public.create_account_with_owner(text, text, text, text, text);
 
+-- The two-argument version from 0002, last re-created in 0127, goes too.
+-- Nothing calls it: onboarding and the test seeding both name p_owner_name,
+-- which it does not have, so every call already resolves to the full
+-- version. Left in place it is not merely dead -- beside a version whose
+-- extra arguments all have defaults, a call naming only the account and
+-- clinic would match both and be refused as ambiguous.
+drop function if exists public.create_account_with_owner(text, text);
+
 create function public.create_account_with_owner(
   p_account_name text,
   p_clinic_name text,

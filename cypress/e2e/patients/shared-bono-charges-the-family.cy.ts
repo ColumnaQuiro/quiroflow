@@ -49,8 +49,8 @@ describe('Logging a session from a shared bono', () => {
             // The child draws the twelfth session. Her own balance is 0, well
             // under the 44 EUR this costs, so the per-patient check this
             // replaces would have billed her for it.
-            cy.on('window:confirm', () => true)
-            cy.contains('button', 'Log session').click()
+            cy.get('[data-cy="log-session-open"]').click()
+            cy.get('[data-cy="confirm-dialog-confirm"]').should('not.be.disabled').click()
 
             // The counter is the visible half of the write, and waiting for it
             // is what stops the query below racing the click -- the charge is
@@ -98,8 +98,8 @@ describe('Logging a session from a shared bono', () => {
             cy.contains('[data-cy="bono-card"]', 'Bono 12').should('be.visible')
             cy.contains('12 of 12 sessions left').should('be.visible')
 
-            cy.on('window:confirm', () => true)
-            cy.contains('button', 'Log session').click()
+            cy.get('[data-cy="log-session-open"]').click()
+            cy.get('[data-cy="confirm-dialog-confirm"]').should('not.be.disabled').click()
 
             cy.contains('11 of 12 sessions left', { timeout: 15000 }).should('be.visible')
 

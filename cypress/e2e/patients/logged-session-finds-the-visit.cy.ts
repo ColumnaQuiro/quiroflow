@@ -55,8 +55,8 @@ describe('Logging a bono session', () => {
             cy.login(account.email, account.password)
             cy.visit(`/patients/${patient.id}?tab=billing`)
 
-            cy.on('window:confirm', () => true)
-            cy.contains('button', 'Log session').click()
+            cy.get('[data-cy="log-session-open"]').click()
+            cy.get('[data-cy="confirm-dialog-confirm"]').should('not.be.disabled').click()
             sessionLogged(patient.id, purchase.id).then((effects: any) => {
               expect(effects.sessions.length, 'one session').to.eq(1)
               // The visit he was actually in — no second appointment invented.
@@ -103,8 +103,8 @@ describe('Logging a bono session', () => {
             cy.login(account.email, account.password)
             cy.visit(`/patients/${patient.id}?tab=billing`)
 
-            cy.on('window:confirm', () => true)
-            cy.contains('button', 'Log session').click()
+            cy.get('[data-cy="log-session-open"]').click()
+            cy.get('[data-cy="confirm-dialog-confirm"]').should('not.be.disabled').click()
             sessionLogged(patient.id, purchase.id).then((effects: any) => {
               expect(effects.sessions.length, 'one session').to.eq(1)
               expect(effects.appointments.length, 'the visit was invented').to.eq(1)
@@ -143,11 +143,11 @@ describe('Logging a bono session', () => {
           cy.visit(`/patients/${patient.id}?tab=billing`)
 
           const alerts: string[] = []
-          cy.on('window:confirm', () => true)
           cy.on('window:alert', (text) => {
             alerts.push(text)
           })
-          cy.contains('button', 'Log session').click()
+          cy.get('[data-cy="log-session-open"]').click()
+          cy.get('[data-cy="confirm-dialog-confirm"]').should('not.be.disabled').click()
           cy.wait('@visitInsert')
 
           cy.wrap(alerts).should((seen) => {

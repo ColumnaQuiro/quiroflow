@@ -19,8 +19,8 @@ describe('Logging a bono session', () => {
           cy.contains('12 of 12 sessions left').should('be.visible')
 
           // Logging a session now writes real records, so it asks first.
-          cy.on('window:confirm', () => true)
-          cy.contains('button', 'Log session').click()
+          cy.get('[data-cy="log-session-open"]').click()
+          cy.get('[data-cy="confirm-dialog-confirm"]').should('not.be.disabled').click()
 
           // The counter is the visible half of the change...
           cy.contains('11 of 12 sessions left', { timeout: 15000 }).should('be.visible')
@@ -69,11 +69,10 @@ describe('Logging a bono session', () => {
   })
 
   it('records the visit on the day it happened, not the day it was typed in', () => {
-    // Catching up on a session nobody logged at the time. "Log session" is
-    // still one click on today; this is the other button, and the date it
-    // records has to be the one picked rather than now -- a visit filed under
-    // the wrong day is a visit the practitioner is not paid for on the right
-    // one, and the bono's own history stops matching the calendar.
+    // Catching up on a session for a visit that was never on the calendar.
+    // The date recorded has to be the one picked rather than now -- a visit
+    // filed under the wrong day is a visit the practitioner is not paid for on
+    // the right one, and the bono's own history stops matching the calendar.
     cy.seedStaffAccount().then((account) => {
       cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Berta', lastName: 'Backdate' }).then((patient: any) => {
         cy.task('db:createPackagePurchase', {
@@ -93,21 +92,14 @@ describe('Logging a bono session', () => {
           chosen.setDate(chosen.getDate() - 6)
           const chosenStr = `${chosen.getFullYear()}-${String(chosen.getMonth() + 1).padStart(2, '0')}-${String(chosen.getDate()).padStart(2, '0')}`
 
-          cy.on('window:confirm', () => true)
-          cy.contains('button', 'Another date').click()
-          // No .clear() first: typing YYYY-MM-DD into a native date input
-          // replaces the value outright, and clearing one is the part that
-          // behaves differently across browsers. The field is the only date
-          // input on this tab and only exists while the panel is open.
-          cy.get('input[type="date"]').type(chosenStr)
-          cy.contains('button', 'Log on this date').click()
+          cy.get('[data-cy="log-session-open"]').click()
+          // Nothing on the calendar, so "not on the calendar" is the only
+          // choice and is already picked. No .clear() first: typing
+          // YYYY-MM-DD into a native date input replaces the value outright.
+          cy.get('[data-cy="log-session-date"]').type(chosenStr)
+          cy.get('[data-cy="log-session-summary"]').should('contain.text', '11 of 12 left')
+          cy.get('[data-cy="confirm-dialog-confirm"]').click()
 
-          // contain.text on the card rather than be.visible on the line:
-          // opening and then closing the date panel moves this card, and the
-          // counter ends up clipped by an ancestor's overflow at that scroll
-          // position -- be.visible does not scroll, so it fails on an element
-          // that is on screen and correct. What is being asserted is that the
-          // counter came down, which contain.text says exactly.
           cy.get('[data-cy="bono-card"]', { timeout: 15000 }).should('contain.text', '11 of 12 sessions left')
 
           cy.task('db:packageSessionEffects', { patientId: patient.id, packagePurchaseId: purchase.id }).then((eff: any) => {
@@ -118,6 +110,63 @@ describe('Logging a bono session', () => {
             expect(eff.appointments[0].starts_at.slice(0, 10), 'the visit is on the chosen day').to.eq(chosenStr)
             expect(eff.sessions, 'the visit recorded on the bono').to.have.length(1)
             expect(eff.sessions[0].used_at.slice(0, 10), 'the bono says so too').to.eq(chosenStr)
+          })
+        })
+      })
+    })
+  })
+
+  it('logs a past visit that was never logged onto that visit, not a new one', () => {
+    // Teresa Davis, 24 Sep 2026: her 15 Sep visit had nothing against it, and
+    // "Another date -> 15 Sep" could not see the calendar -- it invented a
+    // second, typeless 12:00 visit that day and put the session and its
+    // receipt on that, leaving the real 10:30 one uncovered.
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Teresa', lastName: 'Pasada' }).then((patient: any) => {
+        cy.task('db:createPackagePurchase', {
+          accountId: account.accountId,
+          patientId: patient.id,
+          packageName: 'Bono mantenimiento',
+          sessionsTotal: 12,
+          sessionsUsed: 0,
+          priceCents: 48000,
+        }).then((purchase: any) => {
+          const nineDaysAgo = new Date()
+          nineDaysAgo.setDate(nineDaysAgo.getDate() - 9)
+          nineDaysAgo.setHours(10, 30, 0, 0)
+          cy.task('db:createAppointment', {
+            accountId: account.accountId,
+            clinicId: account.clinicId,
+            patientId: patient.id,
+            practitionerId: account.teamMemberId,
+            startsAt: nineDaysAgo.toISOString(),
+            status: 'completed',
+          }).then((appt: any) => {
+            cy.login(account.email, account.password)
+            cy.visit(`/patients/${patient.id}?tab=billing`)
+
+            // Said on the card without anyone going looking for it.
+            cy.get('[data-cy="bono-unlogged-visits"]').should('contain.text', '1 visit has no session or payment')
+
+            cy.get('[data-cy="log-session-open"]').click()
+            cy.get('[data-cy="log-session-visit"]').should('have.length', 1)
+            // Not today's, so not picked for them: guessing a day is how a
+            // session lands on the wrong visit.
+            cy.get('[data-cy="confirm-dialog-confirm"]').should('be.disabled')
+            cy.get('[data-cy="log-session-visit"]').click()
+            cy.get('[data-cy="confirm-dialog-confirm"]').should('not.be.disabled').click()
+
+            cy.get('[data-cy="bono-card"]', { timeout: 15000 }).should('contain.text', '11 of 12 sessions left')
+            cy.get('[data-cy="bono-unlogged-visits"]').should('not.exist')
+
+            cy.task('db:packageSessionEffects', { patientId: patient.id, packagePurchaseId: purchase.id }).then((eff: any) => {
+              expect(eff.appointments, 'no second visit invented').to.have.length(1)
+              expect(eff.sessions, 'one session').to.have.length(1)
+              expect(eff.sessions[0].appointment_id, 'on the real visit').to.eq(appt.id)
+              expect(new Date(eff.sessions[0].used_at).getTime(), 'dated to the visit').to.eq(nineDaysAgo.getTime())
+              expect(eff.invoices, 'its receipt on the same visit').to.have.length(1)
+              expect(eff.invoices[0].appointment_id, 'the receipt is on the real visit too').to.eq(appt.id)
+            })
           })
         })
       })

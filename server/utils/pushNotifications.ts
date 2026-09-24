@@ -1,6 +1,7 @@
 import { createSign } from 'node:crypto'
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
+import { inboxRecipients } from '~/utils/inboxRecipients'
 
 // Push notification for a new inbound message (WhatsApp or in-app), to
 // every team member who can see the Inbox -- the owner (bypasses all
@@ -18,14 +19,31 @@ export async function notifyInboxTeamMembers(
 ) {
   const { data: members } = await supabase
     .from('team_members')
-    .select('user_id, is_owner, account_roles(permissions)')
+    .select('id, user_id, is_owner, account_roles(permissions)')
     .eq('account_id', accountId)
     .not('user_id', 'is', null)
   if (!members) return
 
-  const userIds = members
-    .filter((m) => m.is_owner || (m.account_roles as { permissions: Record<string, unknown> } | null)?.permissions?.inbox_access === true)
-    .map((m) => m.user_id as string)
+  // Assigned conversations notify their owner alone (utils/inboxRecipients).
+  let assignedTo: string | null = null
+  if (data.key) {
+    const { data: assignment } = await supabase
+      .from('inbox_assignments')
+      .select('team_member_id')
+      .eq('account_id', accountId)
+      .eq('conversation_key', data.key)
+      .maybeSingle()
+    assignedTo = assignment?.team_member_id ?? null
+  }
+  const userIds = inboxRecipients(
+    members.map((m) => ({
+      id: m.id,
+      user_id: m.user_id,
+      is_owner: m.is_owner,
+      inbox_access: (m.account_roles as { permissions: Record<string, unknown> } | null)?.permissions?.inbox_access === true,
+    })),
+    assignedTo,
+  )
 
   await sendPushToUsers(supabase, userIds, { title: senderName, body: preview, data })
 }

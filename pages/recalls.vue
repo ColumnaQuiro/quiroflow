@@ -211,7 +211,9 @@ async function loadTeamMembers() {
   teamMembers.value = data ?? []
 }
 
+const { refresh: refreshNavBadges } = useNavBadges()
 function refreshAll() {
+  refreshNavBadges()
   maxKnownPage.value = 1
   page.value = 1
   selectedIds.value = new Set()

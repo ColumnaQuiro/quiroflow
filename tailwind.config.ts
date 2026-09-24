@@ -1,4 +1,5 @@
 import type { Config } from 'tailwindcss'
+import plugin from 'tailwindcss/plugin'
 
 // Design tokens from the "QuiroFlow UI Redesign" Claude Design handoff.
 // Every color is a CSS variable (defined in assets/css/theme.css as an RGB
@@ -127,4 +128,13 @@ export default <Partial<Config>>{
       },
     },
   },
+  plugins: [
+    // `touch:` -- sizes for a finger rather than a mouse. The front desk runs
+    // on an iPad, where every control needs 44px, but a desktop sidebar at
+    // 44px a row no longer fits on the screen; (pointer: coarse) gives each
+    // its own.
+    plugin(({ addVariant }) => {
+      addVariant('touch', '@media (pointer: coarse)')
+    }),
+  ],
 }

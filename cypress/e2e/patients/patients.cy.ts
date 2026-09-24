@@ -61,7 +61,7 @@ describe('Patients', () => {
         }
         for (const [old, label] of Object.entries(legacy)) {
           cy.visit(`/patients/${patient.id}?tab=${old}`)
-          cy.contains('button', label).should('have.attr', 'aria-selected', 'true')
+          cy.contains('[role=tab]', label).should('have.attr', 'aria-selected', 'true')
         }
       })
     })

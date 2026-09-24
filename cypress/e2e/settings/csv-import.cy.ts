@@ -11,7 +11,7 @@ describe('CSV patient import (PracticeHub)', () => {
       // the tab's handler, a silent no-op that a plain click can't detect.
       cy.intercept('GET', '**/rest/v1/team_members*').as('teamMembersFetch')
       cy.visit('/settings/import')
-      cy.clickUntil('button:contains("Patients")', 'input[type=file]')
+      cy.clickUntil('main button:contains("Patients")', 'input[type=file]')
       // The importer's onMounted fetches team_members before it's ready to
       // handle a file drop; selecting a file before that resolves is a
       // silent no-op, so wait for the request rather than a blind delay.

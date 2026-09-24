@@ -18,6 +18,14 @@ const route = useRoute()
 const router = useRouter()
 const showDenied = ref(route.query.denied === '1')
 
+// The router's own route, not useRoute(). In a layout, useRoute() is the route
+// of the page on screen, and it only moves once the next page has rendered.
+// The lock screen renders no page at all, so on "Choose a plan" the address
+// changed to /subscription, the page never rendered, the route never moved,
+// and the lock screen stayed -- a locked owner could not reach the one page
+// that lets them pay.
+const currentPath = computed(() => router.currentRoute.value.path)
+
 // Used to live in the sidebar, costing it a full row of width every screen
 // for a control that's really about the whole app, not sidebar navigation --
 // moved to this persistent top bar instead, alongside the account menu.
@@ -55,7 +63,7 @@ const contactHref = 'mailto:hola@quiroflow.com'
   subscription, the portal for a lapsed one), and every API it calls is gated
   on requireTeamMember rather than requireActiveAccount, so all of them keep
   working while the account is locked. -->
-  <div v-if="store.isBillingLocked && route.path !== '/subscription'" class="flex h-screen items-center justify-center bg-surface-page px-6">
+  <div v-if="store.isBillingLocked && currentPath !== '/subscription'" class="flex h-screen items-center justify-center bg-surface-page px-6">
     <div class="max-w-sm text-center">
       <h1 class="text-lg font-semibold text-gray-900">Account locked</h1>
       <p class="mt-2 text-sm text-gray-600">This QuiroFlow account is locked pending payment.</p>
@@ -80,21 +88,22 @@ const contactHref = 'mailto:hola@quiroflow.com'
         which not every page even has) so the account menu has one home
         instead of living in the sidebar, where it permanently cost a row of
         vertical space on every screen. -->
-        <div class="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-line bg-surface px-4">
+        <div class="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-line bg-surface px-4 touch:h-12">
           <div class="flex min-w-0 items-center gap-2">
             <!-- The sidebar is an off-canvas drawer below lg (AppSidebar.vue),
             so this is the only way to reach it on a phone or narrow tablet. -->
             <button
               type="button"
-              class="flex h-7 w-7 shrink-0 items-center justify-center rounded-ctl border border-line-control bg-chip-bg text-ink-muted hover:bg-surface-subtle lg:hidden"
-              :title="t('Open menu', 'Abrir menú')"
+              class="flex h-7 w-7 shrink-0 items-center justify-center rounded-ctl border border-line-control bg-chip-bg text-ink-muted hover:bg-surface-subtle touch:h-11 touch:w-11 lg:hidden"
+              data-cy="open-sidebar"
+              :aria-label="t('Open menu', 'Abrir menú')"
               @click="mobileSidebarOpen = true"
             >
               <svg width="14" height="14" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1.5 3.5h11M1.5 7h11M1.5 10.5h11" /></svg>
             </button>
             <button
               type="button"
-              class="flex h-7 w-7 shrink-0 items-center justify-center rounded-ctl border border-line-control bg-chip-bg text-left text-[13px] text-ink-muted hover:bg-surface-subtle lg:w-64 lg:justify-start lg:gap-2 lg:px-2.5"
+              class="flex h-7 w-7 shrink-0 items-center justify-center rounded-ctl border border-line-control bg-chip-bg text-left text-[13px] text-ink-muted hover:bg-surface-subtle touch:h-11 touch:min-w-11 lg:w-64 lg:justify-start lg:gap-2 lg:px-2.5"
               :title="t('Search or jump to (⌘K)', 'Buscar o ir a (⌘K)')"
               @click="paletteOpen = true"
             >

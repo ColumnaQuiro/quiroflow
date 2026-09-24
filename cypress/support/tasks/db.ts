@@ -376,6 +376,13 @@ async function createPatient(opts: {
   return patient as { id: string; first_name: string; last_name: string | null }
 }
 
+/** Another clinic in the same account, for anything that follows the clinic
+ *  picked in the sidebar. */
+async function addClinic(opts: { accountId: string; name: string }) {
+  const row = unwrap(await admin.from('clinics').insert({ account_id: opts.accountId, name: opts.name }).select('id').single())
+  return { id: row.id as string }
+}
+
 /** A patient's place in the recall queue, set directly or read back. */
 async function setRecallState(opts: { patientId: string; status?: 'active' | 'dismissed'; dismissedAt?: string | null; snoozedUntil?: string | null }) {
   assertOk(
@@ -2642,6 +2649,7 @@ export const dbTasks = {
   'db:createRoom': createRoom,
   'db:setTeamMemberHours': setTeamMemberHours,
   'db:setRecallState': setRecallState,
+  'db:addClinic': addClinic,
   'db:recallState': recallState,
   'db:teamMemberById': teamMemberById,
   'db:setCancellationFee': setCancellationFee,

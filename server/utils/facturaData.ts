@@ -23,7 +23,7 @@ export async function loadFacturaDocumentData(
   const { data: factura } = await supabase
     .from('facturas')
     .select(
-      'number, kind, description, amount_cents, tax_base_cents, tax_rate_bp, tax_amount_cents, tax_exemption_code, issued_at, account_id, patient_id, recipient_name, recipient_nif, recipient_address, rectifies_factura_id, patients(first_name, last_name, email, address, city, postal_code, country, national_id)',
+      'number, kind, description, amount_cents, tax_base_cents, tax_rate_bp, tax_amount_cents, tax_exemption_code, issued_at, account_id, patient_id, recipient_name, recipient_nif, recipient_address, rectifies_factura_id, issuer_name, issuer_legal_name, issuer_address, issuer_tax_id, issuer_footer_text, issuer_logo_storage_path, patients(first_name, last_name, email, address, city, postal_code, country, national_id)',
     )
     .eq('id', facturaId)
     .maybeSingle()
@@ -40,21 +40,31 @@ export async function loadFacturaDocumentData(
     national_id: string | null
   } | null
 
-  // A package or membership sale has no appointment behind it, so the clinic
-  // is the account's first -- accurate for the single-clinic case, which is
-  // every account today.
-  const { data: clinicRow } = await supabase
-    .from('clinics')
-    .select('name, legal_name, address, tax_id, invoice_footer_text, logo_storage_path')
-    .eq('account_id', factura.account_id)
-    .order('created_at')
-    .limit(1)
-    .maybeSingle()
+  // The issuer is printed from the snapshot taken when the factura was issued
+  // (fill_factura_issuer, 20260924135318), never from the clinic as it is
+  // now: an issued factura is a fiscal record, and editing the clinic's
+  // address or NIF in Settings must not rewrite documents already handed
+  // over. The same snapshot also names the right clinic on a multi-clinic
+  // account -- the visit's, not simply the oldest.
+  //
+  // Every row existing at that migration was backfilled, so the live read
+  // below is only a fallback for a factura issued while the account had no
+  // clinic at all.
+  const issuer = factura.issuer_name
+    ? {
+        name: factura.issuer_name,
+        legalName: factura.issuer_legal_name,
+        address: factura.issuer_address,
+        taxId: factura.issuer_tax_id,
+        footerText: factura.issuer_footer_text,
+        logoStoragePath: factura.issuer_logo_storage_path,
+      }
+    : await liveIssuer(supabase, factura.account_id)
 
   let logoBuffer: Buffer | null = null
-  if (clinicRow?.logo_storage_path) {
+  if (issuer?.logoStoragePath) {
     try {
-      const { data: publicUrl } = supabase.storage.from('clinic-logos').getPublicUrl(clinicRow.logo_storage_path)
+      const { data: publicUrl } = supabase.storage.from('clinic-logos').getPublicUrl(issuer.logoStoragePath)
       const res = await fetch(publicUrl.publicUrl)
       if (res.ok) logoBuffer = Buffer.from(await res.arrayBuffer())
     } catch {
@@ -87,8 +97,8 @@ export async function loadFacturaDocumentData(
       country: factura.recipient_address ? null : (patient?.country ?? null),
       nationalId: factura.recipient_nif ?? patient?.national_id ?? null,
     },
-    clinic: clinicRow
-      ? { name: clinicRow.name, legalName: clinicRow.legal_name, address: clinicRow.address, taxId: clinicRow.tax_id, footerText: clinicRow.invoice_footer_text }
+    clinic: issuer
+      ? { name: issuer.name, legalName: issuer.legalName, address: issuer.address, taxId: issuer.taxId, footerText: issuer.footerText }
       : null,
     logoBuffer,
     // A factura is not a reminder to come back; it is a receipt.
@@ -104,5 +114,25 @@ export async function loadFacturaDocumentData(
       amountCents: factura.tax_amount_cents ?? 0,
       exemptionClause: exemptionClause(factura.tax_exemption_code),
     },
+  }
+}
+
+// The pre-snapshot behaviour: the account's first clinic, read now.
+async function liveIssuer(supabase: SupabaseClient<Database>, accountId: string) {
+  const { data: clinicRow } = await supabase
+    .from('clinics')
+    .select('name, legal_name, address, tax_id, invoice_footer_text, logo_storage_path')
+    .eq('account_id', accountId)
+    .order('created_at')
+    .limit(1)
+    .maybeSingle()
+  if (!clinicRow) return null
+  return {
+    name: clinicRow.name,
+    legalName: clinicRow.legal_name,
+    address: clinicRow.address,
+    taxId: clinicRow.tax_id,
+    footerText: clinicRow.invoice_footer_text,
+    logoStoragePath: clinicRow.logo_storage_path,
   }
 }

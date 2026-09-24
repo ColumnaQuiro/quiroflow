@@ -101,6 +101,14 @@ export async function loadInvoiceDocumentData(
   // Most invoices come from an appointment (which has a clinic_id); a
   // package/membership sale invoice doesn't, so this falls back to the
   // account's first clinic -- accurate for the common single-clinic case.
+  //
+  // Read live, deliberately, unlike a factura (see facturaData.ts and
+  // 20260924135318). This is the receipt: a statement of what a visit cost and
+  // what is still owed, not a fiscal document. It has no number in a fiscal
+  // series and no registro behind it, it is re-rendered precisely because its
+  // balance moves, and a clinic that has moved wants a reprinted receipt to
+  // show where to find it now. What must never move -- the document that
+  // evidences the money for Hacienda -- is the factura, and that one is frozen.
   const { data: clinicRow } = appointment?.clinic_id
     ? await supabase.from('clinics').select('name, legal_name, address, tax_id, invoice_footer_text, logo_storage_path').eq('id', appointment.clinic_id).maybeSingle()
     : await supabase

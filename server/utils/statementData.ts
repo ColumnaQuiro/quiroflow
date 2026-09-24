@@ -31,6 +31,11 @@ export async function loadStatementDocumentData(supabase: SupabaseClient<Databas
     .eq('patient_id', patientId)
     .order('created_at')
 
+  // The clinic header is read live and is the account's first clinic, both on
+  // purpose. A statement is generated "as of now" across every visit the
+  // patient has had, possibly at several clinics, so there is no single
+  // establishment it belongs to and no issue date to freeze it at. It is not a
+  // fiscal document; the facturas it summarises carry their own frozen issuer.
   const [{ data: payments }, { data: credits }, { data: clinicRow }] = await Promise.all([
     // By patient, not by their invoices: a statement that listed only payments
     // attached to an invoice would omit money on account and stop adding up.

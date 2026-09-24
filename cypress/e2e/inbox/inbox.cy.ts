@@ -7,7 +7,7 @@ describe('WhatsApp Inbox', () => {
 
         cy.contains('No conversations yet.').should('be.visible')
 
-        cy.clickUntil('button:contains("+ New")', 'input[placeholder="Search patients…"]')
+        cy.clickUntil('[data-cy=inbox-new]', 'input[placeholder="Search patients…"]')
         cy.get('input[placeholder="Search patients…"]').type('Nadia')
         cy.contains('li', 'Nadia Novak').click()
 
@@ -27,7 +27,7 @@ describe('WhatsApp Inbox', () => {
       cy.login(account.email, account.password)
       cy.visit('/inbox')
 
-      cy.clickUntil('button:contains("+ New")', 'input[placeholder="Search patients…"]')
+      cy.clickUntil('[data-cy=inbox-new]', 'input[placeholder="Search patients…"]')
 
       cy.get('body').click(10, 10)
       cy.get('input[placeholder="Search patients…"]').should('not.exist')

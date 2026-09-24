@@ -2379,6 +2379,14 @@ async function setTeamMemberHours(opts: { teamMemberId: string; hours: Record<st
   return { ok: true }
 }
 
+/** What /account saves on a team member, read back. */
+async function teamMemberById(opts: { teamMemberId: string }) {
+  const row = unwrap(
+    await admin.from('team_members').select('full_name, color, language_preference, theme_preference, deleted_at, is_owner').eq('id', opts.teamMemberId).single(),
+  )
+  return row as { full_name: string; color: string; language_preference: string; theme_preference: string; deleted_at: string | null; is_owner: boolean }
+}
+
 /** A patient's invoices with their lines -- what a fee left behind. */
 async function invoicesFor(opts: { patientId: string }) {
   const { data, error } = await admin.from('invoices').select('id, status, total_cents, invoice_line_items(description)').eq('patient_id', opts.patientId).order('created_at')
@@ -2571,6 +2579,7 @@ export const dbTasks = {
   'db:waitlistEntryById': waitlistEntryById,
   'db:createRoom': createRoom,
   'db:setTeamMemberHours': setTeamMemberHours,
+  'db:teamMemberById': teamMemberById,
   'db:setCancellationFee': setCancellationFee,
   'db:invoicesFor': invoicesFor,
   'db:appointmentById': appointmentById,

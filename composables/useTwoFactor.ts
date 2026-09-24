@@ -67,6 +67,12 @@ export function useTwoFactor() {
     return (await verifiedFactorId()) !== null
   }
 
+  /** When the verified authenticator was set up, or null if there is none. */
+  async function enabledSince(): Promise<string | null> {
+    const { data } = await supabase.auth.mfa.listFactors()
+    return data?.totp?.[0]?.created_at ?? null
+  }
+
   // Codes are 6 digits; people paste them with spaces ("123 456") or with
   // the app's own dash.
   function cleanCode(code: string) {
@@ -123,5 +129,5 @@ export function useTwoFactor() {
     return null
   }
 
-  return { gate, forget, isEnabled, verify, startEnroll, confirmEnroll, cancelEnroll, remove }
+  return { gate, forget, isEnabled, enabledSince, verify, startEnroll, confirmEnroll, cancelEnroll, remove }
 }

@@ -25,7 +25,9 @@ describe('Two-factor login', () => {
       })
 
       cy.visit('/account')
-      cy.get('[data-testid="two-factor-card"]').within(() => {
+      // Interactive once mounted, and further down the page than it was.
+      cy.get('[data-cy=account-page]').should('have.attr', 'data-ready', 'true')
+      cy.get('[data-testid="two-factor-card"]').scrollIntoView().within(() => {
         cy.contains('Off').should('be.visible')
         cy.contains('button', 'Set up two-factor').click()
       })
@@ -71,7 +73,8 @@ describe('Two-factor login', () => {
 
           // Required by the clinic, so it cannot be switched off from here.
           cy.visit('/account')
-          cy.get('[data-testid="two-factor-card"]').within(() => {
+          cy.get('[data-cy=account-page]').should('have.attr', 'data-ready', 'true')
+          cy.get('[data-testid="two-factor-card"]').scrollIntoView().within(() => {
             cy.contains('Your clinic requires two-factor authentication').should('be.visible')
             cy.contains('button', 'Turn off').should('not.exist')
           })

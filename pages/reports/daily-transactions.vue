@@ -16,6 +16,9 @@ interface PaymentRow {
   // did all 3,262 payments imported from PracticeHub, which carry no invoice
   // either: every day before mid-September was a page of "Unknown".
   patient_id: string
+  // What the money was for -- 'visit', 'bono', 'membership', 'on_account'.
+  // Null on everything imported from PracticeHub, which never recorded it.
+  purpose: string | null
   invoice_id: string | null
   invoices?: { status: string } | null
 }
@@ -58,7 +61,7 @@ async function load() {
 
   const { data: p } = await supabase
     .from('payments')
-    .select('id, amount_cents, method, paid_at, patient_id, invoice_id, invoices!payments_invoice_id_fkey(status)')
+    .select('id, amount_cents, method, paid_at, patient_id, purpose, invoice_id, invoices!payments_invoice_id_fkey(status)')
     .gte('paid_at', from.toISOString())
     .lte('paid_at', to.toISOString())
     .order('paid_at')
@@ -163,6 +166,11 @@ const byMethod = computed(() => {
 // Stored keys are not labels: "transfer" and "write_off" were rendered raw in
 // the cards and in every row of the table.
 const { ensureLoaded: ensurePaymentMethodsLoaded, labelFor: labelForMethod } = usePaymentMethods()
+
+// What the money was for, beside how it arrived. Two card payments of the
+// same amount on the same morning are a double charge or a visit plus a
+// prepayment, and nothing on this page said which.
+const { purposeLabelFor } = usePaymentPurpose()
 </script>
 
 <template>
@@ -218,6 +226,7 @@ const { ensureLoaded: ensurePaymentMethodsLoaded, labelFor: labelForMethod } = u
                 <th class="px-4 py-2">{{ t('Time', 'Hora') }}</th>
                 <th class="px-4 py-2">{{ t('Patient', 'Paciente') }}</th>
                 <th class="px-4 py-2">{{ t('Receipt', 'Recibo') }}</th>
+                <th class="px-4 py-2">{{ t('For', 'Concepto') }}</th>
                 <th class="px-4 py-2">{{ t('Practitioner', 'Profesional') }}</th>
                 <th class="px-4 py-2">{{ t('Method', 'Método') }}</th>
                 <th class="px-4 py-2 text-right">{{ t('Amount', 'Importe') }}</th>
@@ -225,7 +234,7 @@ const { ensureLoaded: ensurePaymentMethodsLoaded, labelFor: labelForMethod } = u
             </thead>
             <tbody class="divide-y divide-line-row">
               <tr v-if="filteredPayments.length === 0">
-                <td colspan="6" class="px-4 py-6 text-center text-ink-faint2">{{ t('No transactions on this day.', 'Sin transacciones este día.') }}</td>
+                <td colspan="7" class="px-4 py-6 text-center text-ink-faint2">{{ t('No transactions on this day.', 'Sin transacciones este día.') }}</td>
               </tr>
               <tr v-for="row in filteredPayments" :key="row.id">
                 <td class="px-4 py-2.5 text-ink-muted2">{{ time(row.paid_at) }}</td>
@@ -237,6 +246,12 @@ const { ensureLoaded: ensurePaymentMethodsLoaded, labelFor: labelForMethod } = u
                 <td class="px-4 py-2.5 text-ink-muted2">
                   <span>{{ invoiceFor(row)?.invoice_number ?? '—' }}</span>
                   <span v-if="invoiceFor(row)?.is_refund" class="ml-1.5 rounded-pill bg-danger-bg px-1.5 py-0.5 text-[11px] font-medium text-danger-text">{{ t('refund', 'reembolso') }}</span>
+                </td>
+                <td class="px-4 py-2.5 text-ink-muted2">
+                  <span v-if="purposeLabelFor(row.purpose)" class="rounded-pill bg-chip-bg px-1.5 py-0.5 text-[11px] font-medium text-chip-text">
+                    {{ purposeLabelFor(row.purpose) }}
+                  </span>
+                  <span v-else>—</span>
                 </td>
                 <td class="px-4 py-2.5 text-ink-muted2">{{ practitionerName(row) }}</td>
                 <td class="px-4 py-2.5 text-ink-muted2">{{ labelForMethod(row.method) }}</td>

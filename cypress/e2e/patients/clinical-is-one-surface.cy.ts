@@ -161,6 +161,62 @@ describe('The Clinical tab', () => {
     })
   })
 
+  // The tab this replaced had a pencil on every note. The redesign shipped
+  // without one, so a typo in a clinical record could be read but not
+  // corrected -- and the only way back to the editor was "Add note", which
+  // opens the NEWEST visit whatever note you were looking at.
+  it('edits the note that was opened, not the newest one', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:createPatient', {
+        accountId: account.accountId,
+        clinicId: account.clinicId,
+        firstName: 'Corrige',
+        lastName: 'Nota',
+      }).then((patient: any) => {
+        const visit = (daysAgo: number, body: string) =>
+          cy
+            .task('db:createAppointment', {
+              accountId: account.accountId,
+              clinicId: account.clinicId,
+              patientId: patient.id,
+              startsAt: new Date(Date.now() - daysAgo * 86400000).toISOString(),
+              status: 'completed',
+            })
+            .then((appt: any) => cy.task('db:addVisitNote', { accountId: account.accountId, appointmentId: appt.id, body }))
+
+        visit(2, 'Subjective: The recent visit.')
+          .then(() => visit(45, 'Subjective: Tensión cervial desde junio.'))
+          .then(() => {
+            cy.login(account.email, account.password)
+            cy.visit(`/patients/${patient.id}?tab=clinical`)
+
+            // The old visit is collapsed, so open it first -- the action
+            // belongs to the note being read.
+            cy.contains('li', 'Tensión cervial').contains('button', 'Open').click()
+            cy.contains('li', 'Tensión cervial').contains('button', 'Edit').click()
+
+            cy.get('button[aria-label="Edit"]').click()
+            // The decisive assertion: the panel is pointed at THIS visit.
+            // Wired to latestAppointmentId, as "Add note" is, the draft here
+            // would be the recent visit's note instead.
+            cy.get('li textarea').should('have.value', 'Subjective: Tensión cervial desde junio.')
+            cy.get('li textarea').clear().type('Subjective: Tensión cervical desde junio.')
+            cy.contains('button', 'Save').click()
+            // Saved, not merely submitted. The panel swaps the textarea back
+            // for the note once the update lands, and closing before that
+            // reloads the list from the body that is still in the database.
+            cy.get('li textarea').should('not.exist')
+
+            cy.get('button[aria-label="Close"]').click()
+
+            // Corrected in the record, and the misspelling is gone.
+            cy.contains('Tensión cervical desde junio.').should('be.visible')
+            cy.contains('Tensión cervial desde junio.').should('not.exist')
+          })
+      })
+    })
+  })
+
   it('shows the clinical columns once, not twice', () => {
     // The band and the flags panel read the same five columns. Rendering
     // both put all of it on screen twice, which is the drawer problem this

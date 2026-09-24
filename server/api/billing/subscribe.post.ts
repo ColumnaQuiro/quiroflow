@@ -1,8 +1,8 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
-import { stripeForPlatformBilling } from '~/server/utils/platformBillingStripe'
 import { planIncludesGrowth } from '~/utils/growthPlans'
 import { checkoutTrialEnd } from '~/utils/billing'
+import { retrieveChangeableSubscription, stripeForPlatformBilling } from '~/server/utils/platformBillingStripe'
 
 // Starts a brand-new platform subscription (redirect to Stripe Checkout to
 // collect a card) or changes an existing one's plan/interval/seat count in
@@ -123,8 +123,13 @@ export default defineEventHandler(async (event) => {
   // Already paying: change the existing subscription's items in place. No
   // checkout redirect -- the card on file is reused, matching how upgrading
   // a plan works on every subscription SaaS.
-  if (subscription?.stripe_subscription_id) {
-    const current = await stripe.subscriptions.retrieve(subscription.stripe_subscription_id)
+  //
+  // Only while that subscription is still alive. One that has been cancelled
+  // (or never got its first payment) cannot be updated, so it falls through
+  // to Checkout below, against the same Stripe customer -- which is how an
+  // account that cancelled gets to pay again.
+  const current = await retrieveChangeableSubscription(stripe, subscription?.stripe_subscription_id)
+  if (current) {
     // Every plan's price ids, not just the target plan's, so the item
     // actually carrying the CURRENT plan is found regardless of which
     // plan/interval that was.
@@ -154,7 +159,7 @@ export default defineEventHandler(async (event) => {
     // default_tax_rates is set on every update, not just at creation, so a
     // subscription made before VAT was configured picks it up the next time
     // the customer changes plan instead of staying untaxed forever.
-    await stripe.subscriptions.update(subscription.stripe_subscription_id, {
+    await stripe.subscriptions.update(current.id, {
       items,
       proration_behavior: 'create_prorations',
       ...(defaultTaxRates ? { default_tax_rates: defaultTaxRates } : {}),

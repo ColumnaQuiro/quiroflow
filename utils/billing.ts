@@ -196,6 +196,49 @@ export function checkoutTrialEnd(
   return endsAt - nowSeconds >= CHECKOUT_MIN_TRIAL_SECONDS ? endsAt : null
 }
 
+/**
+ * Stripe subscription statuses whose items can still be changed in place.
+ *
+ * The others are ended or never started. `canceled` and `incomplete_expired`
+ * are final: Stripe refuses any update to them, so an owner whose
+ * subscription had ended got a 500 from every attempt to pay again, for as
+ * long as the dead id sat on the row. `incomplete` is a first payment still
+ * waiting on the customer (3-D Secure left unfinished, usually), whose items
+ * Stripe will not change either. For all three, the way to pay is a new
+ * Checkout Session -- which is what the customer would have to do anyway.
+ */
+const CHANGEABLE_STRIPE_STATUSES = new Set(['active', 'trialing', 'past_due', 'unpaid', 'paused'])
+
+export function canChangeInPlace(stripeStatus: string): boolean {
+  return CHANGEABLE_STRIPE_STATUSES.has(stripeStatus)
+}
+
+/**
+ * Whether a customer.subscription.* event describes a subscription the
+ * account has already moved on from, and must be ignored.
+ *
+ * Once an account can subscribe again after cancelling, it has more than one
+ * Stripe subscription over its life, and Stripe delivers their events in no
+ * promised order. The row mirrors one of them -- the id it holds. An event
+ * about a DIFFERENT subscription that is itself over (deleted, cancelled,
+ * expired before its first payment, or not yet paid for) must not write:
+ * otherwise a late `deleted` for last year's subscription lands after this
+ * month's `created` and locks an account that is paying.
+ *
+ * An event for a different subscription that IS live is the account moving
+ * on to it, and is applied. With no id on the row yet, everything applies --
+ * that is how the first subscription gets recorded at all.
+ */
+export function isSupersededSubscriptionEvent(opts: {
+  rowSubscriptionId: string | null | undefined
+  eventSubscriptionId: string
+  eventStatus: string
+  deleted: boolean
+}): boolean {
+  if (!opts.rowSubscriptionId || opts.rowSubscriptionId === opts.eventSubscriptionId) return false
+  return opts.deleted || !canChangeInPlace(opts.eventStatus)
+}
+
 /** The six states a subscription can be in, as the UI names them. */
 export type SubscriptionState = 'trialing' | 'active' | 'past_due' | 'locked' | 'canceled' | 'comped'
 

@@ -5,7 +5,7 @@ const user = useSupabaseUser()
 watch(user, (u) => { if (!u) navigateTo('/login') }, { immediate: true })
 
 const t = useT()
-const { patient, teamMember, loading } = useIdentity()
+const { patient, teamMember, twoFactor, loading, reload } = useIdentity()
 
 // Staff with no patient record of their own have nothing to see here, so
 // they go straight to their own tabs. A dual-identity user (rare, but the
@@ -32,6 +32,31 @@ async function signOut() {
 <template>
   <div v-if="loading" class="flex min-h-0 flex-1 items-center justify-center p-6 text-sm text-ink-faint">
     {{ t('Loading…', 'Cargando…') }}
+  </div>
+
+  <!-- Signed in with the password, still owes the authenticator code (or
+       their clinic requires two-factor and it isn't set up yet). Nothing
+       below can load until then -- the database returns no rows for this
+       login -- so this is the whole screen. -->
+  <div v-else-if="twoFactor !== 'ok'" class="flex min-h-0 flex-1 flex-col justify-center overflow-y-auto px-6 py-10">
+    <div class="w-full rounded-card border border-line bg-surface p-6 shadow-card">
+      <template v-if="twoFactor === 'verify'">
+        <h1 class="text-lg font-semibold text-ink-900">{{ t('Two-factor authentication', 'Verificación en dos pasos') }}</h1>
+        <div class="mt-4">
+          <AuthTwoFactorCode @verified="reload" />
+        </div>
+      </template>
+      <template v-else>
+        <h1 class="text-lg font-semibold text-ink-900">{{ t('Set up two-factor authentication', 'Configura la verificación en dos pasos') }}</h1>
+        <p class="mt-1 text-[13px] text-ink-muted">
+          {{ t('Your clinic requires a code from an authenticator app every time you sign in. Set it up once to continue.', 'Tu clínica exige un código de una app de autenticación cada vez que inicias sesión. Configúralo una vez para continuar.') }}
+        </p>
+        <div class="mt-4">
+          <AuthTwoFactorEnroll required @enabled="reload" />
+        </div>
+      </template>
+      <button type="button" class="mt-5 text-[12.5px] text-ink-muted" @click="signOut">{{ t('Sign out', 'Cerrar sesión') }}</button>
+    </div>
   </div>
 
   <div v-else-if="!patient && !teamMember" class="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 py-16 text-center">

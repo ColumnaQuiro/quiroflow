@@ -41,6 +41,20 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const user = useSupabaseUser()
   if (!user.value) return
 
+  // Two-factor goes before anything that reads the account. Until the code
+  // is in, the database returns nothing for this person -- and "no
+  // team_members row" below means "send them to onboarding to create a new
+  // clinic", which is the one place a staff member must never be sent.
+  const twoFactor = await useTwoFactor().gate()
+  if (twoFactor !== 'ok') {
+    if (to.path === '/two-factor') return
+    // Where they were going comes along, so a password-reset link still
+    // lands on /reset-password once the code is in.
+    const next = ['/', '/login', '/signup'].includes(to.path) ? undefined : to.fullPath
+    return navigateTo({ path: '/two-factor', query: next ? { next } : {} })
+  }
+  if (to.path === '/two-factor') return
+
   const store = useAccountStore()
   if (!store.loaded) {
     await store.load()

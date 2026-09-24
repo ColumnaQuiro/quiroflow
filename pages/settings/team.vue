@@ -46,16 +46,34 @@ const roleName = computed(() => {
   return (roleId: string | null) => (roleId ? (byId.get(roleId) ?? t('Unknown role', 'Rol desconocido')) : t('No role', 'Sin rol'))
 })
 
+// --- Two-factor login. Each person sets it up on their own login (Account
+// Settings); this is where a clinic makes it compulsory for everyone, and
+// where an admin clears it for someone who has lost their phone.
+const requireTwoFactor = ref(false)
+const twoFactorEnrolled = ref<Set<string>>(new Set())
+// Switching the requirement on needs this person's own session to have
+// passed two-factor -- the database refuses it otherwise (see
+// accounts_guard_require_two_factor), so the switch says so up front.
+const myTwoFactorVerified = ref(false)
+const savingRequirement = ref(false)
+const resettingTwoFactorId = ref<string | null>(null)
+
 async function load() {
   loading.value = true
-  const [{ data: m }, { data: i }, { data: r }] = await Promise.all([
+  const [{ data: m }, { data: i }, { data: r }, { data: tf }, { data: acct }, { data: aal }] = await Promise.all([
     supabase.from('team_members').select('*').is('deleted_at', null).order('full_name'),
     supabase.from('account_invites').select('*').is('accepted_at', null).order('created_at', { ascending: false }),
     supabase.from('account_roles').select('id, name').order('is_system', { ascending: false }).order('name'),
+    supabase.rpc('team_two_factor_status', { p_account_id: store.accountId! }),
+    supabase.from('accounts').select('require_two_factor').eq('id', store.accountId!).maybeSingle(),
+    supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
   ])
   members.value = m ?? []
   invites.value = i ?? []
   roles.value = r ?? []
+  twoFactorEnrolled.value = new Set((tf ?? []).filter((row) => row.enrolled).map((row) => row.team_member_id))
+  requireTwoFactor.value = acct?.require_two_factor ?? false
+  myTwoFactorVerified.value = aal?.currentLevel === 'aal2'
   if (!inviteRoleId.value && roles.value.length > 0) {
     inviteRoleId.value = roles.value.find((role) => role.name === 'Practitioner')?.id ?? roles.value[0].id
   }
@@ -218,6 +236,56 @@ async function sendPasswordReset(member: TeamMemberRow) {
   }
 }
 
+const membersWithoutTwoFactor = computed(() => members.value.filter((m) => !twoFactorEnrolled.value.has(m.id)))
+
+async function toggleRequireTwoFactor() {
+  const next = !requireTwoFactor.value
+  if (next) {
+    const without = membersWithoutTwoFactor.value.map((m) => m.full_name)
+    const message = without.length
+      ? t(
+          `Require two-factor for everyone? ${without.join(', ')} will have to set it up the next time they open QuiroFlow.`,
+          `¿Exigir la verificación en dos pasos a todo el equipo? ${without.join(', ')} tendrán que configurarla la próxima vez que abran QuiroFlow.`,
+        )
+      : t('Require two-factor for everyone on the team?', '¿Exigir la verificación en dos pasos a todo el equipo?')
+    if (!confirm(message)) return
+  }
+  savingRequirement.value = true
+  const { error: updateError } = await supabase.from('accounts').update({ require_two_factor: next }).eq('id', store.accountId!)
+  savingRequirement.value = false
+  if (updateError) {
+    showToast(updateError.message, 'error')
+    return
+  }
+  requireTwoFactor.value = next
+  store.requireTwoFactor = next
+  showToast(next ? t('Two-factor is now required.', 'La verificación en dos pasos ahora es obligatoria.') : t('Two-factor is now optional.', 'La verificación en dos pasos ahora es opcional.'))
+}
+
+async function resetTwoFactor(member: TeamMemberRow) {
+  const message = requireTwoFactor.value
+    ? t(
+        `Reset two-factor for ${member.full_name}? Their authenticator app stops working for QuiroFlow, and they will set up a new one the next time they sign in.`,
+        `¿Restablecer la verificación en dos pasos de ${member.full_name}? Su app de autenticación dejará de funcionar para QuiroFlow y configurará una nueva la próxima vez que inicie sesión.`,
+      )
+    : t(
+        `Reset two-factor for ${member.full_name}? Their authenticator app stops working for QuiroFlow and they will sign in with just their password until they set it up again.`,
+        `¿Restablecer la verificación en dos pasos de ${member.full_name}? Su app de autenticación dejará de funcionar para QuiroFlow e iniciará sesión solo con su contraseña hasta que la vuelva a configurar.`,
+      )
+  if (!confirm(message)) return
+  resettingTwoFactorId.value = member.id
+  try {
+    await useStaffFetch(`/api/team-members/${member.id}/reset-two-factor`, { method: 'POST' })
+    twoFactorEnrolled.value.delete(member.id)
+    twoFactorEnrolled.value = new Set(twoFactorEnrolled.value)
+    showToast(t('Two-factor reset.', 'Verificación en dos pasos restablecida.'))
+  } catch (e: any) {
+    showToast(e?.data?.statusMessage || e?.message || t('Could not reset two-factor.', 'No se pudo restablecer la verificación en dos pasos.'), 'error')
+  } finally {
+    resettingTwoFactorId.value = null
+  }
+}
+
 function initialsOf(name: string) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('') || '?'
 }
@@ -238,7 +306,28 @@ function copy(text: string) {
       <div class="flex gap-8 p-6">
         <SettingsNav />
         <div class="min-w-0 max-w-[900px] flex-1">
-          <p class="text-[13px] text-ink-muted2">{{ t('Staff accounts, roles, and invites.', 'Cuentas del personal, roles e invitaciones.') }}</p>
+          <p class="text-[13px] text-ink-muted2">{{ t('Staff accounts, roles, invites, and two-factor login.', 'Cuentas del personal, roles, invitaciones y verificación en dos pasos.') }}</p>
+
+          <div class="mt-4 flex items-start justify-between gap-4 rounded-card border border-line bg-surface p-4 shadow-card" data-testid="require-two-factor">
+            <div class="min-w-0">
+              <p class="text-[13.5px] font-[560] text-ink-900">{{ t('Require two-factor authentication', 'Exigir verificación en dos pasos') }}</p>
+              <p class="mt-0.5 text-[12.5px] text-ink-muted2">
+                {{ t('Everyone on the team signs in with their password and a 6-digit code from an authenticator app. Anyone who has not set it up is asked to the next time they open QuiroFlow.', 'Todo el equipo inicia sesión con su contraseña y un código de 6 dígitos de una app de autenticación. A quien no lo tenga configurado se le pedirá la próxima vez que abra QuiroFlow.') }}
+              </p>
+              <p v-if="!requireTwoFactor && !myTwoFactorVerified && !loading" class="mt-1.5 text-[12.5px] text-warning-text">
+                {{ t('Set up two-factor on your own login first, in', 'Primero configura la verificación en dos pasos en tu propio acceso, en') }}
+                <NuxtLink to="/account" class="font-medium underline">{{ t('Account Settings', 'Ajustes de la Cuenta') }}</NuxtLink>.
+              </p>
+              <p v-else-if="requireTwoFactor && membersWithoutTwoFactor.length > 0" class="mt-1.5 text-[12.5px] text-ink-muted">
+                {{ t('Not set up yet:', 'Aún sin configurar:') }} {{ membersWithoutTwoFactor.map((m) => m.full_name).join(', ') }}
+              </p>
+            </div>
+            <SettingsToggle
+              :model-value="requireTwoFactor"
+              :disabled="loading || savingRequirement || (!requireTwoFactor && !myTwoFactorVerified)"
+              @update:model-value="toggleRequireTwoFactor"
+            />
+          </div>
 
           <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
             <table class="w-full text-[13px]">
@@ -288,6 +377,7 @@ function copy(text: string) {
                       <button v-else type="button" class="hover:text-brand-text" @click="startEdit(m)">
                         {{ m.full_name }}
                       </button>
+                      <UiPill v-if="twoFactorEnrolled.has(m.id)" tone="success" class="ml-2 align-middle" :title="t('Signs in with two-factor authentication', 'Inicia sesión con verificación en dos pasos')">2FA</UiPill>
                     </td>
                     <td class="px-4 py-2.5">
                       <UiPill tone="brand">{{ roleName(m.role_id) }}</UiPill>
@@ -311,6 +401,15 @@ function copy(text: string) {
                         </button>
                         <button type="button" class="whitespace-nowrap text-[12.5px] font-medium text-brand-text hover:text-brand-hover" :disabled="resettingId === m.id" @click="sendPasswordReset(m)">
                           {{ resettingId === m.id ? t('Sending…', 'Enviando…') : t('Reset password', 'Restablecer contraseña') }}
+                        </button>
+                        <button
+                          v-if="twoFactorEnrolled.has(m.id) && m.id !== store.teamMember?.id"
+                          type="button"
+                          class="whitespace-nowrap text-[12.5px] font-medium text-brand-text hover:text-brand-hover"
+                          :disabled="resettingTwoFactorId === m.id"
+                          @click="resetTwoFactor(m)"
+                        >
+                          {{ resettingTwoFactorId === m.id ? t('Resetting…', 'Restableciendo…') : t('Reset two-factor', 'Restablecer 2FA') }}
                         </button>
                       </div>
                     </td>

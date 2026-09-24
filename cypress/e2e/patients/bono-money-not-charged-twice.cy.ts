@@ -27,7 +27,7 @@ describe('Buying a bono', () => {
         // the account, and the debt lives on the bono.
         cy.contains('INV-').should('not.exist')
         cy.contains('264,00 € owed').should('be.visible')
-        cy.contains('264,00 € paid of 528,00 €').should('be.visible')
+        cy.contains('264,00 € paid of 528,00 €').scrollIntoView().should('be.visible')
 
         // The payment still produces its factura -- that is the fiscal
         // document for a bono, and the only one.
@@ -44,7 +44,10 @@ describe('Buying a bono', () => {
         cy.contains('button', 'Record payment').click()
         cy.contains('Recording…').should('not.exist')
 
-        cy.contains('528,00 € paid in full').should('be.visible')
+        // Scrolled to first: recording the payment can leave the Money tab
+        // scrolled down to the ledger, and text above a scroll box's view
+        // reads as not visible even though it is on the page.
+        cy.contains('528,00 € paid in full').scrollIntoView().should('be.visible')
         cy.contains('INV-').should('not.exist')
         cy.task('db:facturasFor', { patientId: patient.id }).then((rows: any) => {
           expect(rows, 'a factura for each payment').to.have.length(2)

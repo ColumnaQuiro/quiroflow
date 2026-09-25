@@ -2249,6 +2249,51 @@ async function stopPracticeHubStub() {
   return { ok: true }
 }
 
+/**
+ * A webhook receiver that only counts. What an automation's webhook step
+ * sends is not the question here -- whether it was called at all is, because
+ * a rule in test mode must not call it.
+ */
+let webhookReceiver: { server: import('node:http').Server; hits: string[] } | null = null
+
+async function startWebhookReceiver() {
+  await stopWebhookReceiver()
+  const { createServer } = await import('node:http')
+  const hits: string[] = []
+  const server = createServer((req, res) => {
+    hits.push(String(req.headers['x-quiroflow-event'] ?? ''))
+    res.statusCode = 204
+    res.end()
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
+  webhookReceiver = { server, hits }
+  const port = (server.address() as { port: number }).port
+  return { url: `http://127.0.0.1:${port}/hook` }
+}
+
+async function webhookReceiverHits() {
+  return webhookReceiver?.hits ?? []
+}
+
+async function stopWebhookReceiver() {
+  const current = webhookReceiver
+  webhookReceiver = null
+  if (!current) return { ok: true }
+  await new Promise<void>((resolve) => current.server.close(() => resolve()))
+  return { ok: true }
+}
+
+/** A lead's email_messages rows, for asserting what a rule sent or recorded. */
+async function leadEmailMessages(opts: { leadId: string }) {
+  const { data, error } = await admin
+    .from('email_messages')
+    .select('provider_message_id, dry_run, rule_id, recipient_email, subject')
+    .eq('lead_id', opts.leadId)
+    .order('sent_at')
+  if (error) throw error
+  return data ?? []
+}
+
 /** How far the receptionist has already drafted, for the no-redraft guard. */
 async function setLeadDraftedThrough(opts: { id: string; at: string | null }) {
   assertOk(await admin.from('leads').update({ ai_drafted_through_at: opts.at }).eq('id', opts.id))
@@ -2649,6 +2694,10 @@ export const dbTasks = {
   'db:setPracticeHubConnection': setPracticeHubConnection,
   'db:startPracticeHubStub': startPracticeHubStub,
   'db:stopPracticeHubStub': stopPracticeHubStub,
+  'db:startWebhookReceiver': startWebhookReceiver,
+  'db:webhookReceiverHits': webhookReceiverHits,
+  'db:stopWebhookReceiver': stopWebhookReceiver,
+  'db:leadEmailMessages': leadEmailMessages,
   'db:setLeadStage': setLeadStage,
   'db:sequenceRuns': sequenceRuns,
   'db:makeSequenceDue': makeSequenceDue,

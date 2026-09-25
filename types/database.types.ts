@@ -872,6 +872,7 @@ export type Database = {
       appointment_types: {
         Row: {
           account_id: string
+          archived_at: string | null
           color: string
           created_at: string
           default_price_cents: number
@@ -884,10 +885,12 @@ export type Database = {
           online_deposit_cents: number | null
           online_max_days_ahead: number | null
           online_payment_required: boolean
+          sort_order: number | null
           stage: string | null
         }
         Insert: {
           account_id: string
+          archived_at?: string | null
           color?: string
           created_at?: string
           default_price_cents?: number
@@ -900,10 +903,12 @@ export type Database = {
           online_deposit_cents?: number | null
           online_max_days_ahead?: number | null
           online_payment_required?: boolean
+          sort_order?: number | null
           stage?: string | null
         }
         Update: {
           account_id?: string
+          archived_at?: string | null
           color?: string
           created_at?: string
           default_price_cents?: number
@@ -916,6 +921,7 @@ export type Database = {
           online_deposit_cents?: number | null
           online_max_days_ahead?: number | null
           online_payment_required?: boolean
+          sort_order?: number | null
           stage?: string | null
         }
         Relationships: [
@@ -6022,6 +6028,8 @@ export type Database = {
       }
       get_my_permissions: { Args: { target_account_id: string }; Returns: Json }
       get_patient_booking_info: { Args: never; Returns: Json }
+      get_appointment_type_usage: { Args: { p_account_id: string }; Returns: Json }
+      reorder_appointment_types: { Args: { p_ids: string[] }; Returns: undefined }
       cancel_patient_appointment: { Args: { p_appointment_id: string }; Returns: Json }
       record_email_event: {
         Args: {

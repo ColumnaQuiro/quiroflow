@@ -7,6 +7,7 @@ import { appointmentStage, matchesFilter, needsNextBookingFlag, STAGE_FILTERS, s
 import { shortPatientName } from '~/utils/appointmentBlock'
 import { bonoForVisit, type VisitPayment } from '~/utils/visitPayment'
 import { effectivePriceCents } from '~/utils/appointmentOverrides'
+import { orderTypes } from '~/utils/appointmentTypes'
 import { FILTER_DOT_CLASS, STAGE_TONE, STAGE_TONE_CLASS } from '~/composables/useAppointmentStage'
 import type { BlockView } from '~/components/calendar/AppointmentBlock.vue'
 import type { FlowRow } from '~/components/calendar/FlowTracker.vue'
@@ -66,7 +67,7 @@ const WEEK_MAX_LANES = 4
 const OVERFLOW_CHIP_PX = 20
 
 interface Room { id: string; name: string }
-interface AppointmentType { id: string; name: string; duration_minutes: number; color: string; default_price_cents: number }
+interface AppointmentType { id: string; name: string; duration_minutes: number; color: string; default_price_cents: number; sort_order: number | null; archived_at: string | null }
 interface TeamMember { id: string; full_name: string; color: string; business_hours: BusinessHours | null }
 interface TeamMemberClinic { team_member_id: string; clinic_id: string }
 
@@ -151,6 +152,14 @@ const practitionerFilter = ref('')
 const anchorDate = ref(new Date())
 const rooms = ref<Room[]>([])
 const appointmentTypes = ref<AppointmentType[]>([])
+// Archived types (Settings -> Appointment Types) are not offered for a new
+// appointment, but one already on an appointment stays choosable in that
+// appointment's own panel -- otherwise opening "Change" on an old visit would
+// show no type and saving would quietly clear it.
+const activeAppointmentTypes = computed(() => appointmentTypes.value.filter((x) => !x.archived_at))
+function typesForPanel(currentTypeId: string | null | undefined) {
+  return appointmentTypes.value.filter((x) => !x.archived_at || x.id === currentTypeId)
+}
 const teamMembers = ref<TeamMember[]>([])
 const teamMemberClinics = ref<TeamMemberClinic[]>([])
 const overrides = ref<AppointmentTypeOverride[]>([])
@@ -284,12 +293,12 @@ const miniWeekdayAbbrevs = computed(() => [
 
 async function loadReferenceData() {
   const [{ data: types }, { data: members }, { data: ovr }, { data: memberClinics }] = await Promise.all([
-    supabase.from('appointment_types').select('id, name, duration_minutes, color, default_price_cents').order('name'),
+    supabase.from('appointment_types').select('id, name, duration_minutes, color, default_price_cents, sort_order, archived_at'),
     supabase.from('team_members').select('id, full_name, color, business_hours').is('deleted_at', null).eq('is_practitioner', true).order('full_name'),
     supabase.from('appointment_type_overrides').select('appointment_type_id, team_member_id, duration_minutes, price_cents'),
     supabase.from('team_member_clinics').select('team_member_id, clinic_id'),
   ])
-  appointmentTypes.value = types ?? []
+  appointmentTypes.value = orderTypes(types ?? [])
   // business_hours comes back as Supabase's recursive Json type, which never
   // narrows to BusinessHours on its own -- cast at the read site, same as
   // settings/team/[id].vue and settings/online-booking.vue already do.
@@ -2446,7 +2455,7 @@ function showNowLineOn(day: Date) {
     <CalendarNewAppointmentPanel
       v-if="modalOpen && modalMode === 'create'"
       :rooms="rooms"
-      :appointment-types="appointmentTypes"
+      :appointment-types="activeAppointmentTypes"
       :team-members="teamMembers"
       :prefill-date="prefill?.date"
       :prefill-time="prefill?.time"
@@ -2465,7 +2474,7 @@ function showNowLineOn(day: Date) {
       :payment="paymentFor(openAppointment)"
       :price-cents="priceFor(openAppointment)"
       :rooms="rooms"
-      :appointment-types="appointmentTypes"
+      :appointment-types="typesForPanel(openAppointment.appointment_type_id)"
       :team-members="clinicTeamMembers"
       :overrides="overrides"
       :initial-tab="panelInitialTab"

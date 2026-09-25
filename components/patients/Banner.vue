@@ -23,6 +23,8 @@ const props = defineProps<{
   canEdit: boolean
   canManageRecord: boolean
   canBook: boolean
+  /** Take payment leads to the Money tab, which billing_history_view gates. */
+  canCharge?: boolean
   archiving: boolean
   /** The patient's first number, from patient_contact_numbers. */
   primaryNumber: Tables<'patient_contact_numbers'> | null
@@ -195,7 +197,7 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
           <!-- Taking a payment was a button in the rail; the rail is gone and
                this is where it went. Non-destructive, so it leads. -->
           <button
-            v-if="canEdit"
+            v-if="canEdit && canCharge !== false"
             type="button"
             class="block w-full px-3 py-3 text-left text-[13px] text-ink-700 outline-none hover:bg-surface-subtle focus-visible:bg-surface-subtle lg:py-2"
             @click="closeMenu(false); $emit('charge')"

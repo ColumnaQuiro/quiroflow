@@ -27,7 +27,8 @@ describe('Every authenticated app page renders for the account owner', () => {
           const practitionerRole = account.roles.find((r) => r.name === 'Practitioner')!
           cy.visit(`/settings/roles/${practitionerRole.id}`)
           cy.location('pathname').should('eq', `/settings/roles/${practitionerRole.id}`)
-          cy.contains('Role name').should('be.visible')
+          cy.get('[data-cy=role-page]').should('have.attr', 'data-ready', 'true')
+          cy.get('[data-cy=role-name]').should('be.visible')
 
           cy.visit(`/settings/clinics/${account.clinicId}`)
           cy.location('pathname').should('eq', `/settings/clinics/${account.clinicId}`)

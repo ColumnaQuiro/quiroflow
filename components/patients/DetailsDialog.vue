@@ -23,6 +23,8 @@ const store = useAccountStore()
 const t = useT()
 const { showToast } = useToast()
 const { can } = usePermission()
+const { load: loadPackageTags, isPackageTag } = usePackageTags()
+onMounted(loadPackageTags)
 
 interface TeamMemberOption { id: string; full_name: string }
 interface TutorOption { id: string; first_name: string; last_name: string | null }
@@ -204,6 +206,21 @@ async function save() {
     .split(',')
     .map((t) => t.trim())
     .filter(Boolean)
+
+  // patients_tags_remove, said before the save rather than after the
+  // database refuses the whole form over one tag.
+  if (!can('patients_tags_remove')) {
+    const kept = new Set(tags.map((x) => x.toLocaleLowerCase('es')))
+    const lost = props.patient.tags.filter((x) => isPackageTag(x) && !kept.has(x.trim().toLocaleLowerCase('es')))
+    if (lost.length > 0) {
+      error.value = t(
+        `Your role cannot remove bono or membership tags: ${lost.join(', ')}. Put them back to save.`,
+        `Tu rol no puede quitar etiquetas de bono o membresía: ${lost.join(', ')}. Vuelve a ponerlas para guardar.`,
+      )
+      saving.value = false
+      return
+    }
+  }
 
   const newReferredById = referralSource.value === 'Patient' ? (selectedReferredBy.value?.id ?? null) : null
 

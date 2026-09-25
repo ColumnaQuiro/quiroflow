@@ -1,5 +1,5 @@
 <script setup lang="ts">
-defineProps<{ dateRange?: unknown; practitionerId?: string; clinicId?: string }>()
+const props = defineProps<{ dateRange?: unknown; practitionerId?: string; clinicId?: string }>()
 
 const t = useT()
 const supabase = useSupabaseClient()
@@ -30,10 +30,15 @@ onMounted(async () => {
   const rangeEnd = addMonths(rangeStart, 1)
   const prevStart = addMonths(rangeStart, -1)
 
-  const [{ count: current }, { count: prevCount }] = await Promise.all([
-    supabase.from('appointments').select('*', { count: 'exact', head: true }).gte('starts_at', rangeStart.toISOString()).lt('starts_at', rangeEnd.toISOString()),
-    supabase.from('appointments').select('*', { count: 'exact', head: true }).gte('starts_at', prevStart.toISOString()).lt('starts_at', rangeStart.toISOString()),
-  ])
+  let currentQuery = supabase.from('appointments').select('*', { count: 'exact', head: true }).gte('starts_at', rangeStart.toISOString()).lt('starts_at', rangeEnd.toISOString())
+  let prevQuery = supabase.from('appointments').select('*', { count: 'exact', head: true }).gte('starts_at', prevStart.toISOString()).lt('starts_at', rangeStart.toISOString())
+  // Declared and then ignored until the dashboard's "own" scope needed it:
+  // a practitioner's dashboard counted the whole clinic's month here.
+  if (props.practitionerId) {
+    currentQuery = currentQuery.eq('practitioner_id', props.practitionerId)
+    prevQuery = prevQuery.eq('practitioner_id', props.practitionerId)
+  }
+  const [{ count: current }, { count: prevCount }] = await Promise.all([currentQuery, prevQuery])
 
   totalCount.value = current ?? 0
   changePct.value = !prevCount ? null : Math.round(((totalCount.value - prevCount) / prevCount) * 100)

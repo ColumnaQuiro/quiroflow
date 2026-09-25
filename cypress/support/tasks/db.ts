@@ -1611,6 +1611,67 @@ async function readAsStaff(opts: { email: string; password: string; table: strin
   return { rows: (data as unknown[] | null)?.length ?? 0, error: error ? error.message : null }
 }
 
+/**
+ * A write the database should refuse, made as a signed-in staff member with
+ * the browser's own key -- so what is tested is the policy or trigger, not
+ * whether the button happened to be hidden.
+ */
+async function writeAsStaff(opts: {
+  email: string
+  password: string
+  op: 'deleteAppointment' | 'softDeleteAppointment' | 'setPatientTags' | 'insertPackagePurchase'
+  appointmentId?: string
+  patientId?: string
+  tags?: string[]
+  purchase?: Record<string, unknown>
+}) {
+  const userClient = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+  const { error: signInErr } = await userClient.auth.signInWithPassword({ email: opts.email, password: opts.password })
+  if (signInErr) throw signInErr
+  let result: { data: unknown[] | null; error: { message: string } | null }
+  if (opts.op === 'deleteAppointment') {
+    result = await userClient.from('appointments').delete().eq('id', opts.appointmentId!).select('id')
+  } else if (opts.op === 'softDeleteAppointment') {
+    result = await userClient.from('appointments').update({ deleted_at: new Date().toISOString() }).eq('id', opts.appointmentId!).select('id')
+  } else if (opts.op === 'setPatientTags') {
+    result = await userClient.from('patients').update({ tags: opts.tags ?? [] }).eq('id', opts.patientId!).select('id')
+  } else {
+    result = await userClient.from('package_purchases').insert(opts.purchase as never).select('id')
+  }
+  return { rows: result.data?.length ?? 0, error: result.error ? result.error.message : null }
+}
+
+/** A role by its stored name, or null -- rolePermissions throws when it is gone. */
+async function roleByName(opts: { accountId: string; name: string }) {
+  const { data } = await admin.from('account_roles').select('id, name, description, is_system, permissions').eq('account_id', opts.accountId).eq('name', opts.name).maybeSingle()
+  return data ?? null
+}
+
+/** Whose role a team member, or an invite, currently points at. */
+async function roleIdsOf(opts: { teamMemberIds?: string[]; inviteTokens?: string[] }) {
+  const members = opts.teamMemberIds?.length ? unwrap(await admin.from('team_members').select('id, role_id, role').in('id', opts.teamMemberIds)) : []
+  const invites = opts.inviteTokens?.length ? unwrap(await admin.from('account_invites').select('token, role_id, role').in('token', opts.inviteTokens)) : []
+  return { members, invites } as { members: { id: string; role_id: string | null; role: string }[]; invites: { token: string; role_id: string | null; role: string }[] }
+}
+
+async function packagePurchasesFor(opts: { patientId: string }) {
+  return unwrap(await admin.from('package_purchases').select('id, package_name, created_by').eq('patient_id', opts.patientId)) as { id: string; package_name: string; created_by: string | null }[]
+}
+
+async function setPatientTags(opts: { patientId: string; tags: string[] }) {
+  assertOk(await admin.from('patients').update({ tags: opts.tags }).eq('id', opts.patientId))
+  return { tags: opts.tags }
+}
+
+async function patientTags(opts: { patientId: string }) {
+  const row = unwrap(await admin.from('patients').select('tags').eq('id', opts.patientId).single()) as { tags: string[] }
+  return row.tags ?? []
+}
+
+async function createMembershipTemplate(opts: { accountId: string; name: string; priceCents?: number }) {
+  return unwrap(await admin.from('memberships').insert({ account_id: opts.accountId, name: opts.name, price_cents: opts.priceCents ?? 5000 }).select('id').single()) as { id: string }
+}
+
 async function clearWhatsappAppSecret(opts: { accountId: string }) {
   assertOk(await admin.from('whatsapp_app_secrets').delete().eq('account_id', opts.accountId))
   return { configured: false }
@@ -1622,9 +1683,9 @@ async function signWhatsappBody(opts: { body: string; appSecret: string }) {
 
 async function appointmentById(opts: { appointmentId: string }) {
   const row = unwrap(
-    await admin.from('appointments').select('id, status, confirmation_status, rescheduled, starts_at, ends_at, room_id, checked_in_at, practitioner_id').eq('id', opts.appointmentId).single(),
+    await admin.from('appointments').select('id, status, confirmation_status, rescheduled, starts_at, ends_at, room_id, checked_in_at, practitioner_id, deleted_at').eq('id', opts.appointmentId).single(),
   )
-  return row as { id: string; status: string; confirmation_status: string | null; rescheduled: boolean; starts_at: string; ends_at: string; room_id: string | null; checked_in_at: string | null; practitioner_id: string | null }
+  return row as { id: string; status: string; confirmation_status: string | null; rescheduled: boolean; starts_at: string; ends_at: string; room_id: string | null; checked_in_at: string | null; practitioner_id: string | null; deleted_at: string | null }
 }
 
 /**
@@ -2985,5 +3046,12 @@ export const dbTasks = {
   'db:stopMetaGraphStub': stopMetaGraphStub,
   'db:readAsStaff': readAsStaff,
   'db:rolePermissions': rolePermissions,
+  'db:writeAsStaff': writeAsStaff,
+  'db:roleByName': roleByName,
+  'db:roleIdsOf': roleIdsOf,
+  'db:packagePurchasesFor': packagePurchasesFor,
+  'db:setPatientTags': setPatientTags,
+  'db:patientTags': patientTags,
+  'db:createMembershipTemplate': createMembershipTemplate,
   'db:bookingAttribution': bookingAttribution,
 }

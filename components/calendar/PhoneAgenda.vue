@@ -32,6 +32,8 @@ const props = defineProps<{
   privacy?: boolean
   now: Date
   isToday: boolean
+  /** False for a read-only calendar (calendar_read_only). */
+  canCreate?: boolean
 }>()
 const emit = defineEmits<{ open: [id: string]; scope: [value: 'mine' | 'all']; create: [] }>()
 
@@ -135,6 +137,7 @@ const heightFor = (i: AgendaItem) => {
 
     <!-- Above the corner, not in it: the app's help launcher already sits there. -->
     <button
+      v-if="canCreate !== false"
       type="button"
       :aria-label="t('New appointment', 'Nueva cita')"
       data-cy="agenda-new"

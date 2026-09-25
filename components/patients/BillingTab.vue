@@ -74,6 +74,13 @@ interface LedgerCreditRow { id: string; amount_cents: number; reason: string | n
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const { can } = usePermission()
+// packages_edit ("Sell and edit bonos and memberships"): selling one, drawing
+// or sharing its sessions, voiding it, and running a membership. These used
+// to answer to billing_config alone -- the Settings permission for the bono
+// CATALOGUE -- because that is what the database policies asked for. Both
+// now grant it (20260925074722), so an admin who could do this keeps it and a
+// receptionist can be given it without the catalogue and Stripe settings.
+const canManagePackages = computed(() => can('packages_edit') || can('billing_config'))
 const { fire } = useAutomations()
 const t = useT()
 
@@ -2083,6 +2090,7 @@ function money(cents: number) {
               catching up -- and the second could not see the calendar, so it
               invented a visit beside the real one. -->
               <UiBtn
+                v-if="canManagePackages"
                 size="sm"
                 variant="primary"
                 data-cy="log-session-open"
@@ -2103,10 +2111,10 @@ function money(cents: number) {
                 <UiBtn size="sm" variant="secondary" @click="toggleLinkPayment(p.id)">
                   {{ t('Link payment', 'Vincular pago') }}{{ linkedPaymentsFor(p).length ? ` (${linkedPaymentsFor(p).length})` : '' }}…
                 </UiBtn>
-                <UiBtn size="sm" variant="secondary" @click="toggleShares(p.id)">
+                <UiBtn v-if="canManagePackages" size="sm" variant="secondary" @click="toggleShares(p.id)">
                   {{ t('Share', 'Compartir') }}{{ shares[p.id]?.length ? ` (${shares[p.id].length})` : '' }}…
                 </UiBtn>
-                <UiIconBtn v-if="can('billing_config')" icon="trash" tone="danger" class="ml-auto" :label="t('Delete', 'Eliminar')" @click="deletePackagePurchase(p)" />
+                <UiIconBtn v-if="canManagePackages" icon="trash" tone="danger" class="ml-auto" :label="t('Delete', 'Eliminar')" @click="deletePackagePurchase(p)" />
               </template>
             </div>
 
@@ -2244,11 +2252,14 @@ function money(cents: number) {
             </div>
             </template>
           </div>
-          <p v-if="purchases.length === 0" class="rounded-ctl border border-dashed border-line-control p-4 text-center text-[12.5px] text-ink-faint">
-            {{ t('No packages purchased.', 'No se ha comprado ningún bono.') }}
+          <!-- Without either permission the database returns no bonos at all,
+          so "none purchased" would be a claim about the patient that is
+          really a fact about the role. -->
+          <p v-if="purchases.length === 0" class="rounded-ctl border border-dashed border-line-control p-4 text-center text-[12.5px] text-ink-faint" data-cy="packages-empty">
+            {{ canManagePackages ? t('No packages purchased.', 'No se ha comprado ningún bono.') : t('Your role does not include selling or editing bonos.', 'Tu rol no incluye vender ni editar bonos.') }}
           </p>
         </div>
-        <form class="mt-3 flex flex-wrap items-end gap-2 border-t border-line-divider pt-3" @submit.prevent="sellPackage">
+        <form v-if="canManagePackages" class="mt-3 flex flex-wrap items-end gap-2 border-t border-line-divider pt-3" data-cy="sell-package-form" @submit.prevent="sellPackage">
           <select v-model="sellPackageId" class="bg-surface w-full flex-1 rounded-ctl border border-line-control px-2.5 py-1.5 text-[12.5px] sm:max-w-xs">
             <option value="" disabled>{{ t('Sell a package…', 'Vender un bono…') }}</option>
             <option v-for="t in packageTemplates" :key="t.id" :value="t.id">{{ t.name }} ({{ t.session_count }}, {{ money(t.price_cents) }})</option>
@@ -2312,7 +2323,7 @@ function money(cents: number) {
                 {{ t('started', 'iniciada el') }} {{ new Date(m.started_at).toLocaleDateString() }}
               </p>
             </div>
-            <div class="mt-3 flex flex-wrap items-center gap-1.5 border-t border-line-divider pt-3">
+            <div v-if="canManagePackages" class="mt-3 flex flex-wrap items-center gap-1.5 border-t border-line-divider pt-3">
               <UiBtn size="sm" variant="secondary" @click="logPayment(m, 'paid')">{{ t('Log payment', 'Registrar pago') }}</UiBtn>
               <UiBtn size="sm" variant="secondary" class="hover:border-danger-border hover:text-danger-text" @click="logPayment(m, 'failed')">{{ t('Log failed', 'Registrar fallo') }}</UiBtn>
               <select
@@ -2367,7 +2378,7 @@ function money(cents: number) {
             </div>
           </div>
         </div>
-        <form class="mt-3 flex flex-wrap items-end gap-2 border-t border-line-divider pt-3" @submit.prevent="activateMembership">
+        <form v-if="canManagePackages" class="mt-3 flex flex-wrap items-end gap-2 border-t border-line-divider pt-3" data-cy="activate-membership-form" @submit.prevent="activateMembership">
           <select v-model="activateMembershipId" class="bg-surface w-full flex-1 rounded-ctl border border-line-control px-2.5 py-1.5 text-[12.5px] sm:max-w-xs">
             <option value="" disabled>{{ t('Activate a membership…', 'Activar una membresía…') }}</option>
             <option v-for="t in membershipTemplates" :key="t.id" :value="t.id">{{ t.name }} ({{ money(t.price_cents) }})</option>

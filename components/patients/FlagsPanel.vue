@@ -3,6 +3,14 @@ const props = defineProps<{ patientId: string }>()
 
 const supabase = useSupabaseClient()
 const t = useT()
+const { can } = usePermission()
+// patients_tags_remove: a tag a bono or membership put on the patient stays
+// unless the role may take it off (usePackageTags says which those are).
+const { load: loadPackageTags, isPackageTag } = usePackageTags()
+onMounted(loadPackageTags)
+function canRemoveTag(tag: string) {
+  return can('patients_tags_remove') || !isPackageTag(tag)
+}
 
 const chiefComplaint = ref('')
 const diagnosis = ref('')
@@ -58,6 +66,7 @@ async function addTag() {
   await supabase.from('patients').update({ tags: tags.value }).eq('id', props.patientId)
 }
 async function removeTag(tag: string) {
+  if (!canRemoveTag(tag)) return
   tags.value = tags.value.filter((t) => t !== tag)
   await supabase.from('patients').update({ tags: tags.value }).eq('id', props.patientId)
 }
@@ -156,9 +165,19 @@ const flagRows = computed(() => {
         <div>
           <label class="block text-[11px] font-medium text-ink-muted2">{{ t('Tags', 'Etiquetas') }}</label>
           <div class="mt-1 flex flex-wrap items-center gap-1.5">
-            <span v-for="tag in tags" :key="tag" class="inline-flex items-center gap-1 rounded-pill bg-chip-bg px-2 py-0.5 text-[11px] font-medium text-chip-text">
+            <span v-for="tag in tags" :key="tag" data-cy="patient-tag" :data-tag="tag" class="inline-flex items-center gap-1 rounded-pill bg-chip-bg px-2 py-0.5 text-[11px] font-medium text-chip-text">
               {{ tag }}
-              <button type="button" class="text-ink-faint hover:text-ink-600" @click="removeTag(tag)">✕</button>
+              <button
+                v-if="canRemoveTag(tag)"
+                type="button"
+                data-cy="patient-tag-remove"
+                :aria-label="t(`Remove tag ${tag}`, `Quitar la etiqueta ${tag}`)"
+                class="text-ink-faint hover:text-ink-600"
+                @click="removeTag(tag)"
+              >
+                ✕
+              </button>
+              <span v-else data-cy="patient-tag-locked" class="sr-only">{{ t('(bono or membership tag: your role cannot remove it)', '(etiqueta de bono o membresía: tu rol no puede quitarla)') }}</span>
             </span>
             <input
               v-model="newTag"

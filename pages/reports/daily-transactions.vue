@@ -41,7 +41,9 @@ function todayISO() {
 }
 
 const dateStr = ref(todayISO())
-const practitionerFilter = ref('')
+// reports_own_only: pinned to the viewer, with the picker hidden (useOwnScope).
+const { reportsPractitionerId } = useOwnScope()
+const practitionerFilter = ref(reportsPractitionerId.value ?? '')
 const clinicFilter = ref('')
 const loading = ref(true)
 const payments = ref<PaymentRow[]>([])
@@ -214,7 +216,7 @@ const { purposeLabelFor } = usePaymentPurpose()
         <button type="button" class="h-8 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-600 hover:bg-surface-subtle" @click="dateStr = todayISO()">
           {{ t('Today', 'Hoy') }}
         </button>
-        <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
+        <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" :locked-to="reportsPractitionerId" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
       </div>
 
       <div v-if="loading" class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">

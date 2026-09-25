@@ -102,7 +102,11 @@ interface AppointmentRow {
 const supabase = useSupabaseClient()
 const { fetchVisitPayments } = useVisitPayments()
 const store = useAccountStore()
-const { can } = usePermission()
+const { can, restricted } = usePermission()
+// calendar_read_only: sees the diary, changes nothing in it. The database
+// has refused the writes since 0047; this stops offering them -- booking,
+// dragging, resizing, blocking time -- instead of letting each one fail.
+const readOnly = computed(() => restricted('calendar_read_only'))
 const t = useT()
 
 const SLOT_MIN = computed(() => store.currentClinic?.slot_duration_minutes ?? 30)
@@ -1118,7 +1122,7 @@ function columnAtPoint(x: number, y: number) {
 }
 
 function startAppointmentDrag(appt: AppointmentRow, mode: 'move' | 'resize', e: PointerEvent) {
-  if (appt.status !== 'booked') return
+  if (appt.status !== 'booked' || readOnly.value) return
   // A slot click while reschedule-mode is active (see startReschedule below)
   // is what moves the appointment now -- starting an unrelated drag on some
   // other block mid-pick would just be confusing.
@@ -1597,7 +1601,7 @@ function createGhostFor(dayKey: string, roomId: string) {
 }
 function ghostFor(dayKey: string, roomId: string) {
   const cell = ghostCell.value
-  if (!cell || reschedulingAppointment.value || (modalOpen.value && modalMode.value === 'create')) return null
+  if (!cell || readOnly.value || reschedulingAppointment.value || (modalOpen.value && modalMode.value === 'create')) return null
   const c = gridColumns.value[cell.col]
   if (!c || c.dayKey !== dayKey || c.roomId !== roomId) return null
   if (appointmentAtCell(cell)) return null
@@ -1667,6 +1671,9 @@ function onColumnClick(e: MouseEvent, day: Date, roomId: string, hourPx: number)
 }
 
 function openCreateAt(day: Date, time: string, roomId: string | null) {
+  // Every way of booking -- the button, a slot click, Enter on a cell, the
+  // phone agenda -- ends here, so a read-only calendar is refused once.
+  if (readOnly.value) return
   prefill.value = { date: toDateKey(day), time, roomId: roomId ?? '' }
   modalMode.value = 'create'
   editingAppointment.value = null
@@ -1873,8 +1880,11 @@ function showNowLineOn(day: Date) {
           <option value="week">{{ t('Week', 'Semana') }}</option>
         </select>
         <UiBtn v-if="can('payments_allocate')" variant="secondary" size="sm" @click="cashShiftOpen = true">{{ t('Cash Shift', 'Turno de Caja') }}</UiBtn>
-        <UiBtn variant="secondary" size="sm" @click="openBlockCreateModal()">{{ t('Block time', 'Bloquear horario') }}</UiBtn>
-        <UiBtn variant="primary" size="sm" @click="openCreateModal()">{{ t('+ New Appointment', '+ Nueva Cita') }}</UiBtn>
+        <template v-if="!readOnly">
+          <UiBtn variant="secondary" size="sm" @click="openBlockCreateModal()">{{ t('Block time', 'Bloquear horario') }}</UiBtn>
+          <UiBtn variant="primary" size="sm" data-cy="new-appointment" @click="openCreateModal()">{{ t('+ New Appointment', '+ Nueva Cita') }}</UiBtn>
+        </template>
+        <span v-else class="inline-flex h-8 items-center rounded-pill bg-chip-bg px-3 text-[12.5px] font-semibold text-chip-text" data-cy="calendar-read-only">{{ t('Read-only', 'Solo lectura') }}</span>
         <!-- The mini-calendar/display panel is a fixed 238px column at lg+
         (below), but that plus the optional flow-tracker column would eat
         most of a phone's width -- so below lg it's an off-canvas drawer
@@ -2103,6 +2113,7 @@ function showNowLineOn(day: Date) {
           :is-today="isSameDate(anchorDate, now)"
           @open="openAgendaItem"
           @scope="setAgendaScope"
+          :can-create="!readOnly"
           @create="openCreateModal()"
         />
 
@@ -2303,7 +2314,7 @@ function showNowLineOn(day: Date) {
                   >
                     <span class="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-muted2">{{ formatWeekdayDate(day).split(' ')[0] }}</span>
                     <span class="text-[12.5px] font-medium" :class="isSameDate(day, new Date()) ? 'text-brand-text' : 'text-ink-900'">{{ day.getDate() }}</span>
-                    <button type="button" :aria-label="t('New appointment on this day', 'Nueva cita este día')" class="absolute right-1 top-0.5 text-[11px] text-ink-faint hover:text-brand-text" @click.stop="openCreateModalForDay(day)">+</button>
+                    <button v-if="!readOnly" type="button" :aria-label="t('New appointment on this day', 'Nueva cita este día')" class="absolute right-1 top-0.5 text-[11px] text-ink-faint hover:text-brand-text" @click.stop="openCreateModalForDay(day)">+</button>
                   </div>
                   <!-- Per-day counts: the two that need someone to act. -->
                   <div class="flex h-[18px] items-center justify-center gap-2 border-b border-line text-[10.5px] text-ink-muted" data-cy="day-header-counts" :class="isSameDate(day, new Date()) ? 'bg-brand-tintDeep' : ''">

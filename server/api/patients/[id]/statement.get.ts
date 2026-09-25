@@ -1,6 +1,8 @@
 export default defineEventHandler(async (event) => {
   const patientId = getRouterParam(event, 'id')
-  const { supabase } = await requirePermission(event, 'billing_access')
+  // The statement is the patient's whole billing history on paper, so it sits
+  // behind billing_history_view as well as billing_access, like the Money tab.
+  const { supabase } = await requireAllPermissions(event, ['billing_access', 'billing_history_view'])
 
   const data = await loadStatementDocumentData(supabase, patientId!)
   if (!data) {

@@ -1,12 +1,15 @@
 <script setup lang="ts">
 const route = useRoute()
 const { can } = usePermission()
+const store = useAccountStore()
 const t = useT()
 
 interface NavItem {
   label: string
   to: string
   perm?: string
+  /** The company's own settings (VeriFactu): owners only, whatever the role grants. */
+  ownerOnly?: boolean
 }
 interface NavGroup {
   label: string
@@ -40,6 +43,7 @@ const allGroups = computed<NavGroup[]>(() => [
       { label: t('Payment Methods', 'Métodos de pago'), to: '/settings/payment-methods', perm: 'billing_config' },
       { label: t('Receipt Settings', 'Configuración de recibos'), to: '/settings/invoice-settings', perm: 'billing_config' },
       { label: t('Fiscal Data', 'Datos fiscales'), to: '/settings/fiscal-data', perm: 'billing_config' },
+      { label: 'VeriFactu', to: '/settings/verifactu', ownerOnly: true },
     ],
   },
   {
@@ -67,7 +71,7 @@ const allGroups = computed<NavGroup[]>(() => [
 ])
 
 const groups = computed(() =>
-  allGroups.value.map((group) => ({ ...group, items: group.items.filter((item) => !item.perm || can(item.perm)) })).filter((group) => group.items.length > 0),
+  allGroups.value.map((group) => ({ ...group, items: group.items.filter((item) => (!item.perm || can(item.perm)) && (!item.ownerOnly || store.isOwner)) })).filter((group) => group.items.length > 0),
 )
 
 // A section stays lit on its own detail pages -- Clinics on

@@ -33,6 +33,7 @@ const ICONS = {
 }
 
 const t = useT()
+const store = useAccountStore()
 
 const groups = computed(() => [
   {
@@ -61,6 +62,11 @@ const groups = computed(() => [
       { to: '/settings/payment-methods', label: t('Payment Methods', 'Métodos de pago'), description: t('The methods staff can record a payment against.', 'Los métodos con los que el personal puede registrar un pago.'), icon: ICONS.creditCard },
       { to: '/settings/invoice-settings', label: t('Receipt Settings', 'Configuración de recibos'), description: t('Numbering, display options, and email templates for visit receipts.', 'Numeración, opciones de visualización y plantillas de email para los recibos de visita.'), icon: ICONS.documentText },
       { to: '/settings/fiscal-data', label: t('Fiscal Data', 'Datos fiscales'), description: t('Legal name and tax ID shown on facturas and receipts.', 'Razón social y NIF/CIF que aparecen en facturas y recibos.'), icon: ICONS.documentText },
+      // Owners only: sending the clinic's invoicing records to the tax agency
+      // under its certificate is the company's decision, not a role's.
+      ...(store.isOwner
+        ? [{ to: '/settings/verifactu', label: 'VeriFactu', description: t('Send invoicing records to the AEAT: test or live, and the certificate they are sent with.', 'Envío de registros de facturación a la AEAT: pruebas o producción, y el certificado con el que se envían.'), icon: ICONS.lockClosed }]
+        : []),
     ],
   },
   {

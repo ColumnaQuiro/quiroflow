@@ -21,6 +21,7 @@ export const SETTINGS_PAGES = [
   '/settings/developers',
   '/settings/docs',
   '/settings/fiscal-data',
+  '/settings/verifactu',
   '/settings/import',
   '/settings/invoice-settings',
   '/settings/memberships',

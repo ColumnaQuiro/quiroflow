@@ -24,7 +24,7 @@ interface LineItemRow { id: string; price_cents: number; service_id: string | nu
 interface PaymentRow { id: string; amount_cents: number; method: string; paid_at: string }
 
 const supabase = useSupabaseClient()
-const { context } = usePractitionerContext()
+const { context, can, restricted } = usePractitionerContext()
 const { fire } = useAutomations()
 
 const appointment = ref<Appointment | null>(null)
@@ -372,7 +372,7 @@ function euros(cents: number) {
       </NuxtLink>
 
       <button
-        v-if="!appointment.checked_in_at && appointment.status !== 'completed'"
+        v-if="!appointment.checked_in_at && appointment.status !== 'completed' && !restricted('calendar_read_only')"
         type="button"
         class="w-full rounded-ctl border border-line-control px-4 py-2.5 text-center text-[14px] font-medium text-brand-text active:bg-surface-subtle"
         @click="checkIn"
@@ -380,7 +380,7 @@ function euros(cents: number) {
         Check in
       </button>
 
-      <div v-if="!billingOpen">
+      <div v-if="!billingOpen && can('billing_access') && !restricted('calendar_read_only')">
         <button
           type="button"
           class="w-full rounded-ctl bg-brand px-4 py-2.5 text-center text-[14px] font-medium text-white active:opacity-90"
@@ -419,7 +419,7 @@ function euros(cents: number) {
             </div>
             <UiBtn variant="primary" class="w-full" :disabled="saving" @click="recordPayment">{{ saving ? 'Saving…' : `Record ${euros(Math.round((parseFloat(paymentAmount) || 0) * 100))}` }}</UiBtn>
 
-            <div v-if="activePackages.length > 0" class="flex flex-wrap items-center gap-2 border-t border-line-divider pt-2">
+            <div v-if="activePackages.length > 0 && (can('packages_edit') || can('billing_config'))" class="flex flex-wrap items-center gap-2 border-t border-line-divider pt-2">
               <span class="text-[12px] text-ink-muted2">Or use a package session:</span>
               <button
                 v-for="p in activePackages"

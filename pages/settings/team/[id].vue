@@ -365,7 +365,7 @@ const card = 'flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg
             <section id="perfil" aria-labelledby="h-perfil" :class="card">
               <h2 id="h-perfil" class="text-[16px] font-bold text-ink-900">{{ t('Profile', 'Perfil') }}</h2>
               <div class="flex items-center gap-4">
-                <SettingsTeamMemberPhotoUpload :account-id="store.accountId!" :team-member-id="memberId" :photo-storage-path="photoPath" :initials="initials" :color="form.color" :size="64" @uploaded="reloadPhoto" />
+                <SettingsTeamMemberPhotoUpload :account-id="store.accountId!" :team-member-id="memberId" :photo-storage-path="photoPath" :initials="initials" :color="form.color" :size="64" @uploaded="reloadPhoto" @failed="(m) => showToast(t(`Could not change the photo: ${m}`, `No se pudo cambiar la foto: ${m}`), 'error', 8000)" />
                 <div class="flex flex-col gap-1">
                   <span class="text-[13.5px] text-ink-700">{{ t('Click the photo to change it.', 'Pulsa la foto para cambiarla.') }}</span>
                   <button v-if="photoPath" type="button" data-cy="member-photo-remove" class="self-start text-[13.5px] font-semibold text-brand-text hover:underline" @click="removePhoto">{{ t('Remove photo', 'Quitar foto') }}</button>

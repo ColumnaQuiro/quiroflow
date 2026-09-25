@@ -16,7 +16,9 @@ const props = withDefaults(
   }>(),
   { color: '#4C6FEB', size: 32 },
 )
-const emit = defineEmits<{ uploaded: [] }>()
+// Failures are the parent's to show: the web has toasts, the mobile bundle
+// does not, so this only reports them.
+const emit = defineEmits<{ uploaded: []; failed: [message: string] }>()
 
 const supabase = useSupabaseClient()
 
@@ -37,12 +39,17 @@ async function uploadFile(file: File) {
   const path = `${props.accountId}/${props.teamMemberId}/${Date.now()}-${sanitizeStorageFilename(file.name)}`
   const { error } = await supabase.storage.from('team-member-photos').upload(path, file)
   if (error) {
-    alert(error.message)
     uploading.value = false
+    emit('failed', error.message)
     return
   }
-  await supabase.from('team_members').update({ photo_storage_path: path }).eq('id', props.teamMemberId)
+  // The file is up; pointing the profile at it can still be refused.
+  const { error: saveError } = await supabase.from('team_members').update({ photo_storage_path: path }).eq('id', props.teamMemberId).select('id').single()
   uploading.value = false
+  if (saveError) {
+    emit('failed', saveError.message)
+    return
+  }
   emit('uploaded')
 }
 

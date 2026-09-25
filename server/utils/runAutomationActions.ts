@@ -1,4 +1,5 @@
 import { createHmac, randomUUID } from 'node:crypto'
+import { automationFieldValue as recipientFieldValue, type MergeContext } from '~/utils/automationFields'
 import { toE164 } from '~/utils/phone'
 import { renderTemplateFields } from '~/utils/docFields'
 
@@ -7,7 +8,6 @@ import { renderTemplateFields } from '~/utils/docFields'
 // 16:00 Madrid time (CEST, UTC+2) would merge into a message as "14:00".
 // There's no per-account timezone column yet, so this is hardcoded the same
 // way same-day-cron.post.ts and appointmentNotifications.ts hardcode it.
-const CLINIC_TIMEZONE = 'Europe/Madrid'
 
 // Shared by both the trigger-based fire endpoint and the one-off "Send Now"
 // endpoint: both ultimately just need to run one rule's actions for one
@@ -262,9 +262,19 @@ async function runForRecipient(
   // merge token always refers to the appointment that triggered this rule --
   // there's no other appointment in scope an email action could mean instead.
   let nextAppointmentAt: string | undefined
+  // The clinic behind the message: the appointment's own, else the account's
+  // first active one. Its time zone formats the appointment variables, and its
+  // name, phone and address are variables of their own (clinic_*), so a
+  // clinic's WhatsApp template can say how to reach that location.
+  let clinic: { name: string | null; phone: string | null; address: string | null; timezone: string | null } | null = null
   if (appointmentId) {
-    const { data: appt } = await supabase.from('appointments').select('starts_at').eq('id', appointmentId).maybeSingle()
+    const { data: appt } = await supabase.from('appointments').select('starts_at, clinics(name, phone, address, timezone)').eq('id', appointmentId).maybeSingle()
     nextAppointmentAt = appt?.starts_at ?? undefined
+    clinic = (appt?.clinics as typeof clinic) ?? null
+  }
+  if (!clinic) {
+    const { data } = await supabase.from('clinics').select('name, phone, address, timezone').eq('account_id', accountId).is('archived_at', null).order('created_at').limit(1).maybeSingle()
+    clinic = data ?? null
   }
   // Also resolved once per firing, not per-action -- backs {{google_review_link}}
   // for the appointment.review_request campaign (and any other campaign that
@@ -284,7 +294,15 @@ async function runForRecipient(
     record: !dryRun && !whatsappOverrideNumber && actionsUseReviewLink(actions),
   })
 
-  const context: MergeContext = { ...extraContext, nextAppointmentAt, googleReviewUrl }
+  const context: MergeContext = {
+    ...extraContext,
+    nextAppointmentAt,
+    googleReviewUrl,
+    clinicName: clinic?.name ?? undefined,
+    clinicPhone: clinic?.phone ?? undefined,
+    clinicAddress: clinic?.address ?? undefined,
+    clinicTimezone: clinic?.timezone ?? undefined,
+  }
 
   // Why an action did nothing, in the sender's words. Actions stay
   // best-effort -- one failure must not stop the rest of a rule -- but the
@@ -339,33 +357,6 @@ async function runForRecipient(
   }
 
   return { problems, outcomes }
-}
-
-interface MergeContext { nextAppointmentAt?: string; googleReviewUrl?: string; waitlistClaimLink?: string; waitlistSlotDatetime?: string }
-
-function recipientFieldValue(recipient: Recipient, source: string, context?: MergeContext): string {
-  if (source === 'first_name') return recipient.firstName ?? ''
-  if (source === 'last_name') return recipient.lastName ?? ''
-  if (source === 'email') return recipient.email ?? ''
-  if (source === 'google_review_link') return context?.googleReviewUrl ?? ''
-  if (source === 'waitlist_claim_link') return context?.waitlistClaimLink ?? ''
-  if (source === 'waitlist_slot_datetime') return context?.waitlistSlotDatetime ?? ''
-  if (source === 'next_appointment') {
-    if (!context?.nextAppointmentAt) return ''
-    return new Date(context.nextAppointmentAt).toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: CLINIC_TIMEZONE })
-  }
-  // Split date/time -- some WhatsApp templates (Meta's own approved
-  // "appointment_reminder" among them) have separate {{n}} slots for the
-  // date and the time rather than one combined string like next_appointment.
-  if (source === 'appointment_date') {
-    if (!context?.nextAppointmentAt) return ''
-    return new Date(context.nextAppointmentAt).toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', timeZone: CLINIC_TIMEZONE })
-  }
-  if (source === 'appointment_time') {
-    if (!context?.nextAppointmentAt) return ''
-    return new Date(context.nextAppointmentAt).toLocaleString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: CLINIC_TIMEZONE })
-  }
-  return ''
 }
 
 /**

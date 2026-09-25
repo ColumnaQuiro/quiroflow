@@ -979,7 +979,7 @@ async function releaseParkedRecords(opts: { accountId: string }) {
 // A clinic's fiscal header, as Settings -> Clinics / Fiscal Data would leave
 // it. Written directly so a spec can change it between two renders of the
 // same document.
-async function updateClinic(opts: { clinicId: string; name?: string; legalName?: string | null; address?: string | null; taxId?: string | null; footerText?: string | null }) {
+async function updateClinic(opts: { clinicId: string; name?: string; legalName?: string | null; address?: string | null; taxId?: string | null; footerText?: string | null; phone?: string | null; archivedAt?: string | null; timezone?: string }) {
   assertOk(
     await admin
       .from('clinics')
@@ -989,6 +989,9 @@ async function updateClinic(opts: { clinicId: string; name?: string; legalName?:
         ...(opts.address !== undefined ? { address: opts.address } : {}),
         ...(opts.taxId !== undefined ? { tax_id: opts.taxId } : {}),
         ...(opts.footerText !== undefined ? { invoice_footer_text: opts.footerText } : {}),
+        ...(opts.phone !== undefined ? { phone: opts.phone } : {}),
+        ...(opts.archivedAt !== undefined ? { archived_at: opts.archivedAt } : {}),
+        ...(opts.timezone !== undefined ? { timezone: opts.timezone } : {}),
       })
       .eq('id', opts.clinicId),
   )
@@ -2466,6 +2469,13 @@ async function setTeamMemberHours(opts: { teamMemberId: string; hours: Record<st
   return { ok: true }
 }
 
+/** A clinic's whole-location closures (availability blocks with no practitioner or room). */
+async function clinicClosures(opts: { clinicId: string }) {
+  const { data, error } = await admin.from('availability_blocks').select('starts_at, ends_at, note, practitioner_id, room_id').eq('clinic_id', opts.clinicId).is('practitioner_id', null).is('room_id', null).order('starts_at')
+  if (error) throw error
+  return data ?? []
+}
+
 /** Many patients, each with one inbound WhatsApp message a minute apart --
  *  enough conversations to page the Inbox. Newest first in the returned list. */
 async function seedInboxConversations(opts: { accountId: string; clinicId: string; count: number; prefix?: string }) {
@@ -2734,6 +2744,7 @@ export const dbTasks = {
   'db:recallState': recallState,
   'db:teamMemberById': teamMemberById,
   'db:clinicRow': clinicRow,
+  'db:clinicClosures': clinicClosures,
   'db:seedInboxConversations': seedInboxConversations,
   'db:inboxAssignment': inboxAssignment,
   'db:messagesFromNumber': messagesFromNumber,

@@ -641,7 +641,7 @@ const errorText = 'text-[12.5px] font-semibold text-danger-text'
                 <NuxtLink
                   v-if="!archivedAt"
                   to="/growth/receptionist#bookable-types"
-                  class="flex min-h-11 flex-col gap-0.5 rounded-ctl border border-line bg-surface-subtle px-3.5 py-3 text-[13.5px] text-ink-700 hover:border-line-controlHover"
+                  class="flex min-h-9 touch:min-h-11 flex-col gap-0.5 rounded-ctl border border-line bg-surface-subtle px-3.5 py-3 text-[13.5px] text-ink-700 hover:border-line-controlHover"
                   data-cy="type-usage-receptionist"
                 >
                   <strong>{{ t('AI receptionist', 'Recepcionista IA') }}</strong>

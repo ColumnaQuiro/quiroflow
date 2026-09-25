@@ -95,11 +95,11 @@ const modeClass = (value: Mode) =>
 
       <div v-else class="flex flex-col gap-2.5">
         <div role="radiogroup" :aria-label="t('Which types', 'Qué tipos')" class="grid gap-1.5 sm:grid-cols-2">
-          <label class="flex min-h-11 cursor-pointer items-center gap-2 rounded-ctl border px-3 text-[12px]" :class="modeClass('any')" data-test="bookable-mode-any">
+          <label class="flex min-h-9 touch:min-h-11 cursor-pointer items-center gap-2 rounded-ctl border px-3 text-[12px]" :class="modeClass('any')" data-test="bookable-mode-any">
             <input v-model="mode" type="radio" name="bookable-mode" value="any" class="accent-brand" :disabled="saving">
             <span>{{ t('Any active type', 'Cualquier tipo activo') }}</span>
           </label>
-          <label class="flex min-h-11 cursor-pointer items-center gap-2 rounded-ctl border px-3 text-[12px]" :class="modeClass('only')" data-test="bookable-mode-only">
+          <label class="flex min-h-9 touch:min-h-11 cursor-pointer items-center gap-2 rounded-ctl border px-3 text-[12px]" :class="modeClass('only')" data-test="bookable-mode-only">
             <input v-model="mode" type="radio" name="bookable-mode" value="only" class="accent-brand" :disabled="saving">
             <span>{{ t('Only the ones I choose', 'Solo los que elija') }}</span>
           </label>
@@ -107,7 +107,7 @@ const modeClass = (value: Mode) =>
 
         <ul v-if="mode === 'only'" class="flex flex-col gap-1" data-test="bookable-type-list">
           <li v-for="type in types" :key="type.id">
-            <label class="flex min-h-11 cursor-pointer items-center gap-2.5 rounded-ctl border border-line bg-surface-subtle px-3 text-[12px] text-ink-700 hover:bg-surface" :data-test="`bookable-type-${type.id}`">
+            <label class="flex min-h-9 touch:min-h-11 cursor-pointer items-center gap-2.5 rounded-ctl border border-line bg-surface-subtle px-3 text-[12px] text-ink-700 hover:bg-surface" :data-test="`bookable-type-${type.id}`">
               <input type="checkbox" class="h-4 w-4 accent-brand" :checked="picked.includes(type.id)" :disabled="saving" @change="toggle(type.id)">
               <span class="min-w-0 flex-1 truncate">{{ type.name }}</span>
               <span class="shrink-0 text-[11px] text-ink-faint">{{ type.durationMinutes }} min</span>
@@ -127,14 +127,14 @@ const modeClass = (value: Mode) =>
         <div v-if="dirty" class="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            class="h-11 rounded-ctl bg-brand px-4 text-[12.5px] font-semibold text-white hover:bg-brand-hover disabled:opacity-60"
+            class="h-9 touch:h-11 rounded-ctl bg-brand px-4 text-[12.5px] font-semibold text-white hover:bg-brand-hover disabled:opacity-60"
             :disabled="saving || needsOne"
             data-test="bookable-save"
             @click="onSave"
           >{{ saving ? t('Saving…', 'Guardando…') : t('Save types', 'Guardar tipos') }}</button>
           <button
             type="button"
-            class="h-11 rounded-ctl border border-line-control bg-surface px-4 text-[12.5px] font-medium text-ink-700 hover:bg-surface-subtle"
+            class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-4 text-[12.5px] font-medium text-ink-700 hover:bg-surface-subtle"
             :disabled="saving"
             data-test="bookable-discard"
             @click="reset"

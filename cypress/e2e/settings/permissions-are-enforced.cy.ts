@@ -102,9 +102,11 @@ describe('Permissions that are enforced', () => {
   it('packages_edit: selling a bono needs it, and the database agrees', () => {
     cy.seedStaffAccount().then((account) => {
       cy.task('db:createPackageTemplate', { accountId: account.accountId, name: 'Bono 5', sessionCount: 5, priceCents: 20000 })
+      // Seeded Front Desk sells bonos (20260925094121); take it away here.
+      cy.task('db:setRolePermissions', { accountId: account.accountId, roleName: 'Front Desk', patch: { packages_edit: false } })
       member(account, 'Front Desk', 'Fran Frontdesk').then((me) => {
         patient(account, 'Bea', 'Bono').then((p) => {
-          // Front Desk has billing_access but neither billing_config nor packages_edit.
+          // Front Desk now has billing_access but neither billing_config nor packages_edit.
           cy.login(me.email, PASSWORD)
           cy.visit(`/patients/${p.id}?tab=money`)
           cy.get('[data-cy=packages-empty]', { timeout: 20000 }).should('contain.text', 'Your role does not include selling or editing bonos')
@@ -157,28 +159,29 @@ describe('Permissions that are enforced', () => {
     })
   })
 
-  it('patients_tags_remove: a bono or membership tag stays, other tags come off', () => {
+  // Any tag, since 20260925094121: the bono-only rule protected nothing,
+  // because QuiroFlow never writes bono tags and none matched in production.
+  it('patients_tags_remove: without it no tag comes off, but tags can still be added', () => {
     cy.seedStaffAccount().then((account) => {
-      cy.task('db:createPackageTemplate', { accountId: account.accountId, name: 'Bono 10', sessionCount: 10, priceCents: 40000 })
-      cy.task('db:createMembershipTemplate', { accountId: account.accountId, name: 'Plan Mensual' })
+      // Seeded Front Desk has it now (so nobody lost it); take it away here.
+      cy.task('db:setRolePermissions', { accountId: account.accountId, roleName: 'Front Desk', patch: { patients_tags_remove: false } })
       member(account, 'Front Desk', 'Fran Frontdesk').then((me) => {
         patient(account, 'Tomás', 'Tags').then((p) => {
-          cy.task('db:setPatientTags', { patientId: p.id, tags: ['Bono 10', 'plan mensual', 'VIP'] })
+          cy.task('db:setPatientTags', { patientId: p.id, tags: ['2X3 1X6', 'VIP'] })
           cy.login(me.email, PASSWORD)
           cy.visit(`/patients/${p.id}?tab=clinical`)
           cy.contains('button', 'Edit clinical details', { timeout: 20000 }).click()
           cy.contains('p', 'Flags').parent().contains('button', /^Edit$/).click()
-          cy.get('[data-cy=patient-tag][data-tag="Bono 10"] [data-cy=patient-tag-remove]').should('not.exist')
-          cy.get('[data-cy=patient-tag][data-tag="Bono 10"] [data-cy=patient-tag-locked]').should('exist')
-          cy.get('[data-cy=patient-tag][data-tag="plan mensual"] [data-cy=patient-tag-remove]').should('not.exist')
-          cy.get('[data-cy=patient-tag][data-tag="VIP"] [data-cy=patient-tag-remove]').click()
-          cy.task('db:patientTags', { patientId: p.id }).should('deep.equal', ['Bono 10', 'plan mensual'])
+          cy.get('[data-cy=patient-tag][data-tag="VIP"] [data-cy=patient-tag-remove]').should('not.exist')
+          cy.get('[data-cy=patient-tag][data-tag="VIP"] [data-cy=patient-tag-locked]').should('exist')
+          cy.get('[data-cy=patient-tag][data-tag="2X3 1X6"] [data-cy=patient-tag-remove]').should('not.exist')
 
-          // The database refuses it directly too.
-          cy.task('db:writeAsStaff', { email: me.email, password: PASSWORD, op: 'setPatientTags', patientId: p.id, tags: ['plan mensual'] })
+          // The database refuses a removal directly too, and still allows adding.
+          cy.task('db:writeAsStaff', { email: me.email, password: PASSWORD, op: 'setPatientTags', patientId: p.id, tags: ['2X3 1X6'] })
             .its('error')
-            .should('contain', 'cannot remove bono or membership tags')
-          cy.task('db:patientTags', { patientId: p.id }).should('deep.equal', ['Bono 10', 'plan mensual'])
+            .should('contain', 'cannot remove patient tags')
+          cy.task('db:writeAsStaff', { email: me.email, password: PASSWORD, op: 'setPatientTags', patientId: p.id, tags: ['2X3 1X6', 'VIP', 'Nuevo'] }).its('error').should('eq', null)
+          cy.task('db:patientTags', { patientId: p.id }).should('deep.equal', ['2X3 1X6', 'VIP', 'Nuevo'])
 
           cy.task('db:setRolePermissions', { accountId: account.accountId, roleName: 'Front Desk', patch: { patients_tags_remove: true } })
           cy.task('db:writeAsStaff', { email: me.email, password: PASSWORD, op: 'setPatientTags', patientId: p.id, tags: [] }).its('error').should('eq', null)

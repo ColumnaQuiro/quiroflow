@@ -396,4 +396,54 @@ describe('Appointment types', () => {
       })
     })
   })
+  // The public API hid archived types from its list and /availability, but
+  // still booked one given its id -- and with ends_at given it never looked
+  // at the type at all, so another account's type went straight in.
+  it('refuses an archived or foreign type through the public API, but still moves a visit that has one', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.seedStaffAccount().then((other) => {
+        cy.task<{ id: string }>('db:createAppointmentType', { accountId: account.accountId, name: 'Vigente', durationMinutes: 30 }).then((live) => {
+          cy.task<{ id: string }>('db:createAppointmentType', { accountId: account.accountId, name: 'Retirada', durationMinutes: 30, archivedAt: new Date().toISOString() }).then((archived) => {
+            cy.task<{ id: string }>('db:createAppointmentType', { accountId: other.accountId, name: 'Ajena', durationMinutes: 30 }).then((foreign) => {
+              cy.task<any>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Api', lastName: 'Tipo' }).then((patient) => {
+                cy.task<{ token: string }>('db:createApiToken', { accountId: account.accountId, scopes: ['appointments:write'] }).then(({ token }) => {
+                  const headers = { Authorization: `Bearer ${token}` }
+                  const at = (day: number) => new Date(Date.UTC(2031, 0, day, 9)).toISOString()
+                  const book = (typeId: string, day: number) =>
+                    cy.request({
+                      method: 'POST',
+                      url: '/api/public/v1/appointments',
+                      headers,
+                      failOnStatusCode: false,
+                      body: { patient_id: patient.id, clinic_id: account.clinicId, appointment_type_id: typeId, starts_at: at(day), ends_at: new Date(Date.UTC(2031, 0, day, 9, 30)).toISOString() },
+                    })
+
+                  book(archived.id, 6).then((res) => {
+                    expect(res.status).to.equal(400)
+                    expect(JSON.stringify(res.body)).to.contain('archived')
+                  })
+                  book(foreign.id, 7).then((res) => {
+                    expect(res.status, 'another account\'s type').to.equal(400)
+                  })
+                  book(live.id, 8).then((res) => {
+                    expect(res.status).to.be.oneOf([200, 201])
+                  })
+
+                  // A visit booked before its type was archived keeps it and can still move.
+                  cy.task<{ id: string }>('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId: patient.id, startsAt: at(9), appointmentTypeId: archived.id }).then((appt) => {
+                    cy.request({ method: 'PATCH', url: `/api/public/v1/appointments/${appt.id}`, headers, failOnStatusCode: false, body: { starts_at: at(10), ends_at: new Date(Date.UTC(2031, 0, 10, 9, 30)).toISOString() } }).then((res) => {
+                      expect(res.status).to.equal(200)
+                    })
+                    cy.request({ method: 'PATCH', url: `/api/public/v1/appointments/${appt.id}`, headers, failOnStatusCode: false, body: { appointment_type_id: foreign.id } }).then((res) => {
+                      expect(res.status).to.equal(400)
+                    })
+                  })
+                })
+              })
+            })
+          })
+        })
+      })
+    })
+  })
 })

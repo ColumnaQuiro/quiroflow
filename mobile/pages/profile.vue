@@ -17,7 +17,9 @@ async function signOut() {
   await navigateTo('/login')
 }
 
+const photoError = ref('')
 async function onPhotoUploaded() {
+  photoError.value = ''
   if (!context.value) return
   const { data } = await supabase.from('team_members').select('photo_storage_path').eq('id', context.value.teamMemberId).maybeSingle()
   if (data) context.value.photoStoragePath = data.photo_storage_path
@@ -57,12 +59,14 @@ async function deleteAccount() {
           :initials="(context.fullName ?? '?').split(/\s+/).filter(Boolean).slice(0, 2).map((p: string) => p[0]?.toUpperCase()).join('') || '?'"
           :size="56"
           @uploaded="onPhotoUploaded"
+          @failed="(m: string) => (photoError = m)"
         />
         <div class="min-w-0">
           <p class="truncate text-[17px] font-semibold text-ink-900">{{ context?.fullName }}</p>
           <p class="text-[12.5px] text-ink-muted2">{{ context?.isOwner ? 'Owner' : 'Team member' }}</p>
         </div>
       </div>
+      <p v-if="photoError" class="text-[13px] font-semibold text-danger-text">Could not change your photo: {{ photoError }}</p>
 
       <button
         type="button"

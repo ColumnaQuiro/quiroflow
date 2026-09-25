@@ -1227,6 +1227,57 @@ async function callRpcAsAnon(opts: { fn: string; args?: Record<string, unknown> 
   return { error: error?.message ?? null, code: (error as { code?: string } | null)?.code ?? null }
 }
 
+/**
+ * The online-booking rules of one appointment type, as Settings -> Appointment
+ * Types -> <type> -> Reserva online sets them. Only the fields given change.
+ */
+async function setAppointmentTypeBookingRules(opts: {
+  id: string
+  bookableBy?: 'all' | 'new_patients' | 'existing_patients'
+  maxDaysAhead?: number | null
+  paymentRequired?: boolean
+  depositCents?: number | null
+}) {
+  assertOk(
+    await admin
+      .from('appointment_types')
+      .update({
+        ...(opts.bookableBy !== undefined ? { online_bookable_by: opts.bookableBy } : {}),
+        ...(opts.maxDaysAhead !== undefined ? { online_max_days_ahead: opts.maxDaysAhead } : {}),
+        ...(opts.paymentRequired !== undefined ? { online_payment_required: opts.paymentRequired } : {}),
+        ...(opts.depositCents !== undefined ? { online_deposit_cents: opts.depositCents } : {}),
+      })
+      .eq('id', opts.id),
+  )
+  return { ok: true }
+}
+
+/**
+ * Gives an existing patient a login and turns on booking from the patient
+ * app, which is the state a patient is in after claim_patient_profile links
+ * them in the app.
+ */
+async function givePatientAppLogin(opts: { accountId: string; patientId: string; email: string; password: string }) {
+  const { data, error } = await admin.auth.admin.createUser({ email: opts.email, password: opts.password, email_confirm: true })
+  if (error) throw error
+  assertOk(await admin.from('patients').update({ user_id: data.user!.id, email: opts.email }).eq('id', opts.patientId))
+  assertOk(await admin.from('accounts').update({ patient_app_booking_enabled: true }).eq('id', opts.accountId))
+  return { userId: data.user!.id }
+}
+
+/**
+ * Calls an RPC signed in as that patient -- the way the app does. The
+ * service-role client would bypass exactly what is being tested: the booking
+ * functions resolve the patient from auth.uid().
+ */
+async function callRpcAsPatient(opts: { email: string; password: string; fn: string; args?: Record<string, unknown> }) {
+  const client = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+  const { error: signInErr } = await client.auth.signInWithPassword({ email: opts.email, password: opts.password })
+  if (signInErr) throw signInErr
+  const { data, error } = await client.rpc(opts.fn, (opts.args ?? {}) as never)
+  return { data: data ?? null, error: error?.message ?? null }
+}
+
 /** Gives a second patient the run of someone else's bono -- a family sharing one. */
 async function sharePackageWith(opts: { accountId: string; packagePurchaseId: string; patientId: string }) {
   const row = unwrap(
@@ -3000,6 +3051,9 @@ export const dbTasks = {
   'db:createPackagePurchase': createPackagePurchase,
   'db:callPublicBookingAsAnon': callPublicBookingAsAnon,
   'db:callRpcAsAnon': callRpcAsAnon,
+  'db:setAppointmentTypeBookingRules': setAppointmentTypeBookingRules,
+  'db:givePatientAppLogin': givePatientAppLogin,
+  'db:callRpcAsPatient': callRpcAsPatient,
   'db:sharePackageWith': sharePackageWith,
   'db:packageSessionEffects': packageSessionEffects,
   'db:insertDuplicateSession': insertDuplicateSession,

@@ -25,7 +25,7 @@ function onKeydown(event: KeyboardEvent) {
   <div
     ref="root"
     role="tablist"
-    class="inline-flex gap-0.5 rounded-[9px] border border-chip-border bg-chip-bg p-[3px]"
+    class="inline-flex gap-0.5 rounded-ctl bg-chip-bg p-[3px]"
     @keydown="onKeydown"
   >
     <!-- 44px below lg: on a phone these are the page's primary navigation. -->
@@ -37,7 +37,7 @@ function onKeydown(event: KeyboardEvent) {
       role="tab"
       :aria-selected="item.key === modelValue"
       :tabindex="item.key === modelValue ? 0 : -1"
-      class="inline-flex h-9 touch:h-11 items-center rounded-[7px] px-3.5 text-[13px] outline-none lg:h-[30px]"
+      class="inline-flex h-8 touch:h-10 items-center whitespace-nowrap rounded-[7px] px-3 text-[13px] outline-none"
       :class="
         item.key === modelValue
           ? 'border border-line-control bg-surface font-semibold text-ink-900 shadow-card'

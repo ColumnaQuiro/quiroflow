@@ -133,9 +133,9 @@ export interface SenderConfig {
    * there is no filesystem to put a .p12 on, and anything baked into the
    * bundle would be a private key in the repository.
    *
-   * The passphrase is kept separate and stays an environment variable, so
-   * neither half is usable alone -- whichever store ends up holding the
-   * certificate does not also hold the key to it.
+   * The passphrase is kept separate, encrypted with the platform key, so
+   * neither the database nor the deploy is usable alone -- see
+   * server/utils/verifactuCertificate.ts.
    */
   certificateBase64?: string
   /** A local file instead, for development. Ignored when base64 is set. */
@@ -162,6 +162,13 @@ export type BlockedReason =
   | 'certificate-expired'
   | 'nothing-to-send'
   | 'waiting-on-aeat-pace'
+  | 'production-not-enabled'
+  /** The clinic has VeriFactu switched off in its settings. */
+  | 'verifactu-off'
+  /** A certificate is stored but its passphrase is not. */
+  | 'no-passphrase'
+  /** NUXT_VERIFACTU_SECRET_KEY is missing, or cannot open the stored passphrase. */
+  | 'no-platform-key'
 
 /**
  * Why this account cannot transmit right now, or null if it can.
@@ -209,6 +216,35 @@ export function transmissionBlockedBy(input: {
   if (input.pendingCount < MAX_RECORDS_PER_SUBMISSION && now < input.readyAt) return 'waiting-on-aeat-pace'
 
   return null
+}
+
+export type VerifactuEnvironment = SenderConfig['environment']
+
+/**
+ * Which of an account's two chains this submission is for.
+ *
+ * An account has a test chain and, from `accounts.verifactu_production_from`
+ * on, a production chain that starts again from nothing (see the
+ * verifactu_production_chain migration). A submission carries one chain only,
+ * and goes to that chain's service: a test record must never reach
+ * production, which would hold a record whose RegistroAnterior it never
+ * received, and a production record must never be spent on the test service.
+ *
+ * The oldest owed record decides, so a test backlog still drains in order
+ * before production starts. A production record is only sent once the sender
+ * is configured for production -- reaching it stays a deliberate act of
+ * configuration -- and until then it waits, owed, with the reason given.
+ */
+export function chooseChain(
+  pending: { sequence: number; environment: VerifactuEnvironment }[],
+  configured: VerifactuEnvironment,
+): { environment: VerifactuEnvironment | null; blocked: BlockedReason | null } {
+  if (pending.length === 0) return { environment: null, blocked: 'nothing-to-send' }
+  const oldest = [...pending].sort((a, b) => a.sequence - b.sequence)[0]
+  if (oldest.environment === 'production' && configured !== 'production') {
+    return { environment: 'production', blocked: 'production-not-enabled' }
+  }
+  return { environment: oldest.environment, blocked: null }
 }
 
 /** AEAT's per-record verdicts, unchanged -- the same strings #326 stores. */

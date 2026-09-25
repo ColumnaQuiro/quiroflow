@@ -1,6 +1,6 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
-import { sendPendingRecords, verifactuConfigFrom } from '~/server/utils/verifactuSender'
+import { sendPendingRecords } from '~/server/utils/verifactuSender'
 
 // Sends registros de facturación to the AEAT.
 //
@@ -28,7 +28,10 @@ export default defineEventHandler(async (event) => {
   }
 
   const supabase = serverSupabaseServiceRole<Database>(event)
-  const config = verifactuConfigFrom(runtimeConfig as never)
+  // Whether and where each clinic transmits is its own setting (Settings >
+  // VeriFactu). The platform key is only what opens each clinic's stored
+  // certificate passphrase.
+  const secretKey = String(runtimeConfig.verifactuSecretKey ?? '')
 
   // Accounts with something owed, cheapest question first: with no
   // certificate configured this returns nothing to do and the tick costs one
@@ -59,7 +62,7 @@ export default defineEventHandler(async (event) => {
   // tick and get the next one refused.
   for (const row of owing) {
     try {
-      const r = await sendPendingRecords(supabase, row.account_id, config)
+      const r = await sendPendingRecords(supabase, row.account_id, secretKey)
       results.push({ account: row.account_id, ...r })
     } catch (err) {
       // One clinic's failure must not stop the others. The records stay owed
@@ -83,8 +86,9 @@ export default defineEventHandler(async (event) => {
   // stop the reporting, or it becomes a quieter version of the bug it fixes.
   const parked = (summary ?? []).reduce((n, row) => n + Number(row.parked ?? 0), 0)
 
+  // No platform-wide environment to report any more: each clinic's mode is
+  // its own, and each result below says what happened for that clinic.
   return {
-    environment: config.environment,
     accountsOwing: owing.length,
     ...(parked ? { parked } : {}),
     results,

@@ -36,6 +36,7 @@ describe('Booking from the patient app follows the type rules', () => {
         lastName: 'App',
         email,
       }).then((patient) => {
+        cy.wrap(patient.id).as('patientId')
         cy.task('db:givePatientAppLogin', { accountId: account.accountId, patientId: patient.id, email, password })
       })
     })
@@ -59,7 +60,7 @@ describe('Booking from the patient app follows the type rules', () => {
     )
   }
 
-  function book(account: any, typeId: string, startsAt: string) {
+  function book(account: any, typeId: string, startsAt: string, teamMemberId: string = account.teamMemberId) {
     return cy.get<string>('@email').then((email) =>
       cy.task<{ data: any; error: string | null }>('db:callRpcAsPatient', {
         email,
@@ -67,11 +68,39 @@ describe('Booking from the patient app follows the type rules', () => {
         fn: 'create_patient_booking',
         args: {
           p_clinic_id: account.clinicId,
-          p_team_member_id: account.teamMemberId,
+          p_team_member_id: teamMemberId,
           p_appointment_type_id: typeId,
           p_starts_at: startsAt,
           p_note: '',
         },
+      }),
+    )
+  }
+
+  function reschedule(appointmentId: string, startsAt: string) {
+    return cy.get<string>('@email').then((email) =>
+      cy.task<{ data: any; error: string | null }>('db:callRpcAsPatient', {
+        email,
+        password,
+        fn: 'reschedule_patient_appointment',
+        args: { p_appointment_id: appointmentId, p_starts_at: startsAt },
+      }),
+    )
+  }
+
+  // A second person on the clinic's team, at its clinic. The seeded owner is
+  // the account's one practitioner seat, so a second practitioner needs one
+  // more, as it would for a real clinic.
+  function colleague(account: any, fullName: string, isPractitioner: boolean) {
+    return cy.setExtraProfessionals(account.accountId, 3).then(() =>
+      cy.task<{ teamMemberId: string }>('db:createTeamMemberWithRole', {
+        accountId: account.accountId,
+        clinicId: account.clinicId,
+        roleName: isPractitioner ? 'Practitioner' : 'Front Desk',
+        email: `colleague-${Date.now()}-${Math.floor(Math.random() * 100000)}@example.test`,
+        password,
+        fullName,
+        isPractitioner,
       }),
     )
   }
@@ -152,6 +181,105 @@ describe('Booking from the patient app follows the type rules', () => {
             })
             book(account, zeroDeposit.id, inDays(4, 12)).then((r) => {
               expect(r.error, 'nothing to pay, so it books').to.eq(null)
+            })
+          })
+        })
+      })
+    })
+  })
+
+  // create_patient_booking checks the horizon; moving an appointment did not,
+  // so a type patients may only book a week out could be moved to next year.
+  // The move is measured against the appointment's own type, else the clinic.
+  it('does not move an appointment past the type horizon, or the clinic one', () => {
+    cy.get('@acct').then((account: any) => {
+      cy.task('db:setPatientAppReschedule', { accountId: account.accountId, enabled: true, noticeHours: 24 })
+      cy.get<string>('@patientId').then((patientId) => {
+        type(account, 'Corta antelacion', { maxDaysAhead: 7 }).then((short) => {
+          type(account, 'Ajuste').then((plain) => {
+            const appointment = (typeId: string, startsAt: string) =>
+              cy.task<{ id: string }>('db:createAppointment', {
+                accountId: account.accountId,
+                clinicId: account.clinicId,
+                patientId,
+                practitionerId: account.teamMemberId,
+                appointmentTypeId: typeId,
+                startsAt,
+              })
+            appointment(short.id, inDays(3)).then((a) => {
+              reschedule(a.id, inDays(10)).then((r) => {
+                expect(r.error, "past the type's 7 days").to.contain('too far in advance')
+              })
+              reschedule(a.id, inDays(6)).then((r) => {
+                expect(r.error, "within the type's 7 days").to.eq(null)
+              })
+            })
+            appointment(plain.id, inDays(3, 12)).then((a) => {
+              reschedule(a.id, inDays(120, 12)).then((r) => {
+                expect(r.error, "past the clinic's 90 days").to.contain('too far in advance')
+              })
+              reschedule(a.id, inDays(60, 12)).then((r) => {
+                expect(r.error, "within the clinic's 90 days").to.eq(null)
+              })
+            })
+          })
+        })
+      })
+    })
+  })
+
+  // online_booking_enabled defaults to true for everyone on the team, so the
+  // app offered -- and booked -- receptionists. The web page lists only
+  // practitioners; the app now does too, and not anyone who has left.
+  it('offers and books only practitioners who are still at the clinic', () => {
+    cy.get('@acct').then((account: any) => {
+      type(account, 'Ajuste').then((plain) => {
+        colleague(account, 'Recepcion Mostrador', false).then((desk) => {
+          colleague(account, 'Antigua Fisio', true).then((former) => {
+            cy.task('db:setTeamMemberBookingFlags', { id: former.teamMemberId, deletedAt: new Date().toISOString() })
+            info().then((r) => {
+              const ids = r.data.team_members.map((m: any) => m.id)
+              expect(ids, 'the practitioner is offered').to.include(account.teamMemberId)
+              expect(ids, 'somebody who sees no patients is not').not.to.include(desk.teamMemberId)
+              expect(ids, 'somebody who has left is not').not.to.include(former.teamMemberId)
+            })
+            book(account, plain.id, inDays(3), desk.teamMemberId).then((r) => {
+              expect(r.error, 'the receptionist cannot be booked').to.contain('Practitioner not available')
+            })
+            book(account, plain.id, inDays(3, 11), former.teamMemberId).then((r) => {
+              expect(r.error, 'nor somebody who has left').to.contain('Practitioner not available')
+            })
+            book(account, plain.id, inDays(3, 12)).then((r) => {
+              expect(r.error, 'the practitioner can').to.eq(null)
+            })
+          })
+        })
+      })
+    })
+  })
+
+  // The web page shows no practitioner choice for such a type and books the
+  // first practitioner listed at the clinic -- here the owner, added first.
+  it('books a "patient does not choose" type with the practitioner the clinic assigns', () => {
+    cy.get('@acct').then((account: any) => {
+      type(account, 'Valoracion', { bypassPractitioner: true }).then((assigned) => {
+        type(account, 'Ajuste').then((plain) => {
+          colleague(account, 'Segunda Fisio', true).then((second) => {
+            info().then((r) => {
+              const sent = r.data.appointment_types.find((t: any) => t.id === assigned.id)
+              expect(sent.online_bypass_practitioner, 'the app is told not to ask').to.eq(true)
+              const atClinic = r.data.team_members.filter((m: any) => m.clinic_ids.includes(account.clinicId))
+              expect(atClinic.map((m: any) => m.id), "in the web page's order").to.deep.eq([account.teamMemberId, second.teamMemberId])
+            })
+            book(account, assigned.id, inDays(3), second.teamMemberId).then((r) => {
+              expect(r.error, 'anyone else is refused, naming who to choose').to.contain('clinic assigns the practitioner')
+              expect(r.error).to.contain('Test Owner')
+            })
+            book(account, assigned.id, inDays(3, 11)).then((r) => {
+              expect(r.error, 'the assigned practitioner books').to.eq(null)
+            })
+            book(account, plain.id, inDays(3, 12), second.teamMemberId).then((r) => {
+              expect(r.error, 'an ordinary type still lets the patient choose').to.eq(null)
             })
           })
         })

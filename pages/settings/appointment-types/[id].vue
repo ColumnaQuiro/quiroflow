@@ -2,6 +2,7 @@
 import { formatEur } from '~/utils/billing'
 import { CALENDAR_PALETTE, isPaletteColor } from '~/utils/calendarPalette'
 import { DURATION_MAX, DURATION_MIN, TYPE_STAGES, centsToInput, parseEurosToCents, parseMinutes, typeProblems } from '~/utils/appointmentTypes'
+import { receptionistOffersType } from '~/utils/receptionistTypes'
 
 // One appointment type, everything about it on one page: what used to be the
 // row of Settings -> Appointment Types (name, duration, price, colour, stage,
@@ -52,6 +53,19 @@ const otherActive = ref<{ id: string; name: string }[]>([])
 const accountMaxDays = ref(90)
 const stripeConfigured = ref(false)
 const usage = ref<Usage | null>(null)
+// The receptionist's stored list, read directly rather than from the usage
+// RPC's `receptionist` flag: that flag is "listed by id", which is wrong both
+// ways once an empty list means "any active type" (utils/receptionistTypes.ts)
+// -- it said "does not offer it" for every type of a clinic that never
+// restricted the list. No row at all is the same as an empty list.
+const receptionistIds = ref<string[]>([])
+const receptionistEnabled = ref(false)
+const receptionistOffers = computed(() => receptionistOffersType({ id: typeId, archived_at: archivedAt.value }, receptionistIds.value))
+// Worth a line in the archive warning only when archiving changes something
+// someone set up: a receptionist that is on, or a list that names this type.
+// "Any type" on a receptionist that is off would put the receptionist in
+// every clinic's archive warning.
+const archiveStopsReceptionist = computed(() => receptionistOffers.value && (receptionistEnabled.value || receptionistIds.value.includes(typeId)))
 
 function toForm(row: any, overrides: { team_member_id: string; duration_minutes: number | null; price_cents: number | null }[], people: Practitioner[]): Form {
   const byMember = Object.fromEntries(overrides.map((o) => [o.team_member_id, o]))
@@ -109,11 +123,16 @@ async function load() {
 }
 
 async function loadUsage() {
-  const { data, error } = await supabase.rpc('get_appointment_type_usage', { p_account_id: store.accountId! })
-  if (error) {
-    showToast(error.message, 'error')
+  const [{ data, error }, receptionistRes] = await Promise.all([
+    supabase.rpc('get_appointment_type_usage', { p_account_id: store.accountId! }),
+    supabase.from('receptionist_config').select('enabled, bookable_appointment_type_ids').eq('account_id', store.accountId!).maybeSingle(),
+  ])
+  if (error || receptionistRes.error) {
+    showToast((error ?? receptionistRes.error)!.message, 'error')
     return
   }
+  receptionistIds.value = receptionistRes.data?.bookable_appointment_type_ids ?? []
+  receptionistEnabled.value = !!receptionistRes.data?.enabled
   usage.value = ((data as Usage[] | null) ?? []).find((u) => u.id === typeId) ?? { id: typeId, appointments: 0, upcoming: 0, waitlist: 0, automations: [], receptionist: false }
 }
 
@@ -616,10 +635,25 @@ const errorText = 'text-[12.5px] font-semibold text-danger-text'
                     <template v-else>{{ t('none filters by this type', 'ninguna filtra por este tipo') }}</template>
                   </span>
                 </div>
-                <div class="flex flex-col gap-0.5 rounded-ctl border border-line bg-surface-subtle px-3.5 py-3 text-[13.5px] text-ink-700" data-cy="type-usage-receptionist">
+                <!-- Not shown for an archived type: the receptionist never
+                offers one, whatever its list says, and the line would only
+                invite changing a list that has no effect on it. -->
+                <NuxtLink
+                  v-if="!archivedAt"
+                  to="/growth/receptionist#bookable-types"
+                  class="flex min-h-11 flex-col gap-0.5 rounded-ctl border border-line bg-surface-subtle px-3.5 py-3 text-[13.5px] text-ink-700 hover:border-line-controlHover"
+                  data-cy="type-usage-receptionist"
+                >
                   <strong>{{ t('AI receptionist', 'Recepcionista IA') }}</strong>
-                  <span class="text-ink-500">{{ usage.receptionist ? t('may offer it when booking', 'puede ofrecerlo al reservar') : t('does not offer it', 'no lo ofrece') }}</span>
-                </div>
+                  <span class="text-ink-500">
+                    {{ !receptionistOffers
+                      ? t('does not offer it', 'no lo ofrece')
+                      : receptionistIds.length
+                        ? t('may offer it when booking', 'puede ofrecerlo al reservar')
+                        : t('may offer it when booking, like every active type', 'puede ofrecerlo al reservar, como todos los tipos activos') }}
+                  </span>
+                  <span class="text-[12.5px] font-semibold text-brand-text">{{ t('Choose which types it offers', 'Elegir qué tipos ofrece') }} →</span>
+                </NuxtLink>
               </div>
             </section>
 
@@ -692,14 +726,14 @@ const errorText = 'text-[12.5px] font-semibold text-danger-text'
       <p class="text-[14px] leading-relaxed text-ink-500">
         {{ t(`No longer offered in the calendar, online booking or the pickers. Its ${usage?.appointments ?? 0} appointments keep it and still count in reports.`, `Deja de ofrecerse en el calendario, la reserva online y los selectores. Sus ${usage?.appointments ?? 0} citas lo conservan y siguen contando en los informes.`) }}
       </p>
-      <p v-if="usage && (usage.upcoming > 0 || usage.waitlist > 0 || usage.automations.length > 0 || usage.receptionist)" class="rounded-ctl border border-warning-border bg-warning-bg px-3.5 py-3 text-[13.5px] leading-snug text-warning-text" data-cy="type-archive-in-use">
+      <p v-if="usage && (usage.upcoming > 0 || usage.waitlist > 0 || usage.automations.length > 0 || archiveStopsReceptionist)" class="rounded-ctl border border-warning-border bg-warning-bg px-3.5 py-3 text-[13.5px] leading-snug text-warning-text" data-cy="type-archive-in-use">
         <strong>{{ t('Still in use:', 'Sigue en uso:') }}</strong>
         {{
           [
             usage.upcoming > 0 ? t(`${usage.upcoming} appointments from today on (they are kept)`, `${usage.upcoming} citas a partir de hoy (se mantienen)`) : null,
             usage.waitlist > 0 ? t(`${usage.waitlist} on the waitlist`, `${usage.waitlist} en lista de espera`) : null,
             usage.automations.length > 0 ? t(`${usage.automations.length} automations that filter by this type and will stop firing for new appointments`, `${usage.automations.length} automatizaciones que filtran por este tipo y dejarán de dispararse para citas nuevas`) : null,
-            usage.receptionist ? t('the AI receptionist will stop offering it', 'la recepcionista IA dejará de ofrecerlo') : null,
+            archiveStopsReceptionist ? t('the AI receptionist will stop offering it', 'la recepcionista IA dejará de ofrecerlo') : null,
           ]
             .filter(Boolean)
             .join(', ')

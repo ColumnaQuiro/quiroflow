@@ -23,7 +23,8 @@ describe('Logging a bono session', () => {
           cy.get('[data-cy="confirm-dialog-confirm"]').should('not.be.disabled').click()
 
           // The counter is the visible half of the change...
-          cy.contains('11 of 12 sessions left', { timeout: 15000 }).should('be.visible')
+          // Scrolled to first: logging leaves the panel scrolled below the counter.
+          cy.contains('11 of 12 sessions left', { timeout: 15000 }).scrollIntoView().should('be.visible')
 
           // ...and this is the rest of it: the visit exists as a completed
           // appointment and a package_sessions row, and NOTHING is billed.

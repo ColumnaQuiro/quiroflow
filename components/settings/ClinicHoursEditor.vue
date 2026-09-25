@@ -109,7 +109,7 @@ function problemText(p: HoursProblem) {
           <button
             type="button"
             data-cy="hours-add-range"
-            class="h-10 rounded-ctl border border-dashed border-line-control px-2.5 text-[13px] font-semibold text-ink-500 hover:text-ink-700"
+            class="h-9 touch:h-11 rounded-ctl border border-dashed border-line-control px-2.5 text-[13px] font-semibold text-ink-500 hover:text-ink-700"
             @click="addRange(d.key)"
           >
             {{ t('+ Range', '+ Tramo') }}
@@ -123,7 +123,7 @@ function problemText(p: HoursProblem) {
       <button
         type="button"
         data-cy="hours-copy-monday"
-        class="h-11 rounded-ctl border border-line-control bg-surface px-3.5 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle"
+        class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3.5 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle"
         @click="copyMonday"
       >
         {{ t('Copy Monday to Tuesday–Friday', 'Copiar el lunes a martes–viernes') }}

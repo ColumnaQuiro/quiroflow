@@ -1925,6 +1925,10 @@ async function createLeadMessage(opts: {
   body: string
   createdAt?: string
   status?: string
+  /** A template send: Meta returns no text, only the template's name. */
+  templateName?: string
+  /** A file with no text, as a photo or voice note arrives. */
+  mediaType?: string
 }) {
   const row = unwrap(
     await admin
@@ -1936,6 +1940,8 @@ async function createLeadMessage(opts: {
         body_preview: opts.body,
         status: opts.status ?? (opts.direction === 'inbound' ? 'received' : 'sent'),
         channel: 'whatsapp',
+        ...(opts.templateName ? { template_name: opts.templateName } : {}),
+        ...(opts.mediaType ? { media_type: opts.mediaType } : {}),
       })
       .select('id')
       .single(),

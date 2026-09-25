@@ -144,7 +144,7 @@ async function reactivate(c: ClinicRow) {
       <button
         type="button"
         data-cy="clinic-add"
-        class="h-11 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface hover:bg-brand-hover"
+        class="h-9 touch:h-11 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface hover:bg-brand-hover"
         @click="openAdd"
       >
         {{ t('Add location', 'Añadir sede') }}
@@ -204,7 +204,7 @@ async function reactivate(c: ClinicRow) {
               {{ t(`Archived · ${archived.length}`, `Archivadas · ${archived.length}`) }}
             </summary>
             <div v-for="c in archived" :key="c.id" class="flex items-center gap-4 border-t border-line-row px-5 py-3.5" data-cy="clinic-archived-row" :data-clinic-id="c.id">
-              <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-ctl bg-chip-bg text-[13px] font-bold text-chip-text">{{ initials(c.name) }}</span>
+              <span class="flex h-9 touch:h-11 w-9 touch:w-11 shrink-0 items-center justify-center rounded-ctl bg-chip-bg text-[13px] font-bold text-chip-text">{{ initials(c.name) }}</span>
               <div class="flex min-w-0 flex-1 flex-col gap-0.5">
                 <strong class="text-[15px] text-ink-700">{{ c.name }}</strong>
                 <span class="text-[13px] text-ink-muted">
@@ -214,7 +214,7 @@ async function reactivate(c: ClinicRow) {
               <button
                 type="button"
                 data-cy="clinic-reactivate"
-                class="h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-60"
+                class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-60"
                 :disabled="reactivating === c.id"
                 @click="reactivate(c)"
               >
@@ -258,7 +258,7 @@ async function reactivate(c: ClinicRow) {
           v-model="newName"
           data-cy="clinic-add-name"
           type="text"
-          class="h-11 rounded-ctl border border-line-control bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+          class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           @keydown.enter.prevent="addClinic"
         />
       </label>

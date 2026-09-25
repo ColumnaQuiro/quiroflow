@@ -177,7 +177,7 @@ function eventTitle(event: ExecutionEvent) {
       <p v-if="error" class="px-4 py-6 text-[12px] text-danger-text">{{ error }}</p>
 
       <div v-else-if="loading && runs.length === 0" class="flex animate-pulse flex-col gap-2 p-4" aria-hidden="true">
-        <div v-for="i in 5" :key="i" class="h-10 rounded-ctl bg-surface-subtle" />
+        <div v-for="i in 5" :key="i" class="h-9 touch:h-11 rounded-ctl bg-surface-subtle" />
       </div>
 
       <p v-else-if="runs.length === 0" class="px-4 py-10 text-center text-[12px] text-ink-muted" data-test="executions-empty">

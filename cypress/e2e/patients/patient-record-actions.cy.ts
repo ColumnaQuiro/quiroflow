@@ -206,7 +206,10 @@ describe('The patient record on a phone', () => {
         phone: '600818181',
       }).then((patient: any) => {
         cy.login(account.email, account.password)
+        // A phone is a touch screen, not only a narrow one: the site sizes
+        // targets for a finger by pointer, and 36px is right under a mouse.
         cy.visit(`/patients/${patient.id}`)
+        cy.useTouchScreen()
 
         cy.get('button[aria-label="More actions"]').should('be.visible').then(($b) => {
           // 44px is the smallest target a thumb reliably hits.

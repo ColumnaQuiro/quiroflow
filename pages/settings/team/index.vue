@@ -277,7 +277,7 @@ onMounted(() => {
 <template>
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Team', 'Equipo')">
-      <button type="button" data-cy="team-invite" class="h-11 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface hover:bg-brand-hover" @click="openInvite()">
+      <button type="button" data-cy="team-invite" class="h-9 touch:h-11 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface hover:bg-brand-hover" @click="openInvite()">
         {{ t('Invite', 'Invitar') }}
       </button>
     </PageHeader>
@@ -304,7 +304,7 @@ onMounted(() => {
           <section aria-labelledby="h-members" class="overflow-hidden rounded-card border border-line bg-surface">
             <h2 id="h-members" class="px-[18px] pt-[18px] text-[16px] font-bold text-ink-900">{{ t('Team', 'Equipo') }}</h2>
             <div class="flex flex-wrap items-center gap-2 px-[18px] pb-2.5 pt-3.5">
-              <input v-model="search" type="search" data-cy="team-search" :aria-label="t('Search the team', 'Buscar en el equipo')" :placeholder="t('Search by name', 'Buscar por nombre')" class="h-11 min-w-[200px] flex-1 rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 focus:border-brand focus:outline-none" />
+              <input v-model="search" type="search" data-cy="team-search" :aria-label="t('Search the team', 'Buscar en el equipo')" :placeholder="t('Search by name', 'Buscar por nombre')" class="h-9 touch:h-11 min-w-[200px] flex-1 rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 focus:border-brand focus:outline-none" />
               <button
                 v-for="f in [
                   { key: 'all', label: t(`All · ${active.length}`, `Todos · ${active.length}`) },
@@ -314,7 +314,7 @@ onMounted(() => {
                 :key="f.key"
                 type="button"
                 :aria-pressed="filter === f.key"
-                class="h-10 rounded-pill border px-3 text-[13.5px] font-semibold"
+                class="h-9 touch:h-11 rounded-pill border px-3 text-[13.5px] font-semibold"
                 :class="filter === f.key ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control bg-surface text-ink-700 hover:bg-surface-subtle'"
                 @click="filter = f.key as 'all' | 'practitioners' | 'no2fa'"
               >
@@ -331,7 +331,7 @@ onMounted(() => {
               :data-member-id="m.id"
               class="flex min-h-[72px] items-center gap-3.5 border-t border-line-row px-[18px] py-3 hover:bg-surface-subtle"
             >
-              <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[13px] font-bold text-surface" :style="{ backgroundColor: m.color }">{{ initials(m.full_name) }}</span>
+              <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[13px] font-bold text-surface" :style="{ backgroundColor: m.color }">{{ initials(m.full_name) }}</span>
               <div class="flex min-w-0 flex-1 flex-col gap-1.5">
                 <div class="flex flex-wrap items-center gap-2">
                   <strong class="text-[15.5px] text-ink-900">{{ m.full_name }}</strong>
@@ -363,7 +363,7 @@ onMounted(() => {
                   <strong class="text-[15px] text-ink-700">{{ m.full_name }}</strong>
                   <span class="text-[13px] text-ink-muted">{{ t(`Deactivated ${formatShortDate(m.deleted_at!)} · their appointments, notes and payments are kept`, `Desactivado el ${formatShortDate(m.deleted_at!)} · sus citas, notas y cobros se conservan`) }}</span>
                 </div>
-                <button type="button" data-cy="team-reactivate" class="h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="reactivate(m)">{{ t('Reactivate', 'Reactivar') }}</button>
+                <button type="button" data-cy="team-reactivate" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="reactivate(m)">{{ t('Reactivate', 'Reactivar') }}</button>
               </div>
             </details>
           </section>
@@ -379,9 +379,9 @@ onMounted(() => {
                 <strong class="text-[14.5px] text-ink-900">{{ inviteTitle(i) }}</strong>
                 <span class="text-[13px] text-ink-500">{{ inviteMeta(i) }}</span>
               </div>
-              <button type="button" data-cy="team-invite-copy" class="h-11 rounded-ctl border border-line-control bg-surface px-3.5 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="copyInvite(i)">{{ t('Copy link', 'Copiar enlace') }}</button>
-              <button v-if="i.email" type="button" data-cy="team-invite-resend" :disabled="resending === i.id" class="h-11 rounded-ctl border border-line-control bg-surface px-3.5 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-60" @click="resend(i)">{{ t('Resend email', 'Reenviar email') }}</button>
-              <button type="button" data-cy="team-invite-revoke" class="h-11 rounded-ctl px-3.5 text-[14px] font-semibold text-ink-500 hover:bg-surface-subtle hover:text-ink-700" @click="revokeFor = i">{{ t('Revoke', 'Revocar') }}</button>
+              <button type="button" data-cy="team-invite-copy" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3.5 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="copyInvite(i)">{{ t('Copy link', 'Copiar enlace') }}</button>
+              <button v-if="i.email" type="button" data-cy="team-invite-resend" :disabled="resending === i.id" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3.5 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-60" @click="resend(i)">{{ t('Resend email', 'Reenviar email') }}</button>
+              <button type="button" data-cy="team-invite-revoke" class="h-9 touch:h-11 rounded-ctl px-3.5 text-[14px] font-semibold text-ink-500 hover:bg-surface-subtle hover:text-ink-700" @click="revokeFor = i">{{ t('Revoke', 'Revocar') }}</button>
             </div>
           </section>
 
@@ -396,12 +396,12 @@ onMounted(() => {
                 <strong class="text-[14.5px] text-ink-900">{{ n.name }}</strong>
                 <span class="text-[13px] text-ink-500">{{ t(`${n.count} appointments`, `${n.count} citas`) }}</span>
               </div>
-              <select v-model="linkTarget[n.name]" data-cy="team-imported-target" :aria-label="t(`Link ${n.name} to`, `Vincular ${n.name} a`)" class="h-11 w-[220px] rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 focus:border-brand focus:outline-none">
+              <select v-model="linkTarget[n.name]" data-cy="team-imported-target" :aria-label="t(`Link ${n.name} to`, `Vincular ${n.name} a`)" class="h-9 touch:h-11 w-[220px] rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 focus:border-brand focus:outline-none">
                 <option :value="undefined" disabled>{{ t('Link to…', 'Vincular a…') }}</option>
                 <option v-for="m in active" :key="m.id" :value="m.id">{{ m.full_name }}</option>
               </select>
-              <button type="button" data-cy="team-imported-link" :disabled="!linkTarget[n.name]" class="h-11 rounded-ctl border border-line-control bg-surface px-3.5 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-50" @click="askLink(n)">{{ t('Link', 'Vincular') }}</button>
-              <button type="button" data-cy="team-imported-invite" class="h-11 rounded-ctl px-3.5 text-[14px] font-semibold text-brand-text hover:bg-surface-subtle" @click="openInvite({ name: n.name, link: n.name })">{{ t('Invite as practitioner', 'Invitar como profesional') }}</button>
+              <button type="button" data-cy="team-imported-link" :disabled="!linkTarget[n.name]" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3.5 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-50" @click="askLink(n)">{{ t('Link', 'Vincular') }}</button>
+              <button type="button" data-cy="team-imported-invite" class="h-9 touch:h-11 rounded-ctl px-3.5 text-[14px] font-semibold text-brand-text hover:bg-surface-subtle" @click="openInvite({ name: n.name, link: n.name })">{{ t('Invite as practitioner', 'Invitar como profesional') }}</button>
             </div>
           </section>
 

@@ -18,7 +18,7 @@ function step(delta: number) {
       type="button"
       :aria-label="t('Remove a seat', 'Quitar una plaza')"
       :disabled="model <= lower"
-      class="flex h-11 w-11 items-center justify-center rounded-[6px] text-ink-700 outline-none hover:bg-surface-subtle focus-visible:shadow-focus disabled:cursor-not-allowed disabled:text-ink-faint lg:h-8 lg:w-8"
+      class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-[6px] text-ink-700 outline-none hover:bg-surface-subtle focus-visible:shadow-focus disabled:cursor-not-allowed disabled:text-ink-faint lg:h-8 lg:w-8"
       @click="step(-1)"
     >
       <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" class="h-3.5 w-3.5">
@@ -30,7 +30,7 @@ function step(delta: number) {
       type="button"
       :aria-label="t('Add a seat', 'Añadir una plaza')"
       :disabled="model >= upper"
-      class="flex h-11 w-11 items-center justify-center rounded-[6px] text-ink-700 outline-none hover:bg-surface-subtle focus-visible:shadow-focus disabled:cursor-not-allowed disabled:text-ink-faint lg:h-8 lg:w-8"
+      class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-[6px] text-ink-700 outline-none hover:bg-surface-subtle focus-visible:shadow-focus disabled:cursor-not-allowed disabled:text-ink-faint lg:h-8 lg:w-8"
       @click="step(1)"
     >
       <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" class="h-3.5 w-3.5">

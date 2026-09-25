@@ -53,7 +53,7 @@ function eur(cents: number) {
     <div class="mt-4">
       <PatientCard :title="t('Your packages', 'Tus bonos')">
         <div v-if="moneyLoading" class="space-y-4">
-          <UiSkeleton class="h-10 w-full rounded-ctl" />
+          <UiSkeleton class="h-9 touch:h-11 w-full rounded-ctl" />
         </div>
         <div v-else-if="activePackages.length > 0" class="space-y-4">
           <PatientBonoProgress

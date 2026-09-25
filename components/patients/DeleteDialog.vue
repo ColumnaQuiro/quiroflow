@@ -114,7 +114,7 @@ const lines = computed(() =>
         <div class="mt-4 flex flex-col gap-2 lg:flex-row lg:justify-end">
           <button
             type="button"
-            class="flex h-11 items-center justify-center rounded-ctl border border-line-control px-3.5 text-[13.5px] font-semibold text-ink-700 outline-none hover:border-line-controlHover focus-visible:shadow-focus lg:h-[34px]"
+            class="flex h-9 touch:h-11 items-center justify-center rounded-ctl border border-line-control px-3.5 text-[13.5px] font-semibold text-ink-700 outline-none hover:border-line-controlHover focus-visible:shadow-focus lg:h-[34px]"
             @click="emit('close')"
           >
             {{ t('Close', 'Cerrar') }}
@@ -122,7 +122,7 @@ const lines = computed(() =>
           <button
             v-if="!archived"
             type="button"
-            class="flex h-11 items-center justify-center rounded-ctl bg-brand px-3.5 text-[13.5px] font-semibold text-white outline-none hover:bg-brand-hover focus-visible:shadow-focus lg:h-[34px]"
+            class="flex h-9 touch:h-11 items-center justify-center rounded-ctl bg-brand px-3.5 text-[13.5px] font-semibold text-white outline-none hover:bg-brand-hover focus-visible:shadow-focus lg:h-[34px]"
             @click="emit('archive')"
           >
             {{ t('Archive instead', 'Archivar en su lugar') }}
@@ -163,7 +163,7 @@ const lines = computed(() =>
             v-model="typed"
             type="text"
             autocomplete="off"
-            class="mt-1.5 h-11 w-full rounded-ctl border border-line-control bg-surface px-3 text-[15px] text-ink-900 outline-none focus:border-brand focus:shadow-focus lg:h-[38px] lg:text-[14px]"
+            class="mt-1.5 h-9 touch:h-11 w-full rounded-ctl border border-line-control bg-surface px-3 text-[15px] text-ink-900 outline-none focus:border-brand focus:shadow-focus lg:h-[38px] lg:text-[14px]"
           />
         </label>
 
@@ -172,7 +172,7 @@ const lines = computed(() =>
         <div class="mt-4 flex flex-col gap-2 lg:flex-row lg:justify-end">
           <button
             type="button"
-            class="flex h-11 items-center justify-center rounded-ctl border border-line-control px-3.5 text-[13.5px] font-semibold text-ink-700 outline-none hover:border-line-controlHover focus-visible:shadow-focus lg:h-[34px]"
+            class="flex h-9 touch:h-11 items-center justify-center rounded-ctl border border-line-control px-3.5 text-[13.5px] font-semibold text-ink-700 outline-none hover:border-line-controlHover focus-visible:shadow-focus lg:h-[34px]"
             @click="emit('close')"
           >
             {{ t('Cancel', 'Cancelar') }}
@@ -180,7 +180,7 @@ const lines = computed(() =>
           <button
             type="button"
             :disabled="!canDelete || deleting"
-            class="flex h-11 items-center justify-center rounded-ctl bg-danger-text px-3.5 text-[13.5px] font-semibold text-white outline-none focus-visible:shadow-focusDanger disabled:cursor-not-allowed disabled:opacity-50 lg:h-[34px]"
+            class="flex h-9 touch:h-11 items-center justify-center rounded-ctl bg-danger-text px-3.5 text-[13.5px] font-semibold text-white outline-none focus-visible:shadow-focusDanger disabled:cursor-not-allowed disabled:opacity-50 lg:h-[34px]"
             @click="remove"
           >
             {{ deleting ? t('Deleting…', 'Eliminando…') : t('Delete permanently', 'Eliminar permanentemente') }}

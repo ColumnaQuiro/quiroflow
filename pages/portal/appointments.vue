@@ -43,7 +43,7 @@ function timeOnly(iso: string) {
         <li v-for="appt in upcoming" :key="appt.id" class="flex items-start gap-3.5 px-4 py-3.5">
           <!-- A date block rather than a sentence: a list of visits is
                scanned by date, not read. -->
-          <span class="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-ctl bg-brand-tint leading-none">
+          <span class="flex h-9 touch:h-11 w-9 touch:w-11 shrink-0 flex-col items-center justify-center rounded-ctl bg-brand-tint leading-none">
             <span class="text-[15px] font-[640] text-brand">{{ dayNumber(appt.starts_at) }}</span>
             <span class="mt-0.5 text-[10px] font-medium uppercase text-brand">{{ monthShort(appt.starts_at) }}</span>
           </span>

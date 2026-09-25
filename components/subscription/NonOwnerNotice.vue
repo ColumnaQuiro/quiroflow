@@ -30,7 +30,7 @@ const t = useT()
       <div class="mt-4 flex flex-col items-center gap-3 lg:flex-row">
         <NuxtLink
           to="/calendar"
-          class="flex h-11 items-center justify-center rounded-ctl border border-line-control bg-surface px-3.5 text-[13.5px] font-semibold text-ink-700 outline-none hover:border-line-controlHover focus-visible:shadow-focus lg:h-[34px]"
+          class="flex h-9 touch:h-11 items-center justify-center rounded-ctl border border-line-control bg-surface px-3.5 text-[13.5px] font-semibold text-ink-700 outline-none hover:border-line-controlHover focus-visible:shadow-focus lg:h-[34px]"
         >
           {{ t('Back to calendar', 'Volver a la agenda') }}
         </NuxtLink>

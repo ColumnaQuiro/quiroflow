@@ -321,7 +321,7 @@ function onBeforeUnload(e: BeforeUnloadEvent) {
 onMounted(() => window.addEventListener('beforeunload', onBeforeUnload))
 onUnmounted(() => window.removeEventListener('beforeunload', onBeforeUnload))
 
-const inputClass = 'h-11 rounded-ctl border bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand'
+const inputClass = 'h-9 touch:h-11 rounded-ctl border bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand'
 const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
 const card = 'flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg-surface p-6'
 </script>
@@ -358,7 +358,7 @@ const card = 'flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg
           <main class="flex min-w-0 max-w-[720px] flex-1 flex-col gap-6" data-cy="member-page" :data-ready="loaded ? 'true' : undefined">
             <p v-if="deletedAt" class="flex flex-wrap items-center gap-3 rounded-card border border-line bg-surface-subtle px-4 py-3 text-[14px] text-ink-700">
               <span class="flex-1">{{ t(`Deactivated ${formatShortDate(deletedAt)}: cannot sign in and is off the calendar. Their appointments, notes and payments are kept.`, `Desactivado el ${formatShortDate(deletedAt)}: no puede entrar y no aparece en el calendario. Sus citas, notas y cobros se conservan.`) }}</span>
-              <button type="button" data-cy="member-reactivate" class="h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="reactivate">{{ t('Reactivate', 'Reactivar') }}</button>
+              <button type="button" data-cy="member-reactivate" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="reactivate">{{ t('Reactivate', 'Reactivar') }}</button>
             </p>
 
             <!-- Perfil -->
@@ -394,7 +394,7 @@ const card = 'flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg
                     :aria-label="t(c.en, c.es)"
                     :title="t(c.en, c.es)"
                     data-cy="member-color"
-                    class="flex h-11 w-11 items-center justify-center rounded-full border-2"
+                    class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-full border-2"
                     :class="form.color.toLowerCase() === c.hex ? 'border-ink-900' : 'border-transparent'"
                     @click="form.color = c.hex"
                   >
@@ -462,7 +462,7 @@ const card = 'flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg
                 <div v-if="activeClinics.length > 1" class="flex flex-col gap-2 border-t border-line-row pt-4">
                   <span class="text-[14.5px] font-semibold text-ink-900">{{ t('Clinics', 'Sedes') }}</span>
                   <div class="flex flex-wrap gap-2">
-                    <label v-for="c in activeClinics" :key="c.id" data-cy="member-clinic" class="flex h-11 items-center gap-2.5 rounded-ctl border px-3.5 text-[14px] font-semibold" :class="form.clinic_ids.includes(c.id) ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-700'">
+                    <label v-for="c in activeClinics" :key="c.id" data-cy="member-clinic" class="flex h-9 touch:h-11 items-center gap-2.5 rounded-ctl border px-3.5 text-[14px] font-semibold" :class="form.clinic_ids.includes(c.id) ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-700'">
                       <input type="checkbox" class="h-[18px] w-[18px]" :checked="form.clinic_ids.includes(c.id)" @change="toggleClinic(c.id)" />{{ c.name }}
                     </label>
                   </div>
@@ -471,7 +471,7 @@ const card = 'flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg
                 <div class="flex flex-col gap-3 border-t border-line-row pt-4">
                   <div class="flex items-center gap-3">
                     <span class="flex-1 text-[14.5px] font-semibold text-ink-900">{{ t('Their hours', 'Su horario') }}</span>
-                    <button v-if="hasOwnHours || ownHoursOpen" type="button" data-cy="member-hours-clear" class="h-10 rounded-ctl px-3 text-[13.5px] font-semibold text-brand-text hover:bg-surface-subtle" @click="clearHours">{{ t("Use the clinic's hours", 'Usar el de la sede') }}</button>
+                    <button v-if="hasOwnHours || ownHoursOpen" type="button" data-cy="member-hours-clear" class="h-9 touch:h-11 rounded-ctl px-3 text-[13.5px] font-semibold text-brand-text hover:bg-surface-subtle" @click="clearHours">{{ t("Use the clinic's hours", 'Usar el de la sede') }}</button>
                   </div>
                   <SettingsClinicHoursEditor
                     v-if="hasOwnHours || ownHoursOpen"
@@ -481,7 +481,7 @@ const card = 'flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg
                   />
                   <div v-else class="flex flex-wrap items-center gap-3 rounded-ctl border border-line bg-surface-subtle px-3.5 py-3" data-cy="member-hours-none">
                     <span class="min-w-[220px] flex-1 text-[13.5px] leading-snug text-ink-700">{{ t("No hours of their own: they can be booked whenever their clinic is open. Set their own only if they work less than that.", 'Sin horario propio: se le puede reservar siempre que su sede esté abierta. Pon uno propio solo si trabaja menos que eso.') }}</span>
-                    <button type="button" data-cy="member-hours-set" class="h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="ownHoursOpen = true">{{ t('Set their own hours', 'Poner horario propio') }}</button>
+                    <button type="button" data-cy="member-hours-set" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="ownHoursOpen = true">{{ t('Set their own hours', 'Poner horario propio') }}</button>
                   </div>
                 </div>
                 <div class="flex flex-col gap-2 border-t border-line-row pt-4" data-cy="member-overrides">
@@ -510,12 +510,12 @@ const card = 'flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg
                   {{ t('Two-factor authentication', 'Verificación en dos pasos') }}:
                   <strong data-cy="member-2fa" :class="twoFactor ? 'text-success-text' : 'text-warning-text'">{{ twoFactor ? t('set up', 'configurada') : t('not set up', 'sin configurar') }}</strong>
                 </span>
-                <button v-if="twoFactor && !isMe && (!isOwner || store.isOwner)" type="button" data-cy="member-reset-2fa" class="h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="resetTwoFactorOpen = true">{{ t('Reset two-factor', 'Restablecer') }}</button>
+                <button v-if="twoFactor && !isMe && (!isOwner || store.isOwner)" type="button" data-cy="member-reset-2fa" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="resetTwoFactorOpen = true">{{ t('Reset two-factor', 'Restablecer') }}</button>
               </div>
               <p v-if="isMe" :class="hint">{{ t('Your own password and two-factor are in', 'Tu contraseña y tu verificación están en') }} <NuxtLink to="/account" class="font-semibold text-brand-text hover:underline">{{ t('Account Settings', 'Ajustes de la Cuenta') }}</NuxtLink>.</p>
               <div v-else class="flex flex-wrap items-center gap-3 border-t border-line-row pt-4">
                 <span class="flex-1 text-[14px] text-ink-700">{{ t('Forgot their password? Send them an email to set a new one.', '¿Ha olvidado la contraseña? Envíale un email para crear una nueva.') }}</span>
-                <button type="button" data-cy="member-reset-password" :disabled="!!deletedAt" class="h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-50" @click="resetPasswordOpen = true">{{ t('Send reset email', 'Enviar email') }}</button>
+                <button type="button" data-cy="member-reset-password" :disabled="!!deletedAt" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-50" @click="resetPasswordOpen = true">{{ t('Send reset email', 'Enviar email') }}</button>
               </div>
             </section>
 
@@ -523,7 +523,7 @@ const card = 'flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg
             <section v-if="!isMe && !deletedAt" id="desactivar" aria-labelledby="h-desactivar" :class="card">
               <h2 id="h-desactivar" class="text-[16px] font-bold text-ink-900">{{ t('Deactivate', 'Desactivar') }}</h2>
               <p class="text-[14px] text-ink-700">{{ t('For someone who has left. They can no longer sign in and leave the calendar, their seat is freed, and everything they did — appointments, notes, payments — is kept under their name. You can reactivate them later.', 'Para quien ya no trabaja aquí. No podrá entrar, deja el calendario y libera su plaza; todo lo que hizo (citas, notas, cobros) se conserva a su nombre. Puedes reactivarle más adelante.') }}</p>
-              <button type="button" data-cy="member-deactivate" :disabled="isOwner && !store.isOwner" class="h-11 self-start rounded-ctl border border-danger-border bg-surface px-4 text-[14px] font-semibold text-danger-text hover:bg-danger-bg disabled:opacity-50" @click="deactivateOpen = true">{{ t(`Deactivate ${form.full_name}`, `Desactivar a ${form.full_name}`) }}</button>
+              <button type="button" data-cy="member-deactivate" :disabled="isOwner && !store.isOwner" class="h-9 touch:h-11 self-start rounded-ctl border border-danger-border bg-surface px-4 text-[14px] font-semibold text-danger-text hover:bg-danger-bg disabled:opacity-50" @click="deactivateOpen = true">{{ t(`Deactivate ${form.full_name}`, `Desactivar a ${form.full_name}`) }}</button>
             </section>
           </main>
         </template>
@@ -538,8 +538,8 @@ const card = 'flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg
       class="absolute bottom-6 left-1/2 flex w-[min(720px,calc(100%-32px))] -translate-x-1/2 items-center gap-2.5 rounded-card bg-ink-900 py-3 pl-5 pr-3 text-surface-page shadow-popover"
     >
       <span class="flex-1 text-[14px] font-semibold">{{ t('Unsaved changes', 'Cambios sin guardar') }}</span>
-      <button type="button" data-cy="member-discard" class="h-11 rounded-ctl border border-surface-page/30 px-3.5 text-[14px] font-semibold" @click="discard">{{ t('Discard', 'Descartar') }}</button>
-      <button type="button" data-cy="member-save" :disabled="saving" class="h-11 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface disabled:opacity-70" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save changes', 'Guardar cambios') }}</button>
+      <button type="button" data-cy="member-discard" class="h-9 touch:h-11 rounded-ctl border border-surface-page/30 px-3.5 text-[14px] font-semibold" @click="discard">{{ t('Discard', 'Descartar') }}</button>
+      <button type="button" data-cy="member-save" :disabled="saving" class="h-9 touch:h-11 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface disabled:opacity-70" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save changes', 'Guardar cambios') }}</button>
     </div>
 
     <UiConfirmDialog

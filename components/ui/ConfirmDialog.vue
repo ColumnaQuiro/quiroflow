@@ -65,7 +65,7 @@ function confirm() {
             data-cy="confirm-dialog-word"
             autocomplete="off"
             autocapitalize="characters"
-            class="h-11 rounded-ctl border border-line-control bg-surface px-3 text-[15px] tracking-wide text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[15px] tracking-wide text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
             @keydown.enter.prevent="confirm"
           />
         </label>
@@ -75,7 +75,7 @@ function confirm() {
           ref="cancelBtn"
           type="button"
           data-cy="confirm-dialog-cancel"
-          class="h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle"
+          class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle"
           @click="emit('cancel')"
         >
           {{ cancelLabel }}
@@ -84,7 +84,7 @@ function confirm() {
           type="button"
           data-cy="confirm-dialog-confirm"
           :disabled="locked || busy"
-          class="h-11 rounded-ctl px-4 text-[14px] font-bold disabled:cursor-not-allowed disabled:bg-chip-bg disabled:text-ink-faint"
+          class="h-9 touch:h-11 rounded-ctl px-4 text-[14px] font-bold disabled:cursor-not-allowed disabled:bg-chip-bg disabled:text-ink-faint"
           :class="tone === 'danger' ? 'bg-danger-text text-surface' : 'bg-ink-900 text-surface'"
           @click="confirm"
         >

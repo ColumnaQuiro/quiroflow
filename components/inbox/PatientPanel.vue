@@ -67,8 +67,8 @@ const bonos = computed(() => activePackages.value.filter((b) => b.sessions_total
       <span v-if="phone" class="text-[13px] text-ink-muted">{{ phone }}</span>
     </div>
     <div class="flex gap-2">
-      <NuxtLink :to="`/patients/${patientId}`" class="flex h-11 flex-1 items-center justify-center rounded-ctl border border-line-control bg-surface text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle">{{ t('Open record', 'Abrir ficha') }}</NuxtLink>
-      <NuxtLink to="/calendar" class="flex h-11 flex-1 items-center justify-center rounded-ctl bg-brand text-[14px] font-bold text-surface hover:bg-brand-hover">{{ t('Book visit', 'Reservar cita') }}</NuxtLink>
+      <NuxtLink :to="`/patients/${patientId}`" class="flex h-9 touch:h-11 flex-1 items-center justify-center rounded-ctl border border-line-control bg-surface text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle">{{ t('Open record', 'Abrir ficha') }}</NuxtLink>
+      <NuxtLink to="/calendar" class="flex h-9 touch:h-11 flex-1 items-center justify-center rounded-ctl bg-brand text-[14px] font-bold text-surface hover:bg-brand-hover">{{ t('Book visit', 'Reservar cita') }}</NuxtLink>
     </div>
     <div class="flex flex-col gap-1 rounded-card border border-line bg-surface p-3.5" data-cy="inbox-panel-next">
       <span class="text-[12px] font-bold uppercase tracking-[.04em] text-ink-muted">{{ t('Next visit', 'Próxima cita') }}</span>

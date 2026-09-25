@@ -115,16 +115,16 @@ function roleLabel(name: string) {
     <div class="flex flex-col gap-4" data-cy="invite-dialog">
       <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
         {{ t('Email', 'Email') }}
-        <input v-model="email" data-cy="invite-email" type="email" autocomplete="off" placeholder="nombre@ejemplo.com" class="h-11 rounded-ctl border bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none" :class="emailBad ? 'border-danger-text' : 'border-line-control'" />
+        <input v-model="email" data-cy="invite-email" type="email" autocomplete="off" placeholder="nombre@ejemplo.com" class="h-9 touch:h-11 rounded-ctl border bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none" :class="emailBad ? 'border-danger-text' : 'border-line-control'" />
         <span class="text-[12.5px] font-normal text-ink-muted">{{ t('We email them the link. No email? Leave it empty and share the link yourself (on WhatsApp, say).', 'Le enviamos el enlace. Si no tiene email, déjalo vacío y compártelo tú (por WhatsApp, por ejemplo).') }}</span>
       </label>
       <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
         {{ t('Name (optional)', 'Nombre (opcional)') }}
-        <input v-model="fullName" data-cy="invite-name" type="text" class="h-11 rounded-ctl border border-line-control bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none" />
+        <input v-model="fullName" data-cy="invite-name" type="text" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none" />
       </label>
       <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
         {{ t('Role', 'Rol') }}
-        <select v-model="roleId" data-cy="invite-role" class="h-11 rounded-ctl border border-line-control bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none">
+        <select v-model="roleId" data-cy="invite-role" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none">
           <option v-for="r in roles" :key="r.id" :value="r.id">{{ roleLabel(r.name) }}</option>
         </select>
         <span class="text-[12.5px] font-normal text-ink-muted">{{ t('What they can do. You can change it any time from their page.', 'Qué puede hacer. Puedes cambiarlo cuando quieras desde su ficha.') }}</span>
@@ -145,7 +145,7 @@ function roleLabel(name: string) {
       <div v-if="store.clinics.length > 1" class="flex flex-col gap-2">
         <span class="text-[13px] font-semibold text-ink-700">{{ t('Clinics', 'Sedes') }}</span>
         <div class="flex flex-wrap gap-2">
-          <label v-for="c in store.clinics" :key="c.id" class="flex h-11 items-center gap-2.5 rounded-ctl border px-3.5 text-[14px] font-semibold" :class="clinicIds.includes(c.id) ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-700'">
+          <label v-for="c in store.clinics" :key="c.id" class="flex h-9 touch:h-11 items-center gap-2.5 rounded-ctl border px-3.5 text-[14px] font-semibold" :class="clinicIds.includes(c.id) ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-700'">
             <input type="checkbox" class="h-[18px] w-[18px]" :checked="clinicIds.includes(c.id)" @change="toggleClinic(c.id)" />{{ c.name }}
           </label>
         </div>
@@ -171,8 +171,8 @@ function roleLabel(name: string) {
       </p>
       <p v-else class="text-[14px] text-ink-500">{{ t('Share this link with them. Whoever opens it joins with this role.', 'Comparte este enlace. Quien lo abra entra con este rol.') }}</p>
       <div class="flex gap-2">
-        <input readonly :value="result.link" data-cy="invite-link" class="h-11 min-w-0 flex-1 rounded-ctl border border-line-control bg-surface-subtle px-3 font-mono text-[13px] text-ink-700" @focus="($event.target as HTMLInputElement).select()" />
-        <button type="button" class="h-11 shrink-0 rounded-ctl border border-line-control bg-surface px-3.5 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="copy">{{ t('Copy', 'Copiar') }}</button>
+        <input readonly :value="result.link" data-cy="invite-link" class="h-9 touch:h-11 min-w-0 flex-1 rounded-ctl border border-line-control bg-surface-subtle px-3 font-mono text-[13px] text-ink-700" @focus="($event.target as HTMLInputElement).select()" />
+        <button type="button" class="h-9 touch:h-11 shrink-0 rounded-ctl border border-line-control bg-surface px-3.5 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="copy">{{ t('Copy', 'Copiar') }}</button>
       </div>
     </div>
   </UiConfirmDialog>

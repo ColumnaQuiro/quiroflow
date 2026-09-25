@@ -2,7 +2,7 @@ import { ApiError, defineApiHandler, notFound } from '~/server/utils/publicApi'
 import { assertUuid } from '~/server/utils/publicApiQuery'
 import { definedOnly, enumValue, isoDateTime, readApiBody, rejectUnknownFields, str, uuid } from '~/server/utils/publicApiBody'
 import { assertBelongsToAccount, loose } from '~/server/utils/publicApiHandlers'
-import { APPOINTMENT_STATUSES, assertNoOverlap, resolveWindow } from '~/server/utils/publicApiAppointments'
+import { APPOINTMENT_STATUSES, assertNoOverlap, assertTypeBookable, resolveWindow } from '~/server/utils/publicApiAppointments'
 import { appointmentsResource } from '~/server/utils/publicApiResources'
 
 const FIELDS = ['practitioner_id', 'appointment_type_id', 'room_id', 'starts_at', 'ends_at', 'status', 'note', 'external_reference']
@@ -37,6 +37,8 @@ export default defineApiHandler({ scope: 'appointments:write' }, async ({ event,
     practitionerName = practitioner.full_name as string
   }
   if (roomId) await assertBelongsToAccount(supabase, 'calendar_resources', roomId, accountId, 'room_id')
+  // Only a type being given now; keeping the one it has is always allowed.
+  if (appointmentTypeId && appointmentTypeId !== existing.appointment_type_id) await assertTypeBookable(supabase, accountId, appointmentTypeId)
 
   const startsAt = isoDateTime(body, 'starts_at')
   const endsAt = isoDateTime(body, 'ends_at')

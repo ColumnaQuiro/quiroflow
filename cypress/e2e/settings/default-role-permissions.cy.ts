@@ -23,6 +23,21 @@ const DESTRUCTIVE_KEYS = ['patients_delete_merge', 'patient_docs_delete', 'patie
 type Role = { permissions: Record<string, unknown>; isSystem: boolean }
 
 describe('Default role permissions', () => {
+  // 20260925094121: reception sells bonos, and both default roles may take
+  // tags off (the key now covers any tag, so without it nobody could).
+  it('lets Front Desk sell bonos, and both default roles remove tags', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task<Role>('db:rolePermissions', { accountId: account.accountId, roleName: 'Front Desk' }).then((role) => {
+        expect(role.permissions.packages_edit, 'Front Desk.packages_edit').to.eq(true)
+        expect(role.permissions.patients_tags_remove, 'Front Desk.patients_tags_remove').to.eq(true)
+      })
+      cy.task<Role>('db:rolePermissions', { accountId: account.accountId, roleName: 'Practitioner' }).then((role) => {
+        expect(role.permissions.packages_edit, 'Practitioner.packages_edit').to.eq(false)
+        expect(role.permissions.patients_tags_remove, 'Practitioner.patients_tags_remove').to.eq(true)
+      })
+    })
+  })
+
   it('gives neither default role any administrative access', () => {
     cy.seedStaffAccount().then((account) => {
       for (const roleName of ['Practitioner', 'Front Desk']) {

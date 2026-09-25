@@ -364,6 +364,7 @@ const phoneSections = computed(() => sections.value.filter((s) => s.id !== 'acce
                 :color="color"
                 :size="72"
                 @uploaded="store.load()"
+                @failed="(m) => showToast(t(`Could not change your photo: ${m}`, `No se pudo cambiar tu foto: ${m}`), 'error', 8000)"
               />
               <p class="text-[12.5px] text-ink-muted">{{ t('Tap your photo to change it. It shows in the sidebar and, if you see patients, on online booking.', 'Toca tu foto para cambiarla. Sale en la barra lateral y, si atiendes citas, en la reserva online.') }}</p>
             </div>

@@ -206,9 +206,9 @@ export function permissionGroups(t: T): PermissionGroup[] {
         {
           kind: 'toggle',
           key: 'patients_tags_remove',
-          label: t('Remove bono or membership tags', 'Quitar etiquetas de bono o membresía'),
-          short: t('Remove bono tags', 'Quitar etiquetas de bono'),
-          description: t('Take off a patient the tag a bono or a membership gave them.', 'Quitar a un paciente la etiqueta que le puso un bono o una membresía.'),
+          label: t('Remove patient tags', 'Quitar etiquetas de pacientes'),
+          short: t('Remove tags', 'Quitar etiquetas'),
+          description: t('Take any tag off a patient. Adding tags only needs "Edit patient details".', 'Quitar cualquier etiqueta de un paciente. Para añadirlas basta con «Editar datos de pacientes».'),
         },
         {
           kind: 'toggle',

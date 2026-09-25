@@ -35,7 +35,7 @@ const addressLine = computed(() => {
       </div>
       <button
         type="button"
-        class="flex h-11 items-center justify-center gap-1.5 rounded-ctl border border-line-control bg-surface px-3.5 text-[13.5px] font-semibold text-ink-700 outline-none hover:border-line-controlHover focus-visible:shadow-focus lg:h-[34px]"
+        class="flex h-9 touch:h-11 items-center justify-center gap-1.5 rounded-ctl border border-line-control bg-surface px-3.5 text-[13.5px] font-semibold text-ink-700 outline-none hover:border-line-controlHover focus-visible:shadow-focus lg:h-[34px]"
         @click="$emit('portal')"
       >
         {{ t('Manage in Stripe', 'Gestionar en Stripe') }}

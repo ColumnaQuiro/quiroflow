@@ -334,6 +334,21 @@ const aiFilter = ref<'all' | 'ai_handling' | 'needs_human' | 'draft_ready'>('all
 // each lead row is what answers the same question without touching a filter.
 const sourceFilter = ref<'all' | 'leads' | 'patients'>('all')
 
+// --- The filter row ---------------------------------------------------------
+// Compact chips (the site's 32px tier, 44px on touch), one style for all.
+const chip = 'flex h-8 touch:h-11 items-center gap-1 rounded-pill border px-3 text-[13px] font-semibold'
+const chipOn = 'border-brand-tintBorder bg-brand-tint text-brand-text'
+const chipOff = 'border-line-control text-ink-700 hover:bg-surface-subtle'
+const menuRow = 'flex min-h-9 touch:min-h-11 w-full items-center gap-2 rounded-ctlSm px-2.5 text-left text-[13.5px] text-ink-700 hover:bg-surface-subtle'
+const moreFiltersOpen = ref(false)
+const moreFiltersEl = ref<HTMLElement>()
+const moreFiltersActive = computed(() => (replyFilter.value !== 'all' ? 1 : 0) + (aiFilter.value === 'ai_handling' || aiFilter.value === 'needs_human' ? 1 : 0))
+function onMoreFiltersDocClick(e: MouseEvent) {
+  if (moreFiltersOpen.value && moreFiltersEl.value && !moreFiltersEl.value.contains(e.target as Node)) moreFiltersOpen.value = false
+}
+onMounted(() => document.addEventListener('click', onMoreFiltersDocClick))
+onUnmounted(() => document.removeEventListener('click', onMoreFiltersDocClick))
+
 // Growth > Conversations in the sidebar is a saved view into this inbox, not
 // a screen of its own -- it deep-links here with the filter already applied.
 // Read once on mount rather than watched: after landing, the chips are the
@@ -1207,8 +1222,8 @@ function avatarInitials(name: string) {
     <div v-if="webPush.supported.value && webPush.permission.value === 'default' && !pushBannerDismissed" class="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-line bg-brand-tint px-4 py-2">
       <p class="text-[12.5px] text-brand-text">{{ t('Get notified here when a patient messages you, even with the tab in the background.', 'Recibe avisos aquí cuando un paciente te escriba, incluso con la pestaña en segundo plano.') }}</p>
       <div class="flex shrink-0 items-center gap-3">
-        <UiBtn variant="primary" size="sm" @click="webPush.register()">{{ t('Enable notifications', 'Activar notificaciones') }}</UiBtn>
-        <button type="button" class="text-[12.5px] text-ink-faint hover:text-ink-muted" @click="pushBannerDismissed = true">{{ t('Not now', 'Ahora no') }}</button>
+        <UiBtn variant="primary" data-cy="push-enable" @click="webPush.register()">{{ t('Enable notifications', 'Activar notificaciones') }}</UiBtn>
+        <UiBtn variant="ghost" @click="pushBannerDismissed = true">{{ t('Not now', 'Ahora no') }}</UiBtn>
       </div>
     </div>
     <div class="flex flex-1 overflow-hidden">
@@ -1224,7 +1239,7 @@ function avatarInitials(name: string) {
         <div class="flex flex-col gap-2.5 border-b border-line-divider p-3">
           <template v-if="!selectionMode">
             <div class="flex items-center gap-2">
-              <label class="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-ctl border border-line-control bg-surface px-3 text-ink-muted focus-within:border-brand">
+              <label class="flex h-9 touch:h-11 min-w-0 flex-1 items-center gap-2 rounded-ctl border border-line-control bg-surface px-3 text-ink-muted focus-within:border-brand">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
                 <input
                   v-model="search"
@@ -1238,7 +1253,7 @@ function avatarInitials(name: string) {
               <button
                 type="button"
                 data-cy="inbox-select"
-                class="flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-muted hover:bg-surface-subtle"
+                class="flex h-9 touch:h-11 w-9 touch:w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-muted hover:bg-surface-subtle"
                 :aria-label="t('Select several', 'Seleccionar varias')"
                 :title="t('Select several', 'Seleccionar varias')"
                 @click="selectionMode = true"
@@ -1248,7 +1263,7 @@ function avatarInitials(name: string) {
               <button
                 type="button"
                 data-cy="inbox-archived-toggle"
-                class="flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl border"
+                class="flex h-9 touch:h-11 w-9 touch:w-11 shrink-0 items-center justify-center rounded-ctl border"
                 :class="view === 'archived' ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted hover:bg-surface-subtle'"
                 :aria-pressed="view === 'archived'"
                 :aria-label="view === 'archived' ? t('Show active conversations', 'Mostrar conversaciones activas') : t('Show my archived conversations', 'Mostrar mis archivadas')"
@@ -1258,7 +1273,7 @@ function avatarInitials(name: string) {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18v4H3z" /><path d="M5 9v10h14V9" /><path d="M10 13h4" /></svg>
               </button>
               <div v-if="view === 'active'" ref="composeEl" class="relative shrink-0">
-                <button type="button" data-cy="inbox-new" class="h-11 rounded-ctl bg-brand px-3.5 text-[14px] font-bold text-surface hover:bg-brand-hover" @click="composeOpen = !composeOpen">
+                <button type="button" data-cy="inbox-new" class="h-9 touch:h-11 rounded-ctl bg-brand px-3.5 text-[14px] font-bold text-surface hover:bg-brand-hover" @click="composeOpen = !composeOpen">
                   {{ t('New', 'Nueva') }}
                 </button>
                 <div v-if="composeOpen" class="absolute right-0 top-[calc(100%+4px)] z-20 w-72 rounded-card border border-line bg-surface p-2 shadow-popover">
@@ -1267,11 +1282,11 @@ function avatarInitials(name: string) {
                     type="text"
                     autofocus
                     :placeholder="t('Search patients…', 'Buscar pacientes…')"
-                    class="h-11 w-full rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none"
+                    class="h-9 touch:h-11 w-full rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none"
                   />
                   <ul class="mt-1 max-h-64 overflow-y-auto">
                     <li v-for="p in filteredComposePatients" :key="p.id">
-                      <button type="button" class="flex min-h-11 w-full items-center rounded-ctlSm px-2.5 text-left text-[14px] text-ink-700 hover:bg-surface-subtle" @click="startConversationWith(p)">
+                      <button type="button" class="flex min-h-9 touch:min-h-11 w-full items-center rounded-ctlSm px-2.5 text-left text-[14px] text-ink-700 hover:bg-surface-subtle" @click="startConversationWith(p)">
                         {{ p.first_name }} {{ p.last_name ?? '' }}
                       </button>
                     </li>
@@ -1292,24 +1307,25 @@ function avatarInitials(name: string) {
                 role="tab"
                 :data-cy="`inbox-tab-${tb.key}`"
                 :aria-selected="tab === tb.key"
-                class="flex h-[38px] flex-1 items-center justify-center gap-1.5 rounded-[9px] text-[13.5px] font-semibold"
+                class="flex h-8 touch:h-10 min-w-0 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-[7px] px-1.5 text-[13px] font-semibold"
                 :class="tab === tb.key ? 'bg-surface text-ink-900 shadow-card' : 'text-ink-500 hover:text-ink-700'"
                 @click="tab = tb.key as 'all' | 'mine' | 'unassigned'"
               >
                 {{ tb.label }} <span class="text-[12.5px] font-medium text-ink-muted">{{ tb.count }}</span>
               </button>
             </div>
-            <!-- One row that scrolls sideways: wrapped, the filters took four
-            rows of a laptop screen before the first conversation. -->
-            <div class="-mx-3 flex items-center gap-1.5 overflow-x-auto px-3 pb-0.5 [&>*]:shrink-0">
-              <!-- First in the row, and only where both kinds exist. This is
-              the split people are actually scanning for; every chip after it
-              narrows within whichever side is showing. -->
+            <!-- The filters people reach for daily stay in the row; the rest
+            sit behind "More filters", which says how many are on. One row of
+            ten chips scrolled sideways past the edge of the list, and wrapped
+            it took four rows of a laptop screen before the first conversation. -->
+            <div class="flex flex-wrap items-center gap-1.5" data-cy="inbox-filters">
+              <!-- First, and only where both kinds exist: the split people
+              actually scan for. Every other filter narrows within it. -->
               <template v-if="hasGrowth && view !== 'archived'">
                 <button
                   type="button"
-                  class="flex h-10 items-center gap-1 rounded-pill border px-3 text-[13px] font-semibold"
-                  :class="sourceFilter === 'patients' ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control text-ink-700 hover:bg-surface-subtle'"
+                  :class="[chip, sourceFilter === 'patients' ? chipOn : chipOff]"
+                  :aria-pressed="sourceFilter === 'patients'"
                   data-test="filter-patients-only"
                   @click="sourceFilter = sourceFilter === 'patients' ? 'all' : 'patients'"
                 >
@@ -1317,8 +1333,8 @@ function avatarInitials(name: string) {
                 </button>
                 <button
                   type="button"
-                  class="flex h-10 items-center gap-1 rounded-pill border px-3 text-[13px] font-semibold"
-                  :class="sourceFilter === 'leads' ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control text-ink-700 hover:bg-surface-subtle'"
+                  :class="[chip, sourceFilter === 'leads' ? chipOn : chipOff]"
+                  :aria-pressed="sourceFilter === 'leads'"
                   data-test="filter-leads-only"
                   @click="sourceFilter = sourceFilter === 'leads' ? 'all' : 'leads'"
                 >
@@ -1329,66 +1345,86 @@ function avatarInitials(name: string) {
                 type="button"
                 data-cy="inbox-filter-unread"
                 :aria-pressed="unreadOnly"
-                class="flex h-10 items-center gap-1 rounded-pill border px-3 text-[13px] font-semibold"
-                :class="unreadOnly ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control text-ink-700 hover:bg-surface-subtle'"
+                :class="[chip, unreadOnly ? chipOn : chipOff]"
                 @click="unreadOnly = !unreadOnly"
               >
                 {{ t('Unread', 'No leídas') }}<span v-if="counts.unread > 0"> · {{ counts.unread }}</span>
               </button>
-              <button
-                type="button"
-                :aria-pressed="replyFilter === 'awaiting_us'"
-                class="flex h-10 items-center gap-1 rounded-pill border px-3 text-[13px] font-semibold"
-                :class="replyFilter === 'awaiting_us' ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control text-ink-700 hover:bg-surface-subtle'"
-                @click="replyFilter = replyFilter === 'awaiting_us' ? 'all' : 'awaiting_us'"
-              >
-                {{ t('Awaiting us', 'Esperan respuesta') }}
-              </button>
-              <button
-                type="button"
-                :aria-pressed="replyFilter === 'awaiting_patient'"
-                class="flex h-10 items-center gap-1 rounded-pill border px-3 text-[13px] font-semibold"
-                :class="replyFilter === 'awaiting_patient' ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control text-ink-700 hover:bg-surface-subtle'"
-                @click="replyFilter = replyFilter === 'awaiting_patient' ? 'all' : 'awaiting_patient'"
-              >
-                {{ t('Awaiting patient', 'Esperan al paciente') }}
-              </button>
               <InboxLabelFilterPicker v-model="labelFilter" :labels="labels" />
-              <!-- Growth only. Without the tier there are no AI-handled
-              conversations, so these would filter a list of nothing. -->
-              <template v-if="hasGrowth">
+              <!-- Only when there is one. A chip reading "· 0" every day
+                   teaches people to stop looking at it, and this is the one
+                   that means somebody has work waiting. -->
+              <button
+                v-if="hasGrowth && draftReadyCount > 0"
+                type="button"
+                :class="[chip, aiFilter === 'draft_ready' ? chipOn : chipOff]"
+                :aria-pressed="aiFilter === 'draft_ready'"
+                data-test="filter-draft-ready"
+                @click="aiFilter = aiFilter === 'draft_ready' ? 'all' : 'draft_ready'"
+              >
+                {{ t('Draft ready', 'Borrador listo') }} · {{ draftReadyCount }}
+              </button>
+              <div ref="moreFiltersEl" class="relative">
                 <button
                   type="button"
-                  class="flex h-10 items-center gap-1 rounded-pill border px-3 text-[13px] font-semibold"
-                  :class="aiFilter === 'ai_handling' ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control text-ink-700 hover:bg-surface-subtle'"
-                  data-test="filter-ai-handling"
-                  @click="aiFilter = aiFilter === 'ai_handling' ? 'all' : 'ai_handling'"
+                  data-cy="inbox-more-filters"
+                  aria-haspopup="menu"
+                  :aria-expanded="moreFiltersOpen"
+                  :class="[chip, moreFiltersActive > 0 ? chipOn : chipOff]"
+                  @click="moreFiltersOpen = !moreFiltersOpen"
                 >
-                  {{ t('AI handling', 'IA gestionando') }} · {{ aiHandlingCount }}
+                  {{ t('More filters', 'Más filtros') }}<span v-if="moreFiltersActive > 0"> · {{ moreFiltersActive }}</span>
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 6l4 4 4-4" stroke-linecap="round" stroke-linejoin="round" /></svg>
                 </button>
-                <button
-                  type="button"
-                  class="flex h-10 items-center gap-1 rounded-pill border px-3 text-[13px] font-semibold"
-                  :class="aiFilter === 'needs_human' ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control text-ink-700 hover:bg-surface-subtle'"
-                  data-test="filter-needs-human"
-                  @click="aiFilter = aiFilter === 'needs_human' ? 'all' : 'needs_human'"
-                >
-                  {{ t('Needs human', 'Requiere persona') }} · {{ needsHumanCount }}
-                </button>
-                <!-- Only when there is one. A chip reading "· 0" every day
-                     teaches people to stop looking at it, and this is the one
-                     that means somebody has work waiting. -->
-                <button
-                  v-if="draftReadyCount > 0"
-                  type="button"
-                  class="flex h-10 items-center gap-1 rounded-pill border px-3 text-[13px] font-semibold"
-                  :class="aiFilter === 'draft_ready' ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control text-ink-700 hover:bg-surface-subtle'"
-                  data-test="filter-draft-ready"
-                  @click="aiFilter = aiFilter === 'draft_ready' ? 'all' : 'draft_ready'"
-                >
-                  {{ t('Draft ready', 'Borrador listo') }} · {{ draftReadyCount }}
-                </button>
-              </template>
+                <div v-if="moreFiltersOpen" role="menu" class="absolute left-0 top-[calc(100%+4px)] z-20 w-64 rounded-card border border-line bg-surface p-1.5 shadow-popover" data-cy="inbox-more-filters-menu">
+                  <p class="px-2.5 pb-1 pt-1.5 text-[11.5px] font-semibold uppercase tracking-wide text-ink-faint">{{ t('Who replies next', 'Quién responde') }}</p>
+                  <button
+                    v-for="f in [
+                      { key: 'awaiting_us', label: t('Awaiting us', 'Esperan respuesta') },
+                      { key: 'awaiting_patient', label: t('Awaiting patient', 'Esperan al paciente') },
+                    ]"
+                    :key="f.key"
+                    type="button"
+                    role="menuitemcheckbox"
+                    :aria-checked="replyFilter === f.key"
+                    :class="menuRow"
+                    @click="replyFilter = replyFilter === f.key ? 'all' : (f.key as 'awaiting_us' | 'awaiting_patient')"
+                  >
+                    <span class="flex-1">{{ f.label }}</span>
+                    <svg v-if="replyFilter === f.key" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" class="text-brand-text" aria-hidden="true"><path d="M3 8.5l3 3 7-7" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                  </button>
+                  <!-- Growth only. Without the tier there are no AI-handled
+                  conversations, so these would filter a list of nothing. -->
+                  <template v-if="hasGrowth">
+                    <p class="mt-1 border-t border-line-divider px-2.5 pb-1 pt-2.5 text-[11.5px] font-semibold uppercase tracking-wide text-ink-faint">{{ t('Receptionist', 'Recepcionista IA') }}</p>
+                    <button
+                      v-for="f in [
+                        { key: 'ai_handling', label: t('AI handling', 'IA gestionando'), count: aiHandlingCount, test: 'filter-ai-handling' },
+                        { key: 'needs_human', label: t('Needs human', 'Requiere persona'), count: needsHumanCount, test: 'filter-needs-human' },
+                      ]"
+                      :key="f.key"
+                      type="button"
+                      role="menuitemcheckbox"
+                      :aria-checked="aiFilter === f.key"
+                      :data-test="f.test"
+                      :class="menuRow"
+                      @click="aiFilter = aiFilter === f.key ? 'all' : (f.key as 'ai_handling' | 'needs_human')"
+                    >
+                      <span class="flex-1">{{ f.label }} · {{ f.count }}</span>
+                      <svg v-if="aiFilter === f.key" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" class="text-brand-text" aria-hidden="true"><path d="M3 8.5l3 3 7-7" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                    </button>
+                  </template>
+                  <button
+                    v-if="moreFiltersActive > 0"
+                    type="button"
+                    data-cy="inbox-more-filters-clear"
+                    class="mt-1 w-full border-t border-line-divider px-2.5 pt-2 text-left text-[13px] font-semibold text-brand-text hover:underline"
+                    @click="replyFilter = 'all'; if (aiFilter !== 'draft_ready') aiFilter = 'all'"
+                  >
+                    {{ t('Clear these filters', 'Quitar estos filtros') }}
+                  </button>
+                </div>
+              </div>
             </div>
           </template>
           <div v-else role="region" :aria-label="t('Selection', 'Selección')" class="flex flex-col gap-2 rounded-card border border-brand-tintBorder bg-brand-tint p-2.5" data-cy="inbox-bulk">
@@ -1401,17 +1437,17 @@ function avatarInitials(name: string) {
                 <button
                   type="button"
                   data-cy="inbox-bulk-assign"
-                  class="h-10 rounded-ctl bg-brand px-3 text-[13.5px] font-bold text-surface disabled:opacity-50"
+                  class="h-9 touch:h-11 rounded-ctl bg-brand px-3 text-[13.5px] font-bold text-surface disabled:opacity-50"
                   :disabled="selectedKeys.size === 0"
                   @click.stop="assignMenuFor = assignMenuFor === 'bulk' ? null : 'bulk'"
                 >
                   {{ t('Assign to…', 'Asignar a…') }}
                 </button>
                 <div v-if="assignMenuFor === 'bulk'" role="menu" class="absolute left-0 top-[calc(100%+4px)] z-20 w-64 rounded-card border border-line bg-surface p-1.5 shadow-popover">
-                  <button v-for="m in team" :key="m.id" type="button" role="menuitem" class="flex min-h-11 w-full items-center rounded-ctlSm px-2.5 text-left text-[14px] text-ink-900 hover:bg-surface-subtle" @click="assign([...selectedKeys], m.id); exitSelectionMode()">
+                  <button v-for="m in team" :key="m.id" type="button" role="menuitem" class="flex min-h-9 touch:min-h-11 w-full items-center rounded-ctlSm px-2.5 text-left text-[14px] text-ink-900 hover:bg-surface-subtle" @click="assign([...selectedKeys], m.id); exitSelectionMode()">
                     {{ m.id === myId ? t(`${m.full_name} (you)`, `${m.full_name} (tú)`) : m.full_name }}
                   </button>
-                  <button type="button" role="menuitem" class="flex min-h-11 w-full items-center rounded-ctlSm px-2.5 text-left text-[14px] text-ink-500 hover:bg-surface-subtle" @click="assign([...selectedKeys], null); exitSelectionMode()">
+                  <button type="button" role="menuitem" class="flex min-h-9 touch:min-h-11 w-full items-center rounded-ctlSm px-2.5 text-left text-[14px] text-ink-500 hover:bg-surface-subtle" @click="assign([...selectedKeys], null); exitSelectionMode()">
                     {{ t('Unassigned', 'Sin asignar') }}
                   </button>
                 </div>
@@ -1422,10 +1458,10 @@ function avatarInitials(name: string) {
                 @toggle-label="(id: string) => toggleLabelForKeys(id, [...selectedKeys])"
                 @create-label="(name: string, color: string) => createLabel(name, color, [...selectedKeys])"
               />
-              <button type="button" data-cy="inbox-bulk-unread" class="h-10 rounded-ctl border border-brand-tintBorder bg-surface px-3 text-[13.5px] font-semibold text-brand-text disabled:opacity-50" :disabled="selectedKeys.size === 0" @click="bulkMarkUnreadSelected">
+              <button type="button" data-cy="inbox-bulk-unread" class="h-9 touch:h-11 rounded-ctl border border-brand-tintBorder bg-surface px-3 text-[13.5px] font-semibold text-brand-text disabled:opacity-50" :disabled="selectedKeys.size === 0" @click="bulkMarkUnreadSelected">
                 {{ t('Mark unread', 'Marcar no leídas') }}
               </button>
-              <button type="button" data-cy="inbox-bulk-archive" class="h-10 rounded-ctl border border-brand-tintBorder bg-surface px-3 text-[13.5px] font-semibold text-brand-text disabled:opacity-50" :disabled="selectedKeys.size === 0" @click="bulkArchiveSelected(view !== 'archived')">
+              <button type="button" data-cy="inbox-bulk-archive" class="h-9 touch:h-11 rounded-ctl border border-brand-tintBorder bg-surface px-3 text-[13.5px] font-semibold text-brand-text disabled:opacity-50" :disabled="selectedKeys.size === 0" @click="bulkArchiveSelected(view !== 'archived')">
                 {{ view === 'archived' ? t('Unarchive', 'Desarchivar') : t('Archive', 'Archivar') }}
               </button>
             </div>
@@ -1569,7 +1605,7 @@ function avatarInitials(name: string) {
             </div>
           </button>
           <div v-if="hasMore && !loading" class="p-3">
-            <button type="button" data-cy="inbox-load-more" class="h-11 w-full rounded-ctl border border-line-control bg-surface text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-60" :disabled="loadingMore" @click="loadList({ append: true })">
+            <button type="button" data-cy="inbox-load-more" class="h-9 touch:h-11 w-full rounded-ctl border border-line-control bg-surface text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-60" :disabled="loadingMore" @click="loadList({ append: true })">
               {{ loadingMore ? t('Loading…', 'Cargando…') : t('Load older conversations', 'Cargar conversaciones anteriores') }}
             </button>
           </div>
@@ -1584,32 +1620,7 @@ function avatarInitials(name: string) {
       with the block below on purpose: that one sends through the WhatsApp
       API against a real patient row, and a lead has neither. -->
       <template v-else-if="selectedLead">
-        <div class="flex min-w-0 flex-1 flex-col">
-        <!-- Leads are assigned like any other conversation. -->
-        <div class="flex shrink-0 items-center justify-end gap-2 border-b border-line bg-surface px-3 py-2" data-assign-menu>
-          <span class="text-[13px] text-ink-muted">{{ t('Assigned to', 'Asignada a') }}</span>
-          <div class="relative">
-            <button
-              type="button"
-              data-cy="lead-assign"
-              aria-haspopup="menu"
-              :aria-expanded="assignMenuFor === 'lead'"
-              class="flex h-11 items-center gap-2 rounded-ctl border border-line-control bg-surface px-3 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle"
-              @click.stop="assignMenuFor = assignMenuFor === 'lead' ? null : 'lead'"
-            >
-              {{ leadOwners[selectedLead.key] ? memberName(leadOwners[selectedLead.key]) : t('Nobody', 'Nadie') }}
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
-            </button>
-            <div v-if="assignMenuFor === 'lead'" role="menu" class="absolute right-0 top-[calc(100%+4px)] z-20 w-64 rounded-card border border-line bg-surface p-1.5 shadow-popover" data-cy="lead-assign-menu">
-              <button v-for="m in team" :key="m.id" type="button" role="menuitemradio" :aria-checked="leadOwners[selectedLead.key] === m.id" class="flex min-h-11 w-full items-center rounded-ctlSm px-2.5 text-left text-[14px] text-ink-900 hover:bg-surface-subtle" @click="assign([selectedLead!.key], m.id)">
-                {{ m.id === myId ? t(`${m.full_name} (you)`, `${m.full_name} (tú)`) : m.full_name }}
-              </button>
-              <button type="button" role="menuitemradio" :aria-checked="!leadOwners[selectedLead.key]" class="flex min-h-11 w-full items-center rounded-ctlSm px-2.5 text-left text-[14px] text-ink-500 hover:bg-surface-subtle" @click="assign([selectedLead!.key], null)">
-                {{ t('Unassigned', 'Sin asignar') }}
-              </button>
-            </div>
-          </div>
-        </div>
+        <!-- Leads are assigned like any other conversation, from the thread's own header. -->
         <GrowthInboxLeadThread
           v-if="leadThread"
           :thread="leadThread"
@@ -1622,12 +1633,38 @@ function avatarInitials(name: string) {
           @draft-reply="leadThread && draftLeadReply(leadThread.id)"
           @approve-draft="(text) => leadThread && approveLeadDraft(leadThread.id, text)"
           @discard-draft="leadThread && discardLeadDraft(leadThread.id)"
-        />
+        >
+          <template #actions>
+            <div class="flex items-center gap-2" data-assign-menu>
+              <span class="hidden text-[13px] text-ink-muted lg:inline">{{ t('Assigned to', 'Asignada a') }}</span>
+              <div class="relative">
+                <button
+                  type="button"
+                  data-cy="lead-assign"
+                  aria-haspopup="menu"
+                  :aria-expanded="assignMenuFor === 'lead'"
+                  class="flex h-9 touch:h-11 items-center gap-2 rounded-ctl border border-line-control bg-surface px-3 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle"
+                  @click.stop="assignMenuFor = assignMenuFor === 'lead' ? null : 'lead'"
+                >
+                  {{ leadOwners[selectedLead.key] ? memberName(leadOwners[selectedLead.key]) : t('Nobody', 'Nadie') }}
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+                </button>
+                <div v-if="assignMenuFor === 'lead'" role="menu" class="absolute right-0 top-[calc(100%+4px)] z-20 w-64 rounded-card border border-line bg-surface p-1.5 shadow-popover" data-cy="lead-assign-menu">
+                  <button v-for="m in team" :key="m.id" type="button" role="menuitemradio" :aria-checked="leadOwners[selectedLead.key] === m.id" class="flex min-h-9 touch:min-h-11 w-full items-center rounded-ctlSm px-2.5 text-left text-[14px] text-ink-900 hover:bg-surface-subtle" @click="assign([selectedLead!.key], m.id)">
+                    {{ m.id === myId ? t(`${m.full_name} (you)`, `${m.full_name} (tú)`) : m.full_name }}
+                  </button>
+                  <button type="button" role="menuitemradio" :aria-checked="!leadOwners[selectedLead.key]" class="flex min-h-9 touch:min-h-11 w-full items-center rounded-ctlSm px-2.5 text-left text-[14px] text-ink-500 hover:bg-surface-subtle" @click="assign([selectedLead!.key], null)">
+                    {{ t('Unassigned', 'Sin asignar') }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </template>
+        </GrowthInboxLeadThread>
         <div v-else class="flex min-w-0 flex-1 flex-col gap-3 bg-surface-page p-4" data-test="lead-thread-loading">
-          <UiSkeleton class="h-10 w-56 rounded-ctl" />
+          <UiSkeleton class="h-9 touch:h-11 w-56 rounded-ctl" />
           <UiSkeleton class="h-16 w-3/4 rounded-card" />
           <UiSkeleton class="ml-auto h-16 w-2/3 rounded-card" />
-        </div>
         </div>
         <GrowthInboxLeadRail v-if="leadThread" :thread="leadThread" />
       </template>
@@ -1638,7 +1675,7 @@ function avatarInitials(name: string) {
         <div class="flex min-h-16 shrink-0 flex-wrap items-center gap-2 border-b border-line bg-surface px-3 py-2.5 sm:px-4">
           <button
             type="button"
-            class="flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle md:hidden"
+            class="flex h-9 touch:h-11 w-9 touch:w-11 shrink-0 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle md:hidden"
             :aria-label="t('Back to conversations', 'Volver a conversaciones')"
             @click="selectedKey = null"
           >
@@ -1665,7 +1702,7 @@ function avatarInitials(name: string) {
             v-if="selected.patientId || selected.phoneNumber"
             type="button"
             data-cy="thread-open-panel"
-            class="flex h-11 shrink-0 items-center rounded-ctl border border-line-control bg-surface px-3 text-[13.5px] font-semibold text-brand-text hover:bg-surface-subtle xl:hidden"
+            class="flex h-9 touch:h-11 shrink-0 items-center rounded-ctl border border-line-control bg-surface px-3 text-[13.5px] font-semibold text-brand-text hover:bg-surface-subtle xl:hidden"
             @click="panelOpen = true"
           >
             {{ selected.patientId ? t('Patient', 'Ficha') : t('Link', 'Vincular') }}
@@ -1676,7 +1713,7 @@ function avatarInitials(name: string) {
               data-cy="thread-assign"
               aria-haspopup="menu"
               :aria-expanded="assignMenuFor === 'thread'"
-              class="flex h-11 items-center gap-2 rounded-ctl border border-line-control bg-surface px-3 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle"
+              class="flex h-9 touch:h-11 items-center gap-2 rounded-ctl border border-line-control bg-surface px-3 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle"
               @click.stop="assignMenuFor = assignMenuFor === 'thread' ? null : 'thread'"
             >
               <span class="flex h-6 min-w-6 items-center justify-center rounded-full bg-chip-bg px-1 text-[10px] font-bold text-ink-700">{{ selected.assignedTo ? memberInitials(selected.assignedTo) : '—' }}</span>
@@ -1690,7 +1727,7 @@ function avatarInitials(name: string) {
                 type="button"
                 role="menuitemradio"
                 :aria-checked="selected.assignedTo === m.id"
-                class="flex min-h-11 w-full items-center gap-2.5 rounded-ctlSm px-2.5 text-left text-[14px] text-ink-900"
+                class="flex min-h-9 touch:min-h-11 w-full items-center gap-2.5 rounded-ctlSm px-2.5 text-left text-[14px] text-ink-900"
                 :class="selected.assignedTo === m.id ? 'bg-brand-tint' : 'hover:bg-surface-subtle'"
                 @click="assign([selected!.key], m.id)"
               >
@@ -1700,7 +1737,7 @@ function avatarInitials(name: string) {
                 type="button"
                 role="menuitemradio"
                 :aria-checked="!selected.assignedTo"
-                class="flex min-h-11 w-full items-center rounded-ctlSm px-2.5 text-left text-[14px] text-ink-500"
+                class="flex min-h-9 touch:min-h-11 w-full items-center rounded-ctlSm px-2.5 text-left text-[14px] text-ink-500"
                 :class="!selected.assignedTo ? 'bg-brand-tint' : 'hover:bg-surface-subtle'"
                 @click="assign([selected!.key], null)"
               >
@@ -1722,7 +1759,7 @@ function avatarInitials(name: string) {
             v-if="!isNewConversation"
             type="button"
             data-cy="thread-archive"
-            class="flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control bg-surface text-ink-500 hover:bg-surface-subtle"
+            class="flex h-9 touch:h-11 w-9 touch:w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control bg-surface text-ink-500 hover:bg-surface-subtle"
             :aria-label="selected.archived ? t('Unarchive (just for you)', 'Desarchivar (solo para ti)') : t('Archive (just for you)', 'Archivar (solo para ti)')"
             :title="selected.archived ? t('Unarchive (just for you)', 'Desarchivar (solo para ti)') : t('Archive (just for you)', 'Archivar (solo para ti)')"
             @click="toggleArchiveSelected(selected!.key)"
@@ -1733,7 +1770,7 @@ function avatarInitials(name: string) {
             v-if="!isNewConversation"
             type="button"
             data-cy="thread-mark-unread"
-            class="flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control bg-surface text-ink-500 hover:bg-surface-subtle"
+            class="flex h-9 touch:h-11 w-9 touch:w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control bg-surface text-ink-500 hover:bg-surface-subtle"
             :aria-label="t('Mark as unread (just for you)', 'Marcar como no leída (solo para ti)')"
             :title="t('Mark as unread (just for you)', 'Marcar como no leída (solo para ti)')"
             @click="setReadAt([selected!.key], new Date(0).toISOString()); selectedKey = null"
@@ -1852,7 +1889,7 @@ function avatarInitials(name: string) {
             through whatsapp/inbox-send, and instagram/send posts text alone.
             Offering the buttons on an Instagram thread would take a file,
             upload it and fail at the very end. -->
-            <button v-if="replyChannel !== 'instagram'" type="button" class="flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-500 hover:bg-surface-subtle" :disabled="sending" :aria-label="t('Attach a file', 'Adjuntar archivo')" @click="fileInput?.click()">
+            <button v-if="replyChannel !== 'instagram'" type="button" class="flex h-9 touch:h-11 w-9 touch:w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-500 hover:bg-surface-subtle" :disabled="sending" :aria-label="t('Attach a file', 'Adjuntar archivo')" @click="fileInput?.click()">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
                 <path d="M11.5 5.5L6.4 10.6a2 2 0 002.8 2.8l5.1-5.1a3.5 3.5 0 00-4.95-4.95L4.25 8.45a5 5 0 007.07 7.07" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
@@ -1861,7 +1898,7 @@ function avatarInitials(name: string) {
             <button
               v-if="replyChannel !== 'instagram'"
               type="button"
-              class="flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-500 hover:bg-surface-subtle disabled:opacity-50"
+              class="flex h-9 touch:h-11 w-9 touch:w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-500 hover:bg-surface-subtle disabled:opacity-50"
               :disabled="sending"
               :title="t('Record a voice note', 'Grabar una nota de voz')"
               :aria-label="t('Record a voice note', 'Grabar una nota de voz')"
@@ -1878,10 +1915,10 @@ function avatarInitials(name: string) {
               v-model="composerText"
               rows="1"
               :placeholder="t('Type a message…', 'Escribe un mensaje…')"
-              class="max-h-32 min-h-11 flex-1 resize-none rounded-ctl border border-line-control bg-surface px-3 py-[10px] text-[15px] text-ink-900 focus:border-brand focus:outline-none"
+              class="max-h-32 min-h-9 touch:min-h-11 flex-1 resize-none rounded-ctl border border-line-control bg-surface px-3 py-[10px] text-[15px] text-ink-900 focus:border-brand focus:outline-none"
               @keydown.enter.exact.prevent="sendText"
             />
-            <button type="button" data-cy="thread-send" class="h-11 shrink-0 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface hover:bg-brand-hover disabled:opacity-50" :disabled="sending || !composerText.trim()" @click="sendText">{{ sending ? '…' : t('Send', 'Enviar') }}</button>
+            <button type="button" data-cy="thread-send" class="h-9 touch:h-11 shrink-0 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface hover:bg-brand-hover disabled:opacity-50" :disabled="sending || !composerText.trim()" @click="sendText">{{ sending ? '…' : t('Send', 'Enviar') }}</button>
           </div>
         </div>
       </div>

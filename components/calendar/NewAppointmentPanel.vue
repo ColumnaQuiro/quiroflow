@@ -566,7 +566,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
         <h2 id="new-title" class="text-[20px] font-bold text-ink-900">{{ t('New appointment', 'Nueva cita') }}</h2>
         <span class="truncate text-[13px] text-ink-muted" data-cy="create-when">{{ whenLabel }}<template v-if="roomLabel"> · {{ roomLabel }}</template></span>
       </div>
-      <button type="button" :aria-label="t('Close', 'Cerrar')" class="-mr-2.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle" @click="emit('close')">
+      <button type="button" :aria-label="t('Close', 'Cerrar')" class="-mr-2.5 flex h-9 touch:h-11 w-9 touch:w-11 shrink-0 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle" @click="emit('close')">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
       </button>
     </div>
@@ -587,10 +587,10 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
               <span class="truncate text-[14px] font-semibold text-ink-900">{{ selectedPatient.first_name }} {{ selectedPatient.last_name }}</span>
               <span class="truncate text-[12px] text-ink-muted">{{ selectedPatient.sub }}<template v-for="f in selectedPatient.flags" :key="f"> · {{ f }}</template></span>
             </span>
-            <button type="button" class="h-11 shrink-0 rounded-ctl px-3 text-[13px] font-semibold text-brand-text hover:bg-surface" @click="clearPatient">{{ t('Change', 'Cambiar') }}</button>
+            <button type="button" class="h-9 touch:h-11 shrink-0 rounded-ctl px-3 text-[13px] font-semibold text-brand-text hover:bg-surface" @click="clearPatient">{{ t('Change', 'Cambiar') }}</button>
           </div>
           <div v-else-if="patientMode === 'existing'" class="flex flex-col gap-1.5">
-            <div class="flex h-11 items-center gap-2 rounded-ctl border-[1.5px] border-brand bg-surface px-3">
+            <div class="flex h-9 touch:h-11 items-center gap-2 rounded-ctl border-[1.5px] border-brand bg-surface px-3">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="shrink-0 text-ink-muted" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
               <input
                 id="patient-q"
@@ -607,7 +607,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
               :key="p.id"
               type="button"
               data-cy="create-patient-result"
-              class="flex min-h-11 items-center gap-3 rounded-ctl px-2.5 py-1.5 text-left hover:bg-surface-subtle"
+              class="flex min-h-9 touch:min-h-11 items-center gap-3 rounded-ctl px-2.5 py-1.5 text-left hover:bg-surface-subtle"
               @click="selectPatient(p)"
             >
               <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-chip-bg text-[12px] font-bold text-ink-500">{{ initials(p) }}</span>
@@ -618,25 +618,25 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
               <span v-for="f in p.flags" :key="f" class="shrink-0 rounded-full border border-brand-tintBorder bg-brand-tint px-2 py-0.5 text-[11.5px] font-semibold text-brand-text" data-cy="create-patient-flag">{{ f }}</span>
             </button>
             <p v-if="patientQuery.trim() && !searching && searchResults.length === 0" class="px-2.5 text-[13px] text-ink-muted">{{ t('No matches', 'Sin resultados') }}</p>
-            <button type="button" data-cy="create-new-patient" class="flex min-h-11 items-center gap-2 rounded-ctl border border-dashed border-line-control px-3 text-[13.5px] font-semibold text-brand-text hover:bg-brand-tint" @click="startNewPatient">
+            <button type="button" data-cy="create-new-patient" class="flex min-h-9 touch:min-h-11 items-center gap-2 rounded-ctl border border-dashed border-line-control px-3 text-[13.5px] font-semibold text-brand-text hover:bg-brand-tint" @click="startNewPatient">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
               <template v-if="patientQuery.trim()">{{ t(`New patient “${patientQuery.trim()}”`, `Nuevo paciente «${patientQuery.trim()}»`) }}</template>
               <template v-else>{{ t('New patient', 'Nuevo paciente') }}</template>
             </button>
           </div>
           <div v-else class="grid grid-cols-2 gap-2" data-cy="create-new-patient-form">
-            <input v-model="newPatientFirstName" type="text" :placeholder="t('First name', 'Nombre')" required class="h-11 rounded-ctl border border-line-control bg-surface px-3 text-[13.5px] text-ink-700 focus:border-brand focus:outline-none" />
-            <input v-model="newPatientLastName" type="text" :placeholder="t('Last name', 'Apellidos')" class="h-11 rounded-ctl border border-line-control bg-surface px-3 text-[13.5px] text-ink-700 focus:border-brand focus:outline-none" />
-            <input v-model="newPatientEmail" type="email" :placeholder="t('Email', 'Email')" class="col-span-2 h-11 rounded-ctl border border-line-control bg-surface px-3 text-[13.5px] text-ink-700 focus:border-brand focus:outline-none" />
+            <input v-model="newPatientFirstName" type="text" :placeholder="t('First name', 'Nombre')" required class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[13.5px] text-ink-700 focus:border-brand focus:outline-none" />
+            <input v-model="newPatientLastName" type="text" :placeholder="t('Last name', 'Apellidos')" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[13.5px] text-ink-700 focus:border-brand focus:outline-none" />
+            <input v-model="newPatientEmail" type="email" :placeholder="t('Email', 'Email')" class="col-span-2 h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[13.5px] text-ink-700 focus:border-brand focus:outline-none" />
             <!-- Width pinned: a select takes the width of its LONGEST option
             ("+971 United Arab Emirates") and would leave the number field one
             character wide. The dial code is at the front, so clipping the name
             costs nothing. -->
             <div class="col-span-2 flex min-w-0 gap-2">
-              <select v-model="newPatientPhoneCountry" class="h-11 w-[120px] shrink-0 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
+              <select v-model="newPatientPhoneCountry" class="h-9 touch:h-11 w-[120px] shrink-0 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
                 <option v-for="c in COUNTRIES_BY_NAME" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }} {{ c.name }}</option>
               </select>
-              <input v-model="newPatientPhone" type="tel" :placeholder="t('Phone', 'Teléfono')" class="h-11 min-w-0 flex-1 rounded-ctl border border-line-control bg-surface px-3 text-[13.5px] text-ink-700 focus:border-brand focus:outline-none" />
+              <input v-model="newPatientPhone" type="tel" :placeholder="t('Phone', 'Teléfono')" class="h-9 touch:h-11 min-w-0 flex-1 rounded-ctl border border-line-control bg-surface px-3 text-[13.5px] text-ink-700 focus:border-brand focus:outline-none" />
             </div>
             <!-- Beside the field, not in the panel's general error slot at the
             bottom: this body scrolls, the phone is near the top of it, and a
@@ -714,10 +714,10 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
         <section>
           <span class="mb-2 block text-[11px] font-bold uppercase tracking-[.06em] text-ink-muted">{{ t(`Time · ${duration} min`, `Hora · ${duration} min`) }}</span>
           <div class="grid grid-cols-2 gap-2 min-[420px]:grid-cols-3">
-            <label class="flex flex-col gap-1 text-[12px] font-medium text-ink-600">{{ t('Date', 'Fecha') }}<input v-model="date" type="date" required class="h-11 rounded-ctl border border-line-control bg-surface px-2.5 text-[13.5px] text-ink-700" /></label>
-            <label class="flex flex-col gap-1 text-[12px] font-medium text-ink-600">{{ t('Time', 'Hora') }}<input v-model="time" type="time" required class="h-11 rounded-ctl border border-line-control bg-surface px-2.5 text-[13.5px] text-ink-700" /></label>
+            <label class="flex flex-col gap-1 text-[12px] font-medium text-ink-600">{{ t('Date', 'Fecha') }}<input v-model="date" type="date" required class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-2.5 text-[13.5px] text-ink-700" /></label>
+            <label class="flex flex-col gap-1 text-[12px] font-medium text-ink-600">{{ t('Time', 'Hora') }}<input v-model="time" type="time" required class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-2.5 text-[13.5px] text-ink-700" /></label>
             <label class="col-span-2 flex flex-col gap-1 text-[12px] font-medium text-ink-600 min-[420px]:col-span-1">{{ t('Room', 'Sala') }}
-              <select v-model="roomId" class="h-11 rounded-ctl border border-line-control bg-surface px-2 text-[13.5px] text-ink-700">
+              <select v-model="roomId" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-2 text-[13.5px] text-ink-700">
                 <option value="">{{ t('No room', 'Sin sala') }}</option>
                 <option v-for="r in rooms" :key="r.id" :value="r.id">{{ r.name }}</option>
               </select>
@@ -733,7 +733,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" class="mt-0.5 shrink-0 text-warning-accent" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v6M12 16.5v.5" /></svg>
               <span><strong class="text-warning-text">{{ t(`${formatTime(startsAt)}–${formatTime(endsAt)} doesn’t fit`, `${formatTime(startsAt)}–${formatTime(endsAt)} no cabe`) }}</strong><span class="text-ink-700">{{ t(`: ${clash.who} has ${clash.label} at ${clash.at}. Pick another time.`, `: ${clash.who} tiene a ${clash.label} a las ${clash.at}. Elige otro hueco.`) }}</span></span>
             </span>
-            <label class="flex min-h-11 items-center gap-2 pl-6 text-[12.5px] text-ink-700">
+            <label class="flex min-h-9 touch:min-h-11 items-center gap-2 pl-6 text-[12.5px] text-ink-700">
               <input v-model="allowDoubleBooking" type="checkbox" class="h-4 w-4 accent-brand" data-cy="create-double-book" />
               {{ t('Book it anyway, overlapping', 'Reservar igualmente, solapada') }}
             </label>
@@ -742,7 +742,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
           <template v-if="alternatives.length">
             <span class="mt-3 block text-[12px] text-ink-muted">{{ t(`Other free times for ${selectedAppointmentType?.name ?? 'this'} with ${practitionerFirst}`, `Otros huecos para ${selectedAppointmentType?.name ?? 'esta cita'} con ${practitionerFirst}`) }}</span>
             <div class="mt-1.5 grid grid-cols-3 gap-2" data-cy="create-alternatives">
-              <button v-for="a in alternatives" :key="a.getTime()" type="button" class="flex min-h-11 flex-col items-start justify-center rounded-ctl border border-line-control bg-surface px-2.5 py-1 text-left hover:border-brand" @click="pickAlternative(a)">
+              <button v-for="a in alternatives" :key="a.getTime()" type="button" class="flex min-h-9 touch:min-h-11 flex-col items-start justify-center rounded-ctl border border-line-control bg-surface px-2.5 py-1 text-left hover:border-brand" @click="pickAlternative(a)">
                 <span class="text-[11.5px] text-ink-muted">{{ altDayLabel(a) }}</span>
                 <strong class="font-mono text-[13.5px] font-medium text-ink-900">{{ formatTime(a) }}</strong>
               </button>
@@ -751,13 +751,13 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
         </section>
 
         <details class="rounded-card border border-line" data-cy="create-more">
-          <summary class="flex min-h-11 cursor-pointer items-center px-3.5 text-[13.5px] font-semibold text-ink-700">{{ t('More options', 'Más opciones') }}</summary>
+          <summary class="flex min-h-9 touch:min-h-11 cursor-pointer items-center px-3.5 text-[13.5px] font-semibold text-ink-700">{{ t('More options', 'Más opciones') }}</summary>
           <div class="space-y-4 border-t border-line-divider px-3.5 py-3">
             <label class="flex flex-col gap-1 text-[12.5px] font-medium text-ink-600">{{ t('Note (optional)', 'Nota (opcional)') }}
               <textarea v-model="note" rows="2" :placeholder="t('Any additional notes…', 'Notas adicionales…')" class="rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
             </label>
             <label class="flex flex-col gap-1 text-[12.5px] font-medium text-ink-600">{{ t('Repeat', 'Repetir') }}
-              <select v-model="repeat" class="h-11 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700">
+              <select v-model="repeat" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700">
                 <option value="none">{{ t('Does not repeat', 'No se repite') }}</option>
                 <option value="daily">{{ t('Daily (8 occurrences)', 'Diariamente (8 repeticiones)') }}</option>
                 <option value="weekly">{{ t('Weekly (8 occurrences)', 'Semanalmente (8 repeticiones)') }}</option>
@@ -777,9 +777,9 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
               </button>
             </div>
             <div v-if="collectPayment" class="grid grid-cols-2 gap-3">
-              <label class="flex flex-col gap-1 text-[12.5px] font-medium text-ink-600">{{ t('Amount (€)', 'Importe (€)') }}<input v-model="paymentAmount" type="number" min="0" step="0.01" class="h-11 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700" /></label>
+              <label class="flex flex-col gap-1 text-[12.5px] font-medium text-ink-600">{{ t('Amount (€)', 'Importe (€)') }}<input v-model="paymentAmount" type="number" min="0" step="0.01" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700" /></label>
               <label class="flex flex-col gap-1 text-[12.5px] font-medium text-ink-600">{{ t('Method', 'Método') }}
-                <select v-model="paymentMethod" class="h-11 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700">
+                <select v-model="paymentMethod" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700">
                   <option value="cash">{{ t('Cash', 'Efectivo') }}</option>
                   <option value="card">{{ t('Card', 'Tarjeta') }}</option>
                   <option value="credit">{{ t('Credit on account', 'Crédito en cuenta') }}</option>
@@ -794,7 +794,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
       </div>
 
       <div class="create-footer flex shrink-0 flex-col gap-3 border-t border-line bg-surface px-5 py-3 sm:px-6">
-        <label class="flex min-h-11 items-center gap-2 text-[13px] text-ink-700">
+        <label class="flex min-h-9 touch:min-h-11 items-center gap-2 text-[13px] text-ink-700">
           <input v-model="sendConfirmation" type="checkbox" class="h-4 w-4 accent-brand" data-cy="create-send-confirmation" />
           {{ t('Send WhatsApp confirmation', 'Enviar confirmación por WhatsApp') }}
         </label>

@@ -133,6 +133,24 @@ Cypress.Commands.add('setExtraProfessionals', (accountId: string, extraProfessio
   return cy.task('db:setExtraProfessionals', { accountId, extraProfessionals })
 })
 
+// A phone or an iPad, as far as CSS can tell: `(pointer: coarse)`, which is
+// what the site's `touch:` variant sizes 44px targets by. A narrow viewport
+// alone is still a mouse, so a spec asserting a touch target has to ask for
+// this. Chrome's touch emulation is what flips the media query; the command
+// checks it did rather than trusting it. Pass false to switch it back off.
+Cypress.Commands.add('useTouchScreen', (enabled = true) => {
+  cy.wrap(
+    Cypress.automation('remote:debugger:protocol', {
+      command: 'Emulation.setTouchEmulationEnabled',
+      params: { enabled, maxTouchPoints: enabled ? 5 : 1 },
+    }),
+    { log: false },
+  )
+  cy.window({ log: false }).should((win) => {
+    expect(win.matchMedia('(pointer: coarse)').matches, 'pointer: coarse').to.eq(enabled)
+  })
+})
+
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Cypress {
@@ -153,6 +171,7 @@ declare global {
       setSubscriptionStatus(accountId: string, status: 'trialing' | 'active' | 'past_due' | 'locked' | 'canceled'): Chainable<void>
       setComped(accountId: string, comped: boolean): Chainable<void>
       setExtraProfessionals(accountId: string, extraProfessionals: number): Chainable<void>
+      useTouchScreen(enabled?: boolean): Chainable<void>
     }
   }
 }

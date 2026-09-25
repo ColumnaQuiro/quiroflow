@@ -77,7 +77,7 @@ function onKey(e: KeyboardEvent, index: number) {
         :disabled="disabled"
         data-cy="role-perm-option"
         :data-value="o.value"
-        class="min-h-11 flex-1 rounded-[9px] px-2 text-[13.5px] font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed"
+        class="min-h-9 touch:min-h-11 flex-1 rounded-[9px] px-2 text-[13.5px] font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed"
         :class="modelValue === o.value ? 'bg-surface text-ink-900 shadow-card' : 'text-ink-500 hover:text-ink-700'"
         @click="pick(o.value)"
         @keydown="onKey($event, i)"

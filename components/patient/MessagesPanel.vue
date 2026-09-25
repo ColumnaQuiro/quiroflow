@@ -122,7 +122,7 @@ onUnmounted(() => {
           v-model="composerText"
           rows="1"
           :placeholder="t('Type a message…', 'Escribe un mensaje…')"
-          class="max-h-24 min-h-11 flex-1 resize-none rounded-ctl border border-line-control bg-surface px-3 py-2.5 text-[14px] text-ink-700 focus:border-brand focus:outline-none"
+          class="max-h-24 min-h-9 touch:min-h-11 flex-1 resize-none rounded-ctl border border-line-control bg-surface px-3 py-2.5 text-[14px] text-ink-700 focus:border-brand focus:outline-none"
           @keydown.enter.exact.prevent="sendText"
         />
         <UiBtn variant="primary" size="lg" :disabled="sending || !composerText.trim()" @click="sendText">

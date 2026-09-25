@@ -346,7 +346,7 @@ function initials(name: string) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('') || '·'
 }
 
-const inputClass = 'h-11 rounded-ctl border bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand'
+const inputClass = 'h-9 touch:h-11 rounded-ctl border bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand'
 const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
 const errorText = 'text-[12.5px] font-semibold text-danger-text'
 </script>
@@ -382,7 +382,7 @@ const errorText = 'text-[12.5px] font-semibold text-danger-text'
           <main class="flex min-w-0 max-w-[820px] flex-1 flex-col gap-5" data-cy="type-page" :data-ready="loaded ? 'true' : undefined">
             <p v-if="archivedAt" class="flex flex-wrap items-center gap-3 rounded-card border border-line bg-surface-subtle px-4 py-3 text-[14px] text-ink-700" data-cy="type-archived-banner">
               <span class="flex-1">{{ t('Archived: not offered in the calendar, online booking or any picker. It stays on its appointments, in reports and in billing.', 'Archivado: no se ofrece en el calendario, la reserva online ni los selectores. Sigue en sus citas, en los informes y en los cobros.') }}</span>
-              <button type="button" data-cy="type-page-reactivate" class="h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="reactivate">
+              <button type="button" data-cy="type-page-reactivate" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="reactivate">
                 {{ t('Reactivate', 'Reactivar') }}
               </button>
             </p>
@@ -432,7 +432,7 @@ const errorText = 'text-[12.5px] font-semibold text-danger-text'
                     :aria-checked="form.color.toLowerCase() === c.hex.toLowerCase()"
                     :aria-label="c.label"
                     :title="c.label"
-                    class="h-11 w-11 rounded-ctl"
+                    class="h-9 touch:h-11 w-9 touch:w-11 rounded-ctl"
                     :class="form.color.toLowerCase() === c.hex.toLowerCase() ? 'border-[3px] border-ink-900' : 'border border-line'"
                     :style="{ background: c.hex }"
                     @click="form.color = c.hex"
@@ -472,7 +472,7 @@ const errorText = 'text-[12.5px] font-semibold text-danger-text'
                       data-cy="type-bookable-by"
                       :data-value="w.value"
                       :aria-checked="form.bookableBy === w.value"
-                      class="h-11 flex-1 rounded-[9px] px-2 text-[13.5px] font-semibold"
+                      class="h-9 touch:h-11 flex-1 rounded-[9px] px-2 text-[13.5px] font-semibold"
                       :class="form.bookableBy === w.value ? 'bg-surface text-ink-900 shadow-card' : 'text-ink-500'"
                       @click="form.bookableBy = w.value"
                     >
@@ -579,7 +579,7 @@ const errorText = 'text-[12.5px] font-semibold text-danger-text'
                       type="button"
                       data-cy="type-override-clear"
                       :aria-label="t(`Remove ${p.full_name}'s own price`, `Quitar el precio propio de ${p.full_name}`)"
-                      class="flex h-11 w-11 items-center justify-center rounded-ctl text-[20px] text-ink-muted hover:bg-surface-subtle"
+                      class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-ctl text-[20px] text-ink-muted hover:bg-surface-subtle"
                       @click="form.overrides[p.id] = { duration: '', price: '' }"
                     >
                       ×
@@ -635,7 +635,7 @@ const errorText = 'text-[12.5px] font-semibold text-danger-text'
                   <strong class="text-[14px] text-ink-900">{{ t('Archive', 'Archivar') }}</strong>
                   <span class="text-[13px] leading-snug text-ink-500">{{ t(`No longer offered in the calendar, online booking or the pickers. It stays on its ${usage?.appointments ?? 0} appointments, in reports and in billing, and can be reactivated.`, `Deja de ofrecerse en el calendario, la reserva online y los selectores. Sigue en sus ${usage?.appointments ?? 0} citas, en los informes y en los cobros, y se puede reactivar.`) }}</span>
                 </div>
-                <button type="button" data-cy="type-archive" :disabled="dirty || !usage" class="h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:cursor-not-allowed disabled:text-ink-faint" @click="archiveOpen = true">
+                <button type="button" data-cy="type-archive" :disabled="dirty || !usage" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:cursor-not-allowed disabled:text-ink-faint" @click="archiveOpen = true">
                   {{ t('Archive…', 'Archivar…') }}
                 </button>
               </div>
@@ -651,7 +651,7 @@ const errorText = 'text-[12.5px] font-semibold text-danger-text'
                   type="button"
                   data-cy="type-delete"
                   :disabled="dirty || !usage || usage.appointments > 0"
-                  class="h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-danger-text hover:bg-surface-subtle disabled:cursor-not-allowed disabled:border-line disabled:text-ink-faint"
+                  class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-danger-text hover:bg-surface-subtle disabled:cursor-not-allowed disabled:border-line disabled:text-ink-faint"
                   @click="deleteOpen = true"
                 >
                   {{ t('Delete…', 'Eliminar…') }}
@@ -672,10 +672,10 @@ const errorText = 'text-[12.5px] font-semibold text-danger-text'
       class="absolute bottom-6 left-1/2 flex w-[min(820px,calc(100%-32px))] -translate-x-1/2 items-center gap-2.5 rounded-card bg-ink-900 py-3 pl-5 pr-3 text-surface-page shadow-popover"
     >
       <span class="flex-1 text-[14px] font-semibold">{{ t('Unsaved changes', 'Cambios sin guardar') }}</span>
-      <button type="button" data-cy="type-discard" class="h-11 rounded-ctl border border-surface-page/30 px-3.5 text-[14px] font-semibold" @click="discard">
+      <button type="button" data-cy="type-discard" class="h-9 touch:h-11 rounded-ctl border border-surface-page/30 px-3.5 text-[14px] font-semibold" @click="discard">
         {{ t('Discard', 'Descartar') }}
       </button>
-      <button type="button" data-cy="type-save" :disabled="saving" class="h-11 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface disabled:opacity-70" @click="save">
+      <button type="button" data-cy="type-save" :disabled="saving" class="h-9 touch:h-11 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface disabled:opacity-70" @click="save">
         {{ saving ? t('Saving…', 'Guardando…') : t('Save changes', 'Guardar cambios') }}
       </button>
     </div>

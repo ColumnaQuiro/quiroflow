@@ -2230,15 +2230,15 @@ function money(cents: number) {
                 {{ t('Set up autopay', 'Configurar pago automático') }}
               </UiBtn>
               <form v-else class="flex flex-wrap items-end gap-1.5 rounded-ctl border border-line-divider bg-surface-subtle p-2.5" @submit.prevent="setUpPackageAutopay(p)">
-                <input v-model.number="autopayInstallments" type="number" min="1" :title="t('Installments', 'Plazos')" class="h-[26px] w-14 rounded-ctlSm border border-line-control bg-surface px-1.5 text-[12px]" />
-                <input v-model.number="autopayIntervalCount" type="number" min="1" :title="t('Every', 'Cada')" class="h-[26px] w-12 rounded-ctlSm border border-line-control bg-surface px-1.5 text-[12px]" />
-                <select v-model="autopayInterval" class="h-[26px] rounded-ctlSm border border-line-control bg-surface px-1.5 text-[12px]">
+                <input v-model.number="autopayInstallments" type="number" min="1" :title="t('Installments', 'Plazos')" class="h-8 touch:h-11 w-14 rounded-ctlSm border border-line-control bg-surface px-1.5 text-[12px]" />
+                <input v-model.number="autopayIntervalCount" type="number" min="1" :title="t('Every', 'Cada')" class="h-8 touch:h-11 w-12 rounded-ctlSm border border-line-control bg-surface px-1.5 text-[12px]" />
+                <select v-model="autopayInterval" class="h-8 touch:h-11 rounded-ctlSm border border-line-control bg-surface px-1.5 text-[12px]">
                   <option value="day">{{ t('day(s)', 'día(s)') }}</option>
                   <option value="week">{{ t('week(s)', 'semana(s)') }}</option>
                   <option value="month">{{ t('month(s)', 'mes(es)') }}</option>
                   <option value="year">{{ t('year(s)', 'año(s)') }}</option>
                 </select>
-                <input v-model.number="autopayAlreadyPaid" type="number" min="0" :title="t('Already paid', 'Ya pagado')" class="h-[26px] w-14 rounded-ctlSm border border-line-control bg-surface px-1.5 text-[12px]" />
+                <input v-model.number="autopayAlreadyPaid" type="number" min="0" :title="t('Already paid', 'Ya pagado')" class="h-8 touch:h-11 w-14 rounded-ctlSm border border-line-control bg-surface px-1.5 text-[12px]" />
                 <UiBtn type="submit" size="sm" variant="primary" :disabled="settingUpAutopay">
                   {{ settingUpAutopay ? '…' : t('Start', 'Iniciar') }}
                 </UiBtn>
@@ -2328,7 +2328,7 @@ function money(cents: number) {
               <UiBtn size="sm" variant="secondary" class="hover:border-danger-border hover:text-danger-text" @click="logPayment(m, 'failed')">{{ t('Log failed', 'Registrar fallo') }}</UiBtn>
               <select
                 :value="m.status"
-                class="ml-auto h-[26px] rounded-ctl border border-line-control bg-surface px-2 text-[12.5px] text-ink-500 hover:border-line-controlHover focus:border-brand focus:outline-none"
+                class="ml-auto h-8 touch:h-11 rounded-ctl border border-line-control bg-surface px-2 text-[12.5px] text-ink-500 hover:border-line-controlHover focus:border-brand focus:outline-none"
                 @change="setMembershipStatus(m, ($event.target as HTMLSelectElement).value)"
               >
                 <option value="active">{{ t('active', 'activa') }}</option>
@@ -2358,8 +2358,8 @@ function money(cents: number) {
                 {{ t('Set up autopay', 'Configurar pago automático') }}
               </UiBtn>
               <form v-else class="flex flex-wrap items-end gap-1.5 rounded-ctl border border-line-divider bg-surface-subtle p-2.5" @submit.prevent="setUpMembershipAutopay(m)">
-                <input v-model.number="autopayIntervalCount" type="number" min="1" :title="t('Every', 'Cada')" class="h-[26px] w-12 rounded-ctlSm border border-line-control bg-surface px-1.5 text-[12px]" />
-                <select v-model="autopayInterval" class="h-[26px] rounded-ctlSm border border-line-control bg-surface px-1.5 text-[12px]">
+                <input v-model.number="autopayIntervalCount" type="number" min="1" :title="t('Every', 'Cada')" class="h-8 touch:h-11 w-12 rounded-ctlSm border border-line-control bg-surface px-1.5 text-[12px]" />
+                <select v-model="autopayInterval" class="h-8 touch:h-11 rounded-ctlSm border border-line-control bg-surface px-1.5 text-[12px]">
                   <option value="day">{{ t('day(s)', 'día(s)') }}</option>
                   <option value="week">{{ t('week(s)', 'semana(s)') }}</option>
                   <option value="month">{{ t('month(s)', 'mes(es)') }}</option>

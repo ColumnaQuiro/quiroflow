@@ -112,7 +112,7 @@ async function copyReference() {
           <span class="rounded-[6px] border border-chip-border bg-chip-bg px-2 py-1 font-mono text-[12px] text-ink-muted">{{ saleId }}</span>
           <button
             type="button"
-            class="h-[26px] rounded-[6px] border border-line-control px-2.5 text-[12px] font-semibold text-ink-700 outline-none hover:bg-surface focus-visible:shadow-focus"
+            class="h-8 touch:h-11 rounded-[6px] border border-line-control px-2.5 text-[12px] font-semibold text-ink-700 outline-none hover:bg-surface focus-visible:shadow-focus"
             @click.stop="copyReference"
           >
             {{ copied ? t('Copied', 'Copiado') : t('Copy', 'Copiar') }}

@@ -375,12 +375,12 @@ const phoneSections = computed(() => sections.value.filter((s) => s.id !== 'acce
                 data-cy="account-name"
                 type="text"
                 autocomplete="name"
-                class="h-11 rounded-ctl border border-line-control bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
               />
             </label>
             <div class="flex flex-col gap-1.5">
               <span class="text-[13px] font-semibold text-ink-700">{{ t('Login email', 'Correo de acceso') }}</span>
-              <div class="flex min-h-11 items-center gap-2.5 rounded-ctl border border-line bg-surface-subtle px-3" data-cy="account-email">
+              <div class="flex min-h-9 touch:min-h-11 items-center gap-2.5 rounded-ctl border border-line bg-surface-subtle px-3" data-cy="account-email">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-ink-muted" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
                 <span class="min-w-0 break-all text-[15px] text-ink-900">{{ user?.email }}</span>
               </div>
@@ -424,7 +424,7 @@ const phoneSections = computed(() => sections.value.filter((s) => s.id !== 'acce
                     :aria-label="s.label"
                     :title="s.label"
                     :data-color="s.hex"
-                    class="flex h-11 w-11 items-center justify-center rounded-ctl bg-surface"
+                    class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-ctl bg-surface"
                     :class="isChosen(s.hex) ? 'border-2 border-ink-900' : 'border border-line-control hover:border-line-controlHover'"
                     @click="color = s.hex"
                   >
@@ -523,7 +523,7 @@ const phoneSections = computed(() => sections.value.filter((s) => s.id !== 'acce
                   v-if="!passwordOpen"
                   type="button"
                   data-cy="account-password-open"
-                  class="h-11 shrink-0 rounded-ctl border border-line-control bg-surface px-3.5 text-[13.5px] font-semibold text-ink-700 hover:bg-surface-subtle"
+                  class="h-9 touch:h-11 shrink-0 rounded-ctl border border-line-control bg-surface px-3.5 text-[13.5px] font-semibold text-ink-700 hover:bg-surface-subtle"
                   @click="passwordOpen = true"
                 >
                   {{ t('Change…', 'Cambiar…') }}
@@ -532,11 +532,11 @@ const phoneSections = computed(() => sections.value.filter((s) => s.id !== 'acce
               <form v-if="passwordOpen" class="grid grid-cols-1 gap-3 sm:grid-cols-2" data-cy="account-password-form" @submit.prevent="changePassword">
                 <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
                   {{ t('New password', 'Nueva contraseña') }}
-                  <input v-model="newPassword" data-cy="account-new-password" type="password" autocomplete="new-password" required minlength="8" class="h-11 rounded-ctl border border-line-control bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
+                  <input v-model="newPassword" data-cy="account-new-password" type="password" autocomplete="new-password" required minlength="8" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
                 </label>
                 <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
                   {{ t('Repeat it', 'Repítela') }}
-                  <input v-model="confirmPassword" data-cy="account-confirm-password" type="password" autocomplete="new-password" required minlength="8" class="h-11 rounded-ctl border border-line-control bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
+                  <input v-model="confirmPassword" data-cy="account-confirm-password" type="password" autocomplete="new-password" required minlength="8" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
                 </label>
                 <p v-if="confirmPassword" class="text-[12.5px] sm:col-span-2" :class="passwordsMatch ? 'text-success-text' : 'text-warning-text'">
                   {{ passwordsMatch ? t('They match', 'Coinciden') : t("They don't match yet", 'Aún no coinciden') }}
@@ -571,7 +571,7 @@ const phoneSections = computed(() => sections.value.filter((s) => s.id !== 'acce
                   v-if="twoFactorEnabled && !store.requireTwoFactor && !settingUpTwoFactor"
                   type="button"
                   data-cy="account-two-factor-off"
-                  class="h-11 shrink-0 rounded-ctl border border-line-control bg-surface px-3.5 text-[13.5px] font-semibold text-ink-700 hover:bg-surface-subtle"
+                  class="h-9 touch:h-11 shrink-0 rounded-ctl border border-line-control bg-surface px-3.5 text-[13.5px] font-semibold text-ink-700 hover:bg-surface-subtle"
                   @click="confirmingTwoFactorOff = true"
                 >
                   {{ t('Turn off…', 'Desactivar…') }}
@@ -593,7 +593,7 @@ const phoneSections = computed(() => sections.value.filter((s) => s.id !== 'acce
                 type="button"
                 data-cy="account-sign-out-others"
                 :disabled="signingOutOthers || signedOutOthers"
-                class="h-11 shrink-0 self-start rounded-ctl border px-3.5 text-[13.5px] font-semibold sm:self-auto"
+                class="h-9 touch:h-11 shrink-0 self-start rounded-ctl border px-3.5 text-[13.5px] font-semibold sm:self-auto"
                 :class="signedOutOthers ? 'border-success-border bg-success-bg text-success-text' : 'border-line-control bg-surface text-ink-700 hover:bg-surface-subtle'"
                 @click="signOutOthers"
               >
@@ -625,7 +625,7 @@ const phoneSections = computed(() => sections.value.filter((s) => s.id !== 'acce
               type="button"
               data-cy="account-remove-access-open"
               :disabled="soleOwner"
-              class="h-11 self-start rounded-ctl border bg-surface px-4 text-[14px] font-semibold disabled:cursor-not-allowed disabled:border-line disabled:text-ink-faint"
+              class="h-9 touch:h-11 self-start rounded-ctl border bg-surface px-4 text-[14px] font-semibold disabled:cursor-not-allowed disabled:border-line disabled:text-ink-faint"
               :class="soleOwner ? '' : 'border-danger-border text-danger-text hover:bg-danger-bg'"
               @click="confirmingDelete = true"
             >
@@ -639,8 +639,8 @@ const phoneSections = computed(() => sections.value.filter((s) => s.id !== 'acce
     <!-- Unsaved changes: only "Tú" and "Tu agenda" wait for Guardar -->
     <div v-if="dirty" role="status" data-cy="account-unsaved" class="fixed inset-x-4 bottom-4 z-40 mx-auto flex max-w-[720px] items-center gap-3 rounded-card bg-ink-900 py-3 pl-5 pr-3 text-surface-page shadow-popover">
       <span class="flex-1 text-[14px] font-semibold">{{ t('You have unsaved changes', 'Tienes cambios sin guardar') }}</span>
-      <button type="button" data-cy="account-discard" class="h-11 rounded-ctl px-3.5 text-[14px] font-semibold text-surface-page hover:opacity-80" @click="discardProfile">{{ t('Discard', 'Descartar') }}</button>
-      <button type="button" data-cy="account-save" :disabled="savingProfile" class="h-11 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface disabled:opacity-60" @click="saveProfile">
+      <button type="button" data-cy="account-discard" class="h-9 touch:h-11 rounded-ctl px-3.5 text-[14px] font-semibold text-surface-page hover:opacity-80" @click="discardProfile">{{ t('Discard', 'Descartar') }}</button>
+      <button type="button" data-cy="account-save" :disabled="savingProfile" class="h-9 touch:h-11 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface disabled:opacity-60" @click="saveProfile">
         {{ savingProfile ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}
       </button>
     </div>

@@ -243,13 +243,13 @@ async function reactivate(x: TypeRow) {
   await load()
 }
 
-const inputClass = 'h-11 rounded-ctl border bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand'
+const inputClass = 'h-9 touch:h-11 rounded-ctl border bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand'
 </script>
 
 <template>
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Appointment Types', 'Tipos de cita')">
-      <button type="button" data-cy="type-add" class="h-11 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface hover:bg-brand-hover" @click="openAdd">
+      <button type="button" data-cy="type-add" class="h-9 touch:h-11 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface hover:bg-brand-hover" @click="openAdd">
         {{ t('New type', 'Nuevo tipo') }}
       </button>
     </PageHeader>
@@ -264,7 +264,7 @@ const inputClass = 'h-11 rounded-ctl border bg-surface px-3 text-[15px] font-nor
           <section aria-labelledby="h-types" class="overflow-hidden rounded-card border border-line bg-surface">
             <div class="flex flex-wrap items-center gap-2 px-[18px] pb-3 pt-4">
               <h2 id="h-types" class="flex-1 text-[16px] font-bold text-ink-900">{{ t(`Appointment types · ${active.length}`, `Tipos de cita · ${active.length}`) }}</h2>
-              <label class="flex h-11 w-full items-center gap-2 rounded-ctl border border-line-control px-3 text-ink-muted sm:w-[260px]">
+              <label class="flex h-9 touch:h-11 w-full items-center gap-2 rounded-ctl border border-line-control px-3 text-ink-muted sm:w-[260px]">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
                 <input
                   v-model="query"
@@ -305,7 +305,7 @@ const inputClass = 'h-11 rounded-ctl border bg-surface px-3 text-[15px] font-nor
               >
                 <span
                   v-if="canReorder"
-                  class="flex h-11 w-7 shrink-0 cursor-grab items-center justify-center text-ink-faint"
+                  class="flex h-9 touch:h-11 w-7 shrink-0 cursor-grab items-center justify-center text-ink-faint"
                   :title="t('Drag to reorder', 'Arrastra para cambiar el orden')"
                   aria-hidden="true"
                 >
@@ -332,7 +332,7 @@ const inputClass = 'h-11 rounded-ctl border bg-surface px-3 text-[15px] font-nor
                     data-cy="type-move-up"
                     :disabled="i === 0 || reordering"
                     :aria-label="t(`Move ${x.name} up`, `Subir ${x.name}`)"
-                    class="flex h-11 w-11 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle disabled:opacity-30"
+                    class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle disabled:opacity-30"
                     @click="move(i, -1)"
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6" /></svg>
@@ -342,7 +342,7 @@ const inputClass = 'h-11 rounded-ctl border bg-surface px-3 text-[15px] font-nor
                     data-cy="type-move-down"
                     :disabled="i === shown.length - 1 || reordering"
                     :aria-label="t(`Move ${x.name} down`, `Bajar ${x.name}`)"
-                    class="flex h-11 w-11 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle disabled:opacity-30"
+                    class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle disabled:opacity-30"
                     @click="move(i, 1)"
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
@@ -367,7 +367,7 @@ const inputClass = 'h-11 rounded-ctl border bg-surface px-3 text-[15px] font-nor
                   type="button"
                   data-cy="type-reactivate"
                   :disabled="reactivating === x.id"
-                  class="h-11 shrink-0 rounded-ctl border border-line-control bg-surface px-3.5 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-60"
+                  class="h-9 touch:h-11 shrink-0 rounded-ctl border border-line-control bg-surface px-3.5 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-60"
                   @click="reactivate(x)"
                 >
                   {{ t('Reactivate', 'Reactivar') }}

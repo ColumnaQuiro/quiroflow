@@ -16,6 +16,17 @@ interface BookingAppointmentType {
   duration_minutes: number
   color: string
   default_price_cents: number
+  /** This type's booking horizon; null means the clinic's (settings.max_days_ahead). */
+  online_max_days_ahead: number | null
+}
+// Types that are paid online when booked. The app cannot take that payment,
+// so create_patient_booking refuses them and they come separately, only so
+// this page can say why they are missing and where they can be booked.
+interface OnlinePaymentType {
+  id: string
+  name: string
+  default_price_cents: number
+  online_deposit_cents: number | null
 }
 interface BookingTeamMember {
   id: string
@@ -24,10 +35,13 @@ interface BookingTeamMember {
   clinic_ids: string[]
 }
 interface BookingInfo {
+  settings: { max_days_ahead: number | null; booking_slug: string | null } | null
   clinics: BookingClinic[]
   appointment_types: BookingAppointmentType[]
   team_members: BookingTeamMember[]
   overrides: AppointmentTypeOverride[]
+  // Absent from get_patient_booking_info before 20260925161500.
+  online_payment_types?: OnlinePaymentType[]
 }
 
 const supabase = useSupabaseClient()
@@ -58,6 +72,14 @@ const effectivePrice = computed(() =>
 function formatPrice(cents: number) {
   return (cents / 100).toLocaleString(undefined, { style: 'currency', currency: 'EUR' })
 }
+
+const onlinePaymentTypes = computed(() => info.value?.online_payment_types ?? [])
+// The public booking page, which takes the payment these types need.
+const config = useRuntimeConfig()
+const webBookingUrl = computed(() => {
+  const slug = info.value?.settings?.booking_slug
+  return slug ? `${config.public.apiBase}/book/${encodeURIComponent(slug)}` : null
+})
 
 onMounted(async () => {
   const { data, error } = await supabase.rpc('get_patient_booking_info')
@@ -107,6 +129,23 @@ function today() {
 
 const monthLabel = computed(() => viewMonth.value.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }))
 
+// How far ahead this type can be booked: its own limit, else the clinic's --
+// the same fallback pages/book/[slug].vue uses, and the one
+// create_patient_booking enforces (start time no later than now + that many
+// days).
+const maxDaysAhead = computed(() => appointmentType.value?.online_max_days_ahead ?? info.value?.settings?.max_days_ahead ?? 90)
+const latestStart = computed(() => new Date(Date.now() + maxDaysAhead.value * 86400000))
+const lastBookableDay = computed(() => {
+  const d = new Date(latestStart.value)
+  d.setHours(23, 59, 59, 999)
+  return d
+})
+const canGoToNextMonth = computed(() => {
+  const next = new Date(viewMonth.value.getFullYear(), viewMonth.value.getMonth() + 1, 1)
+  return next <= lastBookableDay.value
+})
+const canGoToPrevMonth = computed(() => viewMonth.value > startOfMonth(new Date()))
+
 const calendarDays = computed(() => {
   const first = viewMonth.value
   const firstWeekday = (first.getDay() + 6) % 7 // Monday = 0
@@ -116,7 +155,11 @@ const calendarDays = computed(() => {
   for (let i = 0; i < 42; i++) {
     const date = new Date(gridStart)
     date.setDate(gridStart.getDate() + i)
-    days.push({ date, inMonth: date.getMonth() === first.getMonth(), bookable: dayHasHours(date) && date >= today() })
+    days.push({
+      date,
+      inMonth: date.getMonth() === first.getMonth(),
+      bookable: dayHasHours(date) && date >= today() && date <= lastBookableDay.value,
+    })
   }
   return days
 })
@@ -129,9 +172,11 @@ function dayHasHours(date: Date) {
 }
 
 function prevMonth() {
+  if (!canGoToPrevMonth.value) return
   viewMonth.value = new Date(viewMonth.value.getFullYear(), viewMonth.value.getMonth() - 1, 1)
 }
 function nextMonth() {
+  if (!canGoToNextMonth.value) return
   viewMonth.value = new Date(viewMonth.value.getFullYear(), viewMonth.value.getMonth() + 1, 1)
 }
 
@@ -170,7 +215,7 @@ const daySlots = computed(() => {
     while (true) {
       const slotEnd = new Date(cursor.getTime() + duration * 60000)
       if (slotEnd > windowEnd) break
-      if (cursor > now) {
+      if (cursor > now && cursor <= latestStart.value) {
         const overlaps = busyRanges.value.some((b) => new Date(b.starts_at) < slotEnd && new Date(b.ends_at) > cursor)
         if (!overlaps) slots.push(new Date(cursor))
       }
@@ -257,9 +302,32 @@ async function submitBooking() {
 
       <div>
         <label class="block text-[12.5px] font-medium text-ink-700">Appointment type</label>
-        <select v-model="appointmentTypeId" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-[13.5px]">
+        <select v-if="info!.appointment_types.length > 0" v-model="appointmentTypeId" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-[13.5px]">
           <option v-for="t in info!.appointment_types" :key="t.id" :value="t.id">{{ t.name }} ({{ t.duration_minutes }} min)</option>
         </select>
+        <p v-else class="mt-1 text-[12.5px] text-ink-muted">None of this clinic's appointments can be booked from the app.</p>
+      </div>
+
+      <!-- Types the clinic takes payment for when they are booked. The app
+           cannot take a payment, so the server refuses them here; the web
+           booking page can. -->
+      <div v-if="onlinePaymentTypes.length > 0" class="rounded-card border border-line bg-surface-subtle p-3 text-[12.5px] text-ink-muted">
+        <p>
+          These appointments are paid online when you book them, which the app can't do yet:
+        </p>
+        <ul class="mt-1 list-disc pl-4">
+          <li v-for="t in onlinePaymentTypes" :key="t.id">
+            {{ t.name }}<template v-if="t.online_deposit_cents"> ({{ formatPrice(t.online_deposit_cents) }} deposit)</template>
+          </li>
+        </ul>
+        <p class="mt-1">
+          <template v-if="webBookingUrl">
+            Book them on the
+            <a :href="webBookingUrl" target="_blank" rel="noopener" class="font-medium text-brand-text">clinic's booking page</a>
+            or contact the clinic.
+          </template>
+          <template v-else>Contact the clinic to book them.</template>
+        </p>
       </div>
 
       <div>
@@ -274,10 +342,13 @@ async function submitBooking() {
 
     <div v-else-if="phase === 'datetime'" class="space-y-4">
       <div class="flex items-center justify-between">
-        <button type="button" class="px-2 text-[13px] text-ink-muted" @click="prevMonth">&lsaquo;</button>
+        <button type="button" class="px-2 text-[13px] text-ink-muted disabled:opacity-30" :disabled="!canGoToPrevMonth" @click="prevMonth">&lsaquo;</button>
         <p class="text-[13.5px] font-medium text-ink-900">{{ monthLabel }}</p>
-        <button type="button" class="px-2 text-[13px] text-ink-muted" @click="nextMonth">&rsaquo;</button>
+        <button type="button" class="px-2 text-[13px] text-ink-muted disabled:opacity-30" :disabled="!canGoToNextMonth" @click="nextMonth">&rsaquo;</button>
       </div>
+      <p class="text-[12px] text-ink-faint">
+        {{ appointmentType?.name }} can be booked up to {{ maxDaysAhead }} days ahead.
+      </p>
       <div class="grid grid-cols-7 gap-1 text-center text-[12px]">
         <button
           v-for="day in calendarDays"

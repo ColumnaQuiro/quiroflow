@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { normalizeSearchTerm, sanitizeSearchToken } from '~/utils/searchText'
+import { orderTypes } from '~/utils/appointmentTypes'
 
 interface PatientOption { id: string; first_name: string; last_name: string | null }
-interface AppointmentTypeOption { id: string; name: string }
+interface AppointmentTypeOption { id: string; name: string; sort_order: number | null }
 interface TeamMemberOption { id: string; full_name: string }
 interface WaitlistRow {
   id: string
@@ -66,10 +67,11 @@ const error = ref('')
 
 onMounted(async () => {
   const [{ data: types }, { data: members }] = await Promise.all([
-    supabase.from('appointment_types').select('id, name').order('name'),
+    // Archived types are not offered for a new entry (Settings -> Appointment Types).
+    supabase.from('appointment_types').select('id, name, sort_order').is('archived_at', null),
     supabase.from('team_members').select('id, full_name').order('full_name'),
   ])
-  appointmentTypes.value = types ?? []
+  appointmentTypes.value = orderTypes(types ?? [])
   teamMembers.value = members ?? []
 })
 

@@ -32,6 +32,13 @@ describe('Every authenticated app page renders for the account owner', () => {
           cy.visit(`/settings/clinics/${account.clinicId}`)
           cy.location('pathname').should('eq', `/settings/clinics/${account.clinicId}`)
           cy.contains('Opening hours').should('be.visible')
+
+          cy.task<{ id: string }>('db:createAppointmentType', { accountId: account.accountId, name: 'Smoke type' }).then((type) => {
+            cy.visit(`/settings/appointment-types/${type.id}`)
+            cy.location('pathname').should('eq', `/settings/appointment-types/${type.id}`)
+            cy.get('[data-cy=type-page][data-ready=true]').should('exist')
+            cy.contains('Where it is used').should('be.visible')
+          })
         })
       })
     })

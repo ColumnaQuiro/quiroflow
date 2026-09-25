@@ -193,7 +193,8 @@ async function proceedToPreview() {
     if (typeMap.value[name] === '__create__') {
       const { data } = await supabase
         .from('appointment_types')
-        .insert({ account_id: store.accountId!, name })
+        // Not bookable online until the clinic says so on the type's page.
+        .insert({ account_id: store.accountId!, name, online_booking_enabled: false })
         .select('id')
         .single()
       if (data) {

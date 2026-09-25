@@ -15,6 +15,7 @@ interface Appointment {
   status: string
   checked_in_at: string | null
   appointment_type_id: string | null
+  practitioner_id: string | null
   patients: { first_name: string; last_name: string | null } | null
   appointment_types: { name: string; default_price_cents: number } | null
 }
@@ -47,7 +48,7 @@ const balanceDueCents = computed(() => (invoice.value?.total_cents ?? 0) - paidC
 async function loadAppointment() {
   const { data } = await supabase
     .from('appointments')
-    .select('id, patient_id, starts_at, ends_at, status, checked_in_at, appointment_type_id, patients(first_name, last_name), appointment_types(name, default_price_cents)')
+    .select('id, patient_id, starts_at, ends_at, status, checked_in_at, appointment_type_id, practitioner_id, patients(first_name, last_name), appointment_types(name, default_price_cents)')
     .eq('id', appointmentId)
     .maybeSingle()
   appointment.value = data as unknown as Appointment
@@ -80,7 +81,20 @@ async function ensureInvoice(): Promise<InvoiceRow | null> {
 
   const { count } = await supabase.from('invoices').select('id', { count: 'exact', head: true })
   const invoiceNumber = `INV-${String((count ?? 0) + 1).padStart(4, '0')}`
-  const priceCents = appointment.value.appointment_types?.default_price_cents ?? 0
+  // The practitioner's own price for this type when they have one -- what the
+  // desktop calendar and online booking charge (effectivePriceCents). This
+  // used to charge the type's default regardless.
+  let priceCents = appointment.value.appointment_types?.default_price_cents ?? 0
+  if (appointment.value.appointment_type_id && appointment.value.practitioner_id) {
+    const { data: override } = await supabase
+      .from('appointment_type_overrides')
+      .select('price_cents')
+      .eq('appointment_type_id', appointment.value.appointment_type_id)
+      .eq('team_member_id', appointment.value.practitioner_id)
+      .maybeSingle()
+    const own = (override as { price_cents: number | null } | null)?.price_cents
+    if (own != null) priceCents = own
+  }
   const description = appointment.value.appointment_types?.name ?? 'Appointment'
 
   const { data: newInvoice, error: invoiceError } = await supabase

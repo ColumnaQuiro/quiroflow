@@ -139,7 +139,9 @@ async function apply() {
       }
       const { data: created, error } = await supabase
         .from('appointment_types')
-        .insert({ account_id: store.accountId!, name: c.name, stage: c.funnelStage })
+        // Not bookable online: an imported type is the history's, and the
+        // clinic decides which ones patients may book on the type's own page.
+        .insert({ account_id: store.accountId!, name: c.name, stage: c.funnelStage, online_booking_enabled: false })
         .select('id')
         .single()
       if (error || !created) {

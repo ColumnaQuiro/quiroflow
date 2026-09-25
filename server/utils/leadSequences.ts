@@ -17,13 +17,18 @@ interface ActionRow extends SenderAction {
   position: number
 }
 
-interface SequenceRun {
+export interface SequenceRun {
   id: string
   account_id: string
   rule_id: string
   lead_id: string
   next_position: number
+  attempts?: number
+  last_error?: string | null
 }
+
+/** What every caller has to select for advanceSequenceRun to work. */
+export const RUN_COLUMNS = 'id, account_id, rule_id, lead_id, next_position, attempts, last_error'
 
 export type StopReason = 'converted' | 'already_a_patient' | 'lead_deleted' | 'lost' | 'no_contact' | 'rule_shortened' | 'not_entitled'
 
@@ -181,15 +186,77 @@ function delayMinutes(config: Record<string, any>) {
   return Math.max(raw, SEQUENCE_TICK_MINUTES)
 }
 
-async function stop(supabase: any, runId: string, reason: StopReason) {
-  await supabase.from('automation_sequence_runs').update({ status: 'cancelled', stopped_reason: reason }).eq('id', runId)
+/**
+ * How many times a failing step is tried before the run is parked as
+ * 'failed'. The first attempt plus two retries, one tick apart: enough to
+ * ride out a Meta or webhook blip, few enough that a real problem is on the
+ * Executions tab within the hour rather than retried all week.
+ */
+export const MAX_STEP_ATTEMPTS = 3
+
+/** The plain-language reason a run stopped, as the Executions tab shows it. */
+export const STOP_REASON_TEXT: Record<StopReason, string> = {
+  converted: 'Became a patient',
+  already_a_patient: 'Already a patient (matched by phone or email)',
+  lead_deleted: 'Lead was deleted',
+  lost: 'Lead was marked lost',
+  no_contact: 'Lead has no phone or email',
+  rule_shortened: 'The automation was shortened past where this lead was',
+  not_entitled: 'Growth is no longer on the subscription',
+}
+
+/** What a step is called in the history, copied at the time it ran. */
+export function stepLabel(action: { action_type: string; config: Record<string, any> }) {
+  if (action.action_type === 'delay') {
+    const minutes = delayMinutes(action.config)
+    if (minutes % 1440 === 0) return `Wait ${minutes / 1440} day${minutes === 1440 ? '' : 's'}`
+    if (minutes % 60 === 0) return `Wait ${minutes / 60} hour${minutes === 60 ? '' : 's'}`
+    return `Wait ${minutes} min`
+  }
+  if (action.action_type === 'email') return `Email · ${action.config?.subject || 'no subject'}`
+  if (action.action_type === 'webhook') return `Webhook · ${action.config?.url || 'no URL'}`
+  return `WhatsApp · ${action.config?.template_name || 'no template'}`
+}
+
+type RunEvent = {
+  outcome: 'started' | 'sent' | 'dry_run' | 'skipped' | 'failed' | 'waiting' | 'deferred' | 'stopped' | 'finished' | 'retried'
+  position?: number | null
+  action?: { action_type: string; config: Record<string, any> } | null
+  detail?: string | null
+  actorTeamMemberId?: string | null
 }
 
 /**
- * Runs a sequence from where it left off, until it hits a delay or the end.
+ * Appends to the run's history. Best-effort by design: the history describes
+ * the drip, it must never be the reason a message is not sent or a run is not
+ * advanced -- so a failed insert is logged and swallowed.
+ */
+export async function logRunEvent(supabase: any, run: { id: string; account_id: string }, event: RunEvent) {
+  const { error } = await supabase.from('automation_run_events').insert({
+    account_id: run.account_id,
+    run_id: run.id,
+    position: event.position ?? null,
+    action_type: event.action?.action_type ?? null,
+    step_label: event.action ? stepLabel(event.action) : null,
+    outcome: event.outcome,
+    detail: event.detail ?? null,
+    actor_team_member_id: event.actorTeamMemberId ?? null,
+  })
+  if (error) console.error('[leadSequences] could not record run event:', error.message)
+}
+
+async function stop(supabase: any, run: SequenceRun, reason: StopReason) {
+  await supabase.from('automation_sequence_runs').update({ status: 'cancelled', stopped_reason: reason }).eq('id', run.id)
+  await logRunEvent(supabase, run, { outcome: 'stopped', detail: STOP_REASON_TEXT[reason] })
+}
+
+/**
+ * Runs a sequence from where it left off, until it hits a delay, the end, or
+ * a step that fails.
  *
  * Actions are re-read every time rather than snapshotted at the start, so a
- * corrected typo reaches the people still mid-drip. The cost is that a
+ * corrected typo reaches the people still mid-drip -- and so a failed run
+ * that a person has fixed and retried uses the fixed step. The cost is that a
  * shortened sequence can leave a run pointing past the end, which is treated
  * as finished rather than as an error -- see 'rule_shortened'.
  */
@@ -200,7 +267,7 @@ export async function advanceSequenceRun(supabase: any, run: SequenceRun, origin
     .eq('id', run.lead_id)
     .maybeSingle()
 
-  if (!lead) return stop(supabase, run.id, 'lead_deleted')
+  if (!lead) return stop(supabase, run, 'lead_deleted')
 
   // A drip that keeps messaging strangers after the clinic stopped paying
   // for the thing sending them is indefensible, so an in-flight sequence
@@ -212,19 +279,23 @@ export async function advanceSequenceRun(supabase: any, run: SequenceRun, origin
     .select('plan_id, growth_addon, status, comped')
     .eq('account_id', run.account_id)
     .maybeSingle()
-  if (!hasGrowth(subscription)) return stop(supabase, run.id, 'not_entitled')
+  if (!hasGrowth(subscription)) return stop(supabase, run, 'not_entitled')
 
   const verdict = await sequenceStopReason(supabase, run.account_id, lead)
   if (verdict === 'defer') {
     // Left running and due again shortly, so the next tick re-asks rather
-    // than this one guessing.
+    // than this one guessing. Recorded once per outage, not once per tick:
+    // a PracticeHub that is down all afternoon is one line in the history,
+    // not sixteen.
+    const deferral = 'PracticeHub could not be reached to check whether this lead is already a patient; trying again shortly.'
     await supabase
       .from('automation_sequence_runs')
-      .update({ resume_at: new Date(Date.now() + SEQUENCE_TICK_MINUTES * 60_000).toISOString() })
+      .update({ resume_at: new Date(Date.now() + SEQUENCE_TICK_MINUTES * 60_000).toISOString(), last_error: deferral })
       .eq('id', run.id)
+    if (run.last_error !== deferral) await logRunEvent(supabase, run, { outcome: 'deferred', detail: deferral })
     return
   }
-  if (verdict) return stop(supabase, run.id, verdict)
+  if (verdict) return stop(supabase, run, verdict)
 
   const { data: actionRows } = await supabase
     .from('automation_actions')
@@ -237,33 +308,78 @@ export async function advanceSequenceRun(supabase: any, run: SequenceRun, origin
 
   if (remaining.length === 0) {
     const finishedNormally = actions.length > 0 && run.next_position > actions[actions.length - 1]!.position
-    await supabase
-      .from('automation_sequence_runs')
-      .update(finishedNormally ? { status: 'done' } : { status: 'cancelled', stopped_reason: 'rule_shortened' })
-      .eq('id', run.id)
-    return
+    if (finishedNormally) {
+      await supabase.from('automation_sequence_runs').update({ status: 'done', last_error: null }).eq('id', run.id)
+      await logRunEvent(supabase, run, { outcome: 'finished' })
+      return
+    }
+    return stop(supabase, run, 'rule_shortened')
   }
+
+  let attempts = run.attempts ?? 0
 
   for (const action of remaining) {
     if (action.action_type === 'delay') {
       const resumeAt = new Date(Date.now() + delayMinutes(action.config) * 60_000).toISOString()
       await supabase
         .from('automation_sequence_runs')
-        .update({ next_position: action.position + 1, resume_at: resumeAt })
+        .update({ next_position: action.position + 1, resume_at: resumeAt, attempts: 0, last_error: null })
         .eq('id', run.id)
+      await logRunEvent(supabase, run, { outcome: 'waiting', position: action.position, action, detail: `Until ${resumeAt}` })
       return
     }
 
     // One action at a time through the existing sender, so a lead gets the
     // same consent gate, the same template resolution and the same message
     // log a patient would.
-    await runLeadRuleActions(supabase, run.account_id, run.rule_id, lead as LeadForAction, origin, undefined, [action])
+    const [outcome] = await runLeadRuleActions(supabase, run.account_id, run.rule_id, lead as LeadForAction, origin, undefined, [action])
+
+    if (outcome?.status === 'failed') {
+      attempts += 1
+      const exhausted = attempts >= MAX_STEP_ATTEMPTS
+      // The position does NOT move: the next attempt -- automatic, or a
+      // person's Retry -- starts at this step, and only this step. Everything
+      // before it was saved as it went, so nothing is sent twice.
+      await supabase
+        .from('automation_sequence_runs')
+        .update(
+          exhausted
+            ? { status: 'failed', attempts, last_error: outcome.detail }
+            : { attempts, last_error: outcome.detail, resume_at: new Date(Date.now() + SEQUENCE_TICK_MINUTES * 60_000).toISOString() },
+        )
+        .eq('id', run.id)
+      await logRunEvent(supabase, run, {
+        outcome: 'failed',
+        position: action.position,
+        action,
+        detail: exhausted
+          ? `${outcome.detail} -- attempt ${attempts} of ${MAX_STEP_ATTEMPTS}; stopped until someone retries it.`
+          : `${outcome.detail} -- attempt ${attempts} of ${MAX_STEP_ATTEMPTS}; trying again in ${SEQUENCE_TICK_MINUTES} minutes.`,
+      })
+      return
+    }
+
+    attempts = 0
+    // Saved after every step, not only at delays. Two sends back to back
+    // where the second fails used to mean a retry from the last delay --
+    // sending the first one again.
+    await supabase
+      .from('automation_sequence_runs')
+      .update({ next_position: action.position + 1, attempts: 0, last_error: null })
+      .eq('id', run.id)
+    await logRunEvent(supabase, run, {
+      outcome: outcome?.status ?? 'sent',
+      position: action.position,
+      action,
+      detail: outcome?.detail ?? null,
+    })
   }
 
   await supabase
     .from('automation_sequence_runs')
-    .update({ status: 'done', next_position: (actions[actions.length - 1]?.position ?? 0) + 1 })
+    .update({ status: 'done', next_position: (actions[actions.length - 1]?.position ?? 0) + 1, attempts: 0, last_error: null })
     .eq('id', run.id)
+  await logRunEvent(supabase, run, { outcome: 'finished' })
 }
 
 /**
@@ -277,13 +393,41 @@ export async function startLeadSequence(supabase: any, accountId: string, ruleId
   const { data: run } = await supabase
     .from('automation_sequence_runs')
     .insert({ account_id: accountId, rule_id: ruleId, lead_id: leadId })
-    .select('id, account_id, rule_id, lead_id, next_position')
+    .select(RUN_COLUMNS)
     .maybeSingle()
 
   // Null means the unique index refused it: this lead already has a run for
   // this rule, which is exactly the outcome we want.
   if (!run) return null
 
+  await logRunEvent(supabase, run, { outcome: 'started' })
+  await advanceSequenceRun(supabase, run as SequenceRun, origin)
+  return run.id as string
+}
+
+/**
+ * A person's Retry on a failed run.
+ *
+ * Resumes at the step that failed -- next_position never moved past it -- with
+ * a fresh set of attempts, and runs it now rather than at the next tick: the
+ * person pressing the button is waiting to see whether their fix worked.
+ * Everything the cron checks first still applies, so a lead who booked in the
+ * meantime is stopped here rather than messaged.
+ */
+export async function retrySequenceRun(supabase: any, runId: string, accountId: string, actorTeamMemberId: string, origin: string) {
+  const { data: run } = await supabase
+    .from('automation_sequence_runs')
+    .update({ status: 'running', attempts: 0, last_error: null, resume_at: new Date().toISOString() })
+    .eq('id', runId)
+    .eq('account_id', accountId)
+    // Only a failed run. Retrying one that is mid-flight would race the cron
+    // for the same step and could send it twice.
+    .eq('status', 'failed')
+    .select(RUN_COLUMNS)
+    .maybeSingle()
+  if (!run) return null
+
+  await logRunEvent(supabase, run, { outcome: 'retried', position: run.next_position, actorTeamMemberId })
   await advanceSequenceRun(supabase, run as SequenceRun, origin)
   return run.id as string
 }

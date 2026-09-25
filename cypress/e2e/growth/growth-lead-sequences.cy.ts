@@ -6,8 +6,10 @@
 // that knows when to shut up is the product.
 //
 // No WhatsApp is sent in any of these -- the account has no Meta credentials,
-// so runWhatsAppAction returns before sending. That is deliberate: these test
-// the sequencing, not the delivery.
+// so each WhatsApp step is recorded as skipped ("WhatsApp is not connected")
+// and the drip carries on. That is deliberate: these test the sequencing, not
+// the delivery. A step that genuinely FAILS is exercised with a webhook
+// pointed at a closed port, which fails the same way offline and in CI.
 
 interface SeededAccount {
   email: string
@@ -19,6 +21,8 @@ interface SeededAccount {
 interface Run {
   id: string
   status: string
+  attempts: number
+  last_error: string | null
   next_position: number
   stopped_reason: string | null
   resume_at: string
@@ -284,6 +288,137 @@ describe('Lead welcome sequences', () => {
       expect(res.status).to.eq(201)
       cy.task('db:leadById', { id: res.body.data.id }).then((row) => {
         expect((row as { full_name: string }).full_name).to.eq('Survives Anyway')
+      })
+    })
+  })
+
+  describe('Executions', () => {
+    interface RunEvent {
+      outcome: string
+      position: number | null
+      step_label: string | null
+      detail: string | null
+      actor_team_member_id: string | null
+    }
+
+    it('records every step, including the ones that were skipped and why', () => {
+      threeStepDrip()
+      ingest({ full_name: 'History Kept', phone: '+34600900020', external_id: 'seq-history' }).then((res) => {
+        const leadId = res.body.data.id
+        cy.task<Run[]>('db:sequenceRuns', { leadId }).then((runs) => {
+          cy.task<RunEvent[]>('db:runEvents', { runId: runs[0]!.id }).then((events) => {
+            expect(events.map((e) => e.outcome)).to.deep.eq(['started', 'skipped', 'waiting'])
+            // Not delivered, and the history says so in words -- the drip
+            // used to count this step as done with nothing to show for it.
+            expect(events[1]!.step_label).to.eq('WhatsApp · welcome_1')
+            expect(events[1]!.detail).to.contain('not connected')
+            expect(events[2]!.step_label).to.eq('Wait 1 day')
+          })
+        })
+
+        cy.task('db:makeSequenceDue', { leadId })
+        runCron()
+        cy.task<Run[]>('db:sequenceRuns', { leadId }).then((runs) => {
+          expect(runs[0]!.status).to.eq('done')
+          cy.task<RunEvent[]>('db:runEvents', { runId: runs[0]!.id }).then((events) => {
+            expect(events.map((e) => e.outcome)).to.deep.eq(['started', 'skipped', 'waiting', 'skipped', 'finished'])
+          })
+        })
+      })
+    })
+
+    it('retries a failing step, parks the run as failed, and resumes it from that step on Retry', () => {
+      cy.task<{ id: string }>('db:createAutomationRule', {
+        accountId: account.accountId,
+        triggerEvent: 'lead.created',
+        name: 'Webhook drip',
+        isMarketing: true,
+        actions: [
+          { type: 'whatsapp_template', config: { template_name: 'welcome_1', template_language: 'es' } },
+          // Nothing listens on port 9: refused at once, offline or in CI.
+          { type: 'webhook', config: { url: 'http://127.0.0.1:9/hook' } },
+          { type: 'whatsapp_template', config: { template_name: 'welcome_2', template_language: 'es' } },
+        ],
+      }).then((rule) => {
+        ingest({ full_name: 'Webhook Down', phone: '+34600900021', external_id: 'seq-fail' }).then((res) => {
+          const leadId = res.body.data.id
+
+          // First attempt, in the ingest request itself.
+          cy.task<Run[]>('db:sequenceRuns', { leadId }).then((runs) => {
+            expect(runs[0]!.status, 'retried automatically, not given up on').to.eq('running')
+            expect(runs[0]!.attempts).to.eq(1)
+            // Parked AT the failing step, having saved step 0 as it went.
+            expect(runs[0]!.next_position).to.eq(1)
+            expect(runs[0]!.last_error).to.contain('webhook did not accept')
+          })
+
+          // Two more ticks and it stops trying on its own.
+          cy.task('db:makeSequenceDue', { leadId })
+          runCron()
+          cy.task('db:makeSequenceDue', { leadId })
+          runCron()
+
+          cy.task<Run[]>('db:sequenceRuns', { leadId }).then((runs) => {
+            const run = runs[0]!
+            expect(run.status).to.eq('failed')
+            expect(run.attempts).to.eq(3)
+            expect(run.next_position).to.eq(1)
+
+            // A failed run is not due: the cron leaves it for a person.
+            cy.task('db:makeSequenceDue', { leadId })
+            runCron()
+            cy.task<RunEvent[]>('db:runEvents', { runId: run.id }).then((events) => {
+              expect(events.filter((e) => e.outcome === 'failed')).to.have.length(3)
+            })
+
+            // The person fixes the cause -- here, the webhook's address.
+            cy.task<{ baseUrl: string }>('db:startPracticeHubStub', {}).then(({ baseUrl }) => {
+              cy.task('db:setAutomationActionConfig', { ruleId: rule.id, position: 1, config: { url: `${baseUrl}/hook` } })
+            })
+
+            cy.login(account.email, account.password)
+            cy.visit('/growth/automations?tab=executions')
+
+            // Visible without opening anything: a badge on the tab and a
+            // count on the filter.
+            cy.get('[data-test="tab-executions-failed"]').should('contain', '1')
+            cy.get('[data-test="executions-filter-failed"]').click()
+            cy.get(`[data-test="execution-${run.id}"]`).should('contain', 'Webhook Down').and('contain', 'webhook did not accept').click()
+
+            cy.get('[data-test="execution-status"]').should('contain', 'Failed')
+            cy.get('[data-test="execution-event-failed"]').should('have.length', 3)
+            cy.get('[data-test="execution-retry"]').click()
+
+            cy.get('[data-test="execution-status"]').should('contain', 'Finished')
+            cy.get('[data-test="execution-event-retried"]').should('exist')
+
+            cy.task<Run[]>('db:sequenceRuns', { leadId }).then((after) => {
+              expect(after[0]!.status).to.eq('done')
+              expect(after[0]!.last_error).to.be.null
+            })
+            cy.task<RunEvent[]>('db:runEvents', { runId: run.id }).then((events) => {
+              // Resumed at step 1: step 0 ran once, ever. A retry that started
+              // over would have messaged the lead a second time.
+              expect(events.filter((e) => e.position === 0 && e.outcome !== 'retried')).to.have.length(1)
+              const afterRetry = events.slice(events.findIndex((e) => e.outcome === 'retried'))
+              expect(afterRetry.map((e) => e.outcome)).to.deep.eq(['retried', 'sent', 'skipped', 'finished'])
+              // And it says who pressed the button.
+              expect(afterRetry[0]!.actor_team_member_id).to.be.a('string')
+            })
+          })
+        })
+      })
+    })
+
+    it('refuses to retry a run that has not failed', () => {
+      threeStepDrip()
+      ingest({ full_name: 'Still Running', phone: '+34600900022', external_id: 'seq-no-retry' }).then((res) => {
+        cy.task<Run[]>('db:sequenceRuns', { leadId: res.body.data.id }).then((runs) => {
+          cy.login(account.email, account.password)
+          // Retrying a run mid-flight would race the cron for the same step
+          // and could send it twice.
+          cy.request({ method: 'POST', url: `/api/growth/automation-runs/${runs[0]!.id}/retry`, failOnStatusCode: false }).its('status').should('eq', 409)
+        })
       })
     })
   })

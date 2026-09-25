@@ -120,7 +120,10 @@ export function useGrowthAutomations() {
     try {
       const result = await useStaffFetch<{ workflows: RealWorkflow[] }>('/api/growth/automations')
       workflows.value = result.workflows
-      activeWorkflowId.value = result.workflows[0]?.id ?? null
+      // A reload (after a retry on the Executions tab, say) keeps whichever
+      // workflow was open rather than jumping back to the first.
+      const keep = result.workflows.some((w) => w.id === activeWorkflowId.value)
+      if (!keep) activeWorkflowId.value = result.workflows[0]?.id ?? null
       draw()
     } catch {
       error.value = t('Could not load automations.', 'No se han podido cargar las automatizaciones.')
@@ -181,6 +184,7 @@ export function useGrowthAutomations() {
     edges,
     edgePaths,
     loading,
+    reload: load,
     error,
     selectedNode,
     selectedConfig,

@@ -113,6 +113,23 @@ export interface ActionRow {
   action_type: 'whatsapp_template' | 'email' | 'webhook' | 'delay'
   config: Record<string, any>
 }
+/**
+ * An action that was deliberately not delivered, as opposed to one that
+ * failed: no consent, no number to send to, a channel the clinic never
+ * connected. Retrying cannot change any of these, so the drip carries on past
+ * them -- but the reason is kept, because "why did this lead get nothing" is
+ * exactly the question the Executions tab exists to answer.
+ */
+export class ActionSkipped extends Error {}
+
+/** What one action did, for the sequence runner's execution history. */
+export interface ActionOutcome {
+  actionId: string
+  actionType: ActionRow['action_type']
+  status: 'sent' | 'dry_run' | 'skipped' | 'failed'
+  detail: string | null
+}
+
 interface TriggerBody {
   triggerEvent: string
   patientId: string
@@ -169,7 +186,8 @@ export async function runActionsList(
   // against the campaign would flatter every metric on the page.
   ruleId?: string,
 ) {
-  return runForRecipient(supabase, accountId, actions, patientRecipient(patient), origin, isMarketing, appointmentId, triggerBody, whatsappOverrideNumber, extraContext, dryRun, ruleId)
+  const { problems } = await runForRecipient(supabase, accountId, actions, patientRecipient(patient), origin, isMarketing, appointmentId, triggerBody, whatsappOverrideNumber, extraContext, dryRun, ruleId)
+  return problems
 }
 
 /**
@@ -190,7 +208,7 @@ export async function runLeadRuleActions(
   // actions to find where it got to, so it passes the step rather than
   // making this re-read them and run the lot.
   only?: ActionRow[],
-) {
+): Promise<ActionOutcome[]> {
   const [{ data: rule }, { data: actions }] = await Promise.all([
     supabase.from('automation_rules').select('is_marketing, dry_run').eq('id', ruleId).maybeSingle(),
     only
@@ -198,7 +216,7 @@ export async function runLeadRuleActions(
       : supabase.from('automation_actions').select('id, action_type, config').eq('rule_id', ruleId).order('position'),
   ])
 
-  await runForRecipient(
+  const { outcomes } = await runForRecipient(
     supabase,
     accountId,
     (actions ?? []) as ActionRow[],
@@ -212,6 +230,7 @@ export async function runLeadRuleActions(
     rule?.dry_run ?? false,
     ruleId,
   )
+  return outcomes
 }
 
 async function runForRecipient(
@@ -272,33 +291,54 @@ async function runForRecipient(
   // reason is no longer thrown away. "Send test to me" shows this list; a
   // real automated send logs it and carries on.
   const problems: string[] = []
+  // The same information, per action and machine-readable, for the sequence
+  // runner: it has to tell "not delivered on purpose" (carry on) from "tried
+  // and failed" (retry, then stop and say so) -- which a list of sentences
+  // cannot.
+  const outcomes: ActionOutcome[] = []
   const skipped = (channel: string) =>
     !canContact
       ? `${channel}: this recipient is marked do-not-contact (or is a minor).`
       : `${channel}: this is a marketing rule and the recipient has not opted in to ${channel}.`
 
   for (const action of actions) {
+    const outcome = (status: ActionOutcome['status'], detail: string | null) =>
+      outcomes.push({ actionId: action.id, actionType: action.action_type, status, detail })
     try {
       if (action.action_type === 'whatsapp_template') {
-        if (canContact && channelAllowed('whatsapp')) await runWhatsAppAction(supabase, accountId, recipient, action.config, origin, appointmentId, whatsappOverrideNumber, context, dryRun)
-        else problems.push(skipped('WhatsApp'))
+        if (canContact && channelAllowed('whatsapp')) {
+          const result = await runWhatsAppAction(supabase, accountId, recipient, action.config, origin, appointmentId, whatsappOverrideNumber, context, dryRun)
+          outcome(result, null)
+        } else {
+          problems.push(skipped('WhatsApp'))
+          outcome('skipped', skipped('WhatsApp'))
+        }
       } else if (action.action_type === 'email') {
         if (canContact && channelAllowed('email')) {
           await runEmailAction(recipient, action.config, context, { supabase, accountId, ruleId })
+          outcome('sent', null)
+        } else {
+          problems.push(skipped('Email'))
+          outcome('skipped', skipped('Email'))
         }
-        else problems.push(skipped('Email'))
       } else if (action.action_type === 'webhook') {
         await runWebhookAction(action.config, triggerBody ?? { triggerEvent: 'manual', patientId: recipient.id, appointmentId })
+        outcome('sent', null)
       }
     } catch (e: any) {
       // Best-effort: one failed action shouldn't stop the rest of the rule.
       const message = e?.message ?? String(e)
       problems.push(`${action.action_type}: ${message}`)
-      console.error(`[automations] ${action.action_type} action failed for ${recipient.kind} ${recipient.id}: ${message}`)
+      if (e instanceof ActionSkipped) {
+        outcome('skipped', message)
+      } else {
+        outcome('failed', message)
+        console.error(`[automations] ${action.action_type} action failed for ${recipient.kind} ${recipient.id}: ${message}`)
+      }
     }
   }
 
-  return problems
+  return { problems, outcomes }
 }
 
 interface MergeContext { nextAppointmentAt?: string; googleReviewUrl?: string; waitlistClaimLink?: string; waitlistSlotDatetime?: string }
@@ -498,10 +538,10 @@ async function runWhatsAppAction(
   toOverride?: string,
   context?: MergeContext,
   dryRun = false,
-) {
+): Promise<'sent' | 'dry_run'> {
   const templateName: string | undefined = config.template_name
   const templateLanguage: string = config.template_language || 'es'
-  if (!templateName) return
+  if (!templateName) throw new Error('No WhatsApp template is chosen for this step.')
 
   const { data: account } = await supabase
     .from('accounts')
@@ -516,7 +556,9 @@ async function runWhatsAppAction(
   // the live template lookup below needs those credentials, so an
   // unconnected account cannot catch a wrong variable count. Worth having
   // anyway, and worth not pretending otherwise.
-  if (!dryRun && (!account?.whatsapp_phone_number_id || !account?.whatsapp_access_token)) return
+  if (!dryRun && (!account?.whatsapp_phone_number_id || !account?.whatsapp_access_token)) {
+    throw new ActionSkipped('WhatsApp is not connected for this clinic.')
+  }
 
   let to = toOverride
   // A lead carries its own number, already normalised at ingest. Only a
@@ -528,10 +570,10 @@ async function runWhatsAppAction(
       .select('number, country_code, is_whatsapp')
       .eq('patient_id', recipient.patient.id)
     const target = numbers?.find((n: any) => n.is_whatsapp) ?? numbers?.[0]
-    if (!target) return
+    if (!target) throw new ActionSkipped('No phone number to send WhatsApp to.')
     to = toE164(target.number, target.country_code) ?? undefined
   }
-  if (!to) return
+  if (!to) throw new ActionSkipped('No phone number to send WhatsApp to.')
 
   // Each configured variable slot maps to a patient field (first_name,
   // last_name, email) or fixed text -- lets a template with more than one
@@ -649,7 +691,7 @@ async function runWhatsAppAction(
       status: 'would_send',
       phone_number: to,
     })
-    return
+    return 'dry_run'
   }
 
   try {
@@ -729,6 +771,13 @@ async function runWhatsAppAction(
       await supabase.from('appointments').update({ confirmation_status: 'pending' }).eq('id', appointmentId)
     }
   }
+
+  // Raised only now, after the failed send is logged against the recipient:
+  // the whatsapp_messages row is what the Inbox shows, and it must exist
+  // whether or not anyone upstream is listening. Before this, a refusal from
+  // Meta ended here as a normal return and a drip counted it as delivered.
+  if (!wamid) throw new Error(`Meta refused the WhatsApp message: ${errorMessage ?? 'no message id returned'}`)
+  return 'sent'
 }
 
 // Email clients disagree about what an unstyled <a> looks like, and some
@@ -760,7 +809,8 @@ async function runEmailAction(
   // the sender can read -- see the problems list in runForRecipient.
   if (!subject) throw new Error('The email action has no subject.')
   if (!rawBody) throw new Error('The email action has no body.')
-  if (!recipient.email) throw new Error('No email address to send to.')
+  // Skipped rather than failed: retrying cannot give a lead an address.
+  if (!recipient.email) throw new ActionSkipped('No email address to send to.')
 
   const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
   const mergePlain = (text: string) => text.replace(/\{\{(\w+)\}\}/g, (_, key: string) => recipientFieldValue(recipient, key, context))
@@ -826,7 +876,7 @@ async function runEmailAction(
 
 async function runWebhookAction(config: Record<string, any>, body: TriggerBody) {
   const url: string | undefined = config.url
-  if (!url) return
+  if (!url) throw new Error('The webhook step has no URL.')
 
   const payload = {
     event: body.triggerEvent,
@@ -839,5 +889,14 @@ async function runWebhookAction(config: Record<string, any>, body: TriggerBody) 
     headers['X-QuiroFlow-Signature'] = createHmac('sha256', config.secret).update(JSON.stringify(payload)).digest('hex')
   }
 
-  await $fetch(url, { method: 'POST', headers, body: payload }).catch(() => null)
+  // Not swallowed any more: an endpoint that is down or refusing is exactly
+  // what a sequence needs to know, to retry it and then say so. A rule that
+  // runs straight through still carries on past it -- runForRecipient catches
+  // per action.
+  try {
+    await $fetch(url, { method: 'POST', headers, body: payload, timeout: 10_000 })
+  } catch (e: any) {
+    const status = e?.response?.status ?? e?.statusCode
+    throw new Error(`The webhook did not accept the call${status ? ` (HTTP ${status})` : ''}: ${e?.message ?? 'unknown error'}`)
+  }
 }

@@ -2331,6 +2331,22 @@ async function makeSequenceDue(opts: { leadId: string }) {
   return { ok: true }
 }
 
+/** A run's execution history, oldest first -- what the Executions tab reads. */
+async function runEvents(opts: { runId: string }) {
+  const { data } = await admin
+    .from('automation_run_events')
+    .select('outcome, position, action_type, step_label, detail, actor_team_member_id')
+    .eq('run_id', opts.runId)
+    .order('created_at')
+  return data ?? []
+}
+
+/** Rewrites one step of a rule, the way fixing it in Campaigns would. */
+async function setAutomationActionConfig(opts: { ruleId: string; position: number; config: Record<string, unknown> }) {
+  assertOk(await admin.from('automation_actions').update({ config: opts.config }).eq('rule_id', opts.ruleId).eq('position', opts.position))
+  return { ok: true }
+}
+
 /**
  * A busy week in two inserts: `count` patients, one 30-minute visit each,
  * spread Monday-Friday from 09:00, plus the patients' ids in visit order.
@@ -2674,6 +2690,8 @@ export const dbTasks = {
   'db:createFacturaWithoutTax': createFacturaWithoutTax,
   'db:huellaFor': huellaFor,
   'db:facturaRecordsFor': facturaRecordsFor,
+  'db:runEvents': runEvents,
+  'db:setAutomationActionConfig': setAutomationActionConfig,
   'db:updateClinic': updateClinic,
   'db:createClinic': createClinic,
   'db:tryChangeFacturaIssuer': tryChangeFacturaIssuer,

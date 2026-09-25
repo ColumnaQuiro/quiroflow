@@ -193,7 +193,8 @@ async function proceedToPreview() {
     if (typeMap.value[name] === '__create__') {
       const { data } = await supabase
         .from('appointment_types')
-        .insert({ account_id: store.accountId!, name })
+        // Not bookable online until the clinic says so on the type's page.
+        .insert({ account_id: store.accountId!, name, online_booking_enabled: false })
         .select('id')
         .single()
       if (data) {
@@ -487,8 +488,8 @@ const introNotes = computed(() => [
         <p class="mt-1 text-xs text-ink-muted2">
           {{
             t(
-              'Match each imported practitioner name to a real team member, or keep it as a label only (no login yet, so you can still see who saw the patient — invite them properly from Settings → Team Members later).',
-              'Empareja cada nombre de profesional importado con un miembro real del equipo, o déjalo solo como etiqueta (sin acceso todavía, para que puedas seguir viendo quién atendió al paciente; invítalo correctamente desde Settings → Team Members más adelante).',
+              'Match each imported practitioner name to a real team member, or keep it as a label only (no login yet, so you can still see who saw the patient — invite them properly from Settings → Team later).',
+              'Empareja cada nombre de profesional importado con un miembro real del equipo, o déjalo solo como etiqueta (sin acceso todavía, para que puedas seguir viendo quién atendió al paciente; invítalo correctamente desde Ajustes → Equipo más adelante).',
             )
           }}
         </p>

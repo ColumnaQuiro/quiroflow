@@ -156,6 +156,9 @@ async function loadEmailStats() {
     supabase
       .from('email_messages')
       .select('rule_id, delivered_at, first_opened_at, first_clicked_at, bounced_at, failed_at')
+      // A test-mode rule's emails are recorded but never sent, so they are
+      // not sends -- and would drag down every rate measured against them.
+      .eq('dry_run', false)
       .gte('sent_at', since)
       .range(from, to),
   )

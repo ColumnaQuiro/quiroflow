@@ -21,6 +21,25 @@ interface WindowInput {
 // per-practitioner where an override exists, which is the same rule the
 // booking page applies, so an API booking lands on the same grid a patient
 // would have seen.
+/**
+ * A type an appointment is being given now: it must be this account's, and
+ * not archived. An archived type is hidden from the type list and from
+ * /availability, so an integration only has its id from before it was
+ * archived. Checked on its own because resolveWindow only reads the type
+ * when it needs the length -- with ends_at given, a type from ANOTHER
+ * account used to go straight into the insert.
+ *
+ * Not applied to an appointment keeping the type it already has: moving an
+ * existing visit whose type was archived since must still work.
+ */
+export async function assertTypeBookable(supabase: unknown, accountId: string, appointmentTypeId: string) {
+  const type = await assertBelongsToAccount(supabase, 'appointment_types', appointmentTypeId, accountId, 'appointment_type_id')
+  if (type.archived_at) {
+    throw badRequest(`Appointment type "${type.name}" is archived and can no longer be booked. Reactivate it in QuiroFlow, or use another type.`, 'appointment_type_id')
+  }
+  return type
+}
+
 export async function resolveWindow(
   supabase: unknown,
   accountId: string,

@@ -4,7 +4,7 @@ import { Line } from 'vue-chartjs'
 import { computePresetRange, monthKeysInRange, rangeBounds } from '~/composables/useDateRangePresets'
 import { fetchAllRows, fetchByIds } from '~/composables/useFetchAllRows'
 import { isReceipt } from '~/utils/paymentReceipts'
-import { classifyPaymentForFilter } from '~/utils/incomeAttribution'
+import { classifyPaymentForFilter, practitionerForPayment } from '~/utils/incomeAttribution'
 
 interface PaymentRow { amount_cents: number; method: string; paid_at: string; invoice_id: string | null; patient_id: string | null; invoices?: { status: string } | null }
 interface InvoiceRow { id: string; appointment_id: string | null }
@@ -17,7 +17,9 @@ const { practitioners, clinics, load: loadFilterOptions } = useReportFilterOptio
 const t = useT()
 
 const range = ref(computePresetRange({ months: 1 }))
-const practitionerFilter = ref('')
+// reports_own_only: pinned to the viewer, with the picker hidden (useOwnScope).
+const { reportsPractitionerId } = useOwnScope()
+const practitionerFilter = ref(reportsPractitionerId.value ?? '')
 const clinicFilter = ref('')
 const loading = ref(true)
 const payments = ref<PaymentRow[]>([])
@@ -121,10 +123,16 @@ const monthKeys = computed(() => monthKeysInRange(range.value))
 // places a bono or money on account instead of dropping it into __unassigned
 // -- that bucket held 8,748 EUR of September against 919 attributed.
 function practitionerFor(payment: PaymentRow): string {
-  const appt = appointmentFor(payment)
-  if (appt?.practitioner_id) return appt.practitioner_id
-  const patient = payment.patient_id ? patientById.value.get(payment.patient_id) : undefined
-  return patient?.default_practitioner_id ?? '__unassigned'
+  // Shared with reports/income.vue's breakdown, which had its own copy of
+  // this chain that stopped at the appointment. Two screens answering "whose
+  // money is this" differently is how the same euros read as one
+  // practitioner's here and as "Sin asignar" there.
+  return (
+    practitionerForPayment({
+      appointment: appointmentFor(payment) ?? null,
+      patient: (payment.patient_id ? patientById.value.get(payment.patient_id) : undefined) ?? null,
+    }) ?? '__unassigned'
+  )
 }
 
 const series = computed(() => {
@@ -170,7 +178,7 @@ const totalsByPractitioner = computed(() => series.value.map((s) => ({ label: s.
     <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
       <div class="flex flex-wrap items-center gap-2">
         <ReportsDateRangeSelect v-model="range" />
-        <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
+        <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" :locked-to="reportsPractitionerId" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
       </div>
 
       <div v-if="loading" class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">

@@ -56,7 +56,7 @@ watch(code, (value) => {
       {{ loading ? t('Checking…', 'Comprobando…') : t('Verify', 'Verificar') }}
     </UiBtn>
     <p class="text-[12px] text-ink-faint">
-      {{ t("Lost your phone? Ask your clinic's admin to reset two-factor for you under Settings → Team Members.", '¿Has perdido el móvil? Pide al administrador de tu clínica que restablezca tu verificación en dos pasos en Ajustes → Miembros del equipo.') }}
+      {{ t("Lost your phone? Ask your clinic's admin to reset two-factor for you under Settings → Team.", '¿Has perdido el móvil? Pide al administrador de tu clínica que restablezca tu verificación en dos pasos en Ajustes → Equipo.') }}
     </p>
   </form>
 </template>

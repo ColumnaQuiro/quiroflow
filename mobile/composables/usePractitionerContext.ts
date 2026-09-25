@@ -16,6 +16,8 @@ export interface PractitionerContext {
   fullName: string
   clinicId: string | null
   photoStoragePath: string | null
+  /** The role's permissions, as get_my_bootstrap returns them to the web. */
+  permissions: Record<string, unknown>
 }
 
 const context = ref<PractitionerContext | null>(null)
@@ -39,7 +41,12 @@ export function usePractitionerContext() {
       loading.value = false
       return
     }
-    const { data: clinics } = await supabase.from('clinics').select('id').eq('account_id', teamMember.account_id).is('archived_at', null).order('name').limit(1)
+    const [{ data: clinics }, { data: boot }] = await Promise.all([
+      supabase.from('clinics').select('id').eq('account_id', teamMember.account_id).is('archived_at', null).order('name').limit(1),
+      // The same source the web's store reads permissions from, so the app
+      // hides what the role cannot do instead of offering it and failing.
+      supabase.rpc('get_my_bootstrap' as never),
+    ])
     context.value = {
       teamMemberId: teamMember.id,
       accountId: teamMember.account_id,
@@ -47,6 +54,7 @@ export function usePractitionerContext() {
       fullName: teamMember.full_name,
       clinicId: clinics?.[0]?.id ?? null,
       photoStoragePath: teamMember.photo_storage_path,
+      permissions: ((boot as { permissions?: Record<string, unknown> } | null)?.permissions ?? {}) as Record<string, unknown>,
     }
     loading.value = false
   }
@@ -67,5 +75,14 @@ export function usePractitionerContext() {
     { immediate: true },
   )
 
-  return { context, loading }
+  // Mirrors composables/usePermission.ts on the web: an owner can do
+  // everything and is never restricted.
+  function can(key: string): boolean {
+    return !!context.value && (context.value.isOwner || context.value.permissions[key] === true)
+  }
+  function restricted(key: string): boolean {
+    return !!context.value && !context.value.isOwner && context.value.permissions[key] === true
+  }
+
+  return { context, loading, can, restricted }
 }

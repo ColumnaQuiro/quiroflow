@@ -15,6 +15,7 @@ interface Appointment {
   status: string
   checked_in_at: string | null
   appointment_type_id: string | null
+  practitioner_id: string | null
   patients: { first_name: string; last_name: string | null } | null
   appointment_types: { name: string; default_price_cents: number } | null
 }
@@ -23,7 +24,7 @@ interface LineItemRow { id: string; price_cents: number; service_id: string | nu
 interface PaymentRow { id: string; amount_cents: number; method: string; paid_at: string }
 
 const supabase = useSupabaseClient()
-const { context } = usePractitionerContext()
+const { context, can, restricted } = usePractitionerContext()
 const { fire } = useAutomations()
 
 const appointment = ref<Appointment | null>(null)
@@ -47,7 +48,7 @@ const balanceDueCents = computed(() => (invoice.value?.total_cents ?? 0) - paidC
 async function loadAppointment() {
   const { data } = await supabase
     .from('appointments')
-    .select('id, patient_id, starts_at, ends_at, status, checked_in_at, appointment_type_id, patients(first_name, last_name), appointment_types(name, default_price_cents)')
+    .select('id, patient_id, starts_at, ends_at, status, checked_in_at, appointment_type_id, practitioner_id, patients(first_name, last_name), appointment_types(name, default_price_cents)')
     .eq('id', appointmentId)
     .maybeSingle()
   appointment.value = data as unknown as Appointment
@@ -80,7 +81,20 @@ async function ensureInvoice(): Promise<InvoiceRow | null> {
 
   const { count } = await supabase.from('invoices').select('id', { count: 'exact', head: true })
   const invoiceNumber = `INV-${String((count ?? 0) + 1).padStart(4, '0')}`
-  const priceCents = appointment.value.appointment_types?.default_price_cents ?? 0
+  // The practitioner's own price for this type when they have one -- what the
+  // desktop calendar and online booking charge (effectivePriceCents). This
+  // used to charge the type's default regardless.
+  let priceCents = appointment.value.appointment_types?.default_price_cents ?? 0
+  if (appointment.value.appointment_type_id && appointment.value.practitioner_id) {
+    const { data: override } = await supabase
+      .from('appointment_type_overrides')
+      .select('price_cents')
+      .eq('appointment_type_id', appointment.value.appointment_type_id)
+      .eq('team_member_id', appointment.value.practitioner_id)
+      .maybeSingle()
+    const own = (override as { price_cents: number | null } | null)?.price_cents
+    if (own != null) priceCents = own
+  }
   const description = appointment.value.appointment_types?.name ?? 'Appointment'
 
   const { data: newInvoice, error: invoiceError } = await supabase
@@ -358,7 +372,7 @@ function euros(cents: number) {
       </NuxtLink>
 
       <button
-        v-if="!appointment.checked_in_at && appointment.status !== 'completed'"
+        v-if="!appointment.checked_in_at && appointment.status !== 'completed' && !restricted('calendar_read_only')"
         type="button"
         class="w-full rounded-ctl border border-line-control px-4 py-2.5 text-center text-[14px] font-medium text-brand-text active:bg-surface-subtle"
         @click="checkIn"
@@ -366,7 +380,7 @@ function euros(cents: number) {
         Check in
       </button>
 
-      <div v-if="!billingOpen">
+      <div v-if="!billingOpen && can('billing_access') && !restricted('calendar_read_only')">
         <button
           type="button"
           class="w-full rounded-ctl bg-brand px-4 py-2.5 text-center text-[14px] font-medium text-white active:opacity-90"
@@ -405,7 +419,7 @@ function euros(cents: number) {
             </div>
             <UiBtn variant="primary" class="w-full" :disabled="saving" @click="recordPayment">{{ saving ? 'Saving…' : `Record ${euros(Math.round((parseFloat(paymentAmount) || 0) * 100))}` }}</UiBtn>
 
-            <div v-if="activePackages.length > 0" class="flex flex-wrap items-center gap-2 border-t border-line-divider pt-2">
+            <div v-if="activePackages.length > 0 && (can('packages_edit') || can('billing_config'))" class="flex flex-wrap items-center gap-2 border-t border-line-divider pt-2">
               <span class="text-[12px] text-ink-muted2">Or use a package session:</span>
               <button
                 v-for="p in activePackages"

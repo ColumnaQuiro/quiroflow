@@ -17,7 +17,7 @@ const ICONS = {
     'M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75',
 }
 const t = useT()
-const groups = computed(() => [
+const allGroups = computed(() => [
   {
     label: t('Operations', 'Operaciones'),
     items: [
@@ -50,6 +50,15 @@ const groups = computed(() => [
     ],
   },
 ])
+
+// Only the reports this person can open. With "only their own figures" the
+// clinic-wide ones are refused by the route guard (CLINIC_WIDE_REPORTS), so
+// offering them here would only lead to "you don't have access".
+const store = useAccountStore()
+const { reportsPractitionerId } = useOwnScope()
+const groups = computed(() =>
+  allGroups.value.map((g) => ({ ...g, items: g.items.filter((i) => isRouteAllowed(store, i.to)) })).filter((g) => g.items.length > 0),
+)
 </script>
 
 <template>
@@ -58,6 +67,9 @@ const groups = computed(() => [
     <div class="flex-1 overflow-y-auto">
       <div class="p-4 sm:p-6">
         <p class="text-[13px] text-ink-muted2">{{ t('Metrics across patients, appointments, and billing. Each report below has its own filters and date range.', 'Métricas de pacientes, citas y facturación. Cada informe tiene sus propios filtros y periodo.') }}</p>
+        <p v-if="reportsPractitionerId" class="mt-3 max-w-[960px] rounded-ctl border border-line bg-surface-subtle px-3.5 py-3 text-[13.5px] leading-snug text-ink-700" data-cy="reports-own-only-note">
+          {{ t('Your role shows you only your own figures: your appointments, your takings and your patients.', 'Tu rol te enseña solo tus datos: tus citas, tus cobros y tus pacientes.') }}
+        </p>
         <div class="mt-8 max-w-[960px]">
           <IconLinkGrid :groups="groups" />
         </div>

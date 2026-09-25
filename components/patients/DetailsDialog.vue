@@ -205,6 +205,21 @@ async function save() {
     .map((t) => t.trim())
     .filter(Boolean)
 
+  // patients_tags_remove, said before the save rather than after the
+  // database refuses the whole form over one tag.
+  if (!can('patients_tags_remove')) {
+    const kept = new Set(tags.map((x) => x.toLocaleLowerCase('es')))
+    const lost = props.patient.tags.filter((x) => !kept.has(x.trim().toLocaleLowerCase('es')))
+    if (lost.length > 0) {
+      error.value = t(
+        `Your role cannot remove tags: ${lost.join(', ')}. Put them back to save.`,
+        `Tu rol no puede quitar etiquetas: ${lost.join(', ')}. Vuelve a ponerlas para guardar.`,
+      )
+      saving.value = false
+      return
+    }
+  }
+
   const newReferredById = referralSource.value === 'Patient' ? (selectedReferredBy.value?.id ?? null) : null
 
   const { error: updateError } = await supabase

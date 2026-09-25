@@ -19,8 +19,7 @@ const allGroups = computed<NavGroup[]>(() => [
     items: [
       { label: t('Clinics', 'Clínicas'), to: '/settings/clinics', perm: 'clinic_config' },
       { label: t('Online Booking', 'Reserva online'), to: '/settings/online-booking', perm: 'clinic_config' },
-      { label: t('Team Members', 'Miembros del equipo'), to: '/settings/team', perm: 'team_admin' },
-      { label: t('Practitioners', 'Profesionales'), to: '/settings/practitioners', perm: 'team_admin' },
+      { label: t('Team', 'Equipo'), to: '/settings/team', perm: 'team_admin' },
       { label: t('Roles & Permissions', 'Roles y permisos'), to: '/settings/roles', perm: 'roles_admin' },
       { label: t('Appointment Types', 'Tipos de cita'), to: '/settings/appointment-types', perm: 'clinic_config' },
       { label: t('Scheduling Policies', 'Políticas de programación'), to: '/settings/reschedule-reasons', perm: 'clinic_config' },

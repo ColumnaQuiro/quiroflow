@@ -97,4 +97,133 @@ describe('The day sheet attributes every row', () => {
       })
     })
   })
+
+  // Two card payments of the same amount, minutes apart, on the same morning.
+  // Ana Paula Mañanes has exactly this on 15 Sep 2026 and it reads as a double
+  // charge: one settled that day's visit, the other went on account and paid
+  // the visit two days later. payments.purpose said so all along and the day
+  // sheet never showed it.
+  it('says what each payment was for, so two of the same amount are telling apart', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:createPatient', {
+        accountId: account.accountId,
+        clinicId: account.clinicId,
+        firstName: 'Dos',
+        lastName: 'Cobros',
+      }).then((patient: any) => {
+        cy.task('db:createInvoice', {
+          accountId: account.accountId,
+          patientId: patient.id,
+          invoiceNumber: 'F-9100',
+          totalCents: 5500,
+        }).then((invoice: any) => {
+          cy.task('db:createPayment', {
+            accountId: account.accountId,
+            patientId: patient.id,
+            invoiceId: invoice.id,
+            amountCents: 5500,
+            method: 'card',
+            purpose: 'visit',
+          })
+          // The second €55: same amount, same method, same morning, and not
+          // the same thing at all.
+          cy.task('db:createPayment', {
+            accountId: account.accountId,
+            patientId: patient.id,
+            amountCents: 5500,
+            method: 'card',
+            purpose: 'on_account',
+          })
+
+          cy.login(account.email, account.password)
+          cy.visit('/reports/daily-transactions')
+          cy.contains('Net collected').should('be.visible')
+
+          cy.contains('tr', 'F-9100').should('contain.text', 'Visit')
+          // The one with no receipt is the one the question was about. It is
+          // not a mystery row any more.
+          cy.contains('tr', 'On account').should('exist').and('not.contain.text', 'F-9100')
+        })
+      })
+    })
+  })
+
+  // A bono, a refund and money on account have no appointment by design, so
+  // the column that read the visit had nothing to read and said "Sin
+  // asignar". On 24 Sep 2026 that was three of nine rows on a day the clinic
+  // knew perfectly well whose patients they were.
+  it('names the practitioner for money with no visit behind it, and keeps it under their filter', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:createPatient', {
+        accountId: account.accountId,
+        clinicId: account.clinicId,
+        firstName: 'Bono',
+        lastName: 'Sinvisita',
+        defaultPractitionerId: account.teamMemberId,
+      }).then((patient: any) => {
+        cy.task('db:createPayment', {
+          accountId: account.accountId,
+          patientId: patient.id,
+          amountCents: 24000,
+          method: 'card',
+          purpose: 'bono',
+        })
+
+        cy.login(account.email, account.password)
+        cy.visit('/reports/daily-transactions')
+        cy.contains('Net collected').should('be.visible')
+
+        cy.contains('tr', 'Bono Sinvisita').should('contain.text', 'Test Owner').and('not.contain.text', 'Unassigned')
+
+        // And filtering to them keeps it. The old filter required an
+        // appointment and dropped anything without one, so a practitioner
+        // filtering their own day lost every bono they had sold -- the rows
+        // least likely to be missed, because what remains still adds up to
+        // something.
+        cy.contains('select', 'All practitioners').select('Test Owner')
+        cy.contains('tr', 'Bono Sinvisita').should('be.visible')
+      })
+    })
+  })
+
+  it('still says unassigned when the patient has no practitioner either', () => {
+    // The fallback is an attribution, not an invention.
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Nadie', lastName: 'Suyo' }).then((patient: any) => {
+        cy.task('db:createPayment', { accountId: account.accountId, patientId: patient.id, amountCents: 3000, method: 'cash', purpose: 'bono' })
+
+        cy.login(account.email, account.password)
+        cy.visit('/reports/daily-transactions')
+        cy.contains('Net collected').should('be.visible')
+
+        cy.contains('tr', 'Nadie Suyo').should('contain.text', 'Unassigned')
+      })
+    })
+  })
+
+  it('leaves an imported payment blank rather than inventing what it was for', () => {
+    // Every payment that came from PracticeHub has no purpose -- 3,288 of
+    // them. A dash says "not recorded"; anything else would be a claim
+    // nobody made.
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:createPatient', {
+        accountId: account.accountId,
+        clinicId: account.clinicId,
+        firstName: 'Sin',
+        lastName: 'Concepto',
+      }).then((patient: any) => {
+        cy.task('db:createPayment', { accountId: account.accountId, patientId: patient.id, amountCents: 7000, method: 'cash' })
+
+        cy.login(account.email, account.password)
+        cy.visit('/reports/daily-transactions')
+        cy.contains('Net collected').should('be.visible')
+
+        cy.contains('tr', 'Sin Concepto').within(() => {
+          for (const label of ['Visit', 'Bono', 'Membership', 'On account']) {
+            cy.contains('td', label).should('not.exist')
+          }
+        })
+      })
+    })
+  })
 })

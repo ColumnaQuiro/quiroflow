@@ -50,7 +50,21 @@ const t = useT()
 const { preference: lang } = useLang()
 
 const editing = ref(false)
-const practitionerFilter = ref('')
+
+// dashboard_scope. /dashboard stays reachable whatever it says -- it is where
+// everyone lands after signing in, and where a refused route sends people --
+// so the scope decides what is ON it rather than whether it opens:
+//   'own'  -- every widget pinned to the viewer's own figures, the picker
+//             hidden, and the two widgets that cannot be narrowed to one
+//             practitioner (money owed on bonos, membership revenue) left out.
+//   'none' -- no figures at all, and a sentence saying why.
+// The route rule for /dashboard never ran (the middleware skips it to avoid
+// a redirect loop), so until now 'none' only hid the sidebar link.
+const { dashboardMode, dashboardPractitionerId } = useOwnScope()
+const CLINIC_WIDE_WIDGETS = new Set(['debtors_mini', 'memberships_mini'])
+const practitionerFilter = ref(dashboardPractitionerId.value ?? '')
+const visibleWidgets = computed(() => (dashboardMode.value === 'own' ? widgets.value.filter((w) => !CLINIC_WIDE_WIDGETS.has(w.type)) : widgets.value))
+const hiddenTypes = computed(() => (dashboardMode.value === 'own' ? [...CLINIC_WIDE_WIDGETS] : []))
 const range = ref<DateRange>(computePresetRange({ months: 1 }))
 
 onMounted(() => {
@@ -62,9 +76,13 @@ const draggedIndex = ref<number | null>(null)
 function onDragStart(index: number) {
   draggedIndex.value = index
 }
+// Indexes in the rendered list are not indexes in the saved layout once
+// "own" leaves widgets out, so a drag maps back through the widget's id.
 function onDragOver(index: number) {
   if (draggedIndex.value === null || draggedIndex.value === index) return
-  reorder(draggedIndex.value, index)
+  const from = widgets.value.findIndex((w) => w.id === visibleWidgets.value[draggedIndex.value!]?.id)
+  const to = widgets.value.findIndex((w) => w.id === visibleWidgets.value[index]?.id)
+  if (from >= 0 && to >= 0) reorder(from, to)
   draggedIndex.value = index
 }
 
@@ -159,15 +177,21 @@ function widgetMeta(type: string): string | undefined {
         <h1 class="text-[18px] font-[640] tracking-tightTitle text-ink-900">{{ greeting }}, {{ firstName }}</h1>
         <p class="text-[12.5px] text-ink-muted2">{{ store.accountName }} · {{ todayLabel }}</p>
       </div>
-      <div class="flex flex-wrap items-center gap-2">
+      <div v-if="dashboardMode !== 'none'" class="flex flex-wrap items-center gap-2">
         <ReportsDateRangeSelect v-model="range" />
-        <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" :practitioners="practitioners" :clinics="[]" :show-clinic="false" />
+        <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" :locked-to="dashboardPractitionerId" :practitioners="practitioners" :clinics="[]" :show-clinic="false" />
         <UiBtn :variant="editing ? 'primary' : 'secondary'" @click="toggleEditing">{{ editing ? t('Done', 'Hecho') : t('Edit layout', 'Editar diseño') }}</UiBtn>
       </div>
     </header>
 
-    <div class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6">
-      <DashboardAddWidgetPicker v-if="editing" :existing-types="widgets.map((w) => w.type)" @add="onAddWidget" />
+    <div v-if="dashboardMode === 'none'" class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6" data-cy="dashboard-none" data-ready="true">
+      <UiEmptyState
+        :title="t('No figures on your dashboard', 'Tu panel no muestra cifras')"
+        :description="t('Your role does not include the dashboard\'s figures. Everything else your role allows is in the menu.', 'Tu rol no incluye las cifras del panel. Todo lo demás que tu rol permite está en el menú.')"
+      />
+    </div>
+    <div v-else class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6">
+      <DashboardAddWidgetPicker v-if="editing" :existing-types="[...widgets.map((w) => w.type), ...hiddenTypes]" @add="onAddWidget" />
 
       <div v-if="!loaded" class="grid grid-cols-12 gap-3">
         <!-- Mirrors the default layout's shape (1 two-thirds-width widget + 7
@@ -189,7 +213,7 @@ function widgetMeta(type: string): string | undefined {
       </div>
       <div v-else class="grid grid-cols-12 gap-3">
         <DashboardWidgetFrame
-          v-for="(w, i) in widgets"
+          v-for="(w, i) in visibleWidgets"
           :key="w.id"
           :title="widgetDef(w.type)?.label ?? w.type"
           :meta="widgetMeta(w.type)"

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AppointmentPanelInputs } from '~/composables/useAppointmentPanelLoader'
+import { orderTypes } from '~/utils/appointmentTypes'
 // PracticeHub's "Practitioner Dashboard" is a chronological worklist of a
 // practitioner's own day, click a patient to jump straight into charting.
 // Not built: PH's grid mode (patients currently "with practitioner") --
@@ -18,7 +19,7 @@ import type { AppointmentPanelInputs } from '~/composables/useAppointmentPanelLo
 // and isn't driven from this screen anymore -- it's still fully live via
 // the calendar page's kanban.
 interface Room { id: string; name: string }
-interface AppointmentType { id: string; name: string; duration_minutes: number; color: string; default_price_cents: number }
+interface AppointmentType { id: string; name: string; duration_minutes: number; color: string; default_price_cents: number; sort_order: number | null; archived_at: string | null }
 interface TeamMember { id: string; full_name: string; color: string }
 
 interface AppointmentRow {
@@ -92,13 +93,13 @@ const weekDays = computed(() => Array.from({ length: 7 }, (_, i) => addDays(star
 
 async function loadReferenceData() {
   const [{ data: types }, { data: members }] = await Promise.all([
-    supabase.from('appointment_types').select('id, name, duration_minutes, color, default_price_cents').order('name'),
+    supabase.from('appointment_types').select('id, name, duration_minutes, color, default_price_cents, sort_order, archived_at'),
     // Practitioners only, and not deactivated ones -- My Day is a treating
     // worklist, so front desk and admin staff have no column here. Same
     // filter the Calendar's own practitioner tabs already use.
     supabase.from('team_members').select('id, full_name, color').is('deleted_at', null).eq('is_practitioner', true).order('full_name'),
   ])
-  appointmentTypes.value = types ?? []
+  appointmentTypes.value = orderTypes(types ?? [])
   teamMembers.value = members ?? []
 }
 
@@ -459,7 +460,7 @@ const headerMeta = computed(() => {
       :payment="panelInputs.payment"
       :price-cents="panelInputs.priceCents"
       :rooms="rooms"
-      :appointment-types="appointmentTypes"
+      :appointment-types="appointmentTypes.filter((x) => !x.archived_at || x.id === panelInputs!.appointment.appointment_type_id)"
       :team-members="teamMembers"
       :overrides="panelInputs.overrides"
       no-move

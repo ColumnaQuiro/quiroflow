@@ -2,6 +2,7 @@
 import type { BusinessHours } from '~/utils/businessHours'
 import { WEEK, dayRangesText } from '~/utils/clinicHours'
 import { formatEur } from '~/utils/billing'
+import { orderTypes } from '~/utils/appointmentTypes'
 import type { Tables, TablesUpdate } from '~/types/database.types'
 
 const supabase = useSupabaseClient()
@@ -9,12 +10,11 @@ const store = useAccountStore()
 const config = useRuntimeConfig()
 const t = useT()
 
-const TAB_KEYS = ['general', 'hours', 'entities', 'discounts', 'layout', 'language'] as const
+const TAB_KEYS = ['general', 'hours', 'discounts', 'layout', 'language'] as const
 const activeTab = ref<(typeof TAB_KEYS)[number]>('general')
 const tabs = computed(() => [
   { key: 'general' as const, label: t('General', 'General') },
   { key: 'hours' as const, label: t('Clinics & Hours', 'Clínicas y horarios') },
-  { key: 'entities' as const, label: t('Bookable Entities', 'Entidades reservables') },
   { key: 'discounts' as const, label: t('Discount Codes', 'Códigos de descuento') },
   { key: 'layout' as const, label: t('Layout', 'Diseño') },
   { key: 'language' as const, label: t('Language Overrides', 'Textos personalizados') },
@@ -177,24 +177,21 @@ function hoursLines(c: BookingClinic) {
   return WEEK.map((d) => ({ key: d.key, label: t(d.en.slice(0, 3), d.es.slice(0, 3)), text: dayRangesText(c.business_hours, d.key, t('and', 'y')) }))
 }
 
-// --- Bookable Entities: eligibility / bypass / max-days / deposit per type ---
-const types = ref<Tables<'appointment_types'>[]>([])
-const openTypeId = ref<string | null>(null)
+// --- What can be booked ---
+// Each type's booking rules -- whether it is bookable online, who may book
+// it, the practitioner choice, how far ahead, payment and deposit -- are
+// edited on the type's own page (Settings -> Appointment Types -> <type>).
+// They used to be split between that list's switches and a "Bookable
+// Entities" tab here, which is how a deposit came to sit on a type that was
+// no longer offered online. This lists the types and links to each.
+type BookableType = Pick<Tables<'appointment_types'>, 'id' | 'name' | 'online_booking_enabled' | 'sort_order'>
+const types = ref<BookableType[]>([])
 
 async function loadTypes() {
-  const { data } = await supabase.from('appointment_types').select('*').order('name')
-  types.value = data ?? []
+  const { data } = await supabase.from('appointment_types').select('id, name, online_booking_enabled, sort_order').is('archived_at', null)
+  types.value = orderTypes(data ?? [])
 }
 onMounted(loadTypes)
-
-function toggleType(id: string) {
-  openTypeId.value = openTypeId.value === id ? null : id
-}
-
-async function updateType(type: Tables<'appointment_types'>, patch: TablesUpdate<'appointment_types'>) {
-  Object.assign(type, patch)
-  await supabase.from('appointment_types').update(patch).eq('id', type.id)
-}
 
 // --- Discount codes ---
 const codes = ref<Tables<'online_booking_discount_codes'>[]>([])
@@ -296,7 +293,7 @@ const OVERRIDABLE_STRINGS = [
               </div>
             </div>
             <template v-else>
-              <SettingsFieldRow :label="t('Maximum future booking time', 'Máxima antelación de reserva')" :helper="t('How far ahead patients can book online. Overridable per appointment type below.', 'Con cuánta antelación pueden reservar los pacientes online. Se puede anular por tipo de cita más abajo.')">
+              <SettingsFieldRow :label="t('Maximum future booking time', 'Máxima antelación de reserva')" :helper="t('How far ahead patients can book online. Each appointment type can set its own on its page.', 'Con cuánta antelación pueden reservar los pacientes online. Cada tipo de cita puede tener la suya en su página.')">
                 <div class="flex items-center gap-2">
                   <input v-model.number="maxDaysAhead" type="number" min="1" class="h-8 w-20 rounded-ctl border border-line-control bg-surface px-2 text-center text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
                   <span class="text-[13px] text-ink-muted2">{{ t('days', 'días') }}</span>
@@ -393,6 +390,26 @@ const OVERRIDABLE_STRINGS = [
                   </div>
                 </div>
               </div>
+              <div class="rounded-card border border-line bg-surface p-4 shadow-card" data-cy="booking-types-note">
+                <p class="text-[13.5px] font-[560] text-ink-700">{{ t('What can be booked', 'Qué se puede reservar') }}</p>
+                <p class="mt-1 text-[12.5px] leading-snug text-ink-muted2">
+                  {{ t('Whether a type is booked online, who may book it, how far ahead and whether it is paid when booking are set on each appointment type\'s own page.', 'Si un tipo se reserva online, quién puede reservarlo, con cuánta antelación y si se paga al reservar se decide en la página de cada tipo de cita.') }}
+                </p>
+                <ul v-if="types.length > 0" class="mt-2 flex flex-wrap gap-1.5">
+                  <li v-for="at in types" :key="at.id">
+                    <NuxtLink
+                      :to="`/settings/appointment-types/${at.id}#online`"
+                      data-cy="booking-type-link"
+                      class="inline-flex min-h-[32px] items-center gap-1.5 rounded-pill border border-line-control px-2.5 text-[12.5px] font-semibold hover:bg-surface-subtle"
+                      :class="at.online_booking_enabled ? 'text-ink-700' : 'text-ink-faint'"
+                    >
+                      {{ at.name }}
+                      <span class="font-normal">· {{ at.online_booking_enabled ? t('online', 'online') : t('not online', 'no online') }}</span>
+                    </NuxtLink>
+                  </li>
+                </ul>
+                <NuxtLink v-else to="/settings/appointment-types" class="mt-2 inline-block text-[12.5px] font-medium text-brand-text hover:underline">{{ t('Create an appointment type', 'Crea un tipo de cita') }}</NuxtLink>
+              </div>
             </template>
           </div>
 
@@ -420,64 +437,6 @@ const OVERRIDABLE_STRINGS = [
             </div>
             <p v-if="bookingClinics.length === 0" class="px-4 py-6 text-center text-[13px] text-ink-faint">{{ t('No clinics yet.', 'Todavía no hay clínicas.') }}</p>
             <p v-if="hoursError" class="mt-2 text-[12.5px] text-danger-text">{{ hoursError }}</p>
-          </div>
-
-          <!-- Bookable Entities -->
-          <div v-else-if="activeTab === 'entities'" class="mt-4">
-            <p class="text-[12.5px] text-ink-muted2">
-              {{ t('On/off and "require online payment" for each type still live in', 'Activar/desactivar y "requerir pago online" para cada tipo siguen estando en') }}
-              <NuxtLink to="/settings/appointment-types" class="text-brand-text hover:underline">{{ t('Settings → Appointment Types', 'Ajustes → Tipos de cita') }}</NuxtLink> — {{ t('these are the deeper booking rules for types already enabled there.', 'estas son las reglas de reserva más avanzadas para los tipos ya activados allí.') }}
-            </p>
-            <div class="mt-3 divide-y divide-line-row rounded-card border border-line bg-surface shadow-card">
-              <div v-for="at in types" :key="at.id">
-                <button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left" @click="toggleType(at.id)">
-                  <span class="text-[13.5px] font-[560] text-ink-700">{{ at.name }}</span>
-                  <span class="text-[12px] text-ink-faint">{{ openTypeId === at.id ? t('Hide', 'Ocultar') : t('Configure', 'Configurar') }}</span>
-                </button>
-                <div v-if="openTypeId === at.id" class="space-y-3 border-t border-line-divider bg-surface-subtle p-4">
-                  <div>
-                    <label class="block text-[12px] font-medium text-ink-muted">{{ t('Bookable by', 'Reservable por') }}</label>
-                    <select
-                      :value="at.online_bookable_by"
-                      class="mt-1 h-8 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none"
-                      @change="updateType(at, { online_bookable_by: ($event.target as HTMLSelectElement).value })"
-                    >
-                      <option value="all">{{ t('All patients', 'Todos los pacientes') }}</option>
-                      <option value="new_patients">{{ t('New patients only', 'Solo pacientes nuevos') }}</option>
-                      <option value="existing_patients">{{ t('Existing patients only', 'Solo pacientes existentes') }}</option>
-                    </select>
-                  </div>
-                  <label class="flex items-center gap-2 text-[13px] text-ink-600">
-                    <SettingsToggle :model-value="at.online_bypass_practitioner" @update:model-value="(v) => updateType(at, { online_bypass_practitioner: v })" />
-                    {{ t('Bypass practitioner selection (show any available)', 'Omitir selección de profesional (mostrar cualquiera disponible)') }}
-                  </label>
-                  <div>
-                    <label class="block text-[12px] font-medium text-ink-muted">{{ t('Max days ahead override', 'Anulación de días máximos de antelación') }}</label>
-                    <input
-                      :value="at.online_max_days_ahead ?? ''"
-                      type="number"
-                      min="1"
-                      :placeholder="t('Use account default', 'Usar el valor por defecto de la cuenta')"
-                      class="mt-1 h-8 w-40 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none"
-                      @change="updateType(at, { online_max_days_ahead: ($event.target as HTMLInputElement).value ? parseInt(($event.target as HTMLInputElement).value, 10) : null })"
-                    />
-                  </div>
-                  <div v-if="at.online_payment_required">
-                    <label class="block text-[12px] font-medium text-ink-muted">{{ t('Deposit amount (€)', 'Importe del depósito (€)') }}</label>
-                    <input
-                      :value="at.online_deposit_cents != null ? (at.online_deposit_cents / 100).toFixed(2) : ''"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      :placeholder="t(`Full price (${formatEur(at.default_price_cents)})`, `Precio completo (${formatEur(at.default_price_cents)})`)"
-                      class="mt-1 h-8 w-40 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none"
-                      @change="updateType(at, { online_deposit_cents: ($event.target as HTMLInputElement).value ? Math.round(parseFloat(($event.target as HTMLInputElement).value) * 100) : null })"
-                    />
-                  </div>
-                </div>
-              </div>
-              <p v-if="types.length === 0" class="px-4 py-6 text-center text-[13px] text-ink-faint">{{ t('No appointment types yet.', 'Todavía no hay tipos de cita.') }}</p>
-            </div>
           </div>
 
           <!-- Discount Codes -->

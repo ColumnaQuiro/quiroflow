@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { buildSystemPrompt, toConfig } from '~/server/utils/receptionist'
+import { buildSystemPrompt, loadOfferedTypes, toConfig } from '~/server/utils/receptionist'
 
 // Writing a receptionist reply for one lead.
 //
@@ -115,6 +115,10 @@ export async function draftLeadReply(supabase: any, accountId: string, leadId: s
   // one the moment somebody discards this.
   const newestInboundAt = [...ordered].reverse().find((m: { direction: string }) => m.direction === 'inbound')?.created_at ?? null
 
+  // Read now, not when the receptionist was configured: a type archived or
+  // withheld since then is gone from this reply.
+  const offeredTypes = await loadOfferedTypes(supabase, accountId, config)
+
   const client = new Anthropic({ apiKey })
   const message = await client.messages.create({
     model: MODEL,
@@ -124,7 +128,7 @@ export async function draftLeadReply(supabase: any, accountId: string, leadId: s
     // conversational reply, and on the button path somebody is waiting.
     output_config: { effort: 'low' },
     system: [
-      buildSystemPrompt(config, { testMode: false }),
+      buildSystemPrompt(config, { testMode: false, offeredTypes }),
       `# This reply is a draft\nA member of staff will read what you write before it is sent, and may edit it. Write the message itself and nothing else -- no preamble, no options to choose between, no notes to the reader.`,
       lead.full_name ? `The person you are replying to is ${lead.full_name}.` : '',
     ]

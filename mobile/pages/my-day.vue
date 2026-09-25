@@ -17,7 +17,7 @@ interface Appointment {
 }
 
 const supabase = useSupabaseClient()
-const { context, loading: contextLoading } = usePractitionerContext()
+const { context, loading: contextLoading, restricted } = usePractitionerContext()
 const appointments = ref<Appointment[]>([])
 const loading = ref(true)
 
@@ -94,7 +94,7 @@ async function checkIn(a: Appointment) {
           <span class="shrink-0 rounded-pill px-2 py-0.5 text-[11px] font-medium" :class="statusClass(a)">{{ statusLabel(a) }}</span>
         </div>
         <button
-          v-if="!a.checked_in_at && a.status !== 'completed'"
+          v-if="!a.checked_in_at && a.status !== 'completed' && !restricted('calendar_read_only')"
           type="button"
           class="mt-2.5 rounded-ctl border border-line-control px-3 py-1.5 text-[12.5px] font-medium text-brand-text active:bg-surface-subtle"
           @click="checkIn(a)"

@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { requireGrowth } from '~/server/utils/requireGrowth'
-import { buildSystemPrompt, loadReceptionistConfig } from '~/server/utils/receptionist'
+import { buildSystemPrompt, loadOfferedTypes, loadReceptionistConfig } from '~/server/utils/receptionist'
 
 // "Try Alba" -- the clinic owner talking to their own configuration.
 //
@@ -52,6 +52,9 @@ export default defineEventHandler(async (event) => {
   if (!apiKey) return { available: false as const, reply: '' }
 
   const config = await loadReceptionistConfig(supabase, teamMember.account_id)
+  // The same list the drafts are given, so trying the receptionist shows the
+  // types a patient would actually be offered.
+  const offeredTypes = await loadOfferedTypes(supabase, teamMember.account_id, config)
 
   const client = new Anthropic({ apiKey })
   try {
@@ -63,7 +66,7 @@ export default defineEventHandler(async (event) => {
       // reply needs.
       thinking: { type: 'adaptive' },
       output_config: { effort: 'low' },
-      system: buildSystemPrompt(config, { testMode: true }),
+      system: buildSystemPrompt(config, { testMode: true, offeredTypes }),
       messages: turns.map((turn) => ({ role: turn.role, content: turn.content })),
     })
 

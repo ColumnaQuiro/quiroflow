@@ -10,7 +10,9 @@ const t = useT()
 interface AppointmentRow { starts_at: string; status: string }
 
 const range = ref(computePresetRange({ months: 1 }))
-const practitionerFilter = ref('')
+// reports_own_only: pinned to the viewer, with the picker hidden (useOwnScope).
+const { reportsPractitionerId } = useOwnScope()
+const practitionerFilter = ref(reportsPractitionerId.value ?? '')
 const clinicFilter = ref('')
 const loading = ref(true)
 const rows = ref<AppointmentRow[]>([])
@@ -105,7 +107,7 @@ const hourChartOptions = {
     <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
       <div class="flex flex-wrap items-center gap-2">
         <ReportsDateRangeSelect v-model="range" />
-        <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
+        <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" :locked-to="reportsPractitionerId" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
       </div>
 
       <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">

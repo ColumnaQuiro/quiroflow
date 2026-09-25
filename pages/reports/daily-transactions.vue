@@ -3,6 +3,7 @@ import { formatEur } from '~/utils/billing'
 import { rangeBounds } from '~/composables/useDateRangePresets'
 import { isReceipt } from '~/utils/paymentReceipts'
 import { fetchByIds } from '~/composables/useFetchAllRows'
+import { classifyPaymentForFilter, practitionerForPayment } from '~/utils/incomeAttribution'
 
 interface PaymentRow {
   id: string
@@ -16,11 +17,17 @@ interface PaymentRow {
   // did all 3,262 payments imported from PracticeHub, which carry no invoice
   // either: every day before mid-September was a page of "Unknown".
   patient_id: string
+  // What the money was for -- 'visit', 'bono', 'membership', 'on_account'.
+  // Null on everything imported from PracticeHub, which never recorded it.
+  purpose: string | null
   invoice_id: string | null
   invoices?: { status: string } | null
 }
 interface InvoiceRow { id: string; invoice_number: string; patient_id: string; is_refund: boolean; appointment_id: string | null }
-interface PatientRow { id: string; first_name: string; last_name: string | null }
+// default_practitioner_id and clinic_id are here for attribution, not for
+// display: they are what answers "whose money is this" for a payment with no
+// visit behind it. See utils/incomeAttribution.
+interface PatientRow { id: string; first_name: string; last_name: string | null; default_practitioner_id: string | null; clinic_id: string | null }
 interface AppointmentRow { id: string; practitioner_id: string | null; clinic_id: string | null }
 interface TeamMemberRow { id: string; full_name: string }
 
@@ -34,7 +41,9 @@ function todayISO() {
 }
 
 const dateStr = ref(todayISO())
-const practitionerFilter = ref('')
+// reports_own_only: pinned to the viewer, with the picker hidden (useOwnScope).
+const { reportsPractitionerId } = useOwnScope()
+const practitionerFilter = ref(reportsPractitionerId.value ?? '')
 const clinicFilter = ref('')
 const loading = ref(true)
 const payments = ref<PaymentRow[]>([])
@@ -58,7 +67,7 @@ async function load() {
 
   const { data: p } = await supabase
     .from('payments')
-    .select('id, amount_cents, method, paid_at, patient_id, invoice_id, invoices!payments_invoice_id_fkey(status)')
+    .select('id, amount_cents, method, paid_at, patient_id, purpose, invoice_id, invoices!payments_invoice_id_fkey(status)')
     .gte('paid_at', from.toISOString())
     .lte('paid_at', to.toISOString())
     .order('paid_at')
@@ -76,7 +85,7 @@ async function load() {
   // patient went missing when the list was built the other way round.
   const patientIds = [...new Set(payments.value.map((row) => row.patient_id))]
   patients.value = await fetchByIds<PatientRow>(patientIds, (ids) =>
-    supabase.from('patients').select('id, first_name, last_name').in('id', ids),
+    supabase.from('patients').select('id, first_name, last_name, default_practitioner_id, clinic_id').in('id', ids),
   )
 
   // The practitioner comes from the invoice's linked appointment, same as
@@ -115,15 +124,21 @@ function apptFor(payment: PaymentRow) {
   const invoice = payment.invoice_id ? invoiceById.value.get(payment.invoice_id) : undefined
   return invoice?.appointment_id ? appointmentById.value.get(invoice.appointment_id) : undefined
 }
+// The same rule reports/income.vue filters by, rather than this page's own
+// copy. The old one required an appointment and dropped anything without one,
+// so filtering the day sheet to a practitioner hid every bono they had sold
+// and every refund they had given -- the rows least likely to be noticed
+// missing, because the ones that remain still add up to something.
 const filteredPayments = computed(() =>
-  payments.value.filter((row) => {
-    if (!practitionerFilter.value && !clinicFilter.value) return true
-    const appt = apptFor(row)
-    if (!appt) return false
-    if (practitionerFilter.value && appt.practitioner_id !== practitionerFilter.value) return false
-    if (clinicFilter.value && appt.clinic_id !== clinicFilter.value) return false
-    return true
-  }),
+  payments.value.filter(
+    (row) =>
+      classifyPaymentForFilter({
+        practitionerId: practitionerFilter.value || undefined,
+        clinicId: clinicFilter.value || undefined,
+        appointment: apptFor(row) ?? null,
+        patient: patientById.value.get(row.patient_id) ?? null,
+      }) === 'matches',
+  ),
 )
 
 // payments.patient_id is not null, so the only way this misses now is a
@@ -135,9 +150,24 @@ function patientName(patientId: string) {
   const p = patientById.value.get(patientId)
   return p ? `${p.first_name} ${p.last_name ?? ''}`.trim() : t('Unknown', 'Desconocido')
 }
+// Whose money this is, by the same chain Income answers with: the visit when
+// there is one, the patient's own practitioner when there is not.
+//
+// It used to stop at the visit, so a bono, a refund and money on account --
+// none of which has an appointment by design -- all read "Sin asignar" on a
+// day the clinic knew perfectly well whose patients they were. On 24 Sep 2026
+// that was three of nine rows, and all three patients had a practitioner.
+//
+// This makes the column an attribution rather than a record of who performed
+// the visit: a bono sold by one practitioner to another's patient counts to
+// the patient's. That is the trade Income already made, and one word meaning
+// two things on two money screens was worse than either meaning alone.
 function practitionerName(payment: PaymentRow) {
-  const appt = apptFor(payment)
-  return appt?.practitioner_id ? (memberById.value.get(appt.practitioner_id) ?? t('Unknown', 'Desconocido')) : t('Unassigned', 'Sin asignar')
+  const practitionerId = practitionerForPayment({
+    appointment: apptFor(payment) ?? null,
+    patient: patientById.value.get(payment.patient_id) ?? null,
+  })
+  return practitionerId ? (memberById.value.get(practitionerId) ?? t('Unknown', 'Desconocido')) : t('Unassigned', 'Sin asignar')
 }
 function time(iso: string) {
   const d = new Date(iso)
@@ -163,6 +193,11 @@ const byMethod = computed(() => {
 // Stored keys are not labels: "transfer" and "write_off" were rendered raw in
 // the cards and in every row of the table.
 const { ensureLoaded: ensurePaymentMethodsLoaded, labelFor: labelForMethod } = usePaymentMethods()
+
+// What the money was for, beside how it arrived. Two card payments of the
+// same amount on the same morning are a double charge or a visit plus a
+// prepayment, and nothing on this page said which.
+const { purposeLabelFor } = usePaymentPurpose()
 </script>
 
 <template>
@@ -181,7 +216,7 @@ const { ensureLoaded: ensurePaymentMethodsLoaded, labelFor: labelForMethod } = u
         <button type="button" class="h-8 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-600 hover:bg-surface-subtle" @click="dateStr = todayISO()">
           {{ t('Today', 'Hoy') }}
         </button>
-        <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
+        <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" :locked-to="reportsPractitionerId" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
       </div>
 
       <div v-if="loading" class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -218,6 +253,7 @@ const { ensureLoaded: ensurePaymentMethodsLoaded, labelFor: labelForMethod } = u
                 <th class="px-4 py-2">{{ t('Time', 'Hora') }}</th>
                 <th class="px-4 py-2">{{ t('Patient', 'Paciente') }}</th>
                 <th class="px-4 py-2">{{ t('Receipt', 'Recibo') }}</th>
+                <th class="px-4 py-2">{{ t('For', 'Concepto') }}</th>
                 <th class="px-4 py-2">{{ t('Practitioner', 'Profesional') }}</th>
                 <th class="px-4 py-2">{{ t('Method', 'Método') }}</th>
                 <th class="px-4 py-2 text-right">{{ t('Amount', 'Importe') }}</th>
@@ -225,7 +261,7 @@ const { ensureLoaded: ensurePaymentMethodsLoaded, labelFor: labelForMethod } = u
             </thead>
             <tbody class="divide-y divide-line-row">
               <tr v-if="filteredPayments.length === 0">
-                <td colspan="6" class="px-4 py-6 text-center text-ink-faint2">{{ t('No transactions on this day.', 'Sin transacciones este día.') }}</td>
+                <td colspan="7" class="px-4 py-6 text-center text-ink-faint2">{{ t('No transactions on this day.', 'Sin transacciones este día.') }}</td>
               </tr>
               <tr v-for="row in filteredPayments" :key="row.id">
                 <td class="px-4 py-2.5 text-ink-muted2">{{ time(row.paid_at) }}</td>
@@ -237,6 +273,12 @@ const { ensureLoaded: ensurePaymentMethodsLoaded, labelFor: labelForMethod } = u
                 <td class="px-4 py-2.5 text-ink-muted2">
                   <span>{{ invoiceFor(row)?.invoice_number ?? '—' }}</span>
                   <span v-if="invoiceFor(row)?.is_refund" class="ml-1.5 rounded-pill bg-danger-bg px-1.5 py-0.5 text-[11px] font-medium text-danger-text">{{ t('refund', 'reembolso') }}</span>
+                </td>
+                <td class="px-4 py-2.5 text-ink-muted2">
+                  <span v-if="purposeLabelFor(row.purpose)" class="rounded-pill bg-chip-bg px-1.5 py-0.5 text-[11px] font-medium text-chip-text">
+                    {{ purposeLabelFor(row.purpose) }}
+                  </span>
+                  <span v-else>—</span>
                 </td>
                 <td class="px-4 py-2.5 text-ink-muted2">{{ practitionerName(row) }}</td>
                 <td class="px-4 py-2.5 text-ink-muted2">{{ labelForMethod(row.method) }}</td>

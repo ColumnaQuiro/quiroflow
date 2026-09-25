@@ -12,6 +12,13 @@ const { lead: openLead, loading: leadLoading, loadLead, close: closeLead } = use
 // pages/growth/index.vue for why this reuses communication_config.
 const allowed = computed(() => can('communication_config'))
 
+// ?lead=<id> opens that lead's drawer -- how Automations > Executions links
+// from a run to the person it was for.
+onMounted(() => {
+  const id = route.query.lead
+  if (typeof id === 'string' && id) loadLead(id)
+})
+
 // ?state=empty and ?state=loading render artboards 1j and 1k against the same
 // page rather than as separate routes, so the three states cannot drift apart
 // and the empty state is reachable without emptying an account.

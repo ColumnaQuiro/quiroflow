@@ -2,7 +2,21 @@
 const t = useT()
 const { can } = usePermission()
 const { hasGrowth, resolved } = useGrowthTier()
-const { config, channels, testModelAvailable, loading, saving, error, save, liveChannelCount } = useGrowthReceptionist()
+const { config, channels, appointmentTypes, offeredTypes, testModelAvailable, loading, saving, error, save, liveChannelCount } = useGrowthReceptionist()
+const route = useRoute()
+
+// Linked from each appointment type's own page ("Where it is used"). The
+// section only exists once the config has loaded, so the browser's own jump
+// to the hash has nothing to land on; this does it when there is.
+watch(
+  () => Boolean(config.value) && route.hash === '#bookable-types',
+  async (ready) => {
+    if (!ready) return
+    await nextTick()
+    document.getElementById('bookable-types')?.scrollIntoView({ block: 'start' })
+  },
+  { immediate: true },
+)
 
 const allowed = computed(() => can('communication_config'))
 
@@ -315,9 +329,16 @@ const CHANNEL_CLASS: Record<string, string> = {
                 <div class="flex items-baseline justify-between gap-2 border-t border-line-divider pt-1.5">
                   <dt class="text-[11px] text-ink-faint">{{ t('May book', 'Puede reservar') }}</dt>
                   <dd class="text-right text-[11.5px] text-ink-700">
-                    {{ config.bookableAppointmentTypeIds.length
-                      ? `${config.bookableAppointmentTypeIds.length} ${t('appointment types', 'tipos de cita')}`
-                      : t('Nothing yet', 'Nada todavía') }}
+                    <!-- The server's count of what the drafts are given, not the
+                    length of the stored list: that one counts archived types
+                    and reads 0 for "any type". -->
+                    <a href="#bookable-types" class="text-brand-text hover:underline" data-test="may-book-summary">
+                      {{ !config.bookableAppointmentTypeIds.length
+                        ? t(`Any active type (${offeredTypes.length})`, `Cualquier tipo activo (${offeredTypes.length})`)
+                        : offeredTypes.length === 1
+                          ? t('1 appointment type', '1 tipo de cita')
+                          : t(`${offeredTypes.length} appointment types`, `${offeredTypes.length} tipos de cita`) }}
+                    </a>
                   </dd>
                 </div>
               </dl>
@@ -329,6 +350,14 @@ const CHANNEL_CLASS: Record<string, string> = {
               </p>
             </GrowthSettingCard>
           </div>
+
+          <GrowthBookableTypesEditor
+            :types="appointmentTypes"
+            :selected-ids="config.bookableAppointmentTypeIds"
+            :offered="offeredTypes"
+            :saving="saving"
+            :save="(ids: string[]) => save({ bookableAppointmentTypeIds: ids })"
+          />
 
           <GrowthSettingCard :title="t('Escalation rules', 'Reglas de escalado')">
             <p v-if="!config.escalationRules.length" class="text-[11.5px] text-ink-muted" data-test="escalation-empty">

@@ -7,6 +7,7 @@ import { appointmentStage, matchesFilter, needsNextBookingFlag, STAGE_FILTERS, s
 import { shortPatientName } from '~/utils/appointmentBlock'
 import { bonoForVisit, type VisitPayment } from '~/utils/visitPayment'
 import { effectivePriceCents } from '~/utils/appointmentOverrides'
+import { orderTypes } from '~/utils/appointmentTypes'
 import { FILTER_DOT_CLASS, STAGE_TONE, STAGE_TONE_CLASS } from '~/composables/useAppointmentStage'
 import type { BlockView } from '~/components/calendar/AppointmentBlock.vue'
 import type { FlowRow } from '~/components/calendar/FlowTracker.vue'
@@ -66,7 +67,7 @@ const WEEK_MAX_LANES = 4
 const OVERFLOW_CHIP_PX = 20
 
 interface Room { id: string; name: string }
-interface AppointmentType { id: string; name: string; duration_minutes: number; color: string; default_price_cents: number }
+interface AppointmentType { id: string; name: string; duration_minutes: number; color: string; default_price_cents: number; sort_order: number | null; archived_at: string | null }
 interface TeamMember { id: string; full_name: string; color: string; business_hours: BusinessHours | null }
 interface TeamMemberClinic { team_member_id: string; clinic_id: string }
 
@@ -101,7 +102,11 @@ interface AppointmentRow {
 const supabase = useSupabaseClient()
 const { fetchVisitPayments } = useVisitPayments()
 const store = useAccountStore()
-const { can } = usePermission()
+const { can, restricted } = usePermission()
+// calendar_read_only: sees the diary, changes nothing in it. The database
+// has refused the writes since 0047; this stops offering them -- booking,
+// dragging, resizing, blocking time -- instead of letting each one fail.
+const readOnly = computed(() => restricted('calendar_read_only'))
 const t = useT()
 
 const SLOT_MIN = computed(() => store.currentClinic?.slot_duration_minutes ?? 30)
@@ -151,6 +156,14 @@ const practitionerFilter = ref('')
 const anchorDate = ref(new Date())
 const rooms = ref<Room[]>([])
 const appointmentTypes = ref<AppointmentType[]>([])
+// Archived types (Settings -> Appointment Types) are not offered for a new
+// appointment, but one already on an appointment stays choosable in that
+// appointment's own panel -- otherwise opening "Change" on an old visit would
+// show no type and saving would quietly clear it.
+const activeAppointmentTypes = computed(() => appointmentTypes.value.filter((x) => !x.archived_at))
+function typesForPanel(currentTypeId: string | null | undefined) {
+  return appointmentTypes.value.filter((x) => !x.archived_at || x.id === currentTypeId)
+}
 const teamMembers = ref<TeamMember[]>([])
 const teamMemberClinics = ref<TeamMemberClinic[]>([])
 const overrides = ref<AppointmentTypeOverride[]>([])
@@ -284,15 +297,15 @@ const miniWeekdayAbbrevs = computed(() => [
 
 async function loadReferenceData() {
   const [{ data: types }, { data: members }, { data: ovr }, { data: memberClinics }] = await Promise.all([
-    supabase.from('appointment_types').select('id, name, duration_minutes, color, default_price_cents').order('name'),
+    supabase.from('appointment_types').select('id, name, duration_minutes, color, default_price_cents, sort_order, archived_at'),
     supabase.from('team_members').select('id, full_name, color, business_hours').is('deleted_at', null).eq('is_practitioner', true).order('full_name'),
     supabase.from('appointment_type_overrides').select('appointment_type_id, team_member_id, duration_minutes, price_cents'),
     supabase.from('team_member_clinics').select('team_member_id, clinic_id'),
   ])
-  appointmentTypes.value = types ?? []
+  appointmentTypes.value = orderTypes(types ?? [])
   // business_hours comes back as Supabase's recursive Json type, which never
   // narrows to BusinessHours on its own -- cast at the read site, same as
-  // settings/team.vue and settings/online-booking.vue already do.
+  // settings/team/[id].vue and settings/online-booking.vue already do.
   teamMembers.value = (members ?? []) as unknown as TeamMember[]
   overrides.value = ovr ?? []
   teamMemberClinics.value = memberClinics ?? []
@@ -1109,7 +1122,7 @@ function columnAtPoint(x: number, y: number) {
 }
 
 function startAppointmentDrag(appt: AppointmentRow, mode: 'move' | 'resize', e: PointerEvent) {
-  if (appt.status !== 'booked') return
+  if (appt.status !== 'booked' || readOnly.value) return
   // A slot click while reschedule-mode is active (see startReschedule below)
   // is what moves the appointment now -- starting an unrelated drag on some
   // other block mid-pick would just be confusing.
@@ -1588,7 +1601,7 @@ function createGhostFor(dayKey: string, roomId: string) {
 }
 function ghostFor(dayKey: string, roomId: string) {
   const cell = ghostCell.value
-  if (!cell || reschedulingAppointment.value || (modalOpen.value && modalMode.value === 'create')) return null
+  if (!cell || readOnly.value || reschedulingAppointment.value || (modalOpen.value && modalMode.value === 'create')) return null
   const c = gridColumns.value[cell.col]
   if (!c || c.dayKey !== dayKey || c.roomId !== roomId) return null
   if (appointmentAtCell(cell)) return null
@@ -1658,6 +1671,9 @@ function onColumnClick(e: MouseEvent, day: Date, roomId: string, hourPx: number)
 }
 
 function openCreateAt(day: Date, time: string, roomId: string | null) {
+  // Every way of booking -- the button, a slot click, Enter on a cell, the
+  // phone agenda -- ends here, so a read-only calendar is refused once.
+  if (readOnly.value) return
   prefill.value = { date: toDateKey(day), time, roomId: roomId ?? '' }
   modalMode.value = 'create'
   editingAppointment.value = null
@@ -1864,8 +1880,11 @@ function showNowLineOn(day: Date) {
           <option value="week">{{ t('Week', 'Semana') }}</option>
         </select>
         <UiBtn v-if="can('payments_allocate')" variant="secondary" size="sm" @click="cashShiftOpen = true">{{ t('Cash Shift', 'Turno de Caja') }}</UiBtn>
-        <UiBtn variant="secondary" size="sm" @click="openBlockCreateModal()">{{ t('Block time', 'Bloquear horario') }}</UiBtn>
-        <UiBtn variant="primary" size="sm" @click="openCreateModal()">{{ t('+ New Appointment', '+ Nueva Cita') }}</UiBtn>
+        <template v-if="!readOnly">
+          <UiBtn variant="secondary" size="sm" @click="openBlockCreateModal()">{{ t('Block time', 'Bloquear horario') }}</UiBtn>
+          <UiBtn variant="primary" size="sm" data-cy="new-appointment" @click="openCreateModal()">{{ t('+ New Appointment', '+ Nueva Cita') }}</UiBtn>
+        </template>
+        <span v-else class="inline-flex h-8 items-center rounded-pill bg-chip-bg px-3 text-[12.5px] font-semibold text-chip-text" data-cy="calendar-read-only">{{ t('Read-only', 'Solo lectura') }}</span>
         <!-- The mini-calendar/display panel is a fixed 238px column at lg+
         (below), but that plus the optional flow-tracker column would eat
         most of a phone's width -- so below lg it's an off-canvas drawer
@@ -2094,6 +2113,7 @@ function showNowLineOn(day: Date) {
           :is-today="isSameDate(anchorDate, now)"
           @open="openAgendaItem"
           @scope="setAgendaScope"
+          :can-create="!readOnly"
           @create="openCreateModal()"
         />
 
@@ -2294,7 +2314,7 @@ function showNowLineOn(day: Date) {
                   >
                     <span class="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-muted2">{{ formatWeekdayDate(day).split(' ')[0] }}</span>
                     <span class="text-[12.5px] font-medium" :class="isSameDate(day, new Date()) ? 'text-brand-text' : 'text-ink-900'">{{ day.getDate() }}</span>
-                    <button type="button" :aria-label="t('New appointment on this day', 'Nueva cita este día')" class="absolute right-1 top-0.5 text-[11px] text-ink-faint hover:text-brand-text" @click.stop="openCreateModalForDay(day)">+</button>
+                    <button v-if="!readOnly" type="button" :aria-label="t('New appointment on this day', 'Nueva cita este día')" class="absolute right-1 top-0.5 text-[11px] text-ink-faint hover:text-brand-text" @click.stop="openCreateModalForDay(day)">+</button>
                   </div>
                   <!-- Per-day counts: the two that need someone to act. -->
                   <div class="flex h-[18px] items-center justify-center gap-2 border-b border-line text-[10.5px] text-ink-muted" data-cy="day-header-counts" :class="isSameDate(day, new Date()) ? 'bg-brand-tintDeep' : ''">
@@ -2446,7 +2466,7 @@ function showNowLineOn(day: Date) {
     <CalendarNewAppointmentPanel
       v-if="modalOpen && modalMode === 'create'"
       :rooms="rooms"
-      :appointment-types="appointmentTypes"
+      :appointment-types="activeAppointmentTypes"
       :team-members="teamMembers"
       :prefill-date="prefill?.date"
       :prefill-time="prefill?.time"
@@ -2465,7 +2485,7 @@ function showNowLineOn(day: Date) {
       :payment="paymentFor(openAppointment)"
       :price-cents="priceFor(openAppointment)"
       :rooms="rooms"
-      :appointment-types="appointmentTypes"
+      :appointment-types="typesForPanel(openAppointment.appointment_type_id)"
       :team-members="clinicTeamMembers"
       :overrides="overrides"
       :initial-tab="panelInitialTab"

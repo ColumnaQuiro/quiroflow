@@ -1,300 +1,469 @@
 <script setup lang="ts">
+import {
+  displayRoleName,
+  permissionGroups,
+  roleNameTaken,
+  rowValue,
+  setFinancialsMode,
+  permissionsWithDefaults,
+  type FinancialsMode,
+  type PermissionRow,
+  type RolePermissions,
+} from '~/utils/rolePermissions'
+
+// One role: its name and what it is for, who holds it, and every permission
+// in plain words grouped the way a clinic thinks about them. One Guardar for
+// the page with the floating bar and leave guard from Settings > Clinics.
+//
+// The old page's Save button sat in the header, outside its <form>, so the
+// name input's `required` never ran and a role could be saved nameless; and
+// it saved a clinic's own role over the one being edited without asking even
+// when the change locked the editor out of this very page.
+
 const supabase = useSupabaseClient()
+const store = useAccountStore()
 const route = useRoute()
 const router = useRouter()
-const roleId = route.params.id as string
 const t = useT()
-
-interface Permissions {
-  dashboard_scope: 'all' | 'own' | 'none'
-  calendar_scope: 'all' | 'own' | 'none'
-  patients_scope: 'all' | 'own' | 'none'
-  calendar_read_only: boolean
-  settings_access: boolean
-  roles_admin: boolean
-  team_admin: boolean
-  clinic_config: boolean
-  billing_config: boolean
-  communication_config: boolean
-  data_admin: boolean
-  developers_access: boolean
-  billing_access: boolean
-  recalls_access: boolean
-  inbox_access: boolean
-  reports_access: boolean
-  reports_own_only: boolean
-  appointments_delete: boolean
-  patients_edit: boolean
-  patients_delete_merge: boolean
-  patients_tags_remove: boolean
-  financials_edit_all: boolean
-  financials_edit_same_day_only: boolean
-  payments_allocate: boolean
-  packages_edit: boolean
-  billing_history_view: boolean
-  patient_docs_delete: boolean
-  patient_files_delete: boolean
-  visit_notes_access: boolean
-  visit_notes_scope: 'all' | 'own'
-  visit_notes_edit: boolean
-  visit_notes_delete: boolean
-  docs_files_scope: 'all' | 'own'
-}
-
-// The keys above that SettingsToggle (a boolean-only control) actually
-// binds to via a dynamic `permissions[tg.key]` -- excludes the scope/mode
-// fields, which use a <select> bound to their own named property instead.
-type BooleanPermissionKey = { [K in keyof Permissions]: Permissions[K] extends boolean ? K : never }[keyof Permissions]
-
-const DEFAULTS: Permissions = {
-  dashboard_scope: 'none',
-  calendar_scope: 'none',
-  patients_scope: 'none',
-  calendar_read_only: false,
-  settings_access: false,
-  roles_admin: false,
-  team_admin: false,
-  clinic_config: false,
-  billing_config: false,
-  communication_config: false,
-  data_admin: false,
-  developers_access: false,
-  billing_access: false,
-  recalls_access: false,
-  inbox_access: false,
-  reports_access: false,
-  reports_own_only: false,
-  appointments_delete: false,
-  patients_edit: false,
-  patients_delete_merge: false,
-  patients_tags_remove: false,
-  financials_edit_all: false,
-  financials_edit_same_day_only: false,
-  payments_allocate: false,
-  packages_edit: false,
-  billing_history_view: false,
-  patient_docs_delete: false,
-  patient_files_delete: false,
-  visit_notes_access: false,
-  visit_notes_scope: 'own',
-  visit_notes_edit: false,
-  visit_notes_delete: false,
-  docs_files_scope: 'own',
-}
-
-const name = ref('')
-const isSystem = ref(false)
-const permissions = ref<Permissions>({ ...DEFAULTS })
 const { showToast } = useToast()
-const loading = ref(true)
-const saving = ref(false)
-const notFound = ref(false)
+const { can } = usePermission()
+const roleId = route.params.id as string
+
+interface Form {
+  name: string
+  description: string
+  permissions: RolePermissions
+}
+interface Member {
+  id: string
+  full_name: string
+}
+
+const loaded = ref(false)
+const missing = ref(false)
+const isSystem = ref(false)
+const storedName = ref('')
+const form = ref<Form | null>(null)
+const original = ref('')
+const members = ref<Member[]>([])
+const pendingInvites = ref(0)
+const otherRoles = ref<{ id: string; name: string; is_system: boolean }[]>([])
 
 async function load() {
-  loading.value = true
-  const { data } = await supabase.from('account_roles').select('name, is_system, permissions').eq('id', roleId).maybeSingle()
-  if (!data) {
-    notFound.value = true
-    loading.value = false
+  const [r, m, all, inv] = await Promise.all([
+    supabase.from('account_roles').select('id, name, description, is_system, permissions').eq('id', roleId).maybeSingle(),
+    supabase.from('team_members').select('id, full_name').eq('role_id', roleId).is('deleted_at', null).order('full_name'),
+    supabase.from('account_roles').select('id, name, is_system').order('is_system', { ascending: false }).order('name'),
+    // Readable only with the Team permission (the invites policy); without
+    // it this is 0, and delete_account_role moves them regardless.
+    supabase.from('account_invites').select('id', { count: 'exact', head: true }).eq('role_id', roleId).is('accepted_at', null),
+  ])
+  if (r.error || !r.data) {
+    missing.value = true
+    loaded.value = true
     return
   }
-  name.value = data.name
-  isSystem.value = data.is_system
-  permissions.value = { ...DEFAULTS, ...(data.permissions as Record<string, boolean | string>) }
-  loading.value = false
+  isSystem.value = r.data.is_system
+  storedName.value = r.data.name
+  form.value = { name: r.data.name, description: r.data.description ?? '', permissions: permissionsWithDefaults(r.data.permissions) }
+  original.value = JSON.stringify(form.value)
+  members.value = (m.data ?? []) as Member[]
+  otherRoles.value = ((all.data ?? []) as { id: string; name: string; is_system: boolean }[]).filter((x) => x.id !== roleId)
+  pendingInvites.value = inv.count ?? 0
+  loaded.value = true
 }
 onMounted(load)
 
-const financialsEditMode = computed<'none' | 'same_day' | 'all'>({
-  get: () => (permissions.value.financials_edit_all ? 'all' : permissions.value.financials_edit_same_day_only ? 'same_day' : 'none'),
-  set: (mode) => {
-    permissions.value.financials_edit_all = mode === 'all'
-    permissions.value.financials_edit_same_day_only = mode === 'same_day'
+const groups = computed(() => permissionGroups(t))
+const dirty = computed(() => !!form.value && !isSystem.value && JSON.stringify(form.value) !== original.value)
+const savedForm = computed<Form | null>(() => (original.value ? JSON.parse(original.value) : null))
+
+// Showing the stored English name for a default role would read as a
+// different role to a Spanish-speaking owner; the input shows it translated
+// until someone actually types a new name.
+const shownTitle = computed(() => (form.value && form.value.name === storedName.value ? displayRoleName(storedName.value, t) : (form.value?.name ?? '')))
+const nameInput = computed({
+  get: () => (form.value && form.value.name === storedName.value ? displayRoleName(storedName.value, t) : (form.value?.name ?? '')),
+  set: (v: string) => {
+    if (!form.value) return
+    // Typing the translated default back exactly is keeping the name.
+    form.value.name = v === displayRoleName(storedName.value, t) ? storedName.value : v
   },
 })
+const nameEmpty = computed(() => !!form.value && !form.value.name.trim())
+const nameTaken = computed(() => (form.value && form.value.name !== storedName.value ? roleNameTaken(form.value.name, otherRoles.value) : null))
 
-const generalToggles = computed<{ key: BooleanPermissionKey; label: string; hint?: string }[]>(() => [
-  { key: 'settings_access', label: t('Settings', 'Ajustes'), hint: t('Gates the whole Settings section — required for the sub-toggles below to have any effect', 'Bloquea toda la sección de Ajustes — necesario para que los interruptores de abajo tengan efecto') },
-  { key: 'roles_admin', label: t('Roles & permission settings', 'Roles y permisos'), hint: t('Requires Settings', 'Requiere Ajustes') },
-  { key: 'team_admin', label: t('Team member administration', 'Administración del equipo'), hint: t('Requires Settings', 'Requiere Ajustes') },
-  { key: 'clinic_config', label: t('Clinic configuration', 'Configuración de la clínica'), hint: t('Clinics, appointment types, calendar resources — requires Settings', 'Clínicas, tipos de cita, recursos del calendario — requiere Ajustes') },
-  { key: 'billing_config', label: t('Billing configuration', 'Configuración de facturación'), hint: t('Services, packages, memberships, Stripe — requires Settings', 'Servicios, bonos, membresías, Stripe — requiere Ajustes') },
-  { key: 'communication_config', label: t('Communication configuration', 'Configuración de comunicación'), hint: t('WhatsApp, document templates — requires Settings', 'WhatsApp, plantillas de documentos — requiere Ajustes') },
-  { key: 'data_admin', label: t('Data administration', 'Administración de datos'), hint: t('Import, migrations, webhooks — requires Settings', 'Importación, migraciones, webhooks — requiere Ajustes') },
-  { key: 'developers_access', label: t('Developer API & tokens', 'API para desarrolladores y tokens'), hint: t('Create/revoke API tokens that can send WhatsApp as this clinic — requires Settings', 'Crear/revocar tokens de API que pueden enviar WhatsApp en nombre de esta clínica — requiere Ajustes') },
-  { key: 'billing_access', label: t('Billing', 'Facturación'), hint: t('View/create receipts', 'Ver/crear recibos') },
-  { key: 'recalls_access', label: t('Recalls & patient messaging', 'Recordatorios y mensajería a pacientes') },
-  { key: 'inbox_access', label: t('WhatsApp Inbox', 'Bandeja de WhatsApp'), hint: t('Read and reply to patient WhatsApp conversations', 'Leer y responder conversaciones de WhatsApp con pacientes') },
-])
+function permValue(row: PermissionRow) {
+  return form.value ? rowValue(form.value.permissions, row) : false
+}
+function setValue(row: PermissionRow, value: string | boolean) {
+  if (!form.value) return
+  const p = form.value.permissions
+  if (row.kind === 'toggle') p[row.key] = value === true
+  else if (row.key === 'financials') setFinancialsMode(p, value as FinancialsMode)
+  else (p as unknown as Record<string, string>)[row.key] = value as string
+}
 
-const reportsToggles = computed<{ key: BooleanPermissionKey; label: string; hint?: string }[]>(() => [
-  { key: 'reports_access', label: t('Allow access to reports', 'Permitir acceso a informes') },
-  { key: 'reports_own_only', label: t('Only allow access to own reports', 'Permitir acceso solo a informes propios'), hint: t('Only meaningful when Calendar/Patients below are set to "Own only"', 'Solo relevante cuando Calendario/Pacientes abajo están configurados como "Solo propios"') },
-])
+// --- Whose role is this? ----------------------------------------------------------
+const isMine = computed(() => !!store.teamMember && members.value.some((m) => m.id === store.teamMember!.id))
+// Would saving take away the viewer's own way back into this page? Owners
+// pass every check whatever their role says, so it cannot lock them out.
+const locksMeOut = computed(() => {
+  if (!isMine.value || store.isOwner || !form.value || !savedForm.value) return false
+  const before = savedForm.value.permissions
+  const after = form.value.permissions
+  return (before.roles_admin && !after.roles_admin) || (before.settings_access && !after.settings_access)
+})
 
-const patientToggles = computed<{ key: BooleanPermissionKey; label: string; hint?: string }[]>(() => [
-  { key: 'appointments_delete', label: t('Delete appointments', 'Eliminar citas') },
-  { key: 'patients_edit', label: t('Edit patients', 'Editar pacientes') },
-  { key: 'patients_delete_merge', label: t('Delete and merge patients', 'Eliminar y fusionar pacientes') },
-  { key: 'patients_tags_remove', label: t('Remove membership/package tags from patients', 'Quitar etiquetas de membresía/bono de los pacientes') },
-  { key: 'payments_allocate', label: t('Allocate payments', 'Asignar pagos') },
-  { key: 'packages_edit', label: t('Edit packages', 'Editar bonos') },
-  { key: 'billing_history_view', label: t('View patient billing history', 'Ver historial de facturación del paciente') },
-  { key: 'patient_docs_delete', label: t('Delete patient documents', 'Eliminar documentos del paciente') },
-  { key: 'patient_files_delete', label: t('Delete patient files', 'Eliminar archivos del paciente') },
-])
+// --- Save / discard -------------------------------------------------------------
+const saving = ref(false)
+const tried = ref(false)
+const selfOpen = ref(false)
 
-const clinicalToggles = computed<{ key: BooleanPermissionKey; label: string; hint?: string }[]>(() => [
-  { key: 'visit_notes_access', label: t('Access appointment notes', 'Acceder a las notas de la cita') },
-  { key: 'visit_notes_edit', label: t('Edit appointment notes', 'Editar notas de la cita') },
-  { key: 'visit_notes_delete', label: t('Delete appointment notes', 'Eliminar notas de la cita') },
-])
-
-async function save() {
-  saving.value = true
-  const { error: updateError } = await supabase
-    .from('account_roles')
-    .update({ name: name.value.trim(), permissions: permissions.value })
-    .eq('id', roleId)
-  saving.value = false
-  if (updateError) {
-    showToast(updateError.message, 'error')
+function save() {
+  if (!form.value) return
+  tried.value = true
+  if (nameEmpty.value || nameTaken.value) {
+    showToast(t('The name needs fixing before this can be saved.', 'Hay que corregir el nombre antes de guardar.'), 'error')
     return
   }
-  showToast(t('Saved', 'Guardado'))
+  if (locksMeOut.value) {
+    selfOpen.value = true
+    return
+  }
+  doSave()
 }
+
+async function doSave() {
+  if (!form.value) return
+  selfOpen.value = false
+  saving.value = true
+  const lockingOut = locksMeOut.value
+  const values = {
+    name: form.value.name.trim().replace(/\s+/g, ' '),
+    description: form.value.description.trim() || null,
+    permissions: form.value.permissions as any,
+  }
+  const { error } = await supabase.from('account_roles').update(values).eq('id', roleId).select('id').single()
+  saving.value = false
+  if (error) {
+    if (error.code === '23505') {
+      showToast(t(`A role called "${values.name}" already exists.`, `Ya hay un rol llamado «${values.name}».`), 'error', 8000)
+      return
+    }
+    showToast(error.message, 'error', 8000)
+    return
+  }
+  form.value.name = values.name
+  storedName.value = values.name
+  form.value.description = values.description ?? ''
+  original.value = JSON.stringify(form.value)
+  tried.value = false
+  // Permissions are read from the store everywhere in the app; after
+  // changing their own role, the viewer should get the new ones now rather
+  // than on their next full page load.
+  if (isMine.value) await store.load()
+  showToast(t('Saved', 'Guardado'))
+  if (lockingOut) {
+    pendingLeave.value = '/dashboard'
+    router.push('/dashboard')
+  }
+}
+
+function discard() {
+  if (!savedForm.value) return
+  form.value = JSON.parse(original.value)
+  tried.value = false
+}
+
+// --- Leaving with unsaved changes -------------------------------------------------
+const pendingLeave = ref<string | null>(null)
+onBeforeRouteLeave((to) => {
+  if (!dirty.value || pendingLeave.value === to.fullPath) return true
+  pendingLeave.value = to.fullPath
+  leaveOpen.value = true
+  return false
+})
+const leaveOpen = ref(false)
+function leaveAnyway() {
+  const to = pendingLeave.value
+  leaveOpen.value = false
+  if (to) router.push(to)
+}
+function stayHere() {
+  leaveOpen.value = false
+  pendingLeave.value = null
+}
+function onBeforeUnload(e: BeforeUnloadEvent) {
+  if (dirty.value) e.preventDefault()
+}
+onMounted(() => window.addEventListener('beforeunload', onBeforeUnload))
+onUnmounted(() => window.removeEventListener('beforeunload', onBeforeUnload))
+
+// --- Delete -----------------------------------------------------------------------
+// People first: a role deleted from under someone leaves them with no role at
+// all, and no role is no permissions -- the next page load shows them an empty
+// app. delete_account_role moves them (and pending invites) in the same
+// transaction as the delete.
+const deleteOpen = ref(false)
+const deleting = ref(false)
+const moveTo = ref('')
+const moveTargets = computed(() => otherRoles.value.filter((r) => !r.is_system))
+const hasHolders = computed(() => members.value.length > 0 || pendingInvites.value > 0)
+const deleteBlocked = computed(() => {
+  if (!hasHolders.value) return ''
+  if (!can('team_admin')) return t('Moving people to another role needs the Team permission. Ask an owner or a team admin.', 'Pasar a personas a otro rol necesita el permiso de Equipo. Pídeselo a un propietario o a quien lleve el equipo.')
+  if (isMine.value && !store.isOwner) return t('You have this role yourself, and only an owner can change your role.', 'Tienes este rol tú mismo, y solo un propietario puede cambiarte de rol.')
+  if (moveTargets.value.length === 0) return t('There is no other role to move them to. Create one first.', 'No hay otro rol al que pasarlas. Crea uno antes.')
+  return ''
+})
+
+function openDelete() {
+  moveTo.value = moveTargets.value.find((r) => r.name === 'Front Desk')?.id ?? moveTargets.value[0]?.id ?? ''
+  deleteOpen.value = true
+}
+
+async function remove() {
+  deleting.value = true
+  const { error } = await supabase.rpc('delete_account_role', { p_role_id: roleId, p_move_to_role_id: hasHolders.value ? moveTo.value : undefined })
+  deleting.value = false
+  if (error) {
+    showToast(error.message, 'error', 8000)
+    return
+  }
+  deleteOpen.value = false
+  showToast(t('Role deleted', 'Rol eliminado'))
+  pendingLeave.value = '/settings/roles'
+  router.push('/settings/roles')
+}
+
+const peopleLabel = computed(() => {
+  const n = members.value.length
+  if (n === 0) return t('Nobody has this role', 'Nadie tiene este rol')
+  return n === 1 ? t('1 person has this role', '1 persona con este rol') : t(`${n} people have this role`, `${n} personas con este rol`)
+})
+const holdersSentence = computed(() => {
+  const names = members.value.map((m) => m.full_name)
+  const people = names.length === 0 ? '' : names.length <= 3 ? names.join(', ') : `${names.slice(0, 3).join(', ')}…`
+  const parts: string[] = []
+  if (names.length) parts.push(t(`${names.length === 1 ? '1 person' : `${names.length} people`}: ${people}`, `${names.length === 1 ? '1 persona' : `${names.length} personas`}: ${people}`))
+  if (pendingInvites.value) parts.push(t(`${pendingInvites.value} pending invite${pendingInvites.value === 1 ? '' : 's'}`, `${pendingInvites.value} invitación${pendingInvites.value === 1 ? '' : 'es'} pendiente${pendingInvites.value === 1 ? '' : 's'}`))
+  return parts.join(t(' and ', ' y '))
+})
+
+const TONES = ['bg-success-bg text-success-text', 'bg-warning-bg text-warning-text', 'bg-info-bg text-info-text', 'bg-brand-tint text-brand-text', 'bg-chip-bg text-ink-700']
+function initials(name: string) {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('') || '·'
+}
+const inputClass = 'h-11 rounded-ctl border bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand disabled:bg-surface-subtle disabled:text-ink-muted'
+const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
 </script>
 
 <template>
-  <div class="flex h-full flex-col">
-    <PageHeader :title="name || t('Role', 'Rol')">
-      <UiBtn v-if="!isSystem && !loading && !notFound" variant="primary" :disabled="saving" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save changes', 'Guardar cambios') }}</UiBtn>
-    </PageHeader>
+  <div class="relative flex h-full flex-col">
+    <header class="flex shrink-0 flex-col gap-1.5 border-b border-line bg-surface px-4 py-3 sm:px-6">
+      <nav :aria-label="t('Breadcrumb', 'Ruta')" class="flex items-center gap-1.5 text-[13px] text-ink-muted">
+        <NuxtLink to="/settings" class="hover:underline">{{ t('Settings', 'Ajustes') }}</NuxtLink>
+        <span aria-hidden="true">›</span>
+        <NuxtLink to="/settings/roles" class="font-semibold text-brand-text hover:underline" data-cy="role-back">{{ t('Roles and permissions', 'Roles y permisos') }}</NuxtLink>
+      </nav>
+      <div v-if="form" class="flex flex-wrap items-center gap-3">
+        <h1 class="text-[20px] font-bold text-ink-900" data-cy="role-title">{{ shownTitle || t('Untitled', 'Sin nombre') }}</h1>
+        <span v-if="isSystem" class="rounded-pill bg-chip-bg px-2.5 py-0.5 text-[12.5px] font-bold text-chip-text">{{ t('Fixed', 'Fijo') }}</span>
+      </div>
+      <span v-if="form" class="text-[13px] text-ink-muted" data-cy="role-people-count">{{ peopleLabel }}</span>
+    </header>
+
     <div class="flex-1 overflow-y-auto">
-      <div class="flex gap-8 p-6">
+      <div class="flex gap-8 p-4 pb-32 sm:p-6 sm:pb-32">
         <SettingsNav />
-        <div class="min-w-0 max-w-[660px] flex-1">
-          <NuxtLink to="/settings/roles" class="text-[12.5px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Roles', 'Roles') }}</NuxtLink>
+        <p v-if="loaded && missing" class="text-[14px] text-ink-muted" data-cy="role-missing">
+          {{ t('This role does not exist, or is not yours.', 'Este rol no existe o no es tuyo.') }}
+          <NuxtLink to="/settings/roles" class="text-brand-text hover:underline">{{ t('Back to roles', 'Volver a roles') }}</NuxtLink>
+        </p>
+        <template v-else-if="form">
+          <nav :aria-label="t('Sections', 'Secciones')" class="sticky top-0 hidden w-[180px] shrink-0 flex-col gap-0.5 self-start 2xl:flex">
+            <a href="#rol" class="flex min-h-10 items-center rounded-ctlSm px-3 text-[14px] text-ink-700 hover:bg-surface-subtle">{{ t('The role', 'El rol') }}</a>
+            <a href="#personas" class="flex min-h-10 items-center rounded-ctlSm px-3 text-[14px] text-ink-700 hover:bg-surface-subtle">{{ t('People', 'Personas') }}</a>
+            <a v-for="g in groups" :key="g.id" :href="`#${g.id}`" class="flex min-h-10 items-center rounded-ctlSm px-3 text-[14px] text-ink-700 hover:bg-surface-subtle">{{ g.title }}</a>
+          </nav>
 
-          <div v-if="loading" class="mt-3 space-y-3">
-            <UiSkeleton class="h-3 w-32 rounded-ctlSm" />
-            <UiSkeleton class="h-8 w-64 rounded-ctl" />
-          </div>
-          <div v-else-if="notFound" class="mt-4 text-[13px] text-ink-faint">{{ t('Role not found.', 'Rol no encontrado.') }}</div>
-          <form v-else class="mt-3 space-y-8" @submit.prevent="save">
-            <SettingsFieldRow :label="t('Role name', 'Nombre del rol')">
-              <input
-                v-model="name"
-                type="text"
+          <main class="flex min-w-0 max-w-[820px] flex-1 flex-col gap-5" data-cy="role-page" :data-ready="loaded ? 'true' : undefined">
+            <p v-if="isSystem" class="rounded-ctl border border-line bg-surface-subtle px-3.5 py-3 text-[13.5px] leading-snug text-ink-700" data-cy="role-owner-note">
+              {{ t("This is the account owner's role and it cannot be edited. An owner can do everything whatever role they hold -- what decides it is being an owner, not the role -- so nobody, the owner included, can be locked out by mistake here. Owners are made from their page in Team.", 'Este es el rol del propietario de la cuenta y no se puede editar. Un propietario lo puede todo tenga el rol que tenga -- lo que lo decide es ser propietario, no el rol --, así que nadie, ni el propio propietario, puede quedarse sin acceso por error desde aquí. Los propietarios se nombran desde su ficha en Equipo.') }}
+            </p>
+
+            <!-- El rol -->
+            <section id="rol" aria-labelledby="h-rol" class="flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg-surface p-5 sm:p-6">
+              <h2 id="h-rol" class="text-[16px] font-bold text-ink-900">{{ t('The role', 'El rol') }}</h2>
+              <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
+                {{ t('Name', 'Nombre') }}
+                <input
+                  v-model="nameInput"
+                  data-cy="role-name"
+                  type="text"
+                  maxlength="60"
+                  autocomplete="off"
+                  :disabled="isSystem"
+                  :aria-invalid="(tried && nameEmpty) || nameTaken ? 'true' : undefined"
+                  :class="[inputClass, (tried && nameEmpty) || nameTaken ? 'border-danger-text' : 'border-line-control']"
+                />
+                <span v-if="tried && nameEmpty" class="text-[12.5px] font-semibold text-danger-text" data-cy="role-name-error">{{ t('A role needs a name.', 'El rol necesita un nombre.') }}</span>
+                <span v-else-if="nameTaken" class="text-[12.5px] font-semibold text-danger-text" data-cy="role-name-error">
+                  {{ t(`"${displayRoleName(nameTaken.name, t)}" already exists. Choose another name.`, `«${displayRoleName(nameTaken.name, t)}» ya existe. Elige otro nombre.`) }}
+                </span>
+              </label>
+              <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
+                {{ t('Description (optional)', 'Descripción (opcional)') }}
+                <textarea
+                  v-model="form.description"
+                  data-cy="role-description"
+                  rows="2"
+                  maxlength="300"
+                  :disabled="isSystem"
+                  :class="[inputClass, 'h-[72px] resize-y border-line-control py-2.5 leading-snug']"
+                />
+                <span :class="hint">{{ t("Shown on the roles list and when choosing someone's role.", 'Se ve en la lista de roles y al elegir el rol de alguien.') }}</span>
+              </label>
+            </section>
+
+            <!-- Personas -->
+            <section id="personas" aria-labelledby="h-personas" class="flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg-surface p-5 sm:p-6">
+              <div class="flex flex-col gap-1">
+                <h2 id="h-personas" class="text-[16px] font-bold text-ink-900">{{ t(`People with this role · ${members.length}`, `Personas con este rol · ${members.length}`) }}</h2>
+                <p class="text-[13px] text-ink-muted">{{ t("Changed from each person's page.", 'Se cambia desde la ficha de cada persona.') }}</p>
+              </div>
+              <div v-if="members.length" class="flex flex-wrap gap-2.5">
+                <NuxtLink
+                  v-for="(m, i) in members"
+                  :key="m.id"
+                  :to="`/settings/team/${m.id}`"
+                  data-cy="role-member"
+                  class="flex h-11 items-center gap-2.5 rounded-pill border border-line pl-1.5 pr-3.5 text-[14px] font-semibold text-ink-900 hover:bg-surface-subtle"
+                >
+                  <span class="inline-flex h-8 w-8 items-center justify-center rounded-full text-[12px] font-bold" :class="TONES[i % TONES.length]" aria-hidden="true">{{ initials(m.full_name) }}</span>
+                  {{ m.full_name }}
+                </NuxtLink>
+              </div>
+              <p v-else class="text-[13.5px] text-ink-muted">{{ t('Nobody has this role yet.', 'Todavía nadie tiene este rol.') }}</p>
+            </section>
+
+            <!-- Permisos -->
+            <section
+              v-for="g in groups"
+              :id="g.id"
+              :key="g.id"
+              :aria-labelledby="`h-${g.id}`"
+              class="flex scroll-mt-4 flex-col gap-1 rounded-card border border-line bg-surface p-5 sm:p-6"
+              data-cy="role-group"
+            >
+              <div class="flex flex-col gap-1 pb-3">
+                <h2 :id="`h-${g.id}`" class="text-[16px] font-bold text-ink-900">{{ g.title }}</h2>
+                <p v-if="g.subtitle" class="text-[13px] leading-snug text-ink-muted">{{ g.subtitle }}</p>
+              </div>
+              <SettingsRolePermissionRow
+                v-for="row in g.rows"
+                :key="row.key"
+                :row="row"
+                :model-value="permValue(row)"
                 :disabled="isSystem"
-                required
-                class="h-8 w-[230px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20 disabled:bg-surface-subtle disabled:text-ink-faint"
+                @update:model-value="setValue(row, $event)"
               />
-              <template v-if="isSystem" #helper>
-                {{ t("This is the account owner's role — its permissions are always full and can't be changed, to prevent anyone (including the owner) from being locked out by mistake.", 'Este es el rol del propietario de la cuenta — sus permisos son siempre completos y no se pueden cambiar, para evitar que alguien (incluido el propietario) quede bloqueado por error.') }}
-              </template>
-            </SettingsFieldRow>
+            </section>
 
-            <fieldset :disabled="isSystem" class="space-y-8 disabled:opacity-50">
-              <div>
-                <h2 class="text-[15px] font-[620] text-ink-900">{{ t('Ringfencing', 'Segmentación') }}</h2>
-                <p class="mt-0.5 text-[13px] text-ink-muted2">{{ t('Control what data this role can see.', 'Controla qué datos puede ver este rol.') }}</p>
-                <div class="mt-3 space-y-2">
-                  <SettingsFieldRow :label="t('Dashboard access', 'Acceso al panel')">
-                    <select v-model="permissions.dashboard_scope" class="h-8 w-[230px] rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20">
-                      <option value="all">{{ t('Full access', 'Acceso completo') }}</option>
-                      <option value="own">{{ t('Own only', 'Solo propio') }}</option>
-                      <option value="none">{{ t('No access', 'Sin acceso') }}</option>
-                    </select>
-                  </SettingsFieldRow>
-                  <SettingsFieldRow :label="t('Calendar access', 'Acceso al calendario')">
-                    <select v-model="permissions.calendar_scope" class="h-8 w-[230px] rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20">
-                      <option value="all">{{ t('All appointments', 'Todas las citas') }}</option>
-                      <option value="own">{{ t('Own appointments only', 'Solo citas propias') }}</option>
-                      <option value="none">{{ t('No access', 'Sin acceso') }}</option>
-                    </select>
-                  </SettingsFieldRow>
-                  <SettingsFieldRow :label="t('Patient access', 'Acceso a pacientes')">
-                    <select v-model="permissions.patients_scope" class="h-8 w-[230px] rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20">
-                      <option value="all">{{ t('All patient files', 'Todos los expedientes de pacientes') }}</option>
-                      <option value="own">{{ t('Own patients only', 'Solo pacientes propios') }}</option>
-                      <option value="none">{{ t('No access', 'Sin acceso') }}</option>
-                    </select>
-                  </SettingsFieldRow>
-                  <SettingsFieldRow :label="t('Read-only calendar', 'Calendario de solo lectura')" :helper="t('View appointments, but can\'t create, edit, or delete them.', 'Ver las citas, pero sin poder crearlas, editarlas ni eliminarlas.')">
-                    <SettingsToggle v-model="permissions.calendar_read_only" />
-                  </SettingsFieldRow>
-                </div>
+            <p v-if="isMine && !store.isOwner" class="rounded-ctl border border-warning-border bg-warning-bg px-3.5 py-3 text-[13.5px] leading-snug text-warning-text" data-cy="role-is-mine">
+              {{ t('This is your own role: what you change here applies to you as soon as it is saved.', 'Es tu propio rol: lo que cambies aquí se te aplica en cuanto guardes.') }}
+            </p>
+
+            <!-- Eliminar -->
+            <section v-if="!isSystem" id="eliminar" aria-labelledby="h-eliminar" class="flex scroll-mt-4 flex-col gap-3 rounded-card border border-line bg-surface p-5 sm:p-6">
+              <h2 id="h-eliminar" class="text-[16px] font-bold text-ink-900">{{ t('Delete the role', 'Eliminar el rol') }}</h2>
+              <div class="flex flex-wrap items-center gap-3.5">
+                <span class="min-w-[240px] flex-1 text-[13.5px] leading-snug text-ink-500">
+                  <template v-if="hasHolders">{{ t(`Its ${holdersSentence} move to another role first, so nobody is left without permissions.`, `Primero hay que pasar a otro rol a ${holdersSentence}, para que nadie se quede sin permisos.`) }}</template>
+                  <template v-else>{{ t('Nobody has it, so it can be deleted straight away.', 'Nadie lo tiene, así que se puede eliminar directamente.') }}</template>
+                </span>
+                <button
+                  type="button"
+                  data-cy="role-delete"
+                  class="h-11 shrink-0 rounded-ctl border border-danger-border bg-surface px-3.5 text-[14px] font-semibold text-danger-text hover:bg-danger-bg"
+                  @click="openDelete"
+                >
+                  {{ t('Delete…', 'Eliminar…') }}
+                </button>
               </div>
-
-              <div>
-                <h2 class="text-[15px] font-[620] text-ink-900">{{ t('General', 'General') }}</h2>
-                <p class="mt-0.5 text-[13px] text-ink-muted2">{{ t('Access to core system features.', 'Acceso a las funciones principales del sistema.') }}</p>
-                <div class="mt-3 space-y-2">
-                  <SettingsFieldRow v-for="tg in generalToggles" :key="tg.key" :label="tg.label" :helper="tg.hint">
-                    <SettingsToggle v-model="permissions[tg.key]" />
-                  </SettingsFieldRow>
-                </div>
-              </div>
-
-              <div>
-                <h2 class="text-[15px] font-[620] text-ink-900">{{ t('Reports', 'Informes') }}</h2>
-                <div class="mt-3 space-y-2">
-                  <SettingsFieldRow v-for="tg in reportsToggles" :key="tg.key" :label="tg.label" :helper="tg.hint">
-                    <SettingsToggle v-model="permissions[tg.key]" />
-                  </SettingsFieldRow>
-                </div>
-              </div>
-
-              <div>
-                <h2 class="text-[15px] font-[620] text-ink-900">{{ t('Patients & Appointments', 'Pacientes y Citas') }}</h2>
-                <p class="mt-0.5 text-[13px] text-ink-muted2">{{ t('Control access to patient data and financials.', 'Controla el acceso a los datos y finanzas de los pacientes.') }}</p>
-                <div class="mt-3 space-y-2">
-                  <SettingsFieldRow :label="t('Editing patient financials', 'Edición de finanzas del paciente')">
-                    <select v-model="financialsEditMode" class="h-8 w-[230px] rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20">
-                      <option value="none">{{ t('Not allowed', 'No permitido') }}</option>
-                      <option value="same_day">{{ t('Only on the day created', 'Solo el día en que se creó') }}</option>
-                      <option value="all">{{ t('Always allowed', 'Siempre permitido') }}</option>
-                    </select>
-                  </SettingsFieldRow>
-                  <SettingsFieldRow v-for="tg in patientToggles" :key="tg.key" :label="tg.label" :helper="tg.hint">
-                    <SettingsToggle v-model="permissions[tg.key]" />
-                  </SettingsFieldRow>
-                </div>
-              </div>
-
-              <div>
-                <h2 class="text-[15px] font-[620] text-ink-900">{{ t('Clinical Information', 'Información Clínica') }}</h2>
-                <p class="mt-0.5 text-[13px] text-ink-muted2">{{ t('Appointment notes, documents and files.', 'Notas de la cita, documentos y archivos.') }}</p>
-                <div class="mt-3 space-y-2">
-                  <SettingsFieldRow
-                    :label="t('Documents & files', 'Documentos y archivos')"
-                    :helper="t(
-                      'Scoped by who created the record, on top of the patient scope above. Documents and files imported without an author stay visible to everyone.',
-                      'Se limita según quién creó el registro, además del alcance de pacientes de arriba. Los documentos y archivos importados sin autor siguen visibles para todos.',
-                    )"
-                  >
-                    <select v-model="permissions.docs_files_scope" class="h-8 w-[230px] rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20">
-                      <option value="all">{{ t("Any practitioner's documents", 'Documentos de cualquier profesional') }}</option>
-                      <option value="own">{{ t('Only their own documents', 'Solo sus propios documentos') }}</option>
-                    </select>
-                  </SettingsFieldRow>
-                  <SettingsFieldRow :label="t('Editing/deleting notes', 'Edición/eliminación de notas')">
-                    <select v-model="permissions.visit_notes_scope" class="h-8 w-[230px] rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20">
-                      <option value="all">{{ t("Any team member's notes", 'Notas de cualquier miembro del equipo') }}</option>
-                      <option value="own">{{ t('Only their own notes', 'Solo sus propias notas') }}</option>
-                    </select>
-                  </SettingsFieldRow>
-                  <SettingsFieldRow v-for="tg in clinicalToggles" :key="tg.key" :label="tg.label" :helper="tg.hint">
-                    <SettingsToggle v-model="permissions[tg.key]" />
-                  </SettingsFieldRow>
-                </div>
-              </div>
-            </fieldset>
-
-          </form>
-        </div>
+            </section>
+          </main>
+        </template>
       </div>
     </div>
+
+    <!-- One save for the whole page. -->
+    <div
+      v-if="dirty"
+      role="region"
+      :aria-label="t('Unsaved changes', 'Cambios sin guardar')"
+      data-cy="role-save-bar"
+      class="absolute bottom-6 left-1/2 flex w-[min(820px,calc(100%-32px))] -translate-x-1/2 items-center gap-2.5 rounded-card bg-ink-900 py-3 pl-5 pr-3 text-surface-page shadow-popover"
+    >
+      <span class="flex-1 text-[14px] font-semibold">{{ t('Unsaved changes', 'Cambios sin guardar') }}</span>
+      <button type="button" data-cy="role-discard" class="h-11 rounded-ctl border border-surface-page/30 px-3.5 text-[14px] font-semibold" @click="discard">
+        {{ t('Discard', 'Descartar') }}
+      </button>
+      <button type="button" data-cy="role-save" :disabled="saving" class="h-11 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface disabled:opacity-70" @click="save">
+        {{ saving ? t('Saving…', 'Guardando…') : t('Save changes', 'Guardar cambios') }}
+      </button>
+    </div>
+
+    <UiConfirmDialog
+      v-if="selfOpen && form"
+      :title="form.permissions.roles_admin ? t('Take away your own access to Settings?', '¿Quitarte a ti mismo el acceso a Ajustes?') : t('Take away your own \'Roles and permissions\'?', '¿Quitarte a ti mismo «Roles y permisos»?')"
+      :confirm-label="t('Save anyway', 'Guardar igualmente')"
+      :cancel-label="t('Cancel', 'Cancelar')"
+      :busy="saving"
+      @confirm="doSave"
+      @cancel="selfOpen = false"
+    >
+      <p class="text-[14px] leading-relaxed text-ink-500" data-cy="role-self-warning">
+        {{ t('This is your own role. Once saved you will no longer be able to open this page, and only an owner or someone else with this permission can give it back to you.', 'Es tu propio rol. Al guardar dejarás de poder entrar en esta página, y solo un propietario u otra persona con este permiso podrá devolvértelo.') }}
+      </p>
+    </UiConfirmDialog>
+
+    <UiConfirmDialog
+      v-if="deleteOpen && form"
+      tone="danger"
+      :title="t(`Delete the ${shownTitle} role?`, `¿Eliminar el rol ${shownTitle}?`)"
+      :confirm-label="hasHolders ? t('Move and delete', 'Pasar y eliminar') : t('Delete role', 'Eliminar rol')"
+      :cancel-label="t('Cancel', 'Cancelar')"
+      :busy="deleting"
+      :disabled="!!deleteBlocked || (hasHolders && !moveTo)"
+      @confirm="remove"
+      @cancel="deleteOpen = false"
+    >
+      <template v-if="hasHolders">
+        <p class="text-[14px] leading-relaxed text-ink-500">
+          {{ t(`It has ${holdersSentence}. Move them to another role so they are not left without permissions.`, `Tiene ${holdersSentence}. Pásalas a otro rol para que no se queden sin permisos.`) }}
+        </p>
+        <p v-if="deleteBlocked" class="rounded-ctl border border-warning-border bg-warning-bg px-3.5 py-3 text-[13.5px] leading-snug text-warning-text" data-cy="role-delete-blocked">{{ deleteBlocked }}</p>
+        <label v-else class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
+          {{ t('Move them to the role', 'Pasar a sus personas al rol') }}
+          <select v-model="moveTo" data-cy="role-delete-target" :class="[inputClass, 'border-line-control']">
+            <option v-for="r in moveTargets" :key="r.id" :value="r.id">{{ displayRoleName(r.name, t) }}</option>
+          </select>
+        </label>
+      </template>
+      <p v-else class="text-[14px] leading-relaxed text-ink-500">{{ t('Nobody has this role. This cannot be undone.', 'Nadie tiene este rol. Esto no se puede deshacer.') }}</p>
+    </UiConfirmDialog>
+
+    <UiConfirmDialog
+      v-if="leaveOpen"
+      :title="t('Leave without saving?', '¿Salir sin guardar?')"
+      :confirm-label="t('Leave without saving', 'Salir sin guardar')"
+      :cancel-label="t('Keep editing', 'Seguir editando')"
+      @confirm="leaveAnyway"
+      @cancel="stayHere"
+    >
+      <p class="text-[14px] leading-relaxed text-ink-500">{{ t(`The changes to the permissions of "${shownTitle}" have not been saved.`, `Los cambios en los permisos de «${shownTitle}» no se han guardado.`) }}</p>
+    </UiConfirmDialog>
   </div>
 </template>

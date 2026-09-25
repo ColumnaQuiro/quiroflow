@@ -14,6 +14,51 @@ export type Database = {
   }
   public: {
     Tables: {
+      inbox_assignments: {
+        Row: {
+          account_id: string
+          assigned_at: string
+          assigned_by: string | null
+          conversation_key: string
+          team_member_id: string
+        }
+        Insert: {
+          account_id: string
+          assigned_at?: string
+          assigned_by?: string | null
+          conversation_key: string
+          team_member_id: string
+        }
+        Update: {
+          account_id?: string
+          assigned_at?: string
+          assigned_by?: string | null
+          conversation_key?: string
+          team_member_id?: string
+        }
+        Relationships: []
+      }
+      inbox_reads: {
+        Row: {
+          account_id: string
+          conversation_key: string
+          last_read_at: string
+          team_member_id: string
+        }
+        Insert: {
+          account_id: string
+          conversation_key: string
+          last_read_at?: string
+          team_member_id: string
+        }
+        Update: {
+          account_id?: string
+          conversation_key?: string
+          last_read_at?: string
+          team_member_id?: string
+        }
+        Relationships: []
+      }
       account_credits: {
         Row: {
           account_id: string
@@ -125,6 +170,9 @@ export type Database = {
           role: string
           role_id: string | null
           token: string
+          clinic_ids: string[] | null
+          is_practitioner: boolean | null
+          last_sent_at: string | null
         }
         Insert: {
           accepted_at?: string | null
@@ -137,6 +185,9 @@ export type Database = {
           role?: string
           role_id?: string | null
           token?: string
+          clinic_ids?: string[] | null
+          is_practitioner?: boolean | null
+          last_sent_at?: string | null
         }
         Update: {
           accepted_at?: string | null
@@ -149,6 +200,9 @@ export type Database = {
           role?: string
           role_id?: string | null
           token?: string
+          clinic_ids?: string[] | null
+          is_practitioner?: boolean | null
+          last_sent_at?: string | null
         }
         Relationships: [
           {
@@ -203,6 +257,7 @@ export type Database = {
         Row: {
           account_id: string
           created_at: string
+          description: string | null
           id: string
           is_system: boolean
           name: string
@@ -212,6 +267,7 @@ export type Database = {
         Insert: {
           account_id: string
           created_at?: string
+          description?: string | null
           id?: string
           is_system?: boolean
           name: string
@@ -221,6 +277,7 @@ export type Database = {
         Update: {
           account_id?: string
           created_at?: string
+          description?: string | null
           id?: string
           is_system?: boolean
           name?: string
@@ -821,6 +878,7 @@ export type Database = {
       appointment_types: {
         Row: {
           account_id: string
+          archived_at: string | null
           color: string
           created_at: string
           default_price_cents: number
@@ -833,10 +891,12 @@ export type Database = {
           online_deposit_cents: number | null
           online_max_days_ahead: number | null
           online_payment_required: boolean
+          sort_order: number | null
           stage: string | null
         }
         Insert: {
           account_id: string
+          archived_at?: string | null
           color?: string
           created_at?: string
           default_price_cents?: number
@@ -849,10 +909,12 @@ export type Database = {
           online_deposit_cents?: number | null
           online_max_days_ahead?: number | null
           online_payment_required?: boolean
+          sort_order?: number | null
           stage?: string | null
         }
         Update: {
           account_id?: string
+          archived_at?: string | null
           color?: string
           created_at?: string
           default_price_cents?: number
@@ -865,6 +927,7 @@ export type Database = {
           online_deposit_cents?: number | null
           online_max_days_ahead?: number | null
           online_payment_required?: boolean
+          sort_order?: number | null
           stage?: string | null
         }
         Relationships: [
@@ -1205,10 +1268,66 @@ export type Database = {
           },
         ]
       }
+      automation_run_events: {
+        Row: {
+          account_id: string
+          action_type: string | null
+          actor_team_member_id: string | null
+          created_at: string
+          detail: string | null
+          id: string
+          outcome: string
+          position: number | null
+          run_id: string
+          step_label: string | null
+        }
+        Insert: {
+          account_id: string
+          action_type?: string | null
+          actor_team_member_id?: string | null
+          created_at?: string
+          detail?: string | null
+          id?: string
+          outcome: string
+          position?: number | null
+          run_id: string
+          step_label?: string | null
+        }
+        Update: {
+          account_id?: string
+          action_type?: string | null
+          actor_team_member_id?: string | null
+          created_at?: string
+          detail?: string | null
+          id?: string
+          outcome?: string
+          position?: number | null
+          run_id?: string
+          step_label?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "automation_run_events_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "automation_run_events_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "automation_sequence_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       automation_sequence_runs: {
         Row: {
           account_id: string
+          attempts: number
           id: string
+          last_error: string | null
           lead_id: string
           next_position: number
           resume_at: string
@@ -1220,7 +1339,9 @@ export type Database = {
         }
         Insert: {
           account_id: string
+          attempts?: number
           id?: string
+          last_error?: string | null
           lead_id: string
           next_position?: number
           resume_at?: string
@@ -1232,7 +1353,9 @@ export type Database = {
         }
         Update: {
           account_id?: string
+          attempts?: number
           id?: string
+          last_error?: string | null
           lead_id?: string
           next_position?: number
           resume_at?: string
@@ -1988,6 +2111,7 @@ export type Database = {
           click_count: number
           complained_at: string | null
           delivered_at: string | null
+          dry_run: boolean
           failed_at: string | null
           failure_reason: string | null
           first_clicked_at: string | null
@@ -1997,7 +2121,7 @@ export type Database = {
           lead_id: string | null
           open_count: number
           patient_id: string | null
-          provider_message_id: string
+          provider_message_id: string | null
           recipient_email: string
           rule_id: string | null
           sent_at: string
@@ -2010,6 +2134,7 @@ export type Database = {
           click_count?: number
           complained_at?: string | null
           delivered_at?: string | null
+          dry_run?: boolean
           failed_at?: string | null
           failure_reason?: string | null
           first_clicked_at?: string | null
@@ -2019,7 +2144,7 @@ export type Database = {
           lead_id?: string | null
           open_count?: number
           patient_id?: string | null
-          provider_message_id: string
+          provider_message_id?: string | null
           recipient_email: string
           rule_id?: string | null
           sent_at?: string
@@ -2032,6 +2157,7 @@ export type Database = {
           click_count?: number
           complained_at?: string | null
           delivered_at?: string | null
+          dry_run?: boolean
           failed_at?: string | null
           failure_reason?: string | null
           first_clicked_at?: string | null
@@ -2041,7 +2167,7 @@ export type Database = {
           lead_id?: string | null
           open_count?: number
           patient_id?: string | null
-          provider_message_id?: string
+          provider_message_id?: string | null
           recipient_email?: string
           rule_id?: string | null
           sent_at?: string
@@ -5642,6 +5768,32 @@ export type Database = {
       }
     }
     Views: {
+      inbox_conversations: {
+        Row: {
+          account_id: string | null
+          assigned_to: string | null
+          conversation_key: string | null
+          external_contact_id: string | null
+          first_name: string | null
+          last_at: string | null
+          last_body: string | null
+          last_channel: string | null
+          last_direction: string | null
+          last_inbound_at: string | null
+          last_media_type: string | null
+          last_name: string | null
+          last_status: string | null
+          last_template_name: string | null
+          my_archived: boolean | null
+          my_label_ids: string[] | null
+          my_last_read_at: string | null
+          patient_id: string | null
+          phone_number: string | null
+          search_name: string | null
+          unread_for_me: boolean | null
+        }
+        Relationships: []
+      }
       care_plan_continuity_alerts: {
         Row: {
           account_id: string | null
@@ -5756,6 +5908,14 @@ export type Database = {
       }
     }
     Functions: {
+      delete_account_role: {
+        Args: { p_move_to_role_id?: string; p_role_id: string }
+        Returns: number
+      }
+      link_inbox_conversation: {
+        Args: { p_phone_number: string; p_patient_id: string }
+        Returns: number
+      }
       clinic_location_allowance: {
         Args: { target_account_id: string }
         Returns: number
@@ -5880,6 +6040,8 @@ export type Database = {
       }
       get_my_permissions: { Args: { target_account_id: string }; Returns: Json }
       get_patient_booking_info: { Args: never; Returns: Json }
+      get_appointment_type_usage: { Args: { p_account_id: string }; Returns: Json }
+      reorder_appointment_types: { Args: { p_ids: string[] }; Returns: undefined }
       cancel_patient_appointment: { Args: { p_appointment_id: string }; Returns: Json }
       record_email_event: {
         Args: {

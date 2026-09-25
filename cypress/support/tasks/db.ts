@@ -437,6 +437,11 @@ async function createAppointmentType(opts: {
   durationMinutes?: number
   defaultPriceCents?: number
   onlineBookingEnabled?: boolean
+  stage?: string | null
+  /** Archived since this instant (Settings -> Appointment Types -> Archivar). */
+  archivedAt?: string | null
+  /** Left to the insert trigger (after the last one) when omitted. */
+  sortOrder?: number
 }) {
   const { accountId, name, durationMinutes, defaultPriceCents, onlineBookingEnabled } = opts
   const row = unwrap(
@@ -447,12 +452,78 @@ async function createAppointmentType(opts: {
         name,
         duration_minutes: durationMinutes ?? 30,
         default_price_cents: defaultPriceCents ?? 0,
+        // true, although the column now defaults to false: every spec written
+        // before that change books these types online without saying so.
         online_booking_enabled: onlineBookingEnabled ?? true,
+        ...(opts.stage !== undefined ? { stage: opts.stage } : {}),
+        ...(opts.archivedAt !== undefined ? { archived_at: opts.archivedAt } : {}),
+        ...(opts.sortOrder !== undefined ? { sort_order: opts.sortOrder } : {}),
       })
       .select('id, name, duration_minutes')
       .single(),
   )
   return row as { id: string; name: string; duration_minutes: number }
+}
+
+/** One appointment type as stored, with its per-practitioner overrides. */
+async function appointmentTypeRow(opts: { id: string }) {
+  const { data, error } = await admin.from('appointment_types').select('*').eq('id', opts.id).maybeSingle()
+  if (error) throw error
+  const { data: overrides } = await admin
+    .from('appointment_type_overrides')
+    .select('team_member_id, duration_minutes, price_cents')
+    .eq('appointment_type_id', opts.id)
+  return { row: data, overrides: overrides ?? [] }
+}
+
+/** Deletes a type with the service role, so only the database's own guard stands in the way. */
+async function deleteAppointmentType(opts: { id: string }) {
+  const { error } = await admin.from('appointment_types').delete().eq('id', opts.id)
+  return { error: error?.message ?? null }
+}
+
+/** Every appointment type of an account, in the order the app offers them. */
+async function appointmentTypesFor(opts: { accountId: string }) {
+  const { data } = await admin
+    .from('appointment_types')
+    .select('id, name, sort_order, archived_at, online_booking_enabled')
+    .eq('account_id', opts.accountId)
+    .order('sort_order', { nullsFirst: false })
+    .order('name')
+  return data ?? []
+}
+
+/** A practitioner's own duration/price for a type, as the type's page saves it. */
+async function setAppointmentTypeOverride(opts: { accountId: string; appointmentTypeId: string; teamMemberId: string; durationMinutes?: number | null; priceCents?: number | null }) {
+  assertOk(
+    await admin.from('appointment_type_overrides').upsert(
+      {
+        account_id: opts.accountId,
+        appointment_type_id: opts.appointmentTypeId,
+        team_member_id: opts.teamMemberId,
+        duration_minutes: opts.durationMinutes ?? null,
+        price_cents: opts.priceCents ?? null,
+      },
+      { onConflict: 'appointment_type_id,team_member_id' },
+    ),
+  )
+  return { ok: true }
+}
+
+/** The appointment types the Growth receptionist may book. */
+async function setReceptionistTypes(opts: { accountId: string; appointmentTypeIds: string[] }) {
+  assertOk(
+    await admin
+      .from('receptionist_config')
+      .upsert({ account_id: opts.accountId, bookable_appointment_type_ids: opts.appointmentTypeIds }, { onConflict: 'account_id' }),
+  )
+  return { ok: true }
+}
+
+/** Connects Stripe as far as the settings pages check it: a publishable key. */
+async function setStripePublishableKey(opts: { accountId: string; key: string | null }) {
+  assertOk(await admin.from('accounts').update({ stripe_publishable_key: opts.key }).eq('id', opts.accountId))
+  return { ok: true }
 }
 
 async function createServiceProduct(opts: { accountId: string; name: string; priceCents?: number }) {
@@ -979,7 +1050,7 @@ async function releaseParkedRecords(opts: { accountId: string }) {
 // A clinic's fiscal header, as Settings -> Clinics / Fiscal Data would leave
 // it. Written directly so a spec can change it between two renders of the
 // same document.
-async function updateClinic(opts: { clinicId: string; name?: string; legalName?: string | null; address?: string | null; taxId?: string | null; footerText?: string | null }) {
+async function updateClinic(opts: { clinicId: string; name?: string; legalName?: string | null; address?: string | null; taxId?: string | null; footerText?: string | null; phone?: string | null; archivedAt?: string | null; timezone?: string }) {
   assertOk(
     await admin
       .from('clinics')
@@ -989,6 +1060,9 @@ async function updateClinic(opts: { clinicId: string; name?: string; legalName?:
         ...(opts.address !== undefined ? { address: opts.address } : {}),
         ...(opts.taxId !== undefined ? { tax_id: opts.taxId } : {}),
         ...(opts.footerText !== undefined ? { invoice_footer_text: opts.footerText } : {}),
+        ...(opts.phone !== undefined ? { phone: opts.phone } : {}),
+        ...(opts.archivedAt !== undefined ? { archived_at: opts.archivedAt } : {}),
+        ...(opts.timezone !== undefined ? { timezone: opts.timezone } : {}),
       })
       .eq('id', opts.clinicId),
   )
@@ -1151,6 +1225,57 @@ async function callRpcAsAnon(opts: { fn: string; args?: Record<string, unknown> 
   })
   const { error } = await anon.rpc(opts.fn, (opts.args ?? {}) as never)
   return { error: error?.message ?? null, code: (error as { code?: string } | null)?.code ?? null }
+}
+
+/**
+ * The online-booking rules of one appointment type, as Settings -> Appointment
+ * Types -> <type> -> Reserva online sets them. Only the fields given change.
+ */
+async function setAppointmentTypeBookingRules(opts: {
+  id: string
+  bookableBy?: 'all' | 'new_patients' | 'existing_patients'
+  maxDaysAhead?: number | null
+  paymentRequired?: boolean
+  depositCents?: number | null
+}) {
+  assertOk(
+    await admin
+      .from('appointment_types')
+      .update({
+        ...(opts.bookableBy !== undefined ? { online_bookable_by: opts.bookableBy } : {}),
+        ...(opts.maxDaysAhead !== undefined ? { online_max_days_ahead: opts.maxDaysAhead } : {}),
+        ...(opts.paymentRequired !== undefined ? { online_payment_required: opts.paymentRequired } : {}),
+        ...(opts.depositCents !== undefined ? { online_deposit_cents: opts.depositCents } : {}),
+      })
+      .eq('id', opts.id),
+  )
+  return { ok: true }
+}
+
+/**
+ * Gives an existing patient a login and turns on booking from the patient
+ * app, which is the state a patient is in after claim_patient_profile links
+ * them in the app.
+ */
+async function givePatientAppLogin(opts: { accountId: string; patientId: string; email: string; password: string }) {
+  const { data, error } = await admin.auth.admin.createUser({ email: opts.email, password: opts.password, email_confirm: true })
+  if (error) throw error
+  assertOk(await admin.from('patients').update({ user_id: data.user!.id, email: opts.email }).eq('id', opts.patientId))
+  assertOk(await admin.from('accounts').update({ patient_app_booking_enabled: true }).eq('id', opts.accountId))
+  return { userId: data.user!.id }
+}
+
+/**
+ * Calls an RPC signed in as that patient -- the way the app does. The
+ * service-role client would bypass exactly what is being tested: the booking
+ * functions resolve the patient from auth.uid().
+ */
+async function callRpcAsPatient(opts: { email: string; password: string; fn: string; args?: Record<string, unknown> }) {
+  const client = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+  const { error: signInErr } = await client.auth.signInWithPassword({ email: opts.email, password: opts.password })
+  if (signInErr) throw signInErr
+  const { data, error } = await client.rpc(opts.fn, (opts.args ?? {}) as never)
+  return { data: data ?? null, error: error?.message ?? null }
 }
 
 /** Gives a second patient the run of someone else's bono -- a family sharing one. */
@@ -1335,6 +1460,9 @@ async function createWhatsappMessage(opts: {
   templateName?: string
   /** ISO timestamp, so a thread can be seeded in a deliberate order. */
   createdAt?: string
+  /** 'instagram' with an externalContactId for a DM; WhatsApp otherwise. */
+  channel?: string
+  externalContactId?: string
 }) {
   const { accountId, patientId, phoneNumber, direction, bodyPreview } = opts
   const row = unwrap(
@@ -1351,6 +1479,8 @@ async function createWhatsappMessage(opts: {
         ...(opts.errorCode ? { error_code: opts.errorCode } : {}),
         ...(opts.templateName ? { template_name: opts.templateName } : {}),
         ...(opts.createdAt ? { created_at: opts.createdAt } : {}),
+        ...(opts.channel ? { channel: opts.channel } : {}),
+        ...(opts.externalContactId ? { external_contact_id: opts.externalContactId } : {}),
       })
       .select('id, channel')
       .single(),
@@ -1532,6 +1662,67 @@ async function readAsStaff(opts: { email: string; password: string; table: strin
   return { rows: (data as unknown[] | null)?.length ?? 0, error: error ? error.message : null }
 }
 
+/**
+ * A write the database should refuse, made as a signed-in staff member with
+ * the browser's own key -- so what is tested is the policy or trigger, not
+ * whether the button happened to be hidden.
+ */
+async function writeAsStaff(opts: {
+  email: string
+  password: string
+  op: 'deleteAppointment' | 'softDeleteAppointment' | 'setPatientTags' | 'insertPackagePurchase'
+  appointmentId?: string
+  patientId?: string
+  tags?: string[]
+  purchase?: Record<string, unknown>
+}) {
+  const userClient = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+  const { error: signInErr } = await userClient.auth.signInWithPassword({ email: opts.email, password: opts.password })
+  if (signInErr) throw signInErr
+  let result: { data: unknown[] | null; error: { message: string } | null }
+  if (opts.op === 'deleteAppointment') {
+    result = await userClient.from('appointments').delete().eq('id', opts.appointmentId!).select('id')
+  } else if (opts.op === 'softDeleteAppointment') {
+    result = await userClient.from('appointments').update({ deleted_at: new Date().toISOString() }).eq('id', opts.appointmentId!).select('id')
+  } else if (opts.op === 'setPatientTags') {
+    result = await userClient.from('patients').update({ tags: opts.tags ?? [] }).eq('id', opts.patientId!).select('id')
+  } else {
+    result = await userClient.from('package_purchases').insert(opts.purchase as never).select('id')
+  }
+  return { rows: result.data?.length ?? 0, error: result.error ? result.error.message : null }
+}
+
+/** A role by its stored name, or null -- rolePermissions throws when it is gone. */
+async function roleByName(opts: { accountId: string; name: string }) {
+  const { data } = await admin.from('account_roles').select('id, name, description, is_system, permissions').eq('account_id', opts.accountId).eq('name', opts.name).maybeSingle()
+  return data ?? null
+}
+
+/** Whose role a team member, or an invite, currently points at. */
+async function roleIdsOf(opts: { teamMemberIds?: string[]; inviteTokens?: string[] }) {
+  const members = opts.teamMemberIds?.length ? unwrap(await admin.from('team_members').select('id, role_id, role').in('id', opts.teamMemberIds)) : []
+  const invites = opts.inviteTokens?.length ? unwrap(await admin.from('account_invites').select('token, role_id, role').in('token', opts.inviteTokens)) : []
+  return { members, invites } as { members: { id: string; role_id: string | null; role: string }[]; invites: { token: string; role_id: string | null; role: string }[] }
+}
+
+async function packagePurchasesFor(opts: { patientId: string }) {
+  return unwrap(await admin.from('package_purchases').select('id, package_name, created_by').eq('patient_id', opts.patientId)) as { id: string; package_name: string; created_by: string | null }[]
+}
+
+async function setPatientTags(opts: { patientId: string; tags: string[] }) {
+  assertOk(await admin.from('patients').update({ tags: opts.tags }).eq('id', opts.patientId))
+  return { tags: opts.tags }
+}
+
+async function patientTags(opts: { patientId: string }) {
+  const row = unwrap(await admin.from('patients').select('tags').eq('id', opts.patientId).single()) as { tags: string[] }
+  return row.tags ?? []
+}
+
+async function createMembershipTemplate(opts: { accountId: string; name: string; priceCents?: number }) {
+  return unwrap(await admin.from('memberships').insert({ account_id: opts.accountId, name: opts.name, price_cents: opts.priceCents ?? 5000 }).select('id').single()) as { id: string }
+}
+
 async function clearWhatsappAppSecret(opts: { accountId: string }) {
   assertOk(await admin.from('whatsapp_app_secrets').delete().eq('account_id', opts.accountId))
   return { configured: false }
@@ -1543,9 +1734,9 @@ async function signWhatsappBody(opts: { body: string; appSecret: string }) {
 
 async function appointmentById(opts: { appointmentId: string }) {
   const row = unwrap(
-    await admin.from('appointments').select('id, status, confirmation_status, rescheduled, starts_at, ends_at, room_id, checked_in_at').eq('id', opts.appointmentId).single(),
+    await admin.from('appointments').select('id, status, confirmation_status, rescheduled, starts_at, ends_at, room_id, checked_in_at, practitioner_id, deleted_at').eq('id', opts.appointmentId).single(),
   )
-  return row as { id: string; status: string; confirmation_status: string | null; rescheduled: boolean; starts_at: string; ends_at: string; room_id: string | null; checked_in_at: string | null }
+  return row as { id: string; status: string; confirmation_status: string | null; rescheduled: boolean; starts_at: string; ends_at: string; room_id: string | null; checked_in_at: string | null; practitioner_id: string | null; deleted_at: string | null }
 }
 
 /**
@@ -1931,6 +2122,8 @@ async function createAutomationRule(opts: {
   isMarketing?: boolean
   enabled?: boolean
   dryRun?: boolean
+  /** automation_rules.filters, e.g. { appointment_type_ids: [...] }. */
+  filters?: Record<string, unknown>
   actions: { type: string; config?: Record<string, unknown> }[]
 }) {
   const rule = unwrap(
@@ -1943,6 +2136,7 @@ async function createAutomationRule(opts: {
         enabled: opts.enabled ?? true,
         is_marketing: opts.isMarketing ?? false,
         dry_run: opts.dryRun ?? false,
+        ...(opts.filters ? { filters: opts.filters as never } : {}),
       })
       .select('id')
       .single(),
@@ -2241,6 +2435,51 @@ async function stopPracticeHubStub() {
   return { ok: true }
 }
 
+/**
+ * A webhook receiver that only counts. What an automation's webhook step
+ * sends is not the question here -- whether it was called at all is, because
+ * a rule in test mode must not call it.
+ */
+let webhookReceiver: { server: import('node:http').Server; hits: string[] } | null = null
+
+async function startWebhookReceiver() {
+  await stopWebhookReceiver()
+  const { createServer } = await import('node:http')
+  const hits: string[] = []
+  const server = createServer((req, res) => {
+    hits.push(String(req.headers['x-quiroflow-event'] ?? ''))
+    res.statusCode = 204
+    res.end()
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
+  webhookReceiver = { server, hits }
+  const port = (server.address() as { port: number }).port
+  return { url: `http://127.0.0.1:${port}/hook` }
+}
+
+async function webhookReceiverHits() {
+  return webhookReceiver?.hits ?? []
+}
+
+async function stopWebhookReceiver() {
+  const current = webhookReceiver
+  webhookReceiver = null
+  if (!current) return { ok: true }
+  await new Promise<void>((resolve) => current.server.close(() => resolve()))
+  return { ok: true }
+}
+
+/** A lead's email_messages rows, for asserting what a rule sent or recorded. */
+async function leadEmailMessages(opts: { leadId: string }) {
+  const { data, error } = await admin
+    .from('email_messages')
+    .select('provider_message_id, dry_run, rule_id, recipient_email, subject')
+    .eq('lead_id', opts.leadId)
+    .order('sent_at')
+  if (error) throw error
+  return data ?? []
+}
+
 /** How far the receptionist has already drafted, for the no-redraft guard. */
 async function setLeadDraftedThrough(opts: { id: string; at: string | null }) {
   assertOk(await admin.from('leads').update({ ai_drafted_through_at: opts.at }).eq('id', opts.id))
@@ -2323,6 +2562,22 @@ async function makeSequenceDue(opts: { leadId: string }) {
       .update({ resume_at: new Date(Date.now() - 60_000).toISOString() })
       .eq('lead_id', opts.leadId),
   )
+  return { ok: true }
+}
+
+/** A run's execution history, oldest first -- what the Executions tab reads. */
+async function runEvents(opts: { runId: string }) {
+  const { data } = await admin
+    .from('automation_run_events')
+    .select('outcome, position, action_type, step_label, detail, actor_team_member_id')
+    .eq('run_id', opts.runId)
+    .order('created_at')
+  return data ?? []
+}
+
+/** Rewrites one step of a rule, the way fixing it in Campaigns would. */
+async function setAutomationActionConfig(opts: { ruleId: string; position: number; config: Record<string, unknown> }) {
+  assertOk(await admin.from('automation_actions').update({ config: opts.config }).eq('rule_id', opts.ruleId).eq('position', opts.position))
   return { ok: true }
 }
 
@@ -2445,6 +2700,54 @@ async function setTeamMemberHours(opts: { teamMemberId: string; hours: Record<st
   return { ok: true }
 }
 
+/** A clinic's whole-location closures (availability blocks with no practitioner or room). */
+async function clinicClosures(opts: { clinicId: string }) {
+  const { data, error } = await admin.from('availability_blocks').select('starts_at, ends_at, note, practitioner_id, room_id').eq('clinic_id', opts.clinicId).is('practitioner_id', null).is('room_id', null).order('starts_at')
+  if (error) throw error
+  return data ?? []
+}
+
+/** Many patients, each with one inbound WhatsApp message a minute apart --
+ *  enough conversations to page the Inbox. Newest first in the returned list. */
+async function seedInboxConversations(opts: { accountId: string; clinicId: string; count: number; prefix?: string }) {
+  const prefix = opts.prefix ?? 'Paged'
+  const patients = unwrap(
+    await admin
+      .from('patients')
+      .insert(Array.from({ length: opts.count }, (_, i) => ({ account_id: opts.accountId, clinic_id: opts.clinicId, first_name: prefix, last_name: `N${String(i).padStart(3, '0')}` })))
+      .select('id, last_name'),
+  ) as { id: string; last_name: string }[]
+  const base = Date.now() - 2 * 60 * 60 * 1000
+  assertOk(
+    await admin.from('whatsapp_messages').insert(
+      patients.map((p, i) => ({
+        account_id: opts.accountId,
+        patient_id: p.id,
+        phone_number: `+3460${String(1000000 + i)}`,
+        direction: 'inbound',
+        status: 'received',
+        body_preview: `Mensaje ${p.last_name}`,
+        created_at: new Date(base + i * 60000).toISOString(),
+      })),
+    ),
+  )
+  return patients.map((p) => p.id).reverse()
+}
+
+/** Who an Inbox conversation is assigned to, read back. */
+async function inboxAssignment(opts: { accountId: string; conversationKey: string }) {
+  const { data, error } = await admin.from('inbox_assignments').select('team_member_id').eq('account_id', opts.accountId).eq('conversation_key', opts.conversationKey).maybeSingle()
+  if (error) throw error
+  return data?.team_member_id ?? null
+}
+
+/** Every WhatsApp message from a number, with the patient it is on. */
+async function messagesFromNumber(opts: { accountId: string; phoneNumber: string }) {
+  const { data, error } = await admin.from('whatsapp_messages').select('id, patient_id').eq('account_id', opts.accountId).eq('phone_number', opts.phoneNumber)
+  if (error) throw error
+  return data ?? []
+}
+
 /** A clinic as Settings -> Clinics leaves it, or null once deleted. */
 async function clinicRow(opts: { clinicId: string }) {
   const { data, error } = await admin
@@ -2465,9 +2768,23 @@ async function setAppointmentStatus(opts: { appointmentId: string; status: strin
 /** What /account saves on a team member, read back. */
 async function teamMemberById(opts: { teamMemberId: string }) {
   const row = unwrap(
-    await admin.from('team_members').select('full_name, color, language_preference, theme_preference, deleted_at, is_owner').eq('id', opts.teamMemberId).single(),
+    await admin
+      .from('team_members')
+      .select('full_name, color, language_preference, theme_preference, deleted_at, is_owner, role_id, is_practitioner, online_booking_enabled')
+      .eq('id', opts.teamMemberId)
+      .single(),
   )
-  return row as { full_name: string; color: string; language_preference: string; theme_preference: string; deleted_at: string | null; is_owner: boolean }
+  return row as {
+    full_name: string
+    color: string
+    language_preference: string
+    theme_preference: string
+    deleted_at: string | null
+    is_owner: boolean
+    role_id: string | null
+    is_practitioner: boolean
+    online_booking_enabled: boolean
+  }
 }
 
 /** A patient's invoices with their lines -- what a fee left behind. */
@@ -2481,6 +2798,78 @@ async function invoicesFor(opts: { patientId: string }) {
 async function setCancellationFee(opts: { accountId: string; cents: number | null }) {
   assertOk(await admin.from('accounts').update({ cancellation_fee_cents: opts.cents }).eq('id', opts.accountId))
   return { ok: true }
+}
+
+// --- Settings > Team --------------------------------------------------------
+
+/** Everything the member page edits, plus whether auth has them banned. */
+async function teamMemberDetail(opts: { teamMemberId: string }) {
+  const row = unwrap(
+    await admin
+      .from('team_members')
+      .select('full_name, color, role_id, is_practitioner, online_booking_enabled, business_hours, deleted_at, is_owner, user_id')
+      .eq('id', opts.teamMemberId)
+      .single(),
+  )
+  const clinics = unwrap(await admin.from('team_member_clinics').select('clinic_id').eq('team_member_id', opts.teamMemberId))
+  let bannedUntil: string | null = null
+  if (row.user_id) {
+    const { data } = await admin.auth.admin.getUserById(row.user_id)
+    bannedUntil = (data.user as { banned_until?: string } | null)?.banned_until ?? null
+  }
+  return { ...row, clinicIds: (clinics as { clinic_id: string }[]).map((c) => c.clinic_id), bannedUntil }
+}
+
+/** Appointments imported from PracticeHub carry only the practitioner's name. */
+async function createImportedAppointments(opts: { accountId: string; clinicId: string; patientId: string; practitionerName: string; count: number }) {
+  const rows = Array.from({ length: opts.count }, (_, i) => {
+    const starts = new Date(Date.UTC(2026, 0, 5 + i, 9))
+    return {
+      account_id: opts.accountId,
+      clinic_id: opts.clinicId,
+      patient_id: opts.patientId,
+      practitioner_id: null,
+      practitioner_name: opts.practitionerName,
+      starts_at: starts.toISOString(),
+      ends_at: new Date(starts.getTime() + 30 * 60000).toISOString(),
+      status: 'completed',
+    }
+  })
+  assertOk(await admin.from('appointments').insert(rows))
+  return { created: opts.count }
+}
+
+/** How many appointments under an imported name are linked, and to whom. */
+async function importedAppointmentsLinks(opts: { accountId: string; practitionerName: string }) {
+  const rows = unwrap(await admin.from('appointments').select('practitioner_id').eq('account_id', opts.accountId).eq('practitioner_name', opts.practitionerName))
+  return (rows as { practitioner_id: string | null }[]).map((r) => r.practitioner_id)
+}
+
+/** The newest invite on an account, as Settings > Team wrote it. */
+async function latestInvite(opts: { accountId: string }) {
+  const row = unwrap(
+    await admin
+      .from('account_invites')
+      .select('id, token, email, full_name, role, role_id, is_practitioner, clinic_ids, link_practitioner_name, last_sent_at')
+      .eq('account_id', opts.accountId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single(),
+  )
+  return row
+}
+
+/** Accept an invite as a signed-in user, the way /join does. */
+async function acceptInviteAs(opts: { email: string; password: string; token: string }) {
+  const userClient = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+  const { error: signInErr } = await userClient.auth.signInWithPassword({ email: opts.email, password: opts.password })
+  if (signInErr) throw signInErr
+  const { error } = await userClient.rpc('accept_invite' as never, { p_token: opts.token } as never)
+  if (error) throw error
+  const { data: me } = await userClient.auth.getUser()
+  const member = unwrap(await admin.from('team_members').select('id, is_practitioner, role_id').eq('user_id', me.user!.id).single())
+  const clinics = unwrap(await admin.from('team_member_clinics').select('clinic_id').eq('team_member_id', member.id))
+  return { ...member, clinicIds: (clinics as { clinic_id: string }[]).map((c) => c.clinic_id) }
 }
 
 // --- Two-factor login ------------------------------------------------------
@@ -2577,6 +2966,10 @@ export const dbTasks = {
   'db:setPracticeHubConnection': setPracticeHubConnection,
   'db:startPracticeHubStub': startPracticeHubStub,
   'db:stopPracticeHubStub': stopPracticeHubStub,
+  'db:startWebhookReceiver': startWebhookReceiver,
+  'db:webhookReceiverHits': webhookReceiverHits,
+  'db:stopWebhookReceiver': stopWebhookReceiver,
+  'db:leadEmailMessages': leadEmailMessages,
   'db:setLeadStage': setLeadStage,
   'db:sequenceRuns': sequenceRuns,
   'db:makeSequenceDue': makeSequenceDue,
@@ -2602,6 +2995,12 @@ export const dbTasks = {
   'db:seedManyPatients': seedManyPatients,
   'db:patientByName': patientByName,
   'db:createAppointmentType': createAppointmentType,
+  'db:appointmentTypeRow': appointmentTypeRow,
+  'db:deleteAppointmentType': deleteAppointmentType,
+  'db:appointmentTypesFor': appointmentTypesFor,
+  'db:setAppointmentTypeOverride': setAppointmentTypeOverride,
+  'db:setReceptionistTypes': setReceptionistTypes,
+  'db:setStripePublishableKey': setStripePublishableKey,
   'db:createServiceProduct': createServiceProduct,
   'db:enableOnlineBooking': enableOnlineBooking,
   'db:enableEmailConfirmations': enableEmailConfirmations,
@@ -2628,6 +3027,8 @@ export const dbTasks = {
   'db:createFacturaWithoutTax': createFacturaWithoutTax,
   'db:huellaFor': huellaFor,
   'db:facturaRecordsFor': facturaRecordsFor,
+  'db:runEvents': runEvents,
+  'db:setAutomationActionConfig': setAutomationActionConfig,
   'db:updateClinic': updateClinic,
   'db:createClinic': createClinic,
   'db:tryChangeFacturaIssuer': tryChangeFacturaIssuer,
@@ -2650,6 +3051,9 @@ export const dbTasks = {
   'db:createPackagePurchase': createPackagePurchase,
   'db:callPublicBookingAsAnon': callPublicBookingAsAnon,
   'db:callRpcAsAnon': callRpcAsAnon,
+  'db:setAppointmentTypeBookingRules': setAppointmentTypeBookingRules,
+  'db:givePatientAppLogin': givePatientAppLogin,
+  'db:callRpcAsPatient': callRpcAsPatient,
   'db:sharePackageWith': sharePackageWith,
   'db:packageSessionEffects': packageSessionEffects,
   'db:insertDuplicateSession': insertDuplicateSession,
@@ -2669,7 +3073,16 @@ export const dbTasks = {
   'db:addClinic': addClinic,
   'db:recallState': recallState,
   'db:teamMemberById': teamMemberById,
+  'db:teamMemberDetail': teamMemberDetail,
+  'db:createImportedAppointments': createImportedAppointments,
+  'db:importedAppointmentsLinks': importedAppointmentsLinks,
+  'db:latestInvite': latestInvite,
+  'db:acceptInviteAs': acceptInviteAs,
   'db:clinicRow': clinicRow,
+  'db:clinicClosures': clinicClosures,
+  'db:seedInboxConversations': seedInboxConversations,
+  'db:inboxAssignment': inboxAssignment,
+  'db:messagesFromNumber': messagesFromNumber,
   'db:setAppointmentStatus': setAppointmentStatus,
   'db:setCancellationFee': setCancellationFee,
   'db:invoicesFor': invoicesFor,
@@ -2687,5 +3100,12 @@ export const dbTasks = {
   'db:stopMetaGraphStub': stopMetaGraphStub,
   'db:readAsStaff': readAsStaff,
   'db:rolePermissions': rolePermissions,
+  'db:writeAsStaff': writeAsStaff,
+  'db:roleByName': roleByName,
+  'db:roleIdsOf': roleIdsOf,
+  'db:packagePurchasesFor': packagePurchasesFor,
+  'db:setPatientTags': setPatientTags,
+  'db:patientTags': patientTags,
+  'db:createMembershipTemplate': createMembershipTemplate,
   'db:bookingAttribution': bookingAttribution,
 }

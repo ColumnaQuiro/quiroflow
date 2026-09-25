@@ -3,6 +3,12 @@ const props = defineProps<{ patientId: string }>()
 
 const supabase = useSupabaseClient()
 const t = useT()
+const { can } = usePermission()
+// patients_tags_remove: taking any tag off a patient. Adding one only needs
+// patients_edit. The database enforces the same (patient_tag_removal_needs_permission).
+function canRemoveTag(_tag: string) {
+  return can('patients_tags_remove')
+}
 
 const chiefComplaint = ref('')
 const diagnosis = ref('')
@@ -58,6 +64,7 @@ async function addTag() {
   await supabase.from('patients').update({ tags: tags.value }).eq('id', props.patientId)
 }
 async function removeTag(tag: string) {
+  if (!canRemoveTag(tag)) return
   tags.value = tags.value.filter((t) => t !== tag)
   await supabase.from('patients').update({ tags: tags.value }).eq('id', props.patientId)
 }
@@ -156,9 +163,19 @@ const flagRows = computed(() => {
         <div>
           <label class="block text-[11px] font-medium text-ink-muted2">{{ t('Tags', 'Etiquetas') }}</label>
           <div class="mt-1 flex flex-wrap items-center gap-1.5">
-            <span v-for="tag in tags" :key="tag" class="inline-flex items-center gap-1 rounded-pill bg-chip-bg px-2 py-0.5 text-[11px] font-medium text-chip-text">
+            <span v-for="tag in tags" :key="tag" data-cy="patient-tag" :data-tag="tag" class="inline-flex items-center gap-1 rounded-pill bg-chip-bg px-2 py-0.5 text-[11px] font-medium text-chip-text">
               {{ tag }}
-              <button type="button" class="text-ink-faint hover:text-ink-600" @click="removeTag(tag)">✕</button>
+              <button
+                v-if="canRemoveTag(tag)"
+                type="button"
+                data-cy="patient-tag-remove"
+                :aria-label="t(`Remove tag ${tag}`, `Quitar la etiqueta ${tag}`)"
+                class="text-ink-faint hover:text-ink-600"
+                @click="removeTag(tag)"
+              >
+                ✕
+              </button>
+              <span v-else data-cy="patient-tag-locked" class="sr-only">{{ t('(your role cannot remove tags)', '(tu rol no puede quitar etiquetas)') }}</span>
             </span>
             <input
               v-model="newTag"

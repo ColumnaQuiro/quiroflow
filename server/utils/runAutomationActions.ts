@@ -1,4 +1,5 @@
 import { createHmac, randomUUID } from 'node:crypto'
+import { automationFieldValue as recipientFieldValue, type MergeContext } from '~/utils/automationFields'
 import { toE164 } from '~/utils/phone'
 import { renderTemplateFields } from '~/utils/docFields'
 
@@ -7,7 +8,6 @@ import { renderTemplateFields } from '~/utils/docFields'
 // 16:00 Madrid time (CEST, UTC+2) would merge into a message as "14:00".
 // There's no per-account timezone column yet, so this is hardcoded the same
 // way same-day-cron.post.ts and appointmentNotifications.ts hardcode it.
-const CLINIC_TIMEZONE = 'Europe/Madrid'
 
 // Shared by both the trigger-based fire endpoint and the one-off "Send Now"
 // endpoint: both ultimately just need to run one rule's actions for one
@@ -113,6 +113,23 @@ export interface ActionRow {
   action_type: 'whatsapp_template' | 'email' | 'webhook' | 'delay'
   config: Record<string, any>
 }
+/**
+ * An action that was deliberately not delivered, as opposed to one that
+ * failed: no consent, no number to send to, a channel the clinic never
+ * connected. Retrying cannot change any of these, so the drip carries on past
+ * them -- but the reason is kept, because "why did this lead get nothing" is
+ * exactly the question the Executions tab exists to answer.
+ */
+export class ActionSkipped extends Error {}
+
+/** What one action did, for the sequence runner's execution history. */
+export interface ActionOutcome {
+  actionId: string
+  actionType: ActionRow['action_type']
+  status: 'sent' | 'dry_run' | 'skipped' | 'failed'
+  detail: string | null
+}
+
 interface TriggerBody {
   triggerEvent: string
   patientId: string
@@ -169,7 +186,8 @@ export async function runActionsList(
   // against the campaign would flatter every metric on the page.
   ruleId?: string,
 ) {
-  return runForRecipient(supabase, accountId, actions, patientRecipient(patient), origin, isMarketing, appointmentId, triggerBody, whatsappOverrideNumber, extraContext, dryRun, ruleId)
+  const { problems } = await runForRecipient(supabase, accountId, actions, patientRecipient(patient), origin, isMarketing, appointmentId, triggerBody, whatsappOverrideNumber, extraContext, dryRun, ruleId)
+  return problems
 }
 
 /**
@@ -190,7 +208,7 @@ export async function runLeadRuleActions(
   // actions to find where it got to, so it passes the step rather than
   // making this re-read them and run the lot.
   only?: ActionRow[],
-) {
+): Promise<ActionOutcome[]> {
   const [{ data: rule }, { data: actions }] = await Promise.all([
     supabase.from('automation_rules').select('is_marketing, dry_run').eq('id', ruleId).maybeSingle(),
     only
@@ -198,7 +216,7 @@ export async function runLeadRuleActions(
       : supabase.from('automation_actions').select('id, action_type, config').eq('rule_id', ruleId).order('position'),
   ])
 
-  await runForRecipient(
+  const { outcomes } = await runForRecipient(
     supabase,
     accountId,
     (actions ?? []) as ActionRow[],
@@ -212,6 +230,7 @@ export async function runLeadRuleActions(
     rule?.dry_run ?? false,
     ruleId,
   )
+  return outcomes
 }
 
 async function runForRecipient(
@@ -243,9 +262,19 @@ async function runForRecipient(
   // merge token always refers to the appointment that triggered this rule --
   // there's no other appointment in scope an email action could mean instead.
   let nextAppointmentAt: string | undefined
+  // The clinic behind the message: the appointment's own, else the account's
+  // first active one. Its time zone formats the appointment variables, and its
+  // name, phone and address are variables of their own (clinic_*), so a
+  // clinic's WhatsApp template can say how to reach that location.
+  let clinic: { name: string | null; phone: string | null; address: string | null; timezone: string | null } | null = null
   if (appointmentId) {
-    const { data: appt } = await supabase.from('appointments').select('starts_at').eq('id', appointmentId).maybeSingle()
+    const { data: appt } = await supabase.from('appointments').select('starts_at, clinics(name, phone, address, timezone)').eq('id', appointmentId).maybeSingle()
     nextAppointmentAt = appt?.starts_at ?? undefined
+    clinic = (appt?.clinics as typeof clinic) ?? null
+  }
+  if (!clinic) {
+    const { data } = await supabase.from('clinics').select('name, phone, address, timezone').eq('account_id', accountId).is('archived_at', null).order('created_at').limit(1).maybeSingle()
+    clinic = data ?? null
   }
   // Also resolved once per firing, not per-action -- backs {{google_review_link}}
   // for the appointment.review_request campaign (and any other campaign that
@@ -265,67 +294,69 @@ async function runForRecipient(
     record: !dryRun && !whatsappOverrideNumber && actionsUseReviewLink(actions),
   })
 
-  const context: MergeContext = { ...extraContext, nextAppointmentAt, googleReviewUrl }
+  const context: MergeContext = {
+    ...extraContext,
+    nextAppointmentAt,
+    googleReviewUrl,
+    clinicName: clinic?.name ?? undefined,
+    clinicPhone: clinic?.phone ?? undefined,
+    clinicAddress: clinic?.address ?? undefined,
+    clinicTimezone: clinic?.timezone ?? undefined,
+  }
 
   // Why an action did nothing, in the sender's words. Actions stay
   // best-effort -- one failure must not stop the rest of a rule -- but the
   // reason is no longer thrown away. "Send test to me" shows this list; a
   // real automated send logs it and carries on.
   const problems: string[] = []
+  // The same information, per action and machine-readable, for the sequence
+  // runner: it has to tell "not delivered on purpose" (carry on) from "tried
+  // and failed" (retry, then stop and say so) -- which a list of sentences
+  // cannot.
+  const outcomes: ActionOutcome[] = []
   const skipped = (channel: string) =>
     !canContact
       ? `${channel}: this recipient is marked do-not-contact (or is a minor).`
       : `${channel}: this is a marketing rule and the recipient has not opted in to ${channel}.`
 
   for (const action of actions) {
+    const outcome = (status: ActionOutcome['status'], detail: string | null) =>
+      outcomes.push({ actionId: action.id, actionType: action.action_type, status, detail })
     try {
       if (action.action_type === 'whatsapp_template') {
-        if (canContact && channelAllowed('whatsapp')) await runWhatsAppAction(supabase, accountId, recipient, action.config, origin, appointmentId, whatsappOverrideNumber, context, dryRun)
-        else problems.push(skipped('WhatsApp'))
+        if (canContact && channelAllowed('whatsapp')) {
+          const result = await runWhatsAppAction(supabase, accountId, recipient, action.config, origin, appointmentId, whatsappOverrideNumber, context, dryRun)
+          outcome(result, null)
+        } else {
+          problems.push(skipped('WhatsApp'))
+          outcome('skipped', skipped('WhatsApp'))
+        }
       } else if (action.action_type === 'email') {
         if (canContact && channelAllowed('email')) {
-          await runEmailAction(recipient, action.config, context, { supabase, accountId, ruleId })
+          const result = await runEmailAction(recipient, action.config, context, { supabase, accountId, ruleId }, dryRun)
+          outcome(result, null)
+        } else {
+          problems.push(skipped('Email'))
+          outcome('skipped', skipped('Email'))
         }
-        else problems.push(skipped('Email'))
       } else if (action.action_type === 'webhook') {
-        await runWebhookAction(action.config, triggerBody ?? { triggerEvent: 'manual', patientId: recipient.id, appointmentId })
+        const result = await runWebhookAction(action.config, triggerBody ?? { triggerEvent: 'manual', patientId: recipient.id, appointmentId }, dryRun)
+        outcome(result, result === 'dry_run' ? 'Test mode: the webhook was not called.' : null)
       }
     } catch (e: any) {
       // Best-effort: one failed action shouldn't stop the rest of the rule.
       const message = e?.message ?? String(e)
       problems.push(`${action.action_type}: ${message}`)
-      console.error(`[automations] ${action.action_type} action failed for ${recipient.kind} ${recipient.id}: ${message}`)
+      if (e instanceof ActionSkipped) {
+        outcome('skipped', message)
+      } else {
+        outcome('failed', message)
+        console.error(`[automations] ${action.action_type} action failed for ${recipient.kind} ${recipient.id}: ${message}`)
+      }
     }
   }
 
-  return problems
-}
-
-interface MergeContext { nextAppointmentAt?: string; googleReviewUrl?: string; waitlistClaimLink?: string; waitlistSlotDatetime?: string }
-
-function recipientFieldValue(recipient: Recipient, source: string, context?: MergeContext): string {
-  if (source === 'first_name') return recipient.firstName ?? ''
-  if (source === 'last_name') return recipient.lastName ?? ''
-  if (source === 'email') return recipient.email ?? ''
-  if (source === 'google_review_link') return context?.googleReviewUrl ?? ''
-  if (source === 'waitlist_claim_link') return context?.waitlistClaimLink ?? ''
-  if (source === 'waitlist_slot_datetime') return context?.waitlistSlotDatetime ?? ''
-  if (source === 'next_appointment') {
-    if (!context?.nextAppointmentAt) return ''
-    return new Date(context.nextAppointmentAt).toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: CLINIC_TIMEZONE })
-  }
-  // Split date/time -- some WhatsApp templates (Meta's own approved
-  // "appointment_reminder" among them) have separate {{n}} slots for the
-  // date and the time rather than one combined string like next_appointment.
-  if (source === 'appointment_date') {
-    if (!context?.nextAppointmentAt) return ''
-    return new Date(context.nextAppointmentAt).toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', timeZone: CLINIC_TIMEZONE })
-  }
-  if (source === 'appointment_time') {
-    if (!context?.nextAppointmentAt) return ''
-    return new Date(context.nextAppointmentAt).toLocaleString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: CLINIC_TIMEZONE })
-  }
-  return ''
+  return { problems, outcomes }
 }
 
 /**
@@ -498,10 +529,10 @@ async function runWhatsAppAction(
   toOverride?: string,
   context?: MergeContext,
   dryRun = false,
-) {
+): Promise<'sent' | 'dry_run'> {
   const templateName: string | undefined = config.template_name
   const templateLanguage: string = config.template_language || 'es'
-  if (!templateName) return
+  if (!templateName) throw new Error('No WhatsApp template is chosen for this step.')
 
   const { data: account } = await supabase
     .from('accounts')
@@ -516,7 +547,9 @@ async function runWhatsAppAction(
   // the live template lookup below needs those credentials, so an
   // unconnected account cannot catch a wrong variable count. Worth having
   // anyway, and worth not pretending otherwise.
-  if (!dryRun && (!account?.whatsapp_phone_number_id || !account?.whatsapp_access_token)) return
+  if (!dryRun && (!account?.whatsapp_phone_number_id || !account?.whatsapp_access_token)) {
+    throw new ActionSkipped('WhatsApp is not connected for this clinic.')
+  }
 
   let to = toOverride
   // A lead carries its own number, already normalised at ingest. Only a
@@ -528,10 +561,10 @@ async function runWhatsAppAction(
       .select('number, country_code, is_whatsapp')
       .eq('patient_id', recipient.patient.id)
     const target = numbers?.find((n: any) => n.is_whatsapp) ?? numbers?.[0]
-    if (!target) return
+    if (!target) throw new ActionSkipped('No phone number to send WhatsApp to.')
     to = toE164(target.number, target.country_code) ?? undefined
   }
-  if (!to) return
+  if (!to) throw new ActionSkipped('No phone number to send WhatsApp to.')
 
   // Each configured variable slot maps to a patient field (first_name,
   // last_name, email) or fixed text -- lets a template with more than one
@@ -649,7 +682,7 @@ async function runWhatsAppAction(
       status: 'would_send',
       phone_number: to,
     })
-    return
+    return 'dry_run'
   }
 
   try {
@@ -729,6 +762,13 @@ async function runWhatsAppAction(
       await supabase.from('appointments').update({ confirmation_status: 'pending' }).eq('id', appointmentId)
     }
   }
+
+  // Raised only now, after the failed send is logged against the recipient:
+  // the whatsapp_messages row is what the Inbox shows, and it must exist
+  // whether or not anyone upstream is listening. Before this, a refusal from
+  // Meta ended here as a normal return and a drip counted it as delivered.
+  if (!wamid) throw new Error(`Meta refused the WhatsApp message: ${errorMessage ?? 'no message id returned'}`)
+  return 'sent'
 }
 
 // Email clients disagree about what an unstyled <a> looks like, and some
@@ -746,13 +786,19 @@ function styleLinks(html: string) {
  * to a campaign. Optional, because one caller has no business recording
  * anything -- a "send test to me" would otherwise put the staff member's own
  * open into the campaign's open rate.
+ *
+ * Under `dryRun` everything up to the Resend call still runs -- the subject,
+ * body and address checks, the merge -- and the message is recorded as a
+ * dry_run row instead of sent. It used to ignore dry run entirely, so a rule
+ * in test mode with an email step emailed real people.
  */
 async function runEmailAction(
   recipient: Recipient,
   config: Record<string, any>,
   context?: MergeContext,
   record?: { supabase: any; accountId: string; ruleId?: string },
-) {
+  dryRun = false,
+): Promise<'sent' | 'dry_run'> {
   const subject: string | undefined = config.subject
   const rawBody: string | undefined = config.body
   // These used to be silent returns. Every one of them is a reason an email
@@ -760,7 +806,8 @@ async function runEmailAction(
   // the sender can read -- see the problems list in runForRecipient.
   if (!subject) throw new Error('The email action has no subject.')
   if (!rawBody) throw new Error('The email action has no body.')
-  if (!recipient.email) throw new Error('No email address to send to.')
+  // Skipped rather than failed: retrying cannot give a lead an address.
+  if (!recipient.email) throw new ActionSkipped('No email address to send to.')
 
   const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
   const mergePlain = (text: string) => text.replace(/\{\{(\w+)\}\}/g, (_, key: string) => recipientFieldValue(recipient, key, context))
@@ -775,8 +822,10 @@ async function runEmailAction(
   const runtimeConfig = useRuntimeConfig()
   // No key means nothing has ever been sent from this deployment. Silence
   // here reads exactly like a delivery failure, which is the harder thing to
-  // diagnose of the two.
-  if (!runtimeConfig.resendApiKey) throw new Error('Email sending is not configured (no Resend API key on this deployment).')
+  // diagnose of the two. A dry run does not need one, for the same reason a
+  // WhatsApp dry run does not need Meta credentials: rehearsing before the
+  // channel is set up is the order a clinic actually does things in.
+  if (!dryRun && !runtimeConfig.resendApiKey) throw new Error('Email sending is not configured (no Resend API key on this deployment).')
 
   const html = `
     <div style="background:#F4F4F6;padding:40px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
@@ -793,6 +842,27 @@ async function runEmailAction(
   // green tick on it. The caller decides what to do with the failure; a real
   // automated send still swallows it so one bad address can't halt a rule.
   const mergedSubject = mergePlain(subject)
+
+  // Recorded where real emails are, so the patient's thread shows what would
+  // have gone out. No provider id, because nothing reached the provider, and
+  // flagged so the campaign metrics do not count it as a send.
+  if (dryRun) {
+    if (record) {
+      const { error } = await record.supabase.from('email_messages').insert({
+        account_id: record.accountId,
+        provider_message_id: null,
+        dry_run: true,
+        rule_id: record.ruleId ?? null,
+        patient_id: recipient.kind === 'patient' ? recipient.id : null,
+        lead_id: recipient.kind === 'lead' ? recipient.id : null,
+        recipient_email: recipient.email,
+        subject: mergedSubject,
+      })
+      if (error) console.error(`[automations] could not record dry-run email: ${error.message}`)
+    }
+    return 'dry_run'
+  }
+
   try {
     const sent = await $fetch<{ id?: string }>('https://api.resend.com/emails', {
       method: 'POST',
@@ -822,11 +892,25 @@ async function runEmailAction(
     const detail = e?.data?.message || e?.data?.error?.message || e?.message || 'unknown error'
     throw new Error(`Resend rejected the email: ${detail}`)
   }
+  return 'sent'
 }
 
-async function runWebhookAction(config: Record<string, any>, body: TriggerBody) {
+/**
+ * Under dry run a webhook is not called at all. There is no "record instead"
+ * for it: whatever is on the other end -- n8n, Zapier, the clinic's own
+ * system -- does its own thing with the event, sending messages and writing
+ * records we cannot see or take back, and that is exactly what test mode
+ * promises will not happen. Nor can a flag in the payload stand in for it;
+ * a receiver written before the flag existed would act on it anyway.
+ */
+async function runWebhookAction(config: Record<string, any>, body: TriggerBody, dryRun = false): Promise<'sent' | 'dry_run'> {
   const url: string | undefined = config.url
-  if (!url) return
+  if (!url) throw new Error('The webhook step has no URL.')
+
+  if (dryRun) {
+    console.info(`[automations] test mode: webhook not called for ${body.triggerEvent}`)
+    return 'dry_run'
+  }
 
   const payload = {
     event: body.triggerEvent,
@@ -839,5 +923,15 @@ async function runWebhookAction(config: Record<string, any>, body: TriggerBody) 
     headers['X-QuiroFlow-Signature'] = createHmac('sha256', config.secret).update(JSON.stringify(payload)).digest('hex')
   }
 
-  await $fetch(url, { method: 'POST', headers, body: payload }).catch(() => null)
+  // Not swallowed any more: an endpoint that is down or refusing is exactly
+  // what a sequence needs to know, to retry it and then say so. A rule that
+  // runs straight through still carries on past it -- runForRecipient catches
+  // per action.
+  try {
+    await $fetch(url, { method: 'POST', headers, body: payload, timeout: 10_000 })
+  } catch (e: any) {
+    const status = e?.response?.status ?? e?.statusCode
+    throw new Error(`The webhook did not accept the call${status ? ` (HTTP ${status})` : ''}: ${e?.message ?? 'unknown error'}`)
+  }
+  return 'sent'
 }

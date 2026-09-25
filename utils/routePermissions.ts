@@ -11,6 +11,14 @@ function scopeNotNone(store: Store, key: string) {
   return value === 'all' || value === 'own'
 }
 
+// A restriction-style key (true takes something away). Never applies to an
+// owner, as has_restriction() in the database.
+function restrictedTo(store: Store, key: string) {
+  return !store.isOwner && store.permissions[key] === true
+}
+
+export const CLINIC_WIDE_REPORTS = ['/reports/scheduled-reminders', '/reports/debtors', '/reports/memberships', '/reports/data-exports', '/reports/custom']
+
 interface Rule {
   test: (path: string) => boolean
   check: (store: Store) => boolean
@@ -18,11 +26,16 @@ interface Rule {
 
 // Checked in order, most specific first — the first matching rule wins.
 const rules: Rule[] = [
-  { test: (p) => p === '/settings/team' || p === '/settings/practitioners', check: (s) => can(s, 'settings_access') && can(s, 'team_admin') },
+  // /settings/team/<id> is one person's own page, under the same key as the list.
+  { test: (p) => p === '/settings/team' || p.startsWith('/settings/team/') || p === '/settings/practitioners', check: (s) => can(s, 'settings_access') && can(s, 'team_admin') },
   { test: (p) => p === '/settings/roles' || p.startsWith('/settings/roles/'), check: (s) => can(s, 'settings_access') && can(s, 'roles_admin') },
   {
-    // /settings/clinics/<id> is one clinic's own page, under the same key as the list.
-    test: (p) => ['/settings/clinics', '/settings/appointment-types', '/settings/rooms', '/settings/referral-sources', '/settings/app'].includes(p) || p.startsWith('/settings/clinics/'),
+    // /settings/clinics/<id> and /settings/appointment-types/<id> are one
+    // clinic's or one type's own page, under the same key as their list.
+    test: (p) =>
+      ['/settings/clinics', '/settings/appointment-types', '/settings/rooms', '/settings/referral-sources', '/settings/app'].includes(p) ||
+      p.startsWith('/settings/clinics/') ||
+      p.startsWith('/settings/appointment-types/'),
     check: (s) => can(s, 'settings_access') && can(s, 'clinic_config'),
   },
   {
@@ -53,6 +66,12 @@ const rules: Rule[] = [
   { test: (p) => p.startsWith('/inbox'), check: (s) => can(s, 'inbox_access') },
   { test: (p) => p.startsWith('/recalls'), check: (s) => can(s, 'recalls_access') },
   { test: (p) => p.startsWith('/billing'), check: (s) => can(s, 'billing_access') },
+  // Reports that are about the whole clinic and cannot be narrowed to one
+  // practitioner -- money owed on bonos, membership revenue, reminder
+  // delivery, bulk exports of the patient list, free-form custom reports.
+  // "Only their own figures" (reports_own_only) cannot be honoured on them,
+  // so they are not offered at all rather than shown whole.
+  { test: (p) => CLINIC_WIDE_REPORTS.includes(p), check: (s) => can(s, 'reports_access') && !restrictedTo(s, 'reports_own_only') },
   { test: (p) => p.startsWith('/reports'), check: (s) => can(s, 'reports_access') },
 ]
 

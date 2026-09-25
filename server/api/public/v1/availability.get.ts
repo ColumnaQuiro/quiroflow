@@ -45,7 +45,9 @@ export default defineApiHandler({ scope: 'appointments:read' }, async ({ event, 
   }
 
   const clinic = await assertBelongsToAccount(supabase, 'clinics', clinicId, accountId, 'clinic_id')
-  const appointmentType = await assertBelongsToAccount(supabase, 'appointment_types', appointmentTypeId, accountId, 'appointment_type_id')
+  // Not an archived type: availability is asked for in order to book, and an
+  // archived type is not offered for booking anywhere else either.
+  const appointmentType = await assertBelongsToAccount(supabase, 'appointment_types', appointmentTypeId, accountId, 'appointment_type_id', { archived_at: null })
   const timezone = (clinic.timezone as string) || 'Europe/Madrid'
 
   // Practitioners considered. Unlike the public booking page this does not

@@ -458,18 +458,28 @@ async function markNoShow() {
   fire('appointment.no_show', { patientId: props.appointment.patient_id, appointmentId: props.appointment.id })
   await maybeApplyStatusFee('no_show')
 }
+const deleteOpen = ref(false)
 async function remove() {
-  if (!confirm(t('Delete this appointment?', '¿Eliminar esta cita?'))) return
+  deleteOpen.value = false
   // Soft delete, so "Hide deleted" has a row to hide.
   if (await update({ deleted_at: new Date().toISOString() })) emit('close')
 }
+
+// A read-only calendar (calendar_read_only) sees the appointment and can
+// charge it, but not change it. The database refused those writes already
+// (0047), so every control below used to be a button that failed when
+// pressed; now they are not offered. Deleting also needs appointments_delete,
+// which the database checks too (20260925074722).
+const { can, restricted } = usePermission()
+const readOnly = computed(() => restricted('calendar_read_only'))
+const canDelete = computed(() => !readOnly.value && can('appointments_delete'))
 
 function onBillingCompleted() {
   refreshFacts()
   refreshMoney()
   emit('changed')
 }
-const canAct = computed(() => props.appointment.status === 'booked')
+const canAct = computed(() => props.appointment.status === 'booked' && !readOnly.value)
 </script>
 
 <template>
@@ -578,7 +588,7 @@ const canAct = computed(() => props.appointment.status === 'booked')
           <p v-else class="text-[14px] font-semibold text-ink-700" data-cy="stage-off-track">{{ stageLine(appointment, stage).title }}</p>
           <p v-if="onTrack && stageLine(appointment, stage).sub" class="mt-2 text-[12.5px] text-ink-muted">{{ stageLine(appointment, stage).title }} · {{ stageLine(appointment, stage).sub }}</p>
 
-          <div v-if="next || undoable || isUnconfirmedStage(stage)" class="mt-3 flex flex-wrap items-center gap-2">
+          <div v-if="!readOnly && (next || undoable || isUnconfirmedStage(stage))" class="mt-3 flex flex-wrap items-center gap-2">
             <button v-if="next && !isPhone" type="button" data-cy="advance-stage" :data-next="next" :disabled="busy" class="flex h-11 items-center gap-2 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface hover:bg-brand-hover disabled:opacity-60" @click="advance">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
               {{ nextLabel }}
@@ -628,7 +638,7 @@ const canAct = computed(() => props.appointment.status === 'booked')
           </label>
           <label class="flex flex-col gap-1.5 text-[12.5px] font-medium text-ink-600">
             <span>{{ t('Note for this visit', 'Nota de esta visita') }} <span v-if="savedNote === 'visit'" class="font-normal text-success-text">· {{ t('saved', 'guardada') }}</span></span>
-            <textarea v-model="visitNote" rows="2" data-cy="visit-note" :placeholder="t('Quick note for this visit…', 'Nota rápida para esta visita…')" class="rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13.5px] text-ink-700 focus:border-brand focus:outline-none" @blur="saveVisitNote" @input="savedNote = null" />
+            <textarea v-model="visitNote" rows="2" data-cy="visit-note" :readonly="readOnly" :placeholder="t('Quick note for this visit…', 'Nota rápida para esta visita…')" class="rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13.5px] text-ink-700 focus:border-brand focus:outline-none" @blur="saveVisitNote" @input="savedNote = null" />
           </label>
         </section>
 
@@ -644,7 +654,7 @@ const canAct = computed(() => props.appointment.status === 'booked')
           <p v-else class="text-[13px] text-ink-muted">{{ t('None yet.', 'Ninguno todavía.') }}</p>
         </section>
 
-        <button type="button" class="self-start text-[12.5px] font-medium text-ink-muted underline-offset-2 hover:underline" @click="remove">{{ t('Delete appointment', 'Eliminar cita') }}</button>
+        <button v-if="canDelete" type="button" data-cy="delete-appointment" class="h-11 self-start text-[12.5px] font-medium text-ink-muted underline-offset-2 hover:underline" @click="deleteOpen = true">{{ t('Delete appointment', 'Eliminar cita') }}</button>
       </div>
 
       <div v-else-if="tab === 'billing'">
@@ -670,7 +680,7 @@ const canAct = computed(() => props.appointment.status === 'booked')
 
     <!-- Footer: the consequential actions, each its own button. -->
     <div class="appt-panel-footer flex shrink-0 flex-wrap items-center gap-2 border-t border-line bg-surface px-5 py-3 sm:px-6">
-      <button v-if="next && isPhone" type="button" data-cy="advance-stage" :data-next="next" :disabled="busy" class="flex h-12 w-full items-center justify-center gap-2 rounded-ctl bg-brand text-[15px] font-bold text-surface disabled:opacity-60" @click="advance">
+      <button v-if="next && isPhone && !readOnly" type="button" data-cy="advance-stage" :data-next="next" :disabled="busy" class="flex h-12 w-full items-center justify-center gap-2 rounded-ctl bg-brand text-[15px] font-bold text-surface disabled:opacity-60" @click="advance">
         {{ nextLabel }}
       </button>
       <template v-if="canAct">
@@ -691,10 +701,24 @@ const canAct = computed(() => props.appointment.status === 'booked')
           {{ t('Move…', 'Mover…') }}
         </button>
       </template>
+      <p v-else-if="readOnly" class="text-[13px] text-ink-muted" data-cy="appt-read-only">{{ t('Read-only calendar: you can see this appointment but not change it.', 'Calendario de solo lectura: puedes ver esta cita pero no cambiarla.') }}</p>
       <p v-else class="text-[13px] text-ink-muted">{{ stageLabel(stage) }}</p>
     </div>
     </template>
   </div>
+
+  <UiConfirmDialog
+    v-if="deleteOpen"
+    tone="danger"
+    :title="t('Delete this appointment?', '¿Eliminar esta cita?')"
+    :confirm-label="t('Delete appointment', 'Eliminar cita')"
+    :cancel-label="t('Keep it', 'Mantenerla')"
+    :busy="busy"
+    @confirm="remove"
+    @cancel="deleteOpen = false"
+  >
+    <p class="text-[14px] leading-relaxed text-ink-500">{{ t('It disappears from the calendar. To keep a record that the patient did not come, cancel it instead.', 'Desaparece del calendario. Para dejar constancia de que el paciente no vino, cancélala en su lugar.') }}</p>
+  </UiConfirmDialog>
 </template>
 
 <style scoped>

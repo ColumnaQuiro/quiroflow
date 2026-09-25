@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Json } from '~/types/database.types'
+import { orderTypes } from '~/utils/appointmentTypes'
 
 const props = defineProps<{ ruleId?: string | null }>()
 const emit = defineEmits<{ close: []; saved: [] }>()
@@ -43,6 +44,9 @@ const VARIABLE_SOURCES = computed(() => [
   { value: 'google_review_link', label: t('Google review link', 'Enlace de reseña de Google') },
   { value: 'waitlist_claim_link', label: t('Waitlist claim link', 'Enlace para reservar plaza') },
   { value: 'waitlist_slot_datetime', label: t('Waitlist offered slot date & time', 'Fecha y hora de la plaza ofrecida') },
+  { value: 'clinic_name', label: t('Clinic name', 'Nombre de la clínica') },
+  { value: 'clinic_phone', label: t('Clinic phone', 'Teléfono de la clínica') },
+  { value: 'clinic_address', label: t('Clinic address', 'Dirección de la clínica') },
   { value: 'text', label: t('Fixed text', 'Texto fijo') },
 ])
 const ACTION_TONE: Record<string, string> = {
@@ -113,7 +117,12 @@ const isMarketing = ref(false)
 const dryRun = ref(false)
 const actions = ref<ActionForm[]>([blankAction()])
 const docTemplates = ref<{ id: string; title: string }[]>([])
-const appointmentTypes = ref<{ id: string; name: string }[]>([])
+const allAppointmentTypes = ref<{ id: string; name: string; sort_order: number | null; archived_at: string | null }[]>([])
+// Archived types are not offered for a new filter, but a rule that already
+// filters by one keeps showing it (ticked, marked archived) -- dropping it
+// from the list would untick it on the next save and silently widen the rule
+// to every other type.
+const appointmentTypes = computed(() => allAppointmentTypes.value.filter((x) => !x.archived_at || filterAppointmentTypeIds.value.includes(x.id)))
 const practitioners = ref<{ id: string; full_name: string }[]>([])
 const membershipPlans = ref<{ id: string; name: string }[]>([])
 // Any of these types matches (OR) -- an appointment only ever has one type,
@@ -182,8 +191,8 @@ onMounted(async () => {
   const { data: templates } = await supabase.from('doc_templates').select('id, title').order('title')
   docTemplates.value = templates ?? []
 
-  const { data: types } = await supabase.from('appointment_types').select('id, name').order('name')
-  appointmentTypes.value = types ?? []
+  const { data: types } = await supabase.from('appointment_types').select('id, name, sort_order, archived_at')
+  allAppointmentTypes.value = orderTypes(types ?? [])
 
   const { data: teamMembers } = await supabase.from('team_members').select('id, full_name').eq('is_practitioner', true).is('deleted_at', null).order('full_name')
   practitioners.value = teamMembers ?? []
@@ -647,7 +656,7 @@ async function sendTestToMe() {
                 <div class="mt-1 flex max-h-24 flex-col gap-1 overflow-y-auto">
                   <label v-for="at in appointmentTypes" :key="at.id" class="flex items-center gap-1.5 text-[12.5px] text-ink-700">
                     <input v-model="filterAppointmentTypeIds" type="checkbox" :value="at.id" class="h-3.5 w-3.5 rounded border-line-control text-brand focus:ring-brand" />
-                    {{ at.name }}
+                    {{ at.name }}<span v-if="at.archived_at" class="text-ink-muted2"> ({{ t('archived', 'archivado') }})</span>
                   </label>
                 </div>
               </div>

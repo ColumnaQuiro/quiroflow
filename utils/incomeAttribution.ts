@@ -65,3 +65,28 @@ export function classifyPaymentForFilter(input: IncomeFilterInput): IncomeMatch 
 export function paymentMatchesFilter(input: IncomeFilterInput): boolean {
   return classifyPaymentForFilter(input) === 'matches'
 }
+
+/**
+ * Whose income this payment is, as a practitioner id -- the same chain
+ * classifyPaymentForFilter applies, for the screens that GROUP by
+ * practitioner rather than filter to one.
+ *
+ * Splitting those two apart is what let them drift. The filter was taught the
+ * patient fallback; the Income report's own by-practitioner breakdown was
+ * not, and went on reading payment -> invoice -> appointment alone. So
+ * filtering to a practitioner counted a bono of theirs while the breakdown
+ * beside it still called the same euros "Sin asignar" -- 13,164 EUR of
+ * September 2026's 16,711, with only 301 EUR genuinely unplaceable.
+ *
+ * null means exactly that: nothing on the payment says whose it is. It is a
+ * bucket to report, never a practitioner to invent.
+ */
+export function practitionerForPayment(input: Pick<IncomeFilterInput, 'appointment' | 'patient'>): string | null {
+  // A visit is the end of the chain even when it names no practitioner --
+  // 200 appointments here do not. Falling through to the patient in that case
+  // would answer differently from classifyPaymentForFilter above, which
+  // compares the appointment's practitioner and stops there, so the same
+  // euros would be counted to someone the filter excludes them from.
+  if (input.appointment) return input.appointment.practitioner_id
+  return input.patient?.default_practitioner_id ?? null
+}

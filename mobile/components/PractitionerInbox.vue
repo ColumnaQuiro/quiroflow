@@ -68,8 +68,10 @@ const messages = ref<Message[]>([])
 const patientNames = ref<Record<string, string>>({})
 const loading = ref(true)
 const readTimestamps = ref<Record<string, string>>({})
+// Read status is each person's own (inbox_reads), the same as on the web:
+// opening a conversation marks it read for me, not for the whole team.
 async function loadReadTimestamps() {
-  const { data } = await supabase.from('whatsapp_conversation_reads').select('conversation_key, last_read_at').eq('account_id', props.accountId)
+  const { data } = await supabase.from('inbox_reads').select('conversation_key, last_read_at').eq('team_member_id', props.teamMemberId)
   const next: Record<string, string> = {}
   for (const r of data ?? []) next[r.conversation_key] = r.last_read_at
   readTimestamps.value = next
@@ -243,59 +245,20 @@ watch(
 async function markRead(key: string) {
   const now = new Date().toISOString()
   readTimestamps.value = { ...readTimestamps.value, [key]: now }
-  await supabase.from('whatsapp_conversation_reads').upsert({ account_id: props.accountId, conversation_key: key, last_read_at: now } as never)
+  await supabase.from('inbox_reads').upsert({ account_id: props.accountId, team_member_id: props.teamMemberId, conversation_key: key, last_read_at: now } as never)
 }
 function openConversation(c: Conversation) {
   selectedKey.value = c.key
   if (c.unread) markRead(c.key)
 }
 
-const deletingConversation = ref(false)
-async function deleteKeys(keys: string[]) {
-  deletingConversation.value = true
-  try {
-    for (const key of keys) {
-      const c = conversations.value.find((conv) => conv.key === key)
-      if (!c) continue
-      let query = supabase.from('whatsapp_messages').delete()
-      query = c.patientId ? query.eq('patient_id', c.patientId) : query.eq('phone_number', c.phoneNumber!)
-      await query
-      if (c.patientId) await supabase.from('patient_app_messages').delete().eq('patient_id', c.patientId)
-      await supabase.from('whatsapp_conversation_reads').delete().eq('account_id', props.accountId).eq('conversation_key', key)
-      await supabase.from('whatsapp_conversation_archives').delete().eq('team_member_id', props.teamMemberId).eq('conversation_key', key)
-      await supabase.from('whatsapp_conversation_labels').delete().eq('team_member_id', props.teamMemberId).eq('conversation_key', key)
-    }
-    messages.value = messages.value.filter((m) => !keys.includes(m.patient_id ?? m.phone_number ?? 'unknown'))
-    pendingMessages.value = pendingMessages.value.filter((m) => !keys.includes(m.patient_id ?? m.phone_number ?? 'unknown'))
-    if (selectedKey.value && keys.includes(selectedKey.value)) selectedKey.value = null
-  } finally {
-    deletingConversation.value = false
-  }
-}
-async function deleteConversationByKey(c: Conversation) {
-  if (!confirm(`Delete this whole conversation with ${c.name}? This removes all messages and can't be undone.`)) return
-  await deleteKeys([c.key])
-}
-async function deleteConversation() {
-  if (!selected.value) return
-  await deleteConversationByKey(selected.value)
-}
-function deleteFromList(c: Conversation) {
-  swipedKey.value = null
-  deleteConversationByKey(c)
-}
-async function bulkDeleteSelected() {
-  const keys = [...selectedKeys.value]
-  if (keys.length === 0) return
-  if (!confirm(`Delete ${keys.length} conversation${keys.length > 1 ? 's' : ''}? This removes all their messages and can't be undone.`)) return
-  await deleteKeys(keys)
-  exitSelectionMode()
-}
+// Conversations are archived, never deleted: messages are part of the
+// patient's record. (Same as the web Inbox.)
 async function bulkMarkUnreadSelected() {
   const past = new Date(0).toISOString()
   for (const key of selectedKeys.value) {
     readTimestamps.value = { ...readTimestamps.value, [key]: past }
-    await supabase.from('whatsapp_conversation_reads').upsert({ account_id: props.accountId, conversation_key: key, last_read_at: past } as never)
+    await supabase.from('inbox_reads').upsert({ account_id: props.accountId, team_member_id: props.teamMemberId, conversation_key: key, last_read_at: past } as never)
   }
   exitSelectionMode()
 }
@@ -370,7 +333,7 @@ async function toggleUnread(c: Conversation) {
   }
   const past = new Date(0).toISOString()
   readTimestamps.value = { ...readTimestamps.value, [c.key]: past }
-  await supabase.from('whatsapp_conversation_reads').upsert({ account_id: props.accountId, conversation_key: c.key, last_read_at: past } as never)
+  await supabase.from('inbox_reads').upsert({ account_id: props.accountId, team_member_id: props.teamMemberId, conversation_key: c.key, last_read_at: past } as never)
 }
 
 // Swipe-to-reveal on each conversation row, live-following the finger like
@@ -383,7 +346,7 @@ async function toggleUnread(c: Conversation) {
 // immediately followed by a synthesized click on the same element; without
 // it, that click's own handler (see the template) would see swipedKey
 // already set and instantly close what touchend just opened.
-const ROW_ACTIONS_WIDTH = 228 // Unread + Archive + Delete, 76px each
+const ROW_ACTIONS_WIDTH = 152 // Unread + Archive, 76px each
 const swipedKey = ref<string | null>(null)
 const draggingKey = ref<string | null>(null)
 const rowDragX = ref(0)
@@ -876,7 +839,6 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             {{ view === 'archived' ? 'Unarchive' : 'Archive' }}
           </button>
           <button type="button" class="text-[13px] font-medium text-brand-text disabled:opacity-40" :disabled="selectedKeys.size === 0" @click="bulkMarkUnreadSelected">Unread</button>
-          <button type="button" class="text-[13px] font-medium text-danger-text disabled:opacity-40" :disabled="selectedKeys.size === 0" @click="bulkDeleteSelected">Delete</button>
         </div>
       </div>
       <div
@@ -907,9 +869,6 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             </button>
             <button type="button" class="flex w-[76px] items-center justify-center bg-ink-muted text-[12px] font-medium text-white" @click="toggleArchive(c)">
               {{ archivedKeys.has(c.key) ? 'Unarchive' : 'Archive' }}
-            </button>
-            <button type="button" class="flex w-[76px] items-center justify-center bg-danger-text text-[12px] font-medium text-white" @click="deleteFromList(c)">
-              Delete
             </button>
           </div>
           <button

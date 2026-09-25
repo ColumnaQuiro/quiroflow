@@ -2030,6 +2030,7 @@ export type Database = {
           click_count: number
           complained_at: string | null
           delivered_at: string | null
+          dry_run: boolean
           failed_at: string | null
           failure_reason: string | null
           first_clicked_at: string | null
@@ -2039,7 +2040,7 @@ export type Database = {
           lead_id: string | null
           open_count: number
           patient_id: string | null
-          provider_message_id: string
+          provider_message_id: string | null
           recipient_email: string
           rule_id: string | null
           sent_at: string
@@ -2052,6 +2053,7 @@ export type Database = {
           click_count?: number
           complained_at?: string | null
           delivered_at?: string | null
+          dry_run?: boolean
           failed_at?: string | null
           failure_reason?: string | null
           first_clicked_at?: string | null
@@ -2061,7 +2063,7 @@ export type Database = {
           lead_id?: string | null
           open_count?: number
           patient_id?: string | null
-          provider_message_id: string
+          provider_message_id?: string | null
           recipient_email: string
           rule_id?: string | null
           sent_at?: string
@@ -2074,6 +2076,7 @@ export type Database = {
           click_count?: number
           complained_at?: string | null
           delivered_at?: string | null
+          dry_run?: boolean
           failed_at?: string | null
           failure_reason?: string | null
           first_clicked_at?: string | null
@@ -2083,7 +2086,7 @@ export type Database = {
           lead_id?: string | null
           open_count?: number
           patient_id?: string | null
-          provider_message_id?: string
+          provider_message_id?: string | null
           recipient_email?: string
           rule_id?: string | null
           sent_at?: string

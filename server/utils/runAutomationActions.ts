@@ -302,11 +302,11 @@ async function runForRecipient(
         else problems.push(skipped('WhatsApp'))
       } else if (action.action_type === 'email') {
         if (canContact && channelAllowed('email')) {
-          await runEmailAction(recipient, action.config, context, { supabase, accountId, ruleId })
+          await runEmailAction(recipient, action.config, context, { supabase, accountId, ruleId }, dryRun)
         }
         else problems.push(skipped('Email'))
       } else if (action.action_type === 'webhook') {
-        await runWebhookAction(action.config, triggerBody ?? { triggerEvent: 'manual', patientId: recipient.id, appointmentId })
+        await runWebhookAction(action.config, triggerBody ?? { triggerEvent: 'manual', patientId: recipient.id, appointmentId }, dryRun)
       }
     } catch (e: any) {
       // Best-effort: one failed action shouldn't stop the rest of the rule.
@@ -737,13 +737,19 @@ function styleLinks(html: string) {
  * to a campaign. Optional, because one caller has no business recording
  * anything -- a "send test to me" would otherwise put the staff member's own
  * open into the campaign's open rate.
+ *
+ * Under `dryRun` everything up to the Resend call still runs -- the subject,
+ * body and address checks, the merge -- and the message is recorded as a
+ * dry_run row instead of sent. It used to ignore dry run entirely, so a rule
+ * in test mode with an email step emailed real people.
  */
 async function runEmailAction(
   recipient: Recipient,
   config: Record<string, any>,
   context?: MergeContext,
   record?: { supabase: any; accountId: string; ruleId?: string },
-) {
+  dryRun = false,
+): Promise<'sent' | 'dry_run'> {
   const subject: string | undefined = config.subject
   const rawBody: string | undefined = config.body
   // These used to be silent returns. Every one of them is a reason an email
@@ -766,8 +772,10 @@ async function runEmailAction(
   const runtimeConfig = useRuntimeConfig()
   // No key means nothing has ever been sent from this deployment. Silence
   // here reads exactly like a delivery failure, which is the harder thing to
-  // diagnose of the two.
-  if (!runtimeConfig.resendApiKey) throw new Error('Email sending is not configured (no Resend API key on this deployment).')
+  // diagnose of the two. A dry run does not need one, for the same reason a
+  // WhatsApp dry run does not need Meta credentials: rehearsing before the
+  // channel is set up is the order a clinic actually does things in.
+  if (!dryRun && !runtimeConfig.resendApiKey) throw new Error('Email sending is not configured (no Resend API key on this deployment).')
 
   const html = `
     <div style="background:#F4F4F6;padding:40px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
@@ -784,6 +792,27 @@ async function runEmailAction(
   // green tick on it. The caller decides what to do with the failure; a real
   // automated send still swallows it so one bad address can't halt a rule.
   const mergedSubject = mergePlain(subject)
+
+  // Recorded where real emails are, so the patient's thread shows what would
+  // have gone out. No provider id, because nothing reached the provider, and
+  // flagged so the campaign metrics do not count it as a send.
+  if (dryRun) {
+    if (record) {
+      const { error } = await record.supabase.from('email_messages').insert({
+        account_id: record.accountId,
+        provider_message_id: null,
+        dry_run: true,
+        rule_id: record.ruleId ?? null,
+        patient_id: recipient.kind === 'patient' ? recipient.id : null,
+        lead_id: recipient.kind === 'lead' ? recipient.id : null,
+        recipient_email: recipient.email,
+        subject: mergedSubject,
+      })
+      if (error) console.error(`[automations] could not record dry-run email: ${error.message}`)
+    }
+    return 'dry_run'
+  }
+
   try {
     const sent = await $fetch<{ id?: string }>('https://api.resend.com/emails', {
       method: 'POST',
@@ -813,11 +842,25 @@ async function runEmailAction(
     const detail = e?.data?.message || e?.data?.error?.message || e?.message || 'unknown error'
     throw new Error(`Resend rejected the email: ${detail}`)
   }
+  return 'sent'
 }
 
-async function runWebhookAction(config: Record<string, any>, body: TriggerBody) {
+/**
+ * Under dry run a webhook is not called at all. There is no "record instead"
+ * for it: whatever is on the other end -- n8n, Zapier, the clinic's own
+ * system -- does its own thing with the event, sending messages and writing
+ * records we cannot see or take back, and that is exactly what test mode
+ * promises will not happen. Nor can a flag in the payload stand in for it;
+ * a receiver written before the flag existed would act on it anyway.
+ */
+async function runWebhookAction(config: Record<string, any>, body: TriggerBody, dryRun = false): Promise<'sent' | 'dry_run' | undefined> {
   const url: string | undefined = config.url
   if (!url) return
+
+  if (dryRun) {
+    console.info(`[automations] test mode: webhook not called for ${body.triggerEvent}`)
+    return 'dry_run'
+  }
 
   const payload = {
     event: body.triggerEvent,
@@ -831,4 +874,5 @@ async function runWebhookAction(config: Record<string, any>, body: TriggerBody) 
   }
 
   await $fetch(url, { method: 'POST', headers, body: payload }).catch(() => null)
+  return 'sent'
 }

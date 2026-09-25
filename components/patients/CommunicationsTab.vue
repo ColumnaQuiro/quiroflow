@@ -61,7 +61,7 @@ async function load() {
     // recorded nowhere visible is indistinguishable from one never sent.
     supabase
       .from('email_messages')
-      .select('id, recipient_email, subject, sent_at, delivered_at, bounced_at, failed_at, failure_reason, first_opened_at')
+      .select('id, recipient_email, subject, sent_at, delivered_at, bounced_at, failed_at, failure_reason, first_opened_at, dry_run')
       .eq('patient_id', props.patientId)
       .order('sent_at'),
     supabase.from('patient_contact_numbers').select('*').eq('patient_id', props.patientId).order('created_at').limit(1),
@@ -75,7 +75,9 @@ async function load() {
     template_name: null,
     // Mapped onto the same five states the ticks already speak, so email
     // does not need a second vocabulary for the same four facts.
-    status: e.failed_at || e.bounced_at ? 'failed' : e.first_opened_at ? 'read' : e.delivered_at ? 'delivered' : 'sent',
+    // A test-mode rule records the email instead of sending it, and says so
+    // in the same words a test-mode WhatsApp does.
+    status: e.dry_run ? 'would_send' : e.failed_at || e.bounced_at ? 'failed' : e.first_opened_at ? 'read' : e.delivered_at ? 'delivered' : 'sent',
     error_code: null,
     error_message: e.failure_reason ?? (e.bounced_at ? t('The address bounced.', 'La dirección rebotó.') : null),
     body_preview: e.subject,

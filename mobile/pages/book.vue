@@ -18,6 +18,11 @@ interface BookingAppointmentType {
   default_price_cents: number
   /** This type's booking horizon; null means the clinic's (settings.max_days_ahead). */
   online_max_days_ahead: number | null
+  /**
+   * "Patient doesn't choose a practitioner": booked with the first practitioner
+   * listed for the clinic, as on the web page. Absent before 20260925181500.
+   */
+  online_bypass_practitioner?: boolean
 }
 // Types that are paid online when booked. The app cannot take that payment,
 // so create_patient_booking refuses them and they come separately, only so
@@ -43,8 +48,29 @@ interface BookingInfo {
   // Absent from get_patient_booking_info before 20260925161500.
   online_payment_types?: OnlinePaymentType[]
 }
+// The appointment being moved, when this page is reached as
+// /book?reschedule=<id>. reschedule_patient_appointment keeps its clinic,
+// practitioner and length and only changes the time, so the slots offered are
+// that practitioner's, at that length, within its own type's horizon.
+interface RescheduleTarget {
+  id: string
+  clinic_id: string
+  practitioner_id: string
+  starts_at: string
+  ends_at: string
+  appointment_types: { name: string; online_max_days_ahead: number | null } | null
+  team_members: { full_name: string } | null
+}
 
 const supabase = useSupabaseClient()
+
+// Reached as /book?reschedule=<id> from the visits screen. The slot picker is
+// identical either way -- only the RPC at the end differs -- so this reuses
+// the whole flow rather than duplicating an availability calendar somewhere
+// else.
+const route = useRoute()
+const rescheduleId = computed(() => (typeof route.query.reschedule === 'string' ? route.query.reschedule : null))
+const rescheduleTarget = ref<RescheduleTarget | null>(null)
 
 const phase = ref<'loading' | 'not_available' | 'select' | 'datetime' | 'confirm' | 'success'>('loading')
 
@@ -59,7 +85,9 @@ const teamMember = computed(() => info.value?.team_members.find((m) => m.id === 
 const availablePractitioners = computed(() => (info.value?.team_members ?? []).filter((m) => m.clinic_ids.includes(clinicId.value)))
 
 const effectiveDurationMinutes = computed(() =>
-  appointmentType.value
+  rescheduleTarget.value
+    ? Math.round((new Date(rescheduleTarget.value.ends_at).getTime() - new Date(rescheduleTarget.value.starts_at).getTime()) / 60000)
+    : appointmentType.value
     ? effectiveDuration(appointmentType.value.duration_minutes, appointmentTypeId.value, teamMemberId.value, info.value?.overrides ?? [])
     : 0,
 )
@@ -72,6 +100,15 @@ const effectivePrice = computed(() =>
 function formatPrice(cents: number) {
   return (cents / 100).toLocaleString(undefined, { style: 'currency', currency: 'EUR' })
 }
+
+// "Patient doesn't choose a practitioner" -- pages/book/[slug].vue shows no
+// practitioner choice for such a type and books the first practitioner who
+// works at the clinic. The list comes in the web page's order, and
+// create_patient_booking refuses anyone else for this type.
+const bypassPractitioner = computed(() => !!appointmentType.value?.online_bypass_practitioner)
+watch(appointmentTypeId, () => {
+  if (bypassPractitioner.value) teamMemberId.value = availablePractitioners.value[0]?.id ?? ''
+})
 
 const onlinePaymentTypes = computed(() => info.value?.online_payment_types ?? [])
 // The public booking page, which takes the payment these types need.
@@ -93,15 +130,41 @@ onMounted(async () => {
     return
   }
   info.value = parsed
+
+  if (rescheduleId.value) {
+    await startReschedule(parsed)
+    return
+  }
+
   clinicId.value = parsed.clinics[0].id
   if (parsed.appointment_types.length === 1) appointmentTypeId.value = parsed.appointment_types[0].id
   const forClinic = parsed.team_members.filter((m) => m.clinic_ids.includes(clinicId.value))
-  if (forClinic.length === 1) teamMemberId.value = forClinic[0].id
+  if (forClinic.length === 1 || bypassPractitioner.value) teamMemberId.value = forClinic[0]?.id ?? ''
   phase.value = 'select'
 })
 
 function onClinicChange() {
-  teamMemberId.value = availablePractitioners.value.length === 1 ? availablePractitioners.value[0].id : ''
+  teamMemberId.value = availablePractitioners.value.length === 1 || bypassPractitioner.value ? (availablePractitioners.value[0]?.id ?? '') : ''
+}
+
+// Moving an appointment: there is nothing to choose but the time, so this
+// goes straight to the calendar with the appointment's own clinic and
+// practitioner. Its clinic has to be one the app books at, for its hours.
+async function startReschedule(parsed: BookingInfo) {
+  const { data } = await supabase
+    .from('appointments')
+    .select('id, clinic_id, practitioner_id, starts_at, ends_at, appointment_types(name, online_max_days_ahead), team_members(full_name)')
+    .eq('id', rescheduleId.value!)
+    .maybeSingle()
+  const target = data as unknown as RescheduleTarget | null
+  if (!target || !parsed.clinics.some((c) => c.id === target.clinic_id)) {
+    phase.value = 'not_available'
+    return
+  }
+  rescheduleTarget.value = target
+  clinicId.value = target.clinic_id
+  teamMemberId.value = target.practitioner_id
+  phase.value = 'datetime'
 }
 
 const canContinueFromSelect = computed(() => !!clinicId.value && !!appointmentTypeId.value && !!teamMemberId.value)
@@ -132,8 +195,14 @@ const monthLabel = computed(() => viewMonth.value.toLocaleDateString(undefined, 
 // How far ahead this type can be booked: its own limit, else the clinic's --
 // the same fallback pages/book/[slug].vue uses, and the one
 // create_patient_booking enforces (start time no later than now + that many
-// days).
-const maxDaysAhead = computed(() => appointmentType.value?.online_max_days_ahead ?? info.value?.settings?.max_days_ahead ?? 90)
+// days). reschedule_patient_appointment applies the same limit to a move,
+// from the appointment's own type.
+const typeMaxDaysAhead = computed(() =>
+  rescheduleTarget.value ? (rescheduleTarget.value.appointment_types?.online_max_days_ahead ?? null) : (appointmentType.value?.online_max_days_ahead ?? null),
+)
+const maxDaysAhead = computed(() => typeMaxDaysAhead.value ?? info.value?.settings?.max_days_ahead ?? 90)
+const typeName = computed(() => rescheduleTarget.value?.appointment_types?.name ?? appointmentType.value?.name ?? '')
+const practitionerName = computed(() => rescheduleTarget.value?.team_members?.full_name ?? teamMember.value?.full_name ?? '')
 const latestStart = computed(() => new Date(Date.now() + maxDaysAhead.value * 86400000))
 const lastBookableDay = computed(() => {
   const d = new Date(latestStart.value)
@@ -195,12 +264,16 @@ async function selectDate(day: { date: Date; bookable: boolean }) {
     p_from: dayStart.toISOString(),
     p_to: dayEnd.toISOString(),
   })
-  busyRanges.value = (data as { starts_at: string; ends_at: string }[]) ?? []
+  // The appointment being moved is busy time on this practitioner's
+  // calendar, but not in its own way: reschedule_patient_appointment skips it.
+  busyRanges.value = ((data as { starts_at: string; ends_at: string }[]) ?? []).filter(
+    (b) => !rescheduleTarget.value || new Date(b.starts_at).getTime() !== new Date(rescheduleTarget.value.starts_at).getTime() || new Date(b.ends_at).getTime() !== new Date(rescheduleTarget.value.ends_at).getTime(),
+  )
   slotsLoading.value = false
 }
 
 const daySlots = computed(() => {
-  if (!selectedDate.value || !appointmentType.value) return []
+  if (!selectedDate.value || effectiveDurationMinutes.value <= 0) return []
   const windows = clinic.value?.business_hours?.[WEEKDAY_KEYS[selectedDate.value.getDay()]] ?? []
   const duration = effectiveDurationMinutes.value
   const now = new Date()
@@ -236,12 +309,6 @@ const submitting = ref(false)
 const submitError = ref('')
 const confirmation = ref<{ starts_at: string } | null>(null)
 
-// Reached as /book?reschedule=<id> from the appointments card. The slot
-// picker is identical either way -- only the RPC at the end differs -- so
-// this reuses the whole flow rather than duplicating an availability
-// calendar somewhere else.
-const route = useRoute()
-const rescheduleId = computed(() => (typeof route.query.reschedule === 'string' ? route.query.reschedule : null))
 
 async function submitBooking() {
   if (!selectedSlot.value) return
@@ -289,7 +356,8 @@ async function submitBooking() {
 
     <div v-if="phase === 'loading'" class="flex flex-1 items-center justify-center text-sm text-ink-faint">Loading…</div>
     <div v-else-if="phase === 'not_available'" class="flex flex-1 items-center justify-center px-6 text-center text-sm text-ink-muted">
-      Online booking isn't available for your clinic right now — please contact them directly.
+      <template v-if="rescheduleId">This appointment can't be moved from the app — please contact the clinic.</template>
+      <template v-else>Online booking isn't available for your clinic right now — please contact them directly.</template>
     </div>
 
     <div v-else-if="phase === 'select'" class="space-y-4">
@@ -330,12 +398,15 @@ async function submitBooking() {
         </p>
       </div>
 
-      <div>
+      <!-- As on the web page: a type the clinic assigns the practitioner for
+           offers no choice. -->
+      <div v-if="!bypassPractitioner">
         <label class="block text-[12.5px] font-medium text-ink-700">Practitioner</label>
         <select v-model="teamMemberId" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-[13.5px]">
           <option v-for="m in availablePractitioners" :key="m.id" :value="m.id">{{ m.full_name }}</option>
         </select>
       </div>
+      <p v-else-if="!teamMemberId" class="text-[12.5px] text-ink-muted">No practitioner can be booked for this at this clinic.</p>
 
       <UiBtn variant="primary" class="w-full" :disabled="!canContinueFromSelect" @click="phase = 'datetime'">Continue</UiBtn>
     </div>
@@ -347,7 +418,7 @@ async function submitBooking() {
         <button type="button" class="px-2 text-[13px] text-ink-muted disabled:opacity-30" :disabled="!canGoToNextMonth" @click="nextMonth">&rsaquo;</button>
       </div>
       <p class="text-[12px] text-ink-faint">
-        {{ appointmentType?.name }} can be booked up to {{ maxDaysAhead }} days ahead.
+        {{ typeName }} can be {{ rescheduleTarget ? 'moved' : 'booked' }} up to {{ maxDaysAhead }} days ahead.
       </p>
       <div class="grid grid-cols-7 gap-1 text-center text-[12px]">
         <button
@@ -385,10 +456,10 @@ async function submitBooking() {
 
     <div v-else-if="phase === 'confirm'" class="space-y-4">
       <div class="rounded-card border border-line bg-surface p-4">
-        <p class="text-[13.5px] font-medium text-ink-900">{{ appointmentType?.name }}</p>
-        <p class="mt-1 text-[12.5px] text-ink-muted">with {{ teamMember?.full_name }}</p>
+        <p class="text-[13.5px] font-medium text-ink-900">{{ typeName }}</p>
+        <p v-if="practitionerName" class="mt-1 text-[12.5px] text-ink-muted">with {{ practitionerName }}</p>
         <p class="mt-1 text-[12.5px] text-ink-muted">{{ selectedSlot?.toLocaleString([], { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) }}</p>
-        <p v-if="appointmentType" class="mt-1 text-[12.5px] text-ink-muted">{{ formatPrice(effectivePrice) }}</p>
+        <p v-if="appointmentType && !rescheduleTarget" class="mt-1 text-[12.5px] text-ink-muted">{{ formatPrice(effectivePrice) }}</p>
       </div>
       <!-- The reschedule RPC moves the existing appointment and takes no
            note, so asking for one here would quietly discard it. -->

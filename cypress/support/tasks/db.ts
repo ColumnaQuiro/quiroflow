@@ -1237,11 +1237,13 @@ async function setAppointmentTypeBookingRules(opts: {
   maxDaysAhead?: number | null
   paymentRequired?: boolean
   depositCents?: number | null
+  bypassPractitioner?: boolean
 }) {
   assertOk(
     await admin
       .from('appointment_types')
       .update({
+        ...(opts.bypassPractitioner !== undefined ? { online_bypass_practitioner: opts.bypassPractitioner } : {}),
         ...(opts.bookableBy !== undefined ? { online_bookable_by: opts.bookableBy } : {}),
         ...(opts.maxDaysAhead !== undefined ? { online_max_days_ahead: opts.maxDaysAhead } : {}),
         ...(opts.paymentRequired !== undefined ? { online_payment_required: opts.paymentRequired } : {}),
@@ -1263,6 +1265,42 @@ async function givePatientAppLogin(opts: { accountId: string; patientId: string;
   assertOk(await admin.from('patients').update({ user_id: data.user!.id, email: opts.email }).eq('id', opts.patientId))
   assertOk(await admin.from('accounts').update({ patient_app_booking_enabled: true }).eq('id', opts.accountId))
   return { userId: data.user!.id }
+}
+
+/**
+ * Patient app -> "Patients can reschedule" and the notice it needs, as
+ * Settings -> App sets them.
+ */
+async function setPatientAppReschedule(opts: { accountId: string; enabled: boolean; noticeHours?: number }) {
+  assertOk(
+    await admin
+      .from('accounts')
+      .update({
+        patient_app_reschedule_enabled: opts.enabled,
+        ...(opts.noticeHours !== undefined ? { patient_app_change_notice_hours: opts.noticeHours } : {}),
+      })
+      .eq('id', opts.accountId),
+  )
+  return { ok: true }
+}
+
+/**
+ * Sets a team member's online-booking flags directly: whether they see
+ * patients, whether they take online bookings, and whether they have left
+ * (deleted_at, as closing their own login leaves it).
+ */
+async function setTeamMemberBookingFlags(opts: { id: string; isPractitioner?: boolean; onlineBookingEnabled?: boolean; deletedAt?: string | null }) {
+  assertOk(
+    await admin
+      .from('team_members')
+      .update({
+        ...(opts.isPractitioner !== undefined ? { is_practitioner: opts.isPractitioner } : {}),
+        ...(opts.onlineBookingEnabled !== undefined ? { online_booking_enabled: opts.onlineBookingEnabled } : {}),
+        ...(opts.deletedAt !== undefined ? { deleted_at: opts.deletedAt } : {}),
+      })
+      .eq('id', opts.id),
+  )
+  return { ok: true }
 }
 
 /**
@@ -3060,6 +3098,8 @@ export const dbTasks = {
   'db:setAppointmentTypeBookingRules': setAppointmentTypeBookingRules,
   'db:givePatientAppLogin': givePatientAppLogin,
   'db:callRpcAsPatient': callRpcAsPatient,
+  'db:setPatientAppReschedule': setPatientAppReschedule,
+  'db:setTeamMemberBookingFlags': setTeamMemberBookingFlags,
   'db:sharePackageWith': sharePackageWith,
   'db:packageSessionEffects': packageSessionEffects,
   'db:insertDuplicateSession': insertDuplicateSession,

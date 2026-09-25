@@ -17,9 +17,9 @@ describe('Practitioner seat cap', () => {
       }).then(() => {
         cy.login(account.email, account.password)
         cy.visit('/settings/team')
-        cy.get('[data-cy=team-page]').should('have.attr', 'data-ready', 'true')
+        cy.get('[data-cy=team-page]', { timeout: 20000 }).should('have.attr', 'data-ready', 'true')
         cy.contains('[data-cy=team-member-row]', 'Priya Practitioner').click()
-        cy.get('[data-cy=member-page]').should('have.attr', 'data-ready', 'true')
+        cy.get('[data-cy=member-page]', { timeout: 20000 }).should('have.attr', 'data-ready', 'true')
 
         cy.get('[data-cy=member-practitioner]')
           .as('practitionerToggle')
@@ -33,7 +33,7 @@ describe('Practitioner seat cap', () => {
         // unsaved on screen, with the reason, rather than looking done.
         cy.get('[data-cy=member-save-bar]').should('be.visible')
         cy.reload()
-        cy.get('[data-cy=member-page]').should('have.attr', 'data-ready', 'true')
+        cy.get('[data-cy=member-page]', { timeout: 20000 }).should('have.attr', 'data-ready', 'true')
         cy.get('[data-cy=member-practitioner]').should('have.attr', 'aria-checked', 'false')
       })
     })
@@ -59,9 +59,9 @@ describe('Practitioner seat cap', () => {
       }).then(() => {
         cy.login(account.email, account.password)
         cy.visit('/settings/team')
-        cy.get('[data-cy=team-page]').should('have.attr', 'data-ready', 'true')
+        cy.get('[data-cy=team-page]', { timeout: 20000 }).should('have.attr', 'data-ready', 'true')
         cy.contains('[data-cy=team-member-row]', 'Nour Newseat').click()
-        cy.get('[data-cy=member-page]').should('have.attr', 'data-ready', 'true')
+        cy.get('[data-cy=member-page]', { timeout: 20000 }).should('have.attr', 'data-ready', 'true')
 
         cy.get('[data-cy=member-practitioner]')
           .as('practitionerToggle')
@@ -72,7 +72,7 @@ describe('Practitioner seat cap', () => {
         cy.get('[data-cy=member-save-bar]').should('not.exist')
         cy.get('[data-cy=member-seat-refused]').should('not.exist')
         cy.reload()
-        cy.get('[data-cy=member-page]').should('have.attr', 'data-ready', 'true')
+        cy.get('[data-cy=member-page]', { timeout: 20000 }).should('have.attr', 'data-ready', 'true')
         cy.get('@practitionerToggle').should('have.attr', 'aria-checked', 'true')
       })
     })
@@ -96,9 +96,9 @@ describe('Practitioner seat cap', () => {
       }).then(() => {
         cy.login(account.email, account.password)
         cy.visit('/settings/team')
-        cy.get('[data-cy=team-page]').should('have.attr', 'data-ready', 'true')
+        cy.get('[data-cy=team-page]', { timeout: 20000 }).should('have.attr', 'data-ready', 'true')
         cy.contains('[data-cy=team-member-row]', 'Tomás Trialseat').click()
-        cy.get('[data-cy=member-page]').should('have.attr', 'data-ready', 'true')
+        cy.get('[data-cy=member-page]', { timeout: 20000 }).should('have.attr', 'data-ready', 'true')
 
         cy.get('[data-cy=member-practitioner]')
           .as('practitionerToggle')

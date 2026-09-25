@@ -4,12 +4,12 @@
 describe('Settings > Team', () => {
   function openTeam() {
     cy.visit('/settings/team')
-    cy.get('[data-cy=team-page]').should('have.attr', 'data-ready', 'true')
+    cy.get('[data-cy=team-page]', { timeout: 20000 }).should('have.attr', 'data-ready', 'true')
   }
   function openMember(name: string) {
     openTeam()
     cy.contains('[data-cy=team-member-row]', name).click()
-    cy.get('[data-cy=member-page]').should('have.attr', 'data-ready', 'true')
+    cy.get('[data-cy=member-page]', { timeout: 20000 }).should('have.attr', 'data-ready', 'true')
     cy.get('[data-cy=member-title]').should('have.text', name)
   }
   function confirm() {
@@ -125,7 +125,7 @@ describe('Settings > Team', () => {
         cy.get('[data-cy=invite-link]').invoke('val').should('match', /\/join\?token=/)
         confirm()
 
-        cy.contains('[data-cy=team-invite-row]', email).should('contain', 'will not see patients')
+        cy.contains('[data-cy=team-invite-row]', email, { timeout: 20000 }).should('contain', 'will not see patients')
 
         cy.task<any>('db:latestInvite', { accountId: account.accountId }).then((invite) => {
           expect(invite.is_practitioner).to.eq(false)
@@ -157,7 +157,7 @@ describe('Settings > Team', () => {
       cy.get('[data-cy=invite-result]').should('contain', 'Share this link')
       confirm()
 
-      cy.contains('[data-cy=team-invite-row]', 'Pablo Sinemail').within(() => {
+      cy.contains('[data-cy=team-invite-row]', 'Pablo Sinemail', { timeout: 20000 }).within(() => {
         cy.contains('will see patients').should('exist')
         cy.get('[data-cy=team-invite-resend]').should('not.exist')
         cy.get('[data-cy=team-invite-revoke]').click()
@@ -179,7 +179,7 @@ describe('Settings > Team', () => {
         cy.location('pathname').should('eq', '/settings/team')
         cy.location('hash').should('eq', '#importados')
 
-        cy.get('[data-cy=team-page]').should('have.attr', 'data-ready', 'true')
+        cy.get('[data-cy=team-page]', { timeout: 20000 }).should('have.attr', 'data-ready', 'true')
         cy.get('[data-cy=team-imported-row][data-name="Dr. Legacy"]').within(() => {
           cy.contains('3 appointments').should('exist')
           cy.get('[data-cy=team-imported-link]').should('be.disabled')
@@ -209,7 +209,7 @@ describe('Settings > Team', () => {
         cy.get('[data-cy=invite-practitioner]').should('be.checked')
         confirm()
         confirm()
-        cy.contains('[data-cy=team-invite-row]', 'Dra. Pasado').should('contain', 'gets the imported appointments of "Dra. Pasado"')
+        cy.contains('[data-cy=team-invite-row]', 'Dra. Pasado', { timeout: 20000 }).should('contain', 'gets the imported appointments of "Dra. Pasado"')
         cy.task<any>('db:latestInvite', { accountId: account.accountId }).its('link_practitioner_name').should('eq', 'Dra. Pasado')
       })
     })

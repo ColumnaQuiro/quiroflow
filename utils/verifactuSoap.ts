@@ -133,9 +133,9 @@ export interface SenderConfig {
    * there is no filesystem to put a .p12 on, and anything baked into the
    * bundle would be a private key in the repository.
    *
-   * The passphrase is kept separate and stays an environment variable, so
-   * neither half is usable alone -- whichever store ends up holding the
-   * certificate does not also hold the key to it.
+   * The passphrase is kept separate, encrypted with the platform key, so
+   * neither the database nor the deploy is usable alone -- see
+   * server/utils/verifactuCertificate.ts.
    */
   certificateBase64?: string
   /** A local file instead, for development. Ignored when base64 is set. */
@@ -163,6 +163,12 @@ export type BlockedReason =
   | 'nothing-to-send'
   | 'waiting-on-aeat-pace'
   | 'production-not-enabled'
+  /** The clinic has VeriFactu switched off in its settings. */
+  | 'verifactu-off'
+  /** A certificate is stored but its passphrase is not. */
+  | 'no-passphrase'
+  /** NUXT_VERIFACTU_SECRET_KEY is missing, or cannot open the stored passphrase. */
+  | 'no-platform-key'
 
 /**
  * Why this account cannot transmit right now, or null if it can.

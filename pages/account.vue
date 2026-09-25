@@ -486,7 +486,7 @@ const phoneSections = computed(() => sections.value.filter((s) => s.id !== 'acce
               <h2 id="h-idioma" class="text-[16px] font-bold text-ink-900">{{ t('Language', 'Idioma') }}</h2>
               <p class="mt-1 text-[13px] text-ink-muted">{{ t('Applies at once, and only to you.', 'Se aplica al momento y solo a ti.') }}</p>
             </div>
-            <div role="radiogroup" aria-labelledby="h-idioma" class="flex gap-0.5 rounded-[11px] border border-chip-border bg-chip-bg p-[3px] sm:w-[280px]" data-cy="account-language">
+            <div role="radiogroup" aria-labelledby="h-idioma" class="flex gap-0.5 rounded-ctl bg-chip-bg p-[3px] sm:w-[280px]" data-cy="account-language">
               <button
                 v-for="opt in LANGUAGES"
                 :key="opt.value"
@@ -496,7 +496,7 @@ const phoneSections = computed(() => sections.value.filter((s) => s.id !== 'acce
                 :disabled="savingLang"
                 :lang="opt.value"
                 :data-lang="opt.value"
-                class="h-10 flex-1 rounded-[8px] text-[13.5px] font-semibold"
+                class="h-8 touch:h-10 flex-1 whitespace-nowrap rounded-[7px] px-2.5 text-[13px] font-semibold"
                 :class="langPreference === opt.value ? 'bg-surface text-ink-900 shadow-card' : 'text-ink-muted'"
                 @click="chooseLanguage(opt.value)"
               >

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
+import { offeredAppointmentTypes, offeredTypesSection, type PromptType } from '~/utils/receptionistTypes'
 
 // Shared shape and defaults for the AI receptionist's configuration, plus the
 // system prompt built from it.
@@ -91,6 +92,61 @@ export function toConfig(row: Row | null): ReceptionistConfig {
   }
 }
 
+/** A type as the prompt and the settings screen name it. */
+export interface OfferedType extends PromptType {
+  id: string
+}
+
+/**
+ * The appointment types this account's receptionist may offer, read at the
+ * moment of use. See utils/receptionistTypes.ts for what an empty list means
+ * and why archived types are filtered here rather than when archived.
+ *
+ * Fails closed: if the types cannot be read, the answer is "none", and the
+ * prompt then tells the model to hand booking to a colleague. Offering a type
+ * the clinic has since archived or withheld is the failure this exists to
+ * prevent, so an unreadable list must not turn into an unrestricted one.
+ */
+export async function loadOfferedTypes(supabase: SupabaseClient<Database>, accountId: string, config: ReceptionistConfig): Promise<OfferedType[]> {
+  const { data, error } = await readAccountTypes(supabase, accountId)
+  if (error) {
+    console.error('[receptionist] could not read appointment types:', error.message)
+    return []
+  }
+  return offeredAppointmentTypes(data ?? [], config.bookableAppointmentTypeIds).map(toOfferedType)
+}
+
+/** Every type the account has, archived included, for callers that filter. */
+export function readAccountTypes(supabase: SupabaseClient<Database>, accountId: string) {
+  return supabase
+    .from('appointment_types')
+    .select('id, name, duration_minutes, archived_at, sort_order')
+    .eq('account_id', accountId)
+}
+
+/**
+ * What the settings screen needs to edit the list: the clinic's active types
+ * in its own order, and the ones the receptionist offers right now -- the
+ * latter computed by the same function the prompt uses, so the screen cannot
+ * describe a list the drafts are not given.
+ *
+ * Unlike loadOfferedTypes this throws: a settings screen that cannot read the
+ * types should say so, not show an editor with nothing in it.
+ */
+export async function loadTypeChoices(supabase: SupabaseClient<Database>, accountId: string, config: ReceptionistConfig) {
+  const { data, error } = await readAccountTypes(supabase, accountId)
+  if (error) throw createError({ statusCode: 500, statusMessage: error.message })
+  const rows = data ?? []
+  return {
+    appointmentTypes: offeredAppointmentTypes(rows, []).map(toOfferedType),
+    offeredTypes: offeredAppointmentTypes(rows, config.bookableAppointmentTypeIds).map(toOfferedType),
+  }
+}
+
+function toOfferedType(type: { id: string; name: string; duration_minutes: number }): OfferedType {
+  return { id: type.id, name: type.name, durationMinutes: type.duration_minutes }
+}
+
 /**
  * Builds the system prompt from the config.
  *
@@ -100,7 +156,7 @@ export function toConfig(row: Row | null): ReceptionistConfig {
  * never to confirm a booking. Writing to the calendar is the booking code's
  * job, and a model that believes it booked something will say so to a patient.
  */
-export function buildSystemPrompt(config: ReceptionistConfig, opts: { testMode: boolean }) {
+export function buildSystemPrompt(config: ReceptionistConfig, opts: { testMode: boolean; offeredTypes: PromptType[] }) {
   const knowledge = config.knowledge
     .map((card) => `## ${card.title}\n${card.lines.map((line) => `- ${line}`).join('\n')}`)
     .join('\n\n')
@@ -114,7 +170,13 @@ export function buildSystemPrompt(config: ReceptionistConfig, opts: { testMode: 
     `Reply in the language the patient writes in. The clinic supports: ${config.languages.join(', ')}.`,
     knowledge ? `# What you know about this clinic\n\n${knowledge}` : '# What you know about this clinic\n\nNothing has been configured yet. Say you will check with a colleague rather than guessing.',
     questions ? `# Qualify the enquiry by working these in naturally, one at a time\n\n${questions}` : '',
-    `# Booking\nYou may offer up to ${config.slotsPerReply} time${config.slotsPerReply === 1 ? '' : 's'} per reply, within the next ${config.bookingWindowDays} days, no sooner than ${config.minimumNoticeMinutes} minutes from now.`,
+    // The types come from the database at the moment of drafting, not from
+    // the model's reading of the knowledge cards: an owner who withholds a
+    // type, or archives it, has it gone from the next reply.
+    offeredTypesSection(opts.offeredTypes),
+    opts.offeredTypes.length
+      ? `# Booking\nYou may offer up to ${config.slotsPerReply} time${config.slotsPerReply === 1 ? '' : 's'} per reply, within the next ${config.bookingWindowDays} days, no sooner than ${config.minimumNoticeMinutes} minutes from now.`
+      : '',
     // The single most important line in this prompt.
     `You must NEVER state that an appointment is booked, confirmed or reserved. You offer times; a member of staff or the booking system confirms them. If the patient accepts a time, say you are putting it through and that they will get a confirmation.`,
     escalations ? `# Stop and hand over to a person when\n\n${escalations}\n\nWhen one of these applies, say a colleague will pick this up shortly and stop.` : '',

@@ -1,5 +1,5 @@
 import { requireGrowth } from '~/server/utils/requireGrowth'
-import { loadReceptionistConfig } from '~/server/utils/receptionist'
+import { loadReceptionistConfig, loadTypeChoices } from '~/server/utils/receptionist'
 
 export default defineEventHandler(async (event) => {
   const { supabase, teamMember } = await requireGrowth(event)
@@ -23,6 +23,7 @@ export default defineEventHandler(async (event) => {
 
   return {
     config,
+    ...(await loadTypeChoices(supabase, teamMember.account_id, config)),
     channels: [
       {
         key: 'whatsapp',

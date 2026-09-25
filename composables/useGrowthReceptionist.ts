@@ -44,7 +44,21 @@ export interface ReceptionistChannel {
   statusLabel: string
 }
 
-interface ConfigResponse {
+/** An appointment type as the receptionist screen lists it. */
+export interface ReceptionistType {
+  id: string
+  name: string
+  durationMinutes: number
+}
+
+interface TypeChoices {
+  /** The clinic's active types, in its own order. What the editor lists. */
+  appointmentTypes: ReceptionistType[]
+  /** What the prompt is given now -- computed server-side, archived excluded. */
+  offeredTypes: ReceptionistType[]
+}
+
+interface ConfigResponse extends TypeChoices {
   config: ReceptionistConfig
   channels: ReceptionistChannel[]
   testModelAvailable: boolean
@@ -54,6 +68,8 @@ export function useGrowthReceptionist() {
   const config = ref<ReceptionistConfig | null>(null)
   const channels = ref<ReceptionistChannel[]>([])
   const testModelAvailable = ref(false)
+  const appointmentTypes = ref<ReceptionistType[]>([])
+  const offeredTypes = ref<ReceptionistType[]>([])
   const loading = ref(true)
   const saving = ref(false)
   const error = ref<string | null>(null)
@@ -64,6 +80,8 @@ export function useGrowthReceptionist() {
     try {
       const data = await useStaffFetch<ConfigResponse>('/api/growth/receptionist/config')
       config.value = data.config
+      appointmentTypes.value = data.appointmentTypes
+      offeredTypes.value = data.offeredTypes
       channels.value = data.channels
       testModelAvailable.value = data.testModelAvailable
     } catch {
@@ -77,8 +95,10 @@ export function useGrowthReceptionist() {
   async function save(patch: Partial<ReceptionistConfig>) {
     saving.value = true
     try {
-      const data = await useStaffFetch<{ config: ReceptionistConfig }>('/api/growth/receptionist/config', { method: 'PUT', body: patch })
+      const data = await useStaffFetch<{ config: ReceptionistConfig } & TypeChoices>('/api/growth/receptionist/config', { method: 'PUT', body: patch })
       config.value = data.config
+      appointmentTypes.value = data.appointmentTypes
+      offeredTypes.value = data.offeredTypes
       showToast(t('Saved.', 'Guardado.'))
       return true
     } catch (e) {
@@ -91,5 +111,5 @@ export function useGrowthReceptionist() {
 
   const liveChannelCount = computed(() => channels.value.filter((c) => c.status === 'connected').length)
 
-  return { config, channels, testModelAvailable, loading, saving, error, save, liveChannelCount }
+  return { config, channels, appointmentTypes, offeredTypes, testModelAvailable, loading, saving, error, save, liveChannelCount }
 }

@@ -170,6 +170,9 @@ export type Database = {
           role: string
           role_id: string | null
           token: string
+          clinic_ids: string[] | null
+          is_practitioner: boolean | null
+          last_sent_at: string | null
         }
         Insert: {
           accepted_at?: string | null
@@ -182,6 +185,9 @@ export type Database = {
           role?: string
           role_id?: string | null
           token?: string
+          clinic_ids?: string[] | null
+          is_practitioner?: boolean | null
+          last_sent_at?: string | null
         }
         Update: {
           accepted_at?: string | null
@@ -194,6 +200,9 @@ export type Database = {
           role?: string
           role_id?: string | null
           token?: string
+          clinic_ids?: string[] | null
+          is_practitioner?: boolean | null
+          last_sent_at?: string | null
         }
         Relationships: [
           {
@@ -1253,10 +1262,66 @@ export type Database = {
           },
         ]
       }
+      automation_run_events: {
+        Row: {
+          account_id: string
+          action_type: string | null
+          actor_team_member_id: string | null
+          created_at: string
+          detail: string | null
+          id: string
+          outcome: string
+          position: number | null
+          run_id: string
+          step_label: string | null
+        }
+        Insert: {
+          account_id: string
+          action_type?: string | null
+          actor_team_member_id?: string | null
+          created_at?: string
+          detail?: string | null
+          id?: string
+          outcome: string
+          position?: number | null
+          run_id: string
+          step_label?: string | null
+        }
+        Update: {
+          account_id?: string
+          action_type?: string | null
+          actor_team_member_id?: string | null
+          created_at?: string
+          detail?: string | null
+          id?: string
+          outcome?: string
+          position?: number | null
+          run_id?: string
+          step_label?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "automation_run_events_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "automation_run_events_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "automation_sequence_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       automation_sequence_runs: {
         Row: {
           account_id: string
+          attempts: number
           id: string
+          last_error: string | null
           lead_id: string
           next_position: number
           resume_at: string
@@ -1268,7 +1333,9 @@ export type Database = {
         }
         Insert: {
           account_id: string
+          attempts?: number
           id?: string
+          last_error?: string | null
           lead_id: string
           next_position?: number
           resume_at?: string
@@ -1280,7 +1347,9 @@ export type Database = {
         }
         Update: {
           account_id?: string
+          attempts?: number
           id?: string
+          last_error?: string | null
           lead_id?: string
           next_position?: number
           resume_at?: string

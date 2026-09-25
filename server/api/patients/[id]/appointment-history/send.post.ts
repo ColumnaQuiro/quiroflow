@@ -1,8 +1,9 @@
 export default defineEventHandler(async (event) => {
-  const patientId = getRouterParam(event, 'id')
-  const { supabase } = await requirePermission(event, 'patients_access')
+  // Was requirePermission('patients_access') -- a key no role has ever had,
+  // so everyone but an owner got a 403. Seeing the patient is the gate.
+  const { supabase, patientId } = await requirePatientAccess(event, getRouterParam(event, 'id'))
 
-  const data = await loadAppointmentHistoryData(supabase, patientId!)
+  const data = await loadAppointmentHistoryData(supabase, patientId)
   if (!data) {
     throw createError({ statusCode: 404, statusMessage: 'Patient not found' })
   }

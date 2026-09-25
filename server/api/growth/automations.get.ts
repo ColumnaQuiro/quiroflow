@@ -78,12 +78,13 @@ export default defineEventHandler(async (event) => {
   const sendCounts = new Map<string, number>()
   for (const s of sends ?? []) sendCounts.set(s.rule_id, (sendCounts.get(s.rule_id) ?? 0) + 1)
 
-  const runCounts = new Map<string, { total: number; running: number; stopped: number }>()
+  const runCounts = new Map<string, { total: number; running: number; stopped: number; failed: number }>()
   for (const r of sequenceRuns ?? []) {
-    const current = runCounts.get(r.rule_id) ?? { total: 0, running: 0, stopped: 0 }
+    const current = runCounts.get(r.rule_id) ?? { total: 0, running: 0, stopped: 0, failed: 0 }
     current.total += 1
     if (r.status === 'running') current.running += 1
     if (r.status === 'cancelled') current.stopped += 1
+    if (r.status === 'failed') current.failed += 1
     runCounts.set(r.rule_id, current)
   }
 
@@ -97,7 +98,7 @@ export default defineEventHandler(async (event) => {
     // than being dressed up -- a new automation has not run yet, and that is
     // worth seeing.
     const runs = sequence
-      ? `${sequence.total} ${sequence.total === 1 ? 'run' : 'runs'} · 30d${sequence.running ? ` · ${sequence.running} in progress` : ''}`
+      ? `${sequence.total} ${sequence.total === 1 ? 'run' : 'runs'} · 30d${sequence.running ? ` · ${sequence.running} in progress` : ''}${sequence.failed ? ` · ${sequence.failed} failed` : ''}`
       : `${sent} ${sent === 1 ? 'run' : 'runs'} · 30d`
 
     return {

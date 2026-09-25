@@ -58,9 +58,12 @@ describe('Automation test mode', () => {
       triggerEvent: 'lead.created',
       isMarketing: true,
       dryRun,
+      // Webhook first: a live run has no Resend key in CI, so its email step
+      // fails, and a failed step holds the drip for a retry -- a webhook after
+      // it would never be reached, and the live test would prove nothing.
       actions: [
-        { type: 'email', config: { subject: 'Hola {{first_name}}', body: '<p>Bienvenida, {{first_name}}.</p>' } },
         { type: 'webhook', config: { url: hookUrl } },
+        { type: 'email', config: { subject: 'Hola {{first_name}}', body: '<p>Bienvenida, {{first_name}}.</p>' } },
       ],
     })
   }

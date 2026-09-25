@@ -132,3 +132,28 @@ export async function requirePermission(event: H3Event, permKey: string) {
 export async function requireSettingsPermission(event: H3Event, permKey: string) {
   return checkPermissions(event, ['settings_access', permKey])
 }
+
+/**
+ * For patient-scoped endpoints with no permission of their own: the caller
+ * may act on this patient exactly when they may see the patient record. That
+ * is `can_access_patient` -- patients_scope 'all', or 'own' and the patient is
+ * theirs -- the same rule the patients RLS policy applies.
+ *
+ * Not found and not yours answer the same 404, so the route does not confirm
+ * that a patient id exists to someone who cannot see it.
+ */
+export async function requirePatientAccess(event: H3Event, patientId: string | undefined) {
+  if (!patientId) throw createError({ statusCode: 400, statusMessage: 'Missing patient id' })
+
+  const { supabase, teamMember } = await requireActiveAccount(event)
+
+  const { data: allowed } = await supabase.rpc('can_access_patient', {
+    target_account_id: teamMember.account_id,
+    target_patient_id: patientId,
+  })
+  if (!allowed) {
+    throw createError({ statusCode: 404, statusMessage: 'Patient not found' })
+  }
+
+  return { supabase, teamMember, patientId }
+}

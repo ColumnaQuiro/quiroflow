@@ -225,7 +225,7 @@ async function reactivate(c: ClinicRow) {
 
           <p class="text-[12.5px] text-ink-muted">
             {{ t('Who works at each location is set per person in', 'Quién trabaja en cada sede se decide por persona en') }}
-            <NuxtLink to="/settings/team" class="text-brand-text hover:underline">{{ t('Team Members', 'Miembros del equipo') }}</NuxtLink>.
+            <NuxtLink to="/settings/team" class="text-brand-text hover:underline">{{ t('Team', 'Equipo') }}</NuxtLink>.
           </p>
         </div>
       </div>

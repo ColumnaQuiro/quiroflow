@@ -1,5 +1,5 @@
 describe('Practitioner seat cap', () => {
-  it('blocks flipping a second staff member to practitioner on a full Solo plan and reverts the toggle', () => {
+  it('blocks flipping a second staff member to practitioner on a full Solo plan and keeps it unsaved', () => {
     cy.seedStaffAccount().then((account) => {
       // A fresh account is on Solo (included_professionals = 1) and the
       // owner created at signup is already a practitioner, so the seat is
@@ -17,19 +17,24 @@ describe('Practitioner seat cap', () => {
       }).then(() => {
         cy.login(account.email, account.password)
         cy.visit('/settings/team')
+        cy.get('[data-cy=team-page]', { timeout: 20000 }).should('have.attr', 'data-ready', 'true')
+        cy.contains('[data-cy=team-member-row]', 'Priya Practitioner').click()
+        cy.get('[data-cy=member-page]', { timeout: 20000 }).should('have.attr', 'data-ready', 'true')
 
-        cy.contains('tr', 'Priya Practitioner')
-          .find('button[role="switch"]')
-          .first()
+        cy.get('[data-cy=member-practitioner]')
           .as('practitionerToggle')
           .should('have.attr', 'aria-checked', 'false')
           .click()
+        cy.get('[data-cy=member-save]').click()
 
-        cy.contains('Your plan covers 1 practitioner(s) and all of them are in use.').should('be.visible')
+        cy.get('[data-cy=member-seat-refused]').should('contain', 'Your plan covers 1 practitioner(s) and all of them are in use.')
 
-        // The optimistic flip must be undone once the database rejects it --
-        // otherwise the person looks schedulable when they aren't.
-        cy.get('@practitionerToggle').should('have.attr', 'aria-checked', 'false')
+        // Refused by the database, so nothing was saved: the change stays
+        // unsaved on screen, with the reason, rather than looking done.
+        cy.get('[data-cy=member-save-bar]').should('be.visible')
+        cy.reload()
+        cy.get('[data-cy=member-page]', { timeout: 20000 }).should('have.attr', 'data-ready', 'true')
+        cy.get('[data-cy=member-practitioner]').should('have.attr', 'aria-checked', 'false')
       })
     })
   })
@@ -54,16 +59,21 @@ describe('Practitioner seat cap', () => {
       }).then(() => {
         cy.login(account.email, account.password)
         cy.visit('/settings/team')
+        cy.get('[data-cy=team-page]', { timeout: 20000 }).should('have.attr', 'data-ready', 'true')
+        cy.contains('[data-cy=team-member-row]', 'Nour Newseat').click()
+        cy.get('[data-cy=member-page]', { timeout: 20000 }).should('have.attr', 'data-ready', 'true')
 
-        cy.contains('tr', 'Nour Newseat')
-          .find('button[role="switch"]')
-          .first()
+        cy.get('[data-cy=member-practitioner]')
           .as('practitionerToggle')
           .should('have.attr', 'aria-checked', 'false')
           .click()
+        cy.get('[data-cy=member-save]').click()
 
+        cy.get('[data-cy=member-save-bar]').should('not.exist')
+        cy.get('[data-cy=member-seat-refused]').should('not.exist')
+        cy.reload()
+        cy.get('[data-cy=member-page]', { timeout: 20000 }).should('have.attr', 'data-ready', 'true')
         cy.get('@practitionerToggle').should('have.attr', 'aria-checked', 'true')
-        cy.contains('Your plan covers 1 practitioner(s) and all of them are in use.').should('not.exist')
       })
     })
   })
@@ -86,16 +96,19 @@ describe('Practitioner seat cap', () => {
       }).then(() => {
         cy.login(account.email, account.password)
         cy.visit('/settings/team')
+        cy.get('[data-cy=team-page]', { timeout: 20000 }).should('have.attr', 'data-ready', 'true')
+        cy.contains('[data-cy=team-member-row]', 'Tomás Trialseat').click()
+        cy.get('[data-cy=member-page]', { timeout: 20000 }).should('have.attr', 'data-ready', 'true')
 
-        cy.contains('tr', 'Tomás Trialseat')
-          .find('button[role="switch"]')
-          .first()
+        cy.get('[data-cy=member-practitioner]')
           .as('practitionerToggle')
           .should('have.attr', 'aria-checked', 'false')
           .click()
+        cy.get('[data-cy=member-save]').click()
 
+        cy.get('[data-cy=member-save-bar]').should('not.exist')
+        cy.get('[data-cy=member-seat-refused]').should('not.exist')
         cy.get('@practitionerToggle').should('have.attr', 'aria-checked', 'true')
-        cy.contains('all of them are in use').should('not.exist')
 
         cy.visit('/subscription')
         cy.contains('No seat limit during your free trial.').should('be.visible')

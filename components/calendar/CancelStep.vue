@@ -178,11 +178,11 @@ async function confirmCancel() {
 <template>
   <div class="flex min-h-0 flex-1 flex-col" data-cy="cancel-sheet">
     <div class="flex shrink-0 items-center gap-2 border-b border-line px-3 py-2 sm:px-4">
-      <button type="button" :aria-label="t('Back to the appointment', 'Volver a la cita')" class="flex h-11 w-11 items-center justify-center rounded-ctl text-ink-700 hover:bg-surface-subtle" data-cy="cancel-back" @click="emit('back')">
+      <button type="button" :aria-label="t('Back to the appointment', 'Volver a la cita')" class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-ctl text-ink-700 hover:bg-surface-subtle" data-cy="cancel-back" @click="emit('back')">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6" /></svg>
       </button>
       <h2 id="cancel-title" class="flex-1 text-[18px] font-bold text-ink-900">{{ t('Cancel the appointment', 'Cancelar la cita') }}</h2>
-      <button type="button" :aria-label="t('Close', 'Cerrar')" class="flex h-11 w-11 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle" @click="emit('close')">
+      <button type="button" :aria-label="t('Close', 'Cerrar')" class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle" @click="emit('close')">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
       </button>
     </div>
@@ -212,7 +212,7 @@ async function confirmCancel() {
           <label
             v-for="o in feeOptions"
             :key="o.key"
-            class="flex min-h-11 cursor-pointer items-start gap-3 rounded-[12px] px-3.5 py-3"
+            class="flex min-h-9 touch:min-h-11 cursor-pointer items-start gap-3 rounded-[12px] px-3.5 py-3"
             :class="fee === o.key ? 'border-[1.5px] border-brand bg-brand-tint' : 'border border-line-control bg-surface'"
             :data-cy="`cancel-fee-${o.key}`"
           >
@@ -247,7 +247,7 @@ async function confirmCancel() {
 
           <template v-if="firstMatch">
             <label
-              class="flex min-h-11 items-start gap-3 rounded-[12px] px-3.5 py-3"
+              class="flex min-h-9 touch:min-h-11 items-start gap-3 rounded-[12px] px-3.5 py-3"
               :class="[offer ? 'border-[1.5px] border-brand bg-brand-tint' : 'border border-line-control bg-surface', deadline ? 'cursor-pointer' : 'cursor-not-allowed opacity-60']"
               data-cy="cancel-offer"
             >
@@ -261,7 +261,7 @@ async function confirmCancel() {
                 <span v-else class="text-[12.5px] text-ink-muted">{{ t('It starts too soon for anyone to take it.', 'Empieza demasiado pronto para que alguien lo aproveche.') }}</span>
               </span>
             </label>
-            <label class="flex min-h-11 cursor-pointer items-start gap-3 rounded-[12px] px-3.5 py-3" :class="!offer ? 'border-[1.5px] border-brand bg-brand-tint' : 'border border-line-control bg-surface'" data-cy="cancel-leave-free">
+            <label class="flex min-h-9 touch:min-h-11 cursor-pointer items-start gap-3 rounded-[12px] px-3.5 py-3" :class="!offer ? 'border-[1.5px] border-brand bg-brand-tint' : 'border border-line-control bg-surface'" data-cy="cancel-leave-free">
               <input v-model="offer" type="radio" name="slot" :value="false" class="mt-1 accent-brand" />
               <span class="flex flex-col gap-0.5">
                 <span class="text-[14px] font-semibold text-ink-900">{{ t('Leave the slot free', 'Dejar el hueco libre') }}</span>
@@ -277,8 +277,8 @@ async function confirmCancel() {
     <div class="appt-panel-footer flex shrink-0 flex-col gap-3 border-t border-line bg-surface px-5 py-3 sm:px-6">
       <span class="text-[12.5px] text-ink-muted" data-cy="cancel-summary">{{ summary }}</span>
       <div class="flex flex-wrap items-center justify-end gap-2">
-        <button type="button" class="h-11 rounded-ctl border border-line-control px-4 text-[13.5px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="emit('back')">{{ t('Don’t cancel', 'No cancelar') }}</button>
-        <button type="button" data-cy="confirm-cancel" :disabled="busy || loading" class="h-11 rounded-ctl bg-ink-900 px-4 text-[13.5px] font-bold text-surface hover:opacity-90 disabled:opacity-50" @click="confirmCancel">{{ cta }}</button>
+        <button type="button" class="h-9 touch:h-11 rounded-ctl border border-line-control px-4 text-[13.5px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="emit('back')">{{ t('Don’t cancel', 'No cancelar') }}</button>
+        <button type="button" data-cy="confirm-cancel" :disabled="busy || loading" class="h-9 touch:h-11 rounded-ctl bg-ink-900 px-4 text-[13.5px] font-bold text-surface hover:opacity-90 disabled:opacity-50" @click="confirmCancel">{{ cta }}</button>
       </div>
     </div>
   </div>

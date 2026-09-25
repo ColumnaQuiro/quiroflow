@@ -52,9 +52,14 @@ describe('Growth in the shared Inbox', () => {
     cy.get('[data-test="lead-row"]').should('not.exist')
     cy.get('[data-test="filter-ai-handling"]').should('not.exist')
 
-    // The filters the base plan has always had are still there.
-    cy.contains('button', 'Awaiting us').should('be.visible')
-    cy.contains('button', 'Awaiting patient').should('be.visible')
+    // The filters the base plan has always had are still there, behind
+    // "More filters", with no receptionist section.
+    cy.get('[data-cy=inbox-more-filters]').click()
+    cy.get('[data-cy=inbox-more-filters-menu]').within(() => {
+      cy.contains('button', 'Awaiting us').should('be.visible')
+      cy.contains('button', 'Awaiting patient').should('be.visible')
+      cy.contains('Receptionist').should('not.exist')
+    })
   })
 
   it('shows a lead conversation alongside the patient threads', () => {
@@ -95,6 +100,52 @@ describe('Growth in the shared Inbox', () => {
         })
       })
     })
+  })
+
+  it('says what a template or a file was, and shows the newest messages of a long thread', () => {
+    cy.visit('/inbox?growth=1')
+    seedConversation(account, 'Tomasa Plantilla', 'paused', { lastInboundMinutesAgo: 300 }).then((leadId) => {
+      cy.task('db:createLeadMessage', { accountId: account.accountId, leadId, direction: 'outbound', body: '', templateName: 'quiroads_welcome_message_2', createdAt: new Date(Date.now() - 290 * 60000).toISOString() })
+      cy.task('db:createLeadMessage', { accountId: account.accountId, leadId, direction: 'inbound', body: '', mediaType: 'audio', createdAt: new Date(Date.now() - 280 * 60000).toISOString() })
+      // 205 more, so the thread is past the 200 the endpoint returns.
+      for (let i = 0; i < 205; i++) {
+        cy.task('db:createLeadMessage', { accountId: account.accountId, leadId, direction: 'inbound', body: `Relleno ${i}`, createdAt: new Date(Date.now() - (270 - i) * 60000).toISOString() })
+      }
+      cy.task('db:createLeadMessage', { accountId: account.accountId, leadId, direction: 'inbound', body: 'El más reciente', createdAt: new Date(Date.now() - 60000).toISOString() })
+      cy.reload()
+      cy.contains('[data-test="lead-row"]', 'Tomasa Plantilla').click()
+      // The newest message is there, not the first 200 ever sent.
+      cy.get('[data-test="lead-thread"]').should('contain', 'El más reciente')
+    })
+    // And a short thread shows the template and the voice note by name.
+    seedConversation(account, 'Rita Plantilla', 'paused').then((leadId) => {
+      cy.task('db:createLeadMessage', { accountId: account.accountId, leadId, direction: 'outbound', body: '', templateName: 'quiroads_welcome_message_2' })
+      cy.task('db:createLeadMessage', { accountId: account.accountId, leadId, direction: 'inbound', body: '', mediaType: 'audio' })
+      cy.reload()
+      cy.contains('[data-test="lead-row"]', 'Rita Plantilla').click()
+      cy.get('[data-test="lead-template-message"]').should('contain', 'Template «quiroads_welcome_message_2»')
+      cy.get('[data-test="lead-thread"]').should('contain', 'Voice note')
+      // Assigned from the thread's own header, not a second bar above it.
+      cy.get('[data-test="lead-thread"] [data-cy=lead-assign]').should('be.visible')
+    })
+  })
+
+  it('fits the filters in the list without sideways scrolling', () => {
+    cy.viewport(1440, 900)
+    cy.visit('/inbox?growth=1')
+    cy.get('[data-cy=inbox-filters]').should(($row) => {
+      const el = $row[0]
+      expect(el.scrollWidth, 'no horizontal overflow').to.be.at.most(el.clientWidth + 1)
+      // Two rows at most: 32px chips and a 6px gap.
+      expect(el.getBoundingClientRect().height).to.be.at.most(2 * 32 + 6 + 1)
+    })
+    cy.get('[data-cy=inbox-new]').invoke('outerHeight').should('eq', 36)
+    cy.get('[data-cy=inbox-filter-unread]').invoke('outerHeight').should('eq', 32)
+    cy.get('[data-cy=inbox-label-filter]').invoke('outerHeight').should('eq', 32)
+    // On a touch screen every one of them is a 44px target.
+    cy.useTouchScreen()
+    cy.get('[data-cy=inbox-new]').invoke('outerHeight').should('eq', 44)
+    cy.get('[data-cy=inbox-filter-unread]').invoke('outerHeight').should('eq', 44)
   })
 
   it('locks the composer while the AI is answering, and opens it on take over', () => {
@@ -389,7 +440,12 @@ describe('Growth in the shared Inbox', () => {
     seedConversation(account, 'Taken Over', 'paused')
     cy.reload()
 
+    // Wait for the list: a click before the page has started is lost.
+    cy.contains('[data-test="lead-row"]', 'Taken Over').should('be.visible')
+    cy.get('[data-cy=inbox-more-filters]').click()
     cy.get('[data-test="filter-ai-handling"]').click()
+    // The chip says a filter behind it is on.
+    cy.get('[data-cy=inbox-more-filters]').should('contain', '· 1')
     cy.contains('[data-test="lead-row"]', 'Handled By Ai').should('be.visible')
     cy.contains('[data-test="lead-row"]', 'Taken Over').should('not.exist')
   })

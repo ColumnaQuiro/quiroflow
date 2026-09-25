@@ -91,7 +91,7 @@ watch(() => route.fullPath, () => (mobileOpen.value = false))
   <button
     v-if="!mobileOpen"
     type="button"
-    class="fixed bottom-6 left-4 z-30 flex h-11 items-center gap-2 rounded-pill border border-line bg-surface px-4 text-[13px] font-medium text-ink-700 shadow-card lg:hidden"
+    class="fixed bottom-6 left-4 z-30 flex h-9 touch:h-11 items-center gap-2 rounded-pill border border-line bg-surface px-4 text-[13px] font-medium text-ink-700 shadow-card lg:hidden"
     @click="mobileOpen = true"
   >
     <svg width="14" height="14" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1.5 3.5h11M1.5 7h11M1.5 10.5h11" /></svg>

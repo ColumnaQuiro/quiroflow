@@ -35,7 +35,7 @@ function pick(r: SavedReply) {
     <button
       type="button"
       class="flex shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-500 hover:bg-surface-subtle"
-      :class="size === 'lg' ? 'h-11 w-11' : 'h-9 w-9'"
+      :class="size === 'lg' ? 'h-11 w-11' : 'h-9 w-9 touch:h-11 touch:w-11'"
       :title="t('Saved replies', 'Respuestas guardadas')"
       @click="toggle"
     >

@@ -548,7 +548,7 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
 
       <!-- Filters -->
       <div class="flex flex-wrap items-center gap-2">
-        <label class="flex h-11 w-full items-center gap-2 rounded-ctl border border-line-control bg-surface px-3 sm:w-72">
+        <label class="flex h-9 touch:h-11 w-full items-center gap-2 rounded-ctl border border-line-control bg-surface px-3 sm:w-72">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="shrink-0 text-ink-muted" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
           <input v-model="search" type="search" data-cy="recalls-search" :aria-label="t('Search patient', 'Buscar paciente')" :placeholder="t('Search patient', 'Buscar paciente')" class="min-w-0 flex-1 bg-transparent text-[14px] text-ink-900 outline-none placeholder:text-ink-faint" />
         </label>
@@ -597,7 +597,7 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
       <div v-if="tab === 'queue' && moreFiltersOpen" class="mt-2 flex flex-wrap items-end gap-3 rounded-card border border-line bg-surface p-3" data-cy="recalls-more-panel">
         <label class="flex flex-col gap-1 text-[12.5px] font-semibold text-ink-700">
           {{ t('Balance', 'Saldo') }}
-          <select v-model="balanceFilter" class="h-10 rounded-ctl border border-line-control bg-surface px-2 text-[13.5px] font-normal text-ink-900">
+          <select v-model="balanceFilter" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-2 text-[13.5px] font-normal text-ink-900">
             <option value="any">{{ t('Any', 'Cualquiera') }}</option>
             <option value="debit">{{ t('Owing', 'Debe') }}</option>
             <option value="credit">{{ t('In credit', 'A favor') }}</option>
@@ -605,11 +605,11 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
         </label>
         <label class="flex flex-col gap-1 text-[12.5px] font-semibold text-ink-700">
           {{ t('Tag', 'Etiqueta') }}
-          <input v-model="tagFilter" type="search" class="h-10 w-40 rounded-ctl border border-line-control bg-surface px-2 text-[13.5px] font-normal text-ink-900" />
+          <input v-model="tagFilter" type="search" class="h-9 touch:h-11 w-40 rounded-ctl border border-line-control bg-surface px-2 text-[13.5px] font-normal text-ink-900" />
         </label>
         <label class="flex flex-col gap-1 text-[12.5px] font-semibold text-ink-700">
           {{ t('Last visit since (instead of weeks)', 'Última visita desde (en vez de semanas)') }}
-          <input v-model="dateFrom" type="date" class="h-10 rounded-ctl border border-line-control bg-surface px-2 text-[13.5px] font-normal text-ink-900" />
+          <input v-model="dateFrom" type="date" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-2 text-[13.5px] font-normal text-ink-900" />
         </label>
         <button v-if="extraFilterCount" type="button" class="h-10 px-2 text-[13px] font-semibold text-brand-text" @click="(dateFrom = ''), (balanceFilter = 'any'), (tagFilter = '')">{{ t('Clear', 'Borrar') }}</button>
       </div>
@@ -619,14 +619,14 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
         <!-- Bulk bar -->
         <div v-if="tab === 'queue' && selectedIds.size > 0" class="flex flex-wrap items-center gap-2 rounded-t-card border-b border-brand-tintBorder bg-brand-tint px-4 py-2" data-cy="recalls-bulk">
           <strong class="text-[14px] text-brand-text">{{ t(`${selectedIds.size} selected`, `${selectedIds.size} seleccionados`) }}</strong>
-          <button type="button" data-cy="recalls-bulk-whatsapp" :disabled="reachableSelected.length === 0" class="h-10 rounded-ctl bg-brand px-3 text-[13.5px] font-bold text-surface disabled:opacity-50" @click="bulkWhatsAppOpen = true">
+          <button type="button" data-cy="recalls-bulk-whatsapp" :disabled="reachableSelected.length === 0" class="h-9 touch:h-11 rounded-ctl bg-brand px-3 text-[13.5px] font-bold text-surface disabled:opacity-50" @click="bulkWhatsAppOpen = true">
             {{ t(`WhatsApp to ${reachableSelected.length}`, `WhatsApp a ${reachableSelected.length}`) }}
           </button>
           <span v-if="unreachableCount" class="text-[12.5px] text-ink-500" data-cy="recalls-bulk-skipped">{{ t(`${unreachableCount} without a phone, skipped`, `${unreachableCount} sin teléfono, se salta`) }}</span>
           <div class="relative" data-row-menu>
             <button type="button" class="h-10 px-3 text-[13.5px] font-semibold text-brand-text" @click="assignMenuOpen = !assignMenuOpen">{{ t('Assign practitioner', 'Asignar profesional') }}</button>
             <div v-if="assignMenuOpen" class="absolute left-0 top-full z-20 mt-1 w-52 rounded-ctl border border-line bg-surface py-1 shadow-popover">
-              <button v-for="m in teamMembers" :key="m.id" type="button" class="block min-h-11 w-full px-3 text-left text-[13.5px] text-ink-700 hover:bg-surface-subtle" @click="bulkAssignPractitioner(m.id)">{{ m.full_name }}</button>
+              <button v-for="m in teamMembers" :key="m.id" type="button" class="block min-h-9 touch:min-h-11 w-full px-3 text-left text-[13.5px] text-ink-700 hover:bg-surface-subtle" @click="bulkAssignPractitioner(m.id)">{{ m.full_name }}</button>
             </div>
           </div>
           <button type="button" data-cy="recalls-bulk-snooze" class="h-10 px-3 text-[13.5px] font-semibold text-brand-text" @click="openSnooze(selectedRecalls.map((r) => r.patient_id!), selectionName)">{{ t('Snooze…', 'Posponer…') }}</button>
@@ -637,7 +637,7 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
         <!-- Queue -->
         <template v-if="tab === 'queue'">
           <div class="hidden h-10 items-center gap-3 border-b border-line bg-surface-subtle px-4 text-[11.5px] font-bold uppercase tracking-wide text-ink-muted lg:grid lg:grid-cols-[44px_minmax(0,2.2fr)_minmax(0,1.3fr)_minmax(0,1fr)_110px_minmax(0,1.5fr)_250px]">
-            <label class="flex h-11 w-11 items-center justify-center"><input type="checkbox" :checked="allVisibleSelected" :aria-label="t('Select all', 'Seleccionar todos')" class="h-[18px] w-[18px] accent-brand" @change="toggleSelectAll" /></label>
+            <label class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center"><input type="checkbox" :checked="allVisibleSelected" :aria-label="t('Select all', 'Seleccionar todos')" class="h-[18px] w-[18px] accent-brand" @change="toggleSelectAll" /></label>
             <span>{{ t('Patient', 'Paciente') }}</span><span>{{ t('Last visit', 'Última visita') }}</span><span>{{ t('Practitioner', 'Profesional') }}</span><span class="text-right">{{ t('Balance', 'Saldo') }}</span><span>{{ t('Last contact', 'Último contacto') }}</span><span></span>
           </div>
           <div v-if="loading" class="space-y-3 p-4"><UiSkeleton v-for="i in 6" :key="i" class="h-12 rounded-ctl" /></div>
@@ -651,7 +651,7 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
             class="grid grid-cols-[44px_minmax(0,1fr)] gap-x-3 gap-y-2 border-b border-line-row px-4 py-3 lg:grid-cols-[44px_minmax(0,2.2fr)_minmax(0,1.3fr)_minmax(0,1fr)_110px_minmax(0,1.5fr)_250px] lg:items-center"
             :class="selectedIds.has(r.patient_id!) ? 'bg-brand-tint' : ''"
           >
-            <label class="row-span-4 flex h-11 w-11 items-center justify-center lg:row-span-1">
+            <label class="row-span-4 flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center lg:row-span-1">
               <input type="checkbox" :checked="selectedIds.has(r.patient_id!)" :aria-label="t(`Select ${fullName(r)}`, `Seleccionar a ${fullName(r)}`)" class="h-[18px] w-[18px] accent-brand" @change="toggleSelect(r.patient_id!)" />
             </label>
             <div class="flex min-w-0 items-center gap-2.5">
@@ -684,28 +684,28 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
                 data-cy="recall-whatsapp"
                 :disabled="!hasPhone(r.patient_id!)"
                 :title="hasPhone(r.patient_id!) ? t('Send the recall on WhatsApp', 'Enviar el recordatorio por WhatsApp') : t('No phone: add one on their chart', 'Sin teléfono: añádelo en su ficha')"
-                class="flex h-10 items-center gap-1.5 rounded-ctl border px-3 text-[13px] font-semibold disabled:cursor-not-allowed disabled:border-line disabled:bg-surface disabled:text-ink-faint"
+                class="flex h-9 touch:h-11 items-center gap-1.5 rounded-ctl border px-3 text-[13px] font-semibold disabled:cursor-not-allowed disabled:border-line disabled:bg-surface disabled:text-ink-faint"
                 :class="hasPhone(r.patient_id!) ? 'border-success-border bg-success-bg text-success-text' : ''"
                 @click="sendingTo = r"
               >
                 WhatsApp
               </button>
-              <button type="button" data-cy="recall-log" :aria-expanded="openMenu?.id === r.patient_id && openMenu?.kind === 'log'" class="h-10 rounded-ctl border border-line-control bg-surface px-3 text-[13px] font-semibold text-ink-700" @click="toggleMenu(r.patient_id!, 'log')">
+              <button type="button" data-cy="recall-log" :aria-expanded="openMenu?.id === r.patient_id && openMenu?.kind === 'log'" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[13px] font-semibold text-ink-700" @click="toggleMenu(r.patient_id!, 'log')">
                 {{ t('Log call', 'Registrar') }} ▾
               </button>
-              <button type="button" data-cy="recall-more" :aria-label="t(`More for ${fullName(r)}`, `Más acciones para ${fullName(r)}`)" class="flex h-10 w-10 items-center justify-center rounded-ctl border border-line-control bg-surface text-ink-500" @click="toggleMenu(r.patient_id!, 'more')">
+              <button type="button" data-cy="recall-more" :aria-label="t(`More for ${fullName(r)}`, `Más acciones para ${fullName(r)}`)" class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-ctl border border-line-control bg-surface text-ink-500" @click="toggleMenu(r.patient_id!, 'more')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>
               </button>
               <div v-if="openMenu?.id === r.patient_id && openMenu?.kind === 'log'" role="menu" class="absolute right-0 top-full z-20 mt-1 flex w-60 flex-col rounded-card border border-line bg-surface p-1.5 shadow-popover" data-cy="recall-log-menu">
                 <span class="px-2.5 pb-1 pt-1.5 text-[11.5px] font-bold uppercase tracking-wide text-ink-muted">{{ t('Log a call', 'Registrar llamada') }}</span>
-                <button type="button" role="menuitem" data-cy="recall-log-no-answer" class="min-h-11 rounded-ctlSm px-2.5 text-left text-[14px] text-ink-900 hover:bg-surface-subtle" @click="logCall(r, 'called_no_answer')">{{ t('No answer', 'Sin respuesta') }}</button>
-                <button type="button" role="menuitem" data-cy="recall-log-message" class="min-h-11 rounded-ctlSm px-2.5 text-left text-[14px] text-ink-900 hover:bg-surface-subtle" @click="logCall(r, 'called_left_message')">{{ t('Left a message', 'Dejé un mensaje') }}</button>
-                <button type="button" role="menuitem" data-cy="recall-log-booked" class="min-h-11 rounded-ctlSm bg-success-bg px-2.5 text-left text-[14px] font-semibold text-success-text" @click="logCall(r, 'booked')">{{ t('Booked an appointment', 'Reservó cita') }}</button>
+                <button type="button" role="menuitem" data-cy="recall-log-no-answer" class="min-h-9 touch:min-h-11 rounded-ctlSm px-2.5 text-left text-[14px] text-ink-900 hover:bg-surface-subtle" @click="logCall(r, 'called_no_answer')">{{ t('No answer', 'Sin respuesta') }}</button>
+                <button type="button" role="menuitem" data-cy="recall-log-message" class="min-h-9 touch:min-h-11 rounded-ctlSm px-2.5 text-left text-[14px] text-ink-900 hover:bg-surface-subtle" @click="logCall(r, 'called_left_message')">{{ t('Left a message', 'Dejé un mensaje') }}</button>
+                <button type="button" role="menuitem" data-cy="recall-log-booked" class="min-h-9 touch:min-h-11 rounded-ctlSm bg-success-bg px-2.5 text-left text-[14px] font-semibold text-success-text" @click="logCall(r, 'booked')">{{ t('Booked an appointment', 'Reservó cita') }}</button>
               </div>
               <div v-if="openMenu?.id === r.patient_id && openMenu?.kind === 'more'" role="menu" class="absolute right-0 top-full z-20 mt-1 flex w-56 flex-col rounded-card border border-line bg-surface p-1.5 shadow-popover" data-cy="recall-more-menu">
-                <button type="button" role="menuitem" data-cy="recall-priority-toggle" class="min-h-11 rounded-ctlSm px-2.5 text-left text-[14px] text-ink-900 hover:bg-surface-subtle" @click="togglePriority(r)">{{ r.recall_priority ? t('Remove priority', 'Quitar prioridad') : t('Mark as priority', 'Marcar prioridad') }}</button>
-                <button type="button" role="menuitem" data-cy="recall-snooze" class="min-h-11 rounded-ctlSm px-2.5 text-left text-[14px] text-ink-900 hover:bg-surface-subtle" @click="openSnooze([r.patient_id!], fullName(r))">{{ t('Snooze…', 'Posponer…') }}</button>
-                <button type="button" role="menuitem" data-cy="recall-dismiss" class="min-h-11 rounded-ctlSm px-2.5 text-left text-[14px] text-ink-900 hover:bg-surface-subtle" @click="openDismiss([r.patient_id!], fullName(r))">{{ t('Dismiss…', 'Descartar…') }}</button>
+                <button type="button" role="menuitem" data-cy="recall-priority-toggle" class="min-h-9 touch:min-h-11 rounded-ctlSm px-2.5 text-left text-[14px] text-ink-900 hover:bg-surface-subtle" @click="togglePriority(r)">{{ r.recall_priority ? t('Remove priority', 'Quitar prioridad') : t('Mark as priority', 'Marcar prioridad') }}</button>
+                <button type="button" role="menuitem" data-cy="recall-snooze" class="min-h-9 touch:min-h-11 rounded-ctlSm px-2.5 text-left text-[14px] text-ink-900 hover:bg-surface-subtle" @click="openSnooze([r.patient_id!], fullName(r))">{{ t('Snooze…', 'Posponer…') }}</button>
+                <button type="button" role="menuitem" data-cy="recall-dismiss" class="min-h-9 touch:min-h-11 rounded-ctlSm px-2.5 text-left text-[14px] text-ink-900 hover:bg-surface-subtle" @click="openDismiss([r.patient_id!], fullName(r))">{{ t('Dismiss…', 'Descartar…') }}</button>
               </div>
             </div>
           </div>
@@ -737,7 +737,7 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
               <template v-else-if="p.recall_dismissed_at">{{ t(`Dismissed on ${formatShortDate(p.recall_dismissed_at)}`, `Descartado el ${formatShortDate(p.recall_dismissed_at)}`) }}</template>
               <template v-else>{{ t('Dismissed', 'Descartado') }}</template>
             </span>
-            <button type="button" data-cy="parked-restore" class="h-10 rounded-ctl border border-line-control bg-surface px-3.5 text-[13px] font-semibold text-ink-700" @click="restore(p)">
+            <button type="button" data-cy="parked-restore" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3.5 text-[13px] font-semibold text-ink-700" @click="restore(p)">
               {{ p.parked_as === 'snoozed' ? t('Bring back now', 'Reactivar ya') : t('Restore', 'Restaurar') }}
             </button>
           </div>
@@ -752,8 +752,8 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
         {{ t(`logged for ${followUp.name}. Try again later?`, `registrado para ${followUp.name}. ¿Lo volvemos a intentar más adelante?`) }}
       </span>
       <div class="flex flex-wrap gap-2">
-        <button type="button" data-cy="recall-follow-up-2d" class="h-10 rounded-ctl bg-brand px-3 text-[13.5px] font-bold text-surface" @click="followUpSnooze(2)">{{ t('In 2 days', 'En 2 días') }}</button>
-        <button type="button" class="h-10 rounded-ctl border border-surface-page/30 px-3 text-[13.5px] font-semibold" @click="followUpSnooze(7)">{{ t('In 1 week', 'En 1 semana') }}</button>
+        <button type="button" data-cy="recall-follow-up-2d" class="h-9 touch:h-11 rounded-ctl bg-brand px-3 text-[13.5px] font-bold text-surface" @click="followUpSnooze(2)">{{ t('In 2 days', 'En 2 días') }}</button>
+        <button type="button" class="h-9 touch:h-11 rounded-ctl border border-surface-page/30 px-3 text-[13.5px] font-semibold" @click="followUpSnooze(7)">{{ t('In 1 week', 'En 1 semana') }}</button>
         <button type="button" data-cy="recall-follow-up-keep" class="h-10 px-3 text-[13.5px] font-semibold opacity-80" @click="followUp = null">{{ t('Keep in the list', 'Dejarlo en la lista') }}</button>
       </div>
     </div>
@@ -785,7 +785,7 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
       </div>
       <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
         {{ t('Or a date', 'O una fecha') }}
-        <input v-model="snoozeUntil" type="date" data-cy="snooze-date" :min="isoDateIn(1)" class="h-11 rounded-ctl border border-line-control bg-surface px-3 text-[15px] font-normal text-ink-900" />
+        <input v-model="snoozeUntil" type="date" data-cy="snooze-date" :min="isoDateIn(1)" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[15px] font-normal text-ink-900" />
       </label>
     </UiConfirmDialog>
 

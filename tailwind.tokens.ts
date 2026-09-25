@@ -139,3 +139,18 @@ export const tokens = {
     },
   },
 } satisfies Partial<Config>
+
+// `touch:` -- sizes for a finger rather than a mouse. The front desk runs on
+// an iPad, where every control needs 44px, but a desktop screen of 44px
+// controls no longer fits; (pointer: coarse) gives each its own. The site's
+// scale is: controls h-9 (36px) with touch:h-11, compact chips and segments
+// h-8 (32px) with touch:h-11.
+//
+// Here rather than in tailwind.config.ts because the mobile app compiles the
+// shared components too, and without the variant every `h-9 touch:h-11`
+// control there would shrink to 36px on a phone. A plain function is a valid
+// Tailwind plugin, so this needs no `tailwindcss/plugin` import -- which is
+// the import that broke Xcode Cloud (see the top of this file).
+export function touchVariant({ addVariant }: { addVariant: (name: string, definition: string) => void }) {
+  addVariant('touch', '@media (pointer: coarse)')
+}

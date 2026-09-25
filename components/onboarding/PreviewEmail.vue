@@ -35,7 +35,7 @@ const t = useT()
             )
           }}
         </p>
-        <span class="mt-4 inline-flex h-10 items-center rounded-ctl bg-brand px-[18px] text-[14px] font-semibold text-white">
+        <span class="mt-4 inline-flex h-9 touch:h-11 items-center rounded-ctl bg-brand px-[18px] text-[14px] font-semibold text-white">
           {{ t('Confirm email address', 'Confirmar dirección') }}
         </span>
         <p class="mt-4 text-[12.5px] leading-[1.55] text-ink-muted">

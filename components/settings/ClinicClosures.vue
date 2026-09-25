@@ -111,7 +111,7 @@ async function remove(c: Closure) {
         <span class="text-[14px] font-semibold text-ink-900">{{ range(c) }}</span>
         <span v-if="c.note" class="text-[13px] text-ink-500">{{ c.note }}</span>
       </div>
-      <button type="button" data-cy="clinic-closure-remove" class="h-11 rounded-ctl px-3 text-[13.5px] font-semibold text-ink-500 hover:bg-surface-subtle hover:text-ink-700" @click="remove(c)">
+      <button type="button" data-cy="clinic-closure-remove" class="h-9 touch:h-11 rounded-ctl px-3 text-[13.5px] font-semibold text-ink-500 hover:bg-surface-subtle hover:text-ink-700" @click="remove(c)">
         {{ t('Remove', 'Quitar') }}
       </button>
     </div>
@@ -119,28 +119,28 @@ async function remove(c: Closure) {
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
           {{ t('From', 'Desde') }}
-          <input v-model="from" type="date" data-cy="closure-from" class="h-11 rounded-ctl border border-line-control bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none" />
+          <input v-model="from" type="date" data-cy="closure-from" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none" />
         </label>
         <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
           {{ t('To (included)', 'Hasta (incluido)') }}
-          <input v-model="to" type="date" data-cy="closure-to" :min="from || undefined" class="h-11 rounded-ctl border border-line-control bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none" />
+          <input v-model="to" type="date" data-cy="closure-to" :min="from || undefined" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none" />
         </label>
       </div>
       <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
         {{ t('Reason (optional)', 'Motivo (opcional)') }}
-        <input v-model="note" type="text" data-cy="closure-note" :placeholder="t('Bank holiday, holidays…', 'Festivo local, vacaciones…')" class="h-11 rounded-ctl border border-line-control bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none" />
+        <input v-model="note" type="text" data-cy="closure-note" :placeholder="t('Bank holiday, holidays…', 'Festivo local, vacaciones…')" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none" />
       </label>
       <p v-if="toBeforeFrom" class="text-[12.5px] font-semibold text-danger-text">{{ t('The last day is before the first.', 'El último día es anterior al primero.') }}</p>
       <p v-else-if="bookedInside > 0" class="rounded-ctl border border-warning-border bg-warning-bg px-3 py-2 text-[13px] text-warning-text" data-cy="closure-booked">
         {{ t(`${bookedInside} appointments are already booked in these days. Closing hides the free slots but moves nobody.`, `Ya hay ${bookedInside} citas en esos días. Cerrar oculta los huecos libres, pero no mueve a nadie.`) }}
       </p>
       <div class="flex gap-2">
-        <button type="button" class="h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700" @click="adding = false">{{ t('Cancel', 'Cancelar') }}</button>
-        <button type="button" data-cy="closure-save" class="h-11 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface disabled:opacity-60" :disabled="saving || !from || toBeforeFrom" @click="add">{{ t('Add closure', 'Añadir cierre') }}</button>
+        <button type="button" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700" @click="adding = false">{{ t('Cancel', 'Cancelar') }}</button>
+        <button type="button" data-cy="closure-save" class="h-9 touch:h-11 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface disabled:opacity-60" :disabled="saving || !from || toBeforeFrom" @click="add">{{ t('Add closure', 'Añadir cierre') }}</button>
       </div>
     </div>
     <div v-else>
-      <button type="button" data-cy="closure-add" class="h-11 rounded-ctl border border-line-control bg-surface px-3.5 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="adding = true">
+      <button type="button" data-cy="closure-add" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3.5 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="adding = true">
         {{ t('Add a holiday or closure…', 'Añadir un día festivo o cierre…') }}
       </button>
     </div>

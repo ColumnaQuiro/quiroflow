@@ -87,7 +87,7 @@ async function createAndLink() {
     </div>
     <div v-if="suggestions.length" class="flex flex-col gap-1 rounded-card border border-line bg-surface p-3">
       <span class="text-[12px] font-bold uppercase tracking-[.04em] text-ink-muted">{{ t('Maybe it is', 'Quizá es') }}</span>
-      <button v-for="c in suggestions" :key="c.id" type="button" data-cy="unknown-suggestion" class="flex min-h-11 items-center gap-2 rounded-ctlSm px-2 text-left text-[14px] text-ink-900 hover:bg-surface-subtle disabled:opacity-60" :disabled="busy" @click="link(c.id)">
+      <button v-for="c in suggestions" :key="c.id" type="button" data-cy="unknown-suggestion" class="flex min-h-9 touch:min-h-11 items-center gap-2 rounded-ctlSm px-2 text-left text-[14px] text-ink-900 hover:bg-surface-subtle disabled:opacity-60" :disabled="busy" @click="link(c.id)">
         <span class="flex-1 font-semibold">{{ c.first_name }} {{ c.last_name ?? '' }}</span>
         <span class="text-[13px] font-semibold text-brand-text">{{ t('Link', 'Vincular') }}</span>
       </button>
@@ -99,30 +99,30 @@ async function createAndLink() {
         type="search"
         data-cy="unknown-search"
         :placeholder="t('Name or surname', 'Nombre o apellidos')"
-        class="h-11 rounded-ctl border border-line-control bg-surface px-3 text-[14px] font-normal text-ink-900 focus:border-brand focus:outline-none"
+        class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[14px] font-normal text-ink-900 focus:border-brand focus:outline-none"
       />
     </label>
     <div v-if="results.length" class="flex flex-col rounded-card border border-line bg-surface p-1">
-      <button v-for="c in results" :key="c.id" type="button" data-cy="unknown-result" class="flex min-h-11 items-center gap-2 rounded-ctlSm px-2.5 text-left text-[14px] text-ink-900 hover:bg-surface-subtle disabled:opacity-60" :disabled="busy" @click="link(c.id)">
+      <button v-for="c in results" :key="c.id" type="button" data-cy="unknown-result" class="flex min-h-9 touch:min-h-11 items-center gap-2 rounded-ctlSm px-2.5 text-left text-[14px] text-ink-900 hover:bg-surface-subtle disabled:opacity-60" :disabled="busy" @click="link(c.id)">
         <span class="flex-1">{{ c.first_name }} {{ c.last_name ?? '' }}</span>
         <span class="text-[13px] font-semibold text-brand-text">{{ t('Link', 'Vincular') }}</span>
       </button>
     </div>
-    <button v-if="!creating" type="button" data-cy="unknown-create" class="h-11 rounded-ctl border border-line-control bg-surface text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="creating = true">
+    <button v-if="!creating" type="button" data-cy="unknown-create" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="creating = true">
       {{ t('Create patient with this number', 'Crear paciente con este número') }}
     </button>
     <form v-else class="flex flex-col gap-2.5 rounded-card border border-line bg-surface p-3" @submit.prevent="createAndLink">
       <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
         {{ t('First name', 'Nombre') }}
-        <input v-model="firstName" data-cy="unknown-first-name" type="text" required class="h-11 rounded-ctl border border-line-control bg-surface px-3 text-[14px] font-normal text-ink-900 focus:border-brand focus:outline-none" />
+        <input v-model="firstName" data-cy="unknown-first-name" type="text" required class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[14px] font-normal text-ink-900 focus:border-brand focus:outline-none" />
       </label>
       <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
         {{ t('Surname', 'Apellidos') }}
-        <input v-model="lastName" data-cy="unknown-last-name" type="text" class="h-11 rounded-ctl border border-line-control bg-surface px-3 text-[14px] font-normal text-ink-900 focus:border-brand focus:outline-none" />
+        <input v-model="lastName" data-cy="unknown-last-name" type="text" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[14px] font-normal text-ink-900 focus:border-brand focus:outline-none" />
       </label>
       <div class="flex gap-2">
-        <button type="button" class="h-11 flex-1 rounded-ctl border border-line-control bg-surface text-[14px] font-semibold text-ink-700" @click="creating = false">{{ t('Cancel', 'Cancelar') }}</button>
-        <button type="submit" data-cy="unknown-create-submit" class="h-11 flex-1 rounded-ctl bg-brand text-[14px] font-bold text-surface disabled:opacity-60" :disabled="busy || !firstName.trim()">{{ t('Create and link', 'Crear y vincular') }}</button>
+        <button type="button" class="h-9 touch:h-11 flex-1 rounded-ctl border border-line-control bg-surface text-[14px] font-semibold text-ink-700" @click="creating = false">{{ t('Cancel', 'Cancelar') }}</button>
+        <button type="submit" data-cy="unknown-create-submit" class="h-9 touch:h-11 flex-1 rounded-ctl bg-brand text-[14px] font-bold text-surface disabled:opacity-60" :disabled="busy || !firstName.trim()">{{ t('Create and link', 'Crear y vincular') }}</button>
       </div>
     </form>
   </aside>

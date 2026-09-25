@@ -17,8 +17,8 @@ const { documents, loading, busyId, open } = usePatientDocuments(() => patientId
 
     <PatientCard flush>
       <div v-if="loading" class="space-y-3 p-4">
-        <UiSkeleton class="h-10 w-full rounded-ctl" />
-        <UiSkeleton class="h-10 w-full rounded-ctl" />
+        <UiSkeleton class="h-9 touch:h-11 w-full rounded-ctl" />
+        <UiSkeleton class="h-9 touch:h-11 w-full rounded-ctl" />
       </div>
       <ul v-else-if="documents.length > 0" class="divide-y divide-line-divider">
         <li v-for="file in documents" :key="file.id" class="flex items-center gap-3 px-4 py-3.5">

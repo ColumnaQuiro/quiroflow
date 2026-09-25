@@ -69,7 +69,7 @@ const t = useT()
           <span class="flex-1" />
           <button
             type="button"
-            class="h-11 rounded-ctl border border-line-control bg-surface px-3.5 text-[13.5px] font-semibold text-ink-700 outline-none hover:border-line-controlHover focus-visible:shadow-focus lg:h-8"
+            class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3.5 text-[13.5px] font-semibold text-ink-700 outline-none hover:border-line-controlHover focus-visible:shadow-focus lg:h-8"
             @click="$emit('refresh')"
           >
             {{ t('Refresh now', 'Actualizar ahora') }}

@@ -1859,22 +1859,22 @@ function showNowLineOn(day: Date) {
 
 <template>
   <div class="flex h-full flex-col">
-    <header class="flex shrink-0 flex-col gap-2.5 border-b border-line bg-surface px-4 py-2.5 lg:h-14 lg:flex-row lg:items-center lg:justify-between lg:px-6 lg:py-0">
+    <header class="flex shrink-0 flex-col gap-2.5 border-b border-line bg-surface px-4 py-2.5 lg:min-h-14 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between lg:px-6 lg:py-2.5">
       <div class="flex items-center gap-4">
         <h1 class="text-[18px] font-[640] tracking-tightTitle text-ink-900">{{ t('Calendar', 'Calendario') }}</h1>
         <div class="flex items-center gap-1">
-          <button type="button" :aria-label="t('Previous', 'Anterior')" class="flex h-[26px] w-[26px] items-center justify-center rounded-ctlSm border border-line-control text-ink-500 hover:border-line-controlHover hover:bg-surface-subtle [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11" @click="stepDate(-1)">
+          <button type="button" :aria-label="t('Previous', 'Anterior')" class="flex h-8 w-8 touch:h-11 touch:w-11 items-center justify-center rounded-ctlSm border border-line-control text-ink-500 hover:border-line-controlHover hover:bg-surface-subtle [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11" @click="stepDate(-1)">
             <svg width="7" height="11" viewBox="0 0 7 11" fill="none"><path d="M6 1L1 5.5L6 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
           </button>
-          <button type="button" class="flex h-[26px] items-center rounded-ctlSm border border-line-control px-2.5 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover hover:bg-surface-subtle [@media(pointer:coarse)]:h-11" @click="goToday">{{ t('Today', 'Hoy') }}</button>
-          <button type="button" :aria-label="t('Next', 'Siguiente')" class="flex h-[26px] w-[26px] items-center justify-center rounded-ctlSm border border-line-control text-ink-500 hover:border-line-controlHover hover:bg-surface-subtle [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11" @click="stepDate(1)">
+          <button type="button" class="flex h-8 touch:h-11 items-center rounded-ctlSm border border-line-control px-2.5 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover hover:bg-surface-subtle [@media(pointer:coarse)]:h-11" @click="goToday">{{ t('Today', 'Hoy') }}</button>
+          <button type="button" :aria-label="t('Next', 'Siguiente')" class="flex h-8 w-8 touch:h-11 touch:w-11 items-center justify-center rounded-ctlSm border border-line-control text-ink-500 hover:border-line-controlHover hover:bg-surface-subtle [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11" @click="stepDate(1)">
             <svg width="7" height="11" viewBox="0 0 7 11" fill="none"><path d="M1 1L6 5.5L1 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
           </button>
         </div>
         <span class="text-[13.5px] font-[560] text-ink-700">{{ rangeLabel }}</span>
       </div>
       <div class="flex flex-wrap items-center gap-2">
-        <select v-model="viewMode" :aria-label="t('View', 'Vista')" class="h-[26px] rounded-ctlSm border border-line-control bg-surface px-2 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover focus:border-brand focus:outline-none [@media(pointer:coarse)]:h-11">
+        <select v-model="viewMode" :aria-label="t('View', 'Vista')" class="h-8 touch:h-11 rounded-ctlSm border border-line-control bg-surface px-2 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover focus:border-brand focus:outline-none [@media(pointer:coarse)]:h-11">
           <option value="day">{{ t('Day', 'Día') }}</option>
           <option value="workweek">{{ t('Work week', 'Semana laboral') }}</option>
           <option value="week">{{ t('Week', 'Semana') }}</option>
@@ -1891,7 +1891,7 @@ function showNowLineOn(day: Date) {
         instead, reached from here. -->
         <button
           type="button"
-          class="flex h-[26px] items-center gap-1 rounded-ctlSm border border-line-control px-2.5 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover hover:bg-surface-subtle lg:hidden [@media(pointer:coarse)]:h-11"
+          class="flex h-8 touch:h-11 items-center gap-1 rounded-ctlSm border border-line-control px-2.5 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover hover:bg-surface-subtle lg:hidden [@media(pointer:coarse)]:h-11"
           @click="mobileInfoOpen = true"
         >
           <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="7" cy="7" r="5.3" /><path d="M7 6.3v3.4M7 4.3v.15" stroke-linecap="round" /></svg>
@@ -1906,7 +1906,7 @@ function showNowLineOn(day: Date) {
       <button
         type="button"
         data-testid="practitioner-tab-all"
-        class="h-[26px] shrink-0 rounded-ctlSm px-3 text-[12.5px] font-medium transition-colors [@media(pointer:coarse)]:h-11"
+        class="h-8 shrink-0 rounded-ctlSm px-3 text-[12.5px] font-medium transition-colors touch:h-11"
         :class="practitionerFilter === ALL_PRACTITIONERS ? 'bg-brand text-white' : 'text-ink-600 hover:bg-surface-subtle'"
         :aria-pressed="practitionerFilter === ALL_PRACTITIONERS"
         @click="practitionerFilter = ALL_PRACTITIONERS"
@@ -1919,7 +1919,7 @@ function showNowLineOn(day: Date) {
         :key="m.id"
         type="button"
         data-testid="practitioner-tab"
-        class="flex h-[26px] shrink-0 items-center gap-1.5 rounded-ctlSm px-3 text-[12.5px] font-medium transition-colors [@media(pointer:coarse)]:h-11"
+        class="flex h-8 shrink-0 items-center gap-1.5 rounded-ctlSm px-3 text-[12.5px] font-medium transition-colors touch:h-11"
         :class="practitionerFilter === m.id ? 'bg-brand text-white' : 'text-ink-600 hover:bg-surface-subtle'"
         :aria-pressed="practitionerFilter === m.id"
         @click="practitionerFilter = m.id"
@@ -1929,7 +1929,7 @@ function showNowLineOn(day: Date) {
       <button
         type="button"
         data-testid="practitioner-tab-unassigned"
-        class="h-[26px] shrink-0 rounded-ctlSm px-3 text-[12.5px] font-medium transition-colors [@media(pointer:coarse)]:h-11"
+        class="h-8 shrink-0 rounded-ctlSm px-3 text-[12.5px] font-medium transition-colors touch:h-11"
         :class="practitionerFilter === UNASSIGNED_PRACTITIONER ? 'bg-brand text-white' : 'text-ink-faint hover:bg-surface-subtle'"
         :aria-pressed="practitionerFilter === UNASSIGNED_PRACTITIONER"
         @click="practitionerFilter = UNASSIGNED_PRACTITIONER"
@@ -1994,7 +1994,7 @@ function showNowLineOn(day: Date) {
       >
         <div class="flex items-center justify-between px-3 pt-3 lg:hidden">
           <span class="text-[12.5px] font-[640] text-ink-900">{{ t('Calendar info', 'Info del calendario') }}</span>
-          <button type="button" :aria-label="t('Close', 'Cerrar')" class="flex h-11 w-11 items-center justify-center rounded-ctlSm text-ink-muted2 hover:bg-surface-subtle" @click="mobileInfoOpen = false">
+          <button type="button" :aria-label="t('Close', 'Cerrar')" class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-ctlSm text-ink-muted2 hover:bg-surface-subtle" @click="mobileInfoOpen = false">
             <svg width="13" height="13" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2 2l10 10M12 2L2 12" /></svg>
           </button>
         </div>

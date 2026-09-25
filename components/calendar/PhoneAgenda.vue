@@ -70,7 +70,7 @@ const heightFor = (i: AgendaItem) => {
           role="tab"
           data-cy="agenda-scope-mine"
           :aria-selected="scope === 'mine'"
-          class="h-11 rounded-ctlSm text-[14px] font-semibold"
+          class="h-9 touch:h-11 rounded-ctlSm text-[14px] font-semibold"
           :class="scope === 'mine' ? 'bg-surface text-ink-900 shadow-card' : 'text-ink-muted'"
           @click="emit('scope', 'mine')"
         >
@@ -81,7 +81,7 @@ const heightFor = (i: AgendaItem) => {
           role="tab"
           data-cy="agenda-scope-all"
           :aria-selected="scope === 'all'"
-          class="h-11 rounded-ctlSm text-[14px] font-semibold"
+          class="h-9 touch:h-11 rounded-ctlSm text-[14px] font-semibold"
           :class="scope === 'all' ? 'bg-surface text-ink-900 shadow-card' : 'text-ink-muted'"
           @click="emit('scope', 'all')"
         >
@@ -97,7 +97,7 @@ const heightFor = (i: AgendaItem) => {
 
     <ol class="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 pb-40 pt-3">
       <li v-if="done.length">
-        <button type="button" class="flex min-h-11 w-full items-center justify-between rounded-ctl border border-line bg-surface-subtle px-3.5 text-[13.5px] font-semibold text-ink-500" data-cy="agenda-done" :aria-expanded="doneOpen" @click="doneOpen = !doneOpen">
+        <button type="button" class="flex min-h-9 touch:min-h-11 w-full items-center justify-between rounded-ctl border border-line bg-surface-subtle px-3.5 text-[13.5px] font-semibold text-ink-500" data-cy="agenda-done" :aria-expanded="doneOpen" @click="doneOpen = !doneOpen">
           {{ t(`${done.length} done · ${doneRange}`, `${done.length} ${done.length === 1 ? 'hecha' : 'hechas'} · ${doneRange}`) }}
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" :class="doneOpen ? 'rotate-180' : ''" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
         </button>

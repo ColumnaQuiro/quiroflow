@@ -271,7 +271,7 @@ const SECTIONS = computed(() => [
 ])
 
 const initials = computed(() => (form.value?.name ?? '').split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('') || '·')
-const inputClass = 'h-11 rounded-ctl border bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand'
+const inputClass = 'h-9 touch:h-11 rounded-ctl border bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand'
 const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
 </script>
 
@@ -284,7 +284,7 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
         <NuxtLink to="/settings/clinics" class="font-semibold text-brand-text hover:underline" data-cy="clinic-back">{{ t('Clinics', 'Clínicas') }}</NuxtLink>
       </nav>
       <div v-if="form" class="flex flex-wrap items-center gap-3">
-        <span class="flex h-10 w-10 items-center justify-center rounded-ctl bg-brand-tint text-[14px] font-bold text-brand-text">{{ initials }}</span>
+        <span class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-ctl bg-brand-tint text-[14px] font-bold text-brand-text">{{ initials }}</span>
         <h1 class="text-[20px] font-bold text-ink-900" data-cy="clinic-title">{{ form.name || t('Untitled', 'Sin nombre') }}</h1>
         <span v-if="archivedAt" class="rounded-pill bg-chip-bg px-2.5 py-0.5 text-[12.5px] font-bold text-chip-text" data-cy="clinic-archived-chip">{{ t('Archived', 'Archivada') }}</span>
         <NuxtLink
@@ -321,7 +321,7 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
           <main class="flex min-w-0 max-w-[720px] flex-1 flex-col gap-6" data-cy="clinic-page" :data-ready="loaded ? 'true' : undefined">
             <p v-if="archivedAt" class="flex flex-wrap items-center gap-3 rounded-card border border-line bg-surface-subtle px-4 py-3 text-[14px] text-ink-700">
               <span class="flex-1">{{ t('Archived: hidden from the clinic switcher, the calendar and online booking. Its history is kept.', 'Archivada: no aparece en el selector de clínica, el calendario ni la reserva online. Su historial se conserva.') }}</span>
-              <button type="button" data-cy="clinic-page-reactivate" class="h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="reactivate">
+              <button type="button" data-cy="clinic-page-reactivate" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="reactivate">
                 {{ t('Reactivate', 'Reactivar') }}
               </button>
             </p>
@@ -426,7 +426,7 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
                     data-cy="clinic-slot"
                     :data-minutes="m"
                     :aria-checked="form.slot_duration_minutes === m"
-                    class="h-11 min-w-[72px] rounded-ctl px-3 text-[14px] font-semibold"
+                    class="h-9 touch:h-11 min-w-[72px] rounded-ctl px-3 text-[14px] font-semibold"
                     :class="form.slot_duration_minutes === m ? 'border-[1.5px] border-brand bg-brand-tint text-brand-text' : 'border border-line-control bg-surface text-ink-700 hover:bg-surface-subtle'"
                     @click="form.slot_duration_minutes = m"
                   >
@@ -484,7 +484,7 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
                   <strong class="text-[14px] text-ink-900">{{ t('Archive', 'Archivar') }}</strong>
                   <span class="text-[13px] leading-snug text-ink-500">{{ t('Leaves the clinic switcher, the calendar and online booking. Its appointments, patients and facturas are kept, and you can reactivate it whenever you like.', 'Desaparece del selector de clínica, del calendario y de la reserva online. Sus citas, pacientes y facturas se conservan, y puedes reactivarla cuando quieras.') }}</span>
                 </div>
-                <button type="button" data-cy="clinic-archive" class="h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="archiveOpen = true">
+                <button type="button" data-cy="clinic-archive" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="archiveOpen = true">
                   {{ t('Archive…', 'Archivar…') }}
                 </button>
               </div>
@@ -503,7 +503,7 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
                   type="button"
                   data-cy="clinic-delete"
                   :disabled="appointmentCount > 0 || otherActiveCount === 0"
-                  class="h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-danger-text hover:bg-surface-subtle disabled:cursor-not-allowed disabled:border-line disabled:text-ink-faint"
+                  class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-danger-text hover:bg-surface-subtle disabled:cursor-not-allowed disabled:border-line disabled:text-ink-faint"
                   @click="deleteOpen = true"
                 >
                   {{ t('Delete…', 'Eliminar…') }}
@@ -524,10 +524,10 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
       class="absolute bottom-6 left-1/2 flex w-[min(720px,calc(100%-32px))] -translate-x-1/2 items-center gap-2.5 rounded-card bg-ink-900 py-3 pl-5 pr-3 text-surface-page shadow-popover"
     >
       <span class="flex-1 text-[14px] font-semibold">{{ t('Unsaved changes', 'Cambios sin guardar') }}</span>
-      <button type="button" data-cy="clinic-discard" class="h-11 rounded-ctl border border-surface-page/30 px-3.5 text-[14px] font-semibold" @click="discard">
+      <button type="button" data-cy="clinic-discard" class="h-9 touch:h-11 rounded-ctl border border-surface-page/30 px-3.5 text-[14px] font-semibold" @click="discard">
         {{ t('Discard', 'Descartar') }}
       </button>
-      <button type="button" data-cy="clinic-save" :disabled="saving" class="h-11 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface disabled:opacity-70" @click="save">
+      <button type="button" data-cy="clinic-save" :disabled="saving" class="h-9 touch:h-11 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface disabled:opacity-70" @click="save">
         {{ saving ? t('Saving…', 'Guardando…') : t('Save changes', 'Guardar cambios') }}
       </button>
     </div>

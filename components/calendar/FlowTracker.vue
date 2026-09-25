@@ -48,7 +48,7 @@ const columns = computed(() => {
             data-cy="flow-advance"
             :aria-label="`${col.action}: ${privacy ? '' : r.name}`"
             :title="col.action"
-            class="flex min-h-11 min-w-11 shrink-0 items-center justify-center border-l border-line-row px-2 text-[12.5px] font-semibold hover:bg-surface-subtle"
+            class="flex min-h-9 touch:min-h-11 min-w-9 touch:min-w-11 shrink-0 items-center justify-center border-l border-line-row px-2 text-[12.5px] font-semibold hover:bg-surface-subtle"
             :class="col.glyph ? 'text-brand-text' : 'text-success-text'"
             @click="emit('advance', r.id)"
           >

@@ -500,17 +500,17 @@ const canAct = computed(() => props.appointment.status === 'booked' && !readOnly
     <div class="shrink-0 border-b border-line px-5 pt-3 sm:px-6">
       <div class="flex items-center justify-between">
         <span class="text-[11px] font-bold uppercase tracking-[.06em] text-ink-muted">{{ t('Appointment', 'Cita') }}</span>
-        <button type="button" :aria-label="t('Close', 'Cerrar')" class="-mr-2.5 flex h-11 w-11 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle" @click="emit('close')">
+        <button type="button" :aria-label="t('Close', 'Cerrar')" class="-mr-2.5 flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle" @click="emit('close')">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
         </button>
       </div>
       <div class="flex items-center gap-3">
-        <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[15px] font-bold text-brand-text">{{ initials }}</span>
+        <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[15px] font-bold text-brand-text">{{ initials }}</span>
         <div class="flex min-w-0 flex-1 flex-col">
           <h2 id="appt-name" class="truncate text-[20px] font-bold text-ink-900">{{ view.name }}</h2>
           <span class="truncate text-[12.5px] text-ink-muted" data-cy="appt-sheet-facts">{{ headerSub }}</span>
         </div>
-        <NuxtLink :to="`/patients/${appointment.patient_id}`" class="flex h-11 shrink-0 items-center gap-1 rounded-ctl px-3 text-[13px] font-semibold text-brand-text hover:bg-brand-tint">
+        <NuxtLink :to="`/patients/${appointment.patient_id}`" class="flex h-9 touch:h-11 shrink-0 items-center gap-1 rounded-ctl px-3 text-[13px] font-semibold text-brand-text hover:bg-brand-tint">
           {{ t('Chart', 'Ficha') }}
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7M9 7h8v8" /></svg>
         </NuxtLink>
@@ -522,26 +522,26 @@ const canAct = computed(() => props.appointment.status === 'booked' && !readOnly
           <span class="font-semibold text-ink-900" data-cy="appt-sheet-when">{{ formatWeekdayDate(appointment.starts_at) }} · <span class="font-mono font-medium">{{ formatTime(appointment.starts_at) }}–{{ formatTime(appointment.ends_at) }}</span></span>
           <span class="truncate text-ink-muted">{{ [appointment.appointment_types?.name, appointment.team_members?.full_name, roomName].filter(Boolean).join(' · ') }}</span>
         </div>
-        <button v-if="canAct" type="button" data-cy="appt-edit" class="h-11 shrink-0 rounded-ctl px-3 text-[13px] font-semibold text-brand-text hover:bg-brand-tint" @click="startEdit">{{ t('Change', 'Cambiar') }}</button>
+        <button v-if="canAct" type="button" data-cy="appt-edit" class="h-9 touch:h-11 shrink-0 rounded-ctl px-3 text-[13px] font-semibold text-brand-text hover:bg-brand-tint" @click="startEdit">{{ t('Change', 'Cambiar') }}</button>
       </div>
       <form v-else class="mt-3 grid grid-cols-2 gap-2.5 rounded-ctl border border-line bg-surface-subtle p-3 text-[12.5px]" data-cy="appt-edit-form" @submit.prevent="saveEdit">
-        <label class="flex flex-col gap-1 font-medium text-ink-600">{{ t('Date', 'Fecha') }}<input v-model="form.date" type="date" required class="h-11 rounded-ctl border border-line-control bg-surface px-2.5 text-[13px] text-ink-700" /></label>
-        <label class="flex flex-col gap-1 font-medium text-ink-600">{{ t('Time', 'Hora') }}<input v-model="form.time" type="time" required class="h-11 rounded-ctl border border-line-control bg-surface px-2.5 text-[13px] text-ink-700" /></label>
+        <label class="flex flex-col gap-1 font-medium text-ink-600">{{ t('Date', 'Fecha') }}<input v-model="form.date" type="date" required class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-2.5 text-[13px] text-ink-700" /></label>
+        <label class="flex flex-col gap-1 font-medium text-ink-600">{{ t('Time', 'Hora') }}<input v-model="form.time" type="time" required class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-2.5 text-[13px] text-ink-700" /></label>
         <label class="flex flex-col gap-1 font-medium text-ink-600">{{ t('Type', 'Tipo') }}
-          <select v-model="form.typeId" class="h-11 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700">
+          <select v-model="form.typeId" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700">
             <option value="">{{ t('No type', 'Sin tipo') }}</option>
             <option v-for="ty in appointmentTypes" :key="ty.id" :value="ty.id">{{ ty.name }}</option>
           </select>
         </label>
-        <label class="flex flex-col gap-1 font-medium text-ink-600">{{ t('Minutes', 'Minutos') }}<input v-model.number="form.duration" type="number" min="5" step="5" required class="h-11 rounded-ctl border border-line-control bg-surface px-2.5 text-[13px] text-ink-700" /></label>
+        <label class="flex flex-col gap-1 font-medium text-ink-600">{{ t('Minutes', 'Minutos') }}<input v-model.number="form.duration" type="number" min="5" step="5" required class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-2.5 text-[13px] text-ink-700" /></label>
         <label class="flex flex-col gap-1 font-medium text-ink-600">{{ t('Room', 'Sala') }}
-          <select v-model="form.roomId" class="h-11 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700">
+          <select v-model="form.roomId" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700">
             <option value="">{{ t('No room', 'Sin sala') }}</option>
             <option v-for="r in rooms" :key="r.id" :value="r.id">{{ r.name }}</option>
           </select>
         </label>
         <label class="flex flex-col gap-1 font-medium text-ink-600">{{ t('Practitioner', 'Profesional') }}
-          <select v-model="form.practitionerId" class="h-11 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700">
+          <select v-model="form.practitionerId" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700">
             <option value="">{{ t('No practitioner', 'Sin profesional') }}</option>
             <option v-for="m in teamMembers" :key="m.id" :value="m.id">{{ m.full_name }}</option>
           </select>
@@ -560,7 +560,7 @@ const canAct = computed(() => props.appointment.status === 'booked' && !readOnly
           role="tab"
           :aria-selected="tab === k"
           :data-cy="`appt-tab-${k}`"
-          class="-mb-px flex h-11 items-center gap-1.5 border-b-2 px-3 text-[13.5px] font-semibold"
+          class="-mb-px flex h-9 touch:h-11 items-center gap-1.5 border-b-2 px-3 text-[13.5px] font-semibold"
           :class="tab === k ? 'border-brand text-brand-text' : 'border-transparent text-ink-muted hover:text-ink-700'"
           @click="tab = k"
         >
@@ -589,13 +589,13 @@ const canAct = computed(() => props.appointment.status === 'booked' && !readOnly
           <p v-if="onTrack && stageLine(appointment, stage).sub" class="mt-2 text-[12.5px] text-ink-muted">{{ stageLine(appointment, stage).title }} · {{ stageLine(appointment, stage).sub }}</p>
 
           <div v-if="!readOnly && (next || undoable || isUnconfirmedStage(stage))" class="mt-3 flex flex-wrap items-center gap-2">
-            <button v-if="next && !isPhone" type="button" data-cy="advance-stage" :data-next="next" :disabled="busy" class="flex h-11 items-center gap-2 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface hover:bg-brand-hover disabled:opacity-60" @click="advance">
+            <button v-if="next && !isPhone" type="button" data-cy="advance-stage" :data-next="next" :disabled="busy" class="flex h-9 touch:h-11 items-center gap-2 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface hover:bg-brand-hover disabled:opacity-60" @click="advance">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
               {{ nextLabel }}
             </button>
-            <button v-if="isUnconfirmedStage(stage)" type="button" data-cy="mark-confirmed" :disabled="busy" class="h-11 rounded-ctl border border-line-control px-3.5 text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="markConfirmed">{{ t('Mark confirmed', 'Marcar confirmada') }}</button>
-            <button v-if="stage === 'checkout'" type="button" data-cy="mark-done" :disabled="busy" class="h-11 rounded-ctl border border-line-control px-3.5 text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="markDone">{{ t('Done, nothing to charge', 'Hecha, sin cobro') }}</button>
-            <button v-if="undoable" type="button" data-cy="undo-stage" :disabled="busy" class="h-11 rounded-ctl px-3 text-[13px] font-semibold text-ink-muted hover:bg-surface-subtle" @click="undo">{{ undoable.label }}</button>
+            <button v-if="isUnconfirmedStage(stage)" type="button" data-cy="mark-confirmed" :disabled="busy" class="h-9 touch:h-11 rounded-ctl border border-line-control px-3.5 text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="markConfirmed">{{ t('Mark confirmed', 'Marcar confirmada') }}</button>
+            <button v-if="stage === 'checkout'" type="button" data-cy="mark-done" :disabled="busy" class="h-9 touch:h-11 rounded-ctl border border-line-control px-3.5 text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="markDone">{{ t('Done, nothing to charge', 'Hecha, sin cobro') }}</button>
+            <button v-if="undoable" type="button" data-cy="undo-stage" :disabled="busy" class="h-9 touch:h-11 rounded-ctl px-3 text-[13px] font-semibold text-ink-muted hover:bg-surface-subtle" @click="undo">{{ undoable.label }}</button>
           </div>
         </section>
 
@@ -622,7 +622,7 @@ const canAct = computed(() => props.appointment.status === 'booked' && !readOnly
                 <span v-else class="text-[14px] font-semibold text-ink-700">{{ t('Nothing owed', 'Sin saldo pendiente') }}</span>
                 <span v-if="view.owesCents > 0 && unpaidList" class="truncate text-[12px] text-ink-500">{{ t(`${unpaidList}, unpaid`, `${unpaidList}, sin cobrar`) }}</span>
               </div>
-              <NuxtLink v-if="view.owesCents > 0" :to="`/patients/${appointment.patient_id}?tab=money`" data-cy="collect-balance" class="flex h-11 shrink-0 items-center rounded-ctl bg-danger-text px-3.5 text-[13.5px] font-bold text-surface hover:opacity-90">
+              <NuxtLink v-if="view.owesCents > 0" :to="`/patients/${appointment.patient_id}?tab=money`" data-cy="collect-balance" class="flex h-9 touch:h-11 shrink-0 items-center rounded-ctl bg-danger-text px-3.5 text-[13.5px] font-bold text-surface hover:opacity-90">
                 {{ t(`Collect ${formatEur(view.owesCents)}`, `Cobrar ${formatEur(view.owesCents)}`) }}
               </NuxtLink>
             </div>
@@ -654,7 +654,7 @@ const canAct = computed(() => props.appointment.status === 'booked' && !readOnly
           <p v-else class="text-[13px] text-ink-muted">{{ t('None yet.', 'Ninguno todavía.') }}</p>
         </section>
 
-        <button v-if="canDelete" type="button" data-cy="delete-appointment" class="h-11 self-start text-[12.5px] font-medium text-ink-muted underline-offset-2 hover:underline" @click="deleteOpen = true">{{ t('Delete appointment', 'Eliminar cita') }}</button>
+        <button v-if="canDelete" type="button" data-cy="delete-appointment" class="h-9 touch:h-11 self-start text-[12.5px] font-medium text-ink-muted underline-offset-2 hover:underline" @click="deleteOpen = true">{{ t('Delete appointment', 'Eliminar cita') }}</button>
       </div>
 
       <div v-else-if="tab === 'billing'">
@@ -684,19 +684,19 @@ const canAct = computed(() => props.appointment.status === 'booked' && !readOnly
         {{ nextLabel }}
       </button>
       <template v-if="canAct">
-        <button type="button" data-cy="cancel-appointment" :disabled="busy" class="h-11 rounded-ctl border border-line-control px-3.5 text-[13.5px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="cancelAppointment">{{ t('Cancel appointment…', 'Cancelar cita…') }}</button>
+        <button type="button" data-cy="cancel-appointment" :disabled="busy" class="h-9 touch:h-11 rounded-ctl border border-line-control px-3.5 text-[13.5px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="cancelAppointment">{{ t('Cancel appointment…', 'Cancelar cita…') }}</button>
         <button
           type="button"
           data-cy="mark-no-show"
           :disabled="busy || hasArrived(stage)"
           :title="hasArrived(stage) ? t('Already arrived', 'Ya ha llegado') : undefined"
-          class="h-11 rounded-ctl border border-line-control px-3.5 text-[13.5px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-45"
+          class="h-9 touch:h-11 rounded-ctl border border-line-control px-3.5 text-[13.5px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-45"
           @click="markNoShow"
         >
           {{ t('No-show', 'No vino') }}
         </button>
         <span class="grow" />
-        <button v-if="!noMove" type="button" data-cy="move-appointment" :disabled="busy" class="flex h-11 items-center gap-1.5 rounded-ctl border border-line-control px-3.5 text-[13.5px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="emit('reschedule')">
+        <button v-if="!noMove" type="button" data-cy="move-appointment" :disabled="busy" class="flex h-9 touch:h-11 items-center gap-1.5 rounded-ctl border border-line-control px-3.5 text-[13.5px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="emit('reschedule')">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h14l-4-4M20 16H6l4 4" /></svg>
           {{ t('Move…', 'Mover…') }}
         </button>

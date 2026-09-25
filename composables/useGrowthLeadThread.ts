@@ -9,6 +9,11 @@ export interface LeadThreadMessage {
   status: string
   at: string
   templateName: string | null
+  /** image | video | audio | document | sticker, when the message carries a file. */
+  mediaType: string | null
+  /** Signed for 30 minutes; null when the file is missing from storage. */
+  mediaUrl: string | null
+  mediaFilename: string | null
 }
 
 export interface LeadThread {

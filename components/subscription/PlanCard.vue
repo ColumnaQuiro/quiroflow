@@ -40,7 +40,7 @@ const comped = computed(() => props.state === 'comped')
       <button
         v-if="canManage && !comped"
         type="button"
-        class="flex h-11 items-center justify-center rounded-ctl bg-brand px-3.5 text-[13.5px] font-semibold text-white outline-none hover:bg-brand-hover focus-visible:shadow-focus lg:h-[34px]"
+        class="flex h-9 touch:h-11 items-center justify-center rounded-ctl bg-brand px-3.5 text-[13.5px] font-semibold text-white outline-none hover:bg-brand-hover focus-visible:shadow-focus lg:h-[34px]"
         @click="$emit('changePlan')"
       >
         {{ t('Change plan', 'Cambiar de plan') }}

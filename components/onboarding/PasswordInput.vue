@@ -47,7 +47,7 @@ const tone = computed(() => TONES[Math.max(0, score.value - 1)])
         minlength="6"
         :readonly="readonly"
         :aria-describedby="[describedBy, `${id}-strength`].filter(Boolean).join(' ') || undefined"
-        class="h-11 w-full rounded-ctl border bg-surface pl-3 pr-[74px] text-[15px] text-ink-900 outline-none transition-shadow lg:h-[38px] lg:text-[14px]"
+        class="h-9 touch:h-11 w-full rounded-ctl border bg-surface pl-3 pr-[74px] text-[15px] text-ink-900 outline-none transition-shadow lg:h-[38px] lg:text-[14px]"
         :class="
           readonly
             ? 'border-line bg-surface-subtle text-ink-muted'

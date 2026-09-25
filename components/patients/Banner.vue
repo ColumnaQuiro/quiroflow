@@ -109,7 +109,7 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
       <NuxtLink
         to="/patients"
         :aria-label="t('Back to patients', 'Volver a pacientes')"
-        class="hidden h-[30px] w-[30px] shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-muted outline-none hover:text-ink-700 focus-visible:shadow-focus lg:flex"
+        class="hidden h-9 w-9 touch:h-11 touch:w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-muted outline-none hover:text-ink-700 focus-visible:shadow-focus lg:flex"
       >
         <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" class="h-3.5 w-3.5">
           <path d="M10 3.5L5 8l5 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
@@ -166,7 +166,7 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
         <button
           v-if="canContact"
           type="button"
-          class="hidden h-[34px] items-center rounded-ctl border border-line-control bg-surface px-3.5 text-[13.5px] font-semibold text-ink-700 outline-none hover:border-line-controlHover focus-visible:shadow-focus lg:flex"
+          class="hidden h-9 touch:h-11 items-center rounded-ctl border border-line-control bg-surface px-3.5 text-[13.5px] font-semibold text-ink-700 outline-none hover:border-line-controlHover focus-visible:shadow-focus lg:flex"
           @click="$emit('message')"
         >
           {{ t('Message', 'Mensaje') }}
@@ -174,7 +174,7 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
         <button
           v-if="canBook"
           type="button"
-          class="hidden h-[34px] items-center rounded-ctl bg-brand px-3.5 text-[13.5px] font-semibold text-white outline-none hover:bg-brand-hover focus-visible:shadow-focus lg:flex"
+          class="hidden h-9 touch:h-11 items-center rounded-ctl bg-brand px-3.5 text-[13.5px] font-semibold text-white outline-none hover:bg-brand-hover focus-visible:shadow-focus lg:flex"
           @click="$emit('book')"
         >
           {{ t('Book visit', 'Reservar visita') }}
@@ -185,7 +185,7 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
           type="button"
           :aria-label="t('More actions', 'Más acciones')"
           :aria-expanded="menuOpen"
-          class="flex h-11 w-11 items-center justify-center rounded-ctl border border-line-control bg-surface text-ink-muted outline-none hover:text-ink-700 focus-visible:shadow-focus lg:h-[34px] lg:w-[34px]"
+          class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-ctl border border-line-control bg-surface text-ink-muted outline-none hover:text-ink-700 focus-visible:shadow-focus lg:h-[34px] lg:w-[34px]"
           @click="menuOpen = !menuOpen"
         >
           <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" class="h-[18px] w-[18px]">

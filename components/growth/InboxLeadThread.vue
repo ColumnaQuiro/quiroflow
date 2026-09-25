@@ -63,6 +63,20 @@ function time(at: string) {
  */
 const isDryRun = (status: string) => status === 'would_send'
 
+// When the file itself could not be signed (missing from storage), still
+// say what kind of message it was.
+function mediaLabel(type: string) {
+  const labels: Record<string, [string, string]> = {
+    image: ['Photo', 'Foto'],
+    sticker: ['Sticker', 'Sticker'],
+    video: ['Video', 'Vídeo'],
+    audio: ['Voice note', 'Nota de voz'],
+    document: ['Document', 'Documento'],
+  }
+  const [en, es] = labels[type] ?? ['Attachment', 'Adjunto']
+  return t(en, es)
+}
+
 function statusLabel(status: string) {
   if (status === 'would_send') return t('would have been sent', 'se habría enviado')
   if (status === 'received') return t('received', 'recibido')
@@ -86,22 +100,24 @@ function submit() {
   flex child's minimum height is its content -- so a long thread grew past
   the screen and pushed the composer out of sight instead of scrolling. -->
   <div class="flex min-h-0 min-w-0 flex-1 flex-col bg-surface-page" data-test="lead-thread">
-    <div class="flex h-14 shrink-0 items-center gap-2.5 border-b border-line bg-surface px-4">
+    <div class="flex min-h-16 shrink-0 items-center gap-2.5 border-b border-line bg-surface px-3 py-2.5 sm:px-4">
       <button
         type="button"
-        class="flex h-8 w-8 shrink-0 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle md:hidden"
+        class="flex h-9 touch:h-11 w-9 touch:w-11 shrink-0 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle md:hidden"
         :title="t('Back to conversations', 'Volver a conversaciones')"
         @click="emit('back')"
       >
         <svg width="8" height="13" viewBox="0 0 8 13" fill="none"><path d="M7 1L1 6.5L7 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
       </button>
       <div class="min-w-0 flex-1">
-        <p class="truncate text-[13.5px] font-[600] text-ink-900">{{ thread.name }}</p>
-        <p class="truncate text-[11.5px] text-ink-muted2">
+        <p class="truncate text-[15px] font-bold text-ink-900">{{ thread.name }}</p>
+        <p class="truncate text-[12.5px] text-ink-muted2">
           {{ t('Lead', 'Contacto') }}<template v-if="thread.phone"> · {{ thread.phone }}</template>
           <template v-if="thread.source"> · {{ thread.source }}</template>
         </p>
       </div>
+      <!-- The Inbox puts who it is assigned to here, as on a patient thread. -->
+      <slot name="actions" />
     </div>
 
     <GrowthInboxAiBanner
@@ -130,7 +146,17 @@ function submit() {
               ? 'rounded-bl-[4px] border border-line bg-surface text-ink-700'
               : 'rounded-br-[4px] border border-brand-tintBorder bg-brand-tint text-ink-700'"
           :data-test="isDryRun(message.status) ? 'dry-run-message' : undefined"
-        >{{ message.text }}</p>
+        >
+          <img v-if="message.mediaUrl && (message.mediaType === 'image' || message.mediaType === 'sticker')" :src="message.mediaUrl" alt="" class="mb-1 max-h-72 max-w-full rounded-ctl object-contain" data-test="lead-media" />
+          <video v-else-if="message.mediaUrl && message.mediaType === 'video'" :src="message.mediaUrl" controls class="mb-1 max-w-full rounded-ctl" data-test="lead-media" />
+          <audio v-else-if="message.mediaUrl && message.mediaType === 'audio'" :src="message.mediaUrl" controls class="mb-1 max-w-full" data-test="lead-media" />
+          <a v-else-if="message.mediaUrl" :href="message.mediaUrl" target="_blank" rel="noopener" class="mb-1 block font-semibold text-brand-text underline" data-test="lead-media">{{ message.mediaFilename || t('Open the file', 'Abrir el archivo') }}</a>
+          <span v-else-if="message.mediaType" class="block italic text-ink-muted">{{ mediaLabel(message.mediaType) }}</span>
+          <!-- A template's text is not stored, only its name: say what was
+          sent instead of drawing an empty bubble. -->
+          <span v-if="!message.text && message.templateName" class="italic text-ink-muted" data-test="lead-template-message">{{ t('Template', 'Plantilla') }} «{{ message.templateName }}»</span>
+          <template v-else>{{ message.text }}</template>
+        </p>
         <!-- Status comes off the row Meta acknowledged, so "delivered" here
         means delivered. Nothing claims which human or model wrote it,
         because the row does not record that. -->
@@ -138,7 +164,7 @@ function submit() {
           <template v-if="isDryRun(message.status)">
             {{ t('Test run · not sent', 'Prueba · no enviado') }} ·
           </template>
-          {{ time(message.at) }} · {{ statusLabel(message.status) }}<template v-if="message.templateName"> · {{ message.templateName }}</template>
+          {{ time(message.at) }} · {{ statusLabel(message.status) }}<template v-if="message.templateName && message.text"> · {{ message.templateName }}</template>
         </span>
       </div>
     </div>

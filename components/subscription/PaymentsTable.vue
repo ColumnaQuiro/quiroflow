@@ -41,7 +41,7 @@ watch(year, () => (shown.value = PAGE))
         <span class="sr-only">{{ t('Filter by year', 'Filtrar por año') }}</span>
         <select
           v-model="year"
-          class="h-11 rounded-ctl border border-line-control bg-surface px-3 text-[13px] font-semibold text-ink-700 outline-none focus:border-brand focus:shadow-focus lg:h-8"
+          class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[13px] font-semibold text-ink-700 outline-none focus:border-brand focus:shadow-focus lg:h-8"
         >
           <option :value="null">{{ t('All years', 'Todos los años') }}</option>
           <option v-for="y in years" :key="y" :value="y">{{ y }}</option>
@@ -53,7 +53,7 @@ watch(year, () => (shown.value = PAGE))
     </div>
 
     <div v-if="loading" class="mt-4 flex flex-col gap-2">
-      <UiSkeleton v-for="n in 4" :key="n" class="h-10 w-full rounded-ctlSm" />
+      <UiSkeleton v-for="n in 4" :key="n" class="h-9 touch:h-11 w-full rounded-ctlSm" />
     </div>
 
     <SubscriptionPaymentsEmptyState v-else-if="payments.length === 0" :first-charge-date="firstChargeDate" />
@@ -87,7 +87,7 @@ watch(year, () => (shown.value = PAGE))
       <div v-if="filtered.length > shown" class="mt-3.5 flex items-center gap-3">
         <button
           type="button"
-          class="h-11 rounded-ctl border border-line-control px-3.5 text-[13px] font-semibold text-ink-700 outline-none hover:border-line-controlHover focus-visible:shadow-focus lg:h-8"
+          class="h-9 touch:h-11 rounded-ctl border border-line-control px-3.5 text-[13px] font-semibold text-ink-700 outline-none hover:border-line-controlHover focus-visible:shadow-focus lg:h-8"
           @click="shown += PAGE"
         >
           {{ t('Load more', 'Cargar más') }}

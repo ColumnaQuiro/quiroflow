@@ -116,7 +116,7 @@ describe('Appointment types', () => {
         // Online Booking no longer edits types; it points at their pages.
         cy.visit('/settings/online-booking')
         cy.contains('button', 'Bookable Entities').should('not.exist')
-        cy.get('[data-cy=booking-types-note]').should('be.visible')
+        cy.get('[data-cy=booking-types-note]').scrollIntoView().should('be.visible')
         cy.contains('[data-cy=booking-type-link]', 'Primera visita completa').should('have.attr', 'href', `/settings/appointment-types/${id}#online`)
       })
     })

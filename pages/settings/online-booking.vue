@@ -293,27 +293,6 @@ const OVERRIDABLE_STRINGS = [
               </div>
             </div>
             <template v-else>
-              <div class="rounded-card border border-line bg-surface p-4 shadow-card" data-cy="booking-types-note">
-                <p class="text-[13.5px] font-[560] text-ink-700">{{ t('What can be booked', 'Qué se puede reservar') }}</p>
-                <p class="mt-1 text-[12.5px] leading-snug text-ink-muted2">
-                  {{ t('Whether a type is booked online, who may book it, how far ahead and whether it is paid when booking are set on each appointment type\'s own page.', 'Si un tipo se reserva online, quién puede reservarlo, con cuánta antelación y si se paga al reservar se decide en la página de cada tipo de cita.') }}
-                </p>
-                <ul v-if="types.length > 0" class="mt-2 flex flex-wrap gap-1.5">
-                  <li v-for="at in types" :key="at.id">
-                    <NuxtLink
-                      :to="`/settings/appointment-types/${at.id}#online`"
-                      data-cy="booking-type-link"
-                      class="inline-flex min-h-[32px] items-center gap-1.5 rounded-pill border border-line-control px-2.5 text-[12.5px] font-semibold hover:bg-surface-subtle"
-                      :class="at.online_booking_enabled ? 'text-ink-700' : 'text-ink-faint'"
-                    >
-                      {{ at.name }}
-                      <span class="font-normal">· {{ at.online_booking_enabled ? t('online', 'online') : t('not online', 'no online') }}</span>
-                    </NuxtLink>
-                  </li>
-                </ul>
-                <NuxtLink v-else to="/settings/appointment-types" class="mt-2 inline-block text-[12.5px] font-medium text-brand-text hover:underline">{{ t('Create an appointment type', 'Crea un tipo de cita') }}</NuxtLink>
-              </div>
-
               <SettingsFieldRow :label="t('Maximum future booking time', 'Máxima antelación de reserva')" :helper="t('How far ahead patients can book online. Each appointment type can set its own on its page.', 'Con cuánta antelación pueden reservar los pacientes online. Cada tipo de cita puede tener la suya en su página.')">
                 <div class="flex items-center gap-2">
                   <input v-model.number="maxDaysAhead" type="number" min="1" class="h-8 w-20 rounded-ctl border border-line-control bg-surface px-2 text-center text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
@@ -410,6 +389,26 @@ const OVERRIDABLE_STRINGS = [
                     </p>
                   </div>
                 </div>
+              </div>
+              <div class="rounded-card border border-line bg-surface p-4 shadow-card" data-cy="booking-types-note">
+                <p class="text-[13.5px] font-[560] text-ink-700">{{ t('What can be booked', 'Qué se puede reservar') }}</p>
+                <p class="mt-1 text-[12.5px] leading-snug text-ink-muted2">
+                  {{ t('Whether a type is booked online, who may book it, how far ahead and whether it is paid when booking are set on each appointment type\'s own page.', 'Si un tipo se reserva online, quién puede reservarlo, con cuánta antelación y si se paga al reservar se decide en la página de cada tipo de cita.') }}
+                </p>
+                <ul v-if="types.length > 0" class="mt-2 flex flex-wrap gap-1.5">
+                  <li v-for="at in types" :key="at.id">
+                    <NuxtLink
+                      :to="`/settings/appointment-types/${at.id}#online`"
+                      data-cy="booking-type-link"
+                      class="inline-flex min-h-[32px] items-center gap-1.5 rounded-pill border border-line-control px-2.5 text-[12.5px] font-semibold hover:bg-surface-subtle"
+                      :class="at.online_booking_enabled ? 'text-ink-700' : 'text-ink-faint'"
+                    >
+                      {{ at.name }}
+                      <span class="font-normal">· {{ at.online_booking_enabled ? t('online', 'online') : t('not online', 'no online') }}</span>
+                    </NuxtLink>
+                  </li>
+                </ul>
+                <NuxtLink v-else to="/settings/appointment-types" class="mt-2 inline-block text-[12.5px] font-medium text-brand-text hover:underline">{{ t('Create an appointment type', 'Crea un tipo de cita') }}</NuxtLink>
               </div>
             </template>
           </div>

@@ -37,7 +37,7 @@ describe('Every authenticated app page renders for the account owner', () => {
             cy.visit(`/settings/appointment-types/${type.id}`)
             cy.location('pathname').should('eq', `/settings/appointment-types/${type.id}`)
             cy.get('[data-cy=type-page][data-ready=true]').should('exist')
-            cy.contains('Where it is used').should('be.visible')
+            cy.contains('h2', 'The appointment type').should('be.visible')
           })
         })
       })

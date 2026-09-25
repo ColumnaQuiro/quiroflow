@@ -678,6 +678,8 @@ function schemas() {
         name: { type: 'string' },
         legal_name: text(),
         address: text(),
+        phone: text(),
+        email: text(),
         tax_id: text(),
         timezone: { type: 'string' },
         business_hours: { $ref: '#/components/schemas/BusinessHours' },

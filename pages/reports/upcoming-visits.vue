@@ -2,8 +2,8 @@
 import { Bar } from 'vue-chartjs'
 
 const supabase = useSupabaseClient()
-const store = useAccountStore()
 const t = useT()
+const { reportsPractitionerId } = useOwnScope()
 
 interface AppointmentRow { starts_at: string; status: string }
 
@@ -36,18 +36,23 @@ async function load() {
   loading.value = true
   const prevStart = addMonths(rangeStart.value, -1)
 
-  const [{ data: current }, { count: prevCount }] = await Promise.all([
-    supabase
-      .from('appointments')
-      .select('starts_at, status')
-      .gte('starts_at', rangeStart.value.toISOString())
-      .lt('starts_at', rangeEnd.value.toISOString()),
-    supabase
-      .from('appointments')
-      .select('*', { count: 'exact', head: true })
-      .gte('starts_at', prevStart.toISOString())
-      .lt('starts_at', rangeStart.value.toISOString()),
-  ])
+  let current_ = supabase
+    .from('appointments')
+    .select('starts_at, status')
+    .gte('starts_at', rangeStart.value.toISOString())
+    .lt('starts_at', rangeEnd.value.toISOString())
+  let previous = supabase
+    .from('appointments')
+    .select('*', { count: 'exact', head: true })
+    .gte('starts_at', prevStart.toISOString())
+    .lt('starts_at', rangeStart.value.toISOString())
+  // reports_own_only: this report has no practitioner picker to pin, so the
+  // restriction goes straight onto both counts.
+  if (reportsPractitionerId.value) {
+    current_ = current_.eq('practitioner_id', reportsPractitionerId.value)
+    previous = previous.eq('practitioner_id', reportsPractitionerId.value)
+  }
+  const [{ data: current }, { count: prevCount }] = await Promise.all([current_, previous])
 
   rows.value = current ?? []
   prevMonthCount.value = prevCount ?? 0

@@ -35,6 +35,7 @@ export const SETTINGS_PAGES = [
   '/settings/referral-sources',
   '/settings/reschedule-reasons',
   '/settings/roles',
+  '/settings/roles/compare',
   '/settings/rooms',
   '/settings/saved-replies',
   '/settings/services',

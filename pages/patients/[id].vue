@@ -98,7 +98,11 @@ const tabs = computed(() => [
   { key: 'overview', label: t('Overview', 'Resumen') },
   { key: 'clinical', label: t('Clinical', 'Clínico') },
   { key: 'appointments', label: t('Appointments', 'Citas') },
-  { key: 'money', label: t('Money', 'Dinero') },
+  // billing_history_view ("See billing history"): the whole ledger -- every
+  // receipt, payment, bono and the statement -- lives on this tab. Stored and
+  // seeded for months while nothing read it; the Money tab showed regardless.
+  // Charging a visit stays possible from the calendar with billing_access.
+  ...(can('billing_history_view') ? [{ key: 'money', label: t('Money', 'Dinero') }] : []),
   // Also hidden without inbox_access: 0164 stops those roles reading
   // messages at all, so the tab would render an empty thread that reads as
   // "this patient has never been contacted" -- worse than not offering it.
@@ -263,6 +267,7 @@ function onTabKeydown(event: KeyboardEvent) {
         :can-edit="can('patients_edit')"
         :can-manage-record="can('patients_delete_merge')"
         :can-book="true"
+        :can-charge="can('billing_history_view')"
         :archiving="archiving"
         :primary-number="primaryNumber"
         :tutor="tutor"

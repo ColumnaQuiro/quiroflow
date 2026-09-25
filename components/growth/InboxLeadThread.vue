@@ -81,7 +81,11 @@ function submit() {
 </script>
 
 <template>
-  <div class="flex min-w-0 flex-1 flex-col bg-surface-page" data-test="lead-thread">
+  <!-- min-h-0 here and on the message list: since the Inbox put the
+  "Assigned to" bar above this (PR 448) it is a flex child of a column, and a
+  flex child's minimum height is its content -- so a long thread grew past
+  the screen and pushed the composer out of sight instead of scrolling. -->
+  <div class="flex min-h-0 min-w-0 flex-1 flex-col bg-surface-page" data-test="lead-thread">
     <div class="flex h-14 shrink-0 items-center gap-2.5 border-b border-line bg-surface px-4">
       <button
         type="button"
@@ -107,7 +111,7 @@ function submit() {
       @hand-back="emit('handBack')"
     />
 
-    <div class="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+    <div class="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4">
       <p v-if="!thread.messages.length" class="py-8 text-center text-[12px] text-ink-faint">
         {{ t('No messages yet.', 'Aún no hay mensajes.') }}
       </p>

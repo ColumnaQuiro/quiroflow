@@ -1,5 +1,6 @@
 import { requireGrowth } from '~/server/utils/requireGrowth'
-import { loadReceptionistConfig } from '~/server/utils/receptionist'
+import { loadReceptionistConfig, loadTypeChoices, readAccountTypes } from '~/server/utils/receptionist'
+import { checkBookableIds } from '~/utils/receptionistTypes'
 import type { TablesUpdate } from '~/types/database.types'
 
 interface Body {
@@ -13,6 +14,7 @@ interface Body {
   bookingWindowDays?: unknown
   minimumNoticeMinutes?: unknown
   slotsPerReply?: unknown
+  bookableAppointmentTypeIds?: unknown
   afterHours?: unknown
   missedCallTextBack?: unknown
   answerDuringHours?: unknown
@@ -65,6 +67,15 @@ export default defineEventHandler(async (event) => {
   if (body.bookingWindowDays !== undefined) patch.booking_window_days = intInRange(body.bookingWindowDays, 1, 90, 'Booking window')
   if (body.minimumNoticeMinutes !== undefined) patch.minimum_notice_minutes = intInRange(body.minimumNoticeMinutes, 0, 10080, 'Minimum notice')
   if (body.slotsPerReply !== undefined) patch.slots_per_reply = intInRange(body.slotsPerReply, 1, 5, 'Slots per reply')
+  // [] is "any active type" (utils/receptionistTypes.ts). The screen sends it
+  // only from its "Any type" choice, never as an emptied "only these" list.
+  if (body.bookableAppointmentTypeIds !== undefined) {
+    const { data: types, error: typesError } = await readAccountTypes(supabase, teamMember.account_id)
+    if (typesError) throw createError({ statusCode: 500, statusMessage: typesError.message })
+    const checked = checkBookableIds(body.bookableAppointmentTypeIds, types ?? [])
+    if ('error' in checked) throw createError({ statusCode: 400, statusMessage: checked.error })
+    patch.bookable_appointment_type_ids = checked.ids
+  }
   if (body.afterHours !== undefined) patch.after_hours = Boolean(body.afterHours)
   if (body.missedCallTextBack !== undefined) patch.missed_call_text_back = Boolean(body.missedCallTextBack)
   if (body.answerDuringHours !== undefined) patch.answer_during_hours = Boolean(body.answerDuringHours)
@@ -74,5 +85,6 @@ export default defineEventHandler(async (event) => {
   const { error } = await supabase.from('receptionist_config').update(patch).eq('account_id', teamMember.account_id)
   if (error) throw createError({ statusCode: 500, statusMessage: error.message })
 
-  return { config: await loadReceptionistConfig(supabase, teamMember.account_id) }
+  const config = await loadReceptionistConfig(supabase, teamMember.account_id)
+  return { config, ...(await loadTypeChoices(supabase, teamMember.account_id, config)) }
 })

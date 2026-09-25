@@ -42,6 +42,7 @@ import { readFileSync } from 'node:fs'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 import { buildRegistroAlta } from '~/utils/registroAlta'
+import { PASSPHRASE_SECRET_NAME, decryptSecret } from './verifactuCertificate'
 import {
   MAX_RECORDS_PER_SUBMISSION,
   hasCertificate,
@@ -79,55 +80,51 @@ export function buildAgent(config: SenderConfig): Agent {
 }
 
 /**
- * The certificate for an account, from the store.
+ * Everything the sender needs for one clinic, from that clinic's own settings
+ * (Settings > VeriFactu): whether it transmits at all, and the certificate it
+ * transmits with.
  *
- * Read per send rather than cached: a renewed certificate is a row update,
- * and the next tick should pick it up without a redeploy. That matters more
- * than the query -- the one in use expires in February 2028 and is tied to an
- * individual, so it can be revoked before then with no warning to us.
+ * Read per send rather than cached: a renewed certificate or a changed mode is
+ * a row update, and the next tick should pick it up without a redeploy. That
+ * matters -- a certificate tied to an individual can be revoked before its
+ * expiry with no warning to us.
+ *
+ * This used to be one deploy-wide setting (NUXT_VERIFACTU_ENVIRONMENT, plus
+ * the passphrase as an environment variable), which fits exactly one clinic.
  */
-export async function certificateFor(
+export async function accountSenderConfig(
   supabase: SupabaseClient<Database>,
   accountId: string,
-): Promise<Pick<SenderConfig, 'certificateBase64' | 'certificateType' | 'certificateNotAfter'> | null> {
-  const { data } = await supabase
-    .from('verifactu_certificates')
-    .select('pkcs12_base64, certificate_type, not_after')
-    .eq('account_id', accountId)
-    .maybeSingle()
-  if (!data) return null
-  return {
-    certificateBase64: data.pkcs12_base64,
-    certificateType: data.certificate_type === 'seal' ? 'seal' : 'representative',
-    certificateNotAfter: data.not_after ? new Date(data.not_after) : undefined,
-  }
-}
+  secretKey: string,
+): Promise<{ mode: 'off' | 'test' | 'live'; config: SenderConfig; blocked: BlockedReason | null }> {
+  const [{ data: account }, { data: cert }, { data: secret }] = await Promise.all([
+    supabase.from('accounts').select('verifactu_mode').eq('id', accountId).maybeSingle(),
+    supabase.from('verifactu_certificates').select('pkcs12_base64, certificate_type, not_after').eq('account_id', accountId).maybeSingle(),
+    supabase.from('account_secrets').select('value').eq('account_id', accountId).eq('name', PASSPHRASE_SECRET_NAME).maybeSingle(),
+  ])
+  const mode = account?.verifactu_mode === 'live' ? 'live' : account?.verifactu_mode === 'test' ? 'test' : 'off'
 
-/** The sender's configuration, from runtimeConfig. */
-export function verifactuConfigFrom(runtime: {
-  verifactuEnvironment?: string
-  verifactuCertificateBase64?: string
-  verifactuCertificatePassphrase?: string
-  verifactuCertificateType?: string
-}): SenderConfig {
-  return {
-    // Defaults to 'test'. Reaching production has to be a deliberate act of
-    // configuration, not what happens when a variable is unset.
-    environment: runtime.verifactuEnvironment === 'production' ? 'production' : 'test',
-    certificateBase64: runtime.verifactuCertificateBase64 || undefined,
-    // String() on purpose. Nuxt runs environment variables through destr, so
-    // a passphrase that happens to be all digits arrives as a NUMBER -- and
-    // Node answers that with "Pass phrase must be a buffer", which names
-    // neither the passphrase nor its type nor the variable it came from.
-    //
-    // That is what 819 transport errors in production turned out to be. The
-    // certificate was right, the store was right, the transport was right;
-    // the password was a number.
-    certificatePassphrase: runtime.verifactuCertificatePassphrase
-      ? String(runtime.verifactuCertificatePassphrase)
-      : undefined,
-    certificateType: runtime.verifactuCertificateType === 'seal' ? 'seal' : 'representative',
+  const config: SenderConfig = {
+    // Placeholder: the chain being sent decides the service, per submission.
+    environment: 'test',
+    certificateBase64: cert?.pkcs12_base64 || undefined,
+    certificateType: cert?.certificate_type === 'seal' ? 'seal' : 'representative',
+    certificateNotAfter: cert?.not_after ? new Date(cert.not_after) : undefined,
   }
+
+  if (mode === 'off') return { mode, config, blocked: 'verifactu-off' }
+  // No certificate is transmissionBlockedBy's to say; only the passphrase is
+  // new here.
+  if (!cert) return { mode, config, blocked: null }
+  if (!secret?.value) return { mode, config, blocked: 'no-passphrase' }
+  try {
+    config.certificatePassphrase = decryptSecret(secret.value, secretKey)
+  } catch {
+    // The platform key is missing, or is not the one it was stored under.
+    // Either way nothing can be sent, and retrying will not change that.
+    return { mode, config, blocked: 'no-platform-key' }
+  }
+  return { mode, config, blocked: null }
 }
 
 /**
@@ -201,8 +198,11 @@ interface PendingRecord {
 export async function sendPendingRecords(
   supabase: SupabaseClient<Database>,
   accountId: string,
-  config: SenderConfig,
+  secretKey: string,
 ): Promise<{ sent: number; parked: number; blocked: BlockedReason | null; estadoEnvio: string | null }> {
+  const account = await accountSenderConfig(supabase, accountId, secretKey)
+  if (account.blocked === 'verifactu-off') return { sent: 0, parked: 0, blocked: account.blocked, estadoEnvio: null }
+
   const { data: pendingRaw } = await supabase.rpc('factura_records_awaiting_aeat', { p_account_id: accountId })
 
   // Parked records are dropped HERE rather than by the query, so the thing
@@ -215,14 +215,14 @@ export async function sendPendingRecords(
 
   // One chain per submission, sent to that chain's own service -- see
   // chooseChain. The test chain drains first; the production one waits until
-  // the sender is configured for production.
+  // the clinic is live.
   const { data: chainRows } = sendable.length
     ? await supabase.from('factura_records').select('id, environment').in('id', sendable.map((p) => p.factura_record_id))
     : { data: [] as { id: string; environment: string }[] }
   const environmentOf = new Map((chainRows ?? []).map((r) => [r.id, r.environment === 'production' ? 'production' : 'test'] as const))
   const chain = chooseChain(
     sendable.map((p) => ({ sequence: p.sequence, environment: environmentOf.get(p.factura_record_id) ?? 'test' })),
-    config.environment,
+    account.mode === 'live' ? 'production' : 'test',
   )
   if (chain.blocked === 'production-not-enabled') return { sent: 0, parked, blocked: chain.blocked, estadoEnvio: null }
   const pending = sendable
@@ -232,17 +232,11 @@ export async function sendPendingRecords(
   const { data: readyAtRaw } = await supabase.rpc('factura_submission_ready_at', { p_account_id: accountId })
   const readyAt = new Date((readyAtRaw as unknown as string) ?? Date.now())
 
-  // The store wins over anything configured by hand. Configuration is the
-  // developer's escape hatch; the store is where a renewed certificate lands,
-  // and a stale env var silently taking precedence over it is the bug this
-  // ordering prevents.
-  const stored = await certificateFor(supabase, accountId)
-  // The chain decides the service, not the configuration alone: once the
-  // sender is set to production, a test record still owed goes to the test
-  // service it was chained for.
-  const effective: SenderConfig = { ...config, ...(stored ?? {}), environment: chain.environment ?? config.environment }
+  // The chain decides the service: once a clinic is live, a test record still
+  // owed goes to the test service it was chained for.
+  const effective: SenderConfig = { ...account.config, environment: chain.environment ?? 'test' }
 
-  const blocked = transmissionBlockedBy({ config: effective, pendingCount: pending.length, readyAt })
+  const blocked = transmissionBlockedBy({ config: effective, pendingCount: pending.length, readyAt }) ?? account.blocked
   if (blocked) return { sent: 0, parked, blocked, estadoEnvio: null }
 
   const built = await buildRecordsFor(supabase, accountId, pending, effective)

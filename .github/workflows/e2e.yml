@@ -55,6 +55,18 @@ jobs:
 
       - run: npm run preflight
 
+      # Nothing else here installs mobile/, so a mobile/package-lock.json out
+      # of sync with its package.json merged green: dependabot's svgo bump
+      # (#358) dropped the lock entries for @nuxt/cli's cac and commander,
+      # and `npm ci` in mobile/ refused from then on. Xcode Cloud's
+      # ci_post_clone.sh runs exactly that on every push to main. --dry-run
+      # checks the lock against package.json without installing anything,
+      # which is all this needs, in a couple of seconds. The runner's npm 10
+      # is the strict one -- npm 11 quietly tolerated this particular drift.
+      - name: mobile/ lockfile matches package.json
+        run: npm ci --dry-run --ignore-scripts
+        working-directory: mobile
+
       # `nuxi typecheck` does NOT compile templates, so it passes on a tree
       # that cannot build. A stray `v-else` whose sibling `v-if` had been
       # edited away reached main that way: preflight reported clean, every

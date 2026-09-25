@@ -2,34 +2,22 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
 import { runRuleActions } from '~/server/utils/runAutomationActions'
+import { DEFAULT_CLINIC_TIMEZONE, localDay } from '~/utils/clinicClock'
 
 // Fires 'appointment.same_day' for every booked appointment happening today,
 // for accounts with an enabled rule on that trigger -- same reasoning/auth
 // pattern as birthday-cron.post.ts: "is this appointment today" has no
 // client action to hang off of. Meant to be scheduled every 15 minutes, same
 // as appointment-reminders-cron.post.ts, but only does anything inside the
-// SEND_HOUR window below -- there's no per-account timezone column, so
-// "local" is hardcoded to Europe/Madrid, read from the actual wall-clock at
-// each tick (correct across the DST transition, unlike a fixed UTC offset).
+// SEND_HOUR window below -- 9:00 where EACH CLINIC is (clinics.timezone), over
+// that clinic's own day. It used to be 9:00 in Madrid for everyone, which
+// sent a Canary Islands clinic's messages at 8:00 its time.
 const SEND_HOUR = 9
 const WINDOW_BUFFER_MINUTES = 20
-const CLINIC_TIMEZONE = 'Europe/Madrid'
 // See server/utils/concurrency.ts -- bounds how many appointments' actions
 // run at once so one send window across many accounts still finishes
 // promptly without approaching the shared send-provider rate limit.
 const SEND_CONCURRENCY = 5
-
-function clinicWallClock(now: Date) {
-  const fmt = new Intl.DateTimeFormat('en-GB', {
-    timeZone: CLINIC_TIMEZONE,
-    hour12: false,
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  })
-  const parts = Object.fromEntries(fmt.formatToParts(now).map((p) => [p.type, p.value]))
-  return { hour: Number(parts.hour), minute: Number(parts.minute), second: Number(parts.second) }
-}
 
 export default defineEventHandler(async (event) => {
   const runtimeConfig = useRuntimeConfig()
@@ -39,11 +27,10 @@ export default defineEventHandler(async (event) => {
   }
 
   const now = new Date()
-  const { hour, minute, second } = clinicWallClock(now)
-  const minutesSinceMidnight = hour * 60 + minute
   const windowStart = SEND_HOUR * 60
-  if (minutesSinceMidnight < windowStart || minutesSinceMidnight >= windowStart + WINDOW_BUFFER_MINUTES) {
-    return { sent: 0, skipped: 'outside send window' }
+  const inWindow = (tz: string) => {
+    const { minutesSinceMidnight } = localDay(now, tz)
+    return minutesSinceMidnight >= windowStart && minutesSinceMidnight < windowStart + WINDOW_BUFFER_MINUTES
   }
 
   const supabase = serverSupabaseServiceRole<Database>(event)
@@ -57,22 +44,32 @@ export default defineEventHandler(async (event) => {
 
   const accountIds = [...new Set(rules.map((r) => r.account_id))]
 
-  // "Today" in the clinic's timezone, expressed as a UTC instant range --
-  // derived from now's actual local wall-clock reading rather than a fixed
-  // offset, so the boundary stays correct across the DST transition.
-  const secondsSinceMidnight = hour * 3600 + minute * 60 + second
-  const todayStart = new Date(now.getTime() - secondsSinceMidnight * 1000)
-  const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000)
+  // Each time zone the accounts' clinics are in is its own window and its
+  // own "today"; a zone not at 9:00 right now has nothing to send this tick.
+  const { data: clinics } = await supabase.from('clinics').select('id, timezone').in('account_id', accountIds)
+  const clinicsByZone = new Map<string, string[]>()
+  for (const c of clinics ?? []) {
+    const tz = c.timezone || DEFAULT_CLINIC_TIMEZONE
+    clinicsByZone.set(tz, [...(clinicsByZone.get(tz) ?? []), c.id])
+  }
+  const dueZones = [...clinicsByZone.entries()].filter(([tz]) => inWindow(tz))
+  if (dueZones.length === 0) return { sent: 0, skipped: 'outside send window' }
 
-  const { data: appointments } = await supabase
-    .from('appointments')
-    .select('id, account_id, patient_id')
-    .in('account_id', accountIds)
-    .eq('status', 'booked')
-    .is('same_day_info_sent_at', null)
-    .gte('starts_at', todayStart.toISOString())
-    .lt('starts_at', todayEnd.toISOString())
-  if (!appointments || appointments.length === 0) return { sent: 0 }
+  const appointments: { id: string; account_id: string; patient_id: string }[] = []
+  for (const [tz, clinicIds] of dueZones) {
+    const { start, end } = localDay(now, tz)
+    const { data } = await supabase
+      .from('appointments')
+      .select('id, account_id, patient_id')
+      .in('account_id', accountIds)
+      .in('clinic_id', clinicIds)
+      .eq('status', 'booked')
+      .is('same_day_info_sent_at', null)
+      .gte('starts_at', start.toISOString())
+      .lt('starts_at', end.toISOString())
+    appointments.push(...(data ?? []))
+  }
+  if (appointments.length === 0) return { sent: 0 }
 
   const patientIds = [...new Set(appointments.map((a) => a.patient_id))]
   const { data: patients } = await supabase

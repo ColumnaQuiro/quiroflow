@@ -1,7 +1,7 @@
 import { ApiError, badRequest, defineApiHandler } from '~/server/utils/publicApi'
 import { definedOnly, enumValue, isoDateTime, readApiBody, rejectUnknownFields, str, uuid } from '~/server/utils/publicApiBody'
 import { assertBelongsToAccount, loose } from '~/server/utils/publicApiHandlers'
-import { APPOINTMENT_STATUSES, assertNoOverlap, resolveWindow } from '~/server/utils/publicApiAppointments'
+import { APPOINTMENT_STATUSES, assertNoOverlap, assertTypeBookable, resolveWindow } from '~/server/utils/publicApiAppointments'
 import { appointmentsResource } from '~/server/utils/publicApiResources'
 
 const FIELDS = [
@@ -23,6 +23,7 @@ export default defineApiHandler({ scope: 'appointments:write' }, async ({ event,
   const patient = await assertBelongsToAccount(supabase, 'patients', patientId, accountId, 'patient_id')
   await assertBelongsToAccount(supabase, 'clinics', clinicId, accountId, 'clinic_id')
   if (roomId) await assertBelongsToAccount(supabase, 'calendar_resources', roomId, accountId, 'room_id')
+  if (appointmentTypeId) await assertTypeBookable(supabase, accountId, appointmentTypeId)
 
   let practitionerName: string | undefined
   if (practitionerId) {

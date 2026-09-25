@@ -4,12 +4,10 @@ const props = defineProps<{ patientId: string }>()
 const supabase = useSupabaseClient()
 const t = useT()
 const { can } = usePermission()
-// patients_tags_remove: a tag a bono or membership put on the patient stays
-// unless the role may take it off (usePackageTags says which those are).
-const { load: loadPackageTags, isPackageTag } = usePackageTags()
-onMounted(loadPackageTags)
-function canRemoveTag(tag: string) {
-  return can('patients_tags_remove') || !isPackageTag(tag)
+// patients_tags_remove: taking any tag off a patient. Adding one only needs
+// patients_edit. The database enforces the same (patient_tag_removal_needs_permission).
+function canRemoveTag(_tag: string) {
+  return can('patients_tags_remove')
 }
 
 const chiefComplaint = ref('')
@@ -177,7 +175,7 @@ const flagRows = computed(() => {
               >
                 ✕
               </button>
-              <span v-else data-cy="patient-tag-locked" class="sr-only">{{ t('(bono or membership tag: your role cannot remove it)', '(etiqueta de bono o membresía: tu rol no puede quitarla)') }}</span>
+              <span v-else data-cy="patient-tag-locked" class="sr-only">{{ t('(your role cannot remove tags)', '(tu rol no puede quitar etiquetas)') }}</span>
             </span>
             <input
               v-model="newTag"

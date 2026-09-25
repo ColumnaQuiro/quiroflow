@@ -17,7 +17,7 @@ const doneCount = steps.filter((s) => s.done).length
 <template>
   <div class="flex justify-center px-4 py-12">
     <div class="flex w-full max-w-[520px] flex-col items-center gap-5 text-center">
-      <div class="flex h-11 w-11 items-center justify-center rounded-card border border-brand-tintBorder bg-brand-tint text-[20px] font-light text-brand-text">
+      <div class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-card border border-brand-tintBorder bg-brand-tint text-[20px] font-light text-brand-text">
         +
       </div>
 

@@ -254,7 +254,7 @@ const stats = computed(() => [
 
         <div v-if="loading" class="divide-y divide-line-row">
           <div v-for="i in 3" :key="i" class="flex items-center gap-4 px-4 py-3">
-            <UiSkeleton class="h-10 w-10 shrink-0 rounded-ctl" />
+            <UiSkeleton class="h-9 touch:h-11 w-9 touch:w-11 shrink-0 rounded-ctl" />
             <UiSkeleton class="h-3.5 w-40 rounded-ctlSm" />
             <UiSkeleton class="h-5 w-20 rounded-pill" />
           </div>
@@ -272,7 +272,7 @@ const stats = computed(() => [
             :class="isCancelled(appt) ? 'opacity-60' : ''"
           >
             <!-- Date block -->
-            <div class="flex h-10 w-10 shrink-0 flex-col items-center justify-center rounded-ctl border border-line bg-surface-subtle2">
+            <div class="flex h-9 touch:h-11 w-9 touch:w-11 shrink-0 flex-col items-center justify-center rounded-ctl border border-line bg-surface-subtle2">
               <span class="font-mono text-[14px] font-semibold leading-none text-ink-900">{{ dateBlock(appt.starts_at).day }}</span>
               <span class="mt-0.5 text-[9.5px] uppercase leading-none text-ink-muted2">{{ dateBlock(appt.starts_at).month }}</span>
             </div>

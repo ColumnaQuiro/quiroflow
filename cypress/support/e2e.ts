@@ -8,3 +8,15 @@ import './commands'
 Cypress.on('uncaught:exception', (err) => {
   if (/ResizeObserver loop/.test(err.message)) return false
 })
+
+// cy.useTouchScreen() emulates through Chrome's DevTools protocol, which a
+// new test does not reset -- switch it off so it cannot leak into the next.
+afterEach(() => {
+  cy.wrap(
+    Cypress.automation('remote:debugger:protocol', {
+      command: 'Emulation.setTouchEmulationEnabled',
+      params: { enabled: false },
+    }).catch(() => null),
+    { log: false },
+  )
+})

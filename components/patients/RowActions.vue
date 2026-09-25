@@ -51,7 +51,7 @@ const items = computed(() => [
       :aria-label="`${t('Actions for', 'Acciones para')} ${patientName}`"
       :aria-expanded="open"
       aria-haspopup="menu"
-      class="inline-flex h-11 w-11 items-center justify-center rounded-ctlSm text-ink-faint outline-none hover:bg-surface-subtle hover:text-ink-700 focus-visible:shadow-focus lg:h-[26px] lg:w-[26px]"
+      class="inline-flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-ctlSm text-ink-faint outline-none hover:bg-surface-subtle hover:text-ink-700 focus-visible:shadow-focus lg:h-[26px] lg:w-[26px]"
       @click.stop="open = !open"
     >
       <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" class="h-[15px] w-[15px]">

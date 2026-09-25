@@ -19,12 +19,26 @@ export default defineEventHandler(async (event) => {
 
   if (!lead) throw createError({ statusCode: 404, statusMessage: 'Lead not found' })
 
-  const { data: messages } = await supabase
+  // The NEWEST 200, shown oldest first. Ascending with a limit returned the
+  // first 200 ever, so a long conversation lost exactly the messages someone
+  // was about to answer.
+  const { data: newest } = await supabase
     .from('whatsapp_messages')
-    .select('id, direction, body_preview, channel, status, created_at, template_name')
+    .select('id, direction, body_preview, channel, status, created_at, template_name, media_type, media_storage_path, media_filename')
     .eq('lead_id', id)
-    .order('created_at', { ascending: true })
+    .order('created_at', { ascending: false })
     .limit(200)
+  const messages = [...(newest ?? [])].reverse()
+
+  // Photos, voice notes and documents a lead sends: signed here, as the
+  // patient thread signs them in the browser, so they show rather than
+  // arriving as empty bubbles.
+  const mediaPaths = [...new Set(messages.map((m) => m.media_storage_path).filter((p): p is string => !!p))]
+  const mediaUrls: Record<string, string> = {}
+  if (mediaPaths.length) {
+    const { data: signed } = await supabase.storage.from('whatsapp-media').createSignedUrls(mediaPaths, 60 * 30)
+    for (const row of signed ?? []) if (row.path && row.signedUrl) mediaUrls[row.path] = row.signedUrl
+  }
 
   // The 24h customer-service window decides whether a free-text reply is even
   // possible, so the composer needs to know before it lets someone type a
@@ -74,7 +88,7 @@ export default defineEventHandler(async (event) => {
     draft: lead.ai_draft_body,
     draftAt: lead.ai_draft_created_at,
     receptionistEnabled: receptionist?.enabled ?? false,
-    messages: (messages ?? []).map((message) => ({
+    messages: messages.map((message) => ({
       id: message.id,
       // A lead's own messages are inbound; everything outbound came from the
       // clinic. Which human or model sent it is not recorded on the row, so
@@ -85,6 +99,9 @@ export default defineEventHandler(async (event) => {
       status: message.status,
       at: message.created_at,
       templateName: message.template_name,
+      mediaType: message.media_type,
+      mediaUrl: message.media_storage_path ? (mediaUrls[message.media_storage_path] ?? null) : null,
+      mediaFilename: message.media_filename,
     })),
   }
 })

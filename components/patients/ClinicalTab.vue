@@ -183,7 +183,7 @@ const goalChips = computed(() =>
         </div>
 
         <div v-if="loading" class="space-y-3 p-4">
-          <UiSkeleton v-for="i in 3" :key="i" class="h-10 rounded-ctl" />
+          <UiSkeleton v-for="i in 3" :key="i" class="h-9 touch:h-11 rounded-ctl" />
         </div>
 
         <p v-else-if="notes.length === 0" class="px-4 py-8 text-center text-[13px] text-ink-faint">

@@ -34,7 +34,7 @@ function pick(id: string) {
     <button
       type="button"
       data-cy="tz-picker-button"
-      class="flex h-11 items-center gap-2.5 rounded-ctl border border-line-control bg-surface px-3 text-left text-[15px] text-ink-900 hover:border-line-controlHover"
+      class="flex h-9 touch:h-11 items-center gap-2.5 rounded-ctl border border-line-control bg-surface px-3 text-left text-[15px] text-ink-900 hover:border-line-controlHover"
       :aria-expanded="open"
       :aria-controls="listId"
       @click="toggle"
@@ -53,7 +53,7 @@ function pick(id: string) {
         data-cy="tz-picker-search"
         :aria-label="t('Search time zones', 'Buscar zona horaria')"
         :placeholder="t('Search a city, country or zone', 'Busca una ciudad, país o zona')"
-        class="h-11 rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+        class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
       />
       <span class="px-2 pt-1.5 text-[11.5px] font-bold uppercase tracking-[.04em] text-ink-muted">
         {{ query.trim() ? t('Results', 'Resultados') : t('Frequent · or search them all', 'Frecuentes · o busca entre todas') }}
@@ -67,7 +67,7 @@ function pick(id: string) {
           data-cy="tz-option"
           :data-zone="z.id"
           :aria-selected="z.id === modelValue"
-          class="flex min-h-11 items-center gap-2.5 rounded-ctlSm px-2.5 text-left text-[14px] text-ink-900"
+          class="flex min-h-9 touch:min-h-11 items-center gap-2.5 rounded-ctlSm px-2.5 text-left text-[14px] text-ink-900"
           :class="z.id === modelValue ? 'bg-brand-tint' : 'hover:bg-surface-subtle'"
           @click="pick(z.id)"
         >

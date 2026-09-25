@@ -119,11 +119,11 @@ function describe(r: RoleRow) {
         <NuxtLink
           to="/settings/roles/compare"
           data-cy="roles-compare"
-          class="inline-flex h-11 items-center rounded-ctl border border-line-control bg-surface px-3.5 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle"
+          class="inline-flex h-9 touch:h-11 items-center rounded-ctl border border-line-control bg-surface px-3.5 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle"
         >
           {{ t('Compare roles', 'Comparar roles') }}
         </NuxtLink>
-        <button type="button" data-cy="roles-new" class="h-11 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface hover:bg-brand-hover" @click="openNew">
+        <button type="button" data-cy="roles-new" class="h-9 touch:h-11 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface hover:bg-brand-hover" @click="openNew">
           {{ t('New role', 'Nuevo rol') }}
         </button>
       </div>
@@ -205,7 +205,7 @@ function describe(r: RoleRow) {
             type="text"
             maxlength="60"
             autocomplete="off"
-            class="h-11 rounded-ctl border bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            class="h-9 touch:h-11 rounded-ctl border bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
             :class="newTried && (nameEmpty || nameTaken) ? 'border-danger-text' : 'border-line-control'"
             :aria-invalid="newTried && (nameEmpty || nameTaken) ? 'true' : undefined"
             aria-describedby="role-new-name-error"
@@ -220,7 +220,7 @@ function describe(r: RoleRow) {
           <select
             v-model="copyFrom"
             data-cy="role-new-copy"
-            class="h-11 rounded-ctl border border-line-control bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           >
             <option v-for="r in roles" :key="r.id" :value="r.id">{{ displayRoleName(r.name, t) }}</option>
             <option value="">{{ t('None', 'Ninguno') }}</option>

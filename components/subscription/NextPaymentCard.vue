@@ -101,7 +101,7 @@ const eyebrow = computed(() =>
       <button
         v-if="variant !== 'active'"
         type="button"
-        class="flex h-11 w-full items-center justify-center gap-1.5 rounded-ctl text-[13.5px] font-semibold text-white outline-none focus-visible:shadow-focus lg:h-10"
+        class="flex h-9 touch:h-11 w-full items-center justify-center gap-1.5 rounded-ctl text-[13.5px] font-semibold text-white outline-none focus-visible:shadow-focus lg:h-10"
         :class="variant === 'past_due' ? 'bg-danger-text' : 'bg-brand hover:bg-brand-hover'"
         @click="emit('portal')"
       >

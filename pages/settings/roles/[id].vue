@@ -255,7 +255,7 @@ const TONES = ['bg-success-bg text-success-text', 'bg-warning-bg text-warning-te
 function initials(name: string) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('') || '·'
 }
-const inputClass = 'h-11 rounded-ctl border bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand disabled:bg-surface-subtle disabled:text-ink-muted'
+const inputClass = 'h-9 touch:h-11 rounded-ctl border bg-surface px-3 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand disabled:bg-surface-subtle disabled:text-ink-muted'
 const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
 </script>
 
@@ -339,7 +339,7 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
                   :key="m.id"
                   :to="`/settings/team/${m.id}`"
                   data-cy="role-member"
-                  class="flex h-11 items-center gap-2.5 rounded-pill border border-line pl-1.5 pr-3.5 text-[14px] font-semibold text-ink-900 hover:bg-surface-subtle"
+                  class="flex h-9 touch:h-11 items-center gap-2.5 rounded-pill border border-line pl-1.5 pr-3.5 text-[14px] font-semibold text-ink-900 hover:bg-surface-subtle"
                 >
                   <span class="inline-flex h-8 w-8 items-center justify-center rounded-full text-[12px] font-bold" :class="TONES[i % TONES.length]" aria-hidden="true">{{ initials(m.full_name) }}</span>
                   {{ m.full_name }}
@@ -386,7 +386,7 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
                 <button
                   type="button"
                   data-cy="role-delete"
-                  class="h-11 shrink-0 rounded-ctl border border-danger-border bg-surface px-3.5 text-[14px] font-semibold text-danger-text hover:bg-danger-bg"
+                  class="h-9 touch:h-11 shrink-0 rounded-ctl border border-danger-border bg-surface px-3.5 text-[14px] font-semibold text-danger-text hover:bg-danger-bg"
                   @click="openDelete"
                 >
                   {{ t('Delete…', 'Eliminar…') }}
@@ -407,10 +407,10 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
       class="absolute bottom-6 left-1/2 flex w-[min(820px,calc(100%-32px))] -translate-x-1/2 items-center gap-2.5 rounded-card bg-ink-900 py-3 pl-5 pr-3 text-surface-page shadow-popover"
     >
       <span class="flex-1 text-[14px] font-semibold">{{ t('Unsaved changes', 'Cambios sin guardar') }}</span>
-      <button type="button" data-cy="role-discard" class="h-11 rounded-ctl border border-surface-page/30 px-3.5 text-[14px] font-semibold" @click="discard">
+      <button type="button" data-cy="role-discard" class="h-9 touch:h-11 rounded-ctl border border-surface-page/30 px-3.5 text-[14px] font-semibold" @click="discard">
         {{ t('Discard', 'Descartar') }}
       </button>
-      <button type="button" data-cy="role-save" :disabled="saving" class="h-11 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface disabled:opacity-70" @click="save">
+      <button type="button" data-cy="role-save" :disabled="saving" class="h-9 touch:h-11 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface disabled:opacity-70" @click="save">
         {{ saving ? t('Saving…', 'Guardando…') : t('Save changes', 'Guardar cambios') }}
       </button>
     </div>

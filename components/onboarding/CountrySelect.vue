@@ -129,7 +129,7 @@ const listboxId = computed(() => `${props.id}-listbox`)
       :aria-expanded="open"
       :aria-controls="open ? listboxId : undefined"
       :aria-describedby="describedBy"
-      class="flex h-11 w-full items-center gap-[9px] rounded-ctl border bg-surface px-3 text-left outline-none lg:h-[38px] lg:px-[11px]"
+      class="flex h-9 touch:h-11 w-full items-center gap-[9px] rounded-ctl border bg-surface px-3 text-left outline-none lg:h-[38px] lg:px-[11px]"
       :class="open ? 'border-brand shadow-focus' : 'border-line-control focus-visible:border-brand focus-visible:shadow-focus'"
       @click="open ? closeList() : openList()"
       @keydown="onTriggerKeydown"
@@ -180,7 +180,7 @@ const listboxId = computed(() => `${props.id}-listbox`)
           role="option"
           :data-index="i"
           :aria-selected="country.code === model"
-          class="flex h-11 cursor-pointer items-center gap-2.5 rounded-ctlSm px-[9px] lg:h-[33px]"
+          class="flex h-9 touch:h-11 cursor-pointer items-center gap-2.5 rounded-ctlSm px-[9px] lg:h-[33px]"
           :class="[
             country.code === model && 'bg-brand-tint',
             i === activeIndex && country.code !== model && 'bg-surface-subtle',

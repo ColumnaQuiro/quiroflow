@@ -806,7 +806,7 @@ if (import.meta.client) {
                   @click="chooseTeamMember(m.id)"
                 >
                   <div class="flex items-center gap-3">
-                    <div class="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-brand-tint text-sm font-semibold text-brand-text">
+                    <div class="flex h-9 touch:h-11 w-9 touch:w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-brand-tint text-sm font-semibold text-brand-text">
                       <img v-if="practitionerPhotoUrl(m)" :src="practitionerPhotoUrl(m)!" class="h-full w-full object-cover" alt="" />
                       <template v-else>{{ practitionerInitials(m.full_name) }}</template>
                     </div>

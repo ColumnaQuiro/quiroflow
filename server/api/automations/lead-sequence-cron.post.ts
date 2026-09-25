@@ -1,6 +1,6 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
-import { advanceSequenceRun } from '~/server/utils/leadSequences'
+import { advanceSequenceRun, RUN_COLUMNS } from '~/server/utils/leadSequences'
 
 // Advances every lead sequence that is due.
 //
@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: due } = await supabase
     .from('automation_sequence_runs')
-    .select('id, account_id, rule_id, lead_id, next_position')
+    .select(RUN_COLUMNS)
     .eq('status', 'running')
     .lte('resume_at', new Date().toISOString())
     .order('resume_at')
@@ -44,7 +44,10 @@ export default defineEventHandler(async (event) => {
           advanced += 1
         } catch (err) {
           // One lead's sequence failing must not stop the rest of the tick.
-          // The run stays 'running' and due, so the next tick retries it.
+          // The run stays 'running' and due, so the next tick retries it. A
+          // step that fails is handled inside advanceSequenceRun (counted,
+          // retried, then parked as 'failed'); reaching here means something
+          // around it threw, which is rarer and only in the server log.
           console.error('[lead-sequence-cron] run failed:', (run as { id: string }).id, (err as Error)?.message ?? err)
         }
       }),

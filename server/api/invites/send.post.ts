@@ -82,5 +82,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 502, statusMessage: `Resend error: ${errBody}` })
   }
 
+  // So the pending list can say when it last went out.
+  await supabase.from('account_invites').update({ last_sent_at: new Date().toISOString() } as never).eq('id', invite.id)
   return { sent: true }
 })

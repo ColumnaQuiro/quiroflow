@@ -1612,9 +1612,9 @@ async function signWhatsappBody(opts: { body: string; appSecret: string }) {
 
 async function appointmentById(opts: { appointmentId: string }) {
   const row = unwrap(
-    await admin.from('appointments').select('id, status, confirmation_status, rescheduled, starts_at, ends_at, room_id, checked_in_at, deleted_at').eq('id', opts.appointmentId).single(),
+    await admin.from('appointments').select('id, status, confirmation_status, rescheduled, starts_at, ends_at, room_id, checked_in_at, practitioner_id, deleted_at').eq('id', opts.appointmentId).single(),
   )
-  return row as { id: string; status: string; confirmation_status: string | null; rescheduled: boolean; starts_at: string; ends_at: string; room_id: string | null; checked_in_at: string | null; deleted_at: string | null }
+  return row as { id: string; status: string; confirmation_status: string | null; rescheduled: boolean; starts_at: string; ends_at: string; room_id: string | null; checked_in_at: string | null; practitioner_id: string | null; deleted_at: string | null }
 }
 
 /**
@@ -2440,6 +2440,22 @@ async function makeSequenceDue(opts: { leadId: string }) {
   return { ok: true }
 }
 
+/** A run's execution history, oldest first -- what the Executions tab reads. */
+async function runEvents(opts: { runId: string }) {
+  const { data } = await admin
+    .from('automation_run_events')
+    .select('outcome, position, action_type, step_label, detail, actor_team_member_id')
+    .eq('run_id', opts.runId)
+    .order('created_at')
+  return data ?? []
+}
+
+/** Rewrites one step of a rule, the way fixing it in Campaigns would. */
+async function setAutomationActionConfig(opts: { ruleId: string; position: number; config: Record<string, unknown> }) {
+  assertOk(await admin.from('automation_actions').update({ config: opts.config }).eq('rule_id', opts.ruleId).eq('position', opts.position))
+  return { ok: true }
+}
+
 /**
  * A busy week in two inserts: `count` patients, one 30-minute visit each,
  * spread Monday-Friday from 09:00, plus the patients' ids in visit order.
@@ -2627,9 +2643,23 @@ async function setAppointmentStatus(opts: { appointmentId: string; status: strin
 /** What /account saves on a team member, read back. */
 async function teamMemberById(opts: { teamMemberId: string }) {
   const row = unwrap(
-    await admin.from('team_members').select('full_name, color, language_preference, theme_preference, deleted_at, is_owner').eq('id', opts.teamMemberId).single(),
+    await admin
+      .from('team_members')
+      .select('full_name, color, language_preference, theme_preference, deleted_at, is_owner, role_id, is_practitioner, online_booking_enabled')
+      .eq('id', opts.teamMemberId)
+      .single(),
   )
-  return row as { full_name: string; color: string; language_preference: string; theme_preference: string; deleted_at: string | null; is_owner: boolean }
+  return row as {
+    full_name: string
+    color: string
+    language_preference: string
+    theme_preference: string
+    deleted_at: string | null
+    is_owner: boolean
+    role_id: string | null
+    is_practitioner: boolean
+    online_booking_enabled: boolean
+  }
 }
 
 /** A patient's invoices with their lines -- what a fee left behind. */
@@ -2643,6 +2673,78 @@ async function invoicesFor(opts: { patientId: string }) {
 async function setCancellationFee(opts: { accountId: string; cents: number | null }) {
   assertOk(await admin.from('accounts').update({ cancellation_fee_cents: opts.cents }).eq('id', opts.accountId))
   return { ok: true }
+}
+
+// --- Settings > Team --------------------------------------------------------
+
+/** Everything the member page edits, plus whether auth has them banned. */
+async function teamMemberDetail(opts: { teamMemberId: string }) {
+  const row = unwrap(
+    await admin
+      .from('team_members')
+      .select('full_name, color, role_id, is_practitioner, online_booking_enabled, business_hours, deleted_at, is_owner, user_id')
+      .eq('id', opts.teamMemberId)
+      .single(),
+  )
+  const clinics = unwrap(await admin.from('team_member_clinics').select('clinic_id').eq('team_member_id', opts.teamMemberId))
+  let bannedUntil: string | null = null
+  if (row.user_id) {
+    const { data } = await admin.auth.admin.getUserById(row.user_id)
+    bannedUntil = (data.user as { banned_until?: string } | null)?.banned_until ?? null
+  }
+  return { ...row, clinicIds: (clinics as { clinic_id: string }[]).map((c) => c.clinic_id), bannedUntil }
+}
+
+/** Appointments imported from PracticeHub carry only the practitioner's name. */
+async function createImportedAppointments(opts: { accountId: string; clinicId: string; patientId: string; practitionerName: string; count: number }) {
+  const rows = Array.from({ length: opts.count }, (_, i) => {
+    const starts = new Date(Date.UTC(2026, 0, 5 + i, 9))
+    return {
+      account_id: opts.accountId,
+      clinic_id: opts.clinicId,
+      patient_id: opts.patientId,
+      practitioner_id: null,
+      practitioner_name: opts.practitionerName,
+      starts_at: starts.toISOString(),
+      ends_at: new Date(starts.getTime() + 30 * 60000).toISOString(),
+      status: 'completed',
+    }
+  })
+  assertOk(await admin.from('appointments').insert(rows))
+  return { created: opts.count }
+}
+
+/** How many appointments under an imported name are linked, and to whom. */
+async function importedAppointmentsLinks(opts: { accountId: string; practitionerName: string }) {
+  const rows = unwrap(await admin.from('appointments').select('practitioner_id').eq('account_id', opts.accountId).eq('practitioner_name', opts.practitionerName))
+  return (rows as { practitioner_id: string | null }[]).map((r) => r.practitioner_id)
+}
+
+/** The newest invite on an account, as Settings > Team wrote it. */
+async function latestInvite(opts: { accountId: string }) {
+  const row = unwrap(
+    await admin
+      .from('account_invites')
+      .select('id, token, email, full_name, role, role_id, is_practitioner, clinic_ids, link_practitioner_name, last_sent_at')
+      .eq('account_id', opts.accountId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single(),
+  )
+  return row
+}
+
+/** Accept an invite as a signed-in user, the way /join does. */
+async function acceptInviteAs(opts: { email: string; password: string; token: string }) {
+  const userClient = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+  const { error: signInErr } = await userClient.auth.signInWithPassword({ email: opts.email, password: opts.password })
+  if (signInErr) throw signInErr
+  const { error } = await userClient.rpc('accept_invite' as never, { p_token: opts.token } as never)
+  if (error) throw error
+  const { data: me } = await userClient.auth.getUser()
+  const member = unwrap(await admin.from('team_members').select('id, is_practitioner, role_id').eq('user_id', me.user!.id).single())
+  const clinics = unwrap(await admin.from('team_member_clinics').select('clinic_id').eq('team_member_id', member.id))
+  return { ...member, clinicIds: (clinics as { clinic_id: string }[]).map((c) => c.clinic_id) }
 }
 
 // --- Two-factor login ------------------------------------------------------
@@ -2794,6 +2896,8 @@ export const dbTasks = {
   'db:createFacturaWithoutTax': createFacturaWithoutTax,
   'db:huellaFor': huellaFor,
   'db:facturaRecordsFor': facturaRecordsFor,
+  'db:runEvents': runEvents,
+  'db:setAutomationActionConfig': setAutomationActionConfig,
   'db:updateClinic': updateClinic,
   'db:createClinic': createClinic,
   'db:tryChangeFacturaIssuer': tryChangeFacturaIssuer,
@@ -2835,6 +2939,11 @@ export const dbTasks = {
   'db:addClinic': addClinic,
   'db:recallState': recallState,
   'db:teamMemberById': teamMemberById,
+  'db:teamMemberDetail': teamMemberDetail,
+  'db:createImportedAppointments': createImportedAppointments,
+  'db:importedAppointmentsLinks': importedAppointmentsLinks,
+  'db:latestInvite': latestInvite,
+  'db:acceptInviteAs': acceptInviteAs,
   'db:clinicRow': clinicRow,
   'db:clinicClosures': clinicClosures,
   'db:seedInboxConversations': seedInboxConversations,

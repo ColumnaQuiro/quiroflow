@@ -5,7 +5,9 @@ import { WEEK, copyMondayToWeekdays, type HoursProblem } from '~/utils/clinicHou
 // A week of opening hours, edited in place on clinics.business_hours' own
 // shape. A closed day is an empty list, exactly as the calendar and the
 // booking page already read it.
-const props = defineProps<{ modelValue: BusinessHours; problems: Record<string, HoursProblem> }>()
+// emptyNote replaces the clinic's explanation of an empty week, for a
+// practitioner's own hours, where an empty week means something else.
+const props = defineProps<{ modelValue: BusinessHours; problems: Record<string, HoursProblem>; emptyNote?: string }>()
 const emit = defineEmits<{ 'update:modelValue': [BusinessHours] }>()
 const t = useT()
 const { preference } = useLang()
@@ -56,7 +58,7 @@ function problemText(p: HoursProblem) {
     not "closed all week": the calendar then marks nothing as out of hours.
     Online booking still needs hours from somewhere, so say where. -->
     <p v-if="WEEK.every((d) => (modelValue[d.key] ?? []).length === 0)" class="rounded-ctl border border-line bg-surface-subtle px-3.5 py-3 text-[13.5px] leading-snug text-ink-700" data-cy="hours-not-set">
-      {{ t('No opening hours yet. The calendar marks no time as closed, and online booking only offers practitioners who have hours of their own. Switch on the days you open.', 'Aún sin horario. El calendario no marca ninguna hora como cerrada, y la reserva online solo ofrece a los profesionales con horario propio. Activa los días que abrís.') }}
+      {{ emptyNote ?? t('No opening hours yet. The calendar marks no time as closed, and online booking only offers practitioners who have hours of their own. Switch on the days you open.', 'Aún sin horario. El calendario no marca ninguna hora como cerrada, y la reserva online solo ofrece a los profesionales con horario propio. Activa los días que abrís.') }}
     </p>
     <div class="overflow-hidden rounded-card border border-line">
       <div

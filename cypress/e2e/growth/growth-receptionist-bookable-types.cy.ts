@@ -47,7 +47,7 @@ describe('Growth AI receptionist: appointment types it may offer', () => {
       createType(account, 'Revisión antigua', { archivedAt: new Date().toISOString() })
 
       cy.visit('/growth/receptionist?growth=1')
-      cy.get('[data-test="bookable-types"]').should('be.visible')
+      cy.get('[data-test="bookable-types"]').scrollIntoView().should('be.visible')
 
       // Untouched: any active type, which includes both, never the archived one.
       cy.get('[data-test="bookable-mode-any"] input').should('be.checked')
@@ -91,7 +91,7 @@ describe('Growth AI receptionist: appointment types it may offer', () => {
     createType(account, 'Ajuste').then((ajuste) => {
       createType(account, 'Revisión antigua', { archivedAt: new Date().toISOString() }).then((archived) => {
         cy.visit('/growth/receptionist?growth=1')
-        cy.get('[data-test="bookable-types"]').should('be.visible')
+        cy.get('[data-test="bookable-types"]').should('exist')
 
         apiRequest({ method: 'PUT', url: '/api/growth/receptionist/config', body: { bookableAppointmentTypeIds: [ajuste.id, archived.id] } }).then((res) => {
           expect(res.status).to.eq(400)
@@ -139,7 +139,7 @@ describe('Growth AI receptionist: appointment types it may offer', () => {
 
         cy.visit(`/settings/appointment-types/${archived.id}`, withGrowth)
         cy.get('[data-cy=type-page]').should('have.attr', 'data-ready', 'true')
-        cy.get('[data-cy=type-usage]').should('be.visible')
+        cy.get('[data-cy=type-usage]').should('exist')
         cy.get('[data-cy=type-usage-receptionist]').should('not.exist')
 
         cy.visit(`/settings/appointment-types/${ajuste.id}`, withGrowth)

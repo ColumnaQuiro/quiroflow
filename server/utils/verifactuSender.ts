@@ -48,6 +48,7 @@ import {
   type BlockedReason,
   type SenderConfig,
   buildRegFactuEnvelope,
+  chooseChain,
   parseVerifactuResponse,
   transmissionBlockedBy,
   verifactuEndpoint,
@@ -210,7 +211,23 @@ export async function sendPendingRecords(
   // not going out again until someone looks at them.
   const owed = (pendingRaw ?? []) as PendingRecord[]
   const parked = owed.filter((p) => p.parked).length
-  const pending = owed.filter((p) => !p.parked).slice(0, MAX_RECORDS_PER_SUBMISSION)
+  const sendable = owed.filter((p) => !p.parked)
+
+  // One chain per submission, sent to that chain's own service -- see
+  // chooseChain. The test chain drains first; the production one waits until
+  // the sender is configured for production.
+  const { data: chainRows } = sendable.length
+    ? await supabase.from('factura_records').select('id, environment').in('id', sendable.map((p) => p.factura_record_id))
+    : { data: [] as { id: string; environment: string }[] }
+  const environmentOf = new Map((chainRows ?? []).map((r) => [r.id, r.environment === 'production' ? 'production' : 'test'] as const))
+  const chain = chooseChain(
+    sendable.map((p) => ({ sequence: p.sequence, environment: environmentOf.get(p.factura_record_id) ?? 'test' })),
+    config.environment,
+  )
+  if (chain.blocked === 'production-not-enabled') return { sent: 0, parked, blocked: chain.blocked, estadoEnvio: null }
+  const pending = sendable
+    .filter((p) => (environmentOf.get(p.factura_record_id) ?? 'test') === chain.environment)
+    .slice(0, MAX_RECORDS_PER_SUBMISSION)
 
   const { data: readyAtRaw } = await supabase.rpc('factura_submission_ready_at', { p_account_id: accountId })
   const readyAt = new Date((readyAtRaw as unknown as string) ?? Date.now())
@@ -220,7 +237,10 @@ export async function sendPendingRecords(
   // and a stale env var silently taking precedence over it is the bug this
   // ordering prevents.
   const stored = await certificateFor(supabase, accountId)
-  const effective: SenderConfig = stored ? { ...config, ...stored } : config
+  // The chain decides the service, not the configuration alone: once the
+  // sender is set to production, a test record still owed goes to the test
+  // service it was chained for.
+  const effective: SenderConfig = { ...config, ...(stored ?? {}), environment: chain.environment ?? config.environment }
 
   const blocked = transmissionBlockedBy({ config: effective, pendingCount: pending.length, readyAt })
   if (blocked) return { sent: 0, parked, blocked, estadoEnvio: null }
@@ -522,10 +542,15 @@ async function buildRecordsFor(
 
     // The predecessor in full: the AEAT re-walks the chain, so its huella
     // alone does not identify it.
+    //
+    // Within the same chain. The first production record has none, and goes
+    // as PrimerRegistro -- naming the last TEST record here would point the
+    // production service at a record it never received.
     const { data: prev } = await supabase
       .from('factura_records')
       .select('issuer_nif, serie_number, issued_on')
       .eq('account_id', accountId)
+      .eq('environment', config.environment)
       .lt('sequence', r.sequence)
       .order('sequence', { ascending: false })
       .limit(1)

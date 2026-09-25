@@ -162,6 +162,7 @@ export type BlockedReason =
   | 'certificate-expired'
   | 'nothing-to-send'
   | 'waiting-on-aeat-pace'
+  | 'production-not-enabled'
 
 /**
  * Why this account cannot transmit right now, or null if it can.
@@ -209,6 +210,35 @@ export function transmissionBlockedBy(input: {
   if (input.pendingCount < MAX_RECORDS_PER_SUBMISSION && now < input.readyAt) return 'waiting-on-aeat-pace'
 
   return null
+}
+
+export type VerifactuEnvironment = SenderConfig['environment']
+
+/**
+ * Which of an account's two chains this submission is for.
+ *
+ * An account has a test chain and, from `accounts.verifactu_production_from`
+ * on, a production chain that starts again from nothing (see the
+ * verifactu_production_chain migration). A submission carries one chain only,
+ * and goes to that chain's service: a test record must never reach
+ * production, which would hold a record whose RegistroAnterior it never
+ * received, and a production record must never be spent on the test service.
+ *
+ * The oldest owed record decides, so a test backlog still drains in order
+ * before production starts. A production record is only sent once the sender
+ * is configured for production -- reaching it stays a deliberate act of
+ * configuration -- and until then it waits, owed, with the reason given.
+ */
+export function chooseChain(
+  pending: { sequence: number; environment: VerifactuEnvironment }[],
+  configured: VerifactuEnvironment,
+): { environment: VerifactuEnvironment | null; blocked: BlockedReason | null } {
+  if (pending.length === 0) return { environment: null, blocked: 'nothing-to-send' }
+  const oldest = [...pending].sort((a, b) => a.sequence - b.sequence)[0]
+  if (oldest.environment === 'production' && configured !== 'production') {
+    return { environment: 'production', blocked: 'production-not-enabled' }
+  }
+  return { environment: oldest.environment, blocked: null }
 }
 
 /** AEAT's per-record verdicts, unchanged -- the same strings #326 stores. */

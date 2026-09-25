@@ -259,6 +259,32 @@ describe('Settings > Team', () => {
     })
   })
 
+  // Closing your own login only set deleted_at, and the web booking page
+  // filters on online_booking_enabled -- so a practitioner who left that way
+  // stayed bookable online. Leaving now switches it off, whichever way.
+  it('stops offering someone for online booking once they close their own login', () => {
+    cy.seedStaffAccount().then((account) => {
+      const email = `leaving-${Date.now()}@example.test`
+      cy.task<{ teamMemberId: string }>('db:createTeamMemberWithRole', {
+        accountId: account.accountId,
+        clinicId: account.clinicId,
+        roleName: 'Practitioner',
+        email,
+        password: 'Test1234!',
+        fullName: 'Pepa Sevaya',
+        isPractitioner: true,
+      }).then((member) => {
+        cy.task('db:teamMemberDetail', { teamMemberId: member.teamMemberId }).its('online_booking_enabled').should('eq', true)
+        cy.login(email, 'Test1234!')
+        cy.request({ method: 'POST', url: '/api/account/delete' }).its('status').should('eq', 200)
+        cy.task<any>('db:teamMemberDetail', { teamMemberId: member.teamMemberId }).then((m) => {
+          expect(m.deleted_at, 'left').to.be.a('string')
+          expect(m.online_booking_enabled, 'no longer bookable online').to.eq(false)
+        })
+      })
+    })
+  })
+
   it('lets an owner make someone else an owner, and refuses deactivating yourself', () => {
     cy.seedStaffAccount().then((account) => {
       cy.task<{ teamMemberId: string }>('db:createTeamMemberWithRole', {

@@ -390,7 +390,7 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
                   <template v-if="withOwnHours.length > 0 && withoutOwnHours.length > 0">
                     {{ t(`Using these: ${withoutOwnHours.map((p) => p.full_name).join(', ')}.`, `Usan el de la sede: ${withoutOwnHours.map((p) => p.full_name).join(', ')}.`) }}
                   </template>
-                  <NuxtLink to="/settings/team" class="font-semibold text-brand-text hover:underline">{{ t('See hours in Team Members', 'Ver horarios en Miembros del equipo') }}</NuxtLink>
+                  <NuxtLink to="/settings/team" class="font-semibold text-brand-text hover:underline">{{ t('See hours in Team', 'Ver horarios en Equipo') }}</NuxtLink>
                 </span>
               </div>
             </section>

@@ -170,6 +170,9 @@ export type Database = {
           role: string
           role_id: string | null
           token: string
+          clinic_ids: string[] | null
+          is_practitioner: boolean | null
+          last_sent_at: string | null
         }
         Insert: {
           accepted_at?: string | null
@@ -182,6 +185,9 @@ export type Database = {
           role?: string
           role_id?: string | null
           token?: string
+          clinic_ids?: string[] | null
+          is_practitioner?: boolean | null
+          last_sent_at?: string | null
         }
         Update: {
           accepted_at?: string | null
@@ -194,6 +200,9 @@ export type Database = {
           role?: string
           role_id?: string | null
           token?: string
+          clinic_ids?: string[] | null
+          is_practitioner?: boolean | null
+          last_sent_at?: string | null
         }
         Relationships: [
           {

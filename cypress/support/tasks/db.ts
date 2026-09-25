@@ -2978,7 +2978,32 @@ async function passwordOnlyReads({ email, password }: { email: string; password:
   }
 }
 
+// Puts an account live with a date already past and issues one factura, so
+// its first PRODUCTION record exists -- the state in which Settings >
+// VeriFactu has to refuse to move the date or leave 'live'. Straight to the
+// database: the settings endpoint rightly refuses a date in the past.
+async function startProductionChain({ accountId, clinicId }: { accountId: string; clinicId: string }) {
+  assertOk(await admin.from('accounts').update({ verifactu_mode: 'live', verifactu_production_from: new Date(Date.now() - 60_000).toISOString() } as never).eq('id', accountId))
+  const patient = unwrap(await admin.from('patients').insert({ account_id: accountId, clinic_id: clinicId, first_name: 'Primer', last_name: 'Registro' } as never).select('id').single()) as { id: string }
+  const payment = unwrap(await admin.from('payments').insert({ account_id: accountId, patient_id: patient.id, amount_cents: 4400, method: 'card' } as never).select('id').single()) as { id: string }
+  const factura = unwrap(
+    await admin
+      .from('facturas')
+      .insert({ account_id: accountId, patient_id: patient.id, payment_id: payment.id, number: `F-TEST-${Date.now()}`, kind: 'simplified', description: 'Consulta', amount_cents: 4400 } as never)
+      .select('id')
+      .single(),
+  ) as { id: string }
+  const record = unwrap(await admin.from('factura_records').select('environment, previous_huella').eq('factura_id', factura.id).single()) as { environment: string; previous_huella: string | null }
+  return record
+}
+
+async function verifactuSettingsOf({ accountId }: { accountId: string }) {
+  return unwrap(await admin.from('accounts').select('verifactu_mode, verifactu_production_from').eq('id', accountId).single())
+}
+
 export const dbTasks = {
+  'db:verifactuSettingsOf': verifactuSettingsOf,
+  'db:startProductionChain': startProductionChain,
   'totp:code': totpCode,
   'db:setRequireTwoFactor': setRequireTwoFactor,
   'db:passwordOnlyReads': passwordOnlyReads,

@@ -359,6 +359,8 @@ export type Database = {
           factura_tax_rate_bp: number
           factura_tax_exemption_code: string | null
           slug: string
+          verifactu_mode: string
+          verifactu_production_from: string | null
           require_two_factor: boolean
           default_phone_country: string
           stripe_connect_account_id: string | null
@@ -439,6 +441,8 @@ export type Database = {
           factura_tax_rate_bp?: number
           factura_tax_exemption_code?: string | null
           slug: string
+          verifactu_mode?: string
+          verifactu_production_from?: string | null
           require_two_factor?: boolean
           stripe_connect_account_id?: string | null
           stripe_publishable_key?: string | null
@@ -518,6 +522,8 @@ export type Database = {
           factura_tax_rate_bp?: number
           factura_tax_exemption_code?: string | null
           slug?: string
+          verifactu_mode?: string
+          verifactu_production_from?: string | null
           require_two_factor?: boolean
           default_phone_country?: string
           stripe_connect_account_id?: string | null
@@ -2205,6 +2211,7 @@ export type Database = {
         Row: {
           account_id: string
           created_at: string
+          environment: string
           cuota_total_cents: number
           factura_id: string
           generated_at: string
@@ -2223,6 +2230,7 @@ export type Database = {
         Insert: {
           account_id: string
           created_at?: string
+          environment?: string
           cuota_total_cents: number
           factura_id: string
           generated_at?: string

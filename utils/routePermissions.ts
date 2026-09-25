@@ -38,6 +38,9 @@ const rules: Rule[] = [
       p.startsWith('/settings/appointment-types/'),
     check: (s) => can(s, 'settings_access') && can(s, 'clinic_config'),
   },
+  // Owners only, whatever the role: whether the clinic's records go to the
+  // AEAT, and under whose certificate, is the company's own decision.
+  { test: (p) => p === '/settings/verifactu', check: (s) => s.isOwner },
   {
     test: (p) => ['/settings/services', '/settings/packages', '/settings/memberships', '/settings/payments', '/settings/fiscal-data'].includes(p),
     check: (s) => can(s, 'settings_access') && can(s, 'billing_config'),

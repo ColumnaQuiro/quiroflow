@@ -162,7 +162,10 @@ export const practitionersResource: ApiResource = {
 export const clinicsResource: ApiResource = {
   table: 'clinics',
   scope: 'catalog:read',
-  select: 'id, name, legal_name, address, tax_id, timezone, business_hours, slot_duration_minutes, online_booking_enabled, created_at',
+  select: 'id, name, legal_name, address, phone, email, tax_id, timezone, business_hours, slot_duration_minutes, online_booking_enabled, created_at',
+  // An archived clinic (Settings -> Clinics -> Archivar) is a location the
+  // practice has closed: nothing can be booked there, so it is not listed.
+  baseFilters: [{ column: 'archived_at', op: 'is_null' }],
   filterable: { id: 'uuid', name: 'string', online_booking_enabled: 'boolean', ...TIMESTAMPS },
   sortable: ['name', 'created_at'],
   defaultOrder: { column: 'name', ascending: true },
@@ -171,6 +174,8 @@ export const clinicsResource: ApiResource = {
     name: row.name,
     legal_name: row.legal_name,
     address: row.address,
+    phone: row.phone,
+    email: row.email,
     tax_id: row.tax_id,
     // IANA name. Every timestamp the API returns is UTC ISO 8601; this is
     // what business_hours' wall-clock strings are relative to.

@@ -363,7 +363,21 @@ const leadConversationsInView = computed(() => {
   return list
 })
 
-const visibleLeadConversations = computed(() => (sourceFilter.value === 'patients' ? [] : leadConversationsInView.value))
+const visibleLeadConversations = computed(() => {
+  if (sourceFilter.value === 'patients') return []
+  if (tab.value === 'mine') return leadConversationsInView.value.filter((c) => leadOwners.value[c.key] === myId.value)
+  if (tab.value === 'unassigned') return leadConversationsInView.value.filter((c) => !leadOwners.value[c.key])
+  return leadConversationsInView.value
+})
+// The tabs count leads too, so "Mine · 3" means three rows under it.
+const tabCounts = computed(() => {
+  const leads = view.value === 'archived' ? [] : leadConversationsInView.value
+  return {
+    all: counts.value.all + leads.length,
+    mine: counts.value.mine + leads.filter((c) => leadOwners.value[c.key] === myId.value).length,
+    unassigned: counts.value.unassigned + leads.filter((c) => !leadOwners.value[c.key]).length,
+  }
+})
 
 const aiHandlingCount = computed(() => leadConversations.value.filter((c) => c.aiState === 'handling').length)
 const needsHumanCount = computed(() => leadConversations.value.filter((c) => c.aiState === 'needs_human' || c.aiState === 'blocked').length)
@@ -389,11 +403,39 @@ const selectedLead = computed(() => {
   return leadConversations.value.find((c) => c.key === selectedKey.value) ?? null
 })
 
+// Leads join the same per-person read status and team assignment as patient
+// threads, keyed lead:<id> in inbox_reads and inbox_assignments. Their list
+// comes from the Growth endpoint, so both are read here and applied to it.
+const leadReads = ref<Record<string, string>>({})
+const leadOwners = ref<Record<string, string>>({})
+async function loadLeadState() {
+  if (!hasGrowth.value || !store.accountId || !myId.value) return
+  const [reads, owners] = await Promise.all([
+    supabase.from('inbox_reads').select('conversation_key, last_read_at').eq('team_member_id', myId.value).like('conversation_key', 'lead:%'),
+    supabase.from('inbox_assignments').select('conversation_key, team_member_id').eq('account_id', store.accountId).like('conversation_key', 'lead:%'),
+  ])
+  leadReads.value = Object.fromEntries((reads.data ?? []).map((r) => [r.conversation_key, r.last_read_at]))
+  leadOwners.value = Object.fromEntries((owners.data ?? []).map((r) => [r.conversation_key, r.team_member_id]))
+}
+watch([hasGrowth, () => store.teamMember], () => loadLeadState(), { immediate: true })
+// The endpoint calls a lead unread whenever they wrote last; read since then
+// (by me) it is not.
+watch([leadConversations, leadReads], () => {
+  for (const c of leadConversations.value) {
+    const readAt = leadReads.value[c.key]
+    if (c.unread && readAt && readAt >= c.lastMessageAt) c.unread = false
+  }
+})
+
 function selectLeadConversation(c: { key: string; leadId: string }) {
   draftConversation.value = null
   selectedKey.value = c.key
   const match = leadConversations.value.find((l) => l.key === c.key)
-  if (match) match.unread = false
+  if (match?.unread) {
+    match.unread = false
+    leadReads.value = { ...leadReads.value, [c.key]: new Date().toISOString() }
+    setReadAt([c.key], new Date().toISOString())
+  }
   loadLeadThread(c.leadId)
 }
 
@@ -639,6 +681,17 @@ const route = useRoute()
 onMounted(async () => {
   const key = route.query.open
   if (typeof key !== 'string') return
+  if (key.startsWith('lead:')) {
+    // Lead rows arrive from the Growth endpoint, after mount.
+    const stop = watch(leadConversations, (list) => {
+      const lead = list.find((c) => c.key === key)
+      if (lead) {
+        stop()
+        selectLeadConversation(lead)
+      }
+    }, { immediate: true })
+    return
+  }
   const { data } = await supabase.from('inbox_conversations').select('*').eq('conversation_key', key).maybeSingle()
   if (!data) return
   openedRow.value = data as unknown as InboxRow
@@ -674,11 +727,21 @@ function toggleArchiveSelected(key: string) {
 
 // Who is looking after a conversation. Shared by the whole team, unlike the
 // three above; null takes it off whoever had it.
-const assignMenuFor = ref<'thread' | 'bulk' | null>(null)
+const assignMenuFor = ref<'thread' | 'bulk' | 'lead' | null>(null)
+// Below 1280px there is no room for the patient panel beside the thread, so
+// it opens over it from the header instead.
+const panelOpen = ref(false)
+watch(selectedKey, () => (panelOpen.value = false))
 async function assign(keys: string[], memberId: string | null) {
   assignMenuFor.value = null
   if (keys.length === 0 || !store.accountId) return
   rows.value = rows.value.map((r) => (keys.includes(r.conversation_key) ? { ...r, assigned_to: memberId } : r))
+  const owners = { ...leadOwners.value }
+  for (const k of keys.filter((k) => k.startsWith('lead:'))) {
+    if (memberId) owners[k] = memberId
+    else delete owners[k]
+  }
+  leadOwners.value = owners
   if (openedRow.value && keys.includes(openedRow.value.conversation_key)) openedRow.value = { ...openedRow.value, assigned_to: memberId }
   if (memberId) {
     await supabase
@@ -1220,9 +1283,9 @@ function avatarInitials(name: string) {
             <div v-if="view === 'active'" role="tablist" :aria-label="t('Whose', 'De quién')" class="flex rounded-ctl bg-chip-bg p-[3px]">
               <button
                 v-for="tb in [
-                  { key: 'all', label: t('All', 'Todas'), count: counts.all },
-                  { key: 'mine', label: t('Mine', 'Mías'), count: counts.mine },
-                  { key: 'unassigned', label: t('Unassigned', 'Sin asignar'), count: counts.unassigned },
+                  { key: 'all', label: t('All', 'Todas'), count: tabCounts.all },
+                  { key: 'mine', label: t('Mine', 'Mías'), count: tabCounts.mine },
+                  { key: 'unassigned', label: t('Unassigned', 'Sin asignar'), count: tabCounts.unassigned },
                 ]"
                 :key="tb.key"
                 type="button"
@@ -1436,6 +1499,13 @@ function avatarInitials(name: string) {
                 <span v-else-if="c.aiState === 'paused'" class="rounded-pill border border-chip-border bg-chip-bg px-2 py-px text-[11.5px] text-ink-muted">{{ t('AI paused', 'IA en pausa') }}</span>
                 <span v-else-if="c.aiState === 'needs_human'" class="rounded-pill border border-warning-border bg-warning-bg px-2 py-px text-[11.5px] font-medium text-warning-text">{{ t('Needs human', 'Requiere persona') }}</span>
                 <span v-else-if="c.aiState === 'blocked'" class="rounded-pill border border-danger-border bg-danger-bg px-2 py-px text-[11.5px] font-medium text-danger-text">{{ t('Blocked', 'Bloqueado') }}</span>
+                <span class="flex-1" />
+                <span
+                  v-if="leadOwners[c.key]"
+                  class="flex h-[22px] min-w-[22px] items-center justify-center rounded-full border border-chip-border bg-chip-bg px-1 text-[10px] font-bold text-ink-700"
+                  :title="t(`Assigned to ${memberName(leadOwners[c.key])}`, `Asignada a ${memberName(leadOwners[c.key])}`)"
+                  data-cy="lead-row-owner"
+                >{{ memberInitials(leadOwners[c.key]) }}</span>
               </div>
             </div>
           </button>
@@ -1514,6 +1584,32 @@ function avatarInitials(name: string) {
       with the block below on purpose: that one sends through the WhatsApp
       API against a real patient row, and a lead has neither. -->
       <template v-else-if="selectedLead">
+        <div class="flex min-w-0 flex-1 flex-col">
+        <!-- Leads are assigned like any other conversation. -->
+        <div class="flex shrink-0 items-center justify-end gap-2 border-b border-line bg-surface px-3 py-2" data-assign-menu>
+          <span class="text-[13px] text-ink-muted">{{ t('Assigned to', 'Asignada a') }}</span>
+          <div class="relative">
+            <button
+              type="button"
+              data-cy="lead-assign"
+              aria-haspopup="menu"
+              :aria-expanded="assignMenuFor === 'lead'"
+              class="flex h-11 items-center gap-2 rounded-ctl border border-line-control bg-surface px-3 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle"
+              @click.stop="assignMenuFor = assignMenuFor === 'lead' ? null : 'lead'"
+            >
+              {{ leadOwners[selectedLead.key] ? memberName(leadOwners[selectedLead.key]) : t('Nobody', 'Nadie') }}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+            </button>
+            <div v-if="assignMenuFor === 'lead'" role="menu" class="absolute right-0 top-[calc(100%+4px)] z-20 w-64 rounded-card border border-line bg-surface p-1.5 shadow-popover" data-cy="lead-assign-menu">
+              <button v-for="m in team" :key="m.id" type="button" role="menuitemradio" :aria-checked="leadOwners[selectedLead.key] === m.id" class="flex min-h-11 w-full items-center rounded-ctlSm px-2.5 text-left text-[14px] text-ink-900 hover:bg-surface-subtle" @click="assign([selectedLead!.key], m.id)">
+                {{ m.id === myId ? t(`${m.full_name} (you)`, `${m.full_name} (tú)`) : m.full_name }}
+              </button>
+              <button type="button" role="menuitemradio" :aria-checked="!leadOwners[selectedLead.key]" class="flex min-h-11 w-full items-center rounded-ctlSm px-2.5 text-left text-[14px] text-ink-500 hover:bg-surface-subtle" @click="assign([selectedLead!.key], null)">
+                {{ t('Unassigned', 'Sin asignar') }}
+              </button>
+            </div>
+          </div>
+        </div>
         <GrowthInboxLeadThread
           v-if="leadThread"
           :thread="leadThread"
@@ -1531,6 +1627,7 @@ function avatarInitials(name: string) {
           <UiSkeleton class="h-10 w-56 rounded-ctl" />
           <UiSkeleton class="h-16 w-3/4 rounded-card" />
           <UiSkeleton class="ml-auto h-16 w-2/3 rounded-card" />
+        </div>
         </div>
         <GrowthInboxLeadRail v-if="leadThread" :thread="leadThread" />
       </template>
@@ -1564,9 +1661,15 @@ function avatarInitials(name: string) {
               <span v-else-if="!selected.patientId && replyChannel !== 'instagram'">{{ t('No patient linked', 'Sin paciente vinculado') }}</span>
             </p>
           </div>
-          <NuxtLink v-if="selected.patientId" :to="`/patients/${selected.patientId}`" class="flex h-11 shrink-0 items-center rounded-ctl px-2 text-[13.5px] font-semibold text-brand-text hover:bg-surface-subtle xl:hidden">
-            {{ t('View patient', 'Ver paciente') }}
-          </NuxtLink>
+          <button
+            v-if="selected.patientId || selected.phoneNumber"
+            type="button"
+            data-cy="thread-open-panel"
+            class="flex h-11 shrink-0 items-center rounded-ctl border border-line-control bg-surface px-3 text-[13.5px] font-semibold text-brand-text hover:bg-surface-subtle xl:hidden"
+            @click="panelOpen = true"
+          >
+            {{ selected.patientId ? t('Patient', 'Ficha') : t('Link', 'Vincular') }}
+          </button>
           <div v-if="!isNewConversation" class="relative shrink-0" data-assign-menu>
             <button
               type="button"
@@ -1736,8 +1839,7 @@ function avatarInitials(name: string) {
               <template v-else-if="replyChannel === 'instagram'">{{ t('More than 24h since', 'Han pasado más de 24h desde que') }} {{ selected.name }} {{ t('last messaged — Instagram blocks replies until they write again.', 'escribió por última vez — Instagram bloquea las respuestas hasta que vuelva a escribir.') }}</template>
               <template v-else>{{ t('More than 24h since', 'Han pasado más de 24h desde que') }} {{ selected.name }} {{ t('last messaged — free-form replies are blocked by WhatsApp. Send a template instead.', 'escribió por última vez — WhatsApp bloquea las respuestas libres. Envía una plantilla en su lugar.') }}</template>
             </p>
-            <UiBtn v-if="selected.patientId && replyChannel !== 'instagram'" variant="primary" size="sm" @click="templateModalOpen = true">{{ t('Send template', 'Enviar plantilla') }}</UiBtn>
-            <span v-else-if="!selected.patientId && replyChannel !== 'instagram'" class="shrink-0 text-[12.5px] font-semibold text-warning-text">{{ t('Link it to a patient to send a template.', 'Vincúlalo a un paciente para enviar una plantilla.') }}</span>
+            <UiBtn v-if="(selected.patientId || selected.phoneNumber) && replyChannel !== 'instagram'" variant="primary" size="sm" @click="templateModalOpen = true">{{ t('Send template', 'Enviar plantilla') }}</UiBtn>
           </div>
           <div v-else-if="audioRecording" class="flex items-center gap-3 rounded-ctl border border-line-control bg-surface-subtle px-3 py-2">
             <span class="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-danger-text" />
@@ -1786,20 +1888,27 @@ function avatarInitials(name: string) {
       <!-- Beside the thread on a wide screen: who this is, without leaving
       the Inbox -- the patient's next visit, balance and recall, or, for a
       number no patient has, a way to attach it to one. -->
-      <InboxPatientPanel v-if="selected?.patientId && !selectedLead" :key="selected.patientId" :patient-id="selected.patientId" class="hidden xl:flex" />
+      <div v-if="panelOpen" class="fixed inset-0 z-30 bg-ink-900/40 xl:hidden" data-cy="panel-backdrop" @click="panelOpen = false" />
+      <InboxPatientPanel
+        v-if="selected?.patientId && !selectedLead"
+        :key="selected.patientId"
+        :patient-id="selected.patientId"
+        :class="panelOpen ? 'fixed inset-y-0 right-0 z-40 flex max-w-[90vw] shadow-drawer xl:static xl:z-auto xl:shadow-none' : 'hidden xl:flex'"
+      />
       <InboxUnknownPanel
         v-else-if="selected && !selected.patientId && selected.phoneNumber && !selectedLead"
         :key="selected.phoneNumber"
         :phone-number="selected.phoneNumber"
-        class="hidden xl:flex"
-        @linked="onLinked"
+        :class="panelOpen ? 'fixed inset-y-0 right-0 z-40 flex max-w-[90vw] shadow-drawer xl:static xl:z-auto xl:shadow-none' : 'hidden xl:flex'"
+        @linked="(id: string) => { panelOpen = false; onLinked(id) }"
       />
     </div>
 
     <SendWhatsAppModal
-      v-if="templateModalOpen && selected?.patientId"
-      :patient-id="selected.patientId"
-      :patient-first-name="selected.name.split(' ')[0]"
+      v-if="templateModalOpen && (selected?.patientId || selected?.phoneNumber)"
+      :patient-id="selected.patientId ?? undefined"
+      :phone-number="selected.patientId ? undefined : (selected.phoneNumber ?? undefined)"
+      :patient-first-name="selected.patientId ? selected.name.split(' ')[0] : undefined"
       @close="templateModalOpen = false"
       @sent="onTemplateSent"
     />

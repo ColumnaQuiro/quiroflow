@@ -43,6 +43,9 @@ const VARIABLE_SOURCES = computed(() => [
   { value: 'google_review_link', label: t('Google review link', 'Enlace de reseña de Google') },
   { value: 'waitlist_claim_link', label: t('Waitlist claim link', 'Enlace para reservar plaza') },
   { value: 'waitlist_slot_datetime', label: t('Waitlist offered slot date & time', 'Fecha y hora de la plaza ofrecida') },
+  { value: 'clinic_name', label: t('Clinic name', 'Nombre de la clínica') },
+  { value: 'clinic_phone', label: t('Clinic phone', 'Teléfono de la clínica') },
+  { value: 'clinic_address', label: t('Clinic address', 'Dirección de la clínica') },
   { value: 'text', label: t('Fixed text', 'Texto fijo') },
 ])
 const ACTION_TONE: Record<string, string> = {

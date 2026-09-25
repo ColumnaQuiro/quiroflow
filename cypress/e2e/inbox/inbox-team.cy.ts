@@ -13,6 +13,14 @@ function openInbox() {
 function row(key: string) {
   return cy.get(`[data-cy=inbox-row][data-key="${key}"]`)
 }
+// cy.task runs once and never retries; this re-runs it until it agrees.
+function taskEventually<T>(name: string, args: object, ok: (v: T) => boolean, tries = 20): Cypress.Chainable<T> {
+  return cy.task<T>(name, args).then((v) => {
+    if (ok(v) || tries <= 0) return cy.wrap(v)
+    cy.wait(250)
+    return taskEventually(name, args, ok, tries - 1)
+  })
+}
 function minutesAgo(n: number) {
   return new Date(Date.now() - n * 60000).toISOString()
 }
@@ -44,8 +52,8 @@ describe('Inbox, as a team', () => {
           // Assign it to Frida: the whole team sees that.
           cy.get('[data-cy=thread-assign]').click()
           cy.get('[data-cy=thread-assign-menu]').contains('button', 'Frida Front').click()
-          cy.task('db:inboxAssignment', { accountId: account.accountId, conversationKey: ana.id }).should('equal', frida.teamMemberId)
           row(ana.id).find('[data-cy=inbox-row-owner]').should('have.text', 'FF')
+          taskEventually<string | null>('db:inboxAssignment', { accountId: account.accountId, conversationKey: ana.id }, (v) => v === frida.teamMemberId).should('equal', frida.teamMemberId)
 
           // Archive it: gone from my list, still in my archive.
           cy.get('[data-cy=thread-archive]').click()
@@ -160,6 +168,70 @@ describe('Inbox, as a team', () => {
         keys.forEach((k) => row(k).click())
         cy.get('[data-cy=inbox-bulk-unread]').click()
         cy.get('[data-cy=inbox-row-unread]').should('have.length', 3)
+      })
+    })
+  })
+
+  it('opens the patient panel over the thread on a narrower screen, and links from there', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Irene', lastName: 'Iglesias', phone: '677001122' }).then((irene) => {
+        cy.task('db:createWhatsappMessage', { accountId: account.accountId, phoneNumber: '+34677001122', direction: 'inbound', bodyPreview: 'Hola, soy Irene' })
+        cy.viewport(1024, 768)
+        cy.login(account.email, account.password)
+        openInbox()
+        row('+34677001122').click()
+        cy.get('[data-cy=inbox-unknown-panel]').should('not.be.visible')
+        cy.get('[data-cy=thread-open-panel]').should('have.text', 'Link').click()
+        cy.get('[data-cy=inbox-unknown-panel]').should('be.visible')
+        cy.get('[data-cy=unknown-suggestion]').should('contain.text', 'Irene Iglesias').click()
+        cy.get('[data-cy=thread-name]').should('have.text', 'Irene Iglesias')
+        cy.get('[data-cy=inbox-patient-panel]').should('not.be.visible')
+        cy.get('[data-cy=thread-open-panel]').should('have.text', 'Patient').click()
+        cy.get('[data-cy=inbox-patient-panel]').should('be.visible')
+        cy.get('[data-cy=panel-backdrop]').click(20, 400)
+        cy.get('[data-cy=inbox-patient-panel]').should('not.be.visible')
+        cy.task<{ patient_id: string | null }[]>('db:messagesFromNumber', { accountId: account.accountId, phoneNumber: '+34677001122' }).then((rows) => expect(rows[0].patient_id).to.equal(irene.id))
+      })
+    })
+  })
+
+  it('offers a template to a number that wrote more than a day ago, patient or not', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:createWhatsappMessage', { accountId: account.accountId, phoneNumber: '+34688776655', direction: 'inbound', bodyPreview: '¿Seguís abiertos?', createdAt: minutesAgo(3 * 24 * 60) })
+      cy.login(account.email, account.password)
+      openInbox()
+      row('+34688776655').click()
+      cy.contains('button', 'Send template').should('be.visible')
+      // The send route takes the bare number; past validation it stops only at
+      // the missing WhatsApp setup, which a test account has none of.
+      cy.request({ method: 'POST', url: '/api/whatsapp/send', failOnStatusCode: false, body: { phoneNumber: '+34688776655', templateName: 'hola', templateLanguage: 'es', variables: [] } }).then((res) => {
+        expect(res.status).to.eq(400)
+        expect(JSON.stringify(res.body)).to.contain('WhatsApp is not configured')
+      })
+    })
+  })
+
+  it('assigns a lead like any other conversation, and remembers I read it', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task<{ id: string }>('db:createLead', { accountId: account.accountId, fullName: 'Lola Lead', stage: 'contacted', phone: '+34600444909', source: 'Meta Ads' }).then((lead) => {
+        cy.task('db:createLeadMessage', { accountId: account.accountId, leadId: lead.id, direction: 'inbound', body: 'Hola, quiero información', createdAt: minutesAgo(5) })
+        cy.login(account.email, account.password)
+        cy.visit('/inbox?growth=1')
+        cy.get('[data-cy=inbox-list]').should('have.attr', 'data-ready', 'true')
+        cy.get('[data-test="filter-leads-only"]').should('contain.text', 'Leads · 1')
+        cy.contains('[data-test="lead-row"]', 'Lola Lead').click()
+        cy.get('[data-cy=lead-assign]').click()
+        cy.get('[data-cy=lead-assign-menu]').contains('button', '(you)').click()
+        cy.contains('[data-test="lead-row"]', 'Lola Lead').find('[data-cy=lead-row-owner]').should('exist')
+        taskEventually<string | null>('db:inboxAssignment', { accountId: account.accountId, conversationKey: `lead:${lead.id}` }, (v) => v !== null).should('not.equal', null)
+
+        // Read stays read, and it counts as mine.
+        cy.visit('/inbox?growth=1')
+        cy.get('[data-cy=inbox-list]').should('have.attr', 'data-ready', 'true')
+        cy.contains('[data-test="lead-row"]', 'Lola Lead').should('exist')
+        cy.get('[data-test="filter-leads-only"]').should('not.contain.text', '· 1')
+        cy.get('[data-cy=inbox-tab-mine]').click()
+        cy.contains('[data-test="lead-row"]', 'Lola Lead').should('exist')
       })
     })
   })

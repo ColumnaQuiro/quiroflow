@@ -226,4 +226,52 @@ describe('A clinic\'s settings page', () => {
       })
     })
   })
+
+  it('closes the whole location for whole days, in its own time zone', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:updateClinic', { clinicId: account.clinicId, timezone: 'Atlantic/Canary' })
+      withPatient(account).then((p) => {
+        cy.task('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId: p.id, practitionerId: account.teamMemberId, startsAt: '2027-12-24T10:00:00Z', status: 'booked' })
+      })
+      cy.login(account.email, account.password)
+      openClinic(account.clinicId)
+      cy.get('[data-cy=clinic-closures]').should('contain.text', 'No closures coming up.')
+      cy.get('[data-cy=closure-add]').click()
+      cy.get('[data-cy=closure-from]').type('2027-12-24')
+      cy.get('[data-cy=closure-to]').type('2027-12-26')
+      cy.get('[data-cy=closure-note]').type('Navidad')
+      // Something is already booked in those days: said before saving.
+      cy.get('[data-cy=closure-booked]').should('contain.text', '1 appointments are already booked')
+      cy.get('[data-cy=closure-save]').click()
+      cy.get('[data-cy=clinic-closure]').should('have.length', 1).and('contain.text', 'Navidad')
+      cy.task<any[]>('db:clinicClosures', { clinicId: account.clinicId }).then((rows) => {
+        expect(rows).to.have.length(1)
+        // Midnight on the 24th to midnight after the 26th, Canary time (UTC+0 in winter).
+        expect(new Date(rows[0].starts_at).toISOString()).to.equal('2027-12-24T00:00:00.000Z')
+        expect(new Date(rows[0].ends_at).toISOString()).to.equal('2027-12-27T00:00:00.000Z')
+        expect(rows[0].practitioner_id).to.equal(null)
+        expect(rows[0].room_id).to.equal(null)
+      })
+      cy.get('[data-cy=clinic-closure-remove]').click()
+      cy.get('[data-cy=clinic-closure]').should('not.exist')
+    })
+  })
+
+  it('lists active clinics in the public API, with their contact details', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:updateClinic', { clinicId: account.clinicId, phone: '+34 963 12 34 56' })
+      cy.task<{ id: string }>('db:addClinic', { accountId: account.accountId, name: 'Closed Branch' }).then((closed) => {
+        cy.task('db:updateClinic', { clinicId: closed.id, archivedAt: new Date().toISOString() })
+        cy.task<{ token: string }>('db:createApiToken', { accountId: account.accountId, scopes: ['catalog:read'] }).then(({ token }) => {
+          cy.request({ url: '/api/public/v1/clinics', headers: { Authorization: `Bearer ${token}` } }).then((res) => {
+            const ids = (res.body.data as { id: string }[]).map((c) => c.id)
+            expect(ids).to.include(account.clinicId)
+            expect(ids, 'an archived clinic is not listed').to.not.include(closed.id)
+            const main = (res.body.data as { id: string; phone: string | null }[]).find((c) => c.id === account.clinicId)!
+            expect(main.phone).to.equal('+34 963 12 34 56')
+          })
+        })
+      })
+    })
+  })
 })

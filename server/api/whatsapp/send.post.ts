@@ -7,7 +7,10 @@ import { toE164 } from '~/utils/phone'
 // arbitrary text.
 export default defineEventHandler(async (event) => {
   const body = await readBody<{
-    patientId: string
+    /** Either a patient, or -- from the Inbox, for a number no patient has
+     *  yet -- the bare number the conversation is with. */
+    patientId?: string
+    phoneNumber?: string
     templateName: string
     templateLanguage: string
     variables: string[]
@@ -17,11 +20,13 @@ export default defineEventHandler(async (event) => {
     appointmentId?: string
   }>(event)
 
-  if (!body?.patientId || !body?.templateName || !body?.templateLanguage) {
-    throw createError({ statusCode: 400, statusMessage: 'patientId, templateName and templateLanguage are required' })
+  if ((!body?.patientId && !body?.phoneNumber) || !body?.templateName || !body?.templateLanguage) {
+    throw createError({ statusCode: 400, statusMessage: 'patientId (or phoneNumber), templateName and templateLanguage are required' })
   }
 
-  const { supabase, teamMember } = await requirePermission(event, 'recalls_access')
+  // A bare number is only ever an Inbox conversation, so it takes the
+  // Inbox's permission; a patient send keeps the one it always had.
+  const { supabase, teamMember } = await requirePermission(event, body.patientId ? 'recalls_access' : 'inbox_access')
 
   const { data: account } = await supabase
     .from('accounts')
@@ -34,25 +39,35 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'WhatsApp is not configured. Set it up in Settings > WhatsApp.' })
   }
 
-  const { data: patient } = await supabase.from('patients').select('id, is_minor, do_not_contact').eq('id', body.patientId).maybeSingle()
-  if (!patient) {
-    throw createError({ statusCode: 404, statusMessage: 'Patient not found' })
-  }
-  if (patient.is_minor || patient.do_not_contact) {
-    throw createError({ statusCode: 400, statusMessage: 'This patient cannot be contacted (under age or marked do not contact).' })
-  }
+  let to: string | null
+  if (body.patientId) {
+    const { data: patient } = await supabase.from('patients').select('id, is_minor, do_not_contact').eq('id', body.patientId).maybeSingle()
+    if (!patient) {
+      throw createError({ statusCode: 404, statusMessage: 'Patient not found' })
+    }
+    if (patient.is_minor || patient.do_not_contact) {
+      throw createError({ statusCode: 400, statusMessage: 'This patient cannot be contacted (under age or marked do not contact).' })
+    }
 
-  const { data: numbers } = await supabase
-    .from('patient_contact_numbers')
-    .select('number, country_code, is_whatsapp')
-    .eq('patient_id', body.patientId)
-  const target = numbers?.find((n) => n.is_whatsapp) ?? numbers?.[0]
-  if (!target) {
-    throw createError({ statusCode: 400, statusMessage: 'This patient has no phone number on file' })
-  }
-  const to = toE164(target.number, target.country_code)
-  if (!to) {
-    throw createError({ statusCode: 400, statusMessage: 'This patient\'s phone number could not be formatted for WhatsApp' })
+    const { data: numbers } = await supabase
+      .from('patient_contact_numbers')
+      .select('number, country_code, is_whatsapp')
+      .eq('patient_id', body.patientId)
+    const target = numbers?.find((n) => n.is_whatsapp) ?? numbers?.[0]
+    if (!target) {
+      throw createError({ statusCode: 400, statusMessage: 'This patient has no phone number on file' })
+    }
+    to = toE164(target.number, target.country_code)
+    if (!to) {
+      throw createError({ statusCode: 400, statusMessage: 'This patient\'s phone number could not be formatted for WhatsApp' })
+    }
+  } else {
+    // Meta takes digits; the message is recorded under the number exactly as
+    // the conversation has it (below), so it lands in the same thread.
+    to = (body.phoneNumber ?? '').replace(/\D/g, '') || null
+    if (!to || to.length < 8) {
+      throw createError({ statusCode: 400, statusMessage: 'That phone number could not be formatted for WhatsApp' })
+    }
   }
 
   const components: Record<string, unknown>[] = []
@@ -124,7 +139,8 @@ export default defineEventHandler(async (event) => {
           : 'other'
 
   await Promise.all([
-    supabase.from('contact_log').insert({
+    // The contact log belongs to a patient; a bare number has none yet.
+    body.patientId && supabase.from('contact_log').insert({
       account_id: teamMember.account_id,
       patient_id: body.patientId,
       appointment_id: body.appointmentId ?? null,
@@ -134,9 +150,9 @@ export default defineEventHandler(async (event) => {
     }),
     supabase.from('whatsapp_messages').insert({
       account_id: teamMember.account_id,
-      patient_id: body.patientId,
+      patient_id: body.patientId ?? null,
       appointment_id: body.appointmentId ?? null,
-      phone_number: to,
+      phone_number: body.patientId ? to : body.phoneNumber,
       wamid,
       purpose,
       template_name: body.templateName,

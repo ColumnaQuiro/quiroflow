@@ -463,7 +463,9 @@ export default defineEventHandler(async (event) => {
         }
         await notifyInboxTeamMembers(supabase, account.id, senderName, insert.body_preview ?? 'New message', {
           type: 'whatsapp_message',
-          key: patientId ?? leadId ?? msg.from,
+          // The Inbox's own conversation key: a lead's row is keyed
+          // lead:<id>, so a notification opens that row and finds its owner.
+          key: patientId ?? (leadId ? `lead:${leadId}` : msg.from),
         })
 
         const intent = classifyReply(replyText(msg))

@@ -145,6 +145,7 @@ export async function handleInstagramEntries(
 
       await notifyInboxTeamMembers(supabase, account.id, 'Instagram', preview.slice(0, 120), {
         channel: 'instagram',
+        key: leadId ? `lead:${leadId}` : senderId,
       })
     }
   }

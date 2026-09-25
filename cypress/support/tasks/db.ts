@@ -437,6 +437,11 @@ async function createAppointmentType(opts: {
   durationMinutes?: number
   defaultPriceCents?: number
   onlineBookingEnabled?: boolean
+  stage?: string | null
+  /** Archived since this instant (Settings -> Appointment Types -> Archivar). */
+  archivedAt?: string | null
+  /** Left to the insert trigger (after the last one) when omitted. */
+  sortOrder?: number
 }) {
   const { accountId, name, durationMinutes, defaultPriceCents, onlineBookingEnabled } = opts
   const row = unwrap(
@@ -447,12 +452,78 @@ async function createAppointmentType(opts: {
         name,
         duration_minutes: durationMinutes ?? 30,
         default_price_cents: defaultPriceCents ?? 0,
+        // true, although the column now defaults to false: every spec written
+        // before that change books these types online without saying so.
         online_booking_enabled: onlineBookingEnabled ?? true,
+        ...(opts.stage !== undefined ? { stage: opts.stage } : {}),
+        ...(opts.archivedAt !== undefined ? { archived_at: opts.archivedAt } : {}),
+        ...(opts.sortOrder !== undefined ? { sort_order: opts.sortOrder } : {}),
       })
       .select('id, name, duration_minutes')
       .single(),
   )
   return row as { id: string; name: string; duration_minutes: number }
+}
+
+/** One appointment type as stored, with its per-practitioner overrides. */
+async function appointmentTypeRow(opts: { id: string }) {
+  const { data, error } = await admin.from('appointment_types').select('*').eq('id', opts.id).maybeSingle()
+  if (error) throw error
+  const { data: overrides } = await admin
+    .from('appointment_type_overrides')
+    .select('team_member_id, duration_minutes, price_cents')
+    .eq('appointment_type_id', opts.id)
+  return { row: data, overrides: overrides ?? [] }
+}
+
+/** Deletes a type with the service role, so only the database's own guard stands in the way. */
+async function deleteAppointmentType(opts: { id: string }) {
+  const { error } = await admin.from('appointment_types').delete().eq('id', opts.id)
+  return { error: error?.message ?? null }
+}
+
+/** Every appointment type of an account, in the order the app offers them. */
+async function appointmentTypesFor(opts: { accountId: string }) {
+  const { data } = await admin
+    .from('appointment_types')
+    .select('id, name, sort_order, archived_at, online_booking_enabled')
+    .eq('account_id', opts.accountId)
+    .order('sort_order', { nullsFirst: false })
+    .order('name')
+  return data ?? []
+}
+
+/** A practitioner's own duration/price for a type, as the type's page saves it. */
+async function setAppointmentTypeOverride(opts: { accountId: string; appointmentTypeId: string; teamMemberId: string; durationMinutes?: number | null; priceCents?: number | null }) {
+  assertOk(
+    await admin.from('appointment_type_overrides').upsert(
+      {
+        account_id: opts.accountId,
+        appointment_type_id: opts.appointmentTypeId,
+        team_member_id: opts.teamMemberId,
+        duration_minutes: opts.durationMinutes ?? null,
+        price_cents: opts.priceCents ?? null,
+      },
+      { onConflict: 'appointment_type_id,team_member_id' },
+    ),
+  )
+  return { ok: true }
+}
+
+/** The appointment types the Growth receptionist may book. */
+async function setReceptionistTypes(opts: { accountId: string; appointmentTypeIds: string[] }) {
+  assertOk(
+    await admin
+      .from('receptionist_config')
+      .upsert({ account_id: opts.accountId, bookable_appointment_type_ids: opts.appointmentTypeIds }, { onConflict: 'account_id' }),
+  )
+  return { ok: true }
+}
+
+/** Connects Stripe as far as the settings pages check it: a publishable key. */
+async function setStripePublishableKey(opts: { accountId: string; key: string | null }) {
+  assertOk(await admin.from('accounts').update({ stripe_publishable_key: opts.key }).eq('id', opts.accountId))
+  return { ok: true }
 }
 
 async function createServiceProduct(opts: { accountId: string; name: string; priceCents?: number }) {
@@ -2000,6 +2071,8 @@ async function createAutomationRule(opts: {
   isMarketing?: boolean
   enabled?: boolean
   dryRun?: boolean
+  /** automation_rules.filters, e.g. { appointment_type_ids: [...] }. */
+  filters?: Record<string, unknown>
   actions: { type: string; config?: Record<string, unknown> }[]
 }) {
   const rule = unwrap(
@@ -2012,6 +2085,7 @@ async function createAutomationRule(opts: {
         enabled: opts.enabled ?? true,
         is_marketing: opts.isMarketing ?? false,
         dry_run: opts.dryRun ?? false,
+        ...(opts.filters ? { filters: opts.filters as never } : {}),
       })
       .select('id')
       .single(),
@@ -2870,6 +2944,12 @@ export const dbTasks = {
   'db:seedManyPatients': seedManyPatients,
   'db:patientByName': patientByName,
   'db:createAppointmentType': createAppointmentType,
+  'db:appointmentTypeRow': appointmentTypeRow,
+  'db:deleteAppointmentType': deleteAppointmentType,
+  'db:appointmentTypesFor': appointmentTypesFor,
+  'db:setAppointmentTypeOverride': setAppointmentTypeOverride,
+  'db:setReceptionistTypes': setReceptionistTypes,
+  'db:setStripePublishableKey': setStripePublishableKey,
   'db:createServiceProduct': createServiceProduct,
   'db:enableOnlineBooking': enableOnlineBooking,
   'db:enableEmailConfirmations': enableEmailConfirmations,

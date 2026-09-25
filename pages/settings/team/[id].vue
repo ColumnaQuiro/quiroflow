@@ -34,7 +34,7 @@ interface Override {
   id: string
   duration_minutes: number | null
   price_cents: number | null
-  type: { id: string; name: string; duration_minutes: number; price_cents: number | null } | null
+  type: { id: string; name: string; duration_minutes: number; default_price_cents: number } | null
 }
 
 const loaded = ref(false)
@@ -64,7 +64,7 @@ async function load() {
     supabase.from('team_member_clinics').select('clinic_id').eq('team_member_id', memberId),
     supabase.from('account_roles').select('id, name').order('is_system', { ascending: false }).order('name'),
     supabase.from('team_members').select('id, full_name, is_practitioner').eq('account_id', accountId).is('deleted_at', null).neq('id', memberId).order('full_name'),
-    supabase.from('appointment_type_overrides').select('id, duration_minutes, price_cents, type:appointment_types(id, name, duration_minutes, price_cents)').eq('team_member_id', memberId),
+    supabase.from('appointment_type_overrides').select('id, duration_minutes, price_cents, type:appointment_types(id, name, duration_minutes, default_price_cents)').eq('team_member_id', memberId),
     supabase.rpc('team_two_factor_status', { p_account_id: accountId }),
     supabase.from('accounts').select('require_two_factor').eq('id', accountId).maybeSingle(),
     supabase.from('appointments').select('id', { count: 'exact', head: true }).eq('practitioner_id', memberId).is('deleted_at', null).neq('status', 'cancelled').gte('starts_at', new Date().toISOString()),
@@ -489,9 +489,9 @@ const card = 'flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg
                   <p v-if="overrides.length === 0" :class="hint">{{ t('None: they use every appointment type as it is.', 'Ninguno: usa cada tipo de cita tal cual.') }}</p>
                   <ul v-else class="flex flex-col">
                     <li v-for="o in overrides" :key="o.id" class="flex flex-wrap items-center gap-2 border-t border-line-row py-2 text-[14px] first:border-t-0">
-                      <span class="flex-1 font-semibold text-ink-900">{{ o.type!.name }}</span>
+                      <NuxtLink :to="`/settings/appointment-types/${o.type!.id}#profesionales`" class="flex-1 font-semibold text-ink-900 hover:underline">{{ o.type!.name }}</NuxtLink>
                       <span class="text-ink-700">{{ o.duration_minutes ?? o.type!.duration_minutes }} min</span>
-                      <span class="text-ink-700">{{ formatEur(o.price_cents ?? o.type!.price_cents ?? 0) }}</span>
+                      <span class="text-ink-700">{{ formatEur(o.price_cents ?? o.type!.default_price_cents ?? 0) }}</span>
                     </li>
                   </ul>
                   <span :class="hint">

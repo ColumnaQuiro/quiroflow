@@ -4,7 +4,7 @@ import { APP_PAGES, sweepAuthenticatedPages } from '../../support/pageInventory'
 // /settings, plus the dynamic detail pages, which need real fixtures and so
 // can only run where a patient and invoice have been seeded.
 describe('Every authenticated app page renders for the account owner', () => {
-  it('smoke-tests the app pages plus dynamic patient/billing/role/clinic detail pages', () => {
+  it('smoke-tests the app pages plus dynamic patient/billing/role/clinic/team member detail pages', () => {
     cy.seedStaffAccount().then((account) => {
       cy.task('db:createPatient', {
         accountId: account.accountId,
@@ -32,6 +32,10 @@ describe('Every authenticated app page renders for the account owner', () => {
           cy.visit(`/settings/clinics/${account.clinicId}`)
           cy.location('pathname').should('eq', `/settings/clinics/${account.clinicId}`)
           cy.contains('Opening hours').should('be.visible')
+
+          cy.visit(`/settings/team/${account.teamMemberId}`)
+          cy.location('pathname').should('eq', `/settings/team/${account.teamMemberId}`)
+          cy.get('[data-cy=member-page][data-ready=true]').should('contain', 'Sees patients')
         })
       })
     })

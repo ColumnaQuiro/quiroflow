@@ -49,6 +49,8 @@ describe('Two-factor login', () => {
           // Now this session has passed two-factor, the switch is live.
           cy.visit('/settings/team')
           cy.get('[data-testid="require-two-factor"] [role="switch"]').should('not.be.disabled').click()
+          cy.get('[data-cy=confirm-dialog]').should('contain', 'Require two-factor for everyone?')
+          cy.get('[data-cy=confirm-dialog-confirm]').click()
           cy.get('[data-testid="require-two-factor"] [role="switch"]').should('have.attr', 'aria-checked', 'true')
 
           // A real sign-in through the form now stops at the code.

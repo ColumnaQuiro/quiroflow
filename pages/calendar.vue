@@ -292,7 +292,7 @@ async function loadReferenceData() {
   appointmentTypes.value = types ?? []
   // business_hours comes back as Supabase's recursive Json type, which never
   // narrows to BusinessHours on its own -- cast at the read site, same as
-  // settings/team.vue and settings/online-booking.vue already do.
+  // settings/team/[id].vue and settings/online-booking.vue already do.
   teamMembers.value = (members ?? []) as unknown as TeamMember[]
   overrides.value = ovr ?? []
   teamMemberClinics.value = memberClinics ?? []

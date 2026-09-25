@@ -15,9 +15,26 @@ const {
   selectedConfig,
   selectedNodeId,
   selectNode,
+  reload: reloadWorkflows,
 } = useGrowthAutomations()
 
 const allowed = computed(() => can('communication_config'))
+
+// Workflow shows what an automation is; Executions shows what it did. In the
+// URL so a failed run can be linked to directly: ?tab=executions&run=<id>.
+const route = useRoute()
+const router = useRouter()
+const tab = computed(() => (route.query.tab === 'executions' ? 'executions' : 'workflow'))
+const initialRunId = typeof route.query.run === 'string' ? route.query.run : null
+const failedCount = ref(0)
+
+function setTab(next: 'workflow' | 'executions') {
+  router.replace({ query: { ...route.query, tab: next === 'workflow' ? undefined : next, run: undefined } })
+}
+function onOpenRun(id: string | null) {
+  if (tab.value !== 'executions') return
+  router.replace({ query: { ...route.query, run: id ?? undefined } })
+}
 </script>
 
 <template>
@@ -73,7 +90,47 @@ const allowed = computed(() => can('communication_config'))
         <div class="h-[320px] rounded-card border border-line bg-surface shadow-card" />
       </div>
 
-      <div v-else class="grid gap-4 xl:grid-cols-[220px_minmax(0,1fr)_260px] xl:items-start">
+      <template v-else>
+      <div class="mb-4 flex items-center gap-1 border-b border-line-divider" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          :aria-selected="tab === 'workflow'"
+          class="-mb-px border-b-2 px-3 py-2 text-[12.5px] font-medium"
+          :class="tab === 'workflow' ? 'border-brand text-ink-900' : 'border-transparent text-ink-muted hover:text-ink-700'"
+          data-test="tab-workflow"
+          @click="setTab('workflow')"
+        >
+          {{ t('Workflow', 'Flujo') }}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          :aria-selected="tab === 'executions'"
+          class="-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-[12.5px] font-medium"
+          :class="tab === 'executions' ? 'border-brand text-ink-900' : 'border-transparent text-ink-muted hover:text-ink-700'"
+          data-test="tab-executions"
+          @click="setTab('executions')"
+        >
+          {{ t('Executions', 'Ejecuciones') }}
+          <!-- Visible from the Workflow tab too: a failed run is the one
+          thing on this page someone has to act on. -->
+          <span v-if="failedCount > 0" class="rounded-pill bg-danger-bg px-1.5 text-[10.5px] font-semibold text-danger-text" data-test="tab-executions-failed">{{ failedCount }}</span>
+        </button>
+      </div>
+
+      <!-- Mounted with the page (v-show, not v-if) so the failed count above
+      is there before anyone opens the tab. -->
+      <GrowthExecutionsPanel
+        v-show="tab === 'executions'"
+        :workflows="workflows.map((w) => ({ id: w.id, name: w.name }))"
+        :initial-run-id="initialRunId"
+        @failed-count="failedCount = $event"
+        @open-run="onOpenRun"
+        @retried="reloadWorkflows"
+      />
+
+      <div v-show="tab === 'workflow'" class="grid gap-4 xl:grid-cols-[220px_minmax(0,1fr)_260px] xl:items-start">
         <!-- Workflow list -->
         <div class="flex flex-col gap-4">
           <section class="flex flex-col gap-1 rounded-card border border-line bg-surface p-3 shadow-card">
@@ -158,6 +215,7 @@ const allowed = computed(() => can('communication_config'))
           </p>
         </section>
       </div>
+      </template>
     </div>
   </div>
 </template>

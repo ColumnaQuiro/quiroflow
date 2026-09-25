@@ -2379,6 +2379,22 @@ async function makeSequenceDue(opts: { leadId: string }) {
   return { ok: true }
 }
 
+/** A run's execution history, oldest first -- what the Executions tab reads. */
+async function runEvents(opts: { runId: string }) {
+  const { data } = await admin
+    .from('automation_run_events')
+    .select('outcome, position, action_type, step_label, detail, actor_team_member_id')
+    .eq('run_id', opts.runId)
+    .order('created_at')
+  return data ?? []
+}
+
+/** Rewrites one step of a rule, the way fixing it in Campaigns would. */
+async function setAutomationActionConfig(opts: { ruleId: string; position: number; config: Record<string, unknown> }) {
+  assertOk(await admin.from('automation_actions').update({ config: opts.config }).eq('rule_id', opts.ruleId).eq('position', opts.position))
+  return { ok: true }
+}
+
 /**
  * A busy week in two inserts: `count` patients, one 30-minute visit each,
  * spread Monday-Friday from 09:00, plus the patients' ids in visit order.
@@ -2566,9 +2582,23 @@ async function setAppointmentStatus(opts: { appointmentId: string; status: strin
 /** What /account saves on a team member, read back. */
 async function teamMemberById(opts: { teamMemberId: string }) {
   const row = unwrap(
-    await admin.from('team_members').select('full_name, color, language_preference, theme_preference, deleted_at, is_owner').eq('id', opts.teamMemberId).single(),
+    await admin
+      .from('team_members')
+      .select('full_name, color, language_preference, theme_preference, deleted_at, is_owner, role_id, is_practitioner, online_booking_enabled')
+      .eq('id', opts.teamMemberId)
+      .single(),
   )
-  return row as { full_name: string; color: string; language_preference: string; theme_preference: string; deleted_at: string | null; is_owner: boolean }
+  return row as {
+    full_name: string
+    color: string
+    language_preference: string
+    theme_preference: string
+    deleted_at: string | null
+    is_owner: boolean
+    role_id: string | null
+    is_practitioner: boolean
+    online_booking_enabled: boolean
+  }
 }
 
 /** A patient's invoices with their lines -- what a fee left behind. */
@@ -2805,6 +2835,8 @@ export const dbTasks = {
   'db:createFacturaWithoutTax': createFacturaWithoutTax,
   'db:huellaFor': huellaFor,
   'db:facturaRecordsFor': facturaRecordsFor,
+  'db:runEvents': runEvents,
+  'db:setAutomationActionConfig': setAutomationActionConfig,
   'db:updateClinic': updateClinic,
   'db:createClinic': createClinic,
   'db:tryChangeFacturaIssuer': tryChangeFacturaIssuer,

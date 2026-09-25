@@ -12,7 +12,9 @@ interface Template {
 
 const props = withDefaults(
   defineProps<{
-    patientId: string
+    /** Either a patient, or (from the Inbox) a number no patient has yet. */
+    patientId?: string
+    phoneNumber?: string
     patientFirstName?: string
     patientPreferredLanguage?: string
     appointmentId?: string
@@ -72,8 +74,11 @@ onMounted(async () => {
     loadingTemplates.value = false
   }
 
-  const { data } = await supabase.from('patient_files').select('*').eq('patient_id', props.patientId).order('created_at', { ascending: false })
-  files.value = data ?? []
+  // Attachments come from the patient's files, so a bare number has none.
+  if (props.patientId) {
+    const { data } = await supabase.from('patient_files').select('*').eq('patient_id', props.patientId).order('created_at', { ascending: false })
+    files.value = data ?? []
+  }
 })
 
 function slot(n: number) {
@@ -109,6 +114,7 @@ async function send() {
       method: 'POST',
       body: {
         patientId: props.patientId,
+        phoneNumber: props.patientId ? undefined : props.phoneNumber,
         templateName: selectedTemplate.value.name,
         templateLanguage: selectedTemplate.value.language,
         variables: variables.value,

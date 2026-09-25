@@ -1295,7 +1295,10 @@ function avatarInitials(name: string) {
                 </div>
               </div>
             </div>
-            <div v-if="view === 'active'" role="tablist" :aria-label="t('Whose', 'De quién')" class="flex rounded-ctl bg-chip-bg p-[3px]">
+            <!-- Segments sized to their text (flex-auto), not equal thirds: in the
+            320px list "Unassigned 414" is wider than a third and ran into the
+            edge of its own pill. -->
+            <div v-if="view === 'active'" role="tablist" :aria-label="t('Whose', 'De quién')" class="flex gap-0.5 rounded-ctl bg-chip-bg p-[3px]" data-cy="inbox-tabs">
               <button
                 v-for="tb in [
                   { key: 'all', label: t('All', 'Todas'), count: tabCounts.all },
@@ -1307,7 +1310,7 @@ function avatarInitials(name: string) {
                 role="tab"
                 :data-cy="`inbox-tab-${tb.key}`"
                 :aria-selected="tab === tb.key"
-                class="flex h-8 touch:h-10 min-w-0 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-[7px] px-1.5 text-[13px] font-semibold"
+                class="flex h-8 touch:h-10 flex-auto items-center justify-center gap-1.5 whitespace-nowrap rounded-[7px] px-2.5 text-[13px] font-semibold"
                 :class="tab === tb.key ? 'bg-surface text-ink-900 shadow-card' : 'text-ink-500 hover:text-ink-700'"
                 @click="tab = tb.key as 'all' | 'mine' | 'unassigned'"
               >

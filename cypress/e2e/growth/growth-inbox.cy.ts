@@ -130,6 +130,27 @@ describe('Growth in the shared Inbox', () => {
     })
   })
 
+  // Measured at the width where the list is narrowest (320px, xl), with the
+  // count production has: "Unassigned 414" overflowed an equal third.
+  it('fits every segment\'s text inside its pill in the narrowest list', () => {
+    cy.viewport(1280, 800)
+    cy.visit('/inbox?growth=1')
+    cy.get('[data-cy=inbox-tabs] [role=tab]').each(($tab) => {
+      // Stand in for a four-digit count, the worst case.
+      const count = $tab[0].querySelector('span')
+      if (count) count.textContent = '1414'
+    })
+    cy.get('[data-cy=inbox-tabs] [role=tab]').each(($tab) => {
+      const el = $tab[0]
+      expect(el.scrollWidth, `${el.textContent} fits its pill`).to.be.at.most(el.clientWidth)
+      const pad = parseFloat(getComputedStyle(el).paddingLeft)
+      expect(pad, 'side padding').to.be.at.least(8)
+    })
+    cy.get('[data-cy=inbox-tabs]').should(($row) => {
+      expect($row[0].scrollWidth, 'segments fit the list').to.be.at.most($row[0].clientWidth)
+    })
+  })
+
   it('fits the filters in the list without sideways scrolling', () => {
     cy.viewport(1440, 900)
     cy.visit('/inbox?growth=1')

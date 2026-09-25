@@ -11,7 +11,8 @@ import type { PermissionRow } from '~/utils/rolePermissions'
 const props = defineProps<{ row: PermissionRow; modelValue: string | boolean; disabled?: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [string | boolean] }>()
 
-const uid = `perm-${props.row.key}-${Math.random().toString(36).slice(2, 7)}`
+// useId, not Math.random: stable between the server render and hydration.
+const uid = `perm-${props.row.key}-${useId()}`
 
 function pick(value: string) {
   if (!props.disabled) emit('update:modelValue', value)

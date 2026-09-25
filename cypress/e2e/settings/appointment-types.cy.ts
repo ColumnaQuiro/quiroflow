@@ -219,6 +219,11 @@ describe('Appointment types', () => {
           openList()
           cy.contains('[data-cy=type-row]', 'Primera visita').should('contain.text', '1 practitioner with own price')
 
+          // And the person's own page shows it, read-only.
+          cy.visit(`/settings/team/${paula.teamMemberId}`)
+          cy.get('[data-cy=member-page][data-ready=true]')
+          cy.get('[data-cy=member-overrides]').should('contain.text', 'Primera visita').and('contain.text', '60 min').and('contain.text', '70,00')
+
           openType(type.id)
           cy.get(`[data-cy=type-override-row][data-member-id="${paula.teamMemberId}"]`).within(() => {
             cy.get('[data-cy=type-override-duration]').should('have.value', '60')

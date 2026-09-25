@@ -67,6 +67,36 @@ describe('Growth in the shared Inbox', () => {
     cy.contains('[data-test="lead-row"]', 'AI handling').should('be.visible')
   })
 
+  // Since the "Assigned to" bar went above the lead thread (#448), a long
+  // thread grew past the screen instead of scrolling, and the composer ended
+  // up below the bottom edge -- present in the page, invisible to a person.
+  // One message (as in the tests below) never showed it.
+  it('keeps the composer on screen when a lead thread is long', () => {
+    cy.viewport(1440, 900)
+    cy.visit('/inbox?growth=1')
+    seedConversation(account, 'Larga Conversación', 'paused').then((leadId) => {
+      for (let i = 0; i < 30; i++) {
+        cy.task('db:createLeadMessage', {
+          accountId: account.accountId,
+          leadId,
+          direction: i % 2 ? 'outbound' : 'inbound',
+          body: `Mensaje ${i}: texto suficiente para ocupar una línea entera de la conversación`,
+          createdAt: new Date(Date.now() - (60 - i) * 60000).toISOString(),
+        })
+      }
+      cy.reload()
+      cy.contains('[data-test="lead-row"]', 'Larga Conversación').click()
+      cy.get('[data-test="lead-composer"]').should('exist')
+      cy.window().then((win) => {
+        cy.get('[data-test="lead-composer"]').should(($bar) => {
+          const rect = $bar[0].getBoundingClientRect()
+          expect(rect.bottom, 'composer bottom within the window').to.be.at.most(win.innerHeight)
+          expect(rect.top, 'composer top within the window').to.be.lessThan(win.innerHeight)
+        })
+      })
+    })
+  })
+
   it('locks the composer while the AI is answering, and opens it on take over', () => {
     cy.visit('/inbox?growth=1')
     seedConversation(account, 'Lucia Moreno', 'handling').then((leadId) => {

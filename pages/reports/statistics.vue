@@ -14,7 +14,9 @@ const { practitioners, clinics, load: loadFilterOptions } = useReportFilterOptio
 const t = useT()
 
 const range = ref(computePresetRange({ months: 1 }))
-const practitionerFilter = ref('')
+// reports_own_only: pinned to the viewer, with the picker hidden (useOwnScope).
+const { reportsPractitionerId } = useOwnScope()
+const practitionerFilter = ref(reportsPractitionerId.value ?? '')
 const clinicFilter = ref('')
 const loading = ref(true)
 // Every appointment, all-time and every status. All-time because the funnel
@@ -461,7 +463,7 @@ const unclassifiedTypeNames = computed(() =>
 
       <div class="mt-4 flex flex-wrap items-center gap-2">
         <ReportsDateRangeSelect v-model="range" />
-        <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
+        <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" :locked-to="reportsPractitionerId" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
       </div>
 
       <div v-if="loading" class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">

@@ -248,6 +248,7 @@ export type Database = {
         Row: {
           account_id: string
           created_at: string
+          description: string | null
           id: string
           is_system: boolean
           name: string
@@ -257,6 +258,7 @@ export type Database = {
         Insert: {
           account_id: string
           created_at?: string
+          description?: string | null
           id?: string
           is_system?: boolean
           name: string
@@ -266,6 +268,7 @@ export type Database = {
         Update: {
           account_id?: string
           created_at?: string
+          description?: string | null
           id?: string
           is_system?: boolean
           name?: string
@@ -5825,6 +5828,10 @@ export type Database = {
       }
     }
     Functions: {
+      delete_account_role: {
+        Args: { p_move_to_role_id?: string; p_role_id: string }
+        Returns: number
+      }
       link_inbox_conversation: {
         Args: { p_phone_number: string; p_patient_id: string }
         Returns: number

@@ -108,6 +108,11 @@ export async function requirePermission(event: H3Event, permKey: string) {
   return checkPermissions(event, [permKey])
 }
 
+/** Every one of the keys, for an endpoint that sits behind two permissions. */
+export async function requireAllPermissions(event: H3Event, permKeys: string[]) {
+  return checkPermissions(event, permKeys)
+}
+
 /**
  * For endpoints that exist only to serve a Settings page: requires
  * `settings_access` as well as the specific permission.

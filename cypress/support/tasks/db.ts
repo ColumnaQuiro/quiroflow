@@ -2582,9 +2582,23 @@ async function setAppointmentStatus(opts: { appointmentId: string; status: strin
 /** What /account saves on a team member, read back. */
 async function teamMemberById(opts: { teamMemberId: string }) {
   const row = unwrap(
-    await admin.from('team_members').select('full_name, color, language_preference, theme_preference, deleted_at, is_owner').eq('id', opts.teamMemberId).single(),
+    await admin
+      .from('team_members')
+      .select('full_name, color, language_preference, theme_preference, deleted_at, is_owner, role_id, is_practitioner, online_booking_enabled')
+      .eq('id', opts.teamMemberId)
+      .single(),
   )
-  return row as { full_name: string; color: string; language_preference: string; theme_preference: string; deleted_at: string | null; is_owner: boolean }
+  return row as {
+    full_name: string
+    color: string
+    language_preference: string
+    theme_preference: string
+    deleted_at: string | null
+    is_owner: boolean
+    role_id: string | null
+    is_practitioner: boolean
+    online_booking_enabled: boolean
+  }
 }
 
 /** A patient's invoices with their lines -- what a fee left behind. */

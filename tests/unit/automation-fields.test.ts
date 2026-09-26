@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { automationFieldValue } from '../../utils/automationFields'
+import { answerKey, automationFieldValue, leadAnswersFromEvents } from '../../utils/automationFields'
 
 const laura = { firstName: 'Laura', lastName: 'Gómez', email: 'laura@example.test' }
 const at = '2026-10-02T08:30:00Z'
@@ -26,5 +26,39 @@ describe('Automation merge fields', () => {
     expect(automationFieldValue(laura, 'clinic_phone', {})).toBe('')
     expect(automationFieldValue(laura, 'next_appointment', {})).toBe('')
     expect(automationFieldValue(laura, 'first_name')).toBe('Laura')
+  })
+})
+
+describe('Lead form answers as merge fields', () => {
+  // As /api/public/v1/leads stores a Meta lead ad's field_data: the key
+  // humanised into the question, the value as the answer.
+  const events = [
+    { body: { answers: [{ question: '¿Cuál sería el motivo de tu consulta?', answer: 'Dolor lumbar' }, { question: 'Horario preferido', answer: 'Tardes' }] } },
+    { body: null },
+    { body: { verdict: 'qualified' } },
+    { body: { answers: [{ question: 'Horario preferido', answer: 'Mañanas\nsi puede ser' }] } },
+  ]
+  const leadAnswers = leadAnswersFromEvents(events)
+
+  it('names each question as a token an email can hold', () => {
+    expect(answerKey('¿Cuál sería el motivo de tu consulta?')).toBe('answer_cual_seria_el_motivo_de_tu_consulta')
+    expect(answerKey('cuál_sería_el_motivo')).toBe('answer_cual_seria_el_motivo')
+    expect(answerKey('¿?')).toBe('')
+    expect(answerKey('x'.repeat(200))).toMatch(/^answer_x{60}$/)
+    for (const q of ['¿Cuál sería el motivo de tu consulta?', 'Horario preferido', 'a — b / c']) expect(answerKey(q)).toMatch(/^\w+$/)
+  })
+
+  it('fills a variable with what the lead answered', () => {
+    expect(automationFieldValue(laura, 'answer_cual_seria_el_motivo_de_tu_consulta', { leadAnswers })).toBe('Dolor lumbar')
+  })
+
+  it('takes the latest answer to a question, on one line', () => {
+    expect(automationFieldValue(laura, 'answer_horario_preferido', { leadAnswers })).toBe('Mañanas, si puede ser')
+  })
+
+  it('is empty for a question the lead was not asked, or with no answers at all', () => {
+    expect(automationFieldValue(laura, 'answer_presupuesto', { leadAnswers })).toBe('')
+    expect(automationFieldValue(laura, 'answer_horario_preferido', {})).toBe('')
+    expect(automationFieldValue(laura, 'answer_horario_preferido')).toBe('')
   })
 })

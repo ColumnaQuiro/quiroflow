@@ -156,6 +156,34 @@ describe('Automation builder: step panels', () => {
     })
   })
 
+  // A lead automation can fill a slot with a form answer -- one option per
+  // question the clinic's lead forms have asked.
+  it('offers the questions leads answered as variables of a lead automation', () => {
+    cy.get<string>('@accountId').then((accountId) => {
+      cy.task('db:createLead', {
+        accountId,
+        fullName: 'Pablo Formulario',
+        channel: 'facebook',
+        events: [{ kind: 'qualification', title: 'Submitted the form', body: { answers: [{ question: '¿Cuál sería el motivo de tu consulta?', answer: 'Cervicales' }] } }],
+      })
+      cy.task<{ id: string }>('auto:createFlowRule', {
+        accountId,
+        triggerEvent: 'lead.created',
+        steps: [{ type: 'whatsapp_template', config: { template_name: 'two_slots', template_language: 'es', variables: [{ source: 'first_name' }, { source: '' }] } }],
+      }).then((rule) => {
+        cy.task<{ id: string }[]>('auto:actionsForRule', { ruleId: rule.id }).then((actions) => {
+          cy.visit(`/automations/${rule.id}`)
+          cy.wait('@templates')
+          cy.get(`[data-test="node-${actions[0].id}"]`).click()
+          cy.get('[data-test="variable-2"] select').select('answer_cual_seria_el_motivo_de_tu_consulta')
+          cy.get('[data-test="variable-2-unassigned"]').should('not.exist')
+          cy.get('[data-test="template-preview"]').should('contain', '¿Cuál sería el motivo de tu consulta?')
+          cy.get('[data-test="variables-lead-hint"]').should('contain', 'answered on the form')
+        })
+      })
+    })
+  })
+
   it('says why a test send failed instead of just that it did', () => {
     // No Resend key is configured against the test environment. The old code
     // turned that into silence, then into "Failed to send test."; it now

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { BUTTON_PARAM_SOURCES, VARIABLE_SOURCES, say } from '~/utils/automationCatalog'
+import { ANSWER_PREFIX } from '~/utils/automationFields'
 import { FIELD, HINT, LABEL, LINK_BTN, NOTE, REMOVE_BTN, SECTION, WARN } from '~/utils/automationUi'
 import { serverMessage } from '~/utils/serverMessage'
 
@@ -63,12 +64,29 @@ function removeVariable(i: number) {
   set({ variables: variables.value.filter((_, j) => j !== i) })
 }
 
+// A lead automation can also fill a slot with what the lead answered on the
+// form they came in through -- one option per question their forms ask.
+const answerSources = computed(() => {
+  const list = b.isLead.value ? b.leadQuestions.value.map((q) => ({ value: q.key, label: q.question })) : []
+  // A slot saved with a question no recent form has asked still shows what it
+  // is, rather than a blank select that looks unassigned.
+  for (const v of variableRows.value) {
+    if (v.source?.startsWith(ANSWER_PREFIX) && !list.some((q) => q.value === v.source)) list.push({ value: v.source, label: v.source.slice(ANSWER_PREFIX.length).replace(/_/g, ' ') })
+  }
+  return list
+})
+function sourceLabel(source: string | undefined, n: string) {
+  const known = VARIABLE_SOURCES.find((s) => s.value === source)
+  if (known) return say(t, known.label)
+  return answerSources.value.find((s) => s.value === source)?.label ?? '{{' + n + '}}'
+}
+
 const preview = computed(() => {
   const body = current.value?.bodyText ?? ''
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   return esc(body).replace(/\{\{(\d+)\}\}/g, (_, n: string) => {
     const v = variableRows.value[Number(n) - 1]
-    const label = v?.source === 'text' ? v.text || '…' : say(t, VARIABLE_SOURCES.find((s) => s.value === v?.source)?.label ?? ['{{' + n + '}}', '{{' + n + '}}'])
+    const label = v?.source === 'text' ? v.text || '…' : sourceLabel(v?.source, n)
     return `<strong>${esc(label)}</strong>`
   })
 })
@@ -187,6 +205,9 @@ const isMarketingTemplate = computed(() => current.value?.category === 'MARKETIN
         <select :class="FIELD" :value="v.source" :aria-label="t(`Variable ${i + 1}`, `Variable ${i + 1}`)" @change="setVariable(i, { source: ($event.target as HTMLSelectElement).value })">
           <option value="" disabled>{{ t('Choose…', 'Elige…') }}</option>
           <option v-for="s in VARIABLE_SOURCES" :key="s.value" :value="s.value">{{ say(t, s.label) }}</option>
+          <optgroup v-if="answerSources.length" :label="t('Form answers', 'Respuestas del formulario')">
+            <option v-for="s in answerSources" :key="s.value" :value="s.value">{{ s.label }}</option>
+          </optgroup>
         </select>
         <input v-if="v.source === 'text'" :class="FIELD" :value="v.text ?? ''" :placeholder="t('Fixed value', 'Valor fijo')" @input="setVariable(i, { text: ($event.target as HTMLInputElement).value })" />
         <button v-if="!current" type="button" :class="REMOVE_BTN" :aria-label="t('Remove variable', 'Quitar variable')" @click="removeVariable(i)">✕</button>
@@ -198,7 +219,14 @@ const isMarketingTemplate = computed(() => current.value?.category === 'MARKETIN
         {{ unassignedWarning(n) }}
       </p>
       <button v-if="!current" type="button" :class="LINK_BTN" @click="addVariable">+ {{ t('Add variable', 'Añadir variable') }}</button>
-      <p :class="HINT">{{ t("Filled in from each patient's details or their appointment.", 'Se rellenan con los datos de cada paciente o de su cita.') }}</p>
+      <p v-if="b.isLead.value" :class="HINT" data-test="variables-lead-hint">
+        {{
+          b.leadQuestions.value.length
+            ? t("Filled in from each lead's details, or from what they answered on the form they came in through.", 'Se rellenan con los datos de cada lead o con lo que respondió en el formulario por el que llegó.')
+            : t("Filled in from each lead's details. Form answers appear here once a lead has come in through a form with questions.", 'Se rellenan con los datos de cada lead. Las respuestas del formulario aparecen aquí cuando llegue un lead desde un formulario con preguntas.')
+        }}
+      </p>
+      <p v-else :class="HINT">{{ t("Filled in from each patient's details or their appointment.", 'Se rellenan con los datos de cada paciente o de su cita.') }}</p>
     </div>
 
     <div class="flex flex-col gap-2">

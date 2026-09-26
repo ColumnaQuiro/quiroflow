@@ -4,6 +4,7 @@ import { chainOf, findProblems, newStepId, normalizePositions, subtreeIds, type 
 import { emptyLookup, type NameLookup } from '~/utils/automationDescribe'
 import type { InsertPoint } from '~/utils/automationLayout'
 import { serverMessage } from '~/utils/serverMessage'
+import { answerKey, leadAnswersFromEvents } from '~/utils/automationFields'
 
 // The state of the automation builder: the rule and its tree as they are on
 // screen, what they were when loaded (so "unsaved changes" means something),
@@ -120,6 +121,9 @@ export function useAutomationBuilder() {
   const templates = ref<WhatsAppTemplate[]>([])
   const templatesError = ref('')
   const docTemplates = ref<{ id: string; title: string }[]>([])
+  // The questions leads have answered on their forms, newest wording first --
+  // each one a variable a lead automation can fill ({{answer_…}}).
+  const leadQuestions = ref<{ key: string; question: string }[]>([])
 
   const selection = ref<Selection>({ kind: 'trigger' })
 
@@ -191,12 +195,15 @@ export function useAutomationBuilder() {
 
   // ------------------------------------------------------------ loading
   async function loadLookups() {
-    const [types, members, roles, memberships, docs] = await Promise.all([
+    const [types, members, roles, memberships, docs, forms] = await Promise.all([
       supabase.from('appointment_types').select('id, name, archived_at').order('name'),
       supabase.from('team_members').select('id, full_name, is_practitioner').is('deleted_at', null).order('full_name'),
       supabase.from('account_roles').select('id, name').order('name'),
       supabase.from('memberships').select('id, name').order('name'),
       supabase.from('doc_templates').select('id, title').order('title'),
+      // Recent form submissions are enough to know which questions the
+      // clinic's forms ask; there is no catalogue of them anywhere else.
+      supabase.from('lead_events').select('body').eq('account_id', store.accountId ?? '').eq('kind', 'qualification').order('occurred_at', { ascending: false }).limit(300),
     ])
     lookup.value = {
       ...lookup.value,
@@ -208,6 +215,12 @@ export function useAutomationBuilder() {
       clinics: store.clinics.map((c) => ({ id: c.id, name: c.name })),
     }
     docTemplates.value = (docs.data ?? []) as { id: string; title: string }[]
+    const questions = new Map<string, string>()
+    for (const a of leadAnswersFromEvents((forms.data ?? []) as { body: unknown }[])) {
+      const key = answerKey(a.question)
+      if (key && !questions.has(key)) questions.set(key, a.question)
+    }
+    leadQuestions.value = [...questions].map(([key, question]) => ({ key, question }))
   }
 
   async function loadTemplates() {
@@ -402,6 +415,7 @@ export function useAutomationBuilder() {
     templates,
     templatesError,
     docTemplates,
+    leadQuestions,
     selection,
     dirty,
     isLead,

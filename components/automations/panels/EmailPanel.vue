@@ -10,6 +10,15 @@ const b = useBuilder()
 const t = useT()
 const config = computed(() => b.stepsById.value.get(props.stepId)!.config)
 const set = (patch: Record<string, any>) => b.updateStepConfig(props.stepId, patch)
+
+// A lead automation can also merge in what the lead answered on their form,
+// one chip per question ({{answer_…}}), shortened so a long question does not
+// push the toolbar off the side.
+const short = (s: string) => (s.length > 40 ? s.slice(0, 39).trimEnd() + '…' : s)
+const fields = computed(() => [
+  ...EMAIL_MERGE_FIELDS.map((f) => ({ key: f.value, label: say(t, f.label) })),
+  ...(b.isLead.value ? b.leadQuestions.value.map((q) => ({ key: q.key, label: short(q.question) })) : []),
+])
 </script>
 
 <template>
@@ -20,7 +29,7 @@ const set = (patch: Record<string, any>) => b.updateStepConfig(props.stepId, pat
     </label>
     <div :class="LABEL">
       {{ t('Message', 'Mensaje') }}
-      <AutomationsRichTextEditor :key="stepId" :model-value="config.body ?? ''" :variables="EMAIL_MERGE_FIELDS.map((f) => ({ key: f.value, label: say(t, f.label) }))" @update:model-value="set({ body: $event })" />
+      <AutomationsRichTextEditor :key="stepId" :model-value="config.body ?? ''" :variables="fields" @update:model-value="set({ body: $event })" />
     </div>
     <p :class="HINT">{{ t('Click a field to insert it where the cursor is. It is filled in for each patient when the email goes out.', 'Pulsa un campo para insertarlo donde está el cursor. Se rellena con los datos de cada paciente al enviar.') }}</p>
     <p v-if="b.draft.value.rule.is_marketing" :class="NOTE">{{ t('This automation is marketing: only patients who accepted marketing email receive it.', 'Esta automatización es comercial: solo la reciben los pacientes que aceptaron email comercial.') }}</p>

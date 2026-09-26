@@ -103,4 +103,38 @@ describe('Automation test mode', () => {
       })
     })
   })
+
+  // A Meta lead ad's questions arrive as answers on the lead; each one is a
+  // variable of its own, named after the question, so a welcome message can
+  // say what they came in for.
+  it('fills a variable with what the lead answered on the form', () => {
+    cy.task('db:createAutomationRule', {
+      accountId: account.accountId,
+      triggerEvent: 'lead.created',
+      isMarketing: true,
+      dryRun: true,
+      actions: [
+        {
+          type: 'email',
+          config: {
+            subject: '{{first_name}}, sobre {{answer_cual_seria_el_motivo_de_tu_consulta}} ({{answer_presupuesto}})',
+            body: '<p>Hola {{first_name}}.</p>',
+          },
+        },
+      ],
+    })
+    ingest({
+      full_name: 'Marta Formulario',
+      email: 'marta.form@example.com',
+      external_id: 'form-answers',
+      // Meta's field_data keys, passed straight through as n8n does.
+      answers: { 'cuál_sería_el_motivo_de_tu_consulta?': 'Dolor de espalda' },
+    }).then((res) => {
+      cy.task<EmailRow[]>('db:leadEmailMessages', { leadId: res.body.data.id }).then((rows) => {
+        expect(rows).to.have.length(1)
+        // A question this lead was not asked merges as nothing, not as the token.
+        expect(rows[0]!.subject).to.eq('Marta, sobre Dolor de espalda ()')
+      })
+    })
+  })
 })

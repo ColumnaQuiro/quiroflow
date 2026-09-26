@@ -1,5 +1,5 @@
 import { createHmac, randomUUID } from 'node:crypto'
-import { automationFieldValue as recipientFieldValue, type MergeContext } from '~/utils/automationFields'
+import { automationFieldValue as recipientFieldValue, leadAnswersFromEvents, type MergeContext } from '~/utils/automationFields'
 import { toE164 } from '~/utils/phone'
 import { renderTemplateFields } from '~/utils/docFields'
 import { automationEmailHtml, unsubscribeHeaders, type UnsubscribeLinks } from '~/utils/automationEmail'
@@ -212,11 +212,15 @@ export async function runLeadRuleActions(
   // making this re-read them and run the lot.
   only?: ActionRow[],
 ): Promise<ActionOutcome[]> {
-  const [{ data: rule }, { data: actions }] = await Promise.all([
+  const [{ data: rule }, { data: actions }, { data: formEvents }] = await Promise.all([
     supabase.from('automation_rules').select('is_marketing, dry_run').eq('id', ruleId).maybeSingle(),
     only
       ? Promise.resolve({ data: only })
       : supabase.from('automation_actions').select('id, action_type, config').eq('rule_id', ruleId).order('position'),
+    // What they answered on the form they came in through (a Meta lead ad's
+    // questions -- /api/public/v1/leads stores them as a 'qualification'
+    // event), so each answer can fill a variable: {{answer_<question>}}.
+    supabase.from('lead_events').select('body').eq('lead_id', lead.id).eq('kind', 'qualification').order('occurred_at'),
   ])
 
   const { outcomes } = await runForRecipient(
@@ -229,7 +233,7 @@ export async function runLeadRuleActions(
     undefined,
     undefined,
     undefined,
-    extraContext,
+    { ...extraContext, leadAnswers: leadAnswersFromEvents(formEvents ?? []) },
     rule?.dry_run ?? false,
     ruleId,
   )

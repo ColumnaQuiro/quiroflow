@@ -18,6 +18,7 @@ interface SeededAccount {
 const TEMPLATES = {
   templates: [
     { name: 'plain_message', language: 'es', category: 'MARKETING', status: 'APPROVED', bodyText: 'Hola {{1}}', variableCount: 1, urlButtonCount: 0, mediaHeaderFormat: null, buttons: [] },
+    { name: 'two_slots', language: 'es', category: 'MARKETING', status: 'APPROVED', bodyText: 'Hola {{1}}, por lo de {{2}}', variableCount: 2, urlButtonCount: 0, mediaHeaderFormat: null, buttons: [] },
     { name: 'with_location', language: 'es', category: 'MARKETING', status: 'APPROVED', bodyText: 'Aquí estamos', variableCount: 0, urlButtonCount: 0, mediaHeaderFormat: 'LOCATION', buttons: [] },
     { name: 'with_video', language: 'en', category: 'MARKETING', status: 'APPROVED', bodyText: 'Hi {{1}}', variableCount: 1, urlButtonCount: 0, mediaHeaderFormat: 'VIDEO', buttons: [] },
     {
@@ -122,6 +123,35 @@ describe('Automation builder: step panels', () => {
         expect(wa.config.variables).to.deep.eq([{ source: 'first_name' }])
         expect(wa.config.button_params).to.deep.eq([{ source: 'phone' }])
         expect(wa.config.doc_template_ids).to.deep.eq([null])
+      })
+    })
+  })
+
+  // An unassigned slot is sent as the first name (so Meta does not refuse
+  // the message) -- which is how "por lo de {{2}}" went out as "por lo de
+  // Martín" in production. The panel says so until something is chosen.
+  it('warns about a template variable nothing fills, until something does', () => {
+    // As in production: saved with one variable, on a template that has since
+    // gained a second -- the old Campaigns editor never said so.
+    cy.get<string>('@accountId').then((accountId) => {
+      cy.task<{ id: string }>('auto:createFlowRule', {
+        accountId,
+        triggerEvent: 'appointment.completed',
+        steps: [{ type: 'whatsapp_template', config: { template_name: 'two_slots', template_language: 'es', variables: [{ source: 'first_name' }] } }],
+      }).then((rule) => {
+        cy.task<{ id: string }[]>('auto:actionsForRule', { ruleId: rule.id }).then((actions) => {
+          cy.visit(`/automations/${rule.id}`)
+          cy.wait('@templates')
+          cy.get(`[data-test="node-${actions[0].id}"]`).click()
+          cy.get('[data-test="variable-2-unassigned"]').should('contain', 'sent as the person').and('contain', '{{2}}')
+          cy.get('[data-test="variable-1-unassigned"]').should('not.exist')
+
+          // A fixed value left blank is still nothing.
+          cy.get('[data-test="variable-2"] select').select('text')
+          cy.get('[data-test="variable-2-unassigned"]').should('exist')
+          cy.get('[data-test="variable-2"] input').type('tu espalda')
+          cy.get('[data-test="variable-2-unassigned"]').should('not.exist')
+        })
       })
     })
   })

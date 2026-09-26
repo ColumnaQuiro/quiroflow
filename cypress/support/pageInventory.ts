@@ -24,6 +24,7 @@ export const SETTINGS_PAGES = [
   '/settings/verifactu',
   '/settings/import',
   '/settings/invoice-settings',
+  '/settings/leads',
   '/settings/memberships',
   '/settings/migrate-attachments',
   '/settings/modalities',

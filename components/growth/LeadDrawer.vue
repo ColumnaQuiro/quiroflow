@@ -2,9 +2,38 @@
 import type { GrowthLeadDetail, LeadTimelineKind } from '~/composables/useGrowthLeadDetail'
 
 const props = defineProps<{ lead: GrowthLeadDetail }>()
-const emit = defineEmits<{ close: []; converted: [patientId: string] }>()
+const emit = defineEmits<{ close: []; converted: [patientId: string]; changed: [] }>()
 
 const t = useT()
+const { showToast } = useToast()
+
+// The estimated value, edited in place. Emptying it hands the lead back to
+// the account's default (Settings → Leads) rather than setting it to zero.
+const editingValue = ref(false)
+const valueDraft = ref('')
+const savingValue = ref(false)
+function startEditValue() {
+  valueDraft.value = props.lead.valueCents === null ? '' : String(props.lead.valueCents / 100)
+  editingValue.value = true
+}
+async function saveValue() {
+  const raw = valueDraft.value.trim().replace(',', '.')
+  const euros = raw === '' ? null : Number(raw)
+  if (euros !== null && (!Number.isFinite(euros) || euros < 0)) {
+    showToast(t('Enter an amount in euros, or leave it empty.', 'Escribe un importe en euros, o déjalo vacío.'), 'error')
+    return
+  }
+  savingValue.value = true
+  try {
+    await useStaffFetch(`/api/growth/leads/${props.lead.id}`, { method: 'PATCH', body: { estimatedValueCents: euros === null ? null : Math.round(euros * 100) } })
+    editingValue.value = false
+    emit('changed')
+  } catch {
+    showToast(t('Could not save the value.', 'No se ha podido guardar el valor.'), 'error')
+  } finally {
+    savingValue.value = false
+  }
+}
 const { converting, candidates, convert, linkToExisting, createAnyway, dismissCandidates } = useGrowthLeadConvert()
 
 async function onConvert() {
@@ -87,7 +116,29 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
           </div>
           <div class="flex flex-col">
             <span class="text-[9.5px] uppercase tracking-[.06em] text-ink-faint">{{ t('Estimated value', 'Valor estimado') }}</span>
-            <span class="font-mono text-[11.5px] text-ink-700">{{ lead.value }}</span>
+            <form v-if="editingValue" class="flex items-center gap-1" data-test="lead-value-form" @submit.prevent="saveValue">
+              <input
+                v-model="valueDraft"
+                inputmode="decimal"
+                class="h-6 w-20 rounded-ctlSm border border-line-control bg-surface px-1.5 font-mono text-[11.5px] text-ink-700"
+                :placeholder="t('Default', 'Por defecto')"
+                :aria-label="t('Estimated value in euros', 'Valor estimado en euros')"
+                data-test="lead-value-input"
+                @keydown.escape.stop="editingValue = false"
+              />
+              <span class="text-[11.5px] text-ink-muted">€</span>
+              <button type="submit" class="text-[11px] font-medium text-brand-text hover:underline" :disabled="savingValue" data-test="lead-value-save">{{ t('Save', 'Guardar') }}</button>
+            </form>
+            <button
+              v-else
+              type="button"
+              class="text-left font-mono text-[11.5px] text-ink-700 hover:text-brand-text hover:underline"
+              :title="t('Change the estimated value', 'Cambiar el valor estimado')"
+              data-test="lead-value"
+              @click="startEditValue"
+            >
+              {{ lead.value }}<span v-if="lead.valueIsDefault" class="ml-1 font-sans text-[10px] text-ink-faint">{{ t('(default)', '(por defecto)') }}</span>
+            </button>
           </div>
           <div class="flex flex-col">
             <span class="text-[9.5px] uppercase tracking-[.06em] text-ink-faint">{{ t('Owner', 'Responsable') }}</span>

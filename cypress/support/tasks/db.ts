@@ -2484,25 +2484,42 @@ async function stopPracticeHubStub() {
  * sends is not the question here -- whether it was called at all is, because
  * a rule in test mode must not call it.
  */
-let webhookReceiver: { server: import('node:http').Server; hits: string[] } | null = null
+let webhookReceiver: { server: import('node:http').Server; hits: string[]; calls: { event: string; signature: string | null; body: unknown }[] } | null = null
 
 async function startWebhookReceiver() {
   await stopWebhookReceiver()
   const { createServer } = await import('node:http')
   const hits: string[] = []
+  // What each call carried, for the specs that pin down the payload itself.
+  const calls: { event: string; signature: string | null; body: unknown }[] = []
   const server = createServer((req, res) => {
     hits.push(String(req.headers['x-quiroflow-event'] ?? ''))
-    res.statusCode = 204
-    res.end()
+    let raw = ''
+    req.on('data', (chunk) => (raw += chunk))
+    req.on('end', () => {
+      let body: unknown = raw
+      try {
+        body = JSON.parse(raw)
+      } catch {
+        // Kept as text.
+      }
+      calls.push({ event: String(req.headers['x-quiroflow-event'] ?? ''), signature: (req.headers['x-quiroflow-signature'] as string | undefined) ?? null, body })
+      res.statusCode = 204
+      res.end()
+    })
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
-  webhookReceiver = { server, hits }
+  webhookReceiver = { server, hits, calls }
   const port = (server.address() as { port: number }).port
   return { url: `http://127.0.0.1:${port}/hook` }
 }
 
 async function webhookReceiverHits() {
   return webhookReceiver?.hits ?? []
+}
+
+async function webhookReceiverCalls() {
+  return webhookReceiver?.calls ?? []
 }
 
 async function stopWebhookReceiver() {
@@ -3059,6 +3076,7 @@ export const dbTasks = {
   'db:stopPracticeHubStub': stopPracticeHubStub,
   'db:startWebhookReceiver': startWebhookReceiver,
   'db:webhookReceiverHits': webhookReceiverHits,
+  'db:webhookReceiverCalls': webhookReceiverCalls,
   'db:stopWebhookReceiver': stopWebhookReceiver,
   'db:leadEmailMessages': leadEmailMessages,
   'db:setLeadStage': setLeadStage,

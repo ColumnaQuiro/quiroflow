@@ -45,6 +45,9 @@ describe('Automation templates', () => {
 
       // A flow template arrives as its whole tree, paused too.
       cy.visit('/automations')
+      // The row renders from the list's own request, after mount: the page is
+      // hydrated and the button will answer a click.
+      cy.contains('First visit booked').should('be.visible')
       cy.get('[data-test="open-templates"]').click()
       cy.get('[data-test="template-win-back-after-visit"]').click()
       cy.location('pathname').should('match', /^\/automations\/[0-9a-f-]{36}$/)
@@ -64,6 +67,7 @@ describe('Automation templates', () => {
     cy.seedStaffAccount().then((account) => {
       cy.login(account.email, account.password)
       cy.visit('/automations')
+      cy.get('[data-test="empty"]').should('be.visible')
       cy.get('[data-test="open-templates"]').click()
       cy.get('[data-test="template-first-visit-booked"]').click()
       cy.location('pathname').should('match', /^\/automations\/[0-9a-f-]{36}$/)

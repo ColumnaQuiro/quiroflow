@@ -377,20 +377,24 @@ describe('Lead welcome sequences', () => {
             })
 
             cy.login(account.email, account.password)
-            cy.visit('/growth/automations?tab=executions')
+            // Visible without opening anything: the list counts the failure
+            // on the automation, and People counts it on its filter.
+            cy.visit('/automations')
+            cy.get(`[data-test="rule-${rule.id}"] [data-test="rule-stats"]`).should('contain', '1 failed')
+            cy.visit(`/automations/${rule.id}?tab=people`)
+            cy.get('[data-test="people-tab-failed"]').should('contain', '1').click()
+            cy.get(`[data-test="run-${run.id}"]`).should('contain', 'Webhook Down').click()
 
-            // Visible without opening anything: a badge on the tab and a
-            // count on the filter.
-            cy.get('[data-test="tab-executions-failed"]').should('contain', '1')
-            cy.get('[data-test="executions-filter-failed"]').click()
-            cy.get(`[data-test="execution-${run.id}"]`).should('contain', 'Webhook Down').and('contain', 'webhook did not accept').click()
+            cy.get(`[data-test="run-${run.id}"] [data-test="run-status"]`).should('contain', 'Failed')
+            cy.get('[data-test="run-error"]').should('contain', 'webhook did not accept')
+            cy.get('[data-test="run-event-failed"]').should('have.length', 3)
+            cy.get('[data-test="run-retry"]').click()
 
-            cy.get('[data-test="execution-status"]').should('contain', 'Failed')
-            cy.get('[data-test="execution-event-failed"]').should('have.length', 3)
-            cy.get('[data-test="execution-retry"]').click()
-
-            cy.get('[data-test="execution-status"]').should('contain', 'Finished')
-            cy.get('[data-test="execution-event-retried"]').should('exist')
+            // Retried from the failed step, it finishes -- and leaves the
+            // failed list.
+            cy.get('[data-test="run-events"]').should('contain', 'Finished')
+            cy.get('[data-test="run-event-retried"]').should('exist')
+            cy.get(`[data-test="run-${run.id}"]`).should('not.exist')
 
             cy.task<Run[]>('db:sequenceRuns', { leadId }).then((after) => {
               expect(after[0]!.status).to.eq('done')
@@ -417,7 +421,7 @@ describe('Lead welcome sequences', () => {
           cy.login(account.email, account.password)
           // Retrying a run mid-flight would race the cron for the same step
           // and could send it twice.
-          cy.request({ method: 'POST', url: `/api/growth/automation-runs/${runs[0]!.id}/retry`, failOnStatusCode: false }).its('status').should('eq', 409)
+          cy.request({ method: 'POST', url: `/api/automations/runs/${runs[0]!.id}/retry`, failOnStatusCode: false }).its('status').should('eq', 409)
         })
       })
     })

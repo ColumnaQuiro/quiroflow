@@ -26,5 +26,10 @@ export async function useStaffFetch<T = unknown>(url: string, opts: Record<strin
   const { data } = await supabase.auth.getSession()
   const headers = { ...(opts.headers as Record<string, string> | undefined) }
   if (data.session?.access_token) headers.Authorization = `Bearer ${data.session.access_token}`
-  return $fetch(url, { ...opts, headers }) as Promise<T>
+  // Through a plain signature: Nitro's typed $fetch matches `url` against
+  // every API route's pattern, and with enough dynamic routes that comparison
+  // exceeds TypeScript's stack depth (TS2321). `url` is a runtime string here
+  // anyway, so the route typing never had anything to say about it.
+  const fetcher = $fetch as unknown as (url: string, opts: Record<string, any>) => Promise<unknown>
+  return fetcher(url, { ...opts, headers }) as Promise<T>
 }

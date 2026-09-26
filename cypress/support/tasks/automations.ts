@@ -333,6 +333,66 @@ async function insertRun(opts: { accountId: string; ruleId: string; leadId: stri
   ) as { id: string }
 }
 
+/** A rule's steps as stored, for asserting ids stay put across saves. */
+async function actionsForRule(opts: { ruleId: string }) {
+  return (
+    check(
+      await admin
+        .from('automation_actions')
+        .select('id, action_type, position, parent_id, branch, config')
+        .eq('rule_id', opts.ruleId)
+        .order('position'),
+    ) ?? []
+  )
+}
+
+async function ruleRow(opts: { ruleId: string }) {
+  return check(await admin.from('automation_rules').select('*').eq('id', opts.ruleId).maybeSingle())
+}
+
+/** A WhatsApp row as the sender writes one, attributed (or not) to a rule and step. */
+async function seedWhatsAppMessage(opts: {
+  accountId: string
+  patientId: string
+  templateName: string
+  status: string
+  ruleId?: string | null
+  actionId?: string | null
+  daysAgo?: number
+}) {
+  return check(
+    await admin
+      .from('whatsapp_messages')
+      .insert({
+        account_id: opts.accountId,
+        patient_id: opts.patientId,
+        direction: 'outbound',
+        purpose: 'other',
+        template_name: opts.templateName,
+        status: opts.status,
+        wamid: opts.status === 'would_send' || opts.status === 'failed' ? null : `wamid.${Math.random().toString(36).slice(2)}`,
+        rule_id: opts.ruleId ?? null,
+        automation_action_id: opts.actionId ?? null,
+        created_at: new Date(Date.now() - (opts.daysAgo ?? 0) * 86_400_000).toISOString(),
+      } as never)
+      .select('id')
+      .single(),
+  )
+}
+
+/** Every outbound WhatsApp row of a rule, with its attribution. */
+async function whatsappForRule(opts: { ruleId: string }) {
+  return (
+    check(
+      await admin
+        .from('whatsapp_messages')
+        .select('template_name, status, patient_id, rule_id, automation_action_id')
+        .eq('rule_id' as never, opts.ruleId)
+        .order('created_at'),
+    ) ?? []
+  )
+}
+
 // ---------------------------------------------------------------- phase 3
 
 async function signedIn(email: string, password: string) {
@@ -405,6 +465,10 @@ async function leadConsent(opts: { leadId: string }) {
 }
 
 export const automationTasks = {
+  'auto:actionsForRule': actionsForRule,
+  'auto:ruleRow': ruleRow,
+  'auto:seedWhatsAppMessage': seedWhatsAppMessage,
+  'auto:whatsappForRule': whatsappForRule,
   'auto:patient': patient,
   'auto:whatsappFor': whatsappFor,
   'auto:emailsFor': emailsFor,

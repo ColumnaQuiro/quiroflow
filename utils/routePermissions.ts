@@ -49,7 +49,9 @@ const rules: Rule[] = [
     test: (p) => ['/settings/whatsapp', '/settings/docs'].includes(p),
     check: (s) => can(s, 'settings_access') && can(s, 'communication_config'),
   },
-  { test: (p) => p.startsWith('/campaigns'), check: (s) => can(s, 'communication_config') },
+  // /campaigns and /growth/automations redirect here; the old prefix keeps its
+  // gate so a bookmark never lands anywhere unguarded.
+  { test: (p) => p === '/automations' || p.startsWith('/automations/') || p.startsWith('/campaigns'), check: (s) => can(s, 'communication_config') },
   {
     test: (p) => ['/settings/import', '/settings/migrate-attachments', '/settings/compress-files', '/settings/webhooks'].includes(p),
     check: (s) => can(s, 'settings_access') && can(s, 'data_admin'),

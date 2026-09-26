@@ -17,7 +17,7 @@
 //     every paragraph, an <img> pointing at the clinic's own CDN, and a
 //     hardcoded clinic code. Rewritten as plain paragraphs.
 //
-// Bodies are the small tag set components/campaigns/RichTextEditor.vue
+// Bodies are the small tag set components/automations/RichTextEditor.vue
 // produces (p/ul/li/strong/br/a), because that is what the editor has to be
 // able to reopen and what runAutomationActions injects unescaped.
 

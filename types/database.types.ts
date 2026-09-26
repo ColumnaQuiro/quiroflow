@@ -1348,6 +1348,7 @@ export type Database = {
       automation_run_events: {
         Row: {
           account_id: string
+          action_id: string | null
           action_type: string | null
           actor_team_member_id: string | null
           created_at: string
@@ -1360,6 +1361,7 @@ export type Database = {
         }
         Insert: {
           account_id: string
+          action_id?: string | null
           action_type?: string | null
           actor_team_member_id?: string | null
           created_at?: string
@@ -1372,6 +1374,7 @@ export type Database = {
         }
         Update: {
           account_id?: string
+          action_id?: string | null
           action_type?: string | null
           actor_team_member_id?: string | null
           created_at?: string
@@ -2238,6 +2241,7 @@ export type Database = {
           id: string
           last_event_at: string | null
           lead_id: string | null
+          automation_action_id: string | null
           open_count: number
           patient_id: string | null
           provider_message_id: string | null
@@ -2261,6 +2265,7 @@ export type Database = {
           id?: string
           last_event_at?: string | null
           lead_id?: string | null
+          automation_action_id?: string | null
           open_count?: number
           patient_id?: string | null
           provider_message_id?: string | null
@@ -2284,6 +2289,7 @@ export type Database = {
           id?: string
           last_event_at?: string | null
           lead_id?: string | null
+          automation_action_id?: string | null
           open_count?: number
           patient_id?: string | null
           provider_message_id?: string | null
@@ -5878,6 +5884,8 @@ export type Database = {
           error_message: string | null
           id: string
           lead_id: string | null
+          rule_id: string | null
+          automation_action_id: string | null
           media_filename: string | null
           media_mime_type: string | null
           media_storage_path: string | null
@@ -5902,6 +5910,8 @@ export type Database = {
           error_message?: string | null
           id?: string
           lead_id?: string | null
+          rule_id?: string | null
+          automation_action_id?: string | null
           media_filename?: string | null
           media_mime_type?: string | null
           media_storage_path?: string | null
@@ -5926,6 +5936,8 @@ export type Database = {
           error_message?: string | null
           id?: string
           lead_id?: string | null
+          rule_id?: string | null
+          automation_action_id?: string | null
           media_filename?: string | null
           media_mime_type?: string | null
           media_storage_path?: string | null

@@ -15,14 +15,15 @@ const NAV_ITEMS = computed(() => [
   { label: t('Recalls', 'Recordatorios'), to: '/recalls' },
   { label: t('Billing', 'Facturación'), to: '/billing' },
   { label: t('Reports', 'Informes'), to: '/reports' },
-  { label: t('Campaigns', 'Campañas'), to: '/campaigns' },
+  { label: t('Inbox', 'Bandeja de entrada'), to: '/inbox' },
+  // Campaigns became Automations; "campaigns" still finds it.
+  { label: t('Automations (campaigns)', 'Automatizaciones (campañas)'), to: '/automations' },
   // "Growth", not "Dashboard" as the sidebar calls it -- the sidebar can lean
   // on its group heading for context and this flat list cannot, so two
   // entries called Dashboard would be indistinguishable here.
   { label: t('Growth', 'Crecimiento'), to: '/growth' },
   { label: t('Growth leads', 'Contactos de crecimiento'), to: '/growth/leads' },
   { label: t('AI Receptionist', 'Recepcionista IA'), to: '/growth/receptionist' },
-  { label: t('Automations', 'Automatizaciones'), to: '/growth/automations' },
   { label: t('Reputation', 'Reputación'), to: '/growth/reputation' },
   { label: t('Settings', 'Ajustes'), to: '/settings' },
 ])

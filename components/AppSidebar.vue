@@ -55,7 +55,7 @@ function toggleGroup(id: string) {
 
 const recallsCount = ref(0)
 const myDayCount = ref(0)
-const campaignsActive = ref(false)
+const automationsActive = ref(false)
 const inboxUnreadCount = ref(0)
 
 // The same default the Recalls page opens with -- 3+ weeks since the last
@@ -89,7 +89,7 @@ async function loadBadges() {
       .eq('enabled', true)
       .limit(1)
       .then(({ data }) => {
-        if (token === badgeToken) campaignsActive.value = (data ?? []).length > 0
+        if (token === badgeToken) automationsActive.value = (data ?? []).length > 0
       })
   }
 
@@ -153,7 +153,7 @@ interface NavItem {
   to: string
   perm: () => boolean
   icon: string
-  badge?: 'myday' | 'recalls' | 'campaigns' | 'inbox'
+  badge?: 'myday' | 'recalls' | 'automations' | 'inbox'
   /**
    * Highlight only on this exact path. For an item whose `to` is a prefix of
    * its siblings' -- /growth against /growth/leads -- without which both it
@@ -186,6 +186,10 @@ const navGroups = computed<{ id: string; label: string; tier?: string; items: Na
       { label: t('Waitlist', 'Lista de espera'), to: '/waitlist', perm: () => can('recalls_access'), icon: 'M8 2a6 6 0 100 12A6 6 0 008 2zM8 5v3.2l2.2 1.3' },
       { label: t('Care Plan Alerts', 'Alertas de plan'), to: '/care-plan-alerts', perm: () => can('recalls_access'), icon: 'M8 1.5l1.7 3.5 3.8.5-2.8 2.7.7 3.8L8 10.2 4.6 12l.7-3.8-2.8-2.7 3.8-.5z' },
       { label: t('Inbox', 'Bandeja de entrada'), to: '/inbox', perm: () => can('inbox_access'), icon: 'M2 3.5h12v9h-8l-3 2.5v-2.5h-1z', badge: 'inbox' },
+      // Campaigns and Growth > Automations, as one: every automation, patient
+      // or lead, lives here. In every plan -- lead automations inside it are
+      // what needs Growth, and they say so.
+      { label: t('Automations', 'Automatizaciones'), to: '/automations', perm: () => can('communication_config'), icon: 'M8.9 1.5 3.5 9h3.8l-.6 5.5L12.5 7H8.7z', badge: 'automations' },
     ],
   },
   {
@@ -199,9 +203,9 @@ const navGroups = computed<{ id: string; label: string; tier?: string; items: Na
   {
     id: 'growth',
     label: t('Growth', 'Crecimiento'),
-    // The one group carrying a tier badge -- everything under it is either
-    // already included in every plan (Campaigns) or part of the paid Growth
-    // tier, and the badge is what tells the two apart at a glance.
+    // The one group carrying a tier badge: everything under it is part of the
+    // paid Growth tier. (Automations, which is in every plan, moved up to
+    // Patients.)
     tier: 'GROWTH',
     // No "Conversations" here any more. It was a second link to /inbox
     // (?ai=handling) that could never show as the page you were on, and did
@@ -213,9 +217,7 @@ const navGroups = computed<{ id: string; label: string; tier?: string; items: Na
       { label: t('Overview', 'Resumen'), to: '/growth', exact: true, perm: () => can('communication_config'), icon: 'M2 12.5V7m3.5 5.5V3.5M9 12.5V9m3.5 3.5V5.5' },
       { label: t('Leads', 'Contactos'), to: '/growth/leads', perm: () => can('communication_config'), icon: 'M2.5 3.5h11v9h-11zM2.5 6.5h11M6 6.5v6' },
       { label: t('AI Receptionist', 'Recepcionista IA'), to: '/growth/receptionist', perm: () => can('communication_config'), icon: 'M4 5.5h8v5h-3l-2 2v-2h-3zM6.2 8h.01M9.8 8h.01' },
-      { label: t('Automations', 'Automatizaciones'), to: '/growth/automations', perm: () => can('communication_config'), icon: 'M3 3.5h4v3h-4zM9 9.5h4v3h-4zM5 6.5v3h4' },
       { label: t('Reputation', 'Reputación'), to: '/growth/reputation', perm: () => can('communication_config'), icon: 'M8 1.8l1.8 3.7 4 .6-2.9 2.8.7 4L8 11l-3.6 1.9.7-4-2.9-2.8 4-.6z' },
-      { label: t('Campaigns', 'Campañas'), to: '/campaigns', perm: () => can('communication_config'), icon: 'M8 2l4.5 6H8.9l1.1 6L5.5 8h3.6z', badge: 'campaigns' },
     ],
   },
 ])
@@ -244,7 +246,7 @@ function badgeText(item: NavItem): string | null {
   if (item.badge === 'myday' && myDayCount.value > 0) return t(`${myDayCount.value} today`, `${myDayCount.value} hoy`)
   if (item.badge === 'recalls' && recallsCount.value > 0) return t(`${recallsCount.value} to contact`, `${recallsCount.value} por contactar`)
   if (item.badge === 'inbox' && inboxUnreadCount.value > 0) return t(`${inboxUnreadCount.value} unread`, `${inboxUnreadCount.value} sin leer`)
-  if (item.badge === 'campaigns' && campaignsActive.value) return t('running', 'activas')
+  if (item.badge === 'automations' && automationsActive.value) return t('running', 'activas')
   return null
 }
 function itemName(item: NavItem) {
@@ -399,7 +401,7 @@ watch(() => route.fullPath, () => emit('close'))
               <!-- Neutral, not red: red is money owed everywhere else in the
               app, and a list of people to call is work, not an alarm. -->
               <span v-if="item.badge === 'recalls' && recallsCount > 0" class="rounded-pill bg-chip-bg px-1.5 py-px text-[10.5px] font-semibold text-ink-700" data-cy="nav-badge-recalls">{{ recallsCount }}</span>
-              <span v-if="item.badge === 'campaigns' && campaignsActive" class="h-[5px] w-[5px] rounded-full bg-success-accent" data-cy="nav-badge-campaigns" />
+              <span v-if="item.badge === 'automations' && automationsActive" class="h-[5px] w-[5px] rounded-full bg-success-accent" data-cy="nav-badge-automations" />
               <span v-if="item.badge === 'inbox' && inboxUnreadCount > 0" class="rounded-pill bg-brand px-1.5 py-px text-[10.5px] font-semibold text-surface" data-cy="nav-badge-inbox">{{ inboxUnreadCount }}</span>
             </template>
             <span v-else-if="badgeText(item)" class="absolute right-1 top-1 h-[6px] w-[6px] rounded-full bg-brand" aria-hidden="true" />

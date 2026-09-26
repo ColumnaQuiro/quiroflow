@@ -128,7 +128,7 @@ export async function requireAllPermissions(event: H3Event, permKeys: string[]) 
  * Deliberately NOT applied to every route behind these permissions. Most of
  * them are day-to-day work that a non-settings role is supposed to do:
  * `communication_config` also gates campaigns, the growth inbox and the lead
- * pipeline (routePermissions gates /campaigns on that key *alone*, on
+ * pipeline (routePermissions gates /automations on that key *alone*, on
  * purpose), and `billing_config` also gates taking a card and scheduling a
  * payment from a patient's billing tab. Requiring settings_access there would
  * lock receptionists out of their own job. Only the endpoints whose sole

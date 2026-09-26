@@ -16,6 +16,14 @@
 //                   where a.rule_id = r.id and a.action_type = 'delay')
 //    order by r.account_id, r.name;
 
+/**
+ * Rules saved from the Automations builder on were built knowing a wait
+ * waits, so only the ones created before it -- in the Campaigns editor, where
+ * a patient rule's delay was ignored -- are flagged as "this now behaves
+ * differently". The builder did not exist anywhere before this instant.
+ */
+export const DELAYS_HONOURED_SINCE = '2026-09-26T08:00:00Z'
+
 export interface DelayChangedRule {
   id: string
   name: string

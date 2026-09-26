@@ -7,7 +7,7 @@ import { dispatchPatientRule } from '~/server/utils/automationEngine'
 // multi-rule replacement for the single-slot Settings > Communication >
 // General reminder. A clinic can create as many rules on this trigger as it
 // wants (e.g. one at 72 hours, another at 24), each with its own hours_before
-// value in its filters -- see AutomationModal.vue. Unlike same-day-cron/
+// value in its filters -- see the trigger panel (components/automations/TriggerPanel.vue). Unlike same-day-cron/
 // birthday-cron, the "already sent" guard can't live on the appointment
 // itself (multiple rules with different offsets all need their own
 // independent guard), so it's tracked per (rule, appointment) in

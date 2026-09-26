@@ -46,6 +46,15 @@ export interface AutomationFilters {
   // it means "has an active membership in one of these specific plans".
   membership_active?: boolean
   membership_ids?: string[]
+  // Added with the Automations screen, for scheduled segments ("patients who
+  // have not been in for six months"). Both are read only when present, so a
+  // rule saved before they existed matches exactly as it did.
+  //
+  // At least one completed visit, and the most recent one longer ago than
+  // this many days. Somebody who has never completed a visit is not "lapsed".
+  last_visit_before_days?: number
+  // The patient's own location (patients.clinic_id), any of these.
+  clinic_ids?: string[]
   // Only read by hours-before-cron.post.ts to pick its scan window -- not a
   // patient-targeting filter, so ruleFiltersMatch below never looks at it.
   hours_before?: number
@@ -110,6 +119,25 @@ export async function ruleFiltersMatch(
     const balanceCents = live?.balance_cents ?? 0
     if (filters.balance === 'debit' && !(balanceCents < 0)) return false
     if (filters.balance === 'credit' && !(balanceCents > 0)) return false
+  }
+
+  if (typeof filters.last_visit_before_days === 'number' && filters.last_visit_before_days > 0) {
+    const { data: last } = await supabase
+      .from('appointments')
+      .select('starts_at')
+      .eq('patient_id', patientId)
+      .eq('status', 'completed')
+      .order('starts_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (!last?.starts_at) return false
+    const cutoff = Date.now() - filters.last_visit_before_days * 24 * 3600 * 1000
+    if (new Date(last.starts_at).getTime() >= cutoff) return false
+  }
+
+  if (filters.clinic_ids?.length) {
+    const { data: row } = await supabase.from('patients').select('clinic_id').eq('id', patientId).maybeSingle()
+    if (!row?.clinic_id || !filters.clinic_ids.includes(row.clinic_id)) return false
   }
 
   if (filters.membership_active || filters.membership_ids?.length) {

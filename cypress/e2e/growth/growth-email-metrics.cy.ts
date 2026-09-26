@@ -171,20 +171,21 @@ describe("Email delivery metrics", () => {
         });
 
         cy.login(account.email, account.password);
-        cy.visit("/campaigns");
+        cy.visit("/automations");
 
-        cy.get('[data-test="email-sent"]').should("have.text", "4");
-        // Two of three DELIVERED opened -- 67%. Not two of four: an open rate
-        // diluted by a message that never arrived measures the address list.
-        cy.get('[data-test="email-opened"]').should("have.text", "67%");
-        cy.get('[data-test="email-clicked"]').should("have.text", "33%");
-        cy.get('[data-test="email-bounced"]').should("have.text", "1");
+        // In the list: the open rate. Two of three DELIVERED opened -- 67 %.
+        // Not two of four: an open rate diluted by a message that never
+        // arrived measures the address list.
+        cy.get(`[data-test="rule-${rule.id}"] [data-test="stat-third"]`).should("have.text", "67 %");
 
-        cy.contains("Boletín").click();
+        // In the automation: the rest of it.
+        cy.get(`[data-test="rule-${rule.id}"] [data-test="rule-link"]`).click();
         cy.get('[data-test="rule-email-stats"]').within(() => {
-          cy.contains("Sent").parent().should("contain.text", "4");
+          cy.get('[data-test="rule-email-stats-Sent"]').should("contain.text", "4");
           // Three opens happened; two patients opened.
-          cy.contains("Opened").parent().should("contain.text", "2");
+          cy.get('[data-test="rule-email-stats-Opened"]').should("contain.text", "2").and("contain.text", "67 %");
+          cy.get('[data-test="rule-email-stats-Clicked"]').should("contain.text", "1").and("contain.text", "33 %");
+          cy.get('[data-test="rule-email-stats-Bounced / failed"]').should("contain.text", "1");
         });
       });
     });

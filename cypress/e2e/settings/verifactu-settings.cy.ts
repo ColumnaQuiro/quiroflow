@@ -66,4 +66,45 @@ describe('VeriFactu settings', () => {
       cy.request({ url: '/api/verifactu/settings', failOnStatusCode: false }).its('status').should('eq', 403)
     })
   })
+
+  describe('the certificate', () => {
+    function upload(nif: string) {
+      cy.task<string>('cert:makeTestCertificate', { nif, password: 'prueba-1234' }).then((b64) => {
+        cy.get('[data-cy="verifactu-cert-file"]').selectFile({ contents: Cypress.Buffer.from(b64, 'base64'), fileName: 'certificado.p12' })
+      })
+      cy.get('[data-cy="verifactu-cert-password"]').type('prueba-1234')
+      cy.get('[data-cy="verifactu-cert-upload"]').click()
+      cy.wait('@upload').its('response.statusCode').should('eq', 200)
+    }
+
+    it('says it is valid, and what each check found', () => {
+      cy.seedStaffAccount().then((account) => {
+        cy.task('db:setClinicFiscal', { clinicId: account.clinicId, taxId: 'B12345678', legalName: 'Clinica Prueba SL' })
+        cy.intercept('POST', '/api/verifactu/certificate').as('upload')
+        cy.login(account.email, account.password)
+        cy.visit('/settings/verifactu')
+        upload('B12345678')
+
+        cy.get('[data-cy="verifactu-cert-status"]').should('contain.text', 'Valid')
+        cy.get('[data-cy="verifactu-cert-checks"]')
+          .should('contain.text', 'Issued for this company (B12345678)')
+          .and('contain.text', 'In date')
+          .and('contain.text', 'The stored password opens it')
+        cy.get('[data-cy="verifactu-cert-aeat"]').should('contain.text', 'Nothing has been sent with it yet')
+      })
+    })
+
+    it('flags a certificate that belongs to another company', () => {
+      cy.seedStaffAccount().then((account) => {
+        cy.task('db:setClinicFiscal', { clinicId: account.clinicId, taxId: 'B12345678', legalName: 'Clinica Prueba SL' })
+        cy.intercept('POST', '/api/verifactu/certificate').as('upload')
+        cy.login(account.email, account.password)
+        cy.visit('/settings/verifactu')
+        upload('B87654321')
+
+        cy.get('[data-cy="verifactu-cert-status"]').should('contain.text', 'Needs attention')
+        cy.get('[data-cy="verifactu-cert-checks"]').should('contain.text', 'It is not for this company (B12345678)')
+      })
+    })
+  })
 })

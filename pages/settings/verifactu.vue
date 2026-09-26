@@ -14,7 +14,20 @@ interface Settings {
   productionFrom: string | null
   locked: boolean
   company: { nif: string | null; legalName: string | null }
-  certificate: { type: 'representative' | 'seal'; subject: string | null; notAfter: string | null; updatedAt: string; hasPassphrase: boolean } | null
+  certificate: {
+    type: 'representative' | 'seal'
+    subject: string | null
+    notAfter: string | null
+    updatedAt: string
+    hasPassphrase: boolean
+    checks: {
+      belongsToCompany: boolean | null
+      expired: boolean
+      passwordOpens: boolean | null
+      aeat: { state: 'accepted' | 'refused' | 'unreachable' | 'unused'; at: string | null; message: string | null }
+      valid: boolean
+    } | null
+  } | null
   platformKeyConfigured: boolean
   activity: {
     waiting: number
@@ -224,7 +237,51 @@ function formatDateTime(iso: string | null) {
 
             <!-- Certificate ------------------------------------------------------------>
             <section class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card" data-cy="verifactu-certificate">
-              <h2 class="text-[14px] font-semibold text-ink-900">{{ t('Certificate', 'Certificado') }}</h2>
+              <div class="flex items-center justify-between gap-3">
+                <h2 class="text-[14px] font-semibold text-ink-900">{{ t('Certificate', 'Certificado') }}</h2>
+                <UiPill v-if="settings.certificate?.checks?.valid" tone="success" dot data-cy="verifactu-cert-status">{{ t('Valid', 'Válido') }}</UiPill>
+                <UiPill v-else-if="settings.certificate" tone="warning" dot data-cy="verifactu-cert-status">{{ t('Needs attention', 'Requiere atención') }}</UiPill>
+              </div>
+
+              <!-- What "valid" is made of, one line each, so a warning says
+              which part is wrong rather than leaving the owner to guess. -->
+              <ul v-if="settings.certificate?.checks" data-cy="verifactu-cert-checks" class="mt-2 space-y-1 text-[12.5px]">
+                <li :class="settings.certificate.checks.belongsToCompany === false ? 'text-danger-text' : 'text-ink-600'">
+                  {{ settings.certificate.checks.belongsToCompany === false ? '✕' : settings.certificate.checks.belongsToCompany ? '✓' : '·' }}
+                  {{
+                    settings.certificate.checks.belongsToCompany === false
+                      ? t(`It is not for this company (${settings.company.nif}).`, `No es de esta empresa (${settings.company.nif}).`)
+                      : settings.certificate.checks.belongsToCompany
+                        ? t(`Issued for this company (${settings.company.nif}).`, `Emitido para esta empresa (${settings.company.nif}).`)
+                        : t('Add the NIF in Fiscal Data to check whose it is.', 'Añade el NIF en Datos fiscales para comprobar de quién es.')
+                  }}
+                </li>
+                <li :class="settings.certificate.checks.expired ? 'text-danger-text' : 'text-ink-600'">
+                  {{ settings.certificate.checks.expired ? '✕' : '✓' }}
+                  {{ settings.certificate.checks.expired ? t('Expired.', 'Caducado.') : t(`In date${daysLeft !== null ? ` -- ${daysLeft} days left` : ''}.`, `Vigente${daysLeft !== null ? `: quedan ${daysLeft} días` : ''}.`) }}
+                </li>
+                <li :class="settings.certificate.checks.passwordOpens === false ? 'text-danger-text' : 'text-ink-600'">
+                  {{ settings.certificate.checks.passwordOpens === false ? '✕' : settings.certificate.checks.passwordOpens ? '✓' : '·' }}
+                  {{
+                    settings.certificate.checks.passwordOpens === false
+                      ? t('The stored password does not open it. Upload it again with its password.', 'La contraseña guardada no lo abre. Vuelve a subirlo con su contraseña.')
+                      : settings.certificate.checks.passwordOpens
+                        ? t('The stored password opens it.', 'La contraseña guardada lo abre.')
+                        : t('The password cannot be checked until the platform key is configured.', 'La contraseña no se puede comprobar hasta que se configure la clave de la plataforma.')
+                  }}
+                </li>
+                <li data-cy="verifactu-cert-aeat" :class="settings.certificate.checks.aeat.state === 'accepted' ? 'text-ink-600' : settings.certificate.checks.aeat.state === 'unused' ? 'text-ink-muted2' : 'text-warning-text'">
+                  {{ settings.certificate.checks.aeat.state === 'accepted' ? '✓' : settings.certificate.checks.aeat.state === 'unused' ? '·' : '!' }}
+                  <template v-if="settings.certificate.checks.aeat.state === 'accepted'">{{ t('The AEAT has accepted records sent with it', 'La AEAT ha aceptado registros enviados con él') }} ({{ formatDateTime(settings.certificate.checks.aeat.at) }}).</template>
+                  <template v-else-if="settings.certificate.checks.aeat.state === 'refused'">
+                    {{ t('The AEAT answered, so the connection works, but refused the last record', 'La AEAT respondió, así que la conexión funciona, pero rechazó el último registro') }} ({{ formatDateTime(settings.certificate.checks.aeat.at) }}): {{ settings.certificate.checks.aeat.message }}
+                  </template>
+                  <template v-else-if="settings.certificate.checks.aeat.state === 'unreachable'">
+                    {{ t('Could not reach the AEAT with it', 'No se pudo conectar con la AEAT con él') }} ({{ formatDateTime(settings.certificate.checks.aeat.at) }}): {{ settings.certificate.checks.aeat.message }}
+                  </template>
+                  <template v-else>{{ t('Nothing has been sent with it yet.', 'Todavía no se ha enviado nada con él.') }}</template>
+                </li>
+              </ul>
 
               <div v-if="settings.certificate" class="mt-2 rounded-ctl bg-surface-subtle px-3 py-2 text-[13px]">
                 <p class="font-medium text-ink-900">{{ settings.certificate.subject || t('Certificate on file', 'Certificado guardado') }}</p>

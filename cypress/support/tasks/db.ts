@@ -3001,7 +3001,29 @@ async function verifactuSettingsOf({ accountId }: { accountId: string }) {
   return unwrap(await admin.from('accounts').select('verifactu_mode, verifactu_production_from').eq('id', accountId).single())
 }
 
+// A real PKCS#12, made the way a clinic's certificate arrives: openssl, with
+// modern AES encryption. The company's NIF goes in the subject the way a
+// Spanish representative certificate carries it -- "(R: B12345678)" -- so the
+// settings page can check whose it is.
+async function makeTestCertificate({ nif, password }: { nif: string; password: string }) {
+  const { execFileSync } = await import('node:child_process')
+  const { mkdtempSync, readFileSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const dir = mkdtempSync(join(tmpdir(), 'p12-'))
+  execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', join(dir, 'k.pem'), '-out', join(dir, 'c.pem'), '-days', '400', '-subj', `/CN=PRUEBA TEST (R: ${nif})/O=Clinica Prueba SL`], { stdio: 'ignore' })
+  execFileSync('openssl', ['pkcs12', '-export', '-inkey', join(dir, 'k.pem'), '-in', join(dir, 'c.pem'), '-out', join(dir, 'c.p12'), '-passout', `pass:${password}`, '-keypbe', 'AES-256-CBC', '-certpbe', 'AES-256-CBC', '-macalg', 'sha256'], { stdio: 'ignore' })
+  return readFileSync(join(dir, 'c.p12')).toString('base64')
+}
+
+async function setClinicFiscal({ clinicId, taxId, legalName }: { clinicId: string; taxId: string; legalName: string }) {
+  assertOk(await admin.from('clinics').update({ tax_id: taxId, legal_name: legalName } as never).eq('id', clinicId))
+  return null
+}
+
 export const dbTasks = {
+  'cert:makeTestCertificate': makeTestCertificate,
+  'db:setClinicFiscal': setClinicFiscal,
   'db:verifactuSettingsOf': verifactuSettingsOf,
   'db:startProductionChain': startProductionChain,
   'totp:code': totpCode,

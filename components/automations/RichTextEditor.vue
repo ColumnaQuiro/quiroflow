@@ -11,7 +11,10 @@
 // can't be a signed URL that expires.
 import { sanitizeStorageFilename } from '~/utils/storageFilename'
 
-const props = defineProps<{ modelValue: string }>()
+// `variables`: the merge fields offered as chips. Without it, the three the
+// settings emails use (name, surname, email); the automation builder passes
+// every field an automated email can resolve.
+const props = defineProps<{ modelValue: string; variables?: { key: string; label: string }[] }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024
@@ -149,7 +152,19 @@ async function uploadAndInsert(file: File) {
   }
 }
 
+const chips = computed(
+  () =>
+    props.variables ?? [
+      { key: 'first_name', label: t('First name', 'Nombre') },
+      { key: 'last_name', label: t('Last name', 'Apellidos') },
+      { key: 'email', label: t('Email', 'Correo electrónico') },
+    ],
+)
+
 function insertVariable(name: string) {
+  // Into the editor even when the cursor was elsewhere: focusing first keeps
+  // the chip from typing into whatever field had focus.
+  if (document.activeElement !== editorRef.value) editorRef.value?.focus()
   document.execCommand('insertText', false, `{{${name}}}`)
   onInput()
 }
@@ -170,10 +185,15 @@ function onInput() {
         {{ uploading ? t('Uploading…', 'Subiendo…') : t('Image', 'Imagen') }}
       </button>
       <input ref="fileInputRef" type="file" accept="image/*" class="hidden" @change="onFileChosen" />
-      <div class="ml-auto flex items-center gap-1">
-        <button type="button" class="rounded-pill border border-line-control bg-surface px-2 py-0.5 text-[11px] text-ink-muted2 hover:border-brand-tintBorder hover:bg-brand-tint hover:text-brand-text" @click="insertVariable('first_name')">{{ t('First name', 'Nombre') }}</button>
-        <button type="button" class="rounded-pill border border-line-control bg-surface px-2 py-0.5 text-[11px] text-ink-muted2 hover:border-brand-tintBorder hover:bg-brand-tint hover:text-brand-text" @click="insertVariable('last_name')">{{ t('Last name', 'Apellidos') }}</button>
-        <button type="button" class="rounded-pill border border-line-control bg-surface px-2 py-0.5 text-[11px] text-ink-muted2 hover:border-brand-tintBorder hover:bg-brand-tint hover:text-brand-text" @click="insertVariable('email')">{{ t('Email', 'Correo electrónico') }}</button>
+      <div class="ml-auto flex flex-wrap items-center gap-1">
+        <button
+          v-for="v in chips"
+          :key="v.key"
+          type="button"
+          class="rounded-pill border border-line-control bg-surface px-2 py-0.5 text-[11px] text-ink-muted2 hover:border-brand-tintBorder hover:bg-brand-tint hover:text-brand-text touch:min-h-9"
+          @mousedown.prevent
+          @click="insertVariable(v.key)"
+        >{{ v.label }}</button>
       </div>
     </div>
     <div

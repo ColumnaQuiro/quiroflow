@@ -171,7 +171,7 @@ async function save() {
                     :placeholder="t('Subject — e.g. Your appointment is confirmed', 'Asunto — p. ej. Tu cita ha sido confirmada')"
                     class="h-8 w-full rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
                   />
-                  <CampaignsRichTextEditor v-model="emailConfirmationBody" />
+                  <AutomationsRichTextEditor v-model="emailConfirmationBody" />
                   <p class="text-[11.5px] text-ink-faint">
                     {{ t('Merge fields:', 'Campos combinados:') }} <code class="rounded-ctlSm bg-surface-subtle px-1">&#123;&#123;first_name&#125;&#125;</code>
                     <code class="rounded-ctlSm bg-surface-subtle px-1">&#123;&#123;next_appointment&#125;&#125;</code>
@@ -245,7 +245,7 @@ async function save() {
                     :placeholder="t('Subject — e.g. Reminder: your appointment is tomorrow', 'Asunto — p. ej. Recordatorio: tu cita es mañana')"
                     class="h-8 w-full rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
                   />
-                  <CampaignsRichTextEditor v-model="emailReminderBody" />
+                  <AutomationsRichTextEditor v-model="emailReminderBody" />
                   <p class="text-[11.5px] text-ink-faint">
                     {{ t('Merge fields:', 'Campos combinados:') }} <code class="rounded-ctlSm bg-surface-subtle px-1">&#123;&#123;first_name&#125;&#125;</code>
                     <code class="rounded-ctlSm bg-surface-subtle px-1">&#123;&#123;next_appointment&#125;&#125;</code>

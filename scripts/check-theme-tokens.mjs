@@ -24,7 +24,7 @@ import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const ROOTS = ['components/settings/ClinicClosures.vue', 'pages/settings/roles', 'components/settings/RolePermissionRow.vue', 'components/reports/PractitionerClinicFilters.vue', 'pages/settings/clinics', 'components/settings/ClinicHoursEditor.vue', 'components/settings/TimeZonePicker.vue', 'components/AppSidebar.vue', 'components/growth', 'pages/growth', 'components/calendar', 'pages/calendar.vue', 'pages/account.vue', 'components/ui/ConfirmDialog.vue', 'pages/recalls.vue', 'pages/settings/team', 'components/settings/InviteDialog.vue', 'pages/settings/appointment-types', 'components/settings/SwitchRow.vue']
+const ROOTS = ['components/settings/ClinicClosures.vue', 'pages/settings/roles', 'components/settings/RolePermissionRow.vue', 'components/reports/PractitionerClinicFilters.vue', 'pages/settings/clinics', 'components/settings/ClinicHoursEditor.vue', 'components/settings/TimeZonePicker.vue', 'components/AppSidebar.vue', 'components/growth', 'pages/growth', 'components/calendar', 'pages/calendar.vue', 'pages/account.vue', 'components/ui/ConfirmDialog.vue', 'pages/recalls.vue', 'pages/settings/team', 'components/settings/InviteDialog.vue', 'pages/settings/appointment-types', 'components/settings/SwitchRow.vue', 'components/automations', 'pages/automations', 'utils/automationUi.ts']
 
 // Hex colours, and the rgb()/hsl() forms that dodge a hex check. A CSS var
 // reference is what we WANT, so rgb(var(--x)) has to survive.

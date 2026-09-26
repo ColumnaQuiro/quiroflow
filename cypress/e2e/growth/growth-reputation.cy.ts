@@ -12,7 +12,8 @@
 // reviews in dark by default. scripts/check-theme-tokens.mjs guards the
 // static half (no hardcoded colours); this guards the rendered half.
 
-const GROWTH_PAGES = ['/growth', '/growth/leads', '/growth/receptionist', '/growth/automations', '/growth/reputation']
+// /automations replaced /growth/automations; it stays in the dark pass.
+const GROWTH_PAGES = ['/growth', '/growth/leads', '/growth/receptionist', '/automations', '/growth/reputation']
 
 interface SeededAccount {
   email: string

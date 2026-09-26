@@ -1,80 +1,78 @@
-// The starter campaign set.
+// Starting from a template (Automations > Templates, formerly Campaigns).
 //
-// PracticeHub's API has no campaigns endpoint -- 30 candidate paths, two
-// controls, every one 404 -- and its CSV exports do not carry them either, so
-// there is nothing to import from. A clinic arriving from PracticeHub has the
-// same blank campaigns page as one arriving from nothing.
+// PracticeHub's API has no campaigns endpoint and its exports do not carry
+// them, so a clinic arriving from PracticeHub starts as blank as any other.
 //
-// What earns a test here is the round trip and the safety property: the
-// campaigns are created from the template, and they are created DISABLED.
-// These send to real patients, and a set that started firing because someone
+// What earns a test is the round trip and the safety property: an automation
+// created from a template is exactly the one chosen, and it arrives PAUSED --
+// these reach real patients, and a set that started firing because someone
 // wanted to see what the button did would be a bad way to find out.
-describe('Campaign templates', () => {
-  it('creates the chosen ones, switched off, with the clinic filled in', () => {
+interface Row {
+  id: string
+  name: string
+  enabled: boolean
+  actions: { action_type: string; config: Record<string, any> }[]
+}
+
+describe('Automation templates', () => {
+  it('creates the chosen one, paused, with the clinic filled in', () => {
     cy.seedStaffAccount().then((account) => {
       cy.login(account.email, account.password)
-      cy.visit('/campaigns')
+      cy.visit('/automations')
 
-      cy.contains('No campaigns yet').should('be.visible')
-      cy.contains('button', 'Start from a template').click()
+      cy.get('[data-test="empty"]').should('contain', 'No automations yet')
+      cy.get('[data-test="empty-templates"]').click()
+      cy.get('[data-test="templates-dialog"]').should('be.visible')
+      cy.get('[data-test="template-first-visit-booked"]').click()
+      // Straight into the builder, to read it before switching it on.
+      cy.location('pathname').should('match', /^\/automations\/[0-9a-f-]{36}$/)
+      cy.get('[data-test="automation-enabled"]').should('have.attr', 'aria-checked', 'false')
 
-      // Everything is pre-ticked; narrow to two so the test also proves the
-      // picker is a picker rather than an "add them all" button.
-      cy.get('[data-test="template-first-visit-booked"]').should('be.checked')
-      cy.get('[data-test="template-birthday-active"]').uncheck()
-      cy.get('[data-test="template-birthday-lapsed"]').uncheck()
-      cy.get('[data-test="template-post-first-visit"]').uncheck()
-      cy.get('[data-test="template-what-to-expect"]').uncheck()
-      cy.get('[data-test="template-chiropractic-report"]').uncheck()
-      cy.get('[data-test="template-care-plan-completed"]').uncheck()
-
-      cy.get('[data-test="create-templates"]').click()
-      cy.contains('button', 'Creating…').should('not.exist')
-
-      cy.contains('First visit booked').should('be.visible')
-      cy.contains('First visit cancelled').should('be.visible')
-      // The ones left unticked were not created.
-      cy.contains('Birthday (active patient)').should('not.exist')
-
-      cy.task('db:latestAutomationRules', { accountId: account.accountId }).then((rows: any) => {
-        expect(rows, 'only the two chosen').to.have.length(2)
-        for (const rule of rows) {
-          expect(rule.enabled, `${rule.name} arrives switched off`).to.eq(false)
-        }
-        const welcome = rows.find((r: any) => r.name === 'First visit booked')
-        expect(welcome.actions, 'one email action').to.have.length(1)
-        expect(welcome.actions[0].action_type).to.eq('email')
-        // The clinic name is substituted at creation, so staff open finished
-        // copy rather than a placeholder.
-        expect(welcome.actions[0].config.subject).to.contain('Main Location')
-        expect(welcome.actions[0].config.subject).to.not.contain('{{clinic_name}}')
-        // ...while the per-recipient merge fields must survive untouched.
-        expect(welcome.actions[0].config.body).to.contain('{{next_appointment}}')
+      cy.task<Row[]>('db:latestAutomationRules', { accountId: account.accountId }).then((rows) => {
+        expect(rows, 'only the one chosen').to.have.length(1)
+        const welcome = rows[0]!
+        expect(welcome.name).to.eq('First visit booked')
+        expect(welcome.enabled, 'arrives paused').to.eq(false)
+        expect(welcome.actions, 'one email step').to.have.length(1)
+        expect(welcome.actions[0]!.action_type).to.eq('email')
+        // The clinic name is written in at creation, so staff open finished
+        // copy rather than a placeholder...
+        expect(welcome.actions[0]!.config.subject).to.contain('Main Location')
+        expect(welcome.actions[0]!.config.subject).to.not.contain('{{clinic_name}}')
+        // ...while the per-recipient merge fields survive untouched.
+        expect(welcome.actions[0]!.config.body).to.contain('{{next_appointment}}')
       })
+
+      // A flow template arrives as its whole tree, paused too.
+      cy.visit('/automations')
+      cy.get('[data-test="open-templates"]').click()
+      cy.get('[data-test="template-win-back-after-visit"]').click()
+      cy.location('pathname').should('match', /^\/automations\/[0-9a-f-]{36}$/)
+      cy.task<Row[]>('db:latestAutomationRules', { accountId: account.accountId }).then((rows) => {
+        expect(rows).to.have.length(2)
+        const flow = rows.find((r) => r.name === 'Win back after the visit')!
+        expect(flow.enabled).to.eq(false)
+        expect(flow.actions.map((a) => a.action_type).sort()).to.deep.eq(['branch', 'delay', 'notify', 'tag', 'wait_until', 'whatsapp_template'])
+      })
+      // What it still needs is named on the canvas, not discovered later.
+      cy.get('[data-test="canvas-fit"]').click()
+      cy.get('[data-test="node-problem"]').should('exist')
     })
   })
 
   it('marks what is already there rather than offering a duplicate', () => {
     cy.seedStaffAccount().then((account) => {
       cy.login(account.email, account.password)
-      cy.visit('/campaigns')
+      cy.visit('/automations')
+      cy.get('[data-test="open-templates"]').click()
+      cy.get('[data-test="template-first-visit-booked"]').click()
+      cy.location('pathname').should('match', /^\/automations\/[0-9a-f-]{36}$/)
 
-      cy.contains('button', 'Start from a template').click()
-      cy.get('[data-test="template-birthday-active"]').uncheck()
-      cy.get('[data-test="template-birthday-lapsed"]').uncheck()
-      cy.get('[data-test="template-post-first-visit"]').uncheck()
-      cy.get('[data-test="template-what-to-expect"]').uncheck()
-      cy.get('[data-test="template-chiropractic-report"]').uncheck()
-      cy.get('[data-test="template-care-plan-completed"]').uncheck()
-      cy.get('[data-test="template-first-visit-cancelled"]').uncheck()
-      cy.get('[data-test="create-templates"]').click()
-      cy.contains('button', 'Creating…').should('not.exist')
+      cy.visit('/automations')
       cy.contains('First visit booked').should('be.visible')
-
-      cy.contains('button', 'Templates').click()
-      cy.contains('already added').should('exist')
-      // And it is not re-selected, so a second click cannot duplicate it.
-      cy.get('[data-test="template-first-visit-booked"]').should('not.be.checked')
+      cy.get('[data-test="open-templates"]').click()
+      cy.get('[data-test="template-first-visit-booked"]').should('contain', 'already added')
+      cy.get('[data-test="template-first-visit-cancelled"]').should('not.contain', 'already added')
     })
   })
 })

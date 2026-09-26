@@ -1,6 +1,6 @@
 // What a merge field in an automation resolves to: a WhatsApp template's
 // {{n}} slot mapped to a source in the automation builder
-// (components/campaigns/AutomationModal.vue), or a {{token}} in an automated
+// (components/automations/panels/WhatsAppPanel.vue), or a {{token}} in an automated
 // email. Pure, so each value can be checked without sending anything.
 //
 // Appointment dates and times are written in the clinic's own time zone

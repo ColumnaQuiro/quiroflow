@@ -365,7 +365,7 @@ async function runForRecipient(
     try {
       if (action.action_type === 'whatsapp_template') {
         if (canContact && channelAllowed('whatsapp')) {
-          const result = await runWhatsAppAction(supabase, accountId, recipient, action.config, origin, appointmentId, whatsappOverrideNumber, context, dryRun)
+          const result = await runWhatsAppAction(supabase, accountId, recipient, action.config, origin, appointmentId, whatsappOverrideNumber, context, dryRun, { ruleId, actionId: action.id })
           outcome(result, null)
         } else {
           problems.push(skipped('WhatsApp'))
@@ -373,7 +373,7 @@ async function runForRecipient(
         }
       } else if (action.action_type === 'email') {
         if (canContact && channelAllowed('email')) {
-          const result = await runEmailAction(recipient, action.config, context, { supabase, accountId, ruleId }, dryRun)
+          const result = await runEmailAction(recipient, action.config, context, { supabase, accountId, ruleId, actionId: action.id }, dryRun)
           outcome(result, null)
         } else {
           problems.push(skipped('Email'))
@@ -397,6 +397,22 @@ async function runForRecipient(
   }
 
   return { problems, outcomes }
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * The automation and step a message row belongs to -- the only thing that
+ * lets the Automations screen count a rule's sends per rule rather than by
+ * template name. Only real ids: "Send test to me" passes made-up step ids
+ * ("test-0") and no rule, and a non-uuid in a uuid column would fail the
+ * whole insert and lose the message row with it.
+ */
+function attributionColumns(a?: { ruleId?: string; actionId?: string }) {
+  return {
+    rule_id: a?.ruleId && UUID.test(a.ruleId) ? a.ruleId : null,
+    automation_action_id: a?.actionId && UUID.test(a.actionId) ? a.actionId : null,
+  }
 }
 
 /**
@@ -589,6 +605,9 @@ async function runWhatsAppAction(
   toOverride?: string,
   context?: MergeContext,
   dryRun = false,
+  // Which automation and step sent it, recorded on the row so the Automations
+  // screen can count sends per rule and per step (see attributionColumns).
+  attribution?: { ruleId?: string; actionId?: string },
 ): Promise<'sent' | 'dry_run'> {
   const templateName: string | undefined = config.template_name
   const templateLanguage: string = config.template_language || 'es'
@@ -762,6 +781,7 @@ async function runWhatsAppAction(
       template_name: templateName,
       status: 'would_send',
       phone_number: to,
+      ...attributionColumns(attribution),
     })
     return 'dry_run'
   }
@@ -812,6 +832,7 @@ async function runWhatsAppAction(
     status: wamid ? 'sent' : 'failed',
     error_message: errorMessage,
     phone_number: to,
+    ...attributionColumns(attribution),
   })
 
   // A recall that went out is outreach, the same as one a person sends from
@@ -877,7 +898,7 @@ async function runEmailAction(
   recipient: Recipient,
   config: Record<string, any>,
   context?: MergeContext,
-  record?: { supabase: any; accountId: string; ruleId?: string },
+  record?: { supabase: any; accountId: string; ruleId?: string; actionId?: string },
   dryRun = false,
 ): Promise<'sent' | 'dry_run'> {
   const subject: string | undefined = config.subject
@@ -934,6 +955,7 @@ async function runEmailAction(
         provider_message_id: null,
         dry_run: true,
         rule_id: record.ruleId ?? null,
+        automation_action_id: attributionColumns(record).automation_action_id,
         patient_id: recipient.kind === 'patient' ? recipient.id : null,
         lead_id: recipient.kind === 'lead' ? recipient.id : null,
         recipient_email: recipient.email,
@@ -960,6 +982,7 @@ async function runEmailAction(
         account_id: record.accountId,
         provider_message_id: sent.id,
         rule_id: record.ruleId ?? null,
+        automation_action_id: attributionColumns(record).automation_action_id,
         patient_id: recipient.kind === 'patient' ? recipient.id : null,
         lead_id: recipient.kind === 'lead' ? recipient.id : null,
         recipient_email: recipient.email,

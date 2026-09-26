@@ -1,172 +1,147 @@
-// The delay node in the campaign builder.
+// The automation builder's step panels -- what the Campaigns editor's
+// "action" rows were, now one panel per step type beside the canvas.
 //
-// A sequence is only maintainable if staff can see it, so the engine's
-// delay step needs a way in. The test that earns its place here is the
-// exclusivity one: the action panels are a v-if chain, and the webhook
-// branch used to be the catch-all `v-else` -- so a Wait step rendered its
-// own fields AND the webhook's URL and signing-secret boxes underneath.
-// Caught by looking at it, not by a type error, which is exactly the kind
-// of thing that survives to production.
+// Ported from the Campaigns spec, keeping every assertion's intent:
+//   - a Wait step shows its own fields and nothing else (the webhook panel
+//     used to render under it, as a catch-all v-else);
+//   - a wait is stored in minutes whatever unit was chosen;
+//   - a WhatsApp header is asked for only when the template declares one;
+//   - "Send test to me" says why it failed, not just that it did;
+//   - test mode records instead of sending, and says so.
 
 interface SeededAccount {
-  email: string;
-  password: string;
-  accountId: string;
+  email: string
+  password: string
+  accountId: string
 }
 
-describe("Campaign builder: waiting", () => {
+const TEMPLATES = {
+  templates: [
+    { name: 'plain_message', language: 'es', category: 'MARKETING', status: 'APPROVED', bodyText: 'Hola {{1}}', variableCount: 1, urlButtonCount: 0, mediaHeaderFormat: null, buttons: [] },
+    { name: 'with_location', language: 'es', category: 'MARKETING', status: 'APPROVED', bodyText: 'Aquí estamos', variableCount: 0, urlButtonCount: 0, mediaHeaderFormat: 'LOCATION', buttons: [] },
+    { name: 'with_video', language: 'en', category: 'MARKETING', status: 'APPROVED', bodyText: 'Hi {{1}}', variableCount: 1, urlButtonCount: 0, mediaHeaderFormat: 'VIDEO', buttons: [] },
+    {
+      name: 'with_button',
+      language: 'es',
+      category: 'UTILITY',
+      status: 'APPROVED',
+      bodyText: 'Hola {{1}}, reserva aquí',
+      variableCount: 1,
+      urlButtonCount: 1,
+      mediaHeaderFormat: null,
+      buttons: [{ type: 'URL', text: 'Reservar', dynamic: true }],
+    },
+  ],
+}
+
+describe('Automation builder: step panels', () => {
   beforeEach(() => {
+    // Stubbed at the network edge, because the template list comes from Meta
+    // and a test account has no WhatsApp credentials -- without it the list
+    // is empty and the header tests would pass against a vacuum.
+    cy.intercept('GET', '**/api/whatsapp/templates*', { body: TEMPLATES }).as('templates')
     cy.seedStaffAccount().then((seeded) => {
-      const account = seeded as SeededAccount;
-      cy.wrap(account.accountId).as("accountId");
-      cy.login(account.email, account.password);
-    });
-    cy.visit("/campaigns");
-    // Wait for the page to hydrate before clicking. A click on a
-    // server-rendered button that Vue has not claimed yet does nothing at
-    // all, and the failure looks like a missing modal rather than a race.
-    cy.contains("No campaigns yet").should("be.visible");
-    cy.contains("button", "New campaign").click();
-    // exist, not be.visible: the modal body scrolls inside an
-    // overflow-hidden container, so anything below the fold reads as hidden
-    // even when it is rendered and clickable.
-    cy.get('[data-test="action-type"]').should("exist");
-  });
+      const account = seeded as SeededAccount
+      cy.wrap(account.accountId).as('accountId')
+      cy.login(account.email, account.password)
+    })
+    cy.visit('/automations/new')
+    // Hydrated before clicking: a click on server-rendered markup Vue has
+    // not claimed does nothing, and reads as a missing menu.
+    cy.get('[data-test="node-trigger"]').should('be.visible')
+    cy.get('[data-test="insert-root-root-0"]').should('be.visible')
+  })
 
-  it("offers a Wait step and shows only its own fields", () => {
-    cy.get('[data-test="action-type"]').select("delay");
+  function addStep(type: string, insert = 'insert-root-root-0') {
+    cy.get(`[data-test="${insert}"]`).click()
+    cy.get(`[data-test="add-step-${type}"]`).click()
+    cy.get('[data-test="inspector"]').should('be.visible')
+  }
 
-    cy.get('[data-test="delay-config"]')
-      .scrollIntoView()
-      .should("be.visible")
-      .within(() => {
-        cy.get('input[type="number"]').should("have.value", "1");
-        cy.contains("before the next step").should("exist");
-        // The limit named where it is decided, rather than left to be
-        // discovered by someone whose 30-second wait became 15 minutes.
-        cy.contains("checked every 15 minutes").should("exist");
-      });
-
-    // The regression: a Wait must not drag the webhook panel in with it.
-    cy.contains("Signing secret").should("not.exist");
-    cy.get('input[placeholder*="example.com"]').should("not.exist");
-  });
-
-  it("saves a wait in minutes, whatever unit was chosen", () => {
-    cy.get('[data-test="action-type"]').select("delay");
+  it('offers a Wait step and shows only its own fields', () => {
+    addStep('delay')
     cy.get('[data-test="delay-config"]').within(() => {
-      cy.get('input[type="number"]').clear().type("2");
-      cy.get("select").select("hours");
-    });
-    cy.contains("button", "Save campaign").click();
+      cy.get('input[type="number"]').should('have.value', '1')
+      cy.get('select').should('have.value', 'days')
+    })
+    // The limit named where it is decided, rather than discovered by someone
+    // whose 30-second wait became 15 minutes.
+    cy.get('[data-test="inspector"]').should('contain', 'checked every 15 minutes')
+    // The regression: a Wait must not drag the webhook fields in with it.
+    cy.contains('Signing secret').should('not.exist')
+    cy.get('[data-test="webhook-url"]').should('not.exist')
+  })
+
+  it('saves a wait in minutes, whatever unit was chosen', () => {
+    addStep('delay')
+    cy.get('[data-test="delay-config"]').within(() => {
+      cy.get('input[type="number"]').clear().type('2')
+      cy.get('select').select('hours')
+    })
+    cy.get('[data-test="save"]').click()
+    cy.location('pathname').should('match', /^\/automations\/[0-9a-f-]{36}$/)
 
     // Two hours is stored as 120 minutes: one unit underneath, because the
-    // cron that runs it thinks in minutes and a second unit in the database
-    // would be two ways to say the same thing.
-    cy.get<string>("@accountId").then((accountId) => {
-      cy.task("db:latestAutomationActions", { accountId }).then((rows) => {
-        const actions = rows as {
-          action_type: string;
-          config: { delay_minutes?: number };
-        }[];
-        const delay = actions.find((a) => a.action_type === "delay");
-        expect(delay, "a delay action").to.not.be.undefined;
-        expect(delay!.config.delay_minutes).to.eq(120);
-      });
-    });
-  });
+    // clock that runs it thinks in minutes.
+    cy.get<string>('@accountId').then((accountId) => {
+      cy.task('db:latestAutomationActions', { accountId }).then((rows) => {
+        const delay = (rows as { action_type: string; config: { delay_minutes?: number } }[]).find((a) => a.action_type === 'delay')
+        expect(delay, 'a delay step').to.not.be.undefined
+        expect(delay!.config.delay_minutes).to.eq(120)
+      })
+    })
+  })
 
-  it("asks for a header only when the template declares one", () => {
-    // Stubbed at the network edge rather than seeded, because the template
-    // list comes from Meta and a test account has no WhatsApp credentials --
-    // without this the list is empty and the assertions would be passing
-    // against a vacuum rather than against the branch logic.
-    cy.intercept("GET", "**/api/whatsapp/templates*", {
-      body: {
-        templates: [
-          {
-            name: "plain_message",
-            language: "es",
-            category: "MARKETING",
-            bodyText: "Hola {{1}}",
-            variableCount: 1,
-            urlButtonCount: 0,
-            mediaHeaderFormat: null,
-          },
-          {
-            name: "with_location",
-            language: "es",
-            category: "MARKETING",
-            bodyText: "Aquí estamos",
-            variableCount: 0,
-            urlButtonCount: 0,
-            mediaHeaderFormat: "LOCATION",
-          },
-          {
-            name: "with_video",
-            language: "en",
-            category: "MARKETING",
-            bodyText: "Hi {{1}}",
-            variableCount: 1,
-            urlButtonCount: 0,
-            mediaHeaderFormat: "VIDEO",
-          },
-        ],
-      },
-    }).as("templates");
+  it('asks for a header only when the template declares one', () => {
+    cy.wait('@templates')
+    addStep('whatsapp_template')
 
-    // Reopen so the modal loads the stubbed list.
-    cy.contains("button", "Cancel").click();
-    cy.contains("button", "New campaign").click();
-    cy.wait("@templates");
+    cy.get('[data-test="template-select"]').select('plain_message::es')
+    cy.get('[data-test="header-location"]').should('not.exist')
+    cy.get('[data-test="header-media"]').should('not.exist')
+    // The body, with its variable named rather than numbered.
+    cy.get('[data-test="template-preview"]').should('contain', 'First name')
 
-    cy.get('[data-test="template-select"]').select("plain_message::es");
-    cy.get('[data-test="header-location"]').should("not.exist");
-    cy.get('[data-test="header-media"]').should("not.exist");
+    cy.get('[data-test="template-select"]').select('with_location::es')
+    cy.get('[data-test="header-location"]').should('be.visible')
+    cy.get('[data-test="header-media"]').should('not.exist')
 
-    cy.get('[data-test="template-select"]').select("with_location::es");
-    cy.get('[data-test="header-location"]')
-      .scrollIntoView()
-      .should("be.visible");
-    cy.get('[data-test="header-media"]').should("not.exist");
+    cy.get('[data-test="template-select"]').select('with_video::en')
+    cy.get('[data-test="header-media"]').should('be.visible')
+    cy.get('[data-test="header-location"]').should('not.exist')
 
-    cy.get('[data-test="template-select"]').select("with_video::en");
-    cy.get('[data-test="header-media"]').scrollIntoView().should("be.visible");
-    cy.get('[data-test="header-location"]').should("not.exist");
-  });
+    // A dynamic URL button says what its link carries.
+    cy.get('[data-test="template-select"]').select('with_button::es')
+    cy.get('[data-test="button-slot-0"]').should('contain', 'Reservar').find('select').select('phone')
+    cy.get('[data-test="save"]').click()
+    cy.location('pathname').should('match', /^\/automations\/[0-9a-f-]{36}$/)
+    cy.get<string>('@accountId').then((accountId) => {
+      cy.task('db:latestAutomationActions', { accountId }).then((rows) => {
+        const wa = (rows as { action_type: string; config: Record<string, any> }[]).find((a) => a.action_type === 'whatsapp_template')!
+        expect(wa.config.template_name).to.eq('with_button')
+        expect(wa.config.variables).to.deep.eq([{ source: 'first_name' }])
+        expect(wa.config.button_params).to.deep.eq([{ source: 'phone' }])
+        expect(wa.config.doc_template_ids).to.deep.eq([null])
+      })
+    })
+  })
 
-  it("says why a test send failed instead of just that it did", () => {
-    // "Send test to me" answered every failure with "Failed to send test.",
-    // because the catch in AutomationModal replaced whatever the server said
-    // with a fixed string -- and underneath it runEmailAction swallowed the
-    // Resend error too, and returned silently when no API key was configured
-    // at all. A staff member with a campaign that would never send had no way
-    // to find out why, and neither did anyone they reported it to.
-    //
-    // No Resend key is configured against the test environment, which is one
-    // of the reasons the old code turned into silence. It now names it.
-    cy.get('[data-test="action-type"]').select("email");
-    cy.get('[data-test="email-subject"]').scrollIntoView().type("Prueba");
-    cy.get('[data-test="email-body"]').scrollIntoView().type("Hola");
+  it('says why a test send failed instead of just that it did', () => {
+    // No Resend key is configured against the test environment. The old code
+    // turned that into silence, then into "Failed to send test."; it now
+    // names the cause.
+    addStep('email')
+    cy.get('[data-test="email-subject"]').type('Prueba')
+    cy.get('[data-test="email-body"]').type('Hola')
+    cy.get('[data-test="send-test"]').click()
+    cy.get('[data-cy="confirm-dialog-confirm"]').click()
+    cy.get('[data-test="test-result"]').should('contain', 'not configured').and('not.contain', 'Failed to send')
+  })
 
-    cy.contains("button", "Send test to me").click();
-
-    cy.contains("Failed to send test.").should("not.exist");
-    cy.contains("not configured").should("be.visible");
-  });
-
-  it("offers a test run that records instead of sending", () => {
-    cy.get('[data-test="dry-run-toggle"]')
-      .scrollIntoView()
-      .should("have.attr", "aria-checked", "false")
-      .click();
-    cy.get('[data-test="dry-run-toggle"]').should(
-      "have.attr",
-      "aria-checked",
-      "true",
-    );
-    cy.contains("records what it would have sent instead of sending it").should(
-      "exist",
-    );
-  });
-});
+  it('offers a test mode that records instead of sending', () => {
+    cy.get('[data-test="tab-settings"]').click()
+    cy.get('[data-test="dry-run-toggle"]').should('have.attr', 'aria-checked', 'false').click()
+    cy.get('[data-test="dry-run-toggle"]').should('have.attr', 'aria-checked', 'true')
+    cy.contains('records what it would have sent instead of sending it').should('exist')
+  })
+})

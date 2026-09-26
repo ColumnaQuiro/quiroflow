@@ -43,6 +43,11 @@ export type StopReason =
   | 'not_entitled'
   | 'patient_deleted'
   | 'exited'
+  // A person pressed "Take out" on the Automations screen.
+  | 'taken_out'
+  // The step they were on was removed from the automation, and whoever saved
+  // it chose to take the people on it out rather than move them on.
+  | 'step_removed'
 
 /**
  * 'defer' is the third answer, and the reason this is not a boolean.
@@ -217,6 +222,8 @@ export const STOP_REASON_TEXT: Record<StopReason, string> = {
   not_entitled: 'Growth is no longer on the subscription',
   patient_deleted: 'Patient was deleted',
   exited: 'Left the automation when an exit event happened',
+  taken_out: 'Taken out by someone on the team',
+  step_removed: 'The step they were on was removed from the automation',
 }
 
 /** What a step is called in the history, copied at the time it ran. */
@@ -255,7 +262,7 @@ export type RunEvent = {
     | 'timed_out'
     | 'applied'
   position?: number | null
-  action?: { action_type: string; config: Record<string, any> } | null
+  action?: { id?: string; action_type: string; config: Record<string, any> } | null
   detail?: string | null
   actorTeamMemberId?: string | null
 }
@@ -272,6 +279,8 @@ export async function logRunEvent(supabase: any, run: { id: string; account_id: 
     position: event.position ?? null,
     action_type: event.action?.action_type ?? null,
     step_label: event.action ? stepLabel(event.action) : null,
+    // The step itself, so the builder can count what each step did.
+    action_id: event.action?.id ?? null,
     outcome: event.outcome,
     detail: event.detail ?? null,
     actor_team_member_id: event.actorTeamMemberId ?? null,

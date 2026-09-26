@@ -226,7 +226,14 @@ jobs:
           - name: growth-leads-and-inbox
             specs: "cypress/e2e/growth/growth-lead*.cy.ts,cypress/e2e/growth/growth-inbox.cy.ts,cypress/e2e/inbox/**"
           - name: growth-platform
-            specs: "cypress/e2e/growth/growth-receptionist*.cy.ts,cypress/e2e/growth/growth-reputation.cy.ts,cypress/e2e/growth/growth-dashboard-data.cy.ts,cypress/e2e/growth/growth-dashboard.cy.ts,cypress/e2e/growth/growth-automation*.cy.ts,cypress/e2e/growth/growth-addon-entitlement.cy.ts,cypress/e2e/growth/growth-review-links.cy.ts,cypress/e2e/growth/growth-campaign-templates.cy.ts,cypress/e2e/growth/growth-email-metrics.cy.ts"
+            specs: "cypress/e2e/growth/growth-receptionist*.cy.ts,cypress/e2e/growth/growth-reputation.cy.ts,cypress/e2e/growth/growth-dashboard-data.cy.ts,cypress/e2e/growth/growth-dashboard.cy.ts,cypress/e2e/growth/growth-addon-entitlement.cy.ts,cypress/e2e/growth/growth-review-links.cy.ts"
+          # Split out of growth-platform on 2026-09-26, when the Automations
+          # builder brought four more specs: at twenty specs one Cypress
+          # process ran for 3m+ and its Electron renderer crashed (exit 139)
+          # partway through. growth-automation*.cy.ts is a prefix glob, so the
+          # engine and builder specs still to come join it with no edit here.
+          - name: growth-automations
+            specs: "cypress/e2e/growth/growth-automation*.cy.ts,cypress/e2e/growth/growth-campaign-templates.cy.ts,cypress/e2e/growth/growth-email-metrics.cy.ts"
           # Patients is split by first letter because it is the biggest folder
           # by far: 57 specs, ~300s of Cypress, far more than any one runner
           # should carry. Cut into three on measured per-spec time

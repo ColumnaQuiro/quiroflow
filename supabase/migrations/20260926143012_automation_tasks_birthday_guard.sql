@@ -54,37 +54,45 @@ alter table public.staff_tasks enable row level security;
 create policy "assignees read staff_tasks" on public.staff_tasks
   for select using (is_my_staff_task(account_id, team_member_id, role_id));
 
--- Ticking a task off is the only write staff make: the column grants below
--- keep everything but done_at / done_by out of reach, and the trigger stamps
--- who did it rather than trusting the client to say.
+-- Ticking a task off is the only write staff make. There is no insert or
+-- delete policy, so RLS refuses both; and the trigger below refuses an update
+-- that touches anything but done_at / done_by, and stamps who did it rather
+-- than trusting the client to say. The trigger, not column grants, is what
+-- holds: the local seed (and any "grant ... on all tables") re-grants UPDATE
+-- on every column, and a column grant silently loses to that.
 create policy "assignees complete staff_tasks" on public.staff_tasks
   for update using (is_my_staff_task(account_id, team_member_id, role_id))
   with check (is_my_staff_task(account_id, team_member_id, role_id));
 
-revoke insert, update, delete, truncate on public.staff_tasks from anon, authenticated;
-grant select on public.staff_tasks to authenticated;
-grant update (done_at, done_by) on public.staff_tasks to authenticated;
-
-create or replace function public.staff_tasks_stamp_done_by()
+create or replace function public.staff_tasks_guard_update()
 returns trigger
 language plpgsql
-security definer
+security invoker
 set search_path = public
 as $$
 begin
+  -- A signed-in member writing through the API. Not the service role (the
+  -- engine), and not merge_patients, which runs as its owner and moves a
+  -- task's patient_id -- hence current_user rather than auth.uid(), which is
+  -- still set inside a definer function. Invoker, so current_user is the caller.
+  if current_user in ('authenticated', 'anon') then
+    if (to_jsonb(new) - 'done_at' - 'done_by') is distinct from (to_jsonb(old) - 'done_at' - 'done_by') then
+      raise exception 'permission denied: only done_at can be changed on a task'
+        using errcode = 'insufficient_privilege';
+    end if;
+  end if;
   if new.done_at is null then
     new.done_by := null;
   else
-    -- Whoever is signed in; the service role (no auth.uid()) may name someone.
     new.done_by := coalesce(current_team_member_id(new.account_id), new.done_by);
   end if;
   return new;
 end;
 $$;
 
-create trigger staff_tasks_stamp_done_by
-  before update of done_at, done_by on public.staff_tasks
-  for each row execute function public.staff_tasks_stamp_done_by();
+create trigger staff_tasks_guard_update
+  before update on public.staff_tasks
+  for each row execute function public.staff_tasks_guard_update();
 
 select public.require_two_factor_on('public.staff_tasks');
 

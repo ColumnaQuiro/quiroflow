@@ -1,5 +1,5 @@
 import { requireGrowth } from '~/server/utils/requireGrowth'
-import { STAGE_TITLES, formatEuros, type LeadStage } from '~/server/utils/leads'
+import { STAGE_TITLES, formatEuros, leadDefaultValueCents, type LeadStage } from '~/server/utils/leads'
 
 // One lead, with everything the drawer renders: the unified timeline, the
 // attribution rail and the consent lines.
@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
   if (error) throw createError({ statusCode: 500, statusMessage: error.message })
   if (!lead) throw createError({ statusCode: 404, statusMessage: 'Lead not found' })
 
-  const [{ data: events }, { data: attribution }] = await Promise.all([
+  const [{ data: events }, { data: attribution }, defaultCents] = await Promise.all([
     supabase
       .from('lead_events')
       .select('id, kind, title, detail, body, occurred_at')
@@ -36,6 +36,7 @@ export default defineEventHandler(async (event) => {
       .select('campaign, ad, audience, first_touch, last_touch, cost_cents')
       .eq('lead_id', id)
       .maybeSingle(),
+    leadDefaultValueCents(supabase, teamMember.account_id),
   ])
 
   const initials = lead.full_name
@@ -68,7 +69,10 @@ export default defineEventHandler(async (event) => {
     stage: STAGE_TITLES[lead.stage as LeadStage] ?? lead.stage,
     stageKey: lead.stage,
     source: lead.source ?? 'Direct',
-    value: formatEuros(lead.estimated_value_cents) ?? '—',
+    value: formatEuros(lead.estimated_value_cents ?? defaultCents) ?? '—',
+    // The lead's own figure, for editing; null when it is on the default.
+    valueCents: lead.estimated_value_cents,
+    valueIsDefault: lead.estimated_value_cents === null && defaultCents !== null,
     owner: lead.team_members?.full_name ?? 'Unassigned',
     patientId: lead.patient_id,
     contact: [lead.phone, lead.email, lead.clinics?.name].filter((line): line is string => Boolean(line)),

@@ -1,5 +1,5 @@
 import { requireGrowth } from '~/server/utils/requireGrowth'
-import { LEAD_STAGES, STAGE_TITLES, formatEuros, type LeadStage } from '~/server/utils/leads'
+import { LEAD_STAGES, STAGE_TITLES, formatEuros, leadDefaultValueCents, type LeadStage } from '~/server/utils/leads'
 
 // The Growth dashboard, computed from the leads a clinic actually has.
 //
@@ -49,7 +49,7 @@ export default defineEventHandler(async (event) => {
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
   const windowStart = new Date(now.getTime() - 90 * 24 * 3600 * 1000)
 
-  const [{ data: rows, error }, { data: spendRows }, { count: pendingReplies }] = await Promise.all([
+  const [{ data: rows, error }, { data: spendRows }, { count: pendingReplies }, defaultCents] = await Promise.all([
     supabase
       .from('leads')
       .select('id, stage, furthest_stage, source, estimated_value_cents, created_at, converted_at')
@@ -70,6 +70,7 @@ export default defineEventHandler(async (event) => {
       .eq('account_id', teamMember.account_id)
       .not('draft_body', 'is', null)
       .is('replied_at', null),
+    leadDefaultValueCents(supabase, teamMember.account_id),
   ])
 
   if (error) throw createError({ statusCode: 500, statusMessage: error.message })
@@ -127,7 +128,7 @@ export default defineEventHandler(async (event) => {
   const hasSpend = totalSpend > 0
 
   const convertedThisMonth = thisMonth.filter((lead) => lead.furthest_stage === 'converted')
-  const revenueCents = convertedThisMonth.reduce((sum, lead) => sum + (lead.estimated_value_cents ?? 0), 0)
+  const revenueCents = convertedThisMonth.reduce((sum, lead) => sum + (lead.estimated_value_cents ?? defaultCents ?? 0), 0)
 
   const kpis: { key: string; label: string; value: string; delta: string; tone: 'positive' | 'negative' | 'neutral' }[] = [
     { key: 'leads', label: 'New leads this month', value: String(thisMonth.length), delta: `${leads.length} in 90 days`, tone: 'neutral' },

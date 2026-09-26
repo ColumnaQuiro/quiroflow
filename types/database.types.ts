@@ -329,6 +329,9 @@ export type Database = {
           online_booking_gtm_id: string | null
           online_booking_hide_logo: boolean
           online_booking_max_days_ahead: number
+          lead_convert_after_visits: number | null
+          lead_convert_appointment_type_id: string | null
+          lead_default_value_cents: number | null
           new_lead_notify_email: string | null
           new_lead_notify_whatsapp: string | null
           new_lead_notify_whatsapp_template_language: string | null
@@ -411,6 +414,9 @@ export type Database = {
           online_booking_gtm_id?: string | null
           online_booking_hide_logo?: boolean
           online_booking_max_days_ahead?: number
+          lead_convert_after_visits?: number | null
+          lead_convert_appointment_type_id?: string | null
+          lead_default_value_cents?: number | null
           new_lead_notify_email?: string | null
           new_lead_notify_whatsapp?: string | null
           new_lead_notify_whatsapp_template_language?: string | null
@@ -492,6 +498,9 @@ export type Database = {
           online_booking_gtm_id?: string | null
           online_booking_hide_logo?: boolean
           online_booking_max_days_ahead?: number
+          lead_convert_after_visits?: number | null
+          lead_convert_appointment_type_id?: string | null
+          lead_default_value_cents?: number | null
           new_lead_notify_email?: string | null
           new_lead_notify_whatsapp?: string | null
           new_lead_notify_whatsapp_template_language?: string | null

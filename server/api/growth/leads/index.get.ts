@@ -5,6 +5,7 @@ import {
   STAGE_TITLES,
   channelTag,
   formatEuros,
+  leadDefaultValueCents,
   timeInStage,
 } from '~/server/utils/leads'
 
@@ -21,14 +22,20 @@ export default defineEventHandler(async (event) => {
   // One pass over the open leads for this account. At clinic scale (hundreds
   // of open leads) this is cheaper than seven per-stage round trips, and the
   // totals have to be exact rather than paged anyway.
-  const { data: rows, error } = await supabase
-    .from('leads')
-    .select('id, full_name, stage, channel, source, estimated_value_cents, ai_handling, stage_changed_at, created_at, patient_id')
-    .eq('account_id', teamMember.account_id)
-    .is('deleted_at', null)
-    .order('stage_changed_at', { ascending: false })
+  const [{ data: rows, error }, defaultCents] = await Promise.all([
+    supabase
+      .from('leads')
+      .select('id, full_name, stage, channel, source, estimated_value_cents, ai_handling, stage_changed_at, created_at, patient_id')
+      .eq('account_id', teamMember.account_id)
+      .is('deleted_at', null)
+      .order('stage_changed_at', { ascending: false }),
+    leadDefaultValueCents(supabase, teamMember.account_id),
+  ])
 
   if (error) throw createError({ statusCode: 500, statusMessage: error.message })
+
+  // A lead's own figure, else the account's default.
+  const valueOf = (lead: { estimated_value_cents: number | null }) => lead.estimated_value_cents ?? defaultCents
 
   const now = Date.now()
   type LeadRow = NonNullable<typeof rows>[number]
@@ -41,7 +48,7 @@ export default defineEventHandler(async (event) => {
 
   const columns = LEAD_STAGES.map((stage) => {
     const all = byStage.get(stage) ?? []
-    const valueCents = all.reduce((sum, lead) => sum + (lead.estimated_value_cents ?? 0), 0)
+    const valueCents = all.reduce((sum, lead) => sum + (valueOf(lead) ?? 0), 0)
     const shown = all.slice(0, CARDS_PER_STAGE)
 
     return {
@@ -59,13 +66,13 @@ export default defineEventHandler(async (event) => {
         source: lead.source ?? 'Direct',
         aiHandling: lead.ai_handling,
         timeInStage: timeInStage(lead.stage_changed_at, now),
-        value: formatEuros(lead.estimated_value_cents) ?? '—',
+        value: formatEuros(valueOf(lead)) ?? '—',
       })),
     }
   })
 
   const open = (rows ?? []).filter((lead) => lead.stage !== 'converted' && lead.stage !== 'lost')
-  const openValue = open.reduce((sum, lead) => sum + (lead.estimated_value_cents ?? 0), 0)
+  const openValue = open.reduce((sum, lead) => sum + (valueOf(lead) ?? 0), 0)
 
   return {
     columns,

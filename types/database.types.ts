@@ -1194,6 +1194,52 @@ export type Database = {
           },
         ]
       }
+      automation_birthday_sends: {
+        Row: {
+          account_id: string
+          created_at: string
+          local_date: string
+          patient_id: string
+          rule_id: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          local_date: string
+          patient_id: string
+          rule_id: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          local_date?: string
+          patient_id?: string
+          rule_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "automation_birthday_sends_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "automation_birthday_sends_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "automation_birthday_sends_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "automation_rules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       automation_rule_sends: {
         Row: {
           appointment_id: string
@@ -4909,6 +4955,111 @@ export type Database = {
             columns: ["account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      staff_tasks: {
+        Row: {
+          account_id: string
+          created_at: string
+          done_at: string | null
+          done_by: string | null
+          due_at: string | null
+          id: string
+          lead_id: string | null
+          patient_id: string | null
+          role_id: string | null
+          rule_id: string | null
+          run_id: string | null
+          team_member_id: string | null
+          title: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          done_at?: string | null
+          done_by?: string | null
+          due_at?: string | null
+          id?: string
+          lead_id?: string | null
+          patient_id?: string | null
+          role_id?: string | null
+          rule_id?: string | null
+          run_id?: string | null
+          team_member_id?: string | null
+          title: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          done_at?: string | null
+          done_by?: string | null
+          due_at?: string | null
+          id?: string
+          lead_id?: string | null
+          patient_id?: string | null
+          role_id?: string | null
+          rule_id?: string | null
+          run_id?: string | null
+          team_member_id?: string | null
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_tasks_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staff_tasks_done_by_fkey"
+            columns: ["done_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staff_tasks_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staff_tasks_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staff_tasks_role_id_fkey"
+            columns: ["role_id"]
+            isOneToOne: false
+            referencedRelation: "account_roles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staff_tasks_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "automation_rules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staff_tasks_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "automation_sequence_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staff_tasks_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
             referencedColumns: ["id"]
           },
         ]

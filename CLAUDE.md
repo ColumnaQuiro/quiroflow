@@ -406,13 +406,19 @@ Job names are descriptive rather than derived (`same-day-cron` is scheduled
 as `appointment-same-day-15min`), so the check matches on the endpoint path
 inside the command, not on the name.
 
-`--build` is deliberately not passed to the CLI. It would hand the build
-to Netlify's own build system, and that system doesn't install
-dependencies when driven this way from CI. Nitro's `netlify` preset
-already emits everything Netlify needs from a plain `npm run build` —
-`dist/` plus the `.netlify/functions-internal/server` function that serves
-every SSR page and `/api/*` route — so building here and uploading the
-result is both sufficient and simpler.
+**A release builds once, inside `netlify deploy`.** netlify-cli builds by
+default now: the deploy step runs `@netlify/build` on the GitHub runner
+(`netlify.toml`'s `npm run build`, with the site's environment variables)
+and uploads what that produced. The workflow used to run its own
+`npm run build` first, from when the CLI only uploaded, so every release
+built the app twice and threw the first build away. Do not add a build step
+back in front of the deploy; and do not pass `--no-build` without also
+removing that expectation here, since what ships would then be a different
+artifact from the one every release so far has shipped. This build runs on
+the runner, not on Netlify's servers, so it is not the paid-plan build
+infrastructure that refused `--build` with a 403. Nitro's `netlify` preset
+emits `dist/` plus the `.netlify/functions-internal/server` function that
+serves every SSR page and `/api/*` route.
 
 ## Releasing the mobile app to the stores
 

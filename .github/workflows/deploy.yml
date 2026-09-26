@@ -113,23 +113,28 @@ jobs:
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
 
-      # Nitro's `netlify` preset (nuxt.config.ts) already produces
-      # Netlify-shaped output on its own -- `dist/` for static assets *and*
-      # `.netlify/functions-internal/server` for the serverless function that
-      # handles every SSR page and `/api/*` route. Confirmed locally: a plain
-      # `npm run build` writes both, no Netlify tooling involved.
-      - run: npm run build
-
-      # Deliberately NOT `netlify deploy --build`. `--build` hands the build
-      # to Netlify's own build system (@netlify/build) instead of using the
-      # one just run above -- and that's the same build infrastructure
-      # that's gated behind a paid plan for a private repo, regardless of
-      # whether it's triggered by a git webhook or this CLI flag. That's
-      # exactly what the first three runs of this workflow hit: `netlify
-      # status` (pure auth check, no build) succeeded with this same token,
-      # but `deploy --build` failed immediately with 403 Forbidden. Plain
-      # `deploy` -- upload and publish an already-built artifact -- is a
-      # more basic action that doesn't touch that infrastructure at all.
+      # ONE build, and it is the one inside `netlify deploy` below.
+      #
+      # This workflow used to run `npm run build` itself and then upload the
+      # result, because the CLI of the time only uploaded. netlify-cli now
+      # BUILDS BY DEFAULT: the deploy step runs @netlify/build here on the
+      # runner (netlify.toml's `npm run build`, with the site's environment
+      # variables), then uploads what that produced. So every release built
+      # the app twice, and what went live was always the second build -- the
+      # first was thrown away. Seen in deploy run 36222794222 (26 Sep 2026):
+      # "Netlify Build ... build.command from netlify.toml ... npm run build"
+      # right after this workflow's own build step.
+      #
+      # The one kept is the one that already ships, so dropping the other
+      # changes nothing about what reaches production. It runs on THIS runner
+      # with the dependencies `npm ci` installed above -- not on Netlify's own
+      # build servers, which are what the paid plan gates (the 403 the first
+      # runs of this workflow hit came from `--build` asking Netlify's servers
+      # to build, which is a different thing).
+      #
+      # Nitro's `netlify` preset (nuxt.config.ts) writes `dist/` for static
+      # assets and `.netlify/functions-internal/server` for the function that
+      # serves every SSR page and `/api/*` route, and the deploy uploads both.
       #
       # `prod` defaults to false so a manual run is a draft deploy (its own
       # throwaway preview URL, printed in this step's log) -- safe to use to

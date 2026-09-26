@@ -25,7 +25,7 @@ import { sendPushToUsers } from '~/server/utils/pushNotifications'
 import { STAGE_TITLES, isLeadStage, type LeadStage } from '~/server/utils/leads'
 import { evaluateBranch, fieldsUsed, type BranchConfig, type ConditionFacts } from '~/utils/automationConditions'
 import { isValidQuietHours, nextAllowedSendTime, segmentIsDue, type QuietHours, type SegmentSchedule } from '~/utils/automationTiming'
-import type { MergeContext } from '~/utils/automationFields'
+import { automationFieldValue, type MergeContext } from '~/utils/automationFields'
 import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
 
 // The automation engine: walks one run of a rule through its steps.
@@ -607,17 +607,27 @@ async function applyStep(supabase: any, run: SequenceRun, rule: EngineRule, subj
       }
 
       case 'notify': {
-        // Phase 1: a push to the chosen team members' devices (web and app).
-        // TODO(automations phase 3): also create a task in the recipients'
-        // "Mi día" list, so a notification nobody saw is still waiting there.
+        // A push to the chosen team members' devices (web and app), and --
+        // unless the step says `create_task: false` -- a task in their Mi día,
+        // so a notification nobody saw is still waiting there.
         const memberIds = await notifyRecipients(supabase, run, config)
         if (memberIds.length === 0) return { status: 'skipped', detail: 'Nobody to notify: no team member matches this step.' }
-        if (rule.dry_run) return testMode(`${memberIds.length} team member(s) were not notified.`)
+        const withTask = notifyCreatesTask(config)
+        if (rule.dry_run) return testMode(`${memberIds.length} team member(s) were not notified${withTask ? ' and no task was created' : ''}.`)
         const { data: members } = await supabase.from('team_members').select('user_id').in('id', memberIds).not('user_id', 'is', null)
         const userIds = (members ?? []).map((m: { user_id: string }) => m.user_id)
         const who = subject.kind === 'patient' ? `${subject.patient.first_name} ${subject.patient.last_name ?? ''}`.trim() : subject.lead.full_name
+        const title = notifyTitle(config, rule, subject)
+        // The task first: a failed insert fails the step before anyone is
+        // pushed, so the retry does not push twice.
+        let taskDetail = ''
+        if (withTask) {
+          const created = await createNotifyTasks(supabase, run, subject, config, title)
+          if (created.error) return { status: 'failed', detail: `Could not create the Mi día task: ${created.error}` }
+          taskDetail = ` Created ${created.count} Mi día task(s).`
+        }
         const pushed = await sendPushToUsers(supabase, userIds, {
-          title: String(config.title || rule.name || 'Automatización'),
+          title,
           body: who,
           data: {
             type: 'automation',
@@ -625,7 +635,7 @@ async function applyStep(supabase: any, run: SequenceRun, rule: EngineRule, subj
             ...(subject.kind === 'patient' ? { patientId: subject.patient.id } : { leadId: subject.lead.id }),
           },
         })
-        return { status: 'applied', detail: `Notified ${memberIds.length} team member(s) on ${pushed.attempted} device(s).` }
+        return { status: 'applied', detail: `Notified ${memberIds.length} team member(s) on ${pushed.attempted} device(s).${taskDetail}` }
       }
 
       case 'lead_stage':
@@ -672,6 +682,77 @@ async function applyStep(supabase: any, run: SequenceRun, rule: EngineRule, subj
   } catch (err) {
     return { status: 'failed', detail: (err as Error)?.message ?? String(err) }
   }
+}
+
+/**
+ * Whether a notify step also leaves a task in Mi día. On unless the step says
+ * `create_task: false` -- the builder's "También crear una tarea en su Mi día"
+ * checkbox, ticked by default -- so a step saved before the option existed
+ * creates one too.
+ */
+export function notifyCreatesTask(config: Record<string, any>): boolean {
+  return config?.create_task !== false
+}
+
+/** The step's title with {{first_name}} / {{last_name}} filled in, else the rule's name. */
+function notifyTitle(config: Record<string, any>, rule: EngineRule, subject: Subject): string {
+  const raw = String(config.title || rule.name || 'Automatización')
+  const recipient =
+    subject.kind === 'patient'
+      ? { firstName: subject.patient.first_name ?? '', lastName: subject.patient.last_name ?? null, email: subject.patient.email ?? null }
+      : {
+          firstName: (subject.lead.full_name ?? '').trim().split(/\s+/)[0] ?? '',
+          lastName: (subject.lead.full_name ?? '').trim().split(/\s+/).slice(1).join(' ') || null,
+          email: subject.lead.email ?? null,
+        }
+  return raw.replace(/\{\{(first_name|last_name)\}\}/g, (_, key: string) => automationFieldValue(recipient, key)).trim() || rule.name || 'Automatización'
+}
+
+/**
+ * The Mi día task(s) for a notify step: one per named person (the chosen team
+ * member, the appointment's practitioner) and one for the whole role, which
+ * everyone in it sees and any of them can tick off.
+ */
+async function createNotifyTasks(
+  supabase: any,
+  run: SequenceRun,
+  subject: Subject,
+  config: Record<string, any>,
+  title: string,
+): Promise<{ count: number; error: string | null }> {
+  const to = (config.to ?? {}) as { team_member_id?: string; role_id?: string; practitioner_of_appointment?: boolean }
+  const people = new Set<string>()
+  if (to.team_member_id) people.add(to.team_member_id)
+  if (to.practitioner_of_appointment && run.appointment_id) {
+    const { data } = await supabase.from('appointments').select('practitioner_id').eq('id', run.appointment_id).maybeSingle()
+    if (data?.practitioner_id) people.add(data.practitioner_id)
+  }
+  // Only this clinic's people and roles, whatever the config says.
+  const { data: members } = people.size
+    ? await supabase.from('team_members').select('id').eq('account_id', run.account_id).is('deleted_at', null).in('id', [...people])
+    : { data: [] }
+  const { data: role } = to.role_id
+    ? await supabase.from('account_roles').select('id').eq('id', to.role_id).eq('account_id', run.account_id).maybeSingle()
+    : { data: null }
+
+  const minutes = Number(config.due_in_minutes)
+  const dueAt = Number.isFinite(minutes) && minutes > 0 ? new Date(Date.now() + minutes * 60_000).toISOString() : null
+  const base = {
+    account_id: run.account_id,
+    patient_id: subject.kind === 'patient' ? subject.patient.id : null,
+    lead_id: subject.kind === 'lead' ? subject.lead.id : null,
+    title,
+    due_at: dueAt,
+    rule_id: run.rule_id,
+    run_id: run.id,
+  }
+  const rows = [
+    ...(members ?? []).map((m: { id: string }) => ({ ...base, team_member_id: m.id, role_id: null })),
+    ...(role ? [{ ...base, team_member_id: null, role_id: role.id }] : []),
+  ]
+  if (rows.length === 0) return { count: 0, error: null }
+  const { error } = await supabase.from('staff_tasks').insert(rows)
+  return { count: error ? 0 : rows.length, error: error?.message ?? null }
 }
 
 /** Which team members a notify step reaches. */

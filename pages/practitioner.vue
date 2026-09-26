@@ -324,6 +324,10 @@ const headerMeta = computed(() => {
         </div>
       </div>
 
+      <!-- What automations asked this person (or their role) to do. Outside
+      the loading switch, so changing day does not reload it. -->
+      <PractitionerMyDayTasks :privacy-mode="privacyMode" />
+
       <div v-if="loading" class="flex flex-col gap-4 p-4 sm:p-6">
         <UiSkeleton class="h-16 w-full rounded-card" />
         <div class="space-y-2">

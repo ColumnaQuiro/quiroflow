@@ -105,6 +105,9 @@ export default defineNuxtConfig({
         '/portal/**',
         '/book/**',
         '/doc/**',
+        // The unsubscribe link in a marketing email: opened by a patient
+        // with no QuiroFlow login, gated by its own signed token.
+        '/unsubscribe/**',
         '/forgot-password',
         '/reset-password',
         '/legal/**',

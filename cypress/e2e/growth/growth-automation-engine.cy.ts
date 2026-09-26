@@ -246,7 +246,8 @@ describe('Automation engine', () => {
           events(rs[0]!.id).then((ev) => {
             expect(ev[1]!.outcome).to.eq('applied')
             // No device is registered in e2e, so the push reaches none.
-            expect(ev[1]!.detail).to.eq('Notified 1 team member(s) on 0 device(s).')
+            // And, by default, a task in their Mi día (growth-automation-tasks).
+            expect(ev[1]!.detail).to.eq('Notified 1 team member(s) on 0 device(s). Created 1 Mi día task(s).')
           })
         })
       })

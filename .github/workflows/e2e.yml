@@ -490,6 +490,11 @@ jobs:
           # from CI, which started the moment metaPlatformAppId stopped being
           # blank and the "not configured" branch stopped catching it.
           NUXT_META_GRAPH_BASE_URL: http://127.0.0.1:9147
+          # The VeriFactu platform key, which encrypts each clinic's
+          # certificate password. Fixed and test-only, like the secrets above:
+          # without it no certificate can be stored, and the settings page's
+          # "Valid" check could only ever be tested in its unconfigured state.
+          NUXT_VERIFACTU_SECRET_KEY: ZTJlLXZlcmlmYWN0dS1wbGF0Zm9ybS1rZXktMzJieXQ=
 
       - name: Upload screenshots on failure
         if: failure()

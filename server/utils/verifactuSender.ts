@@ -312,7 +312,21 @@ export async function sendPendingRecords(
       .in('factura_record_id', attempts.map((a) => a.recordId))
 
     for (const attempt of attempts) {
-      const line = parsed.lines.find((l) => l.serieNumber === attempt.serieNumber)
+      const matched = parsed.lines.find((l) => l.serieNumber === attempt.serieNumber)
+      // The AEAT refused the submission as a whole and said nothing about this
+      // record by name. That used to write nothing at all -- the reason was
+      // read, discarded, and the record went on being refused every minute
+      // with no trace of why. Seen on 26 Sep 2026: F-2026-0064 came back
+      // Incorrecto on every tick after the certificate was re-uploaded, and
+      // the table's newest row for it was from the 23rd. Recorded now as a
+      // refusal of this record, with the AEAT's own words, so it is visible,
+      // collapses like any other repeated verdict, and parks after ten.
+      const line =
+        matched?.estado
+          ? matched
+          : parsed.estadoEnvio === 'Incorrecto'
+            ? { estado: 'Incorrecto' as const, errorCode: 'envio', errorMessage: `La AEAT rechazó el envío completo: ${responseText(responseXml)}` }
+            : null
       if (!line?.estado) continue
 
       const same = (existing ?? []).find(
@@ -412,6 +426,22 @@ export async function sendPendingRecords(
     estadoEnvio = one.estadoEnvio ?? estadoEnvio
   }
   return { sent, parked, blocked: null, estadoEnvio }
+}
+
+/**
+ * The readable text of an AEAT response, for a row a person will read: tags
+ * dropped, whitespace collapsed, and cut short. The envelope's own markup is
+ * noise; the codes and descriptions inside it are the explanation.
+ */
+function responseText(xml: string): string {
+  return xml
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 500)
 }
 
 /**

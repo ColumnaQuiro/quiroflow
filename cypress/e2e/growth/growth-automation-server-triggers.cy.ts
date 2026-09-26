@@ -141,13 +141,45 @@ describe('Automations fired by the server', () => {
   })
 
   describe('a slot offered to the waitlist', () => {
-    it('cannot hold a waitlist.slot_offered rule, although the editor offers the trigger', () => {
-      // Pinned as it is: the trigger was dropped from the CHECK constraint by
-      // mistake in 20260915035941, while waitlistOffer.ts still fires it. The
-      // engine change puts it back, and flips this test.
+    it('holds a waitlist.slot_offered rule again, and runs it for the patient offered the slot', () => {
+      // The trigger was dropped from the CHECK constraint by mistake in
+      // 20260915035941 while waitlistOffer.ts still fired it, so no such rule
+      // could be saved. The automation engine migration puts it back.
       cy.task<{ id: string | null; error: string | null }>('auto:tryInsertRule', { accountId: account.accountId, triggerEvent: 'waitlist.slot_offered' }).then((res) => {
-        expect(res.id).to.be.null
-        expect(res.error).to.contain('automation_rules_trigger_event_check')
+        expect(res.error).to.be.null
+        expect(res.id).to.be.a('string')
+      })
+
+      cy.task('db:createAutomationRule', {
+        accountId: account.accountId,
+        triggerEvent: 'waitlist.slot_offered',
+        dryRun: true,
+        actions: [{ type: 'whatsapp_template', config: { template_name: 'hueco_libre', template_language: 'es', variables: [{ source: 'first_name' }] } }],
+      })
+      cy.task<{ id: string }>('auto:patient', {
+        accountId: account.accountId,
+        clinicId: account.clinicId,
+        firstName: 'Wanda',
+        lastName: 'Espera',
+        phone: `6${String(Math.floor(Math.random() * 1e8)).padStart(8, '0')}`,
+      }).then((waiting) => {
+        cy.task('db:createWaitlistEntry', { accountId: account.accountId, clinicId: account.clinicId, patientId: waiting.id })
+        cy.task<{ id: string }>('auto:patient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Carlos', lastName: 'Cancela' }).then((cancelling) => {
+          cy.task<{ id: string }>('db:createAppointment', {
+            accountId: account.accountId,
+            clinicId: account.clinicId,
+            patientId: cancelling.id,
+            status: 'cancelled',
+            startsAt: new Date(Date.now() + 26 * 3600 * 1000).toISOString(),
+          }).then((appt) => {
+            cy.login(account.email, account.password)
+            cy.request({ method: 'POST', url: '/api/waitlist/offer-next', body: { appointmentId: appt.id } }).its('body').should('deep.eq', { offered: true })
+            cy.task<WhatsAppRow[]>('auto:whatsappFor', { patientId: waiting.id }).then((rows) => {
+              expect(rows.map((r) => r.template_name)).to.deep.eq(['hueco_libre'])
+              expect(rows[0]!.status).to.eq('would_send')
+            })
+          })
+        })
       })
     })
   })

@@ -5,7 +5,7 @@ import { phoneMatches } from '~/utils/phone'
 import { downloadMetaMedia, extensionForMimeType, type MediaKind } from '~/server/utils/whatsappSend'
 import { notifyInboxTeamMembers } from '~/server/utils/pushNotifications'
 import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
-import { runRuleActions } from '~/server/utils/runAutomationActions'
+import { automationEvent, dispatchPatientRule } from '~/server/utils/automationEngine'
 
 // Meta's ongoing webhook: delivers both outbound message status updates
 // (sent/delivered/read/failed) and inbound replies from patients, in the
@@ -468,6 +468,13 @@ export default defineEventHandler(async (event) => {
           key: patientId ?? (leadId ? `lead:${leadId}` : msg.from),
         })
 
+        // A reply is what a wait_until "whatsapp.replied" waits for, and what
+        // a rule set to exit on a reply exits on. After the message is stored,
+        // so a branch asking "replied since the start?" already sees it.
+        if (patientId || leadId) {
+          await automationEvent(supabase, account.id, patientId ? { patientId } : { leadId }, 'whatsapp.replied', getRequestURL(event).origin)
+        }
+
         const intent = classifyReply(replyText(msg))
         if (intent && patientIds.length > 0) {
           const appt = await resolveRepliedAppointment(supabase, patientIds)
@@ -509,7 +516,7 @@ export default defineEventHandler(async (event) => {
                 const origin = getRequestURL(event).origin
                 for (const rule of rules ?? []) {
                   if (!(await ruleFiltersMatch(supabase, patient.id, rule.filters as AutomationFilters, appt.id))) continue
-                  await runRuleActions(supabase, account.id, rule.id, patient, origin, appt.id, {
+                  await dispatchPatientRule(supabase, supabase, account.id, rule.id, patient, origin, appt.id, {
                     triggerEvent: 'appointment.cancelled',
                     patientId: patient.id,
                     appointmentId: appt.id,

@@ -14,7 +14,7 @@ import { renderTemplateFields } from '~/utils/docFields'
 // patient. Kept here (server/utils/*.ts auto-imports into server routes per
 // Nitro convention, same as requirePermission.ts) so neither endpoint
 // duplicates the WhatsApp/email/webhook sending logic.
-interface PatientForAction {
+export interface PatientForAction {
   id: string
   first_name: string
   last_name: string | null
@@ -130,7 +130,7 @@ export interface ActionOutcome {
   detail: string | null
 }
 
-interface TriggerBody {
+export interface TriggerBody {
   triggerEvent: string
   patientId: string
   appointmentId?: string
@@ -225,6 +225,46 @@ export async function runLeadRuleActions(
     rule?.is_marketing ?? false,
     undefined,
     undefined,
+    undefined,
+    extraContext,
+    rule?.dry_run ?? false,
+    ruleId,
+  )
+  return outcomes
+}
+
+/**
+ * Runs chosen steps of a rule for a patient and says what each one did.
+ *
+ * The automation engine's way in (server/utils/automationEngine.ts): a rule
+ * that waits runs one step at a time, the way a lead drip always has, and has
+ * to tell "not delivered on purpose" from "failed" to know whether to retry.
+ * Everything below -- consent, dry run, templates, doc links, header media,
+ * email tracking -- is the same code runRuleActions reaches; runRuleActions
+ * itself is untouched, and still what every rule that does not wait goes
+ * through.
+ */
+export async function runPatientRuleActions(
+  supabase: any,
+  accountId: string,
+  ruleId: string,
+  patient: PatientForAction,
+  origin: string,
+  appointmentId: string | undefined,
+  triggerBody: TriggerBody | undefined,
+  extraContext: Partial<MergeContext> | undefined,
+  only: ActionRow[],
+): Promise<ActionOutcome[]> {
+  const { data: rule } = await supabase.from('automation_rules').select('is_marketing, dry_run').eq('id', ruleId).maybeSingle()
+  const { outcomes } = await runForRecipient(
+    supabase,
+    accountId,
+    only,
+    patientRecipient(patient),
+    origin,
+    rule?.is_marketing ?? false,
+    appointmentId,
+    triggerBody,
     undefined,
     extraContext,
     rule?.dry_run ?? false,

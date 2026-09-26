@@ -147,9 +147,11 @@ describe('Patient automations fired from the app', () => {
     fire({ triggerEvent: 'appointment.booked', patientId: '00000000-0000-0000-0000-000000000000' }, false).its('status').should('eq', 403)
   })
 
-  it('runs every step of a rule at once, including the ones after a delay', () => {
-    // Today's behaviour, pinned so that changing it is a visible decision: a
-    // delay in a PATIENT rule is ignored and both messages go out together.
+  it('waits at a delay in a patient rule, instead of sending every step at once', () => {
+    // The one intended change of the automation engine. Until it, a delay in
+    // a PATIENT rule was ignored and both messages went out together; now it
+    // waits, as it always has for leads. growth-automation-engine walks the
+    // rest of this run.
     rule({
       triggerEvent: 'appointment.completed',
       actions: [whatsapp('primera'), { type: 'delay', config: { delay_minutes: 1440 } }, whatsapp('segunda')],
@@ -158,9 +160,13 @@ describe('Patient automations fired from the app', () => {
         appointment(p.id).then((appt) => {
           fire({ triggerEvent: 'appointment.completed', patientId: p.id, appointmentId: appt.id }).its('body').should('deep.eq', { fired: 1 })
           cy.task<WhatsAppRow[]>('auto:whatsappFor', { patientId: p.id }).then((rows) => {
-            expect(rows.map((row) => row.template_name)).to.deep.eq(['primera', 'segunda'])
+            expect(rows.map((row) => row.template_name)).to.deep.eq(['primera'])
           })
-          cy.task<unknown[]>('auto:runsForRule', { ruleId: r.id }).should('have.length', 0)
+          cy.task<{ status: string; patient_id: string }[]>('auto:runsForRule', { ruleId: r.id }).then((runs) => {
+            expect(runs).to.have.length(1)
+            expect(runs[0]!.status).to.eq('running')
+            expect(runs[0]!.patient_id).to.eq(p.id)
+          })
         })
       })
     })

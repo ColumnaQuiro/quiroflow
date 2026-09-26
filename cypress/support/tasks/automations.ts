@@ -15,6 +15,10 @@ const SERVICE_ROLE_KEY =
   process.env.NUXT_SUPABASE_SECRET_KEY ||
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU'
 
+const ANON_KEY =
+  process.env.NUXT_PUBLIC_SUPABASE_KEY ||
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0'
+
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
 })
@@ -183,6 +187,151 @@ async function signStripe(opts: { body: string; secret: string }) {
   return { header: `t=${t},v1=${v1}` }
 }
 
+
+/** A step of a flow rule, with the chains that hang off it. */
+interface FlowStep {
+  type: string
+  config?: Record<string, unknown>
+  yes?: FlowStep[]
+  no?: FlowStep[]
+  met?: FlowStep[]
+  timeout?: FlowStep[]
+}
+
+/**
+ * A rule whose steps are a tree, inserted parent first so each chain can point
+ * at the step it hangs from -- what the new builder will save.
+ */
+async function createFlowRule(opts: {
+  accountId: string
+  triggerEvent: string
+  name?: string
+  dryRun?: boolean
+  isMarketing?: boolean
+  enabled?: boolean
+  filters?: Record<string, unknown>
+  entryMode?: string
+  exitOn?: string[]
+  quietHours?: Record<string, unknown>
+  segment?: Record<string, unknown>
+  steps: FlowStep[]
+}) {
+  const rule = check(
+    await admin
+      .from('automation_rules')
+      .insert({
+        account_id: opts.accountId,
+        name: opts.name ?? 'cypress flow',
+        trigger_event: opts.triggerEvent,
+        enabled: opts.enabled ?? true,
+        dry_run: opts.dryRun ?? true,
+        is_marketing: opts.isMarketing ?? false,
+        filters: opts.filters ?? {},
+        entry_mode: opts.entryMode ?? 'every_time',
+        exit_on: opts.exitOn ?? [],
+        quiet_hours: opts.quietHours ?? null,
+        segment: opts.segment ?? null,
+      } as never)
+      .select('id')
+      .single(),
+  ) as { id: string }
+
+  async function insertChain(steps: FlowStep[], parentId: string | null, branch: string | null) {
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i]!
+      const row = check(
+        await admin
+          .from('automation_actions')
+          .insert({ account_id: opts.accountId, rule_id: rule.id, action_type: step.type, position: i, config: step.config ?? {}, parent_id: parentId, branch } as never)
+          .select('id')
+          .single(),
+      ) as { id: string }
+      for (const outlet of ['yes', 'no', 'met', 'timeout'] as const) {
+        if (step[outlet]?.length) await insertChain(step[outlet]!, row.id, outlet)
+      }
+    }
+  }
+  await insertChain(opts.steps, null, null)
+  return rule
+}
+
+/** Pulls a rule's running runs back so the next tick sees them as due -- and any wait as timed out. */
+async function makeRunsDue(opts: { ruleId: string }) {
+  const past = new Date(Date.now() - 60_000).toISOString()
+  check(await admin.from('automation_sequence_runs').update({ resume_at: past }).eq('rule_id', opts.ruleId).eq('status', 'running').select('id'))
+  check(
+    await admin
+      .from('automation_sequence_runs')
+      .update({ wait_deadline: past } as never)
+      .eq('rule_id', opts.ruleId)
+      .eq('status', 'running')
+      .not('wait_deadline' as never, 'is', null)
+      .select('id'),
+  )
+  return { ok: true }
+}
+
+async function patientTags(opts: { patientId: string }) {
+  const row = check(await admin.from('patients').select('tags').eq('id', opts.patientId).single()) as { tags: string[] }
+  return row.tags ?? []
+}
+
+async function leadRow(opts: { id: string }) {
+  return check(await admin.from('leads').select('id, stage, owner_team_member_id').eq('id', opts.id).single())
+}
+
+/** Merges two patients the way the Merge dialog does: the RPC, as a signed-in member. */
+async function mergeAsStaff(opts: { email: string; password: string; survivorId: string; duplicateId: string }) {
+  const client = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+  const { error: signInError } = await client.auth.signInWithPassword({ email: opts.email, password: opts.password })
+  if (signInError) throw signInError
+  const { data, error } = await client.rpc('merge_patients', { p_survivor_id: opts.survivorId, p_duplicate_id: opts.duplicateId })
+  if (error) throw error
+  return data
+}
+
+/** Tries to write a rule as a signed-in member, and reports what the database said. */
+async function insertRuleAsStaff(opts: { email: string; password: string; accountId: string }) {
+  const client = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+  const { error: signInError } = await client.auth.signInWithPassword({ email: opts.email, password: opts.password })
+  if (signInError) throw signInError
+  const { data, error } = await client
+    .from('automation_rules')
+    .insert({ account_id: opts.accountId, name: 'As staff', trigger_event: 'appointment.booked', enabled: false })
+    .select('id')
+  const read = await client.from('automation_rules').select('id').eq('account_id', opts.accountId)
+  return { inserted: (data ?? []).length, error: error?.message ?? null, readable: (read.data ?? []).length }
+}
+
+/**
+ * A run written straight into the table, as the previous code left them: a
+ * cursor (next_position) and, since the migration's backfill, possibly a
+ * current_action_id that code never kept up to date.
+ */
+async function insertRun(opts: { accountId: string; ruleId: string; leadId: string; nextPosition: number; currentActionPosition?: number }) {
+  let currentActionId: string | null = null
+  if (opts.currentActionPosition !== undefined) {
+    const action = check(
+      await admin.from('automation_actions').select('id').eq('rule_id', opts.ruleId).eq('position', opts.currentActionPosition).single(),
+    ) as { id: string }
+    currentActionId = action.id
+  }
+  return check(
+    await admin
+      .from('automation_sequence_runs')
+      .insert({
+        account_id: opts.accountId,
+        rule_id: opts.ruleId,
+        lead_id: opts.leadId,
+        next_position: opts.nextPosition,
+        resume_at: new Date(Date.now() - 60_000).toISOString(),
+        current_action_id: currentActionId,
+      } as never)
+      .select('id')
+      .single(),
+  ) as { id: string }
+}
+
 export const automationTasks = {
   'auto:patient': patient,
   'auto:whatsappFor': whatsappFor,
@@ -199,4 +348,11 @@ export const automationTasks = {
   'auto:reviewRequestsForPatient': reviewRequestsForPatient,
   'auto:membershipOnStripe': membershipOnStripe,
   'auto:signStripe': signStripe,
+  'auto:createFlowRule': createFlowRule,
+  'auto:makeRunsDue': makeRunsDue,
+  'auto:patientTags': patientTags,
+  'auto:leadRow': leadRow,
+  'auto:mergeAsStaff': mergeAsStaff,
+  'auto:insertRuleAsStaff': insertRuleAsStaff,
+  'auto:insertRun': insertRun,
 }

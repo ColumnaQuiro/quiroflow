@@ -281,9 +281,10 @@ describe('Scheduled and manual automation sends', () => {
   })
 
   describe('Send now', () => {
-    it("runs a campaign's steps for one patient, all of them at once", () => {
-      // Every step, straight through -- including past a delay. Pinned as it
-      // is today.
+    it("runs a campaign's steps for one patient, waiting at a delay", () => {
+      // Every step used to go out at once, straight past the delay. Since the
+      // automation engine a delay waits, here as everywhere; the rest of the
+      // campaign is a run the tick picks up.
       rule({
         triggerEvent: 'appointment.completed',
         enabled: false,
@@ -293,8 +294,26 @@ describe('Scheduled and manual automation sends', () => {
           cy.login(account.email, account.password)
           cy.request({ method: 'POST', url: '/api/automations/send-now', body: { ruleId: r.id, patientId: p.id } }).its('body').should('deep.eq', { sent: true })
           cy.task<WhatsAppRow[]>('auto:whatsappFor', { patientId: p.id }).then((rows) => {
+            expect(rows.map((row) => row.template_name)).to.deep.eq(['uno'])
+          })
+          cy.task('auto:makeRunsDue', { ruleId: r.id })
+          cron('lead-sequence-cron')
+          cy.task<WhatsAppRow[]>('auto:whatsappFor', { patientId: p.id }).then((rows) => {
             expect(rows.map((row) => row.template_name)).to.deep.eq(['uno', 'dos'])
           })
+        })
+      })
+    })
+
+    it('sends a campaign with no delay straight through, leaving no run', () => {
+      rule({ triggerEvent: 'appointment.completed', enabled: false, actions: [whatsapp('uno'), whatsapp('dos')] }).then((r) => {
+        patient().then((p) => {
+          cy.login(account.email, account.password)
+          cy.request({ method: 'POST', url: '/api/automations/send-now', body: { ruleId: r.id, patientId: p.id } }).its('body').should('deep.eq', { sent: true })
+          cy.task<WhatsAppRow[]>('auto:whatsappFor', { patientId: p.id }).then((rows) => {
+            expect(rows.map((row) => row.template_name)).to.deep.eq(['uno', 'dos'])
+          })
+          cy.task('auto:runsForRule', { ruleId: r.id }).should('have.length', 0)
         })
       })
     })

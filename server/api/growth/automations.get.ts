@@ -1,4 +1,5 @@
 import { requireGrowth } from '~/server/utils/requireGrowth'
+import { stepLabel } from '~/server/utils/leadSequences'
 
 // The account's real automations, shaped for the workflow canvas.
 //
@@ -30,6 +31,8 @@ const TRIGGER_TITLES: Record<string, string> = {
   'membership.new_member': 'New member',
   'membership.removed': 'Membership ended',
   'membership.payment_processed': 'Membership payment',
+  'waitlist.slot_offered': 'Waitlist slot offered',
+  segment: 'Scheduled segment',
 }
 
 function delayLabel(minutes: number) {
@@ -56,7 +59,7 @@ export default defineEventHandler(async (event) => {
       .order('created_at', { ascending: false }),
     supabase
       .from('automation_actions')
-      .select('id, rule_id, action_type, position, config')
+      .select('id, rule_id, action_type, position, config, parent_id')
       .eq('account_id', teamMember.account_id)
       .order('position'),
     supabase
@@ -71,7 +74,9 @@ export default defineEventHandler(async (event) => {
   ])
 
   const actionsByRule = new Map<string, { action_type: string; position: number; config: Record<string, any> }[]>()
-  for (const a of actions ?? []) {
+  // The root chain only: this canvas draws a straight line, and the steps
+  // under a branch or a wait have no place on it until the new builder.
+  for (const a of (actions ?? []).filter((row) => !(row as { parent_id?: string | null }).parent_id)) {
     actionsByRule.set(a.rule_id, [...(actionsByRule.get(a.rule_id) ?? []), a as never])
   }
 
@@ -122,6 +127,9 @@ export default defineEventHandler(async (event) => {
           }
           if (action.action_type === 'email') {
             return { kind: 'message' as const, title: action.config?.subject || 'Email', eyebrow: 'Message · Email', detail: null }
+          }
+          if (!['whatsapp_template', 'email', 'webhook'].includes(action.action_type)) {
+            return { kind: 'internal' as const, title: stepLabel(action), eyebrow: 'Step', detail: null }
           }
           if (action.action_type === 'webhook') {
             return { kind: 'internal' as const, title: 'Webhook', eyebrow: 'Internal', detail: action.config?.url ?? null }

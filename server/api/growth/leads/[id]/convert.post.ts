@@ -1,4 +1,7 @@
+import { serverSupabaseServiceRole } from '#supabase/server'
+import type { Database } from '~/types/database.types'
 import { requireGrowth } from '~/server/utils/requireGrowth'
+import { automationEvent } from '~/server/utils/automationEngine'
 
 interface Body {
   /** Attach the lead to this existing patient instead of creating one. */
@@ -147,6 +150,10 @@ export default defineEventHandler(async (event) => {
     title: linkPatientId ? 'Linked to an existing patient' : 'Converted to a patient',
     detail: lead.source ? `Attribution kept: ${lead.source}` : null,
   })
+
+  // Ends at once any run whose rule exits on conversion, rather than at its
+  // next step (where the converted check would stop it anyway).
+  await automationEvent(serverSupabaseServiceRole<Database>(event), teamMember.account_id, { leadId: id }, 'lead.converted', getRequestURL(event).origin)
 
   return { patientId, created: !linkPatientId, alreadyConverted: false }
 })

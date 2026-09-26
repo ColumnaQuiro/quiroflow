@@ -1,7 +1,7 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
-import { runRuleActions } from '~/server/utils/runAutomationActions'
+import { dispatchPatientRule } from '~/server/utils/automationEngine'
 
 // Fires the appointment.hours_before campaign trigger -- the flexible,
 // multi-rule replacement for the single-slot Settings > Communication >
@@ -85,7 +85,7 @@ export default defineEventHandler(async (event) => {
     if (!rule) return false
     if (!(await ruleFiltersMatch(supabase, patient.id, rule.filters as AutomationFilters, due.appointmentId))) return false
 
-    await runRuleActions(supabase, due.accountId, due.ruleId, patient, origin, due.appointmentId)
+    await dispatchPatientRule(supabase, supabase, due.accountId, due.ruleId, patient, origin, due.appointmentId)
     // Best-effort: a duplicate insert (unique(rule_id, appointment_id)) can
     // only happen from two overlapping cron ticks racing the same row, in
     // which case the actions already fired twice regardless of this insert

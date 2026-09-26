@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 import type Stripe from 'stripe'
 import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
-import { runRuleActions } from '~/server/utils/runAutomationActions'
+import { dispatchPatientRule } from '~/server/utils/automationEngine'
 
 // Shared by both webhook routes: the legacy per-account endpoint
 // (webhook/[accountId].post.ts) and the platform-level Connect endpoint
@@ -31,7 +31,7 @@ export async function handleStripeEvent(supabase: SupabaseClient<Database>, acco
       .eq('enabled', true)
     for (const rule of rules ?? []) {
       if (!(await ruleFiltersMatch(supabase, patient.id, rule.filters as AutomationFilters))) continue
-      await runRuleActions(supabase, accountId, rule.id, patient, origin, undefined, {
+      await dispatchPatientRule(supabase, supabase, accountId, rule.id, patient, origin, undefined, {
         triggerEvent: 'membership.payment_processed',
         patientId: patient.id,
         membershipId,

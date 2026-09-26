@@ -1,6 +1,7 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { verifyResendSignature } from '~/server/utils/resendWebhookAuth'
+import { automationEvent } from '~/server/utils/automationEngine'
 
 // Delivery events from Resend: delivered, opened, clicked, bounced,
 // complained, failed. Register this URL once in the Resend dashboard under
@@ -88,6 +89,20 @@ export default defineEventHandler(async (event) => {
     // A real database failure IS worth a retry, so this one is not swallowed.
     console.error(`[resend-webhook] ${type} for ${messageId}: ${error.message}`)
     throw createError({ statusCode: 500, statusMessage: 'Could not record the event' })
+  }
+
+  // An open or a click is what an automation's "wait until the email is
+  // opened / clicked" waits for. Best-effort: automationEvent never throws,
+  // and nothing about it may turn a recorded event into a retry.
+  if (matched === true && (type === 'email.opened' || type === 'email.clicked')) {
+    const { data: email } = await supabase
+      .from('email_messages')
+      .select('account_id, patient_id, lead_id')
+      .eq('provider_message_id', messageId)
+      .maybeSingle()
+    if (email && (email.patient_id || email.lead_id)) {
+      await automationEvent(supabase, email.account_id, { patientId: email.patient_id, leadId: email.lead_id }, type, getRequestURL(event).origin)
+    }
   }
 
   // matched === false means no row with that id: an email sent before this

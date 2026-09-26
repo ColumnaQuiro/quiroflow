@@ -1,6 +1,12 @@
+import { serverSupabaseServiceRole } from '#supabase/server'
+import type { Database } from '~/types/database.types'
+import { dispatchPatientRule } from '~/server/utils/automationEngine'
+
 // One-off send: run a single campaign's actions for a specific patient right
 // now, bypassing the trigger-event matching in fire.post.ts entirely. Same
-// underlying action-sending logic (server/utils/runAutomationActions.ts).
+// underlying action-sending logic (server/utils/runAutomationActions.ts). A
+// campaign that waits or branches starts a run for the patient instead, and
+// ignores the rule's entry mode: a person asked for it.
 interface SendNowBody {
   ruleId: string
   patientId: string
@@ -27,7 +33,7 @@ export default defineEventHandler(async (event) => {
   if (!patient) throw createError({ statusCode: 404, statusMessage: 'Patient not found' })
 
   const origin = getRequestURL(event).origin
-  await runRuleActions(supabase, accountId, rule.id, patient, origin)
+  await dispatchPatientRule(supabase, serverSupabaseServiceRole<Database>(event), accountId, rule.id, patient, origin, undefined, undefined, undefined, { force: true })
 
   return { sent: true }
 })

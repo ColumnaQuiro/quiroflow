@@ -1,6 +1,6 @@
 import type { AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
 import { ruleFiltersMatch } from '~/server/utils/evaluateAutomationFilters'
-import { runRuleActions } from '~/server/utils/runAutomationActions'
+import { dispatchPatientRule } from '~/server/utils/automationEngine'
 import { offerExpiresAt as offerDeadline, waitlistEntryMatches } from '~/utils/waitlistOffer'
 
 export { WAITLIST_OFFER_TTL_HOURS } from '~/utils/waitlistOffer'
@@ -20,7 +20,11 @@ interface SlotToOffer {
 // unclaimed) -- both ultimately do the same thing: find the oldest waiting
 // entry that matches this freed slot, mark it offered, and notify them.
 // Returns true if an offer went out, false if no waiting entry matched.
-export async function offerNextWaitlistEntry(supabase: any, origin: string, slot: SlotToOffer): Promise<boolean> {
+// `service` is the service role, for a waitlist rule that waits or branches
+// (its run outlives this request); a rule that only sends goes through the
+// caller's own client as it always has. Defaults to `supabase` for a caller
+// that already holds the service role.
+export async function offerNextWaitlistEntry(supabase: any, origin: string, slot: SlotToOffer, service: any = supabase): Promise<boolean> {
   // Capped at 20 minutes before the slot (utils/waitlistOffer): a two-hour
   // window on a slot starting in 50 minutes could be claimed after it began.
   // A slot starting sooner than that is offered to nobody.
@@ -92,7 +96,7 @@ export async function offerNextWaitlistEntry(supabase: any, origin: string, slot
 
   for (const rule of rules ?? []) {
     if (!(await ruleFiltersMatch(supabase, patient.id, rule.filters as AutomationFilters))) continue
-    await runRuleActions(supabase, slot.accountId, rule.id, patient, origin, undefined, undefined, {
+    await dispatchPatientRule(supabase, service, slot.accountId, rule.id, patient, origin, undefined, undefined, {
       waitlistClaimLink: claimLink,
       waitlistSlotDatetime: slotDatetime,
     })

@@ -1,7 +1,7 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
-import { runRuleActions } from '~/server/utils/runAutomationActions'
+import { dispatchPatientRule } from '~/server/utils/automationEngine'
 
 // See server/utils/concurrency.ts -- bounds how many patients' birthday
 // actions run at once so a day with birthdays across many accounts still
@@ -55,7 +55,7 @@ export default defineEventHandler(async (event) => {
     let count = 0
     for (const rule of accountRules) {
       if (!(await ruleFiltersMatch(supabase, patient.id, rule.filters as AutomationFilters))) continue
-      await runRuleActions(supabase, patient.account_id, rule.id, patient, origin)
+      await dispatchPatientRule(supabase, supabase, patient.account_id, rule.id, patient, origin)
       count += 1
     }
     return count

@@ -1,8 +1,15 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
-import { advanceSequenceRun, RUN_COLUMNS } from '~/server/utils/leadSequences'
+import { RUN_COLUMNS } from '~/server/utils/leadSequences'
+import { advanceRun, enrolDueSegments } from '~/server/utils/automationEngine'
 
-// Advances every lead sequence that is due.
+// Advances every automation run that is due -- a lead's drip, and since the
+// automation engine a patient's run too: a delay that has elapsed, a
+// wait_until whose deadline has passed (it takes its timeout path), a step
+// deferred by quiet hours or a failed step's retry. It also enrols the
+// patients of any scheduled segment rule that has come due. One cron for all
+// of it, deliberately: this one is already scheduled in production, and a new
+// *-cron endpoint would need a hand-made pg_cron job before it did anything.
 //
 // Same shape and the same 15-minute tick as the other automation crons, but
 // it reads a state row rather than recomputing "is anything due" from
@@ -25,6 +32,15 @@ export default defineEventHandler(async (event) => {
   const supabase = serverSupabaseServiceRole<Database>(event)
   const origin = getRequestURL(event).origin
 
+  // Enrolment first, so the runs it creates are due in this same tick (up to
+  // the cap). A failure here must not stop runs already in flight.
+  let enrolled = 0
+  try {
+    enrolled = await enrolDueSegments(supabase, origin)
+  } catch (err) {
+    console.error('[lead-sequence-cron] segment enrolment failed:', (err as Error)?.message ?? err)
+  }
+
   const { data: due } = await supabase
     .from('automation_sequence_runs')
     .select(RUN_COLUMNS)
@@ -40,7 +56,7 @@ export default defineEventHandler(async (event) => {
     await Promise.all(
       runs.slice(i, i + CONCURRENCY).map(async (run) => {
         try {
-          await advanceSequenceRun(supabase, run as never, origin)
+          await advanceRun(supabase, run as never, origin)
           advanced += 1
         } catch (err) {
           // One lead's sequence failing must not stop the rest of the tick.
@@ -54,5 +70,5 @@ export default defineEventHandler(async (event) => {
     )
   }
 
-  return { due: runs.length, advanced }
+  return { due: runs.length, advanced, ...(enrolled ? { enrolled } : {}) }
 })

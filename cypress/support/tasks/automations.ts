@@ -1,5 +1,6 @@
 import { createHmac } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
+import { deriveUnsubscribeKey, signUnsubscribeToken } from '../../../server/utils/unsubscribeToken'
 
 // Tasks for the automation specs: seeding a patient exactly as a rule needs
 // to see them (tags, consent, contact flags), and reading back every row an
@@ -392,6 +393,77 @@ async function whatsappForRule(opts: { ruleId: string }) {
   )
 }
 
+// ---------------------------------------------------------------- phase 3
+
+async function signedIn(email: string, password: string) {
+  const client = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+  const { error } = await client.auth.signInWithPassword({ email, password })
+  if (error) throw error
+  return client
+}
+
+/** Mi día tasks, as the database has them (service role). */
+async function tasksFor(opts: { ruleId?: string; patientId?: string }) {
+  let query = admin
+    .from('staff_tasks')
+    .select('id, account_id, team_member_id, role_id, patient_id, lead_id, title, due_at, done_at, done_by, rule_id, run_id')
+    .order('created_at')
+  if (opts.ruleId) query = query.eq('rule_id', opts.ruleId)
+  if (opts.patientId) query = query.eq('patient_id', opts.patientId)
+  return check(await query) ?? []
+}
+
+/** The task ids a signed-in member can read, through RLS. */
+async function tasksAsStaff(opts: { email: string; password: string }) {
+  const client = await signedIn(opts.email, opts.password)
+  const { data, error } = await client.from('staff_tasks').select('id')
+  return { ids: (data ?? []).map((r: { id: string }) => r.id), error: error?.message ?? null }
+}
+
+/** Writes a task as a signed-in member, and reports what the database said. */
+async function taskWriteAsStaff(opts: { email: string; password: string; taskId: string; patch: Record<string, unknown> }) {
+  const client = await signedIn(opts.email, opts.password)
+  const { data, error } = await client.from('staff_tasks').update(opts.patch as never).eq('id', opts.taskId).select('id')
+  return { rows: (data ?? []).length, error: error?.message ?? null }
+}
+
+async function birthdaySends(opts: { patientId: string }) {
+  return check(await admin.from('automation_birthday_sends').select('rule_id, local_date').eq('patient_id', opts.patientId).order('local_date')) ?? []
+}
+
+async function insertBirthdaySend(opts: { accountId: string; ruleId: string; patientId: string; localDate: string }) {
+  check(
+    await admin
+      .from('automation_birthday_sends')
+      .insert({ account_id: opts.accountId, rule_id: opts.ruleId, patient_id: opts.patientId, local_date: opts.localDate })
+      .select('rule_id'),
+  )
+  return { ok: true }
+}
+
+/**
+ * The unsubscribe token the server would put in a marketing email for this
+ * recipient: the same function, keyed off the same secret the server reads
+ * (NUXT_SUPABASE_SECRET_KEY).
+ */
+async function unsubscribeToken(opts: { kind: 'patient' | 'lead'; id: string }) {
+  return signUnsubscribeToken(deriveUnsubscribeKey(SERVICE_ROLE_KEY), opts.kind, opts.id)
+}
+
+async function patientChannels(opts: { patientId: string }) {
+  const row = check(await admin.from('patients').select('marketing_channels').eq('id', opts.patientId).single()) as { marketing_channels: string[] }
+  return row.marketing_channels ?? []
+}
+
+async function setLeadConsent(opts: { leadId: string; consentedAt: string | null }) {
+  check(await admin.from('leads').update({ marketing_consent_at: opts.consentedAt, marketing_consent_source: opts.consentedAt ? 'cypress' : null }).eq('id', opts.leadId).select('id'))
+  return { ok: true }
+}
+
+async function leadConsent(opts: { leadId: string }) {
+  return check(await admin.from('leads').select('marketing_consent_at, marketing_consent_source').eq('id', opts.leadId).single())
+}
+
 export const automationTasks = {
   'auto:actionsForRule': actionsForRule,
   'auto:ruleRow': ruleRow,
@@ -419,4 +491,13 @@ export const automationTasks = {
   'auto:mergeAsStaff': mergeAsStaff,
   'auto:insertRuleAsStaff': insertRuleAsStaff,
   'auto:insertRun': insertRun,
+  'auto:tasksFor': tasksFor,
+  'auto:tasksAsStaff': tasksAsStaff,
+  'auto:taskWriteAsStaff': taskWriteAsStaff,
+  'auto:birthdaySends': birthdaySends,
+  'auto:insertBirthdaySend': insertBirthdaySend,
+  'auto:unsubscribeToken': unsubscribeToken,
+  'auto:patientChannels': patientChannels,
+  'auto:setLeadConsent': setLeadConsent,
+  'auto:leadConsent': leadConsent,
 }

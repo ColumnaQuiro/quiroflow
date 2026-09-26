@@ -70,16 +70,24 @@ describe('Scheduled and manual automation sends', () => {
   })
 
   describe('birthday', () => {
-    const today = new Date()
-    const birthdayToday = `1990-${String(today.getUTCMonth() + 1).padStart(2, '0')}-${String(today.getUTCDate()).padStart(2, '0')}`
-    const tomorrow = new Date(Date.now() + 24 * HOUR)
-    const birthdayTomorrow = `1990-${String(tomorrow.getUTCMonth() + 1).padStart(2, '0')}-${String(tomorrow.getUTCDate()).padStart(2, '0')}`
+    // "Today" is the clinic's date (automations phase 3). Each test pins the
+    // clinic's zone, then works out what today is there.
+    const dateIn = (zone: string, at = new Date()) => {
+      const parts = Object.fromEntries(
+        new Intl.DateTimeFormat('en-US', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(at).map((p) => [p.type, p.value]),
+      )
+      return `${parts.year}-${parts.month}-${parts.day}`
+    }
+    const born = (date: string) => `1990-${date.slice(5)}`
 
-    it('messages the patients whose birthday it is today (UTC), through the rule filters', () => {
+    it("messages the patients whose birthday it is today, through the rule filters -- once a day", () => {
+      cy.task('auto:setClinicTimezone', { clinicId: account.clinicId, timezone: 'Etc/UTC' })
+      const today = dateIn('Etc/UTC')
+      const tomorrow = dateIn('Etc/UTC', new Date(Date.now() + 24 * HOUR))
       rule({ triggerEvent: 'patient.birthday', filters: { tag_contains: 'cumple' }, actions: [whatsapp('feliz_cumple')] })
-      patient({ dateOfBirth: birthdayToday, tags: ['cumple-si'] }).then((p) => {
-        patient({ dateOfBirth: birthdayToday, tags: [] }).then((filteredOut) => {
-          patient({ dateOfBirth: birthdayTomorrow, tags: ['cumple-si'] }).then((notToday) => {
+      patient({ dateOfBirth: born(today), tags: ['cumple-si'] }).then((p) => {
+        patient({ dateOfBirth: born(today), tags: [] }).then((filteredOut) => {
+          patient({ dateOfBirth: born(tomorrow), tags: ['cumple-si'] }).then((notToday) => {
             cron('birthday-cron').its('status').should('eq', 200)
             cy.task<WhatsAppRow[]>('auto:whatsappFor', { patientId: p.id }).then((rows) => {
               expect(rows).to.have.length(1)
@@ -89,10 +97,33 @@ describe('Scheduled and manual automation sends', () => {
             cy.task('auto:whatsappFor', { patientId: filteredOut.id }).should('have.length', 0)
             cy.task('auto:whatsappFor', { patientId: notToday.id }).should('have.length', 0)
 
-            // No once-a-day guard: a second call the same day sends again.
-            // Pinned as it is today; making it idempotent is a separate change.
+            // Changed deliberately in automations phase 3: a second call the
+            // same day used to send again. It now finds the day claimed.
             cron('birthday-cron')
-            cy.task('auto:whatsappFor', { patientId: p.id }).should('have.length', 2)
+            cy.task('auto:whatsappFor', { patientId: p.id }).should('have.length', 1)
+          })
+        })
+      })
+    })
+
+    it("uses the clinic's date, not UTC's, when the two differ", () => {
+      // A zone where it is already another day than in UTC right now:
+      // UTC+14 is ahead from 10:00 UTC, UTC-12 behind until 12:00 UTC, so one
+      // of them always is -- the same situation as Madrid between 22:00 and
+      // 24:00 UTC.
+      const zone = dateIn('Etc/GMT-14') !== dateIn('Etc/UTC') ? 'Etc/GMT-14' : 'Etc/GMT+12'
+      const clinicToday = dateIn(zone)
+      const utcToday = dateIn('Etc/UTC')
+      expect(clinicToday).to.not.eq(utcToday)
+      cy.task('auto:setClinicTimezone', { clinicId: account.clinicId, timezone: zone })
+      rule({ triggerEvent: 'patient.birthday', actions: [whatsapp('feliz_cumple')] })
+      patient({ dateOfBirth: born(clinicToday) }).then((clinicBirthday) => {
+        patient({ dateOfBirth: born(utcToday) }).then((utcBirthday) => {
+          cron('birthday-cron').its('status').should('eq', 200)
+          cy.task('auto:whatsappFor', { patientId: clinicBirthday.id }).should('have.length', 1)
+          cy.task('auto:whatsappFor', { patientId: utcBirthday.id }).should('have.length', 0)
+          cy.task<{ local_date: string }[]>('auto:birthdaySends', { patientId: clinicBirthday.id }).then((rows) => {
+            expect(rows.map((r) => r.local_date)).to.deep.eq([clinicToday])
           })
         })
       })

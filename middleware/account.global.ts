@@ -37,6 +37,9 @@ export default defineNuxtRouteMiddleware(async (to) => {
   if (to.path.startsWith('/join')) return
   if (to.path.startsWith('/book')) return
   if (to.path.startsWith('/doc/')) return
+  // Unsubscribing from a clinic's marketing email: a patient's link, never
+  // anything to do with a staff session that happens to be open.
+  if (to.path.startsWith('/unsubscribe/')) return
 
   const user = useSupabaseUser()
   if (!user.value) return

@@ -286,9 +286,16 @@ describe('Patient automations fired from the app', () => {
         fire({ triggerEvent: 'appointment.completed', patientId: p.id })
         cy.task('auto:whatsappFor', { patientId: p.id }).should('have.length', 1)
       })
-      // The email half of the gate is pinned in growth-automation-schedules,
-      // where a dry-run email leaves a row to count; through this endpoint it
-      // leaves none (see "an email in dry run" below).
+      // The email half of the gate, now that an app-fired email leaves a row.
+      rule({ triggerEvent: 'appointment.checked_in', isMarketing: true, actions: [{ type: 'email', config: { subject: 'Oferta', body: '<p>Oferta</p>' } }] })
+      patient({ marketingChannels: ['whatsapp'] }).then((p) => {
+        fire({ triggerEvent: 'appointment.checked_in', patientId: p.id })
+        cy.task('auto:emailsFor', { patientId: p.id }).should('have.length', 0)
+      })
+      patient({ marketingChannels: ['email'] }).then((p) => {
+        fire({ triggerEvent: 'appointment.checked_in', patientId: p.id })
+        cy.task('auto:emailsFor', { patientId: p.id }).should('have.length', 1)
+      })
     })
 
     it('a transactional rule needs no marketing opt-in', () => {
@@ -326,16 +333,25 @@ describe('Patient automations fired from the app', () => {
   })
 
   describe('what each step leaves behind', () => {
-    it('an email in dry run leaves no row when fired from the app', () => {
-      // Pinned as found, not as intended: this endpoint runs the rule with
-      // the caller's own client, and email_messages refuses that insert under
-      // RLS ("could not record dry-run email" in the server log). The same
-      // rule run by a cron, with the service role, does record it -- see
-      // growth-automation-schedules.
-      rule({ triggerEvent: 'appointment.completed', actions: [{ type: 'email', config: { subject: 'Gracias {{first_name}}', body: '<p>Hola {{first_name}}</p>' } }] })
-      patient({ email: 'ana.gracias@example.test' }).then((p) => {
-        fire({ triggerEvent: 'appointment.completed', patientId: p.id }).its('body.fired').should('eq', 1)
-        cy.task<EmailRow[]>('auto:emailsFor', { patientId: p.id }).should('have.length', 0)
+    it('an email in dry run leaves a row when fired from the app, as it does from a cron', () => {
+      // Changed deliberately in automations phase 3. This endpoint runs the
+      // rule with the caller's own client, and email_messages has no staff
+      // insert policy, so the row used to be refused ("could not record
+      // dry-run email") and app-fired emails were missing from the email
+      // metrics -- live ones included. The sender now records with the
+      // service role, exactly as the crons always have.
+      rule({ triggerEvent: 'appointment.completed', actions: [{ type: 'email', config: { subject: 'Gracias {{first_name}}', body: '<p>Hola {{first_name}}</p>' } }] }).then((r) => {
+        patient({ email: 'ana.gracias@example.test' }).then((p) => {
+          fire({ triggerEvent: 'appointment.completed', patientId: p.id }).its('body.fired').should('eq', 1)
+          cy.task<EmailRow[]>('auto:emailsFor', { patientId: p.id }).then((rows) => {
+            expect(rows).to.have.length(1)
+            expect(rows[0]!.dry_run).to.eq(true)
+            expect(rows[0]!.provider_message_id).to.be.null
+            expect(rows[0]!.rule_id).to.eq(r.id)
+            expect(rows[0]!.recipient_email).to.eq('ana.gracias@example.test')
+            expect(rows[0]!.subject).to.eq('Gracias Ana')
+          })
+        })
       })
     })
 

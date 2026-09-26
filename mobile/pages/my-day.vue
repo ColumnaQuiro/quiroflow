@@ -16,9 +16,21 @@ interface Appointment {
   appointment_types: { name: string; color: string } | null
 }
 
+// What an automation's "notify" step asked this person, or their role, to
+// do -- the same list as the web's Mi día (components/practitioner/MyDayTasks.vue).
+interface Task {
+  id: string
+  title: string
+  done_at: string | null
+  patient_id: string | null
+  patients: { first_name: string; last_name: string | null } | null
+  automation_rules: { name: string } | null
+}
+
 const supabase = useSupabaseClient()
 const { context, loading: contextLoading, restricted } = usePractitionerContext()
 const appointments = ref<Appointment[]>([])
+const tasks = ref<Task[]>([])
 const loading = ref(true)
 
 function startOfToday() {
@@ -46,7 +58,27 @@ async function load() {
     .lt('starts_at', end.toISOString())
     .order('starts_at')
   appointments.value = (data as unknown as Appointment[]) ?? []
+  await loadTasks()
   loading.value = false
+}
+
+async function loadTasks() {
+  // Open ones, and today's finished ones so a tick does not make a task vanish.
+  const { data } = await supabase
+    .from('staff_tasks')
+    .select('id, title, done_at, patient_id, patients(first_name, last_name), automation_rules(name)')
+    .or(`done_at.is.null,done_at.gte.${startOfToday().toISOString()}`)
+    .order('created_at')
+    .limit(100)
+  const rows = (data as unknown as Task[]) ?? []
+  tasks.value = [...rows.filter((t) => !t.done_at), ...rows.filter((t) => t.done_at)]
+}
+
+async function toggleTask(task: Task) {
+  const previous = task.done_at
+  task.done_at = previous ? null : new Date().toISOString()
+  const { error } = await supabase.from('staff_tasks').update({ done_at: task.done_at } as never).eq('id', task.id)
+  if (error) task.done_at = previous
 }
 
 watch(context, load, { immediate: true })
@@ -82,9 +114,31 @@ async function checkIn(a: Appointment) {
     </div>
 
     <div v-if="contextLoading || loading" class="flex flex-1 items-center justify-center text-sm text-ink-faint">Loading…</div>
-    <p v-else-if="appointments.length === 0" class="flex flex-1 items-center justify-center px-6 text-center text-sm text-ink-muted">No appointments today.</p>
+    <p v-else-if="appointments.length === 0 && tasks.length === 0" class="flex flex-1 items-center justify-center px-6 text-center text-sm text-ink-muted">No appointments today.</p>
 
     <div v-else class="flex-1 space-y-2 overflow-y-auto px-3 py-3">
+      <template v-if="tasks.length > 0">
+        <p class="px-1 pt-1 text-[12px] font-semibold uppercase tracking-wide text-ink-muted2">Tasks</p>
+        <div v-for="task in tasks" :key="task.id" class="flex items-start gap-3 rounded-card border border-line bg-surface px-3.5 py-3 shadow-card">
+          <button
+            type="button"
+            class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
+            :class="task.done_at ? 'bg-success-accent text-white' : 'border border-line-control text-ink-faint3'"
+            :aria-label="task.done_at ? 'Mark as not done' : 'Mark as done'"
+            @click="toggleTask(task)"
+          >
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2.5 6.2l2.4 2.4 4.6-5.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          </button>
+          <div class="min-w-0">
+            <p class="text-[14px] font-[600]" :class="task.done_at ? 'text-ink-faint line-through' : 'text-ink-900'">{{ task.title }}</p>
+            <p class="mt-0.5 text-[12.5px] text-ink-muted2">
+              <NuxtLink v-if="task.patient_id && task.patients" :to="`/patients/${task.patient_id}`" class="font-medium text-brand-text">{{ task.patients.first_name }} {{ task.patients.last_name ?? '' }}</NuxtLink>
+              <span v-if="task.automation_rules"> · Automation “{{ task.automation_rules.name }}”</span>
+            </p>
+          </div>
+        </div>
+        <p v-if="appointments.length > 0" class="px-1 pt-2 text-[12px] font-semibold uppercase tracking-wide text-ink-muted2">Appointments</p>
+      </template>
       <div v-for="a in appointments" :key="a.id" class="rounded-card border border-line bg-surface px-3.5 py-3 shadow-card">
         <div class="flex items-start justify-between gap-2">
           <div class="min-w-0">

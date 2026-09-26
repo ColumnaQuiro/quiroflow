@@ -2,6 +2,9 @@ import { createHmac, randomUUID } from 'node:crypto'
 import { automationFieldValue as recipientFieldValue, type MergeContext } from '~/utils/automationFields'
 import { toE164 } from '~/utils/phone'
 import { renderTemplateFields } from '~/utils/docFields'
+import { automationEmailHtml, unsubscribeHeaders, type UnsubscribeLinks } from '~/utils/automationEmail'
+import { serviceSupabase } from '~/server/utils/serviceSupabase'
+import { unsubscribeLinks } from '~/server/utils/unsubscribe'
 
 // The server runs in UTC, so formatting a UTC Date with toLocaleString and no
 // timeZone renders the UTC wall-clock time, not the clinic's -- a booking at
@@ -373,7 +376,18 @@ async function runForRecipient(
         }
       } else if (action.action_type === 'email') {
         if (canContact && channelAllowed('email')) {
-          const result = await runEmailAction(recipient, action.config, context, { supabase, accountId, ruleId, actionId: action.id }, dryRun)
+          // Recorded with the service role, whoever fired the rule. The row is
+          // what the campaign's email metrics count, and email_messages has no
+          // staff insert policy -- so a rule fired from the app (fire.post.ts,
+          // send-now, with the caller's own client) used to send the email
+          // and silently lose the row, while the same rule run by a cron
+          // recorded it. A test send (no ruleId) records nothing, as before.
+          // actionId attributes the row to its step, for per-step stats.
+          const record = ruleId ? { supabase: serviceSupabase() ?? supabase, accountId, ruleId, actionId: action.id } : undefined
+          // A marketing email carries a way out: the footer link and the
+          // List-Unsubscribe headers, signed for this one recipient.
+          const unsubscribe = isMarketing && ruleId ? unsubscribeLinks(origin, recipient.kind, recipient.id) : null
+          const result = await runEmailAction(recipient, action.config, context, record, dryRun, unsubscribe)
           outcome(result, null)
         } else {
           problems.push(skipped('Email'))
@@ -900,6 +914,7 @@ async function runEmailAction(
   context?: MergeContext,
   record?: { supabase: any; accountId: string; ruleId?: string; actionId?: string },
   dryRun = false,
+  unsubscribe?: UnsubscribeLinks | null,
 ): Promise<'sent' | 'dry_run'> {
   const subject: string | undefined = config.subject
   const rawBody: string | undefined = config.body
@@ -929,13 +944,7 @@ async function runEmailAction(
   // channel is set up is the order a clinic actually does things in.
   if (!dryRun && !runtimeConfig.resendApiKey) throw new Error('Email sending is not configured (no Resend API key on this deployment).')
 
-  const html = `
-    <div style="background:#F4F4F6;padding:40px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
-      <div style="max-width:560px;margin:0 auto;background:#FFFFFF;border-radius:14px;border:1px solid #E4E4EA;overflow:hidden;">
-        <div style="padding:24px 32px 32px;font-size:14px;line-height:1.6;color:#4A4A57;">${styleLinks(mergeHtml(rawBody))}</div>
-      </div>
-    </div>
-  `
+  const html = automationEmailHtml(styleLinks(mergeHtml(rawBody)), { unsubscribe, clinicName: context?.clinicName })
 
   // Deliberately NOT `.catch(() => null)` any more. Resend refuses sends for
   // reasons that are entirely fixable and entirely invisible from here -- an
@@ -970,7 +979,13 @@ async function runEmailAction(
     const sent = await $fetch<{ id?: string }>('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${runtimeConfig.resendApiKey}`, 'Content-Type': 'application/json' },
-      body: { from: 'QuiroFlow <notifications@quiroflow.com>', to: recipient.email, subject: mergedSubject, html },
+      body: {
+        from: 'QuiroFlow <notifications@quiroflow.com>',
+        to: recipient.email,
+        subject: mergedSubject,
+        html,
+        ...(unsubscribe ? { headers: unsubscribeHeaders(unsubscribe) } : {}),
+      },
     })
 
     // Best-effort, and deliberately after the send rather than around it: the

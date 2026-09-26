@@ -156,7 +156,9 @@ defineExpose({ reload: () => load() })
 </script>
 
 <template>
-  <div class="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 sm:p-6 xl:grid-cols-[minmax(0,1fr)_380px] xl:items-start" data-test="people">
+  <!-- The journey column only exists while someone is open: reserved
+  permanently, it squeezed the table until "In progress" wrapped. -->
+  <div class="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 sm:p-6 xl:items-start" :class="selectedId ? 'xl:grid-cols-[minmax(0,1fr)_380px]' : ''" data-test="people">
     <div class="flex min-w-0 flex-col gap-3">
       <div class="flex flex-wrap items-center gap-1.5">
         <button
@@ -208,14 +210,14 @@ defineExpose({ reload: () => load() })
                 <td class="px-4 py-2.5">
                   <span class="flex items-center gap-2.5">
                     <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[11.5px] font-bold text-brand-text">{{ initials(r.subject.name) }}</span>
-                    <span class="font-semibold text-ink-900">{{ r.subject.name }}</span>
+                    <span class="whitespace-nowrap font-semibold text-ink-900">{{ r.subject.name }}</span>
                     <span v-if="r.subject.kind === 'lead'" class="rounded-pill bg-chip-bg px-1.5 text-[10.5px] font-semibold text-chip-text">Lead</span>
                   </span>
                 </td>
                 <td class="px-2 py-2.5 text-ink-700">{{ r.status === 'running' || r.status === 'failed' ? whereLabel(r) : '—' }}</td>
                 <td class="hidden whitespace-nowrap px-2 py-2.5 text-ink-muted md:table-cell">{{ sinceLabel(r.startedAt) }}</td>
                 <td class="hidden whitespace-nowrap px-2 py-2.5 text-ink-muted md:table-cell">{{ nextLabel(r) }}</td>
-                <td class="px-2 py-2.5"><UiPill :tone="statusTone(r)" data-test="run-status">{{ statusLabel(r) }}</UiPill></td>
+                <td class="whitespace-nowrap px-2 py-2.5"><UiPill :tone="statusTone(r)" data-test="run-status">{{ statusLabel(r) }}</UiPill></td>
               </tr>
             </tbody>
           </table>

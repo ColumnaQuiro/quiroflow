@@ -54,6 +54,11 @@ describe('Automation people', () => {
           cy.visit(`/automations/${rule.id}`)
           cy.get('[data-test="tab-people"]').should('contain', '2').click()
           cy.get('[data-test="people-tab-running"]').should('contain', '2')
+          // Nothing open: the table has the full width and the status stays on one line.
+          cy.get('[data-test="run-detail"]').should('not.exist')
+          cy.get('[data-test="run-status"]').each(($pill) => {
+            expect($pill[0].getClientRects().length, `"${$pill.text()}" on one line`).to.eq(1)
+          })
           cy.get('[data-test^="run-"]').filter(':contains("Marta Dentro")').should('contain', 'Wait 2 days').and('contain', 'continues')
 
           // Skip: past the wait, the next step runs now.

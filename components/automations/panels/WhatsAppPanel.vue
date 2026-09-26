@@ -42,6 +42,12 @@ const variableRows = computed(() => {
   const n = current.value ? current.value.variableCount : variables.value.length
   return Array.from({ length: n }, (_, i) => variables.value[i] ?? { source: '' })
 })
+// Slots the template has that nothing fills (or a fixed value left blank).
+function unassignedWarning(n: number) {
+  const slot = '{' + '{' + n + '}' + '}'
+  return t(`${slot} has nothing assigned, so it is sent as the person's first name. Choose what it should say.`, `${slot} no tiene nada asignado, así que se envía el nombre de la persona. Elige qué debe decir.`)
+}
+const unassignedSlots = computed(() => variableRows.value.map((v, i) => (!v.source || (v.source === 'text' && !(v.text ?? '').trim()) ? i + 1 : 0)).filter((n) => n > 0))
 function setVariable(i: number, patch: { source?: string; text?: string }) {
   const next = [...variableRows.value.map((v) => ({ ...v }))]
   next[i] = { ...next[i]!, ...patch }
@@ -185,6 +191,12 @@ const isMarketingTemplate = computed(() => current.value?.category === 'MARKETIN
         <input v-if="v.source === 'text'" :class="FIELD" :value="v.text ?? ''" :placeholder="t('Fixed value', 'Valor fijo')" @input="setVariable(i, { text: ($event.target as HTMLInputElement).value })" />
         <button v-if="!current" type="button" :class="REMOVE_BTN" :aria-label="t('Remove variable', 'Quitar variable')" @click="removeVariable(i)">✕</button>
       </div>
+      <!-- An empty slot is not left empty: the sender fills it with the first
+      name so Meta does not refuse the message (runAutomationActions.ts). Say
+      so, or "por lo de" + slot 2 quietly goes out as "por lo de Martín". -->
+      <p v-for="n in unassignedSlots" :key="`unassigned-${n}`" class="rounded-ctl border border-warning-border bg-warning-bg px-3 py-2 text-[12.5px] leading-snug text-warning-text" :data-test="`variable-${n}-unassigned`">
+        {{ unassignedWarning(n) }}
+      </p>
       <button v-if="!current" type="button" :class="LINK_BTN" @click="addVariable">+ {{ t('Add variable', 'Añadir variable') }}</button>
       <p :class="HINT">{{ t("Filled in from each patient's details or their appointment.", 'Se rellenan con los datos de cada paciente o de su cita.') }}</p>
     </div>

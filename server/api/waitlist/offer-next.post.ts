@@ -1,3 +1,5 @@
+import { serverSupabaseServiceRole } from '#supabase/server'
+import type { Database } from '~/types/database.types'
 import { offerNextWaitlistEntry } from '~/server/utils/waitlistOffer'
 
 // Called right after a staff member cancels an appointment (AppointmentModal.vue),
@@ -31,7 +33,7 @@ export default defineEventHandler(async (event) => {
     appointmentTypeId: appt.appointment_type_id,
     startsAt: appt.starts_at,
     endsAt: appt.ends_at,
-  })
+  }, serverSupabaseServiceRole<Database>(event))
 
   return { offered }
 })

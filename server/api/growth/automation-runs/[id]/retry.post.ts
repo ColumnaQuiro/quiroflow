@@ -1,7 +1,7 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { requireGrowth } from '~/server/utils/requireGrowth'
-import { retrySequenceRun } from '~/server/utils/leadSequences'
+import { retrySequenceRun } from '~/server/utils/automationEngine'
 
 // Retry a failed run, from the step that failed.
 //

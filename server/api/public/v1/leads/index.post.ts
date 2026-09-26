@@ -3,7 +3,7 @@ import { ApiError, defineApiHandler, badRequest } from '~/server/utils/publicApi
 import { assertBelongsToAccount, loose } from '~/server/utils/publicApiHandlers'
 import { bool, definedOnly, email as emailField, enumValue, integer, readApiBody, rejectUnknownFields, str, uuid } from '~/server/utils/publicApiBody'
 import { LEAD_CHANNELS, nextLeadReference } from '~/server/utils/leads'
-import { startLeadSequence } from '~/server/utils/leadSequences'
+import { startLeadSequence } from '~/server/utils/automationEngine'
 import { hasGrowth } from '~/server/utils/requireGrowth'
 
 // Where an enquiry gets in from outside.

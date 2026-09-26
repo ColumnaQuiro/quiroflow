@@ -1,7 +1,7 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
-import { runRuleActions } from '~/server/utils/runAutomationActions'
+import { dispatchPatientRule } from '~/server/utils/automationEngine'
 import { DEFAULT_CLINIC_TIMEZONE, localDay } from '~/utils/clinicClock'
 
 // Fires 'appointment.same_day' for every booked appointment happening today,
@@ -88,7 +88,7 @@ export default defineEventHandler(async (event) => {
     let matched = false
     for (const rule of accountRules) {
       if (!(await ruleFiltersMatch(supabase, patient.id, rule.filters as AutomationFilters, appt.id))) continue
-      await runRuleActions(supabase, appt.account_id, rule.id, patient, origin, appt.id)
+      await dispatchPatientRule(supabase, supabase, appt.account_id, rule.id, patient, origin, appt.id)
       matched = true
     }
 

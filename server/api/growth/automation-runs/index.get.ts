@@ -1,7 +1,9 @@
 import { requireGrowth } from '~/server/utils/requireGrowth'
 import { STOP_REASON_TEXT, stepLabel, type StopReason } from '~/server/utils/leadSequences'
 
-// Executions: every run of a lead automation, newest first.
+// Executions: every run of an automation, newest first -- a lead's drip, or
+// (since the automation engine) a patient's run of a rule that waits. A
+// patient run fills the same fields a lead run does, so the page reads both.
 //
 // The list answers "did it work, and if not, why" without opening anything:
 // status, who it was for, which step it is on, and the last error in words.
@@ -24,7 +26,7 @@ export default defineEventHandler(async (event) => {
 
   let runsQuery = supabase
     .from('automation_sequence_runs')
-    .select('id, rule_id, lead_id, status, stopped_reason, next_position, attempts, last_error, resume_at, started_at, updated_at, leads(full_name, phone, email), automation_rules(name)')
+    .select('id, rule_id, lead_id, patient_id, current_action_id, status, stopped_reason, next_position, attempts, last_error, resume_at, started_at, updated_at, leads(full_name, phone, email), patients(first_name, last_name, email), automation_rules(name)')
     .eq('account_id', accountId)
     .order('started_at', { ascending: false })
     .limit(limit + 1)
@@ -53,22 +55,28 @@ export default defineEventHandler(async (event) => {
   const page = (rows ?? []).slice(0, limit)
   const ruleIds = [...new Set(page.map((r) => r.rule_id))]
   const { data: actions } = ruleIds.length
-    ? await supabase.from('automation_actions').select('rule_id, action_type, position, config').in('rule_id', ruleIds).order('position')
+    ? await supabase.from('automation_actions').select('id, rule_id, action_type, position, config, parent_id').in('rule_id', ruleIds).order('position')
     : { data: [] }
 
-  const actionsByRule = new Map<string, { action_type: string; position: number; config: Record<string, any> }[]>()
+  const actionsByRule = new Map<string, { id: string; action_type: string; position: number; config: Record<string, any>; parent_id: string | null }[]>()
   for (const a of actions ?? []) actionsByRule.set(a.rule_id, [...(actionsByRule.get(a.rule_id) ?? []), a as never])
 
   const runs = page.map((r) => {
     const ruleActions = actionsByRule.get(r.rule_id) ?? []
-    const current = ruleActions.find((a) => a.position >= r.next_position) ?? null
-    const lead = r.leads as unknown as { full_name: string; phone: string | null; email: string | null } | null
+    // Inside a branch or a wait the cursor is the action id; on the root
+    // chain it is next_position, as it always was.
+    const nested = r.current_action_id ? ruleActions.find((a) => a.id === r.current_action_id && a.parent_id) : null
+    const current = nested ?? ruleActions.find((a) => !a.parent_id && a.position >= r.next_position) ?? null
+    const patient = r.patients as unknown as { first_name: string; last_name: string | null; email: string | null } | null
+    const lead = (r.leads as unknown as { full_name: string; phone: string | null; email: string | null } | null)
+      ?? (patient ? { full_name: `${patient.first_name} ${patient.last_name ?? ''}`.trim(), phone: null, email: patient.email } : null)
     const rule = r.automation_rules as unknown as { name: string } | null
     return {
       id: r.id,
       ruleId: r.rule_id,
       ruleName: rule?.name ?? '—',
       leadId: r.lead_id,
+      patientId: r.patient_id,
       leadName: lead?.full_name ?? '—',
       leadContact: lead?.phone ?? lead?.email ?? null,
       status: r.status,

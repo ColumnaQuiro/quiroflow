@@ -1,7 +1,7 @@
 import { requireGrowth } from '~/server/utils/requireGrowth'
 import { STOP_REASON_TEXT, type StopReason } from '~/server/utils/leadSequences'
 
-// One run of a lead automation, with its full history: every step sent,
+// One run of an automation (a lead's or a patient's), with its full history: every step sent,
 // skipped or failed and why, every wait, deferral and retry, in order.
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
@@ -12,7 +12,7 @@ export default defineEventHandler(async (event) => {
   // account_id filtered here as well as by RLS, so a foreign id is a clean 404.
   const { data: run, error } = await supabase
     .from('automation_sequence_runs')
-    .select('id, rule_id, lead_id, status, stopped_reason, next_position, attempts, last_error, resume_at, started_at, updated_at, leads(full_name, phone, email), automation_rules(name, dry_run)')
+    .select('id, rule_id, lead_id, patient_id, status, stopped_reason, next_position, attempts, last_error, resume_at, started_at, updated_at, leads(full_name, phone, email), patients(first_name, last_name, email), automation_rules(name, dry_run)')
     .eq('id', id)
     .eq('account_id', teamMember.account_id)
     .maybeSingle()
@@ -31,7 +31,9 @@ export default defineEventHandler(async (event) => {
     : { data: [] }
   const actorName = new Map((actors ?? []).map((a) => [a.id, a.full_name]))
 
-  const lead = run.leads as unknown as { full_name: string; phone: string | null; email: string | null } | null
+  const patient = run.patients as unknown as { first_name: string; last_name: string | null; email: string | null } | null
+  const lead = (run.leads as unknown as { full_name: string; phone: string | null; email: string | null } | null)
+    ?? (patient ? { full_name: `${patient.first_name} ${patient.last_name ?? ''}`.trim(), phone: null, email: patient.email } : null)
   const rule = run.automation_rules as unknown as { name: string; dry_run: boolean } | null
 
   return {
@@ -41,6 +43,7 @@ export default defineEventHandler(async (event) => {
       ruleName: rule?.name ?? '—',
       dryRun: rule?.dry_run ?? false,
       leadId: run.lead_id,
+      patientId: run.patient_id,
       leadName: lead?.full_name ?? '—',
       leadPhone: lead?.phone ?? null,
       leadEmail: lead?.email ?? null,

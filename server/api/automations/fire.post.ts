@@ -1,4 +1,7 @@
+import { serverSupabaseServiceRole } from '#supabase/server'
+import type { Database } from '~/types/database.types'
 import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
+import { automationEvent, dispatchPatientRule } from '~/server/utils/automationEngine'
 
 // Fires every enabled automation_rule matching a trigger event -- called
 // from the client right after the underlying action already happened (a
@@ -7,7 +10,10 @@ import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluat
 // a failed automation shouldn't undo or block the action that triggered it,
 // so every action here is best-effort and never throws back to the caller.
 // Action-sending logic itself lives in server/utils/runAutomationActions.ts,
-// shared with the one-off send-now.post.ts endpoint.
+// shared with the one-off send-now.post.ts endpoint. A rule that waits or
+// branches starts a run instead (server/utils/automationEngine.ts), and the
+// event itself is also offered to runs already in flight: one waiting for it,
+// or one whose rule exits on it.
 interface FireBody {
   triggerEvent: string
   patientId: string
@@ -24,6 +30,14 @@ export default defineEventHandler(async (event) => {
 
   const { supabase, teamMember } = await requireTeamMember(event)
   const accountId = teamMember.account_id
+  const service = serverSupabaseServiceRole<Database>(event)
+  const origin = getRequestURL(event).origin
+
+  // Runs already in flight hear about the event whether or not any rule
+  // fires on it -- so this happens before the early returns below. Only for
+  // a patient of the caller's own account.
+  const { data: inAccount } = await supabase.from('patients').select('id').eq('id', body.patientId).eq('account_id', accountId).maybeSingle()
+  if (inAccount) await automationEvent(service, accountId, { patientId: body.patientId }, body.triggerEvent, origin)
 
   const { data: rules } = await supabase
     .from('automation_rules')
@@ -41,12 +55,10 @@ export default defineEventHandler(async (event) => {
     .maybeSingle()
   if (!patient) return { fired: 0 }
 
-  const origin = getRequestURL(event).origin
-
   let fired = 0
   for (const rule of rules) {
     if (!(await ruleFiltersMatch(supabase, patient.id, rule.filters as AutomationFilters, body.appointmentId))) continue
-    await runRuleActions(supabase, accountId, rule.id, patient, origin, body.appointmentId, body)
+    await dispatchPatientRule(supabase, service, accountId, rule.id, patient, origin, body.appointmentId, body)
     fired += 1
   }
 

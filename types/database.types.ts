@@ -1140,27 +1140,33 @@ export type Database = {
         Row: {
           account_id: string
           action_type: string
+          branch: string | null
           config: Json
           created_at: string
           id: string
+          parent_id: string | null
           position: number
           rule_id: string
         }
         Insert: {
           account_id: string
           action_type: string
+          branch?: string | null
           config?: Json
           created_at?: string
           id?: string
+          parent_id?: string | null
           position?: number
           rule_id: string
         }
         Update: {
           account_id?: string
           action_type?: string
+          branch?: string | null
           config?: Json
           created_at?: string
           id?: string
+          parent_id?: string | null
           position?: number
           rule_id?: string
         }
@@ -1170,6 +1176,13 @@ export type Database = {
             columns: ["account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "automation_actions_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "automation_actions"
             referencedColumns: ["id"]
           },
           {
@@ -1224,10 +1237,15 @@ export type Database = {
           dry_run: boolean
           created_by: string | null
           enabled: boolean
+          entry_mode: string
+          exit_on: string[]
           filters: Json
           id: string
           is_marketing: boolean
           name: string
+          quiet_hours: Json | null
+          segment: Json | null
+          segment_last_run_at: string | null
           trigger_event: string
         }
         Insert: {
@@ -1236,10 +1254,15 @@ export type Database = {
           dry_run?: boolean
           created_by?: string | null
           enabled?: boolean
+          entry_mode?: string
+          exit_on?: string[]
           filters?: Json
           id?: string
           is_marketing?: boolean
           name?: string
+          quiet_hours?: Json | null
+          segment?: Json | null
+          segment_last_run_at?: string | null
           trigger_event: string
         }
         Update: {
@@ -1248,10 +1271,15 @@ export type Database = {
           dry_run?: boolean
           created_by?: string | null
           enabled?: boolean
+          entry_mode?: string
+          exit_on?: string[]
           filters?: Json
           id?: string
           is_marketing?: boolean
           name?: string
+          quiet_hours?: Json | null
+          segment?: Json | null
+          segment_last_run_at?: string | null
           trigger_event?: string
         }
         Relationships: [
@@ -1328,45 +1356,66 @@ export type Database = {
       automation_sequence_runs: {
         Row: {
           account_id: string
+          appointment_id: string | null
           attempts: number
+          branch_taken: string | null
+          context: Json
+          current_action_id: string | null
           id: string
           last_error: string | null
-          lead_id: string
+          lead_id: string | null
           next_position: number
+          patient_id: string | null
           resume_at: string
           rule_id: string
           started_at: string
           status: string
           stopped_reason: string | null
           updated_at: string
+          wait_deadline: string | null
+          waiting_for: string | null
         }
         Insert: {
           account_id: string
+          appointment_id?: string | null
           attempts?: number
+          branch_taken?: string | null
+          context?: Json
+          current_action_id?: string | null
           id?: string
           last_error?: string | null
-          lead_id: string
+          lead_id?: string | null
           next_position?: number
+          patient_id?: string | null
           resume_at?: string
           rule_id: string
           started_at?: string
           status?: string
           stopped_reason?: string | null
           updated_at?: string
+          wait_deadline?: string | null
+          waiting_for?: string | null
         }
         Update: {
           account_id?: string
+          appointment_id?: string | null
           attempts?: number
+          branch_taken?: string | null
+          context?: Json
+          current_action_id?: string | null
           id?: string
           last_error?: string | null
-          lead_id?: string
+          lead_id?: string | null
           next_position?: number
+          patient_id?: string | null
           resume_at?: string
           rule_id?: string
           started_at?: string
           status?: string
           stopped_reason?: string | null
           updated_at?: string
+          wait_deadline?: string | null
+          waiting_for?: string | null
         }
         Relationships: [
           {
@@ -1377,10 +1426,31 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "automation_sequence_runs_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "automation_sequence_runs_current_action_id_fkey"
+            columns: ["current_action_id"]
+            isOneToOne: false
+            referencedRelation: "automation_actions"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "automation_sequence_runs_lead_id_fkey"
             columns: ["lead_id"]
             isOneToOne: false
             referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "automation_sequence_runs_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
             referencedColumns: ["id"]
           },
           {

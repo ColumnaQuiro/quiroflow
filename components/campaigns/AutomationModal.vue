@@ -72,6 +72,14 @@ interface ActionForm {
   template_name: string
   template_language: string
   doc_template_ids: string[]
+  /**
+   * Per-button URL parameters. There is no control for these -- they are
+   * set per automation in the config. Carried through load and save anyway,
+   * because this form rebuilds the whole config object: without it, opening
+   * an automation that uses them and pressing Save would silently drop them
+   * and the links would go back to sending the wrong suffix.
+   */
+  buttonParams: { source: string; text?: string }[]
   variables: WhatsAppVariable[]
   subject: string
   body: string
@@ -87,7 +95,7 @@ interface ActionForm {
   headerAddress: string
 }
 function blankAction(): ActionForm {
-  return { action_type: 'whatsapp_template', template_name: '', template_language: 'es', doc_template_ids: [], variables: [{ source: 'first_name', text: '' }], subject: '', body: '', url: '', secret: '', delayValue: '1', delayUnit: 'days', headerPath: '', headerFilename: '', headerLatitude: '', headerLongitude: '', headerName: '', headerAddress: '' }
+  return { action_type: 'whatsapp_template', template_name: '', template_language: 'es', doc_template_ids: [], buttonParams: [], variables: [{ source: 'first_name', text: '' }], subject: '', body: '', url: '', secret: '', delayValue: '1', delayUnit: 'days', headerPath: '', headerFilename: '', headerLatitude: '', headerLongitude: '', headerName: '', headerAddress: '' }
 }
 
 /** Minutes back into the largest unit that divides cleanly, for editing. */
@@ -274,6 +282,7 @@ onMounted(async () => {
           template_name: config.template_name ?? '',
           template_language: config.template_language ?? 'es',
           doc_template_ids: Array.isArray(config.doc_template_ids) ? config.doc_template_ids : [],
+          buttonParams: Array.isArray(config.button_params) ? config.button_params : [],
           variables: Array.isArray(config.variables) && config.variables.length > 0 ? config.variables : [{ source: 'first_name', text: '' }],
           subject: config.subject ?? '',
           body: config.body ?? '',
@@ -389,6 +398,7 @@ function configFor(a: ActionForm): Record<string, unknown> {
       template_name: a.template_name.trim(),
       template_language: a.template_language.trim() || 'es',
       doc_template_ids: a.doc_template_ids.map((id) => id || null),
+      ...(a.buttonParams.length > 0 ? { button_params: a.buttonParams } : {}),
       variables: a.variables.map((v) => ({ source: v.source, text: v.source === 'text' ? v.text.trim() : undefined })),
       ...(headerConfigFor(a) ? { header: headerConfigFor(a) } : {}),
     }

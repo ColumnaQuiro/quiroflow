@@ -360,6 +360,26 @@ async function runForRecipient(
 }
 
 /**
+ * One dynamic URL button's value, for a template that configures them.
+ *
+ * `phone` is digits only. Meta appends this to the stored URL verbatim, so a
+ * `+34...` arrives as `?phone=+34...`, and a `+` in a query string decodes to
+ * a space -- the page then reads a number starting with a space and matches
+ * nobody. The n8n flow this mirrors strips it for the same reason. Leads
+ * carry a number normalised at ingest; a patient's comes back from toE164
+ * with the plus, so both are stripped here rather than trusting either.
+ *
+ * `text` is passed through untouched, so a fixed suffix can carry its own
+ * `&`-separated pairs. Anything else is URL-encoded, since a name with a
+ * space or an accent would otherwise end the value early.
+ */
+function buttonParamValue(param: { source: string; text?: string }, to: string, recipient: Recipient, context?: MergeContext): string {
+  if (param.source === 'text') return param.text ?? ''
+  if (param.source === 'phone') return to.replace(/\D/g, '')
+  return encodeURIComponent(recipientFieldValue(recipient, param.source, context))
+}
+
+/**
  * The header of a template, when it has one that needs filling.
  *
  * Two kinds, because the welcome drip this was written for uses both: a video
@@ -583,6 +603,22 @@ async function runWhatsAppAction(
   // more body variable, appended last -- the original single-link design.
   const docTemplateIds: (string | null)[] = Array.isArray(config.doc_template_ids) ? config.doc_template_ids : []
 
+  // What goes in a dynamic URL button's {{n}} blank, one entry per button.
+  //
+  // Meta stores the fixed half of the link and appends whatever we send, so
+  // the right value depends entirely on the template: quiroads_welcome_message_3
+  // ends in `?phone=` and the booking page reads that back to prefill the
+  // field, while new_patient_arrived_tasks ends in `/doc/` and wants a
+  // document token. Nothing in the API says which, and Meta validates only
+  // that a parameter is present -- never that it suits the URL. So a wrong
+  // value here sends cleanly and arrives as a link that quietly does nothing,
+  // which is why this is configured rather than guessed.
+  //
+  // Unset keeps the older behaviour every rule written before this relies on:
+  // the doc-template token when the slot has one, and otherwise Meta's own
+  // example suffix for these buttons.
+  const buttonParams: { source: string; text?: string }[] = Array.isArray(config.button_params) ? config.button_params : []
+
   // Fetch the live approved template so the send always matches what Meta
   // actually expects, rather than trusting the staff-entered config alone:
   // (a) a template can carry URL buttons whose link needs a per-recipient
@@ -636,7 +672,12 @@ async function runWhatsAppAction(
     for (let i = 0; i < dynamicUrlButtonIndexes.length; i++) {
       const docTemplateId = docTemplateIds[i]
       const token = docTemplateId ? await generateDocLink(supabase, accountId, recipient.patient, docTemplateId) : null
-      const paramText = token ? token : `name=${encodeURIComponent(recipient.firstName ?? '')}&id=${recipient.id}`
+      const configured = buttonParams[i]
+      const paramText = token
+        ? token
+        : configured
+          ? buttonParamValue(configured, to, recipient, context)
+          : `name=${encodeURIComponent(recipient.firstName ?? '')}&id=${recipient.id}`
       buttonComponents.push({ type: 'button', sub_type: 'url', index: String(dynamicUrlButtonIndexes[i]), parameters: [{ type: 'text', text: paramText }] })
     }
   } else {

@@ -2,7 +2,7 @@
 const props = defineProps<{ available: boolean; personaName: string }>()
 
 const t = useT()
-const { turns, thinking, unavailable, send } = useGrowthReceptionistTest()
+const { turns, thinking, unavailable, fromAd, send } = useGrowthReceptionistTest()
 const draft = ref('')
 
 const usable = computed(() => props.available && !unavailable.value)
@@ -62,7 +62,14 @@ function submit() {
       </template>
     </div>
 
-    <div v-if="usable" class="flex shrink-0 items-center gap-2 border-t border-line-divider p-3">
+    <!-- A real lead's origin is on its record; here the owner picks one, so
+    an answer that depends on it (an ad-only price) can be tried both ways. -->
+    <label v-if="usable" class="flex shrink-0 cursor-pointer items-center gap-2 border-t border-line-divider px-3 pt-2.5 text-[11.5px] text-ink-muted">
+      <input v-model="fromAd" type="checkbox" class="h-3.5 w-3.5 accent-brand" data-test="test-chat-from-ad">
+      {{ t('Pretend this person came from an ad', 'Simular que viene de un anuncio') }}
+    </label>
+
+    <div v-if="usable" class="flex shrink-0 items-center gap-2 p-3">
       <input
         v-model="draft"
         type="text"

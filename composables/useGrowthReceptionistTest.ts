@@ -13,6 +13,10 @@ export function useGrowthReceptionistTest() {
   const turns = ref<TestTurn[]>([])
   const thinking = ref(false)
   const unavailable = ref(false)
+  // Who the owner is pretending to be. A real lead's origin comes from its
+  // record (an ad form, a WhatsApp message); here it is chosen, so both
+  // answers to "how much is it?" can be tried before either reaches anyone.
+  const fromAd = ref(false)
   const t = useT()
   const { showToast } = useToast()
 
@@ -27,7 +31,7 @@ export function useGrowthReceptionistTest() {
         '/api/growth/receptionist/test-chat',
         // The whole conversation, because the API is stateless and the
         // receptionist has to remember what the patient already told it.
-        { method: 'POST', body: { messages: turns.value } },
+        { method: 'POST', body: { messages: turns.value, origin: fromAd.value ? 'ad' : 'unknown' } },
       )
 
       if (!result.available) {
@@ -59,5 +63,5 @@ export function useGrowthReceptionistTest() {
     turns.value = []
   }
 
-  return { turns, thinking, unavailable, send, reset }
+  return { turns, thinking, unavailable, fromAd, send, reset }
 }

@@ -1,5 +1,5 @@
 import { createHmac, randomUUID } from 'node:crypto'
-import { automationFieldValue as recipientFieldValue, leadAnswersFromEvents, type MergeContext } from '~/utils/automationFields'
+import { automationFieldValue as recipientFieldValue, withAnswerFallback, leadAnswersFromEvents, type MergeContext } from '~/utils/automationFields'
 import { toE164 } from '~/utils/phone'
 import { renderTemplateFields } from '~/utils/docFields'
 import { automationEmailHtml, unsubscribeHeaders, type UnsubscribeLinks } from '~/utils/automationEmail'
@@ -668,10 +668,12 @@ async function runWhatsAppAction(
   // {{n}} placeholder be filled correctly, matching however many variables
   // that specific template actually needs (Meta doesn't expose this to us
   // to validate against, so the config is where staff match it themselves).
-  const configuredVariables: { source: string; text?: string }[] = Array.isArray(config.variables) && config.variables.length > 0
+  const configuredVariables: { source: string; text?: string; fallback?: string }[] = Array.isArray(config.variables) && config.variables.length > 0
     ? config.variables
     : [{ source: 'first_name' }]
-  const variables: string[] = configuredVariables.map((v) => (v.source === 'text' ? (v.text ?? '') : recipientFieldValue(recipient, v.source, context)))
+  const variables: string[] = configuredVariables.map((v) =>
+    v.source === 'text' ? (v.text ?? '') : withAnswerFallback(v.source, recipientFieldValue(recipient, v.source, context), v.fallback),
+  )
 
   // One doc-template slot per configured link. A template with URL buttons
   // that carry a {{n}} placeholder maps each slot to a button by position

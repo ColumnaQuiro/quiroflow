@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { requireGrowth } from '~/server/utils/requireGrowth'
-import { buildSystemPrompt, loadOfferedTypes, loadReceptionistConfig } from '~/server/utils/receptionist'
+import { buildSystemPrompt, loadOfferedTypes, loadReceptionistConfig, type LeadOrigin } from '~/server/utils/receptionist'
+import { modelFailureMessage } from '~/utils/modelFailure'
 
 // "Try Alba" -- the clinic owner talking to their own configuration.
 //
@@ -25,6 +26,17 @@ const MAX_TURNS = 20
 
 interface Body {
   messages?: unknown
+  /** Who the owner is pretending to be: 'ad' for a lead that came from an ad. */
+  origin?: unknown
+}
+
+// The two cases worth trying by hand. An ad lead is a Meta lead-ad form,
+// which is what real ad leads arrive as, so the prompt is built exactly as a
+// real draft for one would be. Anything else is a WhatsApp enquiry nobody
+// knows the source of -- the case where the receptionist has to ask.
+const TEST_ORIGINS: Record<string, LeadOrigin> = {
+  ad: { channel: 'facebook', source: null, externalSource: 'facebook', campaign: null, ad: null },
+  unknown: { channel: 'whatsapp', source: null, externalSource: null, campaign: null, ad: null },
 }
 
 interface Turn {
@@ -56,6 +68,8 @@ export default defineEventHandler(async (event) => {
   // types a patient would actually be offered.
   const offeredTypes = await loadOfferedTypes(supabase, teamMember.account_id, config)
 
+  const leadOrigin = TEST_ORIGINS[body.origin === 'ad' ? 'ad' : 'unknown']
+
   const client = new Anthropic({ apiKey })
   try {
     const message = await client.messages.create({
@@ -66,7 +80,7 @@ export default defineEventHandler(async (event) => {
       // reply needs.
       thinking: { type: 'adaptive' },
       output_config: { effort: 'low' },
-      system: buildSystemPrompt(config, { testMode: true, offeredTypes }),
+      system: buildSystemPrompt(config, { testMode: true, offeredTypes, leadOrigin }),
       messages: turns.map((turn) => ({ role: turn.role, content: turn.content })),
     })
 
@@ -85,6 +99,8 @@ export default defineEventHandler(async (event) => {
     return { available: true as const, reply, refused: false }
   } catch (err) {
     console.error('[growth/receptionist/test-chat] Anthropic request failed:', (err as Error)?.message ?? err)
-    throw createError({ statusCode: 502, statusMessage: 'The model did not answer. Try again.' })
+    // The reason, not "try again": a rejected key or an empty account fails
+    // identically on every retry, and the owner is the one who can tell us.
+    throw createError({ statusCode: 502, statusMessage: modelFailureMessage(err) })
   }
 })

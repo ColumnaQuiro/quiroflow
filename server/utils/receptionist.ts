@@ -1,6 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 import { offeredAppointmentTypes, offeredTypesSection, type PromptType } from '~/utils/receptionistTypes'
+import { leadOriginSection, type LeadOrigin } from '~/utils/receptionistLeadOrigin'
+
+export type { LeadOrigin }
 
 // Shared shape and defaults for the AI receptionist's configuration, plus the
 // system prompt built from it.
@@ -156,7 +159,10 @@ function toOfferedType(type: { id: string; name: string; duration_minutes: numbe
  * never to confirm a booking. Writing to the calendar is the booking code's
  * job, and a model that believes it booked something will say so to a patient.
  */
-export function buildSystemPrompt(config: ReceptionistConfig, opts: { testMode: boolean; offeredTypes: PromptType[] }) {
+export function buildSystemPrompt(
+  config: ReceptionistConfig,
+  opts: { testMode: boolean; offeredTypes: PromptType[]; leadOrigin?: LeadOrigin | null },
+) {
   const knowledge = config.knowledge
     .map((card) => `## ${card.title}\n${card.lines.map((line) => `- ${line}`).join('\n')}`)
     .join('\n\n')
@@ -169,7 +175,11 @@ export function buildSystemPrompt(config: ReceptionistConfig, opts: { testMode: 
     `Tone: ${TONE_WORDING[config.tone] ?? TONE_WORDING.warm_brief}`,
     `Reply in the language the patient writes in. The clinic supports: ${config.languages.join(', ')}.`,
     knowledge ? `# What you know about this clinic\n\n${knowledge}` : '# What you know about this clinic\n\nNothing has been configured yet. Say you will check with a colleague rather than guessing.',
-    questions ? `# Qualify the enquiry by working these in naturally, one at a time\n\n${questions}` : '',
+    opts.leadOrigin ? leadOriginSection(opts.leadOrigin) : '',
+    // The whole conversation is in the messages, and a receptionist who asks
+    // for something the patient said three messages ago reads as a form.
+    `Read the whole conversation before replying. Never ask for something the patient has already told you or that is already known about them, and never repeat a question that has been answered.`,
+    questions ? `# Qualify the enquiry by working these in naturally, one at a time, skipping any the conversation already answers\n\n${questions}` : '',
     // The types come from the database at the moment of drafting, not from
     // the model's reading of the knowledge cards: an owner who withholds a
     // type, or archives it, has it gone from the next reply.

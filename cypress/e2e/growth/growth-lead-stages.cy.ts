@@ -100,7 +100,8 @@ describe('Lead stages follow the calendar', () => {
     cy.task('db:createLead', { accountId: account.accountId, fullName: 'Con Valor', stage: 'contacted', estimatedValueCents: 10_000 })
     cy.login(account.email, account.password)
     cy.visit('/growth/leads?growth=1')
-    // 350 € default + 100 € of its own.
-    cy.get('[data-test="lead-column-contacted"]').should('contain', '450 € est.')
+    // 350 € default + 100 € of its own. es-ES puts a non-breaking space
+    // before the euro sign.
+    cy.get('[data-test="lead-column-contacted"]').should('contain', '450\u00a0€ est.')
   })
 })

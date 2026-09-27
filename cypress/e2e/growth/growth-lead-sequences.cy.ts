@@ -385,7 +385,7 @@ describe('Lead welcome sequences', () => {
             cy.get('[data-test="people-tab-failed"]').should('contain', '1').click()
             cy.get(`[data-test="run-${run.id}"]`).should('contain', 'Webhook Down').click()
 
-            cy.get(`[data-test="run-${run.id}"] [data-test="run-status"]`).should('contain', 'Failed')
+            cy.get('[data-test="run-detail"] [data-test="run-status"]').should('contain', 'Failed')
             cy.get('[data-test="run-error"]').should('contain', 'webhook did not accept')
             cy.get('[data-test="run-event-failed"]').should('have.length', 3)
             cy.get('[data-test="run-retry"]').click()
@@ -394,6 +394,7 @@ describe('Lead welcome sequences', () => {
             // failed list.
             cy.get('[data-test="run-events"]').should('contain', 'Finished')
             cy.get('[data-test="run-event-retried"]').should('exist')
+            cy.get('[data-test="people-back"]').click()
             cy.get(`[data-test="run-${run.id}"]`).should('not.exist')
 
             cy.task<Run[]>('db:sequenceRuns', { leadId }).then((after) => {

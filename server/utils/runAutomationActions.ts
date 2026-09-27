@@ -712,6 +712,10 @@ async function runWhatsAppAction(
   // trimmed/padded to match.
   const bodyComponents: Record<string, any>[] = []
   const buttonComponents: Record<string, any>[] = []
+  // The message as the person reads it, variables filled in -- kept on the
+  // row so the Inbox and an automation's journey show what went out, not
+  // only which template. Null when the template could not be read from Meta.
+  let sentBody: string | null = null
   const headerComponents = await buildHeaderComponent(supabase, config.header)
   if (account?.whatsapp_business_account_id) {
     const templates = await $fetch<{ data: { name: string; language: string; components: any[] }[] }>(
@@ -744,6 +748,9 @@ async function runWhatsAppAction(
     if (bodySlots.size > 0) {
       const trimmed = Array.from({ length: bodySlots.size }, (_, i) => variables[i] ?? recipient.firstName ?? '')
       bodyComponents.push({ type: 'body', parameters: trimmed.map((v) => ({ type: 'text', text: v })) })
+      sentBody = bodyText.replace(/\{\{(\d+)\}\}/g, (m, n) => trimmed[Number(n) - 1] ?? m)
+    } else if (bodyText) {
+      sentBody = bodyText
     }
 
     for (let i = 0; i < dynamicUrlButtonIndexes.length; i++) {
@@ -797,6 +804,7 @@ async function runWhatsAppAction(
       wamid: null,
       purpose,
       template_name: templateName,
+      body_preview: sentBody,
       status: 'would_send',
       phone_number: to,
       ...attributionColumns(attribution),
@@ -847,6 +855,7 @@ async function runWhatsAppAction(
     wamid,
     purpose,
     template_name: templateName,
+    body_preview: sentBody,
     status: wamid ? 'sent' : 'failed',
     error_message: errorMessage,
     phone_number: to,

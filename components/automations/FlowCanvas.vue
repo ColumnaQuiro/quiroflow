@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { layoutTree, type InsertPoint } from '~/utils/automationLayout'
+import type { CanvasJourney } from '~/utils/automationJourney'
 import { outletLabel, stepDetail, stepEyebrow, stepTitle, triggerDetail } from '~/utils/automationDescribe'
 import { say, stepDef, triggerTitle, KIND_LABEL } from '~/utils/automationCatalog'
 
@@ -12,8 +13,12 @@ import { say, stepDef, triggerTitle, KIND_LABEL } from '~/utils/automationCatalo
 // Pan by dragging the background (one finger on a tablet); zoom with the
 // buttons or Ctrl/Cmd + scroll.
 
-const props = defineProps<{ readOnly?: boolean; popoverMenu?: boolean }>()
-const emit = defineEmits<{ insert: [point: InsertPoint] }>()
+// `journey`: one person's run drawn on the flow (People tab) -- each step's
+// state and a one-line note, the outlet taken at each fork, and its own
+// selection, so picking a step shows what happened there rather than opening
+// the step's settings.
+const props = defineProps<{ readOnly?: boolean; popoverMenu?: boolean; journey?: CanvasJourney | null }>()
+const emit = defineEmits<{ insert: [point: InsertPoint]; pick: [id: string] }>()
 
 const b = useBuilder()
 const t = useT()
@@ -128,14 +133,16 @@ const triggerStats = computed(() => {
 })
 
 function isSelected(id: string) {
+  if (props.journey) return props.journey.picked === id
   const s = b.selection.value
   return (id === 'trigger' && s?.kind === 'trigger') || (s?.kind === 'step' && s.id === id)
 }
 function selectNode(id: string) {
+  if (props.journey) return emit('pick', id)
   b.selection.value = id === 'trigger' ? { kind: 'trigger' } : { kind: 'step', id }
 }
 function openInsert(point: InsertPoint) {
-  if (props.readOnly) return
+  if (props.readOnly || props.journey) return
   b.selection.value = { kind: 'insert', point }
   emit('insert', point)
 }
@@ -185,7 +192,10 @@ function pickStep(type: string) {
         v-for="label in layout.labels"
         :key="`${label.parentId}-${label.branch}`"
         class="absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-pill border px-2 py-0.5 text-[11px] font-semibold"
-        :class="label.branch === 'yes' || label.branch === 'met' ? 'border-success-border bg-success-bg text-success-text' : 'border-line bg-surface text-ink-500'"
+        :class="[
+          label.branch === 'yes' || label.branch === 'met' ? 'border-success-border bg-success-bg text-success-text' : 'border-line bg-surface text-ink-500',
+          journey ? (journey.steps[label.parentId]?.outlet === label.branch ? 'ring-2 ring-success-accent' : 'opacity-40') : '',
+        ]"
         :style="{ left: `${label.x}px`, top: `${label.y}px` }"
         :data-test="`outlet-${label.parentId}-${label.branch}`"
       >{{ outletLabel(t, b.stepsById.value.get(label.parentId), label.branch) }}</span>
@@ -198,6 +208,8 @@ function pickStep(type: string) {
           :title="triggerTitle(t, b.draft.value.rule.trigger_event, b.draft.value.rule.filters)"
           :detail="triggerDetail(t, b.draft.value.rule, b.lookup.value)"
           :stats="triggerStats"
+          :run-state="journey ? 'ok' : undefined"
+          :run-note="journey?.triggerNote"
           :growth="b.isLead.value"
           :locked="b.isLead.value && !b.hasGrowth.value"
           :problem="b.problems.value.some((p) => !p.stepId)"
@@ -220,6 +232,8 @@ function pickStep(type: string) {
           :title="stepTitle(t, b.stepsById.value.get(node.id)!, b.lookup.value)"
           :detail="stepDetail(t, b.stepsById.value.get(node.id)!, b.lookup.value, b.draft.value.rule)"
           :stats="statsLine(node.id, b.stepsById.value.get(node.id)!.action_type)"
+          :run-state="journey ? (journey.steps[node.id]?.state ?? 'unreached') : undefined"
+          :run-note="journey?.steps[node.id]?.note"
           :growth="!!stepDef(b.stepsById.value.get(node.id)!.action_type)?.leadOnly"
           :locked="!!stepDef(b.stepsById.value.get(node.id)!.action_type)?.leadOnly && !b.hasGrowth.value"
           :problem="problemSteps.has(node.id)"
@@ -229,7 +243,7 @@ function pickStep(type: string) {
         />
       </div>
 
-      <template v-if="!readOnly">
+      <template v-if="!readOnly && !journey">
         <button
           v-for="p in layout.inserts"
           :key="insertKey(p)"

@@ -68,10 +68,13 @@ describe('Automation people', () => {
           cy.get('[data-test="run-events"]').should('contain', 'Skipped')
           templates(marta.id).should('deep.eq', ['tras_espera'])
 
-          // Take out: nothing more is sent.
+          // Take out: nothing more is sent. Back to the list first -- a
+          // journey takes the whole width.
+          cy.get('[data-test="people-back"]').click()
           cy.contains('[data-test^="run-"]', 'Jorge Dentro').click()
           cy.get('[data-test="run-remove"]').click()
           cy.get('[data-test="run-events"]').should('contain', 'Taken out by someone on the team')
+          cy.get('[data-test="people-back"]').click()
           cy.get('[data-test="people-tab-running"]').should('contain', '0')
           cy.get('[data-test="people-tab-exited"]').should('contain', '1').click()
           cy.contains('[data-test^="run-"]', 'Jorge Dentro').should('contain', 'Taken out by someone on the team')
@@ -91,6 +94,55 @@ describe('Automation people', () => {
           cy.get('[data-test="tab-history"]').click()
           cy.get('[data-test="history-event"]').should('have.length.at.least', 4)
           cy.get('[data-test="history-whatsapp"]').should('contain', 'tras_espera')
+        })
+      })
+    })
+  })
+
+  // n8n-style: one person's journey on the flow itself -- each step's border
+  // says what happened to them, the path not taken stays faded, and picking a
+  // step shows what it sent.
+  it('draws one person\'s journey on the flow, step by step', () => {
+    cy.task<{ id: string }>('auto:createFlowRule', {
+      accountId: account.accountId,
+      triggerEvent: 'appointment.completed',
+      steps: [
+        { type: 'whatsapp_template', config: { template_name: 'bienvenida', template_language: 'es' } },
+        { type: 'delay', config: { delay_minutes: 2880 } },
+        { type: 'whatsapp_template', config: { template_name: 'dia_dos', template_language: 'es' } },
+      ],
+    }).then((rule) => {
+      patient('Lucia').then((lucia) => {
+        fire(lucia.id)
+        cy.task<{ id: string; action_type: string; config: { template_name?: string } }[]>('auto:actionsForRule', { ruleId: rule.id }).then((steps) => {
+          const [first, wait, second] = steps
+          cy.visit(`/automations/${rule.id}?tab=people`)
+          cy.contains('[data-test^="run-"]', 'Lucia Dentro').click()
+
+          // Full width: the list gives way to the journey.
+          cy.get('[data-test="run-detail"]').should('contain', 'Lucia Dentro')
+          cy.get('[data-test="people-back"]').should('be.visible')
+          cy.get(`[data-test="node-${first!.id}"]`).should('have.attr', 'data-run-state', 'ok').and('contain', 'Recorded (test mode)')
+          cy.get(`[data-test="node-${wait!.id}"]`).should('have.attr', 'data-run-state', 'waiting').and('contain', 'Until')
+          cy.get(`[data-test="node-${second!.id}"]`).should('have.attr', 'data-run-state', 'unreached')
+
+          // Opens on where they are; picking a step shows what it did.
+          cy.get('[data-test="journey-step-state"]').should('contain', 'Waiting here')
+          cy.get(`[data-test="node-${first!.id}"]`).click()
+          cy.get('[data-test="journey-step-state"]').should('contain', 'Done')
+          cy.get('[data-test="journey-message"]').should('have.length', 1).and('contain', 'bienvenida')
+          cy.get(`[data-test="node-${second!.id}"]`).click()
+          cy.get('[data-test="journey-step"]').should('contain', 'have not reached this step')
+
+          // Straight to their conversation.
+          cy.get('[data-test="run-inbox"]').should('have.attr', 'href', `/inbox?open=${lucia.id}`)
+
+          // Skip the wait from here: the second message goes, and turns green.
+          cy.get('[data-test="run-skip"]').click()
+          cy.get(`[data-test="node-${second!.id}"]`).should('have.attr', 'data-run-state', 'ok')
+          // The skipped wait says so, rather than claiming it waited.
+          cy.get(`[data-test="node-${wait!.id}"]`).should('have.attr', 'data-run-state', 'skipped').and('contain', 'Skipped')
+          templates(lucia.id).should('deep.eq', ['bienvenida', 'dia_dos'])
         })
       })
     })

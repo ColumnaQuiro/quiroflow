@@ -1,5 +1,6 @@
 import { requireGrowth } from '~/server/utils/requireGrowth'
 import { draftLeadReply } from '~/server/utils/receptionistDraft'
+import { modelFailureMessage } from '~/utils/modelFailure'
 
 // "Draft a reply", from the Inbox.
 //
@@ -23,7 +24,7 @@ export default defineEventHandler(async (event) => {
     outcome = await draftLeadReply(supabase, teamMember.account_id, id)
   } catch (err: any) {
     console.error('[growth/draft-reply] model call failed:', err?.message ?? err)
-    throw createError({ statusCode: 502, statusMessage: 'Could not draft a reply just now. Try again.' })
+    throw createError({ statusCode: 502, statusMessage: modelFailureMessage(err) })
   }
 
   switch (outcome.status) {

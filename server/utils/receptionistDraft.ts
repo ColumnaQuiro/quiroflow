@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { buildSystemPrompt, loadOfferedTypes, toConfig } from '~/server/utils/receptionist'
+import { buildSystemPrompt, loadOfferedTypes, toConfig, type LeadOrigin } from '~/server/utils/receptionist'
 
 // Writing a receptionist reply for one lead.
 //
@@ -63,7 +63,9 @@ export type DraftOutcome =
 export async function draftLeadReply(supabase: any, accountId: string, leadId: string): Promise<DraftOutcome> {
   const { data: lead } = await supabase
     .from('leads')
-    .select('id, full_name, ai_state')
+    // Where they came from, so a reply that depends on it (an ad-only price)
+    // is given without asking a question the record already answers.
+    .select('id, full_name, ai_state, channel, source, external_source, lead_attribution(campaign, ad)')
     .eq('id', leadId)
     .eq('account_id', accountId)
     .is('deleted_at', null)
@@ -119,6 +121,17 @@ export async function draftLeadReply(supabase: any, accountId: string, leadId: s
   // withheld since then is gone from this reply.
   const offeredTypes = await loadOfferedTypes(supabase, accountId, config)
 
+  // One-to-one on lead_id, so PostgREST embeds an object -- read as either
+  // shape, because an array here would otherwise read as "no attribution".
+  const attribution = Array.isArray(lead.lead_attribution) ? lead.lead_attribution[0] : lead.lead_attribution
+  const leadOrigin: LeadOrigin = {
+    channel: lead.channel ?? null,
+    source: lead.source ?? null,
+    externalSource: lead.external_source ?? null,
+    campaign: attribution?.campaign ?? null,
+    ad: attribution?.ad ?? null,
+  }
+
   const client = new Anthropic({ apiKey })
   const message = await client.messages.create({
     model: MODEL,
@@ -128,7 +141,7 @@ export async function draftLeadReply(supabase: any, accountId: string, leadId: s
     // conversational reply, and on the button path somebody is waiting.
     output_config: { effort: 'low' },
     system: [
-      buildSystemPrompt(config, { testMode: false, offeredTypes }),
+      buildSystemPrompt(config, { testMode: false, offeredTypes, leadOrigin }),
       `# This reply is a draft\nA member of staff will read what you write before it is sent, and may edit it. Write the message itself and nothing else -- no preamble, no options to choose between, no notes to the reader.`,
       lead.full_name ? `The person you are replying to is ${lead.full_name}.` : '',
     ]

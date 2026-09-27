@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { requireGrowth } from '~/server/utils/requireGrowth'
+import { modelFailureMessage } from '~/utils/modelFailure'
 import { toConfig, toneWording } from '~/server/utils/receptionist'
 
 // Drafts a public reply to a review.
@@ -89,6 +90,6 @@ export default defineEventHandler(async (event) => {
     return { available: true as const, draft, refused: false }
   } catch (err) {
     console.error('[growth/reputation/draft-reply] Anthropic request failed:', (err as Error)?.message ?? err)
-    throw createError({ statusCode: 502, statusMessage: 'The model did not answer. Try again.' })
+    throw createError({ statusCode: 502, statusMessage: modelFailureMessage(err) })
   }
 })

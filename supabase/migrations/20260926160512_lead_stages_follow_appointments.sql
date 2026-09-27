@@ -101,13 +101,18 @@ begin
     return new;
   end if;
 
-  -- Link the patient's unlinked leads.
+  -- The pipeline is bookkeeping; the appointment is the clinic's actual
+  -- work. Whatever goes wrong below is logged and swallowed, so it can never
+  -- be the reason a booking or a check-in fails -- the block's own
+  -- subtransaction rolls back any lead it half-moved.
+  begin
+
+  -- Link the patient's unlinked leads. A patient's numbers live only in
+  -- patient_contact_numbers (patients.phone went in 0007).
   select nullif(lower(trim(p.email)), '') into v_email from patients p where p.id = new.patient_id;
   select coalesce(array_agg(distinct right(d, 9)), '{}') into v_phones
   from (
-    select regexp_replace(p.phone, '\D', '', 'g') as d from patients p where p.id = new.patient_id
-    union all
-    select regexp_replace(n.number, '\D', '', 'g') from patient_contact_numbers n where n.patient_id = new.patient_id
+    select regexp_replace(n.number, '\D', '', 'g') as d from patient_contact_numbers n where n.patient_id = new.patient_id
   ) numbers
   where length(d) >= 9;
 
@@ -161,6 +166,10 @@ begin
       perform lead_auto_stage(r.id, new.account_id, r.stage, 'booked', 'an appointment was booked');
     end if;
   end loop;
+
+  exception when others then
+    raise warning 'leads_follow_appointments: appointment % left the lead pipeline unchanged: % (%)', new.id, sqlerrm, sqlstate;
+  end;
 
   return new;
 end;

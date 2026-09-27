@@ -71,6 +71,17 @@ export function formatEuros(cents: number | null) {
 }
 
 /**
+ * What a lead with no figure of its own is worth: the account's default
+ * (Settings → Leads). Applied when the value is read rather than copied onto
+ * the lead, so changing the default re-values every lead still on it -- a
+ * Meta lead never arrives with one -- and none that has its own.
+ */
+export async function leadDefaultValueCents(supabase: SupabaseClient<Database>, accountId: string): Promise<number | null> {
+  const { data } = await supabase.from('accounts').select('lead_default_value_cents').eq('id', accountId).maybeSingle()
+  return data?.lead_default_value_cents ?? null
+}
+
+/**
  * "12 min in stage" / "2 d in stage". Computed server-side so every client
  * renders the same phrasing, and so the board does not have to hold a clock.
  */

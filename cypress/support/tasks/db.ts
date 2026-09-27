@@ -2821,6 +2821,27 @@ async function clinicRow(opts: { clinicId: string }) {
 }
 
 /** Moves an appointment to a status directly -- cancelling one, say, so its clinic can be archived. */
+/** Front-desk check-in, written the way the calendar writes it: one column. */
+async function checkInAppointment(opts: { appointmentId: string }) {
+  assertOk(await admin.from('appointments').update({ checked_in_at: new Date().toISOString() }).eq('id', opts.appointmentId))
+  return { ok: true }
+}
+
+/** Settings → Leads: the conversion rule and the default value. */
+async function setLeadPipelineSettings(opts: { accountId: string; convertAfterVisits?: number | null; convertAppointmentTypeId?: string | null; defaultValueCents?: number | null }) {
+  assertOk(
+    await admin
+      .from('accounts')
+      .update({
+        ...(opts.convertAfterVisits !== undefined ? { lead_convert_after_visits: opts.convertAfterVisits } : {}),
+        ...(opts.convertAppointmentTypeId !== undefined ? { lead_convert_appointment_type_id: opts.convertAppointmentTypeId } : {}),
+        ...(opts.defaultValueCents !== undefined ? { lead_default_value_cents: opts.defaultValueCents } : {}),
+      })
+      .eq('id', opts.accountId),
+  )
+  return { ok: true }
+}
+
 async function setAppointmentStatus(opts: { appointmentId: string; status: string }) {
   assertOk(await admin.from('appointments').update({ status: opts.status }).eq('id', opts.appointmentId))
   return { ok: true }
@@ -3195,6 +3216,8 @@ export const dbTasks = {
   'db:inboxAssignment': inboxAssignment,
   'db:messagesFromNumber': messagesFromNumber,
   'db:setAppointmentStatus': setAppointmentStatus,
+  'db:checkInAppointment': checkInAppointment,
+  'db:setLeadPipelineSettings': setLeadPipelineSettings,
   'db:setCancellationFee': setCancellationFee,
   'db:invoicesFor': invoicesFor,
   'db:appointmentById': appointmentById,

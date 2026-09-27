@@ -49,6 +49,9 @@ export interface GrowthLeadDetail {
   stageKey: string
   source: string
   value: string
+  /** The lead's own estimated value; null when it has none (and `value` shows the account's default, if any). */
+  valueCents: number | null
+  valueIsDefault: boolean
   owner: string
   patientId: string | null
   contact: string[]
@@ -79,10 +82,21 @@ export function useGrowthLeadDetail() {
     }
   }
 
+  // After an edit in the open drawer: fetched in place, without blanking the
+  // drawer the way opening a different lead has to.
+  async function refreshLead() {
+    if (!lead.value) return
+    try {
+      lead.value = await useStaffFetch<GrowthLeadDetail>(`/api/growth/leads/${lead.value.id}`)
+    } catch {
+      // The drawer keeps what it showed; the board reload says the rest.
+    }
+  }
+
   function close() {
     lead.value = null
     error.value = null
   }
 
-  return { lead, loading, error, loadLead, close }
+  return { lead, loading, error, loadLead, refreshLead, close }
 }

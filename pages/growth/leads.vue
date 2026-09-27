@@ -6,7 +6,7 @@ const route = useRoute()
 const { can } = usePermission()
 const { hasGrowth, resolved } = useGrowthTier()
 const { columns, summary, loading, error, moveLead, reload } = useGrowthLeads()
-const { lead: openLead, loading: leadLoading, loadLead, close: closeLead } = useGrowthLeadDetail()
+const { lead: openLead, loading: leadLoading, loadLead, refreshLead, close: closeLead } = useGrowthLeadDetail()
 
 // Same key that gates the Growth dashboard and Campaigns -- see
 // pages/growth/index.vue for why this reuses communication_config.
@@ -68,6 +68,12 @@ function onOpen(lead: GrowthLead) {
 async function onConverted() {
   closeLead()
   await reload()
+}
+
+// An edit made in the drawer (the estimated value) changes the card and the
+// column totals behind it, and the drawer's own figure.
+async function onLeadChanged() {
+  await Promise.all([reload(), refreshLead()])
 }
 </script>
 
@@ -200,7 +206,7 @@ async function onConverted() {
     </template>
   </div>
 
-  <GrowthLeadDrawer v-if="openLead" :lead="openLead" @close="closeLead" @converted="onConverted" />
+  <GrowthLeadDrawer v-if="openLead" :lead="openLead" @close="closeLead" @converted="onConverted" @changed="onLeadChanged" />
   <!-- The drawer opens on click and fills in when the fetch lands, rather
   than the row staying inert until it does. -->
   <div v-else-if="leadLoading" class="fixed inset-0 z-50 flex justify-end" data-test="lead-drawer-loading">

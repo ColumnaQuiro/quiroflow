@@ -76,6 +76,7 @@ const groups = computed(() => [
       { to: '/settings/whatsapp', label: t('WhatsApp', 'WhatsApp'), description: t('Webhook and message templates for recalls and confirmations.', 'Webhook y plantillas de mensaje para recordatorios y confirmaciones.'), icon: ICONS.chatBubble },
       { to: '/settings/saved-replies', label: t('Saved Replies', 'Respuestas guardadas'), description: t('Pre-written answers your team can insert into the Inbox composer.', 'Respuestas predefinidas que tu equipo puede insertar en el compositor de la Bandeja de entrada.'), icon: ICONS.bookmark },
       { to: '/settings/docs', label: t('Docs', 'Documentos'), description: t('Reusable document templates with patient field placeholders.', 'Plantillas de documentos reutilizables con campos de paciente.'), icon: ICONS.documentText },
+      { to: '/settings/leads', label: t('Leads', 'Leads'), description: t('When leads move to Booked, Showed and Converted, and their default value.', 'Cuándo pasan los leads a Reservado, Asistió y Convertido, y su valor por defecto.'), icon: ICONS.bolt },
     ],
   },
   {

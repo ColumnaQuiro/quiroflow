@@ -46,7 +46,7 @@ const rules: Rule[] = [
     check: (s) => can(s, 'settings_access') && can(s, 'billing_config'),
   },
   {
-    test: (p) => ['/settings/whatsapp', '/settings/docs'].includes(p),
+    test: (p) => ['/settings/whatsapp', '/settings/docs', '/settings/leads'].includes(p),
     check: (s) => can(s, 'settings_access') && can(s, 'communication_config'),
   },
   // /campaigns and /growth/automations redirect here; the old prefix keeps its

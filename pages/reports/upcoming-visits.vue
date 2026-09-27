@@ -32,7 +32,11 @@ const rangeStart = computed(() => monthStart(monthOffset.value))
 const rangeEnd = computed(() => addMonths(rangeStart.value, 1))
 const monthLabel = computed(() => rangeStart.value.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }))
 
+// Clicking through months quickly starts a run per click; only the latest
+// may write, or a slow earlier answer shows the wrong month's figures.
+let run = 0
 async function load() {
+  const mine = ++run
   loading.value = true
   const prevStart = addMonths(rangeStart.value, -1)
 
@@ -53,6 +57,7 @@ async function load() {
     previous = previous.eq('practitioner_id', reportsPractitionerId.value)
   }
   const [{ data: current }, { count: prevCount }] = await Promise.all([current_, previous])
+  if (mine !== run) return
 
   rows.value = current ?? []
   prevMonthCount.value = prevCount ?? 0
@@ -142,38 +147,31 @@ const weekdayChartOptions = {
       </div>
 
       <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-          <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ t('Total this month', 'Total este mes') }}</p>
-          <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ loading ? '—' : totalCount }}</p>
-        </div>
-        <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-          <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ t('vs. previous month', 'vs. mes anterior') }}</p>
+        <ReportsStat :label="t('Total this month', 'Total este mes')" :loading="loading">
+          <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ totalCount }}</p>
+        </ReportsStat>
+        <ReportsStat :label="t('vs. previous month', 'vs. mes anterior')" :loading="loading">
           <p class="mt-1.5 font-mono text-[23px] font-semibold" :class="changePct !== null && changePct < 0 ? 'text-danger-text' : 'text-success-text'">
-            {{ loading || changePct === null ? '—' : `${changePct > 0 ? '+' : ''}${changePct}%` }}
+            {{ changePct === null ? '—' : `${changePct > 0 ? '+' : ''}${changePct}%` }}
           </p>
-        </div>
-        <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-          <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ t('Daily average', 'Media diaria') }}</p>
-          <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">
-            {{ loading ? '—' : (totalCount / daysInMonth(rangeStart)).toFixed(1) }}
-          </p>
-        </div>
+        </ReportsStat>
+        <ReportsStat :label="t('Daily average', 'Media diaria')" :loading="loading">
+          <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ (totalCount / daysInMonth(rangeStart)).toFixed(1) }}</p>
+        </ReportsStat>
       </div>
 
-      <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
-        <h3 class="text-[13.5px] font-semibold text-ink-800">{{ t('By day of month', 'Por día del mes') }}</h3>
-        <div class="mt-3 h-72">
-          <Bar v-if="!loading" :data="dayChartData" :options="dayChartOptions" />
-        </div>
-      </div>
+      <ReportsModule class="mt-4" :title="t('By day of month', 'Por día del mes')" :loading="loading" chart-height="h-72">
+        <div class="mt-3 h-72"><Bar :data="dayChartData" :options="dayChartOptions" /></div>
+      </ReportsModule>
 
-      <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
-        <h3 class="text-[13.5px] font-semibold text-ink-800">{{ t('By day of week', 'Por día de la semana') }}</h3>
-        <p class="text-[12px] text-ink-faint2">{{ t('Which weekdays fill up fastest — useful for staffing and ad scheduling.', 'Qué días de la semana se llenan más rápido — útil para la plantilla y la publicidad.') }}</p>
-        <div class="mt-3 h-64">
-          <Bar v-if="!loading" :data="weekdayChartData" :options="weekdayChartOptions" />
-        </div>
-      </div>
+      <ReportsModule
+        class="mt-4"
+        :title="t('By day of week', 'Por día de la semana')"
+        :description="t('Which weekdays fill up fastest — useful for staffing and ad scheduling.', 'Qué días de la semana se llenan más rápido — útil para la plantilla y la publicidad.')"
+        :loading="loading"
+      >
+        <div class="mt-3 h-64"><Bar :data="weekdayChartData" :options="weekdayChartOptions" /></div>
+      </ReportsModule>
     </div>
   </div>
 </template>

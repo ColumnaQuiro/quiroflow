@@ -24,7 +24,7 @@ describe('Income filtered by practitioner', () => {
 
         cy.login(account.email, account.password)
         cy.visit('/reports/income')
-        cy.contains('Total paid').should('be.visible')
+        cy.get('[data-test=income-total-paid]').should('be.visible')
 
         // Unfiltered it was always counted.
         cy.contains('200,00 €').should('be.visible')
@@ -46,7 +46,7 @@ describe('Income filtered by practitioner', () => {
 
         cy.login(account.email, account.password)
         cy.visit('/reports/income')
-        cy.contains('Total paid').should('be.visible')
+        cy.get('[data-test=income-total-paid]').should('be.visible')
         cy.contains('no filter can attribute').should('not.exist')
 
         cy.contains('select', 'All practitioners').select('Test Owner')
@@ -78,7 +78,7 @@ describe('Income filtered by practitioner', () => {
 
         cy.login(account.email, account.password)
         cy.visit('/reports/income')
-        cy.contains('Total paid').should('be.visible')
+        cy.get('[data-test=income-total-paid]').should('be.visible')
 
         // Nothing touched: no practitioner picked, no date range changed.
         cy.contains('h3', 'By practitioner')
@@ -105,7 +105,7 @@ describe('Income filtered by practitioner', () => {
 
         cy.login(account.email, account.password)
         cy.visit('/reports/income')
-        cy.contains('Total paid').should('be.visible')
+        cy.get('[data-test=income-total-paid]').should('be.visible')
 
         cy.contains('h3', 'By practitioner')
           .parent()

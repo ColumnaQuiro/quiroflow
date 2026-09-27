@@ -61,7 +61,12 @@ function shiftDay(days: number) {
   dateStr.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+// A day picked while this is in flight starts another run; only the latest
+// may write, or clicking through days quickly shows one day's rows under
+// another's date.
+let run = 0
 async function load() {
+  const mine = ++run
   loading.value = true
   const { from, to } = rangeBounds({ from: dateStr.value, to: dateStr.value })
 
@@ -73,31 +78,40 @@ async function load() {
     .order('paid_at')
   // The void rule moved out of the query when the join went from inner to
   // left: a payment with no invoice has nothing to void and must survive it.
-  payments.value = (p ?? []).filter((row) => row.invoices?.status !== 'void')
+  const dayPayments = (p ?? []).filter((row) => row.invoices?.status !== 'void')
 
-  const invoiceIds = [...new Set(payments.value.map((row) => row.invoice_id).filter((id): id is string => !!id))]
-  invoices.value = await fetchByIds<InvoiceRow>(invoiceIds, (ids) =>
-    supabase.from('invoices').select('id, invoice_number, patient_id, is_refund, appointment_id').in('id', ids),
-  )
-
-  // Off the payments, not off the invoices they settle. Half this page's
-  // rows settle no invoice at all, and those are exactly the ones whose
-  // patient went missing when the list was built the other way round.
-  const patientIds = [...new Set(payments.value.map((row) => row.patient_id))]
-  patients.value = await fetchByIds<PatientRow>(patientIds, (ids) =>
-    supabase.from('patients').select('id, first_name, last_name, default_practitioner_id, clinic_id').in('id', ids),
-  )
-
+  // Two independent lookups off the payments, side by side rather than one
+  // after the other: the invoices (and through them the appointments), and
+  // the patients.
+  //
+  // Patients come off the payments, not off the invoices they settle. Half
+  // this page's rows settle no invoice at all, and those are exactly the
+  // ones whose patient went missing when the list was built the other way
+  // round.
+  //
   // The practitioner comes from the invoice's linked appointment, same as
   // reports/income.vue -- neither payments nor invoices carry the column
   // directly. Fetched on every load, not only when a filter is set: the
   // Practitioner COLUMN reads the same map, so skipping this left every row
   // on the page saying "Unassigned" until someone happened to pick a filter.
-  const appointmentIds = [...new Set(invoices.value.map((row) => row.appointment_id).filter((id): id is string => !!id))]
-  appointments.value = await fetchByIds<AppointmentRow>(appointmentIds, (ids) =>
-    supabase.from('appointments').select('id, practitioner_id, clinic_id').in('id', ids),
-  )
-
+  const invoiceIds = [...new Set(dayPayments.map((row) => row.invoice_id).filter((id): id is string => !!id))]
+  const patientIds = [...new Set(dayPayments.map((row) => row.patient_id))]
+  const [[inv, appts], pats] = await Promise.all([
+    fetchByIds<InvoiceRow>(invoiceIds, (ids) =>
+      supabase.from('invoices').select('id, invoice_number, patient_id, is_refund, appointment_id').in('id', ids),
+    ).then(async (rows) => {
+      const appointmentIds = [...new Set(rows.map((row) => row.appointment_id).filter((id): id is string => !!id))]
+      return [rows, await fetchByIds<AppointmentRow>(appointmentIds, (ids) => supabase.from('appointments').select('id, practitioner_id, clinic_id').in('id', ids))] as const
+    }),
+    fetchByIds<PatientRow>(patientIds, (ids) =>
+      supabase.from('patients').select('id, first_name, last_name, default_practitioner_id, clinic_id').in('id', ids),
+    ),
+  ])
+  if (mine !== run) return
+  payments.value = dayPayments
+  invoices.value = inv
+  appointments.value = appts
+  patients.value = pats
   loading.value = false
 }
 
@@ -107,7 +121,9 @@ onMounted(() => {
   ensurePaymentMethodsLoaded()
   supabase.from('team_members').select('id, full_name').then(({ data }) => { teamMembers.value = data ?? [] })
 })
-watch([dateStr, practitionerFilter, clinicFilter], load)
+// Only the day refetches. The practitioner and clinic filters are applied by
+// filteredPayments below, against maps load() has already built.
+watch(dateStr, load)
 
 const invoiceById = computed(() => new Map(invoices.value.map((row) => [row.id, row])))
 const patientById = computed(() => new Map(patients.value.map((row) => [row.id, row])))
@@ -219,19 +235,11 @@ const { purposeLabelFor } = usePaymentPurpose()
         <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" :locked-to="reportsPractitionerId" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
       </div>
 
-      <div v-if="loading" class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div v-for="i in 3" :key="i" class="space-y-2 rounded-card border border-line bg-surface p-4 shadow-card">
-          <UiSkeleton class="h-3 w-24 rounded-ctlSm" />
-          <UiSkeleton class="h-[23px] w-20 rounded-ctlSm" />
-        </div>
-      </div>
-
-      <template v-else>
-        <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-            <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ t('Net collected', 'Neto cobrado') }}</p>
-            <p data-test="daily-net-collected" class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ eur(netCents) }}</p>
-          </div>
+      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <ReportsStat :label="t('Net collected', 'Neto cobrado')" :loading="loading">
+          <p data-test="daily-net-collected" class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ eur(netCents) }}</p>
+        </ReportsStat>
+        <template v-if="!loading">
           <div v-for="row in byMethod" :key="row.method" class="rounded-card border border-line bg-surface p-4 shadow-card">
             <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ labelForMethod(row.method) }}</p>
             <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ eur(row.cents) }}</p>
@@ -244,50 +252,51 @@ const { purposeLabelFor } = usePaymentPurpose()
             <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-muted2">{{ eur(creditAppliedCents) }}</p>
             <p class="mt-1 text-[11px] text-ink-faint2">{{ t('Not money in today', 'No es dinero que entra hoy') }}</p>
           </div>
-        </div>
+        </template>
+      </div>
 
-        <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
-          <table class="w-full text-[13px]">
-            <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">
-              <tr>
-                <th class="px-4 py-2">{{ t('Time', 'Hora') }}</th>
-                <th class="px-4 py-2">{{ t('Patient', 'Paciente') }}</th>
-                <th class="px-4 py-2">{{ t('Receipt', 'Recibo') }}</th>
-                <th class="px-4 py-2">{{ t('For', 'Concepto') }}</th>
-                <th class="px-4 py-2">{{ t('Practitioner', 'Profesional') }}</th>
-                <th class="px-4 py-2">{{ t('Method', 'Método') }}</th>
-                <th class="px-4 py-2 text-right">{{ t('Amount', 'Importe') }}</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-line-row">
-              <tr v-if="filteredPayments.length === 0">
-                <td colspan="7" class="px-4 py-6 text-center text-ink-faint2">{{ t('No transactions on this day.', 'Sin transacciones este día.') }}</td>
-              </tr>
-              <tr v-for="row in filteredPayments" :key="row.id">
-                <td class="px-4 py-2.5 text-ink-muted2">{{ time(row.paid_at) }}</td>
-                <td class="px-4 py-2.5 text-ink-900">
-                  <NuxtLink :to="`/patients/${row.patient_id}`" class="hover:text-brand-text">
-                    {{ patientName(row.patient_id) }}
-                  </NuxtLink>
-                </td>
-                <td class="px-4 py-2.5 text-ink-muted2">
-                  <span>{{ invoiceFor(row)?.invoice_number ?? '—' }}</span>
-                  <span v-if="invoiceFor(row)?.is_refund" class="ml-1.5 rounded-pill bg-danger-bg px-1.5 py-0.5 text-[11px] font-medium text-danger-text">{{ t('refund', 'reembolso') }}</span>
-                </td>
-                <td class="px-4 py-2.5 text-ink-muted2">
-                  <span v-if="purposeLabelFor(row.purpose)" class="rounded-pill bg-chip-bg px-1.5 py-0.5 text-[11px] font-medium text-chip-text">
-                    {{ purposeLabelFor(row.purpose) }}
-                  </span>
-                  <span v-else>—</span>
-                </td>
-                <td class="px-4 py-2.5 text-ink-muted2">{{ practitionerName(row) }}</td>
-                <td class="px-4 py-2.5 text-ink-muted2">{{ labelForMethod(row.method) }}</td>
-                <td class="px-4 py-2.5 text-right font-mono" :class="row.amount_cents < 0 ? 'text-danger-text' : 'text-ink-900'">{{ eur(row.amount_cents) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </template>
+      <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
+        <table class="w-full text-[13px]">
+          <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">
+            <tr>
+              <th class="px-4 py-2">{{ t('Time', 'Hora') }}</th>
+              <th class="px-4 py-2">{{ t('Patient', 'Paciente') }}</th>
+              <th class="px-4 py-2">{{ t('Receipt', 'Recibo') }}</th>
+              <th class="px-4 py-2">{{ t('For', 'Concepto') }}</th>
+              <th class="px-4 py-2">{{ t('Practitioner', 'Profesional') }}</th>
+              <th class="px-4 py-2">{{ t('Method', 'Método') }}</th>
+              <th class="px-4 py-2 text-right">{{ t('Amount', 'Importe') }}</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-line-row">
+            <ReportsTableSkeletonRows v-if="loading" :cols="7" :rows="4" />
+            <tr v-else-if="filteredPayments.length === 0">
+              <td colspan="7" class="px-4 py-6 text-center text-ink-faint2">{{ t('No transactions on this day.', 'Sin transacciones este día.') }}</td>
+            </tr>
+            <tr v-for="row in loading ? [] : filteredPayments" :key="row.id">
+              <td class="px-4 py-2.5 text-ink-muted2">{{ time(row.paid_at) }}</td>
+              <td class="px-4 py-2.5 text-ink-900">
+                <NuxtLink :to="`/patients/${row.patient_id}`" class="hover:text-brand-text">
+                  {{ patientName(row.patient_id) }}
+                </NuxtLink>
+              </td>
+              <td class="px-4 py-2.5 text-ink-muted2">
+                <span>{{ invoiceFor(row)?.invoice_number ?? '—' }}</span>
+                <span v-if="invoiceFor(row)?.is_refund" class="ml-1.5 rounded-pill bg-danger-bg px-1.5 py-0.5 text-[11px] font-medium text-danger-text">{{ t('refund', 'reembolso') }}</span>
+              </td>
+              <td class="px-4 py-2.5 text-ink-muted2">
+                <span v-if="purposeLabelFor(row.purpose)" class="rounded-pill bg-chip-bg px-1.5 py-0.5 text-[11px] font-medium text-chip-text">
+                  {{ purposeLabelFor(row.purpose) }}
+                </span>
+                <span v-else>—</span>
+              </td>
+              <td class="px-4 py-2.5 text-ink-muted2">{{ practitionerName(row) }}</td>
+              <td class="px-4 py-2.5 text-ink-muted2">{{ labelForMethod(row.method) }}</td>
+              <td class="px-4 py-2.5 text-right font-mono" :class="row.amount_cents < 0 ? 'text-danger-text' : 'text-ink-900'">{{ eur(row.amount_cents) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 </template>

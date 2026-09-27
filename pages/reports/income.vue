@@ -23,7 +23,14 @@ const range = ref(computePresetRange({ months: 1 }))
 const { reportsPractitionerId } = useOwnScope()
 const practitionerFilter = ref(reportsPractitionerId.value ?? '')
 const clinicFilter = ref('')
-const loading = ref(true)
+// One flag per data source rather than one for the page, so each panel shows
+// as soon as what IT needs has arrived. The *Loading computeds further down
+// say which panel waits for which.
+const baseLoading = ref(true)
+const attributionLoading = ref(true)
+const outstandingLoading = ref(true)
+const lineItemsLoading = ref(true)
+const namesLoading = ref(true)
 const payments = ref<PaymentRow[]>([])
 const invoices = ref<InvoiceRow[]>([])
 const invoicePayments = ref<{ invoice_id: string | null; amount_cents: number }[]>([])
@@ -55,11 +62,33 @@ function fetchLineItemsFor(invoiceIds: string[]): Promise<LineItemRow[]> {
   )
 }
 
+// Everything the page reads comes off the period's payments and invoices, so
+// those go first; after that there are three independent branches, and they
+// run side by side rather than one after another:
+//
+//   attribution  -- the appointments and patients behind the money, which
+//                   is whose it is (filters, "By practitioner")
+//   outstanding  -- every payment ever made against this period's invoices
+//   services     -- the line items those payments settled, and the bonos
+//                   they drew from ("By service")
+//
+// They used to be one chain -- line items, then outstanding, then the rest --
+// so the headline totals waited on four round-trips in series and on the
+// slowest of every query on the page.
+//
+// A range picked while this is in flight starts another run, and only the
+// latest may write: `stale()` is checked after every await.
+let run = 0
 async function load() {
-  loading.value = true
+  const mine = ++run
+  const stale = () => mine !== run
+  baseLoading.value = true
+  attributionLoading.value = true
+  outstandingLoading.value = true
+  lineItemsLoading.value = true
   const { from, to } = rangeBounds(range.value)
 
-  const [p, inv, sv, tm] = await Promise.all([
+  const [p, inv] = await Promise.all([
     fetchAllRows<PaymentRow>((f, t) =>
       supabase
         .from('payments')
@@ -77,78 +106,115 @@ async function load() {
         .lte('created_at', to.toISOString())
         .range(f, t),
     ),
-    supabase.from('services_products').select('id, name').then((r) => r.data ?? []),
-    supabase.from('team_members').select('id, full_name').then((r) => r.data ?? []),
   ])
+  if (stale()) return
   // The void rule moved out of the query when the join went from inner to
   // left: a payment with no invoice has nothing to void and must survive it.
   const notVoid = (row: PaymentRow) => row.invoices?.status !== 'void'
   payments.value = p.filter(notVoid)
   invoices.value = inv
-  services.value = sv
-  teamMembers.value = tm
-  lineItems.value = await fetchLineItemsFor([...new Set(payments.value.map((row) => row.invoice_id).filter((id): id is string => !!id))])
+  baseLoading.value = false
 
-  // Every payment against this period's invoices, whenever it was taken. An
-  // invoice raised on the 30th is usually settled in the next window, and
-  // outstanding has to see that money or it reports a debt already paid.
-  // Chunked: PostgREST puts an .in() list in the URL, and a busy month's
-  // invoices make one long enough to be refused.
-  invoicePayments.value = await fetchByIds(inv.map((i) => i.id), (chunk) =>
-    fetchAllRows<{ invoice_id: string | null; amount_cents: number }>((f, t) =>
-      supabase.from('payments').select('invoice_id, amount_cents').in('invoice_id', chunk).range(f, t),
-    ).then((data) => ({ data, error: null })),
-  )
+  await Promise.all([loadAttribution(inv, stale), loadOutstanding(inv, stale), loadServices(stale)])
+}
 
-  // What each line was for, and whose money it is. Both fetched by id rather
-  // than wholesale: the appointments table is thousands of rows and this only
-  // needs the ones behind invoices in range.
-  //
-  // One appointments query, not two. The practitioner/clinic columns used to
-  // be loaded separately, from the WHOLE table, and only when a filter was
-  // set -- on the reasoning that with no filter they were "fetched and never
-  // read". They are read: byPractitioner below reads the same maps on every
-  // render, filter or no filter, so the breakdown had nothing to attribute
-  // with and put the entire month under "Sin asignar". Asking for two more
-  // columns on a query that was already being made costs nothing and serves
-  // both.
-  const purchaseIds = [...new Set(lineItems.value.map((li) => li.package_purchase_id).filter((id): id is string => !!id))]
+// What each invoice's visit was, and whose money it is. Both fetched by id
+// rather than wholesale: the appointments table is thousands of rows and this
+// only needs the ones behind invoices in range.
+//
+// One appointments query, not two. The practitioner/clinic columns used to
+// be loaded separately, from the WHOLE table, and only when a filter was
+// set -- on the reasoning that with no filter they were "fetched and never
+// read". They are read: byPractitioner below reads the same maps on every
+// render, filter or no filter, so the breakdown had nothing to attribute
+// with and put the entire month under "Sin asignar". Asking for two more
+// columns on a query that was already being made costs nothing and serves
+// both.
+async function loadAttribution(inv: InvoiceRow[], stale: () => boolean) {
   const appointmentIds = [...new Set(inv.map((i) => i.appointment_id).filter((id): id is string => !!id))]
   // The fallback for money with no appointment behind it -- a bono, money on
   // account, a quick invoice. Scoped to the payments actually on screen
   // rather than every patient the clinic has.
   const patientIds = [...new Set(payments.value.map((row) => row.patient_id).filter((id): id is string => !!id))]
-  const [pur, pkg, apptTypes, appts, pats] = await Promise.all([
-    // One row per id, so a chunk never reaches the 1000-row cap.
-    fetchByIds(purchaseIds, (chunk) => supabase.from('package_purchases').select('id, package_id, package_name').in('id', chunk)),
-    supabase.from('packages').select('id, name').then((r) => r.data ?? []),
-    supabase.from('appointment_types').select('id, name').then((r) => r.data ?? []),
+  const [appts, pats] = await Promise.all([
     fetchByIds<AppointmentRow & { appointment_type_id: string | null }>(appointmentIds, (chunk) =>
       supabase.from('appointments').select('id, appointment_type_id, practitioner_id, clinic_id').in('id', chunk),
     ),
     fetchByIds<PatientRow>(patientIds, (chunk) => supabase.from('patients').select('id, default_practitioner_id, clinic_id').in('id', chunk)),
   ])
-  purchases.value = pur
-  packages.value = pkg
-  appointmentTypes.value = apptTypes
+  if (stale()) return
   appointments.value = appts
   patients.value = pats
   const typeByAppointment = new Map(appts.map((a) => [a.id, a.appointment_type_id]))
   invoiceAppointmentTypes.value = inv
     .filter((i) => i.appointment_id)
     .map((i) => ({ invoice_id: i.id, appointment_type_id: typeByAppointment.get(i.appointment_id!) ?? null }))
+  attributionLoading.value = false
+}
 
-  loading.value = false
+// Every payment against this period's invoices, whenever it was taken. An
+// invoice raised on the 30th is usually settled in the next window, and
+// outstanding has to see that money or it reports a debt already paid.
+// Chunked: PostgREST puts an .in() list in the URL, and a busy month's
+// invoices make one long enough to be refused.
+async function loadOutstanding(inv: InvoiceRow[], stale: () => boolean) {
+  const rows = await fetchByIds(inv.map((i) => i.id), (chunk) =>
+    fetchAllRows<{ invoice_id: string | null; amount_cents: number }>((f, t) =>
+      supabase.from('payments').select('invoice_id, amount_cents').in('invoice_id', chunk).range(f, t),
+    ).then((data) => ({ data, error: null })),
+  )
+  if (stale()) return
+  invoicePayments.value = rows
+  outstandingLoading.value = false
+}
+
+// Only what naming a line needs: the bonos its lines drew from, the templates
+// those bonos belong to, and the names of the catalogue and the visit types.
+async function loadServices(stale: () => boolean) {
+  const [items, pkg, apptTypes] = await Promise.all([
+    fetchLineItemsFor([...new Set(payments.value.map((row) => row.invoice_id).filter((id): id is string => !!id))]),
+    supabase.from('packages').select('id, name').then((r) => r.data ?? []),
+    supabase.from('appointment_types').select('id, name').then((r) => r.data ?? []),
+  ])
+  const purchaseIds = [...new Set(items.map((li) => li.package_purchase_id).filter((id): id is string => !!id))]
+  // One row per id, so a chunk never reaches the 1000-row cap.
+  const pur = await fetchByIds(purchaseIds, (chunk) => supabase.from('package_purchases').select('id, package_id, package_name').in('id', chunk))
+  if (stale()) return
+  lineItems.value = items
+  packages.value = pkg
+  appointmentTypes.value = apptTypes
+  purchases.value = pur
+  lineItemsLoading.value = false
+}
+
+// Neither of these depends on the range, so they are not refetched with it.
+async function loadNames() {
+  const [sv, tm] = await Promise.all([
+    supabase.from('services_products').select('id, name').then((r) => r.data ?? []),
+    supabase.from('team_members').select('id, full_name').then((r) => r.data ?? []),
+  ])
+  services.value = sv
+  teamMembers.value = tm
+  namesLoading.value = false
 }
 
 onMounted(() => {
   load()
+  loadNames()
   loadFilterOptions()
   ensurePaymentMethodsLoaded()
 })
 watch(range, load)
 // No watcher on the filters: they are applied client-side against maps this
 // load() has already built, so changing one re-computes rather than refetches.
+
+// When each panel can draw. With a practitioner or clinic picked, even the
+// totals need to know whose each payment is; with none, they are ready the
+// moment the payments are, without waiting for the attribution lookups.
+const filtering = computed(() => !!practitionerFilter.value || !!clinicFilter.value)
+const totalsLoading = computed(() => baseLoading.value || (filtering.value && attributionLoading.value))
+const byPractitionerLoading = computed(() => baseLoading.value || attributionLoading.value || namesLoading.value)
+const byServiceLoading = computed(() => byPractitionerLoading.value || lineItemsLoading.value)
 
 const appointmentById = computed(() => new Map(appointments.value.map((a) => [a.id, a])))
 const patientById = computed(() => new Map(patients.value.map((p) => [p.id, p])))
@@ -364,6 +430,10 @@ function lineLabel(li: LineItemRow): string {
   return t('Not identified', 'Sin identificar')
 }
 
+const byServiceHint = computed(() =>
+  t('e.g. "Primera Visita €600, Informe €6,000" — set up under Billing → Services.', 'p. ej. "Primera Visita 600 €, Informe 6.000 €" — configúralo en Facturación → Servicios.'),
+)
+
 const byService = computed(() => {
   const paidInvoiceIds = new Set(filteredPayments.value.map((p) => p.invoice_id))
   const totals = new Map<string, number>()
@@ -388,29 +458,19 @@ const byService = computed(() => {
         <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" :locked-to="reportsPractitionerId" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
       </div>
 
-      <div v-if="loading" class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div v-for="i in 3" :key="i" class="space-y-2 rounded-card border border-line bg-surface p-4 shadow-card">
-          <UiSkeleton class="h-3 w-24 rounded-ctlSm" />
-          <UiSkeleton class="h-[23px] w-20 rounded-ctlSm" />
-        </div>
+      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <ReportsStat :label="t('Total charged', 'Total facturado')" :loading="totalsLoading">
+          <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ eur(totalCharged) }}</p>
+        </ReportsStat>
+        <ReportsStat :label="t('Total paid', 'Total pagado')" :loading="totalsLoading">
+          <p data-test="income-total-paid" class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ eur(totalPaid) }}</p>
+        </ReportsStat>
+        <ReportsStat :label="t('Outstanding', 'Pendiente')" :loading="totalsLoading || outstandingLoading">
+          <p data-test="income-outstanding" class="mt-1.5 font-mono text-[23px] font-semibold" :class="outstanding > 0 ? 'text-warning-text' : 'text-ink-900'">{{ eur(outstanding) }}</p>
+        </ReportsStat>
       </div>
 
-      <template v-else>
-        <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-            <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ t('Total charged', 'Total facturado') }}</p>
-            <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ eur(totalCharged) }}</p>
-          </div>
-          <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-            <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ t('Total paid', 'Total pagado') }}</p>
-            <p data-test="income-total-paid" class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ eur(totalPaid) }}</p>
-          </div>
-          <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-            <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ t('Outstanding', 'Pendiente') }}</p>
-            <p data-test="income-outstanding" class="mt-1.5 font-mono text-[23px] font-semibold" :class="outstanding > 0 ? 'text-warning-text' : 'text-ink-900'">{{ eur(outstanding) }}</p>
-          </div>
-        </div>
-
+      <template v-if="!totalsLoading">
         <!-- Said out loud rather than silently dropped. A filtered total that
         does not reconcile with the clinic's takings is worse than one that
         names the gap: almost all of this is PracticeHub money imported
@@ -429,44 +489,45 @@ const byService = computed(() => {
           {{ t('A further', 'Además') }} <span class="font-medium text-ink-700">{{ eur(creditAppliedCents) }}</span>
           {{ t('was settled from credit on account — already counted as income on the day it was paid in, so it is not in the totals above.', 'se liquidó con crédito en cuenta: ya se contó como ingreso el día en que se pagó, por lo que no está en los totales de arriba.') }}
         </p>
+      </template>
 
-        <div v-if="filteredPayments.length === 0" class="mt-4 rounded-card border border-dashed border-line-control bg-surface p-6 text-center text-[13px] text-ink-faint2">
-          {{ t('No payments recorded yet in this range — charts will fill in as receipts get paid.', 'Todavía no hay pagos registrados en este periodo — los gráficos se completarán a medida que se paguen recibos.') }}
-        </div>
+      <div v-if="!totalsLoading && filteredPayments.length === 0" class="mt-4 rounded-card border border-dashed border-line-control bg-surface p-6 text-center text-[13px] text-ink-faint2">
+        {{ t('No payments recorded yet in this range — charts will fill in as receipts get paid.', 'Todavía no hay pagos registrados en este periodo — los gráficos se completarán a medida que se paguen recibos.') }}
+      </div>
 
-        <template v-else>
-          <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
-            <h3 class="text-[13.5px] font-semibold text-ink-800">{{ t('Revenue by month', 'Ingresos por mes') }}</h3>
-            <div class="mt-3 h-64"><Line :data="revenueChartData" :options="lineChartOptions" /></div>
-          </div>
+      <template v-else>
+        <ReportsModule class="mt-4" :title="t('Revenue by month', 'Ingresos por mes')" :loading="totalsLoading">
+          <div class="mt-3 h-64"><Line :data="revenueChartData" :options="lineChartOptions" /></div>
+        </ReportsModule>
 
-          <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-              <h3 class="text-[13.5px] font-semibold text-ink-800">{{ t('By payment method', 'Por método de pago') }}</h3>
-              <div class="mt-3 h-56"><Bar :data="methodChartData" :options="barChartOptions" /></div>
-            </div>
-            <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-              <h3 class="text-[13.5px] font-semibold text-ink-800">{{ t('By practitioner', 'Por profesional') }}</h3>
-              <ul class="mt-2 space-y-1.5 text-[13px]">
-                <li v-for="row in byPractitioner" :key="row.label" class="flex items-center justify-between">
-                  <span class="text-ink-600">{{ row.label }}</span>
-                  <span class="font-mono font-medium text-ink-900">{{ eur(row.cents) }}</span>
-                </li>
-              </ul>
-            </div>
-          </div>
-
-          <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
-            <h3 class="text-[13.5px] font-semibold text-ink-800">{{ t('By service', 'Por servicio') }}</h3>
-            <p class="text-[12px] text-ink-faint2">{{ t('e.g. "Primera Visita €600, Informe €6,000" — set up under Billing → Services.', 'p. ej. "Primera Visita 600 €, Informe 6.000 €" — configúralo en Facturación → Servicios.') }}</p>
+        <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <ReportsModule :title="t('By payment method', 'Por método de pago')" :loading="totalsLoading" chart-height="h-56">
+            <div class="mt-3 h-56"><Bar :data="methodChartData" :options="barChartOptions" /></div>
+          </ReportsModule>
+          <ReportsModule :title="t('By practitioner', 'Por profesional')" :loading="byPractitionerLoading" skeleton="list">
             <ul class="mt-2 space-y-1.5 text-[13px]">
-              <li v-for="row in byService" :key="row.label" class="flex items-center justify-between">
+              <li v-for="row in byPractitioner" :key="row.label" class="flex items-center justify-between">
                 <span class="text-ink-600">{{ row.label }}</span>
                 <span class="font-mono font-medium text-ink-900">{{ eur(row.cents) }}</span>
               </li>
             </ul>
-          </div>
-        </template>
+          </ReportsModule>
+        </div>
+
+        <ReportsModule
+          class="mt-4"
+          :title="t('By service', 'Por servicio')"
+          :description="byServiceHint"
+          :loading="byServiceLoading"
+          skeleton="list"
+        >
+          <ul class="mt-2 space-y-1.5 text-[13px]">
+            <li v-for="row in byService" :key="row.label" class="flex items-center justify-between">
+              <span class="text-ink-600">{{ row.label }}</span>
+              <span class="font-mono font-medium text-ink-900">{{ eur(row.cents) }}</span>
+            </li>
+          </ul>
+        </ReportsModule>
       </template>
     </div>
   </div>

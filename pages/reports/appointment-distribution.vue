@@ -17,15 +17,21 @@ const clinicFilter = ref('')
 const loading = ref(true)
 const rows = ref<AppointmentRow[]>([])
 
+// A range or filter picked while this is in flight starts another run; only
+// the latest may write, or a slow earlier answer lands over the newer one.
+let run = 0
 async function load() {
+  const mine = ++run
   loading.value = true
   const { from, to } = rangeBounds(range.value)
-  rows.value = await fetchAllRows<AppointmentRow>((f, t) => {
+  const result = await fetchAllRows<AppointmentRow>((f, t) => {
     let query = supabase.from('appointments').select('starts_at, status').gte('starts_at', from.toISOString()).lte('starts_at', to.toISOString())
     if (practitionerFilter.value) query = query.eq('practitioner_id', practitionerFilter.value)
     if (clinicFilter.value) query = query.eq('clinic_id', clinicFilter.value)
     return query.range(f, t)
   })
+  if (mine !== run) return
+  rows.value = result
   loading.value = false
 }
 onMounted(() => {
@@ -111,28 +117,21 @@ const hourChartOptions = {
       </div>
 
       <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div v-for="s in shiftStats" :key="s.key" class="rounded-card border border-line bg-surface p-4 shadow-card">
-          <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ s.label }}</p>
-          <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ loading ? '—' : s.total }}</p>
+        <ReportsStat v-for="s in shiftStats" :key="s.key" :label="s.label" :loading="loading">
+          <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ s.total }}</p>
           <p class="text-[12px] text-ink-faint2">
-            {{ loading ? '' : s.showRate === null ? t('No completed history yet', 'Sin historial de citas completadas') : t(`${s.showRate}% show-up rate`, `${s.showRate}% de tasa de asistencia`) }}
+            {{ s.showRate === null ? t('No completed history yet', 'Sin historial de citas completadas') : t(`${s.showRate}% show-up rate`, `${s.showRate}% de tasa de asistencia`) }}
           </p>
-        </div>
+        </ReportsStat>
       </div>
 
-      <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
-        <h3 class="text-[13.5px] font-semibold text-ink-800">{{ t('By shift, by outcome', 'Por turno, por resultado') }}</h3>
-        <div class="mt-3 h-72">
-          <Bar v-if="!loading" :data="shiftChartData" :options="shiftChartOptions" />
-        </div>
-      </div>
+      <ReportsModule class="mt-4" :title="t('By shift, by outcome', 'Por turno, por resultado')" :loading="loading" chart-height="h-72">
+        <div class="mt-3 h-72"><Bar :data="shiftChartData" :options="shiftChartOptions" /></div>
+      </ReportsModule>
 
-      <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
-        <h3 class="text-[13.5px] font-semibold text-ink-800">{{ t('By hour of day', 'Por hora del día') }}</h3>
-        <div class="mt-3 h-64">
-          <Bar v-if="!loading" :data="hourChartData" :options="hourChartOptions" />
-        </div>
-      </div>
+      <ReportsModule class="mt-4" :title="t('By hour of day', 'Por hora del día')" :loading="loading">
+        <div class="mt-3 h-64"><Bar :data="hourChartData" :options="hourChartOptions" /></div>
+      </ReportsModule>
     </div>
   </div>
 </template>

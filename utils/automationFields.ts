@@ -48,6 +48,20 @@ export interface LeadAnswer {
  */
 export const ANSWER_PREFIX = 'answer_'
 
+/**
+ * What a form-answer variable sends when the lead left that question blank
+ * (or came in through a form without it) and the step sets no fallback of
+ * its own. Never empty: Meta refuses the whole message over an empty
+ * parameter, so a lead who skipped the question would get nothing at all.
+ */
+export const DEFAULT_ANSWER_FALLBACK = 'tu consulta'
+
+/** A template variable's value, with a form answer's fallback applied. */
+export function withAnswerFallback(source: string, value: string, fallback?: string | null): string {
+  if (!source.startsWith(ANSWER_PREFIX) || value.trim()) return value
+  return (fallback ?? '').trim() || DEFAULT_ANSWER_FALLBACK
+}
+
 export function answerKey(question: string): string {
   const slug = question
     .normalize('NFD')

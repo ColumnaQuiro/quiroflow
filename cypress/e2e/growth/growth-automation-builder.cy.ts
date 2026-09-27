@@ -179,6 +179,21 @@ describe('Automation builder: step panels', () => {
           cy.get('[data-test="variable-2-unassigned"]').should('not.exist')
           cy.get('[data-test="template-preview"]').should('contain', '¿Cuál sería el motivo de tu consulta?')
           cy.get('[data-test="variables-lead-hint"]').should('contain', 'answered on the form')
+
+          // What goes out when a lead skipped the question: an empty variable
+          // makes Meta refuse the whole message.
+          cy.get('[data-test="variable-2"] [data-test="answer-fallback"]').should('have.attr', 'placeholder').and('contain', 'tu consulta')
+          cy.get('[data-test="variable-2"] [data-test="answer-fallback"]').type('tu dolor')
+          cy.get('[data-test="variable-1"] [data-test="answer-fallback"]').should('not.exist')
+          cy.get('[data-test="save"]').click()
+          // Saved, before reading it back (cy.task does not retry).
+          cy.get('[data-test="save-bar"]').should('not.exist')
+          cy.task<{ config: Record<string, any> }[]>('auto:actionsForRule', { ruleId: rule.id }).should((rows) => {
+            expect(rows[0]!.config.variables[1]).to.deep.eq({ source: 'answer_cual_seria_el_motivo_de_tu_consulta', fallback: 'tu dolor' })
+          })
+          // Back to a plain field, the fallback goes with it.
+          cy.get('[data-test="variable-2"] select').select('first_name')
+          cy.get('[data-test="variable-2"] [data-test="answer-fallback"]').should('not.exist')
         })
       })
     })

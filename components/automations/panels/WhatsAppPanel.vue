@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { BUTTON_PARAM_SOURCES, VARIABLE_SOURCES, say } from '~/utils/automationCatalog'
-import { ANSWER_PREFIX } from '~/utils/automationFields'
+import { ANSWER_PREFIX, DEFAULT_ANSWER_FALLBACK } from '~/utils/automationFields'
 import { FIELD, HINT, LABEL, LINK_BTN, NOTE, REMOVE_BTN, SECTION, WARN } from '~/utils/automationUi'
 import { serverMessage } from '~/utils/serverMessage'
 
@@ -38,10 +38,10 @@ function selectTemplate(value: string) {
 }
 
 // ---- variables
-const variables = computed<{ source: string; text?: string }[]>(() => (Array.isArray(config.value.variables) ? config.value.variables : []))
+const variables = computed<{ source: string; text?: string; fallback?: string }[]>(() => (Array.isArray(config.value.variables) ? config.value.variables : []))
 const variableRows = computed(() => {
   const n = current.value ? current.value.variableCount : variables.value.length
-  return Array.from({ length: n }, (_, i) => variables.value[i] ?? { source: '' })
+  return Array.from({ length: n }, (_, i): { source: string; text?: string; fallback?: string } => variables.value[i] ?? { source: '' })
 })
 // Slots the template has that nothing fills (or a fixed value left blank).
 function unassignedWarning(n: number) {
@@ -49,10 +49,11 @@ function unassignedWarning(n: number) {
   return t(`${slot} has nothing assigned, so it is sent as the person's first name. Choose what it should say.`, `${slot} no tiene nada asignado, así que se envía el nombre de la persona. Elige qué debe decir.`)
 }
 const unassignedSlots = computed(() => variableRows.value.map((v, i) => (!v.source || (v.source === 'text' && !(v.text ?? '').trim()) ? i + 1 : 0)).filter((n) => n > 0))
-function setVariable(i: number, patch: { source?: string; text?: string }) {
+function setVariable(i: number, patch: { source?: string; text?: string; fallback?: string }) {
   const next = [...variableRows.value.map((v) => ({ ...v }))]
   next[i] = { ...next[i]!, ...patch }
   if (next[i]!.source !== 'text') delete next[i]!.text
+  if (!next[i]!.source?.startsWith(ANSWER_PREFIX)) delete next[i]!.fallback
   set({ variables: next })
 }
 /** "{{1}}" -- built here because a literal "}}" ends a template interpolation. */
@@ -210,6 +211,18 @@ const isMarketingTemplate = computed(() => current.value?.category === 'MARKETIN
           </optgroup>
         </select>
         <input v-if="v.source === 'text'" :class="FIELD" :value="v.text ?? ''" :placeholder="t('Fixed value', 'Valor fijo')" @input="setVariable(i, { text: ($event.target as HTMLInputElement).value })" />
+        <!-- A lead who skipped the question still gets the message: an empty
+        variable makes Meta refuse the whole thing. -->
+        <input
+          v-if="v.source?.startsWith(ANSWER_PREFIX)"
+          :class="FIELD"
+          :value="v.fallback ?? ''"
+          :placeholder="t(`If unanswered: ${DEFAULT_ANSWER_FALLBACK}`, `Si no respondió: ${DEFAULT_ANSWER_FALLBACK}`)"
+          :aria-label="t(`Variable ${i + 1} if they did not answer`, `Variable ${i + 1} si no respondió`)"
+          :title="t('Sent when the lead left this question blank', 'Se envía si el lead dejó esta pregunta en blanco')"
+          data-test="answer-fallback"
+          @input="setVariable(i, { fallback: ($event.target as HTMLInputElement).value })"
+        />
         <button v-if="!current" type="button" :class="REMOVE_BTN" :aria-label="t('Remove variable', 'Quitar variable')" @click="removeVariable(i)">✕</button>
       </div>
       <!-- An empty slot is not left empty: the sender fills it with the first

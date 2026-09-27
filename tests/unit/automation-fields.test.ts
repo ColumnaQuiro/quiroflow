@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { answerKey, automationFieldValue, leadAnswersFromEvents } from '../../utils/automationFields'
+import { answerKey, automationFieldValue, DEFAULT_ANSWER_FALLBACK, leadAnswersFromEvents, withAnswerFallback } from '../../utils/automationFields'
 
 const laura = { firstName: 'Laura', lastName: 'Gómez', email: 'laura@example.test' }
 const at = '2026-10-02T08:30:00Z'
@@ -60,5 +60,24 @@ describe('Lead form answers as merge fields', () => {
     expect(automationFieldValue(laura, 'answer_presupuesto', { leadAnswers })).toBe('')
     expect(automationFieldValue(laura, 'answer_horario_preferido', {})).toBe('')
     expect(automationFieldValue(laura, 'answer_horario_preferido')).toBe('')
+  })
+})
+
+describe('A form answer the lead left blank', () => {
+  const key = 'answer_cual_seria_el_motivo_de_tu_consulta'
+  it('sends the answer when there is one', () => {
+    expect(withAnswerFallback(key, 'Cervicales', 'tu dolor')).toBe('Cervicales')
+  })
+  it('sends the step\'s fallback, else a default -- never an empty parameter Meta would refuse', () => {
+    expect(withAnswerFallback(key, '', 'tu dolor')).toBe('tu dolor')
+    expect(withAnswerFallback(key, '   ', '  ')).toBe(DEFAULT_ANSWER_FALLBACK)
+    expect(withAnswerFallback(key, '', undefined)).toBe('tu consulta')
+    // Resolved from a lead who answered other questions, not this one.
+    const value = automationFieldValue({ firstName: 'Ana', lastName: null, email: null }, key, { leadAnswers: [{ question: '¿Vives en Valencia?', answer: 'si' }] })
+    expect(withAnswerFallback(key, value, null)).toBe('tu consulta')
+  })
+  it('leaves every other kind of variable alone', () => {
+    expect(withAnswerFallback('first_name', '', 'x')).toBe('')
+    expect(withAnswerFallback('text', '', 'x')).toBe('')
   })
 })

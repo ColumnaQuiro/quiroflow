@@ -28,11 +28,15 @@ const appointments = ref<AppointmentRow[]>([])
 const patients = ref<PatientRow[]>([])
 const teamMembers = ref<TeamMemberRow[]>([])
 
+// A range picked while this is in flight starts another run; only the latest
+// may write, or a slow earlier answer lands over the newer one.
+let run = 0
 async function load() {
+  const mine = ++run
   loading.value = true
   const { from, to } = rangeBounds(range.value)
 
-  const [p, inv, tm] = await Promise.all([
+  const [p, inv] = await Promise.all([
     fetchAllRows<PaymentRow>((f, t) =>
       supabase
         .from('payments')
@@ -42,49 +46,53 @@ async function load() {
         .range(f, t),
     ),
     fetchAllRows<InvoiceRow>((f, t) => supabase.from('invoices').select('id, appointment_id').neq('status', 'void').gte('created_at', from.toISOString()).lte('created_at', to.toISOString()).range(f, t)),
-    supabase.from('team_members').select('id, full_name, color').then((r) => r.data ?? []),
   ])
+  if (mine !== run) return
   // The void rule moved out of the query when the join went from inner to
   // left: a payment with no invoice has nothing to void and must survive it.
   const notVoid = (row: PaymentRow) => row.invoices?.status !== 'void'
   // Credit and write-off rows settle an invoice without money arriving, and
   // this figure is money -- see utils/paymentReceipts. Dropped here rather
   // than at each total, because every number on this widget is takings.
-  payments.value = p.filter((row) => notVoid(row) && isReceipt(row.method))
-  invoices.value = inv
-  teamMembers.value = tm
+  const inRangePayments = p.filter((row) => notVoid(row) && isReceipt(row.method))
 
   // practitionerFor() resolves every payment through its invoice's
   // appointment, so unlike the other reports this page always needs the
   // appointment map -- but only for the invoices actually in range, not the
   // entire appointments table.
-  await Promise.all([loadAppointmentsFor(inv), loadPatientsFor(payments.value)])
+  const [appts, pats] = await Promise.all([fetchAppointmentsFor(inv), fetchPatientsFor(inRangePayments)])
+  if (mine !== run) return
+  // All at once, so the chart never draws this range's money against the
+  // last range's appointments.
+  payments.value = inRangePayments
+  invoices.value = inv
+  appointments.value = appts
+  patients.value = pats
   loading.value = false
 }
 
-async function loadAppointmentsFor(inRangeInvoices: InvoiceRow[]) {
+async function fetchAppointmentsFor(inRangeInvoices: InvoiceRow[]) {
   const ids = [...new Set(inRangeInvoices.map((i) => i.appointment_id).filter((id): id is string => !!id))]
-  if (ids.length === 0) {
-    appointments.value = []
-    return
-  }
   // Postgrest puts `in` lists in the URL, so long ranges get chunked.
-  appointments.value = await fetchByIds<AppointmentRow>(ids, (chunk) => supabase.from('appointments').select('id, practitioner_id, clinic_id').in('id', chunk))
+  return fetchByIds<AppointmentRow>(ids, (chunk) => supabase.from('appointments').select('id, practitioner_id, clinic_id').in('id', chunk))
 }
 // The patients behind the payments in range -- the answer for money with no
 // appointment, which is most of what a bono or credit on account produces.
-async function loadPatientsFor(inRangePayments: PaymentRow[]) {
+async function fetchPatientsFor(inRangePayments: PaymentRow[]) {
   const ids = [...new Set(inRangePayments.map((p) => p.patient_id).filter((id): id is string => !!id))]
-  if (ids.length === 0) {
-    patients.value = []
-    return
-  }
-  patients.value = await fetchByIds<PatientRow>(ids, (chunk) => supabase.from('patients').select('id, default_practitioner_id, clinic_id').in('id', chunk))
+  return fetchByIds<PatientRow>(ids, (chunk) => supabase.from('patients').select('id, default_practitioner_id, clinic_id').in('id', chunk))
 }
 
 onMounted(() => {
   load()
   loadFilterOptions()
+  // Not tied to the range, so not refetched with it.
+  supabase
+    .from('team_members')
+    .select('id, full_name, color')
+    .then((r) => {
+      teamMembers.value = r.data ?? []
+    })
 })
 watch(range, load)
 
@@ -181,27 +189,21 @@ const totalsByPractitioner = computed(() => series.value.map((s) => ({ label: s.
         <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" :locked-to="reportsPractitionerId" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
       </div>
 
-      <div v-if="loading" class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
-        <UiSkeleton class="h-4 w-56 rounded-ctlSm" />
-        <UiSkeleton class="mt-3 h-80 w-full rounded-ctl" />
-      </div>
-      <div v-else-if="filteredPayments.length === 0" class="mt-6 rounded-card border border-dashed border-line-control bg-surface p-6 text-center text-[13px] text-ink-faint2">
+      <div v-if="!loading && filteredPayments.length === 0" class="mt-6 rounded-card border border-dashed border-line-control bg-surface p-6 text-center text-[13px] text-ink-faint2">
         {{ t('No payments recorded yet — this fills in once receipts are being paid.', 'Todavía no hay pagos registrados — esto se completará en cuanto se paguen recibos.') }}
       </div>
       <template v-else>
-        <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
-          <h3 class="text-[13.5px] font-semibold text-ink-800">{{ t('Revenue by practitioner, by month', 'Ingresos por profesional, por mes') }}</h3>
+        <ReportsModule class="mt-4" :title="t('Revenue by practitioner, by month', 'Ingresos por profesional, por mes')" :loading="loading" chart-height="h-80">
           <div class="mt-3 h-80"><Line :data="chartData" :options="chartOptions" /></div>
-        </div>
-        <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
-          <h3 class="text-[13.5px] font-semibold text-ink-800">{{ t('Total over range', 'Total del periodo') }}</h3>
+        </ReportsModule>
+        <ReportsModule class="mt-4" :title="t('Total over range', 'Total del periodo')" :loading="loading" skeleton="list" :rows="3">
           <ul class="mt-2 space-y-1.5 text-[13px]">
             <li v-for="row in totalsByPractitioner" :key="row.label" class="flex items-center justify-between">
               <span class="text-ink-600">{{ row.label }}</span>
               <span class="font-mono font-medium text-ink-900">{{ formatEurFromAmount(row.total) }}</span>
             </li>
           </ul>
-        </div>
+        </ReportsModule>
       </template>
     </div>
   </div>

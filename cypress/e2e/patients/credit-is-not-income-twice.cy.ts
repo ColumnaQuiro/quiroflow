@@ -46,7 +46,7 @@ describe('Credit spent is not counted as income', () => {
 
         cy.login(account.email, account.password)
         cy.visit('/reports/income')
-        cy.contains('Total paid').should('be.visible')
+        cy.get('[data-test=income-total-paid]').should('be.visible')
 
         // The space before the € is U+00A0 -- formatEur is es-ES, and neither
         // have.text nor contain.text normalises whitespace, so a plain space
@@ -66,7 +66,7 @@ describe('Credit spent is not counted as income', () => {
 
         cy.login(account.email, account.password)
         cy.visit('/reports/income')
-        cy.contains('Total paid').should('be.visible')
+        cy.get('[data-test=income-total-paid]').should('be.visible')
 
         cy.get('[data-test="income-total-paid"]').should('have.text', '110,00 €')
         cy.contains('p', 'settled from credit on account').should('be.visible').and('contain.text', '55,00 €')
@@ -82,7 +82,7 @@ describe('Credit spent is not counted as income', () => {
 
         cy.login(account.email, account.password)
         cy.visit('/reports/income')
-        cy.contains('Total paid').should('be.visible')
+        cy.get('[data-test=income-total-paid]').should('be.visible')
 
         cy.get('[data-test="income-total-paid"]').should('have.text', '40,00 €')
       })
@@ -101,7 +101,7 @@ describe('Credit spent is not counted as income', () => {
 
           cy.login(account.email, account.password)
           cy.visit('/reports/daily-transactions')
-          cy.contains('Net collected').should('be.visible')
+          cy.get('[data-test=daily-net-collected]').should('be.visible')
 
           cy.get('[data-test="daily-net-collected"]').should('have.text', '115,00 €')
           cy.contains('Credit applied').should('be.visible')
@@ -119,7 +119,7 @@ describe('Credit spent is not counted as income', () => {
 
           cy.login(account.email, account.password)
           cy.visit('/reports/daily-transactions')
-          cy.contains('Net collected').should('be.visible')
+          cy.get('[data-test=daily-net-collected]').should('be.visible')
 
           cy.contains('td', 'Credit on account').should('be.visible')
           cy.contains('td', 'credit').should('not.exist')

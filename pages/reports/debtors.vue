@@ -114,54 +114,50 @@ function patientName(id: string) {
     <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
       <p class="text-[13px] text-ink-muted2">{{ t('Includes any Stripe autopay charge that failed.', 'Incluye cualquier cobro automático de Stripe que haya fallado.') }}</p>
 
-      <div v-if="loading">
-        <div class="mt-4 space-y-1.5 rounded-card border border-line bg-surface p-4 shadow-card">
-          <UiSkeleton class="h-[23px] w-24 rounded-ctlSm" />
-          <UiSkeleton class="h-3 w-48 rounded-ctlSm" />
-        </div>
-        <div class="mt-4 space-y-3 overflow-hidden rounded-card border border-line bg-surface p-4 shadow-card">
-          <UiSkeleton v-for="i in 4" :key="i" class="h-3.5 w-full rounded-ctlSm" />
-        </div>
-      </div>
-      <template v-else>
-        <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
+      <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card" :aria-busy="loading || undefined">
+        <template v-if="loading">
+          <div class="flex items-center font-mono text-[23px]" aria-hidden="true">&#8203;<UiSkeleton class="h-[23px] w-24 rounded-ctlSm" /></div>
+          <p class="text-[12px] text-ink-muted2">{{ t('Total outstanding', 'Total pendiente') }}</p>
+        </template>
+        <template v-else>
           <p class="font-mono text-[23px] font-semibold text-ink-900">{{ formatEur(totalOwed) }}</p>
           <p class="text-[12px] text-ink-muted2">{{ t(`Total outstanding across ${debtors.length} purchase(s)`, `Total pendiente en ${debtors.length} compra(s)`) }}</p>
-        </div>
+        </template>
+      </div>
 
-        <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
-          <table class="w-full text-[13px]">
-            <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">
-              <tr>
-                <th class="px-4 py-2">{{ t('Patient', 'Paciente') }}</th>
-                <th class="px-4 py-2">{{ t('Package', 'Paquete') }}</th>
-                <th class="px-4 py-2">{{ t('Purchased', 'Comprado') }}</th>
-                <th class="px-4 py-2">{{ t('Amount owed', 'Importe adeudado') }}</th>
-                <th class="px-4 py-2">{{ t('Status', 'Estado') }}</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-line-row">
-              <tr v-if="debtors.length === 0">
-                <td colspan="5" class="px-4 py-6 text-center text-ink-faint2">{{ t("No debtors — everyone's paid up.", 'Sin deudores: todo el mundo ha pagado.') }}</td>
-              </tr>
-              <tr v-for="p in debtors" :key="p.id">
-                <td class="px-4 py-2.5 text-ink-900">
-                  <NuxtLink :to="`/patients/${p.patient_id}`" class="hover:text-brand-text">{{ patientName(p.patient_id) }}</NuxtLink>
-                </td>
-                <td class="px-4 py-2.5 text-ink-muted2">{{ p.package_name }}</td>
-                <td class="px-4 py-2.5 text-ink-muted2">{{ new Date(p.purchased_at).toLocaleDateString() }}</td>
-                <td class="px-4 py-2.5 font-mono text-ink-900">{{ formatEur(owedCentsFor(p)) }}</td>
-                <td class="px-4 py-2.5">
-                  <span v-if="schedulesByPurchase.get(p.id)" class="rounded-pill bg-danger-bg px-1.5 py-0.5 text-[11px] font-medium text-danger-text">{{ t('stripe charge failed', 'cobro de stripe fallido') }}</span>
-                  <span v-else class="rounded-pill px-1.5 py-0.5 text-[11px] font-medium" :class="p.invoice_id ? 'bg-danger-bg text-danger-text' : 'bg-chip-bg text-chip-text'">
-                    {{ p.invoice_id ? (invoicesById.get(p.invoice_id)?.status ?? t('unknown', 'desconocido')) : t('no receipt', 'sin recibo') }}
-                  </span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </template>
+      <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
+        <table class="w-full text-[13px]">
+          <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">
+            <tr>
+              <th class="px-4 py-2">{{ t('Patient', 'Paciente') }}</th>
+              <th class="px-4 py-2">{{ t('Package', 'Paquete') }}</th>
+              <th class="px-4 py-2">{{ t('Purchased', 'Comprado') }}</th>
+              <th class="px-4 py-2">{{ t('Amount owed', 'Importe adeudado') }}</th>
+              <th class="px-4 py-2">{{ t('Status', 'Estado') }}</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-line-row">
+            <ReportsTableSkeletonRows v-if="loading" :cols="5" />
+            <tr v-else-if="debtors.length === 0">
+              <td colspan="5" class="px-4 py-6 text-center text-ink-faint2">{{ t("No debtors — everyone's paid up.", 'Sin deudores: todo el mundo ha pagado.') }}</td>
+            </tr>
+            <tr v-for="p in loading ? [] : debtors" :key="p.id">
+              <td class="px-4 py-2.5 text-ink-900">
+                <NuxtLink :to="`/patients/${p.patient_id}`" class="hover:text-brand-text">{{ patientName(p.patient_id) }}</NuxtLink>
+              </td>
+              <td class="px-4 py-2.5 text-ink-muted2">{{ p.package_name }}</td>
+              <td class="px-4 py-2.5 text-ink-muted2">{{ new Date(p.purchased_at).toLocaleDateString() }}</td>
+              <td class="px-4 py-2.5 font-mono text-ink-900">{{ formatEur(owedCentsFor(p)) }}</td>
+              <td class="px-4 py-2.5">
+                <span v-if="schedulesByPurchase.get(p.id)" class="rounded-pill bg-danger-bg px-1.5 py-0.5 text-[11px] font-medium text-danger-text">{{ t('stripe charge failed', 'cobro de stripe fallido') }}</span>
+                <span v-else class="rounded-pill px-1.5 py-0.5 text-[11px] font-medium" :class="p.invoice_id ? 'bg-danger-bg text-danger-text' : 'bg-chip-bg text-chip-text'">
+                  {{ p.invoice_id ? (invoicesById.get(p.invoice_id)?.status ?? t('unknown', 'desconocido')) : t('no receipt', 'sin recibo') }}
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 </template>

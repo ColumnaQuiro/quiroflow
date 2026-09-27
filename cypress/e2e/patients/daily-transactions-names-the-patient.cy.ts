@@ -35,7 +35,7 @@ describe('The day sheet attributes every row', () => {
 
         cy.login(account.email, account.password)
         cy.visit('/reports/daily-transactions')
-        cy.contains('Net collected').should('be.visible')
+        cy.get('[data-test=daily-net-collected]').should('be.visible')
 
         cy.contains('td', 'Amparo Bonos')
           .should('be.visible')
@@ -85,7 +85,7 @@ describe('The day sheet attributes every row', () => {
 
             cy.login(account.email, account.password)
             cy.visit('/reports/daily-transactions')
-            cy.contains('Net collected').should('be.visible')
+            cy.get('[data-test=daily-net-collected]').should('be.visible')
 
             // No filter touched. This is the page as it opens.
             cy.contains('tr', 'Nuria Visita').within(() => {
@@ -137,7 +137,7 @@ describe('The day sheet attributes every row', () => {
 
           cy.login(account.email, account.password)
           cy.visit('/reports/daily-transactions')
-          cy.contains('Net collected').should('be.visible')
+          cy.get('[data-test=daily-net-collected]').should('be.visible')
 
           cy.contains('tr', 'F-9100').should('contain.text', 'Visit')
           // The one with no receipt is the one the question was about. It is
@@ -171,7 +171,7 @@ describe('The day sheet attributes every row', () => {
 
         cy.login(account.email, account.password)
         cy.visit('/reports/daily-transactions')
-        cy.contains('Net collected').should('be.visible')
+        cy.get('[data-test=daily-net-collected]').should('be.visible')
 
         cy.contains('tr', 'Bono Sinvisita').should('contain.text', 'Test Owner').and('not.contain.text', 'Unassigned')
 
@@ -194,7 +194,7 @@ describe('The day sheet attributes every row', () => {
 
         cy.login(account.email, account.password)
         cy.visit('/reports/daily-transactions')
-        cy.contains('Net collected').should('be.visible')
+        cy.get('[data-test=daily-net-collected]').should('be.visible')
 
         cy.contains('tr', 'Nadie Suyo').should('contain.text', 'Unassigned')
       })
@@ -216,7 +216,7 @@ describe('The day sheet attributes every row', () => {
 
         cy.login(account.email, account.password)
         cy.visit('/reports/daily-transactions')
-        cy.contains('Net collected').should('be.visible')
+        cy.get('[data-test=daily-net-collected]').should('be.visible')
 
         cy.contains('tr', 'Sin Concepto').within(() => {
           for (const label of ['Visit', 'Bono', 'Membership', 'On account']) {

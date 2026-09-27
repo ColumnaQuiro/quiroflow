@@ -67,6 +67,14 @@ onMounted(async () => {
   loading.value = false
 })
 
+// The three headline figures. Their labels are on screen from the first
+// paint; only the numbers wait for the data.
+const tiles = computed(() => [
+  { key: 'active', label: t('Active memberships', 'Membresías activas'), value: String(active.value.length), danger: false },
+  { key: 'revenue', label: t('Revenue this month (paid)', 'Ingresos este mes (pagado)'), value: formatEur(monthlyRevenue.value), danger: false },
+  { key: 'failed', label: t('Failed payments (all time)', 'Pagos fallidos (histórico)'), value: String(failedPayments.value.length), danger: failedPayments.value.length > 0 },
+])
+
 function patientName(id: string) {
   const p = patientsById.value.get(id)
   return p ? `${p.first_name} ${p.last_name}` : '—'
@@ -96,73 +104,54 @@ function lastPayment(membershipId: string) {
     <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
       <p class="text-[13px] text-ink-muted2">{{ t('Manual and Stripe autopay combined.', 'Combina pagos manuales y cobro automático de Stripe.') }}</p>
 
-      <div v-if="loading">
-        <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div v-for="i in 3" :key="i" class="space-y-2 rounded-card border border-line bg-surface p-4 shadow-card">
-            <UiSkeleton class="h-[23px] w-16 rounded-ctlSm" />
-            <UiSkeleton class="h-3 w-32 rounded-ctlSm" />
-          </div>
-        </div>
-        <div class="mt-4 space-y-3 overflow-hidden rounded-card border border-line bg-surface p-4 shadow-card">
-          <UiSkeleton v-for="i in 4" :key="i" class="h-3.5 w-full rounded-ctlSm" />
+      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div v-for="tile in tiles" :key="tile.key" class="rounded-card border border-line bg-surface p-4 shadow-card" :aria-busy="loading || undefined">
+          <div v-if="loading" class="flex items-center font-mono text-[23px]" aria-hidden="true">&#8203;<UiSkeleton class="h-[23px] w-16 rounded-ctlSm" /></div>
+          <p v-else class="font-mono text-[23px] font-semibold" :class="tile.danger ? 'text-danger-text' : 'text-ink-900'">{{ tile.value }}</p>
+          <p class="text-[12px] text-ink-muted2">{{ tile.label }}</p>
         </div>
       </div>
-      <template v-else>
-        <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-            <p class="font-mono text-[23px] font-semibold text-ink-900">{{ active.length }}</p>
-            <p class="text-[12px] text-ink-muted2">{{ t('Active memberships', 'Membresías activas') }}</p>
-          </div>
-          <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-            <p class="font-mono text-[23px] font-semibold text-ink-900">{{ formatEur(monthlyRevenue) }}</p>
-            <p class="text-[12px] text-ink-muted2">{{ t('Revenue this month (paid)', 'Ingresos este mes (pagado)') }}</p>
-          </div>
-          <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-            <p class="font-mono text-[23px] font-semibold" :class="failedPayments.length > 0 ? 'text-danger-text' : 'text-ink-900'">{{ failedPayments.length }}</p>
-            <p class="text-[12px] text-ink-muted2">{{ t('Failed payments (all time)', 'Pagos fallidos (histórico)') }}</p>
-          </div>
-        </div>
 
-        <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
-          <table class="w-full text-[13px]">
-            <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">
-              <tr>
-                <th class="px-4 py-2">{{ t('Patient', 'Paciente') }}</th>
-                <th class="px-4 py-2">{{ t('Plan', 'Plan') }}</th>
-                <th class="px-4 py-2">{{ t('Status', 'Estado') }}</th>
-                <th class="px-4 py-2">{{ t('Started', 'Inicio') }}</th>
-                <th class="px-4 py-2">{{ t('Last payment', 'Último pago') }}</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-line-row">
-              <tr v-if="memberships.length === 0">
-                <td colspan="5" class="px-4 py-6 text-center text-ink-faint2">{{ t('No memberships yet.', 'Todavía no hay membresías.') }}</td>
-              </tr>
-              <tr v-for="m in memberships" :key="m.id">
-                <td class="px-4 py-2.5 text-ink-900">
-                  <NuxtLink :to="`/patients/${m.patient_id}`" class="hover:text-brand-text">{{ patientName(m.patient_id) }}</NuxtLink>
-                </td>
-                <td class="px-4 py-2.5 text-ink-muted2">{{ m.membership_name }}</td>
-                <td class="px-4 py-2.5">
-                  <span
-                    class="rounded-pill px-1.5 py-0.5 text-[11px] font-medium"
-                    :class="{ active: 'bg-success-bg text-success-text', paused: 'bg-warning-bg text-warning-text', cancelled: 'bg-chip-bg text-chip-text' }[m.status]"
-                  >
-                    {{ m.status }}
-                  </span>
-                </td>
-                <td class="px-4 py-2.5 text-ink-muted2">{{ new Date(m.started_at).toLocaleDateString() }}</td>
-                <td class="px-4 py-2.5">
-                  <span v-if="lastPayment(m.id)" class="rounded-pill px-1.5 py-0.5 text-[11px] font-medium" :class="lastPayment(m.id)!.status === 'paid' ? 'bg-success-bg text-success-text' : 'bg-danger-bg text-danger-text'">
-                    {{ lastPayment(m.id)!.period_start }}: {{ lastPayment(m.id)!.status }}
-                  </span>
-                  <span v-else class="text-[12px] text-ink-faint2">—</span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </template>
+      <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
+        <table class="w-full text-[13px]">
+          <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">
+            <tr>
+              <th class="px-4 py-2">{{ t('Patient', 'Paciente') }}</th>
+              <th class="px-4 py-2">{{ t('Plan', 'Plan') }}</th>
+              <th class="px-4 py-2">{{ t('Status', 'Estado') }}</th>
+              <th class="px-4 py-2">{{ t('Started', 'Inicio') }}</th>
+              <th class="px-4 py-2">{{ t('Last payment', 'Último pago') }}</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-line-row">
+            <ReportsTableSkeletonRows v-if="loading" :cols="5" />
+            <tr v-else-if="memberships.length === 0">
+              <td colspan="5" class="px-4 py-6 text-center text-ink-faint2">{{ t('No memberships yet.', 'Todavía no hay membresías.') }}</td>
+            </tr>
+            <tr v-for="m in loading ? [] : memberships" :key="m.id">
+              <td class="px-4 py-2.5 text-ink-900">
+                <NuxtLink :to="`/patients/${m.patient_id}`" class="hover:text-brand-text">{{ patientName(m.patient_id) }}</NuxtLink>
+              </td>
+              <td class="px-4 py-2.5 text-ink-muted2">{{ m.membership_name }}</td>
+              <td class="px-4 py-2.5">
+                <span
+                  class="rounded-pill px-1.5 py-0.5 text-[11px] font-medium"
+                  :class="{ active: 'bg-success-bg text-success-text', paused: 'bg-warning-bg text-warning-text', cancelled: 'bg-chip-bg text-chip-text' }[m.status]"
+                >
+                  {{ m.status }}
+                </span>
+              </td>
+              <td class="px-4 py-2.5 text-ink-muted2">{{ new Date(m.started_at).toLocaleDateString() }}</td>
+              <td class="px-4 py-2.5">
+                <span v-if="lastPayment(m.id)" class="rounded-pill px-1.5 py-0.5 text-[11px] font-medium" :class="lastPayment(m.id)!.status === 'paid' ? 'bg-success-bg text-success-text' : 'bg-danger-bg text-danger-text'">
+                  {{ lastPayment(m.id)!.period_start }}: {{ lastPayment(m.id)!.status }}
+                </span>
+                <span v-else class="text-[12px] text-ink-faint2">—</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 </template>

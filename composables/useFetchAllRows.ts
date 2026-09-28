@@ -17,25 +17,41 @@
 // A short page means the end of the table, so anything requested past it in
 // the same wave comes back empty and is ignored -- worst case CONCURRENCY-1
 // wasted requests once per call, which is cheap next to the latency saved.
-export async function fetchAllRows<T>(build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: any }>): Promise<T[]> {
+//
+// `total`, when a caller can give it, is a head-only count of the same query
+// sent alongside the first page. Knowing how many rows there are lets every
+// remaining page go out in ONE wave instead of waves of four: the whole
+// appointments table (9,000 rows) arrives in two round-trips rather than
+// four. It only decides how many pages to ask for at once -- the rows are
+// still read until a short page, exactly as without it, so a count that is
+// off (a row added in between, a count that failed) costs a wave, never a
+// row.
+export async function fetchAllRows<T>(
+  build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: any }>,
+  opts: { total?: PromiseLike<{ count: number | null }> } = {},
+): Promise<T[]> {
   const PAGE_SIZE = 1000
   const CONCURRENCY = 4
   const all: T[] = []
 
-  const { data: firstPage, error: firstError } = await build(0, PAGE_SIZE - 1)
+  const [{ data: firstPage, error: firstError }, counted] = await Promise.all([build(0, PAGE_SIZE - 1), opts.total ?? Promise.resolve(null)])
   if (firstError) throw firstError
   if (!firstPage || firstPage.length === 0) return all
   all.push(...firstPage)
   if (firstPage.length < PAGE_SIZE) return all
 
+  // Pages still to fetch after the first, if the count says; else the usual wave.
+  const known = counted?.count != null ? Math.ceil(counted.count / PAGE_SIZE) - 1 : 0
+  let next = 1
   for (let wave = 0; ; wave++) {
+    const size = wave === 0 && known > 0 ? known : CONCURRENCY
     const pages = await Promise.all(
-      Array.from({ length: CONCURRENCY }, (_unused, i) => {
-        // +1 because the first page is already in `all`.
-        const from = (wave * CONCURRENCY + i + 1) * PAGE_SIZE
+      Array.from({ length: size }, (_unused, i) => {
+        const from = (next + i) * PAGE_SIZE
         return build(from, from + PAGE_SIZE - 1)
       }),
     )
+    next += size
 
     for (const { data, error } of pages) {
       if (error) throw error

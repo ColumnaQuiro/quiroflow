@@ -27,8 +27,9 @@ async function load() {
   const needsInvoices = !!props.practitionerId || !!props.clinicId
 
   const [completed, p, inv] = await Promise.all([
-    fetchAllRows<ApptRow>((f, t) =>
-      supabase.from('appointments').select('id, patient_id, starts_at, practitioner_id, clinic_id').eq('status', 'completed').range(f, t),
+    fetchAllRows<ApptRow>(
+      (f, t) => supabase.from('appointments').select('id, patient_id, starts_at, practitioner_id, clinic_id').eq('status', 'completed').range(f, t),
+      { total: supabase.from('appointments').select('id', { count: 'exact', head: true }).eq('status', 'completed') },
     ),
     fetchAllRows<PaymentRow>((f, t) =>
       supabase
@@ -39,7 +40,10 @@ async function load() {
         .range(f, t),
     ),
     needsInvoices
-      ? fetchAllRows<InvoiceRow>((f, t) => supabase.from('invoices').select('id, appointment_id').range(f, t))
+      ? fetchAllRows<InvoiceRow>(
+          (f, t) => supabase.from('invoices').select('id, appointment_id').range(f, t),
+          { total: supabase.from('invoices').select('id', { count: 'exact', head: true }) },
+        )
       : Promise.resolve([] as InvoiceRow[]),
   ])
   allCompleted.value = completed

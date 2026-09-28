@@ -2,11 +2,11 @@
 import { formatEur } from '~/utils/billing'
 import { isReceipt } from '~/utils/paymentReceipts'
 import { classifyPaymentForFilter } from '~/utils/incomeAttribution'
-import { fetchByIds } from '~/composables/useFetchAllRows'
 const props = defineProps<{ practitionerId?: string; clinicId?: string }>()
 
 const t = useT()
 const supabase = useSupabaseClient()
+const thisWeekAppointments = useThisWeekAppointments()
 const loading = ref(true)
 
 interface TypeCount { name: string; count: number }
@@ -23,21 +23,40 @@ async function load() {
   const { from: fromDate, to: toDate } = rangeBounds({ from, to })
   const now = new Date()
 
-  let apptQuery = supabase
-    .from('appointments')
-    .select('id, status, starts_at, appointment_types(name)')
-    .gte('starts_at', fromDate.toISOString())
-    .lte('starts_at', toDate.toISOString())
-  if (props.practitionerId) apptQuery = apptQuery.eq('practitioner_id', props.practitionerId)
-  if (props.clinicId) apptQuery = apptQuery.eq('clinic_id', props.clinicId)
-
-  const appointments = await fetchAllRows((f, t) => apptQuery.range(f, t))
+  // Left-joined, not inner: a payment with no invoice (money on account,
+  // possible since 0170) is still money taken this week, and an inner join
+  // would drop it. No invoice means nothing to void.
+  //
+  // Everything this widget reads in three requests side by side: the week's
+  // appointments (shared with the other this-week widgets), its payments and
+  // its invoices -- each carrying the visit and the patient whose money it
+  // is, and the invoices their line items. Those used to follow one after
+  // another, then a round of lookups by id for the practitioner filter, then
+  // the line items by invoice id: up to six round-trips in series.
+  type Who = { id: string; practitioner_id: string | null; clinic_id: string | null }
+  type Patient = { id: string; default_practitioner_id: string | null; clinic_id: string | null }
+  type PaymentRow = { amount_cents: number; method: string; patient_id: string | null; invoices: { status: string; appointment_id: string | null; appointments: Who | null } | null; patients: Patient | null }
+  type InvoiceRow = { id: string; appointment_id: string | null; patient_id: string | null; appointments: Who | null; patients: Patient | null; invoice_line_items: { price_cents: number; quantity: number }[] }
+  const [appointments, { data: paymentData }, { data: invoiceData }] = await Promise.all([
+    thisWeekAppointments(props.practitionerId, props.clinicId),
+    supabase
+      .from('payments')
+      .select('amount_cents, method, patient_id, invoices!payments_invoice_id_fkey(status, appointment_id, appointments!invoices_appointment_id_fkey(id, practitioner_id, clinic_id)), patients!payments_patient_id_fkey(id, default_practitioner_id, clinic_id)')
+      .gte('paid_at', fromDate.toISOString())
+      .lte('paid_at', toDate.toISOString()),
+    supabase
+      .from('invoices')
+      .select('id, appointment_id, patient_id, appointments!invoices_appointment_id_fkey(id, practitioner_id, clinic_id), patients!invoices_patient_id_fkey(id, default_practitioner_id, clinic_id), invoice_line_items(price_cents, quantity)')
+      .neq('status', 'void')
+      .gte('created_at', fromDate.toISOString())
+      .lte('created_at', toDate.toISOString()),
+  ])
 
   const typeCounts = new Map<string, number>()
   let remainingCount = 0
   let estimatedCount = 0
   let cancelledCount = 0
-  for (const appt of appointments as unknown as { status: string; starts_at: string; appointment_types: { name: string } | null }[]) {
+  for (const appt of appointments) {
     if (appt.status === 'cancelled') cancelledCount++
     if (appt.status === 'booked' || appt.status === 'completed') estimatedCount++
     if (appt.status === 'booked' && new Date(appt.starts_at) > now) remainingCount++
@@ -51,24 +70,8 @@ async function load() {
   estimated.value = estimatedCount
   cancellations.value = cancelledCount
 
-  // Left-joined, not inner: a payment with no invoice (money on account,
-  // possible since 0170) is still money taken this week, and an inner join
-  // would drop it. No invoice means nothing to void.
-  type PaymentRow = { amount_cents: number; method: string; patient_id: string | null; invoices: { status: string; appointment_id: string | null } | null }
-  type InvoiceRow = { id: string; appointment_id: string | null; patient_id: string | null }
-  const { data: paymentData } = await supabase
-    .from('payments')
-    .select('amount_cents, method, patient_id, invoices!payments_invoice_id_fkey(status, appointment_id)')
-    .gte('paid_at', fromDate.toISOString())
-    .lte('paid_at', toDate.toISOString())
-  const { data: invoiceData } = await supabase
-    .from('invoices')
-    .select('id, appointment_id, patient_id')
-    .neq('status', 'void')
-    .gte('created_at', fromDate.toISOString())
-    .lte('created_at', toDate.toISOString())
   let payments = (paymentData ?? []) as unknown as PaymentRow[]
-  let invoicesThisWeek = (invoiceData ?? []) as InvoiceRow[]
+  let invoicesThisWeek = (invoiceData ?? []) as unknown as InvoiceRow[]
 
   // The appointment counts above always honoured the practitioner filter;
   // the money below did not, so a practitioner's dashboard ("own" scope, or
@@ -76,14 +79,16 @@ async function load() {
   // takings. Attributed with the rule every income figure uses
   // (utils/incomeAttribution): the visit's practitioner, else the patient's.
   if (props.practitionerId || props.clinicId) {
-    const apptIds = [...new Set([...payments.map((p) => p.invoices?.appointment_id), ...invoicesThisWeek.map((i) => i.appointment_id)].filter((x): x is string => !!x))]
-    const patientIds = [...new Set([...payments.map((p) => p.patient_id), ...invoicesThisWeek.map((i) => i.patient_id)].filter((x): x is string => !!x))]
-    const [appts, pats] = await Promise.all([
-      fetchByIds<{ id: string; practitioner_id: string | null; clinic_id: string | null }>(apptIds, (chunk) => supabase.from('appointments').select('id, practitioner_id, clinic_id').in('id', chunk)),
-      fetchByIds<{ id: string; default_practitioner_id: string | null; clinic_id: string | null }>(patientIds, (chunk) => supabase.from('patients').select('id, default_practitioner_id, clinic_id').in('id', chunk)),
-    ])
-    const apptById = new Map(appts.map((a) => [a.id, a]))
-    const patientById = new Map(pats.map((p) => [p.id, p]))
+    const apptById = new Map<string, Who>()
+    const patientById = new Map<string, Patient>()
+    for (const p of payments) {
+      if (p.invoices?.appointments) apptById.set(p.invoices.appointments.id, p.invoices.appointments)
+      if (p.patients) patientById.set(p.patients.id, p.patients)
+    }
+    for (const i of invoicesThisWeek) {
+      if (i.appointments) apptById.set(i.appointments.id, i.appointments)
+      if (i.patients) patientById.set(i.patients.id, i.patients)
+    }
     const matches = (appointmentId: string | null | undefined, patientId: string | null) =>
       classifyPaymentForFilter({
         practitionerId: props.practitionerId,
@@ -101,13 +106,7 @@ async function load() {
     .filter((p) => isReceipt(p.method))
     .reduce((sum, p) => sum + p.amount_cents, 0)
 
-  const invoiceIds = invoicesThisWeek.map((i) => i.id)
-  if (invoiceIds.length > 0) {
-    const { data: lines } = await supabase.from('invoice_line_items').select('price_cents, quantity').in('invoice_id', invoiceIds)
-    serviceCents.value = (lines ?? []).reduce((sum, l) => sum + l.price_cents * l.quantity, 0)
-  } else {
-    serviceCents.value = 0
-  }
+  serviceCents.value = invoicesThisWeek.flatMap((i) => i.invoice_line_items).reduce((sum, l) => sum + l.price_cents * l.quantity, 0)
 
   loading.value = false
 }

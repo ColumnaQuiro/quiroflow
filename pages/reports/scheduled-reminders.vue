@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computePresetRange, rangeBounds } from '~/composables/useDateRangePresets'
-import { fetchAllRows, fetchByIds } from '~/composables/useFetchAllRows'
+import { fetchAllRows } from '~/composables/useFetchAllRows'
 
 const { can } = usePermission()
 const canReadMessages = computed(() => can('inbox_access'))
@@ -13,6 +13,7 @@ interface WhatsappMessageRow {
   error_code: string | null
   error_message: string | null
   created_at: string
+  patients: PatientName | null
 }
 interface AppointmentRow {
   id: string
@@ -20,8 +21,9 @@ interface AppointmentRow {
   starts_at: string
   confirmation_status: string | null
   status: string
+  patients: PatientName | null
 }
-interface PatientRow { id: string; first_name: string; last_name: string | null }
+interface PatientName { first_name: string; last_name: string | null }
 
 const supabase = useSupabaseClient()
 const t = useT()
@@ -39,13 +41,19 @@ const patientById = ref(new Map<string, string>())
 // Only the patients either card names. This used to download every patient in
 // the clinic -- thousands of rows, page by page -- to label a handful of
 // failed sends and upcoming confirmations.
-async function addPatientNames(ids: (string | null)[]) {
-  const missing = [...new Set(ids.filter((id): id is string => !!id && !patientById.value.has(id)))]
-  const rows = await fetchByIds<PatientRow>(missing, (chunk) => supabase.from('patients').select('id, first_name, last_name').in('id', chunk))
-  if (rows.length === 0) return
+// Names for the rows that show one, from the patient each row already
+// carries (embedded in its own query, rather than looked up by id in a
+// second round-trip). The same patients' row-level security applies: a
+// patient this person cannot see comes back without a name, as before.
+function addPatientNames(rows: { patient_id: string | null; patients: PatientName | null }[]) {
   const next = new Map(patientById.value)
-  for (const p of rows) next.set(p.id, `${p.first_name} ${p.last_name ?? ''}`.trim())
-  patientById.value = next
+  let added = false
+  for (const row of rows) {
+    if (!row.patient_id || !row.patients || next.has(row.patient_id)) continue
+    next.set(row.patient_id, `${row.patients.first_name} ${row.patients.last_name ?? ''}`.trim())
+    added = true
+  }
+  if (added) patientById.value = next
 }
 
 // Every row of this report comes from whatsapp_messages, which 0164 gates
@@ -65,13 +73,13 @@ async function loadMessages() {
   const msgs = await fetchAllRows<WhatsappMessageRow>((f, t) =>
     supabase
       .from('whatsapp_messages')
-      .select('id, patient_id, status, purpose, error_code, error_message, created_at')
+      .select('id, patient_id, status, purpose, error_code, error_message, created_at, patients(first_name, last_name)')
       .eq('direction', 'outbound')
       .gte('created_at', from.toISOString())
       .lte('created_at', to.toISOString())
       .range(f, t),
   )
-  await addPatientNames(msgs.filter((m) => m.status === 'failed').map((m) => m.patient_id))
+  addPatientNames(msgs.filter((m) => m.status === 'failed'))
   if (mine !== messagesRun) return
   messages.value = msgs
   messagesLoading.value = false
@@ -86,13 +94,13 @@ async function loadConfirmations() {
   const appts = await fetchAllRows<AppointmentRow>((f, t) =>
     supabase
       .from('appointments')
-      .select('id, patient_id, starts_at, confirmation_status, status')
+      .select('id, patient_id, starts_at, confirmation_status, status, patients(first_name, last_name)')
       .eq('status', 'booked')
       .gte('starts_at', new Date().toISOString())
       .not('confirmation_status', 'is', null)
       .range(f, t),
   )
-  await addPatientNames(appts.map((a) => a.patient_id))
+  addPatientNames(appts)
   appointments.value = appts
   confirmationsLoading.value = false
 }

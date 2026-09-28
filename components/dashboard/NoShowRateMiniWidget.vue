@@ -9,6 +9,7 @@ interface ApptRow { status: string }
 
 const t = useT()
 const supabase = useSupabaseClient()
+const thisWeekAppointments = useThisWeekAppointments()
 const loading = ref(true)
 const rate = ref<number | null>(null)
 const deltaPts = ref<number | null>(null)
@@ -34,7 +35,9 @@ async function load() {
   const now = new Date()
   const lastWeek = new Date(now)
   lastWeek.setDate(lastWeek.getDate() - 7)
-  const [thisWeekRows, lastWeekRows] = await Promise.all([fetchWeek(now), fetchWeek(lastWeek)])
+  // This week's rows are shared with the other this-week widgets; see
+  // useThisWeekAppointments.
+  const [thisWeekRows, lastWeekRows] = await Promise.all([thisWeekAppointments(props.practitionerId, props.clinicId), fetchWeek(lastWeek)])
   const thisRate = rateFor(thisWeekRows)
   const lastRate = rateFor(lastWeekRows)
   rate.value = thisRate

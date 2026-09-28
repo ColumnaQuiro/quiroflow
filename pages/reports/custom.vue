@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Bar, Line } from 'vue-chartjs'
 import { computePresetRange, monthKeysInRange, rangeBounds, type DateRange } from '~/composables/useDateRangePresets'
-import { fetchAllRows, fetchByIds } from '~/composables/useFetchAllRows'
+import { fetchAllRows } from '~/composables/useFetchAllRows'
 import { isReceipt } from '~/utils/paymentReceipts'
 
 // Deliberately not `Tables<'custom_reports'>` -- that type's `config: Json`
@@ -84,11 +84,6 @@ function monthKeyFor(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', year: '2-digit' })
 }
 
-// Postgrest puts `in` lists in the URL, so a wide date range's worth of
-// appointment ids gets chunked rather than sent as one oversized request.
-function fetchAppointmentsByIds(ids: string[]): Promise<{ id: string; practitioner_id: string | null }[]> {
-  return fetchByIds(ids, (chunk) => supabase.from('appointments').select('id, practitioner_id').in('id', chunk))
-}
 const WEEKDAY_LABELS = computed(() => [
   t('Mon', 'lun'),
   t('Tue', 'mar'),
@@ -104,15 +99,16 @@ async function run() {
   const { from, to } = rangeBounds(range.value)
 
   if (sourceKey.value === 'appointments') {
-    const list = await fetchAllRows((f, t) =>
-      supabase
-        .from('appointments')
-        .select('starts_at, status, practitioner_id, appointment_type_id')
-        .gte('starts_at', from.toISOString())
-        .lte('starts_at', to.toISOString())
-        .range(f, t),
-    )
-    const [{ data: members }, { data: types }] = await Promise.all([
+    // The names alongside the rows, not after them.
+    const [list, { data: members }, { data: types }] = await Promise.all([
+      fetchAllRows((f, t) =>
+        supabase
+          .from('appointments')
+          .select('starts_at, status, practitioner_id, appointment_type_id')
+          .gte('starts_at', from.toISOString())
+          .lte('starts_at', to.toISOString())
+          .range(f, t),
+      ),
       supabase.from('team_members').select('id, full_name'),
       supabase.from('appointment_types').select('id, name'),
     ])
@@ -145,22 +141,30 @@ async function run() {
     }
     rows.value = [...totals.entries()].map(([label, value]) => ({ label, value }))
   } else if (sourceKey.value === 'payments') {
+    // Only the practitioner grouping walks payment -> invoice -> appointment,
+    // so only it reads the invoices in range -- with each one's visit embedded,
+    // rather than looked up by id in another round afterwards. Month and
+    // method need neither.
+    type InvoiceWithVisit = { id: string; appointment_id: string | null; appointments: { id: string; practitioner_id: string | null } | null }
     const [payments, invoices, { data: members }] = await Promise.all([
       fetchAllRows((f, t) =>
         supabase.from('payments').select('amount_cents, method, paid_at, invoice_id').gte('paid_at', from.toISOString()).lte('paid_at', to.toISOString()).range(f, t),
       ),
-      fetchAllRows((f, t) => supabase.from('invoices').select('id, appointment_id').gte('created_at', from.toISOString()).lte('created_at', to.toISOString()).range(f, t)),
+      groupByKey.value === 'practitioner'
+        ? fetchAllRows<InvoiceWithVisit>(
+            (f, t) =>
+              supabase
+                .from('invoices')
+                .select('id, appointment_id, appointments!invoices_appointment_id_fkey(id, practitioner_id)')
+                .gte('created_at', from.toISOString())
+                .lte('created_at', to.toISOString())
+                .range(f, t) as unknown as PromiseLike<{ data: InvoiceWithVisit[] | null; error: unknown }>,
+          )
+        : Promise.resolve([] as InvoiceWithVisit[]),
       supabase.from('team_members').select('id, full_name'),
     ])
-    // Only the practitioner grouping walks payment -> invoice -> appointment,
-    // and even then only for invoices in range -- this used to page the whole
-    // appointments table on every run regardless of grouping.
-    const appointments =
-      groupByKey.value === 'practitioner'
-        ? await fetchAppointmentsByIds([...new Set(invoices.map((i: any) => i.appointment_id).filter((id: any): id is string => !!id))])
-        : []
     const invoiceById = new Map(invoices.map((i) => [i.id, i]))
-    const apptById = new Map(appointments.map((a) => [a.id, a]))
+    const apptById = new Map(invoices.filter((i) => i.appointments).map((i) => [i.appointments!.id, i.appointments!]))
     const memberById = new Map((members ?? []).map((m) => [m.id, m.full_name]))
     // Whatever this report is grouped by, the amounts are takings, so the
     // rows that only move money already taken are out -- see
@@ -188,10 +192,10 @@ async function run() {
     }
     rows.value = [...totals.entries()].map(([label, value]) => ({ label, value }))
   } else if (sourceKey.value === 'patients') {
-    const { data: patients } = await supabase
-      .from('patients')
-      .select('default_practitioner_id, recall_status, preferred_language, confirmation_channel')
-    const { data: members } = await supabase.from('team_members').select('id, full_name')
+    const [{ data: patients }, { data: members }] = await Promise.all([
+      supabase.from('patients').select('default_practitioner_id, recall_status, preferred_language, confirmation_channel'),
+      supabase.from('team_members').select('id, full_name'),
+    ])
     const memberById = new Map((members ?? []).map((m) => [m.id, m.full_name]))
     const list = patients ?? []
 

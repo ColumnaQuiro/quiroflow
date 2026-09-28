@@ -6279,6 +6279,7 @@ export type Database = {
       }
       get_my_bootstrap: { Args: never; Returns: Json }
       get_my_two_factor_gate: { Args: never; Returns: string }
+      inbox_unread_count: { Args: never; Returns: number }
       team_two_factor_status: {
         Args: { p_account_id: string }
         Returns: { team_member_id: string; enrolled: boolean }[]

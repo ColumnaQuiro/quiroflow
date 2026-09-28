@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { fetchByIds } from '~/composables/useFetchAllRows'
 import { formatEur } from '~/utils/billing'
 // eslint-disable-next-line no-unused-vars -- accepted for a consistent generic widget prop shape, not used here (source report has no filters)
 defineProps<{ dateRange?: unknown; practitionerId?: string; clinicId?: string }>()
@@ -14,28 +13,30 @@ const memberships = ref<MembershipRow[]>([])
 const payments = ref<PaymentRow[]>([])
 
 onMounted(async () => {
-  const { data: m } = await supabase.from('patient_memberships').select('id, status')
-  memberships.value = m ?? []
-  const ids = memberships.value.map((x) => x.id)
-
-  const [p, schedules] = await Promise.all([
-    fetchByIds<PaymentRow>(ids, (chunk) =>
-      supabase.from('membership_payments').select('patient_membership_id, period_start, amount_cents, status').in('patient_membership_id', chunk),
+  // One request: each membership with its own payments and its Stripe
+  // schedule's charges, rather than three more rounds by id after it.
+  type Row = MembershipRow & {
+    membership_payments: PaymentRow[]
+    payment_schedules: { patient_membership_id: string | null; stripe_payment_events: { period_start: string; amount_cents: number; status: string }[] }[]
+  }
+  const { data } = await supabase
+    .from('patient_memberships')
+    .select(
+      'id, status, membership_payments(patient_membership_id, period_start, amount_cents, status), payment_schedules!payment_schedules_patient_membership_id_fkey(patient_membership_id, stripe_payment_events(period_start, amount_cents, status))',
+    )
+  const rows = (data ?? []) as unknown as Row[]
+  memberships.value = rows.map((m) => ({ id: m.id, status: m.status }))
+  const stripeAsPayments: PaymentRow[] = rows.flatMap((m) =>
+    m.payment_schedules.flatMap((schedule) =>
+      schedule.stripe_payment_events.map((e) => ({
+        patient_membership_id: schedule.patient_membership_id ?? '',
+        period_start: e.period_start,
+        amount_cents: e.amount_cents,
+        status: e.status,
+      })),
     ),
-    fetchByIds(ids, (chunk) => supabase.from('payment_schedules').select('id, patient_membership_id').in('patient_membership_id', chunk)),
-  ])
-  const scheduleIds = schedules.map((s) => s.id)
-  const scheduleToMembership = new Map(schedules.map((s) => [s.id, s.patient_membership_id as string]))
-  const stripeEvents = await fetchByIds(scheduleIds, (chunk) =>
-    supabase.from('stripe_payment_events').select('payment_schedule_id, period_start, amount_cents, status').in('payment_schedule_id', chunk),
   )
-  const stripeAsPayments: PaymentRow[] = stripeEvents.map((e) => ({
-    patient_membership_id: scheduleToMembership.get(e.payment_schedule_id) ?? '',
-    period_start: e.period_start,
-    amount_cents: e.amount_cents,
-    status: e.status,
-  }))
-  payments.value = [...p, ...stripeAsPayments]
+  payments.value = [...rows.flatMap((m) => m.membership_payments), ...stripeAsPayments]
   loading.value = false
 })
 

@@ -3004,17 +3004,21 @@ async function passwordOnlyReads({ email, password }: { email: string; password:
   const client = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
   const { error: signInErr } = await client.auth.signInWithPassword({ email, password })
   if (signInErr) throw signInErr
-  const [{ data: teamMembers }, { data: clinics }, { data: bootstrap }, { data: gate }] = await Promise.all([
+  const [{ data: teamMembers }, { data: clinics }, { data: bootstrap }, { data: gate }, { data: inboxUnread }, { data: messages }] = await Promise.all([
     client.from('team_members').select('id'),
     client.from('clinics').select('id'),
     client.rpc('get_my_bootstrap'),
     client.rpc('get_my_two_factor_gate'),
+    client.rpc('inbox_unread_count' as never),
+    client.from('whatsapp_messages').select('id'),
   ])
   return {
     teamMembers: (teamMembers ?? []).length,
     clinics: (clinics ?? []).length,
     bootstrapTeamMember: (bootstrap as { team_member: unknown } | null)?.team_member ?? null,
     gate,
+    inboxUnread,
+    messages: (messages ?? []).length,
   }
 }
 

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { fetchByIds } from '~/composables/useFetchAllRows'
 import { formatEur } from '~/utils/billing'
 interface MembershipRow {
   id: string
@@ -26,43 +25,37 @@ const payments = ref<PaymentRow[]>([])
 const patientsById = ref<Map<string, PatientRow>>(new Map())
 
 onMounted(async () => {
-  const { data: m } = await supabase
+  // One request: each membership with its patient, its own payments and its
+  // Stripe schedule's charges. These were four more rounds after the
+  // memberships had loaded -- payments, patients and schedules by membership
+  // id, then the charges by schedule id -- each chunked into the URL.
+  type Row = MembershipRow & {
+    patients: PatientRow | null
+    membership_payments: PaymentRow[]
+    payment_schedules: { id: string; patient_membership_id: string | null; stripe_payment_events: { id: string; payment_schedule_id: string; period_start: string; amount_cents: number; status: string }[] }[]
+  }
+  const { data } = await supabase
     .from('patient_memberships')
-    .select('id, patient_id, membership_name, price_cents, status, started_at')
+    .select(
+      'id, patient_id, membership_name, price_cents, status, started_at, patients!patient_memberships_patient_id_fkey(id, first_name, last_name), membership_payments(id, patient_membership_id, period_start, amount_cents, status), payment_schedules!payment_schedules_patient_membership_id_fkey(id, patient_membership_id, stripe_payment_events(id, payment_schedule_id, period_start, amount_cents, status))',
+    )
     .order('started_at', { ascending: false })
-  memberships.value = m ?? []
+  const rows = (data ?? []) as unknown as Row[]
+  memberships.value = rows.map(({ patients: _patient, membership_payments: _payments, payment_schedules: _schedules, ...m }) => m)
+  patientsById.value = new Map(rows.filter((m) => m.patients).map((m) => [m.patients!.id, m.patients!]))
 
-  const ids = memberships.value.map((x) => x.id)
-  const patientIds = [...new Set(memberships.value.map((x) => x.patient_id))]
-
-  // Every membership in the account, so the id lists grow with the clinic --
-  // fetchByIds keeps each one inside what a URL can hold.
-  const [p, patients, schedules] = await Promise.all([
-    fetchByIds<PaymentRow>(ids, (chunk) =>
-      supabase.from('membership_payments').select('id, patient_membership_id, period_start, amount_cents, status').in('patient_membership_id', chunk),
+  const stripeAsPayments: PaymentRow[] = rows.flatMap((m) =>
+    m.payment_schedules.flatMap((schedule) =>
+      schedule.stripe_payment_events.map((e) => ({
+        id: `stripe-${e.id}`,
+        patient_membership_id: schedule.patient_membership_id ?? '',
+        period_start: e.period_start,
+        amount_cents: e.amount_cents,
+        status: e.status,
+      })),
     ),
-    fetchByIds(patientIds, (chunk) => supabase.from('patients').select('id, first_name, last_name').in('id', chunk)),
-    fetchByIds(ids, (chunk) => supabase.from('payment_schedules').select('id, patient_membership_id').in('patient_membership_id', chunk)),
-  ])
-  patientsById.value = new Map(patients.map((pt) => [pt.id, pt as PatientRow]))
-
-  const scheduleIds = schedules.map((s) => s.id)
-  const scheduleToMembership = new Map(schedules.map((s) => [s.id, s.patient_membership_id as string]))
-  const stripeEvents = await fetchByIds(scheduleIds, (chunk) =>
-    supabase.from('stripe_payment_events').select('id, payment_schedule_id, period_start, amount_cents, status').in('payment_schedule_id', chunk),
   )
-
-  // Merge manual (membership_payments) and Stripe-collected (stripe_payment_events)
-  // charges into one list so revenue/failure stats and the "last payment"
-  // column don't need to know which billing path produced each row.
-  const stripeAsPayments: PaymentRow[] = stripeEvents.map((e) => ({
-    id: `stripe-${e.id}`,
-    patient_membership_id: scheduleToMembership.get(e.payment_schedule_id) ?? '',
-    period_start: e.period_start,
-    amount_cents: e.amount_cents,
-    status: e.status,
-  }))
-  payments.value = [...p, ...stripeAsPayments]
+  payments.value = [...rows.flatMap((m) => m.membership_payments), ...stripeAsPayments]
 
   loading.value = false
 })

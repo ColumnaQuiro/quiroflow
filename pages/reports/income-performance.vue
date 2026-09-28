@@ -2,7 +2,7 @@
 import { formatEurFromAmount } from '~/utils/billing'
 import { Line } from 'vue-chartjs'
 import { computePresetRange, monthKeysInRange, rangeBounds } from '~/composables/useDateRangePresets'
-import { fetchAllRows, fetchByIds } from '~/composables/useFetchAllRows'
+import { fetchAllRows } from '~/composables/useFetchAllRows'
 import { isReceipt } from '~/utils/paymentReceipts'
 import { classifyPaymentForFilter, practitionerForPayment } from '~/utils/incomeAttribution'
 
@@ -36,16 +36,34 @@ async function load() {
   loading.value = true
   const { from, to } = rangeBounds(range.value)
 
+  // Two requests side by side, each carrying what attribution reads off it:
+  // the payments their patient (the answer for money with no visit behind
+  // it), the invoices their appointment (the answer for money that has one).
+  // Those lookups used to follow as two more rounds of id-list requests.
+  // Appointments are still reached only through the invoices in range, and
+  // patients only through the payments in range, as before.
+  type EmbeddedPayment = PaymentRow & { patients: PatientRow | null }
+  type EmbeddedInvoice = InvoiceRow & { appointments: AppointmentRow | null }
   const [p, inv] = await Promise.all([
-    fetchAllRows<PaymentRow>((f, t) =>
-      supabase
-        .from('payments')
-        .select('amount_cents, method, paid_at, invoice_id, patient_id, invoices!payments_invoice_id_fkey(status)')
-        .gte('paid_at', from.toISOString())
-        .lte('paid_at', to.toISOString())
-        .range(f, t),
+    fetchAllRows<EmbeddedPayment>(
+      (f, t) =>
+        supabase
+          .from('payments')
+          .select('amount_cents, method, paid_at, invoice_id, patient_id, invoices!payments_invoice_id_fkey(status), patients!payments_patient_id_fkey(id, default_practitioner_id, clinic_id)')
+          .gte('paid_at', from.toISOString())
+          .lte('paid_at', to.toISOString())
+          .range(f, t) as unknown as PromiseLike<{ data: EmbeddedPayment[] | null; error: unknown }>,
     ),
-    fetchAllRows<InvoiceRow>((f, t) => supabase.from('invoices').select('id, appointment_id').neq('status', 'void').gte('created_at', from.toISOString()).lte('created_at', to.toISOString()).range(f, t)),
+    fetchAllRows<EmbeddedInvoice>(
+      (f, t) =>
+        supabase
+          .from('invoices')
+          .select('id, appointment_id, appointments!invoices_appointment_id_fkey(id, practitioner_id, clinic_id)')
+          .neq('status', 'void')
+          .gte('created_at', from.toISOString())
+          .lte('created_at', to.toISOString())
+          .range(f, t) as unknown as PromiseLike<{ data: EmbeddedInvoice[] | null; error: unknown }>,
+    ),
   ])
   if (mine !== run) return
   // The void rule moved out of the query when the join went from inner to
@@ -56,31 +74,18 @@ async function load() {
   // than at each total, because every number on this widget is takings.
   const inRangePayments = p.filter((row) => notVoid(row) && isReceipt(row.method))
 
-  // practitionerFor() resolves every payment through its invoice's
-  // appointment, so unlike the other reports this page always needs the
-  // appointment map -- but only for the invoices actually in range, not the
-  // entire appointments table.
-  const [appts, pats] = await Promise.all([fetchAppointmentsFor(inv), fetchPatientsFor(inRangePayments)])
-  if (mine !== run) return
+  const appointmentById = new Map<string, AppointmentRow>()
+  for (const i of inv) if (i.appointments) appointmentById.set(i.appointments.id, i.appointments)
+  const patientById = new Map<string, PatientRow>()
+  for (const row of inRangePayments) if (row.patients) patientById.set(row.patients.id, row.patients)
+
   // All at once, so the chart never draws this range's money against the
   // last range's appointments.
-  payments.value = inRangePayments
-  invoices.value = inv
-  appointments.value = appts
-  patients.value = pats
+  payments.value = inRangePayments.map(({ patients: _patient, ...row }) => row)
+  invoices.value = inv.map(({ appointments: _appointment, ...row }) => row)
+  appointments.value = [...appointmentById.values()]
+  patients.value = [...patientById.values()]
   loading.value = false
-}
-
-async function fetchAppointmentsFor(inRangeInvoices: InvoiceRow[]) {
-  const ids = [...new Set(inRangeInvoices.map((i) => i.appointment_id).filter((id): id is string => !!id))]
-  // Postgrest puts `in` lists in the URL, so long ranges get chunked.
-  return fetchByIds<AppointmentRow>(ids, (chunk) => supabase.from('appointments').select('id, practitioner_id, clinic_id').in('id', chunk))
-}
-// The patients behind the payments in range -- the answer for money with no
-// appointment, which is most of what a bono or credit on account produces.
-async function fetchPatientsFor(inRangePayments: PaymentRow[]) {
-  const ids = [...new Set(inRangePayments.map((p) => p.patient_id).filter((id): id is string => !!id))]
-  return fetchByIds<PatientRow>(ids, (chunk) => supabase.from('patients').select('id, default_practitioner_id, clinic_id').in('id', chunk))
 }
 
 onMounted(() => {

@@ -2,7 +2,6 @@
 import { formatEur } from '~/utils/billing'
 import { rangeBounds } from '~/composables/useDateRangePresets'
 import { isReceipt } from '~/utils/paymentReceipts'
-import { fetchByIds } from '~/composables/useFetchAllRows'
 import { classifyPaymentForFilter, practitionerForPayment } from '~/utils/incomeAttribution'
 
 interface PaymentRow {
@@ -70,19 +69,11 @@ async function load() {
   loading.value = true
   const { from, to } = rangeBounds({ from: dateStr.value, to: dateStr.value })
 
-  const { data: p } = await supabase
-    .from('payments')
-    .select('id, amount_cents, method, paid_at, patient_id, purpose, invoice_id, invoices!payments_invoice_id_fkey(status)')
-    .gte('paid_at', from.toISOString())
-    .lte('paid_at', to.toISOString())
-    .order('paid_at')
-  // The void rule moved out of the query when the join went from inner to
-  // left: a payment with no invoice has nothing to void and must survive it.
-  const dayPayments = (p ?? []).filter((row) => row.invoices?.status !== 'void')
-
-  // Two independent lookups off the payments, side by side rather than one
-  // after the other: the invoices (and through them the appointments), and
-  // the patients.
+  // One request. Each payment carries the invoice it settles (its number, and
+  // through it the appointment, which is whose money it is) and the patient
+  // it was taken from. They used to be three more round-trips after this one
+  // -- invoices by id, then appointments by id, and patients by id -- all
+  // passing the day's ids back in the URL.
   //
   // Patients come off the payments, not off the invoices they settle. Half
   // this page's rows settle no invoice at all, and those are exactly the
@@ -91,22 +82,38 @@ async function load() {
   //
   // The practitioner comes from the invoice's linked appointment, same as
   // reports/income.vue -- neither payments nor invoices carry the column
-  // directly. Fetched on every load, not only when a filter is set: the
-  // Practitioner COLUMN reads the same map, so skipping this left every row
-  // on the page saying "Unassigned" until someone happened to pick a filter.
-  const invoiceIds = [...new Set(dayPayments.map((row) => row.invoice_id).filter((id): id is string => !!id))]
-  const patientIds = [...new Set(dayPayments.map((row) => row.patient_id))]
-  const [[inv, appts], pats] = await Promise.all([
-    fetchByIds<InvoiceRow>(invoiceIds, (ids) =>
-      supabase.from('invoices').select('id, invoice_number, patient_id, is_refund, appointment_id').in('id', ids),
-    ).then(async (rows) => {
-      const appointmentIds = [...new Set(rows.map((row) => row.appointment_id).filter((id): id is string => !!id))]
-      return [rows, await fetchByIds<AppointmentRow>(appointmentIds, (ids) => supabase.from('appointments').select('id, practitioner_id, clinic_id').in('id', ids))] as const
-    }),
-    fetchByIds<PatientRow>(patientIds, (ids) =>
-      supabase.from('patients').select('id, first_name, last_name, default_practitioner_id, clinic_id').in('id', ids),
-    ),
-  ])
+  // directly. Read on every load, not only when a filter is set: the
+  // Practitioner COLUMN reads the same map.
+  type DayPaymentRow = Omit<PaymentRow, 'invoices'> & {
+    invoices: (InvoiceRow & { status: string; appointments: AppointmentRow | null }) | null
+    patients: PatientRow | null
+  }
+  const { data: p } = (await supabase
+    .from('payments')
+    .select(
+      'id, amount_cents, method, paid_at, patient_id, purpose, invoice_id, invoices!payments_invoice_id_fkey(status, id, invoice_number, patient_id, is_refund, appointment_id, appointments!invoices_appointment_id_fkey(id, practitioner_id, clinic_id)), patients!payments_patient_id_fkey(id, first_name, last_name, default_practitioner_id, clinic_id)',
+    )
+    .gte('paid_at', from.toISOString())
+    .lte('paid_at', to.toISOString())
+    .order('paid_at')) as unknown as { data: DayPaymentRow[] | null }
+  // The void rule moved out of the query when the join went from inner to
+  // left: a payment with no invoice has nothing to void and must survive it.
+  const kept = (p ?? []).filter((row) => row.invoices?.status !== 'void')
+  const dayPayments: PaymentRow[] = kept.map(({ invoices: invoice, patients: _patient, ...row }) => ({ ...row, invoices: invoice ? { status: invoice.status } : null }))
+  const invoiceById = new Map<string, InvoiceRow>()
+  const appointmentById = new Map<string, AppointmentRow>()
+  const patientById = new Map<string, PatientRow>()
+  for (const row of kept) {
+    if (row.invoices) {
+      const { appointments: appointment, status: _status, ...invoice } = row.invoices
+      invoiceById.set(invoice.id, invoice)
+      if (appointment) appointmentById.set(appointment.id, appointment)
+    }
+    if (row.patients) patientById.set(row.patients.id, row.patients)
+  }
+  const inv = [...invoiceById.values()]
+  const appts = [...appointmentById.values()]
+  const pats = [...patientById.values()]
   if (mine !== run) return
   payments.value = dayPayments
   invoices.value = inv

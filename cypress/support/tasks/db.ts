@@ -3153,6 +3153,32 @@ async function inboxUnreadCounts(opts: { email: string; password: string }) {
   return { view: count ?? 0, badge: rpcError ? `error: ${rpcError.message}` : badge }
 }
 
+// Live on VeriFactu since a given instant, straight to the row: the settings
+// endpoint refuses a date in the past, and the fee is about what happens once
+// the date has come.
+async function setVerifactuLiveSince({ accountId, since }: { accountId: string; since: string }) {
+  assertOk(await admin.from('accounts').update({ verifactu_mode: 'live', verifactu_production_from: since } as never).eq('id', accountId))
+  return null
+}
+
+async function setVerifactuBilledLocations({ accountId, locations }: { accountId: string; locations: number }) {
+  assertOk(await admin.from('subscriptions').update({ verifactu_locations: locations } as never).eq('account_id', accountId))
+  return null
+}
+
+/** What the cron would see for this account: due now, and whether it is picked up to be changed. */
+async function verifactuFeeState({ accountId }: { accountId: string }) {
+  const { data: due } = await admin.rpc('verifactu_fee_locations' as never, { p_account_id: accountId } as never)
+  const { data: outOfSync } = await admin.rpc('verifactu_fee_out_of_sync' as never, { p_limit: 1000 } as never)
+  const row = ((outOfSync ?? []) as { account_id: string; billed: number; due: number }[]).find((r) => r.account_id === accountId) ?? null
+  return { due: Number(due ?? 0), outOfSync: row }
+}
+
+async function archiveClinic({ clinicId }: { clinicId: string }) {
+  assertOk(await admin.from('clinics').update({ archived_at: new Date().toISOString() } as never).eq('id', clinicId))
+  return null
+}
+
 // A submission as the sender would have written it, for a spec about how
 // Settings > VeriFactu reads the AEAT's answers -- the AEAT itself is not
 // reachable from CI. Needs one factura record to hang it on, so it issues one.
@@ -3172,6 +3198,10 @@ export const dbTasks = {
   'db:inboxUnreadCounts': inboxUnreadCounts,
   'db:recordVerifactuSubmission': recordVerifactuSubmission,
   'db:setVerifactuMode': setVerifactuMode,
+  'db:setVerifactuLiveSince': setVerifactuLiveSince,
+  'db:setVerifactuBilledLocations': setVerifactuBilledLocations,
+  'db:verifactuFeeState': verifactuFeeState,
+  'db:archiveClinic': archiveClinic,
   'db:setVerifactuPlatform': setVerifactuPlatform,
   'db:verifactuDelegationOf': verifactuDelegationOf,
   'cert:makeTestCertificate': makeTestCertificate,

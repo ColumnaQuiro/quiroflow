@@ -3,6 +3,7 @@ import type { Database } from '~/types/database.types'
 import { planIncludesGrowth } from '~/utils/growthPlans'
 import { checkoutTrialEnd } from '~/utils/billing'
 import { retrieveChangeableSubscription, stripeForPlatformBilling } from '~/server/utils/platformBillingStripe'
+import { verifactuFeeItemFor } from '~/server/utils/verifactuFee'
 
 // Starts a brand-new platform subscription (redirect to Stripe Checkout to
 // collect a card) or changes an existing one's plan/interval/seat count in
@@ -155,6 +156,10 @@ export default defineEventHandler(async (event) => {
     } else if (growthItem) {
       items.push({ id: growthItem.id, deleted: true })
     }
+    // The VeriFactu fee is not the owner's to choose here, but it has to
+    // follow the new interval: Stripe refuses items on mixed intervals.
+    const verifactuFee = await verifactuFeeItemFor(serviceRole, teamMember.account_id, body.interval, current.items.data)
+    if (verifactuFee) items.push(verifactuFee)
 
     // default_tax_rates is set on every update, not just at creation, so a
     // subscription made before VAT was configured picks it up the next time
@@ -180,6 +185,10 @@ export default defineEventHandler(async (event) => {
   // shows is the one Stripe will bill on.
   const trialEnd = checkoutTrialEnd(subscription)
 
+  // A clinic already live on VeriFactu starts paying its fee with the rest.
+  const verifactuFee = await verifactuFeeItemFor(serviceRole, teamMember.account_id, body.interval, [])
+  const verifactuFeeLine = verifactuFee && 'price' in verifactuFee ? [{ price: verifactuFee.price, quantity: verifactuFee.quantity }] : []
+
   const origin = getRequestURL(event).origin
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
@@ -197,6 +206,7 @@ export default defineEventHandler(async (event) => {
       { price: planPriceId, quantity: 1 },
       ...(extraProfessionals > 0 && addOnPriceId ? [{ price: addOnPriceId, quantity: extraProfessionals }] : []),
       ...(wantsGrowth && growth.priceId ? [{ price: growth.priceId, quantity: 1 }] : []),
+      ...verifactuFeeLine,
     ],
     // On the subscription rather than the line items: line-item tax_rates
     // apply to this one checkout's invoice, so every renewal after it would

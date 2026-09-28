@@ -329,3 +329,28 @@ export function parseVerifactuResponse(xml: string): VerifactuResponse {
 
   return { estadoEnvio, csv, waitSeconds, lines }
 }
+
+/**
+ * What came back when the AEAT did not judge the submission, for a person to
+ * read. A SOAP Fault is the AEAT answering, not the network failing, and its
+ * faultcode says whose problem it is: env:Server is the AEAT's own service
+ * erroring ("Codigo[102]. Error interno en el servidor"), env:Client is our
+ * document being refused before it is read ("4102 ... Falta informar campo
+ * obligatorio"). Written as "AEAT fault <code>: <text>" so Settings > VeriFactu
+ * can tell them apart; anything else keeps the raw start of the body.
+ */
+export function describeUnjudged(httpStatus: number, responseXml: string): string {
+  const fault = parseSoapFault(responseXml)
+  if (fault) return `AEAT fault ${fault.code}: ${fault.text}`
+  return `HTTP ${httpStatus}: response was not a VERI*FACTU answer: ${responseXml.slice(0, 300)}`
+}
+
+export function parseSoapFault(text: string | null | undefined): { code: string; text: string } | null {
+  if (!text) return null
+  const stored = text.match(/^AEAT fault (\S+): ([\s\S]*)$/)
+  if (stored) return { code: stored[1], text: stored[2] }
+  const code = text.match(/<faultcode>([^<]*)<\/faultcode>/)
+  if (!code) return null
+  const detail = text.match(/<faultstring>([^<]*)<\/faultstring>/)
+  return { code: code[1].trim(), text: (detail?.[1] ?? '').trim() }
+}

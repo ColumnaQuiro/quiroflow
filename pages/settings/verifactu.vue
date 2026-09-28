@@ -9,6 +9,14 @@
 // Owners only (routePermissions, and requireOwner behind every endpoint).
 
 type Mode = 'off' | 'test' | 'live'
+type Sender = 'own_certificate' | 'apoderamiento' | 'colaboracion_social'
+interface Delegation {
+  route: 'apoderamiento' | 'colaboracion_social'
+  requestedAt: string
+  signedDocumentName: string | null
+  signedDocumentUploadedAt: string | null
+  acceptedAt: string | null
+}
 interface Settings {
   mode: Mode
   productionFrom: string | null
@@ -29,6 +37,10 @@ interface Settings {
     } | null
   } | null
   platformKeyConfigured: boolean
+  sender: Sender
+  platform: { nif: string | null; legalName: string | null } | null
+  isPlatform: boolean
+  delegation: Delegation | null
   activity: {
     waiting: number
     parked: number
@@ -36,6 +48,7 @@ interface Settings {
     productionRecords: number
     last: {
       status: string
+      notAuthorised: boolean
       kind: 'accepted' | 'accepted-with-warnings' | 'refused' | 'aeat-error' | 'unreachable'
       errorCode: string | null
       errorMessage: string | null
@@ -63,6 +76,8 @@ async function load() {
   try {
     settings.value = await useStaffFetch<Settings>('/api/verifactu/settings')
     mode.value = settings.value.mode
+    sender.value = settings.value.sender
+    if (settings.value.isPlatform) await loadDelegations()
     if (settings.value.productionFrom) liveDay.value = madridDay(settings.value.productionFrom)
   } catch (e: any) {
     loadError.value = e?.data?.statusMessage || e?.message || t('Could not load the VeriFactu settings.', 'No se pudieron cargar los ajustes de VeriFactu.')
@@ -97,6 +112,97 @@ async function save() {
   } finally {
     saving.value = false
   }
+}
+
+// --- Who sends -----------------------------------------------------------------
+// The clinic's own certificate, or QuiroFlow's under one of the two
+// authorisations the AEAT accepts. Choosing QuiroFlow files a request; the
+// records go with QuiroFlow's certificate once QuiroFlow confirms the
+// authorisation, since until then the AEAT refuses every one with 4112.
+const sender = ref<Sender>('own_certificate')
+const savingSender = ref(false)
+
+async function saveSender() {
+  if (!settings.value || sender.value === settings.value.sender) return
+  savingSender.value = true
+  try {
+    await useStaffFetch('/api/verifactu/sender', { method: 'PUT', body: { sender: sender.value } })
+    showToast(t('Saved', 'Guardado'))
+    await load()
+  } catch (e: any) {
+    showToast(e?.data?.statusMessage || e?.message || t('Could not save.', 'No se pudo guardar.'), 'error')
+  } finally {
+    savingSender.value = false
+  }
+}
+
+const docFile = ref<File | null>(null)
+const docInput = ref<HTMLInputElement | null>(null)
+const uploadingDoc = ref(false)
+
+async function uploadSignedDocument() {
+  if (!docFile.value) return
+  uploadingDoc.value = true
+  try {
+    const fileBase64 = await fileToBase64(docFile.value)
+    await useStaffFetch('/api/verifactu/delegation-document', { method: 'POST', body: { fileBase64, fileName: docFile.value.name } })
+    showToast(t('Document uploaded', 'Documento subido'))
+    docFile.value = null
+    if (docInput.value) docInput.value.value = ''
+    await load()
+  } catch (e: any) {
+    showToast(e?.data?.statusMessage || e?.message || t('Could not upload the document.', 'No se pudo subir el documento.'), 'error')
+  } finally {
+    uploadingDoc.value = false
+  }
+}
+
+// --- QuiroFlow's own account: the clinics it sends for -------------------------
+interface PlatformDelegation extends Delegation {
+  accountId: string
+  clinicName: string | null
+  nif: string | null
+}
+const delegations = ref<PlatformDelegation[]>([])
+const decidingFor = ref<string | null>(null)
+
+async function loadDelegations() {
+  try {
+    const res = await useStaffFetch<{ delegations: PlatformDelegation[] }>('/api/verifactu/delegations')
+    delegations.value = res.delegations
+  } catch {
+    delegations.value = []
+  }
+}
+
+async function setAccepted(d: PlatformDelegation, accepted: boolean) {
+  if (accepted) {
+    const ok = confirm(
+      d.route === 'apoderamiento'
+        ? t(`Confirm that QuiroFlow has ACCEPTED the IZ860 apoderamiento from ${d.clinicName ?? d.nif} in the AEAT’s office. From now on its records are sent with QuiroFlow’s certificate.`, `Confirma que QuiroFlow ha ACEPTADO el apoderamiento IZ860 de ${d.clinicName ?? d.nif} en la sede de la AEAT. Desde ahora sus registros se envían con el certificado de QuiroFlow.`)
+        : t(`Confirm that the signed document from ${d.clinicName ?? d.nif} has been checked. From now on its records are sent with QuiroFlow’s certificate.`, `Confirma que se ha revisado el documento firmado de ${d.clinicName ?? d.nif}. Desde ahora sus registros se envían con el certificado de QuiroFlow.`),
+    )
+    if (!ok) return
+  }
+  decidingFor.value = d.accountId
+  try {
+    await useStaffFetch(`/api/verifactu/delegations/${d.accountId}`, { method: 'PUT', body: { accepted } })
+    await loadDelegations()
+  } catch (e: any) {
+    showToast(e?.data?.statusMessage || e?.message || t('Could not save.', 'No se pudo guardar.'), 'error')
+  } finally {
+    decidingFor.value = null
+  }
+}
+
+async function downloadSignedDocument(d: PlatformDelegation) {
+  const blob = await useStaffFetch<Blob>(`/api/verifactu/delegations/${d.accountId}/document`, { responseType: 'blob' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = d.signedDocumentName ?? 'documento-representacion.pdf'
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 // --- Certificate ---------------------------------------------------------------
@@ -148,6 +254,11 @@ const notSendingBecause = computed(() => {
   const s = settings.value
   if (!s || s.mode === 'off') return null
   if (!s.company.nif) return t('the clinic has no NIF in Fiscal Data', 'la clínica no tiene NIF en Datos fiscales')
+  if (s.sender !== 'own_certificate') {
+    if (s.sender === 'colaboracion_social' && !s.delegation?.signedDocumentUploadedAt) return t('the signed representation document has not been uploaded', 'no se ha subido el documento de representación firmado')
+    if (!s.delegation?.acceptedAt) return t('QuiroFlow has not confirmed your authorisation yet', 'QuiroFlow aún no ha confirmado tu autorización')
+    return null
+  }
   if (!s.certificate) return t('no certificate has been uploaded', 'no se ha subido ningún certificado')
   if (!s.certificate.hasPassphrase) return t('the certificate’s password is missing -- upload it again', 'falta la contraseña del certificado: vuelve a subirlo')
   if (daysLeft.value !== null && daysLeft.value <= 0) return t('the certificate has expired', 'el certificado ha caducado')
@@ -240,6 +351,84 @@ function formatDateTime(iso: string | null) {
               </UiBtn>
             </section>
 
+            <!-- Who sends ------------------------------------------------------------->
+            <section v-if="settings.platform" class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card" data-cy="verifactu-sender">
+              <div class="flex items-center justify-between gap-3">
+                <h2 class="text-[14px] font-semibold text-ink-900">{{ t('Who sends', 'Quién envía') }}</h2>
+                <template v-if="settings.sender !== 'own_certificate'">
+                  <UiPill v-if="settings.delegation?.acceptedAt" tone="success" dot data-cy="verifactu-delegation-status">{{ t('Authorised', 'Autorizado') }}</UiPill>
+                  <UiPill v-else tone="warning" dot data-cy="verifactu-delegation-status">{{ t('Waiting for authorisation', 'Pendiente de autorización') }}</UiPill>
+                </template>
+              </div>
+              <p class="mt-1 text-[12px] text-ink-muted2">
+                {{ t('Records always name your company as the issuer. This only decides whose certificate sends them to the AEAT.', 'Los registros siempre identifican a tu empresa como emisora. Esto solo decide con qué certificado se envían a la AEAT.') }}
+              </p>
+
+              <div class="mt-3 space-y-2">
+                <label class="flex cursor-pointer items-start gap-2.5 rounded-ctl border p-3" :class="sender === 'own_certificate' ? 'border-brand bg-brand-tint' : 'border-line hover:bg-surface-subtle'">
+                  <input v-model="sender" type="radio" value="own_certificate" data-cy="verifactu-sender-own" class="mt-0.5" />
+                  <span>
+                    <span class="block text-[13px] font-medium text-ink-900">{{ t('Your own certificate', 'Tu propio certificado') }}</span>
+                    <span class="mt-0.5 block text-[12px] text-ink-muted2">{{ t('Upload your company’s certificate below. You renew it when it expires.', 'Sube abajo el certificado de tu empresa. Lo renuevas cuando caduque.') }}</span>
+                  </span>
+                </label>
+                <label class="flex cursor-pointer items-start gap-2.5 rounded-ctl border p-3" :class="sender === 'apoderamiento' ? 'border-brand bg-brand-tint' : 'border-line hover:bg-surface-subtle'">
+                  <input v-model="sender" type="radio" value="apoderamiento" data-cy="verifactu-sender-apoderamiento" class="mt-0.5" />
+                  <span>
+                    <span class="block text-[13px] font-medium text-ink-900">{{ t('QuiroFlow sends for you — AEAT authorisation', 'QuiroFlow envía por ti — autorización en la AEAT') }}</span>
+                    <span class="mt-0.5 block text-[12px] text-ink-muted2">{{ t('You authorise QuiroFlow once in the AEAT’s online office (apoderamiento IZ860). No certificate to upload or renew.', 'Autorizas a QuiroFlow una vez en la sede electrónica de la AEAT (apoderamiento IZ860). Sin certificado que subir ni renovar.') }}</span>
+                  </span>
+                </label>
+                <label class="flex cursor-pointer items-start gap-2.5 rounded-ctl border p-3" :class="sender === 'colaboracion_social' ? 'border-brand bg-brand-tint' : 'border-line hover:bg-surface-subtle'">
+                  <input v-model="sender" type="radio" value="colaboracion_social" data-cy="verifactu-sender-colaboracion" class="mt-0.5" />
+                  <span>
+                    <span class="block text-[13px] font-medium text-ink-900">{{ t('QuiroFlow sends for you — signed document', 'QuiroFlow envía por ti — documento firmado') }}</span>
+                    <span class="mt-0.5 block text-[12px] text-ink-muted2">{{ t('You sign a representation document for QuiroFlow as a colaborador social of the AEAT, and upload it here. No certificate to upload or renew.', 'Firmas un documento de representación a favor de QuiroFlow como colaborador social de la AEAT y lo subes aquí. Sin certificado que subir ni renovar.') }}</span>
+                  </span>
+                </label>
+              </div>
+              <UiBtn v-if="sender !== settings.sender" variant="primary" class="mt-3" data-cy="verifactu-sender-save" :disabled="savingSender" @click="saveSender">
+                {{ savingSender ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}
+              </UiBtn>
+
+              <!-- Route A: the steps at the AEAT, with QuiroFlow's details filled in. -->
+              <div v-if="settings.sender === 'apoderamiento' && sender === 'apoderamiento'" class="mt-4 rounded-ctl bg-surface-subtle px-3 py-3 text-[12.5px] text-ink-700" data-cy="verifactu-apoderamiento-steps">
+                <p class="font-medium text-ink-900">{{ t('What to do at the AEAT', 'Qué hacer en la AEAT') }}</p>
+                <ol class="mt-1.5 list-decimal space-y-1 pl-5">
+                  <li>{{ t('Your company’s legal representative, with their certificate, opens the AEAT online office → Registro de Apoderamientos → “Apoderamiento para un trámite concreto”.', 'El representante legal de tu empresa, con su certificado, entra en la sede electrónica de la AEAT → Registro de Apoderamientos → «Apoderamiento para un trámite concreto».') }}</li>
+                  <li>
+                    {{ t('Authorised party (apoderado):', 'Apoderado:') }}
+                    <span class="font-medium" data-cy="verifactu-platform-identity">{{ [settings.platform.legalName, settings.platform.nif].filter(Boolean).join(' · ') }}</span>
+                  </li>
+                  <li>{{ t('Procedure: IZ860 — “Remisión y consulta de registros de facturación por servicio web” (listed under IVA). Not IZ862 or IZ863: they look alike and the AEAT refuses the records.', 'Trámite: IZ860 — «Remisión y consulta de registros de facturación por servicio web» (en IVA). No IZ862 ni IZ863: se parecen y la AEAT rechaza los registros.') }}</li>
+                  <li>{{ t('QuiroFlow then accepts it at the AEAT and confirms it here. Records start going as soon as it does.', 'Después QuiroFlow lo acepta en la AEAT y lo confirma aquí. Los registros empiezan a enviarse en ese momento.') }}</li>
+                </ol>
+              </div>
+
+              <!-- Route B: the signed document. -->
+              <div v-if="settings.sender === 'colaboracion_social' && sender === 'colaboracion_social'" class="mt-4 rounded-ctl bg-surface-subtle px-3 py-3 text-[12.5px] text-ink-700" data-cy="verifactu-colaboracion-steps">
+                <p class="font-medium text-ink-900">{{ t('The representation document', 'El documento de representación') }}</p>
+                <p class="mt-1">
+                  {{ t('Fill in the model representation document of the', 'Rellena el modelo de documento de representación de la') }}
+                  <a href="https://www.boe.es/buscar/doc.php?id=BOE-A-2024-27600" target="_blank" rel="noopener" class="font-medium text-brand-text hover:text-brand-hover">Resolución de 18 de diciembre de 2024 (BOE-A-2024-27600)</a>
+                  {{ t('naming', 'a favor de') }} <span class="font-medium">{{ [settings.platform.legalName, settings.platform.nif].filter(Boolean).join(' · ') }}</span>{{ t(', have your legal representative sign it — by hand with a copy of their ID, or with a qualified electronic signature — and upload the PDF.', ', haz que lo firme tu representante legal —a mano con copia de su DNI, o con firma electrónica cualificada— y sube el PDF.') }}
+                </p>
+                <p v-if="settings.delegation?.signedDocumentUploadedAt" class="mt-2 text-ink-600" data-cy="verifactu-signed-document">
+                  ✓ {{ settings.delegation.signedDocumentName }} · {{ formatDateTime(settings.delegation.signedDocumentUploadedAt) }}
+                </p>
+                <form class="mt-2 flex flex-wrap items-center gap-2" @submit.prevent="uploadSignedDocument">
+                  <input ref="docInput" type="file" accept="application/pdf,.pdf" data-cy="verifactu-signed-document-file" class="text-[12.5px]" @change="docFile = ($event.target as HTMLInputElement).files?.[0] ?? null" />
+                  <UiBtn type="submit" variant="secondary" data-cy="verifactu-signed-document-upload" :disabled="!docFile || uploadingDoc">
+                    {{ uploadingDoc ? t('Uploading…', 'Subiendo…') : settings.delegation?.signedDocumentUploadedAt ? t('Replace document', 'Sustituir documento') : t('Upload signed document', 'Subir documento firmado') }}
+                  </UiBtn>
+                </form>
+              </div>
+
+              <p v-if="settings.sender !== 'own_certificate' && settings.delegation?.acceptedAt" class="mt-3 text-[12.5px] text-ink-muted">
+                {{ t('QuiroFlow confirmed your authorisation on', 'QuiroFlow confirmó tu autorización el') }} {{ formatDateTime(settings.delegation.acceptedAt) }}.
+              </p>
+            </section>
+
             <!-- Company ---------------------------------------------------------------->
             <section class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
               <div class="flex items-center justify-between gap-3">
@@ -255,7 +444,10 @@ function formatDateTime(iso: string | null) {
             </section>
 
             <!-- Certificate ------------------------------------------------------------>
-            <section class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card" data-cy="verifactu-certificate">
+            <p v-if="settings.sender !== 'own_certificate'" class="mt-4 rounded-card border border-line bg-surface p-4 text-[12.5px] text-ink-muted shadow-card" data-cy="verifactu-certificate-by-quiroflow">
+              {{ t('Your records are sent with QuiroFlow’s certificate, so you do not need one of your own here.', 'Tus registros se envían con el certificado de QuiroFlow, así que aquí no necesitas uno propio.') }}
+            </p>
+            <section v-else class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card" data-cy="verifactu-certificate">
               <div class="flex items-center justify-between gap-3">
                 <h2 class="text-[14px] font-semibold text-ink-900">{{ t('Certificate', 'Certificado') }}</h2>
                 <UiPill v-if="settings.certificate?.checks?.valid" tone="success" dot data-cy="verifactu-cert-status">{{ t('Valid', 'Válido') }}</UiPill>
@@ -367,7 +559,39 @@ function formatDateTime(iso: string | null) {
                   · {{ [settings.activity.last.errorCode, settings.activity.last.errorMessage].filter(Boolean).join(' ') }}
                 </span>
               </p>
+              <p v-if="settings.activity.last?.notAuthorised" data-cy="verifactu-not-authorised" class="mt-2 rounded-ctl bg-warning-bg px-3 py-2 text-[12.5px] text-warning-text">
+                {{
+                  settings.sender === 'own_certificate'
+                    ? t('The AEAT says this certificate is not allowed to send for your company’s NIF. Check it belongs to your company, or that its holder is authorised to represent it.', 'La AEAT indica que este certificado no puede enviar por el NIF de tu empresa. Comprueba que es de tu empresa o que su titular está autorizado para representarla.')
+                    : t('The AEAT says QuiroFlow is not yet authorised to send for your company. Check the apoderamiento was granted for procedure IZ860 (not IZ862/IZ863) to QuiroFlow’s NIF; QuiroFlow has been told.', 'La AEAT indica que QuiroFlow aún no está autorizado para enviar por tu empresa. Comprueba que el apoderamiento se concedió para el trámite IZ860 (no IZ862/IZ863) al NIF de QuiroFlow; QuiroFlow ya está avisado.')
+                }}
+              </p>
               <p v-else class="mt-3 text-[12.5px] text-ink-muted2">{{ t('Nothing has been sent yet.', 'Todavía no se ha enviado nada.') }}</p>
+            </section>
+            <!-- QuiroFlow's own account: the clinics it sends for ------------------------->
+            <section v-if="settings.isPlatform" class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card" data-cy="verifactu-delegations">
+              <h2 class="text-[14px] font-semibold text-ink-900">{{ t('Clinics QuiroFlow sends for', 'Clínicas por las que envía QuiroFlow') }}</h2>
+              <p class="mt-1 text-[12px] text-ink-muted2">
+                {{ t('Only QuiroFlow sees this. Confirm a clinic once its IZ860 has been accepted in the AEAT’s office, or its signed document has been checked. Its records then go with this account’s certificate.', 'Solo lo ve QuiroFlow. Confirma una clínica cuando su IZ860 esté aceptado en la sede de la AEAT o su documento firmado esté revisado. Sus registros se envían entonces con el certificado de esta cuenta.') }}
+              </p>
+              <p v-if="!delegations.length" class="mt-3 text-[12.5px] text-ink-muted2">{{ t('No clinic has asked yet.', 'Ninguna clínica lo ha pedido aún.') }}</p>
+              <ul v-else class="mt-3 divide-y divide-line">
+                <li v-for="d in delegations" :key="d.accountId" class="flex flex-wrap items-center justify-between gap-2 py-2.5" data-cy="verifactu-delegation-row">
+                  <div class="min-w-0">
+                    <p class="text-[13px] font-medium text-ink-900">{{ d.clinicName || t('Unnamed clinic', 'Clínica sin nombre') }} <span class="font-normal text-ink-muted2">· {{ d.nif || t('no NIF', 'sin NIF') }}</span></p>
+                    <p class="text-[12px] text-ink-muted2">
+                      {{ d.route === 'apoderamiento' ? t('Apoderamiento IZ860', 'Apoderamiento IZ860') : t('Signed document', 'Documento firmado') }}
+                      · {{ t('asked', 'pedido') }} {{ formatDateTime(d.requestedAt) }}
+                      <template v-if="d.acceptedAt"> · {{ t('confirmed', 'confirmado') }} {{ formatDateTime(d.acceptedAt) }}</template>
+                    </p>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <UiBtn v-if="d.route === 'colaboracion_social' && d.signedDocumentUploadedAt" variant="secondary" size="sm" @click="downloadSignedDocument(d)">{{ t('Document', 'Documento') }}</UiBtn>
+                    <UiBtn v-if="!d.acceptedAt" variant="primary" size="sm" data-cy="verifactu-delegation-accept" :disabled="decidingFor === d.accountId || (d.route === 'colaboracion_social' && !d.signedDocumentUploadedAt)" @click="setAccepted(d, true)">{{ t('Confirm', 'Confirmar') }}</UiBtn>
+                    <UiBtn v-else variant="secondary" size="sm" data-cy="verifactu-delegation-withdraw" :disabled="decidingFor === d.accountId" @click="setAccepted(d, false)">{{ t('Withdraw', 'Retirar') }}</UiBtn>
+                  </div>
+                </li>
+              </ul>
             </section>
           </template>
         </div>

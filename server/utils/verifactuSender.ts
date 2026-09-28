@@ -43,12 +43,14 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 import { buildRegistroAlta } from '~/utils/registroAlta'
 import { PASSPHRASE_SECRET_NAME, decryptSecret } from './verifactuCertificate'
+import { isDelegated, verifactuPlatformAccountId } from './verifactuPlatform'
 import {
   MAX_RECORDS_PER_SUBMISSION,
   hasCertificate,
   type BlockedReason,
   type SenderConfig,
   buildRegFactuEnvelope,
+  certificateAccountFor,
   chooseChain,
   describeUnjudged,
   parseVerifactuResponse,
@@ -98,25 +100,46 @@ export async function accountSenderConfig(
   accountId: string,
   secretKey: string,
 ): Promise<{ mode: 'off' | 'test' | 'live'; config: SenderConfig; blocked: BlockedReason | null }> {
-  const [{ data: account }, { data: cert }, { data: secret }] = await Promise.all([
-    supabase.from('accounts').select('verifactu_mode').eq('id', accountId).maybeSingle(),
-    supabase.from('verifactu_certificates').select('pkcs12_base64, certificate_type, not_after').eq('account_id', accountId).maybeSingle(),
-    supabase.from('account_secrets').select('value').eq('account_id', accountId).eq('name', PASSPHRASE_SECRET_NAME).maybeSingle(),
-  ])
+  const { data: account } = await supabase.from('accounts').select('verifactu_mode, verifactu_sender').eq('id', accountId).maybeSingle()
   const mode = account?.verifactu_mode === 'live' ? 'live' : account?.verifactu_mode === 'test' ? 'test' : 'off'
+  // Placeholder environment: the chain being sent decides the service, per submission.
+  const empty: SenderConfig = { environment: 'test', certificateType: 'representative' }
+  if (mode === 'off') return { mode, config: empty, blocked: 'verifactu-off' }
+
+  // Whose certificate: see certificateAccountFor.
+  const delegated = isDelegated(account?.verifactu_sender)
+  const [{ data: delegation }, platformAccountId] = delegated
+    ? await Promise.all([
+        supabase.from('verifactu_delegations').select('route, accepted_at').eq('account_id', accountId).maybeSingle(),
+        verifactuPlatformAccountId(supabase),
+      ])
+    : [{ data: null }, null]
+  const whose = certificateAccountFor({
+    accountId,
+    sender: account?.verifactu_sender,
+    delegation: delegation ? { route: delegation.route, acceptedAt: delegation.accepted_at } : null,
+    platformAccountId,
+  })
+  if (whose.blocked) return { mode, config: empty, blocked: whose.blocked }
+  const certificateAccountId = whose.accountId
+
+  const [{ data: cert }, { data: secret }] = await Promise.all([
+    supabase.from('verifactu_certificates').select('pkcs12_base64, certificate_type, not_after').eq('account_id', certificateAccountId).maybeSingle(),
+    supabase.from('account_secrets').select('value').eq('account_id', certificateAccountId).eq('name', PASSPHRASE_SECRET_NAME).maybeSingle(),
+  ])
 
   const config: SenderConfig = {
-    // Placeholder: the chain being sent decides the service, per submission.
-    environment: 'test',
+    ...empty,
     certificateBase64: cert?.pkcs12_base64 || undefined,
     certificateType: cert?.certificate_type === 'seal' ? 'seal' : 'representative',
     certificateNotAfter: cert?.not_after ? new Date(cert.not_after) : undefined,
   }
 
-  if (mode === 'off') return { mode, config, blocked: 'verifactu-off' }
   // No certificate is transmissionBlockedBy's to say; only the passphrase is
   // new here.
-  if (!cert) return { mode, config, blocked: null }
+  if (!cert) {
+    return { mode, config, blocked: certificateAccountId === accountId ? null : 'no-platform-certificate' }
+  }
   if (!secret?.value) return { mode, config, blocked: 'no-passphrase' }
   try {
     config.certificatePassphrase = decryptSecret(secret.value, secretKey)

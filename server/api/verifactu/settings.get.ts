@@ -1,7 +1,8 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { PASSPHRASE_SECRET_NAME, decryptSecret, readPkcs12 } from '~/server/utils/verifactuCertificate'
-import { parseSoapFault } from '~/utils/verifactuSoap'
+import { isNotAuthorisedToSend, parseSoapFault } from '~/utils/verifactuSoap'
+import { isDelegated, verifactuPlatformIdentity } from '~/server/utils/verifactuPlatform'
 
 // Everything Settings > VeriFactu shows, for the signed-in owner's clinic.
 // The certificate and passphrase tables are service-role only, so this reads
@@ -14,7 +15,7 @@ export default defineEventHandler(async (event) => {
 
   const [{ data: account }, { data: clinic }, { data: cert }, { data: secret }, { data: owed }, { data: last }, { count: productionRecords }, { count: testRecords }] =
     await Promise.all([
-      admin.from('accounts').select('verifactu_mode, verifactu_production_from').eq('id', accountId).maybeSingle(),
+      admin.from('accounts').select('verifactu_mode, verifactu_production_from, verifactu_sender').eq('id', accountId).maybeSingle(),
       admin.from('clinics').select('tax_id, legal_name, name').eq('account_id', accountId).order('created_at').limit(1).maybeSingle(),
       admin.from('verifactu_certificates').select('pkcs12_base64, certificate_type, subject, not_after, updated_at').eq('account_id', accountId).maybeSingle(),
       admin.from('account_secrets').select('value, updated_at').eq('account_id', accountId).eq('name', PASSPHRASE_SECRET_NAME).maybeSingle(),
@@ -29,6 +30,13 @@ export default defineEventHandler(async (event) => {
       admin.from('factura_records').select('id', { count: 'exact', head: true }).eq('account_id', accountId).eq('environment', 'production'),
       admin.from('factura_records').select('id', { count: 'exact', head: true }).eq('account_id', accountId).eq('environment', 'test'),
     ])
+
+  const [platform, { data: delegation }] = await Promise.all([
+    verifactuPlatformIdentity(admin),
+    admin.from('verifactu_delegations').select('route, requested_at, signed_document_name, signed_document_uploaded_at, accepted_at').eq('account_id', accountId).maybeSingle(),
+  ])
+  const sender = (isDelegated(account?.verifactu_sender) ? account!.verifactu_sender : 'own_certificate') as 'own_certificate' | 'apoderamiento' | 'colaboracion_social'
+  const isPlatform = !!platform && platform.accountId === accountId
 
   const owedRows = (owed ?? []) as { parked: boolean }[]
   const secretKey = String(useRuntimeConfig().verifactuSecretKey ?? '')
@@ -105,6 +113,21 @@ export default defineEventHandler(async (event) => {
         }
       : null,
     platformKeyConfigured: Boolean(useRuntimeConfig().verifactuSecretKey),
+    sender,
+    // Who a clinic authorises when QuiroFlow sends for it, as the AEAT knows
+    // it. null in an environment with no platform account: the option is
+    // then not offered at all.
+    platform: platform && !isPlatform ? { nif: platform.nif, legalName: platform.legalName } : null,
+    isPlatform,
+    delegation: delegation
+      ? {
+          route: delegation.route as 'apoderamiento' | 'colaboracion_social',
+          requestedAt: delegation.requested_at,
+          signedDocumentName: delegation.signed_document_name,
+          signedDocumentUploadedAt: delegation.signed_document_uploaded_at,
+          acceptedAt: delegation.accepted_at,
+        }
+      : null,
     activity: {
       waiting: owedRows.filter((r) => !r.parked).length,
       parked: owedRows.filter((r) => r.parked).length,
@@ -153,6 +176,9 @@ function lastAnswer(row: { status: string; error_code: string | null; error_mess
     : 'unreachable'
   return {
     status: row.status,
+    // 4112: the certificate is not allowed to send for this NIF. For a clinic
+    // QuiroFlow sends for, that is the authorisation, never the certificate.
+    notAuthorised: isNotAuthorisedToSend(row.error_code, row.error_message),
     kind: kind as 'accepted' | 'accepted-with-warnings' | 'refused' | 'aeat-error' | 'unreachable',
     errorCode: row.error_code,
     errorMessage: fault ? fault.text : row.error_message,

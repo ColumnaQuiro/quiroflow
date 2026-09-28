@@ -15,7 +15,9 @@ export interface FlowRow {
   sub: string
 }
 
-const props = defineProps<{ rows: FlowRow[]; privacy?: boolean }>()
+// loading: today's visits have not arrived yet -- the columns keep their
+// titles and show a placeholder rather than a "0" that is not true yet.
+const props = defineProps<{ rows: FlowRow[]; privacy?: boolean; loading?: boolean }>()
 const emit = defineEmits<{ advance: [id: string]; open: [id: string] }>()
 const t = useT()
 
@@ -35,9 +37,11 @@ const columns = computed(() => {
       <div class="flex items-center gap-1.5 px-0.5">
         <span class="h-2 w-2 shrink-0 rounded-full" :class="FILTER_DOT_CLASS[col.key]" aria-hidden="true" />
         <h3 class="grow text-[12.5px] font-[640] text-ink-700">{{ col.title }}</h3>
-        <span data-cy="flow-count" class="rounded-pill bg-chip-bg px-1.5 py-0.5 text-[11px] font-medium text-chip-text">{{ col.rows.length }}</span>
+        <UiSkeleton v-if="loading" class="h-[18px] w-5 rounded-pill" />
+        <span v-else data-cy="flow-count" class="rounded-pill bg-chip-bg px-1.5 py-0.5 text-[11px] font-medium text-chip-text">{{ col.rows.length }}</span>
       </div>
-      <ul class="mt-2 space-y-1.5">
+      <UiSkeleton v-if="loading" class="mt-2 h-3.5 w-2/3 rounded-ctlSm" />
+      <ul v-else class="mt-2 space-y-1.5">
         <li v-for="r in col.rows" :key="r.id" data-cy="flow-row" :data-appointment-id="r.id" class="flex items-stretch overflow-hidden rounded-ctlSm border border-line-row">
           <button type="button" data-cy="flow-open" class="min-w-0 grow px-2 py-1.5 text-left hover:bg-surface-subtle" @click="emit('open', r.id)">
             <span class="block truncate text-[13px] font-medium text-ink-700" :class="{ 'select-none blur-sm': privacy }">{{ r.name }}</span>
@@ -56,7 +60,7 @@ const columns = computed(() => {
           </button>
         </li>
       </ul>
-      <p v-if="col.rows.length === 0" class="mt-1.5 px-0.5 text-[12px] text-ink-faint">—</p>
+      <p v-if="!loading && col.rows.length === 0" class="mt-1.5 px-0.5 text-[12px] text-ink-faint">—</p>
     </section>
   </div>
 </template>

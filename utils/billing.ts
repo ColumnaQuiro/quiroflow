@@ -66,10 +66,18 @@ export function formatShortDate(iso: string | Date): string {
   return date.toLocaleDateString(LOCALE, { day: 'numeric', month: 'short' })
 }
 
+// One formatter, built once: toLocaleTimeString with options builds a new
+// Intl.DateTimeFormat on every call, and the calendar formats every block's
+// times whenever its appointments change.
+const TIME_FORMAT = new Intl.DateTimeFormat(LOCALE, { hour: '2-digit', minute: '2-digit', hour12: false })
+
 /** "10:06". 24-hour, because Spain writes it that way. */
 export function formatTime(iso: string | Date): string {
   const date = typeof iso === 'string' ? new Date(iso) : iso
-  return date.toLocaleTimeString(LOCALE, { hour: '2-digit', minute: '2-digit', hour12: false })
+  // format() throws on an invalid date where toLocaleTimeString said
+  // "Invalid Date" -- and a half-typed time in the booking form is one.
+  if (Number.isNaN(date.getTime())) return 'Invalid Date'
+  return TIME_FORMAT.format(date)
 }
 
 /** "mié 23 sept" -- a day as the calendar names it in a header or a panel. */

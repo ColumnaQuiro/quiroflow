@@ -57,6 +57,7 @@
     "lines": [
       "This month",
       "Only your own figures",
+      "<select: All clinics>",
       "Total charged",
       "456,00 €",
       "Total paid",
@@ -87,6 +88,7 @@
       "›",
       "Today",
       "Only your own figures",
+      "<select: All clinics>",
       "Net collected",
       "44,00 €",
       "Card",
@@ -100,6 +102,7 @@
     "lines": [
       "This month",
       "Only your own figures",
+      "<select: All clinics>",
       "Revenue by practitioner, by month",
       "height 320px",
       "Total over range",
@@ -116,6 +119,7 @@
       ".",
       "This month",
       "Only your own figures",
+      "<select: All clinics>",
       "Counts attended visits. Compared with the same dates a month earlier: May 1 – May 17",
       "1",
       "First visits",
@@ -201,6 +205,7 @@
     "lines": [
       "This month",
       "Only your own figures",
+      "<select: All clinics>",
       "Morning (before 12pm)",
       "5",
       "100% show-up rate",

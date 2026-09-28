@@ -7,7 +7,11 @@ import type { FilterOption } from '~/composables/useReportFilterOptions'
 // others exist and are merely out of reach, and offering them would be the
 // leak itself. The model is pinned too, so a page that forgot to start from
 // the locked id still cannot show anyone else's figures.
-const props = defineProps<{ practitioners: FilterOption[]; clinics: FilterOption[]; showClinic?: boolean; lockedTo?: string | null }>()
+// showClinic defaults to TRUE. Declared as a bare optional boolean it read
+// as false whenever a page left it out -- Vue casts an absent boolean prop to
+// false -- so the clinic filter never appeared on any report, although every
+// report already filtered by it. Only the dashboard opts out.
+const props = withDefaults(defineProps<{ practitioners: FilterOption[]; clinics: FilterOption[]; showClinic?: boolean; lockedTo?: string | null }>(), { showClinic: true, lockedTo: null })
 const practitionerId = defineModel<string>('practitionerId', { default: '' })
 const clinicId = defineModel<string>('clinicId', { default: '' })
 const t = useT()
@@ -30,8 +34,10 @@ watch(
     <option v-for="p in practitioners" :key="p.id" :value="p.id">{{ p.name }}</option>
   </select>
   <select
-    v-if="showClinic !== false && clinics.length > 1"
+    v-if="showClinic && clinics.length > 1"
     v-model="clinicId"
+    data-cy="report-clinic-filter"
+    :aria-label="t('Clinic', 'Clínica')"
     class="h-8 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-500 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
   >
     <option value="">{{ t('All clinics', 'Todas las clínicas') }}</option>

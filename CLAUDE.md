@@ -228,6 +228,35 @@ admin) is recovered with the service role: delete the owner's row from
 `auth.mfa_factors`, or `update accounts set require_two_factor = false`.
 The guard trigger lets both through when there is no `auth.uid()`.
 
+## VeriFactu: QuiroFlow can send for a clinic, and accepting that is manual
+
+Settings → VeriFactu → **Who sends** lets a clinic use its own certificate or
+have QuiroFlow send with the platform's, under one of the two authorisations
+the AEAT accepts: an **apoderamiento IZ860** granted to Columnaquiro S.L.
+(B16365504), or a **colaboración social** representation document the clinic
+signs and uploads. The records still name the clinic as ObligadoEmision; only
+the certificate on the connection changes.
+
+The platform is an account, not configuration: `verifactu_platform` names
+Columnaquiro's, and its uploaded certificate is the one that sends for every
+delegated clinic. Its owners see "Clinics QuiroFlow sends for" on the same
+page and **Confirm** each one. Nothing is sent for a clinic until then,
+because the AEAT refuses every submission with **4112** until it has the
+authorisation.
+
+Confirming is a statement about the AEAT, so do the AEAT side first:
+
+- **IZ860:** accept the apoderamiento in the AEAT's sede with Columnaquiro's
+  certificate (Registro de Apoderamientos → apoderamientos recibidos). It has
+  no effect until accepted. IZ862/IZ863 look the same and do not work.
+- **Colaboración social:** needs the Tipo 017 agreement with the AEAT
+  (comunicacion.sepri@correo.aeat.es), and a document that is really signed,
+  by hand with ID or with a qualified e-signature. "I agree" in the app is
+  not a signature.
+
+A 4112 after confirming means one of those steps is missing or used the wrong
+procedure code. It does not mean the certificate is broken.
+
 ## Deploying — a published release, via GitHub Actions
 
 **Merging does not deploy.** `.github/workflows/deploy.yml` runs when a

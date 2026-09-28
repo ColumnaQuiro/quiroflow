@@ -363,6 +363,7 @@ export type Database = {
           factura_tax_exemption_code: string | null
           slug: string
           verifactu_mode: string
+          verifactu_sender: string
           verifactu_production_from: string | null
           require_two_factor: boolean
           default_phone_country: string
@@ -448,6 +449,7 @@ export type Database = {
           factura_tax_exemption_code?: string | null
           slug: string
           verifactu_mode?: string
+          verifactu_sender?: string
           verifactu_production_from?: string | null
           require_two_factor?: boolean
           stripe_connect_account_id?: string | null
@@ -532,6 +534,7 @@ export type Database = {
           factura_tax_exemption_code?: string | null
           slug?: string
           verifactu_mode?: string
+          verifactu_sender?: string
           verifactu_production_from?: string | null
           require_two_factor?: boolean
           default_phone_country?: string
@@ -2442,6 +2445,48 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      verifactu_delegations: {
+        Row: {
+          account_id: string
+          route: string
+          requested_at: string
+          requested_by: string | null
+          signed_document_base64: string | null
+          signed_document_name: string | null
+          signed_document_uploaded_at: string | null
+          accepted_at: string | null
+          accepted_by: string | null
+        }
+        Insert: {
+          account_id: string
+          route: string
+          requested_at?: string
+          requested_by?: string | null
+          signed_document_base64?: string | null
+          signed_document_name?: string | null
+          signed_document_uploaded_at?: string | null
+          accepted_at?: string | null
+          accepted_by?: string | null
+        }
+        Update: {
+          account_id?: string
+          route?: string
+          requested_at?: string
+          requested_by?: string | null
+          signed_document_base64?: string | null
+          signed_document_name?: string | null
+          signed_document_uploaded_at?: string | null
+          accepted_at?: string | null
+          accepted_by?: string | null
+        }
+        Relationships: []
+      }
+      verifactu_platform: {
+        Row: { singleton: boolean; account_id: string }
+        Insert: { singleton?: boolean; account_id: string }
+        Update: { singleton?: boolean; account_id?: string }
+        Relationships: []
       }
       verifactu_certificates: {
         Row: {

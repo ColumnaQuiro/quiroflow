@@ -3066,6 +3066,21 @@ async function setVerifactuMode({ accountId, mode }: { accountId: string; mode: 
   return null
 }
 
+// Which account is the VeriFactu platform (verifactu_platform, one row at
+// most). null clears it, so a spec leaves the environment as it found it --
+// a fresh database has no platform, and the "Who sends" choice is then not
+// offered to anyone.
+async function setVerifactuPlatform({ accountId }: { accountId: string | null }) {
+  assertOk(await admin.from('verifactu_platform').delete().eq('singleton', true))
+  if (accountId) assertOk(await admin.from('verifactu_platform').insert({ account_id: accountId } as never))
+  return null
+}
+
+async function verifactuDelegationOf({ accountId }: { accountId: string }) {
+  const { data } = await admin.from('verifactu_delegations').select('route, accepted_at, signed_document_name').eq('account_id', accountId).maybeSingle()
+  return data ?? null
+}
+
 // A submission as the sender would have written it, for a spec about how
 // Settings > VeriFactu reads the AEAT's answers -- the AEAT itself is not
 // reachable from CI. Needs one factura record to hang it on, so it issues one.
@@ -3083,6 +3098,8 @@ async function recordVerifactuSubmission({ accountId, clinicId, status, errorMes
 export const dbTasks = {
   'db:recordVerifactuSubmission': recordVerifactuSubmission,
   'db:setVerifactuMode': setVerifactuMode,
+  'db:setVerifactuPlatform': setVerifactuPlatform,
+  'db:verifactuDelegationOf': verifactuDelegationOf,
   'cert:makeTestCertificate': makeTestCertificate,
   'db:setClinicFiscal': setClinicFiscal,
   'db:verifactuSettingsOf': verifactuSettingsOf,

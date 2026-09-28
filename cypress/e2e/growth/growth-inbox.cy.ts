@@ -54,7 +54,11 @@ describe('Growth in the shared Inbox', () => {
 
     // The filters the base plan has always had are still there, behind
     // "More filters", with no receptionist section.
-    cy.get('[data-cy=inbox-more-filters]').click()
+    //
+    // Nothing above waits for the client: the heading and the absent lead
+    // rows are both true of the server-rendered HTML, so a plain click could
+    // land before hydration and open nothing (see commands.ts clickUntil).
+    cy.clickUntil('[data-cy=inbox-more-filters]', '[data-cy=inbox-more-filters-menu]')
     cy.get('[data-cy=inbox-more-filters-menu]').within(() => {
       cy.contains('button', 'Awaiting us').should('be.visible')
       cy.contains('button', 'Awaiting patient').should('be.visible')

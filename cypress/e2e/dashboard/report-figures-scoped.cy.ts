@@ -10,7 +10,7 @@
 //
 // Recorded before the reports were reworked for speed; see
 // cypress/support/reportFigures.ts.
-import { expectFigures, saveRecordedFigures, type FigureSnapshot } from '../../support/reportFigures'
+import { defaultLocale, expectFigures, saveRecordedFigures, type FigureSnapshot } from '../../support/reportFigures'
 
 const FIXTURE = 'report-figures-scoped.json'
 const NOW = new Date(2026, 5, 17, 10, 30, 0, 0)
@@ -41,7 +41,7 @@ describe('Report and dashboard figures, narrowed by role', () => {
   function open(who: Person, path: string) {
     cy.login(who.email, who.password)
     cy.clock(NOW.getTime(), ['Date'])
-    cy.visit(path)
+    cy.visit(path, { onBeforeLoad: (win) => defaultLocale(win) })
   }
   const figures = (key: string) => expectFigures(FIXTURE, recorded, key)
 

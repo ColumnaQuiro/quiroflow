@@ -116,7 +116,7 @@
       ".",
       "This month",
       "Only your own figures",
-      "Counts attended visits. Compared with the same dates a month earlier: 1 May – 17 May",
+      "Counts attended visits. Compared with the same dates a month earlier: May 1 – May 17",
       "1",
       "First visits",
       "▲ 0%",
@@ -171,7 +171,7 @@
       "."
     ],
     "charts": [
-      "Conversion to 3rd visit: Apr 26=0, Aug 25=null, Dec 25=null, Feb 26=0, Jan 26=null, Jul 25=null, Jun 26=0, Mar 26=100, May 26=33, Nov 25=null, Oct 25=null, Sept 25=null || Overall retention: Apr 26=44, Aug 25=null, Dec 25=null, Feb 26=0, Jan 26=null, Jul 25=null, Jun 26=82, Mar 26=29, May 26=56, Nov 25=null, Oct 25=null, Sept 25=null || PVA (€): Apr 26=21.42, Aug 25=null, Dec 25=null, Feb 26=29.38, Jan 26=null, Jul 25=null, Jun 26=20.92, Mar 26=7.82, May 26=13.71, Nov 25=null, Oct 25=null, Sept 25=null || Retention post-revision: Apr 26=null, Aug 25=null, Dec 25=null, Feb 26=null, Jan 26=null, Jul 25=null, Jun 26=50, Mar 26=100, May 26=0, Nov 25=null, Oct 25=null, Sept 25=null"
+      "Conversion to 3rd visit: Apr 26=0, Aug 25=null, Dec 25=null, Feb 26=0, Jan 26=null, Jul 25=null, Jun 26=0, Mar 26=100, May 26=33, Nov 25=null, Oct 25=null, Sep 25=null || Overall retention: Apr 26=44, Aug 25=null, Dec 25=null, Feb 26=0, Jan 26=null, Jul 25=null, Jun 26=82, Mar 26=29, May 26=56, Nov 25=null, Oct 25=null, Sep 25=null || PVA (€): Apr 26=21.42, Aug 25=null, Dec 25=null, Feb 26=29.38, Jan 26=null, Jul 25=null, Jun 26=20.92, Mar 26=7.82, May 26=13.71, Nov 25=null, Oct 25=null, Sep 25=null || Retention post-revision: Apr 26=null, Aug 25=null, Dec 25=null, Feb 26=null, Jan 26=null, Jul 25=null, Jun 26=50, Mar 26=100, May 26=0, Nov 25=null, Oct 25=null, Sep 25=null"
     ]
   },
   "Beatriz / /reports/upcoming-visits": {
@@ -254,7 +254,7 @@
       "[David González 23 | 190,00 € ; Diego Pérez 17 | 440,00 € ; Elena Gómez 40 | 220,00 € ; Manuel Alonso 26 | 380,00 € ; Noa López 32 | 220,00 €]",
       "7 outstanding · 1650,00 € total",
       "Next up today",
-      "[Carmen García 20 | Natacha Ruiz | 16:45 ; Javier Sánchez 57 | Olga Owner | 11:30 ; Mario Romero 36 | Olga Owner | 13:00]",
+      "[Carmen García 20 | Natacha Ruiz | 04:45 PM ; Javier Sánchez 57 | Olga Owner | 11:30 AM ; Mario Romero 36 | Olga Owner | 01:00 PM]",
       "Active patients",
       "59",
       "(98%)",

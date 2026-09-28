@@ -10,7 +10,7 @@
 // The browser's Date is frozen to NOW, the instant the clinic was generated
 // against, so "this month", "this week" and "today" mean the same days on
 // every run.
-import { expectFigures, pickPreset, saveRecordedFigures, type FigureSnapshot } from '../../support/reportFigures'
+import { defaultLocale, expectFigures, pickPreset, saveRecordedFigures, type FigureSnapshot } from '../../support/reportFigures'
 
 const FIXTURE = 'report-figures-owner.json'
 // A Wednesday in the middle of a month, mid-morning: this week, this month,
@@ -32,7 +32,7 @@ describe('Report and dashboard figures, as the owner', () => {
   function open(path: string) {
     cy.login(owner.email, owner.password)
     cy.clock(NOW.getTime(), ['Date'])
-    cy.visit(path)
+    cy.visit(path, { onBeforeLoad: (win) => defaultLocale(win) })
   }
   const figures = (key: string) => expectFigures(FIXTURE, recorded, key)
   // No clinic filter here: ReportsPractitionerClinicFilters declares

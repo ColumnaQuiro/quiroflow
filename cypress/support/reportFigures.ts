@@ -117,7 +117,7 @@ export function settledSnapshot(): Cypress.Chainable<FigureSnapshot> {
   let last = ''
   let since = 0
   return cy
-    .document({ log: false })
+    .document({ log: false, timeout: 30000 })
     .should((doc) => {
       const region = doc.querySelector('.overflow-y-auto.bg-surface-page')
       expect(region, 'report region').to.exist
@@ -135,6 +135,16 @@ export function settledSnapshot(): Cypress.Chainable<FigureSnapshot> {
 
 const recording = () => !!Cypress.env('RECORD_REPORT_FIGURES')
 
+// The lines that differ, named in the failure -- a deep-equal of two long
+// arrays otherwise says only that they are not equal.
+function firstDifferences(actual: string[], recorded: string[]): string {
+  const out: string[] = []
+  for (let i = 0; i < Math.max(actual.length, recorded.length) && out.length < 4; i++) {
+    if (actual[i] !== recorded[i]) out.push(`\n  #${i} page:     ${actual[i]}\n  #${i} recorded: ${recorded[i]}`)
+  }
+  return out.join('')
+}
+
 /** Compares the settled page with the recorded figures under `key` (or records them). */
 export function expectFigures(fixture: string, recorded: Record<string, FigureSnapshot>, key: string) {
   settledSnapshot().then((actual) => {
@@ -144,14 +154,48 @@ export function expectFigures(fixture: string, recorded: Record<string, FigureSn
     }
     cy.fixture(fixture).then((all: Record<string, FigureSnapshot>) => {
       expect(all[key], `recorded figures for ${key}`).to.exist
-      expect(actual.lines, `${key}: what the page shows`).to.deep.equal(all[key].lines)
-      expect(actual.charts, `${key}: what the charts were given`).to.deep.equal(all[key].charts)
+      expect(actual.lines, `${key}: what the page shows${firstDifferences(actual.lines, all[key].lines)}`).to.deep.equal(all[key].lines)
+      expect(actual.charts, `${key}: what the charts were given${firstDifferences(actual.charts, all[key].charts)}`).to.deep.equal(all[key].charts)
     })
   })
 }
 
 export function saveRecordedFigures(fixture: string, recorded: Record<string, FigureSnapshot>) {
   if (recording()) cy.writeFile(`cypress/fixtures/${fixture}`, recorded)
+}
+
+/**
+ * Formats every date and number the page leaves to "the browser's locale" in
+ * one fixed locale, for the page about to load.
+ *
+ * Several report figures are written with toLocaleDateString(undefined) and
+ * the like, which Electron answers from the machine it runs on: "19/03/2026"
+ * and "11:30" on a Mac set up in Spain, "3/19/2026" and "11:30 AM" on the CI
+ * runner. The figures are the same; the pinned text would not be. Pass as
+ * cy.visit's onBeforeLoad. Only the default is replaced -- anything the app
+ * formats in an explicit locale ('es-ES', 'en-GB') is left exactly as it is.
+ */
+export function defaultLocale(win: Cypress.AUTWindow, locale = 'en-US') {
+  const w = win as any
+  const withDefault = (proto: any, name: string) => {
+    const original = proto[name]
+    proto[name] = function (this: unknown, locales?: unknown, options?: unknown) {
+      return original.call(this, locales ?? locale, options)
+    }
+  }
+  withDefault(w.Date.prototype, 'toLocaleDateString')
+  withDefault(w.Date.prototype, 'toLocaleTimeString')
+  withDefault(w.Date.prototype, 'toLocaleString')
+  withDefault(w.Number.prototype, 'toLocaleString')
+  for (const name of ['DateTimeFormat', 'NumberFormat']) {
+    const Original = w.Intl[name]
+    const Wrapped = function (locales?: unknown, options?: unknown) {
+      return new Original(locales ?? locale, options)
+    }
+    Wrapped.prototype = Original.prototype
+    Wrapped.supportedLocalesOf = Original.supportedLocalesOf
+    w.Intl[name] = Wrapped
+  }
 }
 
 /** The same preset every report's range picker offers. */

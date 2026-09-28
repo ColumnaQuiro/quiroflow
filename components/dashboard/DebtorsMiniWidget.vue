@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { fetchAllRows, fetchByIds } from '~/composables/useFetchAllRows'
-import { useBonoOwedPayments } from '~/composables/useBonoOwedPayments'
+import { useBonoDebts } from '~/composables/useBonoOwedPayments'
 import { formatEur } from '~/utils/billing'
 import { bonoOwedCents, type BonoOwedPayment } from '~/utils/bonoOwed'
 defineProps<{ dateRange?: unknown; practitionerId?: string; clinicId?: string }>()
@@ -17,8 +16,7 @@ interface InvoiceRow { id: string; status: string; total_cents: number }
 interface ScheduleRow { package_purchase_id: string | null; status: string }
 
 const t = useT()
-const supabase = useSupabaseClient()
-const fetchBonoOwedPayments = useBonoOwedPayments()
+const loadBonoDebts = useBonoDebts()
 const loading = ref(true)
 const purchases = ref<PurchaseRow[]>([])
 const invoicesById = ref<Map<string, InvoiceRow>>(new Map())
@@ -26,21 +24,11 @@ const schedulesByPurchase = ref<Map<string, ScheduleRow>>(new Map())
 const allPayments = ref<BonoOwedPayment[]>([])
 
 onMounted(async () => {
-  purchases.value = (await fetchAllRows((from, to) =>
-    supabase.from('package_purchases').select('id, price_cents, invoice_id, owed_cents, external_reference, patients(first_name, last_name)').order('id').range(from, to),
-  )) as unknown as PurchaseRow[]
-  const invoiceIds = purchases.value.map((x) => x.invoice_id).filter((x): x is string => !!x)
-
-  const [invoices, { data: schedules }, payments] = await Promise.all([
-    fetchByIds<InvoiceRow>(invoiceIds, (chunk) => supabase.from('invoices').select('id, status, total_cents').in('id', chunk)),
-    supabase.from('payment_schedules').select('package_purchase_id, status').not('package_purchase_id', 'is', null),
-    // All of them: a bono sold here has no invoice now, and a migrated one
-    // never had -- its payments hang off the purchase.
-    fetchBonoOwedPayments(invoiceIds),
-  ])
-  invoicesById.value = new Map(invoices.map((i) => [i.id, i]))
-  schedulesByPurchase.value = new Map((schedules ?? []).map((s) => [s.package_purchase_id as string, s as ScheduleRow]))
-  allPayments.value = payments
+  const debts = await loadBonoDebts('id')
+  purchases.value = debts.purchases
+  invoicesById.value = debts.invoicesById
+  schedulesByPurchase.value = debts.schedulesByPurchase
+  allPayments.value = debts.payments
   loading.value = false
 })
 

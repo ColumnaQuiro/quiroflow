@@ -101,15 +101,17 @@ async function loadBadges() {
   // Only for someone who can open the Inbox. Conversations unread by ME
   // (inbox_reads is per person) and not archived by me -- exactly the Inbox's
   // own "Unread" count. It used to pull the last 500 messages and guess.
+  //
+  // Asked as one number (inbox_unread_count, same definition as the view's
+  // unread_for_me and my_archived) rather than by counting rows of
+  // inbox_conversations: that view builds every conversation there has ever
+  // been -- names, previews, labels, assignment -- before a filter can apply,
+  // and it was the slowest request on every page, up to 2.3 s. Same row-level
+  // security either way; the function runs as the caller.
   if (can('inbox_access')) {
-    supabase
-      .from('inbox_conversations')
-      .select('conversation_key', { count: 'exact', head: true })
-      .eq('unread_for_me', true)
-      .eq('my_archived', false)
-      .then(({ count }) => {
-        if (token === badgeToken) inboxUnreadCount.value = count ?? 0
-      })
+    supabase.rpc('inbox_unread_count').then(({ data }) => {
+      if (token === badgeToken) inboxUnreadCount.value = data ?? 0
+    })
   }
 
   // Only "My Day" needs the team member id, so it's the only one that waits

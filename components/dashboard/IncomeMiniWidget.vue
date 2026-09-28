@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { fetchByIds } from '~/composables/useFetchAllRows'
 import { formatEur } from '~/utils/billing'
 import { classifyPaymentForFilter } from '~/utils/incomeAttribution'
 import { isReceipt } from '~/utils/paymentReceipts'
@@ -40,90 +39,66 @@ async function load() {
   loading.value = true
   const { from, to } = rangeBounds(props.dateRange)
   const { from: prevFrom, to: prevTo } = previousRange(props.dateRange)
-  // The appointments map only exists to resolve a practitioner/clinic
-  // filter (see apptMatchesFilter, which short-circuits without one). On an
-  // unfiltered dashboard -- how it renders by default -- fetching the whole
-  // appointments table meant paging thousands of rows that were never read.
-  // load() already re-runs when either filter prop changes, so this can just
-  // be skipped rather than lazy-loaded.
   const needsAppointments = !!props.practitionerId || !!props.clinicId
 
-  const [p, inv, appt, pats, prevPaymentRows, prevInvoiceRows] = await Promise.all([
-    fetchAllRows<PaymentRow>((f, t) =>
-      supabase
-        .from('payments')
-        .select('amount_cents, method, paid_at, invoice_id, patient_id, invoices!payments_invoice_id_fkey(status)')
-        .gte('paid_at', from.toISOString())
-        .lte('paid_at', to.toISOString())
-        .range(f, t),
-    ),
-    fetchAllRows<InvoiceRow>((f, t) =>
-      supabase
-        .from('invoices')
-        .select('id, total_cents, status, appointment_id, patient_id')
-        .neq('status', 'void')
-        .gte('created_at', from.toISOString())
-        .lte('created_at', to.toISOString())
-        .range(f, t),
-    ),
-    needsAppointments
-      ? fetchAllRows<AppointmentRow>((f, t) => supabase.from('appointments').select('id, practitioner_id, clinic_id').range(f, t))
-      : Promise.resolve([] as AppointmentRow[]),
-    // The fallback for money with no appointment behind it -- a bono, credit
-    // on account, a quick invoice. Same "only when filtering" reasoning.
-    needsAppointments
-      ? fetchAllRows<PatientRow>((f, t) => supabase.from('patients').select('id, default_practitioner_id, clinic_id').range(f, t))
-      : Promise.resolve([] as PatientRow[]),
-    // Classified exactly like the current period. It used to be summed
-    // account-wide, which compared one practitioner's takings against the
-    // whole clinic's: Beatriz Ferrando's first month read "-56% vs previous
-    // period" -- 2,320 of her own against 5,278 of everyone's -- when she
-    // had no previous period at all and had gone from nothing to 2,320.
-    fetchAllRows<PaymentRow>((f, t) =>
-      supabase
-        .from('payments')
-        .select('amount_cents, method, paid_at, invoice_id, patient_id, invoices!payments_invoice_id_fkey(status)')
-        .gte('paid_at', prevFrom.toISOString())
-        .lte('paid_at', prevTo.toISOString())
-        .range(f, t),
-    ),
-    // Only to resolve those payments to an appointment, and so to a
-    // practitioner. Never summed: "charged" is about the current period.
-    needsAppointments
-      ? fetchAllRows<InvoiceRow>((f, t) =>
-          supabase
-            .from('invoices')
-            .select('id, total_cents, status, appointment_id, patient_id')
-            .neq('status', 'void')
-            .gte('created_at', prevFrom.toISOString())
-            .lte('created_at', prevTo.toISOString())
-            .range(f, t),
-        )
-      : Promise.resolve([] as InvoiceRow[]),
-  ])
-  // The void rule moved out of the query when the join went from inner to
-  // left: a payment with no invoice has nothing to void and must survive it.
-  const notVoid = (row: PaymentRow) => row.invoices?.status !== 'void'
-  // Credit and write-off rows settle an invoice without money arriving, and
-  // this figure is money -- see utils/paymentReceipts. Dropped here rather
-  // than at each total, because every number on this widget is takings.
-  payments.value = p.filter((row) => notVoid(row) && isReceipt(row.method))
-  invoices.value = inv
-  appointments.value = appt
-  patients.value = pats
-  // Same void rule as the current period. It was missing here, so a payment
-  // against a voided invoice counted towards the comparison but not towards
-  // the figure being compared.
-  prevPayments.value = prevPaymentRows.filter((row) => notVoid(row) && isReceipt(row.method))
-  prevInvoices.value = prevInvoiceRows
+  // Whose money each payment and invoice is travels with it: the patient it
+  // was taken from, and (through its invoice) the visit behind it. With a
+  // practitioner picked this widget used to download the ENTIRE appointments
+  // and patients tables to look those up -- ten-odd requests for a clinic
+  // with 9,000 appointments -- and every payment against the period's
+  // invoices came in a further round after the rest. The lookups read the
+  // same rows either way: an invoice's appointment is only ever asked for
+  // through an invoice in one of the two periods, a patient only through a
+  // payment or invoice on screen.
+  type Embedded<T> = T & { patients?: PatientRow | null; appointments?: AppointmentRow | null; payments?: { invoice_id: string | null; amount_cents: number }[] }
+  const paymentColumns = `amount_cents, method, paid_at, invoice_id, patient_id, invoices!payments_invoice_id_fkey(status)${needsAppointments ? ', patients!payments_patient_id_fkey(id, default_practitioner_id, clinic_id)' : ''}`
+  const invoiceColumns = (withPayments: boolean) =>
+    `id, total_cents, status, appointment_id, patient_id${needsAppointments ? ', appointments!invoices_appointment_id_fkey(id, practitioner_id, clinic_id), patients!invoices_patient_id_fkey(id, default_practitioner_id, clinic_id)' : ''}${withPayments ? ', payments!payments_invoice_id_fkey(invoice_id, amount_cents)' : ''}`
+  const paymentsIn = (a: Date, b: Date) =>
+    fetchAllRows<Embedded<PaymentRow>>(
+      (f, t) =>
+        supabase.from('payments').select(paymentColumns).gte('paid_at', a.toISOString()).lte('paid_at', b.toISOString()).range(f, t) as unknown as PromiseLike<{ data: Embedded<PaymentRow>[] | null; error: unknown }>,
+    )
+  const invoicesIn = (a: Date, b: Date, withPayments: boolean) =>
+    fetchAllRows<Embedded<InvoiceRow>>(
+      (f, t) =>
+        supabase
+          .from('invoices')
+          .select(invoiceColumns(withPayments))
+          .neq('status', 'void')
+          .gte('created_at', a.toISOString())
+          .lte('created_at', b.toISOString())
+          .range(f, t) as unknown as PromiseLike<{ data: Embedded<InvoiceRow>[] | null; error: unknown }>,
+    )
 
-  // Chunked: PostgREST puts an .in() list in the URL, and a busy month's
-  // invoices make one long enough to be refused.
-  invoicePayments.value = await fetchByIds(inv.map((i) => i.id), (chunk) =>
-    fetchAllRows<{ invoice_id: string | null; amount_cents: number }>((f, t) =>
-      supabase.from('payments').select('invoice_id, amount_cents').in('invoice_id', chunk).range(f, t),
-    ).then((data) => ({ data, error: null })),
-  )
+  const [p, inv, prevPaymentRows, prevInvoiceRows] = await Promise.all([
+    paymentsIn(from, to),
+    invoicesIn(from, to, true),
+    paymentsIn(prevFrom, prevTo),
+    needsAppointments ? invoicesIn(prevFrom, prevTo, false) : Promise.resolve([] as Embedded<InvoiceRow>[]),
+  ])
+
+  const appointmentById = new Map<string, AppointmentRow>()
+  const patientById = new Map<string, PatientRow>()
+  for (const row of [...p, ...prevPaymentRows, ...inv, ...prevInvoiceRows]) {
+    if (row.patients) patientById.set(row.patients.id, row.patients)
+    if (row.appointments) appointmentById.set(row.appointments.id, row.appointments)
+  }
+  const strip = <T extends object>(row: Embedded<T>): T => {
+    const { patients: _p, appointments: _a, payments: _pay, ...rest } = row
+    return rest as T
+  }
+
+  // Credit and write-off rows are not takings -- see utils/paymentReceipts.
+  const notVoid = (row: PaymentRow) => row.invoices?.status !== 'void'
+  payments.value = p.filter((row) => notVoid(row) && isReceipt(row.method)).map(strip)
+  invoices.value = inv.map(strip)
+  appointments.value = [...appointmentById.values()]
+  patients.value = [...patientById.values()]
+  prevPayments.value = prevPaymentRows.filter((row) => notVoid(row) && isReceipt(row.method)).map(strip)
+  prevInvoices.value = prevInvoiceRows.map(strip)
+  // Every payment against this period's invoices, whenever it was taken.
+  invoicePayments.value = inv.flatMap((i) => i.payments ?? [])
   loading.value = false
 }
 onMounted(load)

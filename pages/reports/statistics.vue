@@ -54,14 +54,19 @@ const invoices = ref<InvoiceRow[]>([])
 // offset paging is only stable over a stable order.
 async function loadAppointments() {
   appointmentsLoading.value = true
+  // Counted alongside the first page, so the other nine-odd pages of a
+  // clinic's history go out together rather than four at a time (see
+  // fetchAllRows).
   const [appts, typeRows] = await Promise.all([
-    fetchAllRows<Omit<ApptRow, 'at' | 'stage'>>((f, to) =>
-      supabase
-        .from('appointments')
-        .select('id, patient_id, starts_at, status, appointment_type_id, practitioner_id, clinic_id')
-        .is('deleted_at', null)
-        .order('id')
-        .range(f, to),
+    fetchAllRows<Omit<ApptRow, 'at' | 'stage'>>(
+      (f, to) =>
+        supabase
+          .from('appointments')
+          .select('id, patient_id, starts_at, status, appointment_type_id, practitioner_id, clinic_id')
+          .is('deleted_at', null)
+          .order('id')
+          .range(f, to),
+      { total: supabase.from('appointments').select('id', { count: 'exact', head: true }).is('deleted_at', null) },
     ),
     supabase.from('appointment_types').select('id, name, stage').then((r) => (r.data ?? []) as TypeRow[]),
   ])
@@ -109,11 +114,13 @@ async function loadMoney() {
   const run = ++moneyRun
   moneyLoading.value = true
   const [p, inv] = await Promise.all([
-    fetchAllRows<Omit<PaymentRow, 'at'>>((f, t2) =>
-      supabase.from('payments').select('amount_cents, paid_at, invoice_id').gte('paid_at', from.toISOString()).lte('paid_at', to.toISOString()).order('id').range(f, t2),
+    fetchAllRows<Omit<PaymentRow, 'at'>>(
+      (f, t2) => supabase.from('payments').select('amount_cents, paid_at, invoice_id').gte('paid_at', from.toISOString()).lte('paid_at', to.toISOString()).order('id').range(f, t2),
+      { total: supabase.from('payments').select('id', { count: 'exact', head: true }).gte('paid_at', from.toISOString()).lte('paid_at', to.toISOString()) },
     ),
-    fetchAllRows<InvoiceRow>((f, t2) =>
-      supabase.from('invoices').select('id, appointment_id').gte('created_at', from.toISOString()).lte('created_at', to.toISOString()).order('id').range(f, t2),
+    fetchAllRows<InvoiceRow>(
+      (f, t2) => supabase.from('invoices').select('id, appointment_id').gte('created_at', from.toISOString()).lte('created_at', to.toISOString()).order('id').range(f, t2),
+      { total: supabase.from('invoices').select('id', { count: 'exact', head: true }).gte('created_at', from.toISOString()).lte('created_at', to.toISOString()) },
     ),
   ])
   if (run !== moneyRun) return

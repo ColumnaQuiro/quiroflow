@@ -12,8 +12,13 @@ const active = ref(0)
 async function load() {
   loading.value = true
 
-  let totalQuery = supabase.from('patients').select('id', { count: 'exact', head: true })
-  if (props.practitionerId) totalQuery = totalQuery.eq('default_practitioner_id', props.practitionerId)
+  // The same count "Total patients" shows; asked once when both are on the
+  // dashboard. See useSharedFetch.
+  const totalQuery = sharedFetch(`patients-count:${props.practitionerId ?? ''}`, () => {
+    let query = supabase.from('patients').select('id', { count: 'exact', head: true })
+    if (props.practitionerId) query = query.eq('default_practitioner_id', props.practitionerId)
+    return query
+  })
 
   const cutoff = new Date()
   cutoff.setDate(cutoff.getDate() - ACTIVE_WINDOW_DAYS)
@@ -25,7 +30,9 @@ async function load() {
     .gte('starts_at', cutoff.toISOString())
   if (props.practitionerId) activeQuery = activeQuery.eq('practitioner_id', props.practitionerId)
 
-  const [{ count }, rows] = await Promise.all([totalQuery, fetchAllRows((f, t) => activeQuery.range(f, t))])
+  let activeCount = supabase.from('appointments').select('id', { count: 'exact', head: true }).eq('status', 'completed').gte('starts_at', cutoff.toISOString())
+  if (props.practitionerId) activeCount = activeCount.eq('practitioner_id', props.practitionerId)
+  const [{ count }, rows] = await Promise.all([totalQuery, fetchAllRows((f, t) => activeQuery.range(f, t), { total: activeCount })])
 
   total.value = count ?? 0
   active.value = new Set(rows.map((r) => r.patient_id)).size

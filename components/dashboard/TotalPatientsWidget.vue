@@ -8,9 +8,12 @@ const total = ref(0)
 
 async function load() {
   loading.value = true
-  let query = supabase.from('patients').select('id', { count: 'exact', head: true })
-  if (props.practitionerId) query = query.eq('default_practitioner_id', props.practitionerId)
-  const { count } = await query
+  // Shared with "Active patients", which shows the same count beside its own.
+  const { count } = await sharedFetch(`patients-count:${props.practitionerId ?? ''}`, () => {
+    let query = supabase.from('patients').select('id', { count: 'exact', head: true })
+    if (props.practitionerId) query = query.eq('default_practitioner_id', props.practitionerId)
+    return query
+  })
   total.value = count ?? 0
   loading.value = false
 }

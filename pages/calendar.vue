@@ -370,6 +370,7 @@ const APPOINTMENT_SELECT =
 async function loadAppointments(silent = false) {
   if (!store.currentClinicId) {
     appointments.value = []
+    loading.value = false // or "No clinic selected" sits behind the skeleton
     loadToday() // clears today's panels too
     return
   }
@@ -403,7 +404,9 @@ async function loadAppointments(silent = false) {
   // Started once the grid has drawn, not beside its queries: the grid is
   // what the desk is waiting for, and on a slow connection the extra
   // requests held its skeleton up.
-  loadToday().catch((e) => console.error('calendar: today failed', e))
+  loadToday()
+    .catch((e) => console.error('calendar: today failed', e))
+    .finally(() => (todayLoaded.value = true)) // a failure shows zeros, not a placeholder forever
   // Second-rank detail -- the bono count, how often a visit was moved, the
   // waitlist offers standing on freed slots. The grid is usable without them,
   // so they fill in after it renders rather than holding it back for the
@@ -492,12 +495,16 @@ function owesCents(patientId: string) {
 const todayRows = ref<AppointmentRow[]>([])
 const todayGlance = ref({ booked: 0, seen: 0, rescheduled: 0, cancelled: 0, missed: 0 })
 const todayOwedByPatient = ref<Record<string, number>>({})
+// Until the first answer, the glance and the tracker show placeholders, not
+// zeros: "0 booked" on a full day reads as a fact.
+const todayLoaded = ref(false)
 let todayToken = 0
 async function loadToday() {
   const clinicId = store.currentClinicId
   if (!clinicId) {
     todayRows.value = []
     todayGlance.value = { booked: 0, seen: 0, rescheduled: 0, cancelled: 0, missed: 0 }
+    todayLoaded.value = true
     return
   }
   const token = ++todayToken
@@ -529,6 +536,7 @@ async function loadToday() {
     missed: live.filter((a) => a.status === 'no_show').length,
   }
   todayRows.value = live
+  todayLoaded.value = true
 
   // What each patient waiting to pay owes, for the tracker's "debe X €".
   const paying = [...new Set(live.filter((a) => stageOf(a) === 'checkout').map((a) => a.patient_id))]
@@ -643,7 +651,7 @@ async function loadFutureAppointmentIds(patientIds: string[]) {
 function hasFutureAppointment(appt: AppointmentRow) {
   const ids = futureAppointmentIdsByPatient.value[appt.patient_id]
   if (!ids) return false
-  return [...ids].some((id) => id !== appt.id)
+  return ids.size > 1 || !ids.has(appt.id)
 }
 
 
@@ -666,22 +674,60 @@ async function loadAvailabilityBlocks() {
   availabilityBlocks.value = data ?? []
 }
 
+// The range in view: appointments and blocks side by side, not one after the
+// other -- neither needs anything from the other.
+function loadRange() {
+  return Promise.all([loadAppointments(), loadAvailabilityBlocks().catch((e) => console.error('calendar: availability failed', e))])
+}
+
+// First paint used to be five round trips in a row (types/team -> rooms ->
+// appointments -> balances -> blocks), and on the way the range was fetched
+// two or three times over: restoring the saved view and then the saved
+// practitioner each tripped the watcher below, the first time with no
+// practitioner at all -- the whole clinic's week, thrown away.
+//
+// Now the page settles its view and practitioner before anything watches
+// them, and asks for the range at the same time as the reference data
+// whenever the practitioner it will show is already known (the one used last
+// time). If the reference data then says that tab is gone, the filter moves
+// and the watcher reloads; loadToken drops the stale answer.
+const referenceLoaded = ref(false)
+let mounted = false
 onMounted(async () => {
-  await loadReferenceData()
+  const clinicAtStart = store.currentClinicId
+  const stored = localStorage.getItem(CALENDAR_PRACTITIONER_KEY)
+  if (stored) practitionerFilter.value = stored
+  const reference = Promise.all([loadReferenceData(), loadRooms()])
+  const early = stored ? rangeKey() : null
+  if (early) loadRange()
+  await reference.catch((e) => console.error('calendar: reference data failed', e))
+  referenceLoaded.value = true
   ensureValidPractitionerFilter()
-  await loadRooms()
-  await loadAppointments()
-  await loadAvailabilityBlocks()
+  // The watchers below only start listening now, so the filter settling
+  // above is not a second load.
+  await nextTick()
+  mounted = true
+  // Anything that moved meanwhile -- the tab, or a click on Next while the
+  // team was still loading -- means the early answer is for the wrong range.
+  if (store.currentClinicId !== clinicAtStart) await onClinicChanged()
+  else if (rangeKey() !== early) await loadRange()
 })
-watch(() => store.currentClinicId, async () => {
+function rangeKey() {
+  return `${viewMode.value}|${toDateKey(anchorDate.value)}|${practitionerFilter.value}`
+}
+async function onClinicChanged() {
+  await loadRooms()
+  const before = practitionerFilter.value
   ensureValidPractitionerFilter()
-  await loadRooms()
-  await loadAppointments()
-  await loadAvailabilityBlocks()
+  // A changed filter reloads through the watcher below.
+  if (practitionerFilter.value === before) await loadRange()
+}
+watch(() => store.currentClinicId, () => {
+  if (mounted) onClinicChanged()
 })
-watch([viewMode, anchorDate, practitionerFilter], async () => {
-  await loadAppointments()
-  await loadAvailabilityBlocks()
+watch([viewMode, anchorDate, practitionerFilter], () => {
+  if (!mounted) return
+  loadRange()
 })
 
 const dayColumns = computed(() => [...rooms.value, { id: '__none', name: t('Unassigned', 'Sin asignar') }])
@@ -723,9 +769,20 @@ function isApptVisible(appt: AppointmentRow) {
   return true
 }
 
-function appointmentsForRoom(roomId: string) {
-  return appointments.value.filter((a) => (a.room_id ?? '__none') === roomId && isApptVisible(a))
-}
+// The loaded range grouped by calendar day, once per change to it. Every
+// column, day header and count used to filter the whole list for itself, on
+// every render -- and the grid renders on every slot the pointer crosses, so
+// a whole-clinic week re-parsed each start time thousands of times a second.
+const appointmentsByDay = computed(() => {
+  const byDay = new Map<string, AppointmentRow[]>()
+  for (const a of appointments.value) {
+    const key = toDateKey(new Date(a.starts_at))
+    const rows = byDay.get(key)
+    if (rows) rows.push(a)
+    else byDay.set(key, [a])
+  }
+  return byDay
+})
 
 // Best-effort practitioner line under a room's column header (the app has
 // no fixed room->practitioner assignment, so this reflects whoever's
@@ -831,6 +888,39 @@ function closedSlotRects(forDate: Date, hourPx: number) {
   }
   return rects
 }
+// Per day on screen, at the current view's scale -- every room column of a
+// day shares its day's rects, so they are worked out once, not per column.
+const closedRectsByDay = computed(() => {
+  const hourPx = viewMode.value === 'day' ? DAY_HOUR_PX.value : WEEK_HOUR_PX.value
+  const days = viewMode.value === 'day' ? [anchorDate.value] : visibleWeekDays.value
+  return new Map(days.map((d) => [toDateKey(d), closedSlotRects(d, hourPx)]))
+})
+function closedRectsFor(day: Date) {
+  return closedRectsByDay.value.get(toDateKey(day)) ?? []
+}
+
+// Placeholder visits while a range loads: a few per column at fixed, varied
+// times, so the skeleton reads as a diary rather than as stripes. Hours
+// nobody works stay hatched and empty, as they will be once it loads.
+const SKELETON_BLOCKS: [number, number][][] = [
+  [[1, 1], [2.5, 0.5], [4, 1], [6.5, 1.5]],
+  [[0.5, 1], [3, 1], [5.5, 0.5], [8, 1]],
+  [[2, 1.5], [4.5, 1], [7.5, 0.5], [9, 1]],
+  [[1.5, 0.5], [3.5, 1.5], [7, 1]],
+]
+function skeletonBlocks(index: number, hourPx: number, day?: Date) {
+  const closed = day ? closedRectsFor(day) : []
+  return SKELETON_BLOCKS[index % SKELETON_BLOCKS.length]
+    .map(([at, hours]) => ({ top: at * hourPx + 1, height: hours * hourPx - 3 }))
+    .filter((b) => !closed.some((r) => b.top < r.top + r.height && b.top + b.height > r.top))
+}
+// Before the rooms are known: three columns for a day, one per day for a week.
+const skeletonColumns = computed<(Date | null)[]>(() => (viewMode.value === 'day' ? [null, null, null] : visibleWeekDays.value))
+// The unassigned column is usually empty; placeholders there would promise
+// visits that are not coming. Unless it is the only column there is.
+function skeletonInColumn(roomId: string) {
+  return roomId !== '__none' || rooms.value.length === 0
+}
 
 // --- Stage, block, counts ---
 // One stage per appointment, from utils/appointmentStage -- the block, the
@@ -843,7 +933,19 @@ function firstName(full: string | null | undefined) {
   return (full ?? '').trim().split(/\s+/)[0] || null
 }
 
+// Built once per appointment per change, not on every render: a fresh object
+// each time re-rendered every block on the grid whenever anything on the
+// page moved -- the pointer crossing a slot was enough.
+const blockViewById = computed(() => {
+  const views = new Map<string, BlockView>()
+  for (const a of appointments.value) views.set(a.id, buildBlockView(a))
+  return views
+})
 function blockView(appt: AppointmentRow): BlockView {
+  // Today's rows (the flow tracker's) can be outside the range on screen.
+  return blockViewById.value.get(appt.id) ?? buildBlockView(appt)
+}
+function buildBlockView(appt: AppointmentRow): BlockView {
   const stage = stageOf(appt)
   const payment = visitPaymentById.value[appt.id] ?? { kind: 'none' as const }
   return {
@@ -880,8 +982,8 @@ function countsFor(rows: AppointmentRow[]) {
 // The row above the grid covers what the grid shows: the day in Day view,
 // the visible days otherwise.
 const rangeCounts = computed(() => {
-  const keys = new Set((viewMode.value === 'day' ? [anchorDate.value] : visibleWeekDays.value).map(toDateKey))
-  return countsFor(appointments.value.filter((a) => keys.has(toDateKey(new Date(a.starts_at)))))
+  const days = viewMode.value === 'day' ? [anchorDate.value] : visibleWeekDays.value
+  return countsFor(days.flatMap((d) => appointmentsByDay.value.get(toDateKey(d)) ?? []))
 })
 const { stageLabel, filterLabel } = useStageLabels()
 const countChips = computed(() =>
@@ -898,10 +1000,16 @@ const countsNoun = computed(() => {
   const noun = t(one ? 'appointment' : 'appointments', one ? 'cita' : 'citas')
   return today ? `${noun} ${t('today', 'hoy')}` : noun
 })
+const dayHeaderCountsByDay = computed(() => {
+  const byDay = new Map<string, { unconfirmed: number; owe: number }>()
+  for (const [key, rows] of appointmentsByDay.value) {
+    const c = countsFor(rows).counts
+    byDay.set(key, { unconfirmed: c.pending, owe: c.owes })
+  }
+  return byDay
+})
 function dayHeaderCounts(day: Date) {
-  const key = toDateKey(day)
-  const c = countsFor(appointments.value.filter((a) => toDateKey(new Date(a.starts_at)) === key)).counts
-  return { unconfirmed: c.pending, owe: c.owes }
+  return dayHeaderCountsByDay.value.get(toDateKey(day)) ?? { unconfirmed: 0, owe: 0 }
 }
 
 // Stage key for the side panel: one row per stage, drawn with the same pill
@@ -981,9 +1089,14 @@ function assignOverlapLayout(sorted: AppointmentRow[], maxLanes: number, hourPx:
   let cluster: LaidOutAppointment[] = []
   let clusterEnd = -Infinity
 
+  // The lanes are written onto the raw rows: this runs inside a computed
+  // (layoutByColumn), and writing through the reactive proxy would tell
+  // everything reading a block to update again. The computed returning a new
+  // layout is what re-renders the blocks.
   function flush() {
     if (cluster.length === 0) return
     const colEnds: number[] = []
+    const lanes: number[] = []
     for (const appt of cluster) {
       const start = new Date(appt.starts_at).getTime()
       let col = colEnds.findIndex((end) => end <= start)
@@ -992,16 +1105,17 @@ function assignOverlapLayout(sorted: AppointmentRow[], maxLanes: number, hourPx:
         colEnds.push(0)
       }
       colEnds[col] = effEndMs(appt)
-      appt._col = col
+      lanes.push(col)
+      toRaw(appt)._col = col
     }
     const totalCols = colEnds.length
     if (totalCols <= maxLanes) {
-      for (const appt of cluster) appt._totalCols = totalCols
+      for (const appt of cluster) toRaw(appt)._totalCols = totalCols
       result.push(...cluster)
     } else {
-      const visible = cluster.filter((a) => a._col < maxLanes - 1)
-      const hidden = cluster.filter((a) => a._col >= maxLanes - 1)
-      for (const a of visible) a._totalCols = maxLanes
+      const visible = cluster.filter((_, i) => lanes[i] < maxLanes - 1)
+      const hidden = cluster.filter((_, i) => lanes[i] >= maxLanes - 1)
+      for (const a of visible) toRaw(a)._totalCols = maxLanes
       result.push(...visible)
       result.push({
         _overflow: true,
@@ -1025,22 +1139,45 @@ function assignOverlapLayout(sorted: AppointmentRow[], maxLanes: number, hourPx:
   return result
 }
 
+// Every column's blocks, laid out once per change to what is on screen.
 // Day view splits columns by room, but two appointments can still be
-// double-booked (or just overlap) in the same room -- without this, they'd
-// all render at full column width and visually stack on top of each other.
-function layoutForRoom(roomId: string): LayoutBlock[] {
-  const sorted = [...appointmentsForRoom(roomId)].sort((a, b) => a.starts_at.localeCompare(b.starts_at))
-  return assignOverlapLayout(sorted, DAY_MAX_LANES, DAY_HOUR_PX.value, DAY_MIN_BLOCK_PX)
-}
-
+// double-booked (or just overlap) in the same room -- without the lanes,
+// they'd all render at full column width and stack on top of each other.
+//
 // Week view mirrors Day view's room columns (one sub-column per room, per
 // day) instead of cramming every room's appointments into a single day
 // column -- that's what was forcing 3-4 way lane splits and truncating
 // patient names down to a few characters even when nothing was genuinely
 // double-booked.
-function appointmentsForRoomOnDay(day: Date, roomId: string) {
-  const key = toDateKey(day)
-  return appointments.value.filter((a) => toDateKey(new Date(a.starts_at)) === key && (a.room_id ?? '__none') === roomId && isApptVisible(a))
+function columnKey(dayKey: string, roomId: string) {
+  return `${dayKey}|${roomId}`
+}
+const layoutByColumn = computed(() => {
+  const day = viewMode.value === 'day'
+  const columns = new Map<string, AppointmentRow[]>()
+  for (const [dayKey, rows] of appointmentsByDay.value) {
+    for (const a of rows) {
+      if (!isApptVisible(a)) continue
+      const key = columnKey(dayKey, a.room_id ?? '__none')
+      const col = columns.get(key)
+      if (col) col.push(a)
+      else columns.set(key, [a])
+    }
+  }
+  const layouts = new Map<string, LayoutBlock[]>()
+  for (const [key, rows] of columns) {
+    rows.sort((a, b) => a.starts_at.localeCompare(b.starts_at))
+    layouts.set(
+      key,
+      day
+        ? assignOverlapLayout(rows, DAY_MAX_LANES, DAY_HOUR_PX.value, DAY_MIN_BLOCK_PX)
+        : assignOverlapLayout(rows, WEEK_MAX_LANES, WEEK_HOUR_PX.value, WEEK_MIN_BLOCK_PX),
+    )
+  }
+  return layouts
+})
+function layoutForRoomOnDay(day: Date, roomId: string): LayoutBlock[] {
+  return layoutByColumn.value.get(columnKey(toDateKey(day), roomId)) ?? []
 }
 function blocksForRoomOnDay(day: Date, roomId: string) {
   if (!settings.showAvailability) return []
@@ -1053,10 +1190,6 @@ function blocksForRoomOnDay(day: Date, roomId: string) {
       new Date(b.starts_at).getTime() < dayEnd &&
       new Date(b.ends_at).getTime() > dayStart,
   )
-}
-function layoutForRoomOnDay(day: Date, roomId: string): LayoutBlock[] {
-  const sorted = [...appointmentsForRoomOnDay(day, roomId)].sort((a, b) => a.starts_at.localeCompare(b.starts_at))
-  return assignOverlapLayout(sorted, WEEK_MAX_LANES, WEEK_HOUR_PX.value, WEEK_MIN_BLOCK_PX)
 }
 function showOverflowDay(day: Date) {
   anchorDate.value = day
@@ -1730,6 +1863,9 @@ function onGridKeydown(e: KeyboardEvent) {
     case 'Enter':
     case ' ': {
       e.preventDefault()
+      // Mid-load, what is in a cell is not known yet: Enter could book over a
+      // visit that is on its way. The cursor still moves.
+      if (loading.value) return
       const appt = appointmentAtCell(cell)
       if (appt) handleAppointmentClick(appt)
       else {
@@ -1808,9 +1944,8 @@ watch([showAgenda, () => clinicTeamMembers.value.length], ([on]) => {
   if (practitionerFilter.value !== ALL_PRACTITIONERS && practitionerFilter.value !== myPractitionerId.value) setAgendaScope(myPractitionerId.value ? 'mine' : 'all')
 })
 const agendaItems = computed(() => {
-  const key = toDateKey(anchorDate.value)
-  return appointments.value
-    .filter((a) => toDateKey(new Date(a.starts_at)) === key && isApptVisible(a))
+  return (appointmentsByDay.value.get(toDateKey(anchorDate.value)) ?? [])
+    .filter(isApptVisible)
     .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
     .map((a) => ({ id: a.id, startsAt: a.starts_at, endsAt: a.ends_at, view: blockView(a), stickyNote: a.patients?.sticky_note?.trim() || null }))
 })
@@ -1901,8 +2036,12 @@ function showNowLineOn(day: Date) {
     </header>
 
     <!-- One tab per practitioner, plus the whole clinic and the visits with
-         no practitioner at all. -->
-    <div v-if="clinicTeamMembers.length > 0 && !showAgenda" data-testid="practitioner-tabs" class="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b border-line bg-surface px-4 lg:px-6 [@media(pointer:coarse)]:h-12">
+         no practitioner at all. Until the team has loaded, placeholder tabs:
+         the "no practitioners" line below used to flash on every visit. -->
+    <div v-if="!referenceLoaded && !showAgenda" data-cy="practitioner-tabs-loading" class="flex h-9 shrink-0 items-center gap-1 overflow-hidden border-b border-line bg-surface px-4 lg:px-6 [@media(pointer:coarse)]:h-12" aria-busy="true">
+      <UiSkeleton v-for="w in [96, 64, 112, 88, 104]" :key="w" class="mx-1.5 h-3.5 shrink-0 rounded-ctlSm" :style="{ width: `${w}px` }" />
+    </div>
+    <div v-else-if="clinicTeamMembers.length > 0 && !showAgenda" data-testid="practitioner-tabs" class="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b border-line bg-surface px-4 lg:px-6 [@media(pointer:coarse)]:h-12">
       <button
         type="button"
         data-testid="practitioner-tab-all"
@@ -1956,7 +2095,11 @@ function showNowLineOn(day: Date) {
          does not match, so the day keeps its shape while one kind stands out.
          This is what "Today at a glance" used to be, moved to where the eye
          already is and made to do something. -->
-    <div v-if="store.currentClinicId && !loading && !showAgenda" data-cy="day-counts" class="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-line bg-surface px-4 py-1.5 lg:px-6">
+    <div v-if="store.currentClinicId && loading && !showAgenda" class="flex shrink-0 items-center gap-2 overflow-hidden border-b border-line bg-surface px-4 py-1.5 lg:px-6" aria-busy="true">
+      <UiSkeleton class="mr-1 h-4 w-24 shrink-0 rounded-ctlSm" />
+      <UiSkeleton v-for="w in [118, 96, 132]" :key="w" class="h-9 shrink-0 rounded-full [@media(pointer:coarse)]:h-11" :style="{ width: `${w}px` }" />
+    </div>
+    <div v-else-if="store.currentClinicId && !showAgenda" data-cy="day-counts" class="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-line bg-surface px-4 py-1.5 lg:px-6">
       <span class="shrink-0 pr-1 text-[13px] text-ink-muted" data-cy="day-counts-total"><strong class="font-semibold text-ink-900">{{ rangeCounts.total }}</strong> {{ countsNoun }}</span>
       <button
         v-for="c in countChips"
@@ -2030,7 +2173,7 @@ function showNowLineOn(day: Date) {
              clinical-note icon. Here it costs the grid nothing, and it comes
              along into the off-canvas drawer below lg. -->
         <div v-if="settings.flowTracker" data-cy="flow-tracker" :aria-label="t('Flow tracker', 'Seguimiento de flujo')" role="region" class="mx-3 mb-3">
-          <CalendarFlowTracker :rows="flowRows" :privacy="settings.privacyMode" @advance="advanceFromFlow" @open="openFromFlow" />
+          <CalendarFlowTracker :rows="flowRows" :privacy="settings.privacyMode" :loading="!todayLoaded" @advance="advanceFromFlow" @open="openFromFlow" />
         </div>
 
         <div data-cy="today-glance" class="mx-3 mb-3 rounded-card border border-line bg-surface p-3">
@@ -2038,7 +2181,8 @@ function showNowLineOn(day: Date) {
           <div class="mt-2 space-y-1.5">
             <div v-for="row in glanceRows" :key="row.key" :data-cy="`glance-${row.key}`" class="flex items-center justify-between text-[12.5px]">
               <span :class="row.key === 'booked' ? 'text-ink-600' : row.tone">{{ row.label }}</span>
-              <span class="font-mono text-[12.5px] font-medium" :class="row.tone">{{ row.value }}</span>
+              <UiSkeleton v-if="!todayLoaded" class="h-3.5 rounded-ctlSm" :class="row.key === 'booked' ? 'w-6' : 'w-14'" />
+              <span v-else class="font-mono text-[12.5px] font-medium" :class="row.tone">{{ row.value }}</span>
             </div>
           </div>
         </div>
@@ -2089,17 +2233,36 @@ function showNowLineOn(day: Date) {
            only horizontally, the headers stuck to a box that never moved and
            scrolled away with the grid. -->
       <div ref="scrollAreaRef" class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <div v-if="loading" class="flex min-w-0 flex-1 p-3">
-          <div v-for="col in 3" :key="col" class="flex-1 border-r border-line px-3 last:border-r-0">
-            <UiSkeleton class="mb-4 h-4 w-24 rounded-ctlSm" />
-            <div class="space-y-3">
-              <UiSkeleton v-for="row in 6" :key="row" class="rounded-ctl" :class="row % 3 === 1 ? 'h-14' : 'h-8'" />
-            </div>
-          </div>
+        <div v-if="!store.currentClinicId" class="p-6 text-[13px] text-ink-faint">
+          {{ t('No clinic selected.', 'Ninguna clínica seleccionada.') }}
         </div>
 
-        <div v-else-if="!store.currentClinicId" class="p-6 text-[13px] text-ink-faint">
-          {{ t('No clinic selected.', 'Ninguna clínica seleccionada.') }}
+        <div v-else-if="showAgenda && loading" class="space-y-2 overflow-hidden p-3" aria-busy="true">
+          <UiSkeleton class="mb-3 h-10 rounded-ctl" />
+          <UiSkeleton v-for="row in 6" :key="row" class="rounded-ctl" :class="row % 3 === 1 ? 'h-[72px]' : 'h-14'" />
+        </div>
+
+        <!-- Before the rooms are known: the grid's own shape -- the hours,
+             the day or week's columns, placeholder visits -- so nothing moves
+             when it arrives. After that the real grid stays up and only its
+             contents are placeholders while a range loads (below). -->
+        <div v-else-if="!showAgenda && !referenceLoaded" class="flex min-h-0 min-w-0 flex-1 overflow-hidden" aria-busy="true" data-cy="calendar-skeleton">
+          <div class="w-[58px] shrink-0 border-r border-line">
+            <div class="border-b border-line" :style="{ height: `${viewMode === 'day' ? DAY_HEADER_PX : WEEK_HEADER_PX}px` }" />
+            <div class="relative" :style="{ height: `${viewMode === 'day' ? dayGridHeight : weekGridHeight}px` }">
+              <span v-for="h in hourMarks" :key="h" class="absolute left-0 right-0 px-2 font-mono text-[11px] text-ink-faint" :style="{ top: `${Math.max(0, (h - START_HOUR) * hourPxForView() - 7)}px` }">{{ hourLabel(h) }}</span>
+            </div>
+          </div>
+          <div v-for="(day, i) in skeletonColumns" :key="i" class="flex min-w-0 flex-1 flex-col border-r border-line last:border-r-0">
+            <div class="flex shrink-0 flex-col items-center justify-center gap-1.5 border-b border-line" :style="{ height: `${viewMode === 'day' ? DAY_HEADER_PX : WEEK_HEADER_PX}px` }">
+              <span v-if="day" class="text-[12.5px] font-medium text-ink-900">{{ formatWeekdayDate(day) }}</span>
+              <UiSkeleton class="h-3 w-20 rounded-ctlSm" />
+            </div>
+            <div class="relative" :style="{ height: `${viewMode === 'day' ? dayGridHeight : weekGridHeight}px` }">
+              <div v-for="h in hourMarks" :key="h" class="absolute left-0 right-0 border-t border-line" :style="{ top: `${(h - START_HOUR) * hourPxForView()}px` }" />
+              <UiSkeleton v-for="(b, j) in skeletonBlocks(i, hourPxForView())" :key="j" class="absolute left-1 right-1 rounded-ctl" :style="{ top: `${b.top}px`, height: `${b.height}px` }" />
+            </div>
+          </div>
         </div>
 
         <CalendarPhoneAgenda
@@ -2125,6 +2288,7 @@ function showNowLineOn(day: Date) {
           tabindex="0"
           role="group"
           data-cy="calendar-grid"
+          :aria-busy="loading || undefined"
           :aria-label="t('Calendar grid. Arrow keys move between slots; Enter books a free slot or opens an appointment.', 'Calendario. Las flechas mueven entre huecos; Intro reserva un hueco libre o abre una cita.')"
           class="flex min-h-0 min-w-0 flex-1 flex-col outline-none"
           @focus="onGridFocus"
@@ -2140,7 +2304,7 @@ function showNowLineOn(day: Date) {
                 <div class="sticky left-0 z-10 h-10 w-[58px] shrink-0 border-b border-r border-line bg-surface"></div>
                 <div v-for="col in dayColumns" :key="col.id" class="flex h-10 flex-1 flex-col items-center justify-center border-b border-r border-line last:border-r-0">
                   <span class="text-[13px] font-semibold text-ink-900">{{ col.name }}</span>
-                  <span v-if="roomPractitionerLabel(col.id)" class="text-[11.5px] leading-none text-ink-muted2">{{ roomPractitionerLabel(col.id) }}</span>
+                  <span v-if="!loading && roomPractitionerLabel(col.id)" class="text-[11.5px] leading-none text-ink-muted2">{{ roomPractitionerLabel(col.id) }}</span>
                 </div>
               </div>
 
@@ -2167,22 +2331,30 @@ function showNowLineOn(day: Date) {
                 </div>
 
                 <div
-                  v-for="col in dayColumns"
+                  v-for="(col, ci) in dayColumns"
                   :key="col.id"
                   data-cal-col
                   :data-room-id="col.id"
                   :data-day-key="toDateKey(anchorDate)"
                   class="relative flex-1 cursor-pointer border-r border-line last:border-r-0"
+                  :class="{ 'pointer-events-none': loading }"
                   @pointerdown="onColumnPointerDown"
                   @pointermove="onColumnPointerMove($event, toDateKey(anchorDate), col.id, DAY_HOUR_PX)"
                   @pointerleave="hoverCell = null"
                   @click="onColumnClick($event, anchorDate, col.id, DAY_HOUR_PX)"
                 >
-                  <div v-for="rect in closedSlotRects(anchorDate, DAY_HOUR_PX)" :key="rect.top" data-cy="closed-hours" class="cal-hatch pointer-events-none absolute left-0 right-0 flex items-start px-2 pt-1.5 text-[12px] text-ink-muted" :style="{ top: `${rect.top}px`, height: `${rect.height}px` }">
+                  <div v-for="rect in closedRectsFor(anchorDate)" :key="rect.top" data-cy="closed-hours" class="cal-hatch pointer-events-none absolute left-0 right-0 flex items-start px-2 pt-1.5 text-[12px] text-ink-muted" :style="{ top: `${rect.top}px`, height: `${rect.height}px` }">
                     <span v-if="rect.height >= 28">{{ t('Nobody working', 'Fuera de horario') }}</span>
                   </div>
                   <div v-for="m in slotMarks" :key="`slot-${m}`" class="pointer-events-none absolute left-0 right-0 border-t border-dashed border-line-divider" :style="{ top: `${(m / 60) * DAY_HOUR_PX}px` }" />
                   <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-line" :style="{ top: `${(h - START_HOUR) * DAY_HOUR_PX}px` }" />
+
+                  <!-- A range loading: placeholders where the visits go, and
+                       nothing to click until it is known what is free. -->
+                  <template v-if="loading">
+                    <UiSkeleton v-for="(b, j) in skeletonInColumn(col.id) ? skeletonBlocks(ci, DAY_HOUR_PX, anchorDate) : []" :key="`sk-${j}`" class="absolute left-1 right-1 rounded-ctl" :style="{ top: `${b.top}px`, height: `${b.height}px` }" />
+                  </template>
+                  <template v-else>
 
                   <div
                     v-for="block in blocksForRoom(col.id)"
@@ -2208,7 +2380,7 @@ function showNowLineOn(day: Date) {
                     <span class="truncate text-ink-muted">· {{ freedSlotUntil(o) }}</span>
                   </div>
 
-                  <template v-for="(appt, i) in layoutForRoom(col.id)" :key="isOverflowBlock(appt) ? `overflow-${col.id}-${i}` : appt.id">
+                  <template v-for="(appt, i) in layoutForRoomOnDay(anchorDate, col.id)" :key="isOverflowBlock(appt) ? `overflow-${col.id}-${i}` : appt.id">
                     <div
                       v-if="isOverflowBlock(appt)"
                       class="absolute flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[10.5px] font-medium text-ink-muted2 shadow-card"
@@ -2267,6 +2439,7 @@ function showNowLineOn(day: Date) {
                       {{ t(`New appointment · ${g.label}`, `Nueva cita · ${g.label}`) }}
                     </div>
                   </template>
+                  </template>
                   <template v-for="r in [focusRectFor(toDateKey(anchorDate), col.id, DAY_HOUR_PX)]" :key="`focus-${col.id}`">
                     <div v-if="r" data-grid-focus class="pointer-events-none absolute left-0.5 right-0.5 z-[16] rounded-ctl ring-2 ring-inset ring-brand/60" :style="{ top: `${r.top}px`, height: `${r.height}px` }" />
                   </template>
@@ -2306,7 +2479,7 @@ function showNowLineOn(day: Date) {
                 </div>
               </div>
 
-              <div v-for="day in visibleWeekDays" :key="toDateKey(day)" class="flex flex-1 flex-col border-r border-line last:border-r-0">
+              <div v-for="(day, di) in visibleWeekDays" :key="toDateKey(day)" class="flex flex-1 flex-col border-r border-line last:border-r-0">
                 <div class="sticky top-0 z-30 bg-surface">
                   <div
                     class="relative flex h-6 items-center justify-center gap-1"
@@ -2318,9 +2491,12 @@ function showNowLineOn(day: Date) {
                   </div>
                   <!-- Per-day counts: the two that need someone to act. -->
                   <div class="flex h-[18px] items-center justify-center gap-2 border-b border-line text-[10.5px] text-ink-muted" data-cy="day-header-counts" :class="isSameDate(day, new Date()) ? 'bg-brand-tintDeep' : ''">
-                    <template v-for="c in [dayHeaderCounts(day)]" :key="`c-${toDateKey(day)}`">
-                      <span v-if="c.unconfirmed > 0" class="inline-flex items-center gap-1 text-warning-text"><span class="h-1.5 w-1.5 rounded-full bg-warning-accent" />{{ t(`${c.unconfirmed} unconfirmed`, `${c.unconfirmed} sin confirmar`) }}</span>
-                      <span v-if="c.owe > 0" class="inline-flex items-center gap-1 text-danger-text"><span class="h-1.5 w-1.5 rounded-full bg-danger-text" />{{ t(`${c.owe} owe`, `${c.owe} deben`) }}</span>
+                    <UiSkeleton v-if="loading" class="h-2.5 w-16 rounded-ctlSm" />
+                    <template v-else>
+                      <template v-for="c in [dayHeaderCounts(day)]" :key="`c-${toDateKey(day)}`">
+                        <span v-if="c.unconfirmed > 0" class="inline-flex items-center gap-1 text-warning-text"><span class="h-1.5 w-1.5 rounded-full bg-warning-accent" />{{ t(`${c.unconfirmed} unconfirmed`, `${c.unconfirmed} sin confirmar`) }}</span>
+                        <span v-if="c.owe > 0" class="inline-flex items-center gap-1 text-danger-text"><span class="h-1.5 w-1.5 rounded-full bg-danger-text" />{{ t(`${c.owe} owe`, `${c.owe} deben`) }}</span>
+                      </template>
                     </template>
                   </div>
                   <div class="flex h-[26px] border-b border-line">
@@ -2341,21 +2517,27 @@ function showNowLineOn(day: Date) {
                     <div class="h-0.5 -translate-y-1/2 bg-danger-text"></div>
                   </div>
                   <div
-                    v-for="col in dayColumns"
+                    v-for="(col, ci) in dayColumns"
                     :key="col.id"
                     data-cal-col
                     :data-room-id="col.id"
                     :data-day-key="toDateKey(day)"
                     class="relative flex-1 cursor-pointer border-r border-line-divider last:border-r-0"
+                    :class="{ 'pointer-events-none': loading }"
                     :style="{ minWidth: `${WEEK_ROOM_COL_PX}px` }"
                     @pointerdown="onColumnPointerDown"
                     @pointermove="onColumnPointerMove($event, toDateKey(day), col.id, WEEK_HOUR_PX)"
                     @pointerleave="hoverCell = null"
                     @click="onColumnClick($event, day, col.id, WEEK_HOUR_PX)"
                   >
-                    <div v-for="rect in closedSlotRects(day, WEEK_HOUR_PX)" :key="rect.top" data-cy="closed-hours" class="cal-hatch pointer-events-none absolute left-0 right-0" :style="{ top: `${rect.top}px`, height: `${rect.height}px` }" />
+                    <div v-for="rect in closedRectsFor(day)" :key="rect.top" data-cy="closed-hours" class="cal-hatch pointer-events-none absolute left-0 right-0" :style="{ top: `${rect.top}px`, height: `${rect.height}px` }" />
                     <div v-for="m in slotMarks" :key="`slot-${m}`" class="pointer-events-none absolute left-0 right-0 border-t border-dashed border-line-divider" :style="{ top: `${(m / 60) * WEEK_HOUR_PX}px` }" />
                     <div v-for="h in hourMarks" :key="h" class="pointer-events-none absolute left-0 right-0 border-t border-line" :style="{ top: `${(h - START_HOUR) * WEEK_HOUR_PX}px` }" />
+
+                    <template v-if="loading">
+                      <UiSkeleton v-for="(b, j) in skeletonInColumn(col.id) ? skeletonBlocks(di + ci, WEEK_HOUR_PX, day) : []" :key="`sk-${j}`" class="absolute left-0.5 right-0.5 rounded-[6px]" :style="{ top: `${b.top}px`, height: `${b.height}px` }" />
+                    </template>
+                    <template v-else>
 
                     <!--
                       Clickable, exactly as in Day view above -- this is the only
@@ -2450,6 +2632,7 @@ function showNowLineOn(day: Date) {
                       >
                         {{ g.label }}
                       </div>
+                    </template>
                     </template>
                     <template v-for="r in [focusRectFor(toDateKey(day), col.id, WEEK_HOUR_PX)]" :key="`focus-${toDateKey(day)}-${col.id}`">
                       <div v-if="r" data-grid-focus class="pointer-events-none absolute left-0 right-0 z-[16] rounded-[6px] ring-2 ring-inset ring-brand/60" :style="{ top: `${r.top}px`, height: `${r.height}px` }" />

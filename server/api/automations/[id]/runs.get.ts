@@ -26,9 +26,6 @@ export default defineEventHandler(async (event) => {
   const stepId = typeof query.step === 'string' && query.step ? query.step : null
   const before = typeof query.before === 'string' && query.before ? query.before : null
 
-  const { data: rule } = await supabase.from('automation_rules').select('id').eq('id', ruleId).eq('account_id', teamMember.account_id).maybeSingle()
-  if (!rule) throw createError({ statusCode: 404, statusMessage: 'Automation not found' })
-
   let rows = supabase
     .from('automation_sequence_runs')
     .select('id, lead_id, patient_id, status, stopped_reason, current_action_id, next_position, waiting_for, wait_deadline, attempts, last_error, resume_at, started_at, updated_at, leads(full_name), patients(first_name, last_name)')
@@ -42,7 +39,11 @@ export default defineEventHandler(async (event) => {
   const count = (statuses: readonly string[]) =>
     supabase.from('automation_sequence_runs').select('id', { count: 'exact', head: true }).eq('rule_id', ruleId).in('status', [...statuses])
 
-  const [{ data, error }, running, done, exited, failed, { data: steps }] = await Promise.all([
+  // The rule is checked alongside the reads, not before them: runs of
+  // another account's rule are read (under RLS, so there are none) and
+  // dropped with the 404.
+  const [{ data: rule }, { data, error }, running, done, exited, failed, { data: steps }] = await Promise.all([
+    supabase.from('automation_rules').select('id').eq('id', ruleId).eq('account_id', teamMember.account_id).maybeSingle(),
     rows,
     count(TABS.running),
     count(TABS.done),
@@ -50,6 +51,7 @@ export default defineEventHandler(async (event) => {
     count(TABS.failed),
     supabase.from('automation_actions').select('id, action_type, position, config, parent_id').eq('rule_id', ruleId),
   ])
+  if (!rule) throw createError({ statusCode: 404, statusMessage: 'Automation not found' })
   if (error) throw createError({ statusCode: 500, statusMessage: error.message })
 
   const page = (data ?? []).slice(0, LIMIT)

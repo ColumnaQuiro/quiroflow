@@ -13,16 +13,18 @@ export default defineEventHandler(async (event) => {
   const { supabase, teamMember } = await requirePermission(event, 'communication_config')
   const accountId = teamMember.account_id
 
-  const loaded = await loadRuleTree(supabase, accountId, ruleId)
-  if (!loaded) throw createError({ statusCode: 404, statusMessage: 'Automation not found' })
-
+  // All in one round trip rather than the rule first: the stats are read
+  // before anyone knows the id is on this account, and thrown away with a
+  // 404 if it is not -- they are never sent.
   const service = serverSupabaseServiceRole<Database>(event)
-  const readWhatsApp = await canReadWhatsApp(supabase, teamMember)
-  const [stats, { data: subscription }, delayChanged] = await Promise.all([
-    statsForRule(supabase, service, accountId, ruleId, readWhatsApp),
+  const [loaded, readWhatsApp, stats, { data: subscription }, delayChanged] = await Promise.all([
+    loadRuleTree(supabase, accountId, ruleId),
+    canReadWhatsApp(supabase, teamMember),
+    statsForRule(supabase, service, accountId, ruleId),
     supabase.from('subscriptions').select('plan_id, growth_addon, status, comped').eq('account_id', accountId).maybeSingle(),
     rulesWhoseDelayNowWaits(supabase, accountId),
   ])
+  if (!loaded) throw createError({ statusCode: 404, statusMessage: 'Automation not found' })
 
   return {
     rule: loaded.rule,

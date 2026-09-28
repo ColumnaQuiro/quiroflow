@@ -56,6 +56,10 @@ watch(idParam, (id) => {
 })
 
 // ---- saving
+// The list keeps its last load to show on the way back (pages/automations/
+// index.vue); anything written here makes that copy wrong, so it goes.
+const forgetList = () => clearNuxtState('automations-list')
+
 const people = ref<{ stepId: string; actionType: string; count: number }[] | null>(null)
 const problems = ref<Problem[] | null>(null)
 let pending: { enabled?: boolean } = {}
@@ -65,6 +69,7 @@ async function saveWith(opts: { enabled?: boolean; removedPolicy?: 'move_on' | '
   const wasNew = b.isNew.value
   const result = await b.save(opts)
   if (result.ok) {
+    forgetList()
     people.value = null
     problems.value = null
     showToast(t('Saved', 'Guardado'))
@@ -112,6 +117,7 @@ async function toggleEnabled() {
   try {
     await useStaffFetch(`/api/automations/${b.ruleId.value}/enabled`, { method: 'POST', body: { enabled: target } })
     b.draft.value.enabled = target
+    forgetList()
     await b.load(b.ruleId.value!)
     showToast(target ? t('Switched on', 'Activada') : t('Paused', 'Pausada'))
   } catch (e: any) {
@@ -130,6 +136,7 @@ const sendTestOpen = ref(false)
 const launchOpen = ref(false)
 const deleteOpen = ref(false)
 function onDeleted() {
+  forgetList()
   deleteOpen.value = false
   leavingOnPurpose = true
   router.push('/automations')

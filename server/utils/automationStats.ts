@@ -16,8 +16,10 @@
 // towards none.
 //
 // WhatsApp rows are read with the caller's own client, so they stay behind
-// inbox_access exactly as the Inbox does (0164); `canReadWhatsApp` says when
-// the figures are hidden rather than zero.
+// inbox_access exactly as the Inbox does (0164): someone without it reads
+// none, and their WhatsApp figures are all zero. `canReadWhatsApp` says when
+// that zero means hidden -- and, since RLS already does the hiding, it runs
+// beside the reads rather than before them.
 
 const DAY = 24 * 3600 * 1000
 export const STATS_DAYS = 30
@@ -135,20 +137,18 @@ function bumpEmail(s: EmailStats, row: EmailRow) {
   if (row.failed_at) s.failed += 1
 }
 
-async function messageRows(supabase: any, accountId: string, since: string, readWhatsApp: boolean, ruleId?: string) {
+async function messageRows(supabase: any, accountId: string, since: string, ruleId?: string) {
   const [wa, email] = await Promise.all([
-    readWhatsApp
-      ? allRows<WaRow>((from, to) => {
-          let q = supabase
-            .from('whatsapp_messages')
-            .select('rule_id, automation_action_id, status, patient_id, lead_id, appointment_id, created_at')
-            .eq('account_id', accountId)
-            .eq('direction', 'outbound')
-            .gte('created_at', since)
-          q = ruleId ? q.eq('rule_id', ruleId) : q.not('rule_id', 'is', null)
-          return q.range(from, to)
-        })
-      : Promise.resolve([] as WaRow[]),
+    allRows<WaRow>((from, to) => {
+      let q = supabase
+        .from('whatsapp_messages')
+        .select('rule_id, automation_action_id, status, patient_id, lead_id, appointment_id, created_at')
+        .eq('account_id', accountId)
+        .eq('direction', 'outbound')
+        .gte('created_at', since)
+      q = ruleId ? q.eq('rule_id', ruleId) : q.not('rule_id', 'is', null)
+      return q.range(from, to)
+    }),
     allRows<EmailRow>((from, to) => {
       let q = supabase
         .from('email_messages')
@@ -176,7 +176,7 @@ function immediateEntries(wa: WaRow[], email: EmailRow[]): number {
 }
 
 /** Stats for every automation on the account. `service` reads runs and cron sends; `supabase` (the caller) reads messages. */
-export async function statsByRule(supabase: any, service: any, accountId: string, readWhatsApp: boolean): Promise<Record<string, RuleStats>> {
+export async function statsByRule(supabase: any, service: any, accountId: string): Promise<Record<string, RuleStats>> {
   const since = new Date(Date.now() - STATS_DAYS * DAY).toISOString()
   const [active, recent, sends, { wa, email }] = await Promise.all([
     allRows<{ rule_id: string; status: string }>((from, to) =>
@@ -188,7 +188,7 @@ export async function statsByRule(supabase: any, service: any, accountId: string
     allRows<{ rule_id: string; automation_rules: { account_id: string } }>((from, to) =>
       service.from('automation_rule_sends').select('rule_id, automation_rules!inner(account_id)').eq('automation_rules.account_id', accountId).gte('sent_at', since).range(from, to),
     ),
-    messageRows(supabase, accountId, since, readWhatsApp),
+    messageRows(supabase, accountId, since),
   ])
 
   const stats: Record<string, RuleStats> = {}
@@ -205,12 +205,16 @@ export async function statsByRule(supabase: any, service: any, accountId: string
   const waByRule = new Map<string, WaRow[]>()
   for (const r of wa) {
     bumpWhatsApp(of(r.rule_id).whatsapp, r)
-    waByRule.set(r.rule_id, [...(waByRule.get(r.rule_id) ?? []), r])
+    const list = waByRule.get(r.rule_id)
+    if (list) list.push(r)
+    else waByRule.set(r.rule_id, [r])
   }
   const emailByRule = new Map<string, EmailRow[]>()
   for (const r of email) {
     bumpEmail(of(r.rule_id).email, r)
-    emailByRule.set(r.rule_id, [...(emailByRule.get(r.rule_id) ?? []), r])
+    const list = emailByRule.get(r.rule_id)
+    if (list) list.push(r)
+    else emailByRule.set(r.rule_id, [r])
   }
   const sendsByRule = new Map<string, number>()
   for (const s of sends) sendsByRule.set(s.rule_id, (sendsByRule.get(s.rule_id) ?? 0) + 1)
@@ -223,7 +227,7 @@ export async function statsByRule(supabase: any, service: any, accountId: string
 }
 
 /** Stats for one automation, per step, plus the rule's own totals. */
-export async function statsForRule(supabase: any, service: any, accountId: string, ruleId: string, readWhatsApp: boolean) {
+export async function statsForRule(supabase: any, service: any, accountId: string, ruleId: string) {
   const since = new Date(Date.now() - STATS_DAYS * DAY).toISOString()
   const [active, runsRecent, events, sends, { wa, email }] = await Promise.all([
     allRows<{ status: string; current_action_id: string | null; waiting_for: string | null }>((from, to) =>
@@ -240,7 +244,7 @@ export async function statsForRule(supabase: any, service: any, accountId: strin
         .range(from, to),
     ),
     service.from('automation_rule_sends').select('id', { count: 'exact', head: true }).eq('rule_id', ruleId).gte('sent_at', since),
-    messageRows(supabase, accountId, since, readWhatsApp, ruleId),
+    messageRows(supabase, accountId, since, ruleId),
   ])
 
   const steps: Record<string, StepStats> = {}

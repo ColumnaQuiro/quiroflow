@@ -4,7 +4,7 @@ import { classifyPaymentForFilter, practitionerForPayment } from '~/utils/income
 import { isReceipt } from '~/utils/paymentReceipts'
 import { Line, Bar } from 'vue-chartjs'
 import { computePresetRange, monthKeysInRange, rangeBounds } from '~/composables/useDateRangePresets'
-import { fetchAllRows, fetchByIds } from '~/composables/useFetchAllRows'
+import { fetchAllRows } from '~/composables/useFetchAllRows'
 
 interface PaymentRow { amount_cents: number; method: string; paid_at: string; invoice_id: string | null; patient_id: string | null; invoices?: { status: string } | null }
 interface InvoiceRow { id: string; total_cents: number; status: string; appointment_id: string | null; patient_id: string | null }
@@ -23,13 +23,9 @@ const range = ref(computePresetRange({ months: 1 }))
 const { reportsPractitionerId } = useOwnScope()
 const practitionerFilter = ref(reportsPractitionerId.value ?? '')
 const clinicFilter = ref('')
-// One flag per data source rather than one for the page, so each panel shows
-// as soon as what IT needs has arrived. The *Loading computeds further down
-// say which panel waits for which.
+// The money (with everything read off it) arrives in one go; the names that
+// label it -- team, services, bonos, visit types -- separately.
 const baseLoading = ref(true)
-const attributionLoading = ref(true)
-const outstandingLoading = ref(true)
-const lineItemsLoading = ref(true)
 const namesLoading = ref(true)
 const payments = ref<PaymentRow[]>([])
 const invoices = ref<InvoiceRow[]>([])
@@ -50,151 +46,123 @@ function eur(cents: number) {
   return `${formatEur(cents)}`
 }
 
-// Only `byService` reads line items, and only for invoices the in-range
-// payments point at -- fetching the whole table (every line item ever) to
-// then throw away all but a month's worth was the single biggest transfer
-// on this page. Payments can settle against an invoice raised outside the
-// range, so this scopes by the payments' invoice ids rather than by
-// invoice date. Postgrest puts `in` lists in the URL, hence the chunking.
-function fetchLineItemsFor(invoiceIds: string[]): Promise<LineItemRow[]> {
-  return fetchByIds(invoiceIds, (ids) =>
-    supabase.from('invoice_line_items').select('invoice_id, price_cents, quantity, service_id, package_purchase_id').in('invoice_id', ids),
-  )
+// The period's payments and invoices, each carrying what the page reads off
+// them, in two requests side by side:
+//
+//   payments -- the invoice each settles (its status, for the void rule, and
+//               its line items with the bonos they drew from, for "By
+//               service") and the patient it was taken from (whose money it
+//               is when there is no visit behind it)
+//   invoices -- the visit behind each (whose money it is, and what type of
+//               visit it was) and every payment ever made against it
+//               (outstanding), whenever it was taken
+//
+// These used to be separate round-trips chained after the first two, each
+// passing a long list of ids back in the URL -- line items by invoice id,
+// appointments by id, patients by id, payments by invoice id, bonos by id,
+// several chunked requests apiece. On the live clinic that was 23 requests and
+// 9.7 s before the page could finish. Embedded, the database resolves the
+// same foreign keys in the same query, under the same row-level security.
+//
+// What each panel reads is unchanged, and so is its scope: appointments only
+// through the period's own invoices (a payment settling an older invoice is
+// attributed by its patient, as it always was), patients only through the
+// period's payments, line items only for invoices those payments settle.
+interface EmbeddedPaymentRow extends Omit<PaymentRow, 'invoices'> {
+  invoices: { status: string; invoice_line_items: (LineItemRow & { package_purchases: { id: string; package_id: string | null; package_name: string } | null })[] } | null
+  patients: PatientRow | null
+}
+interface EmbeddedInvoiceRow extends InvoiceRow {
+  appointments: (AppointmentRow & { appointment_type_id: string | null }) | null
+  payments: { invoice_id: string | null; amount_cents: number }[]
 }
 
-// Everything the page reads comes off the period's payments and invoices, so
-// those go first; after that there are three independent branches, and they
-// run side by side rather than one after another:
-//
-//   attribution  -- the appointments and patients behind the money, which
-//                   is whose it is (filters, "By practitioner")
-//   outstanding  -- every payment ever made against this period's invoices
-//   services     -- the line items those payments settled, and the bonos
-//                   they drew from ("By service")
-//
-// They used to be one chain -- line items, then outstanding, then the rest --
-// so the headline totals waited on four round-trips in series and on the
-// slowest of every query on the page.
-//
 // A range picked while this is in flight starts another run, and only the
-// latest may write: `stale()` is checked after every await.
+// latest may write.
 let run = 0
 async function load() {
   const mine = ++run
-  const stale = () => mine !== run
   baseLoading.value = true
-  attributionLoading.value = true
-  outstandingLoading.value = true
-  lineItemsLoading.value = true
   const { from, to } = rangeBounds(range.value)
 
   const [p, inv] = await Promise.all([
-    fetchAllRows<PaymentRow>((f, t) =>
-      supabase
-        .from('payments')
-        .select('amount_cents, method, paid_at, invoice_id, patient_id, invoices!payments_invoice_id_fkey(status)')
-        .gte('paid_at', from.toISOString())
-        .lte('paid_at', to.toISOString())
-        .range(f, t),
+    fetchAllRows<EmbeddedPaymentRow>(
+      (f, t) =>
+        supabase
+          .from('payments')
+          .select(
+            'amount_cents, method, paid_at, invoice_id, patient_id, invoices!payments_invoice_id_fkey(status, invoice_line_items(invoice_id, price_cents, quantity, service_id, package_purchase_id, package_purchases(id, package_id, package_name))), patients!payments_patient_id_fkey(id, default_practitioner_id, clinic_id)',
+          )
+          .gte('paid_at', from.toISOString())
+          .lte('paid_at', to.toISOString())
+          .range(f, t) as unknown as PromiseLike<{ data: EmbeddedPaymentRow[] | null; error: unknown }>,
     ),
-    fetchAllRows<InvoiceRow>((f, t) =>
-      supabase
-        .from('invoices')
-        .select('id, total_cents, status, appointment_id, patient_id')
-        .neq('status', 'void')
-        .gte('created_at', from.toISOString())
-        .lte('created_at', to.toISOString())
-        .range(f, t),
+    fetchAllRows<EmbeddedInvoiceRow>(
+      (f, t) =>
+        supabase
+          .from('invoices')
+          .select('id, total_cents, status, appointment_id, patient_id, appointments!invoices_appointment_id_fkey(id, appointment_type_id, practitioner_id, clinic_id), payments!payments_invoice_id_fkey(invoice_id, amount_cents)')
+          .neq('status', 'void')
+          .gte('created_at', from.toISOString())
+          .lte('created_at', to.toISOString())
+          .range(f, t) as unknown as PromiseLike<{ data: EmbeddedInvoiceRow[] | null; error: unknown }>,
     ),
   ])
-  if (stale()) return
-  // The void rule moved out of the query when the join went from inner to
-  // left: a payment with no invoice has nothing to void and must survive it.
-  const notVoid = (row: PaymentRow) => row.invoices?.status !== 'void'
-  payments.value = p.filter(notVoid)
-  invoices.value = inv
-  baseLoading.value = false
+  if (mine !== run) return
+  // The void rule is applied here rather than in the query: the join is a
+  // left one, and a payment with no invoice has nothing to void and must
+  // survive it.
+  const kept = p.filter((row) => row.invoices?.status !== 'void')
+  payments.value = kept.map(({ invoices: invoice, patients: _patient, ...row }) => ({ ...row, invoices: invoice ? { status: invoice.status } : null }))
+  invoices.value = inv.map(({ appointments: _appointment, payments: _payments, ...row }) => row)
 
-  await Promise.all([loadAttribution(inv, stale), loadOutstanding(inv, stale), loadServices(stale)])
-}
+  // The patients behind the payments on screen.
+  const patientById = new Map<string, PatientRow>()
+  for (const row of kept) if (row.patients) patientById.set(row.patients.id, row.patients)
+  patients.value = [...patientById.values()]
 
-// What each invoice's visit was, and whose money it is. Both fetched by id
-// rather than wholesale: the appointments table is thousands of rows and this
-// only needs the ones behind invoices in range.
-//
-// One appointments query, not two. The practitioner/clinic columns used to
-// be loaded separately, from the WHOLE table, and only when a filter was
-// set -- on the reasoning that with no filter they were "fetched and never
-// read". They are read: byPractitioner below reads the same maps on every
-// render, filter or no filter, so the breakdown had nothing to attribute
-// with and put the entire month under "Sin asignar". Asking for two more
-// columns on a query that was already being made costs nothing and serves
-// both.
-async function loadAttribution(inv: InvoiceRow[], stale: () => boolean) {
-  const appointmentIds = [...new Set(inv.map((i) => i.appointment_id).filter((id): id is string => !!id))]
-  // The fallback for money with no appointment behind it -- a bono, money on
-  // account, a quick invoice. Scoped to the payments actually on screen
-  // rather than every patient the clinic has.
-  const patientIds = [...new Set(payments.value.map((row) => row.patient_id).filter((id): id is string => !!id))]
-  const [appts, pats] = await Promise.all([
-    fetchByIds<AppointmentRow & { appointment_type_id: string | null }>(appointmentIds, (chunk) =>
-      supabase.from('appointments').select('id, appointment_type_id, practitioner_id, clinic_id').in('id', chunk),
-    ),
-    fetchByIds<PatientRow>(patientIds, (chunk) => supabase.from('patients').select('id, default_practitioner_id, clinic_id').in('id', chunk)),
-  ])
-  if (stale()) return
-  appointments.value = appts
-  patients.value = pats
-  const typeByAppointment = new Map(appts.map((a) => [a.id, a.appointment_type_id]))
+  // The visits behind the period's invoices, and what type each was.
+  const appointmentById = new Map<string, AppointmentRow & { appointment_type_id: string | null }>()
+  for (const i of inv) if (i.appointments) appointmentById.set(i.appointments.id, i.appointments)
+  appointments.value = [...appointmentById.values()]
   invoiceAppointmentTypes.value = inv
     .filter((i) => i.appointment_id)
-    .map((i) => ({ invoice_id: i.id, appointment_type_id: typeByAppointment.get(i.appointment_id!) ?? null }))
-  attributionLoading.value = false
+    .map((i) => ({ invoice_id: i.id, appointment_type_id: appointmentById.get(i.appointment_id!)?.appointment_type_id ?? null }))
+
+  // Every payment against the period's invoices, whenever it was taken.
+  invoicePayments.value = inv.flatMap((i) => i.payments)
+
+  // The line items of the invoices those payments settle -- once per
+  // invoice, however many payments settle it -- and the bonos they drew from.
+  const itemsByInvoice = new Map<string, LineItemRow[]>()
+  const purchaseById = new Map<string, { id: string; package_id: string | null; package_name: string }>()
+  for (const row of kept) {
+    if (!row.invoice_id || !row.invoices || itemsByInvoice.has(row.invoice_id)) continue
+    itemsByInvoice.set(
+      row.invoice_id,
+      row.invoices.invoice_line_items.map(({ package_purchases: purchase, ...item }) => {
+        if (purchase) purchaseById.set(purchase.id, purchase)
+        return item
+      }),
+    )
+  }
+  lineItems.value = [...itemsByInvoice.values()].flat()
+  purchases.value = [...purchaseById.values()]
+  baseLoading.value = false
 }
 
-// Every payment against this period's invoices, whenever it was taken. An
-// invoice raised on the 30th is usually settled in the next window, and
-// outstanding has to see that money or it reports a debt already paid.
-// Chunked: PostgREST puts an .in() list in the URL, and a busy month's
-// invoices make one long enough to be refused.
-async function loadOutstanding(inv: InvoiceRow[], stale: () => boolean) {
-  const rows = await fetchByIds(inv.map((i) => i.id), (chunk) =>
-    fetchAllRows<{ invoice_id: string | null; amount_cents: number }>((f, t) =>
-      supabase.from('payments').select('invoice_id, amount_cents').in('invoice_id', chunk).range(f, t),
-    ).then((data) => ({ data, error: null })),
-  )
-  if (stale()) return
-  invoicePayments.value = rows
-  outstandingLoading.value = false
-}
-
-// Only what naming a line needs: the bonos its lines drew from, the templates
-// those bonos belong to, and the names of the catalogue and the visit types.
-async function loadServices(stale: () => boolean) {
-  const [items, pkg, apptTypes] = await Promise.all([
-    fetchLineItemsFor([...new Set(payments.value.map((row) => row.invoice_id).filter((id): id is string => !!id))]),
+// None of these depend on the range, so they are not refetched with it.
+async function loadNames() {
+  const [sv, tm, pkg, apptTypes] = await Promise.all([
+    supabase.from('services_products').select('id, name').then((r) => r.data ?? []),
+    supabase.from('team_members').select('id, full_name').then((r) => r.data ?? []),
     supabase.from('packages').select('id, name').then((r) => r.data ?? []),
     supabase.from('appointment_types').select('id, name').then((r) => r.data ?? []),
   ])
-  const purchaseIds = [...new Set(items.map((li) => li.package_purchase_id).filter((id): id is string => !!id))]
-  // One row per id, so a chunk never reaches the 1000-row cap.
-  const pur = await fetchByIds(purchaseIds, (chunk) => supabase.from('package_purchases').select('id, package_id, package_name').in('id', chunk))
-  if (stale()) return
-  lineItems.value = items
-  packages.value = pkg
-  appointmentTypes.value = apptTypes
-  purchases.value = pur
-  lineItemsLoading.value = false
-}
-
-// Neither of these depends on the range, so they are not refetched with it.
-async function loadNames() {
-  const [sv, tm] = await Promise.all([
-    supabase.from('services_products').select('id, name').then((r) => r.data ?? []),
-    supabase.from('team_members').select('id, full_name').then((r) => r.data ?? []),
-  ])
   services.value = sv
   teamMembers.value = tm
+  packages.value = pkg
+  appointmentTypes.value = apptTypes
   namesLoading.value = false
 }
 
@@ -208,13 +176,11 @@ watch(range, load)
 // No watcher on the filters: they are applied client-side against maps this
 // load() has already built, so changing one re-computes rather than refetches.
 
-// When each panel can draw. With a practitioner or clinic picked, even the
-// totals need to know whose each payment is; with none, they are ready the
-// moment the payments are, without waiting for the attribution lookups.
-const filtering = computed(() => !!practitionerFilter.value || !!clinicFilter.value)
-const totalsLoading = computed(() => baseLoading.value || (filtering.value && attributionLoading.value))
-const byPractitionerLoading = computed(() => baseLoading.value || attributionLoading.value || namesLoading.value)
-const byServiceLoading = computed(() => byPractitionerLoading.value || lineItemsLoading.value)
+// When each panel can draw: the totals need only the money; the breakdowns
+// also need the names they are labelled with.
+const totalsLoading = computed(() => baseLoading.value)
+const byPractitionerLoading = computed(() => baseLoading.value || namesLoading.value)
+const byServiceLoading = computed(() => byPractitionerLoading.value)
 
 const appointmentById = computed(() => new Map(appointments.value.map((a) => [a.id, a])))
 const patientById = computed(() => new Map(patients.value.map((p) => [p.id, p])))
@@ -465,7 +431,7 @@ const byService = computed(() => {
         <ReportsStat :label="t('Total paid', 'Total pagado')" :loading="totalsLoading">
           <p data-test="income-total-paid" class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ eur(totalPaid) }}</p>
         </ReportsStat>
-        <ReportsStat :label="t('Outstanding', 'Pendiente')" :loading="totalsLoading || outstandingLoading">
+        <ReportsStat :label="t('Outstanding', 'Pendiente')" :loading="totalsLoading">
           <p data-test="income-outstanding" class="mt-1.5 font-mono text-[23px] font-semibold" :class="outstanding > 0 ? 'text-warning-text' : 'text-ink-900'">{{ eur(outstanding) }}</p>
         </ReportsStat>
       </div>

@@ -2,7 +2,7 @@
 const props = defineProps<{ practitionerId?: string; clinicId?: string }>()
 
 const t = useT()
-const supabase = useSupabaseClient()
+const thisWeekAppointments = useThisWeekAppointments()
 const loading = ref(true)
 
 const DAY_LABELS = computed(() => [
@@ -19,18 +19,8 @@ const lost = ref<number[]>(Array(7).fill(0))
 
 async function load() {
   loading.value = true
-  const { from, to } = getWeekRange()
-  const { from: fromDate, to: toDate } = rangeBounds({ from, to })
-
-  let query = supabase
-    .from('appointments')
-    .select('starts_at, status')
-    .gte('starts_at', fromDate.toISOString())
-    .lte('starts_at', toDate.toISOString())
-  if (props.practitionerId) query = query.eq('practitioner_id', props.practitionerId)
-  if (props.clinicId) query = query.eq('clinic_id', props.clinicId)
-
-  const rows = await fetchAllRows((f, t) => query.range(f, t))
+  // Shared with the visit summary and the no-show rate: see useThisWeekAppointments.
+  const rows = await thisWeekAppointments(props.practitionerId, props.clinicId)
 
   const nextKept = Array(7).fill(0)
   const nextLost = Array(7).fill(0)

@@ -15,6 +15,14 @@ describe('Two-factor login', () => {
 
   it('asks for the code after the password once set up, and a password alone reads nothing', () => {
     cy.seedStaffAccount().then((account) => {
+      // Something unread in the Inbox, for the password-only badge below.
+      cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Ines', lastName: 'Inbox' }).then((patient: any) => {
+        cy.task('db:createWhatsappMessage', { accountId: account.accountId, patientId: patient.id, direction: 'inbound', bodyPreview: 'Hola' })
+      })
+      cy.task('db:passwordOnlyReads', { email: account.email, password: account.password }).then((reads: any) => {
+        expect(reads.inboxUnread, 'before two-factor: the Inbox badge counts it').to.equal(1)
+        expect(reads.messages).to.equal(1)
+      })
       cy.login(account.email, account.password)
 
       // Requiring it for the team is refused until your own login uses it.
@@ -44,6 +52,10 @@ describe('Two-factor login', () => {
             expect(reads.teamMembers).to.equal(0)
             expect(reads.clinics).to.equal(0)
             expect(reads.bootstrapTeamMember).to.equal(null)
+            // Nor any messages, or an Inbox badge counting them: the badge's
+            // function runs as the caller, under the same restrictive policy.
+            expect(reads.messages).to.equal(0)
+            expect(reads.inboxUnread).to.equal(0)
           })
 
           // Now this session has passed two-factor, the switch is live.

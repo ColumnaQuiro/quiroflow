@@ -32,6 +32,7 @@ interface SubscriptionRow {
   billing_interval: string
   extra_professionals: number
   growth_addon: boolean
+  verifactu_locations: number
   trial_ends_at: string | null
   comped: boolean
   created_at: string | null
@@ -99,6 +100,12 @@ const { loading: loadingPortal, openPortal } = useBillingPortal()
 const subscription = ref<SubscriptionRow | null>(null)
 const plans = ref<PlanRow[]>([])
 const growthAddon = ref<AddonRow | null>(null)
+// 7,50 EUR a month per location from a clinic's VeriFactu live date. Not
+// chosen here: it follows Settings > VeriFactu and the number of locations.
+const verifactuFee = ref<AddonRow | null>(null)
+const verifactuFeePricing = computed(() =>
+  verifactuFee.value ? { monthlyPriceCents: verifactuFee.value.monthly_price_cents, annualPriceCents: verifactuFee.value.annual_price_cents } : null,
+)
 const practitioners = ref<{ full_name: string | null }[]>([])
 const usage = ref<{ whatsapp_conversations_mtd: number; storage_bytes: number } | null>(null)
 const billingInfo = ref<BillingInfo | null>(null)
@@ -113,7 +120,7 @@ async function loadSubscription() {
   const { data } = await supabase
     .from('subscriptions')
     .select(
-      'status, billing_interval, extra_professionals, growth_addon, trial_ends_at, comped, created_at, stripe_customer_id, stripe_subscription_id, plan_id, plans(name, monthly_price_cents, annual_price_cents, included_professionals, included_clinics, included_storage_gb, extra_professional_price_cents)',
+      'status, billing_interval, extra_professionals, growth_addon, verifactu_locations, trial_ends_at, comped, created_at, stripe_customer_id, stripe_subscription_id, plan_id, plans(name, monthly_price_cents, annual_price_cents, included_professionals, included_clinics, included_storage_gb, extra_professional_price_cents)',
     )
     .eq('account_id', store.accountId!)
     .maybeSingle()
@@ -170,6 +177,7 @@ const shape = computed(() => ({
   interval: interval.value,
   extraProfessionals: subscription.value?.extra_professionals ?? 0,
   growthBilled: growthBilled.value,
+  verifactuLocations: subscription.value?.verifactu_locations ?? 0,
 }))
 
 const planPricing = computed(() => {
@@ -189,7 +197,7 @@ const addonPricing = computed(() =>
 )
 
 const perMonthCents = computed(() =>
-  planPricing.value ? pricePerMonth(planPricing.value, shape.value, addonPricing.value) : 0,
+  planPricing.value ? pricePerMonth(planPricing.value, shape.value, addonPricing.value, verifactuFeePricing.value) : 0,
 )
 
 // Stripe's own figure wherever it exists. The local computation is the
@@ -198,7 +206,7 @@ const perMonthCents = computed(() =>
 const usingStripeAmount = computed(() => !!billingInfo.value?.upcoming)
 const nextChargeCents = computed(() => {
   if (billingInfo.value?.upcoming) return billingInfo.value.upcoming.totalCents
-  return planPricing.value ? nextChargeTotal(planPricing.value, shape.value, addonPricing.value) : null
+  return planPricing.value ? nextChargeTotal(planPricing.value, shape.value, addonPricing.value, verifactuFeePricing.value) : null
 })
 const nextChargeSubtotal = computed(() => billingInfo.value?.upcoming?.subtotalCents ?? null)
 const nextChargeTax = computed(() => billingInfo.value?.upcoming?.taxCents ?? null)
@@ -230,6 +238,17 @@ const planLineItems = computed(() => {
       key: 'growth',
       label: t('Growth add-on', 'Complemento Growth'),
       amountCents: annual ? growthAddon.value.annual_price_cents : growthAddon.value.monthly_price_cents,
+    })
+  }
+  const locations = sub.verifactu_locations ?? 0
+  if (locations > 0 && verifactuFee.value) {
+    items.push({
+      key: 'verifactu',
+      label: t(
+        `VeriFactu · ${locations} ${locations === 1 ? 'location' : 'locations'}`,
+        `VeriFactu · ${locations} ${locations === 1 ? 'centro' : 'centros'}`,
+      ),
+      amountCents: locations * (annual ? verifactuFee.value.annual_price_cents : verifactuFee.value.monthly_price_cents),
     })
   }
   return items
@@ -364,6 +383,7 @@ onMounted(async () => {
   ])
   plans.value = planRows ?? []
   growthAddon.value = (addonRows ?? []).find((a) => a.id === 'growth') ?? null
+  verifactuFee.value = (addonRows ?? []).find((a) => a.id === 'verifactu') ?? null
   loading.value = false
 
   if (route.query.checkout === 'success' && !subscription.value?.stripe_subscription_id) {

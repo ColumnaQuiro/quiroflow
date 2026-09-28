@@ -107,6 +107,7 @@ export default defineEventHandler(async (event) => {
   let billingInterval: Database['public']['Tables']['subscriptions']['Row']['billing_interval'] = 'monthly'
   let extraProfessionals = 0
   let growthAddon = false
+  let verifactuLocations = 0
   const unmatchedPriceIds: string[] = []
 
   for (const item of subscription.items.data) {
@@ -125,6 +126,11 @@ export default defineEventHandler(async (event) => {
     const growth = (addons ?? []).find((a) => a.id === 'growth' && (a.stripe_monthly_price_id === priceId || a.stripe_annual_price_id === priceId))
     if (growth) {
       growthAddon = true
+      continue
+    }
+    const verifactuFee = (addons ?? []).find((a) => a.id === 'verifactu' && (a.stripe_monthly_price_id === priceId || a.stripe_annual_price_id === priceId))
+    if (verifactuFee) {
+      verifactuLocations = item.quantity ?? 0
       continue
     }
     unmatchedPriceIds.push(priceId)
@@ -168,6 +174,9 @@ export default defineEventHandler(async (event) => {
             // columns and separate branches in hasGrowth(), rather than this
             // one being set by hand.
             growth_addon: growthAddon,
+            // The VeriFactu fee's quantity as Stripe bills it; the cron
+            // compares it with what is due (verifactu_fee_out_of_sync).
+            verifactu_locations: verifactuLocations,
           }
         : {}),
       ...(mappedStatus ? { status: mappedStatus } : {}),

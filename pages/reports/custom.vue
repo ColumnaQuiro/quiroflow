@@ -94,7 +94,13 @@ const WEEKDAY_LABELS = computed(() => [
   t('Sun', 'dom'),
 ])
 
+// Changing the source resets the metric and grouping, so one change starts
+// two or three runs back to back; only the latest may write, or a slower
+// earlier one lands over it -- the payments run finishing after the patients
+// one and showing "No data for this combination" for patients.
+let runToken = 0
 async function run() {
+  const mine = ++runToken
   loading.value = true
   const { from, to } = rangeBounds(range.value)
 
@@ -139,6 +145,7 @@ async function run() {
         totals.set(label, (totals.get(label) ?? 0) + 1)
       }
     }
+    if (mine !== runToken) return
     rows.value = [...totals.entries()].map(([label, value]) => ({ label, value }))
   } else if (sourceKey.value === 'payments') {
     // Only the practitioner grouping walks payment -> invoice -> appointment,
@@ -190,6 +197,7 @@ async function run() {
         bump(label, p.amount_cents)
       }
     }
+    if (mine !== runToken) return
     rows.value = [...totals.entries()].map(([label, value]) => ({ label, value }))
   } else if (sourceKey.value === 'patients') {
     const [{ data: patients }, { data: members }] = await Promise.all([
@@ -208,6 +216,7 @@ async function run() {
       else if (groupByKey.value === 'confirmation_channel') label = p.confirmation_channel
       totals.set(label, (totals.get(label) ?? 0) + 1)
     }
+    if (mine !== runToken) return
     rows.value = [...totals.entries()].map(([label, value]) => ({ label, value }))
   }
 

@@ -179,7 +179,12 @@ const chartOptions = {
   plugins: { legend: { position: 'bottom' as const } },
 }
 
-const totalsByPractitioner = computed(() => series.value.map((s) => ({ label: s.label, total: s.data.reduce((a, b) => a + b, 0) })).sort((a, b) => b.total - a.total))
+// Keyed by practitioner id, not by label. Until the team's names arrive every
+// series is labelled "Unassigned", and a list keyed by a label four rows
+// share left stale rows behind when the names landed: "Unassigned 380 EUR"
+// four times, and still there after filtering to one practitioner. Which
+// arrived first was a race, so the page showed it some loads and not others.
+const totalsByPractitioner = computed(() => series.value.map((s) => ({ id: s.id, label: s.label, total: s.data.reduce((a, b) => a + b, 0) })).sort((a, b) => b.total - a.total))
 </script>
 
 <template>
@@ -203,7 +208,7 @@ const totalsByPractitioner = computed(() => series.value.map((s) => ({ label: s.
         </ReportsModule>
         <ReportsModule class="mt-4" :title="t('Total over range', 'Total del periodo')" :loading="loading" skeleton="list" :rows="3">
           <ul class="mt-2 space-y-1.5 text-[13px]">
-            <li v-for="row in totalsByPractitioner" :key="row.label" class="flex items-center justify-between">
+            <li v-for="row in totalsByPractitioner" :key="row.id" class="flex items-center justify-between">
               <span class="text-ink-600">{{ row.label }}</span>
               <span class="font-mono font-medium text-ink-900">{{ formatEurFromAmount(row.total) }}</span>
             </li>

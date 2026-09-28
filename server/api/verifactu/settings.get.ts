@@ -1,6 +1,7 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { PASSPHRASE_SECRET_NAME, decryptSecret, readPkcs12 } from '~/server/utils/verifactuCertificate'
+import { parseSoapFault } from '~/utils/verifactuSoap'
 
 // Everything Settings > VeriFactu shows, for the signed-in owner's clinic.
 // The certificate and passphrase tables are service-role only, so this reads
@@ -73,7 +74,7 @@ export default defineEventHandler(async (event) => {
       : latest?.status === 'Incorrecto'
         ? { state: 'refused' as const, at: latest.sent_at, message: [latest.error_code, latest.error_message].filter(Boolean).join(' ') }
         : latest?.status === 'transport_error'
-          ? { state: 'unreachable' as const, at: latest.sent_at, message: latest.error_message }
+          ? transportState(latest.sent_at, latest.error_message)
           : { state: 'unused' as const, at: null, message: null }
 
     const expired = !!cert.not_after && new Date(cert.not_after) <= new Date()
@@ -109,7 +110,7 @@ export default defineEventHandler(async (event) => {
       parked: owedRows.filter((r) => r.parked).length,
       testRecords: testRecords ?? 0,
       productionRecords: productionRecords ?? 0,
-      last: last ? { status: last.status, errorCode: last.error_code, errorMessage: last.error_message, sentAt: last.sent_at } : null,
+      last: last ? lastAnswer(last) : null,
     },
   }
 })
@@ -120,11 +121,41 @@ interface CertificateChecks {
   expired: boolean
   /** null when the platform key is not configured, so it cannot be tried. */
   passwordOpens: boolean | null
-  aeat: { state: 'accepted' | 'refused' | 'unreachable' | 'unused'; at: string | null; message: string | null }
+  aeat: { state: 'accepted' | 'refused' | 'aeat-error' | 'unreachable' | 'unused'; at: string | null; message: string | null }
   /** Everything the sender needs from the certificate itself is in order. */
   valid: boolean
 }
 
 function normaliseNif(value: string | null | undefined): string {
   return (value ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^ES(?=[A-Z0-9]{9}$)/, '')
+}
+
+// A "transport error" is not always a failure to reach the AEAT. When it
+// answers with a SOAP Fault it WAS reached -- the certificate worked -- and
+// the faultcode says whose side the problem is on. Telling an owner "could
+// not reach the AEAT" about the AEAT's own internal error sent them looking
+// at their certificate for nothing.
+function transportState(at: string | null, message: string | null) {
+  const fault = parseSoapFault(message)
+  if (fault?.code.endsWith('Server')) return { state: 'aeat-error' as const, at, message: fault.text }
+  if (fault) return { state: 'refused' as const, at, message: fault.text }
+  return { state: 'unreachable' as const, at, message }
+}
+
+function lastAnswer(row: { status: string; error_code: string | null; error_message: string | null; sent_at: string | null }) {
+  const fault = row.status === 'transport_error' ? parseSoapFault(row.error_message) : null
+  const kind =
+    row.status === 'Correcto' ? 'accepted'
+    : row.status === 'AceptadoConErrores' ? 'accepted-with-warnings'
+    : row.status === 'Incorrecto' ? 'refused'
+    : fault?.code.endsWith('Server') ? 'aeat-error'
+    : fault ? 'refused'
+    : 'unreachable'
+  return {
+    status: row.status,
+    kind: kind as 'accepted' | 'accepted-with-warnings' | 'refused' | 'aeat-error' | 'unreachable',
+    errorCode: row.error_code,
+    errorMessage: fault ? fault.text : row.error_message,
+    sentAt: row.sent_at,
+  }
 }

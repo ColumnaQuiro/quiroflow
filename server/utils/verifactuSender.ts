@@ -50,6 +50,7 @@ import {
   type SenderConfig,
   buildRegFactuEnvelope,
   chooseChain,
+  describeUnjudged,
   parseVerifactuResponse,
   transmissionBlockedBy,
   verifactuEndpoint,
@@ -199,7 +200,14 @@ export async function sendPendingRecords(
   supabase: SupabaseClient<Database>,
   accountId: string,
   secretKey: string,
-): Promise<{ sent: number; parked: number; blocked: BlockedReason | null; estadoEnvio: string | null }> {
+): Promise<{ sent: number; parked: number; blocked: BlockedReason | null; estadoEnvio: string | null; writeErrors?: string[] }> {
+  // Failures to WRITE down what the AEAT said. The AEAT's answer is the
+  // fiscal evidence; losing it silently is how a refusal went unrecorded for
+  // two days. Returned with the tick's result, so the cron response says so.
+  const writeErrors: string[] = []
+  const noteWrite = (what: string, error: { message: string } | null) => {
+    if (error) writeErrors.push(`${what}: ${error.message}`)
+  }
   const account = await accountSenderConfig(supabase, accountId, secretKey)
   if (account.blocked === 'verifactu-off') return { sent: 0, parked: 0, blocked: account.blocked, estadoEnvio: null }
 
@@ -265,11 +273,11 @@ export async function sendPendingRecords(
       // Nothing was judged, so nothing is known about the payload. Recorded as
       // its own status precisely so it is not mistaken for a rejection, and so
       // it does not set a pace that holds the retry back.
-      await recordAttempts(supabase, accountId, attempts, {
+      writeErrors.push(...await recordAttempts(supabase, accountId, attempts, {
         status: 'transport_error',
         sentAt,
         errorMessage: err instanceof Error ? err.message : String(err),
-      })
+      }))
       return { sent: 0, estadoEnvio: null, schemaFault: false }
     }
 
@@ -284,11 +292,11 @@ export async function sendPendingRecords(
     // was never judged. The status and the first of the body go in the message,
     // since the whole point is that somebody can read what came back.
     if (!parsed.estadoEnvio) {
-      await recordAttempts(supabase, accountId, attempts, {
+      writeErrors.push(...await recordAttempts(supabase, accountId, attempts, {
         status: 'transport_error',
         sentAt,
-        errorMessage: `HTTP ${httpStatus}: response was not a VERI*FACTU answer: ${responseXml.slice(0, 300)}`,
-      })
+        errorMessage: describeUnjudged(httpStatus, responseXml),
+      }))
       return { sent: 0, estadoEnvio: null, schemaFault: true }
     }
 
@@ -359,7 +367,7 @@ export async function sendPendingRecords(
         // same thing -- and that count is the only honest signal for when to
         // stop asking. Counting rows cannot recover it: a record stuck on
         // 3002 for a day has exactly one 3002 row.
-        await supabase
+        const { error: updateError } = await supabase
           .from('factura_record_submissions')
           .update({
             sent_at: sentAt,
@@ -369,10 +377,11 @@ export async function sendPendingRecords(
             repeats: (same.repeats ?? 1) + 1,
           })
           .eq('id', same.id)
+        noteWrite(`${attempt.serieNumber} repeat`, updateError)
         continue
       }
 
-      await supabase.from('factura_record_submissions').insert({
+      const { error: insertError } = await supabase.from('factura_record_submissions').insert({
         account_id: accountId,
         factura_record_id: attempt.recordId,
         attempt: attempt.attempt,
@@ -384,6 +393,7 @@ export async function sendPendingRecords(
         sent_at: sentAt,
         responded_at: new Date().toISOString(),
       })
+      noteWrite(`${attempt.serieNumber} attempt ${attempt.attempt}`, insertError)
     }
 
     return {
@@ -415,7 +425,7 @@ export async function sendPendingRecords(
   // rather than isolate anything.
   const outcome = await submit(built.registros, built.attempts)
   if (!outcome.schemaFault || built.registros.length === 1) {
-    return { sent: outcome.sent, parked, blocked: null, estadoEnvio: outcome.estadoEnvio }
+    return { sent: outcome.sent, parked, blocked: null, estadoEnvio: outcome.estadoEnvio, ...(writeErrors.length ? { writeErrors } : {}) }
   }
 
   let sent = 0
@@ -425,7 +435,7 @@ export async function sendPendingRecords(
     sent += one.sent
     estadoEnvio = one.estadoEnvio ?? estadoEnvio
   }
-  return { sent, parked, blocked: null, estadoEnvio }
+  return { sent, parked, blocked: null, estadoEnvio, ...(writeErrors.length ? { writeErrors } : {}) }
 }
 
 /**
@@ -462,7 +472,8 @@ async function recordAttempts(
   accountId: string,
   attempts: { recordId: string; attempt: number; serieNumber: string }[],
   outcome: { status: string; sentAt: string; errorMessage?: string },
-) {
+): Promise<string[]> {
+  const errors: string[] = []
   if (outcome.status === 'transport_error') {
     const ids = attempts.map((a) => a.recordId)
     const { data: latest } = await supabase
@@ -476,18 +487,19 @@ async function recordAttempts(
     if (fresh.length === 0) {
       // Still broken, already on record. Refresh when it was last seen so the
       // row does not read as stale, and write nothing new.
-      await supabase
+      const { error } = await supabase
         .from('factura_record_submissions')
         .update({ sent_at: outcome.sentAt, error_message: outcome.errorMessage ?? null })
         .in('factura_record_id', ids)
         .eq('status', 'transport_error')
-      return
+      if (error) errors.push(`transport_error refresh: ${error.message}`)
+      return errors
     }
     attempts = fresh
   }
 
   for (const a of attempts) {
-    await supabase.from('factura_record_submissions').insert({
+    const { error } = await supabase.from('factura_record_submissions').insert({
       account_id: accountId,
       factura_record_id: a.recordId,
       attempt: a.attempt,
@@ -495,7 +507,9 @@ async function recordAttempts(
       error_message: outcome.errorMessage ?? null,
       sent_at: outcome.sentAt,
     })
+    if (error) errors.push(`${a.serieNumber} attempt ${a.attempt}: ${error.message}`)
   }
+  return errors
 }
 
 /**
@@ -638,13 +652,20 @@ async function buildRecordsFor(
       }),
     )
 
-    // Attempt numbers continue from what the record already has, so a resend
-    // is attempt 2 rather than colliding with attempt 1.
-    const { count } = await supabase
+    // Attempt numbers continue AFTER the highest one the record has, which is
+    // not the same as counting its rows. (factura_record_id, attempt) is
+    // unique, and repeated verdicts are folded into one row, so rows and
+    // attempts drift apart: F-2026-0064 had 19 rows numbered 12..30, so "rows
+    // + 1" was always 20 -- taken -- and every answer the AEAT gave it from
+    // 26 Sep was refused by the database and silently lost.
+    const { data: lastAttempt } = await supabase
       .from('factura_record_submissions')
-      .select('id', { count: 'exact', head: true })
+      .select('attempt')
       .eq('factura_record_id', r.id)
-    attempts.push({ recordId: r.id, attempt: (count ?? 0) + 1, serieNumber: r.serie_number })
+      .order('attempt', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    attempts.push({ recordId: r.id, attempt: (lastAttempt?.attempt ?? 0) + 1, serieNumber: r.serie_number })
   }
 
   return {

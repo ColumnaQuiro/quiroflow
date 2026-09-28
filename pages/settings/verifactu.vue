@@ -24,7 +24,7 @@ interface Settings {
       belongsToCompany: boolean | null
       expired: boolean
       passwordOpens: boolean | null
-      aeat: { state: 'accepted' | 'refused' | 'unreachable' | 'unused'; at: string | null; message: string | null }
+      aeat: { state: 'accepted' | 'refused' | 'aeat-error' | 'unreachable' | 'unused'; at: string | null; message: string | null }
       valid: boolean
     } | null
   } | null
@@ -34,7 +34,13 @@ interface Settings {
     parked: number
     testRecords: number
     productionRecords: number
-    last: { status: string; errorCode: string | null; errorMessage: string | null; sentAt: string | null } | null
+    last: {
+      status: string
+      kind: 'accepted' | 'accepted-with-warnings' | 'refused' | 'aeat-error' | 'unreachable'
+      errorCode: string | null
+      errorMessage: string | null
+      sentAt: string | null
+    } | null
   }
 }
 
@@ -147,6 +153,19 @@ const notSendingBecause = computed(() => {
   if (daysLeft.value !== null && daysLeft.value <= 0) return t('the certificate has expired', 'el certificado ha caducado')
   if (!s.platformKeyConfigured) return t('the platform key is not configured', 'la clave de la plataforma no está configurada')
   return null
+})
+
+// The AEAT's status words ("Incorrecto", "transport_error") mean nothing at
+// a clinic's front desk; say what happened.
+const lastAnswerLabel = computed(() => {
+  const kind = settings.value?.activity.last?.kind
+  return {
+    accepted: t('Accepted', 'Aceptado'),
+    'accepted-with-warnings': t('Accepted with warnings', 'Aceptado con avisos'),
+    refused: t('Refused', 'Rechazado'),
+    'aeat-error': t('AEAT internal error', 'Error interno de la AEAT'),
+    unreachable: t('Not reached', 'Sin conexión'),
+  }[kind ?? 'unreachable']
 })
 
 function formatDateTime(iso: string | null) {
@@ -276,6 +295,10 @@ function formatDateTime(iso: string | null) {
                   <template v-else-if="settings.certificate.checks.aeat.state === 'refused'">
                     {{ t('The AEAT answered, so the connection works, but refused the last record', 'La AEAT respondió, así que la conexión funciona, pero rechazó el último registro') }} ({{ formatDateTime(settings.certificate.checks.aeat.at) }}): {{ settings.certificate.checks.aeat.message }}
                   </template>
+                  <template v-else-if="settings.certificate.checks.aeat.state === 'aeat-error'">
+                    {{ t('The AEAT answered, so the connection works, but its own service had an internal error', 'La AEAT respondió, así que la conexión funciona, pero su propio servicio tuvo un error interno') }} ({{ formatDateTime(settings.certificate.checks.aeat.at) }}): {{ settings.certificate.checks.aeat.message }}.
+                    {{ t('This is on the AEAT’s side; QuiroFlow keeps trying every minute.', 'Es un problema de la AEAT; QuiroFlow sigue intentándolo cada minuto.') }}
+                  </template>
                   <template v-else-if="settings.certificate.checks.aeat.state === 'unreachable'">
                     {{ t('Could not reach the AEAT with it', 'No se pudo conectar con la AEAT con él') }} ({{ formatDateTime(settings.certificate.checks.aeat.at) }}): {{ settings.certificate.checks.aeat.message }}
                   </template>
@@ -338,9 +361,11 @@ function formatDateTime(iso: string | null) {
               </dl>
               <p v-if="settings.activity.last" class="mt-3 text-[12.5px] text-ink-muted">
                 {{ t('Last answer from the AEAT:', 'Última respuesta de la AEAT:') }}
-                <span class="font-medium text-ink-700">{{ settings.activity.last.status }}</span>
+                <span data-cy="verifactu-last-answer" class="font-medium text-ink-700">{{ lastAnswerLabel }}</span>
                 · {{ formatDateTime(settings.activity.last.sentAt) }}
-                <span v-if="settings.activity.last.errorCode"> · {{ settings.activity.last.errorCode }} {{ settings.activity.last.errorMessage }}</span>
+                <span v-if="settings.activity.last.kind !== 'accepted' && (settings.activity.last.errorCode || settings.activity.last.errorMessage)">
+                  · {{ [settings.activity.last.errorCode, settings.activity.last.errorMessage].filter(Boolean).join(' ') }}
+                </span>
               </p>
               <p v-else class="mt-3 text-[12.5px] text-ink-muted2">{{ t('Nothing has been sent yet.', 'Todavía no se ha enviado nada.') }}</p>
             </section>

@@ -11,6 +11,12 @@ import type { Database } from '~/types/database.types'
 // catches every appointment exactly once (reminder_sent_at is the guard
 // against ever sending it twice).
 const WINDOW_BUFFER_MINUTES = 20
+// reminder_sent_at is kept when an appointment is moved (the panel's History
+// tab reads it), so it can belong to the old time. A reminder for the time
+// being looked at now can only have gone out on a tick inside this window,
+// i.e. within the last WINDOW_BUFFER_MINUTES; one older than this is for a
+// time the appointment has since been moved from, and does not count.
+const STALE_REMINDER_MINUTES = 60
 // Bounded rather than one-at-a-time so a tick with many due appointments
 // across many accounts still finishes within the 15-minute schedule as the
 // account base grows -- see server/utils/concurrency.ts for why this stays
@@ -33,6 +39,7 @@ export default defineEventHandler(async (event) => {
   if (!accounts || accounts.length === 0) return { sent: 0 }
 
   const now = Date.now()
+  const staleBefore = new Date(now - STALE_REMINDER_MINUTES * 60 * 1000).toISOString()
   const dueAppointments: { accountId: string; appointmentId: string }[] = []
 
   for (const account of accounts) {
@@ -45,7 +52,7 @@ export default defineEventHandler(async (event) => {
       .select('id')
       .eq('account_id', account.id)
       .eq('status', 'booked')
-      .is('reminder_sent_at', null)
+      .or(`reminder_sent_at.is.null,reminder_sent_at.lt.${staleBefore}`)
       .gte('starts_at', windowStart)
       .lt('starts_at', windowEnd)
 

@@ -64,7 +64,10 @@ export default defineEventHandler(async (event) => {
       .in('account_id', accountIds)
       .in('clinic_id', clinicIds)
       .eq('status', 'booked')
-      .is('same_day_info_sent_at', null)
+      // Sent on an earlier day means it was for the day the appointment has
+      // since been moved from -- kept rather than cleared on the move because
+      // the panel's History tab reads it.
+      .or(`same_day_info_sent_at.is.null,same_day_info_sent_at.lt.${start.toISOString()}`)
       .gte('starts_at', start.toISOString())
       .lt('starts_at', end.toISOString())
     appointments.push(...(data ?? []))

@@ -17,6 +17,10 @@
 //   must reach the service as %26, not start a fifth parameter.
 // - fecha as DD-MM-AAAA; importe with a "." and at most two decimals.
 // - Never the optional `formato=json`: the AEAT forbids it in the QR itself.
+//
+// Printed only on production facturas (server/utils/facturaData.ts): a
+// test-chain factura gets no QR. The test URL stays here because the builder
+// is the same and the spec defines it; nothing prints it on a document.
 
 export const VERIFACTU_QR_BASE_URL = {
   production: 'https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR',

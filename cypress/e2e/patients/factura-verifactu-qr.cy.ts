@@ -18,19 +18,22 @@ describe('The VERI*FACTU QR on a factura', () => {
     )
   }
 
-  it('is printed on a factura from a clinic that sends to the AEAT', () => {
+  it('is not printed on a test-period factura, even from a clinic that sends to the AEAT', () => {
+    // A test-chain factura is still a real patient's document: its QR would
+    // open the AEAT's test portal, and "VERI*FACTU" would claim a status it
+    // does not have yet.
     cy.seedStaffAccount().then((account) => {
       cy.task('db:setClinicFiscal', { clinicId: account.clinicId, taxId: 'B12345678', legalName: 'Clinica Prueba SL' })
       cy.task('db:setVerifactuMode', { accountId: account.accountId, mode: 'test' })
       cy.login(account.email, account.password)
       facturaPdfText(account, 'F-2026-0101').then((text) => {
-        expect(text).to.contain('QR tributario:')
-        expect(text).to.contain('VERI*FACTU')
+        expect(text).not.to.contain('QR tributario')
+        expect(text).not.to.contain('VERI*FACTU')
       })
     })
   })
 
-  it('is printed on a live clinic’s real factura too', () => {
+  it('is printed on a live clinic’s real factura', () => {
     cy.seedStaffAccount().then((account) => {
       cy.task('db:setClinicFiscal', { clinicId: account.clinicId, taxId: 'B12345678', legalName: 'Clinica Prueba SL' })
       // Live, with the first production record already issued.

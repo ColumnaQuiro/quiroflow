@@ -78,7 +78,7 @@ export async function loadFacturaDocumentData(
   // own. That is what lets a NIF collected next week appear on a document
   // issued today -- and what lets a delivered one be frozen so it stops
   // changing under the patient's feet.
-  const verifactuQr = await verifactuQrFor(supabase, facturaId, factura.account_id)
+  const verifactuQr = await verifactuQrFor(supabase, facturaId)
 
   const frozenName = factura.recipient_name
   const [frozenFirst, ...frozenRest] = (frozenName ?? '').split(' ')
@@ -125,30 +125,27 @@ export async function loadFacturaDocumentData(
 // The factura's VERI*FACTU QR, from its registro -- see utils/verifactuQr.ts
 // for why the record and not the factura.
 //
-// None when the clinic has VeriFactu off (nothing is being registered, so the
-// AEAT would answer "not found"), and none for a record with no NIF, which
-// the service could not match either. A record in the test chain points at
-// the AEAT's test service, a production one at the real one.
-async function verifactuQrFor(supabase: SupabaseClient<Database>, facturaId: string, accountId: string) {
-  const [{ data: record }, { data: account }] = await Promise.all([
-    supabase
-      .from('factura_records')
-      .select('issuer_nif, serie_number, issued_on, importe_total_cents, environment')
-      .eq('factura_id', facturaId)
-      .eq('record_type', 'alta')
-      .order('sequence', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    supabase.from('accounts').select('verifactu_mode').eq('id', accountId).maybeSingle(),
-  ])
-  if (!record || !record.issuer_nif || !account || account.verifactu_mode === 'off') return null
+// Only on a factura whose record is in the PRODUCTION chain, i.e. one issued
+// after the clinic went live. A test-chain factura is a real document handed
+// to a real patient, and on it the QR would open the AEAT's test portal
+// (Portal de Pruebas Externas) and the "VERI*FACTU" legend would claim a
+// status the factura does not have -- Columnaquiro's 2026 facturas are not
+// VERI*FACTU facturas; its 2027 ones are. Decided 28 Sep 2026.
+async function verifactuQrFor(supabase: SupabaseClient<Database>, facturaId: string) {
+  const { data: record } = await supabase
+    .from('factura_records')
+    .select('issuer_nif, serie_number, issued_on, importe_total_cents, environment')
+    .eq('factura_id', facturaId)
+    .eq('record_type', 'alta')
+    .maybeSingle()
+  if (!record || record.environment !== 'production' || !record.issuer_nif) return null
 
   const url = verifactuQrUrl({
     issuerNif: record.issuer_nif,
     serieNumber: record.serie_number,
     issuedOn: record.issued_on,
     importeTotalCents: record.importe_total_cents,
-    environment: record.environment === 'production' ? 'production' : 'test',
+    environment: 'production',
   })
   const png = await QRCode.toBuffer(url, { errorCorrectionLevel: 'M', margin: 0, width: 600, type: 'png' })
   return { url, png }

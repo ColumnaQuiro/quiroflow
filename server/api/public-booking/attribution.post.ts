@@ -117,5 +117,14 @@ export default defineEventHandler(async (event) => {
     )
   if (error) throw createError({ statusCode: 500, statusMessage: error.message })
 
+  // A booking that came from an ad goes on the leads board, which is what the
+  // Growth dashboard counts -- otherwise a Google Ads booking is a conversion
+  // in Google and nothing at all here. The rules for what qualifies live in
+  // the function (20260928160512_leads_from_attributed_bookings.sql). It is
+  // bookkeeping on top of a booking that has already succeeded, so a failure
+  // is logged, not returned to the widget.
+  const { error: leadError } = await supabase.rpc('lead_for_attributed_booking', { p_appointment_id: appt.id })
+  if (leadError) console.error('[public-booking/attribution] could not create a lead:', leadError.message)
+
   return { recorded: true }
 })

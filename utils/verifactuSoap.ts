@@ -169,6 +169,15 @@ export type BlockedReason =
   | 'no-passphrase'
   /** NUXT_VERIFACTU_SECRET_KEY is missing, or cannot open the stored passphrase. */
   | 'no-platform-key'
+  /**
+   * The clinic asked QuiroFlow to send for it, and the AEAT authorisation
+   * behind that (apoderamiento IZ860, or the signed colaboración social
+   * document) has not been accepted yet. Sending before would earn 4112 on
+   * every submission.
+   */
+  | 'delegation-not-accepted'
+  /** The clinic is delegated, but this environment has no platform account whose certificate could send. */
+  | 'no-platform-certificate'
 
 /**
  * Why this account cannot transmit right now, or null if it can.
@@ -353,4 +362,42 @@ export function parseSoapFault(text: string | null | undefined): { code: string;
   if (!code) return null
   const detail = text.match(/<faultstring>([^<]*)<\/faultstring>/)
   return { code: code[1].trim(), text: (detail?.[1] ?? '').trim() }
+}
+
+/**
+ * The AEAT's 4112: "El titular del certificado debe ser Obligado Emisión,
+ * Colaborador Social, Apoderado o Sucesor". The certificate on the connection
+ * is not allowed to send for this NIF -- for a clinic QuiroFlow sends for,
+ * the authorisation is missing, not accepted, or for the wrong procedure
+ * (IZ862/IZ863 look like IZ860 and are not). It can come back as a record's
+ * CodigoErrorRegistro or inside a SOAP Fault, so both are looked at.
+ */
+export function isNotAuthorisedToSend(errorCode: string | null | undefined, errorMessage: string | null | undefined): boolean {
+  if ((errorCode ?? '').trim() === '4112') return true
+  return /(^|\D)4112(\D|$)/.test(errorMessage ?? '')
+}
+
+/**
+ * Whose certificate sends a clinic's records (Settings > VeriFactu > Who
+ * sends). Its own; or, when QuiroFlow sends for it, the platform account's --
+ * but only once the authorisation for THAT route has been accepted. Until the
+ * AEAT has the apoderamiento or the signed document on file it refuses every
+ * submission with 4112, once a minute, which reads like a broken certificate;
+ * and an IZ860 accepted at the AEAT says nothing about a colaboración social
+ * document, or the reverse.
+ */
+export function certificateAccountFor(input: {
+  accountId: string
+  sender: string | null | undefined
+  delegation: { route: string; acceptedAt: string | null } | null
+  platformAccountId: string | null
+}): { accountId: string; blocked: null } | { accountId: null; blocked: 'delegation-not-accepted' | 'no-platform-certificate' } {
+  if (input.sender !== 'apoderamiento' && input.sender !== 'colaboracion_social') {
+    return { accountId: input.accountId, blocked: null }
+  }
+  if (!input.delegation?.acceptedAt || input.delegation.route !== input.sender) {
+    return { accountId: null, blocked: 'delegation-not-accepted' }
+  }
+  if (!input.platformAccountId) return { accountId: null, blocked: 'no-platform-certificate' }
+  return { accountId: input.platformAccountId, blocked: null }
 }

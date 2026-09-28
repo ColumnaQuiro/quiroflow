@@ -48,8 +48,9 @@ describe('Appointments with no practitioner', () => {
         // The panel is open *and* the reference data is still in flight --
         // the precondition the bug needed, so assert it rather than hope for
         // it. This line is the difference between testing the fix and
-        // testing nothing.
-        cy.contains('No practitioners are assigned to this clinic yet.').should('exist')
+        // testing nothing. (The tab bar shows placeholders until the team has
+        // loaded; it used to say "No practitioners are assigned" meanwhile.)
+        cy.get('[data-cy=practitioner-tabs-loading]').should('exist')
 
         cy.wait('@teamMemberClinics')
 

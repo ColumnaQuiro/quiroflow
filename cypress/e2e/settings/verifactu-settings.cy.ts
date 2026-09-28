@@ -94,6 +94,34 @@ describe('VeriFactu settings', () => {
       })
     })
 
+    it('says an AEAT internal error is the AEAT’s, not a connection problem', () => {
+      // 26 Sep 2026: the AEAT's test service answered "Codigo[102]. Error
+      // interno en el servidor" and the page said "Could not reach the AEAT",
+      // with the SOAP XML beneath it -- sending the owner to check a
+      // certificate that was working.
+      cy.seedStaffAccount().then((account) => {
+        cy.task('db:setClinicFiscal', { clinicId: account.clinicId, taxId: 'B12345678', legalName: 'Clinica Prueba SL' })
+        cy.intercept('POST', '/api/verifactu/certificate').as('upload')
+        cy.login(account.email, account.password)
+        cy.visit('/settings/verifactu')
+        upload('B12345678')
+        cy.task('db:recordVerifactuSubmission', {
+          accountId: account.accountId,
+          clinicId: account.clinicId,
+          status: 'transport_error',
+          errorMessage: 'AEAT fault env:Server: Codigo[102].Error interno en el servidor, Id. Error: 132499179',
+        })
+        cy.reload()
+
+        cy.get('[data-cy="verifactu-cert-aeat"]')
+          .should('contain.text', 'its own service had an internal error')
+          .and('contain.text', 'Codigo[102]')
+          .and('not.contain.text', 'Could not reach')
+          .and('not.contain.text', '<env:')
+        cy.get('[data-cy="verifactu-last-answer"]').should('have.text', 'AEAT internal error')
+      })
+    })
+
     it('flags a certificate that belongs to another company', () => {
       cy.seedStaffAccount().then((account) => {
         cy.task('db:setClinicFiscal', { clinicId: account.clinicId, taxId: 'B12345678', legalName: 'Clinica Prueba SL' })

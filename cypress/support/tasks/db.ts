@@ -3066,7 +3066,22 @@ async function setVerifactuMode({ accountId, mode }: { accountId: string; mode: 
   return null
 }
 
+// A submission as the sender would have written it, for a spec about how
+// Settings > VeriFactu reads the AEAT's answers -- the AEAT itself is not
+// reachable from CI. Needs one factura record to hang it on, so it issues one.
+async function recordVerifactuSubmission({ accountId, clinicId, status, errorMessage }: { accountId: string; clinicId: string; status: string; errorMessage: string }) {
+  const patient = unwrap(await admin.from('patients').insert({ account_id: accountId, clinic_id: clinicId, first_name: 'Envio', last_name: 'Prueba' } as never).select('id').single()) as { id: string }
+  const payment = unwrap(await admin.from('payments').insert({ account_id: accountId, patient_id: patient.id, amount_cents: 4400, method: 'card' } as never).select('id').single()) as { id: string }
+  const factura = unwrap(
+    await admin.from('facturas').insert({ account_id: accountId, patient_id: patient.id, payment_id: payment.id, number: `F-TEST-${Date.now()}`, kind: 'simplified', description: 'Consulta', amount_cents: 4400 } as never).select('id').single(),
+  ) as { id: string }
+  const record = unwrap(await admin.from('factura_records').select('id').eq('factura_id', factura.id).single()) as { id: string }
+  assertOk(await admin.from('factura_record_submissions').insert({ account_id: accountId, factura_record_id: record.id, attempt: 1, status, error_message: errorMessage, sent_at: new Date().toISOString() } as never))
+  return null
+}
+
 export const dbTasks = {
+  'db:recordVerifactuSubmission': recordVerifactuSubmission,
   'db:setVerifactuMode': setVerifactuMode,
   'cert:makeTestCertificate': makeTestCertificate,
   'db:setClinicFiscal': setClinicFiscal,

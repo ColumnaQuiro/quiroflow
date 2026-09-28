@@ -53,8 +53,10 @@ describe('Growth in the shared Inbox', () => {
     cy.get('[data-test="filter-ai-handling"]').should('not.exist')
 
     // The filters the base plan has always had are still there, behind
-    // "More filters", with no receptionist section.
-    cy.get('[data-cy=inbox-more-filters]').click()
+    // "More filters", with no receptionist section. Nothing loads on this
+    // page to wait for, so the click can land before hydration and be lost;
+    // clickUntil retries it until the menu opens.
+    cy.clickUntil('[data-cy=inbox-more-filters]', '[data-cy=inbox-more-filters-menu]')
     cy.get('[data-cy=inbox-more-filters-menu]').within(() => {
       cy.contains('button', 'Awaiting us').should('be.visible')
       cy.contains('button', 'Awaiting patient').should('be.visible')

@@ -21,6 +21,64 @@ const hideLogo = ref(false)
 const emailSubject = ref('')
 const emailBody = ref('')
 
+// Factura numbering. The next numbers are sent only when changed: loading 89
+// and saving 89 back after the desk issued 89 in the meantime would read as
+// moving the count backwards, which the database refuses.
+interface FacturaNumbering {
+  year: number
+  factura_prefix: string
+  rectificativa_prefix: string
+  next_factura: number
+  next_rectificativa: number
+}
+const numbering = ref<FacturaNumbering | null>(null)
+const facturaPrefix = ref('')
+const rectificativaPrefix = ref('')
+const nextFactura = ref('')
+const nextRectificativa = ref('')
+const PREFIX = /^[A-Za-z0-9]{1,10}$/
+
+function facturaNumberPreview(prefix: string, next: string) {
+  const n = parseInt(next, 10)
+  return `${prefix.trim() || '…'}-${numbering.value?.year ?? ''}-${String(Number.isFinite(n) ? n : 1).padStart(4, '0')}`
+}
+
+const numberingError = computed(() => {
+  if (!numbering.value) return ''
+  if (!PREFIX.test(facturaPrefix.value.trim()) || !PREFIX.test(rectificativaPrefix.value.trim())) {
+    return t('A prefix is 1 to 10 letters or digits.', 'Un prefijo tiene de 1 a 10 letras o números.')
+  }
+  if (facturaPrefix.value.trim().toUpperCase() === rectificativaPrefix.value.trim().toUpperCase()) {
+    return t('Facturas and rectificativas need different prefixes.', 'Las facturas y las rectificativas necesitan prefijos distintos.')
+  }
+  const checks: [string, number][] = [[nextFactura.value, numbering.value.next_factura], [nextRectificativa.value, numbering.value.next_rectificativa]]
+  for (const [value, current] of checks) {
+    const n = parseInt(value, 10)
+    if (!Number.isInteger(n) || n < 1 || n > 999999) return t('The next number must be between 1 and 999999.', 'El próximo número debe estar entre 1 y 999999.')
+    if (n < current) {
+      return t(`The next number can only move forward: numbers below ${current} are already used this year.`, `El próximo número solo puede avanzar: los números por debajo de ${current} ya se han usado este año.`)
+    }
+  }
+  return ''
+})
+
+function changedNext(value: string, current: number) {
+  const n = parseInt(value, 10)
+  return n === current ? null : n
+}
+
+async function loadNumbering() {
+  const { data } = await supabase.rpc('get_factura_numbering', { p_account_id: store.accountId! })
+  const row = data as unknown as FacturaNumbering | null
+  numbering.value = row
+  if (row) {
+    facturaPrefix.value = row.factura_prefix
+    rectificativaPrefix.value = row.rectificativa_prefix
+    nextFactura.value = String(row.next_factura)
+    nextRectificativa.value = String(row.next_rectificativa)
+  }
+}
+
 async function load() {
   loading.value = true
   const { data } = await supabase
@@ -45,11 +103,16 @@ async function load() {
     emailSubject.value = data.invoice_email_subject ?? ''
     emailBody.value = data.invoice_email_body ?? ''
   }
+  await loadNumbering()
   loading.value = false
 }
 onMounted(load)
 
 async function save() {
+  if (numberingError.value) {
+    showToast(numberingError.value, 'error')
+    return
+  }
   saving.value = true
   const { error } = await supabase
     .from('accounts')
@@ -69,11 +132,27 @@ async function save() {
       invoice_email_body: emailBody.value || null,
     })
     .eq('id', store.accountId!)
-  saving.value = false
   if (error) {
+    saving.value = false
     showToast(error.message, 'error')
     return
   }
+  if (numbering.value) {
+    const { error: numberingSaveError } = await supabase.rpc('set_factura_numbering', {
+      p_account_id: store.accountId!,
+      p_factura_prefix: facturaPrefix.value.trim(),
+      p_rectificativa_prefix: rectificativaPrefix.value.trim(),
+      p_next_factura: changedNext(nextFactura.value, numbering.value.next_factura),
+      p_next_rectificativa: changedNext(nextRectificativa.value, numbering.value.next_rectificativa),
+    })
+    if (numberingSaveError) {
+      saving.value = false
+      showToast(numberingSaveError.message, 'error')
+      return
+    }
+    await loadNumbering()
+  }
+  saving.value = false
   showToast(t('Saved', 'Guardado'))
 }
 </script>
@@ -89,6 +168,37 @@ async function save() {
             <p class="text-[13px] font-semibold text-ink-700">{{ t('Receipt Numbering', 'Numeración de recibos') }}</p>
             <label class="mt-2 block text-[12.5px] font-medium text-ink-600">{{ t('Next receipt number', 'Próximo número de recibo') }}</label>
             <input v-model="nextInvoiceNumber" type="number" min="1" :placeholder="t('Leave blank to keep counting automatically', 'Déjalo en blanco para seguir contando automáticamente')" class="mt-1 h-8 w-64 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
+          </div>
+
+          <div v-if="numbering" class="rounded-card border border-line bg-surface p-4 shadow-card" data-cy="factura-numbering">
+            <p class="text-[13px] font-semibold text-ink-700">{{ t('Factura Numbering', 'Numeración de facturas') }}</p>
+            <p class="mt-1 text-[12px] text-ink-muted2">
+              {{ t(
+                `Facturas are numbered PREFIX-YEAR-NUMBER, and the number starts again at 1 every year. You can change the prefix, and move this year's next number forward — for example to continue the series of your previous system. It cannot go back: those numbers are already on facturas.`,
+                `Las facturas se numeran PREFIJO-AÑO-NÚMERO, y el número vuelve a empezar en 1 cada año. Puedes cambiar el prefijo y adelantar el próximo número de este año, por ejemplo para continuar la serie de tu sistema anterior. No puede retroceder: esos números ya están en facturas.`,
+              ) }}
+            </p>
+            <div class="mt-3 grid grid-cols-[auto_auto_1fr] items-end gap-x-3 gap-y-3">
+              <div>
+                <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Factura prefix', 'Prefijo de facturas') }}</label>
+                <input v-model="facturaPrefix" type="text" maxlength="10" data-cy="factura-prefix" class="mt-1 h-8 w-24 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
+              </div>
+              <div>
+                <label class="block text-[12.5px] font-medium text-ink-600">{{ t(`Next number (${numbering.year})`, `Próximo número (${numbering.year})`) }}</label>
+                <input v-model="nextFactura" type="number" :min="numbering.next_factura" data-cy="factura-next" class="mt-1 h-8 w-32 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
+              </div>
+              <p class="pb-1.5 text-[12.5px] text-ink-muted2">{{ t('Next:', 'Siguiente:') }} <span class="font-medium text-ink-700" data-cy="factura-preview">{{ facturaNumberPreview(facturaPrefix, nextFactura) }}</span></p>
+              <div>
+                <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Rectificativa prefix', 'Prefijo de rectificativas') }}</label>
+                <input v-model="rectificativaPrefix" type="text" maxlength="10" data-cy="rectificativa-prefix" class="mt-1 h-8 w-24 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
+              </div>
+              <div>
+                <label class="block text-[12.5px] font-medium text-ink-600">{{ t(`Next number (${numbering.year})`, `Próximo número (${numbering.year})`) }}</label>
+                <input v-model="nextRectificativa" type="number" :min="numbering.next_rectificativa" data-cy="rectificativa-next" class="mt-1 h-8 w-32 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
+              </div>
+              <p class="pb-1.5 text-[12.5px] text-ink-muted2">{{ t('Next:', 'Siguiente:') }} <span class="font-medium text-ink-700" data-cy="rectificativa-preview">{{ facturaNumberPreview(rectificativaPrefix, nextRectificativa) }}</span></p>
+            </div>
+            <p v-if="numberingError" class="mt-2 text-[12px] text-danger-text" data-cy="factura-numbering-error">{{ numberingError }}</p>
           </div>
 
           <div class="rounded-card border border-line bg-surface p-4 shadow-card">
@@ -129,7 +239,7 @@ async function save() {
             <textarea v-model="emailBody" rows="4" :placeholder="t('Copy for automatic receipt emails sent to patients', 'Texto para los correos automáticos de recibo enviados a los pacientes')" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
           </div>
 
-          <UiBtn variant="primary" :disabled="saving" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save Settings', 'Guardar ajustes') }}</UiBtn>
+          <UiBtn variant="primary" :disabled="saving" data-cy="invoice-settings-save" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save Settings', 'Guardar ajustes') }}</UiBtn>
         </div>
       </div>
     </div>

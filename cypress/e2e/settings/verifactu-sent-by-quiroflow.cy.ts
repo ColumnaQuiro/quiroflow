@@ -44,8 +44,10 @@ describe('VeriFactu sent by QuiroFlow', () => {
       cy.get('[data-cy="verifactu-certificate-by-quiroflow"]').should('be.visible')
 
       // QuiroFlow's side.
+      cy.intercept('GET', '/api/verifactu/delegations').as('delegations')
       cy.login(platform.email, platform.password)
       cy.visit('/settings/verifactu')
+      cy.wait('@delegations')
       cy.get('[data-cy="verifactu-sender"]').should('not.exist')
       cy.contains('[data-cy="verifactu-delegation-row"]', clinicName).within(() => {
         cy.get('[data-cy="verifactu-delegation-accept"]').click()
@@ -64,29 +66,37 @@ describe('VeriFactu sent by QuiroFlow', () => {
     withPlatformAndClinic((platform, clinic, clinicName) => {
       cy.login(clinic.email, clinic.password)
       cy.visit('/settings/verifactu')
+      cy.intercept('PUT', '/api/verifactu/sender').as('sender')
       cy.get('[data-cy="verifactu-sender-colaboracion"]').check()
       cy.get('[data-cy="verifactu-sender-save"]').click()
+      cy.wait('@sender').its('response.statusCode').should('eq', 200)
       cy.get('[data-cy="verifactu-colaboracion-steps"]').should('contain', 'BOE-A-2024-27600')
 
       // Nothing to confirm yet: QuiroFlow cannot accept an unsigned request.
+      cy.intercept('GET', '/api/verifactu/delegations').as('delegations')
       cy.login(platform.email, platform.password)
       cy.visit('/settings/verifactu')
+      cy.wait('@delegations')
       cy.contains('[data-cy="verifactu-delegation-row"]', clinicName).find('[data-cy="verifactu-delegation-accept"]').should('be.disabled')
       cy.request({ method: 'PUT', url: `/api/verifactu/delegations/${clinic.accountId}`, body: { accepted: true }, failOnStatusCode: false }).its('status').should('eq', 409)
 
       cy.login(clinic.email, clinic.password)
       cy.visit('/settings/verifactu')
       // A photo renamed .pdf is not a document.
+      cy.intercept('POST', '/api/verifactu/delegation-document').as('upload')
       cy.get('[data-cy="verifactu-signed-document-file"]').selectFile({ contents: Cypress.Buffer.from('not a pdf'), fileName: 'firma.pdf', mimeType: 'application/pdf' })
       cy.get('[data-cy="verifactu-signed-document-upload"]').click()
+      cy.wait('@upload').its('response.statusCode').should('eq', 400)
       cy.get('[data-cy="verifactu-signed-document"]').should('not.exist')
 
       cy.get('[data-cy="verifactu-signed-document-file"]').selectFile({ contents: Cypress.Buffer.from('%PDF-1.4\n%firmado\n'), fileName: 'representacion.pdf', mimeType: 'application/pdf' })
       cy.get('[data-cy="verifactu-signed-document-upload"]').click()
+      cy.wait('@upload').its('response.statusCode').should('eq', 200)
       cy.get('[data-cy="verifactu-signed-document"]').should('contain', 'representacion.pdf')
 
       cy.login(platform.email, platform.password)
       cy.visit('/settings/verifactu')
+      cy.wait('@delegations')
       cy.contains('[data-cy="verifactu-delegation-row"]', clinicName).find('[data-cy="verifactu-delegation-accept"]').should('not.be.disabled')
     })
   })

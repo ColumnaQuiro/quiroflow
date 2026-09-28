@@ -1,6 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
+import QRCode from 'qrcode'
 import { exemptionClause } from '~/utils/facturaTax'
+import { verifactuQrUrl } from '~/utils/verifactuQr'
 
 // The document the patient is actually given: one per payment, describing what
 // the money bought.
@@ -76,6 +78,8 @@ export async function loadFacturaDocumentData(
   // own. That is what lets a NIF collected next week appear on a document
   // issued today -- and what lets a delivered one be frozen so it stops
   // changing under the patient's feet.
+  const verifactuQr = await verifactuQrFor(supabase, facturaId, factura.account_id)
+
   const frozenName = factura.recipient_name
   const [frozenFirst, ...frozenRest] = (frozenName ?? '').split(' ')
 
@@ -114,7 +118,40 @@ export async function loadFacturaDocumentData(
       amountCents: factura.tax_amount_cents ?? 0,
       exemptionClause: exemptionClause(factura.tax_exemption_code),
     },
+    verifactuQr,
   }
+}
+
+// The factura's VERI*FACTU QR, from its registro -- see utils/verifactuQr.ts
+// for why the record and not the factura.
+//
+// None when the clinic has VeriFactu off (nothing is being registered, so the
+// AEAT would answer "not found"), and none for a record with no NIF, which
+// the service could not match either. A record in the test chain points at
+// the AEAT's test service, a production one at the real one.
+async function verifactuQrFor(supabase: SupabaseClient<Database>, facturaId: string, accountId: string) {
+  const [{ data: record }, { data: account }] = await Promise.all([
+    supabase
+      .from('factura_records')
+      .select('issuer_nif, serie_number, issued_on, importe_total_cents, environment')
+      .eq('factura_id', facturaId)
+      .eq('record_type', 'alta')
+      .order('sequence', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase.from('accounts').select('verifactu_mode').eq('id', accountId).maybeSingle(),
+  ])
+  if (!record || !record.issuer_nif || !account || account.verifactu_mode === 'off') return null
+
+  const url = verifactuQrUrl({
+    issuerNif: record.issuer_nif,
+    serieNumber: record.serie_number,
+    issuedOn: record.issued_on,
+    importeTotalCents: record.importe_total_cents,
+    environment: record.environment === 'production' ? 'production' : 'test',
+  })
+  const png = await QRCode.toBuffer(url, { errorCorrectionLevel: 'M', margin: 0, width: 600, type: 'png' })
+  return { url, png }
 }
 
 // The pre-snapshot behaviour: the account's first clinic, read now.

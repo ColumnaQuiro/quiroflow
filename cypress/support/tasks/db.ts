@@ -3059,7 +3059,15 @@ async function setClinicFiscal({ clinicId, taxId, legalName }: { clinicId: strin
   return null
 }
 
+// Straight to the database: the settings endpoint is covered by its own spec,
+// and a spec about what a factura LOOKS like should not depend on it.
+async function setVerifactuMode({ accountId, mode }: { accountId: string; mode: 'off' | 'test' }) {
+  assertOk(await admin.from('accounts').update({ verifactu_mode: mode } as never).eq('id', accountId))
+  return null
+}
+
 export const dbTasks = {
+  'db:setVerifactuMode': setVerifactuMode,
   'cert:makeTestCertificate': makeTestCertificate,
   'db:setClinicFiscal': setClinicFiscal,
   'db:verifactuSettingsOf': verifactuSettingsOf,

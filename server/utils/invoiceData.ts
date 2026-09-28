@@ -1,6 +1,10 @@
 import PDFDocument from 'pdfkit'
+import { VERIFACTU_QR_LABEL, VERIFACTU_QR_LEGEND } from '../../utils/verifactuQr'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
+
+// PDF points per millimetre: the Orden sizes the VERI*FACTU QR in mm.
+const MM = 72 / 25.4
 
 // Shared by the invoice PDF endpoint and the email-send endpoint, so the
 // downloaded PDF, the emailed PDF, and the on-screen invoice can't drift
@@ -45,6 +49,11 @@ export interface InvoiceDocumentData {
   // only "Total" satisfies neither. The same figures are what a VERI*FACTU
   // registro de facturación carries.
   tax?: { baseCents: number; rateBp: number; amountCents: number; exemptionClause: string | null } | null
+  // The VERI*FACTU QR, on facturas only (see utils/verifactuQr.ts). `png` is
+  // the code itself, rendered at error-correction level M as the Orden
+  // requires; `url` is what it encodes, kept for tests and for anyone
+  // debugging a "not found" from the AEAT.
+  verifactuQr?: { url: string; png: Buffer } | null
 }
 
 // "123 Main St" + "28001 Madrid" + "Spain" on their own lines, skipping any
@@ -171,9 +180,25 @@ export function generateInvoicePdf(data: InvoiceDocumentData): Promise<Buffer> {
     doc.on('end', () => resolve(Buffer.concat(chunks)))
     doc.on('error', reject)
 
+    // The VERI*FACTU QR comes first, above everything the system prints --
+    // the AEAT's placement rules for a portrait page: at the top, near the
+    // upper margin, centred, and the first QR on the document. 35 mm, inside
+    // the 30-40 mm the Orden allows; "QR tributario:" above it and
+    // "VERI*FACTU" right below, no smaller than the rest of the text, with
+    // well over the 2 mm of clear space it needs on every side.
+    let headerTop = 45
+    if (data.verifactuQr) {
+      const size = 35 * MM
+      const pageWidth = doc.page.width
+      doc.fillColor('#000').fontSize(10).font('Helvetica').text(VERIFACTU_QR_LABEL, 0, 30, { width: pageWidth, align: 'center' })
+      doc.image(data.verifactuQr.png, (pageWidth - size) / 2, 52, { width: size, height: size })
+      doc.fontSize(10).font('Helvetica-Bold').text(VERIFACTU_QR_LEGEND, 0, 52 + size + 10, { width: pageWidth, align: 'center' })
+      headerTop = 52 + size + 40
+    }
+
     if (data.logoBuffer) {
       try {
-        doc.image(data.logoBuffer, 50, 45, { fit: [120, 60] })
+        doc.image(data.logoBuffer, 50, headerTop, { fit: [120, 60] })
       } catch {
         // Corrupt/unsupported image format -- skip it rather than fail the whole invoice.
       }
@@ -181,14 +206,15 @@ export function generateInvoicePdf(data: InvoiceDocumentData): Promise<Buffer> {
 
     if (data.clinic) {
       const clinicX = data.logoBuffer ? 185 : 50
-      doc.fontSize(14).font('Helvetica-Bold').text(data.clinic.name, clinicX, 50)
+      doc.fontSize(14).font('Helvetica-Bold').text(data.clinic.name, clinicX, headerTop + 5)
       doc.fontSize(10).font('Helvetica').fillColor('#555')
       if (data.clinic.legalName) doc.text(data.clinic.legalName, clinicX)
       for (const line of addressLines(data.clinic.address, null, null, null)) doc.text(line, clinicX)
       if (data.clinic.taxId) doc.text(`Tax ID: ${data.clinic.taxId}`, clinicX)
       doc.moveDown(1.5)
     }
-    if (data.logoBuffer && doc.y < 115) doc.y = 115
+    if (data.logoBuffer && doc.y < headerTop + 70) doc.y = headerTop + 70
+    if (doc.y < headerTop) doc.y = headerTop
 
     doc.x = 50
     // A visit charge is a RECIBO, not a factura. Fiscally the invoice follows

@@ -31,10 +31,33 @@ comment on column accounts.factura_prefix is
 comment on column accounts.rectificativa_prefix is
   'Prefix of rectificativas: <prefix>-<year>-<nnnn>. Counted by factura_number_sequences series R.';
 
--- The year is Madrid's, not UTC's: a factura issued at 00:30 on 1 January
--- belongs to the new year's series, and until now it opened it only an hour
--- later. `set timezone` would change what now() prints as well; saying the
--- zone at the one place it matters is plainer.
+-- Whose clock a factura's date and year are read on: the clinic's own zone
+-- (Settings > Clinics), not the server's UTC and not always Madrid's: a
+-- clinic in the Canaries runs an hour behind the peninsula, so its New Year
+-- starts an hour after Madrid's. The account's first clinic, the same one whose NIF the registro carries
+-- (record_factura_alta); a factura that names its issuing clinic uses that
+-- one's zone instead, below.
+create or replace function public.account_timezone(p_account_id uuid)
+returns text
+language sql
+stable
+security definer
+set search_path to 'public'
+as $function$
+  select coalesce(
+    (select c.timezone from clinics c
+      where c.account_id = p_account_id
+      order by c.created_at
+      limit 1),
+    'Europe/Madrid'
+  );
+$function$;
+
+revoke all on function public.account_timezone(uuid) from public, anon, authenticated;
+
+-- The year a number belongs to is the clinic's, not UTC's: a factura issued
+-- at 00:30 on 1 January belongs to the new year's series, and until now it
+-- opened it only an hour or two later.
 create or replace function public.next_factura_number(p_account_id uuid, p_series text default 'F')
 returns text
 language plpgsql
@@ -42,7 +65,7 @@ security definer
 set search_path to 'public'
 as $function$
 declare
-  v_year integer := extract(year from (now() at time zone 'Europe/Madrid'))::integer;
+  v_year integer := extract(year from (now() at time zone account_timezone(p_account_id)))::integer;
   v_number bigint;
   v_series text := upper(coalesce(p_series, 'F'));
   v_prefix text;
@@ -93,7 +116,7 @@ security definer
 set search_path to 'public'
 as $function$
 declare
-  v_year integer := extract(year from (now() at time zone 'Europe/Madrid'))::integer;
+  v_year integer := extract(year from (now() at time zone account_timezone(p_account_id)))::integer;
   v_result jsonb;
 begin
   if auth.uid() is not null
@@ -135,7 +158,7 @@ security definer
 set search_path to 'public'
 as $function$
 declare
-  v_year integer := extract(year from (now() at time zone 'Europe/Madrid'))::integer;
+  v_year integer := extract(year from (now() at time zone account_timezone(p_account_id)))::integer;
   v_series text;
   v_next bigint;
   v_current bigint;
@@ -199,7 +222,8 @@ revoke all on function public.set_factura_numbering(uuid, text, text, bigint, bi
 grant execute on function public.get_factura_numbering(uuid) to authenticated;
 grant execute on function public.set_factura_numbering(uuid, text, text, bigint, bigint) to authenticated;
 
--- The registro's FechaExpedicionFactura, in Madrid too. It was the UTC date,
+-- The registro's FechaExpedicionFactura, on the clinic's clock too -- the
+-- issuing clinic's when the factura names one. It was the UTC date,
 -- so a factura issued between midnight and 01:00/02:00 carried the previous
 -- day -- and on 1 January, the previous YEAR, on a number of the new one.
 -- Only records written from now on change: verify_factura_chain reads the
@@ -216,8 +240,13 @@ declare
   v_generated timestamptz := now();
   v_input text;
   v_environment text;
-  v_issued_on date := (new.issued_at at time zone 'Europe/Madrid')::date;
+  v_issued_on date;
 begin
+  v_issued_on := (new.issued_at at time zone coalesce(
+    (select c.timezone from clinics c where c.id = new.issuer_clinic_id),
+    account_timezone(new.account_id)
+  ))::date;
+
   perform pg_advisory_xact_lock(hashtext('factura_records'), hashtext(new.account_id::text));
 
   select c.tax_id into v_nif

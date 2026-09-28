@@ -471,12 +471,12 @@ describe('Growth in the shared Inbox', () => {
     cy.contains('[data-test="lead-row"]', 'Taken Over').should('not.exist')
   })
 
-  // Leads sit above the patient threads in one list, which is the right
-  // call -- but on a day with a lead-ad campaign running, "has a PATIENT
-  // written to us" becomes a scrolling exercise. These two are the answer:
-  // a badge for reading, a chip for narrowing.
+  // Leads and patient threads share one list in date order -- but on a day
+  // with a lead-ad campaign running, "has a PATIENT written to us" becomes a
+  // scrolling exercise. These are the answer: a badge for reading, a chip
+  // for narrowing.
   describe('telling leads and patients apart', () => {
-    function seedPatientConversation(firstName: string, lastName: string, body: string) {
+    function seedPatientConversation(firstName: string, lastName: string, body: string, opts: { minutesAgo?: number } = {}) {
       return cy
         .task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName, lastName })
         .then((patient) => {
@@ -485,9 +485,29 @@ describe('Growth in the shared Inbox', () => {
             patientId: (patient as { id: string }).id,
             direction: 'inbound',
             bodyPreview: body,
+            ...(opts.minutesAgo !== undefined ? { createdAt: new Date(Date.now() - opts.minutesAgo * 60000).toISOString() } : {}),
           })
         })
     }
+
+    // Leads used to sit above every patient thread, so a lead from last week
+    // outranked a patient who had just written. The list is one list, so it
+    // is ordered like one: newest message first, whoever sent it.
+    it('orders leads and patients together by their last message', () => {
+      cy.visit('/inbox?growth=1')
+      seedConversation(account, 'Older Lead', 'handling', { lastInboundMinutesAgo: 120 })
+      seedPatientConversation('Newest', 'Patient', 'Acabo de escribir', { minutesAgo: 1 })
+      seedPatientConversation('Oldest', 'Patient', 'Escribí ayer', { minutesAgo: 24 * 60 })
+      cy.reload()
+
+      cy.contains('[data-test="lead-row"]', 'Older Lead').should('be.visible')
+      cy.get('[data-test="lead-row"], [data-cy="inbox-row"]').then((rows) => {
+        const names = [...rows].map((r) => r.textContent ?? '')
+        const at = (name: string) => names.findIndex((n) => n.includes(name))
+        expect(at('Newest Patient'), 'newest patient above the lead').to.be.lessThan(at('Older Lead'))
+        expect(at('Older Lead'), 'lead above the oldest patient').to.be.lessThan(at('Oldest Patient'))
+      })
+    })
 
     // A lead's messages live in whatsapp_messages with a phone number and no
     // patient_id, so they also grouped by phone into a second, nameless

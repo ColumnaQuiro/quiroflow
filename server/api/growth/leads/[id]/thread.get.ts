@@ -9,58 +9,57 @@ export default defineEventHandler(async (event) => {
 
   const { supabase, teamMember } = await requireGrowth(event)
 
-  const { data: lead } = await supabase
-    .from('leads')
-    .select('id, full_name, phone, email, channel, source, stage, estimated_value_cents, ai_state, patient_id, ai_taken_over_at, ai_draft_body, ai_draft_created_at, clinics:clinic_id(name), team_members:ai_taken_over_by(full_name)')
-    .eq('id', id)
-    .eq('account_id', teamMember.account_id)
-    .is('deleted_at', null)
-    .maybeSingle()
+  // The lead, its messages and the receptionist setting do not depend on one
+  // another, so they are read together: from the Netlify function each round
+  // trip is ~300 ms, and one after another they made opening a lead thread
+  // take over a second. The messages are keyed by the lead id from the URL
+  // and scoped by RLS, and are only used once the lead itself is found.
+  const [{ data: lead }, { data: newest }, { data: receptionist }] = await Promise.all([
+    supabase
+      .from('leads')
+      .select('id, full_name, phone, email, channel, source, stage, estimated_value_cents, ai_state, patient_id, ai_taken_over_at, ai_draft_body, ai_draft_created_at, clinics:clinic_id(name), team_members:ai_taken_over_by(full_name)')
+      .eq('id', id)
+      .eq('account_id', teamMember.account_id)
+      .is('deleted_at', null)
+      .maybeSingle(),
+    // The NEWEST 200, shown oldest first. Ascending with a limit returned the
+    // first 200 ever, so a long conversation lost exactly the messages
+    // someone was about to answer.
+    supabase
+      .from('whatsapp_messages')
+      .select('id, direction, body_preview, channel, status, created_at, template_name, media_type, media_storage_path, media_filename')
+      .eq('lead_id', id)
+      .order('created_at', { ascending: false })
+      .limit(200),
+    // Whether the receptionist may work on real conversations. Read here so
+    // the thread can decide about the draft button rather than offering one
+    // that the server would refuse.
+    supabase.from('receptionist_config').select('enabled').eq('account_id', teamMember.account_id).maybeSingle(),
+  ])
 
   if (!lead) throw createError({ statusCode: 404, statusMessage: 'Lead not found' })
 
-  // The NEWEST 200, shown oldest first. Ascending with a limit returned the
-  // first 200 ever, so a long conversation lost exactly the messages someone
-  // was about to answer.
-  const { data: newest } = await supabase
-    .from('whatsapp_messages')
-    .select('id, direction, body_preview, channel, status, created_at, template_name, media_type, media_storage_path, media_filename')
-    .eq('lead_id', id)
-    .order('created_at', { ascending: false })
-    .limit(200)
   const messages = [...(newest ?? [])].reverse()
 
   // Photos, voice notes and documents a lead sends: signed here, as the
   // patient thread signs them in the browser, so they show rather than
-  // arriving as empty bubbles.
+  // arriving as empty bubbles. Only what is actually known about this person
+  // beside them: a lead has no visit history and no balance -- that is what
+  // being a lead means -- so those rows are absent rather than rendered as
+  // zeroes that look like facts. Both need the lead, neither needs the other.
   const mediaPaths = [...new Set(messages.map((m) => m.media_storage_path).filter((p): p is string => !!p))]
+  const [signed, patient] = await Promise.all([
+    mediaPaths.length ? supabase.storage.from('whatsapp-media').createSignedUrls(mediaPaths, 60 * 30) : null,
+    lead.patient_id ? supabase.from('patients').select('id, balance_cents').eq('id', lead.patient_id).maybeSingle() : null,
+  ])
   const mediaUrls: Record<string, string> = {}
-  if (mediaPaths.length) {
-    const { data: signed } = await supabase.storage.from('whatsapp-media').createSignedUrls(mediaPaths, 60 * 30)
-    for (const row of signed ?? []) if (row.path && row.signedUrl) mediaUrls[row.path] = row.signedUrl
-  }
+  for (const row of signed?.data ?? []) if (row.path && row.signedUrl) mediaUrls[row.path] = row.signedUrl
 
   // The 24h customer-service window decides whether a free-text reply is even
   // possible, so the composer needs to know before it lets someone type a
   // message WhatsApp will refuse.
-  const lastInbound = [...(messages ?? [])].reverse().find((m) => m.direction === 'inbound')
+  const lastInbound = [...messages].reverse().find((m) => m.direction === 'inbound')
   const withinWindow = lastInbound ? Date.now() - new Date(lastInbound.created_at).getTime() < 24 * 3600 * 1000 : false
-
-  // Only what is actually known about this person. A lead has no visit
-  // history and no balance -- that is what being a lead means -- so those
-  // rows are absent rather than rendered as zeroes that look like facts.
-  const patient = lead.patient_id
-    ? await supabase.from('patients').select('id, balance_cents').eq('id', lead.patient_id).maybeSingle()
-    : null
-
-  // Whether the receptionist may work on real conversations. Read here so the
-  // thread can decide about the draft button rather than offering one that
-  // the server would refuse.
-  const { data: receptionist } = await supabase
-    .from('receptionist_config')
-    .select('enabled')
-    .eq('account_id', teamMember.account_id)
-    .maybeSingle()
 
   return {
     id: lead.id,

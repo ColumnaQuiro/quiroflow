@@ -349,6 +349,8 @@ async function createPatient(opts: {
   invoiceEmailEnabled?: boolean
   /** The "Referred by" value, which stores a referral source's name. */
   referralSource?: string
+  /** As an import leaves it: the other system's patient number. */
+  externalReference?: string
 }) {
   const { accountId, clinicId, firstName, lastName, email, dateOfBirth, defaultPractitionerId } = opts
   const patient = unwrap(
@@ -364,6 +366,7 @@ async function createPatient(opts: {
         default_practitioner_id: defaultPractitionerId ?? null,
         ...(opts.invoiceEmailEnabled === undefined ? {} : { invoice_email_enabled: opts.invoiceEmailEnabled }),
         ...(opts.referralSource === undefined ? {} : { referral_source: opts.referralSource }),
+        ...(opts.externalReference === undefined ? {} : { external_reference: opts.externalReference }),
       })
       .select('id, first_name, last_name')
       .single(),
@@ -1528,14 +1531,20 @@ async function addVisitNote(opts: { accountId: string; appointmentId: string; bo
   return row as { id: string }
 }
 
-/** A file the clinic uploaded. No object is stored -- only the row. */
+/**
+ * A file the clinic uploaded. No object is stored -- only the row.
+ * storagePath: null is a file an import left as a name only; compressed and
+ * externalReference are what Settings > Files counts.
+ */
 async function createPatientFile(opts: {
   accountId: string
   patientId: string
   fileName: string
   fileType?: string
   sizeBytes?: number
-  storagePath?: string
+  storagePath?: string | null
+  compressed?: boolean
+  externalReference?: string
 }) {
   const row = unwrap(
     await admin
@@ -1546,7 +1555,9 @@ async function createPatientFile(opts: {
         file_name: opts.fileName,
         file_type: opts.fileType ?? 'application/pdf',
         size_bytes: opts.sizeBytes ?? 1024,
-        storage_path: opts.storagePath ?? `seed/${opts.patientId}/${opts.fileName}`,
+        storage_path: opts.storagePath === null ? null : (opts.storagePath ?? `seed/${opts.patientId}/${opts.fileName}`),
+        ...(opts.compressed ? { compressed_at: new Date().toISOString() } : {}),
+        ...(opts.externalReference ? { external_reference: opts.externalReference } : {}),
       })
       .select('id')
       .single(),

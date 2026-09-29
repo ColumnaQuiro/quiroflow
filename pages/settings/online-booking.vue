@@ -98,7 +98,8 @@ async function saveAccountSettings() {
 
   saving.value = true
   const update: TablesUpdate<'accounts'> = {
-    online_booking_max_days_ahead: maxDaysAhead.value,
+    // A cleared box is '' and Postgres would refuse it.
+    online_booking_max_days_ahead: Number(maxDaysAhead.value) || 90,
     online_booking_gtm_id: gtmId.value.trim() || null,
     online_booking_success_url: success.value,
     online_booking_primary_color: primaryColor.value.trim() || null,

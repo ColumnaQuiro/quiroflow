@@ -45,14 +45,17 @@ function show(r: SavedReply) {
   body.value = r.body
 }
 
+// A failed save keeps the reply open with its edits rather than switching
+// away and dropping them; a click while a save is in flight is ignored.
 async function openReply(r: SavedReply) {
-  if (r.id === activeId.value) return
-  if (dirty.value) await save()
+  if (r.id === activeId.value || saving.value) return
+  if (dirty.value && !(await save())) return
   show(r)
 }
 
 async function newReply() {
-  if (dirty.value) await save()
+  if (saving.value) return
+  if (dirty.value && !(await save())) return
   const { data, error } = await supabase
     .from('saved_replies')
     .insert({
@@ -74,20 +77,23 @@ async function newReply() {
   nextTick(() => document.querySelector<HTMLInputElement>('[data-cy="reply-title"]')?.select())
 }
 
-async function save() {
+async function save(): Promise<boolean> {
   const r = active.value
-  if (!r) return
+  if (!r) return false
   saving.value = true
   const values = { title: title.value.trim() || t('Untitled reply', 'Respuesta sin título'), body: body.value, updated_by: store.teamMember?.id ?? null }
   const { data, error } = await supabase.from('saved_replies').update(values).eq('id', r.id).select('*').single()
   saving.value = false
   if (error || !data) {
     showToast(error?.message ?? t('Could not save.', 'No se pudo guardar.'), 'error')
-    return
+    return false
   }
   replies.value = replies.value.map((x) => (x.id === r.id ? data : x)).sort((a, b) => a.title.localeCompare(b.title))
-  if (activeId.value === r.id) title.value = data.title
+  // Only the blank-title fallback is taken back from the row; anything typed
+  // while the request was out stays in the box, and stays unsaved.
+  if (activeId.value === r.id && !title.value.trim()) title.value = data.title
   showToast(t('Saved', 'Guardado'))
+  return true
 }
 
 // Asked in an in-app dialog rather than confirm().

@@ -8,6 +8,10 @@ const t = useT()
 
 const phoneNumberId = ref('')
 const businessAccountId = ref('')
+// Whether the manual setup starts unfolded, decided once per load. Bound to
+// businessAccountId directly, it folded shut on the first character typed
+// into that very field.
+const manualOpen = ref(false)
 const accessToken = ref('')
 // Write-only, same shape as the access token above: the value is never read
 // back, only whether one is stored. It lives in a service-role-only table, so
@@ -64,6 +68,7 @@ async function load() {
     .maybeSingle()
   phoneNumberId.value = data?.whatsapp_phone_number_id ?? ''
   businessAccountId.value = data?.whatsapp_business_account_id ?? ''
+  manualOpen.value = !businessAccountId.value
   hasStoredToken.value = !!data?.whatsapp_access_token
   try {
     const status = await useStaffFetch<{ configured: boolean }>('/api/whatsapp/app-secret')
@@ -356,7 +361,7 @@ async function save() {
             <!-- The manual route, folded but never gone: a clinic set up by hand (Columnaquiro) keeps it.
                  Open by default until something is connected, so a clinic without the button still finds it. -->
             <section class="overflow-hidden rounded-card border border-line bg-surface">
-              <details :open="!businessAccountId" class="group" data-cy="whatsapp-manual">
+              <details :open="manualOpen" class="group" data-cy="whatsapp-manual">
                 <summary class="flex min-h-[52px] cursor-pointer list-none items-center gap-2 px-[18px] text-[14px] font-semibold text-ink-500 hover:bg-surface-subtle">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="transition-transform group-open:rotate-90"><path d="M9 6l6 6-6 6" /></svg>
                   {{ t('Already have your own Meta app? Set it up by hand', '¿Ya tienes tu propia app de Meta? Configúralo a mano') }}

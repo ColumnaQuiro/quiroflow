@@ -48,6 +48,9 @@ interface PatientMembershipRow {
   price_cents: number
   status: string
   started_at: string
+  // The plan's own period, to start autopay from. Null when the plan has
+  // since been removed (membership_id is `on delete set null`).
+  memberships: { billing_interval: string; billing_interval_count: number } | null
 }
 interface MembershipPaymentRow {
   id: string
@@ -689,7 +692,7 @@ async function loadPackages() {
 async function loadMemberships() {
   membershipsLoading.value = true
   const [{ data: patMemberships }, { data: membershipPaymentRows }] = await Promise.all([
-    supabase.from('patient_memberships').select('id, membership_name, price_cents, status, started_at').eq('patient_id', props.patientId).order('started_at', { ascending: false }),
+    supabase.from('patient_memberships').select('id, membership_name, price_cents, status, started_at, memberships(billing_interval, billing_interval_count)').eq('patient_id', props.patientId).order('started_at', { ascending: false }),
     supabase
       .from('membership_payments')
       .select('id, patient_membership_id, period_start, amount_cents, status, patient_memberships!inner(patient_id)')
@@ -1092,12 +1095,14 @@ function eventsForSchedule(scheduleId: string) {
   return stripeEvents.value.filter((e) => e.payment_schedule_id === scheduleId)
 }
 
-function openAutopayForm(id: string) {
+// A membership's autopay starts from its plan's period (Settings >
+// Memberships); anything else, or a plan since removed, from one month.
+function openAutopayForm(id: string, period?: { billing_interval: string; billing_interval_count: number } | null) {
   autopayFormFor.value = id
   autopayError.value = ''
   autopayInstallments.value = 1
-  autopayIntervalCount.value = 1
-  autopayInterval.value = 'month'
+  autopayIntervalCount.value = period?.billing_interval_count ?? 1
+  autopayInterval.value = (period?.billing_interval as 'day' | 'week' | 'month' | 'year' | undefined) ?? 'month'
   autopayAlreadyPaid.value = 0
 }
 
@@ -2373,7 +2378,7 @@ function money(cents: number) {
               </UiBtn>
             </div>
             <div v-else-if="hasCard" class="mt-2.5">
-              <UiBtn v-if="autopayFormFor !== m.id" size="sm" variant="ghost" @click="openAutopayForm(m.id)">
+              <UiBtn v-if="autopayFormFor !== m.id" size="sm" variant="ghost" @click="openAutopayForm(m.id, m.memberships)">
                 {{ t('Set up autopay', 'Configurar pago automático') }}
               </UiBtn>
               <form v-else class="flex flex-wrap items-end gap-1.5 rounded-ctl border border-line-divider bg-surface-subtle p-2.5" @submit.prevent="setUpMembershipAutopay(m)">

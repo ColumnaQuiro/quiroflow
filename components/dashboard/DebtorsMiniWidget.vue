@@ -1,66 +1,37 @@
 <script setup lang="ts">
-import { useBonoDebts } from '~/composables/useBonoOwedPayments'
 import { formatEur } from '~/utils/billing'
-import { bonoOwedCents, type BonoOwedPayment } from '~/utils/bonoOwed'
 defineProps<{ dateRange?: unknown; practitionerId?: string; clinicId?: string }>()
 
-interface PurchaseRow {
-  id: string
-  price_cents: number
-  invoice_id: string | null
-  owed_cents: number | null
-  external_reference: string | null
-  patients: { first_name: string; last_name: string | null } | null
-}
-interface InvoiceRow { id: string; status: string; total_cents: number }
-interface ScheduleRow { package_purchase_id: string | null; status: string }
+// Worked out in the database by dashboard_bono_debtors, which is
+// utils/bonoOwed's bonoOwedCents clause for clause -- the same answer as the
+// Debtors report and the patient's Billing tab (see utils/bonoOwed for why a
+// bono sold here and one migrated from PracticeHub record their debt
+// differently). The widget used to read every bono, every payment on one and
+// every Stripe schedule to show five names; now only those five come back,
+// with the count and total across all of them.
+const SHOWN = 5
+
+interface DebtorRow { package_purchase_id: string; first_name: string | null; last_name: string | null; owed_cents: number }
 
 const t = useT()
-const loadBonoDebts = useBonoDebts()
+const supabase = useSupabaseClient()
 const loading = ref(true)
-const purchases = ref<PurchaseRow[]>([])
-const invoicesById = ref<Map<string, InvoiceRow>>(new Map())
-const schedulesByPurchase = ref<Map<string, ScheduleRow>>(new Map())
-const allPayments = ref<BonoOwedPayment[]>([])
+const debtors = ref<DebtorRow[]>([])
+const debtorCount = ref(0)
+const totalOwed = ref(0)
 
 onMounted(async () => {
-  const debts = await loadBonoDebts('id')
-  purchases.value = debts.purchases
-  invoicesById.value = debts.invoicesById
-  schedulesByPurchase.value = debts.schedulesByPurchase
-  allPayments.value = debts.payments
+  const { data, error } = await supabase.rpc('dashboard_bono_debtors', { p_limit: SHOWN })
+  if (error) throw error
+  debtors.value = data ?? []
+  debtorCount.value = data?.[0]?.debtor_count ?? 0
+  totalOwed.value = data?.[0]?.total_owed_cents ?? 0
   loading.value = false
 })
 
-// Same answer as the Debtors report and the patient's Billing tab, because
-// it is literally the same function now -- see utils/bonoOwed for why a bono
-// sold here and a bono migrated from PracticeHub record their debt
-// differently, and why all three used to disagree.
-function owedCentsFor(p: PurchaseRow): number {
-  const inv = p.invoice_id ? invoicesById.value.get(p.invoice_id) : null
-  return bonoOwedCents({
-    purchaseId: p.id,
-    invoiceId: p.invoice_id,
-    priceCents: p.price_cents,
-    owedCents: p.owed_cents,
-    invoice: inv ? { status: inv.status, total_cents: inv.total_cents } : null,
-    payments: allPayments.value,
-  })
-}
-
-const debtors = computed(() =>
-  purchases.value
-    .filter((p) => {
-      const schedule = schedulesByPurchase.value.get(p.id)
-      if (schedule) return schedule.status === 'past_due' && owedCentsFor(p) > 0
-      return owedCentsFor(p) > 0
-    })
-    .sort((a, b) => owedCentsFor(b) - owedCentsFor(a)),
-)
-const totalOwed = computed(() => debtors.value.reduce((sum, p) => sum + owedCentsFor(p), 0))
-
-function patientName(p: PurchaseRow) {
-  return p.patients ? `${p.patients.first_name} ${p.patients.last_name ?? ''}`.trim() : t('Unknown patient', 'Paciente desconocido')
+// A bono whose patient this person cannot see comes back without a name.
+function patientName(p: DebtorRow) {
+  return p.first_name !== null ? `${p.first_name} ${p.last_name ?? ''}`.trim() : t('Unknown patient', 'Paciente desconocido')
 }
 function euros(cents: number) {
   return `${formatEur(cents)}`
@@ -75,15 +46,15 @@ function euros(cents: number) {
     </div>
   </div>
   <div v-else>
-    <p v-if="debtors.length === 0" class="text-[13px] text-ink-faint">{{ t('No outstanding balances.', 'No hay saldos pendientes.') }}</p>
+    <p v-if="debtorCount === 0" class="text-[13px] text-ink-faint">{{ t('No outstanding balances.', 'No hay saldos pendientes.') }}</p>
     <template v-else>
       <ul class="divide-y divide-line-row2">
-        <li v-for="p in debtors.slice(0, 5)" :key="p.id" class="flex items-center gap-2 py-1.5 text-[13px] first:pt-0">
+        <li v-for="p in debtors" :key="p.package_purchase_id" class="flex items-center gap-2 py-1.5 text-[13px] first:pt-0">
           <span class="min-w-0 flex-1 truncate text-ink-700">{{ patientName(p) }}</span>
-          <span class="shrink-0 font-mono text-[12.5px] text-danger-text">{{ euros(owedCentsFor(p)) }}</span>
+          <span class="shrink-0 font-mono text-[12.5px] text-danger-text">{{ euros(p.owed_cents) }}</span>
         </li>
       </ul>
-      <p class="mt-1.5 border-t border-line-row2 pt-1.5 text-[11.5px] text-ink-muted2">{{ t(`${debtors.length} outstanding · ${euros(totalOwed)} total`, `${debtors.length} pendientes · ${euros(totalOwed)} en total`) }}</p>
+      <p class="mt-1.5 border-t border-line-row2 pt-1.5 text-[11.5px] text-ink-muted2">{{ t(`${debtorCount} outstanding · ${euros(totalOwed)} total`, `${debtorCount} pendientes · ${euros(totalOwed)} en total`) }}</p>
     </template>
   </div>
 </template>

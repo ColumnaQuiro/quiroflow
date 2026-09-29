@@ -1,5 +1,8 @@
 import { requireGrowth } from '~/server/utils/requireGrowth'
 import { formatEuros } from '~/server/utils/leads'
+import type { Database } from '~/types/database.types'
+
+type LeadPreview = Database['public']['Functions']['inbox_lead_previews']['Returns'][number]
 
 // Lead conversations for the Inbox.
 //
@@ -15,38 +18,28 @@ import { formatEuros } from '~/server/utils/leads'
 export default defineEventHandler(async (event) => {
   const { supabase, teamMember } = await requireGrowth(event)
 
-  const { data: messages, error } = await supabase
-    .from('whatsapp_messages')
-    .select('id, lead_id, direction, body_preview, channel, created_at, status')
-    .eq('account_id', teamMember.account_id)
-    .not('lead_id', 'is', null)
-    .order('created_at', { ascending: false })
-    .limit(1000)
-
-  if (error) throw createError({ statusCode: 500, statusMessage: error.message })
-
-  const byLead = new Map<string, NonNullable<typeof messages>>()
-  for (const message of messages ?? []) {
-    if (!message.lead_id) continue
-    const list = byLead.get(message.lead_id) ?? []
-    list.push(message)
-    byLead.set(message.lead_id, list)
+  // One row per lead: its latest message and the lead fields shown below.
+  // This used to be the newest 1000 lead messages grouped here, which lost
+  // every lead whose last message was older than the 1000th, followed by the
+  // leads fetched by id in the URL. See
+  // 20260929142012_inbox_counts_and_lead_previews.sql.
+  //
+  // Paged, because an RPC's rows stop at PostgREST's max_rows (1000) as
+  // silently as a select does -- a clinic with more leads than that would
+  // have the oldest fall off the end, which is the bug this replaces.
+  const PAGE = 1000
+  const rows: LeadPreview[] = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .rpc('inbox_lead_previews', { p_account_id: teamMember.account_id })
+      .range(from, from + PAGE - 1)
+    if (error) throw createError({ statusCode: 500, statusMessage: error.message })
+    rows.push(...(data ?? []))
+    if (!data || data.length < PAGE) break
   }
 
-  if (byLead.size === 0) return { conversations: [] }
-
-  const { data: leads } = await supabase
-    .from('leads')
-    .select('id, full_name, phone, source, stage, ai_state, estimated_value_cents, patient_id, ai_taken_over_at, ai_draft_body, team_members:ai_taken_over_by(full_name)')
-    .eq('account_id', teamMember.account_id)
-    .is('deleted_at', null)
-    .in('id', [...byLead.keys()])
-
-  const conversations = (leads ?? [])
+  const conversations = rows
     .map((lead) => {
-      // Already ordered newest-first by the query above.
-      const thread = byLead.get(lead.id) ?? []
-      const last = thread[0]!
       const initials = lead.full_name
         .split(/\s+/)
         .filter(Boolean)
@@ -55,29 +48,29 @@ export default defineEventHandler(async (event) => {
         .join('')
 
       return {
-        key: `lead:${lead.id}`,
-        leadId: lead.id,
+        key: `lead:${lead.lead_id}`,
+        leadId: lead.lead_id,
         name: lead.full_name,
         initials: initials || '?',
-        channel: last.channel,
+        channel: lead.channel,
         aiState: lead.ai_state,
-        takenOverBy: lead.team_members?.full_name ?? null,
+        takenOverBy: lead.taken_over_by_name ?? null,
         // Unread means the same thing it does for a patient thread: the last
         // message is theirs and nobody has answered since.
-        unread: last.direction === 'inbound',
-        lastMessageAt: last.created_at,
-        preview: last.body_preview ?? '',
+        unread: lead.direction === 'inbound',
+        lastMessageAt: lead.created_at,
+        preview: lead.body_preview ?? '',
         // A dry-run rule records what it WOULD have sent as an outbound row,
         // so the newest row on a lead in test mode is routinely a message
         // nobody received. Unmarked, this list says the clinic said it.
-        previewWasNotSent: last.status === 'would_send',
+        previewWasNotSent: lead.status === 'would_send',
         // A reply the receptionist wrote and nobody has decided on. Since the
         // tick started writing these unprompted, a draft can appear on a
         // thread nobody opened -- so the list has to say which rows are
         // waiting on a person, or the drafts help only whoever goes looking.
         // The text is not sent: this is a flag, and the list is not where
         // somebody should be reading a reply before approving it.
-        hasDraft: Boolean(lead.ai_draft_body),
+        hasDraft: lead.has_draft,
         source: lead.source,
         stage: lead.stage,
         value: formatEuros(lead.estimated_value_cents),

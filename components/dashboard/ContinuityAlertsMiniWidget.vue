@@ -4,8 +4,6 @@
 // as RecallsDueMiniWidget.vue but plan-aware instead of a flat threshold.
 const props = defineProps<{ practitionerId?: string }>()
 
-interface AlertRow { days_overdue: number | null }
-
 const t = useT()
 const supabase = useSupabaseClient()
 const loading = ref(true)
@@ -16,13 +14,13 @@ const latest = useLatestRun()
 async function load() {
   const isStale = latest.start()
   loading.value = true
-  let query = supabase.from('care_plan_continuity_alerts').select('days_overdue')
-  if (props.practitionerId) query = query.eq('default_practitioner_id', props.practitionerId)
-  const rows = await fetchAllRows<AlertRow>((f, t) => query.range(f, t))
+  // Counted and summed in the database; only the average's rounding is done
+  // here, so a half-day rounds exactly as it did when every row came across.
+  const { data, error } = await supabase.rpc('dashboard_continuity_summary', { p_practitioner_id: props.practitionerId || null }).single()
   if (isStale()) return
-  count.value = rows.length
-  const known = rows.map((r) => r.days_overdue).filter((d): d is number => d !== null)
-  avgDays.value = known.length > 0 ? Math.round(known.reduce((sum, d) => sum + d, 0) / known.length) : null
+  if (error) throw error
+  count.value = data.patient_count
+  avgDays.value = data.days_known > 0 ? Math.round(data.days_sum / data.days_known) : null
   loading.value = false
 }
 onMounted(load)

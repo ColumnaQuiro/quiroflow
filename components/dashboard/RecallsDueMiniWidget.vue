@@ -3,8 +3,6 @@
 // recall_candidates view the Recalls page and sidebar badge use.
 const props = defineProps<{ practitionerId?: string }>()
 
-interface RecallRow { days_since_last_appointment: number | null }
-
 const t = useT()
 const supabase = useSupabaseClient()
 const loading = ref(true)
@@ -15,16 +13,13 @@ const latest = useLatestRun()
 async function load() {
   const isStale = latest.start()
   loading.value = true
-  let query = supabase.from('recall_candidates').select('days_since_last_appointment')
-  if (props.practitionerId) query = query.eq('default_practitioner_id', props.practitionerId)
-  // Counted alongside the first page so the rest come in one wave.
-  let total = supabase.from('recall_candidates').select('patient_id', { count: 'exact', head: true })
-  if (props.practitionerId) total = total.eq('default_practitioner_id', props.practitionerId)
-  const rows = await fetchAllRows<RecallRow>((f, t) => query.range(f, t), { total })
+  // Counted and summed in the database; only the average's rounding is done
+  // here, so a half-day rounds exactly as it did when every row came across.
+  const { data, error } = await supabase.rpc('dashboard_recall_summary', { p_practitioner_id: props.practitionerId || null }).single()
   if (isStale()) return
-  count.value = rows.length
-  const known = rows.map((r) => r.days_since_last_appointment).filter((d): d is number => d !== null)
-  avgDays.value = known.length > 0 ? Math.round(known.reduce((sum, d) => sum + d, 0) / known.length) : null
+  if (error) throw error
+  count.value = data.patient_count
+  avgDays.value = data.days_known > 0 ? Math.round(data.days_sum / data.days_known) : null
   loading.value = false
 }
 onMounted(load)

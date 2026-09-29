@@ -79,13 +79,14 @@ async function loadBadges(only: NavBadge[] | null = null) {
   // that, not a coincidence of timing.
   if (wants('recalls') && can('recalls_access')) {
     const token = ++badgeTokens.recalls
-    let recalls = supabase
-      .from('recall_candidates')
-      .select('patient_id', { count: 'exact', head: true })
-      .gte('days_since_last_appointment', RECALLS_MIN_DAYS)
-    if (store.currentClinicId && store.clinics.length > 1) recalls = recalls.or(`clinic_id.eq.${store.currentClinicId},clinic_id.is.null`)
-    recalls.then(({ count }) => {
-      if (token === badgeTokens.recalls) recallsCount.value = count ?? 0
+    // The same exact count over recall_candidates, asked through
+    // recall_badge_count so the scan starts at the caller's own patients
+    // rather than every clinic's: row-level security on its own is a filter,
+    // not an index, so the count read the whole patients table to keep one
+    // account's rows. Same clinic scoping as the Recalls page.
+    const clinicId = store.currentClinicId && store.clinics.length > 1 ? store.currentClinicId : undefined
+    supabase.rpc('recall_badge_count', { p_min_days: RECALLS_MIN_DAYS, p_clinic_id: clinicId }).then(({ data }) => {
+      if (token === badgeTokens.recalls) recallsCount.value = data ?? 0
     })
   }
 

@@ -22,23 +22,21 @@ async function load() {
     return query
   })
 
+  // The window starts in the browser's own day, as it always has; the
+  // database counts the distinct patients rather than sending every
+  // completed appointment across to be counted here.
   const cutoff = new Date()
   cutoff.setDate(cutoff.getDate() - ACTIVE_WINDOW_DAYS)
 
-  let activeQuery = supabase
-    .from('appointments')
-    .select('patient_id')
-    .eq('status', 'completed')
-    .gte('starts_at', cutoff.toISOString())
-  if (props.practitionerId) activeQuery = activeQuery.eq('practitioner_id', props.practitionerId)
-
-  let activeCount = supabase.from('appointments').select('id', { count: 'exact', head: true }).eq('status', 'completed').gte('starts_at', cutoff.toISOString())
-  if (props.practitionerId) activeCount = activeCount.eq('practitioner_id', props.practitionerId)
-  const [{ count }, rows] = await Promise.all([totalQuery, fetchAllRows((f, t) => activeQuery.range(f, t), { total: activeCount })])
+  const [{ count }, { data: activeCount, error }] = await Promise.all([
+    totalQuery,
+    supabase.rpc('dashboard_active_patient_count', { p_since: cutoff.toISOString(), p_practitioner_id: props.practitionerId || null }),
+  ])
   if (isStale()) return
+  if (error) throw error
 
   total.value = count ?? 0
-  active.value = new Set(rows.map((r) => r.patient_id)).size
+  active.value = activeCount ?? 0
   loading.value = false
 }
 onMounted(load)

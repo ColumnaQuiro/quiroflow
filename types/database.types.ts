@@ -6347,6 +6347,61 @@ export type Database = {
         Args: { p_patient_ids: string[] }
         Returns: { patient_id: string; last_visit_at: string | null; completed_count: number; next_visit_at: string | null }[]
       }
+      dashboard_active_patient_count: {
+        Args: { p_since: string; p_practitioner_id?: string | null }
+        Returns: number
+      }
+      dashboard_recall_summary: {
+        Args: { p_practitioner_id?: string | null }
+        Returns: { patient_count: number; days_known: number; days_sum: number }[]
+      }
+      dashboard_continuity_summary: {
+        Args: { p_practitioner_id?: string | null }
+        Returns: { patient_count: number; days_known: number; days_sum: number }[]
+      }
+      dashboard_membership_summary: {
+        Args: { p_month: string }
+        Returns: { active_count: number; revenue_cents: number; failed_count: number }[]
+      }
+      dashboard_bono_debtors: {
+        Args: { p_limit?: number | null }
+        Returns: {
+          package_purchase_id: string
+          first_name: string | null
+          last_name: string | null
+          owed_cents: number
+          debtor_count: number
+          total_owed_cents: number
+        }[]
+      }
+      recall_badge_count: {
+        Args: { p_min_days: number; p_clinic_id?: string }
+        Returns: number
+      }
+      billing_outstanding: {
+        Args: { p_patient_id?: string }
+        Returns: { outstanding_cents: number; invoice_count: number }[]
+      }
+      inbox_lead_previews: {
+        Args: { p_account_id: string }
+        Returns: {
+          lead_id: string
+          channel: string
+          direction: string
+          body_preview: string | null
+          status: string
+          created_at: string
+          full_name: string
+          phone: string | null
+          source: string | null
+          stage: string
+          ai_state: string
+          estimated_value_cents: number | null
+          patient_id: string | null
+          has_draft: boolean
+          taken_over_by_name: string | null
+        }[]
+      }
       team_two_factor_status: {
         Args: { p_account_id: string }
         Returns: { team_member_id: string; enrolled: boolean }[]

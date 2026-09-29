@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { formatEur } from '~/utils/billing'
-import { fetchAllRows, fetchByIds } from '~/composables/useFetchAllRows'
 
 interface InvoiceRow {
   id: string
@@ -132,28 +131,24 @@ async function loadCounts() {
   counts.value = next
 }
 
+// One number, so one request: billing_outstanding adds it up in the database
+// under the same rules this page applied in the browser -- unpaid invoices,
+// every payment against each netted off, what is left floored at zero per
+// invoice. It used to pull every unpaid invoice past the 1000-row cap, then
+// every payment on them in chunks of 150 ids, to sum them here.
+//
+// Switching patient can overtake a request still on its way; only the newest
+// may fill the header. A failed request leaves the header without a figure
+// rather than showing €0 as if nothing were owed.
+let outstandingToken = 0
 async function loadOutstanding() {
-  // fetchAllRows rather than a bare select() for that same 1000-row cap -- an
-  // account carrying more unpaid invoices than that silently under-reported
-  // what it is owed in the header.
-  const rows = await fetchAllRows<{ id: string; total_cents: number }>((from, to) => {
-    const q = supabase.from('invoices').select('id, total_cents').eq('status', 'unpaid')
-    return (patientId.value ? q.eq('patient_id', patientId.value) : q).range(from, to)
-  })
-  const ids = rows.map((r) => r.id)
-
-  const paidByInvoice: Record<string, number> = {}
-  // By chunk as well as by page: every unpaid invoice in the account is more
-  // ids than one URL holds long before it is more rows than one page.
-  const pays = await fetchByIds(ids, (chunk) =>
-    fetchAllRows<{ invoice_id: string | null; amount_cents: number }>((from, to) =>
-      supabase.from('payments').select('invoice_id, amount_cents').in('invoice_id', chunk).range(from, to),
-    ).then((data) => ({ data, error: null })),
-  )
-  for (const p of pays) if (p.invoice_id) paidByInvoice[p.invoice_id] = (paidByInvoice[p.invoice_id] ?? 0) + p.amount_cents
-
-  outstandingCents.value = rows.reduce((sum, r) => sum + Math.max(0, r.total_cents - (paidByInvoice[r.id] ?? 0)), 0)
-  outstandingCount.value = rows.length
+  const token = ++outstandingToken
+  const { data, error } = await supabase.rpc('billing_outstanding', { p_patient_id: patientId.value || undefined })
+  if (token !== outstandingToken) return
+  const row = data?.[0]
+  if (error || !row) return
+  outstandingCents.value = row.outstanding_cents
+  outstandingCount.value = row.invoice_count
   statsLoaded.value = true
 }
 

@@ -267,6 +267,10 @@ let countsToken = 0
 async function loadCounts() {
   const token = ++countsToken
   const count = (fn: (q: ReturnType<typeof inboxQuery>) => PromiseLike<{ count: number | null }>) => fn(inboxQuery('conversation_key', { count: 'exact', head: true })).then((r) => r.count ?? 0)
+  // Four queries in parallel, not one combined count: each filter pushes down
+  // into inbox_conversations, so each is cheap (11-58 ms on the busiest local
+  // clinic), while counting all four in one query builds every conversation
+  // first and took 129-159 ms.
   const [all, mine, unassigned, unread] = await Promise.all([
     count((q) => q),
     count((q) => q.eq('assigned_to', myId.value ?? '')),

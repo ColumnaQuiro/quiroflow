@@ -24,13 +24,10 @@ export type GrowthAccess = Awaited<ReturnType<typeof requirePermission>>
 export async function requireGrowth(event: H3Event): Promise<GrowthAccess> {
   const access = await requirePermission(event, 'communication_config')
 
-  const { data: subscription } = await access.supabase
-    .from('subscriptions')
-    .select('plan_id, growth_addon, status, comped')
-    .eq('account_id', access.teamMember.account_id)
-    .maybeSingle()
-
-  if (!hasGrowth(subscription)) {
+  // Read alongside the team member in requireActiveAccount, one round trip
+  // rather than two; none or several rows arrive as null, as .maybeSingle()
+  // gave them here before.
+  if (!hasGrowth(access.subscription)) {
     throw createError({
       statusCode: 402,
       statusMessage: 'Growth is not on this subscription. Add it under Billing to use leads, the AI receptionist and reputation.',

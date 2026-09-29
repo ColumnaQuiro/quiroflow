@@ -15,38 +15,25 @@ import { formatEuros } from '~/server/utils/leads'
 export default defineEventHandler(async (event) => {
   const { supabase, teamMember } = await requireGrowth(event)
 
-  const { data: messages, error } = await supabase
-    .from('whatsapp_messages')
-    .select('id, lead_id, direction, body_preview, channel, created_at, status')
+  // Each lead with only its newest message, in one query: `!inner` keeps
+  // leads that have written or been written to, and the embedded order and
+  // limit apply per lead. This was two round trips -- the newest thousand
+  // messages, then their leads -- at ~300 ms each from the Netlify function.
+  const { data: leads, error } = await supabase
+    .from('leads')
+    .select(
+      'id, full_name, phone, source, stage, ai_state, estimated_value_cents, patient_id, ai_taken_over_at, ai_draft_body, team_members:ai_taken_over_by(full_name), whatsapp_messages!inner(direction, body_preview, channel, created_at, status)',
+    )
     .eq('account_id', teamMember.account_id)
-    .not('lead_id', 'is', null)
-    .order('created_at', { ascending: false })
-    .limit(1000)
+    .is('deleted_at', null)
+    .order('created_at', { referencedTable: 'whatsapp_messages', ascending: false })
+    .limit(1, { referencedTable: 'whatsapp_messages' })
 
   if (error) throw createError({ statusCode: 500, statusMessage: error.message })
 
-  const byLead = new Map<string, NonNullable<typeof messages>>()
-  for (const message of messages ?? []) {
-    if (!message.lead_id) continue
-    const list = byLead.get(message.lead_id) ?? []
-    list.push(message)
-    byLead.set(message.lead_id, list)
-  }
-
-  if (byLead.size === 0) return { conversations: [] }
-
-  const { data: leads } = await supabase
-    .from('leads')
-    .select('id, full_name, phone, source, stage, ai_state, estimated_value_cents, patient_id, ai_taken_over_at, ai_draft_body, team_members:ai_taken_over_by(full_name)')
-    .eq('account_id', teamMember.account_id)
-    .is('deleted_at', null)
-    .in('id', [...byLead.keys()])
-
   const conversations = (leads ?? [])
     .map((lead) => {
-      // Already ordered newest-first by the query above.
-      const thread = byLead.get(lead.id) ?? []
-      const last = thread[0]!
+      const last = lead.whatsapp_messages[0]!
       const initials = lead.full_name
         .split(/\s+/)
         .filter(Boolean)

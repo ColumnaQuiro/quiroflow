@@ -503,6 +503,12 @@ describe('Growth in the shared Inbox', () => {
       cy.reload()
 
       cy.contains('[data-test="lead-row"]', 'Older Lead').should('be.visible')
+      // Leads and patient threads load from different endpoints, so the lead
+      // row can be on screen before the patient rows are. Reading the order
+      // then finds no 'Oldest Patient' at all (index -1) and fails at random;
+      // wait for every row the assertion names first.
+      cy.contains('[data-cy="inbox-row"]', 'Newest Patient').should('be.visible')
+      cy.contains('[data-cy="inbox-row"]', 'Oldest Patient').should('exist')
       cy.get('[data-test="lead-row"], [data-cy="inbox-row"]').then((rows) => {
         const names = [...rows].map((r) => r.textContent ?? '')
         const at = (name: string) => names.findIndex((n) => n.includes(name))

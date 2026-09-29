@@ -26,10 +26,13 @@ describe('Connecting WhatsApp from Settings', () => {
     // A clinic already set up by hand -- Columnaquiro -- must not find its
     // route gone. Adding Connect is an addition, not a replacement, for as
     // long as the direct model is still in use.
-    cy.contains('Phone Number ID').should('be.visible')
-    cy.contains('WhatsApp Business Account ID').should('be.visible')
-    cy.contains('Access token').should('be.visible')
-    cy.contains('Meta App Secret').should('be.visible')
+    // Folded at the bottom of the page now, open until something is
+    // connected; scrolled to because the page scrolls inside its own panel.
+    cy.get('[data-cy="whatsapp-manual"]').should('have.attr', 'open')
+    cy.contains('label', 'Phone Number ID').scrollIntoView().should('be.visible')
+    cy.contains('label', 'WhatsApp Business Account ID').scrollIntoView().should('be.visible')
+    cy.contains('label', 'Access token').scrollIntoView().should('be.visible')
+    cy.contains('label', 'Meta App Secret').scrollIntoView().should('be.visible')
   })
 
   it('says the manual fields are the alternative, not the instructions', () => {
@@ -37,7 +40,7 @@ describe('Connecting WhatsApp from Settings', () => {
     // left unchanged it contradicted the card above ("nothing to copy
     // across"). Worth a test because it is the kind of copy that silently
     // rots back.
-    cy.contains('Already have your own Meta app?').should('be.visible')
+    cy.contains('summary', 'Already have your own Meta app?').scrollIntoView().should('be.visible')
   })
 
   it('shows the connected state once an account carries a WABA id', () => {

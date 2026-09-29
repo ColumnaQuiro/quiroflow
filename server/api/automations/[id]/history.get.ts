@@ -13,26 +13,26 @@ export default defineEventHandler(async (event) => {
   const { supabase, teamMember } = await requirePermission(event, 'communication_config')
   const accountId = teamMember.account_id
 
-  const { data: rule } = await supabase.from('automation_rules').select('id').eq('id', ruleId).eq('account_id', accountId).maybeSingle()
-  if (!rule) throw createError({ statusCode: 404, statusMessage: 'Automation not found' })
-
-  const readWhatsApp = await canReadWhatsApp(supabase, teamMember)
-  const [{ data: events }, { data: wa }, { data: email }] = await Promise.all([
+  // One round trip: the rule check and the Inbox permission run beside the
+  // reads rather than before them. Everything is read with the caller's
+  // client, so a rule on another account yields nothing before its 404, and
+  // RLS gives someone without Inbox access no WhatsApp rows (0164).
+  const [{ data: rule }, readWhatsApp, { data: events }, { data: wa }, { data: email }] = await Promise.all([
+    supabase.from('automation_rules').select('id').eq('id', ruleId).eq('account_id', accountId).maybeSingle(),
+    canReadWhatsApp(supabase, teamMember),
     supabase
       .from('automation_run_events')
       .select('id, run_id, action_id, step_label, outcome, detail, created_at, automation_sequence_runs!inner(rule_id, patient_id, lead_id, patients(first_name, last_name), leads(full_name))')
       .eq('automation_sequence_runs.rule_id', ruleId)
       .order('created_at', { ascending: false })
       .limit(LIMIT),
-    readWhatsApp
-      ? supabase
-          .from('whatsapp_messages')
-          .select('id, automation_action_id, template_name, status, error_message, created_at, patient_id, lead_id, patients(first_name, last_name), leads(full_name)')
-          .eq('account_id', accountId)
-          .eq('rule_id', ruleId)
-          .order('created_at', { ascending: false })
-          .limit(LIMIT)
-      : Promise.resolve({ data: [] as any[] }),
+    supabase
+      .from('whatsapp_messages')
+      .select('id, automation_action_id, template_name, status, error_message, created_at, patient_id, lead_id, patients(first_name, last_name), leads(full_name)')
+      .eq('account_id', accountId)
+      .eq('rule_id', ruleId)
+      .order('created_at', { ascending: false })
+      .limit(LIMIT),
     supabase
       .from('email_messages')
       .select('id, automation_action_id, subject, dry_run, delivered_at, first_opened_at, first_clicked_at, bounced_at, failed_at, sent_at, patient_id, lead_id, patients(first_name, last_name), leads(full_name)')
@@ -41,6 +41,7 @@ export default defineEventHandler(async (event) => {
       .order('sent_at', { ascending: false })
       .limit(LIMIT),
   ])
+  if (!rule) throw createError({ statusCode: 404, statusMessage: 'Automation not found' })
 
   const personName = (p: any, l: any) => (p ? `${p.first_name} ${p.last_name ?? ''}`.trim() : (l?.full_name ?? null))
 

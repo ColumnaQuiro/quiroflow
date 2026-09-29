@@ -836,6 +836,11 @@ async function setPatientTutor(opts: { patientId: string; tutorPatientId: string
   return null
 }
 
+async function patientInvoiceEmail(opts: { patientId: string }) {
+  const row = unwrap(await admin.from('patients').select('invoice_email_enabled').eq('id', opts.patientId).single()) as { invoice_email_enabled: boolean }
+  return row.invoice_email_enabled
+}
+
 async function setPatientNif(opts: { patientId: string; nationalId: string | null }) {
   const { error } = await admin.from('patients').update({ national_id: opts.nationalId }).eq('id', opts.patientId)
   if (error) throw error
@@ -3347,6 +3352,7 @@ export const dbTasks = {
   'db:createPackageTemplate': createPackageTemplate,
   'db:createFactura': createFactura,
   'db:setPatientNif': setPatientNif,
+  'db:patientInvoiceEmail': patientInvoiceEmail,
   'db:setPatientContactFlags': setPatientContactFlags,
   'db:setPatientTutor': setPatientTutor,
   'db:createPatientDoc': createPatientDoc,

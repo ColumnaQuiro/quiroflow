@@ -1,4 +1,4 @@
-// Settings -> Payment Methods has existed since 0100 and has never been wired
+// Settings -> Payments (formerly Payment Methods) has existed since 0100 and has never been wired
 // to anything. Staff could add a method, its own help text suggested "Bank
 // Transfer", and the method then appeared in no payment form: every dropdown
 // hardcoded its own <option> list and payments.method was a check constraint
@@ -11,7 +11,8 @@ describe('Payment methods', () => {
   it('offers a method added in Settings when taking a payment', () => {
     cy.seedStaffAccount().then((account) => {
       cy.login(account.email, account.password)
-      cy.visit('/settings/payment-methods')
+      cy.visit('/settings/payments')
+      cy.get('[data-cy="payments-settings"][data-ready="true"]')
 
       // Seeded by the migration, so a clinic has something on day one rather
       // than an empty screen -- which is what every account created after
@@ -22,9 +23,9 @@ describe('Payment methods', () => {
       cy.contains('Bank transfer').should('exist')
       cy.contains('Bizum').should('exist')
 
-      cy.get('input[type="text"]').type('Cheque regalo')
-      cy.contains('button', 'Add Method').click()
-      cy.contains('Cheque regalo').should('exist')
+      cy.get('[data-cy="method-new-name"]').type('Cheque regalo')
+      cy.get('[data-cy="method-add"]').click()
+      cy.contains('[data-cy="method-name"]', 'Cheque regalo').should('exist')
 
       cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Paga', lastName: 'Transferencia' }).then((patient: any) => {
         cy.task('db:createInvoice', { accountId: account.accountId, patientId: patient.id, totalCents: 4400, status: 'unpaid' })
@@ -54,21 +55,33 @@ describe('Payment methods', () => {
     })
   })
 
-  it('refuses to delete a method that has payments against it', () => {
+  it('offers Delete only on a method nothing has been paid with', () => {
     // Deleting one used to be allowed, which would leave those payments naming
     // a method the account no longer has and the by-method report grouping on
-    // a key with nothing behind it. Deactivating is the answer, and the
-    // foreign key is what makes the difference enforceable rather than advice.
+    // a key with nothing behind it. Turning it off is the answer, and the
+    // foreign key is what makes the difference enforceable rather than advice;
+    // the page now only offers Delete where the key would let it through.
     cy.seedStaffAccount().then((account) => {
       cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Ya', lastName: 'Pagado' }).then((patient: any) => {
         cy.task('db:createPayment', { accountId: account.accountId, patientId: patient.id, amountCents: 4400, method: 'transfer' })
 
         cy.login(account.email, account.password)
-        cy.visit('/settings/payment-methods')
+        cy.visit('/settings/payments')
+        cy.get('[data-cy="payments-settings"][data-ready="true"]')
 
-        cy.contains('tr', 'Bank transfer').find('button').last().click()
-        cy.contains('cannot be deleted').should('exist')
-        cy.contains('Bank transfer').should('exist')
+        cy.contains('[data-cy="method-row"]', 'Bank transfer').as('used')
+        cy.get('@used').find('[data-cy="method-uses"]').should('have.text', '1 payment')
+        cy.get('@used').find('[data-cy="method-delete"]').should('not.exist')
+
+        // Turning it off keeps it, and its history.
+        cy.get('@used').find('[data-cy="method-active"]').should('have.attr', 'aria-checked', 'true').click()
+        cy.contains('[data-cy="method-row"]', 'Bank transfer').find('[data-cy="method-active"]').should('have.attr', 'aria-checked', 'false')
+
+        // One nothing has used can go.
+        cy.get('[data-cy="method-new-name"]').type('Vale')
+        cy.get('[data-cy="method-add"]').click()
+        cy.contains('[data-cy="method-row"]', 'Vale').find('[data-cy="method-delete"]').click()
+        cy.contains('[data-cy="method-name"]', 'Vale').should('not.exist')
       })
     })
   })

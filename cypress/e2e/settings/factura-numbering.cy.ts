@@ -1,4 +1,4 @@
-// Settings > Receipt Settings > Factura numbering: a clinic picks its own
+// Settings > Invoicing > Numbering: a clinic picks its own
 // prefixes and where this year's count continues from, e.g. the next number
 // of the system it is leaving. The count only moves forward.
 describe('Factura numbering', () => {
@@ -9,7 +9,7 @@ describe('Factura numbering', () => {
     cy.seedStaffAccount().then((account) => {
       cy.intercept('POST', '**/rest/v1/rpc/set_factura_numbering').as('saveNumbering')
       cy.login(account.email, account.password)
-      cy.visit('/settings/invoice-settings')
+      cy.visit('/settings/invoicing')
 
       // A new clinic starts at F-<year>-0001 and R-<year>-0001.
       cy.get('[data-cy="factura-preview"]').should('have.text', `F-${year}-0001`)
@@ -40,7 +40,7 @@ describe('Factura numbering', () => {
     // (accounts_factura_prefixes_differ); this is the page saying so first.
     cy.seedStaffAccount().then((account) => {
       cy.login(account.email, account.password)
-      cy.visit('/settings/invoice-settings')
+      cy.visit('/settings/invoicing')
       cy.get('[data-cy="rectificativa-prefix"]').clear().type('f')
       cy.get('[data-cy="factura-numbering-error"]').should('contain', 'different prefixes')
     })

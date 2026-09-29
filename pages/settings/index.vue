@@ -58,10 +58,8 @@ const groups = computed(() => [
       { to: '/settings/services', label: t('Services & Products', 'Servicios y productos'), description: t('What you bill for.', 'Lo que facturas.'), icon: ICONS.shoppingBag },
       { to: '/settings/packages', label: t('Packages / Bonos', 'Paquetes / Bonos'), description: t('Session bundle templates you can sell to patients.', 'Plantillas de bonos de sesiones que puedes vender a pacientes.'), icon: ICONS.gift },
       { to: '/settings/memberships', label: t('Memberships', 'Membresías'), description: t('Recurring plan templates for patients.', 'Plantillas de planes recurrentes para pacientes.'), icon: ICONS.badgeCheck },
-      { to: '/settings/payments', label: t('Payments (Stripe)', 'Pagos (Stripe)'), description: t('Automate installments and renewals with a saved card.', 'Automatiza cuotas y renovaciones con una tarjeta guardada.'), icon: ICONS.creditCard },
-      { to: '/settings/payment-methods', label: t('Payment Methods', 'Métodos de pago'), description: t('The methods staff can record a payment against.', 'Los métodos con los que el personal puede registrar un pago.'), icon: ICONS.creditCard },
-      { to: '/settings/invoice-settings', label: t('Receipt Settings', 'Configuración de recibos'), description: t('Numbering, display options, and email templates for visit receipts.', 'Numeración, opciones de visualización y plantillas de email para los recibos de visita.'), icon: ICONS.documentText },
-      { to: '/settings/fiscal-data', label: t('Fiscal Data', 'Datos fiscales'), description: t('Legal name and tax ID shown on facturas and receipts.', 'Razón social y NIF/CIF que aparecen en facturas y recibos.'), icon: ICONS.documentText },
+      { to: '/settings/payments', label: t('Payments', 'Pagos'), description: t('The methods staff record payments with, and card payments through Stripe.', 'Los métodos con los que se registran los pagos, y los cobros con tarjeta mediante Stripe.'), icon: ICONS.creditCard },
+      { to: '/settings/invoicing', label: t('Invoicing', 'Facturación'), description: t('Fiscal data, numbering, what receipts show and the receipt email.', 'Datos fiscales, numeración, qué muestran los recibos y el correo del recibo.'), icon: ICONS.documentText },
       // Owners only: sending the clinic's invoicing records to the tax agency
       // under its certificate is the company's decision, not a role's.
       ...(store.isOwner

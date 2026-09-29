@@ -19,12 +19,23 @@ export default defineEventHandler(async (event) => {
     )
     .join('')
 
+  // The clinic's own subject and message (Settings > Invoicing), with
+  // {{clinic_name}} filled in; the built-in wording when it has written none.
+  const clinicName = data.clinic?.name ?? ''
+  const fill = (text: string) => text.replace(/\{\{\s*clinic_name\s*\}\}/g, clinicName)
+  const intro = data.email?.body
+    ? fill(data.email.body)
+        .split(/\n{2,}/)
+        .map((para) => `<p>${escapeHtml(para).replace(/\n/g, '<br>')}</p>`)
+        .join('')
+    : `<p>Hi ${escapeHtml(data.patient.firstName)},</p>
+      <p>Here is the receipt for your visit -- the full PDF is attached. The
+      invoice (factura) for what you paid is issued separately.</p>`
+
   const html = `
     <div style="font-family:sans-serif">
       <h2>Recibo ${data.invoiceNumber}</h2>
-      <p>Hi ${data.patient.firstName},</p>
-      <p>Here is the receipt for your visit -- the full PDF is attached. The
-      invoice (factura) for what you paid is issued separately.</p>
+      ${intro}
       <table style="border-collapse:collapse;width:100%">
         <thead><tr><th align="left">Description</th><th align="right">Qty</th><th align="right">Total</th></tr></thead>
         <tbody>${rows}</tbody>
@@ -35,10 +46,14 @@ export default defineEventHandler(async (event) => {
 
   await sendResendEmail({
     to: data.patient.email,
-    subject: `Recibo ${data.invoiceNumber}`,
+    subject: data.email?.subject ? fill(data.email.subject) : `Recibo ${data.invoiceNumber}`,
     html,
     attachments: [{ filename: `${data.invoiceNumber}.pdf`, content: pdf.toString('base64') }],
   })
 
   return { sent: true }
 })
+
+function escapeHtml(text: string) {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}

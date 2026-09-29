@@ -42,7 +42,11 @@ const rules: Rule[] = [
   // AEAT, and under whose certificate, is the company's own decision.
   { test: (p) => p === '/settings/verifactu', check: (s) => s.isOwner },
   {
-    test: (p) => ['/settings/services', '/settings/packages', '/settings/memberships', '/settings/payments', '/settings/fiscal-data'].includes(p),
+    // payment-methods, invoice-settings and fiscal-data now redirect into
+    // Payments and Invoicing; they keep the gate so a bookmark never lands
+    // anywhere unguarded.
+    test: (p) =>
+      ['/settings/services', '/settings/packages', '/settings/memberships', '/settings/payments', '/settings/invoicing', '/settings/payment-methods', '/settings/invoice-settings', '/settings/fiscal-data'].includes(p),
     check: (s) => can(s, 'settings_access') && can(s, 'billing_config'),
   },
   {

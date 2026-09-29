@@ -281,6 +281,8 @@ async function createPatientDoc(opts: {
   /** Blocks of the form, in DocField shape. Left out, the document has none
    *  -- which is all the tabs that only list documents need. */
   fields?: unknown[]
+  /** The template it was sent from, as the Docs tab records it. */
+  templateId?: string
 }) {
   const { accountId, patientId, title, createdBy } = opts
   const doc = unwrap(
@@ -291,6 +293,7 @@ async function createPatientDoc(opts: {
         patient_id: patientId,
         title,
         fields: opts.fields ?? [],
+        template_id: opts.templateId ?? null,
         created_by: createdBy ?? null,
         ...(opts.completed ? { completed_at: new Date().toISOString() } : {}),
       })
@@ -569,6 +572,20 @@ async function bookingAndWhatsappSettingsOf(opts: { accountId: string }) {
     await admin
       .from('accounts')
       .select('online_booking_text_overrides, online_booking_practitioner_order, new_lead_notify_whatsapp_template_name, new_lead_notify_whatsapp_template_language, whatsapp_reminder_template_name')
+      .eq('id', opts.accountId)
+      .single(),
+  )
+}
+
+async function createDocTemplate(opts: { accountId: string; title: string; category?: string }) {
+  return unwrap(await admin.from('doc_templates').insert({ account_id: opts.accountId, title: opts.title, fields: [], category: opts.category ?? null }).select('id').single()) as { id: string }
+}
+
+async function commsSettingsOf(opts: { accountId: string }) {
+  return unwrap(
+    await admin
+      .from('accounts')
+      .select('new_lead_notify_email, new_lead_notify_whatsapp, appointment_confirmation_channels, email_confirmation_subject, default_phone_country')
       .eq('id', opts.accountId)
       .single(),
   )
@@ -3402,6 +3419,8 @@ export const dbTasks = {
   'db:setPatientContactFlags': setPatientContactFlags,
   'db:setPatientTutor': setPatientTutor,
   'db:createPatientDoc': createPatientDoc,
+  'db:createDocTemplate': createDocTemplate,
+  'db:commsSettingsOf': commsSettingsOf,
   'db:uploadDocImage': uploadDocImage,
   'db:patientDocFields': patientDocFields,
   'db:createPatientFile': createPatientFile,

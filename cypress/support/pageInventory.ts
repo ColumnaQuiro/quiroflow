@@ -128,6 +128,7 @@ export const NOT_SWEPT_HERE: Record<string, string> = {
   '/legal/privacy': 'static legal copy, no app behaviour',
   '/legal/terms': 'static legal copy, no app behaviour',
   '/settings/patient-app': 'redirects to /settings/app; asserted in settings/app-store-links.cy.ts',
+  '/print/desk-sign': 'printable sign opened from /settings/app, no app layout; asserted in settings/app-store-links.cy.ts',
   '/settings/practitioners': 'redirects to /settings/team#importados; asserted in settings/team.cy.ts',
   '/portal': 'patient portal -- separate app with its own auth, not the staff sidebar',
   '/portal/login': 'patient portal -- separate app with its own auth',

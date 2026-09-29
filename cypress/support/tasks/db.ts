@@ -344,6 +344,8 @@ async function createPatient(opts: {
   phoneCountryCode?: string
   /** Whether invoices are emailed to them. Off by default, as in the schema. */
   invoiceEmailEnabled?: boolean
+  /** The "Referred by" value, which stores a referral source's name. */
+  referralSource?: string
 }) {
   const { accountId, clinicId, firstName, lastName, email, dateOfBirth, defaultPractitionerId } = opts
   const patient = unwrap(
@@ -358,6 +360,7 @@ async function createPatient(opts: {
         date_of_birth: dateOfBirth ?? null,
         default_practitioner_id: defaultPractitionerId ?? null,
         ...(opts.invoiceEmailEnabled === undefined ? {} : { invoice_email_enabled: opts.invoiceEmailEnabled }),
+        ...(opts.referralSource === undefined ? {} : { referral_source: opts.referralSource }),
       })
       .select('id, first_name, last_name')
       .single(),
@@ -1804,6 +1807,19 @@ async function patientTags(opts: { patientId: string }) {
 
 async function createMembershipTemplate(opts: { accountId: string; name: string; priceCents?: number }) {
   return unwrap(await admin.from('memberships').insert({ account_id: opts.accountId, name: opts.name, price_cents: opts.priceCents ?? 5000 }).select('id').single()) as { id: string }
+}
+
+async function createReferralSource(opts: { accountId: string; name: string; status?: 'active' | 'inactive' }) {
+  return unwrap(await admin.from('referral_sources').insert({ account_id: opts.accountId, name: opts.name, status: opts.status ?? 'active' }).select('id').single()) as { id: string }
+}
+
+async function membershipTemplatesFor(opts: { accountId: string }) {
+  return unwrap(await admin.from('memberships').select('name, price_cents, billing_interval, billing_interval_count').eq('account_id', opts.accountId).order('name')) as {
+    name: string
+    price_cents: number
+    billing_interval: string
+    billing_interval_count: number
+  }[]
 }
 
 async function clearWhatsappAppSecret(opts: { accountId: string }) {
@@ -3430,5 +3446,7 @@ export const dbTasks = {
   'db:setPatientTags': setPatientTags,
   'db:patientTags': patientTags,
   'db:createMembershipTemplate': createMembershipTemplate,
+  'db:membershipTemplatesFor': membershipTemplatesFor,
+  'db:createReferralSource': createReferralSource,
   'db:bookingAttribution': bookingAttribution,
 }

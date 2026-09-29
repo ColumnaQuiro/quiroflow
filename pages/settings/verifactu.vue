@@ -348,7 +348,7 @@ const facts = computed(() => {
       value: senderLabel,
       sub: s.sender === 'own_certificate' ? t('Change below', 'Cámbialo abajo') : s.delegation?.acceptedAt ? t('Authorised', 'Autorizado') : t('Waiting for authorisation', 'Pendiente de autorización'),
       ok: s.sender === 'own_certificate' || !!s.delegation?.acceptedAt,
-      href: '#sender',
+      href: s.platform ? '#sender' : '#certificate',
     },
     {
       key: 'certificate',

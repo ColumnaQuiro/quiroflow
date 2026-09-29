@@ -1,7 +1,6 @@
 import PDFDocument from 'pdfkit'
 import { VERIFACTU_QR_LABEL, VERIFACTU_QR_LEGEND } from '../../utils/verifactuQr'
 import { exemptionClause, facturaTaxFor } from '../../utils/facturaTax'
-import { loadStatementDocumentData } from './statementData'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 
@@ -70,8 +69,8 @@ export interface InvoiceDocumentData {
     showPractitioner: boolean
     showLogo: boolean
     practitionerName: string | null
-    // The patient's whole-account balance, the same figure their statement
-    // closes on: positive is credit, negative is owed. Null when not shown.
+    // The patient's whole-account balance, as the patient list shows it:
+    // positive is credit, negative is owed. Null when not shown.
     accountBalanceCents: number | null
     // The account's tax rule applied to the total, as the factura for this
     // money would state it. A receipt is not a fiscal document; this only
@@ -152,7 +151,15 @@ export async function loadInvoiceDocumentData(
     practitionerName ??= appointment.practitioner_name
   }
 
-  const accountBalanceCents = account && !account.hide_account_balance ? ((await loadStatementDocumentData(supabase, invoice.patient_id))?.closingBalanceCents ?? null) : null
+  // The balance the patient list and the Billing tab show (the
+  // patient_live_balances view, through the live_balance_cents computed
+  // field): positive is credit. Not the statement's running sum, which counts
+  // a payment made from credit, and the credit it came from, as money twice.
+  let accountBalanceCents: number | null = null
+  if (account && !account.hide_account_balance) {
+    const { data: live } = await supabase.from('patients').select('live_balance_cents').eq('id', invoice.patient_id).maybeSingle()
+    accountBalanceCents = (live as { live_balance_cents: number | null } | null)?.live_balance_cents ?? null
+  }
 
   // Most invoices come from an appointment (which has a clinic_id); a
   // package/membership sale invoice doesn't, so this falls back to the

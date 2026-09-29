@@ -93,7 +93,8 @@ function openEdit(p: PackageRow) {
 }
 
 const formSessionsNum = computed(() => Number.parseInt(formSessions.value, 10))
-const formPriceCents = computed(() => parseEurosToCents(formPrice.value) ?? 0)
+// Empty is not zero: a blank price is refused, a typed 0 is a free plan.
+const formPriceCents = computed(() => parseEurosToCents(formPrice.value) ?? Number.NaN)
 const formValid = computed(() => formName.value.trim() !== '' && formSessionsNum.value > 0 && Number.isFinite(formPriceCents.value) && formPriceCents.value >= 0)
 const formPerSession = computed(() => (formValid.value ? perSession({ session_count: formSessionsNum.value, price_cents: formPriceCents.value }) : ''))
 

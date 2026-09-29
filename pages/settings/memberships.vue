@@ -107,7 +107,8 @@ function openEdit(p: PlanRow) {
   formError.value = ''
 }
 
-const formPriceCents = computed(() => parseEurosToCents(formPrice.value) ?? 0)
+// Empty is not zero: a blank price is refused, a typed 0 is a free plan.
+const formPriceCents = computed(() => parseEurosToCents(formPrice.value) ?? Number.NaN)
 
 async function save() {
   formError.value = ''

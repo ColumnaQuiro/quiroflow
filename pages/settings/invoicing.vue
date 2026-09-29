@@ -17,7 +17,10 @@ const { showToast } = useToast()
 const loading = ref(true)
 const saving = ref(false)
 
-const nextInvoiceNumber = ref('')
+// A number input's v-model hands back a Number once someone types, so this
+// is read through receiptNext() rather than assumed to be a string.
+const nextInvoiceNumber = ref<string | number>('')
+const receiptNext = computed(() => String(nextInvoiceNumber.value ?? '').trim())
 const sendAutomatically = ref(false)
 const showDob = ref(false)
 const showSsn = ref(false)
@@ -127,7 +130,7 @@ async function save() {
   const { error } = await supabase
     .from('accounts')
     .update({
-      next_invoice_number: nextInvoiceNumber.value.trim() ? parseInt(nextInvoiceNumber.value, 10) : null,
+      next_invoice_number: receiptNext.value ? parseInt(receiptNext.value, 10) : null,
       send_invoices_automatically_default: sendAutomatically.value,
       show_dob_on_invoices: showDob.value,
       show_ssn_on_invoices: showSsn.value,
@@ -237,6 +240,7 @@ const verifactuLine = computed(() => {
 
 // Written out here: inside the template the braces would be read as an interpolation.
 const CLINIC_VAR = '{{clinic_name}}'
+const PATIENT_VAR = '{{patient_name}}'
 
 const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand'
 </script>
@@ -360,7 +364,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
                 <strong class="col-span-2 text-[14.5px] text-ink-900 sm:col-span-1">{{ t('Receipts', 'Recibos') }}</strong>
                 <span class="text-[13px] text-ink-muted">{{ t('No prefix', 'Sin prefijo') }}</span>
                 <input v-model="nextInvoiceNumber" type="number" min="1" data-cy="receipt-next" :placeholder="t('Automatic', 'Automático')" :aria-label="t('Next receipt number', 'Próximo número de recibo')" :class="[inputClass, 'w-full text-right']" />
-                <span class="col-span-2 text-[13px] text-ink-muted sm:col-span-1">{{ nextInvoiceNumber.trim() ? nextInvoiceNumber : t('Keeps counting on its own', 'Sigue contando solo') }}</span>
+                <span class="col-span-2 text-[13px] text-ink-muted sm:col-span-1">{{ receiptNext || t('Keeps counting on its own', 'Sigue contando solo') }}</span>
               </div>
               <p v-if="numberingError" class="border-t border-line-row px-[18px] py-2.5 text-[12.5px] font-semibold text-danger-text" data-cy="factura-numbering-error">{{ numberingError }}</p>
             </section>
@@ -402,7 +406,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
                     <div class="flex items-start justify-between">
                       <span v-if="!hideLogo" class="flex h-10 w-10 items-center justify-center rounded-ctl bg-[#EEF0FE] text-[10px] font-bold text-[#3B32C9]">LOGO</span>
                       <span v-else />
-                      <span class="text-right leading-snug"><strong class="text-[13px]">{{ t('Receipt', 'Recibo') }} {{ nextInvoiceNumber.trim() || '0001' }}</strong><br />{{ new Date().toLocaleDateString('es-ES') }}</span>
+                      <span class="text-right leading-snug"><strong class="text-[13px]">{{ t('Receipt', 'Recibo') }} {{ receiptNext || '0001' }}</strong><br />{{ new Date().toLocaleDateString('es-ES') }}</span>
                     </div>
                     <div class="leading-snug">
                       <strong>{{ t('Patient name', 'Nombre del paciente') }}</strong>
@@ -439,13 +443,13 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
                 />
                 <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
                   {{ t('Subject', 'Asunto') }}
-                  <input v-model="emailSubject" type="text" :placeholder="t('Your receipt from {{clinic_name}}', 'Tu recibo de {{clinic_name}}')" :class="[inputClass, 'w-full font-normal']" />
+                  <input v-model="emailSubject" type="text" :placeholder="t('Empty: “Recibo” and its number', 'Vacío: «Recibo» y su número')" :class="[inputClass, 'w-full font-normal']" />
                 </label>
                 <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
                   {{ t('Message', 'Mensaje') }}
                   <textarea v-model="emailBody" rows="4" :placeholder="t('Copy for automatic receipt emails sent to patients', 'Texto para los correos automáticos de recibo enviados a los pacientes')" class="rounded-ctl border border-line-control bg-surface px-3 py-2 text-[14px] font-normal leading-snug text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
                 </label>
-                <p class="text-[12.5px] text-ink-muted">{{ t(`Write ${CLINIC_VAR} where the clinic’s name should go.`, `Escribe ${CLINIC_VAR} donde deba ir el nombre de la clínica.`) }}</p>
+                <p class="text-[12.5px] text-ink-muted">{{ t(`Write ${CLINIC_VAR} for the clinic’s name and ${PATIENT_VAR} for the patient’s first name.`, `Escribe ${CLINIC_VAR} para el nombre de la clínica y ${PATIENT_VAR} para el nombre del paciente.`) }}</p>
               </div>
             </section>
           </template>

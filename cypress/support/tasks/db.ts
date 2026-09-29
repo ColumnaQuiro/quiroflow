@@ -546,6 +546,18 @@ async function chargeService(opts: { accountId: string; invoiceId: string; servi
   return null
 }
 
+/** The balance the patient list shows: positive is credit. */
+async function liveBalance(opts: { patientId: string }) {
+  const row = unwrap(await admin.from('patients').select('live_balance_cents').eq('id', opts.patientId).single()) as unknown as { live_balance_cents: number }
+  return row.live_balance_cents
+}
+
+/** Deletes a service as the database sees it -- every line, whoever can see it. */
+async function deleteServiceProduct(opts: { serviceId: string }) {
+  const { error } = await admin.from('services_products').delete().eq('id', opts.serviceId)
+  return { code: error?.code ?? null }
+}
+
 /** Online Booking's text overrides, written as an older page might have left them. */
 async function setBookingTextOverrides(opts: { accountId: string; overrides: Record<string, string> }) {
   assertOk(await admin.from('accounts').update({ online_booking_text_overrides: opts.overrides }).eq('id', opts.accountId))
@@ -3371,6 +3383,8 @@ export const dbTasks = {
   'db:setReceptionistTypes': setReceptionistTypes,
   'db:setStripePublishableKey': setStripePublishableKey,
   'db:createServiceProduct': createServiceProduct,
+  'db:liveBalance': liveBalance,
+  'db:deleteServiceProduct': deleteServiceProduct,
   'db:chargeService': chargeService,
   'db:enableOnlineBooking': enableOnlineBooking,
   'db:enableEmailConfirmations': enableEmailConfirmations,

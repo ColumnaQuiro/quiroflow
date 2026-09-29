@@ -200,12 +200,22 @@ async function run() {
     if (mine !== runToken) return
     rows.value = [...totals.entries()].map(([label, value]) => ({ label, value }))
   } else if (sourceKey.value === 'patients') {
-    const [{ data: patients }, { data: members }] = await Promise.all([
-      supabase.from('patients').select('default_practitioner_id, recall_status, preferred_language, confirmation_channel'),
+    // Paged: a single select stops at PostgREST's 1,000-row cap, so a clinic
+    // with more patients than that saw its counts silently stop at 1,000.
+    // Ordered by id so the pages cannot overlap or skip rows.
+    type PatientRow = { default_practitioner_id: string | null; recall_status: string; preferred_language: string; confirmation_channel: string }
+    const [list, { data: members }] = await Promise.all([
+      fetchAllRows<PatientRow>(
+        (f, t) =>
+          supabase
+            .from('patients')
+            .select('default_practitioner_id, recall_status, preferred_language, confirmation_channel')
+            .order('id')
+            .range(f, t) as unknown as PromiseLike<{ data: PatientRow[] | null; error: unknown }>,
+      ),
       supabase.from('team_members').select('id, full_name'),
     ])
     const memberById = new Map((members ?? []).map((m) => [m.id, m.full_name]))
-    const list = patients ?? []
 
     const totals = new Map<string, number>()
     for (const p of list) {

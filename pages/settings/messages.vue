@@ -72,7 +72,8 @@ async function save() {
     email_confirmation_body: emailConfirmationBody.value.trim() || null,
     appointment_reminder_enabled: reminderEnabled.value,
     appointment_reminder_channels: reminderChannels.value,
-    appointment_reminder_hours_before: reminderHoursBefore.value,
+    // A cleared box is '' and Postgres would refuse it.
+    appointment_reminder_hours_before: Number(reminderHoursBefore.value) || 24,
     email_reminder_subject: emailReminderSubject.value.trim() || null,
     email_reminder_body: emailReminderBody.value.trim() || null,
     google_review_url: googleReviewUrl.value.trim() || null,
@@ -125,7 +126,13 @@ const SAMPLE: Record<string, string> = {
   clinic_phone: '+34 960 000 000',
 }
 function sample(text: string) {
-  const plain = import.meta.client ? (new DOMParser().parseFromString(text, 'text/html').body.textContent ?? '') : text
+  if (!import.meta.client) return text
+  // One line per paragraph: textContent alone runs the editor's blocks
+  // (a <div> per Enter, or <p>) together.
+  const doc = new DOMParser().parseFromString(text, 'text/html')
+  doc.querySelectorAll('br').forEach((br) => br.replaceWith('\n'))
+  doc.querySelectorAll('div, p, li, h1, h2, h3').forEach((b) => b.before('\n'))
+  const plain = (doc.body.textContent ?? '').replace(/^\n+/, '')
   return plain.replace(/\{\{(\w+)\}\}/g, (_, key: string) => SAMPLE[key] ?? '')
 }
 

@@ -44,8 +44,10 @@ const notesAppointmentId = ref<string | null>(null)
 const editingClinical = ref(false)
 const latestAppointmentId = ref<string | null>(null)
 
-async function load() {
-  loading.value = true
+// Silent when an editor closes: the list is already on screen, and blanking
+// it to skeletons to pick up one changed note lost the reader's place.
+async function load({ silent = false } = {}) {
+  if (!silent) loading.value = true
   const [{ data: p }, { data: rows }, { data: appts }] = await Promise.all([
     supabase.from('patients').select('chief_complaint, diagnosis, red_flags, yellow_flags, goals').eq('id', props.patientId).maybeSingle(),
     supabase
@@ -72,12 +74,13 @@ async function load() {
     return bt.localeCompare(at)
   })
   latestAppointmentId.value = appts?.[0]?.id ?? null
-  // The newest note opens itself: it is the one being asked about.
-  expandedId.value = notes.value[0]?.id ?? null
+  // The newest note opens itself: it is the one being asked about. After an
+  // edit, the note that was open stays open.
+  if (!silent || !notes.value.some((n) => n.id === expandedId.value)) expandedId.value = notes.value[0]?.id ?? null
   loading.value = false
 }
-onMounted(load)
-watch(() => props.patientId, load)
+onMounted(() => load())
+watch(() => props.patientId, () => load())
 
 function authorOf(note: NoteRow) {
   return note.appointments?.team_members?.full_name ?? note.appointments?.practitioner_name ?? null
@@ -272,12 +275,12 @@ const goalChips = computed(() =>
     <div
       v-if="editingClinical"
       class="fixed inset-0 z-20 flex items-center justify-center bg-ink-900/40 p-4"
-      @click.self="editingClinical = false; load()"
+      @click.self="editingClinical = false; load({ silent: true })"
     >
       <div class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-card bg-surface p-5 shadow-drawer">
         <div class="flex items-center justify-between">
           <h2 class="text-[15px] font-semibold text-ink-900">{{ t('Clinical details', 'Datos clínicos') }}</h2>
-          <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600" @click="editingClinical = false; load()">✕</button>
+          <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600" @click="editingClinical = false; load({ silent: true })">✕</button>
         </div>
         <div class="mt-4">
           <PatientsFlagsPanel :patient-id="patientId" />
@@ -288,11 +291,11 @@ const goalChips = computed(() =>
     <!-- Reloads on the way out, the same as the ✕ does. Without it, editing a
          note and then dismissing by clicking the backdrop left the list
          showing the text that had just been replaced. -->
-    <div v-if="notesAppointmentId" class="fixed inset-0 z-20 flex items-center justify-center bg-ink-900/40 p-4" @click.self="notesAppointmentId = null; load()">
+    <div v-if="notesAppointmentId" class="fixed inset-0 z-20 flex items-center justify-center bg-ink-900/40 p-4" @click.self="notesAppointmentId = null; load({ silent: true })">
       <div class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-card bg-surface p-6 shadow-drawer">
         <div class="flex items-center justify-between">
           <h2 class="text-[15px] font-semibold text-ink-900">{{ t('Visit notes', 'Notas de la visita') }}</h2>
-          <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600" @click="notesAppointmentId = null; load()">✕</button>
+          <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600" @click="notesAppointmentId = null; load({ silent: true })">✕</button>
         </div>
         <div class="mt-4">
           <AppointmentsNotesPanel :appointment-id="notesAppointmentId" />

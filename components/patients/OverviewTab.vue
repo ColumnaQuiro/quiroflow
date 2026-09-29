@@ -43,12 +43,21 @@ const nextAppt = ref<ApptRow | null>(null)
 const lastVisit = ref<ApptRow | null>(null)
 const lastVisitPayment = ref<VisitPayment | null>(null)
 const apptLoading = ref(true)
+// The payment walk behind the footnote is up to three more rounds, and none
+// of it is needed to say when the next appointment is. The card shows as soon
+// as its own two rows are in; only the footnote waits for this.
+const footnoteLoading = ref(true)
 
 const APPT_COLS =
   'id, starts_at, ends_at, status, confirmation_status, clinic_id, practitioner_name, appointment_types(name), team_members(full_name), calendar_resources(name)'
 
-async function loadAppointments() {
-  apptLoading.value = true
+let apptRun = 0
+async function loadAppointments({ silent = false } = {}) {
+  const run = ++apptRun
+  if (!silent) {
+    apptLoading.value = true
+    footnoteLoading.value = true
+  }
   const [{ data: upcoming }, { data: past }] = await Promise.all([
     supabase
       .from('appointments')
@@ -68,10 +77,18 @@ async function loadAppointments() {
       .order('starts_at', { ascending: false })
       .limit(1),
   ])
+  if (run !== apptRun) return
   nextAppt.value = (upcoming?.[0] as unknown as ApptRow) ?? null
-  lastVisit.value = (past?.[0] as unknown as ApptRow) ?? null
-  lastVisitPayment.value = lastVisit.value ? await resolvePaymentFor(lastVisit.value.id) : null
+  const visit = (past?.[0] as unknown as ApptRow) ?? null
+  lastVisit.value = visit
   apptLoading.value = false
+  const payment = visit ? await resolvePaymentFor(visit.id) : null
+  // A reload may have landed a different last visit while this one resolved.
+  // Compared by run, not by object: the ref hands back a reactive proxy, so
+  // `lastVisit.value !== visit` held every time and the footnote never came.
+  if (run !== apptRun) return
+  lastVisitPayment.value = payment
+  footnoteLoading.value = false
 }
 
 // The same four-table walk the Appointments tab does, for one visit: the
@@ -149,8 +166,8 @@ const unpaid = ref<{ invoice_number: string; total_cents: number; created_at: st
 const awaitingForms = ref<{ id: string; title: string; created_at: string }[]>([])
 const attentionLoading = ref(true)
 
-async function loadAttention() {
-  attentionLoading.value = true
+async function loadAttention({ silent = false } = {}) {
+  if (!silent) attentionLoading.value = true
   const [{ data: invoices }, { data: docs }] = await Promise.all([
     supabase
       .from('invoices')
@@ -206,8 +223,8 @@ const plan = ref<PlanRow | null>(null)
 const planCompleted = ref(0)
 const planLoading = ref(true)
 
-async function loadPlan() {
-  planLoading.value = true
+async function loadPlan({ silent = false } = {}) {
+  if (!silent) planLoading.value = true
   const [{ data: plans }, { count }] = await Promise.all([
     supabase
       .from('care_plans')
@@ -259,12 +276,19 @@ function teamMemberName(id: string | null) {
   return teamMembers.value.find((m) => m.id === id)?.full_name ?? t('None', 'Ninguno')
 }
 const teamMembers = ref<{ id: string; full_name: string }[]>([])
+const teamLoaded = ref(false)
 
 const glanceFields = computed(() => [
   { key: 'dob', label: t('Date of birth', 'Fecha de nacimiento'), value: props.patient.date_of_birth ? formatLongDate(props.patient.date_of_birth) : null },
   { key: 'nif', label: t('National ID', 'DNI/NIE'), value: props.patient.national_id, mono: true },
   { key: 'email', label: t('Email', 'Correo electrónico'), value: props.patient.email },
-  { key: 'practitioner', label: t('Practitioner', 'Profesional'), value: teamMemberName(props.patient.default_practitioner_id) },
+  {
+    key: 'practitioner',
+    label: t('Practitioner', 'Profesional'),
+    value: teamMemberName(props.patient.default_practitioner_id),
+    // Until the list is in, an assigned practitioner would read as "None".
+    pending: !!props.patient.default_practitioner_id && !teamLoaded.value,
+  },
   { key: 'clinic', label: t('Clinic', 'Clínica'), value: store.clinics.find((c) => c.id === props.patient.clinic_id)?.name ?? null },
   { key: 'referral', label: t('Referred by', 'Origen'), value: props.patient.referral_source },
 ])
@@ -274,8 +298,8 @@ interface ActivityItem { at: string; text: string; dot: string }
 const activity = ref<ActivityItem[]>([])
 const activityLoading = ref(true)
 
-async function loadActivity() {
-  activityLoading.value = true
+async function loadActivity({ silent = false } = {}) {
+  if (!silent) activityLoading.value = true
   const [{ data: appts }, { data: invoices }, { data: messages }] = await Promise.all([
     supabase
       .from('appointments')
@@ -313,8 +337,6 @@ async function loadActivity() {
   activity.value = items.slice(0, 6)
   activityLoading.value = false
 }
-onMounted(loadActivity)
-watch(() => props.patient.id, loadActivity)
 
 function relativeTime(iso: string) {
   const diffMs = Date.now() - new Date(iso).getTime()
@@ -328,19 +350,27 @@ function relativeTime(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
-async function loadAll() {
-  await Promise.all([loadAppointments(), loadAttention(), loadPlan(), loadActivity()])
+// Silent after an edit: the cards already hold the last answer, and swapping
+// them all for skeletons to confirm it reads as the page reloading.
+async function loadAll(options: { silent?: boolean } = {}) {
+  await Promise.all([loadAppointments(options), loadAttention(options), loadPlan(options), loadActivity(options)])
 }
-onMounted(async () => {
+async function loadTeamMembers() {
   const { data } = await supabase.from('team_members').select('id, full_name').order('full_name')
   teamMembers.value = data ?? []
-  await loadAll()
+  teamLoaded.value = true
+}
+// The team list only names the practitioner in the details card, so it no
+// longer holds up the four cards above it.
+onMounted(() => {
+  loadTeamMembers()
+  loadAll()
 })
-watch(() => props.patient.id, loadAll)
+watch(() => props.patient.id, () => loadAll())
 
 function onDetailsUpdated() {
   emit('updated')
-  loadAll()
+  loadAll({ silent: true })
 }
 </script>
 
@@ -431,9 +461,14 @@ function onDetailsUpdated() {
         <p v-else class="mt-3 text-[13px] text-warning-text">{{ t('Nothing booked.', 'Nada reservado.') }}</p>
 
         <!-- The footnote §4 asks for: the last visit, and how it was paid. -->
-        <p v-if="!apptLoading && lastVisitFootnote" class="mt-3 border-t border-line-divider pt-2.5 text-[12.5px] text-ink-muted">
-          {{ lastVisitFootnote }}
-        </p>
+        <template v-if="!apptLoading && lastVisit">
+          <div v-if="footnoteLoading" class="mt-3 border-t border-line-divider pt-2.5">
+            <UiSkeleton class="h-3 w-64 max-w-full rounded-ctlSm" />
+          </div>
+          <p v-else-if="lastVisitFootnote" class="mt-3 border-t border-line-divider pt-2.5 text-[12.5px] text-ink-muted">
+            {{ lastVisitFootnote }}
+          </p>
+        </template>
       </section>
 
       <!-- 3. Care plan -->
@@ -531,7 +566,8 @@ function onDetailsUpdated() {
         <dl class="mt-3 space-y-2.5">
           <div v-for="field in glanceFields" :key="field.key">
             <dt class="text-[11.5px] text-ink-muted2">{{ field.label }}</dt>
-            <dd class="mt-0.5 truncate text-[13.5px] text-ink-700" :class="field.mono ? 'font-mono text-[12.5px]' : ''">
+            <dd v-if="field.pending" class="mt-1"><UiSkeleton class="h-3.5 w-32 rounded-ctlSm" /></dd>
+            <dd v-else class="mt-0.5 truncate text-[13.5px] text-ink-700" :class="field.mono ? 'font-mono text-[12.5px]' : ''">
               {{ field.value || t('Not recorded', 'Sin registrar') }}
             </dd>
           </div>

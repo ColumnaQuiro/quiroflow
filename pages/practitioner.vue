@@ -118,22 +118,31 @@ async function loadRooms() {
 // later call's response also arrives later. This token guards against a
 // slow, stale response clobbering a newer one: only the most recently
 // *started* call is allowed to commit its results.
+//
+// `silent` keeps what is on screen while it refreshes. Saving a note, signing
+// a visit or editing it in the panel all reload the day, and each used to
+// swap the whole page for the skeleton -- which also unmounted the charting
+// pane beside the list, so the note being written was torn down and fetched
+// again from scratch. Only a different day, week or practitioner is a new
+// page worth a skeleton.
 let loadDayToken = 0
-async function loadDay() {
+async function loadDay(silent = false) {
   const token = ++loadDayToken
   if (!store.currentClinicId || !practitionerId.value) {
     appointments.value = []
     chartedAppointmentIds.value = new Set()
+    // Or the skeleton stays up for good: loading starts out true.
+    loading.value = false
     return
   }
-  loading.value = true
+  if (!silent) loading.value = true
   const rangeStart = viewMode.value === 'day' ? startOfDay(anchorDate.value) : startOfWeek(anchorDate.value)
   const rangeEnd = viewMode.value === 'day' ? addDays(rangeStart, 1) : addDays(rangeStart, 7)
 
   const { data } = await supabase
     .from('appointments')
     .select(
-      'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, confirmation_status, source, patients(first_name, last_name), appointment_types(name, color)',
+      'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, confirmation_status, source, patients(first_name, last_name), appointment_types(name, color), visit_notes(appointment_id)',
     )
     .eq('clinic_id', store.currentClinicId)
     .eq('practitioner_id', practitionerId.value)
@@ -145,7 +154,11 @@ async function loadDay() {
 
   if (token !== loadDayToken) return
 
-  appointments.value = (data as unknown as AppointmentRow[]) ?? []
+  // Whether each visit has a note comes embedded in the same request, rather
+  // than as a second round trip once the list is back.
+  const rows = (data as unknown as (AppointmentRow & { visit_notes: { appointment_id: string }[] | null })[]) ?? []
+  appointments.value = rows.map(({ visit_notes: _notes, ...a }) => a)
+  chartedAppointmentIds.value = new Set(rows.filter((a) => (a.visit_notes ?? []).length > 0).map((a) => a.id))
 
   // Keep the selection pointed at the fresh row (not the stale pre-reload
   // object) so the charting pane's header/status reflect what just changed.
@@ -153,14 +166,6 @@ async function loadDay() {
     selectedAppointment.value = appointments.value.find((a) => a.id === selectedAppointment.value!.id) ?? null
   }
 
-  const ids = appointments.value.map((a) => a.id)
-  if (ids.length > 0) {
-    const { data: notes } = await supabase.from('visit_notes').select('appointment_id').in('appointment_id', ids)
-    if (token !== loadDayToken) return
-    chartedAppointmentIds.value = new Set((notes ?? []).map((n) => n.appointment_id))
-  } else {
-    chartedAppointmentIds.value = new Set()
-  }
   loading.value = false
 }
 
@@ -169,16 +174,15 @@ function appointmentsForDay(day: Date) {
   return appointments.value.filter((a) => toDateKey(new Date(a.starts_at)) === key)
 }
 
-onMounted(async () => {
-  await loadReferenceData()
-  await loadRooms()
-  await loadDay()
-})
-watch(() => store.currentClinicId, async () => {
-  await loadRooms()
-  await loadDay()
-})
-watch([viewMode, anchorDate, practitionerId], loadDay)
+// None of these needs another's answer, so they go out together rather than
+// one round trip after the next.
+onMounted(() => Promise.all([loadReferenceData(), loadRooms(), loadDay()]))
+watch(() => store.currentClinicId, () => Promise.all([loadRooms(), loadDay()]))
+// Wrapped: a watcher passes its new values as the first argument, which would
+// read as `silent`.
+watch([viewMode, anchorDate, practitionerId], () => loadDay())
+// After an edit on this page: same day, so keep it on screen.
+const refreshDay = () => loadDay(true)
 
 async function selectAppointment(appointment: AppointmentRow) {
   selectedAppointment.value = appointment
@@ -191,13 +195,27 @@ async function selectAppointment(appointment: AppointmentRow) {
     await supabase.from('appointments').update({ flow_with_practitioner_at: now }).eq('id', appointment.id)
   }
 }
+// The panel needs a round trip or two before it can open, so the button says
+// it heard the click; and only the last visit asked for may open, or a slow
+// answer for an earlier click opens the wrong patient's panel.
+const openingPanelId = ref<string | null>(null)
+let panelToken = 0
 async function openEditModal(appointment: AppointmentRow) {
-  panelInputs.value = await loadPanel(appointment.id)
+  const token = ++panelToken
+  openingPanelId.value = appointment.id
+  const inputs = await loadPanel(appointment.id)
+  if (token !== panelToken) return
+  panelInputs.value = inputs
+  openingPanelId.value = null
 }
 async function onPanelChanged() {
   const id = panelInputs.value?.appointment.id
-  if (id) panelInputs.value = await loadPanel(id)
-  await loadDay()
+  if (id) {
+    const token = ++panelToken
+    const inputs = await loadPanel(id)
+    if (token === panelToken) panelInputs.value = inputs
+  }
+  await refreshDay()
 }
 
 const { fire } = useAutomations()
@@ -395,6 +413,8 @@ const headerMeta = computed(() => {
                 type="button"
                 data-cy="practitioner-open-appointment"
                 class="pointer-events-none absolute right-1 top-1 flex h-8 w-8 items-center justify-center rounded-ctlSm opacity-0 focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100 [@media(pointer:coarse)]:pointer-events-auto [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11 [@media(pointer:coarse)]:opacity-100"
+                :class="{ 'pointer-events-auto animate-pulse opacity-100': openingPanelId === a.id }"
+                :aria-busy="openingPanelId === a.id || undefined"
                 :title="t('Appointment details', 'Detalles de la cita')"
                 :aria-label="t('Appointment details', 'Detalles de la cita')"
                 @click.stop="openEditModal(a)"
@@ -447,7 +467,7 @@ const headerMeta = computed(() => {
           last one's record. See ExamAutofill.vue and FilesTab.vue for the
           matching defense-in-depth fixes; this key is what makes those the
           belt to this component's suspenders, not the only guard. -->
-          <PractitionerMyDayPatientView :key="selectedAppointment.id" :appointment="selectedAppointment" :rooms="rooms" @charted="loadDay" />
+          <PractitionerMyDayPatientView :key="selectedAppointment.id" :appointment="selectedAppointment" :rooms="rooms" @charted="refreshDay" />
         </div>
         <div v-else class="flex min-w-0 w-full flex-1 items-center justify-center rounded-card border border-dashed border-line-control p-10 text-[13px] text-ink-faint">
           {{ t('Select a patient to chart their visit.', 'Selecciona un paciente para registrar su visita.') }}

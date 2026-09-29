@@ -9,16 +9,20 @@ const t = useT()
 const supabase = useSupabaseClient()
 const loading = ref(true)
 const rows = ref<AppointmentRow[]>([])
+const latest = useLatestRun()
 
 async function load() {
+  const isStale = latest.start()
   loading.value = true
   const { from, to } = rangeBounds(props.dateRange)
-  rows.value = await fetchAllRows<AppointmentRow>((f, t) => {
+  const fetched = await fetchAllRows<AppointmentRow>((f, t) => {
     let query = supabase.from('appointments').select('starts_at, status').gte('starts_at', from.toISOString()).lte('starts_at', to.toISOString())
     if (props.practitionerId) query = query.eq('practitioner_id', props.practitionerId)
     if (props.clinicId) query = query.eq('clinic_id', props.clinicId)
     return query.range(f, t)
   })
+  if (isStale()) return
+  rows.value = fetched
   loading.value = false
 }
 onMounted(load)

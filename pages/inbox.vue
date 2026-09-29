@@ -218,9 +218,15 @@ function inboxQuery(columns: string, opts?: { count: 'exact'; head: true }) {
   return supabase.from('inbox_conversations').select(columns, opts).eq('my_archived', view.value === 'archived')
 }
 
+// The counts are not reloaded here for a tab, filter, search or "load more":
+// they describe the whole view whatever narrows the list, and were four exact
+// counts over inbox_conversations queued behind every chip click. A silent
+// load is a refresh after something changed, which can move them, so it asks
+// for them alongside the list rather than after it.
 let listToken = 0
 async function loadList(opts: { silent?: boolean; append?: boolean } = {}) {
   const token = ++listToken
+  if (opts.silent) loadCounts()
   if (!opts.silent && !opts.append) loading.value = true
   if (opts.append) loadingMore.value = true
   const from = opts.append ? rows.value.length : 0
@@ -255,10 +261,11 @@ async function loadList(opts: { silent?: boolean; append?: boolean } = {}) {
   rows.value = opts.append ? [...rows.value, ...trimmed] : trimmed
   loading.value = false
   loadingMore.value = false
-  loadCounts()
 }
 
+let countsToken = 0
 async function loadCounts() {
+  const token = ++countsToken
   const count = (fn: (q: ReturnType<typeof inboxQuery>) => PromiseLike<{ count: number | null }>) => fn(inboxQuery('conversation_key', { count: 'exact', head: true })).then((r) => r.count ?? 0)
   const [all, mine, unassigned, unread] = await Promise.all([
     count((q) => q),
@@ -266,6 +273,7 @@ async function loadCounts() {
     count((q) => q.is('assigned_to', null)),
     count((q) => q.eq('unread_for_me', true)),
   ])
+  if (token !== countsToken) return
   counts.value = { all, mine, unassigned, unread }
 }
 
@@ -274,7 +282,11 @@ watch(search, () => {
   clearTimeout(searchTimer)
   searchTimer = setTimeout(() => loadList(), 300)
 })
-watch([view, tab, unreadOnly, replyFilter, labelFilter], () => loadList())
+watch(view, () => {
+  loadList()
+  loadCounts()
+})
+watch([tab, unreadOnly, replyFilter, labelFilter], () => loadList())
 
 onMounted(async () => {
   if (!store.teamMember) {
@@ -287,6 +299,7 @@ onMounted(async () => {
       }, { immediate: true })
     })
   }
+  loadCounts()
   await loadList()
   ready.value = true
 })
@@ -694,7 +707,7 @@ async function setReadAt(keys: string[], at: string) {
     .from('inbox_reads')
     .upsert(keys.map((k) => ({ account_id: store.accountId!, team_member_id: myId.value!, conversation_key: k, last_read_at: at })) as never)
   loadCounts()
-  refreshNavBadges()
+  refreshNavBadges(['inbox'])
 }
 async function markRead(key: string) {
   await setReadAt([key], new Date().toISOString())
@@ -742,7 +755,7 @@ async function setArchived(keys: string[], archive: boolean) {
   }
   // It leaves the view it was in, so the list is re-read rather than patched.
   await loadList({ silent: true })
-  refreshNavBadges()
+  refreshNavBadges(['inbox'])
 }
 async function bulkArchiveSelected(archive: boolean) {
   await setArchived([...selectedKeys.value], archive)
@@ -782,9 +795,10 @@ async function assign(keys: string[], memberId: string | null) {
   } else {
     await supabase.from('inbox_assignments').delete().eq('account_id', store.accountId).in('conversation_key', keys)
   }
-  loadCounts()
-  // "Mine" and "Unassigned" are lists of exactly this, so re-read them.
+  // "Mine" and "Unassigned" are lists of exactly this, so re-read them; a
+  // silent load brings the counts with it.
   if (tab.value !== 'all') loadList({ silent: true })
+  else loadCounts()
 }
 function onAssignDocClick(e: MouseEvent) {
   if (assignMenuFor.value && !(e.target as HTMLElement).closest('[data-assign-menu]')) assignMenuFor.value = null
@@ -846,12 +860,12 @@ const mediaUrls = ref<Record<string, string>>({})
 watch(thread, async (msgs) => {
   const paths = [...new Set(msgs.map((m) => m.media_storage_path).filter((p): p is string => !!p && !mediaUrls.value[p]))]
   if (paths.length === 0) return
-  const results = await Promise.all(paths.map((p) => supabase.storage.from('whatsapp-media').createSignedUrl(p, 60 * 30)))
+  // One request for the lot: a thread of photos was one round trip each.
+  const { data } = await supabase.storage.from('whatsapp-media').createSignedUrls(paths, 60 * 30)
   const next = { ...mediaUrls.value }
-  paths.forEach((p, i) => {
-    const url = results[i].data?.signedUrl
-    if (url) next[p] = url
-  })
+  for (const r of data ?? []) {
+    if (r.path && r.signedUrl) next[r.path] = r.signedUrl
+  }
   mediaUrls.value = next
 })
 
@@ -1192,15 +1206,49 @@ function refreshSoon() {
   refreshTimer = setTimeout(() => {
     loadList({ silent: true })
     if (selected.value) loadThread(selected.value, { silent: true })
-    refreshNavBadges()
+    refreshNavBadges(['inbox'])
   }, 400)
+}
+// Delivery receipts arrive as UPDATEs, three or four per message sent (sent,
+// delivered, read), and each one re-read the list, the counts, the thread and
+// the badge. The list shows no ticks, so a receipt only changes the open
+// thread: its status is patched in place. A message that moved conversation
+// (linked to a patient, merged) is not a receipt, and refreshes as a new
+// message would. One outside the open thread changes nothing on screen.
+function onMessageUpdate(payload: { new: Record<string, unknown> }) {
+  const next = payload.new as Partial<Message>
+  // The list shows the last message's ticks too -- including the failed
+  // warning, which is the one that matters -- so when this update is for a
+  // conversation's newest message, its row takes the new status in place.
+  // Matched on conversation and send time: a row carries no message id.
+  if (next.status && next.created_at) {
+    const key = keyOf({ patient_id: next.patient_id ?? null, phone_number: next.phone_number ?? null, external_contact_id: next.external_contact_id ?? null })
+    const sentAt = Date.parse(next.created_at)
+    const r = rows.value.findIndex((row) => row.conversation_key === key && Date.parse(row.last_at) === sentAt)
+    if (r !== -1 && rows.value[r]!.last_status !== next.status) {
+      const list = rows.value.slice()
+      list[r] = { ...list[r]!, last_status: next.status }
+      rows.value = list
+    }
+  }
+  const i = threadMessages.value.findIndex((m) => m.id === next.id)
+  if (i === -1) return
+  const current = threadMessages.value[i]!
+  if (keyOf({ patient_id: next.patient_id ?? null, phone_number: next.phone_number ?? null, external_contact_id: next.external_contact_id ?? null }) !== keyOf(current)) {
+    refreshSoon()
+    return
+  }
+  if (!next.status || next.status === current.status) return
+  const msgs = threadMessages.value.slice()
+  msgs[i] = { ...current, status: next.status }
+  threadMessages.value = msgs
 }
 let channel: ReturnType<typeof supabase.channel> | null = null
 onMounted(() => {
   channel = supabase
     .channel('inbox-whatsapp-messages')
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'whatsapp_messages', filter: `account_id=eq.${store.accountId}` }, refreshSoon)
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'whatsapp_messages', filter: `account_id=eq.${store.accountId}` }, refreshSoon)
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'whatsapp_messages', filter: `account_id=eq.${store.accountId}` }, onMessageUpdate)
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'patient_app_messages', filter: `account_id=eq.${store.accountId}` }, refreshSoon)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'inbox_assignments', filter: `account_id=eq.${store.accountId}` }, refreshSoon)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'whatsapp_labels', filter: `account_id=eq.${store.accountId}` }, () => loadLabels())

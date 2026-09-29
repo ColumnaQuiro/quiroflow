@@ -16,8 +16,10 @@ const estimated = ref(0)
 const cancellations = ref(0)
 const paymentsCents = ref(0)
 const serviceCents = ref(0)
+const latest = useLatestRun()
 
 async function load() {
+  const isStale = latest.start()
   loading.value = true
   const { from, to } = getWeekRange()
   const { from: fromDate, to: toDate } = rangeBounds({ from, to })
@@ -51,6 +53,7 @@ async function load() {
       .gte('created_at', fromDate.toISOString())
       .lte('created_at', toDate.toISOString()),
   ])
+  if (isStale()) return
 
   const typeCounts = new Map<string, number>()
   let remainingCount = 0

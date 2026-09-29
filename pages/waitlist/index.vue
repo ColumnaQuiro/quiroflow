@@ -39,7 +39,11 @@ const rows = ref<WaitlistRow[]>([])
 const loading = ref(true)
 const showOnlyActive = ref(true)
 
+// The "only waiting / offered" toggle can be flipped back before the first
+// list arrives; only the newest request may fill the table.
+let loadToken = 0
 async function load() {
+  const token = ++loadToken
   loading.value = true
   let query = supabase
     .from('waitlist_entries')
@@ -47,6 +51,7 @@ async function load() {
     .order('created_at', { ascending: true })
   if (showOnlyActive.value) query = query.in('status', ['waiting', 'offered'])
   const { data } = await query
+  if (token !== loadToken) return
   rows.value = (data as unknown as WaitlistRow[]) ?? []
   loading.value = false
 }
@@ -145,7 +150,7 @@ function formatDate(iso: string | null) {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader :title="t('Waitlist', 'Lista de espera')" :meta="`${rows.length} ${t('entries', 'registros')}`">
+    <PageHeader :title="t('Waitlist', 'Lista de espera')" :meta="loading ? undefined : `${rows.length} ${t('entries', 'registros')}`">
       <UiBtn variant="primary" @click="openAdd">{{ t('+ Add to waitlist', '+ Añadir a la lista') }}</UiBtn>
     </PageHeader>
 

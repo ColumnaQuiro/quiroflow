@@ -38,6 +38,11 @@ const { preference: langPreference } = useLang()
 const appointments = ref<AppointmentRow[]>([])
 const paymentByAppointment = ref<Record<string, VisitPayment>>({})
 const loading = ref(true)
+// The payment column is a walk over four more tables and nothing else on the
+// row depends on it, so the rows show as soon as the appointments are in and
+// only that column (and the fee line that reads it) waits.
+const paymentsLoading = ref(true)
+let loadToken = 0
 
 const counts = ref({ completed: 0, cancelled: 0, no_show: 0, visits12mo: 0 })
 const attendance = computed(() => {
@@ -47,7 +52,9 @@ const attendance = computed(() => {
 })
 
 async function load() {
+  const token = ++loadToken
   loading.value = true
+  paymentsLoading.value = true
   const { data } = await supabase
     .from('appointments')
     .select(
@@ -56,6 +63,7 @@ async function load() {
     .eq('patient_id', props.patientId)
     .is('deleted_at', null)
     .order('starts_at', { ascending: false })
+  if (token !== loadToken) return
   appointments.value = (data as unknown as AppointmentRow[]) ?? []
 
   const twelveMonthsAgo = new Date()
@@ -66,14 +74,17 @@ async function load() {
     if (a.status === 'completed' && new Date(a.starts_at) >= twelveMonthsAgo) next.visits12mo++
   }
   counts.value = next
-
-  await loadPayments(appointments.value.map((a) => a.id))
   loading.value = false
+
+  await loadPayments(appointments.value.map((a) => a.id), token)
 }
 
 // How each visit was paid for -- see composables/useVisitPayments.
-async function loadPayments(appointmentIds: string[]) {
-  paymentByAppointment.value = await fetchVisitPayments(appointmentIds)
+async function loadPayments(appointmentIds: string[], token: number) {
+  const payments = await fetchVisitPayments(appointmentIds)
+  if (token !== loadToken) return
+  paymentByAppointment.value = payments
+  paymentsLoading.value = false
 }
 
 onMounted(load)
@@ -285,12 +296,14 @@ const stats = computed(() => [
               <p v-if="whereLine(appt)" class="truncate text-[12px] text-ink-muted2">{{ whereLine(appt) }}</p>
               <!-- What happened to the fee, for the two statuses where the
                    patient is likely to ask. -->
-              <p v-if="feeLine(appt)" class="mt-0.5 text-[12px] text-ink-muted">{{ feeLine(appt) }}</p>
+              <UiSkeleton v-if="paymentsLoading && (appt.status === 'no_show' || appt.status === 'cancelled')" class="mt-1 h-3 w-32 rounded-ctlSm" />
+              <p v-else-if="feeLine(appt)" class="mt-0.5 text-[12px] text-ink-muted">{{ feeLine(appt) }}</p>
             </div>
 
             <!-- How it was paid. -->
             <div class="shrink-0 lg:w-[210px]">
-              <template v-if="paymentLine(appt)">
+              <UiSkeleton v-if="paymentsLoading" class="h-3.5 w-28 rounded-ctlSm" />
+              <template v-else-if="paymentLine(appt)">
                 <p
                   class="truncate text-[12.5px]"
                   :class="{

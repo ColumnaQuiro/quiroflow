@@ -8,8 +8,10 @@ const supabase = useSupabaseClient()
 const loading = ref(true)
 const total = ref(0)
 const active = ref(0)
+const latest = useLatestRun()
 
 async function load() {
+  const isStale = latest.start()
   loading.value = true
 
   // The same count "Total patients" shows; asked once when both are on the
@@ -33,6 +35,7 @@ async function load() {
   let activeCount = supabase.from('appointments').select('id', { count: 'exact', head: true }).eq('status', 'completed').gte('starts_at', cutoff.toISOString())
   if (props.practitionerId) activeCount = activeCount.eq('practitioner_id', props.practitionerId)
   const [{ count }, rows] = await Promise.all([totalQuery, fetchAllRows((f, t) => activeQuery.range(f, t), { total: activeCount })])
+  if (isStale()) return
 
   total.value = count ?? 0
   active.value = new Set(rows.map((r) => r.patient_id)).size

@@ -349,7 +349,11 @@ const prefillPractitionerId = computed(() =>
 /** One real practitioner's tab is open (not "everyone", not "no practitioner"). */
 const singlePractitionerId = computed(() => (clinicTeamMembers.value.some((m) => m.id === practitionerFilter.value) ? practitionerFilter.value : null))
 
+// A quick switch between clinics must not leave the first clinic's rooms as
+// the columns of the second.
+let roomsToken = 0
 async function loadRooms() {
+  const token = ++roomsToken
   if (!store.currentClinicId) {
     rooms.value = []
     return
@@ -359,6 +363,7 @@ async function loadRooms() {
     .select('id, name')
     .eq('clinic_id', store.currentClinicId)
     .order('name')
+  if (token !== roomsToken) return
   rooms.value = data ?? []
 }
 
@@ -394,19 +399,25 @@ async function loadAppointments(silent = false) {
   appointments.value = (data as unknown as AppointmentRow[]) ?? []
   const patientIds = [...new Set(appointments.value.map((a) => a.patient_id))]
   const appointmentIds = appointments.value.map((a) => a.id)
-  // A failed lookup leaves the grid without its money and "Sin próxima"
-  // detail, not stuck on the skeleton: the appointments themselves loaded.
-  await Promise.all([loadLiveBalances(patientIds), loadFutureAppointmentIds(patientIds)]).catch((e) => console.error('calendar: balances / next visits failed', e))
-  if (token !== loadToken) return
   loading.value = false
-  // Every change on this page reloads through here, so today's panels
-  // (glance, flow tracker) stay in step with the grid without a caller each.
-  // Started once the grid has drawn, not beside its queries: the grid is
-  // what the desk is waiting for, and on a slow connection the extra
-  // requests held its skeleton up.
-  loadToday()
-    .catch((e) => console.error('calendar: today failed', e))
-    .finally(() => (todayLoaded.value = true)) // a failure shows zeros, not a placeholder forever
+  // The owing badge and "Sin próxima" are detail on blocks that are already
+  // right without them, so the grid no longer waits two more round trips for
+  // them. Both are per patient, not per range, so what the last range left
+  // behind is still true for anyone in this one until they land.
+  Promise.all([loadLiveBalances(token, patientIds), loadFutureAppointmentIds(token, patientIds)]).catch((e) =>
+    console.error('calendar: balances / next visits failed', e),
+  )
+  // Today's panels (glance, flow tracker) describe today whatever range is in
+  // view, so paging through weeks does not refetch them -- only a first load,
+  // a clinic switch or an edit marks them stale. Started once the grid has
+  // drawn, not beside its queries: the grid is what the desk is waiting for,
+  // and on a slow connection the extra requests held its skeleton up.
+  if (todayStale) {
+    todayStale = false
+    loadToday()
+      .catch((e) => console.error('calendar: today failed', e))
+      .finally(() => (todayLoaded.value = true)) // a failure shows zeros, not a placeholder forever
+  }
   // Second-rank detail -- the bono count, how often a visit was moved, the
   // waitlist offers standing on freed slots. The grid is usable without them,
   // so they fill in after it renders rather than holding it back for the
@@ -417,6 +428,14 @@ async function loadAppointments(silent = false) {
 // Bumped on every load, so a slow response for a range the user has already
 // navigated away from cannot land on top of the current one.
 let loadToken = 0
+// Set by anything that could have changed today's visits; the next grid load
+// refreshes today's panels and clears it. Starts set, for the first load.
+let todayStale = true
+/** After a write: the grid in place, and today's panels, which the write may have touched. */
+function reloadAfterChange() {
+  todayStale = true
+  return loadAppointments(true)
+}
 
 const visitPaymentById = ref<Record<string, VisitPayment>>({})
 const activePackageByPatient = ref<Record<string, { package_name: string; sessions_total: number; sessions_used: number }>>({})
@@ -616,14 +635,15 @@ async function advanceFromFlow(id: string) {
     console.error('calendar: flow step failed', error)
     return
   }
-  await loadAppointments(true)
+  await reloadAfterChange()
 }
-async function loadLiveBalances(patientIds: string[]) {
+async function loadLiveBalances(token: number, patientIds: string[]) {
   if (patientIds.length === 0) {
     outstandingByPatient.value = {}
     return
   }
   const data = await fetchByIds(patientIds, (chunk) => supabase.from('patient_live_balances').select('patient_id, outstanding_cents').in('patient_id', chunk))
+  if (token !== loadToken) return
   const map: Record<string, number> = {}
   for (const b of data) map[b.patient_id!] = b.outstanding_cents ?? 0
   outstandingByPatient.value = map
@@ -634,28 +654,40 @@ async function loadLiveBalances(patientIds: string[]) {
 // icon on a block ("no future appointment") so staff can spot who needs a
 // follow-up booked without opening each patient.
 const futureAppointmentIdsByPatient = ref<Record<string, Set<string>>>({})
-async function loadFutureAppointmentIds(patientIds: string[]) {
+// Who the map above has been asked about. The grid now draws before it
+// answers, and absence from the map reads as "nothing booked" -- without
+// this every block would wear "Sin próxima" until the answer landed.
+const futureCheckedPatients = ref<Set<string>>(new Set())
+async function loadFutureAppointmentIds(token: number, patientIds: string[]) {
   if (patientIds.length === 0) {
     futureAppointmentIdsByPatient.value = {}
+    futureCheckedPatients.value = new Set()
     return
   }
   const data = await fetchByIds(patientIds, (chunk) =>
     supabase.from('appointments').select('id, patient_id').in('patient_id', chunk).neq('status', 'cancelled').gt('starts_at', new Date().toISOString()),
   )
+  if (token !== loadToken) return
   const map: Record<string, Set<string>> = {}
   for (const a of data) {
     ;(map[a.patient_id] ??= new Set()).add(a.id)
   }
   futureAppointmentIdsByPatient.value = map
+  futureCheckedPatients.value = new Set(patientIds)
 }
 function hasFutureAppointment(appt: AppointmentRow) {
+  if (!futureCheckedPatients.value.has(appt.patient_id)) return true // not known yet, so not flagged
   const ids = futureAppointmentIdsByPatient.value[appt.patient_id]
   if (!ids) return false
   return ids.size > 1 || !ids.has(appt.id)
 }
 
 
+// Its own counter, not loadToken: blocks reload alone after a block is
+// saved, and that must not void an appointments load still in flight.
+let blocksToken = 0
 async function loadAvailabilityBlocks() {
+  const token = ++blocksToken
   if (!store.currentClinicId) {
     availabilityBlocks.value = []
     return
@@ -670,7 +702,7 @@ async function loadAvailabilityBlocks() {
     .lt('starts_at', rangeEnd.toISOString())
     .gt('ends_at', rangeStart.toISOString())
     .order('starts_at')
-
+  if (token !== blocksToken) return
   availabilityBlocks.value = data ?? []
 }
 
@@ -716,11 +748,14 @@ function rangeKey() {
   return `${viewMode.value}|${toDateKey(anchorDate.value)}|${practitionerFilter.value}`
 }
 async function onClinicChanged() {
-  await loadRooms()
+  todayStale = true
+  // Rooms are only the day view's columns; the practitioner tabs come from
+  // the team already loaded, so the range need not wait for them.
+  const roomsLoaded = loadRooms().catch((e) => console.error('calendar: rooms failed', e))
   const before = practitionerFilter.value
   ensureValidPractitionerFilter()
   // A changed filter reloads through the watcher below.
-  if (practitionerFilter.value === before) await loadRange()
+  await Promise.all([roomsLoaded, practitionerFilter.value === before ? loadRange() : null])
 }
 watch(() => store.currentClinicId, () => {
   if (mounted) onClinicChanged()
@@ -1204,7 +1239,7 @@ function openEditModal(appointment: AppointmentRow, tab: 'summary' | 'billing' =
 }
 async function onSaved() {
   modalOpen.value = false
-  await loadAppointments()
+  await reloadAfterChange()
 }
 
 // --- Drag-to-move / drag-to-resize ---
@@ -1529,7 +1564,7 @@ async function confirmReschedule(payload: { reasonId: string | null; note: strin
   // whatever range is currently in view is what makes the appointment show
   // up in its new slot if that's the range being looked at, and disappear
   // from it otherwise.
-  await loadAppointments()
+  await reloadAfterChange()
 }
 
 // Wraps openEditModal so the click the browser synthesizes right after a
@@ -2673,7 +2708,7 @@ function showNowLineOn(day: Date) {
       :overrides="overrides"
       :initial-tab="panelInitialTab"
       @close="modalOpen = false"
-      @changed="loadAppointments(true)"
+      @changed="reloadAfterChange()"
       @reschedule="startReschedule(openAppointment!)"
     />
 

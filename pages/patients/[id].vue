@@ -26,11 +26,40 @@ const patientId = route.params.id as string
 const patient = ref<Tables<'patients'> | null>(null)
 const notFound = ref(false)
 const loading = ref(true)
+const practitionerName = ref<string | null>(null)
 
+// A minor's messages go to their tutor, and until now the record said so by
+// simply having no Communications tab -- which tells you the rule exists
+// and not where to act on it. The banner links the tutor's own record.
+const tutor = ref<{ id: string; first_name: string; last_name: string | null } | null>(null)
+
+// Only the very first load shows the skeleton. Overview's save, a new photo
+// and a merge all call this again, and blanking the page for those threw away
+// the banner and remounted the open tab -- losing its scroll and whatever it
+// had loaded -- to show one changed field.
 async function loadPatient() {
-  loading.value = true
-  const { data } = await supabase.from('patients').select('*').eq('id', patientId).maybeSingle()
-  patient.value = data
+  // The practitioner's name and the tutor ride along as embeds, rather than
+  // two more round trips once the patient has landed. The tutor is named by
+  // its column: patients references itself, and the constraint-name hint does
+  // not resolve on a self-reference, while the column form does.
+  const { data } = await supabase
+    .from('patients')
+    .select('*, practitioner:team_members!patients_default_practitioner_id_fkey(full_name), tutor:tutor_patient_id(id, first_name, last_name)')
+    .eq('id', patientId)
+    .maybeSingle()
+  if (data) {
+    // Stripped rather than carried on the patient: the edit form and the
+    // merge modal both work from this object, and an unknown key in an
+    // update is a PostgREST error.
+    const { practitioner, tutor: tutorRow, ...row } = data as typeof data & { tutor: { id: string; first_name: string; last_name: string | null } | null }
+    patient.value = row
+    practitionerName.value = practitioner?.full_name ?? null
+    tutor.value = row.is_minor && tutorRow ? tutorRow : null
+  } else {
+    patient.value = null
+    practitionerName.value = null
+    tutor.value = null
+  }
   notFound.value = !data
   loading.value = false
 }
@@ -39,7 +68,6 @@ onMounted(loadPatient)
 // The banner shows the number, so the number is loaded here rather than by
 // whichever tab happens to be open.
 const primaryNumber = ref<Tables<'patient_contact_numbers'> | null>(null)
-const practitionerName = ref<string | null>(null)
 async function loadBannerDetail() {
   const { data } = await supabase
     .from('patient_contact_numbers')
@@ -51,37 +79,7 @@ async function loadBannerDetail() {
 }
 onMounted(loadBannerDetail)
 
-watch(
-  () => patient.value?.default_practitioner_id,
-  async (id) => {
-    if (!id) {
-      practitionerName.value = null
-      return
-    }
-    const { data } = await supabase.from('team_members').select('full_name').eq('id', id).maybeSingle()
-    practitionerName.value = data?.full_name ?? null
-  },
-  { immediate: true },
-)
-
 const clinicName = computed(() => store.clinics.find((c) => c.id === patient.value?.clinic_id)?.name ?? null)
-
-// A minor's messages go to their tutor, and until now the record said so by
-// simply having no Communications tab -- which tells you the rule exists
-// and not where to act on it. The banner links the tutor's own record.
-const tutor = ref<{ id: string; first_name: string; last_name: string | null } | null>(null)
-watch(
-  () => [patient.value?.is_minor, patient.value?.tutor_patient_id] as const,
-  async ([isMinor, tutorId]) => {
-    if (!isMinor || !tutorId) {
-      tutor.value = null
-      return
-    }
-    const { data } = await supabase.from('patients').select('id, first_name, last_name').eq('id', tutorId).maybeSingle()
-    tutor.value = data
-  },
-  { immediate: true },
-)
 
 // Only the two figures the banner's pill reads; the rest of the account's
 // money is Billing's own business and is loaded there.

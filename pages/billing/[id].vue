@@ -24,8 +24,8 @@ interface InvoiceWithPatient extends Tables<'invoices'> {
 }
 
 const invoice = ref<InvoiceWithPatient | null>(null)
-const lineItems = ref<Tables<'invoice_line_items'>[]>([])
-const payments = ref<Tables<'payments'>[]>([])
+const lineItems = ref<Pick<Tables<'invoice_line_items'>, 'id' | 'description' | 'quantity' | 'price_cents'>[]>([])
+const payments = ref<Pick<Tables<'payments'>, 'id' | 'paid_at' | 'method' | 'amount_cents'>[]>([])
 const loading = ref(true)
 const notFound = ref(false)
 
@@ -44,13 +44,17 @@ const hideNextVisit = ref(false)
 
 async function load() {
   loading.value = true
-  const [{ data }, { data: account }] = await Promise.all([
+  // All four at once: the line items and payments key off the route's id, not
+  // off the invoice row, so they never needed to wait for it.
+  const [{ data }, { data: account }, { data: lines }, { data: pays }] = await Promise.all([
     supabase
       .from('invoices')
       .select('*, patients(first_name, last_name, email, address, city, postal_code, country, national_id), appointments(clinic_id)')
       .eq('id', invoiceId)
       .maybeSingle(),
     supabase.from('accounts').select('hide_next_visit_on_invoices').eq('id', store.accountId!).maybeSingle(),
+    supabase.from('invoice_line_items').select('id, description, quantity, price_cents').eq('invoice_id', invoiceId),
+    supabase.from('payments').select('id, paid_at, method, amount_cents').eq('invoice_id', invoiceId).order('paid_at', { ascending: false }),
   ])
   hideNextVisit.value = !!account?.hide_next_visit_on_invoices
 
@@ -60,11 +64,6 @@ async function load() {
     return
   }
   invoice.value = data as unknown as InvoiceWithPatient
-
-  const [{ data: lines }, { data: pays }] = await Promise.all([
-    supabase.from('invoice_line_items').select('*').eq('invoice_id', invoiceId),
-    supabase.from('payments').select('*').eq('invoice_id', invoiceId).order('paid_at', { ascending: false }),
-  ])
   lineItems.value = lines ?? []
   payments.value = pays ?? []
   paymentAmount.value = (balanceDueCents.value / 100).toFixed(2)

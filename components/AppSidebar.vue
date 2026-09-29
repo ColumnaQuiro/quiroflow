@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { NavBadge } from '~/composables/useNavBadges'
+
 const props = defineProps<{ open?: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 
@@ -64,32 +66,38 @@ const inboxUnreadCount = ref(0)
 // two-clinic account is a number no screen ever shows.
 const RECALLS_MIN_DAYS = 21
 
-let badgeToken = 0
-async function loadBadges() {
-  const token = ++badgeToken
+// One token per badge rather than one for the lot: a refresh of the inbox
+// alone must not discard a recalls count still on its way from a full load.
+const badgeTokens: Record<NavBadge, number> = { myday: 0, recalls: 0, automations: 0, inbox: 0 }
+let lastFullLoad = 0
+async function loadBadges(only: NavBadge[] | null = null) {
+  const wants = (b: NavBadge) => !only || only.includes(b)
+  if (!only) lastFullLoad = Date.now()
   // Each badge assigns its own count as its own query returns. They used to
   // share a Promise.all, so all four waited on the slowest and then appeared
   // in one jump -- the recalls and inbox numbers landing together is exactly
   // that, not a coincidence of timing.
-  if (can('recalls_access')) {
+  if (wants('recalls') && can('recalls_access')) {
+    const token = ++badgeTokens.recalls
     let recalls = supabase
       .from('recall_candidates')
       .select('patient_id', { count: 'exact', head: true })
       .gte('days_since_last_appointment', RECALLS_MIN_DAYS)
     if (store.currentClinicId && store.clinics.length > 1) recalls = recalls.or(`clinic_id.eq.${store.currentClinicId},clinic_id.is.null`)
     recalls.then(({ count }) => {
-      if (token === badgeToken) recallsCount.value = count ?? 0
+      if (token === badgeTokens.recalls) recallsCount.value = count ?? 0
     })
   }
 
-  if (can('communication_config')) {
+  if (wants('automations') && can('communication_config')) {
+    const token = ++badgeTokens.automations
     supabase
       .from('automation_rules')
       .select('id')
       .eq('enabled', true)
       .limit(1)
       .then(({ data }) => {
-        if (token === badgeToken) automationsActive.value = (data ?? []).length > 0
+        if (token === badgeTokens.automations) automationsActive.value = (data ?? []).length > 0
       })
   }
 
@@ -108,12 +116,15 @@ async function loadBadges() {
   // been -- names, previews, labels, assignment -- before a filter can apply,
   // and it was the slowest request on every page, up to 2.3 s. Same row-level
   // security either way; the function runs as the caller.
-  if (can('inbox_access')) {
+  if (wants('inbox') && can('inbox_access')) {
+    const token = ++badgeTokens.inbox
     supabase.rpc('inbox_unread_count').then(({ data }) => {
-      if (token === badgeToken) inboxUnreadCount.value = data ?? 0
+      if (token === badgeTokens.inbox) inboxUnreadCount.value = data ?? 0
     })
   }
 
+  if (!wants('myday')) return
+  const token = ++badgeTokens.myday
   // Only "My Day" needs the team member id, so it's the only one that waits
   // for the account store. A fresh client boot can reach this mount before
   // load() resolves store.teamMember -- an empty fallback here used to build
@@ -134,12 +145,19 @@ async function loadBadges() {
     .lt('starts_at', new Date(new Date().setHours(24, 0, 0, 0)).toISOString())
   if (store.currentClinicId) myDay = myDay.eq('clinic_id', store.currentClinicId)
   const { count } = await myDay
-  if (token === badgeToken) myDayCount.value = count ?? 0
+  if (token === badgeTokens.myday) myDayCount.value = count ?? 0
 }
 
 // The sidebar mounts once, in the layout, so loading only on mount left every
 // badge as it was when the app opened. See useNavBadges.
-const { tick: badgesTick } = useNavBadges()
+//
+// Navigation reloads at most once a minute. It reloaded on every route change,
+// and the recalls badge is an exact count over recall_candidates -- the query
+// /recalls itself refuses to run because it pushed accounts past the statement
+// timeout -- so clicking through five pages asked it five times. Anything that
+// changes a count here says so through refresh(), which is not throttled.
+const NAV_BADGES_TTL_MS = 60_000
+const { request: badgesRequest } = useNavBadges()
 function onVisible() {
   if (document.visibilityState === 'visible') loadBadges()
 }
@@ -148,14 +166,18 @@ onMounted(() => {
   document.addEventListener('visibilitychange', onVisible)
 })
 onUnmounted(() => document.removeEventListener('visibilitychange', onVisible))
-watch([() => route.path, () => store.currentClinicId, badgesTick], () => loadBadges())
+watch(() => route.path, () => {
+  if (Date.now() - lastFullLoad >= NAV_BADGES_TTL_MS) loadBadges()
+})
+watch(() => store.currentClinicId, () => loadBadges())
+watch(() => badgesRequest.value.seq, () => loadBadges(badgesRequest.value.only))
 
 interface NavItem {
   label: string
   to: string
   perm: () => boolean
   icon: string
-  badge?: 'myday' | 'recalls' | 'automations' | 'inbox'
+  badge?: NavBadge
   /**
    * Highlight only on this exact path. For an item whose `to` is a prefix of
    * its siblings' -- /growth against /growth/leads -- without which both it

@@ -1,8 +1,14 @@
 <script setup lang="ts">
+import { SAMPLE_GROWTH_DASHBOARD } from '~/composables/useGrowthDashboard'
+
 const t = useT()
 const { can } = usePermission()
+const store = useAccountStore()
 const { hasGrowth, resolved } = useGrowthTier()
-const { data, loading, error, saveChannelSpend } = useGrowthDashboard()
+// Decided once the tier has resolved against a loaded account; before that a
+// "no" may only mean the bootstrap has not landed yet.
+const decided = computed(() => resolved.value && store.loaded)
+const { data, loading, error, saveChannelSpend } = useGrowthDashboard(() => (decided.value ? hasGrowth.value : null))
 
 // Reuses communication_config, the key that already gates Campaigns, rather
 // than introducing a growth_access key. A new permission defaults to
@@ -35,20 +41,23 @@ const allowed = computed(() => can('communication_config'))
         </p>
       </div>
 
-      <p v-else-if="error" class="py-16 text-center text-[13px] text-danger-text" data-test="dashboard-error">{{ error }}</p>
+      <GrowthDashboardSkeleton v-else-if="!decided" />
 
-      <GrowthDashboardSkeleton v-else-if="!resolved || loading || !data" />
+      <template v-else-if="hasGrowth">
+        <p v-if="error" class="py-16 text-center text-[13px] text-danger-text" data-test="dashboard-error">{{ error }}</p>
+        <GrowthDashboardSkeleton v-else-if="loading || !data" />
+        <GrowthDashboardBody v-else :data="data" @save-spend="saveChannelSpend" />
+      </template>
 
-      <GrowthDashboardBody v-else-if="hasGrowth" :data="data" @save-spend="saveChannelSpend" />
-
-      <!-- Locked: the real dashboard out of focus behind the upgrade card,
-      rather than a separate mock that can drift from it. inert keeps its
-      links out of the tab order, so the only reachable controls are the
+      <!-- Locked: the real dashboard body out of focus behind the upgrade
+      card, rather than a separate mock that can drift from it -- fed sample
+      figures, since without Growth the endpoint has none to give. inert keeps
+      its links out of the tab order, so the only reachable controls are the
       card's own. -->
       <div v-else class="flex flex-col gap-4" data-test="growth-locked">
         <div class="relative isolate overflow-hidden rounded-card">
           <div inert aria-hidden="true" class="pointer-events-none absolute inset-0 -z-10 select-none overflow-hidden blur-[5px]">
-            <GrowthDashboardBody :data="data" @save-spend="saveChannelSpend" />
+            <GrowthDashboardBody :data="SAMPLE_GROWTH_DASHBOARD" />
           </div>
           <div aria-hidden="true" class="absolute inset-0 -z-10 bg-surface-page/50" />
           <div class="flex justify-center px-2 py-8 sm:px-4">

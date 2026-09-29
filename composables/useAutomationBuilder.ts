@@ -234,10 +234,18 @@ export function useAutomationBuilder() {
     }
   }
 
-  async function load(id: string) {
+  /**
+   * `silent` re-reads the rule already on screen -- after a save, a pause, a
+   * change on the People tab -- without dropping `loaded`, which blanked the
+   * canvas to a skeleton and redrew it every time.
+   */
+  async function load(id: string, opts: { silent?: boolean } = {}) {
+    const silent = !!opts.silent && loaded.value && ruleId.value === id
     ruleId.value = id
-    loaded.value = false
-    missing.value = false
+    if (!silent) {
+      loaded.value = false
+      missing.value = false
+    }
     try {
       const res = await useStaffFetch<{
         rule: DraftRule & { id: string; enabled: boolean; created_at: string }
@@ -248,6 +256,8 @@ export function useAutomationBuilder() {
         delayNowWaits: boolean
       }>(`/api/automations/${id}`)
       const { id: _id, enabled, created_at, ...rest } = res.rule as any
+      // Replacing the draft under a loaded canvas is not an edit to undo.
+      if (silent) restoring = true
       draft.value = {
         rule: {
           name: rest.name ?? '',
@@ -270,7 +280,15 @@ export function useAutomationBuilder() {
       delayNowWaits.value = res.delayNowWaits
       loaded.value = true
       resetBaseline()
+      if (silent) nextTick(() => (restoring = false))
     } catch (e: any) {
+      // What is on screen is still what was saved: keep it, rather than
+      // swapping a working canvas for an error over a failed re-read.
+      if (silent) {
+        restoring = false
+        resetBaseline()
+        return
+      }
       if (e?.statusCode === 404 || e?.response?.status === 404) missing.value = true
       else loadError.value = serverMessage(e) ?? t('Could not load this automation.', 'No se ha podido cargar esta automatización.')
     }
@@ -374,7 +392,7 @@ export function useAutomationBuilder() {
       draft.value.enabled = enabled
       savedAt.value = Date.now()
       const selected = selection.value
-      await load(ruleId.value!)
+      await load(ruleId.value!, { silent: true })
       selection.value = selected?.kind === 'step' && !stepsById.value.has(selected.id) ? { kind: 'trigger' } : selected
       return { ok: true }
     } catch (e: any) {

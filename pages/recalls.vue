@@ -50,6 +50,10 @@ const hasPhoneByPatient = ref<Record<string, boolean>>({})
 const balanceByPatient = ref<Record<string, number>>({})
 const onPlan = ref<Set<string>>(new Set())
 const loading = ref(true)
+// Contact history, phones, balances and care plans arrive after the rows: the
+// cells that read them show a skeleton meanwhile rather than "Not contacted
+// yet" or "—", which would be wrong for a second.
+const contextPending = ref(false)
 
 // --- Filters: four in the bar, the rest behind "Más filtros" ----------------
 const search = ref('')
@@ -78,6 +82,9 @@ const visiblePages = computed(() => Array.from({ length: Math.min(maxKnownPage.v
 // predicate cannot express, so with either on, every matching row is loaded
 // and filtered here -- correctness over speed for two rarely-used filters.
 const isPaginated = computed(() => !tagFilter.value && !notContactedOnly.value)
+// Which of the two the rows on screen were fetched as. What is fetched depends
+// only on that, not on the tag typed: see onClientFilterChange.
+let loadedPaginated = true
 
 // Every column but balance_cents: Postgres drops the balances join when
 // nothing reads it (11.7ms against 363ms on a real account). Balances for the
@@ -138,6 +145,7 @@ async function load() {
   loading.value = true
   if (tab.value === 'queue') {
     let query = buildQueueQuery()
+    loadedPaginated = isPaginated.value
     if (isPaginated.value) {
       const from = (page.value - 1) * PAGE_SIZE
       query = query.range(from, from + PAGE_SIZE)
@@ -154,7 +162,12 @@ async function load() {
       hasNextPage.value = false
       recalls.value = rows
     }
-    await loadContactContext(recalls.value.map((r) => r.patient_id!).filter(Boolean), token)
+    const context = loadContactContext(recalls.value.map((r) => r.patient_id!).filter(Boolean), token)
+    // The rows are on screen as soon as they arrive, and the contact context
+    // fills its cells after. Not with "not contacted" on, though: that filter
+    // reads the context, so the rows would show and then half of them vanish.
+    if (!notContactedOnly.value) loading.value = false
+    await context
   } else {
     const { data, error } = await buildParkedQuery(tab.value).range(0, 499)
     if (token !== loadToken) return
@@ -175,8 +188,10 @@ async function loadContactContext(ids: string[], token: number) {
     hasPhoneByPatient.value = {}
     balanceByPatient.value = {}
     onPlan.value = new Set()
+    contextPending.value = false
     return
   }
+  contextPending.value = true
   const [logs, phones, balances, plans] = await Promise.all([
     fetchByIds(ids, (chunk) => supabase.from('contact_log').select('patient_id, action, created_at, created_by, note').in('patient_id', chunk).order('created_at', { ascending: false })),
     fetchByIds(ids, (chunk) => supabase.from('patients').select('id, has_phone').in('id', chunk)),
@@ -197,6 +212,7 @@ async function loadContactContext(ids: string[], token: number) {
   hasPhoneByPatient.value = phoneMap
   balanceByPatient.value = balances
   onPlan.value = new Set(plans.map((p) => p.patient_id!).filter(Boolean))
+  contextPending.value = false
 }
 
 async function fetchBalances(ids: string[]): Promise<Record<string, number>> {
@@ -211,14 +227,24 @@ async function loadTeamMembers() {
   teamMembers.value = data ?? []
 }
 
-const { refresh: refreshNavBadges } = useNavBadges()
-function refreshAll() {
-  refreshNavBadges()
+function resetView() {
   maxKnownPage.value = 1
   page.value = 1
   selectedIds.value = new Set()
   openMenu.value = null
+}
+// A filter or a tab: the list, and nothing else. The parked counts and the
+// sidebar badge depend on the clinic alone, so reloading them per filter was
+// two exact counts and a badge refresh for numbers that could not move.
+function reloadList() {
+  resetView()
   load()
+}
+const { refresh: refreshNavBadges } = useNavBadges()
+// After snoozing, dismissing or restoring someone, which moves every count.
+function refreshAll() {
+  refreshNavBadges(['recalls'])
+  reloadList()
   loadParkedCounts()
 }
 
@@ -233,9 +259,32 @@ function goToPage(p: number) {
 let searchDebounce: ReturnType<typeof setTimeout> | undefined
 watch(search, () => {
   clearTimeout(searchDebounce)
-  searchDebounce = setTimeout(refreshAll, 300)
+  searchDebounce = setTimeout(reloadList, 300)
 })
-watch([practitionerFilter, dateFrom, minWeeksOverdue, balanceFilter, tagFilter, notContactedOnly, tab, () => store.currentClinicId], refreshAll)
+watch([practitionerFilter, dateFrom, minWeeksOverdue, balanceFilter, tab], reloadList)
+// The sidebar recounts its own badge on a clinic switch.
+watch(() => store.currentClinicId, () => {
+  reloadList()
+  loadParkedCounts()
+})
+// Tag and "not contacted" are applied in `filtered`, over rows that do not
+// depend on them -- only on whether they are fetched a page at a time or all
+// at once. So a fetch only when that flips (the first letter of a tag, the
+// last one deleted); each keystroke in between reloaded the full set.
+function onClientFilterChange() {
+  if (tab.value === 'queue' && isPaginated.value !== loadedPaginated) {
+    reloadList()
+    return
+  }
+  selectedIds.value = new Set()
+  openMenu.value = null
+}
+let tagDebounce: ReturnType<typeof setTimeout> | undefined
+watch(tagFilter, () => {
+  clearTimeout(tagDebounce)
+  tagDebounce = setTimeout(onClientFilterChange, 300)
+})
+watch(notContactedOnly, onClientFilterChange)
 
 const filtered = computed(() =>
   recalls.value.filter((r) => {
@@ -671,11 +720,13 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
               <span v-if="noShowNote(r)" class="text-[11.5px] text-ink-muted" data-cy="recall-no-show">{{ noShowNote(r) }}</span>
             </div>
             <span class="text-[13.5px] text-ink-500">{{ practitionerName(r.default_practitioner_id) }}</span>
-            <span class="text-[13.5px] font-semibold lg:text-right" :class="balanceText(r.patient_id!).cls">{{ balanceText(r.patient_id!).text }}</span>
+            <div v-if="contextPending" class="flex lg:justify-end"><UiSkeleton class="h-4 w-16 rounded" /></div>
+            <span v-else class="text-[13.5px] font-semibold lg:text-right" :class="balanceText(r.patient_id!).cls">{{ balanceText(r.patient_id!).text }}</span>
             <div class="min-w-0" data-cy="recall-last-contact">
-              <button v-if="actionCountByPatient[r.patient_id!]" type="button" class="text-left text-[13.5px] text-ink-900 hover:underline" @click="historyFor = r">{{ lastContact(r).text }}</button>
+              <UiSkeleton v-if="contextPending" class="h-4 w-28 rounded" />
+              <button v-else-if="actionCountByPatient[r.patient_id!]" type="button" class="text-left text-[13.5px] text-ink-900 hover:underline" @click="historyFor = r">{{ lastContact(r).text }}</button>
               <span v-else class="text-[13.5px]" :class="lastContact(r).tone === 'warn' ? 'font-semibold text-warning-text' : 'text-ink-muted'">{{ lastContact(r).text }}</span>
-              <span v-if="lastContact(r).sub" class="block text-[12px] text-ink-muted">{{ lastContact(r).sub }}</span>
+              <span v-if="!contextPending && lastContact(r).sub" class="block text-[12px] text-ink-muted">{{ lastContact(r).sub }}</span>
             </div>
             <!-- Row actions: each its own control -->
             <div class="relative col-start-2 flex items-center gap-1.5 lg:col-start-auto lg:justify-end" data-row-menu>

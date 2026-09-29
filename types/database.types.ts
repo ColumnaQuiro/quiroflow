@@ -6343,6 +6343,10 @@ export type Database = {
       get_my_bootstrap: { Args: never; Returns: Json }
       get_my_two_factor_gate: { Args: never; Returns: string }
       inbox_unread_count: { Args: never; Returns: number }
+      patient_list_visit_summary: {
+        Args: { p_patient_ids: string[] }
+        Returns: { patient_id: string; last_visit_at: string | null; completed_count: number; next_visit_at: string | null }[]
+      }
       team_two_factor_status: {
         Args: { p_account_id: string }
         Returns: { team_member_id: string; enrolled: boolean }[]

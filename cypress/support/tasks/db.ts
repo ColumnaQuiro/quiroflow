@@ -531,6 +531,21 @@ async function setStripePublishableKey(opts: { accountId: string; key: string | 
   return { ok: true }
 }
 
+/** A receipt line charged under a service, which is what makes it "used". */
+async function chargeService(opts: { accountId: string; invoiceId: string; serviceId: string; priceCents?: number }) {
+  assertOk(
+    await admin.from('invoice_line_items').insert({
+      account_id: opts.accountId,
+      invoice_id: opts.invoiceId,
+      service_id: opts.serviceId,
+      description: 'Servicio',
+      quantity: 1,
+      price_cents: opts.priceCents ?? 1000,
+    }),
+  )
+  return null
+}
+
 async function createServiceProduct(opts: { accountId: string; name: string; priceCents?: number }) {
   const { accountId, name, priceCents } = opts
   const row = unwrap(
@@ -3340,6 +3355,7 @@ export const dbTasks = {
   'db:setReceptionistTypes': setReceptionistTypes,
   'db:setStripePublishableKey': setStripePublishableKey,
   'db:createServiceProduct': createServiceProduct,
+  'db:chargeService': chargeService,
   'db:enableOnlineBooking': enableOnlineBooking,
   'db:enableEmailConfirmations': enableEmailConfirmations,
   'db:createInvoice': createInvoice,

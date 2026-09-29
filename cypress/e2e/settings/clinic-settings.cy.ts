@@ -110,7 +110,8 @@ describe('A clinic\'s settings page', () => {
 
       // Online booking shows those hours and sends you here to change them.
       cy.visit('/settings/online-booking')
-      cy.clickUntil('main button:contains("Clinics & Hours")', '[data-cy=booking-clinic]')
+      // One page now, no tabs: the clinics are a section of it.
+      cy.get('[data-cy=booking-settings][data-ready="true"]')
       cy.get(`[data-cy=booking-clinic][data-clinic-id="${account.clinicId}"]`).within(() => {
         cy.get('[data-cy=booking-clinic-hours]').should('contain.text', '9:00–14:00 and 14:00–20:00').and('contain.text', '10:00–13:00')
         cy.get('[data-cy=booking-clinic-edit-hours]').click()

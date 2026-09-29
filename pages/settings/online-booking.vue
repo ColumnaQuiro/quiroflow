@@ -10,20 +10,22 @@ const store = useAccountStore()
 const config = useRuntimeConfig()
 const t = useT()
 
-const TAB_KEYS = ['general', 'hours', 'discounts', 'layout', 'language'] as const
-const activeTab = ref<(typeof TAB_KEYS)[number]>('general')
-const tabs = computed(() => [
-  { key: 'general' as const, label: t('General', 'General') },
-  { key: 'hours' as const, label: t('Clinics & Hours', 'Clínicas y horarios') },
-  { key: 'discounts' as const, label: t('Discount Codes', 'Códigos de descuento') },
-  { key: 'layout' as const, label: t('Layout', 'Diseño') },
-  { key: 'language' as const, label: t('Language Overrides', 'Textos personalizados') },
+// One page of sections, not five tabs: the tabs hid the booking link, the
+// clinics and the notifications behind each other, and "which tab was it
+// on" was the question every visit started with.
+const SECTIONS = computed(() => [
+  { id: 'where', label: t('Where & what', 'Dónde y qué') },
+  { id: 'rules', label: t('Rules', 'Reglas') },
+  { id: 'look', label: t('Look', 'Aspecto') },
+  { id: 'texts', label: t('Texts', 'Textos') },
+  { id: 'codes', label: t('Discount codes', 'Códigos de descuento') },
+  { id: 'notify', label: t('Notifications', 'Avisos') },
+  { id: 'tracking', label: t('Tracking', 'Seguimiento') },
 ])
 
 // --- account-wide settings (General / Layout / Language) ---
 const maxDaysAhead = ref(90)
 const gtmId = ref('')
-const referralUrl = ref('')
 const successUrl = ref('')
 const primaryColor = ref('')
 const secondaryColor = ref('')
@@ -43,20 +45,25 @@ async function loadAccountSettings() {
   const { data } = await supabase
     .from('accounts')
     .select(
-      'online_booking_max_days_ahead, online_booking_gtm_id, online_booking_referral_url, online_booking_success_url, online_booking_primary_color, online_booking_secondary_color, online_booking_background_color, online_booking_hide_logo, online_booking_practitioner_order, online_booking_text_overrides, online_booking_notify_email, online_booking_notify_whatsapp',
+      'online_booking_max_days_ahead, online_booking_gtm_id, online_booking_success_url, online_booking_primary_color, online_booking_secondary_color, online_booking_background_color, online_booking_hide_logo, online_booking_practitioner_order, online_booking_text_overrides, online_booking_notify_email, online_booking_notify_whatsapp',
     )
     .eq('id', store.accountId!)
     .maybeSingle()
   maxDaysAhead.value = data?.online_booking_max_days_ahead ?? 90
   gtmId.value = data?.online_booking_gtm_id ?? ''
-  referralUrl.value = data?.online_booking_referral_url ?? ''
   successUrl.value = data?.online_booking_success_url ?? ''
   primaryColor.value = data?.online_booking_primary_color ?? ''
   secondaryColor.value = data?.online_booking_secondary_color ?? ''
   backgroundColor.value = data?.online_booking_background_color ?? ''
   hideLogo.value = data?.online_booking_hide_logo ?? false
   practitionerOrder.value = (data?.online_booking_practitioner_order as 'default' | 'alphabetical') ?? 'default'
-  textOverrides.value = (data?.online_booking_text_overrides as Record<string, string>) ?? {}
+  const overrides = { ...((data?.online_booking_text_overrides as Record<string, string>) ?? {}) }
+  // This page used to save the practitioner heading as 'choose_practitioner',
+  // a key the booking page never looked up (it reads 'select_heading'), so the
+  // override never showed. Carried across here and written back on save.
+  if (overrides.choose_practitioner && !overrides.select_heading) overrides.select_heading = overrides.choose_practitioner
+  delete overrides.choose_practitioner
+  textOverrides.value = overrides
   notifyEmail.value = data?.online_booking_notify_email ?? ''
   notifyWhatsapp.value = data?.online_booking_notify_whatsapp ?? ''
   loading.value = false
@@ -93,7 +100,6 @@ async function saveAccountSettings() {
   const update: TablesUpdate<'accounts'> = {
     online_booking_max_days_ahead: maxDaysAhead.value,
     online_booking_gtm_id: gtmId.value.trim() || null,
-    online_booking_referral_url: referralUrl.value.trim() || null,
     online_booking_success_url: success.value,
     online_booking_primary_color: primaryColor.value.trim() || null,
     online_booking_secondary_color: secondaryColor.value.trim() || null,
@@ -112,6 +118,11 @@ async function saveAccountSettings() {
   }
   showToast(t('Saved', 'Guardado'))
 }
+
+// Both builders below read window.location, which does not exist while the
+// page renders on the server. The card that uses them renders once mounted.
+const mounted = ref(false)
+onMounted(() => (mounted.value = true))
 
 function bookingUrl(slug: string) {
   const domain = config.public.appDomain
@@ -248,291 +259,370 @@ async function removeCode(id: string) {
 // isn't built on a keyed i18n catalog, so unlike PracticeHub's full
 // translation search this only covers the handful of strings that page
 // actually looks up against online_booking_text_overrides.
+// Every key the booking page looks up, in the order a patient meets them. A
+// key here that the page does not read is an override that silently does
+// nothing -- which 'choose_practitioner' was until it became 'select_heading'.
 const OVERRIDABLE_STRINGS = [
   { key: 'heading', default: 'Reservar una cita' },
-  { key: 'choose_practitioner', default: 'Elija un profesional' },
+  { key: 'select_heading', default: 'Elija un profesional' },
+  { key: 'any_practitioner_label', default: 'Cualquier profesional' },
+  { key: 'any_practitioner_description', default: 'Esta opción le permite reservar una cita con cualquier profesional disponible en la especialidad y horario seleccionados.' },
   { key: 'choose_datetime', default: 'Elija su fecha y hora' },
   { key: 'enter_details', default: 'Introduzca sus datos' },
   { key: 'confirm_button', default: 'Reservar cita' },
   { key: 'success_heading', default: '¡Cita reservada!' },
+  { key: 'app_promo_heading', default: 'Descarga la app de QuiroFlow' },
 ]
+
+function setOverride(key: string, value: string) {
+  const next = { ...textOverrides.value }
+  if (value.trim()) next[key] = value
+  else delete next[key]
+  textOverrides.value = next
+}
+
+// --- the status line at the top ---
+const bookableClinics = computed(() => bookingClinics.value.filter((c) => c.online_booking_enabled).length)
+const onlineTypes = computed(() => types.value.filter((x) => x.online_booking_enabled).length)
+
+// Discount code, in words: "10% off", "5,00 € off", or both.
+function codeOff(c: Tables<'online_booking_discount_codes'>) {
+  const parts = [c.percent_off ? t(`${c.percent_off}% off`, `${c.percent_off}% de descuento`) : '', c.amount_off_cents ? t(`${formatEur(c.amount_off_cents)} off`, `${formatEur(c.amount_off_cents)} de descuento`) : '']
+  return parts.filter(Boolean).join(' + ') || t('No discount set', 'Sin descuento')
+}
+function codeMeta(c: Tables<'online_booking_discount_codes'>) {
+  const used = c.max_uses ? t(`${c.times_used} of ${c.max_uses} used`, `${c.times_used} de ${c.max_uses} usados`) : t(`${c.times_used} used`, `${c.times_used} usados`)
+  if (!c.expires_at) return used
+  const day = new Date(c.expires_at).toLocaleDateString('es-ES')
+  return new Date(c.expires_at).getTime() < Date.now() ? t(`${used} · expired ${day}`, `${used} · caducó el ${day}`) : t(`${used} · expires ${day}`, `${used} · caduca el ${day}`)
+}
+
+const pickerClass = 'h-9 touch:h-11 w-12 shrink-0 cursor-pointer rounded-ctl border border-line-control bg-surface p-1'
+const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand'
 </script>
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader :title="t('Online Booking Settings', 'Ajustes de reserva online')">
-      <UiBtn v-if="activeTab === 'general' || activeTab === 'layout' || activeTab === 'language'" variant="primary" :disabled="saving || loading" @click="saveAccountSettings">
+    <PageHeader :title="t('Online Booking', 'Reserva online')">
+      <UiBtn variant="primary" data-cy="booking-save" :disabled="saving || loading" @click="saveAccountSettings">
         {{ saving ? t('Saving…', 'Guardando…') : t('Save changes', 'Guardar cambios') }}
       </UiBtn>
     </PageHeader>
     <div class="flex-1 overflow-y-auto">
       <div class="flex gap-8 p-6">
         <SettingsNav />
-        <div class="min-w-0 max-w-[720px] flex-1">
-          <p class="text-[13px] leading-relaxed text-ink-muted2">{{ t('Configure how patients book appointments online.', 'Configura cómo reservan cita los pacientes online.') }}</p>
+        <div class="flex min-w-0 max-w-[940px] flex-1 flex-col gap-4" data-cy="booking-settings" :data-ready="loading ? undefined : 'true'">
+          <p class="text-[13.5px] text-ink-muted">
+            {{ t('How new patients book from your website: where and what they can book, what the page looks like, and who hears about it.', 'Cómo reservan los pacientes nuevos desde tu web: dónde y qué pueden reservar, cómo se ve la página y a quién se avisa.') }}
+          </p>
 
-          <div class="mt-4 flex gap-1 border-b border-line">
-            <button
-              v-for="tab in tabs"
-              :key="tab.key"
-              type="button"
-              class="h-9 px-3 text-[13px]"
-              :class="activeTab === tab.key ? 'border-b-2 border-brand font-semibold text-ink-900' : 'text-ink-muted hover:text-ink-700'"
-              @click="activeTab = tab.key"
-            >
-              {{ tab.label }}
-            </button>
-          </div>
-
-          <!-- General -->
-          <div v-if="activeTab === 'general'" class="mt-4 space-y-3">
-            <div v-if="loading" class="space-y-3">
-              <div v-for="i in 3" :key="i" class="space-y-1.5">
-                <UiSkeleton class="h-3 w-48 rounded-ctlSm" />
-                <UiSkeleton class="h-8 w-40 rounded-ctl" />
+          <!-- The page itself first: the link and the embed are what people come here to copy. -->
+          <section v-if="store.accountSlug && mounted" aria-labelledby="h-page" class="overflow-hidden rounded-card border border-line bg-surface">
+            <div class="flex flex-wrap items-start gap-3.5 px-[18px] py-4">
+              <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px]" :class="bookableClinics > 0 && onlineTypes > 0 ? 'bg-success-bg text-success-text' : 'bg-warning-bg text-warning-text'" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></svg>
+              </span>
+              <div class="flex min-w-[220px] flex-1 flex-col gap-1">
+                <h2 id="h-page" class="text-[16px] font-bold text-ink-900">
+                  {{ bookableClinics > 0 && onlineTypes > 0 ? t('Your booking page is live', 'Tu página de reservas está activa') : t('Nothing can be booked yet', 'Aún no se puede reservar nada') }}
+                </h2>
+                <p class="text-[13.5px] text-ink-500" data-cy="booking-status">
+                  {{ t(`Bookable at ${bookableClinics} of ${bookingClinics.length} clinics, for ${onlineTypes} of ${types.length} appointment types.`, `Se puede reservar en ${bookableClinics} de ${bookingClinics.length} clínicas, para ${onlineTypes} de ${types.length} tipos de cita.`) }}
+                </p>
               </div>
+              <a :href="bookingUrl(store.accountSlug)" target="_blank" rel="noopener" class="inline-flex h-9 touch:h-11 items-center gap-1.5 rounded-ctl border border-line-control bg-surface px-3.5 text-[13px] font-medium text-ink-500 hover:border-line-controlHover">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></svg>
+                {{ t('Open page', 'Abrir página') }}
+              </a>
             </div>
-            <template v-else>
-              <SettingsFieldRow :label="t('Maximum future booking time', 'Máxima antelación de reserva')" :helper="t('How far ahead patients can book online. Each appointment type can set its own on its page.', 'Con cuánta antelación pueden reservar los pacientes online. Cada tipo de cita puede tener la suya en su página.')">
-                <div class="flex items-center gap-2">
-                  <input v-model.number="maxDaysAhead" type="number" min="1" class="h-8 w-20 rounded-ctl border border-line-control bg-surface px-2 text-center text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
-                  <span class="text-[13px] text-ink-muted2">{{ t('days', 'días') }}</span>
-                </div>
-              </SettingsFieldRow>
+            <div class="flex flex-col gap-2.5 border-t border-line-row px-[18px] pb-4 pt-3.5" data-test="booking-embed-card">
+              <div class="flex flex-wrap items-center gap-2.5">
+                <span class="w-[110px] shrink-0 text-[13.5px] font-semibold text-ink-700">{{ t('Link', 'Enlace') }}</span>
+                <code class="min-w-0 flex-1 truncate rounded-ctlSm bg-surface-page px-2.5 py-2 font-mono text-[12.5px] text-ink-500">{{ bookingUrl(store.accountSlug) }}</code>
+                <UiBtn class="w-24" @click="copy(bookingUrl(store.accountSlug))">{{ t('Copy', 'Copiar') }}</UiBtn>
+              </div>
+              <div class="flex flex-wrap items-start gap-2.5">
+                <span class="w-[110px] shrink-0 pt-2 text-[13.5px] font-semibold text-ink-700">{{ t('Website embed', 'Insertar en tu web') }}</span>
+                <textarea
+                  :value="embedSnippet(store.accountSlug)"
+                  data-test="booking-embed-snippet"
+                  readonly
+                  rows="2"
+                  :aria-label="t('Website embed code', 'Código para insertar en tu web')"
+                  class="min-w-0 flex-1 resize-none rounded-ctlSm border-0 bg-surface-page px-2.5 py-2 font-mono text-[12px] leading-relaxed text-ink-500"
+                />
+                <UiBtn class="w-24" @click="copy(embedSnippet(store.accountSlug))">{{ t('Copy', 'Copiar') }}</UiBtn>
+              </div>
+              <p class="text-[12.5px] text-ink-muted sm:ml-[120px]">
+                {{ t('The script tells paid bookings (Google, Meta) apart from the rest. Already embedded the widget by hand? Adding just the script tag is enough.', 'El script distingue las reservas de pago (Google, Meta) del resto. ¿Ya insertaste el widget a mano? Basta con añadir la etiqueta script.') }}
+              </p>
+            </div>
+          </section>
 
-              <SettingsFieldRow :label="t('Google Tag Manager', 'Google Tag Manager')" :helper="t('Injected on the public booking page for conversion tracking.', 'Se inserta en la página pública de reserva para el seguimiento de conversiones.')">
-                <input v-model="gtmId" type="text" placeholder="GTM-XXXXXXX" class="h-8 w-40 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none" />
-              </SettingsFieldRow>
+          <nav :aria-label="t('Sections', 'Secciones')" class="flex flex-wrap gap-2">
+            <a v-for="s in SECTIONS" :key="s.id" :href="`#${s.id}`" class="inline-flex h-8 touch:h-11 items-center rounded-pill border border-line-control bg-surface px-3 text-[13px] text-ink-500 hover:border-line-controlHover">{{ s.label }}</a>
+          </nav>
 
-              <SettingsFieldRow :label="t('Patient referral URL', 'URL de referidos de paciente')" :helper="t('Where a referred-patient link redirects to, if you track referrals separately.', 'Adónde redirige el enlace de paciente referido, si haces un seguimiento de referidos por separado.')">
-                <input v-model="referralUrl" type="text" placeholder="https://mysite.com/referral" class="h-8 w-64 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none" />
-              </SettingsFieldRow>
-
-              <SettingsFieldRow
-                :label="t('Successful booking page', 'Página de reserva completada')"
-                :helper="
-                  t(
-                    'Send patients to your own page once a booking goes through, instead of the built-in confirmation screen. Useful for firing a conversion tag on a thank-you page. The booking, type, value and currency are added to the address as query parameters so your tag can report the real amount. Leave blank to keep the built-in screen.',
-                    'Envía a los pacientes a tu propia página cuando se completa una reserva, en lugar de la pantalla de confirmación integrada. Útil para lanzar una etiqueta de conversión en una página de agradecimiento. La reserva, el tipo, el importe y la moneda se añaden a la dirección como parámetros para que tu etiqueta pueda informar del valor real. Déjalo en blanco para mantener la pantalla integrada.',
-                  )
-                "
+          <!-- Where & what -->
+          <section id="where" aria-labelledby="h-where" class="scroll-mt-4 overflow-hidden rounded-card border border-line bg-surface">
+            <div class="px-[18px] pb-3 pt-4">
+              <h2 id="h-where" class="text-[16px] font-bold text-ink-900">{{ t('Where & what can be booked', 'Dónde y qué se puede reservar') }}</h2>
+              <p class="mt-1 text-[13px] leading-snug text-ink-muted">
+                {{ t('Hours are each clinic’s own. Each appointment type decides whether it is bookable online, how far ahead and whether it is paid when booking.', 'El horario es el de cada clínica. Cada tipo de cita decide si se reserva online, con cuánta antelación y si se paga al reservar.') }}
+              </p>
+            </div>
+            <div v-for="c in bookingClinics" :key="c.id" class="flex flex-wrap items-start gap-4 border-t border-line-row px-[18px] py-3" data-cy="booking-clinic" :data-clinic-id="c.id">
+              <button
+                type="button"
+                role="switch"
+                data-cy="booking-clinic-toggle"
+                :aria-checked="c.online_booking_enabled"
+                :aria-label="t(`Online booking at ${c.name}`, `Reserva online en ${c.name}`)"
+                :disabled="savingClinicId === c.id"
+                class="relative mt-0.5 h-[26px] w-11 shrink-0 rounded-full disabled:opacity-50"
+                :class="c.online_booking_enabled ? 'bg-brand' : 'bg-line-control'"
+                @click="setBookingEnabled(c, !c.online_booking_enabled)"
               >
-                <input v-model="successUrl" type="text" placeholder="https://mysite.com/gracias" class="h-8 w-64 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none" />
-              </SettingsFieldRow>
-
-              <div v-if="store.accountSlug" class="rounded-card border border-line bg-surface p-4 shadow-card">
-                <p class="text-[13.5px] font-[560] text-ink-700">{{ t('Public booking link', 'Enlace de reserva público') }}</p>
-                <div class="mt-2 flex items-center gap-2">
-                  <input :value="bookingUrl(store.accountSlug)" readonly class="h-8 w-full rounded-ctl border border-line-control bg-surface-subtle px-2 text-[13px] text-ink-600" />
-                  <button type="button" class="h-8 shrink-0 rounded-ctl border border-line-control px-3 text-[12.5px] text-ink-600 hover:border-line-controlHover" @click="copy(bookingUrl(store.accountSlug))">
-                    {{ t('Copy', 'Copiar') }}
-                  </button>
-                </div>
-              </div>
-
-              <div v-if="store.accountSlug" data-test="booking-embed-card" class="rounded-card border border-line bg-surface p-4 shadow-card">
-                <p class="text-[13.5px] font-[560] text-ink-700">{{ t('Embed on your website', 'Insertar en tu web') }}</p>
-                <p class="mt-0.5 text-[12.5px] text-ink-muted2">
-                  {{ t(
-                    'Paste this where the booking form should appear. The script carries the visitor\'s campaign (Google, Meta) into the widget, so paid bookings can be told apart from the rest.',
-                    'Pega esto donde deba aparecer el formulario de reserva. El script lleva la campaña del visitante (Google, Meta) al widget, para poder distinguir las reservas de pago del resto.',
-                  ) }}
-                </p>
-                <div class="mt-2 flex items-start gap-2">
-                  <textarea
-                    :value="embedSnippet(store.accountSlug)"
-                    data-test="booking-embed-snippet"
-                    readonly
-                    rows="2"
-                    class="w-full resize-none rounded-ctl border border-line-control bg-surface-subtle px-2 py-1.5 font-mono text-[12px] leading-relaxed text-ink-600"
-                  />
-                  <button type="button" class="h-8 shrink-0 rounded-ctl border border-line-control px-3 text-[12.5px] text-ink-600 hover:border-line-controlHover" @click="copy(embedSnippet(store.accountSlug))">
-                    {{ t('Copy', 'Copiar') }}
-                  </button>
-                </div>
-                <p class="mt-2 text-[12px] text-ink-muted2">
-                  {{ t(
-                    'Already embedded the widget by hand? Adding just the script tag is enough -- it upgrades an iframe that is already on the page.',
-                    '¿Ya insertaste el widget a mano? Basta con añadir la etiqueta script -- actualiza un iframe que ya esté en la página.',
-                  ) }}
-                </p>
-              </div>
-
-              <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-                <p class="text-[13.5px] font-[560] text-ink-700">{{ t('Booking notifications', 'Notificaciones de reserva') }}</p>
-                <p class="mt-0.5 text-[12.5px] text-ink-muted2">{{ t('Get pinged as soon as a patient books online -- by email, WhatsApp, or both.', 'Recibe un aviso en cuanto un paciente reserve online -- por correo, WhatsApp, o ambos.') }}</p>
-                <div class="mt-3 space-y-3">
-                  <div>
-                    <label class="block text-[12px] font-medium text-ink-muted">{{ t('Notify email', 'Correo de notificación') }}</label>
-                    <input
-                      v-model="notifyEmail"
-                      type="email"
-                      placeholder="you@clinic.com"
-                      class="mt-1 h-8 w-64 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label class="block text-[12px] font-medium text-ink-muted">{{ t('Notify WhatsApp number', 'Número de WhatsApp de notificación') }}</label>
-                    <input
-                      v-model="notifyWhatsapp"
-                      type="text"
-                      placeholder="+34600000000"
-                      class="mt-1 h-8 w-64 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none"
-                    />
-                    <p class="mt-1 text-[11.5px] text-ink-faint">
-                      {{
-                        t(
-                          "In E.164 format. WhatsApp only delivers a free-form message like this one within 24h of that number last messaging your clinic's WhatsApp number -- send it a message occasionally to keep notifications flowing, or set a staff notification template in Settings → WhatsApp to send outside that window too.",
-                          'En formato E.164. WhatsApp solo entrega un mensaje de texto libre como este dentro de las 24h posteriores a que ese número le escribiera por última vez al WhatsApp de tu clínica -- envíale un mensaje de vez en cuando para que sigan llegando las notificaciones, o configura una plantilla de aviso al personal en Ajustes → WhatsApp para enviarlas también fuera de esa ventana.',
-                        )
-                      }}
-                    </p>
-                  </div>
-                </div>
-              </div>
-              <div class="rounded-card border border-line bg-surface p-4 shadow-card" data-cy="booking-types-note">
-                <p class="text-[13.5px] font-[560] text-ink-700">{{ t('What can be booked', 'Qué se puede reservar') }}</p>
-                <p class="mt-1 text-[12.5px] leading-snug text-ink-muted2">
-                  {{ t('Whether a type is booked online, who may book it, how far ahead and whether it is paid when booking are set on each appointment type\'s own page.', 'Si un tipo se reserva online, quién puede reservarlo, con cuánta antelación y si se paga al reservar se decide en la página de cada tipo de cita.') }}
-                </p>
-                <ul v-if="types.length > 0" class="mt-2 flex flex-wrap gap-1.5">
-                  <li v-for="at in types" :key="at.id">
-                    <NuxtLink
-                      :to="`/settings/appointment-types/${at.id}#online`"
-                      data-cy="booking-type-link"
-                      class="inline-flex min-h-[32px] items-center gap-1.5 rounded-pill border border-line-control px-2.5 text-[12.5px] font-semibold hover:bg-surface-subtle"
-                      :class="at.online_booking_enabled ? 'text-ink-700' : 'text-ink-faint'"
-                    >
-                      {{ at.name }}
-                      <span class="font-normal">· {{ at.online_booking_enabled ? t('online', 'online') : t('not online', 'no online') }}</span>
-                    </NuxtLink>
-                  </li>
-                </ul>
-                <NuxtLink v-else to="/settings/appointment-types" class="mt-2 inline-block text-[12.5px] font-medium text-brand-text hover:underline">{{ t('Create an appointment type', 'Crea un tipo de cita') }}</NuxtLink>
-              </div>
-            </template>
-          </div>
-
-          <!-- Clinics & Hours -->
-          <div v-else-if="activeTab === 'hours'" class="mt-4 space-y-2">
-            <div v-for="c in bookingClinics" :key="c.id" class="rounded-card border border-line bg-surface p-4 shadow-card" data-cy="booking-clinic" :data-clinic-id="c.id">
-              <div class="flex flex-wrap items-center justify-between gap-3">
-                <span class="text-[13.5px] font-[560] text-ink-700">{{ c.name }}</span>
-                <label class="flex items-center gap-2.5 text-[13px] text-ink-600">
-                  <SettingsToggle :model-value="c.online_booking_enabled" :disabled="savingClinicId === c.id" data-cy="booking-clinic-toggle" @update:model-value="setBookingEnabled(c, $event)" />
-                  {{ t('Online booking', 'Reserva online') }}
-                </label>
-              </div>
-              <div class="mt-3 flex flex-wrap items-end justify-between gap-3">
-                <dl class="grid grid-cols-[48px_1fr] gap-x-2 gap-y-0.5 text-[12.5px]" data-cy="booking-clinic-hours">
+                <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card transition-all" :class="c.online_booking_enabled ? 'left-[21px]' : 'left-[3px]'" />
+              </button>
+              <div class="flex min-w-[200px] flex-1 flex-col gap-1.5">
+                <strong class="text-[14.5px] text-ink-900">{{ c.name }}</strong>
+                <dl class="grid grid-cols-[40px_1fr] gap-x-2 gap-y-0.5 text-[12.5px]" data-cy="booking-clinic-hours">
                   <template v-for="d in hoursLines(c)" :key="d.key">
-                    <dt class="text-ink-muted2">{{ d.label }}</dt>
+                    <dt class="text-ink-muted">{{ d.label }}</dt>
                     <dd :class="d.text ? 'text-ink-700' : 'text-ink-faint'">{{ d.text ?? t('Closed', 'Cerrado') }}</dd>
                   </template>
                 </dl>
-                <NuxtLink :to="`/settings/clinics/${c.id}#horario`" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover" data-cy="booking-clinic-edit-hours">
-                  {{ t('Edit hours in the clinic', 'Editar el horario en la sede') }}
-                </NuxtLink>
               </div>
+              <NuxtLink :to="`/settings/clinics/${c.id}#horario`" class="text-[13px] font-semibold text-brand-text hover:text-brand-hover" data-cy="booking-clinic-edit-hours">
+                {{ t('Edit hours', 'Editar horario') }}
+              </NuxtLink>
             </div>
-            <p v-if="bookingClinics.length === 0" class="px-4 py-6 text-center text-[13px] text-ink-faint">{{ t('No clinics yet.', 'Todavía no hay clínicas.') }}</p>
-            <p v-if="hoursError" class="mt-2 text-[12.5px] text-danger-text">{{ hoursError }}</p>
-          </div>
+            <p v-if="bookingClinics.length === 0" class="border-t border-line-row px-[18px] py-6 text-center text-[14px] text-ink-muted">{{ t('No clinics yet.', 'Todavía no hay clínicas.') }}</p>
+            <p v-if="hoursError" class="border-t border-line-row px-[18px] py-2.5 text-[12.5px] font-semibold text-danger-text">{{ hoursError }}</p>
 
-          <!-- Discount Codes -->
-          <div v-else-if="activeTab === 'discounts'" class="mt-4">
-            <div class="divide-y divide-line-row rounded-card border border-line bg-surface shadow-card">
-              <div v-for="c in codes" :key="c.id" class="flex items-center justify-between px-4 py-2.5 text-[13px]">
-                <div>
-                  <span class="font-mono font-semibold text-ink-700">{{ c.code }}</span>
-                  <span class="ml-2 text-ink-muted2">
-                    {{ c.percent_off ? t(`${c.percent_off}% off`, `${c.percent_off}% de descuento`) : '' }}{{ c.percent_off && c.amount_off_cents ? ' + ' : '' }}{{ c.amount_off_cents ? t(`${formatEur(c.amount_off_cents)} off`, `${formatEur(c.amount_off_cents)} de descuento`) : '' }}
-                  </span>
-                  <span class="ml-2 text-[11.5px] text-ink-faint">
-                    {{ t(`${c.times_used}${c.max_uses ? `/${c.max_uses}` : ''} used${c.expires_at ? ` · expires ${new Date(c.expires_at).toLocaleDateString()}` : ''}`, `${c.times_used}${c.max_uses ? `/${c.max_uses}` : ''} usos${c.expires_at ? ` · caduca ${new Date(c.expires_at).toLocaleDateString()}` : ''}`) }}
-                  </span>
-                </div>
-                <div class="flex items-center gap-3">
-                  <SettingsToggle :model-value="c.active" @update:model-value="toggleCodeActive(c)" />
-                  <button type="button" class="text-ink-faint hover:text-danger-text" @click="removeCode(c.id)">✕</button>
-                </div>
-              </div>
-              <p v-if="codes.length === 0" class="px-4 py-6 text-center text-[13px] text-ink-faint">{{ t('No discount codes yet.', 'Todavía no hay códigos de descuento.') }}</p>
+            <div class="flex flex-col gap-2 border-t border-line px-[18px] pb-4 pt-3" data-cy="booking-types-note">
+              <span class="text-[12.5px] font-semibold text-ink-500">{{ t('Appointment types', 'Tipos de cita') }}</span>
+              <ul v-if="types.length > 0" class="flex flex-wrap gap-1.5">
+                <li v-for="at in types" :key="at.id">
+                  <NuxtLink
+                    :to="`/settings/appointment-types/${at.id}#online`"
+                    data-cy="booking-type-link"
+                    class="inline-flex min-h-[32px] items-center gap-1.5 rounded-pill border border-line-control px-3 text-[13px] font-semibold hover:bg-surface-subtle"
+                    :class="at.online_booking_enabled ? 'bg-surface text-ink-700' : 'bg-surface-subtle text-ink-muted'"
+                  >
+                    {{ at.name }}
+                    <span class="font-normal">· {{ at.online_booking_enabled ? t('online', 'online') : t('not online', 'no online') }}</span>
+                  </NuxtLink>
+                </li>
+              </ul>
+              <NuxtLink v-else to="/settings/appointment-types" class="text-[13px] font-semibold text-brand-text hover:underline">{{ t('Create an appointment type', 'Crea un tipo de cita') }}</NuxtLink>
             </div>
+          </section>
 
-            <form class="mt-4 flex flex-wrap items-end gap-3 rounded-card border border-line bg-surface p-4 shadow-card" @submit.prevent="addCode">
-              <div>
-                <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Code', 'Código') }}</label>
-                <input v-model="newCode" type="text" required placeholder="WELCOME10" class="mt-1 h-8 w-32 rounded-ctl border border-line-control bg-surface px-3 text-[13px] uppercase text-ink-700 focus:border-brand focus:outline-none" />
+          <template v-if="loading">
+            <UiSkeleton class="h-32 w-full rounded-card" />
+            <UiSkeleton class="h-64 w-full rounded-card" />
+          </template>
+          <template v-else>
+            <!-- Rules -->
+            <section id="rules" aria-labelledby="h-rules" class="scroll-mt-4 overflow-hidden rounded-card border border-line bg-surface">
+              <h2 id="h-rules" class="px-[18px] pb-2 pt-4 text-[16px] font-bold text-ink-900">{{ t('Rules', 'Reglas') }}</h2>
+              <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
+                <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
+                  <label for="max-days" class="text-[14.5px] font-bold text-ink-900">{{ t('How far ahead', 'Con cuánta antelación') }}</label>
+                  <span class="text-[13px] text-ink-500">{{ t('The furthest ahead a patient can book. An appointment type can set its own.', 'Lo más lejos que un paciente puede reservar. Un tipo de cita puede fijar la suya.') }}</span>
+                </div>
+                <label class="flex items-center gap-2 text-[14px] text-ink-500">
+                  <input id="max-days" v-model.number="maxDaysAhead" type="number" min="1" data-cy="booking-max-days" :class="[inputClass, 'w-20 text-right']" />
+                  {{ t('days', 'días') }}
+                </label>
               </div>
-              <div>
-                <label class="block text-[12.5px] font-medium text-ink-600">{{ t('% off', '% de descuento') }}</label>
-                <input v-model="newPercentOff" type="number" min="1" max="100" class="mt-1 h-8 w-20 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
+              <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
+                <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
+                  <strong id="order-label" class="text-[14.5px] text-ink-900">{{ t('Practitioner order', 'Orden de los profesionales') }}</strong>
+                  <span class="text-[13px] text-ink-500">{{ t('How practitioners are listed when a patient picks one.', 'Cómo se listan los profesionales cuando el paciente elige uno.') }}</span>
+                </div>
+                <div role="radiogroup" aria-labelledby="order-label" class="inline-flex gap-0.5 rounded-[9px] bg-chip-bg p-[3px]">
+                  <button
+                    v-for="o in [{ value: 'default', label: t('As added', 'Por alta') }, { value: 'alphabetical', label: t('A to Z', 'De la A a la Z') }]"
+                    :key="o.value"
+                    type="button"
+                    role="radio"
+                    :data-cy="`booking-order-${o.value}`"
+                    :aria-checked="practitionerOrder === o.value"
+                    class="h-8 touch:h-11 rounded-[7px] px-3 text-[13px]"
+                    :class="practitionerOrder === o.value ? 'bg-surface font-semibold text-ink-900 shadow-card' : 'text-ink-500 hover:text-ink-900'"
+                    @click="practitionerOrder = o.value as 'default' | 'alphabetical'"
+                  >
+                    {{ o.label }}
+                  </button>
+                </div>
               </div>
-              <div>
-                <label class="block text-[12.5px] font-medium text-ink-600">{{ t('€ off', '€ de descuento') }}</label>
-                <input v-model="newAmountOff" type="number" min="0" step="0.01" class="mt-1 h-8 w-24 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
-              </div>
-              <div>
-                <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Expires', 'Caduca') }}</label>
-                <input v-model="newExpiresAt" type="date" class="mt-1 h-8 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
-              </div>
-              <div>
-                <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Max uses', 'Usos máximos') }}</label>
-                <input v-model="newMaxUses" type="number" min="1" :placeholder="t('Unlimited', 'Ilimitados')" class="mt-1 h-8 w-24 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none" />
-              </div>
-              <UiBtn variant="primary" type="submit" :disabled="addingCode">{{ addingCode ? t('Adding…', 'Añadiendo…') : t('Add Code', 'Añadir código') }}</UiBtn>
-            </form>
-            <p v-if="codeError" class="mt-2 text-[12.5px] text-danger-text">{{ codeError }}</p>
-          </div>
+            </section>
 
-          <!-- Layout -->
-          <div v-else-if="activeTab === 'layout'" class="mt-4 space-y-3">
-            <SettingsFieldRow :label="t('Hide business logo', 'Ocultar el logotipo del negocio')" :helper="t('Hide your clinic logo on the standalone booking page.', 'Oculta el logotipo de tu clínica en la página de reserva independiente.')">
-              <SettingsToggle v-model="hideLogo" />
-            </SettingsFieldRow>
-            <SettingsFieldRow :label="t('Practitioner display order', 'Orden de visualización de profesionales')" align="top">
-              <div class="space-y-1.5 text-[13px] text-ink-600">
-                <label class="flex items-center gap-2"><input v-model="practitionerOrder" type="radio" value="default" class="text-brand focus:ring-brand" /> {{ t('Default', 'Por defecto') }}</label>
-                <label class="flex items-center gap-2"><input v-model="practitionerOrder" type="radio" value="alphabetical" class="text-brand focus:ring-brand" /> {{ t('Alphabetical', 'Alfabético') }}</label>
+            <!-- Look, beside the page it changes -->
+            <section id="look" aria-labelledby="h-look" class="scroll-mt-4 overflow-hidden rounded-card border border-line bg-surface">
+              <div class="px-[18px] pb-2 pt-4">
+                <h2 id="h-look" class="text-[16px] font-bold text-ink-900">{{ t('Look', 'Aspecto') }}</h2>
+                <p class="mt-1 text-[13px] text-ink-muted">{{ t('The page is always light; the background lets it blend into a site that embeds it.', 'La página siempre es clara; el fondo permite integrarla en la web que la inserta.') }}</p>
               </div>
-            </SettingsFieldRow>
-            <SettingsFieldRow :label="t('Primary color', 'Color primario')" align="top">
-              <div class="flex items-center gap-2">
-                <input v-model="primaryColor" type="color" class="h-8 w-14 rounded-ctl border border-line-control" />
-                <input v-model="primaryColor" type="text" placeholder="#4C6FEB" class="h-8 w-28 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none" />
+              <div class="flex flex-col gap-6 px-[18px] pb-[18px] pt-1 md:flex-row">
+                <div class="flex min-w-0 flex-1 flex-col">
+                  <div v-for="c in [
+                    { key: 'primary', label: t('Main colour', 'Color principal'), model: primaryColor, set: (v: string) => (primaryColor = v), placeholder: '#4C6FEB' },
+                    { key: 'secondary', label: t('Soft colour', 'Color suave'), model: secondaryColor, set: (v: string) => (secondaryColor = v), placeholder: '#EEF1FF' },
+                    { key: 'background', label: t('Background', 'Fondo'), model: backgroundColor, set: (v: string) => (backgroundColor = v), placeholder: '#F7F8FA' },
+                  ]" :key="c.key" class="flex min-h-[52px] items-center gap-3 border-b border-line-row">
+                    <label :for="`color-${c.key}`" class="flex-1 text-[14px] text-ink-900">{{ c.label }}</label>
+                    <input type="color" :value="c.model || c.placeholder" :aria-label="c.label" :class="pickerClass" @input="c.set(($event.target as HTMLInputElement).value)" />
+                    <input :id="`color-${c.key}`" :value="c.model" type="text" :placeholder="c.placeholder" :data-cy="`booking-color-${c.key}`" :class="[inputClass, 'w-28 font-mono text-[13px]']" @input="c.set(($event.target as HTMLInputElement).value)" />
+                  </div>
+                  <div class="flex min-h-[52px] items-center gap-3">
+                    <span id="logo-label" class="flex-1 text-[14px] text-ink-900">{{ t('Show your logo', 'Mostrar tu logotipo') }}</span>
+                    <button
+                      type="button"
+                      role="switch"
+                      data-cy="booking-show-logo"
+                      :aria-checked="!hideLogo"
+                      aria-labelledby="logo-label"
+                      class="relative h-[26px] w-11 shrink-0 rounded-full"
+                      :class="!hideLogo ? 'bg-brand' : 'bg-line-control'"
+                      @click="hideLogo = !hideLogo"
+                    >
+                      <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card transition-all" :class="!hideLogo ? 'left-[21px]' : 'left-[3px]'" />
+                    </button>
+                  </div>
+                </div>
+                <!-- An illustration of the colours, not the page itself. -->
+                <figure class="flex w-full shrink-0 flex-col gap-2 md:w-[320px]" aria-hidden="true">
+                  <figcaption class="text-[12.5px] font-semibold text-ink-500">{{ t('Preview', 'Vista previa') }}</figcaption>
+                  <div class="flex flex-col items-center gap-3 rounded-card border border-line px-[18px] py-5" :style="{ background: backgroundColor || '#F7F8FA' }">
+                    <span v-if="!hideLogo" class="flex h-10 w-10 items-center justify-center rounded-[10px] text-[11px] font-bold text-white" :style="{ background: primaryColor || '#4C6FEB' }">LOGO</span>
+                    <strong class="text-[17px] text-[#15171E]">{{ textOverrides.heading || 'Reservar una cita' }}</strong>
+                    <div class="flex w-full flex-col gap-2">
+                      <div class="flex items-center gap-2.5 rounded-ctl border-[1.5px] bg-white px-3 py-2.5" :style="{ borderColor: primaryColor || '#4C6FEB' }">
+                        <span class="h-7 w-7 rounded-full" :style="{ background: secondaryColor || '#EEF1FF' }" />
+                        <span class="text-[13px] font-semibold text-[#15171E]">{{ textOverrides.any_practitioner_label || 'Cualquier profesional' }}</span>
+                      </div>
+                      <div class="flex items-center gap-2.5 rounded-ctl border border-[#E8E9ED] bg-white px-3 py-2.5">
+                        <span class="h-7 w-7 rounded-full" :style="{ background: secondaryColor || '#EEF1FF' }" />
+                        <span class="text-[13px] text-[#15171E]">{{ t('A practitioner', 'Un profesional') }}</span>
+                      </div>
+                    </div>
+                    <span class="flex h-9 w-full items-center justify-center rounded-ctl text-[13px] font-semibold text-white" :style="{ background: primaryColor || '#4C6FEB' }">{{ textOverrides.confirm_button || 'Reservar cita' }}</span>
+                  </div>
+                </figure>
               </div>
-            </SettingsFieldRow>
-            <SettingsFieldRow :label="t('Secondary color', 'Color secundario')" align="top">
-              <div class="flex items-center gap-2">
-                <input v-model="secondaryColor" type="color" class="h-8 w-14 rounded-ctl border border-line-control" />
-                <input v-model="secondaryColor" type="text" placeholder="#EEF1FF" class="h-8 w-28 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none" />
-              </div>
-            </SettingsFieldRow>
-            <SettingsFieldRow label="Background color" helper="The page itself is always light -- it never follows a visitor's dark-mode setting. Use this to blend it with whatever site embeds it." align="top">
-              <div class="flex items-center gap-2">
-                <input v-model="backgroundColor" type="color" class="h-8 w-14 rounded-ctl border border-line-control" />
-                <input v-model="backgroundColor" type="text" placeholder="#F7F8FA" class="h-8 w-28 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none" />
-              </div>
-            </SettingsFieldRow>
-          </div>
+            </section>
 
-          <!-- Language Overrides -->
-          <div v-else-if="activeTab === 'language'" class="mt-4">
-            <p class="text-[12.5px] text-ink-muted2">{{ t("Override the public booking page's own text, per string.", 'Sobrescribe el propio texto de la página pública de reserva, por cadena.') }}</p>
-            <div class="mt-3 divide-y divide-line-row rounded-card border border-line bg-surface shadow-card">
-              <div v-for="s in OVERRIDABLE_STRINGS" :key="s.key" class="grid grid-cols-2 gap-4 px-4 py-2.5">
-                <p class="self-center text-[13px] text-ink-muted2">{{ s.default }}</p>
+            <!-- Texts -->
+            <section id="texts" aria-labelledby="h-texts" class="scroll-mt-4 overflow-hidden rounded-card border border-line bg-surface">
+              <div class="px-[18px] pb-3 pt-4">
+                <h2 id="h-texts" class="text-[16px] font-bold text-ink-900">{{ t('Texts', 'Textos') }}</h2>
+                <p class="mt-1 text-[13px] text-ink-muted">{{ t('Replace any of the booking page’s own words. Leave a line empty to keep the original.', 'Sustituye cualquier texto de la página de reservas. Deja una línea vacía para mantener el original.') }}</p>
+              </div>
+              <div v-for="s in OVERRIDABLE_STRINGS" :key="s.key" class="grid grid-cols-1 items-center gap-2 border-t border-line-row px-[18px] py-2.5 sm:grid-cols-2 sm:gap-4" :data-text-key="s.key">
+                <label :for="`text-${s.key}`" class="line-clamp-2 text-[13.5px] text-ink-500">{{ s.default }}</label>
                 <input
+                  :id="`text-${s.key}`"
                   :value="textOverrides[s.key] ?? ''"
                   type="text"
                   :placeholder="s.default"
-                  class="h-8 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none"
-                  @change="textOverrides = { ...textOverrides, [s.key]: ($event.target as HTMLInputElement).value }"
+                  data-cy="booking-text"
+                  :class="[inputClass, 'w-full']"
+                  @input="setOverride(s.key, ($event.target as HTMLInputElement).value)"
                 />
               </div>
+            </section>
+          </template>
+
+          <!-- Discount codes: saved as they change, like the clinic switches -->
+          <section id="codes" aria-labelledby="h-codes" class="scroll-mt-4 overflow-hidden rounded-card border border-line bg-surface">
+            <div class="flex items-baseline gap-3 px-[18px] pb-3 pt-4">
+              <h2 id="h-codes" class="flex-1 text-[16px] font-bold text-ink-900">{{ t(`Discount codes · ${codes.length}`, `Códigos de descuento · ${codes.length}`) }}</h2>
+              <span v-if="codes.length" class="text-[13px] text-ink-muted">{{ t('Active', 'Activo') }}</span>
             </div>
-          </div>
+            <p v-if="codes.length === 0" class="border-t border-line-row px-[18px] py-5 text-center text-[14px] text-ink-muted">{{ t('No discount codes yet.', 'Todavía no hay códigos de descuento.') }}</p>
+            <div v-for="c in codes" :key="c.id" data-cy="booking-code" class="flex min-h-[60px] flex-wrap items-center gap-3.5 border-t border-line-row py-2 pl-[18px] pr-3">
+              <code class="rounded-ctlSm bg-brand-tint px-2.5 py-1 font-mono text-[13.5px] font-semibold text-brand-text">{{ c.code }}</code>
+              <div class="flex min-w-[160px] flex-1 flex-col gap-0.5">
+                <strong class="text-[14.5px] text-ink-900">{{ codeOff(c) }}</strong>
+                <span class="text-[13px] text-ink-500">{{ codeMeta(c) }}</span>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                :aria-checked="c.active"
+                :aria-label="t(`${c.code} active`, `${c.code} activo`)"
+                class="relative h-[26px] w-11 shrink-0 rounded-full"
+                :class="c.active ? 'bg-brand' : 'bg-line-control'"
+                @click="toggleCodeActive(c)"
+              >
+                <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card transition-all" :class="c.active ? 'left-[21px]' : 'left-[3px]'" />
+              </button>
+              <button type="button" class="flex h-9 w-9 touch:h-11 touch:w-11 shrink-0 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle hover:text-ink-700" :aria-label="t(`Delete ${c.code}`, `Eliminar ${c.code}`)" @click="removeCode(c.id)">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></svg>
+              </button>
+            </div>
+            <form class="grid grid-cols-2 items-end gap-2.5 border-t border-line-row bg-surface-subtle px-[18px] py-3 sm:grid-cols-[1.3fr_.7fr_.7fr_1fr_.8fr_auto]" @submit.prevent="addCode">
+              <label class="col-span-2 flex flex-col gap-1.5 text-[12.5px] font-semibold text-ink-700 sm:col-span-1">{{ t('Code', 'Código') }}<input v-model="newCode" type="text" required placeholder="BIENVENIDA" :class="[inputClass, 'uppercase']" /></label>
+              <label class="flex flex-col gap-1.5 text-[12.5px] font-semibold text-ink-700">{{ t('% off', '% dto.') }}<input v-model="newPercentOff" type="number" min="1" max="100" :class="inputClass" /></label>
+              <label class="flex flex-col gap-1.5 text-[12.5px] font-semibold text-ink-700">{{ t('€ off', '€ dto.') }}<input v-model="newAmountOff" type="number" min="0" step="0.01" :class="inputClass" /></label>
+              <label class="flex flex-col gap-1.5 text-[12.5px] font-semibold text-ink-700">{{ t('Expires', 'Caduca') }}<input v-model="newExpiresAt" type="date" :class="inputClass" /></label>
+              <label class="flex flex-col gap-1.5 text-[12.5px] font-semibold text-ink-700">{{ t('Max uses', 'Usos máx.') }}<input v-model="newMaxUses" type="number" min="1" placeholder="∞" :class="inputClass" /></label>
+              <UiBtn type="submit" :disabled="addingCode">{{ addingCode ? t('Adding…', 'Añadiendo…') : t('Add', 'Añadir') }}</UiBtn>
+              <p v-if="codeError" class="col-span-full text-[12.5px] font-semibold text-danger-text">{{ codeError }}</p>
+            </form>
+          </section>
+
+          <template v-if="!loading">
+            <!-- Notifications -->
+            <section id="notify" aria-labelledby="h-notify" class="scroll-mt-4 overflow-hidden rounded-card border border-line bg-surface">
+              <h2 id="h-notify" class="px-[18px] pb-2 pt-4 text-[16px] font-bold text-ink-900">{{ t('Tell the clinic about new bookings', 'Avisar a la clínica de las reservas') }}</h2>
+              <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
+                <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
+                  <label for="notify-email" class="text-[14.5px] font-bold text-ink-900">{{ t('By email', 'Por correo') }}</label>
+                  <span class="text-[13px] text-ink-500">{{ t('Sent the moment a patient books.', 'Se envía en cuanto un paciente reserva.') }}</span>
+                </div>
+                <input id="notify-email" v-model="notifyEmail" type="email" placeholder="recepcion@clinica.es" :class="[inputClass, 'w-full sm:w-[280px]']" />
+              </div>
+              <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
+                <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
+                  <label for="notify-whatsapp" class="text-[14.5px] font-bold text-ink-900">{{ t('By WhatsApp', 'Por WhatsApp') }}</label>
+                  <span class="text-[13px] leading-snug text-ink-500">
+                    {{ t('In +34… format. When that number has not written to the clinic in 24 h, WhatsApp only delivers the staff booking template set in', 'En formato +34… Si ese número no ha escrito a la clínica en 24 h, WhatsApp solo entrega la plantilla de aviso de reserva configurada en') }}
+                    <NuxtLink to="/settings/whatsapp" class="font-semibold text-brand-text hover:underline">WhatsApp</NuxtLink>.
+                  </span>
+                </div>
+                <input id="notify-whatsapp" v-model="notifyWhatsapp" type="tel" placeholder="+34600000000" :class="[inputClass, 'w-full sm:w-[280px]']" />
+              </div>
+            </section>
+
+            <!-- Tracking -->
+            <section id="tracking" aria-labelledby="h-track" class="scroll-mt-4 overflow-hidden rounded-card border border-line bg-surface">
+              <div class="px-[18px] pb-2 pt-4">
+                <h2 id="h-track" class="text-[16px] font-bold text-ink-900">{{ t('Tracking', 'Seguimiento') }}</h2>
+                <p class="mt-1 text-[13px] text-ink-muted">{{ t('For measuring ads. Leave empty if you don’t run any.', 'Para medir anuncios. Déjalo vacío si no tienes.') }}</p>
+              </div>
+              <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
+                <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
+                  <label for="gtm" class="text-[14.5px] font-bold text-ink-900">Google Tag Manager</label>
+                  <span class="text-[13px] text-ink-500">{{ t('Loaded on the booking page.', 'Se carga en la página de reservas.') }}</span>
+                </div>
+                <input id="gtm" v-model="gtmId" type="text" placeholder="GTM-XXXXXXX" :class="[inputClass, 'w-full font-mono text-[13px] sm:w-[280px]']" />
+              </div>
+              <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
+                <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
+                  <label for="success-url" class="text-[14.5px] font-bold text-ink-900">{{ t('Thank-you page', 'Página de agradecimiento') }}</label>
+                  <span class="text-[13px] leading-snug text-ink-500">
+                    {{ t('Send patients to your own page after booking, instead of the built-in confirmation, to fire a conversion there. The booking, type, value and currency are added to the address.', 'Envía a los pacientes a tu propia página tras reservar, en lugar de la confirmación integrada, para registrar la conversión allí. La reserva, el tipo, el importe y la moneda se añaden a la dirección.') }}
+                  </span>
+                </div>
+                <input id="success-url" v-model="successUrl" type="text" placeholder="https://mysite.com/gracias" :class="[inputClass, 'w-full sm:w-[280px]']" />
+              </div>
+            </section>
+          </template>
         </div>
       </div>
     </div>

@@ -558,6 +558,22 @@ async function deleteServiceProduct(opts: { serviceId: string }) {
   return { code: error?.code ?? null }
 }
 
+/** Online Booking's text overrides, written as an older page might have left them. */
+async function setBookingTextOverrides(opts: { accountId: string; overrides: Record<string, string> }) {
+  assertOk(await admin.from('accounts').update({ online_booking_text_overrides: opts.overrides }).eq('id', opts.accountId))
+  return null
+}
+
+async function bookingAndWhatsappSettingsOf(opts: { accountId: string }) {
+  return unwrap(
+    await admin
+      .from('accounts')
+      .select('online_booking_text_overrides, online_booking_practitioner_order, new_lead_notify_whatsapp_template_name, new_lead_notify_whatsapp_template_language, whatsapp_reminder_template_name')
+      .eq('id', opts.accountId)
+      .single(),
+  )
+}
+
 async function createServiceProduct(opts: { accountId: string; name: string; priceCents?: number }) {
   const { accountId, name, priceCents } = opts
   const row = unwrap(
@@ -3470,6 +3486,8 @@ export const dbTasks = {
   'db:setAccountSecret': setAccountSecret,
   'db:accountWhatsappConnection': accountWhatsappConnection,
   'db:setWhatsappBusinessAccount': setWhatsappBusinessAccount,
+  'db:setBookingTextOverrides': setBookingTextOverrides,
+  'db:bookingAndWhatsappSettingsOf': bookingAndWhatsappSettingsOf,
   'db:setAccountWhatsappToken': setAccountWhatsappToken,
   'db:startMetaGraphStub': startMetaGraphStub,
   'db:stopMetaGraphStub': stopMetaGraphStub,

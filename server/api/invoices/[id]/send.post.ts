@@ -20,9 +20,11 @@ export default defineEventHandler(async (event) => {
     .join('')
 
   // The clinic's own subject and message (Settings > Invoicing), with
-  // {{clinic_name}} filled in; the built-in wording when it has written none.
+  // {{clinic_name}} and {{patient_name}} (their first name) filled in; the
+  // built-in wording when it has written none.
   const clinicName = data.clinic?.name ?? ''
-  const fill = (text: string) => text.replace(/\{\{\s*clinic_name\s*\}\}/g, clinicName)
+  const fill = (text: string) =>
+    text.replace(/\{\{\s*clinic_name\s*\}\}/g, clinicName).replace(/\{\{\s*patient_name\s*\}\}/g, data.patient.firstName)
   const intro = data.email?.body
     ? fill(data.email.body)
         .split(/\n{2,}/)

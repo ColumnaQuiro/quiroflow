@@ -35,10 +35,11 @@ async function load() {
   services.value = data ?? []
   taxRule.value = account ?? null
   loading.value = false
-  // How often each has been charged: what decides whether deleting it would
-  // take receipts out of the income report's by-service figures (the line
-  // items keep their price but lose the link, `on delete set null`). A head
-  // count each, since a select of every line item would hit the row cap.
+  // How often each has been charged, which decides whether Delete is offered:
+  // a charged service is refused by the database anyway
+  // (invoice_line_items.service_id is `on delete restrict`), since deleting it
+  // would take its receipts out of the income report's by-service figures. A
+  // head count each, since a select of every line item would hit the row cap.
   const counts = await Promise.all(services.value.map((s) => supabase.from('invoice_line_items').select('id', { count: 'exact', head: true }).eq('service_id', s.id)))
   uses.value = Object.fromEntries(services.value.map((s, i) => [s.id, counts[i].count ?? 0]))
 }
@@ -132,7 +133,16 @@ async function saveEdit(s: ServiceRow) {
 async function removeService(s: ServiceRow) {
   const { error } = await supabase.from('services_products').delete().eq('id', s.id)
   if (error) {
-    showToast(error.message, 'error')
+    // The count above only sees receipts this user can open; the database
+    // sees them all, and refuses a service charged on any of them
+    // (invoice_line_items.service_id is `on delete restrict`).
+    showToast(
+      error.code === '23503'
+        ? t(`${s.name} has been charged on receipts, so it cannot be deleted. Rename it instead.`, `${s.name} ya se ha cobrado en recibos, así que no se puede eliminar. Cámbiale el nombre.`)
+        : error.message,
+      'error',
+    )
+    await load()
     return
   }
   await load()

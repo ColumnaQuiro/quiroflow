@@ -40,6 +40,7 @@ interface Settings {
   sender: Sender
   platform: { nif: string | null; legalName: string | null } | null
   isPlatform: boolean
+  fee: { monthlyCentsPerLocation: number; locations: number; billedLocations: number } | null
   delegation: Delegation | null
   activity: {
     waiting: number
@@ -72,6 +73,21 @@ function madridDay(iso: string) {
 }
 const todayDay = madridDay(new Date().toISOString())
 
+function euros(cents: number) {
+  return (cents / 100).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })
+}
+// "7,50 € + IVA per location per month -- 2 locations: 15,00 € a month."
+const feeText = computed(() => {
+  const fee = settings.value?.fee
+  if (!fee) return null
+  const each = euros(fee.monthlyCentsPerLocation)
+  const total = euros(fee.monthlyCentsPerLocation * fee.locations)
+  return t(
+    `From that day VeriFactu costs ${each} + IVA per location per month, added to your subscription (${fee.locations} ${fee.locations === 1 ? 'location' : 'locations'}: ${total} a month).`,
+    `Desde ese día VeriFactu cuesta ${each} + IVA por centro y mes, que se añade a tu suscripción (${fee.locations} ${fee.locations === 1 ? 'centro' : 'centros'}: ${total} al mes).`,
+  )
+})
+
 async function load() {
   try {
     settings.value = await useStaffFetch<Settings>('/api/verifactu/settings')
@@ -98,7 +114,7 @@ async function save() {
       t(
         `Go live on ${liveDay.value}? From midnight that day (Madrid), every factura is sent to the AEAT's real service. Once the first one has gone, the date cannot change and VeriFactu cannot be switched off.`,
         `¿Pasar a producción el ${liveDay.value}? Desde la medianoche de ese día (Madrid), cada factura se envía al servicio real de la AEAT. Una vez enviada la primera, la fecha no se puede cambiar y VeriFactu no se puede desactivar.`,
-      ),
+      ) + (feeText.value ? `\n\n${feeText.value}` : ''),
     )
     if (!ok) return
   }
@@ -330,6 +346,7 @@ function formatDateTime(iso: string | null) {
                   <span class="flex-1">
                     <span class="block text-[13px] font-medium text-ink-900">{{ t('Live from a date', 'En producción desde una fecha') }}</span>
                     <span class="mt-0.5 block text-[12px] text-ink-muted2">{{ t('Test service until that day, then the real one. From midnight (Madrid) that day, the first factura starts the real chain, with nothing from the test period before it.', 'Servicio de pruebas hasta ese día y el real a partir de entonces. Desde la medianoche (Madrid) de ese día, la primera factura inicia la cadena real, sin nada del periodo de pruebas por delante.') }}</span>
+                    <span v-if="feeText" data-cy="verifactu-fee" class="mt-1 block text-[12px] font-medium text-ink-700">{{ feeText }}</span>
                     <input
                       v-if="mode === 'live'"
                       v-model="liveDay"

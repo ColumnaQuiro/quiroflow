@@ -16,8 +16,11 @@ export default defineEventHandler(async (event) => {
   const accountId = teamMember.account_id
   const service = serverSupabaseServiceRole<Database>(event)
 
-  const readWhatsApp = await canReadWhatsApp(supabase, teamMember)
-  const [{ data: rules, error }, { data: steps }, { data: subscription }, stats, delayChanged] = await Promise.all([
+  // WhatsApp rows are read with the caller's own client, and RLS already
+  // gives someone without Inbox access none (0164) -- so the stats need not
+  // wait for the permission check; it only says whether a zero means hidden.
+  const [readWhatsApp, { data: rules, error }, { data: steps }, { data: subscription }, stats, delayChanged] = await Promise.all([
+    canReadWhatsApp(supabase, teamMember),
     supabase
       .from('automation_rules')
       .select('id, name, trigger_event, enabled, filters, is_marketing, dry_run, segment, entry_mode, exit_on, quiet_hours, created_at')
@@ -25,13 +28,17 @@ export default defineEventHandler(async (event) => {
       .order('created_at', { ascending: false }),
     supabase.from('automation_actions').select('rule_id, action_type, parent_id').eq('account_id', accountId),
     supabase.from('subscriptions').select('plan_id, growth_addon, status, comped').eq('account_id', accountId).maybeSingle(),
-    statsByRule(supabase, service, accountId, readWhatsApp),
+    statsByRule(supabase, service, accountId),
     rulesWhoseDelayNowWaits(supabase, accountId),
   ])
   if (error) throw createError({ statusCode: 500, statusMessage: error.message })
 
   const byRule = new Map<string, { action_type: string; parent_id: string | null }[]>()
-  for (const s of steps ?? []) byRule.set(s.rule_id, [...(byRule.get(s.rule_id) ?? []), s as never])
+  for (const s of steps ?? []) {
+    const list = byRule.get(s.rule_id)
+    if (list) list.push(s)
+    else byRule.set(s.rule_id, [s])
+  }
   const createdAt = new Map((rules ?? []).map((r) => [r.id, r.created_at]))
 
   return {

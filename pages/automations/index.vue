@@ -42,6 +42,14 @@ interface Stats {
   email: { sent: number; delivered: number; opened: number; clicked: number; bounced: number; failed: number; recorded: number }
 }
 
+interface ListResponse {
+  rules: Row[]
+  stats: Record<string, Stats>
+  canReadWhatsApp: boolean
+  hasGrowth: boolean
+  delayChanged: { id: string; name: string }[]
+}
+
 const rules = ref<Row[]>([])
 const stats = ref<Record<string, Stats>>({})
 const canReadWhatsApp = ref(true)
@@ -51,16 +59,36 @@ const loading = ref(true)
 const loadError = ref('')
 const lookup = ref<NameLookup>(emptyLookup())
 
+// The last list this tab loaded, kept for the session: going into an
+// automation and back shows it at once while a fresh one loads behind it,
+// rather than a skeleton for the second or so the endpoint takes. Keyed by
+// account, so signing in as someone else never shows the previous clinic's.
+const accountId = useAccountStore().accountId
+const cached = useState<{ accountId: string | null; list: ListResponse; lookup: NameLookup } | null>('automations-list', () => null)
+
+function apply(res: ListResponse) {
+  rules.value = res.rules
+  stats.value = res.stats
+  canReadWhatsApp.value = res.canReadWhatsApp
+  hasGrowth.value = res.hasGrowth
+  delayChanged.value = res.delayChanged
+}
+
+if (cached.value && cached.value.accountId === accountId) {
+  apply(cached.value.list)
+  lookup.value = cached.value.lookup
+  loading.value = false
+}
+
 async function load() {
   try {
-    const res = await useStaffFetch<{ rules: Row[]; stats: Record<string, Stats>; canReadWhatsApp: boolean; hasGrowth: boolean; delayChanged: { id: string; name: string }[] }>('/api/automations')
-    rules.value = res.rules
-    stats.value = res.stats
-    canReadWhatsApp.value = res.canReadWhatsApp
-    hasGrowth.value = res.hasGrowth
-    delayChanged.value = res.delayChanged
+    const res = await useStaffFetch<ListResponse>('/api/automations')
+    apply(res)
+    loadError.value = ''
+    cached.value = { accountId, list: res, lookup: lookup.value }
   } catch (e) {
-    loadError.value = serverMessage(e) ?? t('Could not load the automations.', 'No se han podido cargar las automatizaciones.')
+    // A failed refresh over a list already on screen leaves it there.
+    if (loading.value) loadError.value = serverMessage(e) ?? t('Could not load the automations.', 'No se han podido cargar las automatizaciones.')
   } finally {
     loading.value = false
   }
@@ -90,6 +118,7 @@ onMounted(async () => {
     members: (members.data ?? []) as { id: string; full_name: string }[],
     clinics: useAccountStore().clinics.map((c) => ({ id: c.id, name: c.name })),
   }
+  if (cached.value?.accountId === accountId) cached.value = { ...cached.value, lookup: lookup.value }
 })
 
 // ---- filters
@@ -199,6 +228,7 @@ async function activateSegment(testMode: boolean) {
 
 const templatesOpen = ref(false)
 function onCreated(id: string) {
+  cached.value = null
   templatesOpen.value = false
   router.push(`/automations/${id}`)
 }

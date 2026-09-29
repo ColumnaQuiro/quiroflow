@@ -72,13 +72,41 @@ export async function requireTeamMember(event: H3Event) {
 // Not applied to requireTeamMember itself: a few routes call that directly
 // for internal/system work (webhooks, cron-fired automations) that
 // shouldn't stop just because a clinic hasn't paid.
+//
+// The subscription is read in the same request as the team member, embedded
+// through their account, rather than in a second one after it: every API
+// route behind a permission comes through here, and each extra round trip to
+// the database costs ~300 ms from the Netlify function. Both tables are
+// readable by exactly the members of the account (is_account_member, plus
+// the two-factor policy), so the embed sees what a direct read would.
 export async function requireActiveAccount(event: H3Event) {
-  const { supabase, teamMember } = await requireTeamMember(event)
+  const supabase = await resolveSupabaseClient(event)
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) {
+    throw createError({ statusCode: 403, statusMessage: 'Not signed in as a team member' })
+  }
 
-  const { data: subscription } = await supabase.from('subscriptions').select('status').eq('account_id', teamMember.account_id).maybeSingle()
+  // Filtered by user_id for the reason given in requireTeamMember.
+  const { data: row } = await supabase
+    .from('team_members')
+    .select('id, account_id, is_owner, role_id, accounts(subscriptions(status))')
+    .eq('user_id', user.id)
+    .is('deleted_at', null)
+    .maybeSingle()
+
+  if (!row) {
+    throw createError({ statusCode: 403, statusMessage: 'Not signed in as a team member' })
+  }
 
   // No row at all is treated as not-locked rather than as an error -- fail
   // open, not closed, so a gap in backfill never itself locks someone out.
+  // More than one also fails open, as the .maybeSingle() read this replaced
+  // did: nothing says which of them is the account's.
+  const { accounts, ...teamMember } = row
+  const subscriptions = (accounts as { subscriptions: { status: string }[] } | null)?.subscriptions ?? []
+  const subscription = subscriptions.length === 1 ? subscriptions[0]! : null
   if (subscription && (subscription.status === 'locked' || subscription.status === 'canceled')) {
     throw createError({ statusCode: 402, statusMessage: 'This account is locked pending payment' })
   }
@@ -90,14 +118,14 @@ async function checkPermissions(event: H3Event, permKeys: string[]) {
   const { supabase, teamMember } = await requireActiveAccount(event)
 
   if (!teamMember.is_owner) {
-    for (const permKey of permKeys) {
-      const { data: allowed } = await supabase.rpc('has_permission', {
-        target_account_id: teamMember.account_id,
-        perm_key: permKey,
-      })
-      if (!allowed) {
-        throw createError({ statusCode: 403, statusMessage: `Missing permission: ${permKey}` })
-      }
+    // All at once rather than one after another; the first missing key in
+    // the order given is still the one reported.
+    const results = await Promise.all(
+      permKeys.map((permKey) => supabase.rpc('has_permission', { target_account_id: teamMember.account_id, perm_key: permKey })),
+    )
+    const missing = permKeys.find((_, i) => !results[i]!.data)
+    if (missing) {
+      throw createError({ statusCode: 403, statusMessage: `Missing permission: ${missing}` })
     }
   }
 

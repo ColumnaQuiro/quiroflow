@@ -47,6 +47,9 @@ const props = defineProps<{
   // payments_allocate -- gating this on the invoice permission alone would
   // show the button to someone the database then refuses.
   canDeletePayments: boolean
+  // Same gate as removing one: it is an edit to money already received, and
+  // the update goes through the same payments_allocate RLS.
+  canChangePaymentMethod: boolean
   canWriteOff: boolean
   canRefund: boolean
   /**
@@ -64,6 +67,7 @@ const emit = defineEmits<{
   sendInvoice: [invoiceId: string]
   deleteInvoice: [invoiceId: string]
   deletePayment: [payload: { paymentId: string; invoiceId: string | null; amountCents: number }]
+  changePaymentMethod: [payload: { paymentId: string; method: string }]
   writeOffInvoice: [invoiceId: string]
   refundInvoice: [payload: { invoiceId: string | null; paymentId: string | null; amountCents: number; reason: string; method: string }]
   creditsChanged: []
@@ -122,6 +126,8 @@ interface LedgerRow {
   refundableCents?: number
   paymentRefundableCents?: number
   paymentMethod?: string
+  /** Money recorded by hand, so its method is a choice somebody can correct. */
+  paymentMethodChangeable?: boolean
   isRefund?: boolean
   /** Deliberately moves no money -- renders an em dash in Debit and Credit. */
   noMoneyMoved?: boolean
@@ -271,6 +277,11 @@ const rows = computed<LedgerRow[]>(() => {
     paymentInvoiceId: p.invoice_id,
     paymentRefundableCents: paymentRefundableCentsFor(p),
     paymentMethod: p.method,
+    // Not a Stripe charge (that was card, as a matter of fact) and not credit
+    // or a write-off (not money at all). The payments_method_change trigger
+    // refuses the same three; this only keeps the button off rows it would
+    // refuse.
+    paymentMethodChangeable: !p.stripe_payment_intent_id && p.method !== 'credit' && p.method !== 'write_off',
     date: p.paid_at,
     // Negative only for the payments row createRefund() inserts alongside a
     // refund invoice, so this money goes back out belongs in Debit like any
@@ -452,6 +463,33 @@ watch(
   },
   { immediate: true },
 )
+
+// Correcting how a payment came in -- taken as cash, really card. Changes
+// nothing but the method: same amount, same date, same receipt, so the
+// receipt never reopens and a factura issued for it still matches. Offered
+// only for methods on the clinic's own list; a payment on a method since
+// deactivated can still be moved OFF it, but the dropdown will not offer it
+// back.
+const methodModalPaymentId = ref<string | null>(null)
+const methodModalCurrent = ref('')
+const methodModalChoice = ref('')
+
+function openMethodModal(paymentId: string, current: string) {
+  ensurePaymentMethodsLoaded()
+  methodModalPaymentId.value = paymentId
+  methodModalCurrent.value = current
+  methodModalChoice.value = current
+}
+
+function closeMethodModal() {
+  methodModalPaymentId.value = null
+}
+
+function submitMethodChange() {
+  if (!methodModalPaymentId.value || !methodModalChoice.value || methodModalChoice.value === methodModalCurrent.value) return
+  emit('changePaymentMethod', { paymentId: methodModalPaymentId.value, method: methodModalChoice.value })
+  closeMethodModal()
+}
 
 function closeRefundModal() {
   refundModalOpen.value = false
@@ -678,9 +716,18 @@ async function sendStatement() {
                   </template>
                 </dl>
                 <div
-                  v-if="row.paymentId && (canDeletePayments || (canRefund && (row.paymentRefundableCents ?? 0) > 0))"
-                  class="mt-2 flex items-center gap-3 border-t border-line-divider pt-2 text-[12px]"
+                  v-if="row.paymentId && (canDeletePayments || (canChangePaymentMethod && row.paymentMethodChangeable) || (canRefund && (row.paymentRefundableCents ?? 0) > 0))"
+                  class="mt-2 flex flex-wrap items-center gap-3 border-t border-line-divider pt-2 text-[12px]"
                 >
+                  <button
+                    v-if="canChangePaymentMethod && row.paymentMethodChangeable"
+                    type="button"
+                    data-cy="payment-change-method"
+                    class="text-ink-faint hover:text-ink-muted"
+                    @click="openMethodModal(row.paymentId!, row.paymentMethod ?? '')"
+                  >
+                    {{ t('Change method…', 'Cambiar método…') }}
+                  </button>
                   <template v-if="canDeletePayments">
                     <button
                       type="button"
@@ -799,6 +846,33 @@ async function sendStatement() {
         <button type="button" class="text-[12.5px] text-ink-faint hover:text-ink-muted" @click="transferModalOpen = false">{{ t('Cancel', 'Cancelar') }}</button>
         <UiBtn variant="primary" size="sm" :disabled="!transferTarget || !transferAmount || transferring" @click="submitTransferCredit">
           {{ transferring ? t('Transferring…', 'Transfiriendo…') : t('Transfer', 'Transferir') }}
+        </UiBtn>
+      </div>
+    </div>
+  </div>
+
+  <div v-if="methodModalPaymentId" class="fixed inset-0 z-20 flex items-center justify-center bg-ink-900/40 p-4" @click.self="closeMethodModal">
+    <div class="w-full max-w-sm rounded-card border border-line bg-surface p-4 shadow-popover" data-cy="payment-method-modal">
+      <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Change payment method', 'Cambiar método de pago') }}</p>
+      <p class="mt-1 text-[12px] text-ink-faint">
+        {{
+          t(
+            'For a payment recorded with the wrong method. The amount, date and receipt stay as they are; the change is logged with your name.',
+            'Para un pago registrado con el método equivocado. El importe, la fecha y el recibo no cambian; el cambio queda registrado con tu nombre.',
+          )
+        }}
+      </p>
+      <div class="mt-3">
+        <label class="block text-[11px] text-ink-muted">{{ t('Paid with', 'Pagado con') }}</label>
+        <select v-model="methodModalChoice" data-cy="payment-method-select" class="bg-surface mt-0.5 w-full rounded-ctlSm border border-line-control px-2 py-1.5 text-[13px]">
+          <option v-if="!paymentMethods.some((m) => m.key === methodModalCurrent)" :value="methodModalCurrent" disabled>{{ methodModalCurrent }}</option>
+          <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
+        </select>
+      </div>
+      <div class="mt-4 flex items-center justify-end gap-2">
+        <button type="button" class="text-[12.5px] text-ink-faint hover:text-ink-muted" @click="closeMethodModal">{{ t('Cancel', 'Cancelar') }}</button>
+        <UiBtn variant="primary" size="sm" data-cy="payment-method-save" :disabled="!methodModalChoice || methodModalChoice === methodModalCurrent" @click="submitMethodChange">
+          {{ t('Save', 'Guardar') }}
         </UiBtn>
       </div>
     </div>

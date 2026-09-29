@@ -634,8 +634,11 @@ async function createPayment(opts: {
   // ISO timestamp. Defaults to now; set it to put money in an earlier period,
   // which is the only way to exercise anything that compares two windows.
   paidAt?: string
+  // Money Stripe charged on its own -- a card on file, an autopay. Its method
+  // is a fact about the charge rather than something staff chose.
+  stripePaymentIntentId?: string
 }) {
-  const { accountId, invoiceId, amountCents, method, packagePurchaseId, purpose, paidAt } = opts
+  const { accountId, invoiceId, amountCents, method, packagePurchaseId, purpose, paidAt, stripePaymentIntentId } = opts
   let patientId = opts.patientId
   if (!patientId) {
     if (!invoiceId) throw new Error('createPayment needs patientId or invoiceId')
@@ -645,7 +648,7 @@ async function createPayment(opts: {
   const row = unwrap(
     await admin
       .from('payments')
-      .insert({ account_id: accountId, patient_id: patientId, invoice_id: invoiceId ?? null, package_purchase_id: packagePurchaseId ?? null, amount_cents: amountCents, method, ...(purpose ? { purpose } : {}), ...(paidAt ? { paid_at: paidAt } : {}) })
+      .insert({ account_id: accountId, patient_id: patientId, invoice_id: invoiceId ?? null, package_purchase_id: packagePurchaseId ?? null, amount_cents: amountCents, method, ...(purpose ? { purpose } : {}), ...(paidAt ? { paid_at: paidAt } : {}), ...(stripePaymentIntentId ? { stripe_payment_intent_id: stripePaymentIntentId } : {}) })
       .select('id')
       .single(),
   )
@@ -1710,11 +1713,13 @@ async function readAsStaff(opts: { email: string; password: string; table: strin
 async function writeAsStaff(opts: {
   email: string
   password: string
-  op: 'deleteAppointment' | 'softDeleteAppointment' | 'setPatientTags' | 'insertPackagePurchase'
+  op: 'deleteAppointment' | 'softDeleteAppointment' | 'setPatientTags' | 'insertPackagePurchase' | 'setPaymentMethod'
   appointmentId?: string
   patientId?: string
   tags?: string[]
   purchase?: Record<string, unknown>
+  paymentId?: string
+  method?: string
 }) {
   const userClient = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
   const { error: signInErr } = await userClient.auth.signInWithPassword({ email: opts.email, password: opts.password })
@@ -1726,10 +1731,19 @@ async function writeAsStaff(opts: {
     result = await userClient.from('appointments').update({ deleted_at: new Date().toISOString() }).eq('id', opts.appointmentId!).select('id')
   } else if (opts.op === 'setPatientTags') {
     result = await userClient.from('patients').update({ tags: opts.tags ?? [] }).eq('id', opts.patientId!).select('id')
+  } else if (opts.op === 'setPaymentMethod') {
+    result = await userClient.from('payments').update({ method: opts.method! }).eq('id', opts.paymentId!).select('id')
   } else {
     result = await userClient.from('package_purchases').insert(opts.purchase as never).select('id')
   }
   return { rows: result.data?.length ?? 0, error: result.error ? result.error.message : null }
+}
+
+/** What audit_logs holds about one entity, oldest first. */
+async function auditLogFor(opts: { entityId: string }) {
+  return unwrap(
+    await admin.from('audit_logs').select('entity_type, action, summary, team_member_id').eq('entity_id', opts.entityId).order('created_at'),
+  ) as { entity_type: string; action: string; summary: string; team_member_id: string | null }[]
 }
 
 /** A role by its stored name, or null -- rolePermissions throws when it is gone. */
@@ -3297,6 +3311,7 @@ export const dbTasks = {
   'db:setPatientClinical': setPatientClinical,
   'db:createAccountCredit': createAccountCredit,
   'db:paymentsFor': paymentsFor,
+  'db:auditLogFor': auditLogFor,
   'db:facturasFor': facturasFor,
   'db:createFacturaWithoutTax': createFacturaWithoutTax,
   'db:huellaFor': huellaFor,

@@ -781,6 +781,25 @@ async function deleteInvoice(invoice: InvoiceRow) {
 // as cash). Bookkeeping only: no money moves, which is why this is a delete
 // rather than a refund -- a refund records that cash went back to the
 // patient, and here it never left in the first place.
+// Corrects how a payment came in, without touching anything else about it.
+// The payments_method_change trigger refuses a Stripe charge, credit and
+// write-offs and logs the change to audit_logs; the error shown here is its
+// message when it refuses.
+async function changePaymentMethod(paymentId: string, method: string) {
+  const { data, error } = await supabase.from('payments').update({ method }).eq('id', paymentId).select('id')
+  if (error) {
+    showToast(error.message, 'error')
+    return
+  }
+  // RLS refuses an update by matching nothing, not by erroring.
+  if (!data?.length) {
+    showToast(t('This payment could not be changed', 'No se pudo cambiar este pago'), 'error')
+    return
+  }
+  showToast(t('Payment method changed', 'Método de pago cambiado'))
+  await loadAll()
+}
+
 async function deletePayment(paymentId: string, invoiceId: string | null, amountCents: number) {
   const invoice = invoices.value.find((i) => i.id === invoiceId)
 
@@ -2490,6 +2509,7 @@ function money(cents: number) {
       :send-result-message="sendResultMessage"
       :can-delete-invoices="can('financials_edit_all')"
       :can-delete-payments="can('financials_edit_all') && can('payments_allocate')"
+      :can-change-payment-method="can('financials_edit_all') && can('payments_allocate')"
       :can-write-off="can('financials_edit_all')"
       :can-refund="can('financials_edit_all')"
       :open-refund-for-invoice-id="props.refundInvoiceId ?? null"
@@ -2499,6 +2519,7 @@ function money(cents: number) {
       @delete-invoice="(id: string) => { const inv = invoices.find((i) => i.id === id); if (inv) deleteInvoice(inv) }"
       @write-off-invoice="writeOffInvoice"
       @delete-payment="(p: { paymentId: string; invoiceId: string | null; amountCents: number }) => deletePayment(p.paymentId, p.invoiceId, p.amountCents)"
+      @change-payment-method="(p: { paymentId: string; method: string }) => changePaymentMethod(p.paymentId, p.method)"
       @refund-invoice="(payload: { invoiceId: string | null; paymentId: string | null; amountCents: number; reason: string; method: string }) => createRefund(payload.invoiceId, payload.paymentId, payload.amountCents, payload.reason, payload.method)"
       @credits-changed="onLedgerCreditsChanged"
     />

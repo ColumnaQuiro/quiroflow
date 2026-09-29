@@ -51,7 +51,9 @@ const footnoteLoading = ref(true)
 const APPT_COLS =
   'id, starts_at, ends_at, status, confirmation_status, clinic_id, practitioner_name, appointment_types(name), team_members(full_name), calendar_resources(name)'
 
+let apptRun = 0
 async function loadAppointments({ silent = false } = {}) {
+  const run = ++apptRun
   if (!silent) {
     apptLoading.value = true
     footnoteLoading.value = true
@@ -75,13 +77,16 @@ async function loadAppointments({ silent = false } = {}) {
       .order('starts_at', { ascending: false })
       .limit(1),
   ])
+  if (run !== apptRun) return
   nextAppt.value = (upcoming?.[0] as unknown as ApptRow) ?? null
   const visit = (past?.[0] as unknown as ApptRow) ?? null
   lastVisit.value = visit
   apptLoading.value = false
   const payment = visit ? await resolvePaymentFor(visit.id) : null
   // A reload may have landed a different last visit while this one resolved.
-  if (lastVisit.value !== visit) return
+  // Compared by run, not by object: the ref hands back a reactive proxy, so
+  // `lastVisit.value !== visit` held every time and the footnote never came.
+  if (run !== apptRun) return
   lastVisitPayment.value = payment
   footnoteLoading.value = false
 }

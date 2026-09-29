@@ -135,28 +135,17 @@ async function loadPatients() {
   const ids = patients.value.map((p) => p.id)
   if (ids.length > 0) {
     enriching.value = true
-    const [{ data: upcoming }, { data: plans }, { data: completedAppts }, { data: contactNumbers }, { data: balances }] = await Promise.all([
-      supabase
-        .from('appointments')
-        .select('patient_id, starts_at')
-        .eq('status', 'booked')
-        .gt('starts_at', new Date().toISOString())
-        .in('patient_id', ids)
-        .order('starts_at'),
+    const [{ data: visitSummary }, { data: plans }, { data: contactNumbers }, { data: balances }] = await Promise.all([
+      // Last visit, completed count and next booking, already reduced to one
+      // row per patient. These used to come back as every visit of every
+      // patient on the page, which PostgREST cuts off at 1000 rows without
+      // saying so -- see the migration that adds this function.
+      supabase.rpc('patient_list_visit_summary', { p_patient_ids: ids }),
       supabase
         .from('care_plans')
         .select('patient_id, name, total_visits, created_at')
         .in('patient_id', ids)
         .order('created_at', { ascending: false }),
-      // starts_at as well as the id: the same rows give both the completed
-      // count the care-plan progress needs and the date of the last visit,
-      // so the new column costs no extra request.
-      supabase
-        .from('appointments')
-        .select('patient_id, starts_at')
-        .eq('status', 'completed')
-        .in('patient_id', ids)
-        .order('starts_at', { ascending: false }),
       supabase
         .from('patient_contact_numbers')
         .select('patient_id, number, country_code, is_whatsapp')
@@ -171,18 +160,14 @@ async function loadPatients() {
     balanceByPatient.value = balByPatient
 
     const nextByPatient: Record<string, string> = {}
-    for (const a of upcoming ?? []) {
-      if (!nextByPatient[a.patient_id]) nextByPatient[a.patient_id] = a.starts_at
-    }
-    nextAppointmentByPatient.value = nextByPatient
-
     const completedByPatient: Record<string, number> = {}
     const lastByPatient: Record<string, string> = {}
-    for (const a of completedAppts ?? []) {
-      completedByPatient[a.patient_id] = (completedByPatient[a.patient_id] ?? 0) + 1
-      // Ordered newest first above, so the first one seen per patient is it.
-      if (!lastByPatient[a.patient_id]) lastByPatient[a.patient_id] = a.starts_at
+    for (const v of visitSummary ?? []) {
+      if (v.next_visit_at) nextByPatient[v.patient_id] = v.next_visit_at
+      if (v.last_visit_at) lastByPatient[v.patient_id] = v.last_visit_at
+      completedByPatient[v.patient_id] = v.completed_count
     }
+    nextAppointmentByPatient.value = nextByPatient
     lastVisitByPatient.value = lastByPatient
     const planByPatient: Record<string, CarePlanInfo> = {}
     for (const p of plans ?? []) {

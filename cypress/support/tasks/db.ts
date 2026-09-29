@@ -659,6 +659,35 @@ async function createPayment(opts: {
  * `count` small cash payments for one patient in a single insert -- a ledger
  * longer than one unpaged select() returns (Supabase stops at 1000 rows).
  */
+/**
+ * `count` completed visits for one patient, one a day going back from
+ * `endingAt`, in a single insert -- a history longer than one unpaged
+ * select() returns (PostgREST stops at 1000 rows). With `carePlanVisits`,
+ * also a care plan of that many visits, so the list shows its progress.
+ */
+async function seedCompletedVisits(opts: { accountId: string; clinicId: string; patientId: string; count: number; endingAt: string; carePlanVisits?: number }) {
+  const end = new Date(opts.endingAt).getTime()
+  assertOk(
+    await admin.from('appointments').insert(
+      Array.from({ length: opts.count }, (_, i) => {
+        const start = new Date(end - i * 86400000)
+        return {
+          account_id: opts.accountId,
+          clinic_id: opts.clinicId,
+          patient_id: opts.patientId,
+          starts_at: start.toISOString(),
+          ends_at: new Date(start.getTime() + 30 * 60000).toISOString(),
+          status: 'completed',
+        }
+      }),
+    ),
+  )
+  if (opts.carePlanVisits) {
+    assertOk(await admin.from('care_plans').insert({ account_id: opts.accountId, patient_id: opts.patientId, name: 'Plan largo', total_visits: opts.carePlanVisits }))
+  }
+  return { ok: true }
+}
+
 async function seedManyPayments(opts: { accountId: string; patientId: string; count: number; amountCents?: number }) {
   assertOk(
     await admin
@@ -3295,6 +3324,7 @@ export const dbTasks = {
   'db:createInvoice': createInvoice,
   'db:createPayment': createPayment,
   'db:seedManyPayments': seedManyPayments,
+  'db:seedCompletedVisits': seedCompletedVisits,
   'db:nextInvoiceNumber': nextInvoiceNumber,
   'db:deleteInvoice': deleteInvoice,
   'db:paymentById': paymentById,

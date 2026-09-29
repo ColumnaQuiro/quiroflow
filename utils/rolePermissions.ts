@@ -395,8 +395,8 @@ export function permissionGroups(t: T): PermissionGroup[] {
           key: 'clinic_config',
           label: t('Clinic and diary', 'Clínica y agenda'),
           description: t(
-            'Locations, appointment types, resources, online booking, appointment policies, modalities and new-patient fields.',
-            'Sedes, tipos de cita, recursos, reserva online, políticas de citas, modalidades y campos de paciente nuevo.',
+            'Locations, appointment types, resources, online booking, appointment policies and new-patient fields.',
+            'Sedes, tipos de cita, recursos, reserva online, políticas de citas y campos de paciente nuevo.',
           ),
         },
         {

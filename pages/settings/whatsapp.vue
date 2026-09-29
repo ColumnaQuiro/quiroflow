@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { Ref } from 'vue'
 import type { TablesUpdate } from '~/types/database.types'
 
 const supabase = useSupabaseClient()
@@ -105,22 +106,49 @@ async function loadTemplates() {
   }
 }
 
-function useForConfirmation(t: Template) {
-  confirmationTemplateName.value = t.name
-  confirmationTemplateLanguage.value = t.language
+// --- the five messages, one table ---
+// Each message QuiroFlow can start a WhatsApp conversation with, and the
+// approved template it uses. This replaces a name/language pair of text
+// fields per message plus a row of "Use for …" buttons on each template --
+// which had no button for the new-lead alert at all.
+interface TemplateUse {
+  key: string
+  title: string
+  when: string
+  name: Ref<string>
+  lang: Ref<string>
 }
-function useForRecall(t: Template) {
-  recallTemplateName.value = t.name
-  recallTemplateLanguage.value = t.language
+const USES = computed<TemplateUse[]>(() => [
+  { key: 'confirmation', title: t('Appointment confirmation', 'Confirmación de cita'), when: t('When an appointment is booked. A patient’s own language is used when it has an approved variant.', 'Al reservar una cita. Se usa el idioma del paciente si tiene una variante aprobada.'), name: confirmationTemplateName, lang: confirmationTemplateLanguage },
+  { key: 'reminder', title: t('Appointment reminder', 'Recordatorio de cita'), when: t('Before the appointment, as set in Communication › General.', 'Antes de la cita, según Comunicación › General.'), name: reminderTemplateName, lang: reminderTemplateLanguage },
+  { key: 'recall', title: t('Recall', 'Revisión'), when: t('Pre-selected when staff send a recall; they can switch it each time.', 'Preseleccionada al enviar una revisión; se puede cambiar cada vez.'), name: recallTemplateName, lang: recallTemplateLanguage },
+  { key: 'staff-booking', title: t('New booking alert (to staff)', 'Aviso de reserva (al personal)'), when: t('To Online Booking’s notify number, when it has not written to the clinic in 24 h.', 'Al número de aviso de Reserva online, si no ha escrito a la clínica en 24 h.'), name: staffNotifyTemplateName, lang: staffNotifyTemplateLanguage },
+  { key: 'staff-lead', title: t('New lead alert (to staff)', 'Aviso de lead (al personal)'), when: t('To Communication › General’s notify number. Fills name, phone, email, source.', 'Al número de aviso de Comunicación › General. Rellena nombre, teléfono, email y origen.'), name: newLeadNotifyTemplateName, lang: newLeadNotifyTemplateLanguage },
+])
+const chosenCount = computed(() => USES.value.filter((u) => u.name.value.trim()).length)
+
+function useKey(name: string, lang: string) {
+  return name ? `${name}|${lang}` : ''
 }
-function useForReminder(t: Template) {
-  reminderTemplateName.value = t.name
-  reminderTemplateLanguage.value = t.language
+function pickTemplate(use: TemplateUse, value: string) {
+  const [name = '', lang = 'es'] = value.split('|')
+  use.name.value = name
+  use.lang.value = name ? lang : 'es'
 }
-function useForStaffNotify(t: Template) {
-  staffNotifyTemplateName.value = t.name
-  staffNotifyTemplateLanguage.value = t.language
+// What the chosen template actually says, from Meta's list -- so a clinic
+// picks by the words a patient will read, not by an internal name.
+function templateBody(name: string, lang: string) {
+  return templates.value.find((x) => x.name === name && x.language === lang)?.bodyText ?? ''
 }
+// A template stored before it was renamed or deleted at Meta still shows,
+// flagged, rather than silently vanishing from the picker.
+function isKnownTemplate(name: string, lang: string) {
+  return templates.value.some((x) => x.name === name && x.language === lang)
+}
+
+const connected = computed(() => !!(phoneNumberId.value && businessAccountId.value && hasStoredToken.value))
+
+const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand'
 
 // Each id routes inbound messages to exactly one account, so the database
 // refuses one that another account already holds
@@ -194,269 +222,181 @@ async function save() {
 <template>
   <div class="flex h-full flex-col">
     <PageHeader :title="t('WhatsApp', 'WhatsApp')">
-      <UiBtn variant="primary" :disabled="saving || loading" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save changes', 'Guardar cambios') }}</UiBtn>
+      <UiBtn variant="primary" data-cy="whatsapp-save" :disabled="saving || loading" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save changes', 'Guardar cambios') }}</UiBtn>
     </PageHeader>
     <div class="flex-1 overflow-y-auto">
       <div class="flex gap-8 p-6">
         <SettingsNav />
-        <div class="min-w-0 max-w-[660px] flex-1">
-          <!-- The one-click route first, because it is the one almost every
-          clinic should take. The manual fields below stay exactly where they
-          were: a clinic already connected that way (Columnaquiro) must not
-          have its setup moved or hidden, and connecting is not the same act
-          as reconfiguring templates. -->
-          <SettingsWhatsAppConnectCard
-            class="mb-5"
-            :connected-waba-id="businessAccountId || null"
-            @connected="load"
-          />
-
-          <p class="text-[13px] leading-relaxed text-ink-muted2">
-            <!-- Reworded once Connect existed: this paragraph used to be the
-            only instruction on the page, and left as it was it flatly
-            contradicted the card above it ("nothing to copy across"). It is
-            now what it actually is -- the manual alternative, for a clinic
-            that already runs its own Meta app. -->
-            {{ t("Already have your own Meta app? You can set it up by hand instead: a Phone Number ID, a WhatsApp Business Account ID and a permanent access token, plus at least one approved message template.", '¿Ya tienes tu propia app de Meta? Puedes configurarlo a mano: un ID de número de teléfono, un ID de cuenta de WhatsApp Business y un token de acceso permanente, además de al menos una plantilla de mensaje aprobada.') }}
+        <div class="flex min-w-0 max-w-[940px] flex-1 flex-col gap-4" data-cy="whatsapp-settings" :data-ready="loading ? undefined : 'true'">
+          <p class="text-[13.5px] text-ink-muted">
+            {{ t('Your clinic’s WhatsApp number: what QuiroFlow sends from it, and the other Meta accounts that use the same connection.', 'El número de WhatsApp de tu clínica: lo que QuiroFlow envía desde él y las otras cuentas de Meta que usan la misma conexión.') }}
           </p>
 
-          <div v-if="loading" class="mt-5 space-y-3">
-            <div v-for="i in 4" :key="i" class="space-y-1.5">
-              <UiSkeleton class="h-3 w-40 rounded-ctlSm" />
-              <UiSkeleton class="h-8 w-[230px] rounded-ctl" />
-            </div>
-          </div>
-          <form v-else class="mt-5 space-y-3" @submit.prevent="save">
-            <SettingsFieldRow :label="t('Phone Number ID', 'ID del número de teléfono')">
-              <input v-model="phoneNumberId" type="text" class="h-8 w-[230px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20" />
-            </SettingsFieldRow>
+          <!-- The one-click route first: it is the one almost every clinic should take. -->
+          <SettingsWhatsAppConnectCard :connected-waba-id="businessAccountId || null" @connected="load" />
 
-            <SettingsFieldRow :label="t('WhatsApp Business Account ID', 'ID de la cuenta de WhatsApp Business')">
-              <input v-model="businessAccountId" type="text" class="h-8 w-[230px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20" />
-            </SettingsFieldRow>
-
-            <SettingsFieldRow :label="t('Access token', 'Token de acceso')" :helper="t('From your Meta Business account.', 'De tu cuenta de Meta Business.')">
-              <input
-                v-model="accessToken"
-                type="password"
-                autocomplete="off"
-                :placeholder="hasStoredToken ? '••••••••••••••••••••' : ''"
-                class="h-8 w-[230px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
-              />
-            </SettingsFieldRow>
-
-            <SettingsFieldRow
-              :label="t('Meta App Secret', 'Secreto de la app de Meta')"
-              :helper="t('Meta App dashboard → Settings → Basic → App Secret. Required so incoming webhooks can be verified as genuinely from Meta — without it, replies and delivery status are ignored.', 'Panel de Meta App → Configuración → Básica → Secreto de la app. Necesario para verificar que los webhooks entrantes vienen realmente de Meta — sin él, las respuestas y el estado de entrega se ignoran.')"
-            >
-              <div class="flex items-center gap-2">
-                <input
-                  v-model="appSecret"
-                  type="password"
-                  autocomplete="off"
-                  :placeholder="hasStoredAppSecret ? '••••••••••••••••••••' : ''"
-                  class="h-8 w-[230px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
-                />
-                <UiPill v-if="hasStoredAppSecret" tone="success">{{ t('Stored', 'Guardado') }}</UiPill>
-                <UiPill v-else tone="warning">{{ t('Not set', 'Sin configurar') }}</UiPill>
+          <template v-if="loading">
+            <UiSkeleton class="h-24 w-full rounded-card" />
+            <UiSkeleton class="h-72 w-full rounded-card" />
+          </template>
+          <template v-else>
+            <!-- Where things stand, as facts rather than fields. -->
+            <section :aria-label="t('Status', 'Estado')" class="grid grid-cols-1 overflow-hidden rounded-card border border-line bg-surface sm:grid-cols-2" data-cy="whatsapp-status">
+              <div class="flex gap-3 border-line-row px-[18px] py-3.5 max-sm:border-b sm:border-r">
+                <span class="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full" :class="connected ? 'bg-success-bg text-success-text' : 'bg-warning-bg text-warning-text'" aria-hidden="true">
+                  <svg v-if="connected" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7" /></svg>
+                  <svg v-else width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 7v6M12 17h.01" /></svg>
+                </span>
+                <span class="flex flex-col gap-0.5">
+                  <strong class="text-[13.5px] text-ink-900">{{ connected ? t('Messages can be sent', 'Se pueden enviar mensajes') : t('Not connected yet', 'Aún sin conectar') }}</strong>
+                  <span class="text-[12.5px] text-ink-muted">{{ connected ? t(`Business account ${businessAccountId}`, `Cuenta de empresa ${businessAccountId}`) : t('Connect above, or set it up by hand below.', 'Conéctalo arriba, o configúralo a mano abajo.') }}</span>
+                </span>
               </div>
-            </SettingsFieldRow>
-
-            <SettingsFieldRow
-              :label="t('Default confirmation template', 'Plantilla de confirmación predeterminada')"
-              :helper="t('Used automatically for appointment confirmations. If the patient\'s preferred language has its own approved variant, that one is used instead.', 'Se usa automáticamente para las confirmaciones de cita. Si el idioma preferido del paciente tiene su propia variante aprobada, se usa esa en su lugar.')"
-              align="top"
-            >
-              <div class="flex gap-2">
-                <input
-                  v-model="confirmationTemplateName"
-                  type="text"
-                  placeholder="template_name"
-                  class="h-8 w-[152px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
-                />
-                <input
-                  v-model="confirmationTemplateLanguage"
-                  type="text"
-                  placeholder="es"
-                  class="h-8 w-[70px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
-                />
+              <div class="flex gap-3 px-[18px] py-3.5">
+                <span class="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full" :class="chosenCount === USES.length ? 'bg-success-bg text-success-text' : 'bg-warning-bg text-warning-text'" aria-hidden="true">
+                  <svg v-if="chosenCount === USES.length" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7" /></svg>
+                  <svg v-else width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 7v6M12 17h.01" /></svg>
+                </span>
+                <span class="flex flex-col gap-0.5">
+                  <strong class="text-[13.5px] text-ink-900" data-cy="whatsapp-templates-count">{{ t(`${chosenCount} of ${USES.length} templates chosen`, `${chosenCount} de ${USES.length} plantillas elegidas`) }}</strong>
+                  <span class="text-[12.5px] text-ink-muted">{{ chosenCount === USES.length ? t('Every message has one.', 'Cada mensaje tiene la suya.') : t('A message without one is not sent.', 'Un mensaje sin plantilla no se envía.') }}</span>
+                </span>
               </div>
-            </SettingsFieldRow>
+            </section>
 
-            <SettingsFieldRow
-              :label="t('Default recall template', 'Plantilla de recordatorio de revisión predeterminada')"
-              :helper="t('Pre-selected when sending a recall, but the picker stays visible so staff can switch it per recall.', 'Preseleccionada al enviar un recordatorio de revisión, pero el selector sigue visible para que el personal pueda cambiarla en cada envío.')"
-              align="top"
-            >
-              <div class="flex gap-2">
-                <input
-                  v-model="recallTemplateName"
-                  type="text"
-                  placeholder="template_name"
-                  class="h-8 w-[152px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
-                />
-                <input
-                  v-model="recallTemplateLanguage"
-                  type="text"
-                  placeholder="es"
-                  class="h-8 w-[70px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
-                />
+            <!-- Templates: one table, one place to change each -->
+            <section aria-labelledby="h-templates" class="overflow-hidden rounded-card border border-line bg-surface">
+              <div class="flex flex-wrap items-start gap-3 px-[18px] pb-3 pt-4">
+                <div class="min-w-[240px] flex-1">
+                  <h2 id="h-templates" class="text-[16px] font-bold text-ink-900">{{ t('Message templates', 'Plantillas de mensaje') }}</h2>
+                  <p class="mt-1 text-[13px] leading-snug text-ink-muted">{{ t('WhatsApp only lets a business start a conversation with a template Meta has approved. Pick which one each message uses.', 'WhatsApp solo deja a una empresa iniciar una conversación con una plantilla aprobada por Meta. Elige cuál usa cada mensaje.') }}</p>
+                </div>
+                <UiBtn :disabled="loadingTemplates || !hasStoredToken || !businessAccountId" data-cy="whatsapp-templates-refresh" @click="loadTemplates">
+                  {{ loadingTemplates ? t('Loading…', 'Cargando…') : t('Refresh from Meta', 'Actualizar desde Meta') }}
+                </UiBtn>
               </div>
-            </SettingsFieldRow>
+              <p v-if="templatesError" class="border-t border-line-row px-[18px] py-2.5 text-[13px] font-semibold text-danger-text">{{ templatesError }}</p>
 
-            <SettingsFieldRow
-              :label="t('Default reminder template', 'Plantilla de recordatorio predeterminada')"
-              :helper="t('Used automatically for appointment reminders. If the patient\'s preferred language has its own approved variant, that one is used instead. Enable/disable reminders and pick how far ahead they send in Settings → Communication → General.', 'Se usa automáticamente para los recordatorios de cita. Si el idioma preferido del paciente tiene su propia variante aprobada, se usa esa en su lugar. Activa/desactiva los recordatorios y elige con cuánta antelación se envían en Ajustes → Comunicación → General.')"
-              align="top"
-            >
-              <div class="flex gap-2">
-                <input
-                  v-model="reminderTemplateName"
-                  type="text"
-                  placeholder="template_name"
-                  class="h-8 w-[152px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
-                />
-                <input
-                  v-model="reminderTemplateLanguage"
-                  type="text"
-                  placeholder="es"
-                  class="h-8 w-[70px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
-                />
-              </div>
-            </SettingsFieldRow>
-
-            <SettingsFieldRow
-              label="Staff notification template"
-              helper="Used for the 'new online booking' ping to Settings → Online Booking's notify number when it's outside WhatsApp's 24h free-form window (i.e. that number hasn't messaged your clinic recently). Leave blank to only send free-form, which silently fails outside that window."
-              align="top"
-            >
-              <div class="flex gap-2">
-                <input
-                  v-model="staffNotifyTemplateName"
-                  type="text"
-                  placeholder="template_name"
-                  class="h-8 w-[152px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
-                />
-                <input
-                  v-model="staffNotifyTemplateLanguage"
-                  type="text"
-                  placeholder="es"
-                  class="h-8 w-[70px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
-                />
-              </div>
-            </SettingsFieldRow>
-
-            <!-- Instagram rides the same Meta app and the same webhook, so
-            there is nothing new to verify and no second app secret -- only
-            which account to receive and send as. Here rather than on a screen
-            of its own for that reason: it is the same connection. -->
-            <SettingsFieldRow
-              label="Instagram account ID"
-              helper="Your Instagram professional account id. DMs to it arrive in the Inbox beside WhatsApp. Leave blank to keep Instagram disconnected."
-              align="top"
-            >
-              <input
-                v-model="instagramUserId"
-                type="text"
-                placeholder="17841400000000000"
-                data-test="instagram-user-id"
-                class="h-8 w-[240px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
-              />
-            </SettingsFieldRow>
-
-            <SettingsFieldRow
-              label="Instagram access token"
-              helper="Page access token with instagram_manage_messages. Needed to send replies; receiving works without it."
-              align="top"
-            >
-              <input
-                v-model="instagramAccessToken"
-                type="password"
-                placeholder="EAA…"
-                data-test="instagram-access-token"
-                class="h-8 w-[240px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
-              />
-            </SettingsFieldRow>
-
-            <!-- Reading only. The token asked for is ads_read, so a token
-            that leaks cannot spend anybody's money. -->
-            <SettingsFieldRow
-              label="Meta ad account ID"
-              helper="Lets Growth → Dashboard read what you spent, instead of you typing it each month. With or without the act_ prefix. Euro accounts only for now."
-              align="top"
-            >
-              <input
-                v-model="metaAdsAccountId"
-                type="text"
-                placeholder="act_1234567890"
-                data-test="meta-ads-account-id"
-                class="h-8 w-[240px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
-              />
-            </SettingsFieldRow>
-
-            <SettingsFieldRow
-              label="Meta Ads read token"
-              helper="A long-lived token with ads_read for that account. Nothing here writes to Meta Ads."
-              align="top"
-            >
-              <input
-                v-model="metaAdsAccessToken"
-                type="password"
-                placeholder="EAA…"
-                data-test="meta-ads-token"
-                class="h-8 w-[240px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
-              />
-            </SettingsFieldRow>
-
-            <SettingsFieldRow
-              label="New lead notification template"
-              helper="Used for the 'new lead' ping to Settings → Communication → General's notify number when it's outside WhatsApp's 24h free-form window. Variables fill in this order: name, phone, email, source, reference. Leave blank to only send free-form, which silently fails outside that window."
-              align="top"
-            >
-              <div class="flex gap-2">
-                <input
-                  v-model="newLeadNotifyTemplateName"
-                  type="text"
-                  placeholder="template_name"
-                  class="h-8 w-[152px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
-                />
-                <input
-                  v-model="newLeadNotifyTemplateLanguage"
-                  type="text"
-                  placeholder="es"
-                  class="h-8 w-[70px] rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
-                />
-              </div>
-            </SettingsFieldRow>
-
-            <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-              <div class="flex items-center justify-between">
-                <p class="text-[13.5px] font-[560] text-ink-700">{{ t('Approved templates', 'Plantillas aprobadas') }}</p>
-                <button type="button" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover" @click="loadTemplates">
-                  {{ loadingTemplates ? t('Loading…', 'Cargando…') : t('Load from Meta', 'Cargar desde Meta') }}
-                </button>
-              </div>
-              <p v-if="templatesError" class="mt-1 text-[12.5px] text-danger-text">{{ templatesError }}</p>
-              <ul v-if="templates.length > 0" class="mt-3 divide-y divide-line-row rounded-ctl border border-line">
-                <li v-for="tpl in templates" :key="tpl.name + tpl.language" class="flex items-center justify-between px-3 py-2 text-[13px]">
-                  <div>
-                    <span class="font-medium text-ink-700">{{ tpl.name }}</span>
-                    <span class="ml-1 text-[12px] text-ink-faint2">{{ tpl.language }} &middot; {{ tpl.category }}</span>
+              <div v-for="u in USES" :key="u.key" :data-template-use="u.key" class="grid grid-cols-1 items-start gap-2 border-t border-line-row px-[18px] py-3 md:grid-cols-[1fr_1.15fr] md:gap-4">
+                <div class="flex flex-col gap-0.5">
+                  <strong :id="`use-${u.key}`" class="text-[14.5px] text-ink-900">{{ u.title }}</strong>
+                  <span class="text-[12.5px] leading-snug text-ink-muted">{{ u.when }}</span>
+                </div>
+                <div class="flex min-w-0 flex-col gap-1.5">
+                  <!-- Picked from Meta's list once it has loaded; typed by hand when it cannot be. -->
+                  <select
+                    v-if="templates.length > 0"
+                    :value="useKey(u.name.value, u.lang.value)"
+                    :aria-labelledby="`use-${u.key}`"
+                    data-cy="whatsapp-template-select"
+                    :class="[inputClass, 'w-full']"
+                    @change="pickTemplate(u, ($event.target as HTMLSelectElement).value)"
+                  >
+                    <option value="">{{ t('None -- not sent', 'Ninguna -- no se envía') }}</option>
+                    <option v-if="u.name.value && !isKnownTemplate(u.name.value, u.lang.value)" :value="useKey(u.name.value, u.lang.value)">
+                      {{ u.name.value }} · {{ u.lang.value }} · {{ t('not in Meta’s list', 'no está en Meta') }}
+                    </option>
+                    <option v-for="tpl in templates" :key="tpl.name + tpl.language" :value="useKey(tpl.name, tpl.language)">{{ tpl.name }} · {{ tpl.language }} · {{ tpl.category }}</option>
+                  </select>
+                  <div v-else class="flex gap-2">
+                    <input v-model="u.name.value" type="text" placeholder="template_name" :aria-label="t(`${u.title}: template name`, `${u.title}: nombre de la plantilla`)" data-cy="whatsapp-template-name" :class="[inputClass, 'min-w-0 flex-1 font-mono text-[13px]']" />
+                    <input v-model="u.lang.value" type="text" placeholder="es" :aria-label="t(`${u.title}: language`, `${u.title}: idioma`)" :class="[inputClass, 'w-16 text-center']" />
                   </div>
-                  <div class="flex gap-3 text-[12px] font-medium">
-                    <button type="button" class="text-brand-text hover:text-brand-hover" @click="useForConfirmation(tpl)">{{ t('Use for confirmation', 'Usar para confirmación') }}</button>
-                    <button type="button" class="text-brand-text hover:text-brand-hover" @click="useForRecall(tpl)">{{ t('Use for recall', 'Usar para revisión') }}</button>
-                    <button type="button" class="text-brand-text hover:text-brand-hover" @click="useForReminder(tpl)">{{ t('Use for reminder', 'Usar para recordatorio') }}</button>
-                    <button type="button" class="text-brand-text hover:text-brand-hover" @click="useForStaffNotify(tpl)">{{ t('Use for staff notify', 'Usar para aviso al personal') }}</button>
+                  <p v-if="templateBody(u.name.value, u.lang.value)" class="line-clamp-2 text-[12.5px] leading-snug text-ink-500">“{{ templateBody(u.name.value, u.lang.value) }}”</p>
+                </div>
+              </div>
+            </section>
+
+            <!-- Instagram rides the same Meta app and webhook: only which account to receive and send as. -->
+            <section aria-labelledby="h-ig" class="overflow-hidden rounded-card border border-line bg-surface">
+              <div class="flex flex-wrap items-center gap-3 px-[18px] pb-1 pt-4">
+                <h2 id="h-ig" class="flex-1 text-[16px] font-bold text-ink-900">{{ t('Instagram messages', 'Mensajes de Instagram') }}</h2>
+                <UiPill v-if="instagramUserId && instagramAccessToken" tone="success" dot>{{ t('Receiving and replying', 'Recibe y responde') }}</UiPill>
+                <UiPill v-else-if="instagramUserId" tone="warning" dot>{{ t('Receiving only', 'Solo recibe') }}</UiPill>
+                <UiPill v-else tone="neutral">{{ t('Not connected', 'Sin conectar') }}</UiPill>
+              </div>
+              <p class="px-[18px] pb-2 text-[13px] text-ink-muted">{{ t('DMs to your professional account arrive in the Inbox beside WhatsApp. Leave it empty to keep Instagram disconnected.', 'Los mensajes a tu cuenta profesional llegan a la Bandeja junto a WhatsApp. Déjalo vacío para no conectar Instagram.') }}</p>
+              <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
+                <label for="ig-id" class="min-w-[220px] flex-1 text-[14.5px] font-bold text-ink-900">{{ t('Instagram account ID', 'ID de la cuenta de Instagram') }}</label>
+                <input id="ig-id" v-model="instagramUserId" type="text" placeholder="17841400000000000" data-test="instagram-user-id" :class="[inputClass, 'w-full font-mono text-[13px] sm:w-[300px]']" />
+              </div>
+              <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
+                <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
+                  <label for="ig-token" class="text-[14.5px] font-bold text-ink-900">{{ t('Access token', 'Token de acceso') }}</label>
+                  <span class="text-[13px] text-ink-500">{{ t('A Page token with instagram_manage_messages. Only needed to reply.', 'Un token de página con instagram_manage_messages. Solo hace falta para responder.') }}</span>
+                </div>
+                <input id="ig-token" v-model="instagramAccessToken" type="password" autocomplete="off" placeholder="EAA…" data-test="instagram-access-token" :class="[inputClass, 'w-full sm:w-[300px]']" />
+              </div>
+            </section>
+
+            <!-- Reading only: the token asked for is ads_read, so a leaked one cannot spend money. -->
+            <section aria-labelledby="h-ads" class="overflow-hidden rounded-card border border-line bg-surface">
+              <div class="flex flex-wrap items-center gap-3 px-[18px] pb-1 pt-4">
+                <h2 id="h-ads" class="flex-1 text-[16px] font-bold text-ink-900">{{ t('Meta Ads spend', 'Gasto en Meta Ads') }}</h2>
+                <UiPill v-if="metaAdsAccountId && metaAdsAccessToken" tone="success" dot>{{ t('Connected', 'Conectado') }}</UiPill>
+                <UiPill v-else tone="neutral">{{ t('Not connected', 'Sin conectar') }}</UiPill>
+              </div>
+              <p class="px-[18px] pb-2 text-[13px] text-ink-muted">{{ t('Lets Growth read what you spent on Meta ads instead of you typing it each month. Read-only: nothing here can spend money.', 'Permite a Crecimiento leer lo que gastaste en Meta en lugar de escribirlo cada mes. Solo lectura: nada aquí puede gastar dinero.') }}</p>
+              <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
+                <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
+                  <label for="ads-id" class="text-[14.5px] font-bold text-ink-900">{{ t('Ad account ID', 'ID de la cuenta publicitaria') }}</label>
+                  <span class="text-[13px] text-ink-500">{{ t('With or without act_. Euro accounts only for now.', 'Con o sin act_. De momento solo cuentas en euros.') }}</span>
+                </div>
+                <input id="ads-id" v-model="metaAdsAccountId" type="text" placeholder="act_1234567890" data-test="meta-ads-account-id" :class="[inputClass, 'w-full font-mono text-[13px] sm:w-[300px]']" />
+              </div>
+              <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
+                <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
+                  <label for="ads-token" class="text-[14.5px] font-bold text-ink-900">{{ t('Read token', 'Token de lectura') }}</label>
+                  <span class="text-[13px] text-ink-500">{{ t('A long-lived token with ads_read for that account.', 'Un token de larga duración con ads_read para esa cuenta.') }}</span>
+                </div>
+                <input id="ads-token" v-model="metaAdsAccessToken" type="password" autocomplete="off" placeholder="EAA…" data-test="meta-ads-token" :class="[inputClass, 'w-full sm:w-[300px]']" />
+              </div>
+            </section>
+
+            <!-- The manual route, folded but never gone: a clinic set up by hand (Columnaquiro) keeps it.
+                 Open by default until something is connected, so a clinic without the button still finds it. -->
+            <section class="overflow-hidden rounded-card border border-line bg-surface">
+              <details :open="!businessAccountId" class="group" data-cy="whatsapp-manual">
+                <summary class="flex min-h-[52px] cursor-pointer list-none items-center gap-2 px-[18px] text-[14px] font-semibold text-ink-500 hover:bg-surface-subtle">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="transition-transform group-open:rotate-90"><path d="M9 6l6 6-6 6" /></svg>
+                  {{ t('Already have your own Meta app? Set it up by hand', '¿Ya tienes tu propia app de Meta? Configúralo a mano') }}
+                </summary>
+                <p class="px-[18px] pb-2 text-[13px] leading-snug text-ink-muted">
+                  {{ t('A Phone Number ID, a WhatsApp Business Account ID and a permanent access token from your Meta app, plus at least one approved message template.', 'Un ID de número de teléfono, un ID de cuenta de WhatsApp Business y un token de acceso permanente de tu app de Meta, además de al menos una plantilla aprobada.') }}
+                </p>
+                <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
+                  <label for="wa-phone" class="min-w-[220px] flex-1 text-[14.5px] font-bold text-ink-900">{{ t('Phone Number ID', 'ID del número de teléfono') }}</label>
+                  <input id="wa-phone" v-model="phoneNumberId" type="text" :class="[inputClass, 'w-full font-mono text-[13px] sm:w-[300px]']" />
+                </div>
+                <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
+                  <label for="wa-waba" class="min-w-[220px] flex-1 text-[14.5px] font-bold text-ink-900">{{ t('WhatsApp Business Account ID', 'ID de la cuenta de WhatsApp Business') }}</label>
+                  <input id="wa-waba" v-model="businessAccountId" type="text" :class="[inputClass, 'w-full font-mono text-[13px] sm:w-[300px]']" />
+                </div>
+                <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
+                  <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
+                    <label for="wa-token" class="text-[14.5px] font-bold text-ink-900">{{ t('Access token', 'Token de acceso') }}</label>
+                    <span class="text-[13px] text-ink-500">{{ t('From your Meta Business account.', 'De tu cuenta de Meta Business.') }}</span>
                   </div>
-                </li>
-              </ul>
-            </div>
-
-          </form>
-
-          <div class="mt-6 rounded-card border border-line bg-surface p-4 shadow-card">
-            <h3 class="text-[13.5px] font-[560] text-ink-700">{{ t('Delivery & reply tracking', 'Seguimiento de entrega y respuesta') }}</h3>
+                  <input id="wa-token" v-model="accessToken" type="password" autocomplete="off" :placeholder="hasStoredToken ? '••••••••••••••••••••' : ''" :class="[inputClass, 'w-full sm:w-[300px]']" />
+                </div>
+                <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
+                  <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
+                    <label for="wa-secret" class="text-[14.5px] font-bold text-ink-900">{{ t('Meta App Secret', 'Secreto de la app de Meta') }}</label>
+                    <span class="text-[13px] leading-snug text-ink-500">{{ t('Meta App dashboard → Settings → Basic → App Secret. Needed so incoming webhooks can be verified as genuinely from Meta; without it, replies and delivery status are ignored.', 'Panel de la app de Meta → Configuración → Básica → Secreto de la app. Necesario para verificar que los webhooks vienen de Meta; sin él, se ignoran las respuestas y el estado de entrega.') }}</span>
+                  </div>
+                  <div class="flex w-full items-center gap-2 sm:w-[300px]">
+                    <input id="wa-secret" v-model="appSecret" type="password" autocomplete="off" :placeholder="hasStoredAppSecret ? '••••••••••••••••••••' : ''" :class="[inputClass, 'min-w-0 flex-1']" />
+                    <UiPill v-if="hasStoredAppSecret" tone="success">{{ t('Stored', 'Guardado') }}</UiPill>
+                    <UiPill v-else tone="warning">{{ t('Not set', 'Sin configurar') }}</UiPill>
+                  </div>
+                </div>
+              </details>
+              <details class="group border-t border-line" data-cy="whatsapp-webhook">
+                <summary class="flex min-h-[52px] cursor-pointer list-none items-center gap-2 px-[18px] text-[14px] font-semibold text-ink-500 hover:bg-surface-subtle">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="transition-transform group-open:rotate-90"><path d="M9 6l6 6-6 6" /></svg>
+                  {{ t('Delivery and reply tracking: the webhook', 'Seguimiento de entrega y respuesta: el webhook') }}
+                </summary>
+                <div class="px-[18px] pb-4">
             <p class="mt-1 text-[12.5px] leading-relaxed text-ink-muted2">
               {{ t('Optional. Feeds the "Scheduled Reminders" report — whether a message actually delivered (vs. a bad number or a recipient with no WhatsApp) and whether a patient replied to confirm or reschedule. Meta only allows', 'Opcional. Alimenta el informe "Recordatorios Programados" — si un mensaje realmente se entregó (frente a un número incorrecto o un destinatario sin WhatsApp) y si un paciente respondió para confirmar o reprogramar. Meta solo permite') }}
               <strong>{{ t('one', 'una') }}</strong> {{ t('webhook URL per WhatsApp Business number, so if you already point it at another tool (n8n, Zapier, your own backend...), you have two options — no need to give that up:', 'URL de webhook por número de WhatsApp Business, así que si ya lo tienes apuntando a otra herramienta (n8n, Zapier, tu propio backend...), tienes dos opciones — no hace falta renunciar a ello:') }}
@@ -493,7 +433,10 @@ async function save() {
             <p class="mt-2 text-[12px] text-ink-faint">
               {{ t('Skip this entirely and confirmations still send fine — you\'ll just see "pending" stay pending in the report instead of moving to confirmed/reschedule automatically.', 'Omite esto por completo y las confirmaciones seguirán enviándose bien — solo verás que "pendiente" se queda pendiente en el informe en lugar de pasar automáticamente a confirmado/reprogramado.') }}
             </p>
-          </div>
+                </div>
+              </details>
+            </section>
+          </template>
         </div>
       </div>
     </div>

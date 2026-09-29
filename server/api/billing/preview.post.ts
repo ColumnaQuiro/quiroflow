@@ -1,5 +1,6 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
+import { verifactuFeeItemFor } from '~/server/utils/verifactuFee'
 import { retrieveChangeableSubscription, stripeForPlatformBilling } from '~/server/utils/platformBillingStripe'
 
 export interface PreviewResult {
@@ -93,6 +94,9 @@ export default defineEventHandler(async (event): Promise<PreviewResult> => {
   } else if (growthItem) {
     items.push({ id: growthItem.id, deleted: true })
   }
+  // Same as subscribe.post.ts: the fee follows the interval.
+  const verifactuFee = await verifactuFeeItemFor(serviceRole, teamMember.account_id, body.interval, current.items.data)
+  if (verifactuFee) items.push(verifactuFee)
 
   const preview = await stripe.invoices.createPreview({
     customer: subscription.stripe_customer_id ?? undefined,

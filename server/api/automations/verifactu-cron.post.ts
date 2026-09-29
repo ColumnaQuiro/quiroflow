@@ -1,6 +1,7 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { sendPendingRecords } from '~/server/utils/verifactuSender'
+import { syncVerifactuFees } from '~/server/utils/verifactuFee'
 
 // Sends registros de facturación to the AEAT.
 //
@@ -86,9 +87,21 @@ export default defineEventHandler(async (event) => {
   // stop the reporting, or it becomes a quieter version of the bug it fixes.
   const parked = (summary ?? []).reduce((n, row) => n + Number(row.parked ?? 0), 0)
 
+  // The VeriFactu fee, in step with who is live and how many locations they
+  // have. Here because this already runs every minute; a tick where nothing
+  // changed is one query and no Stripe call. Never allowed to fail the tick:
+  // billing is not a reason to stop sending records.
+  let fee: unknown
+  try {
+    fee = await syncVerifactuFees(supabase)
+  } catch (err) {
+    fee = { error: err instanceof Error ? err.message : String(err) }
+  }
+
   // No platform-wide environment to report any more: each clinic's mode is
   // its own, and each result below says what happened for that clinic.
   return {
+    fee,
     accountsOwing: owing.length,
     ...(parked ? { parked } : {}),
     results,

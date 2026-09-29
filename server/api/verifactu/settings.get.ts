@@ -31,9 +31,12 @@ export default defineEventHandler(async (event) => {
       admin.from('factura_records').select('id', { count: 'exact', head: true }).eq('account_id', accountId).eq('environment', 'test'),
     ])
 
-  const [platform, { data: delegation }] = await Promise.all([
+  const [platform, { data: delegation }, { data: feeAddon }, { data: billing }, { count: activeLocations }] = await Promise.all([
     verifactuPlatformIdentity(admin),
     admin.from('verifactu_delegations').select('route, requested_at, signed_document_name, signed_document_uploaded_at, accepted_at').eq('account_id', accountId).maybeSingle(),
+    admin.from('addons').select('monthly_price_cents').eq('id', 'verifactu').maybeSingle(),
+    admin.from('subscriptions').select('comped, verifactu_locations').eq('account_id', accountId).maybeSingle(),
+    admin.from('clinics').select('id', { count: 'exact', head: true }).eq('account_id', accountId).is('archived_at', null),
   ])
   const sender = (isDelegated(account?.verifactu_sender) ? account!.verifactu_sender : 'own_certificate') as 'own_certificate' | 'apoderamiento' | 'colaboracion_social'
   const isPlatform = !!platform && platform.accountId === accountId
@@ -119,6 +122,13 @@ export default defineEventHandler(async (event) => {
     // then not offered at all.
     platform: platform && !isPlatform ? { nif: platform.nif, legalName: platform.legalName } : null,
     isPlatform,
+    // What going live costs, said before the owner picks the date rather than
+    // found on the next invoice. null for an account that is not billed
+    // (comped), or where no fee is configured.
+    fee:
+      feeAddon && !billing?.comped
+        ? { monthlyCentsPerLocation: feeAddon.monthly_price_cents, locations: activeLocations ?? 0, billedLocations: billing?.verifactu_locations ?? 0 }
+        : null,
     delegation: delegation
       ? {
           route: delegation.route as 'apoderamiento' | 'colaboracion_social',

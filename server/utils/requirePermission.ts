@@ -9,9 +9,13 @@ import type { Database } from '~/types/database.types'
 // access token as a bearer header instead. Building the client with that
 // token as its Authorization header makes every query run under the same
 // user's RLS as the cookie path would, just via a different transport.
-async function resolveSupabaseClient(event: H3Event) {
+function bearerToken(event: H3Event) {
   const auth = getHeader(event, 'authorization') ?? ''
-  const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : ''
+  return auth.startsWith('Bearer ') ? auth.slice(7).trim() : ''
+}
+
+async function resolveSupabaseClient(event: H3Event) {
+  const token = bearerToken(event)
   if (!token) return serverSupabaseClient<Database>(event)
 
   const config = useRuntimeConfig()
@@ -19,6 +23,23 @@ async function resolveSupabaseClient(event: H3Event) {
     global: { headers: { Authorization: `Bearer ${token}` } },
     auth: { autoRefreshToken: false, persistSession: false },
   })
+}
+
+// Who is calling, checked against the project's signing key rather than by
+// asking Supabase Auth. The project signs with ES256, so getClaims() verifies
+// the token here, against a key set auth-js caches module-wide for ten
+// minutes -- where getUser() was a round trip to the Auth server on every
+// request, ~300 ms from the Netlify function before the route had read
+// anything. Every staff route pays this, so it is most of why the Growth
+// Inbox endpoints took over a second.
+//
+// It is the same check PostgREST makes on every query the route then runs,
+// so it trusts the token no more than the database already does. The bearer
+// token is passed explicitly: getClaims() reads a session from storage, and
+// the mobile client has none -- only the header.
+async function verifiedUserId(event: H3Event, supabase: Awaited<ReturnType<typeof resolveSupabaseClient>>) {
+  const { data } = await supabase.auth.getClaims(bearerToken(event) || undefined)
+  return data?.claims.sub ?? null
 }
 
 // For endpoints any signed-in user (patient or team_member) can call --
@@ -36,10 +57,8 @@ export async function requireAuthedUser(event: H3Event) {
 
 export async function requireTeamMember(event: H3Event) {
   const supabase = await resolveSupabaseClient(event)
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) {
+  const userId = await verifiedUserId(event, supabase)
+  if (!userId) {
     throw createError({ statusCode: 403, statusMessage: 'Not signed in as a team member' })
   }
 
@@ -54,7 +73,7 @@ export async function requireTeamMember(event: H3Event) {
   const { data: teamMember } = await supabase
     .from('team_members')
     .select('id, account_id, is_owner, role_id')
-    .eq('user_id', user.id)
+    .eq('user_id', userId)
     .is('deleted_at', null)
     .maybeSingle()
 
@@ -81,18 +100,18 @@ export async function requireTeamMember(event: H3Event) {
 // the two-factor policy), so the embed sees what a direct read would.
 export async function requireActiveAccount(event: H3Event) {
   const supabase = await resolveSupabaseClient(event)
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) {
+  const userId = await verifiedUserId(event, supabase)
+  if (!userId) {
     throw createError({ statusCode: 403, statusMessage: 'Not signed in as a team member' })
   }
 
-  // Filtered by user_id for the reason given in requireTeamMember.
+  // Filtered by user_id for the reason given in requireTeamMember. The
+  // subscription carries what requireGrowth needs too, so the Growth routes
+  // do not spend a round trip reading it again.
   const { data: row } = await supabase
     .from('team_members')
-    .select('id, account_id, is_owner, role_id, accounts(subscriptions(status))')
-    .eq('user_id', user.id)
+    .select('id, account_id, is_owner, role_id, accounts(subscriptions(status, plan_id, growth_addon, comped))')
+    .eq('user_id', userId)
     .is('deleted_at', null)
     .maybeSingle()
 
@@ -105,17 +124,24 @@ export async function requireActiveAccount(event: H3Event) {
   // More than one also fails open, as the .maybeSingle() read this replaced
   // did: nothing says which of them is the account's.
   const { accounts, ...teamMember } = row
-  const subscriptions = (accounts as { subscriptions: { status: string }[] } | null)?.subscriptions ?? []
+  const subscriptions = (accounts as { subscriptions: AccountSubscription[] } | null)?.subscriptions ?? []
   const subscription = subscriptions.length === 1 ? subscriptions[0]! : null
   if (subscription && (subscription.status === 'locked' || subscription.status === 'canceled')) {
     throw createError({ statusCode: 402, statusMessage: 'This account is locked pending payment' })
   }
 
-  return { supabase, teamMember }
+  return { supabase, teamMember, subscription }
+}
+
+export interface AccountSubscription {
+  status: string
+  plan_id: string | null
+  growth_addon: boolean | null
+  comped: boolean | null
 }
 
 async function checkPermissions(event: H3Event, permKeys: string[]) {
-  const { supabase, teamMember } = await requireActiveAccount(event)
+  const { supabase, teamMember, subscription } = await requireActiveAccount(event)
 
   if (!teamMember.is_owner) {
     // All at once rather than one after another; the first missing key in
@@ -129,7 +155,7 @@ async function checkPermissions(event: H3Event, permKeys: string[]) {
     }
   }
 
-  return { supabase, teamMember }
+  return { supabase, teamMember, subscription }
 }
 
 export async function requirePermission(event: H3Event, permKey: string) {

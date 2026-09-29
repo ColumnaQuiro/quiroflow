@@ -14,9 +14,14 @@ const store = useAccountStore()
 const t = useT()
 const { showToast } = useToast()
 
-const INPUT = 'h-8 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20'
+const INPUT = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand'
 
 const defaultValue = ref('')
+// Who is told when a lead arrives. Moved here from Communication > General
+// (now Messages): it is only about leads. The matching WhatsApp template is
+// the new-lead alert in Settings > WhatsApp.
+const notifyEmail = ref('')
+const notifyWhatsapp = ref('')
 const autoConvert = ref(false)
 const convertAfter = ref(1)
 const convertTypeId = ref('')
@@ -28,13 +33,15 @@ const saving = ref(false)
 async function load() {
   loading.value = true
   const [{ data }, { data: types }] = await Promise.all([
-    supabase.from('accounts').select('lead_default_value_cents, lead_convert_after_visits, lead_convert_appointment_type_id').eq('id', store.accountId!).maybeSingle(),
+    supabase.from('accounts').select('lead_default_value_cents, lead_convert_after_visits, lead_convert_appointment_type_id, new_lead_notify_email, new_lead_notify_whatsapp').eq('id', store.accountId!).maybeSingle(),
     supabase.from('appointment_types').select('id, name, archived_at').order('name'),
   ])
   defaultValue.value = data?.lead_default_value_cents == null ? '' : String(data.lead_default_value_cents / 100)
   autoConvert.value = data?.lead_convert_after_visits != null
   convertAfter.value = data?.lead_convert_after_visits ?? 1
   convertTypeId.value = data?.lead_convert_appointment_type_id ?? ''
+  notifyEmail.value = data?.new_lead_notify_email ?? ''
+  notifyWhatsapp.value = data?.new_lead_notify_whatsapp ?? ''
   appointmentTypes.value = (types ?? []) as typeof appointmentTypes.value
   loading.value = false
 }
@@ -61,6 +68,8 @@ async function save() {
     lead_default_value_cents: euros === null ? null : Math.round(euros * 100),
     lead_convert_after_visits: autoConvert.value ? visits : null,
     lead_convert_appointment_type_id: autoConvert.value && convertTypeId.value ? convertTypeId.value : null,
+    new_lead_notify_email: notifyEmail.value.trim() || null,
+    new_lead_notify_whatsapp: notifyWhatsapp.value.trim() || null,
   }
   const { error } = await supabase.from('accounts').update(update).eq('id', store.accountId!)
   saving.value = false
@@ -70,6 +79,22 @@ async function save() {
   }
   showToast(t('Saved', 'Guardado'))
 }
+
+// The pipeline, drawn: which steps move by themselves and when. Lost is set
+// by hand from any step and is not a step of its own here.
+const STAGES = computed(() => [
+  { key: 'new', name: t('New', 'Nuevo'), auto: true, when: t('When the enquiry arrives.', 'Cuando llega la solicitud.') },
+  { key: 'contacted', name: t('Contacted', 'Contactado'), auto: false, when: t('Someone has spoken to them.', 'Alguien ha hablado con él.') },
+  { key: 'qualified', name: t('Qualified', 'Cualificado'), auto: false, when: t('Worth a first visit.', 'Merece una primera visita.') },
+  { key: 'booked', name: t('Booked', 'Reservado'), auto: true, when: t('An appointment is made, however it is booked. Matched by email or phone.', 'Se le reserva una cita, como sea. Se enlaza por email o teléfono.') },
+  { key: 'showed', name: t('Showed', 'Asistió'), auto: true, when: t('Checked in, or the visit completed.', 'Check-in hecho, o la visita completada.') },
+  {
+    key: 'converted',
+    name: t('Converted', 'Convertido'),
+    auto: autoConvert.value,
+    when: autoConvert.value ? t(`After ${convertAfter.value} attended visit(s).`, `Tras ${convertAfter.value} visita(s) asistida(s).`) : t('By hand, unless switched on below.', 'A mano, salvo que lo actives abajo.'),
+  },
+])
 </script>
 
 <template>
@@ -80,67 +105,101 @@ async function save() {
     <div class="flex-1 overflow-y-auto">
       <div class="flex gap-8 p-6">
         <SettingsNav />
-        <div class="min-w-0 max-w-[660px] flex-1">
-          <p class="text-[13px] leading-relaxed text-ink-muted2">
-            {{ t('How leads move along the pipeline in Growth › Leads, and what each one is worth.', 'Cómo avanzan los leads por el embudo en Growth › Leads, y cuánto vale cada uno.') }}
+        <div class="flex min-w-0 max-w-[940px] flex-1 flex-col gap-4" data-cy="leads-settings" :data-ready="loading ? undefined : 'true'">
+          <p class="text-[13.5px] text-ink-muted">
+            {{ t('How enquiries move along Growth › Leads, what each is worth, and who is told when one arrives.', 'Cómo avanzan las solicitudes en Crecimiento › Leads, cuánto vale cada una y a quién se avisa cuando llega.') }}
           </p>
 
-          <div v-if="loading" class="mt-5 space-y-4">
-            <div v-for="i in 3" :key="i" class="rounded-card border border-line bg-surface p-4 shadow-card">
-              <UiSkeleton class="h-3.5 w-48 rounded-ctlSm" />
-              <UiSkeleton class="mt-2 h-3 w-64 rounded-ctlSm" />
-            </div>
-          </div>
-          <form v-else class="mt-5 space-y-4" @submit.prevent="save">
-            <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-              <p class="text-[13.5px] font-[560] text-ink-700">{{ t('Automatic stages', 'Etapas automáticas') }}</p>
-              <ul class="mt-2 space-y-1.5 text-[12.5px] leading-snug text-ink-muted2">
-                <li>
-                  <span class="font-medium text-ink-700">{{ t('Booked', 'Reservado') }}</span> —
-                  {{ t("when an appointment is made for them, however it is booked: at the desk, online, in the app or through the API. The lead is matched to the patient by email or phone.", 'cuando se le reserva una cita, se reserve como se reserve: en recepción, online, en la app o por la API. El lead se asocia al paciente por email o teléfono.') }}
-                </li>
-                <li>
-                  <span class="font-medium text-ink-700">{{ t('Showed', 'Asistió') }}</span> —
-                  {{ t('when they are checked in for an appointment, or it is marked completed.', 'cuando se le hace el check-in de una cita, o se marca como completada.') }}
-                </li>
-              </ul>
-              <p class="mt-2 text-[12px] text-ink-faint">
-                {{ t('Leads only move forward, never out of Lost, and only for appointments on or after the day the lead came in.', 'Los leads solo avanzan, nunca salen de Perdido, y solo cuentan las citas del día en que llegó el lead en adelante.') }}
-              </p>
-            </div>
-
-            <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-              <div class="flex items-center justify-between gap-4">
-                <div>
-                  <p class="text-[13.5px] font-[560] text-ink-700">{{ t('Convert automatically', 'Convertir automáticamente') }}</p>
-                  <p class="mt-0.5 text-[12.5px] text-ink-muted2">
-                    {{ t('Move a lead to Converted once they have attended enough visits. Off, Converted stays a move you make by hand.', 'Pasa un lead a Convertido cuando haya asistido a suficientes visitas. Desactivado, Convertido se sigue moviendo a mano.') }}
-                  </p>
-                </div>
-                <SettingsToggle v-model="autoConvert" data-test="auto-convert-toggle" />
+          <template v-if="loading">
+            <UiSkeleton v-for="i in 3" :key="i" class="h-32 w-full rounded-card" />
+          </template>
+          <template v-else>
+            <!-- The pipeline, drawn: which steps move on their own -->
+            <section aria-labelledby="h-pipe" class="overflow-hidden rounded-card border border-line bg-surface">
+              <div class="px-[18px] pb-3 pt-4">
+                <h2 id="h-pipe" class="text-[16px] font-bold text-ink-900">{{ t('The pipeline', 'El embudo') }}</h2>
+                <p class="mt-1 text-[13px] leading-snug text-ink-muted">
+                  {{ t('Leads only move forward, never out of Lost, and only for appointments on or after the day the lead came in. Lost is set by hand, from any step.', 'Los leads solo avanzan, nunca salen de Perdido, y solo cuentan las citas del día en que llegó o posteriores. Perdido se marca a mano, desde cualquier paso.') }}
+                </p>
               </div>
-              <div v-if="autoConvert" class="mt-4 flex flex-wrap items-center gap-2 border-t border-line-divider pt-4 text-[13px] text-ink-600">
+              <ol class="grid grid-cols-2 gap-1.5 px-[18px] pb-[18px] sm:grid-cols-3 lg:grid-cols-6" data-cy="lead-stages">
+                <li v-for="s in STAGES" :key="s.key" :data-stage="s.key" class="flex min-h-[120px] flex-col gap-1.5 rounded-[10px] border p-3" :class="s.auto ? 'border-brand-tintBorder bg-brand-tint' : 'border-line-row bg-surface-subtle'">
+                  <strong class="text-[13.5px] text-ink-900">{{ s.name }}</strong>
+                  <span class="inline-flex h-5 items-center self-start rounded-pill px-2 text-[11px] font-bold" :class="s.auto ? 'bg-surface text-brand-text' : 'bg-chip-bg text-ink-500'">{{ s.auto ? t('Automatic', 'Automático') : t('By hand', 'A mano') }}</span>
+                  <span class="text-[12px] leading-snug text-ink-500">{{ s.when }}</span>
+                </li>
+              </ol>
+            </section>
+
+            <!-- Converting -->
+            <section aria-labelledby="h-conv" class="overflow-hidden rounded-card border border-line bg-surface">
+              <div class="flex items-start gap-4 px-[18px] pb-3.5 pt-4">
+                <div class="flex-1">
+                  <h2 id="h-conv" class="text-[16px] font-bold text-ink-900">{{ t('Convert automatically', 'Convertir automáticamente') }}</h2>
+                  <p class="mt-1 text-[13px] leading-snug text-ink-muted">{{ t('Move a lead to Converted once they have attended enough visits. Off, Converted is a move you make by hand.', 'Pasa un lead a Convertido cuando haya asistido a suficientes visitas. Desactivado, Convertido se marca a mano.') }}</p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  data-test="auto-convert-toggle"
+                  :aria-checked="autoConvert"
+                  aria-labelledby="h-conv"
+                  class="relative h-[26px] w-11 shrink-0 rounded-full"
+                  :class="autoConvert ? 'bg-brand' : 'bg-line-control'"
+                  @click="autoConvert = !autoConvert"
+                >
+                  <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card transition-all" :class="autoConvert ? 'left-[21px]' : 'left-[3px]'" />
+                </button>
+              </div>
+              <div v-if="autoConvert" class="flex flex-wrap items-center gap-2.5 border-t border-line-row px-[18px] py-3.5 text-[14px] text-ink-500">
                 <span>{{ t('After', 'Tras') }}</span>
-                <input v-model.number="convertAfter" type="number" min="1" max="50" :class="[INPUT, 'w-16 text-center']" data-test="convert-after" />
+                <input v-model.number="convertAfter" type="number" min="1" max="50" :aria-label="t('Attended visits', 'Visitas asistidas')" :class="[INPUT, 'w-16 text-right']" data-test="convert-after" />
                 <span>{{ t('attended visits of', 'visitas asistidas de') }}</span>
-                <select v-model="convertTypeId" :class="[INPUT, 'min-w-[180px]']" data-test="convert-type">
+                <select v-model="convertTypeId" :aria-label="t('Appointment type', 'Tipo de cita')" :class="[INPUT, 'min-w-[220px]']" data-test="convert-type">
                   <option value="">{{ t('any appointment type', 'cualquier tipo de cita') }}</option>
                   <option v-for="ty in typeOptions" :key="ty.id" :value="ty.id">{{ ty.name }}</option>
                 </select>
               </div>
-            </div>
+            </section>
 
-            <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-              <p class="text-[13.5px] font-[560] text-ink-700">{{ t('Default estimated value', 'Valor estimado por defecto') }}</p>
-              <p class="mt-0.5 text-[12.5px] text-ink-muted2">
-                {{ t("What a lead is worth when it has no value of its own — leads from Meta forms never do. Used on the board's totals and the dashboard; a value set on a lead always wins.", 'Lo que vale un lead cuando no tiene un valor propio — los de formularios de Meta nunca lo traen. Se usa en los totales del tablero y en el panel; el valor puesto en un lead siempre manda.') }}
-              </p>
-              <div class="mt-3 flex items-center gap-2">
-                <input v-model="defaultValue" inputmode="decimal" :placeholder="t('None', 'Ninguno')" :class="[INPUT, 'w-28']" data-test="default-lead-value" />
-                <span class="text-[13px] text-ink-muted">€</span>
+            <!-- Value -->
+            <section class="flex flex-wrap items-center gap-4 rounded-card border border-line bg-surface px-[18px] py-4">
+              <div class="flex min-w-[240px] flex-1 flex-col gap-0.5">
+                <label for="lead-value" class="text-[16px] font-bold text-ink-900">{{ t('Default value', 'Valor por defecto') }}</label>
+                <span class="text-[13px] leading-snug text-ink-500">
+                  {{ t("What a lead is worth when it has no value of its own -- leads from Meta forms never do. Used on the board's totals and the dashboard; a value set on a lead always wins.", 'Lo que vale un lead sin valor propio -- los de formularios de Meta nunca lo tienen. Se usa en los totales del tablero y en el panel; el valor de un lead siempre prevalece.') }}
+                </span>
               </div>
-            </div>
-          </form>
+              <label class="flex items-center gap-2 text-[14px] text-ink-500">
+                <input id="lead-value" v-model="defaultValue" inputmode="decimal" :placeholder="t('None', 'Ninguno')" :class="[INPUT, 'w-28 text-right']" data-test="default-lead-value" />
+                €
+              </label>
+            </section>
+
+            <!-- Alerts, moved here from Communication › General -->
+            <section aria-labelledby="h-alert" class="overflow-hidden rounded-card border border-line bg-surface" data-cy="lead-alerts">
+              <div class="px-[18px] pb-2 pt-4">
+                <h2 id="h-alert" class="text-[16px] font-bold text-ink-900">{{ t('Tell the team when a lead arrives', 'Avisar al equipo cuando llega un lead') }}</h2>
+                <p class="mt-1 text-[13px] leading-snug text-ink-muted">
+                  {{ t('From a Meta lead ad, the API or anywhere else. The automations answer the lead straight away; this is so a person follows up.', 'De un anuncio de Meta, la API o cualquier otro sitio. Las automatizaciones responden al lead al momento; esto es para que una persona haga el seguimiento.') }}
+                </p>
+              </div>
+              <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
+                <label for="lead-notify-email" class="min-w-[220px] flex-1 text-[14.5px] font-bold text-ink-900">{{ t('By email', 'Por correo') }}</label>
+                <input id="lead-notify-email" v-model="notifyEmail" type="email" placeholder="recepcion@clinica.es" data-cy="lead-notify-email" :class="[INPUT, 'w-full sm:w-[300px]']" />
+              </div>
+              <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
+                <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
+                  <label for="lead-notify-whatsapp" class="text-[14.5px] font-bold text-ink-900">{{ t('By WhatsApp', 'Por WhatsApp') }}</label>
+                  <span class="text-[13px] leading-snug text-ink-500">
+                    {{ t('In +34… format. When that number has not written to the clinic in 24 h, WhatsApp only delivers the new-lead alert template set in', 'En formato +34… Si ese número no ha escrito a la clínica en 24 h, WhatsApp solo entrega la plantilla de aviso de lead configurada en') }}
+                    <NuxtLink to="/settings/whatsapp" class="font-semibold text-brand-text hover:underline">WhatsApp</NuxtLink>.
+                  </span>
+                </div>
+                <input id="lead-notify-whatsapp" v-model="notifyWhatsapp" type="tel" placeholder="+34600000000" data-cy="lead-notify-whatsapp" :class="[INPUT, 'w-full sm:w-[300px]']" />
+              </div>
+            </section>
+          </template>
         </div>
       </div>
     </div>

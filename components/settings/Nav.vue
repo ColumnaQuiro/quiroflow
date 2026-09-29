@@ -46,7 +46,7 @@ const allGroups = computed<NavGroup[]>(() => [
   {
     label: t('Communication', 'Comunicación'),
     items: [
-      { label: t('General', 'General'), to: '/settings/communications-general', perm: 'communication_config' },
+      { label: t('Messages', 'Mensajes'), to: '/settings/messages', perm: 'communication_config' },
       { label: t('WhatsApp', 'WhatsApp'), to: '/settings/whatsapp', perm: 'communication_config' },
       { label: t('Saved Replies', 'Respuestas guardadas'), to: '/settings/saved-replies', perm: 'communication_config' },
       { label: t('Docs', 'Documentos'), to: '/settings/docs', perm: 'communication_config' },

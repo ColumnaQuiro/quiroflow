@@ -16,11 +16,40 @@ const title = ref('')
 const fields = ref<DocField[]>([])
 const saving = ref(false)
 
+// How many patients each template was sent to, and how many filled it in:
+// patient_docs keeps the template it came from. Head counts, since a clinic's
+// forms run to the thousands and a select of them would hit the row cap.
+const counts = ref<Record<string, { sent: number; done: number }>>({})
+
 async function load() {
   loading.value = true
   const { data } = await supabase.from('doc_templates').select('*').order('updated_at', { ascending: false })
   templates.value = (data as unknown as Template[]) ?? []
   loading.value = false
+  const results = await Promise.all(
+    templates.value.map((tpl) =>
+      Promise.all([
+        supabase.from('patient_docs').select('id', { count: 'exact', head: true }).eq('template_id', tpl.id),
+        supabase.from('patient_docs').select('id', { count: 'exact', head: true }).eq('template_id', tpl.id).not('completed_at', 'is', null),
+      ]),
+    ),
+  )
+  counts.value = Object.fromEntries(templates.value.map((tpl, i) => [tpl.id, { sent: results[i][0].count ?? 0, done: results[i][1].count ?? 0 }]))
+}
+
+function countsLabel(id: string) {
+  const c = counts.value[id]
+  if (!c) return ''
+  if (c.sent === 0) return t('Not sent yet', 'Aún sin enviar')
+  return t(`${c.sent} sent · ${c.done} completed`, `${c.sent} enviados · ${c.done} completados`)
+}
+function donePercent(id: string) {
+  const c = counts.value[id]
+  return c && c.sent ? Math.round((c.done / c.sent) * 100) : 0
+}
+function questionCount(tpl: Template) {
+  const n = Array.isArray(tpl.fields) ? tpl.fields.length : 0
+  return n === 1 ? t('1 block', '1 bloque') : t(`${n} blocks`, `${n} bloques`)
 }
 onMounted(load)
 
@@ -82,9 +111,18 @@ async function save() {
   showToast(t('Saved', 'Guardado'))
 }
 
-async function removeTemplate(tmpl: Template) {
-  if (!confirm(t(`Delete "${tmpl.title}"?`, `¿Eliminar "${tmpl.title}"?`))) return
-  await supabase.from('doc_templates').delete().eq('id', tmpl.id)
+// Asked in an in-app dialog rather than confirm(), and saying what happens
+// to the forms already sent (patient_docs keeps its own copy of the fields).
+const deleting = ref<Template | null>(null)
+async function confirmDelete() {
+  const tmpl = deleting.value
+  if (!tmpl) return
+  const { error } = await supabase.from('doc_templates').delete().eq('id', tmpl.id)
+  if (error) {
+    showToast(error.message, 'error')
+    return
+  }
+  deleting.value = null
   templates.value = templates.value.filter((x) => x.id !== tmpl.id)
   if (activeTemplate.value?.id === tmpl.id) activeTemplate.value = null
 }
@@ -92,71 +130,104 @@ async function removeTemplate(tmpl: Template) {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader :title="t('Docs', 'Documentos')" />
+    <PageHeader :title="t('Docs', 'Documentos')">
+      <UiBtn v-if="!activeTemplate" variant="primary" data-cy="doc-new" @click="newTemplate">{{ t('New Template', 'Nueva plantilla') }}</UiBtn>
+    </PageHeader>
     <div class="flex-1 overflow-y-auto">
       <div class="flex gap-8 p-6">
         <SettingsNav />
-        <div class="min-w-0 max-w-[660px] flex-1">
-          <p class="text-[13px] leading-relaxed text-ink-muted2">
-            {{ t('Reusable document templates — build one once (e.g. a data protection consent form) with headings, questions, and patient-field placeholders, then generate a filled-in copy for each patient from their Docs tab.', 'Plantillas de documentos reutilizables — crea una vez (p. ej. un formulario de consentimiento de protección de datos) con títulos, preguntas y marcadores de campos del paciente, y luego genera una copia rellenada para cada paciente desde su pestaña Documentos.') }}
-          </p>
-
-          <div class="mt-6 rounded-card border border-line bg-surface shadow-card">
-            <template v-if="!activeTemplate">
-              <div class="flex items-center justify-between border-b border-line-divider p-4">
-                <h3 class="text-[13.5px] font-[560] text-ink-700">{{ t('Templates', 'Plantillas') }}</h3>
-                <UiBtn variant="primary" size="sm" @click="newTemplate">+ {{ t('New Template', 'Nueva plantilla') }}</UiBtn>
+        <div class="flex min-w-0 max-w-[860px] flex-1 flex-col gap-4" data-cy="docs-settings" :data-ready="loading ? undefined : 'true'">
+          <!-- The list -->
+          <template v-if="!activeTemplate">
+            <p class="text-[13.5px] text-ink-muted">
+              {{ t('Forms you build once (consent, data protection, intake) and send to each patient to fill in and sign.', 'Formularios que creas una vez (consentimiento, protección de datos, anamnesis) y envías a cada paciente para rellenar y firmar.') }}
+            </p>
+            <section aria-labelledby="h-templates" class="overflow-hidden rounded-card border border-line bg-surface">
+              <div class="flex items-baseline gap-3 px-[18px] pb-3 pt-4">
+                <h2 id="h-templates" class="flex-1 text-[16px] font-bold text-ink-900">{{ t(`Templates · ${templates.length}`, `Plantillas · ${templates.length}`) }}</h2>
+                <span v-if="templates.length" class="text-[13px] text-ink-muted max-sm:hidden">{{ t('Sent · completed', 'Enviados · completados') }}</span>
               </div>
-              <div v-if="loading" class="divide-y divide-line-row">
-                <div v-for="i in 3" :key="i" class="px-4 py-3">
-                  <UiSkeleton class="h-3.5 w-40 rounded-ctlSm" />
+              <template v-if="loading">
+                <div v-for="i in 3" :key="i" class="flex items-center gap-3.5 border-t border-line-row px-[18px] py-4">
+                  <UiSkeleton class="h-9 w-9 rounded-ctl" />
+                  <UiSkeleton class="h-4 w-48 rounded-ctlSm" />
                 </div>
+              </template>
+              <p v-else-if="templates.length === 0" class="border-t border-line-row px-[18px] py-6 text-center text-[14px] text-ink-muted">{{ t('No templates yet.', 'Todavía no hay plantillas.') }}</p>
+              <div v-for="tpl in templates" :key="tpl.id" data-cy="doc-row" class="flex min-h-[72px] items-center gap-3 border-t border-line-row py-2 pl-[18px] pr-3">
+                <button type="button" class="flex min-w-0 flex-1 items-center gap-3.5 text-left" @click="openTemplate(tpl)">
+                  <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl bg-brand-tint text-brand-text" aria-hidden="true">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h6" /></svg>
+                  </span>
+                  <span class="flex min-w-0 flex-1 flex-col gap-1">
+                    <span class="flex flex-wrap items-center gap-2">
+                      <strong class="truncate text-[15px] text-ink-900" data-cy="doc-title">{{ tpl.title }}</strong>
+                      <UiPill v-if="categoryLabel(tpl.category)" tone="brand">{{ categoryLabel(tpl.category) }}</UiPill>
+                    </span>
+                    <span class="text-[12.5px] text-ink-muted">{{ questionCount(tpl) }} · {{ t('edited', 'editada el') }} {{ new Date(tpl.updated_at).toLocaleDateString('es-ES') }}</span>
+                  </span>
+                  <span class="flex w-[170px] shrink-0 flex-col items-end gap-1.5 max-sm:hidden">
+                    <span class="text-[13px] text-ink-500" data-cy="doc-counts">{{ countsLabel(tpl.id) }}</span>
+                    <span class="h-1.5 w-[120px] overflow-hidden rounded-pill bg-chip-bg" aria-hidden="true"><span class="block h-full rounded-pill bg-success-accent" :style="{ width: `${donePercent(tpl.id)}%` }" /></span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  class="flex h-9 w-9 touch:h-11 touch:w-11 shrink-0 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle hover:text-ink-700"
+                  :aria-label="t(`Delete ${tpl.title}`, `Eliminar ${tpl.title}`)"
+                  data-cy="doc-delete"
+                  @click="deleting = tpl"
+                >
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></svg>
+                </button>
               </div>
-              <div v-else-if="templates.length === 0" class="p-8 text-center text-[13px] text-ink-faint">{{ t('No templates yet.', 'Todavía no hay plantillas.') }}</div>
-              <ul v-else class="divide-y divide-line-row">
-                <li v-for="tpl in templates" :key="tpl.id" class="flex items-center justify-between px-4 py-3">
-                  <button type="button" class="text-left text-[13.5px] font-[560] text-ink-700 hover:text-brand-text" @click="openTemplate(tpl)">
-                    {{ tpl.title }}
-                    <UiPill v-if="categoryLabel(tpl.category)" tone="brand" class="ml-1.5">{{ categoryLabel(tpl.category) }}</UiPill>
-                  </button>
-                  <div class="flex items-center gap-3">
-                    <span class="text-[12px] text-ink-faint">{{ new Date(tpl.updated_at).toLocaleString() }}</span>
-                    <UiIconBtn icon="trash" tone="danger" :label="t('Delete', 'Eliminar')" @click="removeTemplate(tpl)" />
-                  </div>
-                </li>
-              </ul>
-            </template>
+            </section>
+            <p class="rounded-ctl border border-line bg-surface-subtle px-3.5 py-3 text-[13.5px] leading-snug text-ink-700">
+              {{ t('A category lets Reports list the patients still missing that form. Editing a template changes what is sent from now on; forms already sent keep their questions.', 'Una categoría permite que Informes liste a los pacientes a los que les falta ese formulario. Editar una plantilla cambia lo que se envía a partir de ahora; los formularios ya enviados conservan sus preguntas.') }}
+            </p>
+          </template>
 
-            <template v-else>
-              <div class="flex items-center justify-between border-b border-line-divider p-4">
-                <button type="button" class="text-[13px] text-ink-muted2 hover:text-ink-600" @click="backToList">&larr; {{ t('Templates', 'Plantillas') }}</button>
-                <div class="flex items-center gap-3">
-                  <UiBtn variant="primary" size="sm" :disabled="saving" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}</UiBtn>
-                </div>
+          <!-- The builder -->
+          <section v-else class="overflow-hidden rounded-card border border-line bg-surface" data-cy="doc-editor">
+            <div class="flex flex-wrap items-center gap-3 border-b border-line-row px-[18px] py-3">
+              <button type="button" class="inline-flex h-9 touch:h-11 items-center gap-1.5 rounded-ctl px-2 text-[13.5px] font-semibold text-ink-500 hover:bg-surface-subtle" @click="backToList">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg>
+                {{ t('Templates', 'Plantillas') }}
+              </button>
+              <span class="flex-1" />
+              <UiBtn variant="primary" :disabled="saving" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}</UiBtn>
+            </div>
+            <div class="flex flex-col gap-4 p-[18px]">
+              <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
+                {{ t('Name', 'Nombre') }}
+                <input v-model="title" type="text" :placeholder="t('Untitled template', 'Plantilla sin título')" class="h-10 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[16px] font-semibold text-ink-900 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
+              </label>
+              <div class="flex flex-wrap items-center gap-3">
+                <label for="doc-category" class="text-[13px] font-semibold text-ink-700">{{ t('Category', 'Categoría') }}</label>
+                <select id="doc-category" v-model="category" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-2.5 text-[14px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
+                  <option value="">{{ t('None', 'Ninguna') }}</option>
+                  <option value="data_protection">{{ t('Data protection', 'Protección de datos') }}</option>
+                  <option value="consent">{{ t('Consent', 'Consentimiento') }}</option>
+                </select>
+                <span class="text-[12.5px] text-ink-muted">{{ t("Lets Reports track who's missing this form.", 'Permite que Informes registre a quién le falta este formulario.') }}</span>
               </div>
-
-              <div class="p-4">
-                <input
-                  v-model="title"
-                  type="text"
-                  :placeholder="t('Untitled template', 'Plantilla sin título')"
-                  class="mb-2 w-full border-none text-[18px] font-semibold text-ink-900 placeholder-ink-faint3 focus:outline-none focus:ring-0"
-                />
-                <label class="mb-4 flex items-center gap-2 text-[13px] text-ink-600">
-                  {{ t('Category', 'Categoría') }}
-                  <select v-model="category" class="h-8 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20">
-                    <option value="">{{ t('None', 'Ninguna') }}</option>
-                    <option value="data_protection">{{ t('Data protection', 'Protección de datos') }}</option>
-                    <option value="consent">{{ t('Consent', 'Consentimiento') }}</option>
-                  </select>
-                  <span class="text-[12px] text-ink-faint">{{ t("Lets Reports track who's missing this form", 'Permite que Informes registre a quién le falta este formulario') }}</span>
-                </label>
-                <DocBlocks :fields="fields" mode="build" @update:fields="fields = $event" />
-              </div>
-            </template>
-          </div>
+              <DocBlocks :fields="fields" mode="build" @update:fields="fields = $event" />
+            </div>
+          </section>
         </div>
       </div>
     </div>
+
+    <UiConfirmDialog
+      v-if="deleting"
+      tone="danger"
+      :title="t(`Delete “${deleting.title}”?`, `¿Eliminar «${deleting.title}»?`)"
+      :confirm-label="t('Delete template', 'Eliminar plantilla')"
+      :cancel-label="t('Cancel', 'Cancelar')"
+      @confirm="confirmDelete"
+      @cancel="deleting = null"
+    >
+      <p class="text-[14px] leading-snug text-ink-700">{{ t('It can no longer be sent. Forms already sent with it stay on each patient’s record.', 'Ya no se podrá enviar. Los formularios ya enviados con ella se quedan en la ficha de cada paciente.') }}</p>
+    </UiConfirmDialog>
   </div>
 </template>

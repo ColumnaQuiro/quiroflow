@@ -120,10 +120,10 @@ interface TemplateUse {
 }
 const USES = computed<TemplateUse[]>(() => [
   { key: 'confirmation', title: t('Appointment confirmation', 'Confirmación de cita'), when: t('When an appointment is booked. A patient’s own language is used when it has an approved variant.', 'Al reservar una cita. Se usa el idioma del paciente si tiene una variante aprobada.'), name: confirmationTemplateName, lang: confirmationTemplateLanguage },
-  { key: 'reminder', title: t('Appointment reminder', 'Recordatorio de cita'), when: t('Before the appointment, as set in Communication › General.', 'Antes de la cita, según Comunicación › General.'), name: reminderTemplateName, lang: reminderTemplateLanguage },
+  { key: 'reminder', title: t('Appointment reminder', 'Recordatorio de cita'), when: t('Before the appointment, as set in Messages.', 'Antes de la cita, según Mensajes.'), name: reminderTemplateName, lang: reminderTemplateLanguage },
   { key: 'recall', title: t('Recall', 'Revisión'), when: t('Pre-selected when staff send a recall; they can switch it each time.', 'Preseleccionada al enviar una revisión; se puede cambiar cada vez.'), name: recallTemplateName, lang: recallTemplateLanguage },
   { key: 'staff-booking', title: t('New booking alert (to staff)', 'Aviso de reserva (al personal)'), when: t('To Online Booking’s notify number, when it has not written to the clinic in 24 h.', 'Al número de aviso de Reserva online, si no ha escrito a la clínica en 24 h.'), name: staffNotifyTemplateName, lang: staffNotifyTemplateLanguage },
-  { key: 'staff-lead', title: t('New lead alert (to staff)', 'Aviso de lead (al personal)'), when: t('To Communication › General’s notify number. Fills name, phone, email, source.', 'Al número de aviso de Comunicación › General. Rellena nombre, teléfono, email y origen.'), name: newLeadNotifyTemplateName, lang: newLeadNotifyTemplateLanguage },
+  { key: 'staff-lead', title: t('New lead alert (to staff)', 'Aviso de lead (al personal)'), when: t('To the notify number in Leads. Fills name, phone, email, source.', 'Al número de aviso de Leads. Rellena nombre, teléfono, email y origen.'), name: newLeadNotifyTemplateName, lang: newLeadNotifyTemplateLanguage },
 ])
 const chosenCount = computed(() => USES.value.filter((u) => u.name.value.trim()).length)
 

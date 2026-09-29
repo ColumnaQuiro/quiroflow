@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import type { Tables } from '~/types/database.types'
 
+// Settings > Saved Replies: answers the team inserts in the Inbox
+// (SavedRepliesPicker) instead of retyping them. Shared by everyone.
+//
+// The list and the editor sit side by side, where the list used to turn
+// into the editor and back. Opening another reply saves the one being
+// edited first, so moving between them never loses a change.
+
 type SavedReply = Tables<'saved_replies'>
 
 const supabase = useSupabaseClient()
@@ -10,135 +17,195 @@ const { showToast } = useToast()
 
 const replies = ref<SavedReply[]>([])
 const loading = ref(true)
-const activeReply = ref<SavedReply | null>(null)
+const activeId = ref<string | null>(null)
 const title = ref('')
 const body = ref('')
 const saving = ref(false)
+const query = ref('')
+
+const active = computed(() => replies.value.find((r) => r.id === activeId.value) ?? null)
+const dirty = computed(() => !!active.value && (title.value !== active.value.title || body.value !== active.value.body))
+
+const shown = computed(() => {
+  const q = query.value.trim().toLowerCase()
+  return q ? replies.value.filter((r) => r.title.toLowerCase().includes(q) || r.body.toLowerCase().includes(q)) : replies.value
+})
 
 async function load() {
-  loading.value = true
   const { data } = await supabase.from('saved_replies').select('*').order('title')
   replies.value = data ?? []
   loading.value = false
+  if (!activeId.value && replies.value[0]) openReply(replies.value[0])
 }
 onMounted(load)
 
-function openReply(r: SavedReply) {
-  activeReply.value = r
+function show(r: SavedReply) {
+  activeId.value = r.id
   title.value = r.title
   body.value = r.body
 }
 
+async function openReply(r: SavedReply) {
+  if (r.id === activeId.value) return
+  if (dirty.value) await save()
+  show(r)
+}
+
 async function newReply() {
+  if (dirty.value) await save()
   const { data, error } = await supabase
     .from('saved_replies')
     .insert({
       account_id: store.accountId!,
-      title: 'Untitled reply',
+      title: t('Untitled reply', 'Respuesta sin título'),
       body: '',
       created_by: store.teamMember?.id ?? null,
       updated_by: store.teamMember?.id ?? null,
     })
     .select('*')
     .single()
-  if (error || !data) return
+  if (error || !data) {
+    showToast(error?.message ?? t('Could not create the reply.', 'No se pudo crear la respuesta.'), 'error')
+    return
+  }
   replies.value = [...replies.value, data].sort((a, b) => a.title.localeCompare(b.title))
-  openReply(data)
-}
-
-function backToList() {
-  activeReply.value = null
-  load()
+  query.value = ''
+  show(data)
+  nextTick(() => document.querySelector<HTMLInputElement>('[data-cy="reply-title"]')?.select())
 }
 
 async function save() {
-  if (!activeReply.value) return
+  const r = active.value
+  if (!r) return
   saving.value = true
-  const { error } = await supabase
-    .from('saved_replies')
-    .update({
-      title: title.value.trim() || 'Untitled reply',
-      body: body.value,
-      updated_by: store.teamMember?.id ?? null,
-    })
-    .eq('id', activeReply.value.id)
+  const values = { title: title.value.trim() || t('Untitled reply', 'Respuesta sin título'), body: body.value, updated_by: store.teamMember?.id ?? null }
+  const { data, error } = await supabase.from('saved_replies').update(values).eq('id', r.id).select('*').single()
   saving.value = false
+  if (error || !data) {
+    showToast(error?.message ?? t('Could not save.', 'No se pudo guardar.'), 'error')
+    return
+  }
+  replies.value = replies.value.map((x) => (x.id === r.id ? data : x)).sort((a, b) => a.title.localeCompare(b.title))
+  if (activeId.value === r.id) title.value = data.title
+  showToast(t('Saved', 'Guardado'))
+}
+
+// Asked in an in-app dialog rather than confirm().
+const deleting = ref<SavedReply | null>(null)
+async function confirmDelete() {
+  const r = deleting.value
+  if (!r) return
+  const { error } = await supabase.from('saved_replies').delete().eq('id', r.id)
   if (error) {
     showToast(error.message, 'error')
     return
   }
-  showToast(t('Saved', 'Guardado'))
+  deleting.value = null
+  replies.value = replies.value.filter((x) => x.id !== r.id)
+  if (activeId.value === r.id) {
+    activeId.value = null
+    if (replies.value[0]) show(replies.value[0])
+  }
 }
 
-async function removeReply(r: SavedReply) {
-  if (!confirm(t(`Delete "${r.title}"?`, `¿Eliminar "${r.title}"?`))) return
-  await supabase.from('saved_replies').delete().eq('id', r.id)
-  replies.value = replies.value.filter((x) => x.id !== r.id)
-  if (activeReply.value?.id === r.id) activeReply.value = null
-}
+const inputClass = 'h-9 touch:h-11 w-full rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand'
 </script>
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader :title="t('Saved Replies', 'Respuestas Guardadas')" />
+    <PageHeader :title="t('Saved Replies', 'Respuestas guardadas')">
+      <UiBtn variant="primary" data-cy="reply-new" @click="newReply">{{ t('New reply', 'Nueva respuesta') }}</UiBtn>
+    </PageHeader>
     <div class="flex-1 overflow-y-auto">
       <div class="flex gap-8 p-6">
         <SettingsNav />
-        <div class="min-w-0 max-w-[660px] flex-1">
-          <p class="text-[13px] leading-relaxed text-ink-muted2">
-            {{ t('Pre-written answers your team can insert into the Inbox composer instead of retyping common replies (hours, pricing, availability, etc.). Shared across the whole team.', 'Respuestas ya redactadas que tu equipo puede insertar en el compositor de la Bandeja en lugar de volver a escribir respuestas comunes (horarios, precios, disponibilidad, etc.). Compartidas con todo el equipo.') }}
+        <div class="flex min-w-0 max-w-[940px] flex-1 flex-col gap-4" data-cy="replies-settings" :data-ready="loading ? undefined : 'true'">
+          <p class="text-[13.5px] text-ink-muted">
+            {{ t('Answers the team inserts in the Inbox instead of retyping them: hours, prices, how to find you. Shared by everyone.', 'Respuestas que el equipo inserta en la Bandeja en lugar de reescribirlas: horarios, precios, cómo llegar. Compartidas por todos.') }}
           </p>
 
-          <div class="mt-6 rounded-card border border-line bg-surface shadow-card">
-            <template v-if="!activeReply">
-              <div class="flex items-center justify-between border-b border-line-divider p-4">
-                <h3 class="text-[13.5px] font-[560] text-ink-700">{{ t('Replies', 'Respuestas') }}</h3>
-                <UiBtn variant="primary" size="sm" @click="newReply">{{ t('+ New Reply', '+ Nueva Respuesta') }}</UiBtn>
+          <section class="flex min-h-[560px] flex-col overflow-hidden rounded-card border border-line bg-surface md:flex-row">
+            <!-- The list -->
+            <div class="flex w-full shrink-0 flex-col border-line max-md:border-b md:w-[320px] md:border-r">
+              <div class="p-3.5">
+                <label class="flex h-9 touch:h-11 items-center gap-2 rounded-ctl border border-line-control px-3 text-ink-muted">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
+                  <input v-model="query" type="search" :placeholder="t(`Search ${replies.length} replies`, `Buscar en ${replies.length} respuestas`)" :aria-label="t('Search replies', 'Buscar respuestas')" class="min-w-0 flex-1 border-0 bg-transparent text-[14px] text-ink-900 outline-none" />
+                </label>
               </div>
-              <div v-if="loading" class="divide-y divide-line-row">
-                <div v-for="i in 3" :key="i" class="space-y-2 px-4 py-3">
+              <template v-if="loading">
+                <div v-for="i in 4" :key="i" class="flex flex-col gap-2 border-t border-line-row px-3.5 py-3">
                   <UiSkeleton class="h-3.5 w-32 rounded-ctlSm" />
-                  <UiSkeleton class="h-3 w-56 rounded-ctlSm" />
+                  <UiSkeleton class="h-3 w-48 rounded-ctlSm" />
                 </div>
-              </div>
-              <div v-else-if="replies.length === 0" class="p-8 text-center text-[13px] text-ink-faint">{{ t('No saved replies yet.', 'Aún no hay respuestas guardadas.') }}</div>
-              <ul v-else class="divide-y divide-line-row">
-                <li v-for="r in replies" :key="r.id" class="flex items-center justify-between gap-3 px-4 py-3">
-                  <button type="button" class="min-w-0 flex-1 text-left" @click="openReply(r)">
-                    <p class="text-[13.5px] font-[560] text-ink-700 hover:text-brand-text">{{ r.title }}</p>
-                    <p class="truncate text-[12.5px] text-ink-muted2">{{ r.body || t('Empty', 'Vacío') }}</p>
+              </template>
+              <p v-else-if="replies.length === 0" class="border-t border-line-row px-3.5 py-6 text-center text-[13.5px] text-ink-muted">{{ t('No saved replies yet.', 'Aún no hay respuestas guardadas.') }}</p>
+              <p v-else-if="shown.length === 0" class="border-t border-line-row px-3.5 py-6 text-center text-[13.5px] text-ink-muted">{{ t('No reply matches.', 'Ninguna respuesta coincide.') }}</p>
+              <ul v-else>
+                <li v-for="r in shown" :key="r.id">
+                  <button
+                    type="button"
+                    data-cy="reply-row"
+                    :aria-current="r.id === activeId ? 'true' : undefined"
+                    class="flex w-full flex-col gap-0.5 border-t border-line-row px-3.5 py-2.5 text-left hover:bg-surface-subtle"
+                    :class="r.id === activeId ? 'bg-brand-tint shadow-[inset_3px_0_0_rgb(var(--color-brand))]' : ''"
+                    @click="openReply(r)"
+                  >
+                    <strong class="truncate text-[14px] text-ink-900">{{ r.id === activeId ? title || t('Untitled reply', 'Respuesta sin título') : r.title }}</strong>
+                    <span class="truncate text-[12.5px] text-ink-muted">{{ (r.id === activeId ? body : r.body) || t('Empty', 'Vacía') }}</span>
                   </button>
-                  <UiIconBtn icon="trash" tone="danger" :label="t('Delete', 'Eliminar')" @click="removeReply(r)" />
                 </li>
               </ul>
-            </template>
+            </div>
 
-            <template v-else>
-              <div class="flex items-center justify-between border-b border-line-divider p-4">
-                <button type="button" class="text-[13px] text-ink-muted2 hover:text-ink-600" @click="backToList">&larr; {{ t('Replies', 'Respuestas') }}</button>
-                <div class="flex items-center gap-3">
-                  <UiBtn variant="primary" size="sm" :disabled="saving" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}</UiBtn>
-                </div>
+            <!-- The editor -->
+            <div v-if="active" class="flex min-w-0 flex-1 flex-col gap-3.5 p-[18px]" data-cy="reply-editor">
+              <div class="flex flex-wrap items-center gap-2.5">
+                <span class="flex-1 text-[12.5px] text-ink-muted">
+                  {{ dirty ? t('Unsaved changes', 'Cambios sin guardar') : t(`Edited ${new Date(active.updated_at).toLocaleDateString('es-ES')}`, `Editada el ${new Date(active.updated_at).toLocaleDateString('es-ES')}`) }}
+                </span>
+                <UiBtn class="!border-danger-border !text-danger-text" data-cy="reply-delete" @click="deleting = active">{{ t('Delete', 'Eliminar') }}</UiBtn>
+                <UiBtn variant="primary" data-cy="reply-save" :disabled="saving || !dirty" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}</UiBtn>
               </div>
-
-              <div class="p-4">
-                <input
-                  v-model="title"
-                  type="text"
-                  :placeholder="t('Untitled reply', 'Respuesta sin título')"
-                  class="mb-3 w-full border-none text-[18px] font-semibold text-ink-900 placeholder-ink-faint3 focus:outline-none focus:ring-0"
-                />
+              <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
+                {{ t('Name', 'Nombre') }}
+                <input v-model="title" type="text" data-cy="reply-title" :placeholder="t('Untitled reply', 'Respuesta sin título')" :class="[inputClass, 'font-normal']" />
+              </label>
+              <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
+                {{ t('Message', 'Mensaje') }}
                 <textarea
                   v-model="body"
-                  rows="6"
+                  rows="7"
+                  data-cy="reply-body"
                   :placeholder="t('What should this reply say?', '¿Qué debería decir esta respuesta?')"
-                  class="w-full resize-none rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13.5px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+                  class="resize-y rounded-ctl border border-line-control bg-surface px-3 py-2 text-[14px] font-normal leading-relaxed text-ink-900 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
                 />
+              </label>
+              <div v-if="body.trim()" class="flex flex-col gap-2">
+                <span class="text-[12.5px] font-semibold text-ink-500">{{ t('In the Inbox', 'En la Bandeja') }}</span>
+                <div class="flex justify-end rounded-ctl bg-surface-page p-4">
+                  <p class="max-w-[380px] whitespace-pre-line rounded-[12px_12px_4px_12px] bg-brand px-3 py-2.5 text-[13.5px] leading-snug text-white">{{ body }}</p>
+                </div>
               </div>
-            </template>
-          </div>
+            </div>
+            <div v-else-if="!loading" class="flex flex-1 items-center justify-center p-8 text-center text-[14px] text-ink-muted">
+              {{ t('Create a reply to start.', 'Crea una respuesta para empezar.') }}
+            </div>
+          </section>
         </div>
       </div>
     </div>
+
+    <UiConfirmDialog
+      v-if="deleting"
+      tone="danger"
+      :title="t(`Delete “${deleting.title}”?`, `¿Eliminar «${deleting.title}»?`)"
+      :confirm-label="t('Delete reply', 'Eliminar respuesta')"
+      :cancel-label="t('Cancel', 'Cancelar')"
+      @confirm="confirmDelete"
+      @cancel="deleting = null"
+    >
+      <p class="text-[14px] leading-snug text-ink-700">{{ t('It disappears from the Inbox for the whole team. Messages already sent with it are not affected.', 'Desaparece de la Bandeja para todo el equipo. Los mensajes ya enviados con ella no cambian.') }}</p>
+    </UiConfirmDialog>
   </div>
 </template>

@@ -326,12 +326,11 @@ const {
 // endpoint, which is what gives both sides an owner.
 const aiFilter = ref<'all' | 'ai_handling' | 'needs_human' | 'draft_ready'>('all')
 
-// Leads sit above the patient threads in one list, which is the right call --
-// one person, one thread, and a lead who becomes a patient does not move.
-// But the front desk's question is usually "has a PATIENT written to us",
-// and on a busy lead day the answer is buried under people who are not
-// patients yet. This narrows the list to one side or the other; the badge on
-// each lead row is what answers the same question without touching a filter.
+// Leads and patient threads share one list, newest message first -- one
+// person, one thread, and a lead who becomes a patient does not move. When
+// the front desk's question is "has a PATIENT written to us", this narrows
+// the list to one side or the other; the badge on each lead row is what
+// answers the same question without touching a filter.
 const sourceFilter = ref<'all' | 'leads' | 'patients'>('all')
 
 // --- The filter row ---------------------------------------------------------
@@ -484,6 +483,24 @@ function leadRowTime(at: string) {
 // blank the list and show nothing in its place. The filter only bites where
 // there are two kinds of row to tell apart.
 const filteredConversations = computed(() => (sourceFilter.value === 'leads' && hasGrowth.value && view.value !== 'archived' ? [] : conversations.value))
+
+// Leads and patient threads in one list, ordered by their last message.
+// Leads used to sit above every patient thread, so a lead from last week
+// outranked a patient who wrote five minutes ago. Patient threads arrive a
+// page at a time and leads all at once, so while there are older threads
+// still to load, a lead older than the oldest one showing is held back --
+// placed now, it would sit at the bottom of page one, above patients who
+// wrote after it. "Load older conversations" brings it in at its place.
+type ListRow = { kind: 'lead'; c: (typeof leadConversations.value)[number]; at: number } | { kind: 'patient'; c: Conversation; at: number }
+const listRows = computed<ListRow[]>(() => {
+  const patients = filteredConversations.value
+  const oldest = hasMore.value && patients.length ? Date.parse(patients[patients.length - 1]!.lastMessage!.created_at) : null
+  const leads = visibleLeadConversations.value.filter((c) => oldest === null || Date.parse(c.lastMessageAt) >= oldest)
+  return [
+    ...leads.map((c): ListRow => ({ kind: 'lead', c, at: Date.parse(c.lastMessageAt) })),
+    ...patients.map((c): ListRow => ({ kind: 'patient', c, at: Date.parse(c.lastMessage!.created_at) })),
+  ].sort((a, b) => b.at - a.at)
+})
 
 // Bulk select: "Select" enters the mode, clicking rows checks them, then
 // mark-unread or delete applies to everything checked at once.
@@ -1502,111 +1519,112 @@ function avatarInitials(name: string) {
             <template v-else-if="search.trim() || tab !== 'all' || unreadOnly || replyFilter !== 'all' || labelFilter">{{ t('Nothing matches these filters.', 'Nada coincide con estos filtros.') }}</template>
             <template v-else>{{ t('No conversations yet.', 'Aún no hay conversaciones.') }}</template>
           </p>
-          <!-- Lead conversations sit at the top of the same list, not in a
-          section of their own: one person, one thread is the whole argument
-          for merging these inboxes rather than shipping a second one. -->
-          <button
-            v-for="c in visibleLeadConversations"
-            :key="c.key"
-            type="button"
-            class="flex min-h-[76px] w-full items-start gap-3 border-b border-l-[3px] border-b-line-row px-3.5 py-3 text-left hover:bg-surface-subtle"
-            :class="selectedKey === c.key && !selectionMode ? 'border-l-brand bg-brand-tint' : 'border-l-transparent'"
-            data-test="lead-row"
-            @click="selectLeadConversation(c)"
-          >
-            <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[13px] font-bold text-brand-text">
-              {{ c.initials }}
-            </span>
-            <div class="min-w-0 flex-1">
-              <div class="flex items-baseline justify-between gap-2">
-                <span class="truncate text-[15px] text-ink-900" :class="c.unread ? 'font-bold' : 'font-medium'">{{ c.name }}</span>
-                <span class="shrink-0 text-[12.5px] text-ink-muted">{{ leadRowTime(c.lastMessageAt) }}</span>
-              </div>
-              <p class="truncate text-[13.5px]" :class="c.unread ? 'text-ink-900' : 'text-ink-500'">
-                <!-- Said before the message, not after: the row is truncated,
-                and a marker at the end is the part that gets cut off. -->
-                <span v-if="c.previewWasNotSent" class="font-medium text-warning-text">{{ t('Not sent ·', 'No enviado ·') }} </span>{{ c.preview }}
-              </p>
-              <div class="mt-1 flex flex-wrap items-center gap-1">
-                <!-- Leftmost, because the row truncates from the right and
-                this is the one badge that says what kind of row it is. The
-                channel beside it is "how they wrote in"; this is "who". -->
-                <span class="rounded-pill border border-info-border bg-info-bg px-2 py-px text-[11.5px] font-bold text-info-text" data-test="lead-badge">{{ t('Lead', 'Lead') }}</span>
-                <span class="rounded-pill border border-chip-border bg-chip-bg px-2 py-px text-[11.5px] text-ink-muted">{{ CHANNEL_LABEL[c.channel] }}</span>
-                <span v-if="c.hasDraft" class="rounded-pill border border-brand-tintBorder bg-brand-tint px-2 py-px text-[11.5px] font-bold text-brand-text" data-test="draft-ready-badge">{{ t('Draft ready', 'Borrador listo') }}</span>
-                <span v-if="c.aiState === 'handling'" class="rounded-pill bg-brand px-2 py-px text-[11.5px] font-bold text-surface">{{ t('AI handling', 'IA gestionando') }}</span>
-                <span v-else-if="c.aiState === 'paused'" class="rounded-pill border border-chip-border bg-chip-bg px-2 py-px text-[11.5px] text-ink-muted">{{ t('AI paused', 'IA en pausa') }}</span>
-                <span v-else-if="c.aiState === 'needs_human'" class="rounded-pill border border-warning-border bg-warning-bg px-2 py-px text-[11.5px] font-medium text-warning-text">{{ t('Needs human', 'Requiere persona') }}</span>
-                <span v-else-if="c.aiState === 'blocked'" class="rounded-pill border border-danger-border bg-danger-bg px-2 py-px text-[11.5px] font-medium text-danger-text">{{ t('Blocked', 'Bloqueado') }}</span>
-                <span class="flex-1" />
-                <span
-                  v-if="leadOwners[c.key]"
-                  class="flex h-[22px] min-w-[22px] items-center justify-center rounded-full border border-chip-border bg-chip-bg px-1 text-[10px] font-bold text-ink-700"
-                  :title="t(`Assigned to ${memberName(leadOwners[c.key])}`, `Asignada a ${memberName(leadOwners[c.key])}`)"
-                  data-cy="lead-row-owner"
-                >{{ memberInitials(leadOwners[c.key]) }}</span>
-              </div>
-            </div>
-          </button>
-          <button
-            v-for="c in filteredConversations"
-            :key="c.key"
-            type="button"
-            data-cy="inbox-row"
-            :data-key="c.key"
-            :aria-current="selectedKey === c.key && !selectionMode ? 'true' : undefined"
-            class="flex min-h-[76px] w-full items-start gap-3 border-b border-l-[3px] border-b-line-row px-3.5 py-3 text-left hover:bg-surface-subtle"
-            :class="(selectedKey === c.key && !selectionMode) || selectedKeys.has(c.key) ? 'border-l-brand bg-brand-tint' : 'border-l-transparent'"
-            @click="onRowClick(c)"
-          >
-            <span
-              v-if="selectionMode"
-              class="mt-2.5 flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[6px] border"
-              :class="selectedKeys.has(c.key) ? 'border-brand bg-brand text-surface' : 'border-line-control bg-surface'"
-              aria-hidden="true"
+          <!-- Lead conversations share the patient threads' list, in date
+          order, not a section of their own: one person, one thread is the
+          whole argument for merging these inboxes rather than shipping a
+          second one. -->
+          <template v-for="row in listRows" :key="row.c.key">
+            <button
+              v-if="row.kind === 'lead'"
+              type="button"
+              class="flex min-h-[76px] w-full items-start gap-3 border-b border-l-[3px] border-b-line-row px-3.5 py-3 text-left hover:bg-surface-subtle"
+              :class="selectedKey === row.c.key && !selectionMode ? 'border-l-brand bg-brand-tint' : 'border-l-transparent'"
+              data-test="lead-row"
+              @click="selectLeadConversation(row.c)"
             >
-              <svg v-if="selectedKeys.has(c.key)" viewBox="0 0 16 16" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M3 8l3.5 3.5L13 5" />
-              </svg>
-            </span>
-            <span class="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[13px] font-bold" :class="c.patientId ? 'bg-brand-tint text-brand-text' : 'bg-chip-bg text-ink-700'">
-              {{ avatarInitials(c.name) }}
-              <span
-                class="absolute -bottom-1 -right-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 border-surface px-1 text-[9px] font-extrabold"
-                :class="c.channel === 'whatsapp' ? 'bg-success-bg text-success-text' : c.channel === 'instagram' ? 'bg-info-bg text-info-text' : 'bg-brand-tint text-brand-text'"
-                :title="channelName(c.channel)"
-              >{{ c.channel === 'whatsapp' ? 'WA' : c.channel === 'instagram' ? 'IG' : 'App' }}</span>
-            </span>
-            <div class="min-w-0 flex-1">
-              <div class="flex items-baseline justify-between gap-2">
-                <p class="truncate text-[15px]" :class="c.unread ? 'font-bold text-ink-900' : 'font-medium text-ink-800'">{{ c.name }}</p>
-                <span class="shrink-0 text-[12.5px] text-ink-muted">{{ listTime(c.lastMessage!.created_at) }}</span>
-              </div>
-              <div class="flex items-center gap-1.5">
-                <p class="min-w-0 flex-1 truncate text-[13.5px]" :class="c.unread ? 'text-ink-900' : 'text-ink-500'">
-                  {{ c.lastMessage!.direction === 'outbound' ? t('You: ', 'Tú: ') : '' }}{{ previewText(c.lastMessage!) }}
+              <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[13px] font-bold text-brand-text">
+                {{ row.c.initials }}
+              </span>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-baseline justify-between gap-2">
+                  <span class="truncate text-[15px] text-ink-900" :class="row.c.unread ? 'font-bold' : 'font-medium'">{{ row.c.name }}</span>
+                  <span class="shrink-0 text-[12.5px] text-ink-muted">{{ leadRowTime(row.c.lastMessageAt) }}</span>
+                </div>
+                <p class="truncate text-[13.5px]" :class="row.c.unread ? 'text-ink-900' : 'text-ink-500'">
+                  <!-- Said before the message, not after: the row is truncated,
+                  and a marker at the end is the part that gets cut off. -->
+                  <span v-if="row.c.previewWasNotSent" class="font-medium text-warning-text">{{ t('Not sent ·', 'No enviado ·') }} </span>{{ row.c.preview }}
                 </p>
-                <span v-if="c.unread" class="h-2.5 w-2.5 shrink-0 rounded-full bg-brand" :aria-label="t('Unread', 'No leída')" data-cy="inbox-row-unread" />
+                <div class="mt-1 flex flex-wrap items-center gap-1">
+                  <!-- Leftmost, because the row truncates from the right and
+                  this is the one badge that says what kind of row it is. The
+                  channel beside it is "how they wrote in"; this is "who". -->
+                  <span class="rounded-pill border border-info-border bg-info-bg px-2 py-px text-[11.5px] font-bold text-info-text" data-test="lead-badge">{{ t('Lead', 'Lead') }}</span>
+                  <span class="rounded-pill border border-chip-border bg-chip-bg px-2 py-px text-[11.5px] text-ink-muted">{{ CHANNEL_LABEL[row.c.channel] }}</span>
+                  <span v-if="row.c.hasDraft" class="rounded-pill border border-brand-tintBorder bg-brand-tint px-2 py-px text-[11.5px] font-bold text-brand-text" data-test="draft-ready-badge">{{ t('Draft ready', 'Borrador listo') }}</span>
+                  <span v-if="row.c.aiState === 'handling'" class="rounded-pill bg-brand px-2 py-px text-[11.5px] font-bold text-surface">{{ t('AI handling', 'IA gestionando') }}</span>
+                  <span v-else-if="row.c.aiState === 'paused'" class="rounded-pill border border-chip-border bg-chip-bg px-2 py-px text-[11.5px] text-ink-muted">{{ t('AI paused', 'IA en pausa') }}</span>
+                  <span v-else-if="row.c.aiState === 'needs_human'" class="rounded-pill border border-warning-border bg-warning-bg px-2 py-px text-[11.5px] font-medium text-warning-text">{{ t('Needs human', 'Requiere persona') }}</span>
+                  <span v-else-if="row.c.aiState === 'blocked'" class="rounded-pill border border-danger-border bg-danger-bg px-2 py-px text-[11.5px] font-medium text-danger-text">{{ t('Blocked', 'Bloqueado') }}</span>
+                  <span class="flex-1" />
+                  <span
+                    v-if="leadOwners[row.c.key]"
+                    class="flex h-[22px] min-w-[22px] items-center justify-center rounded-full border border-chip-border bg-chip-bg px-1 text-[10px] font-bold text-ink-700"
+                    :title="t(`Assigned to ${memberName(leadOwners[row.c.key])}`, `Asignada a ${memberName(leadOwners[row.c.key])}`)"
+                    data-cy="lead-row-owner"
+                  >{{ memberInitials(leadOwners[row.c.key]) }}</span>
+                </div>
               </div>
-              <div v-if="c.labelIds?.length || c.assignedTo" class="mt-1 flex flex-wrap items-center gap-1">
+            </button>
+            <button
+              v-else
+              type="button"
+              data-cy="inbox-row"
+              :data-key="row.c.key"
+              :aria-current="selectedKey === row.c.key && !selectionMode ? 'true' : undefined"
+              class="flex min-h-[76px] w-full items-start gap-3 border-b border-l-[3px] border-b-line-row px-3.5 py-3 text-left hover:bg-surface-subtle"
+              :class="(selectedKey === row.c.key && !selectionMode) || selectedKeys.has(row.c.key) ? 'border-l-brand bg-brand-tint' : 'border-l-transparent'"
+              @click="onRowClick(row.c)"
+            >
+              <span
+                v-if="selectionMode"
+                class="mt-2.5 flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[6px] border"
+                :class="selectedKeys.has(row.c.key) ? 'border-brand bg-brand text-surface' : 'border-line-control bg-surface'"
+                aria-hidden="true"
+              >
+                <svg v-if="selectedKeys.has(row.c.key)" viewBox="0 0 16 16" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 8l3.5 3.5L13 5" />
+                </svg>
+              </span>
+              <span class="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[13px] font-bold" :class="row.c.patientId ? 'bg-brand-tint text-brand-text' : 'bg-chip-bg text-ink-700'">
+                {{ avatarInitials(row.c.name) }}
                 <span
-                  v-for="lid in c.labelIds"
-                  :key="lid"
-                  class="rounded-pill px-2 py-px text-[11.5px] font-semibold text-surface"
-                  :style="{ backgroundColor: labels.find((l) => l.id === lid)?.color }"
-                >
-                  {{ labels.find((l) => l.id === lid)?.name }}
-                </span>
-                <span class="flex-1" />
-                <span
-                  v-if="c.assignedTo"
-                  class="flex h-[22px] min-w-[22px] items-center justify-center rounded-full border border-chip-border bg-chip-bg px-1 text-[10px] font-bold text-ink-700"
-                  :title="t(`Assigned to ${memberName(c.assignedTo)}`, `Asignada a ${memberName(c.assignedTo)}`)"
-                  data-cy="inbox-row-owner"
-                >{{ memberInitials(c.assignedTo) }}</span>
+                  class="absolute -bottom-1 -right-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 border-surface px-1 text-[9px] font-extrabold"
+                  :class="row.c.channel === 'whatsapp' ? 'bg-success-bg text-success-text' : row.c.channel === 'instagram' ? 'bg-info-bg text-info-text' : 'bg-brand-tint text-brand-text'"
+                  :title="channelName(row.c.channel)"
+                >{{ row.c.channel === 'whatsapp' ? 'WA' : row.c.channel === 'instagram' ? 'IG' : 'App' }}</span>
+              </span>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-baseline justify-between gap-2">
+                  <p class="truncate text-[15px]" :class="row.c.unread ? 'font-bold text-ink-900' : 'font-medium text-ink-800'">{{ row.c.name }}</p>
+                  <span class="shrink-0 text-[12.5px] text-ink-muted">{{ listTime(row.c.lastMessage!.created_at) }}</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <p class="min-w-0 flex-1 truncate text-[13.5px]" :class="row.c.unread ? 'text-ink-900' : 'text-ink-500'">
+                    {{ row.c.lastMessage!.direction === 'outbound' ? t('You: ', 'Tú: ') : '' }}{{ previewText(row.c.lastMessage!) }}
+                  </p>
+                  <span v-if="row.c.unread" class="h-2.5 w-2.5 shrink-0 rounded-full bg-brand" :aria-label="t('Unread', 'No leída')" data-cy="inbox-row-unread" />
+                </div>
+                <div v-if="row.c.labelIds?.length || row.c.assignedTo" class="mt-1 flex flex-wrap items-center gap-1">
+                  <span
+                    v-for="lid in row.c.labelIds"
+                    :key="lid"
+                    class="rounded-pill px-2 py-px text-[11.5px] font-semibold text-surface"
+                    :style="{ backgroundColor: labels.find((l) => l.id === lid)?.color }"
+                  >
+                    {{ labels.find((l) => l.id === lid)?.name }}
+                  </span>
+                  <span class="flex-1" />
+                  <span
+                    v-if="row.c.assignedTo"
+                    class="flex h-[22px] min-w-[22px] items-center justify-center rounded-full border border-chip-border bg-chip-bg px-1 text-[10px] font-bold text-ink-700"
+                    :title="t(`Assigned to ${memberName(row.c.assignedTo)}`, `Asignada a ${memberName(row.c.assignedTo)}`)"
+                    data-cy="inbox-row-owner"
+                  >{{ memberInitials(row.c.assignedTo) }}</span>
+                </div>
               </div>
-            </div>
-          </button>
+            </button>
+          </template>
           <div v-if="hasMore && !loading" class="p-3">
             <button type="button" data-cy="inbox-load-more" class="h-9 touch:h-11 w-full rounded-ctl border border-line-control bg-surface text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-60" :disabled="loadingMore" @click="loadList({ append: true })">
               {{ loadingMore ? t('Loading…', 'Cargando…') : t('Load older conversations', 'Cargar conversaciones anteriores') }}

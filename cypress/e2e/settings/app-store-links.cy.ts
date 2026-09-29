@@ -55,7 +55,25 @@ describe('Sharing the patient app', () => {
       // gate. Scrolling to it keeps that meaning and drops the layout
       // coupling that made this spec fail on a reorder.
       cy.contains('Share the app').should('be.visible')
-      cy.contains('h2', 'Appointments').scrollIntoView().should('be.visible')
+      cy.contains('h2', 'What patients can do').scrollIntoView().should('be.visible')
+    })
+  })
+
+  it('prints a desk sign with the clinic code', () => {
+    // The sign prints itself on arrival; the stub stands in for the dialog
+    // and proves it was asked for.
+    cy.seedStaffAccount().then((account) => {
+      cy.login(account.email, account.password)
+      cy.visit('/settings/app')
+      cy.get('[data-cy="app-join-code"]')
+        .invoke('text')
+        .then((code) => {
+          expect(code.trim()).not.to.equal('')
+          cy.get('[data-cy="app-desk-sign"]').should('have.attr', 'href', '/print/desk-sign').and('have.attr', 'target', '_blank')
+          cy.visit('/print/desk-sign', { onBeforeLoad: (win) => cy.stub(win, 'print').as('print') })
+          cy.get('[data-cy="desk-sign"]').should('contain', code.trim())
+          cy.get('@print').should('have.been.called')
+        })
     })
   })
 

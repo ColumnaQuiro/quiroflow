@@ -3180,6 +3180,8 @@ export type Database = {
       memberships: {
         Row: {
           account_id: string
+          billing_interval: string
+          billing_interval_count: number
           created_at: string
           id: string
           name: string
@@ -3187,6 +3189,8 @@ export type Database = {
         }
         Insert: {
           account_id: string
+          billing_interval?: string
+          billing_interval_count?: number
           created_at?: string
           id?: string
           name: string
@@ -3194,6 +3198,8 @@ export type Database = {
         }
         Update: {
           account_id?: string
+          billing_interval?: string
+          billing_interval_count?: number
           created_at?: string
           id?: string
           name?: string

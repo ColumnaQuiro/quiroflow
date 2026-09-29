@@ -153,8 +153,9 @@
       "Total completed visits",
       "▼ 32%",
       "vs 19",
-      "20,92 €",
-      "PVA (avg. revenue / visit)",
+      "13.0",
+      "PVA (visits / new patient)",
+      "13 visits · 1 new patient",
       "Conversion to 3rd visit",
       "0%",
       "0 of 1 patients given their report came to a chiropractic adjustment",
@@ -175,7 +176,7 @@
       "."
     ],
     "charts": [
-      "Conversion to 3rd visit: Apr 26=0, Aug 25=null, Dec 25=null, Feb 26=0, Jan 26=null, Jul 25=null, Jun 26=0, Mar 26=100, May 26=33, Nov 25=null, Oct 25=null, Sep 25=null || Overall retention: Apr 26=44, Aug 25=null, Dec 25=null, Feb 26=0, Jan 26=null, Jul 25=null, Jun 26=82, Mar 26=29, May 26=56, Nov 25=null, Oct 25=null, Sep 25=null || PVA (€): Apr 26=21.42, Aug 25=null, Dec 25=null, Feb 26=29.38, Jan 26=null, Jul 25=null, Jun 26=20.92, Mar 26=7.82, May 26=13.71, Nov 25=null, Oct 25=null, Sep 25=null || Retention post-revision: Apr 26=null, Aug 25=null, Dec 25=null, Feb 26=null, Jan 26=null, Jul 25=null, Jun 26=50, Mar 26=100, May 26=0, Nov 25=null, Oct 25=null, Sep 25=null"
+      "Conversion to 3rd visit: Apr 26=0, Aug 25=null, Dec 25=null, Feb 26=0, Jan 26=null, Jul 25=null, Jun 26=0, Mar 26=100, May 26=33, Nov 25=null, Oct 25=null, Sep 25=null || Overall retention: Apr 26=44, Aug 25=null, Dec 25=null, Feb 26=0, Jan 26=null, Jul 25=null, Jun 26=82, Mar 26=29, May 26=56, Nov 25=null, Oct 25=null, Sep 25=null || PVA (visits per new patient): Apr 26=null, Aug 25=null, Dec 25=null, Feb 26=13, Jan 26=null, Jul 25=null, Jun 26=13, Mar 26=7.3, May 26=8.8, Nov 25=null, Oct 25=null, Sep 25=null || Retention post-revision: Apr 26=null, Aug 25=null, Dec 25=null, Feb 26=null, Jan 26=null, Jul 25=null, Jun 26=50, Mar 26=100, May 26=0, Nov 25=null, Oct 25=null, Sep 25=null"
     ]
   },
   "Beatriz / /reports/upcoming-visits": {

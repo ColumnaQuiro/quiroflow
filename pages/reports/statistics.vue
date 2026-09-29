@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { formatEurFromAmount } from '~/utils/billing'
 import { Line } from 'vue-chartjs'
 import { computePresetRange, rangeBounds } from '~/composables/useDateRangePresets'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
@@ -18,8 +17,6 @@ interface ApptRow {
   stage: string | null
 }
 interface TypeRow { id: string; name: string; stage: string | null }
-interface PaymentRow { amount_cents: number; paid_at: string; invoice_id: string | null; at: number }
-interface InvoiceRow { id: string; appointment_id: string | null }
 
 const supabase = useSupabaseClient()
 const { practitioners, clinics, load: loadFilterOptions } = useReportFilterOptions()
@@ -30,11 +27,9 @@ const range = ref(computePresetRange({ months: 1 }))
 const { reportsPractitionerId } = useOwnScope()
 const practitionerFilter = ref(reportsPractitionerId.value ?? '')
 const clinicFilter = ref('')
-// Two loads, each with its own flag, so every panel appears as soon as the
-// data IT needs is in: the visit counts and rates need only the
-// appointments, while PVA and the trend chart also wait for the money.
+// Everything on this page -- counts, rates and PVA -- comes from the
+// appointments alone, so there is one load and one flag.
 const appointmentsLoading = ref(true)
-const moneyLoading = ref(true)
 // Every appointment, all-time and every status. All-time because the funnel
 // metrics need each patient's full history to find the step after the one
 // in range; every status because the tiles report what was attended against
@@ -42,8 +37,6 @@ const moneyLoading = ref(true)
 // compare this page with their calendar.
 const allAppointments = ref<ApptRow[]>([])
 const types = ref<TypeRow[]>([])
-const payments = ref<PaymentRow[]>([])
-const invoices = ref<InvoiceRow[]>([])
 
 // None of this depends on the date range -- it is every appointment there has
 // ever been -- so it is fetched once, and changing the range only re-computes.
@@ -78,63 +71,10 @@ async function loadAppointments() {
   appointmentsLoading.value = false
 }
 
-// Wide enough for whichever is longer: the selected range, or the twelve
-// months the trend chart draws (PVA is per month, so it needs the money
-// for every month on that chart, not just the range).
-//
-// For any range inside the last twelve months -- every preset but a custom
-// one reaching further back -- that window is the same, so what is already
-// loaded covers it and switching range fetches nothing at all.
-function moneyWindow() {
-  const { from, to } = rangeBounds(range.value)
-  const from12 = new Date()
-  from12.setDate(1)
-  from12.setMonth(from12.getMonth() - (TREND_MONTHS - 1))
-  from12.setHours(0, 0, 0, 0)
-  // End of today rather than "now", so the window is the same all day and a
-  // range change a minute later still finds it covered.
-  const endOfToday = new Date()
-  endOfToday.setHours(23, 59, 59, 999)
-  return { from: from12 < from ? from12 : from, to: to > endOfToday ? to : endOfToday }
-}
-
-let moneyRun = 0
-let moneyLoaded: { from: number; to: number } | null = null
-async function loadMoney() {
-  const { from, to } = moneyWindow()
-  if (moneyLoaded && from.getTime() >= moneyLoaded.from && to.getTime() <= moneyLoaded.to) {
-    // Covered by what is on screen -- and any wider fetch still in flight is
-    // for a range no longer picked, so it must not land over this one.
-    moneyRun++
-    moneyLoading.value = false
-    return
-  }
-  // A range picked while this is in flight starts another run; only the
-  // latest one may write, or a slow earlier answer lands over a newer one.
-  const run = ++moneyRun
-  moneyLoading.value = true
-  const [p, inv] = await Promise.all([
-    fetchAllRows<Omit<PaymentRow, 'at'>>(
-      (f, t2) => supabase.from('payments').select('amount_cents, paid_at, invoice_id').gte('paid_at', from.toISOString()).lte('paid_at', to.toISOString()).order('id').range(f, t2),
-      { total: supabase.from('payments').select('id', { count: 'exact', head: true }).gte('paid_at', from.toISOString()).lte('paid_at', to.toISOString()) },
-    ),
-    fetchAllRows<InvoiceRow>(
-      (f, t2) => supabase.from('invoices').select('id, appointment_id').gte('created_at', from.toISOString()).lte('created_at', to.toISOString()).order('id').range(f, t2),
-      { total: supabase.from('invoices').select('id', { count: 'exact', head: true }).gte('created_at', from.toISOString()).lte('created_at', to.toISOString()) },
-    ),
-  ])
-  if (run !== moneyRun) return
-  payments.value = p.map((row) => ({ ...row, at: Date.parse(row.paid_at) }))
-  invoices.value = inv
-  moneyLoaded = { from: from.getTime(), to: to.getTime() }
-  moneyLoading.value = false
-}
 onMounted(() => {
   loadAppointments()
-  loadMoney()
   loadFilterOptions()
 })
-watch(range, loadMoney)
 
 // practitioner/clinic filters apply to the full-history set before anything
 // else touches it, so every metric below (conversion, retention, ...) is
@@ -261,23 +201,14 @@ const retentionRate = computed(() => {
   return Math.round((returning / patientsInRange.size) * 100)
 })
 
-const appointmentById = computed(() => new Map(allAppointments.value.map((a) => [a.id, a])))
-const invoiceById = computed(() => new Map(invoices.value.map((i) => [i.id, i])))
-const filteredPayments = computed(() => {
-  if (!practitionerFilter.value && !clinicFilter.value) return payments.value
-  return payments.value.filter((p) => {
-    const appt = appointmentById.value.get(invoiceById.value.get(p.invoice_id ?? '')?.appointment_id ?? '')
-    if (!appt) return false
-    if (practitionerFilter.value && appt.practitioner_id !== practitionerFilter.value) return false
-    if (clinicFilter.value && appt.clinic_id !== clinicFilter.value) return false
-    return true
-  })
-})
-
-// Over the range only. The money loaded reaches back twelve months for the
-// trend chart, and this used to sum all of it -- so a one-month range divided
-// a year of takings by a month of visits. pvaIn is the chart's own
-// arithmetic, which is what keeps the tile and that month's point agreeing.
+// PVA, "patient visit average": visits in the period divided by the new
+// patients who started in it -- how many visits each new patient turns
+// into. It used to be euros per visit (payments over visits), which is not
+// what the clinic means by PVA and read low for anyone whose patients pay
+// with bonos: a bono session is a visit with no money taken at it, and the
+// bono's own payment is linked to no visit, so September 2026 showed
+// Jordana at 28 EUR from 1,545 EUR over 55 visits. The same month is
+// 55 visits over 22 new patients: 2.5.
 const pva = computed(() => pvaIn(rangeStart.value, rangeEnd.value))
 
 // --- Comparison with the period before this one -------------------------
@@ -404,7 +335,7 @@ function monthLabel(key: string) {
 // The rates, month by month -- which is the comparison the clinic actually
 // wants to look at. Counts already have their own tiles; what a curve adds
 // is whether the *percentages* are moving, and PVA alongside them because
-// it is the one that turns the others into money.
+// it is what those rates add up to: how many visits a new patient becomes.
 //
 // Each month is computed the same way the tiles are, just with that month
 // as the window, so a point on this chart and the tile for that month agree.
@@ -426,14 +357,40 @@ function overallRetentionIn(from: Date, to: Date): number | null {
   return Math.round(([...seen].filter((id) => before.has(id)).length / seen.size) * 100)
 }
 
-function pvaIn(from: Date, to: Date): number | null {
+// A new patient is one who had a first visit -- a "Primera visita" or a
+// "Oferta de primera visita" -- in the period: the same visits the First
+// visits and First visit offers tiles count, so PVA's denominator is a number
+// on this page. Counted as patients, not visits, so the rare patient booked
+// into both counts once.
+//
+// Not "each patient's earliest visit ever", which reads the same on the whole
+// clinic (38 against 37 in Sep 2026) but not for a practitioner limited to
+// their own figures: they cannot see anyone else's visits, so every patient
+// who moved to them from a colleague would look new.
+function pvaParts(from: Date, to: Date): { visits: number; newPatients: number } {
   const fromMs = from.getTime()
   const toMs = to.getTime()
-  const visits = filteredCompleted.value.filter((a) => a.at >= fromMs && a.at <= toMs).length
-  if (visits === 0) return null
-  const cents = filteredPayments.value.filter((p) => p.at >= fromMs && p.at <= toMs).reduce((sum, p) => sum + p.amount_cents, 0)
-  return cents / 100 / visits
+  let visits = 0
+  const newPatients = new Set<string>()
+  for (const a of filteredCompleted.value) {
+    if (a.at < fromMs || a.at > toMs) continue
+    visits++
+    if (a.stage === 'first_visit' || a.stage === 'first_visit_offer') newPatients.add(a.patient_id)
+  }
+  return { visits, newPatients: newPatients.size }
 }
+
+function pvaIn(from: Date, to: Date): number | null {
+  const { visits, newPatients } = pvaParts(from, to)
+  return newPatients === 0 ? null : visits / newPatients
+}
+const pvaNow = computed(() => pvaParts(rangeStart.value, rangeEnd.value))
+const pvaPartsLabel = computed(() => {
+  const { visits, newPatients } = pvaNow.value
+  const en = `${visits} ${visits === 1 ? 'visit' : 'visits'} · ${newPatients} new ${newPatients === 1 ? 'patient' : 'patients'}`
+  const es = `${visits} ${visits === 1 ? 'visita' : 'visitas'} · ${newPatients} ${newPatients === 1 ? 'paciente nuevo' : 'pacientes nuevos'}`
+  return t(en, es)
+})
 
 const trendRates = computed(() =>
   trendMonthKeys.value.map((key) => {
@@ -479,19 +436,19 @@ const trendChartData = computed(() => ({
       spanGaps: true,
     },
     {
-      label: t('PVA (€)', 'PVA (€)'),
-      data: trendRates.value.map((r) => (r.pva === null ? null : Number(r.pva.toFixed(2)))),
+      label: t('PVA (visits per new patient)', 'PVA (visitas por paciente nuevo)'),
+      data: trendRates.value.map((r) => (r.pva === null ? null : Number(r.pva.toFixed(1)))),
       borderColor: '#f59e0b',
       backgroundColor: '#f59e0b',
       borderDash: [5, 4],
       tension: 0.3,
-      yAxisID: 'eur',
+      yAxisID: 'pva',
       spanGaps: true,
     },
   ],
 }))
 
-// Two axes on purpose: three of these are percentages and one is euros, and
+// Two axes on purpose: three of these are percentages and one is a count, and
 // forcing them onto one scale would flatten whichever is smaller into the
 // floor. PVA is dashed so it reads as the odd one out.
 const trendChartOptions = {
@@ -500,7 +457,7 @@ const trendChartOptions = {
   interaction: { mode: 'index' as const, intersect: false },
   scales: {
     pct: { type: 'linear' as const, position: 'left' as const, beginAtZero: true, max: 100, ticks: { callback: (v: number | string) => `${v}%` } },
-    eur: { type: 'linear' as const, position: 'right' as const, beginAtZero: true, grid: { drawOnChartArea: false }, ticks: { callback: (v: number | string) => `€${v}` } },
+    pva: { type: 'linear' as const, position: 'right' as const, beginAtZero: true, grid: { drawOnChartArea: false } },
   },
   plugins: { legend: { position: 'bottom' as const } },
 }
@@ -562,10 +519,13 @@ const unclassifiedTypeNames = computed(() =>
             </p>
           </template>
         </div>
-        <div class="rounded-card border border-line bg-surface p-4 shadow-card" :aria-busy="appointmentsLoading || moneyLoading || undefined">
-          <div v-if="appointmentsLoading || moneyLoading" class="flex items-center font-mono text-[23px]" aria-hidden="true">&#8203;<UiSkeleton class="h-[23px] w-20 rounded-ctlSm" /></div>
-          <p v-else class="font-mono text-[23px] font-semibold text-ink-900">{{ pva !== null ? formatEurFromAmount(pva) : '—' }}</p>
-          <p class="text-[12px] text-ink-muted2">{{ t('PVA (avg. revenue / visit)', 'PVA (ingreso medio / visita)') }}</p>
+        <div class="rounded-card border border-line bg-surface p-4 shadow-card" :aria-busy="appointmentsLoading || undefined">
+          <div v-if="appointmentsLoading" class="flex items-center font-mono text-[23px]" aria-hidden="true">&#8203;<UiSkeleton class="h-[23px] w-20 rounded-ctlSm" /></div>
+          <p v-else data-test="stats-pva" class="font-mono text-[23px] font-semibold text-ink-900">{{ pva !== null ? pva.toFixed(1) : '—' }}</p>
+          <p class="text-[12px] text-ink-muted2">{{ t('PVA (visits / new patient)', 'PVA (visitas / paciente nuevo)') }}</p>
+          <p v-if="!appointmentsLoading" data-test="stats-pva-parts" class="mt-1 text-[11.5px] text-ink-faint2">
+            {{ pvaPartsLabel }}
+          </p>
         </div>
       </div>
 
@@ -609,7 +569,7 @@ const unclassifiedTypeNames = computed(() =>
           'The three rates and PVA, one point per month, over the last 12 months. Not affected by the date range above.',
           'Las tres tasas y el PVA, un punto por mes, durante los últimos 12 meses. No depende del rango de fechas de arriba.',
         )"
-        :loading="appointmentsLoading || moneyLoading"
+        :loading="appointmentsLoading"
         chart-height="h-80"
       >
         <div class="mt-3 h-80"><Line :data="trendChartData" :options="trendChartOptions" /></div>

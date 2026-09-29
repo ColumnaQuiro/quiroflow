@@ -1,5 +1,7 @@
 import PDFDocument from 'pdfkit'
 import { VERIFACTU_QR_LABEL, VERIFACTU_QR_LEGEND } from '../../utils/verifactuQr'
+import { exemptionClause, facturaTaxFor } from '../../utils/facturaTax'
+import { loadStatementDocumentData } from './statementData'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 
@@ -25,6 +27,7 @@ export interface InvoiceDocumentData {
     postalCode: string | null
     country: string | null
     nationalId: string | null
+    dateOfBirth?: string | null
   }
   clinic: { name: string; legalName: string | null; address: string | null; taxId: string | null; footerText: string | null } | null
   logoBuffer: Buffer | null
@@ -54,6 +57,30 @@ export interface InvoiceDocumentData {
   // requires; `url` is what it encodes, kept for tests and for anyone
   // debugging a "not found" from the AEAT.
   verifactuQr?: { url: string; png: Buffer } | null
+  // What the clinic chose to show on its receipts (Settings > Invoicing).
+  // Only the receipt carries it: a factura leaves it out and prints what the
+  // law requires, whatever these switches say.
+  receipt?: {
+    showDob: boolean
+    showNationalId: boolean
+    showTaxes: boolean
+    showPayments: boolean
+    showBalance: boolean
+    showAccountBalance: boolean
+    showPractitioner: boolean
+    showLogo: boolean
+    practitionerName: string | null
+    // The patient's whole-account balance, the same figure their statement
+    // closes on: positive is credit, negative is owed. Null when not shown.
+    accountBalanceCents: number | null
+    // The account's tax rule applied to the total, as the factura for this
+    // money would state it. A receipt is not a fiscal document; this only
+    // tells the patient what the price contains.
+    tax: { baseCents: number; rateBp: number; amountCents: number; exemptionClause: string | null }
+  }
+  // The receipt email's own subject and message, from Settings > Invoicing.
+  // Null leaves the built-in wording.
+  email?: { subject: string | null; body: string | null }
 }
 
 // "123 Main St" + "28001 Madrid" + "Spain" on their own lines, skipping any
@@ -74,7 +101,7 @@ export async function loadInvoiceDocumentData(
   const { data: invoice } = await supabase
     .from('invoices')
     .select(
-      'invoice_number, created_at, total_cents, account_id, patient_id, patients(first_name, last_name, email, address, city, postal_code, country, national_id), appointments(clinic_id)',
+      'invoice_number, created_at, total_cents, account_id, patient_id, patients(first_name, last_name, email, address, city, postal_code, country, national_id, date_of_birth), appointments(clinic_id, practitioner_id, practitioner_name)',
     )
     .eq('id', invoiceId)
     .maybeSingle()
@@ -92,7 +119,13 @@ export async function loadInvoiceDocumentData(
       .order('starts_at', { ascending: true })
       .limit(1)
       .maybeSingle(),
-    supabase.from('accounts').select('hide_next_visit_on_invoices').eq('id', invoice.account_id).maybeSingle(),
+    supabase
+      .from('accounts')
+      .select(
+        'hide_next_visit_on_invoices, show_dob_on_invoices, show_ssn_on_invoices, show_taxes_on_invoices, hide_invoice_balance, hide_account_balance, hide_payments_on_invoices, hide_provider_on_invoices, hide_logo_on_invoices, invoice_email_subject, invoice_email_body, factura_tax_rate_bp, factura_tax_exemption_code',
+      )
+      .eq('id', invoice.account_id)
+      .maybeSingle(),
   ])
 
   const patient = invoice.patients as unknown as {
@@ -104,8 +137,22 @@ export async function loadInvoiceDocumentData(
     postal_code: string | null
     country: string | null
     national_id: string | null
+    date_of_birth: string | null
   } | null
-  const appointment = invoice.appointments as unknown as { clinic_id: string } | null
+  const appointment = invoice.appointments as unknown as { clinic_id: string; practitioner_id: string | null; practitioner_name: string | null } | null
+
+  // The practitioner by their current name, falling back to the name the
+  // appointment was imported with. Only fetched when the receipt shows it.
+  let practitionerName: string | null = null
+  if (!account?.hide_provider_on_invoices && appointment) {
+    if (appointment.practitioner_id) {
+      const { data: member } = await supabase.from('team_members').select('full_name').eq('id', appointment.practitioner_id).maybeSingle()
+      practitionerName = member?.full_name ?? null
+    }
+    practitionerName ??= appointment.practitioner_name
+  }
+
+  const accountBalanceCents = account && !account.hide_account_balance ? ((await loadStatementDocumentData(supabase, invoice.patient_id))?.closingBalanceCents ?? null) : null
 
   // Most invoices come from an appointment (which has a clinic_id); a
   // package/membership sale invoice doesn't, so this falls back to the
@@ -161,6 +208,7 @@ export async function loadInvoiceDocumentData(
           postalCode: patient.postal_code,
           country: patient.country,
           nationalId: patient.national_id,
+          dateOfBirth: patient.date_of_birth,
         }
       : { firstName: '', lastName: null, email: null, address: null, city: null, postalCode: null, country: null, nationalId: null },
     clinic: clinicRow
@@ -169,6 +217,40 @@ export async function loadInvoiceDocumentData(
     logoBuffer,
     nextAppointmentDate: nextAppointment?.starts_at ?? null,
     hideNextVisit: !!account?.hide_next_visit_on_invoices,
+    receipt: receiptOptions(account, invoice.total_cents, practitionerName, accountBalanceCents),
+    email: { subject: account?.invoice_email_subject?.trim() || null, body: account?.invoice_email_body?.trim() || null },
+  }
+}
+
+type ReceiptAccount = {
+  show_dob_on_invoices: boolean
+  show_ssn_on_invoices: boolean
+  show_taxes_on_invoices: boolean
+  hide_invoice_balance: boolean
+  hide_account_balance: boolean
+  hide_payments_on_invoices: boolean
+  hide_provider_on_invoices: boolean
+  hide_logo_on_invoices: boolean
+  factura_tax_rate_bp: number | null
+  factura_tax_exemption_code: string | null
+}
+
+// The switches read as "show"; the columns are a mix of show_* and hide_*.
+// An account that could not be read prints what receipts always printed.
+export function receiptOptions(account: ReceiptAccount | null, totalCents: number, practitionerName: string | null, accountBalanceCents: number | null): NonNullable<InvoiceDocumentData['receipt']> {
+  const tax = facturaTaxFor(totalCents, account)
+  return {
+    showDob: !!account?.show_dob_on_invoices,
+    showNationalId: account ? account.show_ssn_on_invoices : true,
+    showTaxes: !!account?.show_taxes_on_invoices,
+    showPayments: !account?.hide_payments_on_invoices,
+    showBalance: !account?.hide_invoice_balance,
+    showAccountBalance: !!account && !account.hide_account_balance && accountBalanceCents !== null,
+    showPractitioner: !!account && !account.hide_provider_on_invoices && !!practitionerName,
+    showLogo: !account?.hide_logo_on_invoices,
+    practitionerName,
+    accountBalanceCents,
+    tax: { baseCents: tax.taxBaseCents, rateBp: tax.taxRateBp, amountCents: tax.taxAmountCents, exemptionClause: exemptionClause(tax.taxExemptionCode) },
   }
 }
 
@@ -196,16 +278,20 @@ export function generateInvoicePdf(data: InvoiceDocumentData): Promise<Buffer> {
       headerTop = 52 + size + 40
     }
 
-    if (data.logoBuffer) {
+    // The receipt's switches (Settings > Invoicing); a factura has none and
+    // prints everything below as it always has.
+    const receipt = data.receipt
+    const logo = receipt && !receipt.showLogo ? null : data.logoBuffer
+    if (logo) {
       try {
-        doc.image(data.logoBuffer, 50, headerTop, { fit: [120, 60] })
+        doc.image(logo, 50, headerTop, { fit: [120, 60] })
       } catch {
         // Corrupt/unsupported image format -- skip it rather than fail the whole invoice.
       }
     }
 
     if (data.clinic) {
-      const clinicX = data.logoBuffer ? 185 : 50
+      const clinicX = logo ? 185 : 50
       doc.fontSize(14).font('Helvetica-Bold').text(data.clinic.name, clinicX, headerTop + 5)
       doc.fontSize(10).font('Helvetica').fillColor('#555')
       if (data.clinic.legalName) doc.text(data.clinic.legalName, clinicX)
@@ -213,7 +299,7 @@ export function generateInvoicePdf(data: InvoiceDocumentData): Promise<Buffer> {
       if (data.clinic.taxId) doc.text(`Tax ID: ${data.clinic.taxId}`, clinicX)
       doc.moveDown(1.5)
     }
-    if (data.logoBuffer && doc.y < headerTop + 70) doc.y = headerTop + 70
+    if (logo && doc.y < headerTop + 70) doc.y = headerTop + 70
     if (doc.y < headerTop) doc.y = headerTop
 
     doc.x = 50
@@ -239,7 +325,9 @@ export function generateInvoicePdf(data: InvoiceDocumentData): Promise<Buffer> {
     doc.fillColor('#000').fontSize(12).font('Helvetica-Bold').text(`${data.patient.firstName} ${data.patient.lastName ?? ''}`.trim(), 50)
     doc.fontSize(10).font('Helvetica').fillColor('#555')
     for (const line of addressLines(data.patient.address, data.patient.city, data.patient.postalCode, data.patient.country)) doc.text(line, 50)
-    if (data.patient.nationalId) doc.text(`ID: ${data.patient.nationalId}`, 50)
+    if (data.patient.nationalId && (!receipt || receipt.showNationalId)) doc.text(`ID: ${data.patient.nationalId}`, 50)
+    if (receipt?.showDob && data.patient.dateOfBirth) doc.text(`Fecha de nacimiento: ${new Date(data.patient.dateOfBirth).toLocaleDateString('es-ES', { timeZone: 'UTC' })}`, 50)
+    if (receipt?.showPractitioner && receipt.practitionerName) doc.text(`Profesional: ${receipt.practitionerName}`, 50)
     doc.moveDown(1.5)
 
     const col = { desc: 50, qty: 340, price: 400, total: 470 }
@@ -303,15 +391,39 @@ export function generateInvoicePdf(data: InvoiceDocumentData): Promise<Buffer> {
           .text(data.tax.exemptionClause, 50, totalsY + 2, { width: 300 })
       }
     } else {
+      if (receipt?.showTaxes) {
+        const tax = receipt.tax
+        doc.text(`Base: €${(tax.baseCents / 100).toFixed(2)}`, col.price, totalsY, { width: 145, align: 'right' })
+        totalsY += 15
+        doc.text(tax.exemptionClause ? 'IVA: exenta' : `IVA (${(tax.rateBp / 100).toFixed(0)}%): €${(tax.amountCents / 100).toFixed(2)}`, col.price, totalsY, { width: 145, align: 'right' })
+        totalsY += 15
+      }
       doc.text(`Subtotal: €${(data.totalCents / 100).toFixed(2)}`, col.price, totalsY, { width: 145, align: 'right' })
       totalsY += 15
-      doc.text(`Paid: €${(data.paidCents / 100).toFixed(2)}`, col.price, totalsY, { width: 145, align: 'right' })
-      totalsY += 18
-      doc
-        .font('Helvetica-Bold')
-        .fontSize(11)
-        .fillColor('#000')
-        .text(`Balance due: €${(data.balanceDueCents / 100).toFixed(2)}`, col.price, totalsY, { width: 145, align: 'right' })
+      if (!receipt || receipt.showPayments) {
+        doc.text(`Paid: €${(data.paidCents / 100).toFixed(2)}`, col.price, totalsY, { width: 145, align: 'right' })
+        totalsY += 18
+      }
+      if (!receipt || receipt.showBalance) {
+        doc
+          .font('Helvetica-Bold')
+          .fontSize(11)
+          .fillColor('#000')
+          .text(`Balance due: €${(data.balanceDueCents / 100).toFixed(2)}`, col.price, totalsY, { width: 145, align: 'right' })
+        totalsY += 18
+      }
+      if (receipt?.showAccountBalance && receipt.accountBalanceCents !== null) {
+        const b = receipt.accountBalanceCents
+        doc
+          .font('Helvetica')
+          .fontSize(10)
+          .fillColor('#555')
+          .text(`Account balance: €${(Math.abs(b) / 100).toFixed(2)} ${b < 0 ? 'due' : 'credit'}`, col.price - 60, totalsY, { width: 205, align: 'right' })
+        totalsY += 15
+      }
+      if (receipt?.showTaxes && receipt.tax.exemptionClause) {
+        doc.font('Helvetica').fontSize(9).fillColor('#555').text(receipt.tax.exemptionClause, 50, y + 14, { width: 300 })
+      }
     }
 
     let footerY = totalsY + 40

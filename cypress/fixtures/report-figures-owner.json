@@ -187,6 +187,7 @@
     "lines": [
       "This month",
       "<select: All practitioners>",
+      "<select: All clinics>",
       "Total charged",
       "2856,00 €",
       "Total paid",
@@ -215,6 +216,7 @@
     "lines": [
       "This month",
       "<select: Beatriz Ferrando>",
+      "<select: All clinics>",
       "Total charged",
       "456,00 €",
       "Total paid",
@@ -243,6 +245,7 @@
     "lines": [
       "Last month",
       "<select: All practitioners>",
+      "<select: All clinics>",
       "Total charged",
       "5103,00 €",
       "Total paid",
@@ -271,6 +274,7 @@
     "lines": [
       "Last month",
       "<select: Natacha Ruiz>",
+      "<select: All clinics>",
       "Total charged",
       "1367,00 €",
       "Total paid",
@@ -295,12 +299,42 @@
       "Revenue (€): May 26=619.5"
     ]
   },
+  "income / last month / Norte": {
+    "lines": [
+      "Last month",
+      "<select: All practitioners>",
+      "<select: Norte>",
+      "Total charged",
+      "2224,00 €",
+      "Total paid",
+      "1343,00 €",
+      "Outstanding",
+      "108,00 €",
+      "A further",
+      "134,00 €",
+      "was settled from credit on account — already counted as income on the day it was paid in, so it is not in the totals above.",
+      "Revenue by month",
+      "height 256px",
+      "By payment method",
+      "height 224px",
+      "By practitioner",
+      "[Beatriz Ferrando | 372,00 € ; Natacha Ruiz | 252,00 € ; Olga Owner | 449,00 € ; Unassigned | 270,00 €]",
+      "By service",
+      "e.g. \"Primera Visita €600, Informe €6,000\" — set up under Billing → Services.",
+      "[Ajuste | 308,00 € ; Almohada cervical | 45,00 € ; Mantenimiento | 120,00 € ; Plantillas | 90,00 € ; Revisión | 44,00 €]"
+    ],
+    "charts": [
+      "Revenue (€): Bank transfer=299, Card=482, Cash=298, Other=264",
+      "Revenue (€): May 26=1343"
+    ]
+  },
   "daily transactions": {
     "lines": [
       "‹",
       "›",
       "Today",
       "<select: All practitioners>",
+      "<select: All clinics>",
       "Net collected",
       "788,00 €",
       "Bizum",
@@ -325,6 +359,7 @@
       "›",
       "Today",
       "<select: Olga Owner>",
+      "<select: All clinics>",
       "Net collected",
       "214,00 €",
       "Bank transfer",
@@ -345,6 +380,7 @@
       "›",
       "Today",
       "<select: All practitioners>",
+      "<select: All clinics>",
       "Net collected",
       "216,00 €",
       "Cash",
@@ -358,10 +394,27 @@
     ],
     "charts": []
   },
+  "daily transactions / yesterday / Norte": {
+    "lines": [
+      "‹",
+      "›",
+      "Today",
+      "<select: All practitioners>",
+      "<select: Norte>",
+      "Net collected",
+      "134,00 €",
+      "Cash",
+      "134,00 €",
+      "TIME PATIENT RECEIPT FOR PRACTITIONER METHOD AMOUNT",
+      "[11:41 Hugo Ruiz 25 R-00167 Visit Olga Owner Cash 134,00 €]"
+    ],
+    "charts": []
+  },
   "income performance": {
     "lines": [
       "This month",
       "<select: All practitioners>",
+      "<select: All clinics>",
       "Revenue by practitioner, by month",
       "height 320px",
       "Total over range",
@@ -375,6 +428,7 @@
     "lines": [
       "This month",
       "<select: Beatriz Ferrando>",
+      "<select: All clinics>",
       "Revenue by practitioner, by month",
       "height 320px",
       "Total over range",
@@ -388,6 +442,7 @@
     "lines": [
       "Last month",
       "<select: All practitioners>",
+      "<select: All clinics>",
       "Revenue by practitioner, by month",
       "height 320px",
       "Total over range",
@@ -397,6 +452,20 @@
       "Beatriz Ferrando: May 26=1346 || Natacha Ruiz: May 26=619.5 || Olga Owner: May 26=898 || Unassigned: May 26=980"
     ]
   },
+  "income performance / last month / Norte": {
+    "lines": [
+      "Last month",
+      "<select: All practitioners>",
+      "<select: Norte>",
+      "Revenue by practitioner, by month",
+      "height 320px",
+      "Total over range",
+      "[Beatriz Ferrando | 372,00 € ; Natacha Ruiz | 252,00 € ; Olga Owner | 449,00 € ; Unassigned | 270,00 €]"
+    ],
+    "charts": [
+      "Beatriz Ferrando: May 26=372 || Natacha Ruiz: May 26=252 || Olga Owner: May 26=449 || Unassigned: May 26=270"
+    ]
+  },
   "statistics": {
     "lines": [
       "Not counted anywhere below, because they have no stage yet: Sin etiquetar. Tag them in",
@@ -404,6 +473,7 @@
       ".",
       "This month",
       "<select: All practitioners>",
+      "<select: All clinics>",
       "Counts attended visits. Compared with the same dates a month earlier: May 1 – May 17",
       "5",
       "First visits",
@@ -478,6 +548,7 @@
       ".",
       "This month",
       "<select: Natacha Ruiz>",
+      "<select: All clinics>",
       "Counts attended visits. Compared with the same dates a month earlier: May 1 – May 17",
       "1",
       "First visits",
@@ -544,6 +615,7 @@
       ".",
       "Last month",
       "<select: All practitioners>",
+      "<select: All clinics>",
       "Counts attended visits. Compared with the same dates a month earlier: Apr 1 – Apr 30",
       "10",
       "First visits",
@@ -606,6 +678,73 @@
     ],
     "charts": [
       "Conversion to 3rd visit: Apr 26=25, Aug 25=null, Dec 25=null, Feb 26=100, Jan 26=null, Jul 25=null, Jun 26=0, Mar 26=71, May 26=60, Nov 25=null, Oct 25=null, Sep 25=null || Overall retention: Apr 26=93, Aug 25=null, Dec 25=null, Feb 26=0, Jan 26=null, Jul 25=null, Jun 26=100, Mar 26=39, May 26=94, Nov 25=null, Oct 25=null, Sep 25=null || PVA (€): Apr 26=28.39, Aug 25=null, Dec 25=null, Feb 26=68.47, Jan 26=null, Jul 25=null, Jun 26=106.58, Mar 26=76.25, May 26=43.89, Nov 25=null, Oct 25=null, Sep 25=null || Retention post-revision: Apr 26=75, Aug 25=null, Dec 25=null, Feb 26=50, Jan 26=null, Jul 25=null, Jun 26=100, Mar 26=67, May 26=0, Nov 25=null, Oct 25=null, Sep 25=null"
+    ]
+  },
+  "statistics / last month / Norte": {
+    "lines": [
+      "Not counted anywhere below, because they have no stage yet: Sin etiquetar. Tag them in",
+      "Settings → Appointment Types",
+      ".",
+      "Last month",
+      "<select: All practitioners>",
+      "<select: Norte>",
+      "Counts attended visits. Compared with the same dates a month earlier: Apr 1 – Apr 30",
+      "6",
+      "First visits",
+      "vs 0 before",
+      "0",
+      "First visit offers",
+      "vs 0 before",
+      "5",
+      "Reports",
+      "▲ 150%",
+      "vs 2",
+      "1 cancelled",
+      "24",
+      "Adjustments",
+      "▲ 26%",
+      "vs 19",
+      "3 cancelled",
+      "3",
+      "Revision 1",
+      "▲ 50%",
+      "vs 2",
+      "1",
+      "Revision 2",
+      "vs 0 before",
+      "7",
+      "Maintenance visits",
+      "▲ 600%",
+      "vs 1",
+      "1 cancelled",
+      "46",
+      "Total completed visits",
+      "▲ 92%",
+      "vs 24",
+      "11,80 €",
+      "PVA (avg. revenue / visit)",
+      "Conversion to 3rd visit",
+      "67%",
+      "2 of 3 patients given their report came to a chiropractic adjustment",
+      "Previous period: 100%",
+      "Retention post-revision",
+      "0%",
+      "0 of 3 patients at revision 1 went on to a maintenance visit",
+      "Previous period: 50%",
+      "Overall retention",
+      "93%",
+      "Of patients seen this period, % also seen before it",
+      "Month by month",
+      "The three rates and PVA, one point per month, over the last 12 months. Not affected by the date range above.",
+      "height 320px",
+      "Package/bono sales are tracked separately — see",
+      "Debtors",
+      "and",
+      "Memberships",
+      "."
+    ],
+    "charts": [
+      "Conversion to 3rd visit: Apr 26=100, Aug 25=null, Dec 25=null, Feb 26=null, Jan 26=null, Jul 25=null, Jun 26=0, Mar 26=100, May 26=67, Nov 25=null, Oct 25=null, Sep 25=null || Overall retention: Apr 26=89, Aug 25=null, Dec 25=null, Feb 26=0, Jan 26=null, Jul 25=null, Jun 26=100, Mar 26=39, May 26=93, Nov 25=null, Oct 25=null, Sep 25=null || PVA (€): Apr 26=17, Aug 25=null, Dec 25=null, Feb 26=15.5, Jan 26=null, Jul 25=null, Jun 26=21, Mar 26=20.19, May 26=11.8, Nov 25=null, Oct 25=null, Sep 25=null || Retention post-revision: Apr 26=50, Aug 25=null, Dec 25=null, Feb 26=null, Jan 26=null, Jul 25=null, Jun 26=100, Mar 26=0, May 26=0, Nov 25=null, Oct 25=null, Sep 25=null"
     ]
   },
   "scheduled reminders": {
@@ -709,6 +848,7 @@
     "lines": [
       "This month",
       "<select: All practitioners>",
+      "<select: All clinics>",
       "Morning (before 12pm)",
       "21",
       "93% show-up rate",
@@ -732,6 +872,7 @@
     "lines": [
       "This month",
       "<select: Olga Owner>",
+      "<select: All clinics>",
       "Morning (before 12pm)",
       "10",
       "100% show-up rate",
@@ -749,6 +890,30 @@
     "charts": [
       "Appointments: 10am=1, 11am=2, 12pm=1, 1pm=3, 2pm=0, 3pm=2, 4pm=5, 5pm=3, 6pm=3, 7pm=0, 8am=2, 9am=5",
       "Booked (upcoming): Afternoon (12–4pm)=2, Evening (4pm+)=1, Morning (before 12pm)=2 || Cancelled: Afternoon (12–4pm)=1, Evening (4pm+)=0, Morning (before 12pm)=2 || Completed: Afternoon (12–4pm)=3, Evening (4pm+)=9, Morning (before 12pm)=6 || No-show: Afternoon (12–4pm)=0, Evening (4pm+)=1, Morning (before 12pm)=0"
+    ]
+  },
+  "appointment distribution / Norte": {
+    "lines": [
+      "This month",
+      "<select: All practitioners>",
+      "<select: Norte>",
+      "Morning (before 12pm)",
+      "14",
+      "100% show-up rate",
+      "Afternoon (12–4pm)",
+      "8",
+      "100% show-up rate",
+      "Evening (4pm+)",
+      "13",
+      "91% show-up rate",
+      "By shift, by outcome",
+      "height 288px",
+      "By hour of day",
+      "height 256px"
+    ],
+    "charts": [
+      "Appointments: 10am=2, 11am=1, 12pm=1, 1pm=1, 2pm=1, 3pm=5, 4pm=6, 5pm=4, 6pm=2, 7pm=1, 8am=5, 9am=6",
+      "Booked (upcoming): Afternoon (12–4pm)=1, Evening (4pm+)=2, Morning (before 12pm)=3 || Cancelled: Afternoon (12–4pm)=0, Evening (4pm+)=0, Morning (before 12pm)=1 || Completed: Afternoon (12–4pm)=7, Evening (4pm+)=10, Morning (before 12pm)=10 || No-show: Afternoon (12–4pm)=0, Evening (4pm+)=1, Morning (before 12pm)=0"
     ]
   },
   "debtors": {

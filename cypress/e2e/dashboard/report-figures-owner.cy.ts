@@ -35,11 +35,11 @@ describe('Report and dashboard figures, as the owner', () => {
     cy.visit(path, { onBeforeLoad: (win) => defaultLocale(win) })
   }
   const figures = (key: string) => expectFigures(FIXTURE, recorded, key)
-  // No clinic filter here: ReportsPractitionerClinicFilters declares
-  // `showClinic?: boolean`, which Vue casts to false when a page leaves it
-  // out, so no report has ever shown its clinic picker. The pages' clinic
-  // code paths are unreachable from the UI and cannot be pinned from it.
   const practitioner = (name: string) => cy.get('[data-cy="report-practitioner-filter"]').select(name)
+  // The generated account has a second clinic, "Norte". Until the clinic
+  // picker was fixed it never rendered, so these are the first figures ever
+  // pinned through it.
+  const clinic = (name: string) => cy.get('[data-cy="report-clinic-filter"]').select(name)
 
   it('dashboard', () => {
     open('/dashboard')
@@ -60,6 +60,9 @@ describe('Report and dashboard figures, as the owner', () => {
     figures('income / last month')
     practitioner('Natacha Ruiz')
     figures('income / last month / Natacha')
+    practitioner('All practitioners')
+    clinic('Norte')
+    figures('income / last month / Norte')
   })
 
   it('daily transactions', () => {
@@ -70,6 +73,8 @@ describe('Report and dashboard figures, as the owner', () => {
     practitioner('All practitioners')
     cy.contains('button', '‹').click()
     figures('daily transactions / yesterday')
+    clinic('Norte')
+    figures('daily transactions / yesterday / Norte')
   })
 
   it('income performance', () => {
@@ -80,6 +85,8 @@ describe('Report and dashboard figures, as the owner', () => {
     practitioner('All practitioners')
     pickPreset('Last month')
     figures('income performance / last month')
+    clinic('Norte')
+    figures('income performance / last month / Norte')
   })
 
   it('statistics', () => {
@@ -90,6 +97,8 @@ describe('Report and dashboard figures, as the owner', () => {
     practitioner('All practitioners')
     pickPreset('Last month')
     figures('statistics / last month')
+    clinic('Norte')
+    figures('statistics / last month / Norte')
   })
 
   it('scheduled reminders', () => {
@@ -109,6 +118,9 @@ describe('Report and dashboard figures, as the owner', () => {
     figures('appointment distribution')
     practitioner('Olga Owner')
     figures('appointment distribution / Olga')
+    practitioner('All practitioners')
+    clinic('Norte')
+    figures('appointment distribution / Norte')
   })
 
   it('debtors and memberships', () => {

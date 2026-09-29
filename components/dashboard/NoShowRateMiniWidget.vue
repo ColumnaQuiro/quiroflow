@@ -13,6 +13,7 @@ const thisWeekAppointments = useThisWeekAppointments()
 const loading = ref(true)
 const rate = ref<number | null>(null)
 const deltaPts = ref<number | null>(null)
+const latest = useLatestRun()
 
 function rateFor(rows: ApptRow[]): number | null {
   const finished = rows.filter((r) => r.status === 'completed' || r.status === 'no_show')
@@ -31,6 +32,7 @@ async function fetchWeek(weekOf: Date): Promise<ApptRow[]> {
 }
 
 async function load() {
+  const isStale = latest.start()
   loading.value = true
   const now = new Date()
   const lastWeek = new Date(now)
@@ -38,6 +40,7 @@ async function load() {
   // This week's rows are shared with the other this-week widgets; see
   // useThisWeekAppointments.
   const [thisWeekRows, lastWeekRows] = await Promise.all([thisWeekAppointments(props.practitionerId, props.clinicId), fetchWeek(lastWeek)])
+  if (isStale()) return
   const thisRate = rateFor(thisWeekRows)
   const lastRate = rateFor(lastWeekRows)
   rate.value = thisRate

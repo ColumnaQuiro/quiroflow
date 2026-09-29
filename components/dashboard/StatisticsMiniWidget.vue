@@ -11,34 +11,45 @@ interface InvoiceRow { id: string; appointment_id: string | null }
 
 const t = useT()
 const supabase = useSupabaseClient()
-const loading = ref(true)
 const allCompleted = ref<ApptRow[]>([])
 const payments = ref<PaymentRow[]>([])
 const invoices = ref<InvoiceRow[]>([])
+const historyLoading = ref(true)
+const paymentsLoading = ref(true)
+const loading = computed(() => historyLoading.value || paymentsLoading.value)
+const latestHistory = useLatestRun()
+const latestPayments = useLatestRun()
 
-async function load() {
-  loading.value = true
-  const { from, to } = rangeBounds(props.dateRange)
+// Two loads, because only one of them is about the period. The completed
+// visits are all-time -- retention compares against visits from before the
+// range -- and every figure below cuts the range out of them in memory, so
+// they used to be paged in full again on every change of dates for an
+// identical answer. They now reload only when whose figures these are
+// changes, and a new period costs only its payments.
+async function loadHistory() {
+  const isStale = latestHistory.start()
+  historyLoading.value = true
   // Invoices are only read to walk payment -> invoice -> appointment when a
   // practitioner/clinic filter is set (filteredPayments short-circuits
   // without one), so an unfiltered dashboard was paging the whole invoices
-  // table for nothing. The completed-appointments fetch below genuinely is
-  // all-time: retention compares against visits from before the range.
+  // table for nothing.
   const needsInvoices = !!props.practitionerId || !!props.clinicId
-
-  const [completed, p, inv] = await Promise.all([
-    fetchAllRows<ApptRow>(
-      (f, t) => supabase.from('appointments').select('id, patient_id, starts_at, practitioner_id, clinic_id').eq('status', 'completed').range(f, t),
-      { total: supabase.from('appointments').select('id', { count: 'exact', head: true }).eq('status', 'completed') },
-    ),
-    fetchAllRows<PaymentRow>((f, t) =>
-      supabase
-        .from('payments')
-        .select('amount_cents, method, invoice_id, invoices!payments_invoice_id_fkey(status)')
-        .gte('paid_at', from.toISOString())
-        .lte('paid_at', to.toISOString())
-        .range(f, t),
-    ),
+  // Narrowed in the query to the practitioner/clinic filteredCompleted keeps
+  // anyway. The payment walk below reads appointmentById unfiltered, but a
+  // visit that fails the filter makes its payment drop out there exactly as
+  // an absent one does, so no figure moves.
+  let completedQuery = supabase.from('appointments').select('id, patient_id, starts_at, practitioner_id, clinic_id').eq('status', 'completed')
+  let completedCount = supabase.from('appointments').select('id', { count: 'exact', head: true }).eq('status', 'completed')
+  if (props.practitionerId) {
+    completedQuery = completedQuery.eq('practitioner_id', props.practitionerId)
+    completedCount = completedCount.eq('practitioner_id', props.practitionerId)
+  }
+  if (props.clinicId) {
+    completedQuery = completedQuery.eq('clinic_id', props.clinicId)
+    completedCount = completedCount.eq('clinic_id', props.clinicId)
+  }
+  const [completed, inv] = await Promise.all([
+    fetchAllRows<ApptRow>((f, t) => completedQuery.range(f, t), { total: completedCount }),
     needsInvoices
       ? fetchAllRows<InvoiceRow>(
           (f, t) => supabase.from('invoices').select('id, appointment_id').range(f, t),
@@ -46,7 +57,25 @@ async function load() {
         )
       : Promise.resolve([] as InvoiceRow[]),
   ])
+  if (isStale()) return
   allCompleted.value = completed
+  invoices.value = inv
+  historyLoading.value = false
+}
+
+async function loadPayments() {
+  const isStale = latestPayments.start()
+  paymentsLoading.value = true
+  const { from, to } = rangeBounds(props.dateRange)
+  const p = await fetchAllRows<PaymentRow>((f, t) =>
+    supabase
+      .from('payments')
+      .select('amount_cents, method, invoice_id, invoices!payments_invoice_id_fkey(status)')
+      .gte('paid_at', from.toISOString())
+      .lte('paid_at', to.toISOString())
+      .range(f, t),
+  )
+  if (isStale()) return
   // The void rule moved out of the query when the join went from inner to
   // left: a payment with no invoice has nothing to void and must survive it.
   const notVoid = (row: PaymentRow) => row.invoices?.status !== 'void'
@@ -54,11 +83,14 @@ async function load() {
   // this figure is money -- see utils/paymentReceipts. Dropped here rather
   // than at each total, because every number on this widget is takings.
   payments.value = p.filter((row) => notVoid(row) && isReceipt(row.method))
-  invoices.value = inv
-  loading.value = false
+  paymentsLoading.value = false
 }
-onMounted(load)
-watch(() => [props.dateRange, props.practitionerId, props.clinicId], load, { deep: true })
+onMounted(() => {
+  loadHistory()
+  loadPayments()
+})
+watch(() => [props.practitionerId, props.clinicId], loadHistory)
+watch(() => props.dateRange, loadPayments, { deep: true })
 
 const filteredCompleted = computed(() => {
   if (!props.practitionerId && !props.clinicId) return allCompleted.value

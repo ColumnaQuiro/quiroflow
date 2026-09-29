@@ -65,7 +65,9 @@ describe('Changing a payment method', () => {
     cy.seedStaffAccount().then((account) => {
       cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Estela', lastName: 'Stripe' }).then((patient: any) => {
         cy.task('db:createInvoice', { accountId: account.accountId, patientId: patient.id, totalCents: 4400, status: 'paid' }).then((invoice: any) => {
-          cy.task('db:createPayment', { accountId: account.accountId, invoiceId: invoice.id, amountCents: 4400, method: 'card', stripePaymentIntentId: 'pi_test_change_method' })
+          // Unique per run: the column is unique across accounts, so a fixed id
+          // fails every run after the first against the same database.
+          cy.task('db:createPayment', { accountId: account.accountId, invoiceId: invoice.id, amountCents: 4400, method: 'card', stripePaymentIntentId: `pi_test_change_method_${Date.now()}` })
 
           cy.login(account.email, account.password)
           cy.visit(`/patients/${patient.id}?tab=billing`)

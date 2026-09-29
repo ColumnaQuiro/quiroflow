@@ -7,6 +7,7 @@ const loading = ref(true)
 const totalCount = ref(0)
 const changePct = ref<number | null>(null)
 const dailyAvg = ref(0)
+const latest = useLatestRun()
 
 function monthStart(offset: number) {
   const d = new Date()
@@ -24,7 +25,8 @@ function daysInMonth(d: Date) {
   return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
 }
 
-onMounted(async () => {
+async function load() {
+  const isStale = latest.start()
   loading.value = true
   const rangeStart = monthStart(0)
   const rangeEnd = addMonths(rangeStart, 1)
@@ -39,12 +41,17 @@ onMounted(async () => {
     prevQuery = prevQuery.eq('practitioner_id', props.practitionerId)
   }
   const [{ count: current }, { count: prevCount }] = await Promise.all([currentQuery, prevQuery])
+  if (isStale()) return
 
   totalCount.value = current ?? 0
   changePct.value = !prevCount ? null : Math.round(((totalCount.value - prevCount) / prevCount) * 100)
   dailyAvg.value = totalCount.value / daysInMonth(rangeStart)
   loading.value = false
-})
+}
+onMounted(load)
+// Mount-only, it went on showing the first practitioner's month after the
+// filter above the dashboard moved to another.
+watch(() => props.practitionerId, load)
 </script>
 
 <template>

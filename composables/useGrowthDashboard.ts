@@ -88,7 +88,67 @@ export interface GrowthDashboardData {
   trendAxis: string[]
 }
 
-export function useGrowthDashboard() {
+// What the locked screen draws out of focus behind the upgrade card. It used
+// to be the clinic's own dashboard, fetched like the real one -- but the
+// endpoint answers 402 to an account without Growth, which is exactly the
+// account that sees the locked screen, so it showed an error instead of the
+// offer. The body is the same component either way; only the numbers are
+// made up, and nobody can read them through the blur.
+export const SAMPLE_GROWTH_DASHBOARD: GrowthDashboardData = (() => {
+  const trend = [9, 11, 8, 13, 12, 15, 14, 17, 16, 19, 18, 21, 22].map((leads, i) => ({
+    label: `W${i + 1}`,
+    leads,
+    booked: Math.round(leads * 0.55),
+  }))
+  const channels: GrowthChannelRow[] = [
+    { channel: 'Meta Ads', spend: '€1,480', spendCents: 148_000, leads: 64, booked: 33, showRate: 82, costPerNewPatient: '€62' },
+    { channel: 'Google Ads', spend: '€920', spendCents: 92_000, leads: 41, booked: 24, showRate: 88, costPerNewPatient: '€54' },
+    { channel: 'Direct', spend: null, spendCents: null, leads: 22, booked: 14, showRate: 93, costPerNewPatient: null },
+  ]
+  return {
+    periodLabel: 'September 2026',
+    kpis: [
+      { key: 'leads', label: 'New leads this month', value: '127', delta: '342 in 90 days', tone: 'neutral' },
+      { key: 'cpl', label: 'Cost per lead', value: '€18.90', delta: '€2,400 spend', tone: 'neutral' },
+      { key: 'cpnp', label: 'Cost per new patient', value: '€58', delta: '41 converted', tone: 'neutral' },
+      { key: 'revenue', label: 'Revenue attributed', value: '€16,400', delta: 'Estimated value of converted leads', tone: 'positive' },
+      { key: 'roas', label: 'ROAS', value: '6.8x', delta: '€2,400 spend', tone: 'positive' },
+    ],
+    funnelStages: [
+      { key: 'new', label: 'New Lead', count: 127, caption: '' },
+      { key: 'contacted', label: 'Contacted', count: 112, caption: '' },
+      { key: 'qualified', label: 'Qualified', count: 88, caption: '' },
+      { key: 'booked', label: 'Booked', count: 71, caption: '' },
+      { key: 'showed', label: 'Showed', count: 60, caption: '' },
+      { key: 'converted', label: 'Converted', count: 41, caption: '' },
+    ],
+    funnelSteps: [
+      { pct: 88, delta: '−15', tone: 'neutral' },
+      { pct: 79, delta: '−24', tone: 'neutral' },
+      { pct: 81, delta: '−17', tone: 'neutral' },
+      { pct: 85, delta: '−11', tone: 'neutral' },
+      { pct: 68, delta: '−19', tone: 'warning', emphasis: true },
+    ],
+    endToEndRate: '32.3%',
+    dropOff: { summary: 'Biggest drop-off: 19 leads did not reach Converted.', action: 'Review the pipeline' },
+    ai: null,
+    alerts: [
+      { key: 'stale', tone: 'negative', title: '6 leads waiting more than a week', detail: 'Contacted or qualified, never booked' },
+      { key: 'unattributed', tone: 'neutral', title: '3 leads with no source', detail: 'They count in the funnel but not in any channel' },
+    ],
+    channels,
+    channelTotals: { channel: 'All channels', spend: '€2,400', spendCents: 240_000, leads: 127, booked: 71, showRate: 85, costPerNewPatient: '€58' },
+    trend,
+    trendAxis: [trend[0]!.label, trend[6]!.label, trend[12]!.label],
+  }
+})()
+
+/**
+ * `entitled` says whether this account has Growth: null while that is not yet
+ * known. Nothing is fetched until it is true -- without Growth the endpoint
+ * only ever answers 402.
+ */
+export function useGrowthDashboard(entitled: () => boolean | null) {
   const data = ref<GrowthDashboardData | null>(null)
   const loading = ref(true)
   const error = ref<string | null>(null)
@@ -115,7 +175,17 @@ export function useGrowthDashboard() {
     await load()
   }
 
-  onMounted(load)
+  // Watched rather than read once: the tier can resolve to "no" and then to
+  // "yes" when the account store lands after mount.
+  let requested = false
+  onMounted(() => {
+    watch(entitled, (on) => {
+      if (on && !requested) {
+        requested = true
+        load()
+      }
+    }, { immediate: true })
+  })
 
   return { data, loading, error, saveChannelSpend, reload: load }
 }

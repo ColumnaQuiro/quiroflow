@@ -16,11 +16,14 @@ const DAY_LABELS = computed(() => [
 ])
 const kept = ref<number[]>(Array(7).fill(0))
 const lost = ref<number[]>(Array(7).fill(0))
+const latest = useLatestRun()
 
 async function load() {
+  const isStale = latest.start()
   loading.value = true
   // Shared with the visit summary and the no-show rate: see useThisWeekAppointments.
   const rows = await thisWeekAppointments(props.practitionerId, props.clinicId)
+  if (isStale()) return
 
   const nextKept = Array(7).fill(0)
   const nextLost = Array(7).fill(0)

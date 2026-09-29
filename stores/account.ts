@@ -29,6 +29,14 @@ export type PermissionValue = boolean | 'all' | 'own' | 'none'
 const CURRENT_CLINIC_STORAGE_KEY = 'quiroflow-current-clinic-id'
 const CLINIC_COOKIE_OPTIONS = { maxAge: 60 * 60 * 24 * 365, sameSite: 'lax' as const }
 
+// The load in progress, per store instance. A second caller used to return at
+// once while the first was still waiting on the bootstrap, so middleware could
+// go on to read an empty store -- no team member, no permissions -- and route
+// on that. Keyed by the store rather than held in a module variable because on
+// the server the module outlives the request, and a promise is not state the
+// SSR payload can carry.
+const inFlightLoads = new WeakMap<object, Promise<void>>()
+
 export interface Clinic {
   id: string
   account_id: string
@@ -102,8 +110,21 @@ export const useAccountStore = defineStore('account', {
     },
   },
   actions: {
-    async load() {
-      if (this.loading) return
+    load(): Promise<void> {
+      const pending = inFlightLoads.get(this)
+      if (pending) return pending
+      const run = this.loadBootstrap().finally(() => {
+        if (inFlightLoads.get(this) !== run) return
+        inFlightLoads.delete(this)
+        // A bootstrap that threw left this true, and layouts/default.vue then
+        // never asked again.
+        this.loading = false
+      })
+      inFlightLoads.set(this, run)
+      return run
+    },
+    // Called through load(), which shares one run between callers.
+    async loadBootstrap() {
       this.loading = true
       const supabase = useSupabaseClient()
       const user = useSupabaseUser()
@@ -189,6 +210,7 @@ export const useAccountStore = defineStore('account', {
       if (!import.meta.server) localStorage.setItem(CURRENT_CLINIC_STORAGE_KEY, id)
     },
     reset() {
+      inFlightLoads.delete(this)
       this.teamMember = null
       this.accountName = ''
       this.accountSlug = ''

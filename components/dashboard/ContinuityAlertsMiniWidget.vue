@@ -11,12 +11,15 @@ const supabase = useSupabaseClient()
 const loading = ref(true)
 const count = ref(0)
 const avgDays = ref<number | null>(null)
+const latest = useLatestRun()
 
 async function load() {
+  const isStale = latest.start()
   loading.value = true
   let query = supabase.from('care_plan_continuity_alerts').select('days_overdue')
   if (props.practitionerId) query = query.eq('default_practitioner_id', props.practitionerId)
   const rows = await fetchAllRows<AlertRow>((f, t) => query.range(f, t))
+  if (isStale()) return
   count.value = rows.length
   const known = rows.map((r) => r.days_overdue).filter((d): d is number => d !== null)
   avgDays.value = known.length > 0 ? Math.round(known.reduce((sum, d) => sum + d, 0) / known.length) : null

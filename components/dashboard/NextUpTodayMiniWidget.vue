@@ -14,8 +14,10 @@ interface ApptRow {
 const supabase = useSupabaseClient()
 const loading = ref(true)
 const rows = ref<ApptRow[]>([])
+const latest = useLatestRun()
 
 async function load() {
+  const isStale = latest.start()
   loading.value = true
   const now = new Date()
   const endOfDay = new Date(now)
@@ -32,6 +34,7 @@ async function load() {
   if (props.practitionerId) query = query.eq('practitioner_id', props.practitionerId)
   if (props.clinicId) query = query.eq('clinic_id', props.clinicId)
   const { data } = await query
+  if (isStale()) return
   rows.value = (data as unknown as ApptRow[]) ?? []
   loading.value = false
 }

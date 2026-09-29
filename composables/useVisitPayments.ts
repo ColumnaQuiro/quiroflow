@@ -3,8 +3,11 @@ import type { Database } from '~/types/database.types'
 
 // How each of a set of visits was paid for, keyed by appointment id.
 //
-// Four tables, in three rounds: the first two are independent, payments need
-// the invoice ids, facturas need the payment ids. Shared by the patient's
+// Four tables in one round: the bono sessions, and the invoices with their
+// payments and each payment's factura embedded. It used to be three rounds --
+// payments waited for the invoice ids, facturas for the payment ids -- and
+// every screen that shows this (the calendar, the appointment panel, the
+// patient's visits) waited on all three in series. Shared by the patient's
 // Appointments tab and the calendar, which both need the same answer for a
 // screenful of visits -- see utils/visitPayment for the rules that turn the
 // rows into one.
@@ -25,42 +28,34 @@ async function fetchVisitPayments(supabase: ReturnType<typeof useSupabaseClient<
         .select('appointment_id, amount_cents, external_reference, package_purchases(package_name, sessions_total, sessions_used, external_reference)')
         .in('appointment_id', chunk),
     ),
-    fetchByIds(appointmentIds, (chunk) => supabase.from('invoices').select('id, appointment_id, invoice_number, total_cents, status').in('appointment_id', chunk)),
+    // Named foreign key: invoices and payments are related twice (a refund
+    // invoice also points at the payment it refunds). Payments in the order
+    // they were taken.
+    fetchByIds(appointmentIds, (chunk) =>
+      supabase
+        .from('invoices')
+        .select('id, appointment_id, invoice_number, total_cents, status, payments!payments_invoice_id_fkey(id, method, amount_cents, paid_at, facturas(number))')
+        .in('appointment_id', chunk)
+        .order('paid_at', { referencedTable: 'payments' }),
+    ),
   ])
-
-  const invoiceIds = invoices.map((i) => i.id)
-  // Ordered by paid_at inside each chunk; a chunk holds whole invoices, so
-  // each invoice's payments stay in the order they were taken.
-  const payments = await fetchByIds(invoiceIds, (chunk) => supabase.from('payments').select('id, invoice_id, method, amount_cents').in('invoice_id', chunk).order('paid_at'))
-
-  const paymentIds = payments.map((p) => p.id)
-  const facturas = await fetchByIds(paymentIds, (chunk) => supabase.from('facturas').select('payment_id, number').in('payment_id', chunk))
 
   const sessionByAppointment = new Map<string, any>()
   for (const s of sessions) if (s.appointment_id) sessionByAppointment.set(s.appointment_id, s)
-
-  const paymentsByInvoice = new Map<string, { id: string; method: string; amount_cents: number }[]>()
-  for (const p of payments) {
-    if (!p.invoice_id) continue
-    const list = paymentsByInvoice.get(p.invoice_id) ?? []
-    list.push(p)
-    paymentsByInvoice.set(p.invoice_id, list)
-  }
-
-  const facturaByPayment = new Map<string, string>()
-  for (const f of facturas) if (f.payment_id) facturaByPayment.set(f.payment_id, f.number)
 
   const resolved: Record<string, VisitPayment> = {}
   for (const id of appointmentIds) {
     const session = sessionByAppointment.get(id)
     const invoice = invoices.find((i) => i.appointment_id === id) ?? null
-    const invoicePayments = invoice ? (paymentsByInvoice.get(invoice.id) ?? []) : []
+    const invoicePayments = invoice?.payments ?? []
     resolved[id] = resolveVisitPayment({
       session: session ? { amount_cents: session.amount_cents, external_reference: session.external_reference } : null,
       purchase: session?.package_purchases ?? null,
       invoice: invoice ? { invoice_number: invoice.invoice_number, total_cents: invoice.total_cents, status: invoice.status } : null,
       payments: invoicePayments.map((p) => ({ method: p.method, amount_cents: p.amount_cents })),
-      facturaNumbers: invoicePayments.map((p) => facturaByPayment.get(p.id)).filter((n): n is string => !!n),
+      // One factura per payment (payment_id is unique), so PostgREST embeds
+      // an object rather than a list; concat accepts either.
+      facturaNumbers: invoicePayments.flatMap((p) => ([] as { number: string }[]).concat(p.facturas ?? []).map((f) => f.number)).filter((n): n is string => !!n),
     })
   }
   return resolved

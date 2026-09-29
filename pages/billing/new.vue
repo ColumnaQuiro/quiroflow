@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { formatEur } from '~/utils/billing'
+import { normalizeSearchTerm, sanitizeSearchToken } from '~/utils/searchText'
 import type { Tables } from '~/types/database.types'
 
 interface PatientOption { id: string; first_name: string; last_name: string | null }
+type ServiceOption = Pick<Tables<'services_products'>, 'id' | 'name' | 'price_cents'>
 
 interface LineItem {
   serviceId: string
@@ -16,40 +18,64 @@ const store = useAccountStore()
 const route = useRoute()
 const t = useT()
 
-const patients = ref<PatientOption[]>([])
-const services = ref<Tables<'services_products'>[]>([])
-const patientId = ref('')
+// Searched on the server as you type, as the Waitlist does. The whole patients
+// table used to load here, capped at PostgREST's 1,000 rows, so anyone past
+// that was unfindable and a ?patient_id= among them preselected nobody.
+const patientResults = ref<PatientOption[]>([])
+const searchingPatients = ref(false)
+const selectedPatient = ref<PatientOption | null>(null)
+const services = ref<ServiceOption[]>([])
+const patientId = computed(() => selectedPatient.value?.id ?? '')
 const patientQuery = ref('')
 const lines = ref<LineItem[]>([{ serviceId: '', description: '', quantity: 1, priceEuros: '' }])
 const error = ref('')
 const saving = ref(false)
 
 onMounted(async () => {
-  const [{ data: pts }, { data: svc }] = await Promise.all([
-    supabase.from('patients').select('id, first_name, last_name').order('first_name'),
-    supabase.from('services_products').select('*').order('name'),
-  ])
-  patients.value = pts ?? []
-  services.value = svc ?? []
-
   // Preselects the patient when arriving from their own Account Ledger
   // ("New Invoice" there links here with ?patient_id= rather than opening a
   // separate modal, so this page needs to skip its own patient search step).
   const requestedId = route.query.patient_id
-  if (typeof requestedId === 'string' && patients.value.some((p) => p.id === requestedId)) {
-    patientId.value = requestedId
-  }
+  const [{ data: svc }, requested] = await Promise.all([
+    supabase.from('services_products').select('id, name, price_cents').order('name'),
+    typeof requestedId === 'string'
+      ? supabase.from('patients').select('id, first_name, last_name').eq('id', requestedId).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ])
+  services.value = svc ?? []
+  if (requested.data && !selectedPatient.value) selectedPatient.value = requested.data
 })
 
-const filteredPatients = computed(() => {
-  if (!patientQuery.value) return patients.value.slice(0, 20)
-  const q = patientQuery.value.toLowerCase()
-  return patients.value
-    .filter((p) => `${p.first_name} ${p.last_name ?? ''}`.toLowerCase().includes(q))
-    .slice(0, 20)
+let searchDebounce: ReturnType<typeof setTimeout> | undefined
+let searchToken = 0
+watch(patientQuery, (q) => {
+  clearTimeout(searchDebounce)
+  const token = ++searchToken
+  const term = sanitizeSearchToken(q.trim())
+  if (!term) {
+    patientResults.value = []
+    searchingPatients.value = false
+    return
+  }
+  searchingPatients.value = true
+  searchDebounce = setTimeout(async () => {
+    const { data } = await supabase
+      .from('patients')
+      .select('id, first_name, last_name')
+      .ilike('search_name', `%${normalizeSearchTerm(term)}%`)
+      .order('first_name')
+      .limit(20)
+    if (token !== searchToken) return
+    patientResults.value = data ?? []
+    searchingPatients.value = false
+  }, 250)
 })
+function pickPatient(p: PatientOption) {
+  selectedPatient.value = p
+  patientQuery.value = ''
+}
 const selectedPatientLabel = computed(() => {
-  const p = patients.value.find((p) => p.id === patientId.value)
+  const p = selectedPatient.value
   return p ? `${p.first_name} ${p.last_name ?? ''}` : ''
 })
 
@@ -148,15 +174,16 @@ async function save() {
             class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           />
           <ul v-if="patientQuery" class="mt-1 max-h-40 overflow-y-auto rounded-ctl border border-line">
+            <li v-if="searchingPatients && patientResults.length === 0" class="px-3 py-1.5"><UiSkeleton class="h-4 w-40 rounded" /></li>
             <li
-              v-for="p in filteredPatients"
+              v-for="p in patientResults"
               :key="p.id"
               class="cursor-pointer px-3 py-1.5 text-[13px] hover:bg-surface-subtle"
-              @click="patientId = p.id; patientQuery = ''"
+              @click="pickPatient(p)"
             >
               {{ p.first_name }} {{ p.last_name }}
             </li>
-            <li v-if="filteredPatients.length === 0" class="px-3 py-1.5 text-[13px] text-ink-muted2">{{ t('No matches', 'Sin coincidencias') }}</li>
+            <li v-if="!searchingPatients && patientResults.length === 0" class="px-3 py-1.5 text-[13px] text-ink-muted2">{{ t('No matches', 'Sin coincidencias') }}</li>
           </ul>
           <p v-if="selectedPatientLabel && !patientQuery" class="mt-1 text-[13px] text-ink-muted">
             {{ t('Selected:', 'Seleccionado:') }} <span class="font-medium text-ink-900">{{ selectedPatientLabel }}</span>

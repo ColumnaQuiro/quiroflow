@@ -5,8 +5,10 @@ const t = useT()
 const supabase = useSupabaseClient()
 const loading = ref(true)
 const total = ref(0)
+const latest = useLatestRun()
 
 async function load() {
+  const isStale = latest.start()
   loading.value = true
   // Shared with "Active patients", which shows the same count beside its own.
   const { count } = await sharedFetch(`patients-count:${props.practitionerId ?? ''}`, () => {
@@ -14,6 +16,7 @@ async function load() {
     if (props.practitionerId) query = query.eq('default_practitioner_id', props.practitionerId)
     return query
   })
+  if (isStale()) return
   total.value = count ?? 0
   loading.value = false
 }

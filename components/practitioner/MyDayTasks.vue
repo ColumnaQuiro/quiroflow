@@ -30,6 +30,28 @@ const t = useT()
 const tasks = ref<TaskRow[]>([])
 const loaded = ref(false)
 
+// Whether this person had any tasks last time. The card is hidden when there
+// are none, so it cannot hold its place with a skeleton unconditionally -- a
+// placeholder that then vanishes is its own jump. But when there were tasks
+// last time there almost certainly are now, and without a placeholder the
+// card arrived after the worklist and pushed it down the screen.
+const hadTasksKey = computed(() => `myday-had-tasks:${store.teamMember?.id ?? ''}`)
+const expectTasks = ref(false)
+function readHadTasks() {
+  try {
+    expectTasks.value = localStorage.getItem(hadTasksKey.value) === '1'
+  } catch {
+    expectTasks.value = false
+  }
+}
+function rememberHadTasks(had: boolean) {
+  try {
+    localStorage.setItem(hadTasksKey.value, had ? '1' : '0')
+  } catch {
+    // Private mode or blocked storage: the card just arrives without a placeholder.
+  }
+}
+
 async function load() {
   if (!store.teamMember?.id) return
   // Open tasks, and the ones finished today -- so ticking one off does not
@@ -44,10 +66,17 @@ async function load() {
     .limit(100)
   tasks.value = (data as unknown as TaskRow[]) ?? []
   loaded.value = true
+  rememberHadTasks(tasks.value.length > 0)
 }
 
-onMounted(load)
-watch(() => store.teamMember?.id, load)
+onMounted(() => {
+  readHadTasks()
+  load()
+})
+watch(() => store.teamMember?.id, () => {
+  readHadTasks()
+  load()
+})
 
 // Open first (oldest at the top: the longest-waiting call comes first), then done.
 const ordered = computed(() => {
@@ -84,7 +113,20 @@ function formatDue(iso: string) {
 </script>
 
 <template>
-  <div v-if="loaded && tasks.length > 0" class="px-4 pt-4 sm:px-6 sm:pt-6">
+  <div v-if="!loaded && expectTasks" class="px-4 pt-4 sm:px-6 sm:pt-6" aria-busy="true">
+    <div class="w-full overflow-hidden rounded-card border border-line bg-surface-sidebar shadow-card">
+      <div class="flex items-baseline gap-2 border-b border-line-row px-4 py-2.5">
+        <h2 class="text-[13.5px] font-[620] text-ink-900">{{ t('Tasks', 'Tareas') }}</h2>
+      </div>
+      <div class="space-y-3 p-4">
+        <div v-for="i in 2" :key="i" class="flex items-center gap-2.5">
+          <UiSkeleton class="h-5 w-5 shrink-0 rounded-full" />
+          <UiSkeleton class="h-3.5 w-1/2 rounded-ctlSm" />
+        </div>
+      </div>
+    </div>
+  </div>
+  <div v-else-if="loaded && tasks.length > 0" class="px-4 pt-4 sm:px-6 sm:pt-6">
   <div class="w-full overflow-hidden rounded-card border border-line bg-surface-sidebar shadow-card" data-cy="my-day-tasks">
     <div class="flex items-baseline gap-2 border-b border-line-row px-4 py-2.5">
       <h2 class="text-[13.5px] font-[620] text-ink-900">{{ t('Tasks', 'Tareas') }}</h2>

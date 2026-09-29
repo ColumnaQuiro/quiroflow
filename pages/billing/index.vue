@@ -20,7 +20,9 @@ const t = useT()
 const statusFilter = ref<StatusFilter>('unpaid')
 const invoices = ref<InvoiceRow[]>([])
 const loading = ref(true)
-const counts = ref<Record<StatusFilter, number>>({ all: 0, unpaid: 0, paid: 0, void: 0 })
+// Null until counted: "· 0" on every chip while the counts were on their way
+// read as an empty clinic.
+const counts = ref<Record<StatusFilter, number> | null>(null)
 const outstandingCents = ref(0)
 const outstandingCount = ref(0)
 const statsLoaded = ref(false)
@@ -78,7 +80,11 @@ const STATUS_TONE: Record<string, 'success' | 'danger' | 'neutral'> = {
   void: 'neutral',
 }
 
+// Chips and pages can be clicked faster than a page of invoices comes back;
+// only the newest request may fill the list.
+let loadToken = 0
 async function load() {
+  const token = ++loadToken
   loading.value = true
   let query = supabase
     .from('invoices')
@@ -89,6 +95,7 @@ async function load() {
 
   const from = (page.value - 1) * PAGE_SIZE
   const { data, count } = await query.range(from, from + PAGE_SIZE - 1)
+  if (token !== loadToken) return
   invoices.value = (data as unknown as InvoiceRow[]) ?? []
   totalCount.value = count ?? 0
   loading.value = false
@@ -102,7 +109,9 @@ async function load() {
 // invoices, so the chips on screen were understating Paid by 2,258 and
 // reporting the one Void invoice as none. `head: true` returns the count in a
 // header with no row payload at all.
+let countsToken = 0
 async function loadCounts() {
+  const token = ++countsToken
   const buckets: Exclude<StatusFilter, 'all'>[] = ['unpaid', 'paid', 'void']
   // Scoped to the patient filter as well as the status. A chip counting the
   // whole account while the list below shows one patient is the same class of
@@ -115,6 +124,7 @@ async function loadCounts() {
     scoped(),
     ...buckets.map((status) => scoped().eq('status', status)),
   ])
+  if (token !== countsToken) return
   const next: Record<StatusFilter, number> = { all: all.count ?? 0, unpaid: 0, paid: 0, void: 0 }
   buckets.forEach((status, i) => {
     next[status] = rest[i]?.count ?? 0
@@ -159,6 +169,7 @@ watch(statusFilter, () => {
 })
 watch(patientId, () => {
   page.value = 1
+  counts.value = null
   load()
   loadCounts()
   loadOutstanding()
@@ -236,9 +247,10 @@ function formatDate(iso: string) {
             @click="statusFilter = f.value"
           >
             {{ f.label }}
-            <span class="tabular-nums" :class="statusFilter === f.value ? 'text-brand-text/70' : 'text-ink-faint2'">
+            <span v-if="counts" class="tabular-nums" :class="statusFilter === f.value ? 'text-brand-text/70' : 'text-ink-faint2'">
               &middot; {{ counts[f.value] }}
             </span>
+            <UiSkeleton v-else class="h-3 w-4 rounded-ctlSm" />
           </button>
         </div>
 

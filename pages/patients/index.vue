@@ -62,6 +62,19 @@ const whatsappConsentByPatient = ref<Record<string, boolean>>({})
 const primaryPhoneByPatient = ref<Record<string, string>>({})
 const teamMembers = ref<TeamMemberOption[]>([])
 const loading = ref(true)
+// The skeleton rows are for the first load only. A search keystroke or a
+// filter change used to swap the whole table for skeletons and drop the
+// count and the pager with it; now the rows already there stay, dimmed,
+// until the new ones replace them.
+const loadedOnce = ref(false)
+// The five per-page lookups behind balance, visits, plan and contact. The rows
+// render as soon as the patients themselves are in and these cells fill in
+// after, rather than the whole page waiting on the slowest of the six.
+const enriching = ref(true)
+// A slower, older request can finish after a newer one -- typing "ana" then
+// "anabel" 300ms apart is enough -- and without this the older answer lands
+// last and stays, or its rows end up beside the newer request's balances.
+let loadToken = 0
 
 onMounted(async () => {
   const { data } = await supabase.from('team_members').select('id, full_name').order('full_name')
@@ -76,6 +89,7 @@ const totalPages = computed(() => Math.max(1, Math.ceil(totalCount.value / PAGE_
 const visiblePages = computed(() => Array.from({ length: Math.min(totalPages.value, 10) }, (_, i) => i + 1))
 
 async function loadPatients() {
+  const token = ++loadToken
   loading.value = true
 
   // "On a care plan" is filtered via a reverse embed + !inner, the same
@@ -106,6 +120,7 @@ async function loadPatients() {
   const to = from + PAGE_SIZE - 1
   const ascending = sortDir.value === 'asc'
   const { data, count } = await query.order('first_name', { ascending }).order('last_name', { ascending }).range(from, to)
+  if (token !== loadToken) return
 
   // selectCols is built dynamically (it grows a `care_plans!inner(...)` embed
   // when the "On a care plan" chip is active), so supabase-js can't map it to
@@ -114,9 +129,12 @@ async function loadPatients() {
   // Database types either. Assert back to the shape we actually select.
   patients.value = (data ?? []) as unknown as Patient[]
   totalCount.value = count ?? 0
+  loading.value = false
+  loadedOnce.value = true
 
   const ids = patients.value.map((p) => p.id)
   if (ids.length > 0) {
+    enriching.value = true
     const [{ data: upcoming }, { data: plans }, { data: completedAppts }, { data: contactNumbers }, { data: balances }] = await Promise.all([
       supabase
         .from('appointments')
@@ -146,6 +164,7 @@ async function loadPatients() {
         .order('created_at'),
       supabase.from('patient_live_balances').select('patient_id, balance_cents').in('patient_id', ids),
     ])
+    if (token !== loadToken) return
 
     const balByPatient: Record<string, number> = {}
     for (const b of balances ?? []) balByPatient[b.patient_id!] = b.balance_cents ?? 0
@@ -189,8 +208,7 @@ async function loadPatients() {
     primaryPhoneByPatient.value = {}
     balanceByPatient.value = {}
   }
-
-  loading.value = false
+  enriching.value = false
 }
 onMounted(loadPatients)
 
@@ -446,7 +464,7 @@ function tagClass(tag: string) {
   <div class="flex h-full flex-col">
     <PageHeader
       :title="t('Patients', 'Pacientes')"
-      :meta="!loading ? `${totalCount} ${t('patients', 'pacientes')} · ${patients.length} ${t('shown', 'mostrados')}` : undefined"
+      :meta="loadedOnce ? `${totalCount} ${t('patients', 'pacientes')} · ${patients.length} ${t('shown', 'mostrados')}` : undefined"
     >
       <UiBtn variant="secondary" :disabled="exporting" @click="exportCsv">{{ exporting ? t('Exporting…', 'Exportando…') : t('Export', 'Exportar') }}</UiBtn>
       <UiBtn variant="secondary" @click="navigateTo('/settings/import')">{{ t('Import', 'Importar') }}</UiBtn>
@@ -571,7 +589,7 @@ function tagClass(tag: string) {
       <!-- A real table, so a screen reader announces the column a cell belongs
       to. min-w below keeps it scrolling horizontally as one unit on a narrow
       screen rather than squeezing every column unreadably thin. -->
-      <div class="mt-3.5 overflow-hidden rounded-card border border-line bg-surface shadow-card">
+      <div class="mt-3.5 overflow-hidden rounded-card border border-line bg-surface shadow-card" :aria-busy="loading || enriching">
         <div class="overflow-x-auto">
           <table class="w-full min-w-[940px] border-collapse text-[13px]">
             <caption class="sr-only">{{ t('Patients', 'Pacientes') }}</caption>
@@ -600,7 +618,7 @@ function tagClass(tag: string) {
               </tr>
             </thead>
 
-            <tbody v-if="loading">
+            <tbody v-if="!loadedOnce">
               <tr v-for="row in 8" :key="row" class="border-b border-line-row last:border-b-0">
                 <td class="px-5 py-2.5">
                   <div class="flex items-center gap-2.5">
@@ -614,7 +632,7 @@ function tagClass(tag: string) {
               </tr>
             </tbody>
 
-            <tbody v-else-if="patients.length === 0">
+            <tbody v-else-if="patients.length === 0" :class="loading ? 'pointer-events-none opacity-60' : ''">
               <tr>
                 <td colspan="8" class="px-5 py-10 text-center text-[13px] text-ink-faint">
                   {{ activeFilters.length > 0 ? t('No patients match these filters.', 'Ningún paciente coincide con estos filtros.') : t('No patients found.', 'No se encontraron pacientes.') }}
@@ -630,7 +648,7 @@ function tagClass(tag: string) {
               </tr>
             </tbody>
 
-            <tbody v-else>
+            <tbody v-else class="transition-opacity" :class="loading ? 'pointer-events-none opacity-60' : ''">
               <tr
                 v-for="patient in patients"
                 :key="patient.id"
@@ -664,7 +682,8 @@ function tagClass(tag: string) {
                 that are switched ON -- WhatsApp consent on the number, and
                 whether invoices go out by email. -->
                 <td class="px-3 py-2.5">
-                  <div class="flex flex-wrap items-center gap-1.5">
+                  <UiSkeleton v-if="enriching" class="h-3 w-24 rounded-ctlSm" />
+                  <div v-else class="flex flex-wrap items-center gap-1.5">
                   <span v-if="primaryPhoneByPatient[patient.id]" class="inline-flex items-center gap-1.5">
                     <span class="font-mono text-[12.5px] text-ink-700">{{ primaryPhoneByPatient[patient.id] }}</span>
                     <span
@@ -690,12 +709,14 @@ function tagClass(tag: string) {
                 </td>
 
                 <td class="px-3 py-2.5">
-                  <span v-if="lastVisitText(patient.id)" class="text-[13px] text-ink-700">{{ lastVisitText(patient.id) }}</span>
+                  <UiSkeleton v-if="enriching" class="h-3 w-20 rounded-ctlSm" />
+                  <span v-else-if="lastVisitText(patient.id)" class="text-[13px] text-ink-700">{{ lastVisitText(patient.id) }}</span>
                   <span v-else class="text-[12.5px] text-ink-faint2">{{ t('Never', 'Nunca') }}</span>
                 </td>
 
                 <td class="px-3 py-2.5">
-                  <template v-if="nextVisitInfo(patient.id).date">
+                  <UiSkeleton v-if="enriching" class="h-3 w-24 rounded-ctlSm" />
+                  <template v-else-if="nextVisitInfo(patient.id).date">
                     <p class="text-[13px] text-ink-700">{{ nextVisitInfo(patient.id).date }}</p>
                     <p class="text-[11.5px]" :class="nextVisitInfo(patient.id).colorClass">{{ nextVisitInfo(patient.id).relative }}</p>
                   </template>
@@ -703,7 +724,8 @@ function tagClass(tag: string) {
                 </td>
 
                 <td class="px-3 py-2.5">
-                  <template v-if="carePlanByPatient[patient.id]">
+                  <UiSkeleton v-if="enriching" class="h-3 w-24 rounded-ctlSm" />
+                  <template v-else-if="carePlanByPatient[patient.id]">
                     <div class="flex items-center justify-between gap-2">
                       <p class="min-w-0 truncate text-[12.5px] text-ink-700">{{ carePlanByPatient[patient.id].name }}</p>
                       <p class="shrink-0 font-mono text-[11px] text-ink-muted2">
@@ -729,7 +751,8 @@ function tagClass(tag: string) {
                 </td>
 
                 <td class="px-3 py-2.5 text-right">
-                  <span class="inline-flex rounded-[6px] px-2 py-0.5 font-mono text-[12.5px]" :class="balancePill(balanceByPatient[patient.id] ?? 0).class">
+                  <UiSkeleton v-if="enriching" class="ml-auto h-4 w-16 rounded-[6px]" />
+                  <span v-else class="inline-flex rounded-[6px] px-2 py-0.5 font-mono text-[12.5px]" :class="balancePill(balanceByPatient[patient.id] ?? 0).class">
                     {{ balancePill(balanceByPatient[patient.id] ?? 0).text }}
                   </span>
                 </td>
@@ -747,7 +770,7 @@ function tagClass(tag: string) {
         </div>
 
         <UiPaginationFooter
-          v-if="!loading && totalCount > 0"
+          v-if="loadedOnce && totalCount > 0"
           :page="page"
           :visible-pages="visiblePages"
           :has-prev="page > 1"

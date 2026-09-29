@@ -67,13 +67,18 @@ async function load() {
   // one to find the right document. The browser's own PDF viewer renders
   // the first page in the card below, so this needs no rendering library.
   const previewable = files.value.filter((f) => f.storage_path && (f.file_type?.startsWith('image/') || isPdf(f)))
+  // One signing request for the lot rather than one per file: a patient with
+  // forty scans was forty round trips before a single thumbnail appeared.
+  // Matched back by path, since the response is per path, not per row.
   const urls: Record<string, string> = {}
-  await Promise.all(
-    previewable.map(async (f) => {
-      const { data: signed } = await supabase.storage.from('patient-files').createSignedUrl(f.storage_path!, 60 * 10)
-      if (signed?.signedUrl) urls[f.id] = signed.signedUrl
-    }),
-  )
+  if (previewable.length > 0) {
+    const { data: signed } = await supabase.storage
+      .from('patient-files')
+      .createSignedUrls([...new Set(previewable.map((f) => f.storage_path!))], 60 * 10)
+    const byPath: Record<string, string> = {}
+    for (const s of signed ?? []) if (s.path && s.signedUrl && !s.error) byPath[s.path] = s.signedUrl
+    for (const f of previewable) if (byPath[f.storage_path!]) urls[f.id] = byPath[f.storage_path!]
+  }
   thumbUrls.value = urls
 }
 

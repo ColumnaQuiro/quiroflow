@@ -28,13 +28,15 @@ const rows = ref<AlertRow[]>([])
 const loading = ref(true)
 const messagingPatientId = ref<string | null>(null)
 
-async function load() {
-  loading.value = true
+// Silent after a message goes out: the list is already on screen, and
+// swapping it for skeleton rows to drop one patient was a jump for nothing.
+async function load(opts: { silent?: boolean } = {}) {
+  if (!opts.silent) loading.value = true
   const { data } = await supabase.from('care_plan_continuity_alerts').select('*').order('days_overdue', { ascending: false })
   rows.value = (data as AlertRow[]) ?? []
   loading.value = false
 }
-onMounted(load)
+onMounted(() => load())
 
 function patientName(row: AlertRow) {
   return `${row.first_name} ${row.last_name ?? ''}`.trim()
@@ -55,14 +57,14 @@ function openMessage(row: AlertRow) {
 }
 function onSent() {
   messagingPatientId.value = null
-  load()
+  load({ silent: true })
 }
 const messagingRow = computed(() => rows.value.find((r) => r.patient_id === messagingPatientId.value) ?? null)
 </script>
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader :title="t('Care Plan Alerts', 'Alertas de plan de tratamiento')" :meta="`${rows.length} ${t('behind schedule', 'con retraso')}`" />
+    <PageHeader :title="t('Care Plan Alerts', 'Alertas de plan de tratamiento')" :meta="loading ? undefined : `${rows.length} ${t('behind schedule', 'con retraso')}`" />
 
     <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
       <p class="mb-4 text-[13px] text-ink-muted2">

@@ -118,7 +118,7 @@ async function toggleEnabled() {
     await useStaffFetch(`/api/automations/${b.ruleId.value}/enabled`, { method: 'POST', body: { enabled: target } })
     b.draft.value.enabled = target
     forgetList()
-    await b.load(b.ruleId.value!)
+    await b.load(b.ruleId.value!, { silent: true })
     showToast(target ? t('Switched on', 'Activada') : t('Paused', 'Pausada'))
   } catch (e: any) {
     if (e?.data?.data?.problems) problems.value = e.data.data.problems
@@ -306,7 +306,7 @@ const sheetOpen = computed(() => !wide.value && b.selection.value !== null && ta
       <AutomationsPeopleTab
         v-else-if="tab === 'people'"
         :initial-run-id="typeof route.query.run === 'string' ? route.query.run : null"
-        @changed="b.ruleId.value && b.load(b.ruleId.value)"
+        @changed="b.ruleId.value && b.load(b.ruleId.value, { silent: true })"
         @open-run="(id) => router.replace({ query: { ...route.query, run: id ?? undefined } })"
       />
       <AutomationsHistoryTab v-else-if="tab === 'history'" />

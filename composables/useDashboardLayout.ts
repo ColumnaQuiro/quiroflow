@@ -15,6 +15,26 @@ function defaultLayout(): WidgetInstance[] {
   }))
 }
 
+// localStorage can be missing or refuse (private mode, storage full, blocked
+// site data); the cache is only ever a head start, so any failure is silent.
+const CACHE_PREFIX = 'quiroflow-dashboard-layout:'
+function readCache(memberId: string): WidgetInstance[] | null {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(CACHE_PREFIX + memberId) ?? 'null')
+    if (!Array.isArray(parsed) || parsed.length === 0) return null
+    return parsed.every((w) => typeof w?.id === 'string' && typeof w?.type === 'string' && typeof w?.size === 'string') ? parsed : null
+  } catch {
+    return null
+  }
+}
+function writeCache(memberId: string, layout: WidgetInstance[]) {
+  try {
+    localStorage.setItem(CACHE_PREFIX + memberId, JSON.stringify(layout))
+  } catch {
+    // see readCache
+  }
+}
+
 export function useDashboardLayout() {
   const supabase = useSupabaseClient()
   const store = useAccountStore()
@@ -33,23 +53,48 @@ export function useDashboardLayout() {
         watch(() => store.teamMember, (v) => { if (v) resolve() }, { once: true })
       })
     }
-    const { data } = await supabase
+    const memberId = store.teamMember!.id
+    // Whatever this person's dashboard looked like last time, drawn at once
+    // rather than behind a skeleton for the round trip that confirms it. The
+    // database stays the authority and replaces it below if they differ --
+    // the layout is per person, not per browser, so another device may have
+    // changed it since.
+    const cached = readCache(memberId)
+    if (cached) {
+      widgets.value = cached
+      loaded.value = true
+    }
+    const shown = JSON.stringify(widgets.value)
+    const { data, error } = await supabase
       .from('team_members')
       .select('dashboard_layout')
-      .eq('id', store.teamMember!.id)
+      .eq('id', memberId)
       .maybeSingle()
+    // Edited while the answer was on its way: what they just did wins over
+    // what the database said a moment before.
+    if (cached && JSON.stringify(widgets.value) !== shown) return
     const stored = data?.dashboard_layout as WidgetInstance[] | null | undefined
     if (stored && stored.length > 0) {
-      widgets.value = stored
+      // Same ids, so the widgets would survive the swap, but an identical
+      // layout has no reason to touch them at all.
+      if (JSON.stringify(stored) !== shown) widgets.value = stored
+      writeCache(memberId, stored)
+    } else if (error) {
+      // A failed read is not an empty layout: saving the default here would
+      // overwrite the real one with it.
+      if (!cached) widgets.value = defaultLayout()
     } else {
-      widgets.value = defaultLayout()
-      await save()
+      // A first visit, or a cached layout whose save never landed. Neither
+      // is worth holding the widgets back for, so the save runs behind them.
+      if (!cached) widgets.value = defaultLayout()
+      save()
     }
     loaded.value = true
   }
 
   async function save() {
     if (!store.teamMember) return
+    writeCache(store.teamMember.id, widgets.value)
     await supabase.from('team_members').update({ dashboard_layout: widgets.value }).eq('id', store.teamMember.id)
   }
 

@@ -24,6 +24,7 @@ const prevInvoices = ref<InvoiceRow[]>([])
 // invoice raised on the 30th is usually settled in the next window, and
 // outstanding has to see that money or it reports a debt already paid.
 const invoicePayments = ref<{ invoice_id: string | null; amount_cents: number }[]>([])
+const latest = useLatestRun()
 
 // Same-length window immediately preceding the selected period, for the KPI
 // delta (e.g. selecting "this month" compares against last month).
@@ -36,6 +37,7 @@ function previousRange(range: DateRange): { from: Date; to: Date } {
 }
 
 async function load() {
+  const isStale = latest.start()
   loading.value = true
   const { from, to } = rangeBounds(props.dateRange)
   const { from: prevFrom, to: prevTo } = previousRange(props.dateRange)
@@ -77,6 +79,7 @@ async function load() {
     paymentsIn(prevFrom, prevTo),
     needsAppointments ? invoicesIn(prevFrom, prevTo, false) : Promise.resolve([] as Embedded<InvoiceRow>[]),
   ])
+  if (isStale()) return
 
   const appointmentById = new Map<string, AppointmentRow>()
   const patientById = new Map<string, PatientRow>()

@@ -14,19 +14,36 @@ type MembershipTemplate = Pick<Tables<'memberships'>, 'id' | 'name' | 'price_cen
 const packages = ref<PackageTemplate[] | null>(null)
 const memberships = ref<MembershipTemplate[] | null>(null)
 let pending: Promise<void> | null = null
+// What the cache was filled for, and when. invalidate() covers edits made in
+// this tab; these cover the rest -- a price another member changed (sold at
+// the old price until a full reload), and a different account signed in on
+// the same page without one (its templates served to the next).
+let loadedFor: string | null = null
+let loadedAt = 0
+const MAX_AGE_MS = 5 * 60 * 1000
 
 async function ensureLoaded() {
-  if (packages.value && memberships.value) return
+  const accountId = useAccountStore().accountId
+  const fresh = loadedFor === accountId && Date.now() - loadedAt < MAX_AGE_MS
+  if (packages.value && memberships.value && fresh) return
   if (!pending) {
     const supabase = useSupabaseClient()
     pending = Promise.all([
       supabase.from('packages').select('id, name, session_count, price_cents').order('name'),
       supabase.from('memberships').select('id, name, price_cents').order('name'),
-    ]).then(([pkg, mem]) => {
-      packages.value = pkg.data ?? []
-      memberships.value = mem.data ?? []
-      pending = null
-    })
+    ])
+      .then(([pkg, mem]) => {
+        // A failed read is not cached as "none": [] is truthy, so it used to
+        // stay empty until a full reload.
+        if (pkg.error || mem.error) return
+        packages.value = pkg.data ?? []
+        memberships.value = mem.data ?? []
+        loadedFor = accountId
+        loadedAt = Date.now()
+      })
+      .finally(() => {
+        pending = null
+      })
   }
   await pending
 }

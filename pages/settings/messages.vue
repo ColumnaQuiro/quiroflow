@@ -63,7 +63,32 @@ async function load() {
 }
 onMounted(load)
 
+// The editor's HTML with nothing typed in it ("<p><br></p>") is not empty
+// as a string, and the sender would send it.
+function hasText(html: string) {
+  return html.replace(/<[^>]*>|&nbsp;/g, '').trim() !== ''
+}
+
 async function save() {
+  // An email channel with no subject or body sends nothing
+  // (server/utils/appointmentNotifications.ts needs both), while the booking
+  // page tells the patient the details are on their way to their inbox.
+  for (const [on, channels, subject, body, name] of [
+    [confirmationEnabled.value, confirmationChannels.value, emailConfirmationSubject.value, emailConfirmationBody.value, t('confirmation', 'confirmación')],
+    [reminderEnabled.value, reminderChannels.value, emailReminderSubject.value, emailReminderBody.value, t('reminder', 'recordatorio')],
+  ] as const) {
+    if (on && channels.includes('email') && (!subject.trim() || !hasText(body))) {
+      showToast(t(`The ${name} email needs a subject and a message, or untick Email.`, `El correo de ${name} necesita asunto y mensaje, o desmarca Correo.`), 'error')
+      return
+    }
+  }
+  // Number('') is 0: a cleared box is refused, not read as zero hours.
+  const rawHours = reminderHoursBefore.value as number | string
+  const hours = rawHours === '' || rawHours === null ? Number.NaN : Number(rawHours)
+  if (reminderEnabled.value && (!Number.isInteger(hours) || hours < 1 || hours > 168)) {
+    showToast(t('The reminder goes out between 1 and 168 hours (a week) before the visit.', 'El recordatorio sale entre 1 y 168 horas (una semana) antes de la visita.'), 'error')
+    return
+  }
   saving.value = true
   const update: TablesUpdate<'accounts'> = {
     appointment_confirmation_enabled: confirmationEnabled.value,
@@ -72,8 +97,8 @@ async function save() {
     email_confirmation_body: emailConfirmationBody.value.trim() || null,
     appointment_reminder_enabled: reminderEnabled.value,
     appointment_reminder_channels: reminderChannels.value,
-    // A cleared box is '' and Postgres would refuse it.
-    appointment_reminder_hours_before: Number(reminderHoursBefore.value) || 24,
+    // Checked above while reminders are on; off, a cleared box keeps the default.
+    appointment_reminder_hours_before: Number.isInteger(hours) && hours >= 1 && hours <= 168 ? hours : 24,
     email_reminder_subject: emailReminderSubject.value.trim() || null,
     email_reminder_body: emailReminderBody.value.trim() || null,
     google_review_url: googleReviewUrl.value.trim() || null,

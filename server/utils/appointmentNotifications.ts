@@ -337,7 +337,9 @@ async function sendForPurpose(supabase: any, appointmentId: string, purpose: 'co
   // it reuses the same merge fields the email body would have had.
   if (settings.channels.includes('push')) {
     try {
-      const when = new Date(ctx.startsAt).toLocaleString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })
+      // The clinic's clock, as the email and WhatsApp paths use: on the
+      // server this ran in UTC, so a 17:30 Madrid visit said 15:30.
+      const when = new Date(ctx.startsAt).toLocaleString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: ctx.clinicTimezone })
       const result = await sendPushToPatients(supabase, ctx.accountId, [ctx.patientId], {
         title: purpose === 'reminder' ? 'Recordatorio de cita' : 'Cita confirmada',
         body: `${ctx.appointmentTypeName} · ${when}${ctx.practitionerName ? ` · ${ctx.practitionerName}` : ''}`,

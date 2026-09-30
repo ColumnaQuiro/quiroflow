@@ -42,13 +42,18 @@ export default defineEventHandler(async (event) => {
     const platform = stripeForPlatform()
     const response = await platform.oauth.token({ grant_type: 'authorization_code', code: query.code })
 
-    await supabase
+    // Read back: the page said "connected" even when this was refused.
+    const { data: saved, error: saveError } = await supabase
       .from('accounts')
       .update({
         stripe_connect_account_id: response.stripe_user_id,
         stripe_publishable_key: response.stripe_publishable_key ?? null,
       })
       .eq('id', teamMember.account_id)
+      .select('id')
+    if (saveError || !saved?.length) {
+      return redirectTo({ stripe_error: saveError?.message ?? 'Stripe connected, but QuiroFlow could not save it. Please try again.' })
+    }
   } catch (err: any) {
     return redirectTo({ stripe_error: err?.message ?? 'Could not complete the Stripe connection.' })
   }

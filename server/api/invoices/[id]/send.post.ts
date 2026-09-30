@@ -12,10 +12,13 @@ export default defineEventHandler(async (event) => {
 
   const pdf = await generateInvoicePdf(data)
 
+  // Spanish and in euros the Spanish way ("45,00 €"): these go to patients.
+  // A line's description is typed by staff, so it is escaped like the body.
+  const eur = (cents: number) => new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(cents / 100)
   const rows = data.lineItems
     .map(
       (l) =>
-        `<tr><td style="padding:4px 8px">${l.description}</td><td style="padding:4px 8px;text-align:right">${l.quantity}</td><td style="padding:4px 8px;text-align:right">€${((l.price_cents * l.quantity) / 100).toFixed(2)}</td></tr>`,
+        `<tr><td style="padding:4px 8px">${escapeHtml(l.description)}</td><td style="padding:4px 8px;text-align:right">${l.quantity}</td><td style="padding:4px 8px;text-align:right">${eur(l.price_cents * l.quantity)}</td></tr>`,
     )
     .join('')
 
@@ -30,19 +33,19 @@ export default defineEventHandler(async (event) => {
         .split(/\n{2,}/)
         .map((para) => `<p>${escapeHtml(para).replace(/\n/g, '<br>')}</p>`)
         .join('')
-    : `<p>Hi ${escapeHtml(data.patient.firstName)},</p>
-      <p>Here is the receipt for your visit -- the full PDF is attached. The
-      invoice (factura) for what you paid is issued separately.</p>`
+    : `<p>Hola ${escapeHtml(data.patient.firstName)}:</p>
+      <p>Te enviamos el recibo de tu visita; lo tienes completo en el PDF
+      adjunto. La factura de lo que has pagado se emite por separado.</p>`
 
   const html = `
     <div style="font-family:sans-serif">
       <h2>Recibo ${data.invoiceNumber}</h2>
       ${intro}
       <table style="border-collapse:collapse;width:100%">
-        <thead><tr><th align="left">Description</th><th align="right">Qty</th><th align="right">Total</th></tr></thead>
+        <thead><tr><th align="left">Concepto</th><th align="right">Cant.</th><th align="right">Total</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
-      <p style="margin-top:16px"><strong>Total: €${(data.totalCents / 100).toFixed(2)}</strong></p>
+      <p style="margin-top:16px"><strong>Total: ${eur(data.totalCents)}</strong></p>
     </div>
   `
 

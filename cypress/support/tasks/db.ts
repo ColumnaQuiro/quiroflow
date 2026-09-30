@@ -1531,6 +1531,20 @@ async function addVisitNote(opts: { accountId: string; appointmentId: string; bo
   return row as { id: string }
 }
 
+/** Rows as the database holds them, for asserting what a page actually saved. */
+async function selectRows(opts: { table: string; columns: string; match: Record<string, unknown> }) {
+  const { data, error } = await (admin.from(opts.table as never) as any).select(opts.columns).match(opts.match)
+  if (error) throw error
+  return data as unknown[]
+}
+
+/** The number the next receipt gets, taken the way the app takes it. */
+async function issueReceiptNumber(opts: { accountId: string }) {
+  const { data, error } = await admin.rpc('next_invoice_number', { p_account_id: opts.accountId })
+  if (error) throw error
+  return data as string
+}
+
 /**
  * A file the clinic uploaded. No object is stored -- only the row.
  * storagePath: null is a file an import left as a name only; compressed and
@@ -3435,6 +3449,8 @@ export const dbTasks = {
   'db:uploadDocImage': uploadDocImage,
   'db:patientDocFields': patientDocFields,
   'db:createPatientFile': createPatientFile,
+  'db:issueReceiptNumber': issueReceiptNumber,
+  'db:selectRows': selectRows,
   'db:addVisitNote': addVisitNote,
   'db:setPatientClinical': setPatientClinical,
   'db:createAccountCredit': createAccountCredit,

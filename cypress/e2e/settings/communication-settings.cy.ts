@@ -29,6 +29,10 @@ describe('Communication settings', () => {
         cy.get('[data-cy="email-subject"]').clear().type('Hola {{first_name}}', { parseSpecialCharSequences: false })
         cy.get('[data-cy="email-preview"]').should('contain', 'Hola Lucía')
       })
+      // An email channel with no message sends nothing, so it is not saved.
+      cy.get('[data-cy="messages-save"]').click()
+      cy.contains('needs a subject and a message').should('be.visible')
+      cy.get('[data-cy="messages-confirmation"] [contenteditable="true"]').first().type('Te esperamos.')
       cy.get('[data-cy="messages-save"]').click()
       cy.wait('@saveAccount').its('request.body').should((body) => {
         expect(body.email_confirmation_subject).to.eq('Hola {{first_name}}')

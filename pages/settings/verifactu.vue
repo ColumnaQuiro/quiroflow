@@ -557,6 +557,9 @@ const facts = computed(() => {
                       {{ uploadingDoc ? t('Uploading…', 'Subiendo…') : settings.delegation?.signedDocumentUploadedAt ? t('Replace document', 'Sustituir documento') : t('Upload signed document', 'Subir documento firmado') }}
                     </UiBtn>
                   </form>
+                  <p v-if="settings.delegation?.acceptedAt" class="mt-1.5 text-[12.5px] text-warning-text" data-cy="verifactu-replace-warning">
+                    {{ t('Replacing it sends it back to QuiroFlow for confirmation, and nothing is sent to the AEAT for you until it is confirmed again.', 'Sustituirlo lo devuelve a QuiroFlow para confirmarlo, y no se envía nada a la AEAT por ti hasta que se confirme de nuevo.') }}
+                  </p>
                 </div>
 
                 <p v-if="settings.sender !== 'own_certificate' && settings.delegation?.acceptedAt" class="text-[13px] text-ink-muted">

@@ -125,7 +125,10 @@ const SECTIONS = computed(() => [
 const dirty = computed(() => !!form.value && JSON.stringify(form.value) !== original.value)
 const problems = computed(() => (form.value ? hoursProblems(form.value.business_hours) : {}))
 const nameMissing = computed(() => !!form.value && !form.value.full_name.trim())
-const noClinic = computed(() => !!form.value && form.value.is_practitioner && form.value.clinic_ids.length === 0)
+// Active clinics only. A practitioner linked only to a clinic since archived
+// has none: they vanish from every calendar and from booking, and counting the
+// archived link let Save pass with the problem still there.
+const noClinic = computed(() => !!form.value && form.value.is_practitioner && !form.value.clinic_ids.some((id) => activeClinics.value.some((c) => c.id === id)))
 const canSave = computed(() => !nameMissing.value && !noClinic.value && Object.keys(problems.value).length === 0)
 
 function toggleClinic(id: string) {
@@ -459,7 +462,7 @@ const card = 'flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg
                   </div>
                   <SettingsToggle v-model="form.online_booking_enabled" data-cy="member-online" :aria-label="t('Bookable online', 'Se puede reservar online')" />
                 </div>
-                <div v-if="activeClinics.length > 1" class="flex flex-col gap-2 border-t border-line-row pt-4">
+                <div v-if="activeClinics.length > 1 || noClinic" class="flex flex-col gap-2 border-t border-line-row pt-4">
                   <span class="text-[14.5px] font-semibold text-ink-900">{{ t('Clinics', 'Sedes') }}</span>
                   <div class="flex flex-wrap gap-2">
                     <label v-for="c in activeClinics" :key="c.id" data-cy="member-clinic" class="flex h-9 touch:h-11 items-center gap-2.5 rounded-ctl border px-3.5 text-[14px] font-semibold" :class="form.clinic_ids.includes(c.id) ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-700'">

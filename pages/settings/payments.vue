@@ -119,7 +119,11 @@ async function testConnection() {
 // with none of the consequences.
 const disconnectOpen = ref(false)
 async function disconnect() {
-  await supabase.from('accounts').update({ stripe_connect_account_id: null }).eq('id', store.accountId!)
+  const { data: saved, error } = await supabase.from('accounts').update({ stripe_connect_account_id: null }).eq('id', store.accountId!).select('id')
+  if (error || !saved?.length) {
+    showToast(error?.message ?? t('Stripe is still connected: the change was not saved.', 'Stripe sigue conectado: no se ha guardado el cambio.'), 'error')
+    return
+  }
   connectAccountId.value = null
   disconnectOpen.value = false
 }
@@ -179,7 +183,9 @@ async function addMethod() {
   // Two methods a staff member would read as different ("Bizum" and "bizum ")
   // collapse to one key, and the unique index would refuse the second with a
   // constraint message nobody can act on.
-  const taken = new Set(methods.value.map((m) => m.key))
+  // credit and write_off are hidden rows, not absent ones: a method called
+  // "Credit" collided with them and failed with a raw duplicate-key error.
+  const taken = new Set([...methods.value.map((m) => m.key), 'credit', 'write_off'])
   if (taken.has(key)) {
     let n = 2
     while (taken.has(`${key}_${n}`)) n++

@@ -27,7 +27,16 @@ export default defineEventHandler(async (event) => {
 
   const { error } = await admin
     .from('verifactu_delegations')
-    .update({ signed_document_base64: pdf.toString('base64'), signed_document_name: fileName, signed_document_uploaded_at: new Date().toISOString() })
+    .update({
+      signed_document_base64: pdf.toString('base64'),
+      signed_document_name: fileName,
+      signed_document_uploaded_at: new Date().toISOString(),
+      // A new document is a new statement to the AEAT: QuiroFlow confirms it
+      // again rather than carrying over the confirmation of the one it
+      // replaced, which it never looked at.
+      accepted_at: null,
+      accepted_by: null,
+    })
     .eq('account_id', teamMember.account_id)
   if (error) throw createError({ statusCode: 500, statusMessage: error.message })
   return { ok: true, fileName }

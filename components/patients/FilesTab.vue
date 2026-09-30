@@ -8,6 +8,7 @@ const props = defineProps<{ patientId: string }>()
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+const { can } = usePermission()
 
 // `visibility` isn't in the generated Supabase types yet -- merge it in
 // locally rather than editing the generated file by hand.
@@ -176,10 +177,23 @@ async function download(file: Tables<'patient_files'>) {
   if (data?.signedUrl) window.open(data.signedUrl, '_blank')
 }
 
-async function remove(file: Tables<'patient_files'>) {
-  if (!confirm(`${t('Delete', 'Eliminar')} ${file.file_name}?`)) return
+// The row first, then the file. It was the other way round, with neither
+// result checked: storage lets any member remove an object, but the row needs
+// patient_files_delete (and, under own-docs scope, to be theirs) -- so a role
+// without it removed the file, had the row refused, and left a file on the
+// patient that opens to nothing. Four such rows were found in production on
+// 30 Sep 2026. Asked in an in-app dialog rather than confirm().
+const deleting = ref<Tables<'patient_files'> | null>(null)
+async function confirmRemove() {
+  const file = deleting.value
+  if (!file) return
+  deleting.value = null
+  const { data: gone, error: deleteError } = await supabase.from('patient_files').delete().eq('id', file.id).select('id')
+  if (deleteError || !gone?.length) {
+    error.value = deleteError?.message ?? t('This file was not deleted: your role cannot delete it.', 'No se ha eliminado el archivo: tu rol no puede eliminarlo.')
+    return
+  }
   if (file.storage_path) await supabase.storage.from('patient-files').remove([file.storage_path])
-  await supabase.from('patient_files').delete().eq('id', file.id)
   files.value = files.value.filter((f) => f.id !== file.id)
 }
 </script>
@@ -270,7 +284,7 @@ async function remove(file: Tables<'patient_files'>) {
             <div class="flex shrink-0 items-center gap-2">
               <button v-if="file.storage_path" type="button" class="text-[11px] font-medium text-brand-text outline-none hover:text-brand-hover focus-visible:shadow-focus" @click="view(file)">{{ t('Preview', 'Vista previa') }}</button>
               <button v-if="file.storage_path" type="button" class="text-[11px] font-medium text-brand-text outline-none hover:text-brand-hover focus-visible:shadow-focus" @click="download(file)">{{ t('Download', 'Descargar') }}</button>
-              <UiIconBtn icon="trash" tone="danger" :label="t('Delete', 'Eliminar')" @click="remove(file)" />
+              <UiIconBtn v-if="can('patient_files_delete')" icon="trash" tone="danger" data-cy="file-delete" :label="t('Delete', 'Eliminar')" @click="deleting = file" />
             </div>
           </div>
         </div>
@@ -292,5 +306,16 @@ async function remove(file: Tables<'patient_files'>) {
       </span>
       <input type="file" multiple class="hidden" :disabled="uploading" @change="(e) => uploadFiles((e.target as HTMLInputElement).files!)" />
     </label>
+    <UiConfirmDialog
+      v-if="deleting"
+      tone="danger"
+      :title="t(`Delete ${deleting.file_name}?`, `¿Eliminar ${deleting.file_name}?`)"
+      :confirm-label="t('Delete file', 'Eliminar archivo')"
+      :cancel-label="t('Cancel', 'Cancelar')"
+      @confirm="confirmRemove"
+      @cancel="deleting = null"
+    >
+      <p class="text-[14px] leading-snug text-ink-700">{{ t('It is removed from this patient for everyone, and cannot be recovered.', 'Se elimina de este paciente para todos, y no se puede recuperar.') }}</p>
+    </UiConfirmDialog>
   </div>
 </template>

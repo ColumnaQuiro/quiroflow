@@ -1592,6 +1592,38 @@ async function issueReceiptNumber(opts: { accountId: string }) {
   return data as string
 }
 
+/** A patient file with real content in storage, as an upload leaves it. */
+async function storePatientFile(opts: { accountId: string; patientId: string; fileName: string }) {
+  const path = `${opts.accountId}/${opts.patientId}/${Date.now()}-${opts.fileName}`
+  const { error: uploadError } = await admin.storage.from('patient-files').upload(path, Buffer.from('%PDF-1.4 test'), { contentType: 'application/pdf' })
+  if (uploadError) throw uploadError
+  const row = unwrap(
+    await admin
+      .from('patient_files')
+      .insert({ account_id: opts.accountId, patient_id: opts.patientId, file_name: opts.fileName, file_type: 'application/pdf', size_bytes: 13, storage_path: path })
+      .select('id')
+      .single(),
+  )
+  return { id: (row as { id: string }).id, path }
+}
+
+/** Whether a patient file's content is still in storage. */
+async function patientFileStored(opts: { path: string }) {
+  const folder = opts.path.split('/').slice(0, -1).join('/')
+  const name = opts.path.split('/').pop()!
+  const { data } = await admin.storage.from('patient-files').list(folder, { search: name })
+  return (data ?? []).some((o) => o.name === name)
+}
+
+/** Removing a patient file's content as a signed-in staff member. */
+async function removePatientFileAsStaff(opts: { email: string; password: string; path: string }) {
+  const userClient = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+  const { error: signInErr } = await userClient.auth.signInWithPassword({ email: opts.email, password: opts.password })
+  if (signInErr) throw signInErr
+  const { data, error } = await userClient.storage.from('patient-files').remove([opts.path])
+  return { removed: data?.length ?? 0, error: error ? error.message : null }
+}
+
 /**
  * A file the clinic uploaded. No object is stored -- only the row.
  * storagePath: null is a file an import left as a name only; compressed and
@@ -3567,6 +3599,9 @@ export const dbTasks = {
   'db:uploadDocImage': uploadDocImage,
   'db:patientDocFields': patientDocFields,
   'db:createPatientFile': createPatientFile,
+  'db:storePatientFile': storePatientFile,
+  'db:patientFileStored': patientFileStored,
+  'db:removePatientFileAsStaff': removePatientFileAsStaff,
   'db:issueReceiptNumber': issueReceiptNumber,
   'db:selectRows': selectRows,
   'db:addVisitNote': addVisitNote,

@@ -232,6 +232,106 @@ describe('Lead ingest API', () => {
     })
   })
 
+  describe('a refused submission writes nothing', () => {
+    // A 400 tells the sender "fix this and send it again". That is only true
+    // if nothing was kept: attribution and answers used to be checked after
+    // the lead was inserted, so the caller got a 400 while the lead sat in
+    // the board with no timeline, no welcome drip and no staff notification.
+    // The corrected retry then matched it by external_id and came back
+    // "deduplicated", so the drip and the notification never happened at all
+    // -- and without an external_id the retry made a second lead.
+
+    function refusedThenRetried(bad: Record<string, unknown>, field: string, externalId: string) {
+      cy.task<{ id: string }>('db:createAutomationRule', {
+        accountId: account.accountId,
+        triggerEvent: 'lead.created',
+        actions: [{ type: 'whatsapp_template', config: { template_name: 'welcome_1', template_language: 'es' } }],
+      })
+      const good = { full_name: 'Sent Twice', phone: '+34600444111', external_id: externalId }
+
+      post({ ...good, ...bad }, false).then((res) => {
+        expect(res.status).to.eq(400)
+        expect(JSON.stringify(res.body)).to.contain(field)
+      })
+      cy.task('db:leadCount', { accountId: account.accountId }).should('eq', 0)
+
+      // The sender fixes the field and tries again: this has to be the
+      // lead's first arrival, with everything a first arrival gets.
+      post(good).then((res) => {
+        expect(res.status).to.eq(201)
+        expect(res.body.data.deduplicated).to.eq(false)
+        cy.task<{ kind: string }[]>('db:leadEvents', { leadId: res.body.data.id }).should('have.length', 1)
+        cy.task<unknown[]>('db:sequenceRuns', { leadId: res.body.data.id }).should('have.length', 1)
+      })
+      cy.task('db:leadCount', { accountId: account.accountId }).should('eq', 1)
+    }
+
+    it('when an attribution field is unknown', () => {
+      refusedThenRetried({ attribution: { campaign: 'Spring', adset: 'Typo for ad' } }, 'adset', 'bad-attr-field')
+    })
+
+    it('when the cost is not a whole number of cents', () => {
+      refusedThenRetried({ attribution: { campaign: 'Spring', cost_cents: '12.50' } }, 'cost_cents', 'bad-attr-cost')
+    })
+
+    it('when attribution is not an object', () => {
+      refusedThenRetried({ attribution: 'Spring campaign' }, 'attribution', 'bad-attr-shape')
+    })
+
+    it('when an answer is not a question and an answer', () => {
+      refusedThenRetried({ answers: ['yes'] }, 'answers', 'bad-answers')
+    })
+
+    it('when an answer has no question', () => {
+      refusedThenRetried({ answers: [{ answer: 'yes' }] }, 'answers', 'bad-answer-question')
+    })
+
+    it('when occurred_at is not a date', () => {
+      refusedThenRetried({ occurred_at: 'not a date', marketing_consent: true }, 'occurred_at', 'bad-occurred-at')
+    })
+
+    it('and a retry without an external_id does not make a second lead', () => {
+      post({ full_name: 'No Id', phone: '+34600444222', answers: 'si' }, false).its('status').should('eq', 400)
+      post({ full_name: 'No Id', phone: '+34600444222', answers: { motivo: 'si' } }).its('status').should('eq', 201)
+      cy.task('db:leadCount', { accountId: account.accountId }).should('eq', 1)
+    })
+  })
+
+  describe('references', () => {
+    const year = new Date().getUTCFullYear()
+
+    it('numbers past a lead dated before this year but numbered in it', () => {
+      // An attributed online booking becomes a lead dated back to the booking
+      // (lead_for_attributed_booking), numbered from the highest reference of
+      // the year. Booked on 31 Dec and attributed on 1 Jan, it holds this
+      // year's first number with last year's date -- so a count of this
+      // year's leads says the next number is 0001, which is taken, and every
+      // lead the account receives fails on the unique index for the rest of
+      // the year.
+      cy.task('db:createLead', {
+        accountId: account.accountId,
+        fullName: 'Booked On New Year',
+        reference: `LEAD-${year}-0001`,
+        createdAt: `${year - 1}-12-31T22:00:00Z`,
+      })
+      post({ full_name: 'After New Year', phone: '+34600444333', external_id: 'ref-after-backdated' }, false).then((res) => {
+        expect(res.status).to.eq(201)
+        expect(res.body.data.reference).to.eq(`LEAD-${year}-0002`)
+      })
+    })
+
+    it('keeps numbering once the year passes 9999', () => {
+      // References are compared as text, where 10000 sorts below 9999. A
+      // number that is taken is skipped rather than failing the lead.
+      cy.task('db:createLead', { accountId: account.accountId, fullName: 'Nine Nines', reference: `LEAD-${year}-9999` })
+      cy.task('db:createLead', { accountId: account.accountId, fullName: 'Ten Thousand', reference: `LEAD-${year}-10000` })
+      post({ full_name: 'Ten Thousand And One', phone: '+34600444444' }, false).then((res) => {
+        expect(res.status).to.eq(201)
+        expect(res.body.data.reference).to.eq(`LEAD-${year}-10001`)
+      })
+    })
+  })
+
   it('refuses a lead nobody could contact', () => {
     post({ full_name: 'No Way To Reach' }, false).then((res) => {
       expect(res.status).to.eq(400)

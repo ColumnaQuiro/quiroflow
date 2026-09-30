@@ -25,7 +25,9 @@ async function fetchVisitPayments(supabase: ReturnType<typeof useSupabaseClient<
     fetchByIds(appointmentIds, (chunk) =>
       supabase
         .from('package_sessions')
-        .select('appointment_id, amount_cents, external_reference, package_purchases(package_name, sessions_total, sessions_used, external_reference)')
+        .select(
+          'appointment_id, amount_cents, external_reference, used_at, package_purchases(package_name, sessions_total, sessions_used, external_reference, package_sessions(used_at))',
+        )
         .in('appointment_id', chunk),
     ),
     // Named foreign key: invoices and payments are related twice (a refund
@@ -49,7 +51,14 @@ async function fetchVisitPayments(supabase: ReturnType<typeof useSupabaseClient<
     const invoice = invoices.find((i) => i.appointment_id === id) ?? null
     const invoicePayments = invoice?.payments ?? []
     resolved[id] = resolveVisitPayment({
-      session: session ? { amount_cents: session.amount_cents, external_reference: session.external_reference } : null,
+      session: session
+        ? {
+            amount_cents: session.amount_cents,
+            external_reference: session.external_reference,
+            // The pack's sessions drawn after this one -- see resolveVisitPayment.
+            laterSessions: (session.package_purchases?.package_sessions ?? []).filter((s: { used_at: string }) => s.used_at > session.used_at).length,
+          }
+        : null,
       purchase: session?.package_purchases ?? null,
       invoice: invoice ? { invoice_number: invoice.invoice_number, total_cents: invoice.total_cents, status: invoice.status } : null,
       payments: invoicePayments.map((p) => ({ method: p.method, amount_cents: p.amount_cents })),

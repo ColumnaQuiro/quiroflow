@@ -394,6 +394,12 @@ async function addClinic(opts: { accountId: string; name: string }) {
   return { id: row.id as string }
 }
 
+/** Has somebody work at one more of the account's clinics, as Settings -> Team -> <member> -> Clinics does. */
+async function linkTeamMemberToClinic(opts: { teamMemberId: string; clinicId: string }) {
+  assertOk(await admin.from('team_member_clinics').insert({ team_member_id: opts.teamMemberId, clinic_id: opts.clinicId }))
+  return { ok: true }
+}
+
 /** A patient's place in the recall queue, set directly or read back. */
 async function setRecallState(opts: { patientId: string; status?: 'active' | 'dismissed'; dismissedAt?: string | null; snoozedUntil?: string | null }) {
   assertOk(
@@ -1410,6 +1416,32 @@ async function callPublicBookingConcurrently(opts: { args: Record<string, unknow
     }),
   )
   return { errors: results }
+}
+
+/**
+ * The same HTTP request sent once per body, all at the same instant -- an
+ * integration firing parallel calls at the public API. cy.request queues one
+ * after another, which can never race; this cannot help but race.
+ */
+async function requestConcurrently(opts: { url: string; method: string; headers?: Record<string, string>; bodies: unknown[] }) {
+  const results = await Promise.all(
+    opts.bodies.map(async (body) => {
+      const res = await fetch(opts.url, {
+        method: opts.method,
+        headers: { 'content-type': 'application/json', ...(opts.headers ?? {}) },
+        body: JSON.stringify(body),
+      })
+      const text = await res.text()
+      let parsed: unknown = text
+      try {
+        parsed = JSON.parse(text)
+      } catch {
+        // Left as text: a 500 page is still worth seeing in the assertion.
+      }
+      return { status: res.status, body: parsed }
+    }),
+  )
+  return results
 }
 
 /** Time blocked off on the calendar: the whole clinic, or one practitioner's. */
@@ -3729,6 +3761,7 @@ export const dbTasks = {
   'db:callPublicBookingAsAnon': callPublicBookingAsAnon,
   'db:callPublicBookingConcurrently': callPublicBookingConcurrently,
   'db:createAvailabilityBlock': createAvailabilityBlock,
+  'db:requestConcurrently': requestConcurrently,
   'db:callRpcAsAnon': callRpcAsAnon,
   'db:setAppointmentTypeBookingRules': setAppointmentTypeBookingRules,
   'db:givePatientAppLogin': givePatientAppLogin,
@@ -3752,6 +3785,7 @@ export const dbTasks = {
   'db:setTeamMemberHours': setTeamMemberHours,
   'db:setRecallState': setRecallState,
   'db:addClinic': addClinic,
+  'db:linkTeamMemberToClinic': linkTeamMemberToClinic,
   'db:recallState': recallState,
   'db:teamMemberById': teamMemberById,
   'db:teamMemberDetail': teamMemberDetail,

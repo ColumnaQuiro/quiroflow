@@ -33,7 +33,10 @@ const rules: Rule[] = [
     // /settings/clinics/<id> and /settings/appointment-types/<id> are one
     // clinic's or one type's own page, under the same key as their list.
     test: (p) =>
-      ['/settings/clinics', '/settings/appointment-types', '/settings/rooms', '/settings/referral-sources', '/settings/app'].includes(p) ||
+      // online-booking, reschedule-reasons and new-patient-fields were missing
+      // until 30 Sep 2026 and fell through to plain settings_access, so a
+      // role the menu hid them from could still open them by address.
+      ['/settings/clinics', '/settings/appointment-types', '/settings/rooms', '/settings/referral-sources', '/settings/app', '/settings/online-booking', '/settings/reschedule-reasons', '/settings/new-patient-fields'].includes(p) ||
       p.startsWith('/settings/clinics/') ||
       p.startsWith('/settings/appointment-types/'),
     check: (s) => can(s, 'settings_access') && can(s, 'clinic_config'),

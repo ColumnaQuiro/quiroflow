@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isRouteAllowed } from '~/utils/routePermissions'
 const route = useRoute()
 const { can } = usePermission()
 const store = useAccountStore()
@@ -70,7 +71,7 @@ const allGroups = computed<NavGroup[]>(() => [
 ])
 
 const groups = computed(() =>
-  allGroups.value.map((group) => ({ ...group, items: group.items.filter((item) => (!item.perm || can(item.perm)) && (!item.ownerOnly || store.isOwner)) })).filter((group) => group.items.length > 0),
+  allGroups.value.map((group) => ({ ...group, items: group.items.filter((item) => (!item.perm || can(item.perm)) && (!item.ownerOnly || store.isOwner) && isRouteAllowed(store, item.to)) })).filter((group) => group.items.length > 0),
 )
 
 // A section stays lit on its own detail pages -- Clinics on

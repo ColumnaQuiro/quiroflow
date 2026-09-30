@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { isRouteAllowed } from '~/utils/routePermissions'
+
 const ICONS = {
   building: 'M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21',
   users:
@@ -34,7 +36,11 @@ const ICONS = {
 const t = useT()
 const store = useAccountStore()
 
-const groups = computed(() => [
+// Every card is filtered through isRouteAllowed, the same check the route
+// middleware applies -- so a card is shown exactly when clicking it would not
+// bounce to /dashboard?denied=1. Only VeriFactu was filtered before, and a
+// role without billing_config or team_admin saw cards it could not open.
+const allGroups = computed(() => [
   {
     label: t('Clinic', 'Clínica'),
     items: [
@@ -60,9 +66,7 @@ const groups = computed(() => [
       { to: '/settings/invoicing', label: t('Invoicing', 'Facturación'), description: t('Fiscal data, numbering, what receipts show and the receipt email.', 'Datos fiscales, numeración, qué muestran los recibos y el correo del recibo.'), icon: ICONS.documentText },
       // Owners only: sending the clinic's invoicing records to the tax agency
       // under its certificate is the company's decision, not a role's.
-      ...(store.isOwner
-        ? [{ to: '/settings/verifactu', label: 'VeriFactu', description: t('Send invoicing records to the AEAT: test or live, and the certificate they are sent with.', 'Envío de registros de facturación a la AEAT: pruebas o producción, y el certificado con el que se envían.'), icon: ICONS.lockClosed }]
-        : []),
+      { to: '/settings/verifactu', label: 'VeriFactu', description: t('Send invoicing records to the AEAT: test or live, and the certificate they are sent with.', 'Envío de registros de facturación a la AEAT: pruebas o producción, y el certificado con el que se envían.'), icon: ICONS.lockClosed },
     ],
   },
   {
@@ -90,6 +94,9 @@ const groups = computed(() => [
     ],
   },
 ])
+const groups = computed(() =>
+  allGroups.value.map((g) => ({ ...g, items: g.items.filter((item) => isRouteAllowed(store, item.to)) })).filter((g) => g.items.length > 0),
+)
 </script>
 
 <template>

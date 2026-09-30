@@ -15,3 +15,18 @@ where practicehub_api_key is not null
 on conflict (account_id, name) do update set value = excluded.value, updated_at = now();
 
 update public.accounts set practicehub_api_key = null where practicehub_api_key is not null;
+
+-- The WhatsApp, Instagram and Meta Ads access tokens, the same way: they moved
+-- to account_secrets in 20260930100540 (#517); copied again here in case one
+-- was re-saved through the old page since, then emptied.
+insert into public.account_secrets (account_id, name, value)
+select id, 'whatsapp_access_token', whatsapp_access_token from public.accounts where whatsapp_access_token is not null
+union all
+select id, 'instagram_access_token', instagram_access_token from public.accounts where instagram_access_token is not null
+union all
+select id, 'meta_ads_access_token', meta_ads_access_token from public.accounts where meta_ads_access_token is not null
+on conflict (account_id, name) do update set value = excluded.value, updated_at = now();
+
+update public.accounts
+set whatsapp_access_token = null, instagram_access_token = null, meta_ads_access_token = null
+where whatsapp_access_token is not null or instagram_access_token is not null or meta_ads_access_token is not null;

@@ -577,7 +577,7 @@ function schemas() {
         ends_at: { type: 'string', format: 'date-time' },
         status: { type: 'string', enum: ['booked', 'completed', 'cancelled', 'no_show'] },
         note: text(),
-        source: { type: 'string', enum: ['staff', 'online', 'api'], description: '`api` for anything booked through this API; `online` means the clinic’s own booking page.' },
+        source: { type: 'string', enum: ['staff', 'online', 'api', 'waitlist'], description: '`api` for anything booked through this API; `online` means the clinic’s own booking page; `waitlist` a patient taking a slot offered to them from the waitlist.' },
         rescheduled: { type: 'boolean' },
         checked_in_at: datetime(),
         confirmation_status: text(),

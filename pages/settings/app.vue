@@ -16,11 +16,6 @@ import { appStoreUrl, playStoreUrl } from '~/utils/appLinks'
 // what they can do, then talk to them.
 // /settings/patient-app redirects here so older links still land.
 
-interface AppOpenRow {
-  device_id: string
-  platform: string
-  last_seen_at: string
-}
 // What this clinic lets its patients do in the app, and a way to push an
 // announcement to them.
 //
@@ -59,6 +54,14 @@ async function load() {
 onMounted(load)
 
 async function save() {
+  // A cleared box is '' and an integer column refuses it -- and so does 1.5.
+  // Number('') is 0, and a cleared box is not a choice of "no notice".
+  const raw = noticeHours.value as number | string
+  const hours = raw === '' || raw === null ? Number.NaN : Number(raw)
+  if (!Number.isInteger(hours) || hours < 0 || hours > 336) {
+    showToast(t('The notice has to be a whole number of hours, from 0 to 336 (two weeks).', 'El aviso tiene que ser un número entero de horas, de 0 a 336 (dos semanas).'), 'error')
+    return
+  }
   saving.value = true
   const { error } = await supabase
     .from('accounts')
@@ -66,7 +69,7 @@ async function save() {
       patient_app_booking_enabled: bookingEnabled.value,
       patient_app_cancel_enabled: cancelEnabled.value,
       patient_app_reschedule_enabled: rescheduleEnabled.value,
-      patient_app_change_notice_hours: noticeHours.value,
+      patient_app_change_notice_hours: hours,
     })
     .eq('id', store.accountId!)
   saving.value = false
@@ -122,26 +125,26 @@ onMounted(loadHistory)
 // at 300, and there is no way to take one back.
 const reachable = ref<number | null>(null)
 async function loadReach() {
-  const { count } = await supabase
-    .from('patients')
-    .select('id', { count: 'exact', head: true })
-    .not('user_id', 'is', null)
-    .eq('do_not_contact', false)
-    .eq('app_push_opted_out', false)
-  reachable.value = count ?? 0
+  try {
+    reachable.value = (await authedFetch<{ patients: number }>('/api/patient-push/reach')).patients
+  } catch {
+    // No permission to send, or offline: the button says "all patients".
+    reachable.value = null
+  }
 }
 onMounted(loadReach)
 
-async function sendAnnouncement() {
+// Asked in an in-app dialog rather than confirm(): it goes to every patient's
+// lock screen and cannot be recalled.
+const confirmingSend = ref(false)
+function askToSend() {
   if (!pushTitle.value.trim() || !pushBody.value.trim()) return
-  const confirmed = confirm(
-    t(
-      `Send this to ${reachable.value ?? 0} patient(s)? It appears on their phone straight away and can't be recalled.`,
-      `¿Enviar esto a ${reachable.value ?? 0} paciente(s)? Aparecerá en su móvil al momento y no se puede retirar.`,
-    ),
-  )
-  if (!confirmed) return
+  confirmingSend.value = true
+}
 
+async function sendAnnouncement() {
+  confirmingSend.value = false
+  if (!pushTitle.value.trim() || !pushBody.value.trim()) return
   sending.value = true
   try {
     const res = await authedFetch<{ recipients: number; devices: number; delivered: number }>('/api/patient-push/send', {
@@ -189,28 +192,31 @@ async function downloadQr() {
 }
 
 const usageLoading = ref(true)
-const opens = ref<AppOpenRow[]>([])
+const usage = ref({ total: 0, active: 0, ios: 0, android: 0, web: 0 })
 async function loadUsage() {
   if (!store.accountId) return
   usageLoading.value = true
-  const { data } = await supabase.from('app_opens').select('device_id, platform, last_seen_at').eq('account_id', store.accountId)
-  opens.value = data ?? []
+  // Head counts: a select of the rows stopped at PostgREST's 1,000-row cap,
+  // so past 1,000 devices every figure here stopped growing.
+  const opensOf = () => supabase.from('app_opens').select('device_id', { count: 'exact', head: true }).eq('account_id', store.accountId!)
+  const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+  const [total, active, ios, android, web] = await Promise.all([
+    opensOf(),
+    opensOf().gte('last_seen_at', cutoff),
+    opensOf().eq('platform', 'ios'),
+    opensOf().eq('platform', 'android'),
+    opensOf().eq('platform', 'web'),
+  ])
+  usage.value = { total: total.count ?? 0, active: active.count ?? 0, ios: ios.count ?? 0, android: android.count ?? 0, web: web.count ?? 0 }
   usageLoading.value = false
 }
 onMounted(loadUsage)
 watch(() => store.accountId, loadUsage)
 
-const totalDevices = computed(() => opens.value.length)
-const platformShare = (key: string) => (totalDevices.value ? `${(byPlatform.value[key] / totalDevices.value) * 100}%` : '0%')
-const byPlatform = computed(() => {
-  const counts: Record<string, number> = { ios: 0, android: 0, web: 0 }
-  for (const o of opens.value) counts[o.platform] = (counts[o.platform] ?? 0) + 1
-  return counts
-})
-const activeLast30Days = computed(() => {
-  const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000
-  return opens.value.filter((o) => new Date(o.last_seen_at).getTime() >= cutoff).length
-})
+const totalDevices = computed(() => usage.value.total)
+const byPlatform = computed<Record<string, number>>(() => ({ ios: usage.value.ios, android: usage.value.android, web: usage.value.web }))
+const platformShare = (key: string) => (totalDevices.value ? `${(byPlatform.value[key]! / totalDevices.value) * 100}%` : '0%')
+const activeLast30Days = computed(() => usage.value.active)
 </script>
 
 
@@ -369,7 +375,7 @@ const activeLast30Days = computed(() => {
                 </p>
               </div>
               <div class="flex flex-col gap-6 px-[18px] pb-[18px] pt-3.5 md:flex-row">
-                <form class="flex min-w-0 flex-1 flex-col gap-3.5" @submit.prevent="sendAnnouncement">
+                <form class="flex min-w-0 flex-1 flex-col gap-3.5" @submit.prevent="askToSend">
                   <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
                     <span class="flex justify-between">{{ t('Title', 'Título') }} <span class="font-normal text-ink-muted">{{ pushTitle.length }}/64</span></span>
                     <input v-model="pushTitle" maxlength="64" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[14px] font-normal text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
@@ -426,5 +432,17 @@ const activeLast30Days = computed(() => {
         </div>
       </div>
     </div>
+    <UiConfirmDialog
+      v-if="confirmingSend"
+      :title="reachable === null ? t('Send to every patient with the app?', '¿Enviar a todos los pacientes con la app?') : t(`Send to ${reachable} patient(s)?`, `¿Enviar a ${reachable} paciente(s)?`)"
+      :confirm-label="t('Send now', 'Enviar ahora')"
+      :cancel-label="t('Cancel', 'Cancelar')"
+      :busy="sending"
+      @confirm="sendAnnouncement"
+      @cancel="confirmingSend = false"
+    >
+      <p class="text-[14px] leading-snug text-ink-700">{{ t("It appears on their phones straight away and can't be recalled.", 'Aparecerá en sus móviles al momento y no se puede retirar.') }}</p>
+      <p class="rounded-ctl bg-surface-subtle px-3 py-2 text-[13.5px] text-ink-900"><strong>{{ pushTitle }}</strong><br />{{ pushBody }}</p>
+    </UiConfirmDialog>
   </div>
 </template>

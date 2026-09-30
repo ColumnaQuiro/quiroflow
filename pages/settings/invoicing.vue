@@ -17,10 +17,17 @@ const { showToast } = useToast()
 const loading = ref(true)
 const saving = ref(false)
 
-// A number input's v-model hands back a Number once someone types, so this
-// is read through receiptNext() rather than assumed to be a string.
-const nextInvoiceNumber = ref<string | number>('')
-const receiptNext = computed(() => String(nextInvoiceNumber.value ?? '').trim())
+// Receipt numbering is the real counter behind next_invoice_number()
+// (get/set_receipt_numbering). This field used to save
+// accounts.next_invoice_number, which nothing read. A number input's v-model
+// hands back a Number once someone types, so it is read through String().
+const receiptCurrent = ref<number | null>(null)
+const nextReceipt = ref<string | number>('')
+const receiptNext = computed(() => String(nextReceipt.value ?? '').trim())
+function receiptNumberPreview(next: string) {
+  const n = parseInt(next, 10)
+  return `INV-${String(Number.isFinite(n) ? n : (receiptCurrent.value ?? 1)).padStart(4, '0')}`
+}
 const sendAutomatically = ref(false)
 const showDob = ref(false)
 const showSsn = ref(false)
@@ -64,6 +71,13 @@ const numberingError = computed(() => {
   if (facturaPrefix.value.trim().toUpperCase() === rectificativaPrefix.value.trim().toUpperCase()) {
     return t('Facturas and rectificativas need different prefixes.', 'Las facturas y las rectificativas necesitan prefijos distintos.')
   }
+  if (receiptCurrent.value !== null) {
+    const r = parseInt(receiptNext.value, 10)
+    if (!Number.isInteger(r) || r < 1) return t('The next receipt number must be 1 or more.', 'El próximo número de recibo debe ser 1 o más.')
+    if (r < receiptCurrent.value) {
+      return t(`The next receipt number can only move forward: numbers below ${receiptCurrent.value} are already used.`, `El próximo número de recibo solo puede avanzar: los números por debajo de ${receiptCurrent.value} ya se han usado.`)
+    }
+  }
   const checks: [string, number][] = [[nextFactura.value, numbering.value.next_factura], [nextRectificativa.value, numbering.value.next_rectificativa]]
   for (const [value, current] of checks) {
     const n = parseInt(value, 10)
@@ -81,6 +95,10 @@ function changedNext(value: string, current: number) {
 }
 
 async function loadNumbering() {
+  const { data: receipts } = await supabase.rpc('get_receipt_numbering', { p_account_id: store.accountId! })
+  const receiptRow = receipts as unknown as { next_receipt: number } | null
+  receiptCurrent.value = receiptRow?.next_receipt ?? null
+  nextReceipt.value = receiptRow ? String(receiptRow.next_receipt) : ''
   const { data } = await supabase.rpc('get_factura_numbering', { p_account_id: store.accountId! })
   const row = data as unknown as FacturaNumbering | null
   numbering.value = row
@@ -97,12 +115,11 @@ async function load() {
   const { data } = await supabase
     .from('accounts')
     .select(
-      'next_invoice_number, send_invoices_automatically_default, show_dob_on_invoices, show_ssn_on_invoices, show_taxes_on_invoices, hide_invoice_balance, hide_account_balance, hide_payments_on_invoices, hide_provider_on_invoices, hide_next_visit_on_invoices, hide_logo_on_invoices, invoice_email_subject, invoice_email_body',
+      'send_invoices_automatically_default, show_dob_on_invoices, show_ssn_on_invoices, show_taxes_on_invoices, hide_invoice_balance, hide_account_balance, hide_payments_on_invoices, hide_provider_on_invoices, hide_next_visit_on_invoices, hide_logo_on_invoices, invoice_email_subject, invoice_email_body',
     )
     .eq('id', store.accountId!)
     .maybeSingle()
   if (data) {
-    nextInvoiceNumber.value = data.next_invoice_number != null ? String(data.next_invoice_number) : ''
     sendAutomatically.value = data.send_invoices_automatically_default
     showDob.value = data.show_dob_on_invoices
     showSsn.value = data.show_ssn_on_invoices
@@ -130,7 +147,6 @@ async function save() {
   const { error } = await supabase
     .from('accounts')
     .update({
-      next_invoice_number: receiptNext.value ? parseInt(receiptNext.value, 10) : null,
       send_invoices_automatically_default: sendAutomatically.value,
       show_dob_on_invoices: showDob.value,
       show_ssn_on_invoices: showSsn.value,
@@ -163,8 +179,19 @@ async function save() {
       showToast(numberingSaveError.message, 'error')
       return
     }
-    await loadNumbering()
   }
+  if (receiptCurrent.value !== null) {
+    const r = changedNext(receiptNext.value, receiptCurrent.value)
+    if (r !== null) {
+      const { error: receiptSaveError } = await supabase.rpc('set_receipt_numbering', { p_account_id: store.accountId!, p_next_receipt: r })
+      if (receiptSaveError) {
+        saving.value = false
+        showToast(receiptSaveError.message, 'error')
+        return
+      }
+    }
+  }
+  await loadNumbering()
   saving.value = false
   showToast(t('Saved', 'Guardado'))
 }
@@ -362,9 +389,9 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
               </template>
               <div class="grid grid-cols-2 items-center gap-3 border-t border-line-row px-[18px] py-3 sm:grid-cols-[1.2fr_110px_150px_1fr]">
                 <strong class="col-span-2 text-[14.5px] text-ink-900 sm:col-span-1">{{ t('Receipts', 'Recibos') }}</strong>
-                <span class="text-[13px] text-ink-muted">{{ t('No prefix', 'Sin prefijo') }}</span>
-                <input v-model="nextInvoiceNumber" type="number" min="1" data-cy="receipt-next" :placeholder="t('Automatic', 'Automático')" :aria-label="t('Next receipt number', 'Próximo número de recibo')" :class="[inputClass, 'w-full text-right']" />
-                <span class="col-span-2 text-[13px] text-ink-muted sm:col-span-1">{{ receiptNext || t('Keeps counting on its own', 'Sigue contando solo') }}</span>
+                <span class="font-mono text-[13px] text-ink-muted" :title="t('Fixed: receipts are one series', 'Fijo: los recibos son una sola serie')">INV-</span>
+                <input v-model="nextReceipt" type="number" :min="receiptCurrent ?? 1" data-cy="receipt-next" :aria-label="t('Next receipt number', 'Próximo número de recibo')" :class="[inputClass, 'w-full text-right']" />
+                <code class="col-span-2 font-mono text-[14px] font-medium text-ink-900 sm:col-span-1" data-cy="receipt-preview">{{ receiptNumberPreview(receiptNext) }}</code>
               </div>
               <p v-if="numberingError" class="border-t border-line-row px-[18px] py-2.5 text-[12.5px] font-semibold text-danger-text" data-cy="factura-numbering-error">{{ numberingError }}</p>
             </section>
@@ -406,7 +433,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
                     <div class="flex items-start justify-between">
                       <span v-if="!hideLogo" class="flex h-10 w-10 items-center justify-center rounded-ctl bg-[#EEF0FE] text-[10px] font-bold text-[#3B32C9]">LOGO</span>
                       <span v-else />
-                      <span class="text-right leading-snug"><strong class="text-[13px]">{{ t('Receipt', 'Recibo') }} {{ receiptNext || '0001' }}</strong><br />{{ new Date().toLocaleDateString('es-ES') }}</span>
+                      <span class="text-right leading-snug"><strong class="text-[13px]">{{ t('Receipt', 'Recibo') }} {{ receiptNumberPreview(receiptNext) }}</strong><br />{{ new Date().toLocaleDateString('es-ES') }}</span>
                     </div>
                     <div class="leading-snug">
                       <strong>{{ t('Patient name', 'Nombre del paciente') }}</strong>

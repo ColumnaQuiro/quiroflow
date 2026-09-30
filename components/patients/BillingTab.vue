@@ -1720,7 +1720,7 @@ async function activateMembership() {
     return
   }
   activatingMembership.value = true
-  const { data: newMembership } = await supabase
+  const { data: newMembership, error: membershipError } = await supabase
     .from('patient_memberships')
     .insert({
       account_id: store.accountId!,
@@ -1732,7 +1732,14 @@ async function activateMembership() {
     })
     .select('id')
     .single()
-  if (newMembership) fire('membership.new_member', { patientId: props.patientId, membershipId: newMembership.id })
+  // No payment for a membership that was not created: the insert's error was
+  // ignored and the patient was charged anyway, with nothing to show for it.
+  if (membershipError || !newMembership) {
+    activatingMembership.value = false
+    showToast(membershipError?.message ?? t('The membership was not created.', 'No se ha creado la membresía.'), 'error')
+    return
+  }
+  fire('membership.new_member', { patientId: props.patientId, membershipId: newMembership.id })
   if (amountCents > 0) await recordSalePayment(tpl.name, amountCents, activateMethod.value)
   activatingMembership.value = false
   activateMembershipId.value = ''

@@ -3,20 +3,29 @@
 // the input or the figure involved.
 
 describe('Settings review fixes', () => {
-  it('saves a typed receipt number without breaking the page', () => {
+  it('saves a typed receipt number without breaking the page, onto the counter receipts use', () => {
     // A number input's v-model hands back a Number; the page called .trim()
     // on it, so typing a digit broke Invoicing and Save stuck on "Saving…".
+    // And until 30 Sep 2026 it saved a column nothing read: receipts kept
+    // their old numbering whatever was typed here.
     cy.seedStaffAccount().then((account) => {
-      cy.intercept('PATCH', '**/rest/v1/accounts*').as('saveAccount')
+      cy.intercept('POST', '**/rest/v1/rpc/set_receipt_numbering').as('saveReceipts')
       cy.login(account.email, account.password)
       cy.visit('/settings/invoicing')
       cy.get('[data-cy="invoicing-settings"][data-ready="true"]')
 
-      cy.get('[data-cy="receipt-next"]').type('1208')
-      cy.contains('Keeps counting on its own').should('not.exist')
+      cy.get('[data-cy="receipt-next"]').clear().type('1208')
+      cy.get('[data-cy="receipt-preview"]').should('have.text', 'INV-1208')
       cy.get('[data-cy="invoice-settings-save"]').click()
-      cy.wait('@saveAccount').its('request.body.next_invoice_number').should('eq', 1208)
+      cy.wait('@saveReceipts').its('request.body.p_next_receipt').should('eq', 1208)
       cy.get('[data-cy="invoice-settings-save"]').should('contain', 'Save changes')
+      cy.task<string>('db:issueReceiptNumber', { accountId: account.accountId }).should('eq', 'INV-1208')
+
+      // Back would hand out a number already on a receipt.
+      cy.reload()
+      cy.get('[data-cy="invoicing-settings"][data-ready="true"]')
+      cy.get('[data-cy="receipt-next"]').should('have.value', '1209').clear().type('5')
+      cy.get('[data-cy="factura-numbering-error"]').should('contain', 'only move forward')
     })
   })
 
@@ -155,10 +164,12 @@ describe('Settings review fixes, second round', () => {
       cy.get('[data-cy="messages-reminder"] [data-cy="messages-enabled"]').then(($s) => {
         if ($s.attr('aria-checked') !== 'true') cy.wrap($s).click()
       })
+      // A cleared box is refused in words now, rather than silently saved as
+      // 24 -- and never sent to Postgres as ''.
       cy.get('[data-cy="reminder-hours"]').clear()
       cy.get('[data-cy="messages-save"]').click()
-      cy.wait('@saveAccount').its('response.statusCode').should('be.lessThan', 300)
-      cy.get('@saveAccount').its('request.body.appointment_reminder_hours_before').should('eq', 24)
+      cy.contains('between 1 and 168 hours').should('be.visible')
+      cy.get('@saveAccount.all').should('have.length', 0)
 
       cy.visit('/settings/online-booking')
       cy.get('[data-cy="booking-settings"][data-ready="true"]')

@@ -1,7 +1,7 @@
 import { ApiError, badRequest, defineApiHandler } from '~/server/utils/publicApi'
 import { definedOnly, enumValue, isoDateTime, readApiBody, rejectUnknownFields, str, uuid } from '~/server/utils/publicApiBody'
 import { assertBelongsToAccount, loose } from '~/server/utils/publicApiHandlers'
-import { APPOINTMENT_STATUSES, assertNoOverlap, assertTypeBookable, resolveWindow } from '~/server/utils/publicApiAppointments'
+import { APPOINTMENT_STATUSES, assertTypeBookable, resolveWindow, saveAppointmentIfFree } from '~/server/utils/publicApiAppointments'
 import { appointmentsResource } from '~/server/utils/publicApiResources'
 
 const FIELDS = [
@@ -51,10 +51,7 @@ export default defineApiHandler({ scope: 'appointments:write' }, async ({ event,
     appointmentTypeId,
     practitionerId,
   })
-  await assertNoOverlap(supabase, accountId, practitionerId, window.startsAt, window.endsAt)
-
   const insert = definedOnly({
-    account_id: accountId,
     patient_id: patientId,
     clinic_id: clinicId,
     practitioner_id: practitionerId,
@@ -71,7 +68,9 @@ export default defineApiHandler({ scope: 'appointments:write' }, async ({ event,
     source: 'api',
   })
 
-  const { data: created, error } = await loose(supabase).from('appointments').insert(insert as never).select(appointmentsResource.select).single()
+  // The overlap check and the insert, as one step: see saveAppointmentIfFree.
+  const createdId = await saveAppointmentIfFree(supabase, accountId, null, insert, { checkOverlap: true })
+  const { data: created, error } = await loose(supabase).from('appointments').select(appointmentsResource.select).eq('id', createdId).single()
   if (error) throw new ApiError('server_error', error.message)
 
   // The patient's confirmation, as a booking from the public page gets one.

@@ -126,15 +126,22 @@ const weekdayChartOptions = {
   scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
   plugins: { legend: { display: false } },
 }
+
+// What "Download PDF" reads: the sections below marked data-pdf-block,
+// and the figure tiles (components/reports/Stat.vue).
+const pdfRoot = ref<HTMLElement | null>(null)
 </script>
 
 <template>
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Upcoming Visits', 'Próximas visitas')" :meta="t('Appointment distribution across the month', 'Distribución de citas a lo largo del mes')">
-      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+      <div class="flex items-center gap-3">
+        <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+        <ReportsPdfButton :target="pdfRoot" :title="t('Upcoming Visits', 'Próximas visitas')" :extra="[monthLabel]" />
+      </div>
     </PageHeader>
 
-    <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
+    <div ref="pdfRoot" class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
       <p class="text-[13px] text-ink-muted2">
         {{ t('Use it to gauge ad spend, spot maintenance-retention gaps, and predict how the month will close.', 'Úsalo para calibrar el gasto en publicidad, detectar huecos de retención de mantenimiento y predecir cómo cerrará el mes.') }}
       </p>

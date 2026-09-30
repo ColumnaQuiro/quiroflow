@@ -17,7 +17,7 @@ function restrictedTo(store: Store, key: string) {
   return !store.isOwner && store.permissions[key] === true
 }
 
-export const CLINIC_WIDE_REPORTS = ['/reports/scheduled-reminders', '/reports/debtors', '/reports/memberships', '/reports/data-exports', '/reports/custom']
+export const CLINIC_WIDE_REPORTS = ['/reports/scheduled-reminders', '/reports/debtors', '/reports/memberships', '/reports/data-exports']
 
 interface Rule {
   test: (path: string) => boolean
@@ -83,7 +83,8 @@ const rules: Rule[] = [
   { test: (p) => p.startsWith('/billing'), check: (s) => can(s, 'billing_access') },
   // Reports that are about the whole clinic and cannot be narrowed to one
   // practitioner -- money owed on bonos, membership revenue, reminder
-  // delivery, bulk exports of the patient list, free-form custom reports.
+  // delivery, bulk exports of the patient list. (Report pages are not among
+  // them: every block on one is narrowed, or says it cannot be.)
   // "Only their own figures" (reports_own_only) cannot be honoured on them,
   // so they are not offered at all rather than shown whole.
   { test: (p) => CLINIC_WIDE_REPORTS.includes(p), check: (s) => can(s, 'reports_access') && !restrictedTo(s, 'reports_own_only') },

@@ -86,26 +86,33 @@ function lastPayment(membershipId: string) {
     .filter((p) => p.patient_membership_id === membershipId)
     .sort((a, b) => b.period_start.localeCompare(a.period_start))[0]
 }
+
+// What "Download PDF" reads: the sections below marked data-pdf-block,
+// and the figure tiles (components/reports/Stat.vue).
+const pdfRoot = ref<HTMLElement | null>(null)
 </script>
 
 <template>
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Memberships', 'Membresías')" :meta="t('Active count, monthly revenue, and failed payments', 'Recuento activo, ingresos mensuales y pagos fallidos')">
-      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+      <div class="flex items-center gap-3">
+        <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+        <ReportsPdfButton :target="pdfRoot" :title="t('Memberships', 'Membresías')" />
+      </div>
     </PageHeader>
 
-    <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
+    <div ref="pdfRoot" class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
       <p class="text-[13px] text-ink-muted2">{{ t('Manual and Stripe autopay combined.', 'Combina pagos manuales y cobro automático de Stripe.') }}</p>
 
       <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div v-for="tile in tiles" :key="tile.key" class="rounded-card border border-line bg-surface p-4 shadow-card" :aria-busy="loading || undefined">
+        <div v-for="tile in tiles" :key="tile.key" class="rounded-card border border-line bg-surface p-4 shadow-card" :aria-busy="loading || undefined" data-pdf-kpi>
           <div v-if="loading" class="flex items-center font-mono text-[23px]" aria-hidden="true">&#8203;<UiSkeleton class="h-[23px] w-16 rounded-ctlSm" /></div>
-          <p v-else class="font-mono text-[23px] font-semibold" :class="tile.danger ? 'text-danger-text' : 'text-ink-900'">{{ tile.value }}</p>
-          <p class="text-[12px] text-ink-muted2">{{ tile.label }}</p>
+          <p v-else class="font-mono text-[23px] font-semibold" :class="tile.danger ? 'text-danger-text' : 'text-ink-900'" data-pdf-value>{{ tile.value }}</p>
+          <p class="text-[12px] text-ink-muted2" data-pdf-label>{{ tile.label }}</p>
         </div>
       </div>
 
-      <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
+      <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card" data-pdf-block="table" :data-pdf-title="t('Memberships', 'Membresías')">
         <table class="w-full text-[13px]">
           <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">
             <tr>

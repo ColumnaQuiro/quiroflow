@@ -998,6 +998,32 @@ async function paymentsFor(opts: { patientId: string }) {
   return data
 }
 
+/** The patient's account_credits rows, oldest first. */
+async function creditsFor(opts: { patientId: string }) {
+  const { data, error } = await admin
+    .from('account_credits')
+    .select('amount_cents, payment_id, invoice_id, reason')
+    .eq('patient_id', opts.patientId)
+    .order('created_at')
+  if (error) throw error
+  return data
+}
+
+/** A Stripe-paid schedule as the webhook left it: the instalment counter and
+ *  the events mirrored from Stripe. */
+async function stripeScheduleState(opts: { subscriptionId: string }) {
+  const schedule = unwrap(
+    await admin.from('payment_schedules').select('id, installments_paid, status').eq('stripe_subscription_id', opts.subscriptionId).single(),
+  ) as { id: string; installments_paid: number; status: string }
+  const { data: events, error } = await admin
+    .from('stripe_payment_events')
+    .select('stripe_invoice_id, stripe_payment_intent_id, status, amount_cents')
+    .eq('payment_schedule_id', schedule.id)
+    .order('created_at')
+  if (error) throw error
+  return { installmentsPaid: schedule.installments_paid, status: schedule.status, events }
+}
+
 async function facturasFor(opts: { patientId: string }) {
   const { data, error } = await admin
     .from('facturas')
@@ -3620,6 +3646,8 @@ export const dbTasks = {
   'db:setPatientClinical': setPatientClinical,
   'db:createAccountCredit': createAccountCredit,
   'db:paymentsFor': paymentsFor,
+  'db:creditsFor': creditsFor,
+  'db:stripeScheduleState': stripeScheduleState,
   'db:auditLogFor': auditLogFor,
   'db:facturasFor': facturasFor,
   'db:createFacturaWithoutTax': createFacturaWithoutTax,

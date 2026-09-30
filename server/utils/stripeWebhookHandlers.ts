@@ -4,6 +4,35 @@ import type Stripe from 'stripe'
 import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
 import { dispatchPatientRule } from '~/server/utils/automationEngine'
 
+// The subscription an invoice belongs to, in either shape Stripe sends it.
+// Up to 2025-02-24.acacia it is `invoice.subscription`; from 2025-03-31.basil
+// on it moved to `invoice.parent.subscription_details.subscription`, and the
+// top-level field is gone. Which shape arrives is set by the webhook
+// endpoint's API version in the Stripe dashboard, not by the SDK version
+// pinned in server/utils/stripe.ts, so both are read. Reading only the old
+// one resolved no schedule on a current endpoint and booked nothing at all.
+export function stripeInvoiceSubscriptionId(invoice: any): string | null {
+  const idOf = (v: unknown) => (typeof v === 'string' ? v : typeof (v as { id?: unknown })?.id === 'string' ? (v as { id: string }).id : null)
+  return (
+    idOf(invoice?.subscription) ??
+    idOf(invoice?.parent?.subscription_details?.subscription) ??
+    idOf(invoice?.lines?.data?.[0]?.parent?.subscription_item_details?.subscription) ??
+    null
+  )
+}
+
+// The PaymentIntent that paid an invoice, in either shape: `payment_intent`
+// before basil, `payments.data[].payment.payment_intent` after -- and that
+// list is only present when Stripe includes it, so null is a normal answer.
+export function stripeInvoicePaymentIntentId(invoice: any): string | null {
+  const idOf = (v: unknown) => (typeof v === 'string' ? v : typeof (v as { id?: unknown })?.id === 'string' ? (v as { id: string }).id : null)
+  const legacy = idOf(invoice?.payment_intent)
+  if (legacy) return legacy
+  const payments: any[] = invoice?.payments?.data ?? []
+  const paid = payments.find((p) => p?.status === 'paid' && p?.payment?.payment_intent) ?? payments.find((p) => p?.payment?.payment_intent)
+  return idOf(paid?.payment?.payment_intent)
+}
+
 // Shared by both webhook routes: the legacy per-account endpoint
 // (webhook/[accountId].post.ts) and the platform-level Connect endpoint
 // (webhook.post.ts). Mirrors Stripe's outcome into payment_schedules /
@@ -49,6 +78,40 @@ export async function handleStripeEvent(supabase: SupabaseClient<Database>, acco
     return data
   }
 
+  // The invoice is raised 'paid' before its payment exists (the payment names
+  // it). If the payment is then refused, what is left is a paid invoice with
+  // no money under it -- which reads as settled and is not. Take it back out
+  // (its line items cascade) rather than leave that behind.
+  async function dropUnpaidCharge(invoiceId: string, error: { message?: string } | null) {
+    console.error('[stripe webhook] payment insert failed, removing its invoice', invoiceId, error?.message)
+    await supabase.from('invoices').delete().eq('id', invoiceId)
+  }
+
+  // Adds one to a schedule's instalment count without losing a concurrent
+  // increment: the write only lands if the count is still what was read, and
+  // otherwise re-reads and tries again. Two different invoices of the same
+  // schedule arriving together used to both write n+1.
+  async function countInstallment(scheduleId: string) {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const { data: current } = await supabase
+        .from('payment_schedules')
+        .select('installments_paid, installments_total')
+        .eq('id', scheduleId)
+        .maybeSingle()
+      if (!current) return
+      const installmentsPaid = current.installments_paid + 1
+      const completed = current.installments_total != null && installmentsPaid >= current.installments_total
+      const { data: updated } = await supabase
+        .from('payment_schedules')
+        .update({ installments_paid: installmentsPaid, status: completed ? 'completed' : 'active' })
+        .eq('id', scheduleId)
+        .eq('installments_paid', current.installments_paid)
+        .select('id')
+      if (updated?.length) return
+    }
+    console.error('[stripe webhook] could not count instalment after retries', scheduleId)
+  }
+
   // A successful membership installment only ever touched
   // stripe_payment_events/payment_schedules -- invisible to balanceCents,
   // the Account Ledger, and the cash-up report. This makes it a normal
@@ -74,11 +137,15 @@ export async function handleStripeEvent(supabase: SupabaseClient<Database>, acco
       quantity: 1,
       price_cents: amountCents,
     })
-    const { data: payment } = await supabase
+    const { data: payment, error: paymentError } = await supabase
       .from('payments')
       .insert({ account_id: accountId, patient_id: patientId, invoice_id: invoice.id, amount_cents: amountCents, method: 'card', stripe_payment_intent_id: paymentIntentId, purpose: 'membership' })
       .select('id')
       .single()
+    if (paymentError || !payment) {
+      await dropUnpaidCharge(invoice.id, paymentError)
+      return
+    }
 
     // Money arriving with nobody at a screen still needs its document.
     if (payment) {
@@ -118,11 +185,15 @@ export async function handleStripeEvent(supabase: SupabaseClient<Database>, acco
       quantity: 1,
       price_cents: amountCents,
     })
-    const { data: payment } = await supabase
+    const { data: payment, error: paymentError } = await supabase
       .from('payments')
       .insert({ account_id: accountId, patient_id: patientId, invoice_id: invoice.id, amount_cents: amountCents, method: 'card', stripe_payment_intent_id: paymentIntentId, purpose: 'bono' })
       .select('id')
       .single()
+    if (paymentError || !payment) {
+      await dropUnpaidCharge(invoice.id, paymentError)
+      return
+    }
 
     // An autopay instalment describes the share of the bono it buys, exactly
     // as one taken at the desk does.
@@ -155,29 +226,49 @@ export async function handleStripeEvent(supabase: SupabaseClient<Database>, acco
 
   if (stripeEvent.type === 'invoice.paid' || stripeEvent.type === 'invoice.payment_failed') {
     const invoice = stripeEvent.data.object as Stripe.Invoice
-    const subscriptionId = typeof (invoice as any).subscription === 'string' ? (invoice as any).subscription : null
+    const subscriptionId = stripeInvoiceSubscriptionId(invoice)
+    const paymentIntentId = stripeInvoicePaymentIntentId(invoice)
     const schedule = await findSchedule(subscriptionId)
     if (schedule) {
       const status = stripeEvent.type === 'invoice.paid' ? 'paid' : 'failed'
-      await supabase.from('stripe_payment_events').insert({
+
+      // Stripe delivers at least once, not exactly once: a timeout, a retry or
+      // a "Resend" from the dashboard sends the same invoice.paid again, under
+      // a new event id. Each delivery used to raise another paid invoice,
+      // payment and factura for the same money and count the instalment
+      // again. The Stripe invoice id is what identifies the money, so a paid
+      // event already recorded for it means this one has been booked.
+      if (status === 'paid') {
+        const { data: alreadyBooked } = await supabase
+          .from('stripe_payment_events')
+          .select('id')
+          .eq('stripe_invoice_id', invoice.id)
+          .eq('status', 'paid')
+          .limit(1)
+        if (alreadyBooked?.length) return
+      }
+
+      const { error: eventError } = await supabase.from('stripe_payment_events').insert({
         account_id: accountId,
         payment_schedule_id: schedule.id,
         stripe_invoice_id: invoice.id,
-        stripe_payment_intent_id: typeof (invoice as any).payment_intent === 'string' ? (invoice as any).payment_intent : null,
+        stripe_payment_intent_id: paymentIntentId,
         amount_cents: invoice.amount_paid || invoice.amount_due,
         status,
         period_start: new Date((invoice.period_start ?? Math.floor(Date.now() / 1000)) * 1000).toISOString().slice(0, 10),
       })
+      if (status === 'paid' && eventError) {
+        // Two deliveries racing: the partial unique index on paid events
+        // (20260930142942_stripe_invoice_paid_once) lets exactly one in.
+        if (eventError.code === '23505') return
+        // Anything else and nothing is booked yet: fail the request so Stripe
+        // retries, rather than booking money with no record that it was.
+        throw eventError
+      }
 
       if (status === 'paid') {
-        const installmentsPaid = schedule.installments_paid + 1
-        const completed = schedule.installments_total != null && installmentsPaid >= schedule.installments_total
-        await supabase
-          .from('payment_schedules')
-          .update({ installments_paid: installmentsPaid, status: completed ? 'completed' : 'active' })
-          .eq('id', schedule.id)
+        await countInstallment(schedule.id)
 
-        const paymentIntentId = typeof (invoice as any).payment_intent === 'string' ? (invoice as any).payment_intent : null
         if (schedule.patient_membership_id) {
           const periodStart = new Date((invoice.period_start ?? Math.floor(Date.now() / 1000)) * 1000).toISOString()
           await recordMembershipCharge(schedule.patient_id, schedule.patient_membership_id, invoice.amount_paid || invoice.amount_due, periodStart, paymentIntentId)

@@ -40,3 +40,25 @@ export async function settleInvoiceIfCovered(supabase: any, invoiceId: string): 
   if (error) throw error
   return true
 }
+
+/**
+ * What is still due on one invoice: nothing once it is paid or void, however
+ * many payment rows sit under it; otherwise its total less what was paid.
+ *
+ * A 'paid' invoice with no payments is a real and common shape -- a visit
+ * drawn from a prepaid bono is raised paid with no payment row, and so is the
+ * whole migrated PracticeHub history (settle_imported_invoices) -- and status
+ * is trustworthy because deletePayment recomputes it from what is left.
+ * Reading payments alone showed the session price as due on those, with a
+ * form to take it again. Used by the receipt page, its PDF/email and the
+ * appointment dialog so they cannot disagree.
+ *
+ * This is one receipt's figure only. It is not the patient's balance, which
+ * is computed elsewhere (patient_live_balances / utils/owing.ts) and is not
+ * affected by this.
+ */
+export function invoiceDueCents(invoice: { status: string; total_cents: number } | null | undefined, paidCents: number): number {
+  if (!invoice) return 0
+  if (invoice.status === 'paid' || invoice.status === 'void') return 0
+  return invoice.total_cents - paidCents
+}

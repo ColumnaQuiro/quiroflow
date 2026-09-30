@@ -91,6 +91,21 @@ const { can } = usePermission()
 // now grant it (20260925074722), so an admin who could do this keeps it and a
 // receptionist can be given it without the catalogue and Stripe settings.
 const canManagePackages = computed(() => can('packages_edit') || can('billing_config'))
+// Taking money -- Take payment, Add credit, Apply credit -- writes a
+// `payments` row, and RLS ("staff write payments", 0170) only allows that
+// with payments_allocate. These were offered on billing_access alone, so the
+// seeded Practitioner role (billing_access yes, payments_allocate no) was
+// shown them and then refused by the database, with nothing on screen to
+// say so.
+const canTakePayments = computed(() => can('payments_allocate'))
+
+// The message shown when a payment insert is refused. Every flow that writes
+// a payment reads its error now: they used to carry on regardless, closing
+// the panel as if the money had been taken, or -- worse -- writing the paired
+// account_credits row with nothing behind it.
+function paymentRefusedMessage(error: { message?: string } | null) {
+  return t('The payment could not be recorded', 'No se pudo registrar el pago') + (error?.message ? `: ${error.message}` : '.')
+}
 const { fire } = useAutomations()
 const t = useT()
 
@@ -189,7 +204,7 @@ async function addCredit() {
   //
   // The credit row is still what the patient can draw on; the payment is the
   // record that the money arrived.
-  const { data: creditPayment } = await supabase
+  const { data: creditPayment, error: paymentError } = await supabase
     .from('payments')
     .insert({
       account_id: store.accountId!,
@@ -201,7 +216,14 @@ async function addCredit() {
     })
     .select('id')
     .single()
-  await supabase.from('account_credits').insert({
+  // No payment, no credit: the credit row restates the payment, and written
+  // alone it is money the patient never handed over.
+  if (paymentError || !creditPayment) {
+    creditError.value = paymentRefusedMessage(paymentError)
+    addingCredit.value = false
+    return
+  }
+  const { error: creditRowError } = await supabase.from('account_credits').insert({
     account_id: store.accountId!,
     patient_id: props.patientId,
     amount_cents: amountCents,
@@ -210,23 +232,24 @@ async function addCredit() {
     // The row restates the payment above rather than adjusting anything, and
     // says so -- otherwise the balance counts the same euros twice, once as
     // money in and once as credit. See the column comment.
-    payment_id: creditPayment?.id ?? null,
+    payment_id: creditPayment.id,
     created_by: store.teamMember?.id ?? null,
   })
-  if (creditPayment) {
-    await issueFactura({
-      accountId: store.accountId!,
-      patientId: props.patientId,
-      paymentId: creditPayment.id,
-      amountCents,
-      purpose: 'on_account',
-    })
-  }
+  // The money did arrive, so its factura is still issued below; the credit
+  // row failing is reported rather than hidden.
+  if (creditRowError) creditError.value = t('The payment was recorded but the credit could not be added', 'El pago se registró, pero no se pudo añadir el crédito') + `: ${creditRowError.message}`
+  await issueFactura({
+    accountId: store.accountId!,
+    patientId: props.patientId,
+    paymentId: creditPayment.id,
+    amountCents,
+    purpose: 'on_account',
+  })
   addCreditAmount.value = ''
   addCreditReason.value = ''
   addCreditMethod.value = 'cash'
   addingCredit.value = false
-  activePanel.value = null
+  if (!creditRowError) activePanel.value = null
   await Promise.all([loadAll(), refreshCreditSummary(), loadFacturas()])
 }
 
@@ -241,14 +264,21 @@ async function applyCreditToInvoice() {
   creditError.value = ''
   applyingCredit.value = true
 
-  await supabase.from('payments').insert({
+  const { error: paymentError } = await supabase.from('payments').insert({
     account_id: store.accountId!,
     patient_id: props.patientId,
     invoice_id: invoice.id,
     amount_cents: amountCents,
     method: 'credit',
   })
-  await supabase.from('account_credits').insert({
+  // Spending credit the invoice never received would take it off the
+  // patient's balance for nothing.
+  if (paymentError) {
+    creditError.value = paymentRefusedMessage(paymentError)
+    applyingCredit.value = false
+    return
+  }
+  const { error: creditRowError } = await supabase.from('account_credits').insert({
     account_id: store.accountId!,
     patient_id: props.patientId,
     amount_cents: -amountCents,
@@ -256,6 +286,7 @@ async function applyCreditToInvoice() {
     invoice_id: invoice.id,
     created_by: store.teamMember?.id ?? null,
   })
+  if (creditRowError) creditError.value = t('The payment was recorded but the credit could not be drawn down', 'El pago se registró, pero no se pudo descontar el crédito') + `: ${creditRowError.message}`
 
   await settleInvoiceIfCovered(supabase, invoice.id)
 
@@ -304,7 +335,7 @@ async function takePayment() {
   }
   takingPayment.value = true
 
-  const { data: insertedPayments } = await supabase
+  const { data: insertedPayments, error: insertError } = await supabase
     .from('payments')
     .insert(
       rows.map((r) => ({
@@ -317,6 +348,14 @@ async function takePayment() {
       })),
     )
     .select('id, amount_cents, method')
+  // One insert for every row, so it is all or nothing: nothing was taken,
+  // and the panel stays open with the reason rather than closing as if it
+  // had been.
+  if (insertError || !insertedPayments?.length) {
+    paymentError.value = paymentRefusedMessage(insertError)
+    takingPayment.value = false
+    return
+  }
 
   // A factura for the money that actually came in. 'credit' rows are excluded:
   // spending account credit moves no money and was already documented when
@@ -333,8 +372,9 @@ async function takePayment() {
     })
   }
   const creditRows = rows.filter((r) => r.method === 'credit')
+  let creditRowError: { message: string } | null = null
   if (creditRows.length > 0) {
-    await supabase.from('account_credits').insert(
+    ;({ error: creditRowError } = await supabase.from('account_credits').insert(
       creditRows.map((r) => ({
         account_id: store.accountId!,
         patient_id: props.patientId,
@@ -343,7 +383,7 @@ async function takePayment() {
         invoice_id: invoice.id,
         created_by: store.teamMember?.id ?? null,
       })),
-    )
+    ))
   }
 
   // An instalment on a bono used to be banked as spendable account credit,
@@ -364,7 +404,11 @@ async function takePayment() {
   }
 
   takingPayment.value = false
-  activePanel.value = null
+  if (creditRowError) {
+    paymentError.value = t('The payment was recorded but the credit could not be drawn down', 'El pago se registró, pero no se pudo descontar el crédito') + `: ${creditRowError.message}`
+  } else {
+    activePanel.value = null
+  }
   await Promise.all([refreshCreditSummary(), loadAll()])
 }
 
@@ -790,6 +834,10 @@ onMounted(async () => {
 // already active (no remount, so the prop's own change is what fires this).
 function maybeOpenPaymentFromTrigger() {
   if (!props.openPaymentTrigger) return
+  if (!canTakePayments.value) {
+    emit('paymentTriggerConsumed')
+    return
+  }
   activePanel.value = 'payment'
   emit('paymentTriggerConsumed')
 }
@@ -1893,7 +1941,7 @@ function money(cents: number) {
           {{ formatLongDate(oldestUnpaid.created_at) }}
         </p>
         <p v-else class="mt-0.5 text-[12px] text-ink-muted2">{{ t('Nothing outstanding.', 'Nada pendiente.') }}</p>
-        <div class="mt-3 flex flex-wrap gap-2">
+        <div v-if="canTakePayments" class="mt-3 flex flex-wrap gap-2">
           <UiBtn variant="primary" size="sm" @click="activePanel === 'payment' ? (activePanel = null) : openTakePayment()">
             {{ t('Take payment', 'Registrar pago') }}
           </UiBtn>
@@ -1956,7 +2004,7 @@ function money(cents: number) {
           </div>
         </dl>
 
-        <div class="mt-3">
+        <div v-if="canTakePayments" class="mt-3">
           <UiBtn variant="secondary" size="sm" @click="activePanel = activePanel === 'credit' ? null : 'credit'">
             {{ t('Add credit', 'Añadir crédito') }}
           </UiBtn>
@@ -1992,7 +2040,7 @@ function money(cents: number) {
     </div>
 
     <!-- The panels the cards above open. -->
-    <div v-if="activePanel" class="rounded-card border border-line bg-surface p-4 shadow-card">
+    <div v-if="activePanel && canTakePayments" class="rounded-card border border-line bg-surface p-4 shadow-card">
       <div v-if="activePanel === 'credit'" class="mt-4 border-t border-line-divider pt-4">
         <form class="flex flex-wrap items-end gap-2" @submit.prevent="addCredit">
           <div>
@@ -2581,6 +2629,7 @@ function money(cents: number) {
       :can-change-payment-method="can('financials_edit_all') && can('payments_allocate')"
       :can-write-off="can('financials_edit_all')"
       :can-refund="can('financials_edit_all')"
+      :can-take-payments="canTakePayments"
       :open-refund-for-invoice-id="props.refundInvoiceId ?? null"
       @add-credit="activePanel = 'credit'"
       @take-payment="activePanel === 'payment' ? (activePanel = null) : openTakePayment()"

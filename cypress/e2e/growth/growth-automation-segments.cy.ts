@@ -48,7 +48,12 @@ describe('Segment trigger', () => {
 
     cy.get('[data-test="insert-root-root-0"]').click({ force: true })
     cy.get('[data-test="add-step-tag"]').click()
-    cy.get('[data-test="tag-input"]').type('contactado')
+    // The clinic's own tags are offered as chips (not a <datalist>, whose
+    // popup crashes headless Electron), and picking one fills the field.
+    cy.get('[data-test="tag-input"]').type(tag.slice(0, 5))
+    cy.get('[data-test="tag-suggestions"]').contains('button', tag).click()
+    cy.get('[data-test="tag-input"]').should('have.value', tag)
+    cy.get('[data-test="tag-input"]').clear().type('contactado')
     cy.get('[data-test="save"]').click()
     cy.location('pathname').should('match', /^\/automations\/[0-9a-f-]{36}$/)
 

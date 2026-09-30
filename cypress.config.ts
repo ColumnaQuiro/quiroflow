@@ -28,4 +28,13 @@ export default defineConfig({
     openMode: 0,
   },
   video: false,
+  // The growth-automations shard crashed Electron (exit 139, a segfault) at
+  // the start of its 8th spec on #504 and again on #508 -- no test failing,
+  // the renderer dying after seven specs in one browser. Cypress keeps every
+  // test's DOM snapshots in memory for the time-travel debugger, which
+  // nobody sees in a headless run; these two free them between tests and
+  // collect garbage more eagerly.
+  // Only in CI: `cypress open` keeps its debugger history.
+  numTestsKeptInMemory: process.env.CI ? 0 : 50,
+  experimentalMemoryManagement: true,
 })

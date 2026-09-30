@@ -1741,7 +1741,7 @@ async function setWhatsappAppSecret(opts: { accountId: string; appSecret: string
   return { configured: true }
 }
 
-async function createApiToken(opts: { accountId: string; scopes: string[] }) {
+async function createApiToken(opts: { accountId: string; scopes: string[]; expiresAt?: string }) {
   // Same hash the server re-derives on every request (sha256 of the raw
   // token), so the spec can hold the raw value and the database only the hash.
   const raw = `qf_live_${randomUUID().replace(/-/g, '')}`
@@ -1757,6 +1757,7 @@ async function createApiToken(opts: { accountId: string; scopes: string[] }) {
         // storing it; not null, so the insert needs it.
         token_prefix: raw.slice(0, 16),
         scopes: opts.scopes,
+        ...(opts.expiresAt ? { expires_at: opts.expiresAt } : {}),
       })
       .select('id')
       .single(),
@@ -1825,6 +1826,29 @@ async function readAsStaff(opts: { email: string; password: string; table: strin
 
   const { data, error } = await userClient.from(opts.table as never).select(opts.columns ?? '*')
   return { rows: (data as unknown[] | null)?.length ?? 0, error: error ? error.message : null }
+}
+
+/**
+ * Any insert or update on a settings table, as a signed-in staff member with
+ * the browser's own key -- what the policy allows, whatever the page shows.
+ * Returns how many rows the database actually changed: an update RLS refuses
+ * is not an error, it just changes nothing.
+ */
+async function settingsWriteAsStaff(opts: {
+  email: string
+  password: string
+  table: string
+  op: 'insert' | 'update'
+  values: Record<string, unknown>
+  match?: Record<string, unknown>
+}) {
+  const userClient = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+  const { error: signInErr } = await userClient.auth.signInWithPassword({ email: opts.email, password: opts.password })
+  if (signInErr) throw signInErr
+  const table = userClient.from(opts.table as never) as any
+  const query = opts.op === 'insert' ? table.insert(opts.values) : table.update(opts.values).match(opts.match ?? {})
+  const { data, error } = await query.select('*')
+  return { changed: (data as unknown[] | null)?.length ?? 0, error: error ? error.message : null }
 }
 
 /**
@@ -3540,6 +3564,7 @@ export const dbTasks = {
   'db:readAsStaff': readAsStaff,
   'db:rolePermissions': rolePermissions,
   'db:writeAsStaff': writeAsStaff,
+  'db:settingsWriteAsStaff': settingsWriteAsStaff,
   'db:roleByName': roleByName,
   'db:roleIdsOf': roleIdsOf,
   'db:packagePurchasesFor': packagePurchasesFor,

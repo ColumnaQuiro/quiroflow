@@ -930,10 +930,11 @@ async function createFactura(opts: {
  * 0063_patient_status_minor_tutor_dnc.sql), and nothing could set them from a
  * spec before.
  */
-async function setPatientContactFlags(opts: { patientId: string; isMinor?: boolean; doNotContact?: boolean }) {
+async function setPatientContactFlags(opts: { patientId: string; isMinor?: boolean; doNotContact?: boolean; appPushOptedOut?: boolean }) {
   const patch: Record<string, boolean> = {}
   if (opts.isMinor !== undefined) patch.is_minor = opts.isMinor
   if (opts.doNotContact !== undefined) patch.do_not_contact = opts.doNotContact
+  if (opts.appPushOptedOut !== undefined) patch.app_push_opted_out = opts.appPushOptedOut
   const { error } = await admin.from('patients').update(patch).eq('id', opts.patientId)
   if (error) throw error
   return null
@@ -944,6 +945,17 @@ async function setPatientTutor(opts: { patientId: string; tutorPatientId: string
   const { error } = await admin.from('patients').update({ tutor_patient_id: opts.tutorPatientId }).eq('id', opts.patientId)
   if (error) throw error
   return null
+}
+
+/** The fields a merge has to carry across rather than lose with the
+ *  duplicate: the other system's reference and who may be contacted. */
+async function patientMergeFields(opts: { patientId: string }) {
+  const { data } = await admin
+    .from('patients')
+    .select('id, external_reference, is_minor, tutor_patient_id, app_push_opted_out, do_not_contact, referred_by_patient_id')
+    .eq('id', opts.patientId)
+    .maybeSingle()
+  return data ?? null
 }
 
 async function patientInvoiceEmail(opts: { patientId: string }) {
@@ -3605,6 +3617,7 @@ export const dbTasks = {
   'db:patientInvoiceEmail': patientInvoiceEmail,
   'db:setPatientContactFlags': setPatientContactFlags,
   'db:setPatientTutor': setPatientTutor,
+  'db:patientMergeFields': patientMergeFields,
   'db:createPatientDoc': createPatientDoc,
   'db:createDocTemplate': createDocTemplate,
   'db:commsSettingsOf': commsSettingsOf,

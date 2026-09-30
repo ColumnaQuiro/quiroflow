@@ -2075,6 +2075,8 @@ async function createAppointment(opts: {
   reminderSentAt?: string | null
   /** Soft-deleted, as the panel's Delete leaves it. */
   deletedAt?: string | null
+  /** Moved at some point, as a drag or the public API leaves it. */
+  rescheduled?: boolean
 }) {
   const startsAt = new Date(opts.startsAt)
   const endsAt = new Date(startsAt.getTime() + (opts.durationMinutes ?? 30) * 60000)
@@ -2092,6 +2094,7 @@ async function createAppointment(opts: {
         ...(opts.checkedIn ? { checked_in_at: startsAt.toISOString(), flow_with_practitioner_at: startsAt.toISOString() } : {}),
         ...(opts.confirmationStatus !== undefined ? { confirmation_status: opts.confirmationStatus } : {}),
         ...(opts.source ? { source: opts.source } : {}),
+        ...(opts.rescheduled ? { rescheduled: true } : {}),
         ...(opts.createdAt ? { created_at: opts.createdAt } : {}),
         ...(opts.checkedInAt !== undefined ? { checked_in_at: opts.checkedInAt } : {}),
         ...(opts.flowWithPractitionerAt !== undefined ? { flow_with_practitioner_at: opts.flowWithPractitionerAt } : {}),

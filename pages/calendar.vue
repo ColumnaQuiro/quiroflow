@@ -97,6 +97,13 @@ interface AppointmentRow {
   patients: { first_name: string; last_name: string | null; sticky_note: string | null } | null
   appointment_types: { name: string; color: string; default_price_cents: number } | null
   team_members: { full_name: string; color: string } | null
+  /**
+   * Set only on a moved-away marker: the slot this visit USED to hold, drawn
+   * faded where it was. The real visit is `_movedFrom`, and `_movedTo` is
+   * where it is now.
+   */
+  _movedFrom?: AppointmentRow
+  _movedTo?: string
 }
 
 const supabase = useSupabaseClient()
@@ -180,8 +187,14 @@ const openAppointment = computed(() => {
   if (!modalOpen.value || modalMode.value !== 'edit' || !editingAppointment.value) return null
   const id = editingAppointment.value.id
   // The flow tracker opens today's visits while the grid may be on another
-  // week, so today's own rows are the fallback.
-  return appointments.value.find((a) => a.id === id) ?? todayRows.value.find((a) => a.id === id) ?? null
+  // week, so today's own rows are the fallback -- and a moved-away marker
+  // opens its visit wherever it went, often a day not on screen.
+  return (
+    appointments.value.find((a) => a.id === id) ??
+    todayRows.value.find((a) => a.id === id) ??
+    movedAwayMarkers.value.find((m) => m._movedFrom?.id === id)?._movedFrom ??
+    null
+  )
 })
 /** The tab the appointment panel opens on; the flow tracker's "Cobrar" asks for Cobro. */
 const panelInitialTab = ref<'summary' | 'billing'>('summary')
@@ -423,6 +436,56 @@ async function loadAppointments(silent = false) {
   // so they fill in after it renders rather than holding it back for the
   // three sequential rounds fetchVisitPayments needs.
   loadBlockDetails(token, appointmentIds, patientIds, rangeStart, rangeEnd).catch((e) => console.error('calendar: block details failed', e))
+  loadMovedAwayMarkers(token, rangeStart, rangeEnd).catch((e) => console.error('calendar: moved-away markers failed', e))
+}
+
+// Where a visit used to be. Moving an appointment moves the row itself --
+// nothing is left at the old time -- so the slot it held is drawn from
+// appointment_reschedules: one faded marker per move out of this range, for
+// the visit wherever it is now (often outside the range: moved to tomorrow).
+// "Hide rescheduled" hides these markers, and only these; it used to hide
+// the moved visits themselves, which made confirmed visits vanish from
+// today and completed ones from past days.
+const movedAwayMarkers = ref<AppointmentRow[]>([])
+async function loadMovedAwayMarkers(token: number, rangeStart: Date, rangeEnd: Date) {
+  const { data: moves } = await supabase
+    .from('appointment_reschedules')
+    .select('id, appointment_id, from_starts_at')
+    .eq('account_id', store.accountId!)
+    .gte('from_starts_at', rangeStart.toISOString())
+    .lt('from_starts_at', rangeEnd.toISOString())
+  if (token !== loadToken) return
+  const loaded = new Map(appointments.value.map((a) => [a.id, a]))
+  const missing = [...new Set((moves ?? []).map((m) => m.appointment_id).filter((id) => !loaded.has(id)))]
+  if (missing.length) {
+    const rows = await fetchByIds(missing, (chunk) => {
+      let q = supabase.from('appointments').select(APPOINTMENT_SELECT).eq('clinic_id', store.currentClinicId!).in('id', chunk)
+      if (practitionerFilter.value === UNASSIGNED_PRACTITIONER) q = q.is('practitioner_id', null)
+      else if (practitionerFilter.value && practitionerFilter.value !== ALL_PRACTITIONERS) q = q.eq('practitioner_id', practitionerFilter.value)
+      return q
+    })
+    if (token !== loadToken) return
+    for (const a of rows as unknown as AppointmentRow[]) loaded.set(a.id, a)
+  }
+  const markers: AppointmentRow[] = []
+  for (const m of moves ?? []) {
+    const real = loaded.get(m.appointment_id)
+    // Another clinic's visit, or one the practitioner filter leaves out.
+    if (!real) continue
+    const fromMs = Date.parse(m.from_starts_at)
+    // Moved away and later back again: the visit is in that slot itself.
+    if (fromMs === Date.parse(real.starts_at)) continue
+    const durationMs = Date.parse(real.ends_at) - Date.parse(real.starts_at)
+    markers.push({
+      ...real,
+      id: `moved-${m.id}`,
+      starts_at: new Date(fromMs).toISOString(),
+      ends_at: new Date(fromMs + durationMs).toISOString(),
+      _movedFrom: real,
+      _movedTo: real.starts_at,
+    })
+  }
+  movedAwayMarkers.value = markers
 }
 
 // Bumped on every load, so a slow response for a range the user has already
@@ -799,7 +862,12 @@ async function onBlockSaved() {
 
 function isApptVisible(appt: AppointmentRow) {
   if (appt.status === 'cancelled' && !settings.showCancelled) return false
-  if (appt.rescheduled && settings.hideRescheduled) return false
+  // A moved visit is a real visit wherever it now sits, so it always shows.
+  // What "Hide rescheduled" hides is the marker left at its old slot.
+  if (appt._movedFrom) {
+    if (settings.hideRescheduled) return false
+    return isApptVisible(appt._movedFrom)
+  }
   if (appt.deleted_at && settings.hideDeleted) return false
   return true
 }
@@ -1190,15 +1258,21 @@ function columnKey(dayKey: string, roomId: string) {
 const layoutByColumn = computed(() => {
   const day = viewMode.value === 'day'
   const columns = new Map<string, AppointmentRow[]>()
-  for (const [dayKey, rows] of appointmentsByDay.value) {
-    for (const a of rows) {
-      if (!isApptVisible(a)) continue
-      const key = columnKey(dayKey, a.room_id ?? '__none')
-      const col = columns.get(key)
-      if (col) col.push(a)
-      else columns.set(key, [a])
-    }
+  const place = (dayKey: string, a: AppointmentRow) => {
+    if (!isApptVisible(a)) return
+    const key = columnKey(dayKey, a.room_id ?? '__none')
+    const col = columns.get(key)
+    if (col) col.push(a)
+    else columns.set(key, [a])
   }
+  for (const [dayKey, rows] of appointmentsByDay.value) {
+    for (const a of rows) place(dayKey, a)
+  }
+  // Laid out with the visits rather than under them, so a marker and the
+  // visit booked into the freed slot sit side by side instead of one
+  // covering the other. Counts, today's glance and conflict checks read
+  // appointmentsByDay, which the markers never enter.
+  for (const m of movedAwayMarkers.value) place(toDateKey(new Date(m.starts_at)), m)
   const layouts = new Map<string, LayoutBlock[]>()
   for (const [key, rows] of columns) {
     rows.sort((a, b) => a.starts_at.localeCompare(b.starts_at))
@@ -1957,6 +2031,19 @@ function freedSlotLabel(o: WaitlistOffer) {
   const who = `${o.patients?.first_name ?? ''} ${o.patients?.last_name ?? ''}`.trim() || t('the waitlist', 'la lista de espera')
   return t(`Slot offered to ${who}`, `Hueco ofrecido a ${who}`)
 }
+// "Moved to Thu 1 Oct 10:00" on the marker left at a visit's old slot --
+// same day reads as just the time.
+function movedMarkerName(m: AppointmentRow) {
+  if (settings.privacyMode) return t('Moved', 'Movida')
+  return `${m.patients?.first_name ?? ''} ${m.patients?.last_name ?? ''}`.trim()
+}
+function movedMarkerLabel(m: AppointmentRow) {
+  const to = new Date(m._movedTo!)
+  const sameDay = toDateKey(to) === toDateKey(new Date(m.starts_at))
+  const day = to.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
+  const when = sameDay ? formatTime(m._movedTo!) : `${day} ${formatTime(m._movedTo!)}`
+  return t(`Moved to ${when}`, `Movida al ${when}`)
+}
 function freedSlotUntil(o: WaitlistOffer) {
   return o.offer_expires_at ? t(`replies by ${formatTime(o.offer_expires_at)}`, `responde antes de las ${formatTime(o.offer_expires_at)}`) : ''
 }
@@ -2425,6 +2512,20 @@ function showNowLineOn(day: Date) {
                       +{{ appt.count }} {{ t('more', 'más') }}
                     </div>
                     <div
+                      v-else-if="appt._movedFrom"
+                      data-cy="moved-away-marker"
+                      :data-appt-id="appt._movedFrom.id"
+                      class="absolute cursor-pointer"
+                      :style="columnStyle(appt, timeToPx(appt.starts_at, DAY_HOUR_PX) + 1, Math.max(0, durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) - 3))"
+                      :title="`${movedMarkerName(appt)} · ${movedMarkerLabel(appt)}`"
+                      @click.stop="openEditModal(appt._movedFrom)"
+                    >
+                      <div class="flex h-full flex-col overflow-hidden rounded-ctl border border-dashed border-line-control bg-surface-page px-2.5 py-1 text-[12px] leading-tight text-ink-muted opacity-60 hover:opacity-90">
+                        <span class="truncate font-semibold">{{ movedMarkerName(appt) }}</span>
+                        <span class="truncate">{{ movedMarkerLabel(appt) }}</span>
+                      </div>
+                    </div>
+                    <div
                       v-else
                       data-cy="appt-block"
                       :data-appt-id="appt.id"
@@ -2618,6 +2719,20 @@ function showNowLineOn(day: Date) {
                       >
                         +{{ appt.count }}
                       </button>
+                      <div
+                        v-else-if="appt._movedFrom"
+                        data-cy="moved-away-marker"
+                        :data-appt-id="appt._movedFrom.id"
+                        class="absolute cursor-pointer"
+                        :style="columnStyle(appt, timeToPx(appt.starts_at, WEEK_HOUR_PX), Math.max(0, durationToPx(appt.starts_at, appt.ends_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX) - 2))"
+                        :title="`${movedMarkerName(appt)} · ${movedMarkerLabel(appt)}`"
+                        @click.stop="openEditModal(appt._movedFrom)"
+                      >
+                        <div class="flex h-full flex-col overflow-hidden rounded-[6px] border border-dashed border-line-control bg-surface-page px-1 py-0.5 text-[10.5px] leading-tight text-ink-muted opacity-60 hover:opacity-90">
+                          <span class="truncate font-semibold">{{ movedMarkerName(appt) }}</span>
+                          <span class="truncate">{{ movedMarkerLabel(appt) }}</span>
+                        </div>
+                      </div>
                       <div
                         v-else
                         data-cy="appt-block"

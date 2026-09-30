@@ -2,6 +2,7 @@
 import Papa from 'papaparse'
 import type { TablesInsert, TablesUpdate } from '~/types/database.types'
 import { matchIncomingAppointments, type HeldReason, type IncomingAppointment } from '~/utils/importAppointmentMatch'
+import { quiroflowKeeps, type KeptReason } from '~/utils/importAppointmentGuard'
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
@@ -16,10 +17,10 @@ interface MappedAppointment {
   sourceRow: number
 }
 
-// PracticeHub stays authoritative for these fields right up to cutover --
-// a re-import matching an existing appointment overwrites them
-// unconditionally (confirmed with the clinic, including appointments
-// already checked in/flowed through in QuiroFlow). Deliberately never
+// A re-import matching an existing appointment overwrites these from
+// PracticeHub -- unless QuiroFlow has acted on the visit (moved it, or
+// recorded what happened at it), in which case QuiroFlow's version stands and
+// the row is listed as kept (utils/importAppointmentGuard.ts). Deliberately never
 // touched: `rescheduled` (keeps a detected time change silent -- no
 // reschedule automation fires for a bulk historical sync), `note`,
 // `external_reference`, `created_at`, `room_id`, and all QuiroFlow-native
@@ -38,6 +39,8 @@ interface ExistingAppointment {
   starts_at: string
   ends_at: string
   status: string
+  rescheduled: boolean
+  checked_in_at: string | null
   practitioner_id: string | null
   practitioner_name: string | null
   appointment_type_id: string | null
@@ -126,6 +129,16 @@ interface HeldRow {
 const toImport = ref<MappedAppointment[]>([])
 const toUpdate = ref<MappedUpdate[]>([])
 const held = ref<HeldRow[]>([])
+
+/** A matched visit QuiroFlow has acted on: PracticeHub's version is shown, not applied. */
+interface KeptRow {
+  sourceRow: number
+  ref: string
+  here: string
+  practiceHub: string
+  reason: KeptReason
+}
+const kept = ref<KeptRow[]>([])
 const adoptedCount = computed(() => toUpdate.value.filter((u) => u.adopted).length)
 const totalRows = ref(0)
 const skippedNoPatient = ref(0)
@@ -243,7 +256,7 @@ async function proceedToPreview() {
   for (let page = 0; ; page++) {
     const { data } = await supabase
       .from('appointments')
-      .select('id, external_reference, patient_id, clinic_id, starts_at, ends_at, status, practitioner_id, practitioner_name, appointment_type_id')
+      .select('id, external_reference, patient_id, clinic_id, starts_at, ends_at, status, rescheduled, checked_in_at, practitioner_id, practitioner_name, appointment_type_id')
       .order('id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
     for (const a of data ?? []) existingById.set(a.id, a as ExistingAppointment)
     if (!data || data.length < PAGE_SIZE) break
@@ -257,6 +270,7 @@ async function proceedToPreview() {
   const mapped: MappedAppointment[] = []
   const updates: MappedUpdate[] = []
   const heldRows: HeldRow[] = []
+  const keptRows: KeptRow[] = []
   const matchedIds: string[] = []
 
   const refOf = (row: CsvRow) => row['Internal Appt ID']?.trim() || row['Imported Appt ID']?.trim() || ''
@@ -340,14 +354,31 @@ async function proceedToPreview() {
       practitioner_name: practName || null,
       appointment_type_id: (typeName && typeMap.value[typeName]) || null,
     }
-    const { updates: fieldUpdates, diff } = buildAppointmentUpdate(existing, incomingFields)
+    let { updates: fieldUpdates, diff } = buildAppointmentUpdate(existing, incomingFields)
+    const keptReason = quiroflowKeeps(
+      { status: existing.status, rescheduled: existing.rescheduled, checkedInAt: existing.checked_in_at },
+      diff.map((d) => d.field),
+    )
+    if (keptReason) {
+      keptRows.push({
+        sourceRow: index + 2,
+        ref: extRef,
+        here: `${new Date(existing.starts_at).toLocaleString()} · ${statusLabel(existing.status)}`,
+        practiceHub: `${start.toLocaleString()} · ${statusLabel(incomingFields.status!)}`,
+        reason: keptReason,
+      })
+      fieldUpdates = {}
+      diff = []
+    }
+    // An adopted visit still takes the new id when its fields are kept, so
+    // the next run and the ledger import find it.
     const adopted = match.kind === 'adopt'
     if (adopted) {
       fieldUpdates.external_reference = extRef
       diff.unshift({ field: 'external_reference', from: formatValue(existing.external_reference), to: extRef })
     }
     if (Object.keys(fieldUpdates).length === 0) {
-      skippedDuplicate.value++
+      if (!keptReason) skippedDuplicate.value++
       continue
     }
     updates.push({
@@ -379,6 +410,7 @@ async function proceedToPreview() {
   toImport.value = mapped
   toUpdate.value = updates
   held.value = heldRows
+  kept.value = keptRows
   preparingPreview.value = false
   stage.value = 'preview'
 }
@@ -497,6 +529,7 @@ function reset() {
   toImport.value = []
   toUpdate.value = []
   held.value = []
+  kept.value = []
   importedCount.value = 0
   updatedCount.value = 0
   importErrors.value = []
@@ -505,9 +538,32 @@ const introLead = computed(() => t('Brings past and upcoming visits across from 
 const introNotes = computed(() => [
         { title: t('Run Patients first.', 'Ejecuta Pacientes primero.'), body: t('A visit whose patient has no PracticeHub reference here cannot be matched and is skipped.', 'Una visita cuyo paciente no tenga referencia de PracticeHub aquí no se puede emparejar y se omite.') },
         { title: t('Where the file comes from.', 'De dónde sale el archivo.'), body: t('Export "Appointments" as CSV from PracticeHub under Settings -> Data Exports, then drop it here.', 'Exporta "Appointments" como CSV desde PracticeHub en Settings -> Data Exports y suéltalo aquí.') },
-        { title: t('Safe to run again.', 'Se puede volver a ejecutar.'), body: t('PracticeHub stays authoritative until cutover, so a re-run updates a visit that changed there rather than adding a second one.', 'PracticeHub manda hasta el cambio definitivo, así que volver a ejecutarlo actualiza una visita que cambió allí en lugar de añadir otra.') },
+        { title: t('Safe to run again.', 'Se puede volver a ejecutar.'), body: t('A re-run updates a visit that changed in PracticeHub rather than adding a second one.', 'Volver a ejecutarlo actualiza una visita que cambió en PracticeHub en lugar de añadir otra.') },
+        { title: t('QuiroFlow wins once you use it.', 'QuiroFlow manda en cuanto lo usas.'), body: t('A visit moved in QuiroFlow, or already checked in, completed, missed or cancelled here, keeps its QuiroFlow version. The preview lists what PracticeHub has for it instead of changing it.', 'Una visita movida en QuiroFlow, o ya registrada, completada, no presentada o cancelada aquí, conserva su versión de QuiroFlow. La vista previa muestra lo que tiene PracticeHub en lugar de cambiarla.') },
         { title: t('Re-created in PracticeHub.', 'Recreadas en PracticeHub.'), body: t('An appointment deleted and re-created in PracticeHub gets a new id. When the patient has one visit here that day, that visit takes the new id instead of a second one arriving; when that is not certain, the row is held back and listed for you to check.', 'Una cita borrada y recreada en PracticeHub recibe un id nuevo. Si el paciente tiene una visita aquí ese día, esa visita toma el id nuevo en lugar de llegar una segunda; si no es seguro, la fila se aparta y se lista para que la revises.') },
 ])
+
+function statusLabel(status: string): string {
+  switch (status) {
+    case 'completed':
+      return t('completed', 'completada')
+    case 'cancelled':
+      return t('cancelled', 'cancelada')
+    case 'no_show':
+      return t('no-show', 'no presentado')
+    default:
+      return t('booked', 'reservada')
+  }
+}
+
+function keptReasonLabel(reason: KeptReason): string {
+  switch (reason) {
+    case 'moved_here':
+      return t('Moved in QuiroFlow', 'Movida en QuiroFlow')
+    case 'outcome_here':
+      return t('Already checked in, completed, missed or cancelled here', 'Ya registrada, completada, no presentada o cancelada aquí')
+  }
+}
 
 function heldReasonLabel(reason: HeldReason): string {
   switch (reason) {
@@ -612,6 +668,7 @@ function heldReasonLabel(reason: HeldReason): string {
           <div><dt class="text-ink-muted2">{{ t('Will import', 'Se importarán') }}</dt><dd class="font-medium text-success-text">{{ toImport.length }}</dd></div>
           <div><dt class="text-ink-muted2">{{ t('Will update', 'Se actualizarán') }}</dt><dd class="font-medium text-brand-text">{{ toUpdate.length }}</dd></div>
           <div><dt class="text-ink-muted2">{{ t('Re-created in PracticeHub, already here', 'Recreadas en PracticeHub, ya aquí') }}</dt><dd class="font-medium text-brand-text">{{ adoptedCount }}</dd></div>
+          <div><dt class="text-ink-muted2">{{ t('QuiroFlow version kept', 'Se conserva la versión de QuiroFlow') }}</dt><dd class="font-medium text-ink-900">{{ kept.length }}</dd></div>
           <div><dt class="text-ink-muted2">{{ t('Held for review', 'Apartadas para revisar') }}</dt><dd class="font-medium" :class="held.length > 0 ? 'text-danger-text' : 'text-ink-900'">{{ held.length }}</dd></div>
           <div><dt class="text-ink-muted2">{{ t('No matching patient', 'Sin paciente coincidente') }}</dt><dd class="font-medium text-ink-900">{{ skippedNoPatient }}</dd></div>
           <div><dt class="text-ink-muted2">{{ t('No changes / bad dates', 'Sin cambios / fechas incorrectas') }}</dt><dd class="font-medium text-ink-900">{{ skippedDuplicate + skippedInvalidDate }}</dd></div>
@@ -667,6 +724,32 @@ function heldReasonLabel(reason: HeldReason): string {
         <p v-if="toUpdate.length > 5" class="border-t border-line-divider px-3 py-2 text-xs text-ink-faint">
           + {{ toUpdate.length - 5 }} more appointments to update
         </p>
+      </div>
+
+      <div v-if="kept.length > 0" class="overflow-hidden rounded-lg border border-line bg-surface">
+        <div class="border-b border-line-divider px-3 py-2 text-xs font-medium uppercase tracking-wide text-ink-muted2">
+          {{ t('QuiroFlow version kept -- PracticeHub differs, nothing is changed', 'Se conserva la versión de QuiroFlow: PracticeHub difiere, no se cambia nada') }}
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="border-b border-line bg-surface-subtle text-left text-xs font-medium uppercase tracking-wide text-ink-muted2">
+              <tr>
+                <th class="px-3 py-2">{{ t('PracticeHub id', 'Id de PracticeHub') }}</th>
+                <th class="px-3 py-2">{{ t('In QuiroFlow', 'En QuiroFlow') }}</th>
+                <th class="px-3 py-2">{{ t('In PracticeHub', 'En PracticeHub') }}</th>
+                <th class="px-3 py-2">{{ t('Why', 'Motivo') }}</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-line-divider">
+              <tr v-for="row in kept" :key="row.sourceRow">
+                <td class="px-3 py-2 text-ink-muted2">{{ row.ref || t('N/A', 'N/D') }}</td>
+                <td class="px-3 py-2 text-ink-900">{{ row.here }}</td>
+                <td class="px-3 py-2 text-ink-muted2">{{ row.practiceHub }}</td>
+                <td class="px-3 py-2 text-ink-muted2">{{ keptReasonLabel(row.reason) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div v-if="held.length > 0" class="overflow-hidden rounded-lg border border-line bg-surface">

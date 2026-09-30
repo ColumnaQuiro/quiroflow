@@ -150,7 +150,7 @@ function paymentLine(appt: AppointmentRow): { text: string; tone: 'muted' | 'dan
   if (payment.kind === 'void') {
     return { text: t('Charge voided', 'Cargo anulado'), tone: 'muted', mono: payment.invoiceNumber }
   }
-  const methods = payment.methods.map((m) => METHOD_LABELS.value[m] ?? m).join(' + ')
+  const methods = payment.methods.map((m) => METHOD_LABELS.value[m] ?? m).join(' + ') || t('Paid', 'Pagada')
   return { text: methods, tone: 'muted', mono: payment.facturaNumber ?? payment.invoiceNumber }
 }
 

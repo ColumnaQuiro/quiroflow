@@ -607,16 +607,23 @@ async function createServiceProduct(opts: { accountId: string; name: string; pri
 }
 
 /** Enables online booking for a clinic with generous Mon-Fri business hours, for public booking specs. */
-async function enableOnlineBooking(opts: { clinicId: string }) {
-  const businessHours = {
-    mon: [['08:00', '19:00']],
-    tue: [['08:00', '19:00']],
-    wed: [['08:00', '19:00']],
-    thu: [['08:00', '19:00']],
-    fri: [['08:00', '19:00']],
-    sat: [],
-    sun: [],
-  }
+// everyDay: open 07:00-21:00 all week, for a spec that books by relative
+// date through the booking functions and is not about opening hours. Those
+// functions refuse a time outside the hours (20260930141539), and "three days
+// from now" is a Saturday twice a week.
+async function enableOnlineBooking(opts: { clinicId: string; everyDay?: boolean }) {
+  const allDay = [['07:00', '21:00']]
+  const businessHours = opts.everyDay
+    ? { mon: allDay, tue: allDay, wed: allDay, thu: allDay, fri: allDay, sat: allDay, sun: allDay }
+    : {
+        mon: [['08:00', '19:00']],
+        tue: [['08:00', '19:00']],
+        wed: [['08:00', '19:00']],
+        thu: [['08:00', '19:00']],
+        fri: [['08:00', '19:00']],
+        sat: [],
+        sun: [],
+      }
   assertOk(
     await admin
       .from('clinics')
@@ -1359,8 +1366,36 @@ async function callPublicBookingAsAnon(args: Record<string, unknown>) {
   const anon = createClient(SUPABASE_URL, ANON_KEY, {
     auth: { autoRefreshToken: false, persistSession: false },
   })
-  const { error } = await anon.rpc('create_public_booking', args as never)
-  return { error: error?.message ?? null }
+  const { data, error } = await anon.rpc('create_public_booking', args as never)
+  return { error: error?.message ?? null, data: (data as Record<string, unknown> | null) ?? null }
+}
+
+/**
+ * The same booking sent `times` times at once, each on its own anon client --
+ * several patients pressing "Reservar" on one slot in the same instant.
+ */
+async function callPublicBookingConcurrently(opts: { args: Record<string, unknown>; times: number }) {
+  const results = await Promise.all(
+    Array.from({ length: opts.times }, (_, i) => {
+      const anon = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+      // A different person each time, so nothing but the slot is shared.
+      const args = { ...opts.args, p_email: `race-${i}-${Date.now()}@example.test`, p_first_name: `Carrera ${i}` }
+      return anon.rpc('create_public_booking', args as never).then(({ error }) => error?.message ?? null)
+    }),
+  )
+  return { errors: results }
+}
+
+/** Time blocked off on the calendar: the whole clinic, or one practitioner's. */
+async function createAvailabilityBlock(opts: { accountId: string; clinicId: string; startsAt: string; endsAt: string; practitionerId?: string | null }) {
+  const row = unwrap(
+    await admin
+      .from('availability_blocks')
+      .insert({ account_id: opts.accountId, clinic_id: opts.clinicId, starts_at: opts.startsAt, ends_at: opts.endsAt, practitioner_id: opts.practitionerId ?? null })
+      .select('id')
+      .single(),
+  )
+  return row as { id: string }
 }
 
 /**
@@ -1375,8 +1410,8 @@ async function callRpcAsAnon(opts: { fn: string; args?: Record<string, unknown> 
   const anon = createClient(SUPABASE_URL, ANON_KEY, {
     auth: { autoRefreshToken: false, persistSession: false },
   })
-  const { error } = await anon.rpc(opts.fn, (opts.args ?? {}) as never)
-  return { error: error?.message ?? null, code: (error as { code?: string } | null)?.code ?? null }
+  const { data, error } = await anon.rpc(opts.fn, (opts.args ?? {}) as never)
+  return { error: error?.message ?? null, code: (error as { code?: string } | null)?.code ?? null, data: data ?? null }
 }
 
 /**
@@ -2206,6 +2241,15 @@ async function createLead(opts: {
 async function leadById(opts: { id: string }) {
   const { data } = await admin.from('leads').select('*').eq('id', opts.id).maybeSingle()
   return data
+}
+
+/**
+ * Every lead on an account, deleted or not, for asserting a refused request
+ * wrote nothing -- a count, because a refused lead has no id to look up.
+ */
+async function leadCount(opts: { accountId: string }) {
+  const { count } = await admin.from('leads').select('id', { count: 'exact', head: true }).eq('account_id', opts.accountId)
+  return count ?? 0
 }
 
 /** The timeline the API wrote, for asserting a stage change was recorded. */
@@ -3573,6 +3617,7 @@ export const dbTasks = {
   'db:patientCount': patientCount,
   'db:leadById': leadById,
   'db:leadEvents': leadEvents,
+  'db:leadCount': leadCount,
   'db:createTeamMemberWithRole': createTeamMemberWithRole,
   'db:setRolePermissions': setRolePermissions,
   'db:setSubscriptionStatus': setSubscriptionStatus,
@@ -3654,6 +3699,8 @@ export const dbTasks = {
   'db:createImportedPayment': createImportedPayment,
   'db:createPackagePurchase': createPackagePurchase,
   'db:callPublicBookingAsAnon': callPublicBookingAsAnon,
+  'db:callPublicBookingConcurrently': callPublicBookingConcurrently,
+  'db:createAvailabilityBlock': createAvailabilityBlock,
   'db:callRpcAsAnon': callRpcAsAnon,
   'db:setAppointmentTypeBookingRules': setAppointmentTypeBookingRules,
   'db:givePatientAppLogin': givePatientAppLogin,

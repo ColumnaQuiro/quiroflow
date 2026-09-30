@@ -81,6 +81,16 @@ export async function resolveWindow(
 //
 // Appointments with no practitioner are skipped entirely: they're
 // unassigned, so there's no calendar for them to clash on.
+//
+// Known gap: this is check-then-insert across two PostgREST requests, so two
+// API calls for the same slot in the same instant can both pass it. The
+// booking page and the patient app no longer can -- their functions take a
+// per-practitioner advisory lock around the check and the insert
+// (20260930141539) -- but a lock here would end with this request's
+// transaction, before the insert that follows. Closing it means moving the
+// check and the insert into one database function; until then an integration
+// that fires parallel bookings at one practitioner can double-book them,
+// exactly as staff are allowed to on purpose.
 export async function assertNoOverlap(
   supabase: unknown,
   accountId: string,

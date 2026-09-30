@@ -20,6 +20,8 @@ export function useNextAppointment(patientId: MaybeRefOrGetter<string>) {
       .select('starts_at')
       .eq('patient_id', id)
       .neq('status', 'cancelled')
+      // Not one the clinic deleted (status stays 'booked' when it does).
+      .is('deleted_at', null)
       .gt('starts_at', new Date().toISOString())
       .order('starts_at', { ascending: true })
       .limit(1)

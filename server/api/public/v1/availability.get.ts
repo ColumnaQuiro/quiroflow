@@ -1,4 +1,5 @@
 import { practitionerWindowsForDay } from '~/utils/businessHours'
+import { wallClockToUtc } from '~/utils/clinicClock'
 import type { BusinessHours } from '~/utils/businessHours'
 import { ApiError, badRequest, defineApiHandler } from '~/server/utils/publicApi'
 import { assertBelongsToAccount } from '~/server/utils/publicApiHandlers'
@@ -192,40 +193,4 @@ function requireDateParam(value: unknown, field: string): string {
     throw badRequest(`"${field}" is required and must be a date in YYYY-MM-DD form.`, field)
   }
   return raw
-}
-
-// Turns "2026-03-14" + "09:00" in a named timezone into the UTC instant it
-// refers to.
-//
-// Two passes because the offset depends on the instant we're solving for:
-// the first guess uses the offset at the naive-UTC reading of the wall clock,
-// which is wrong for the couple of hours a year that straddle a DST switch.
-// Re-reading the offset at the corrected instant settles it.
-function wallClockToUtc(date: string, hhmm: string, timeZone: string): number {
-  const [hours, minutes] = hhmm.split(':').map(Number)
-  const naive = Date.parse(`${date}T00:00:00Z`) + (hours * 60 + minutes) * 60000
-
-  let instant = naive - offsetMinutes(naive, timeZone) * 60000
-  const settled = naive - offsetMinutes(instant, timeZone) * 60000
-  if (settled !== instant) instant = settled
-  return instant
-}
-
-// Minutes that `timeZone` is ahead of UTC at the given instant.
-function offsetMinutes(instant: number, timeZone: string): number {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    hour12: false,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  }).formatToParts(new Date(instant))
-
-  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0)
-  // Intl renders midnight as hour 24 in some ICU versions; normalise it.
-  const asUtc = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour') % 24, get('minute'), get('second'))
-  return Math.round((asUtc - instant) / 60000)
 }

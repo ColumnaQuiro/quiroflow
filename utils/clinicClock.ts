@@ -67,3 +67,32 @@ export function nextDate(date: string): string {
   const next = new Date(Date.UTC(y, m - 1, d + 1))
   return next.toISOString().slice(0, 10)
 }
+
+/**
+ * The UTC instant of a wall-clock time on a calendar date at the clinic:
+ * "2026-03-14" + "09:00" in Europe/Madrid -> 08:00Z.
+ *
+ * Two passes because the offset depends on the instant being solved for: the
+ * first guess reads it at the naive-UTC reading of the wall clock, which is
+ * wrong for the hours around a daylight-saving switch. Re-reading it at the
+ * corrected instant settles it. Moved here from the public API's availability
+ * endpoint so the booking page and the app build slots the same way.
+ */
+export function wallClockToUtc(date: string, hhmm: string, timeZone: string): number {
+  const [hours, minutes] = hhmm.split(':').map(Number)
+  const naive = Date.parse(`${date}T00:00:00Z`) + (hours * 60 + minutes) * 60000
+  let instant = naive - zoneOffsetMinutes(new Date(naive), timeZone) * 60000
+  const settled = naive - zoneOffsetMinutes(new Date(instant), timeZone) * 60000
+  if (settled !== instant) instant = settled
+  return instant
+}
+
+/** The calendar date it is at the clinic at `at`, as YYYY-MM-DD. */
+export function clinicDateOf(at: Date, timeZone: string): string {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', { timeZone: timeZone || DEFAULT_CLINIC_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit' })
+      .formatToParts(at)
+      .map((p) => [p.type, p.value]),
+  )
+  return `${parts.year}-${parts.month}-${parts.day}`
+}

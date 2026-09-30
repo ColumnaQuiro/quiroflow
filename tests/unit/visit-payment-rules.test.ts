@@ -39,6 +39,26 @@ describe('How a visit was paid', () => {
     }
   })
 
+  it('counts what was left after this visit, not what is left today', () => {
+    // A finished Bono 12 drawn on 17 and 23 Sep. Read off the pack's counter
+    // alone, both rows said "0 of 12 left"; the earlier one had 1 left.
+    const purchase = { package_name: 'Bono 12', sessions_total: 12, sessions_used: 12, external_reference: null }
+    const earlier = resolveVisitPayment({ session: { amount_cents: 4400, external_reference: null, laterSessions: 1 }, purchase })
+    const latest = resolveVisitPayment({ session: { amount_cents: 4400, external_reference: null, laterSessions: 0 }, purchase })
+    expect(earlier.kind === 'bono' && earlier.remaining).to.equal(1)
+    expect(latest.kind === 'bono' && latest.remaining).to.equal(0)
+  })
+
+  it('reads an invoice marked paid as paid, even with no payment attached', () => {
+    // PracticeHub history: the invoice is paid, the money came in apart from
+    // it. Calling it unpaid listed thousands of settled visits as owed.
+    const result = resolveVisitPayment({
+      invoice: { invoice_number: 'PHI-7138', total_cents: 4400, status: 'paid' },
+      payments: [],
+    })
+    expect(result).to.deep.equal({ kind: 'settled', methods: [], facturaNumber: null, invoiceNumber: 'PHI-7138' })
+  })
+
   it('names the factura when the settlement produced one', () => {
     const result = resolveVisitPayment({
       invoice: { invoice_number: 'INV-0012', total_cents: 4400, status: 'paid' },

@@ -107,7 +107,7 @@ async function loadAllOurRows<T>(table: 'patients' | 'appointments' | 'invoices'
     const { data, error } = await supabase
       .from(table)
       .select(columns)
-      .range(page * PAGE, page * PAGE + PAGE - 1)
+      .order('id').range(page * PAGE, page * PAGE + PAGE - 1)
     if (error) throw new Error(error.message)
     const batch = (data ?? []) as unknown as T[]
     rows.push(...batch)

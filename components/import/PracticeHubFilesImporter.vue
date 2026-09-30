@@ -155,7 +155,7 @@ async function buildList() {
         .select('id, external_reference')
         .eq('account_id', store.accountId!)
         .not('external_reference', 'is', null)
-        .range(from, to),
+        .order('id').range(from, to),
     )
     const idByNumber = new Map<string, string>()
     for (const p of ourPatients) idByNumber.set(String(p.external_reference).trim(), p.id)
@@ -169,7 +169,7 @@ async function buildList() {
         .select('external_reference, storage_path')
         .eq('account_id', store.accountId!)
         .not('external_reference', 'is', null)
-        .range(from, to),
+        .order('id').range(from, to),
     )
     const storedRefs = new Set(
       existing.filter((r) => r.storage_path).map((r) => String(r.external_reference)),

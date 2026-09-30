@@ -65,7 +65,7 @@ type ReadableTable = 'patients' | 'invoices' | 'payments' | 'package_purchases'
 async function readAll<T>(table: ReadableTable, columns: string, filter?: (q: any) => any): Promise<T[]> {
   const out: T[] = []
   for (let page = 0; ; page++) {
-    let query = supabase.from(table).select(columns).range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+    let query = supabase.from(table).select(columns).order('id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
     if (filter) query = filter(query)
     const { data, error } = await query
     if (error) throw new Error(`${table}: ${error.message}`)

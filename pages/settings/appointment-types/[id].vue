@@ -139,7 +139,11 @@ async function loadUsage() {
 onMounted(load)
 
 const saved = computed(() => (original.value ? (JSON.parse(original.value) as Form) : null))
-const dirty = computed(() => !!form.value && JSON.stringify(form.value) !== original.value)
+// Numbers compared as text: the form loads them as strings ("30"), and a
+// number input hands back 30 once typed in -- so typing the same duration
+// back counted as a change and asked to leave without saving.
+const asText = (_: string, v: unknown) => (typeof v === 'number' ? String(v) : v)
+const dirty = computed(() => !!form.value && JSON.stringify(form.value, asText) !== JSON.stringify(JSON.parse(original.value || 'null'), asText))
 
 // --- Validation -------------------------------------------------------------------
 const problems = computed(() =>
@@ -220,7 +224,7 @@ async function save() {
   // storing two nulls.
   const before = saved.value?.overrides ?? {}
   const writes = Object.entries(f.overrides)
-    .filter(([id, o]) => JSON.stringify(o) !== JSON.stringify(before[id] ?? { duration: '', price: '' }))
+    .filter(([id, o]) => JSON.stringify(o, asText) !== JSON.stringify(before[id] ?? { duration: '', price: '' }, asText))
     .map(async ([memberId, o]) => {
       const duration = parseMinutes(o.duration)
       const price = parseEurosToCents(o.price)

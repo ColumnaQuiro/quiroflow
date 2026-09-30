@@ -27,12 +27,18 @@ export async function requireApiToken(event: H3Event) {
   const hash = hashApiToken(raw)
   const { data: token } = await supabase
     .from('api_tokens')
-    .select('id, account_id, scopes, revoked_at')
+    .select('id, account_id, scopes, revoked_at, expires_at')
     .eq('token_hash', hash)
     .maybeSingle()
 
   if (!token || token.revoked_at) {
     throw createError({ statusCode: 401, statusMessage: 'Invalid or revoked API token.' })
+  }
+  // Settings > API & Tokens shows an expired token as Expired, and the public
+  // API refuses it (publicApi.ts); this path, which the WhatsApp webhook
+  // forwarder uses, went on accepting it.
+  if (token.expires_at && new Date(token.expires_at) <= new Date()) {
+    throw createError({ statusCode: 401, statusMessage: 'This API token has expired.' })
   }
 
   await supabase.from('api_tokens').update({ last_used_at: new Date().toISOString() }).eq('id', token.id)

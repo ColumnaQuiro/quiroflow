@@ -167,6 +167,19 @@ describe('Who may post to the WhatsApp webhook', () => {
     })
   })
 
+  it('refuses an expired token, as the public API does', () => {
+    // Settings > API & Tokens shows it as Expired; this path went on
+    // accepting it until 30 Sep 2026.
+    seed(null, (appointmentId, _patientId, accountId) => {
+      cy.task<{ token: string }>('db:createApiToken', { accountId, scopes: ['whatsapp:webhook'], expiresAt: new Date(Date.now() - 60_000).toISOString() }).then((tok) => {
+        post(JSON.stringify(payload(buttonMessage('Confirmar'))), { authorization: `Bearer ${tok.token}` }, false)
+          .its('status')
+          .should('eq', 401)
+      })
+      statusOf(appointmentId).should('be.null')
+    })
+  })
+
   it("refuses a valid token belonging to a different clinic", () => {
     // The token path resolves the account from the token, so a forwarder
     // cannot act for a clinic other than its own even though the body names

@@ -83,6 +83,7 @@ export async function fetchWhatsAppTemplates(supabase: any, accountId: string): 
     .select('whatsapp_business_account_id, whatsapp_access_token')
     .eq('id', accountId)
     .maybeSingle()
+  await withMessagingTokens(accountId, account)
   if (!account?.whatsapp_business_account_id || !account?.whatsapp_access_token) {
     throw new WhatsAppTemplatesError('WhatsApp is not configured. Set it up in Settings > WhatsApp.', 400)
   }

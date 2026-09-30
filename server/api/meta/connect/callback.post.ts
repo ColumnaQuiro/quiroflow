@@ -1,4 +1,5 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
+import { setAccountSecret } from '~/server/utils/accountSecrets'
 import type { Database } from '~/types/database.types'
 
 // Finishes Embedded Signup: the clinic has just clicked through Meta's own
@@ -173,7 +174,6 @@ export default defineEventHandler(async (event) => {
     .update({
       whatsapp_business_account_id: wabaId,
       whatsapp_phone_number_id: phoneNumberId,
-      whatsapp_access_token: businessToken,
     })
     .eq('id', teamMember.account_id)
 
@@ -192,9 +192,14 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 500, statusMessage: error.message })
   }
 
+  // The token in account_secrets, not on accounts, where every member of the
+  // clinic could read it.
+  await setAccountSecret(admin, teamMember.account_id, 'whatsapp_access_token', businessToken)
+
   // No app secret is stored, and that is the point: a clinic connected this
   // way has no Meta app of its own. Its webhooks verify against the platform
   // secret in webhookMayActOnAccount, which is why that falls back to the
   // per-account row rather than requiring one.
+
   return { connected: true, wabaId, phoneNumberId, displayPhoneNumber }
 })

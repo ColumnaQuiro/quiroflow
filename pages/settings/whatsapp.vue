@@ -29,6 +29,10 @@ const reminderTemplateLanguage = ref('es')
 const staffNotifyTemplateName = ref('')
 const metaAdsAccountId = ref('')
 const metaAdsAccessToken = ref('')
+// Whether each token is stored. Write-only, like the WhatsApp token: the
+// value never comes back to the page, and an empty field keeps it.
+const hasInstagramToken = ref(false)
+const hasMetaAdsToken = ref(false)
 const instagramUserId = ref('')
 const instagramAccessToken = ref('')
 const newLeadNotifyTemplateName = ref('')
@@ -62,14 +66,22 @@ async function load() {
   const { data } = await supabase
     .from('accounts')
     .select(
-      'whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_access_token, whatsapp_confirmation_template_name, whatsapp_confirmation_template_language, whatsapp_recall_template_name, whatsapp_recall_template_language, whatsapp_reminder_template_name, whatsapp_reminder_template_language, online_booking_notify_whatsapp_template_name, online_booking_notify_whatsapp_template_language, new_lead_notify_whatsapp_template_name, new_lead_notify_whatsapp_template_language, instagram_user_id, instagram_access_token, meta_ads_account_id, meta_ads_access_token',
+      'whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_confirmation_template_name, whatsapp_confirmation_template_language, whatsapp_recall_template_name, whatsapp_recall_template_language, whatsapp_reminder_template_name, whatsapp_reminder_template_language, online_booking_notify_whatsapp_template_name, online_booking_notify_whatsapp_template_language, new_lead_notify_whatsapp_template_name, new_lead_notify_whatsapp_template_language, instagram_user_id, meta_ads_account_id',
     )
     .eq('id', store.accountId!)
     .maybeSingle()
   phoneNumberId.value = data?.whatsapp_phone_number_id ?? ''
   businessAccountId.value = data?.whatsapp_business_account_id ?? ''
   manualOpen.value = !businessAccountId.value
-  hasStoredToken.value = !!data?.whatsapp_access_token
+  // The tokens live in account_secrets; the page only learns which are stored.
+  try {
+    const tokens = await useStaffFetch<{ whatsapp: boolean; instagram: boolean; metaAds: boolean }>('/api/whatsapp/tokens')
+    hasStoredToken.value = tokens.whatsapp
+    hasInstagramToken.value = tokens.instagram
+    hasMetaAdsToken.value = tokens.metaAds
+  } catch {
+    hasStoredToken.value = false
+  }
   try {
     const status = await useStaffFetch<{ configured: boolean }>('/api/whatsapp/app-secret')
     hasStoredAppSecret.value = status.configured
@@ -86,9 +98,9 @@ async function load() {
   reminderTemplateLanguage.value = data?.whatsapp_reminder_template_language ?? 'es'
   staffNotifyTemplateName.value = data?.online_booking_notify_whatsapp_template_name ?? ''
   metaAdsAccountId.value = data?.meta_ads_account_id ?? ''
-  metaAdsAccessToken.value = data?.meta_ads_access_token ?? ''
+  metaAdsAccessToken.value = ''
   instagramUserId.value = data?.instagram_user_id ?? ''
-  instagramAccessToken.value = data?.instagram_access_token ?? ''
+  instagramAccessToken.value = ''
   newLeadNotifyTemplateName.value = data?.new_lead_notify_whatsapp_template_name ?? ''
   newLeadNotifyTemplateLanguage.value = data?.new_lead_notify_whatsapp_template_language ?? 'es'
   staffNotifyTemplateLanguage.value = data?.online_booking_notify_whatsapp_template_language ?? 'es'
@@ -189,20 +201,31 @@ async function save() {
     whatsapp_reminder_template_language: reminderTemplateLanguage.value.trim() || 'es',
     online_booking_notify_whatsapp_template_name: staffNotifyTemplateName.value.trim() || null,
     meta_ads_account_id: metaAdsAccountId.value.trim() || null,
-    meta_ads_access_token: metaAdsAccessToken.value.trim() || null,
     instagram_user_id: instagramUserId.value.trim() || null,
-    instagram_access_token: instagramAccessToken.value.trim() || null,
     new_lead_notify_whatsapp_template_name: newLeadNotifyTemplateName.value.trim() || null,
     new_lead_notify_whatsapp_template_language: newLeadNotifyTemplateLanguage.value.trim() || 'es',
     online_booking_notify_whatsapp_template_language: staffNotifyTemplateLanguage.value.trim() || 'es',
   }
-  if (accessToken.value.trim()) update.whatsapp_access_token = accessToken.value.trim()
-
   const { error: updateError } = await supabase.from('accounts').update(update).eq('id', store.accountId!)
   saving.value = false
   if (updateError) {
     showToast(saveErrorMessage(updateError), 'error')
     return
+  }
+  // Tokens through the server, into account_secrets: not a column every
+  // member of the clinic can read.
+  const typedTokens = { whatsapp: accessToken.value.trim(), instagram: instagramAccessToken.value.trim(), metaAds: metaAdsAccessToken.value.trim() }
+  if (typedTokens.whatsapp || typedTokens.instagram || typedTokens.metaAds) {
+    try {
+      await useStaffFetch('/api/whatsapp/tokens', { method: 'PUT', body: typedTokens })
+      if (typedTokens.instagram) hasInstagramToken.value = true
+      if (typedTokens.metaAds) hasMetaAdsToken.value = true
+      instagramAccessToken.value = ''
+      metaAdsAccessToken.value = ''
+    } catch (e: any) {
+      showToast(e?.data?.statusMessage ?? e?.statusMessage ?? t('Could not save the access token', 'No se pudo guardar el token de acceso'), 'error')
+      return
+    }
   }
   // Its own endpoint, not part of the accounts update above, because the
   // column it writes is not reachable from the browser at all.
@@ -316,7 +339,7 @@ async function save() {
             <section aria-labelledby="h-ig" class="overflow-hidden rounded-card border border-line bg-surface">
               <div class="flex flex-wrap items-center gap-3 px-[18px] pb-1 pt-4">
                 <h2 id="h-ig" class="flex-1 text-[16px] font-bold text-ink-900">{{ t('Instagram messages', 'Mensajes de Instagram') }}</h2>
-                <UiPill v-if="instagramUserId && instagramAccessToken" tone="success" dot>{{ t('Receiving and replying', 'Recibe y responde') }}</UiPill>
+                <UiPill v-if="instagramUserId && (hasInstagramToken || instagramAccessToken)" tone="success" dot>{{ t('Receiving and replying', 'Recibe y responde') }}</UiPill>
                 <UiPill v-else-if="instagramUserId" tone="warning" dot>{{ t('Receiving only', 'Solo recibe') }}</UiPill>
                 <UiPill v-else tone="neutral">{{ t('Not connected', 'Sin conectar') }}</UiPill>
               </div>
@@ -330,7 +353,7 @@ async function save() {
                   <label for="ig-token" class="text-[14.5px] font-bold text-ink-900">{{ t('Access token', 'Token de acceso') }}</label>
                   <span class="text-[13px] text-ink-500">{{ t('A Page token with instagram_manage_messages. Only needed to reply.', 'Un token de página con instagram_manage_messages. Solo hace falta para responder.') }}</span>
                 </div>
-                <input id="ig-token" v-model="instagramAccessToken" type="password" autocomplete="off" placeholder="EAA…" data-test="instagram-access-token" :class="[inputClass, 'w-full sm:w-[300px]']" />
+                <input id="ig-token" v-model="instagramAccessToken" type="password" autocomplete="off" :placeholder="hasInstagramToken ? '••••••••••••••••••••' : 'EAA…'" data-test="instagram-access-token" :class="[inputClass, 'w-full sm:w-[300px]']" />
               </div>
             </section>
 
@@ -338,7 +361,7 @@ async function save() {
             <section aria-labelledby="h-ads" class="overflow-hidden rounded-card border border-line bg-surface">
               <div class="flex flex-wrap items-center gap-3 px-[18px] pb-1 pt-4">
                 <h2 id="h-ads" class="flex-1 text-[16px] font-bold text-ink-900">{{ t('Meta Ads spend', 'Gasto en Meta Ads') }}</h2>
-                <UiPill v-if="metaAdsAccountId && metaAdsAccessToken" tone="success" dot>{{ t('Connected', 'Conectado') }}</UiPill>
+                <UiPill v-if="metaAdsAccountId && (hasMetaAdsToken || metaAdsAccessToken)" tone="success" dot>{{ t('Connected', 'Conectado') }}</UiPill>
                 <UiPill v-else tone="neutral">{{ t('Not connected', 'Sin conectar') }}</UiPill>
               </div>
               <p class="px-[18px] pb-2 text-[13px] text-ink-muted">{{ t('Lets Growth read what you spent on Meta ads instead of you typing it each month. Read-only: nothing here can spend money.', 'Permite a Crecimiento leer lo que gastaste en Meta en lugar de escribirlo cada mes. Solo lectura: nada aquí puede gastar dinero.') }}</p>
@@ -354,7 +377,7 @@ async function save() {
                   <label for="ads-token" class="text-[14.5px] font-bold text-ink-900">{{ t('Read token', 'Token de lectura') }}</label>
                   <span class="text-[13px] text-ink-500">{{ t('A long-lived token with ads_read for that account.', 'Un token de larga duración con ads_read para esa cuenta.') }}</span>
                 </div>
-                <input id="ads-token" v-model="metaAdsAccessToken" type="password" autocomplete="off" placeholder="EAA…" data-test="meta-ads-token" :class="[inputClass, 'w-full sm:w-[300px]']" />
+                <input id="ads-token" v-model="metaAdsAccessToken" type="password" autocomplete="off" :placeholder="hasMetaAdsToken ? '••••••••••••••••••••' : 'EAA…'" data-test="meta-ads-token" :class="[inputClass, 'w-full sm:w-[300px]']" />
               </div>
             </section>
 

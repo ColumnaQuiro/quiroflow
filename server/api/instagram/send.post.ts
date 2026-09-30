@@ -47,6 +47,7 @@ export default defineEventHandler(async (event) => {
     .select('id, instagram_user_id, instagram_access_token')
     .eq('id', teamMember.account_id)
     .maybeSingle()
+  await withMessagingTokens(teamMember.account_id, account)
   if (!account?.instagram_user_id || !account?.instagram_access_token) {
     throw createError({ statusCode: 400, statusMessage: 'Instagram is not connected. Set it up in Settings > WhatsApp.' })
   }

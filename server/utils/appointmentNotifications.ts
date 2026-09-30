@@ -198,6 +198,7 @@ async function sendWhatsApp(
     .select('whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_access_token')
     .eq('id', ctx.accountId)
     .maybeSingle()
+  await withMessagingTokens(ctx.accountId, account)
   if (!account?.whatsapp_phone_number_id || !account?.whatsapp_access_token) return false
 
   const { data: numbers } = await supabase
@@ -451,6 +452,7 @@ export async function notifyStaffOfOnlineBooking(supabase: any, accountId: strin
     )
     .eq('id', accountId)
     .maybeSingle()
+  await withMessagingTokens(accountId, account)
   if (!account?.online_booking_notify_email && !account?.online_booking_notify_whatsapp) return
 
   const ctx = await loadAppointmentContext(supabase, appointmentId)

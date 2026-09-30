@@ -8,6 +8,7 @@ import { shortPatientName } from '~/utils/appointmentBlock'
 import { bonoForVisit, type VisitPayment } from '~/utils/visitPayment'
 import { effectivePriceCents } from '~/utils/appointmentOverrides'
 import { orderTypes } from '~/utils/appointmentTypes'
+import type { MoveClash } from '~/utils/moveClash'
 import { FILTER_DOT_CLASS, STAGE_TONE, STAGE_TONE_CLASS } from '~/composables/useAppointmentStage'
 import type { BlockView } from '~/components/calendar/AppointmentBlock.vue'
 import type { FlowRow } from '~/components/calendar/FlowTracker.vue'
@@ -1432,6 +1433,37 @@ interface PendingReschedule {
 }
 const pendingReschedule = ref<PendingReschedule | null>(null)
 
+// A move, resize or slot pick that lands on another patient or a block asks
+// first (CalendarMoveClashDialog), the way a new booking needs "allow double
+// booking" ticked. `proceed` carries on exactly as a clash-free move would;
+// `back` undoes the live preview.
+const { findMoveClashes } = useMoveClashCheck()
+const moveClash = ref<{ clashes: MoveClash[]; proceed: () => void; back: () => void } | null>(null)
+function onMoveClashConfirm() {
+  const c = moveClash.value
+  moveClash.value = null
+  c?.proceed()
+}
+function onMoveClashCancel() {
+  const c = moveClash.value
+  moveClash.value = null
+  c?.back()
+}
+
+// A drag that leaves the start where it was -- a resize, or the same time in
+// another room -- is not a reschedule: the patient comes when they were told
+// to. It saves as it is, with no reason to give, no "moved" flag, no
+// appointment_reschedules row and no "your appointment has moved" message.
+async function saveInPlace(appointmentId: string, values: { ends_at: string; room_id: string | null }, revert: () => void) {
+  const { error } = await supabase.from('appointments').update(values).eq('id', appointmentId)
+  if (error) {
+    revert()
+    alert(error.message)
+    return
+  }
+  await reloadAfterChange()
+}
+
 // --- Reschedule mode ---
 // Drag-and-drop above only works within whatever days/rooms are currently
 // rendered in the DOM -- there's no way to drag an appointment onto a week
@@ -1490,9 +1522,9 @@ function cancelRescheduleMode() {
 // revert() on cancel; if it isn't (a genuinely different week), there's
 // nothing in memory to preview -- confirmReschedule()'s reload is what
 // makes the new position show up once that week comes into view.
-function pickRescheduleSlot(day: Date, time: string, roomId: string | null) {
+async function pickRescheduleSlot(day: Date, time: string, roomId: string | null) {
   const src = reschedulingAppointment.value
-  if (!src) return
+  if (!src || moveClash.value) return
   const [h, m] = time.split(':').map(Number)
   const newStartsAt = new Date(day.getFullYear(), day.getMonth(), day.getDate(), h, m, 0, 0)
   const durationMs = new Date(src.endsAt).getTime() - new Date(src.startsAt).getTime()
@@ -1505,6 +1537,18 @@ function pickRescheduleSlot(day: Date, time: string, roomId: string | null) {
     if (!confirm(t('This falls outside working hours. Move it anyway?', 'Esto queda fuera del horario de atención. ¿Moverla de todos modos?'))) return
   }
 
+  const clashes = await findMoveClashes({ appointmentId: src.id, practitionerId: src.practitionerId, roomId, startsAt: newStartsAt, endsAt: newEndsAt })
+  // Picking mode may have been left while the lookup was out.
+  if (reschedulingAppointment.value !== src) return
+  if (clashes.length) {
+    // Going back leaves picking mode on: the next click is another try.
+    moveClash.value = { clashes, proceed: () => placeRescheduled(src, newStartsAt, newEndsAt, roomId), back: () => {} }
+    return
+  }
+  placeRescheduled(src, newStartsAt, newEndsAt, roomId)
+}
+
+function placeRescheduled(src: ReschedulingAppointment, newStartsAt: Date, newEndsAt: Date, roomId: string | null) {
   const live = appointments.value.find((a) => a.id === src.id)
   const orig = live ? { starts_at: live.starts_at, ends_at: live.ends_at, room_id: live.room_id } : null
   function revert() {
@@ -1562,17 +1606,38 @@ async function onAppointmentDragEnd(e: PointerEvent) {
     }
   }
 
-  pendingReschedule.value = {
-    appointmentId: appt.id,
-    patientId: appt.patient_id,
-    patientName: appt.patients ? `${appt.patients.first_name} ${appt.patients.last_name ?? ''}`.trim() : '',
-    appointmentTypeName: appt.appointment_types?.name ?? null,
-    origStartsAt: orig.starts_at,
-    newStartsAt: appt.starts_at,
-    newEndsAt: appt.ends_at,
-    newRoomId: appt.room_id,
-    revert,
+  // Where it was dropped, taken now: the lookup below is a round trip, and
+  // the live row can be replaced by a reload in the meantime.
+  const next = { starts_at: appt.starts_at, ends_at: appt.ends_at, room_id: appt.room_id }
+  const same = (a: string, b: string) => new Date(a).getTime() === new Date(b).getTime()
+  const sameStart = same(next.starts_at, orig.starts_at)
+  // Snapped back to where it started: nothing to save or to ask about.
+  if (sameStart && same(next.ends_at, orig.ends_at) && next.room_id === orig.room_id) return
+
+  function proceed() {
+    if (sameStart) {
+      saveInPlace(appt!.id, { ends_at: next.ends_at, room_id: next.room_id }, revert)
+      return
+    }
+    pendingReschedule.value = {
+      appointmentId: appt!.id,
+      patientId: appt!.patient_id,
+      patientName: appt!.patients ? `${appt!.patients.first_name} ${appt!.patients.last_name ?? ''}`.trim() : '',
+      appointmentTypeName: appt!.appointment_types?.name ?? null,
+      origStartsAt: orig.starts_at,
+      newStartsAt: next.starts_at,
+      newEndsAt: next.ends_at,
+      newRoomId: next.room_id,
+      revert,
+    }
   }
+
+  const clashes = await findMoveClashes({ appointmentId: appt.id, practitionerId: appt.practitioner_id, roomId: next.room_id, startsAt: next.starts_at, endsAt: next.ends_at })
+  if (clashes.length) {
+    moveClash.value = { clashes, proceed, back: revert }
+    return
+  }
+  proceed()
 }
 
 function cancelReschedule() {
@@ -2838,6 +2903,8 @@ function showNowLineOn(day: Date) {
       @close="cancelReschedule"
       @confirm="confirmReschedule"
     />
+
+    <CalendarMoveClashDialog v-if="moveClash" :clashes="moveClash.clashes" @confirm="onMoveClashConfirm" @cancel="onMoveClashCancel" />
 
     <CalendarAvailabilityBlockModal
       v-if="blockModalOpen"

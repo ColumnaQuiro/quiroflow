@@ -49,6 +49,10 @@ export type StopReason =
   // The step they were on was removed from the automation, and whoever saved
   // it chose to take the people on it out rather than move them on.
   | 'step_removed'
+  // The appointment the run was started for was deleted from the calendar.
+  | 'appointment_deleted'
+  // The visit a reminder run was counting down to was cancelled.
+  | 'appointment_cancelled'
 
 /**
  * 'defer' is the third answer, and the reason this is not a boolean.
@@ -226,6 +230,8 @@ export const STOP_REASON_TEXT: Record<StopReason, string> = {
   exited: 'Left the automation when an exit event happened',
   taken_out: 'Taken out by someone on the team',
   step_removed: 'The step they were on was removed from the automation',
+  appointment_deleted: 'The appointment it was about was deleted',
+  appointment_cancelled: 'The appointment it was reminding them of was cancelled',
 }
 
 /** What a step is called in the history, copied at the time it ran. */

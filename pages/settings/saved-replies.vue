@@ -53,9 +53,13 @@ async function openReply(r: SavedReply) {
   show(r)
 }
 
+// A second click while the first is still creating made a second
+// "Untitled reply".
+const creating = ref(false)
 async function newReply() {
-  if (saving.value) return
+  if (saving.value || creating.value) return
   if (dirty.value && !(await save())) return
+  creating.value = true
   const { data, error } = await supabase
     .from('saved_replies')
     .insert({
@@ -67,6 +71,7 @@ async function newReply() {
     })
     .select('*')
     .single()
+  creating.value = false
   if (error || !data) {
     showToast(error?.message ?? t('Could not create the reply.', 'No se pudo crear la respuesta.'), 'error')
     return
@@ -120,7 +125,7 @@ const inputClass = 'h-9 touch:h-11 w-full rounded-ctl border border-line-control
 <template>
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Saved Replies', 'Respuestas guardadas')">
-      <UiBtn variant="primary" data-cy="reply-new" @click="newReply">{{ t('New reply', 'Nueva respuesta') }}</UiBtn>
+      <UiBtn variant="primary" data-cy="reply-new" :disabled="creating" @click="newReply">{{ t('New reply', 'Nueva respuesta') }}</UiBtn>
     </PageHeader>
     <div class="flex-1 overflow-y-auto">
       <div class="flex gap-8 p-6">

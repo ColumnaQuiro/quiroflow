@@ -48,9 +48,16 @@ interface PatientMembershipRow {
   price_cents: number
   status: string
   started_at: string
-  // The plan's own period, to start autopay from. Null when the plan has
-  // since been removed (membership_id is `on delete set null`).
+  // The period this member signed up on, copied from the plan when the
+  // membership was created -- so editing the plan later does not re-state
+  // what existing members pay. The plan's own period is the fallback for a
+  // row from before that copy existed.
+  billing_interval: string | null
+  billing_interval_count: number | null
   memberships: { billing_interval: string; billing_interval_count: number } | null
+}
+function memberPeriod(m: { billing_interval: string | null; billing_interval_count: number | null; memberships: { billing_interval: string; billing_interval_count: number } | null }) {
+  return m.billing_interval ? { billing_interval: m.billing_interval, billing_interval_count: m.billing_interval_count ?? 1 } : m.memberships
 }
 interface MembershipPaymentRow {
   id: string
@@ -714,7 +721,7 @@ async function fetchPackages(): Promise<() => void> {
 async function loadMemberships({ silent = false } = {}) {
   if (!silent) membershipsLoading.value = true
   const [{ data: patMemberships }, { data: membershipPaymentRows }] = await Promise.all([
-    supabase.from('patient_memberships').select('id, membership_name, price_cents, status, started_at, memberships(billing_interval, billing_interval_count)').eq('patient_id', props.patientId).order('started_at', { ascending: false }),
+    supabase.from('patient_memberships').select('id, membership_name, price_cents, status, started_at, billing_interval, billing_interval_count, memberships(billing_interval, billing_interval_count)').eq('patient_id', props.patientId).order('started_at', { ascending: false }),
     supabase
       .from('membership_payments')
       .select('id, patient_membership_id, period_start, amount_cents, status, patient_memberships!inner(patient_id)')
@@ -1221,8 +1228,13 @@ const statusTone: Record<string, 'success' | 'danger' | 'warning' | 'neutral'> =
 }
 
 async function sellPackage() {
-  const tpl = packageTemplates.value.find((p) => p.id === sellPackageId.value)
-  if (!tpl) return
+  // Read again at the sale, not from the list loaded earlier: a price another
+  // member changed in Settings since then would otherwise be sold at the old
+  // one.
+  const cached = packageTemplates.value.find((p) => p.id === sellPackageId.value)
+  if (!cached) return
+  const { data: fresh } = await supabase.from('packages').select('id, name, session_count, price_cents').eq('id', cached.id).maybeSingle()
+  const tpl = fresh ?? cached
   const amountCents = Math.round((parseFloat(sellAmountPaid.value) || 0) * 100)
   // Against what is actually spendable, and against the amount being paid
   // now rather than the package's price -- part-paying a EUR 528 bono with
@@ -1712,8 +1724,11 @@ async function removeShare(packageId: string, patientId: string) {
 }
 
 async function activateMembership() {
-  const tpl = membershipTemplates.value.find((m) => m.id === activateMembershipId.value)
-  if (!tpl) return
+  // Read again at the sale, as for bonos above.
+  const cachedPlan = membershipTemplates.value.find((m) => m.id === activateMembershipId.value)
+  if (!cachedPlan) return
+  const { data: freshPlan } = await supabase.from('memberships').select('id, name, price_cents').eq('id', cachedPlan.id).maybeSingle()
+  const tpl = freshPlan ?? cachedPlan
   const amountCents = Math.round((parseFloat(activateAmountPaid.value) || 0) * 100)
   if (activateMethod.value === 'credit' && amountCents > spendableCreditCents.value) {
     creditError.value = t('Amount exceeds available credit.', 'El importe supera el crédito disponible.')
@@ -2427,7 +2442,7 @@ function money(cents: number) {
               </UiBtn>
             </div>
             <div v-else-if="hasCard" class="mt-2.5">
-              <UiBtn v-if="autopayFormFor !== m.id" size="sm" variant="ghost" @click="openAutopayForm(m.id, m.memberships)">
+              <UiBtn v-if="autopayFormFor !== m.id" size="sm" variant="ghost" @click="openAutopayForm(m.id, memberPeriod(m))">
                 {{ t('Set up autopay', 'Configurar pago automático') }}
               </UiBtn>
               <form v-else class="flex flex-wrap items-end gap-1.5 rounded-ctl border border-line-divider bg-surface-subtle p-2.5" @submit.prevent="setUpMembershipAutopay(m)">

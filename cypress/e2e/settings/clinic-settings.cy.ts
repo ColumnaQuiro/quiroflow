@@ -254,6 +254,7 @@ describe('A clinic\'s settings page', () => {
         expect(rows[0].room_id).to.equal(null)
       })
       cy.get('[data-cy=clinic-closure-remove]').click()
+      cy.get('[data-cy=confirm-dialog]').contains('button', 'Remove closure').click()
       cy.get('[data-cy=clinic-closure]').should('not.exist')
     })
   })

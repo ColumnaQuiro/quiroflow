@@ -4,6 +4,7 @@ import { WEEK, dayRangesText } from '~/utils/clinicHours'
 import { formatEur } from '~/utils/billing'
 import { orderTypes } from '~/utils/appointmentTypes'
 import { nextDate, startOfLocalDate } from '~/utils/clinicClock'
+import { normalizeNotifyEmail, normalizeNotifyWhatsapp } from '~/utils/notifyContacts'
 import type { Tables, TablesUpdate } from '~/types/database.types'
 
 const supabase = useSupabaseClient()
@@ -96,6 +97,18 @@ async function saveAccountSettings() {
     return
   }
   successUrl.value = success.value ?? ''
+  const notifyEmailValue = normalizeNotifyEmail(notifyEmail.value)
+  const notifyWhatsappValue = normalizeNotifyWhatsapp(notifyWhatsapp.value, store.defaultPhoneCountry)
+  if (notifyEmailValue === undefined) {
+    showToast(t('The alert email is not an email address.', 'El correo de aviso no es una dirección de correo.'), 'error')
+    return
+  }
+  if (notifyWhatsappValue === undefined) {
+    showToast(t('The alert WhatsApp is not a phone number.', 'El WhatsApp de aviso no es un número de teléfono.'), 'error')
+    return
+  }
+  notifyEmail.value = notifyEmailValue ?? ''
+  notifyWhatsapp.value = notifyWhatsappValue ?? ''
 
   saving.value = true
   const update: TablesUpdate<'accounts'> = {
@@ -109,8 +122,8 @@ async function saveAccountSettings() {
     online_booking_hide_logo: hideLogo.value,
     online_booking_practitioner_order: practitionerOrder.value,
     online_booking_text_overrides: textOverrides.value,
-    online_booking_notify_email: notifyEmail.value.trim() || null,
-    online_booking_notify_whatsapp: notifyWhatsapp.value.trim() || null,
+    online_booking_notify_email: notifyEmailValue,
+    online_booking_notify_whatsapp: notifyWhatsappValue,
   }
   const { error: updateError } = await supabase.from('accounts').update(update).eq('id', store.accountId!)
   saving.value = false

@@ -627,6 +627,52 @@ async function enableOnlineBooking(opts: { clinicId: string }) {
 }
 
 /** Adds 'email' to the account's confirmation channels -- accounts default to whatsapp-only. */
+/**
+ * Confirmations and reminders over WhatsApp, as Settings > Messages and
+ * WhatsApp leave them, against the Meta Graph stub.
+ */
+async function setAutomaticMessages(opts: {
+  accountId: string
+  confirmation?: boolean
+  reminder?: boolean
+  channels?: string[]
+  templateName?: string
+  templateLanguage?: string
+  reminderHoursBefore?: number
+}) {
+  assertOk(
+    await admin
+      .from('accounts')
+      .update({
+        appointment_confirmation_enabled: opts.confirmation ?? true,
+        appointment_confirmation_channels: opts.channels ?? ['whatsapp'],
+        whatsapp_confirmation_template_name: opts.templateName ?? 'confirmacion_cita',
+        whatsapp_confirmation_template_language: opts.templateLanguage ?? 'es',
+        appointment_reminder_enabled: opts.reminder ?? false,
+        appointment_reminder_channels: opts.channels ?? ['whatsapp'],
+        whatsapp_reminder_template_name: opts.templateName ?? 'confirmacion_cita',
+        whatsapp_reminder_template_language: opts.templateLanguage ?? 'es',
+        appointment_reminder_hours_before: opts.reminderHoursBefore ?? 24,
+        whatsapp_business_account_id: 'waba-stub',
+        whatsapp_phone_number_id: `pnid-${Date.now()}-${Math.floor(Math.random() * 1e9)}`,
+        whatsapp_access_token: 'stub-token',
+      })
+      .eq('id', opts.accountId),
+  )
+  return null
+}
+
+/** What was recorded about an appointment's automatic messages. */
+async function appointmentMessageState(opts: { appointmentId: string }) {
+  const { data, error } = await admin
+    .from('appointments')
+    .select('confirmation_sent_at, reminder_sent_at, auto_confirmation_claimed_at')
+    .eq('id', opts.appointmentId)
+    .single()
+  if (error) throw error
+  return data
+}
+
 async function enableEmailConfirmations(opts: { accountId: string }) {
   assertOk(
     await admin
@@ -1546,6 +1592,38 @@ async function issueReceiptNumber(opts: { accountId: string }) {
   return data as string
 }
 
+/** A patient file with real content in storage, as an upload leaves it. */
+async function storePatientFile(opts: { accountId: string; patientId: string; fileName: string }) {
+  const path = `${opts.accountId}/${opts.patientId}/${Date.now()}-${opts.fileName}`
+  const { error: uploadError } = await admin.storage.from('patient-files').upload(path, Buffer.from('%PDF-1.4 test'), { contentType: 'application/pdf' })
+  if (uploadError) throw uploadError
+  const row = unwrap(
+    await admin
+      .from('patient_files')
+      .insert({ account_id: opts.accountId, patient_id: opts.patientId, file_name: opts.fileName, file_type: 'application/pdf', size_bytes: 13, storage_path: path })
+      .select('id')
+      .single(),
+  )
+  return { id: (row as { id: string }).id, path }
+}
+
+/** Whether a patient file's content is still in storage. */
+async function patientFileStored(opts: { path: string }) {
+  const folder = opts.path.split('/').slice(0, -1).join('/')
+  const name = opts.path.split('/').pop()!
+  const { data } = await admin.storage.from('patient-files').list(folder, { search: name })
+  return (data ?? []).some((o) => o.name === name)
+}
+
+/** Removing a patient file's content as a signed-in staff member. */
+async function removePatientFileAsStaff(opts: { email: string; password: string; path: string }) {
+  const userClient = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+  const { error: signInErr } = await userClient.auth.signInWithPassword({ email: opts.email, password: opts.password })
+  if (signInErr) throw signInErr
+  const { data, error } = await userClient.storage.from('patient-files').remove([opts.path])
+  return { removed: data?.length ?? 0, error: error ? error.message : null }
+}
+
 /**
  * A file the clinic uploaded. No object is stored -- only the row.
  * storagePath: null is a file an import left as a name only; compressed and
@@ -1977,6 +2055,8 @@ async function createAppointment(opts: {
   // visit at any point of the flow without clicking through it.
   confirmationStatus?: string | null
   source?: string
+  /** Backdated creation, for the crons that look at how long ago a booking was made. */
+  createdAt?: string
   checkedInAt?: string | null
   flowWithPractitionerAt?: string | null
   flowCheckoutAt?: string | null
@@ -2003,6 +2083,7 @@ async function createAppointment(opts: {
         ...(opts.checkedIn ? { checked_in_at: startsAt.toISOString(), flow_with_practitioner_at: startsAt.toISOString() } : {}),
         ...(opts.confirmationStatus !== undefined ? { confirmation_status: opts.confirmationStatus } : {}),
         ...(opts.source ? { source: opts.source } : {}),
+        ...(opts.createdAt ? { created_at: opts.createdAt } : {}),
         ...(opts.checkedInAt !== undefined ? { checked_in_at: opts.checkedInAt } : {}),
         ...(opts.flowWithPractitionerAt !== undefined ? { flow_with_practitioner_at: opts.flowWithPractitionerAt } : {}),
         ...(opts.flowCheckoutAt !== undefined ? { flow_checkout_at: opts.flowCheckoutAt } : {}),
@@ -2547,6 +2628,11 @@ async function leadMessages(opts: { leadId: string }) {
 // Graph API would mean live calls to Meta from CI; testing it not at all would
 // leave the one endpoint that stores a credential unexercised.
 const META_GRAPH_STUB_PORT = 9147
+// What the stub was asked to send, for a spec to read back.
+let metaGraphStubSends: unknown[] = []
+async function metaGraphStubSendsOf() {
+  return metaGraphStubSends
+}
 let metaGraphStub: import('node:http').Server | null = null
 
 async function startMetaGraphStub(opts: {
@@ -2557,6 +2643,10 @@ async function startMetaGraphStub(opts: {
   displayPhoneNumber?: string
   /** Scopes granted, so a connection with no WABA on it can be simulated. */
   scope?: string
+  /** The template list Meta answers with, variants and statuses included. */
+  templates?: { name: string; language: string; status: string; body: string }[]
+  /** Refuse template sends, as Meta does for a paused template. */
+  failSends?: boolean
 }) {
   await stopMetaGraphStub()
   const { createServer } = await import('node:http')
@@ -2591,6 +2681,11 @@ async function startMetaGraphStub(opts: {
       if (opts.failAt === 'templates') {
         return send(401, { error: { message: 'Error validating access token: Session has expired.', type: 'OAuthException', code: 190 } })
       }
+      if (opts.templates) {
+        return send(200, {
+          data: opts.templates.map((t) => ({ name: t.name, language: t.language, category: 'UTILITY', status: t.status, components: [{ type: 'BODY', text: t.body }] })),
+        })
+      }
       return send(200, {
         data: [
           {
@@ -2602,6 +2697,20 @@ async function startMetaGraphStub(opts: {
           },
         ],
       })
+    }
+    if (path.endsWith('/messages') && req.method === 'POST') {
+      let raw = ''
+      req.on('data', (chunk) => (raw += chunk))
+      req.on('end', () => {
+        try {
+          metaGraphStubSends.push(JSON.parse(raw))
+        } catch {
+          metaGraphStubSends.push(raw)
+        }
+        if (opts.failSends) return send(400, { error: { message: 'Template is paused.', code: 132015 } })
+        send(200, { messages: [{ id: `wamid.STUB${metaGraphStubSends.length}` }] })
+      })
+      return
     }
     if (path.endsWith('/phone_numbers')) {
       if (opts.failAt === 'phones') return refuse('Unsupported get request.')
@@ -2620,6 +2729,7 @@ async function startMetaGraphStub(opts: {
 }
 
 async function stopMetaGraphStub() {
+  metaGraphStubSends = []
   const server = metaGraphStub
   metaGraphStub = null
   if (!server) return { ok: true }
@@ -2629,11 +2739,25 @@ async function stopMetaGraphStub() {
 
 let practiceHubStub: import('node:http').Server | null = null
 
+// The key the last request to the stub carried, so a spec can tell which one
+// the proxy sent without the stub checking keys itself.
+let practiceHubStubLastKey = ''
+
+/** What the legacy accounts column holds: nothing, once a key is saved as a secret. */
+async function practiceHubKeyColumnOf(opts: { accountId: string }) {
+  const { data } = await admin.from('accounts').select('practicehub_api_key').eq('id', opts.accountId).single()
+  return (data as { practicehub_api_key: string | null } | null)?.practicehub_api_key ?? null
+}
+async function practiceHubStubLastKeyOf() {
+  return practiceHubStubLastKey
+}
+
 async function startPracticeHubStub(opts: { totalEntries?: number; emails?: string[] }) {
   await stopPracticeHubStub()
   const { createServer } = await import('node:http')
   const emails = opts.emails ?? []
-  const server = createServer((_req, res) => {
+  const server = createServer((req, res) => {
+    practiceHubStubLastKey = String(req.headers['x-practicehub-key'] ?? '')
     res.setHeader('content-type', 'application/json')
     res.end(
       JSON.stringify({
@@ -3475,6 +3599,9 @@ export const dbTasks = {
   'db:uploadDocImage': uploadDocImage,
   'db:patientDocFields': patientDocFields,
   'db:createPatientFile': createPatientFile,
+  'db:storePatientFile': storePatientFile,
+  'db:patientFileStored': patientFileStored,
+  'db:removePatientFileAsStaff': removePatientFileAsStaff,
   'db:issueReceiptNumber': issueReceiptNumber,
   'db:selectRows': selectRows,
   'db:addVisitNote': addVisitNote,
@@ -3563,10 +3690,15 @@ export const dbTasks = {
   'db:setAccountWhatsappToken': setAccountWhatsappToken,
   'db:startMetaGraphStub': startMetaGraphStub,
   'db:stopMetaGraphStub': stopMetaGraphStub,
+  'db:metaGraphStubSends': metaGraphStubSendsOf,
+  'db:setAutomaticMessages': setAutomaticMessages,
+  'db:appointmentMessageState': appointmentMessageState,
   'db:readAsStaff': readAsStaff,
   'db:rolePermissions': rolePermissions,
   'db:writeAsStaff': writeAsStaff,
   'db:settingsWriteAsStaff': settingsWriteAsStaff,
+  'db:practiceHubStubLastKey': practiceHubStubLastKeyOf,
+  'db:practiceHubKeyColumn': practiceHubKeyColumnOf,
   'db:roleByName': roleByName,
   'db:roleIdsOf': roleIdsOf,
   'db:packagePurchasesFor': packagePurchasesFor,

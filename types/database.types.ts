@@ -3920,6 +3920,8 @@ export type Database = {
       }
       patient_memberships: {
         Row: {
+          billing_interval: string | null
+          billing_interval_count: number | null
           account_id: string
           created_by: string | null
           id: string
@@ -3931,6 +3933,8 @@ export type Database = {
           status: string
         }
         Insert: {
+          billing_interval?: string | null
+          billing_interval_count?: number | null
           account_id: string
           created_by?: string | null
           id?: string
@@ -3942,6 +3946,8 @@ export type Database = {
           status?: string
         }
         Update: {
+          billing_interval?: string | null
+          billing_interval_count?: number | null
           account_id?: string
           created_by?: string | null
           id?: string

@@ -321,7 +321,7 @@ async function computeDiff() {
       .select(
         'id, external_reference, email, first_name, last_name, date_of_birth, referral_source, preferred_language, marketing_channels, default_practitioner_id, created_at, balance_cents',
       )
-      .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+      .order('id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
     for (const p of existing ?? []) {
       const row = p as ExistingPatient
       if (row.external_reference) byRef.set(row.external_reference, row)

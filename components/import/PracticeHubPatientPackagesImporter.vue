@@ -406,7 +406,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     const ourEmailCount = new Map<string, number>()
     const ourPatientByEmail = new Map<string, { id: string; name: string }>()
     for (let page = 0; ; page++) {
-      const { data } = await supabase.from('patients').select('id, external_reference, email, first_name, last_name').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+      const { data } = await supabase.from('patients').select('id, external_reference, email, first_name, last_name').order('id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
       for (const p of data ?? []) {
         const name = `${p.first_name} ${p.last_name ?? ''}`.trim()
         ourPatientNameById.set(p.id, name)
@@ -470,7 +470,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       const { data } = await supabase
         .from('package_purchases')
         .select('id, patient_id, purchased_at, external_reference, invoice_id, package_name, price_cents, sessions_used, sessions_total, owed_cents, is_closed')
-        .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+        .order('id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
       for (const row of data ?? []) {
         if (row.external_reference) purchaseByRef.set(row.external_reference, row.id)
         const dayKey = `${row.patient_id}|${String(row.purchased_at).slice(0, 10)}`
@@ -501,7 +501,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     // the one the clinic has actually been drawing sessions from, which is
     // what makes it safe to say which of a duplicated pair is the live one.
     for (let page = 0; ; page++) {
-      const { data } = await supabase.from('package_sessions').select('package_purchase_id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+      const { data } = await supabase.from('package_sessions').select('package_purchase_id').order('id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
       for (const row of data ?? []) {
         const local = row.package_purchase_id ? localBonoById.get(row.package_purchase_id) : undefined
         if (local) local.visitRows++
@@ -510,7 +510,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     }
 
     for (let page = 0; ; page++) {
-      const { data } = await supabase.from('package_purchase_shares').select('package_purchase_id, patient_id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+      const { data } = await supabase.from('package_purchase_shares').select('package_purchase_id, patient_id').order('id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
       // Per member, not per bono. Testing only "does this bono have any
       // shares" meant a bono someone was added to already could never gain
       // the rest of the household: the first member made it look done.
@@ -522,7 +522,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     }
 
     for (let page = 0; ; page++) {
-      const { data } = await supabase.from('payment_schedules').select('package_purchase_id').not('package_purchase_id', 'is', null).range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+      const { data } = await supabase.from('payment_schedules').select('package_purchase_id').not('package_purchase_id', 'is', null).order('id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
       for (const row of data ?? []) if (row.package_purchase_id) scheduledPurchaseIds.add(row.package_purchase_id)
       if (!data || data.length < PAGE_SIZE) break
     }
@@ -547,7 +547,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         .from('account_credits')
         .select('amount_cents, external_reference')
         .not('external_reference', 'is', null)
-        .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+        .order('id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
       for (const row of data ?? []) {
         const base = row.external_reference ? PACKAGE_CREDIT_REF.exec(row.external_reference)?.[1] : undefined
         if (base) creditCentsByPackageRef.set(base, (creditCentsByPackageRef.get(base) ?? 0) + row.amount_cents)

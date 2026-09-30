@@ -199,6 +199,8 @@ async function loadImportedNames() {
       .is('practitioner_id', null)
       .not('practitioner_name', 'is', null)
       .is('deleted_at', null)
+      // A fixed order: pages of an unordered read can repeat or skip rows.
+      .order('id')
       .range(from, from + PAGE - 1)
     if (error) {
       showToast(error.message, 'error')

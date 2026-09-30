@@ -205,11 +205,19 @@ const LANGUAGES = [
 const savingLang = ref(false)
 async function chooseLanguage(value: 'en' | 'es') {
   if (!store.teamMember || langPreference.value === value) return
+  const previous = langPreference.value
   setLangPreference(value)
   savingLang.value = true
-  await supabase.from('team_members').update({ language_preference: value }).eq('id', store.teamMember.id)
-  store.teamMember.language_preference = value
+  const { error } = await supabase.from('team_members').update({ language_preference: value }).eq('id', store.teamMember.id)
   savingLang.value = false
+  // The page switched language at once; a refused save switched it back on
+  // the next load without a word.
+  if (error) {
+    setLangPreference(previous)
+    showToast(error.message, 'error')
+    return
+  }
+  store.teamMember.language_preference = value
 }
 
 // --- Seguridad --------------------------------------------------------------

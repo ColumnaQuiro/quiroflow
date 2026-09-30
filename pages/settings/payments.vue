@@ -119,9 +119,11 @@ async function testConnection() {
 // with none of the consequences.
 const disconnectOpen = ref(false)
 async function disconnect() {
-  const { data: saved, error } = await supabase.from('accounts').update({ stripe_connect_account_id: null }).eq('id', store.accountId!).select('id')
-  if (error || !saved?.length) {
-    showToast(error?.message ?? t('Stripe is still connected: the change was not saved.', 'Stripe sigue conectado: no se ha guardado el cambio.'), 'error')
+  // Through the server, which also revokes QuiroFlow's access in Stripe.
+  try {
+    await useStaffFetch('/api/stripe/connect/disconnect', { method: 'POST' })
+  } catch (e: any) {
+    showToast(e?.data?.statusMessage ?? e?.message ?? t('Stripe is still connected.', 'Stripe sigue conectado.'), 'error')
     return
   }
   connectAccountId.value = null

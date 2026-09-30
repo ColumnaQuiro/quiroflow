@@ -60,7 +60,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         .from('patients')
         .select('id, external_reference, first_name, last_name, sticky_note')
         .not('external_reference', 'is', null)
-        .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+        .order('id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
       for (const p of data ?? []) {
         if (!p.external_reference) continue
         ourPatients.set(p.external_reference, {

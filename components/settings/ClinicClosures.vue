@@ -36,7 +36,21 @@ onMounted(load)
 function fmt(iso: string) {
   return new Date(iso).toLocaleDateString('es-ES', { timeZone: props.timezone, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
 }
+function clock(iso: string) {
+  return new Date(iso).toLocaleTimeString('es-ES', { timeZone: props.timezone, hour: '2-digit', minute: '2-digit' })
+}
+// Midnight at the clinic, both ends: a closure added here in days. A block
+// drawn on the calendar for part of a day (a two-hour meeting for the whole
+// location) is listed with its hours, not as a closed day.
+function wholeDays(c: Closure) {
+  return clock(c.starts_at) === '00:00' && clock(c.ends_at) === '00:00'
+}
 function range(c: Closure) {
+  if (!wholeDays(c)) {
+    const a = fmt(c.starts_at)
+    const b = fmt(c.ends_at)
+    return a === b ? `${a}, ${clock(c.starts_at)}–${clock(c.ends_at)}` : `${a} ${clock(c.starts_at)} – ${b} ${clock(c.ends_at)}`
+  }
   // ends_at is the midnight after the last day, so the last day is a moment before it.
   const last = new Date(new Date(c.ends_at).getTime() - 1).toISOString()
   const a = fmt(c.starts_at)
@@ -54,7 +68,11 @@ const toBeforeFrom = computed(() => !!from.value && !!to.value && to.value < fro
 
 // Appointments already booked in the chosen days: a closure hides the slots
 // but moves nobody, so say so before it is saved.
+// Numbered, so an answer that arrives after a newer question is dropped
+// rather than showing the count for days no longer chosen.
+let asked = 0
 watch([from, to], async () => {
+  const mine = ++asked
   bookedInside.value = 0
   if (!from.value || toBeforeFrom.value) return
   const start = startOfLocalDate(from.value, props.timezone)
@@ -67,7 +85,7 @@ watch([from, to], async () => {
     .not('status', 'in', '(cancelled,no_show)')
     .gte('starts_at', start.toISOString())
     .lt('starts_at', end.toISOString())
-  bookedInside.value = count ?? 0
+  if (mine === asked) bookedInside.value = count ?? 0
 })
 
 async function add() {
@@ -93,7 +111,12 @@ async function add() {
   await load()
 }
 
-async function remove(c: Closure) {
+// Asked first: removing reopens those days for booking at once.
+const removing = ref<Closure | null>(null)
+async function confirmRemove() {
+  const c = removing.value
+  if (!c) return
+  removing.value = null
   const { error } = await supabase.from('availability_blocks').delete().eq('id', c.id)
   if (error) {
     showToast(error.message, 'error')
@@ -111,7 +134,7 @@ async function remove(c: Closure) {
         <span class="text-[14px] font-semibold text-ink-900">{{ range(c) }}</span>
         <span v-if="c.note" class="text-[13px] text-ink-500">{{ c.note }}</span>
       </div>
-      <button type="button" data-cy="clinic-closure-remove" class="h-9 touch:h-11 rounded-ctl px-3 text-[13.5px] font-semibold text-ink-500 hover:bg-surface-subtle hover:text-ink-700" @click="remove(c)">
+      <button type="button" data-cy="clinic-closure-remove" class="h-9 touch:h-11 rounded-ctl px-3 text-[13.5px] font-semibold text-ink-500 hover:bg-surface-subtle hover:text-ink-700" @click="removing = c">
         {{ t('Remove', 'Quitar') }}
       </button>
     </div>
@@ -144,5 +167,16 @@ async function remove(c: Closure) {
         {{ t('Add a holiday or closure…', 'Añadir un día festivo o cierre…') }}
       </button>
     </div>
+
+    <UiConfirmDialog
+      v-if="removing"
+      :title="t(`Reopen ${range(removing)}?`, `¿Reabrir ${range(removing)}?`)"
+      :confirm-label="t('Remove closure', 'Quitar cierre')"
+      :cancel-label="t('Cancel', 'Cancelar')"
+      @confirm="confirmRemove"
+      @cancel="removing = null"
+    >
+      <p class="text-[14px] leading-snug text-ink-700">{{ t('Its free slots can be booked again straight away, online included.', 'Sus huecos libres se pueden reservar de nuevo al momento, también online.') }}</p>
+    </UiConfirmDialog>
   </div>
 </template>

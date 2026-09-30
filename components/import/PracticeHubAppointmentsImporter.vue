@@ -210,7 +210,7 @@ async function proceedToPreview() {
     const { data } = await supabase
       .from('patients')
       .select('id, external_reference')
-      .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+      .order('id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
     for (const p of data ?? []) {
       if (p.external_reference) patientByRef.set(p.external_reference, p.id)
     }
@@ -223,7 +223,7 @@ async function proceedToPreview() {
       .from('appointments')
       .select('id, external_reference, starts_at, ends_at, status, practitioner_id, practitioner_name, appointment_type_id')
       .not('external_reference', 'is', null)
-      .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+      .order('id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
     for (const a of data ?? []) {
       if (a.external_reference) existingByRef.set(a.external_reference, a as ExistingAppointment)
     }

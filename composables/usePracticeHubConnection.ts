@@ -11,27 +11,20 @@ export function usePracticeHubConnection() {
   return sharedConnection
 }
 
-// Loads the connection saved on the account (accounts.practicehub_*, set
-// from Settings -> Import -> PracticeHub -> General) into the same
-// in-memory ref every importer's connect form reads from, so a saved
-// connection survives page reloads without going back to localStorage --
-// this still only touches accounts, which the client already reads/writes
-// directly (see pages/settings/whatsapp.vue for the identical pattern with
-// whatsapp_access_token).
+// Loads the connection saved in Settings -> Import -> Connection into the
+// same in-memory ref every importer's connect form reads from, so a saved
+// connection survives page reloads. It comes WITHOUT its key: the key lives
+// in account_secrets and practicehub-proxy adds it server-side when a request
+// carries none. (It was read straight from accounts, where every member of
+// the clinic could fetch it.)
 export async function loadSavedPracticeHubConnection() {
   if (sharedConnection.value) return
-  const supabase = useSupabaseClient()
-  const store = useAccountStore()
-  const { data } = await supabase
-    .from('accounts')
-    .select('practicehub_base_url, practicehub_api_key, practicehub_contact_email')
-    .eq('id', store.accountId!)
-    .maybeSingle()
-  if (data?.practicehub_base_url && data?.practicehub_api_key) {
+  const saved = await useStaffFetch<{ baseUrl: string | null; contactEmail: string | null; hasKey: boolean }>('/api/import/practicehub-connection').catch(() => null)
+  if (saved?.baseUrl && saved.hasKey) {
     sharedConnection.value = {
-      baseUrl: data.practicehub_base_url,
-      apiKey: data.practicehub_api_key,
-      appDetails: `QuiroFlow=${data.practicehub_contact_email ?? ''}`,
+      baseUrl: saved.baseUrl,
+      apiKey: '',
+      appDetails: `QuiroFlow=${saved.contactEmail ?? ''}`,
     }
   }
 }

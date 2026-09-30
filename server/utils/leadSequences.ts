@@ -1,4 +1,5 @@
 import { phoneMatches } from '~/utils/phone'
+import { getAccountSecret } from '~/server/utils/accountSecrets'
 
 // A multi-step automation for a lead: send, wait, send again, and stop the
 // moment it stops being appropriate.
@@ -133,12 +134,13 @@ async function practiceHubVerdict(
 ): Promise<SequenceVerdict> {
   const { data: account } = await supabase
     .from('accounts')
-    .select('practicehub_base_url, practicehub_api_key, practicehub_contact_email')
+    .select('practicehub_base_url, practicehub_contact_email')
     .eq('id', accountId)
     .maybeSingle()
 
   const baseUrl: string | undefined = account?.practicehub_base_url ?? undefined
-  const apiKey: string | undefined = account?.practicehub_api_key ?? undefined
+  // In account_secrets now, out of every staff member's reach.
+  const apiKey: string | undefined = (await getAccountSecret(supabase, accountId, 'practicehub_api_key')) ?? undefined
   // Not configured is not the same as unreachable. A clinic that never used
   // PracticeHub must not have its drips deferred forever waiting for an
   // answer nobody can give.

@@ -228,6 +228,22 @@ admin) is recovered with the service role: delete the owner's row from
 `auth.mfa_factors`, or `update accounts set require_two_factor = false`.
 The guard trigger lets both through when there is no `auth.uid()`.
 
+## A new column on `accounts` needs a permission in its guard
+
+Most of a clinic's settings are columns on `accounts`, and its update policy
+lets any member update the row. What stops a receptionist changing the fees or
+the WhatsApp templates through the REST API is the trigger
+`accounts_guard_settings` (`20260930080701_accounts_settings_need_their_permission.sql`):
+for every column an update CHANGES, it requires `settings_access` plus the
+permission of the Settings page that owns it, via
+`accounts_settings_permission(column)`.
+
+A column that function does not list needs an **owner**. So a new settings
+column works for owners and fails for everyone else -- "Only an owner can
+change <column>" -- until it is added there, in the same migration that adds
+the column, under the permission its page is gated on in
+`components/settings/Nav.vue`. Owners and the service role pass untouched.
+
 ## VeriFactu: QuiroFlow can send for a clinic, and accepting that is manual
 
 Settings → VeriFactu → **Who sends** lets a clinic use its own certificate or

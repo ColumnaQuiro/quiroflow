@@ -9,7 +9,7 @@ import type { Database } from '~/types/database.types'
 //
 // Only reachable with the service role, which means only from server routes.
 
-export type AccountSecretName = 'stripe_secret_key' | 'stripe_webhook_secret'
+export type AccountSecretName = 'stripe_secret_key' | 'stripe_webhook_secret' | 'practicehub_api_key'
 
 /**
  * The named secret for this account, or null.

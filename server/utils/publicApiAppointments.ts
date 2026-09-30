@@ -1,4 +1,4 @@
-import { ApiError, badRequest } from '~/server/utils/publicApi'
+import { ApiError, badRequest, notFound } from '~/server/utils/publicApi'
 import { assertBelongsToAccount } from '~/server/utils/publicApiHandlers'
 
 // Booking rules shared by POST /appointments and PATCH /appointments/{id},
@@ -74,44 +74,52 @@ export async function resolveWindow(
   return { startsAt: start.toISOString(), endsAt: new Date(start.getTime() + duration * 60000).toISOString() }
 }
 
-// Refuses a double-booking for the same practitioner. Cancelled and
-// soft-deleted appointments don't hold a slot -- the calendar treats them as
-// free, and an API that disagreed would report a clash on a slot the clinic
-// can plainly see is empty.
+// Writes an appointment, refusing a double-booking for the same practitioner
+// -- the check and the write in one database transaction
+// (save_appointment_if_free, 20260930155957), under the per-practitioner lock
+// the booking page and the patient app take too. It used to be a PostgREST
+// select followed by a separate insert or update, and six parallel calls for
+// one slot all passed the select and all booked it.
 //
-// Appointments with no practitioner are skipped entirely: they're
-// unassigned, so there's no calendar for them to clash on.
-export async function assertNoOverlap(
+// Cancelled and soft-deleted appointments don't hold a slot -- the calendar
+// treats them as free, and an API that disagreed would report a clash on a
+// slot the clinic can plainly see is empty. Appointments with no practitioner
+// are never checked: they're unassigned, so there's no calendar for them to
+// clash on.
+//
+// `values` are the columns to write, exactly as the insert or update would
+// have sent them; a column left out keeps its default (insert) or its value
+// (update). `checkOverlap: false` writes without looking, for a PATCH that
+// changes nothing about when or with whom the visit is. Returns the id.
+export async function saveAppointmentIfFree(
   supabase: unknown,
   accountId: string,
-  practitionerId: string | undefined,
-  startsAt: string,
-  endsAt: string,
-  excludeAppointmentId?: string,
-) {
-  if (!practitionerId) return
-
-  let query = (supabase as any)
-    .from('appointments')
-    .select('id, starts_at, ends_at')
-    .eq('account_id', accountId)
-    .eq('practitioner_id', practitionerId)
-    .is('deleted_at', null)
-    .neq('status', 'cancelled')
-    // Half-open intervals: an appointment ending exactly at 10:00 does not
-    // clash with one starting at 10:00, which is how back-to-back bookings
-    // are supposed to work.
-    .lt('starts_at', endsAt)
-    .gt('ends_at', startsAt)
-
-  if (excludeAppointmentId) query = query.neq('id', excludeAppointmentId)
-
-  const { data: clashes } = await query.limit(1)
-  if (clashes?.length) {
-    throw new ApiError(
-      'conflict',
-      `This practitioner already has an appointment from ${clashes[0].starts_at} to ${clashes[0].ends_at}. Call GET /availability to find a free slot.`,
-      'starts_at',
-    )
+  appointmentId: string | null,
+  values: Record<string, unknown>,
+  opts: { checkOverlap: boolean },
+): Promise<string> {
+  const { data, error } = await (supabase as any).rpc('save_appointment_if_free', {
+    p_account_id: accountId,
+    p_appointment_id: appointmentId,
+    p_values: values,
+    p_check_overlap: opts.checkOverlap,
+  })
+  if (error) {
+    if (error.message === 'appointment_overlap') {
+      let clash: { starts_at?: string; ends_at?: string } = {}
+      try {
+        clash = JSON.parse(error.details ?? '{}')
+      } catch {
+        // The refusal stands without the times.
+      }
+      throw new ApiError(
+        'conflict',
+        `This practitioner already has an appointment from ${clash.starts_at} to ${clash.ends_at}. Call GET /availability to find a free slot.`,
+        'starts_at',
+      )
+    }
+    if (error.message === 'appointment_not_found') throw notFound('appointment')
+    throw new ApiError('server_error', error.message)
   }
+  return data as string
 }

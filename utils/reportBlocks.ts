@@ -161,6 +161,9 @@ export function reportLibrary(t: (en: string, es: string) => string): { report: 
         b(t('Retention post-revision', 'Retención tras revisión'), 3, 'retention_post_revision', 'none', 'number', STATS),
         b(t('Overall retention', 'Retención general'), 3, 'overall_retention', 'none', 'number', STATS),
         b(t('Visits by stage', 'Visitas por etapa'), 6, 'visits_completed', 'stage', 'bar', STATS),
+        // "12 primera visita, 40 ajuste, 9 mantenimiento": by the clinic's own
+        // appointment types, not only by the stage each one is tagged with.
+        b(t('Completed visits by appointment type', 'Visitas completadas por tipo de cita'), 6, 'visits_completed', 'appointment_type', 'table', STATS),
         b(t('Month by month', 'Mes a mes'), 12, 'visits_completed', 'month', 'table', STATS),
       ],
     },
@@ -192,6 +195,7 @@ export function reportLibrary(t: (en: string, es: string) => string): { report: 
       report: UPCOMING,
       blocks: [
         b(t('Visits by day of week', 'Visitas por día de la semana'), 6, 'visits_booked', 'weekday', 'bar', UPCOMING),
+        b(t('Visits booked by appointment type', 'Citas reservadas por tipo de cita'), 6, 'visits_booked', 'appointment_type', 'table', UPCOMING),
         b(t('Daily average', 'Media diaria'), 3, 'visits_daily_average', 'none', 'number', UPCOMING),
         b(t('Cancelled / no-show', 'Canceladas / no presentadas'), 3, 'cancellations', 'none', 'number', UPCOMING),
       ],
@@ -262,6 +266,7 @@ export function pageTemplates(t: (en: string, es: string) => string): PageTempla
         b(t('New patients by referral source', 'Pacientes nuevos por origen'), 6, 'new_patients', 'referral_source', 'table', null),
         b(t('Conversion after a first visit', 'Conversión tras la primera visita'), 8, 'patient_funnel', 'none', 'funnel', null),
         find('show_rate', 'shift'),
+        { ...find('visits_completed', 'appointment_type'), span: 12 },
       ],
     },
     {

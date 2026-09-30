@@ -1,4 +1,5 @@
 import { practitionerWindowsForDay } from '~/utils/businessHours'
+import { wallClockToUtc } from '~/utils/clinicClock'
 import type { BusinessHours } from '~/utils/businessHours'
 import { ApiError, badRequest, defineApiHandler } from '~/server/utils/publicApi'
 import { assertBelongsToAccount } from '~/server/utils/publicApiHandlers'
@@ -14,7 +15,9 @@ import { assertBelongsToAccount } from '~/server/utils/publicApiHandlers'
 //     set their own;
 //   * slots step by the appointment's own length, so what's offered here is
 //     bookable as-is rather than needing the caller to round;
-//   * existing appointments and availability blocks remove slots.
+//   * existing appointments and availability blocks remove slots -- the
+//     practitioner's appointments at every clinic of the account, since
+//     POST /appointments refuses a clash wherever it is.
 //
 // Everything in and out is UTC ISO 8601. business_hours are wall-clock
 // strings in the clinic's timezone, so they're converted using that timezone
@@ -75,11 +78,14 @@ export default defineApiHandler({ scope: 'appointments:read' }, async ({ event, 
   const rangeEnd = new Date(Date.parse(`${to}T00:00:00Z`) + 2 * 86400000)
 
   const [{ data: appointments }, { data: blocks }, { data: overrides }] = await Promise.all([
+    // Every clinic's appointments, not only this one's: a practitioner who
+    // works at two is busy here while they are seeing somebody at the other.
+    // POST /appointments checks clashes across clinics, so a slot offered
+    // here on this clinic's diary alone was refused when booked.
     supabase
       .from('appointments')
       .select('practitioner_id, starts_at, ends_at')
       .eq('account_id', accountId)
-      .eq('clinic_id', clinicId)
       .is('deleted_at', null)
       .neq('status', 'cancelled')
       .lt('starts_at', rangeEnd.toISOString())
@@ -192,40 +198,4 @@ function requireDateParam(value: unknown, field: string): string {
     throw badRequest(`"${field}" is required and must be a date in YYYY-MM-DD form.`, field)
   }
   return raw
-}
-
-// Turns "2026-03-14" + "09:00" in a named timezone into the UTC instant it
-// refers to.
-//
-// Two passes because the offset depends on the instant we're solving for:
-// the first guess uses the offset at the naive-UTC reading of the wall clock,
-// which is wrong for the couple of hours a year that straddle a DST switch.
-// Re-reading the offset at the corrected instant settles it.
-function wallClockToUtc(date: string, hhmm: string, timeZone: string): number {
-  const [hours, minutes] = hhmm.split(':').map(Number)
-  const naive = Date.parse(`${date}T00:00:00Z`) + (hours * 60 + minutes) * 60000
-
-  let instant = naive - offsetMinutes(naive, timeZone) * 60000
-  const settled = naive - offsetMinutes(instant, timeZone) * 60000
-  if (settled !== instant) instant = settled
-  return instant
-}
-
-// Minutes that `timeZone` is ahead of UTC at the given instant.
-function offsetMinutes(instant: number, timeZone: string): number {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    hour12: false,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  }).formatToParts(new Date(instant))
-
-  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0)
-  // Intl renders midnight as hour 24 in some ICU versions; normalise it.
-  const asUtc = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour') % 24, get('minute'), get('second'))
-  return Math.round((asUtc - instant) / 60000)
 }

@@ -6,6 +6,7 @@ import { effectiveDuration, type AppointmentTypeOverride } from '~/utils/appoint
 import { hasArrived, isUnconfirmedStage, nextStep, STAGE_TRACK, trackIndex } from '~/utils/appointmentStage'
 import { matchingMove, parseActivitySummary, type ActivityChange } from '~/utils/appointmentActivity'
 import type { VisitPayment } from '~/utils/visitPayment'
+import type { MoveClash } from '~/utils/moveClash'
 import type { BlockView } from '~/components/calendar/AppointmentBlock.vue'
 import type { StageFacts } from '~/composables/useAppointmentStage'
 import type { Database } from '~/types/database.types'
@@ -136,6 +137,10 @@ function outsideHours(at: Date) {
   if (!hasBusinessHoursConfigured(clinicHours) && !hasBusinessHoursConfigured(practitionerHours)) return false
   return !withinWindows(at.getHours() * 60 + at.getMinutes(), practitionerWindowsForDay(windowsForDay(at, clinicHours), practitionerHours, dayKeyFor(at)))
 }
+// What the new time, room or practitioner would land on, asked before saving
+// -- as a drag on the calendar asks (CalendarMoveClashDialog).
+const { findMoveClashes } = useMoveClashCheck()
+const editClashes = ref<MoveClash[] | null>(null)
 async function saveEdit() {
   error.value = ''
   const startsAt = new Date(`${form.date}T${form.time}`)
@@ -146,7 +151,31 @@ async function saveEdit() {
   // Instants, not strings: Postgres and toISOString() spell the same moment
   // differently, and comparing the strings marked every edit as a move.
   const same = (a: string, b: string) => new Date(a).getTime() === new Date(b).getTime()
-  const timeChanged = !same(startsAt.toISOString(), props.appointment.starts_at) || !same(endsAt.toISOString(), props.appointment.ends_at)
+  const placed =
+    !same(startsAt.toISOString(), props.appointment.starts_at) ||
+    !same(endsAt.toISOString(), props.appointment.ends_at) ||
+    (form.roomId || null) !== props.appointment.room_id ||
+    (form.practitionerId || null) !== props.appointment.practitioner_id
+  // Only when the visit is put somewhere else: changing just its type must not
+  // re-ask about a double booking that was made on purpose.
+  if (placed) {
+    busy.value = true
+    const clashes = await findMoveClashes({ appointmentId: props.appointment.id, practitionerId: form.practitionerId || null, roomId: form.roomId || null, startsAt, endsAt })
+    busy.value = false
+    if (clashes.length) {
+      editClashes.value = clashes
+      return
+    }
+  }
+  await commitEdit()
+}
+async function commitEdit() {
+  editClashes.value = null
+  const startsAt = new Date(`${form.date}T${form.time}`)
+  const endsAt = new Date(startsAt.getTime() + form.duration * 60000)
+  // A new start is a move; a longer or shorter visit starting when it did is
+  // not -- the patient is still expected when they were told.
+  const timeChanged = new Date(props.appointment.starts_at).getTime() !== startsAt.getTime()
   busy.value = true
   const { error: e } = await supabase
     .from('appointments')
@@ -719,6 +748,8 @@ const canAct = computed(() => props.appointment.status === 'booked' && !readOnly
   >
     <p class="text-[14px] leading-relaxed text-ink-500">{{ t('It disappears from the calendar. To keep a record that the patient did not come, cancel it instead.', 'Desaparece del calendario. Para dejar constancia de que el paciente no vino, cancélala en su lugar.') }}</p>
   </UiConfirmDialog>
+
+  <CalendarMoveClashDialog v-if="editClashes" :clashes="editClashes" :busy="busy" @confirm="commitEdit" @cancel="editClashes = null" />
 </template>
 
 <style scoped>

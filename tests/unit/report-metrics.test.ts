@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { savedReportConfig } from '../../utils/reportBlocks'
+import { pageTemplates, reportLibrary, savedReportConfig } from '../../utils/reportBlocks'
 import { comparisonRange, computeMetric, formatDelta, formatMetric, METRIC_BY_KEY, type Appt, type ReportData } from '../../utils/reportMetrics'
 
 const t = (en: string) => en
@@ -76,5 +76,21 @@ describe('report metrics', () => {
     expect(savedReportConfig({ source: 'patients', metric: 'count', groupBy: 'recall_status', chartType: 'table' })).toMatchObject({ metric: 'total_patients', split: 'status', chart: 'table' })
     expect(savedReportConfig({ v: 2, metric: 'pva', split: 'month', chart: 'line' })).toMatchObject({ metric: 'pva', split: 'month', chart: 'line' })
     expect(savedReportConfig({ source: 'nonsense' })).toBeNull()
+  })
+
+  it('offers visits by appointment type ready-made, and on the monthly template', () => {
+    const blocks = reportLibrary(t).flatMap((g) => g.blocks)
+    expect(blocks.some((b) => b.config.metric === 'visits_completed' && b.config.split === 'appointment_type')).toBe(true)
+    expect(blocks.some((b) => b.config.metric === 'visits_booked' && b.config.split === 'appointment_type')).toBe(true)
+    const monthly = pageTemplates(t).find((p) => p.key === 'monthly')!
+    expect(monthly.blocks.some((b) => b.config.split === 'appointment_type')).toBe(true)
+  })
+
+  it('counts completed visits per appointment type', () => {
+    const d = data([appt({ appointment_type_id: 'pv' }), appt({ appointment_type_id: 'aj' }), appt({ appointment_type_id: 'aj' }), appt({ appointment_type_id: 'aj', status: 'cancelled' })])
+    d.names.type.set('pv', 'Primera visita')
+    d.names.type.set('aj', 'Ajuste')
+    const r = computeMetric(METRIC_BY_KEY.get('visits_completed')!, 'appointment_type', d, june)
+    expect(Object.fromEntries(r.rows.map((x) => [x.label, x.value]))).toEqual({ Ajuste: 2, 'Primera visita': 1 })
   })
 })

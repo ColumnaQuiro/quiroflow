@@ -265,7 +265,7 @@ function onTabKeydown(event: KeyboardEvent) {
         :can-edit="can('patients_edit')"
         :can-manage-record="can('patients_delete_merge')"
         :can-book="true"
-        :can-charge="can('billing_history_view')"
+        :can-charge="can('billing_history_view') && can('payments_allocate')"
         :archiving="archiving"
         :primary-number="primaryNumber"
         :tutor="tutor"

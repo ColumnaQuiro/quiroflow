@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
-import { nextLeadReference } from '~/server/utils/leads'
+import { insertLead } from '~/server/utils/leads'
 import { receptionistHandlesNewLeads } from '~/server/utils/receptionist'
 
 // Turning an Instagram DM into a lead.
@@ -107,32 +107,26 @@ export async function leadForInstagramSender(
 
   const name = accessToken ? await fetchInstagramName(igsid, accessToken) : null
 
-  const { data: lead, error } = await supabase
-    .from('leads')
-    .insert({
-      account_id: accountId,
-      reference: await nextLeadReference(supabase, accountId),
-      // Named as honestly as Instagram allows. Not left blank: full_name is
-      // NOT NULL and a board of empty rows is worse than a board of
-      // placeholders somebody can rename.
-      full_name: name ?? placeholderName(igsid),
-      channel: 'instagram',
-      // Spelled so the dashboard's channelOf() reads it as its own channel --
-      // it splits a source on '·' and takes the head, which is how "Meta Ads
-      // · <campaign>" becomes the "Meta Ads" row.
-      source: 'Instagram',
-      external_source: 'instagram',
-      external_id: igsid,
-      // 'contacted' rather than 'new': they wrote first. 'new' means an
-      // enquiry nobody has spoken to, and the funnel counts it that way.
-      stage: 'contacted',
-      // Same rule as the form ingest: on means the receptionist has it.
-      // Especially here -- somebody who has just asked a question in a DM is
-      // the clearest case there is for a drafted reply already waiting.
-      ...((await receptionistHandlesNewLeads(supabase, accountId)) ? { ai_state: 'handling' as const } : {}),
-    })
-    .select('id')
-    .single()
+  const { data: lead, error } = await insertLead(supabase, accountId, {
+    // Named as honestly as Instagram allows. Not left blank: full_name is
+    // NOT NULL and a board of empty rows is worse than a board of
+    // placeholders somebody can rename.
+    full_name: name ?? placeholderName(igsid),
+    channel: 'instagram',
+    // Spelled so the dashboard's channelOf() reads it as its own channel --
+    // it splits a source on '·' and takes the head, which is how "Meta Ads
+    // · <campaign>" becomes the "Meta Ads" row.
+    source: 'Instagram',
+    external_source: 'instagram',
+    external_id: igsid,
+    // 'contacted' rather than 'new': they wrote first. 'new' means an
+    // enquiry nobody has spoken to, and the funnel counts it that way.
+    stage: 'contacted',
+    // Same rule as the form ingest: on means the receptionist has it.
+    // Especially here -- somebody who has just asked a question in a DM is
+    // the clearest case there is for a drafted reply already waiting.
+    ...((await receptionistHandlesNewLeads(supabase, accountId)) ? { ai_state: 'handling' as const } : {}),
+  })
 
   if (error) {
     console.error('[instagram] could not create a lead:', error.message)

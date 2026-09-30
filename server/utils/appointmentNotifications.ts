@@ -48,6 +48,13 @@ async function loadAppointmentContext(supabase: any, appointmentId: string): Pro
       'id, account_id, patient_id, starts_at, team_members(full_name), appointment_types(name), patients(first_name, last_name, email, preferred_language, is_minor, do_not_contact), clinics(name, address, phone, email, timezone)',
     )
     .eq('id', appointmentId)
+    // A deleted appointment is never messaged about. "Eliminar cita" only sets
+    // deleted_at (status stays 'booked'), so every sender that found one by id
+    // -- the reminder and hours-before crons, the confirmation catch-up --
+    // used to message the patient about an appointment the clinic had
+    // removed. Refused here as well as filtered in each query, so a caller
+    // that forgets the filter still sends nothing.
+    .is('deleted_at', null)
     .maybeSingle()
   if (!data || !data.patients) return null
 

@@ -52,6 +52,9 @@ const props = defineProps<{
   canChangePaymentMethod: boolean
   canWriteOff: boolean
   canRefund: boolean
+  // New Payment and Add Credit both write a `payments` row, which RLS only
+  // allows with payments_allocate.
+  canTakePayments: boolean
   /**
    * A receipt to open the refund modal for straight away, from
    * /billing/<id>'s Refund button. The receipt page deliberately does not
@@ -636,8 +639,8 @@ async function sendStatement() {
           </button>
           <div v-if="menuOpen" class="absolute right-0 z-10 mt-1 w-44 rounded-ctl border border-line bg-surface py-1 shadow-popover">
             <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="newInvoice">{{ t('New receipt', 'Nuevo recibo') }}</button>
-            <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="takePayment">{{ t('New Payment', 'Nuevo pago') }}</button>
-            <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="addCredit">{{ t('Add Credit', 'Añadir crédito') }}</button>
+            <button v-if="canTakePayments" type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="takePayment">{{ t('New Payment', 'Nuevo pago') }}</button>
+            <button v-if="canTakePayments" type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="addCredit">{{ t('Add Credit', 'Añadir crédito') }}</button>
             <button v-if="spendableCreditCents > 0" type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="openTransferCredit">
               {{ t('Transfer Credit', 'Transferir crédito') }}
             </button>

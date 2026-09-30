@@ -36,7 +36,9 @@ describe('Booking without a way to reach the patient', () => {
   beforeEach(() => {
     cy.seedStaffAccount().as('acct')
     cy.get('@acct').then((account: any) => {
-      cy.task('db:enableOnlineBooking', { clinicId: account.clinicId })
+      // Open every day: these book "N days from now", which is sometimes a
+      // weekend, and opening hours are not what they are about.
+      cy.task('db:enableOnlineBooking', { clinicId: account.clinicId, everyDay: true })
       cy.task('db:createAppointmentType', {
         accountId: account.accountId,
         name: 'Consultation',

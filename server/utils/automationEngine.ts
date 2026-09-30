@@ -282,6 +282,8 @@ export async function advanceRun(supabase: any, run: SequenceRun, origin: string
     supabase.from('automation_actions').select('id, action_type, position, config, parent_id, branch').eq('rule_id', run.rule_id).order('position'),
   ])
   const rule: EngineRule = ruleRow ?? { id: run.rule_id, account_id: run.account_id, name: '', trigger_event: '', dry_run: false, quiet_hours: null }
+
+  if (await appointmentGone(supabase, run, rule)) return
   const actions = ((actionRows ?? []) as EngineAction[]).map((a) => ({ ...a, parent_id: a.parent_id ?? null, branch: a.branch ?? null, config: a.config ?? {} }))
 
   const chainOf = (parentId: string | null, branch: string | null) => actions.filter((a) => a.parent_id === parentId && a.branch === branch)
@@ -534,6 +536,44 @@ async function loadSubject(supabase: any, run: SequenceRun): Promise<Subject | n
     return null
   }
   return { kind: 'patient', patient }
+}
+
+/**
+ * Rules whose whole subject is a visit that is still going to happen: a
+ * reminder "N hours before" it. Once that visit is cancelled, every step left
+ * in the run is about an appointment the patient no longer has.
+ */
+const UPCOMING_VISIT_TRIGGERS = ['appointment.hours_before']
+
+/**
+ * Ends a run whose appointment is no longer there, and says so. Returns true
+ * when it did.
+ *
+ * "Eliminar cita" sets deleted_at and leaves status 'booked', so the crons
+ * that START a rule learnt to skip it -- but a run that had already started
+ * carried its appointment_id past the delete, and at the next tick walked on
+ * and sent the rest of its steps about a visit that no longer existed. A
+ * deleted appointment ends any run tied to it. A cancelled one ends only a
+ * reminder's run: an "appointment.cancelled" rule exists precisely to follow
+ * a cancellation up, and a rebooking drip after a completed visit is not
+ * about whether some later one was cancelled.
+ *
+ * Checked before every advance, which is also the only time a run can act, so
+ * nothing has to find these runs at the moment of the delete.
+ */
+async function appointmentGone(supabase: any, run: SequenceRun, rule: EngineRule): Promise<boolean> {
+  if (!run.appointment_id) return false
+  const { data: appt } = await supabase.from('appointments').select('status, deleted_at').eq('id', run.appointment_id).maybeSingle()
+  if (!appt) return false
+  if (appt.deleted_at) {
+    await stopRun(supabase, run, 'appointment_deleted')
+    return true
+  }
+  if (appt.status === 'cancelled' && UPCOMING_VISIT_TRIGGERS.includes(rule.trigger_event)) {
+    await stopRun(supabase, run, 'appointment_cancelled')
+    return true
+  }
+  return false
 }
 
 /** The clinic whose clock quiet hours are read on: the appointment's, else the account's first. */
@@ -797,6 +837,8 @@ async function branchFacts(supabase: any, run: SequenceRun, subject: Subject, co
         .select('id', { count: 'exact', head: true })
         .eq('patient_id', p.id)
         .eq('status', 'booked')
+        // A deleted appointment keeps status 'booked'; it is not a future visit.
+        .is('deleted_at', null)
         .gt('starts_at', new Date().toISOString())
       facts.has_future_appointment = (count ?? 0) > 0
     }

@@ -83,7 +83,7 @@ export async function segmentAudience(service: any, accountId: string, filters: 
 
   if (candidates.length && f.has_future_appointment !== undefined) {
     const future = await allRows<{ patient_id: string }>((from, to) =>
-      service.from('appointments').select('patient_id').eq('account_id', accountId).eq('status', 'booked').gt('starts_at', new Date().toISOString()).order('id').range(from, to),
+      service.from('appointments').select('patient_id').eq('account_id', accountId).eq('status', 'booked').is('deleted_at', null).gt('starts_at', new Date().toISOString()).order('id').range(from, to),
     )
     const has = new Set(future.map((a) => a.patient_id))
     candidates = candidates.filter((p) => has.has(p.id) === f.has_future_appointment)

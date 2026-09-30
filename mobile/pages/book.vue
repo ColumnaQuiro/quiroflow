@@ -9,6 +9,8 @@ interface BookingClinic {
   name: string
   address: string | null
   business_hours: Record<string, [string, string][]>
+  /** The zone business_hours are written in. Absent before 20260930141539. */
+  timezone?: string | null
 }
 interface BookingAppointmentType {
   id: string
@@ -38,9 +40,14 @@ interface BookingTeamMember {
   full_name: string
   color: string
   clinic_ids: string[]
+  /**
+   * Their own week, which decides their slots when set (practitionerWindowsForDay).
+   * Absent before 20260930141539, when the clinic's hours were all the app had.
+   */
+  business_hours?: Record<string, [string, string][]> | null
 }
 interface BookingInfo {
-  settings: { max_days_ahead: number | null; booking_slug: string | null } | null
+  settings: { max_days_ahead: number | null; booking_slug: string | null; change_notice_hours?: number | null } | null
   clinics: BookingClinic[]
   appointment_types: BookingAppointmentType[]
   team_members: BookingTeamMember[]
@@ -83,6 +90,15 @@ const clinic = computed(() => info.value?.clinics.find((c) => c.id === clinicId.
 const appointmentType = computed(() => info.value?.appointment_types.find((t) => t.id === appointmentTypeId.value) ?? null)
 const teamMember = computed(() => info.value?.team_members.find((m) => m.id === teamMemberId.value) ?? null)
 const availablePractitioners = computed(() => (info.value?.team_members ?? []).filter((m) => m.clinic_ids.includes(clinicId.value)))
+// The practitioner whose calendar the slots come from. When moving an
+// appointment it is the appointment's own, which may not be listed for new
+// bookings -- then their hours are unknown here and the clinic's stand in;
+// reschedule_patient_appointment checks the real ones.
+const slotPractitioner = computed(() => info.value?.team_members.find((m) => m.id === teamMemberId.value) ?? null)
+// Every time here is the clinic's, as on the web page. Slots used to be built
+// with setHours, in the PHONE's zone, so a patient whose phone was set to
+// another zone was offered the clinic's hours shifted by the difference.
+const clinicTimeZone = computed(() => clinic.value?.timezone || DEFAULT_CLINIC_TIMEZONE)
 
 const effectiveDurationMinutes = computed(() =>
   rescheduleTarget.value
@@ -170,11 +186,11 @@ async function startReschedule(parsed: BookingInfo) {
 const canContinueFromSelect = computed(() => !!clinicId.value && !!appointmentTypeId.value && !!teamMemberId.value)
 
 // --- date/time ---
-const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
-
 const viewMonth = ref(startOfMonth(new Date()))
 const selectedDate = ref<Date | null>(null)
 const selectedSlot = ref<Date | null>(null)
+// The practitioner's appointments and the blocks that apply to them (their
+// own, and whole-clinic closures), for the selected day.
 const busyRanges = ref<{ starts_at: string; ends_at: string }[]>([])
 const slotsLoading = ref(false)
 
@@ -183,11 +199,6 @@ function startOfMonth(d: Date) {
 }
 function isSameDay(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
-}
-function today() {
-  const d = new Date()
-  d.setHours(0, 0, 0, 0)
-  return d
 }
 
 const monthLabel = computed(() => viewMonth.value.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }))
@@ -204,6 +215,15 @@ const maxDaysAhead = computed(() => typeMaxDaysAhead.value ?? info.value?.settin
 const typeName = computed(() => rescheduleTarget.value?.appointment_types?.name ?? appointmentType.value?.name ?? '')
 const practitionerName = computed(() => rescheduleTarget.value?.team_members?.full_name ?? teamMember.value?.full_name ?? '')
 const latestStart = computed(() => new Date(Date.now() + maxDaysAhead.value * 86400000))
+// Calendar cells compared as the clinic's dates.
+const clinicToday = computed(() => clinicDateOf(new Date(), clinicTimeZone.value))
+const lastBookableDate = computed(() => clinicDateOf(latestStart.value, clinicTimeZone.value))
+// reschedule_patient_appointment refuses a new time inside the clinic's
+// change notice ("Please choose a time further ahead"), and this page offered
+// those times all the same. The earliest start it will take, when moving.
+const earliestStart = computed(() =>
+  rescheduleTarget.value ? new Date(Date.now() + (info.value?.settings?.change_notice_hours ?? 0) * 3600000) : new Date(),
+)
 const lastBookableDay = computed(() => {
   const d = new Date(latestStart.value)
   d.setHours(23, 59, 59, 999)
@@ -224,20 +244,22 @@ const calendarDays = computed(() => {
   for (let i = 0; i < 42; i++) {
     const date = new Date(gridStart)
     date.setDate(gridStart.getDate() + i)
+    const key = calendarDateKey(date)
     days.push({
       date,
       inMonth: date.getMonth() === first.getMonth(),
-      bookable: dayHasHours(date) && date >= today() && date <= lastBookableDay.value,
+      bookable: dayHasHours(date) && key >= clinicToday.value && key <= lastBookableDate.value,
     })
   }
   return days
 })
 
+// The practitioner's own week when they have one, the clinic's otherwise --
+// the web page's rule. The clinic's alone offered a practitioner's days off.
 function dayHasHours(date: Date) {
   const hours = clinic.value?.business_hours
   if (!hours) return false
-  const windows = hours[WEEKDAY_KEYS[date.getDay()]]
-  return !!windows && windows.length > 0
+  return bookingWindowsFor(calendarDateKey(date), hours, slotPractitioner.value?.business_hours).length > 0
 }
 
 function prevMonth() {
@@ -254,48 +276,47 @@ async function selectDate(day: { date: Date; bookable: boolean }) {
   selectedDate.value = day.date
   selectedSlot.value = null
   slotsLoading.value = true
-  const dayStart = new Date(day.date)
-  dayStart.setHours(0, 0, 0, 0)
-  const dayEnd = new Date(day.date)
-  dayEnd.setHours(23, 59, 59, 999)
-  const { data } = await supabase.rpc('get_booking_busy_times', {
-    p_clinic_id: clinicId.value,
-    p_team_member_id: teamMemberId.value,
-    p_from: dayStart.toISOString(),
-    p_to: dayEnd.toISOString(),
-  })
+  // A day either side of the phone's day: the clinic's day can start or end
+  // outside it when the two zones differ.
+  const from = new Date(day.date.getTime() - 86400000).toISOString()
+  const to = new Date(day.date.getTime() + 2 * 86400000).toISOString()
+  const [{ data }, { data: blocked }] = await Promise.all([
+    supabase.rpc('get_booking_busy_times', {
+      p_clinic_id: clinicId.value,
+      p_team_member_id: teamMemberId.value,
+      p_from: from,
+      p_to: to,
+    }),
+    // Closures and time blocked off, which the app never asked for: a bank
+    // holiday or a practitioner's afternoon off was offered like any other.
+    // One naming nobody closes the clinic for everyone, as on the web page.
+    supabase.rpc('get_booking_blocked_times', { p_clinic_id: clinicId.value, p_from: from, p_to: to }),
+  ])
   // The appointment being moved is busy time on this practitioner's
   // calendar, but not in its own way: reschedule_patient_appointment skips it.
-  busyRanges.value = ((data as { starts_at: string; ends_at: string }[]) ?? []).filter(
+  const appointments = ((data as { starts_at: string; ends_at: string }[]) ?? []).filter(
     (b) => !rescheduleTarget.value || new Date(b.starts_at).getTime() !== new Date(rescheduleTarget.value.starts_at).getTime() || new Date(b.ends_at).getTime() !== new Date(rescheduleTarget.value.ends_at).getTime(),
   )
+  const blocks = ((blocked as { starts_at: string; ends_at: string; practitioner_id: string | null }[]) ?? []).filter(
+    (b) => b.practitioner_id === null || b.practitioner_id === teamMemberId.value,
+  )
+  busyRanges.value = [...appointments, ...blocks]
   slotsLoading.value = false
 }
 
+// Built as the web page builds them (utils/bookingSlots.ts).
 const daySlots = computed(() => {
   if (!selectedDate.value || effectiveDurationMinutes.value <= 0) return []
-  const windows = clinic.value?.business_hours?.[WEEKDAY_KEYS[selectedDate.value.getDay()]] ?? []
-  const duration = effectiveDurationMinutes.value
-  const now = new Date()
-  const slots: Date[] = []
-  for (const [startStr, endStr] of windows) {
-    const [sh, sm] = startStr.split(':').map(Number)
-    const [eh, em] = endStr.split(':').map(Number)
-    let cursor = new Date(selectedDate.value)
-    cursor.setHours(sh, sm, 0, 0)
-    const windowEnd = new Date(selectedDate.value)
-    windowEnd.setHours(eh, em, 0, 0)
-    while (true) {
-      const slotEnd = new Date(cursor.getTime() + duration * 60000)
-      if (slotEnd > windowEnd) break
-      if (cursor > now && cursor <= latestStart.value) {
-        const overlaps = busyRanges.value.some((b) => new Date(b.starts_at) < slotEnd && new Date(b.ends_at) > cursor)
-        if (!overlaps) slots.push(new Date(cursor))
-      }
-      cursor = new Date(cursor.getTime() + duration * 60000)
-    }
-  }
-  return slots
+  return bookingSlotsForDay({
+    date: calendarDateKey(selectedDate.value),
+    timeZone: clinicTimeZone.value,
+    clinicHours: clinic.value?.business_hours,
+    practitionerHours: slotPractitioner.value?.business_hours,
+    durationMinutes: effectiveDurationMinutes.value,
+    busy: busyRanges.value,
+    notBefore: earliestStart.value,
+    notAfter: latestStart.value,
+  })
 })
 
 function pickSlot(slot: Date) {
@@ -448,7 +469,7 @@ async function submitBooking() {
             class="rounded-ctl border border-line-control py-2 text-[12.5px] text-ink-700 hover:border-brand hover:text-brand-text"
             @click="pickSlot(slot)"
           >
-            {{ slot.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
+            {{ slot.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: clinicTimeZone }) }}
           </button>
         </div>
       </div>
@@ -458,7 +479,7 @@ async function submitBooking() {
       <div class="rounded-card border border-line bg-surface p-4">
         <p class="text-[13.5px] font-medium text-ink-900">{{ typeName }}</p>
         <p v-if="practitionerName" class="mt-1 text-[12.5px] text-ink-muted">with {{ practitionerName }}</p>
-        <p class="mt-1 text-[12.5px] text-ink-muted">{{ selectedSlot?.toLocaleString([], { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) }}</p>
+        <p class="mt-1 text-[12.5px] text-ink-muted">{{ selectedSlot?.toLocaleString([], { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: clinicTimeZone }) }}</p>
         <p v-if="appointmentType && !rescheduleTarget" class="mt-1 text-[12.5px] text-ink-muted">{{ formatPrice(effectivePrice) }}</p>
       </div>
       <!-- The reschedule RPC moves the existing appointment and takes no
@@ -475,7 +496,7 @@ async function submitBooking() {
 
     <div v-else-if="phase === 'success'" class="flex flex-1 flex-col items-center justify-center gap-3 text-center">
       <p class="text-[15px] font-semibold text-ink-900">Appointment booked</p>
-      <p class="text-[13px] text-ink-muted">{{ confirmation && new Date(confirmation.starts_at).toLocaleString([], { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) }}</p>
+      <p class="text-[13px] text-ink-muted">{{ confirmation && new Date(confirmation.starts_at).toLocaleString([], { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: clinicTimeZone }) }}</p>
       <NuxtLink to="/" class="mt-2 text-[13px] font-medium text-brand-text">Back to home</NuxtLink>
     </div>
   </div>

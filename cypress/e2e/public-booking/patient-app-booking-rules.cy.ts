@@ -28,7 +28,9 @@ describe('Booking from the patient app follows the type rules', () => {
     cy.wrap(email).as('email')
     cy.seedStaffAccount().as('acct')
     cy.get('@acct').then((account: any) => {
-      cy.task('db:enableOnlineBooking', { clinicId: account.clinicId })
+      // Open every day: these book "N days from now", which is sometimes a
+      // weekend, and opening hours are not what they are about.
+      cy.task('db:enableOnlineBooking', { clinicId: account.clinicId, everyDay: true })
       cy.task<{ id: string }>('db:createPatient', {
         accountId: account.accountId,
         clinicId: account.clinicId,

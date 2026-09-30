@@ -46,6 +46,8 @@ async function load() {
     .select('id, patient_id, starts_at, ends_at, status, patients(first_name, last_name), appointment_types(name, color), team_members(full_name)')
     .eq('clinic_id', context.value.clinicId)
     .neq('status', 'cancelled')
+    // Deleted on the web calendar: status stays 'booked', only deleted_at is set.
+    .is('deleted_at', null)
     .gte('starts_at', start.toISOString())
     .lt('starts_at', end.toISOString())
     .order('starts_at')

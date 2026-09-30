@@ -7,6 +7,7 @@
 //    purpose (the sidebar's clinic already scopes it).
 //  - The custom report's Patients source read one unpaged select, which
 //    PostgREST caps at 1,000 rows, so a bigger clinic's counts stopped there.
+//    Custom Reports became report pages; that case is in report-pages.cy.ts.
 const REPORTS_WITH_CLINIC_FILTER = [
   '/reports/income',
   '/reports/income-performance',
@@ -66,20 +67,5 @@ describe('Reports: clinic filter and large patient lists', () => {
     morningTotal().should('have.text', '1')
     cy.get('[data-cy="report-clinic-filter"]').select('All clinics')
     morningTotal().should('have.text', '3')
-  })
-
-  it('the custom report counts every patient, not the first 1,000', () => {
-    cy.visit('/reports/custom')
-    cy.contains('label', 'Data source').parent().find('select').select('Patients')
-    cy.contains('label', 'Chart').parent().find('select').select('Table')
-    // Summed across whatever rows the grouping gives, against the account's
-    // own count -- 1,052 seeded here plus anything the staff seed adds.
-    cy.task<number>('db:patientCount', { accountId }).then((expected) => {
-      expect(expected).to.be.greaterThan(1000)
-      cy.get('table tbody tr td:last-child').should(($cells) => {
-        const total = [...$cells].reduce((sum, td) => sum + Number(td.textContent), 0)
-        expect(total).to.eq(expected)
-      })
-    })
   })
 })

@@ -4792,6 +4792,57 @@ export type Database = {
           },
         ]
       }
+      report_pages: {
+        Row: {
+          account_id: string
+          blocks: Json
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          settings: Json
+          updated_at: string
+          visibility: string
+        }
+        Insert: {
+          account_id: string
+          blocks?: Json
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          settings?: Json
+          updated_at?: string
+          visibility?: string
+        }
+        Update: {
+          account_id?: string
+          blocks?: Json
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          settings?: Json
+          updated_at?: string
+          visibility?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "report_pages_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "report_pages_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       reschedule_reasons: {
         Row: {
           account_id: string

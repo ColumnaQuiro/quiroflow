@@ -79,29 +79,36 @@ function patientName(id: string) {
   const p = patientsById.value.get(id)
   return p ? `${p.first_name} ${p.last_name}` : '—'
 }
+
+// What "Download PDF" reads: the sections below marked data-pdf-block,
+// and the figure tiles (components/reports/Stat.vue).
+const pdfRoot = ref<HTMLElement | null>(null)
 </script>
 
 <template>
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Debtors', 'Deudores')" :meta="t('Package/bono purchases with no paid receipt', 'Compras de bonos/paquetes sin recibo pagado')">
-      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+      <div class="flex items-center gap-3">
+        <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+        <ReportsPdfButton :target="pdfRoot" :title="t('Debtors', 'Deudores')" />
+      </div>
     </PageHeader>
 
-    <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
+    <div ref="pdfRoot" class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
       <p class="text-[13px] text-ink-muted2">{{ t('Includes any Stripe autopay charge that failed.', 'Incluye cualquier cobro automático de Stripe que haya fallado.') }}</p>
 
-      <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card" :aria-busy="loading || undefined">
+      <div class="mt-4 rounded-card border border-line bg-surface p-4 shadow-card" :aria-busy="loading || undefined" data-pdf-kpi>
         <template v-if="loading">
           <div class="flex items-center font-mono text-[23px]" aria-hidden="true">&#8203;<UiSkeleton class="h-[23px] w-24 rounded-ctlSm" /></div>
           <p class="text-[12px] text-ink-muted2">{{ t('Total outstanding', 'Total pendiente') }}</p>
         </template>
         <template v-else>
-          <p class="font-mono text-[23px] font-semibold text-ink-900">{{ formatEur(totalOwed) }}</p>
-          <p class="text-[12px] text-ink-muted2">{{ t(`Total outstanding across ${debtors.length} purchase(s)`, `Total pendiente en ${debtors.length} compra(s)`) }}</p>
+          <p class="font-mono text-[23px] font-semibold text-ink-900" data-pdf-value>{{ formatEur(totalOwed) }}</p>
+          <p class="text-[12px] text-ink-muted2" data-pdf-label>{{ t(`Total outstanding across ${debtors.length} purchase(s)`, `Total pendiente en ${debtors.length} compra(s)`) }}</p>
         </template>
       </div>
 
-      <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
+      <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card" data-pdf-block="table" :data-pdf-title="t('Package/bono purchases with no paid receipt', 'Compras de bonos/paquetes sin recibo pagado')">
         <table class="w-full text-[13px]">
           <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">
             <tr>

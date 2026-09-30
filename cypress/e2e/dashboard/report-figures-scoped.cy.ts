@@ -56,7 +56,7 @@ describe('Report and dashboard figures, narrowed by role', () => {
   })
 
   it('refuses a practitioner the reports that cannot be narrowed to them', () => {
-    for (const path of ['/reports/debtors', '/reports/memberships', '/reports/scheduled-reminders', '/reports/custom']) {
+    for (const path of ['/reports/debtors', '/reports/memberships', '/reports/scheduled-reminders']) {
       open(beatriz, path)
       cy.location('pathname').should('not.eq', path)
     }

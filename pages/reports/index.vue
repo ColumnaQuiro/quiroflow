@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { newBlockId, normaliseBlocks, pageTemplates } from '~/utils/reportBlocks'
+
 const ICONS = {
   bell: 'M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0',
   calendar: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z',
@@ -13,8 +15,6 @@ const ICONS = {
   badgeCheck:
     'M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z',
   arrowDownTray: 'M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3',
-  adjustments:
-    'M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75',
 }
 const t = useT()
 const allGroups = computed(() => [
@@ -46,7 +46,6 @@ const allGroups = computed(() => [
     label: t('Data', 'Datos'),
     items: [
       { to: '/reports/data-exports', label: t('Data Exports', 'Exportaciones de datos'), description: t('Patients missing an email, phone, or a consent/data protection form.', 'Pacientes sin correo, teléfono o formulario de consentimiento/protección de datos.'), icon: ICONS.arrowDownTray },
-      { to: '/reports/custom', label: t('Custom Reports', 'Informes personalizados'), description: t('Build and save your own report: source, metric, and chart.', 'Crea y guarda tu propio informe: fuente, métrica y gráfico.'), icon: ICONS.adjustments },
     ],
   },
 ])
@@ -59,21 +58,171 @@ const { reportsPractitionerId } = useOwnScope()
 const groups = computed(() =>
   allGroups.value.map((g) => ({ ...g, items: g.items.filter((i) => isRouteAllowed(store, i.to)) })).filter((g) => g.items.length > 0),
 )
+
+// ---- Report pages -----------------------------------------------------------
+// The clinic's own dashboards, above the standard reports. Row-level security
+// already hides someone else's private page.
+interface PageCard {
+  id: string
+  name: string
+  visibility: string
+  blocks: unknown
+  updated_at: string
+  created_by: string | null
+}
+const supabase = useSupabaseClient()
+const router = useRouter()
+const toast = useToast()
+const pages = ref<PageCard[]>([])
+const pagesLoading = ref(true)
+const memberNames = ref(new Map<string, string>())
+onMounted(async () => {
+  const [{ data }, { data: members }] = await Promise.all([
+    supabase.from('report_pages').select('id, name, visibility, blocks, updated_at, created_by').order('updated_at', { ascending: false }),
+    supabase.from('team_members').select('id, full_name'),
+  ])
+  pages.value = (data ?? []) as PageCard[]
+  memberNames.value = new Map((members ?? []).map((m) => [m.id, m.full_name]))
+  pagesLoading.value = false
+})
+const cards = computed(() =>
+  pages.value.map((p) => {
+    const blocks = normaliseBlocks(p.blocks)
+    const who = p.visibility === 'clinic' ? t('Whole clinic', 'Toda la clínica') : t('Only me', 'Solo yo')
+    const by = p.created_by ? memberNames.value.get(p.created_by) : null
+    const when = new Date(p.updated_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+    return {
+      ...p,
+      blocks,
+      meta: [who, by, t(`edited ${when}`, `editada el ${when}`)].filter(Boolean).join(' · '),
+      summary: blocks.slice(0, 4).map((b) => b.title).join(', '),
+    }
+  }),
+)
+
+const templates = computed(() => pageTemplates(t))
+const creating = ref(false)
+const newName = ref('')
+const newVisibility = ref<'clinic' | 'private'>('clinic')
+const newTemplate = ref<string>('')
+watch(newTemplate, (key) => {
+  const tpl = templates.value.find((x) => x.key === key)
+  if (tpl && (!newName.value || templates.value.some((x) => x.name === newName.value))) newName.value = tpl.name
+})
+function openCreate(templateKey = '') {
+  newTemplate.value = templateKey
+  newName.value = templates.value.find((x) => x.key === templateKey)?.name ?? ''
+  newVisibility.value = 'clinic'
+  creating.value = true
+}
+async function createPage() {
+  const name = newName.value.trim()
+  if (!name || !store.accountId) return
+  const tpl = templates.value.find((x) => x.key === newTemplate.value)
+  const { data, error } = await supabase
+    .from('report_pages')
+    .insert({
+      account_id: store.accountId,
+      name,
+      visibility: newVisibility.value,
+      blocks: (tpl?.blocks ?? []).map((b) => ({ ...b, id: newBlockId() })) as never,
+      settings: { period: 'this_month', compare: 'previous_period' } as never,
+      created_by: store.teamMember?.id ?? null,
+    })
+    .select('id')
+    .single()
+  if (error || !data) {
+    toast.showToast(t('The page was not created: ', 'La página no se ha creado: ') + (error?.message ?? ''), 'error')
+    return
+  }
+  creating.value = false
+  router.push({ path: `/reports/pages/${data.id}`, query: tpl ? {} : { edit: '1' } })
+}
+const SPAN_MINI: Record<number, string> = { 3: 'col-span-3', 4: 'col-span-4', 6: 'col-span-6', 8: 'col-span-8', 12: 'col-span-12' }
 </script>
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader :title="t('Reports', 'Informes')" />
+    <PageHeader :title="t('Reports', 'Informes')">
+      <UiBtn variant="primary" data-cy="report-page-new" @click="openCreate()">+ {{ t('New report page', 'Nueva página de informes') }}</UiBtn>
+    </PageHeader>
     <div class="flex-1 overflow-y-auto">
       <div class="p-4 sm:p-6">
         <p class="text-[13px] text-ink-muted2">{{ t('Metrics across patients, appointments, and billing. Each report below has its own filters and date range.', 'Métricas de pacientes, citas y facturación. Cada informe tiene sus propios filtros y periodo.') }}</p>
         <p v-if="reportsPractitionerId" class="mt-3 max-w-[960px] rounded-ctl border border-line bg-surface-subtle px-3.5 py-3 text-[13.5px] leading-snug text-ink-700" data-cy="reports-own-only-note">
           {{ t('Your role shows you only your own figures: your appointments, your takings and your patients.', 'Tu rol te enseña solo tus datos: tus citas, tus cobros y tus pacientes.') }}
         </p>
-        <div class="mt-8 max-w-[960px]">
+        <section class="mt-6 max-w-[960px]" data-cy="report-pages">
+          <h2 class="text-[15px] font-[620] text-ink-900">{{ t('Report pages', 'Páginas de informes') }}</h2>
+          <p class="mt-0.5 text-[13px] text-ink-muted2">{{ t('Your own dashboards: the numbers you look at together on one page, downloadable as a PDF.', 'Tus propios paneles: las cifras que miras juntas en una página, descargables en PDF.') }}</p>
+          <div class="mt-3.5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <template v-if="pagesLoading">
+              <UiSkeleton v-for="i in 3" :key="i" class="h-40 rounded-card" />
+            </template>
+            <NuxtLink
+              v-for="p in cards"
+              v-else
+              :key="p.id"
+              :to="`/reports/pages/${p.id}`"
+              class="group flex flex-col overflow-hidden rounded-card border border-line bg-surface shadow-card transition-colors hover:border-brand-tintBorder"
+              data-cy="report-page-card"
+            >
+              <div class="grid grid-cols-12 gap-1 border-b border-line-row bg-surface-subtle p-3" aria-hidden="true">
+                <span v-for="b in p.blocks.slice(0, 8)" :key="b.id" :class="[SPAN_MINI[b.span], b.config.chart === 'number' ? 'h-4 bg-brand-tint' : 'h-8 bg-brand-tintBorder']" class="rounded-sm" />
+                <span v-if="p.blocks.length === 0" class="col-span-12 h-8 rounded-sm border border-dashed border-line-control" />
+              </div>
+              <div class="flex flex-col gap-0.5 p-3">
+                <span class="text-[14px] font-semibold text-ink-900 group-hover:text-brand-text">{{ p.name }}</span>
+                <span class="line-clamp-1 text-[12.5px] text-ink-muted2">{{ p.summary || t('No blocks yet', 'Sin bloques todavía') }}</span>
+                <span class="text-[12px] text-ink-faint2">{{ p.meta }}</span>
+              </div>
+            </NuxtLink>
+          </div>
+          <div class="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-card border border-dashed border-line-control px-3.5 py-2.5 text-[13px] text-ink-muted2">
+            <button type="button" class="font-medium text-brand-text hover:underline" @click="openCreate()">+ {{ t('New page', 'Nueva página') }}</button>
+            <span>{{ t('— start empty, or from a template:', '— vacía, o desde una plantilla:') }}</span>
+            <template v-for="(tpl, i) in templates" :key="tpl.key">
+              <span v-if="i > 0" aria-hidden="true">·</span>
+              <button type="button" class="text-brand-text hover:underline" :data-cy="`report-template-${tpl.key}`" @click="openCreate(tpl.key)">{{ tpl.name }}</button>
+            </template>
+          </div>
+        </section>
+
+        <div class="mt-10 max-w-[960px]">
+          <h2 class="text-[15px] font-[620] text-ink-900">{{ t('Standard reports', 'Informes estándar') }}</h2>
+          <p class="mb-5 mt-0.5 text-[13px] text-ink-muted2">{{ t('Each one downloads as a PDF with its filters, and its sections can be added to a report page.', 'Cada uno se descarga en PDF con sus filtros, y sus secciones se pueden añadir a una página de informes.') }}</p>
           <IconLinkGrid :groups="groups" />
         </div>
       </div>
     </div>
+
+    <UiConfirmDialog
+      v-if="creating"
+      :title="t('New report page', 'Nueva página de informes')"
+      :confirm-label="t('Create', 'Crear')"
+      :cancel-label="t('Cancel', 'Cancelar')"
+      :disabled="!newName.trim()"
+      @confirm="createPage"
+      @cancel="creating = false"
+    >
+      <div class="space-y-3 text-left" data-cy="report-page-create">
+        <label class="block text-[12.5px] font-medium text-ink-700">
+          {{ t('Name', 'Nombre') }}
+          <input v-model="newName" type="text" maxlength="120" data-cy="report-page-create-name" class="mt-1 h-9 w-full rounded-ctl border border-line-control px-3 text-[13px] font-normal focus:border-brand focus:outline-none" />
+        </label>
+        <label class="block text-[12.5px] font-medium text-ink-700">
+          {{ t('Start from', 'Empezar desde') }}
+          <select v-model="newTemplate" data-cy="report-page-create-template" class="mt-1 h-9 w-full rounded-ctl border border-line-control bg-surface px-2.5 text-[13px] font-normal">
+            <option value="">{{ t('An empty page', 'Una página vacía') }}</option>
+            <option v-for="tpl in templates" :key="tpl.key" :value="tpl.key">{{ tpl.name }} — {{ tpl.description }}</option>
+          </select>
+        </label>
+        <fieldset class="space-y-1.5 text-[13px] text-ink-700">
+          <legend class="mb-1 text-[12.5px] font-medium">{{ t('Who can see it', 'Quién puede verla') }}</legend>
+          <label class="flex items-center gap-2"><input v-model="newVisibility" type="radio" value="clinic" class="accent-brand" /> {{ t('Everyone in the clinic with access to reports', 'Todos en la clínica con acceso a informes') }}</label>
+          <label class="flex items-center gap-2"><input v-model="newVisibility" type="radio" value="private" class="accent-brand" data-cy="report-page-create-private" /> {{ t('Only me', 'Solo yo') }}</label>
+        </fieldset>
+      </div>
+    </UiConfirmDialog>
   </div>
 </template>

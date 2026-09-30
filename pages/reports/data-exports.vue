@@ -269,15 +269,22 @@ function redownload(exp: GeneratedExport) {
   a.download = exp.filename
   a.click()
 }
+
+// What "Download PDF" reads: the sections below marked data-pdf-block,
+// and the figure tiles (components/reports/Stat.vue).
+const pdfRoot = ref<HTMLElement | null>(null)
 </script>
 
 <template>
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Data Exports', 'Exportaciones de datos')" :meta="t('Export patient data, or find gaps in patient records worth chasing down', 'Exporta datos de pacientes o encuentra huecos en los registros que merezca la pena resolver')">
-      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+      <div class="flex items-center gap-3">
+        <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+        <ReportsPdfButton :target="pdfRoot" :title="t('Data Exports', 'Exportaciones de datos')" />
+      </div>
     </PageHeader>
 
-    <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
+    <div ref="pdfRoot" class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
       <div v-if="loading" class="mx-auto max-w-3xl space-y-3 rounded-card border border-line bg-surface p-5 shadow-card">
         <UiSkeleton class="h-4 w-48 rounded-ctlSm" />
         <UiSkeleton class="h-3 w-64 rounded-ctlSm" />
@@ -400,7 +407,7 @@ function redownload(exp: GeneratedExport) {
           <p class="text-[12.5px] text-ink-muted2">{{ t('To generate a data export, choose from the options above.', 'Para generar una exportación de datos, elige entre las opciones anteriores.') }}</p>
         </div>
 
-        <div v-else class="rounded-card border border-line bg-surface shadow-card">
+        <div v-else class="rounded-card border border-line bg-surface shadow-card" data-pdf-block="image">
           <p class="border-b border-line-divider px-4 py-2.5 text-[12.5px] font-medium text-ink-600">{{ t('Generated this session', 'Generado en esta sesión') }}</p>
           <ul class="divide-y divide-line-row">
             <li v-for="exp in generatedExports" :key="exp.id" class="flex items-center justify-between gap-3 px-4 py-3">
@@ -408,12 +415,12 @@ function redownload(exp: GeneratedExport) {
                 <p class="truncate text-[13px] font-medium text-ink-900">{{ exp.dataTypeLabel }} — {{ t(`${exp.rowCount} row${exp.rowCount === 1 ? '' : 's'}`, `${exp.rowCount} fila${exp.rowCount === 1 ? '' : 's'}`) }}</p>
                 <p class="truncate text-[12px] text-ink-muted2">{{ exp.filterSummary }} · {{ new Date(exp.generatedAt).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) }}</p>
               </div>
-              <UiBtn variant="ghost" size="sm" class="shrink-0" @click="redownload(exp)">{{ t('Download CSV', 'Descargar CSV') }}</UiBtn>
+              <UiBtn variant="ghost" size="sm" class="shrink-0" data-pdf-skip @click="redownload(exp)">{{ t('Download CSV', 'Descargar CSV') }}</UiBtn>
             </li>
           </ul>
         </div>
 
-        <div class="rounded-card border border-line bg-surface p-4 shadow-card">
+        <div class="rounded-card border border-line bg-surface p-4 shadow-card" data-pdf-block="image">
           <h3 class="text-[13.5px] font-semibold text-ink-800">{{ t('Patients per practitioner', 'Pacientes por profesional') }}</h3>
           <ul class="mt-2 space-y-1.5">
             <li

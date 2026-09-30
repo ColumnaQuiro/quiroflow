@@ -22,7 +22,7 @@ withDefaults(
 </script>
 
 <template>
-  <section class="rounded-card border border-line bg-surface p-4 shadow-card" :aria-busy="loading || undefined">
+  <section class="rounded-card border border-line bg-surface p-4 shadow-card" :aria-busy="loading || undefined" data-pdf-block :data-pdf-title="title">
     <h3 class="text-[13.5px] font-semibold text-ink-800">{{ title }}</h3>
     <p v-if="description" class="text-[12px] text-ink-faint2">{{ description }}</p>
     <template v-if="loading">

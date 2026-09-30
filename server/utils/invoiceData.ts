@@ -2,6 +2,7 @@ import PDFDocument from 'pdfkit'
 import { VERIFACTU_QR_LABEL, VERIFACTU_QR_LEGEND } from '../../utils/verifactuQr'
 import { exemptionClause, facturaTaxFor } from '../../utils/facturaTax'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { invoiceDueCents } from '../../utils/settleInvoice'
 import type { Database } from '~/types/database.types'
 
 // PDF points per millimetre: the Orden sizes the VERI*FACTU QR in mm.
@@ -100,7 +101,7 @@ export async function loadInvoiceDocumentData(
   const { data: invoice } = await supabase
     .from('invoices')
     .select(
-      'invoice_number, created_at, total_cents, account_id, patient_id, patients(first_name, last_name, email, address, city, postal_code, country, national_id, date_of_birth), appointments(clinic_id, practitioner_id, practitioner_name)',
+      'invoice_number, created_at, total_cents, status, account_id, patient_id, patients(first_name, last_name, email, address, city, postal_code, country, national_id, date_of_birth), appointments(clinic_id, practitioner_id, practitioner_name)',
     )
     .eq('id', invoiceId)
     .maybeSingle()
@@ -205,7 +206,9 @@ export async function loadInvoiceDocumentData(
     createdAt: invoice.created_at,
     totalCents: invoice.total_cents,
     paidCents,
-    balanceDueCents: invoice.total_cents - paidCents,
+    // What the patient is told they still owe: nothing on a paid or void
+    // receipt, even with no payment rows under it (a bono visit).
+    balanceDueCents: invoiceDueCents(invoice, paidCents),
     lineItems: lineItems ?? [],
     patient: patient
       ? {

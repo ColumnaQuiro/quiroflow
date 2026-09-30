@@ -394,6 +394,12 @@ async function addClinic(opts: { accountId: string; name: string }) {
   return { id: row.id as string }
 }
 
+/** Has somebody work at one more of the account's clinics, as Settings -> Team -> <member> -> Clinics does. */
+async function linkTeamMemberToClinic(opts: { teamMemberId: string; clinicId: string }) {
+  assertOk(await admin.from('team_member_clinics').insert({ team_member_id: opts.teamMemberId, clinic_id: opts.clinicId }))
+  return { ok: true }
+}
+
 /** A patient's place in the recall queue, set directly or read back. */
 async function setRecallState(opts: { patientId: string; status?: 'active' | 'dismissed'; dismissedAt?: string | null; snoozedUntil?: string | null }) {
   assertOk(
@@ -3708,6 +3714,7 @@ export const dbTasks = {
   'db:setTeamMemberHours': setTeamMemberHours,
   'db:setRecallState': setRecallState,
   'db:addClinic': addClinic,
+  'db:linkTeamMemberToClinic': linkTeamMemberToClinic,
   'db:recallState': recallState,
   'db:teamMemberById': teamMemberById,
   'db:teamMemberDetail': teamMemberDetail,

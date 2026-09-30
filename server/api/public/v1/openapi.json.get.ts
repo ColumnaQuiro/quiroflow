@@ -331,7 +331,7 @@ function availabilityPath() {
         '- a practitioner’s own weekly hours are authoritative and are **not** narrowed by the clinic’s;',
         '- the clinic’s hours are the fallback for a practitioner who has never set their own;',
         '- slots step by the appointment’s own length, so anything returned here is bookable as-is;',
-        '- existing appointments and availability blocks remove slots, and slots in the past are omitted.',
+        '- existing appointments and availability blocks remove slots — a practitioner’s appointments at any of the account’s clinics, since they cannot be in two places at once — and slots in the past are omitted.',
         '',
         'Unlike the public booking page this includes practitioners whose `online_booking_enabled` is false — an authenticated integration acts for the clinic. The flag is returned per practitioner so a patient-facing widget can filter on it.',
       ].join('\n'),

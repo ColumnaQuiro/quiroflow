@@ -162,6 +162,33 @@ async function findLeadIdByPhone(supabase: ReturnType<typeof serverSupabaseServi
   return null
 }
 
+// How far along a message is. 'failed' is not on this ladder: it is terminal,
+// and nothing that arrives after it -- a late 'sent' in particular -- may
+// replace it or clear the error it recorded.
+const STATUS_RANK: Record<string, number> = { sent: 1, delivered: 2, read: 3 }
+
+/**
+ * The stored statuses a callback reporting `incoming` may overwrite, or null
+ * when it should be ignored outright.
+ *
+ * Forward only: sent < delivered < read. A failure replaces anything short of
+ * 'read' -- a message the recipient has read was delivered, whatever arrives
+ * afterwards -- and nothing replaces a failure. Statuses we do not track
+ * ('deleted', 'warning', whatever Meta adds next) are ignored rather than
+ * written over one we do.
+ */
+function statusesThisMayReplace(incoming: string): string[] | null {
+  if (incoming === 'failed') return Object.keys(STATUS_RANK).filter((s) => s !== 'read')
+  const rank = STATUS_RANK[incoming]
+  if (!rank) return null
+  return Object.keys(STATUS_RANK).filter((s) => STATUS_RANK[s]! < rank)
+}
+
+async function alreadyStored(supabase: ReturnType<typeof serverSupabaseServiceRole<Database>>, wamid: string): Promise<boolean> {
+  const { data } = await supabase.from('whatsapp_messages').select('id').eq('wamid', wamid).limit(1).maybeSingle()
+  return Boolean(data)
+}
+
 // Which appointment is a Confirmar/Cambiar/Cancelar reply about?
 //
 // This used to be a single query for "the earliest-starting appointment with
@@ -357,13 +384,23 @@ export default defineEventHandler(async (event) => {
       }
 
       for (const status of value?.statuses ?? []) {
+        // Only ever forward. Meta does not promise to deliver callbacks in
+        // the order they happened, and redelivers any it thinks we missed,
+        // so writing each one as it arrives let a late 'delivered' turn a
+        // 'read' back into two grey ticks, and a late 'sent' clear a
+        // failure -- status and reason both -- leaving a thread showing a
+        // message as on its way that never arrived. See statusesThisMayReplace.
+        // 'sent' replaces nothing: it is where every outbound row starts.
+        const replaceable = statusesThisMayReplace(status.status)
+        if (!replaceable?.length) continue
+
         // error_data.details carries the actual reason behind a generic
         // title like "Media upload error" (e.g. which mime type/constraint
         // was violated) -- appending it is the difference between a
         // diagnosable failure and a guess next time one happens.
         const error = status.errors?.[0]
         const errorMessage = error ? [error.title, error.error_data?.details].filter(Boolean).join(' -- ') : null
-        await supabase
+        const { error: updateError } = await supabase
           .from('whatsapp_messages')
           .update({
             status: status.status,
@@ -372,6 +409,8 @@ export default defineEventHandler(async (event) => {
             updated_at: new Date().toISOString(),
           })
           .eq('wamid', status.id)
+          .in('status', replaceable)
+        if (updateError) console.error(`[whatsapp] could not record status ${status.status} for ${status.id}: ${updateError.message}`)
       }
 
       // Keyed by wa_id, because a batch can carry messages from more than one
@@ -379,6 +418,12 @@ export default defineEventHandler(async (event) => {
       const profileNames = new Map((value?.contacts ?? []).map((c) => [c.wa_id, c.profile?.name?.trim() || null]))
 
       for (const msg of value?.messages ?? []) {
+        // A redelivery of something already stored: nothing to do, and no
+        // reason to download its media again or look anybody up. Only a
+        // shortcut -- two copies arriving at once both get past it, which is
+        // what the insert's own duplicate check below is for.
+        if (await alreadyStored(supabase, msg.id)) continue
+
         const patientIds = await findPatientIdsByPhone(supabase, account.id, msg.from)
         const patientId = patientIds[0] ?? null
         // Three ways to belong to somebody, in descending confidence: a
@@ -429,7 +474,26 @@ export default defineEventHandler(async (event) => {
           insert.body_preview = text.slice(0, 2000) || null
         }
 
-        await supabase.from('whatsapp_messages').insert(insert)
+        const { error: insertError } = await supabase.from('whatsapp_messages').insert(insert)
+
+        // Everything below is a consequence of this message arriving, so it
+        // happens once, when the message is first stored -- never on Meta's
+        // redelivery of it. A redelivery fails here on the unique wamid, and
+        // that error used to go unread: the lead's "Replied" event, the push,
+        // the automations and the reply classification all ran again, and a
+        // repeated "Cancelar" -- its appointment already cancelled by the
+        // first -- fell through to the patient's NEXT booked visit and
+        // cancelled that as well.
+        //
+        // Any other failure stops the side effects too: acting on a message
+        // the inbox does not have (and that a retry may yet store, and then
+        // act on) is how the same thing happens twice.
+        if (insertError) {
+          if (insertError.code !== '23505') {
+            console.error(`[whatsapp] could not store inbound message ${msg.id} for account ${account.id}: ${insertError.message}`)
+          }
+          continue
+        }
 
         // A lead writing back is the thing the whole acquisition funnel is
         // trying to cause, and until now it left no trace anywhere except an
@@ -544,7 +608,8 @@ export default defineEventHandler(async (event) => {
   // every transient cause -- an app secret not yet saved, a deploy mid-flight,
   // a clock skew -- from lost messages into late ones. Replays are safe:
   // whatsapp_messages.wamid is uniquely indexed, so a redelivery of something
-  // already stored inserts nothing.
+  // already stored inserts nothing -- and does nothing else either, since
+  // every side effect of a message waits on its insert succeeding.
   //
   // The cost is an oracle: a forged request naming a phone_number_id we know
   // gets 401, an unknown one gets 200, so the difference reveals which

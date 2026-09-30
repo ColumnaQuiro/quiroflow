@@ -21,9 +21,49 @@ interface CompressResult {
   changed: boolean
 }
 
-async function compressImageBuffer(buffer: Buffer): Promise<CompressResult> {
-  const out = await sharp(buffer).jpeg({ quality: JPEG_QUALITY, mozjpeg: true }).toBuffer()
+// A standalone image is re-encoded in its own format, never converted:
+// a PNG turned into JPEG bytes kept its .png name and image/png type and lost
+// its transparency (a signature's clear background came back black).
+//
+// rotate() with no angle applies the EXIF orientation to the pixels. sharp
+// drops metadata by default, and a phone stores a portrait photo as a
+// landscape frame plus an orientation tag -- so without it, a posture photo
+// came back sideways, over the original. Only for standalone images: inside a
+// PDF the tag means nothing (the page draws the raw pixels), and applying it
+// there would be the rotation.
+async function compressImageBuffer(buffer: Buffer, mimeType: string): Promise<CompressResult> {
+  const image = sharp(buffer).rotate()
+  const out =
+    mimeType === 'image/jpeg'
+      ? await image.jpeg({ quality: JPEG_QUALITY, mozjpeg: true }).toBuffer()
+      : mimeType === 'image/png'
+        ? // Lossless: the same pixels, alpha included, packed tighter.
+          await image.png({ compressionLevel: 9, adaptiveFiltering: true }).toBuffer()
+        : await image.webp({ quality: JPEG_QUALITY, alphaQuality: 100 }).toBuffer()
   return out.length < buffer.length ? { buffer: out, changed: true } : { buffer, changed: false }
+}
+
+// How many colour components a PDF image's /ColorSpace declares, when it is
+// one this can recompress faithfully: sharp decodes to RGB or grey, so a CMYK
+// or indexed image re-encoded by it would no longer match what the PDF says
+// it is, and would render wrongly. null means "leave this image alone".
+function declaredComponents(doc: PDFDocument, dict: any): 1 | 3 | null {
+  let cs = dict.get(PDFName.of('ColorSpace'))
+  if (!cs) return null
+  cs = doc.context.lookup(cs) ?? cs
+  const name = cs.toString()
+  if (name === '/DeviceRGB') return 3
+  if (name === '/DeviceGray') return 1
+  // [/ICCBased <stream>]: the stream's /N is the component count.
+  if (typeof cs.asArray === 'function') {
+    const arr = cs.asArray()
+    if (arr[0]?.toString() === '/ICCBased') {
+      const stream = doc.context.lookup(arr[1]) as any
+      const n = Number(stream?.dict?.get(PDFName.of('N'))?.toString())
+      if (n === 1 || n === 3) return n
+    }
+  }
+  return null
 }
 
 // Recompresses every embedded JPEG image inside a PDF in place, leaving
@@ -45,11 +85,20 @@ async function compressPdfBuffer(buffer: Buffer): Promise<CompressResult> {
       if (!xobj?.dict || xobj.dict.get(PDFName.of('Subtype'))?.toString() !== '/Image') continue
       if (xobj.dict.get(PDFName.of('Filter'))?.toString() !== '/DCTDecode') continue
 
+      // A /Decode array remaps the samples; a re-encoded stream would be
+      // remapped again.
+      if (xobj.dict.get(PDFName.of('Decode'))) continue
+      const components = declaredComponents(doc, xobj.dict)
+      if (!components) continue
+
       const original = xobj.contents ?? xobj.getContents?.()
       if (!original || original.length < MIN_SIZE_BYTES) continue
 
       try {
-        const recompressed = await sharp(Buffer.from(original)).jpeg({ quality: JPEG_QUALITY, mozjpeg: true }).toBuffer()
+        const image = sharp(Buffer.from(original))
+        const recompressed = await (components === 1 ? image.toColourspace('b-w') : image.toColourspace('srgb')).jpeg({ quality: JPEG_QUALITY, mozjpeg: true }).toBuffer()
+        // The stream has to keep the component count the PDF declares for it.
+        if ((await sharp(recompressed).metadata()).channels !== components) continue
         if (recompressed.length < original.length) {
           xobj.dict.set(PDFName.of('Length'), doc.context.obj(recompressed.length))
           xobj.contents = recompressed
@@ -78,7 +127,7 @@ export async function compressPatientFile(buffer: Buffer, mimeType: string | nul
 
   try {
     if (mimeType === 'application/pdf') return await compressPdfBuffer(buffer)
-    if (mimeType === 'image/jpeg' || mimeType === 'image/png' || mimeType === 'image/webp') return await compressImageBuffer(buffer)
+    if (mimeType === 'image/jpeg' || mimeType === 'image/png' || mimeType === 'image/webp') return await compressImageBuffer(buffer, mimeType)
   } catch {
     // Same reasoning as above: a file this couldn't process is left
     // exactly as it was, not treated as an error.

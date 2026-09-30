@@ -51,6 +51,9 @@ export default defineEventHandler(async (event) => {
       .select('id, patient_id')
       .eq('account_id', rule.account_id)
       .eq('status', 'completed')
+      // Deleting keeps the status, so a visit the clinic deleted still read
+      // as completed and got a review request.
+      .is('deleted_at', null)
       .gte('ends_at', windowStart)
       .lt('ends_at', windowEnd)
     if (!appointments || appointments.length === 0) continue

@@ -32,6 +32,7 @@ export default defineEventHandler(async (event) => {
       .select('id', { count: 'exact', head: true })
       .eq('room_id', row.offered_room_id)
       .neq('status', 'cancelled')
+      .is('deleted_at', null)
       .lt('starts_at', row.offered_ends_at)
       .gt('ends_at', row.offered_starts_at)
     if ((count ?? 0) > 0) throw createError({ statusCode: 409, statusMessage: 'This slot was just taken. Please contact the clinic.' })

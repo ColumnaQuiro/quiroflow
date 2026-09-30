@@ -1,6 +1,8 @@
 <script setup lang="ts">
 const props = defineProps<{
-  clinic: { name: string; address: string | null } | null
+  // timezone: the slot is shown on the clinic's clock, which is the one the
+  // appointment is kept on, not the visitor's.
+  clinic: { name: string; address: string | null; timezone?: string | null } | null
   appointmentType: { name: string } | null
   priceCents: number
   teamMember: { full_name: string } | null
@@ -14,6 +16,7 @@ const dueNowCents = computed(() => {
   if (!props.onlinePaymentRequired) return 0
   return props.depositCents ?? props.priceCents
 })
+const timeZone = computed(() => props.clinic?.timezone || 'Europe/Madrid')
 const dueAtVisitCents = computed(() => (props.onlinePaymentRequired ? props.priceCents - dueNowCents.value : props.priceCents))
 </script>
 
@@ -43,8 +46,8 @@ const dueAtVisitCents = computed(() => (props.onlinePaymentRequired ? props.pric
         {{ teamMember.full_name }}
       </div>
       <div v-if="slot" class="border-t border-line-divider pt-3 text-ink-700">
-        {{ slot.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' }) }}
-        · {{ slot.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) }}
+        {{ slot.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short', timeZone }) }}
+        · {{ slot.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone }) }}
       </div>
     </div>
   </div>

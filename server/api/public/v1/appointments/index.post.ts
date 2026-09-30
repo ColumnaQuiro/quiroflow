@@ -74,6 +74,18 @@ export default defineApiHandler({ scope: 'appointments:write' }, async ({ event,
   const { data: created, error } = await loose(supabase).from('appointments').insert(insert as never).select(appointmentsResource.select).single()
   if (error) throw new ApiError('server_error', error.message)
 
+  // The patient's confirmation, as a booking from the public page gets one.
+  // Settings > Messages says it is sent for bookings made through the API;
+  // nothing sent it. Best-effort: the booking stands whatever the send does.
+  const createdRow = created as { id?: string; status?: string } | null
+  if (createdRow?.id && (createdRow.status ?? 'booked') === 'booked') {
+    try {
+      if (await claimAutomaticConfirmation(supabase, createdRow.id)) await sendAppointmentConfirmation(supabase, accountId, createdRow.id)
+    } catch {
+      // Logged by the senders; the API answer is about the booking.
+    }
+  }
+
   setResponseStatus(event, 201)
   return { data: appointmentsResource.serialize(created) }
 })

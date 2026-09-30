@@ -32,6 +32,12 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'Appointment not found' })
   }
 
+  // Once per booking. Every call in the ten minutes above used to send the
+  // patient another template and the clinic another alert; a repeated call
+  // now finds the claim taken and sends nothing.
+  if (!(await claimAutomaticConfirmation(supabase, body.appointmentId))) {
+    return { success: true }
+  }
   await sendAppointmentConfirmation(supabase, account.id, body.appointmentId)
   await notifyStaffOfOnlineBooking(supabase, account.id, body.appointmentId)
 

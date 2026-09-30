@@ -6396,6 +6396,8 @@ export type Database = {
         Returns: { account_id: string; billed: number; due: number }[]
       }
       get_factura_numbering: { Args: { p_account_id: string }; Returns: Json }
+      get_receipt_numbering: { Args: { p_account_id: string }; Returns: Json }
+      set_receipt_numbering: { Args: { p_account_id: string; p_next_receipt: number }; Returns: Json }
       set_factura_numbering: {
         Args: {
           p_account_id: string

@@ -33,8 +33,14 @@ async function uploadFile(file: File) {
     uploading.value = false
     return
   }
-  await supabase.from('clinics').update({ logo_storage_path: path }).eq('id', props.clinicId)
+  // Read back: a refused update is not an error, it changes nothing -- and
+  // "uploaded" was reported for a logo the clinic never got.
+  const { data: saved, error: updateError } = await supabase.from('clinics').update({ logo_storage_path: path }).eq('id', props.clinicId).select('id')
   uploading.value = false
+  if (updateError || !saved?.length) {
+    error.value = updateError?.message ?? t('The logo was not saved.', 'No se ha guardado el logo.')
+    return
+  }
   emit('uploaded')
 }
 

@@ -3,6 +3,7 @@ import type { BusinessHours } from '~/utils/businessHours'
 import { WEEK, dayRangesText } from '~/utils/clinicHours'
 import { formatEur } from '~/utils/billing'
 import { orderTypes } from '~/utils/appointmentTypes'
+import { nextDate, startOfLocalDate } from '~/utils/clinicClock'
 import type { Tables, TablesUpdate } from '~/types/database.types'
 
 const supabase = useSupabaseClient()
@@ -161,14 +162,14 @@ function embedSnippet(slug: string) {
 // (Settings -> Clinics -> <clinic>): they are the calendar's and the API's too,
 // not only online booking's, and editing one object in two places is how the
 // two copies of a form drift. Shown here read-only, next to the switch.
-type BookingClinic = Pick<Tables<'clinics'>, 'id' | 'name' | 'online_booking_enabled'> & { business_hours: BusinessHours | null }
+type BookingClinic = Pick<Tables<'clinics'>, 'id' | 'name' | 'online_booking_enabled' | 'timezone'> & { business_hours: BusinessHours | null }
 
 const bookingClinics = ref<BookingClinic[]>([])
 const savingClinicId = ref<string | null>(null)
 const hoursError = ref('')
 
 async function loadBookingClinics() {
-  const { data } = await supabase.from('clinics').select('id, name, online_booking_enabled, business_hours').is('archived_at', null).order('name')
+  const { data } = await supabase.from('clinics').select('id, name, online_booking_enabled, business_hours, timezone').is('archived_at', null).order('name')
   bookingClinics.value = (data as unknown as BookingClinic[]) ?? []
 }
 onMounted(loadBookingClinics)
@@ -176,10 +177,12 @@ onMounted(loadBookingClinics)
 async function setBookingEnabled(c: BookingClinic, enabled: boolean) {
   hoursError.value = ''
   savingClinicId.value = c.id
-  const { error: updateError } = await supabase.from('clinics').update({ online_booking_enabled: enabled }).eq('id', c.id)
+  // Read back: an update RLS refuses is not an error, it changes nothing --
+  // and without this the switch flipped on screen and was off again on reload.
+  const { data: saved, error: updateError } = await supabase.from('clinics').update({ online_booking_enabled: enabled }).eq('id', c.id).select('id')
   savingClinicId.value = null
-  if (updateError) {
-    hoursError.value = updateError.message
+  if (updateError || !saved?.length) {
+    hoursError.value = updateError?.message ?? t('This change was not saved: your role cannot change clinics.', 'No se ha guardado: tu rol no puede cambiar las sedes.')
     return
   }
   c.online_booking_enabled = enabled
@@ -230,7 +233,10 @@ async function addCode() {
     code: newCode.value.trim().toUpperCase(),
     percent_off: newPercentOff.value ? parseInt(newPercentOff.value, 10) : null,
     amount_off_cents: newAmountOff.value ? Math.round(parseFloat(newAmountOff.value) * 100) : null,
-    expires_at: newExpiresAt.value ? new Date(newExpiresAt.value).toISOString() : null,
+    // Valid through the whole chosen day at the clinic. new Date('2026-10-31')
+    // is UTC midnight, which in Madrid stopped the code at 01:00/02:00 ON the
+    // 31st and then said it had expired that day.
+    expires_at: newExpiresAt.value ? startOfLocalDate(nextDate(newExpiresAt.value), codesTimeZone.value).toISOString() : null,
     max_uses: newMaxUses.value ? parseInt(newMaxUses.value, 10) : null,
   })
   addingCode.value = false
@@ -246,13 +252,30 @@ async function addCode() {
   await loadCodes()
 }
 
+// Discount codes are account-wide; the day a code runs to is the clinic's.
+const codesTimeZone = computed(() => bookingClinics.value[0]?.timezone ?? 'Europe/Madrid')
+
 async function toggleCodeActive(c: Tables<'online_booking_discount_codes'>) {
-  c.active = !c.active
-  await supabase.from('online_booking_discount_codes').update({ active: c.active }).eq('id', c.id)
+  const { data, error } = await supabase.from('online_booking_discount_codes').update({ active: !c.active }).eq('id', c.id).select('active')
+  if (error || !data?.length) {
+    showToast(error?.message ?? t('This change was not saved.', 'No se ha guardado el cambio.'), 'error')
+    return
+  }
+  c.active = data[0]!.active
 }
 
-async function removeCode(id: string) {
-  await supabase.from('online_booking_discount_codes').delete().eq('id', id)
+// Asked in an in-app dialog: a deleted code stops working for anyone
+// holding it, and there is no undo.
+const deletingCode = ref<Tables<'online_booking_discount_codes'> | null>(null)
+async function confirmRemoveCode() {
+  const c = deletingCode.value
+  if (!c) return
+  const { data, error } = await supabase.from('online_booking_discount_codes').delete().eq('id', c.id).select('id')
+  if (error || !data?.length) {
+    showToast(error?.message ?? t('The code was not deleted.', 'No se ha eliminado el código.'), 'error')
+    return
+  }
+  deletingCode.value = null
   await loadCodes()
 }
 
@@ -294,7 +317,8 @@ function codeOff(c: Tables<'online_booking_discount_codes'>) {
 function codeMeta(c: Tables<'online_booking_discount_codes'>) {
   const used = c.max_uses ? t(`${c.times_used} of ${c.max_uses} used`, `${c.times_used} de ${c.max_uses} usados`) : t(`${c.times_used} used`, `${c.times_used} usados`)
   if (!c.expires_at) return used
-  const day = new Date(c.expires_at).toLocaleDateString('es-ES')
+  // The last day it works: the instant stored is the start of the day after.
+  const day = new Date(new Date(c.expires_at).getTime() - 1).toLocaleDateString('es-ES', { timeZone: codesTimeZone.value })
   return new Date(c.expires_at).getTime() < Date.now() ? t(`${used} · expired ${day}`, `${used} · caducó el ${day}`) : t(`${used} · expires ${day}`, `${used} · caduca el ${day}`)
 }
 
@@ -562,7 +586,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
               >
                 <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card transition-all" :class="c.active ? 'left-[21px]' : 'left-[3px]'" />
               </button>
-              <button type="button" class="flex h-9 w-9 touch:h-11 touch:w-11 shrink-0 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle hover:text-ink-700" :aria-label="t(`Delete ${c.code}`, `Eliminar ${c.code}`)" @click="removeCode(c.id)">
+              <button type="button" class="flex h-9 w-9 touch:h-11 touch:w-11 shrink-0 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle hover:text-ink-700" :aria-label="t(`Delete ${c.code}`, `Eliminar ${c.code}`)" data-cy="code-delete" @click="deletingCode = c">
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></svg>
               </button>
             </div>
@@ -627,5 +651,16 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
         </div>
       </div>
     </div>
+    <UiConfirmDialog
+      v-if="deletingCode"
+      tone="danger"
+      :title="t(`Delete the code ${deletingCode.code}?`, `¿Eliminar el código ${deletingCode.code}?`)"
+      :confirm-label="t('Delete code', 'Eliminar código')"
+      :cancel-label="t('Cancel', 'Cancelar')"
+      @confirm="confirmRemoveCode"
+      @cancel="deletingCode = null"
+    >
+      <p class="text-[14px] leading-snug text-ink-700">{{ t('Anyone holding it can no longer use it. Bookings already made with it keep their discount. To pause it instead, switch it off.', 'Quien lo tenga ya no podrá usarlo. Las reservas ya hechas conservan su descuento. Para pausarlo, desactívalo.') }}</p>
+    </UiConfirmDialog>
   </div>
 </template>

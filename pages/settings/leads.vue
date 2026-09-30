@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { centsToInput, parseEurosToCents } from '~/utils/appointmentTypes'
 import type { TablesUpdate } from '~/types/database.types'
 
 // How the Growth › Leads board moves and what it is worth.
@@ -36,7 +37,7 @@ async function load() {
     supabase.from('accounts').select('lead_default_value_cents, lead_convert_after_visits, lead_convert_appointment_type_id, new_lead_notify_email, new_lead_notify_whatsapp').eq('id', store.accountId!).maybeSingle(),
     supabase.from('appointment_types').select('id, name, archived_at').order('name'),
   ])
-  defaultValue.value = data?.lead_default_value_cents == null ? '' : String(data.lead_default_value_cents / 100)
+  defaultValue.value = centsToInput(data?.lead_default_value_cents)
   autoConvert.value = data?.lead_convert_after_visits != null
   convertAfter.value = data?.lead_convert_after_visits ?? 1
   convertTypeId.value = data?.lead_convert_appointment_type_id ?? ''
@@ -52,9 +53,10 @@ onMounted(load)
 const typeOptions = computed(() => appointmentTypes.value.filter((ty) => !ty.archived_at || ty.id === convertTypeId.value))
 
 async function save() {
-  const raw = defaultValue.value.trim().replace(',', '.')
-  const euros = raw === '' ? null : Number(raw)
-  if (euros !== null && (!Number.isFinite(euros) || euros < 0)) {
+  // Read as Spain writes it: "1.500" is fifteen hundred, not 1,50 €, and
+  // "1.500,00" is the same amount rather than an error.
+  const cents = parseEurosToCents(defaultValue.value)
+  if (cents !== null && (!Number.isFinite(cents) || cents < 0)) {
     showToast(t('The default value has to be an amount in euros, or empty.', 'El valor por defecto tiene que ser un importe en euros, o quedar vacío.'), 'error')
     return
   }
@@ -65,7 +67,7 @@ async function save() {
   }
   saving.value = true
   const update: TablesUpdate<'accounts'> = {
-    lead_default_value_cents: euros === null ? null : Math.round(euros * 100),
+    lead_default_value_cents: cents,
     lead_convert_after_visits: autoConvert.value ? visits : null,
     lead_convert_appointment_type_id: autoConvert.value && convertTypeId.value ? convertTypeId.value : null,
     new_lead_notify_email: notifyEmail.value.trim() || null,

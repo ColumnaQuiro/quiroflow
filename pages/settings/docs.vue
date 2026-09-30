@@ -60,7 +60,16 @@ function openTemplate(t: Template) {
   title.value = t.title
   fields.value = Array.isArray(t.fields) ? [...t.fields] : []
   category.value = t.category ?? ''
+  savedState.value = editorState()
 }
+
+// What the editor held when it was opened or last saved. The back button
+// used to drop unsaved edits without a word.
+const savedState = ref('')
+function editorState() {
+  return JSON.stringify({ title: title.value.trim(), fields: fields.value, category: category.value })
+}
+const dirty = computed(() => !!activeTemplate.value && editorState() !== savedState.value)
 
 function categoryLabel(c: string | null) {
   if (c === 'data_protection') return t('Data protection', 'Protección de datos')
@@ -87,9 +96,46 @@ async function newTemplate() {
 }
 
 function backToList() {
+  if (dirty.value) {
+    leaveOpen.value = true
+    return
+  }
+  closeEditor()
+}
+function closeEditor() {
+  leaveOpen.value = false
   activeTemplate.value = null
   load()
 }
+
+// Leaving the page, not only the editor.
+const leaveOpen = ref(false)
+const pendingLeave = ref<string | null>(null)
+const router = useRouter()
+onBeforeRouteLeave((to) => {
+  if (!dirty.value || pendingLeave.value === to.fullPath) return true
+  pendingLeave.value = to.fullPath
+  leaveOpen.value = true
+  return false
+})
+function leaveAnyway() {
+  const to = pendingLeave.value
+  if (to) {
+    leaveOpen.value = false
+    router.push(to)
+  } else {
+    closeEditor()
+  }
+}
+function stayHere() {
+  leaveOpen.value = false
+  pendingLeave.value = null
+}
+function onBeforeUnload(e: BeforeUnloadEvent) {
+  if (dirty.value) e.preventDefault()
+}
+onMounted(() => window.addEventListener('beforeunload', onBeforeUnload))
+onUnmounted(() => window.removeEventListener('beforeunload', onBeforeUnload))
 
 async function save() {
   if (!activeTemplate.value) return
@@ -108,6 +154,7 @@ async function save() {
     showToast(error.message, 'error')
     return
   }
+  savedState.value = editorState()
   showToast(t('Saved', 'Guardado'))
 }
 
@@ -228,6 +275,18 @@ async function confirmDelete() {
       @cancel="deleting = null"
     >
       <p class="text-[14px] leading-snug text-ink-700">{{ t('It can no longer be sent. Forms already sent with it stay on each patient’s record.', 'Ya no se podrá enviar. Los formularios ya enviados con ella se quedan en la ficha de cada paciente.') }}</p>
+      <p v-if="deleting.category" class="text-[14px] leading-snug text-warning-text">{{ t('Reports stops counting them as this category, though: every patient shows as missing it until another template in the category is sent.', 'Pero Informes deja de contarlos en esta categoría: todos los pacientes aparecerán sin ella hasta que se envíe otra plantilla de la categoría.') }}</p>
+    </UiConfirmDialog>
+
+    <UiConfirmDialog
+      v-if="leaveOpen"
+      :title="t('Leave without saving?', '¿Salir sin guardar?')"
+      :confirm-label="t('Leave without saving', 'Salir sin guardar')"
+      :cancel-label="t('Keep editing', 'Seguir editando')"
+      @confirm="leaveAnyway"
+      @cancel="stayHere"
+    >
+      <p class="text-[14px] leading-relaxed text-ink-500">{{ t('The changes to this template have not been saved.', 'Los cambios de esta plantilla no se han guardado.') }}</p>
     </UiConfirmDialog>
   </div>
 </template>

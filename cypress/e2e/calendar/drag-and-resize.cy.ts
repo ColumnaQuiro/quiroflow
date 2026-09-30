@@ -1,9 +1,11 @@
 import { seedVisit, todayAt } from '../../support/calendar'
 
 // Dragging a block moves the visit; dragging its bottom edge makes it longer.
-// Both go through the reschedule confirmation (reason, fee, resend), which
-// the redesign kept as it was. The drag handlers listen on window, so the
-// gesture is driven there: press on the block, move, release.
+// A move goes through the reschedule confirmation (reason, fee, resend),
+// which the redesign kept as it was. A resize does not: the visit still
+// starts when the patient was told, so it saves as it is and is not counted
+// as a reschedule. The drag handlers listen on window, so the gesture is
+// driven there: press on the block, move, release.
 
 const HOUR = 60 * 60 * 1000
 
@@ -47,18 +49,18 @@ describe('Dragging a block', () => {
               expect(a.rescheduled).to.eq(true)
             })
 
-            // Resize: the bottom edge, half an hour down.
+            // Resize: the bottom edge, half an hour down. No reschedule
+            // dialog; reading the row waits for the write itself.
+            cy.intercept('PATCH', '**/rest/v1/appointments*').as('resize')
             drag(cy.contains('[data-cy=appt-block]', 'Alargar Estirada').find('.cursor-ns-resize'), px / 2)
-            cy.contains('h2', 'Rescheduling Appointment').should('be.visible')
-            cy.contains('button', 'Confirm').click()
-            // The dialog closes once the write has landed; reading the row
-            // before that races the update (as the move step above waits too).
+            cy.wait('@resize')
             cy.contains('h2', 'Rescheduling Appointment').should('not.exist')
-            cy.task<{ starts_at: string; ends_at: string }>('db:appointmentById', { appointmentId: stretched }).then((a) => {
+            cy.task<{ starts_at: string; ends_at: string; rescheduled: boolean }>('db:appointmentById', { appointmentId: stretched }).then((a) => {
               expect(new Date(a.starts_at).getTime(), 'start unchanged').to.eq(new Date(todayAt(14, 0)).getTime())
               expect(new Date(a.ends_at).getTime(), 'half an hour longer').to.eq(new Date(todayAt(15, 0)).getTime())
+              expect(a.rescheduled, 'a longer visit is not a moved one').to.eq(false)
             })
-            // The grid reloads after a confirm; wait for it to draw the new
+            // The grid reloads after the save; wait for it to draw the new
             // length before touching another block.
             cy.contains('[data-cy=appt-block]', 'Alargar Estirada').should(($b) => expect($b[0].getBoundingClientRect().height).to.be.greaterThan(px * 0.9))
           })

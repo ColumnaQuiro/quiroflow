@@ -7,6 +7,7 @@ import { COUNTRIES_BY_NAME } from '~/utils/countries'
 import { splitDialPrefix } from '~/utils/phone'
 import { formatEur, formatShortDate, formatTime, formatWeekdayDate } from '~/utils/billing'
 import { findFreeSlots, firstClash, type Busy } from '~/utils/freeSlots'
+import { seriesProblems, seriesStarts, type RepeatRule, type SeriesProblem } from '~/utils/repeatSeries'
 
 // A new appointment, from a slot or from "+ Nueva cita". Laid out in the
 // order the desk answers the questions on the phone -- the canvas's Create
@@ -155,19 +156,23 @@ async function loadBooked() {
 watch(date, loadBooked, { immediate: true })
 
 const nameOf = (p: { first_name: string; last_name: string | null } | null) => `${p?.first_name ?? ''} ${p?.last_name ?? ''}`.trim()
-function busyFor(practId: string): Busy[] {
+// Over the rows given, so the whole-series check at save time can ask the
+// same question of a range the two-week load above does not cover.
+function practitionerBusyIn(practId: string, appts: BookedRow[], blks: BlockRow[]): Busy[] {
   if (!practId) return []
   return [
-    ...booked.value.filter((a) => a.practitioner_id === practId).map((a) => ({ start: new Date(a.starts_at).getTime(), end: new Date(a.ends_at).getTime(), label: nameOf(a.patients) })),
-    ...blocks.value
+    ...appts.filter((a) => a.practitioner_id === practId).map((a) => ({ start: new Date(a.starts_at).getTime(), end: new Date(a.ends_at).getTime(), label: nameOf(a.patients) })),
+    ...blks
       .filter((b) => b.practitioner_id === practId || (b.practitioner_id === null && b.room_id === null))
       .map((b) => ({ start: new Date(b.starts_at).getTime(), end: new Date(b.ends_at).getTime(), label: t('a block', 'un bloqueo') })),
   ]
 }
-function roomBusy(room: string): Busy[] {
+function roomBusyIn(room: string, appts: BookedRow[]): Busy[] {
   if (!room) return []
-  return booked.value.filter((a) => a.room_id === room).map((a) => ({ start: new Date(a.starts_at).getTime(), end: new Date(a.ends_at).getTime(), label: nameOf(a.patients) }))
+  return appts.filter((a) => a.room_id === room).map((a) => ({ start: new Date(a.starts_at).getTime(), end: new Date(a.ends_at).getTime(), label: nameOf(a.patients) }))
 }
+const busyFor = (practId: string) => practitionerBusyIn(practId, booked.value, blocks.value)
+const roomBusy = (room: string) => roomBusyIn(room, booked.value)
 function windowsFor(practId: string, day: Date): [string, string][] | null {
   const clinicHours = store.currentClinic?.business_hours as BusinessHours | null | undefined
   const hours = (props.teamMembers.find((m) => m.id === practId)?.business_hours ?? null) as BusinessHours | null
@@ -383,6 +388,71 @@ watch([collectPayment, effectivePrice], ([on]) => {
   if (on) paymentAmount.value = (effectivePrice.value / 100).toFixed(2)
 })
 
+// -- Repeat: every date the booking lands on --------------------------------
+// Bounded rather than open-ended -- 8 occurrences covers a short repeat block
+// without silently filling a patient's calendar for months; a care plan is
+// capped at 26 for the same reason.
+const REPEAT_OCCURRENCES = 8
+const MAX_CARE_PLAN_OCCURRENCES = 26
+// Calendar arithmetic, in the wall-clock time the rest of this panel reads
+// (utils/repeatSeries.ts says why a fixed number of milliseconds was wrong).
+// "Daily" steps over days the practitioner does not work -- their own hours,
+// or the clinic's for someone who never set any -- and still books eight.
+function repeatRule(): RepeatRule {
+  if (repeat.value === 'care_plan' && carePlan.value) {
+    return { unit: carePlan.value.frequency_unit, every: carePlan.value.frequency_value, count: Math.max(1, Math.min(carePlanRemaining.value, MAX_CARE_PLAN_OCCURRENCES)) }
+  }
+  if (repeat.value === 'daily') return { unit: 'day', every: 1, count: REPEAT_OCCURRENCES, skipDay: (day) => windowsFor(practitionerId.value, day)?.length === 0 }
+  if (repeat.value === 'weekly') return { unit: 'week', every: 1, count: REPEAT_OCCURRENCES }
+  if (repeat.value === 'monthly') return { unit: 'month', every: 1, count: REPEAT_OCCURRENCES }
+  return { unit: 'day', every: 1, count: 1 }
+}
+
+// What the practitioner and room already have over the whole series. The
+// panel's live clash answer only knows the first date and the two weeks after
+// it; a monthly or care-plan series runs well past that, so the rest is read
+// here, at save time, for exactly this practitioner and room.
+async function busyOverSeries(starts: Date[]): Promise<Busy[]> {
+  const pid = practitionerId.value
+  const rid = roomId.value
+  if ((!pid && !rid) || !store.currentClinicId) return []
+  const from = starts[0].toISOString()
+  const to = new Date(starts[starts.length - 1].getTime() + duration.value * 60000).toISOString()
+  const who = [pid ? `practitioner_id.eq.${pid}` : '', rid ? `room_id.eq.${rid}` : ''].filter(Boolean).join(',')
+  const [appts, { data: blk, error: blkError }] = await Promise.all([
+    fetchAllRows<BookedRow>((f, l) =>
+      supabase
+        .from('appointments')
+        .select('id, starts_at, ends_at, practitioner_id, room_id, patients(first_name, last_name)')
+        .eq('clinic_id', store.currentClinicId!)
+        .neq('status', 'cancelled')
+        .is('deleted_at', null)
+        .or(who)
+        .lt('starts_at', to)
+        .gt('ends_at', from)
+        .order('starts_at')
+        .order('id')
+        .range(f, l) as unknown as PromiseLike<{ data: BookedRow[] | null; error: unknown }>,
+    ),
+    supabase.from('availability_blocks').select('starts_at, ends_at, practitioner_id, room_id').eq('clinic_id', store.currentClinicId).lt('starts_at', to).gt('ends_at', from),
+  ])
+  if (blkError) throw blkError
+  return [...practitionerBusyIn(pid, appts, blk ?? []), ...roomBusyIn(rid, appts)]
+}
+
+// A series with dates that do not fit waits here for the desk's answer:
+// skip those dates, book them anyway, or go back. Nothing has been written
+// while it waits -- not even a new patient.
+const pendingSeries = ref<{ starts: Date[]; problems: SeriesProblem[] } | null>(null)
+watch([startsAt, practitionerId, roomId, repeat, appointmentTypeId, allowDoubleBooking], () => (pendingSeries.value = null))
+const pendingKeepCount = computed(() => (pendingSeries.value ? pendingSeries.value.starts.length - pendingSeries.value.problems.length : 0))
+function problemReason(p: SeriesProblem) {
+  const reasons: string[] = []
+  if (p.clash) reasons.push(t(`With ${p.clash.label} at ${formatTime(new Date(p.clash.start))}`, `Con ${p.clash.label} a las ${formatTime(new Date(p.clash.start))}`))
+  if (p.outOfHours) reasons.push(t('Not working then', 'Fuera de horario'))
+  return reasons.join(' · ')
+}
+
 // -- Submit ------------------------------------------------------------------
 const hasPatient = computed(() => (patientMode.value === 'existing' ? !!selectedPatient.value : !!newPatientFirstName.value.trim()))
 const blockedByClash = computed(() => !!clash.value && !allowDoubleBooking.value)
@@ -394,8 +464,13 @@ const cta = computed(() => {
   return t(`Book · ${formatWeekdayDate(startsAt.value)} ${formatTime(startsAt.value)}`, `Reservar · ${formatWeekdayDate(startsAt.value)} ${formatTime(startsAt.value)}`)
 })
 
+// Every question is asked before anything is written. The new patient used
+// to be inserted first and the out-of-hours confirm() asked after, so
+// answering "no" -- or an appointment insert failing -- left a patient behind,
+// and the retry created them again.
 async function save() {
   error.value = ''
+  pendingSeries.value = null
   if (!canBook.value) return
   // Checked before anything is written. The number goes in as a second
   // statement after the patient row, so a bad one let through here would
@@ -406,65 +481,95 @@ async function save() {
     newPatientPhoneError.value = phoneProblem(newPatientPhone.value, newPatientPhoneCountry.value)
     if (newPatientPhoneError.value) return
   }
+  const starts = seriesStarts(startsAt.value, repeatRule())
   saving.value = true
-
-  let patientId = selectedPatient.value?.id ?? ''
-  if (patientMode.value === 'new') {
-    const { data: newPatient, error: patientError } = await supabase
-      .from('patients')
-      .insert({
-        account_id: store.accountId!,
-        clinic_id: store.currentClinicId || null,
-        first_name: newPatientFirstName.value.trim(),
-        last_name: newPatientLastName.value.trim() || null,
-        email: newPatientEmail.value.trim() || null,
-        // The practitioner chosen for the visit becomes the patient's default
-        // -- until this was set, 1,381 of 1,559 patients had none, and a
-        // practitioner's dashboard read "0 total patients" while they had
-        // treated thirteen. A default, not a verdict: Overview can change it.
-        default_practitioner_id: practitionerId.value || null,
+  try {
+    if (starts.length > 1) {
+      // Every date, not only the first: the live answer above covers that one.
+      let busy: Busy[]
+      try {
+        busy = await busyOverSeries(starts)
+      } catch (e) {
+        error.value = (e as { message?: string })?.message ?? t('Could not check the other dates.', 'No se han podido comprobar las demás fechas.')
+        return
+      }
+      const problems = seriesProblems(starts, duration.value, busy, (s, e) => !!practitionerId.value && outsideHours(practitionerId.value, s, e), {
+        // "Book it anyway, overlapping" was an answer about the first date,
+        // the only one it was shown for.
+        overlapAllowedAt: allowDoubleBooking.value ? [0] : [],
       })
-      .select('id')
-      .single()
-    if (patientError || !newPatient) {
-      error.value = patientError?.message ?? t('Could not create patient.', 'No se ha podido crear el paciente.')
-      saving.value = false
-      return
+      if (problems.length) {
+        pendingSeries.value = { starts, problems }
+        return
+      }
+    } else if (outOfHours.value) {
+      if (!confirm(t('This appointment falls outside working hours. Book it anyway?', 'Esta cita está fuera del horario de atención. ¿Reservarla de todos modos?'))) return
     }
-    patientId = newPatient.id
-    if (newPatientPhone.value.trim()) {
-      // A dial prefix typed into the number itself wins over the dropdown, so
-      // "+44 7700 900123" is not filed as Spanish (or vice versa).
-      const { countryCode, number } = splitDialPrefix(newPatientPhone.value, newPatientPhoneCountry.value)
-      await supabase.from('patient_contact_numbers').insert({ account_id: store.accountId!, patient_id: patientId, country_code: countryCode, number })
-    }
+    await book(starts)
+  } finally {
+    saving.value = false
   }
+}
 
-  if (outOfHours.value) {
-    if (!confirm(t('This appointment falls outside working hours. Book it anyway?', 'Esta cita está fuera del horario de atención. ¿Reservarla de todos modos?'))) {
-      saving.value = false
-      return
-    }
+async function resolveSeries(choice: 'skip' | 'all') {
+  const pending = pendingSeries.value
+  if (!pending) return
+  const skip = new Set(pending.problems.map((p) => p.index))
+  const starts = choice === 'all' ? pending.starts : pending.starts.filter((_, i) => !skip.has(i))
+  pendingSeries.value = null
+  if (!starts.length) return
+  saving.value = true
+  try {
+    await book(starts)
+  } finally {
+    saving.value = false
   }
+}
 
-  // Repeat is bounded rather than open-ended -- 8 occurrences covers a short
-  // repeat block without silently filling a patient's calendar for months;
-  // a care plan is capped at 26 for the same reason.
-  const REPEAT_OCCURRENCES = 8
-  const MAX_CARE_PLAN_OCCURRENCES = 26
-  let stepDays: number
-  let occurrences: number
-  if (repeat.value === 'care_plan' && carePlan.value) {
-    stepDays = carePlan.value.frequency_value * (carePlan.value.frequency_unit === 'month' ? 30 : 7)
-    occurrences = Math.min(carePlanRemaining.value, MAX_CARE_PLAN_OCCURRENCES)
-  } else {
-    stepDays = { none: 0, daily: 1, weekly: 7, monthly: 30 }[repeat.value as 'none' | 'daily' | 'weekly' | 'monthly'] ?? 0
-    occurrences = repeat.value === 'none' ? 1 : REPEAT_OCCURRENCES
+// The patient this booking is for, creating them if they are new. Once
+// created they stay selected as an existing patient, so a retry after a
+// failed appointment insert books them instead of creating them again.
+async function bookingPatientId(): Promise<string | null> {
+  if (patientMode.value === 'existing') return selectedPatient.value?.id ?? null
+  const firstName = newPatientFirstName.value.trim()
+  const lastName = newPatientLastName.value.trim() || null
+  const { data: newPatient, error: patientError } = await supabase
+    .from('patients')
+    .insert({
+      account_id: store.accountId!,
+      clinic_id: store.currentClinicId || null,
+      first_name: firstName,
+      last_name: lastName,
+      email: newPatientEmail.value.trim() || null,
+      // The practitioner chosen for the visit becomes the patient's default
+      // -- until this was set, 1,381 of 1,559 patients had none, and a
+      // practitioner's dashboard read "0 total patients" while they had
+      // treated thirteen. A default, not a verdict: Overview can change it.
+      default_practitioner_id: practitionerId.value || null,
+    })
+    .select('id')
+    .single()
+  if (patientError || !newPatient) {
+    error.value = patientError?.message ?? t('Could not create patient.', 'No se ha podido crear el paciente.')
+    return null
   }
+  if (newPatientPhone.value.trim()) {
+    // A dial prefix typed into the number itself wins over the dropdown, so
+    // "+44 7700 900123" is not filed as Spanish (or vice versa).
+    const { countryCode, number } = splitDialPrefix(newPatientPhone.value, newPatientPhoneCountry.value)
+    await supabase.from('patient_contact_numbers').insert({ account_id: store.accountId!, patient_id: newPatient.id, country_code: countryCode, number })
+  }
+  selectedPatient.value = { id: newPatient.id, first_name: firstName, last_name: lastName, sub: t('New patient', 'Paciente nuevo'), flags: [] }
+  patientMode.value = 'existing'
+  return newPatient.id
+}
+
+async function book(starts: Date[]) {
+  const patientId = await bookingPatientId()
+  if (!patientId) return
 
   let firstAppointmentId: string | null = null
-  for (let i = 0; i < occurrences; i++) {
-    const occStart = new Date(startsAt.value.getTime() + i * stepDays * 24 * 60 * 60 * 1000)
+  for (const [i, occStart] of starts.entries()) {
     const occEnd = new Date(occStart.getTime() + duration.value * 60000)
     const { data: created, error: apptError } = await supabase
       .from('appointments')
@@ -483,8 +588,10 @@ async function save() {
       .select('id')
       .single()
     if (apptError || !created) {
-      error.value = apptError?.message ?? t('Could not create appointment.', 'No se ha podido crear la cita.')
-      saving.value = false
+      const why = apptError?.message ?? t('Could not create appointment.', 'No se ha podido crear la cita.')
+      // Part of a series is already in: say how much, so a retry is not a
+      // blind second copy of it.
+      error.value = i === 0 ? why : t(`Booked ${i} of ${starts.length}; ${formatWeekdayDate(occStart)} failed: ${why}`, `Reservadas ${i} de ${starts.length}; ${formatWeekdayDate(occStart)} ha fallado: ${why}`)
       return
     }
     if (i === 0) firstAppointmentId = created.id
@@ -535,7 +642,6 @@ async function save() {
     }
   }
 
-  saving.value = false
   emit('saved')
 }
 
@@ -790,7 +896,6 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
           </div>
         </details>
 
-        <p v-if="error" class="text-[13px] text-danger-text">{{ error }}</p>
       </div>
 
       <div class="create-footer flex shrink-0 flex-col gap-3 border-t border-line bg-surface px-5 py-3 sm:px-6">
@@ -798,7 +903,45 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
           <input v-model="sendConfirmation" type="checkbox" class="h-4 w-4 accent-brand" data-cy="create-send-confirmation" />
           {{ t('Send WhatsApp confirmation', 'Enviar confirmación por WhatsApp') }}
         </label>
+        <!-- Here rather than at the end of the scrolling body, where a failed
+        booking's message sat under this footer and out of sight. -->
+        <p v-if="error" role="alert" class="text-[13px] text-danger-text" data-cy="create-error">{{ error }}</p>
+        <!-- In the footer, beside the button it answers for: the body scrolls
+        and the Repeat field that caused this is folded away under More
+        options. -->
+        <div v-if="pendingSeries" role="alert" class="flex flex-col gap-2 rounded-ctl border border-warning-border bg-warning-bg px-3 py-2.5 text-[13px]" data-cy="create-series-conflicts">
+          <strong class="text-warning-text">{{
+            t(
+              `${pendingSeries.problems.length} of ${pendingSeries.starts.length} dates don’t fit`,
+              `${pendingSeries.problems.length} de ${pendingSeries.starts.length} fechas no caben`,
+            )
+          }}</strong>
+          <ul class="flex max-h-32 flex-col gap-1 overflow-y-auto">
+            <li v-for="p in pendingSeries.problems" :key="p.index" class="flex flex-wrap gap-x-2 text-ink-700" data-cy="create-series-conflict">
+              <span class="font-semibold">{{ formatWeekdayDate(p.start) }} · {{ formatTime(p.start) }}</span>
+              <span class="text-ink-500">{{ problemReason(p) }}</span>
+            </li>
+          </ul>
+          <div class="flex flex-wrap gap-2">
+            <button
+              v-if="pendingKeepCount > 0"
+              type="button"
+              class="h-9 touch:h-11 rounded-ctl bg-brand px-3 text-[13px] font-semibold text-surface hover:bg-brand-hover"
+              data-cy="create-series-skip"
+              @click="resolveSeries('skip')"
+            >
+              {{ t(`Skip them, book the other ${pendingKeepCount}`, `Saltarlas y reservar las otras ${pendingKeepCount}`) }}
+            </button>
+            <button type="button" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[13px] font-semibold text-ink-700 hover:border-line-controlHover" data-cy="create-series-anyway" @click="resolveSeries('all')">
+              {{ t('Book all anyway', 'Reservar todas igualmente') }}
+            </button>
+            <button type="button" class="h-9 touch:h-11 rounded-ctl px-3 text-[13px] font-semibold text-brand-text hover:bg-surface" data-cy="create-series-back" @click="pendingSeries = null">
+              {{ t('Go back', 'Volver') }}
+            </button>
+          </div>
+        </div>
         <button
+          v-else
           type="submit"
           data-cy="create-submit"
           :disabled="!canBook"

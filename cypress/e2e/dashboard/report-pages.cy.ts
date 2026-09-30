@@ -58,7 +58,7 @@ describe('Report pages', () => {
       cy.get('[data-cy="confirm-dialog"]').contains('button', 'Create').click()
       cy.location('pathname').should('match', /^\/reports\/pages\//)
       cy.get('[data-cy="report-page-title"]').should('contain', 'Monthly management')
-      cy.get('[data-cy="report-block"]').should('have.length', 10)
+      cy.get('[data-cy="report-block"]').should('have.length', 11)
       // Nothing left loading and nothing refused: an empty clinic still has figures of zero.
       cy.get('[data-cy="report-block"][aria-busy]').should('not.exist')
       cy.get('[data-cy="report-block-unavailable"]').should('not.exist')

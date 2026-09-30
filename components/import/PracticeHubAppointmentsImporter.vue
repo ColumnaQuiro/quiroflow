@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import Papa from 'papaparse'
 import type { TablesInsert, TablesUpdate } from '~/types/database.types'
+import { matchIncomingAppointments, type HeldReason, type IncomingAppointment } from '~/utils/importAppointmentMatch'
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
@@ -22,12 +23,18 @@ interface MappedAppointment {
 // touched: `rescheduled` (keeps a detected time change silent -- no
 // reschedule automation fires for a bulk historical sync), `note`,
 // `external_reference`, `created_at`, `room_id`, and all QuiroFlow-native
-// confirmation/reminder/check-in/flow timestamps.
+// confirmation/reminder/check-in/flow timestamps. The one exception to
+// `external_reference` is a visit adopted by a re-created PracticeHub
+// appointment (utils/importAppointmentMatch.ts): it takes the new id, so the
+// next run and the ledger import find it by id.
 const OVERWRITE_FIELDS = ['starts_at', 'ends_at', 'status', 'practitioner_id', 'practitioner_name', 'appointment_type_id'] as const
 type AppointmentOverwritable = Pick<TablesInsert<'appointments'>, (typeof OVERWRITE_FIELDS)[number]>
 
 interface ExistingAppointment {
   id: string
+  external_reference: string | null
+  patient_id: string
+  clinic_id: string | null
   starts_at: string
   ends_at: string
   status: string
@@ -41,6 +48,8 @@ interface FieldDiff { field: string; from: string; to: string }
 interface MappedUpdate {
   id: string
   label: string
+  /** Set when a re-created PracticeHub appointment takes over this visit. */
+  adopted: boolean
   updates: TablesUpdate<'appointments'>
   diff: FieldDiff[]
   note: string | null
@@ -106,8 +115,18 @@ onMounted(async () => {
   appointmentTypes.value = at ?? []
 })
 
+interface HeldRow {
+  sourceRow: number
+  ref: string
+  patientRef: string
+  label: string
+  reason: HeldReason
+}
+
 const toImport = ref<MappedAppointment[]>([])
 const toUpdate = ref<MappedUpdate[]>([])
+const held = ref<HeldRow[]>([])
+const adoptedCount = computed(() => toUpdate.value.filter((u) => u.adopted).length)
 const totalRows = ref(0)
 const skippedNoPatient = ref(0)
 const skippedDuplicate = ref(0)
@@ -217,33 +236,38 @@ async function proceedToPreview() {
     if (!data || data.length < PAGE_SIZE) break
   }
 
-  const existingByRef = new Map<string, ExistingAppointment>()
+  // Every appointment, not only imported ones: a visit entered here carries
+  // no PracticeHub id and can still be the one a re-created appointment
+  // describes.
+  const existingById = new Map<string, ExistingAppointment>()
   for (let page = 0; ; page++) {
     const { data } = await supabase
       .from('appointments')
-      .select('id, external_reference, starts_at, ends_at, status, practitioner_id, practitioner_name, appointment_type_id')
-      .not('external_reference', 'is', null)
+      .select('id, external_reference, patient_id, clinic_id, starts_at, ends_at, status, practitioner_id, practitioner_name, appointment_type_id')
       .order('id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
-    for (const a of data ?? []) {
-      if (a.external_reference) existingByRef.set(a.external_reference, a as ExistingAppointment)
-    }
+    for (const a of data ?? []) existingById.set(a.id, a as ExistingAppointment)
     if (!data || data.length < PAGE_SIZE) break
   }
+  const existingRefs = new Set([...existingById.values()].map((a) => a.external_reference).filter(Boolean))
+  const { data: clinic } = await supabase.from('clinics').select('timezone').eq('id', targetClinicId.value).maybeSingle()
 
   skippedNoPatient.value = 0
   skippedDuplicate.value = 0
   skippedInvalidDate.value = 0
   const mapped: MappedAppointment[] = []
   const updates: MappedUpdate[] = []
+  const heldRows: HeldRow[] = []
   const matchedIds: string[] = []
 
-  rawRows.value.forEach((row, index) => {
-    const extRef = row['Internal Appt ID']?.trim() || row['Imported Appt ID']?.trim() || ''
-    const existing = extRef ? existingByRef.get(extRef) : undefined
+  const refOf = (row: CsvRow) => row['Internal Appt ID']?.trim() || row['Imported Appt ID']?.trim() || ''
+  const refsInFile = new Set(rawRows.value.map(refOf).filter(Boolean))
 
+  const parsed: { index: number; row: CsvRow; extRef: string; patientId: string | undefined; start: Date; end: Date }[] = []
+  rawRows.value.forEach((row, index) => {
+    const extRef = refOf(row)
     const patientRef = row['Patient Number']?.trim()
     const patientId = patientRef ? patientByRef.get(patientRef) : undefined
-    if (!existing && !patientId) {
+    if (!existingRefs.has(extRef) && !patientId) {
       skippedNoPatient.value++
       return
     }
@@ -254,6 +278,34 @@ async function proceedToPreview() {
       skippedInvalidDate.value++
       return
     }
+    parsed.push({ index, row, extRef, patientId, start, end })
+  })
+
+  const incoming: IncomingAppointment[] = parsed.map((p) => ({
+    key: p.index,
+    ref: p.extRef || null,
+    patientId: p.patientId ?? null,
+    startsAt: p.start.toISOString(),
+    endsAt: p.end.toISOString(),
+    status: mapStatus(p.row['Status'] || ''),
+  }))
+  const matches = matchIncomingAppointments(incoming, [...existingById.values()].map((a) => ({
+    id: a.id,
+    patientId: a.patient_id,
+    clinicId: a.clinic_id,
+    externalReference: a.external_reference,
+    startsAt: a.starts_at,
+    endsAt: a.ends_at,
+    status: a.status,
+  })), refsInFile, targetClinicId.value, clinic?.timezone)
+
+  for (const { index, row, extRef, patientId, start, end } of parsed) {
+    const match = matches.get(index)!
+    if (match.kind === 'held') {
+      heldRows.push({ sourceRow: index + 2, ref: extRef, patientRef: row['Patient Number']?.trim() || '', label: start.toLocaleString(), reason: match.reason })
+      continue
+    }
+    const existing = match.kind === 'insert' ? undefined : existingById.get(match.existingId)
 
     const practName = row['Practitioner']?.trim() || ''
     const typeName = row['Appointment Type']?.trim() || ''
@@ -276,11 +328,11 @@ async function proceedToPreview() {
           external_reference: extRef || null,
         },
       })
-      return
+      continue
     }
 
     matchedIds.push(existing.id)
-    const incoming: AppointmentOverwritable = {
+    const incomingFields: AppointmentOverwritable = {
       starts_at: start.toISOString(),
       ends_at: end.toISOString(),
       status: mapStatus(row['Status'] || ''),
@@ -288,20 +340,26 @@ async function proceedToPreview() {
       practitioner_name: practName || null,
       appointment_type_id: (typeName && typeMap.value[typeName]) || null,
     }
-    const { updates: fieldUpdates, diff } = buildAppointmentUpdate(existing, incoming)
+    const { updates: fieldUpdates, diff } = buildAppointmentUpdate(existing, incomingFields)
+    const adopted = match.kind === 'adopt'
+    if (adopted) {
+      fieldUpdates.external_reference = extRef
+      diff.unshift({ field: 'external_reference', from: formatValue(existing.external_reference), to: extRef })
+    }
     if (Object.keys(fieldUpdates).length === 0) {
       skippedDuplicate.value++
-      return
+      continue
     }
     updates.push({
       id: existing.id,
       label: start.toLocaleString(),
+      adopted,
       updates: fieldUpdates,
       diff,
       note,
       sourceRow: index + 2,
     })
-  })
+  }
 
   // visit_notes are additive-only on an update -- never overwrite a note a
   // practitioner already wrote for this appointment.
@@ -320,6 +378,7 @@ async function proceedToPreview() {
 
   toImport.value = mapped
   toUpdate.value = updates
+  held.value = heldRows
   preparingPreview.value = false
   stage.value = 'preview'
 }
@@ -437,6 +496,7 @@ function reset() {
   rawRows.value = []
   toImport.value = []
   toUpdate.value = []
+  held.value = []
   importedCount.value = 0
   updatedCount.value = 0
   importErrors.value = []
@@ -446,7 +506,19 @@ const introNotes = computed(() => [
         { title: t('Run Patients first.', 'Ejecuta Pacientes primero.'), body: t('A visit whose patient has no PracticeHub reference here cannot be matched and is skipped.', 'Una visita cuyo paciente no tenga referencia de PracticeHub aquí no se puede emparejar y se omite.') },
         { title: t('Where the file comes from.', 'De dónde sale el archivo.'), body: t('Export "Appointments" as CSV from PracticeHub under Settings -> Data Exports, then drop it here.', 'Exporta "Appointments" como CSV desde PracticeHub en Settings -> Data Exports y suéltalo aquí.') },
         { title: t('Safe to run again.', 'Se puede volver a ejecutar.'), body: t('PracticeHub stays authoritative until cutover, so a re-run updates a visit that changed there rather than adding a second one.', 'PracticeHub manda hasta el cambio definitivo, así que volver a ejecutarlo actualiza una visita que cambió allí en lugar de añadir otra.') },
+        { title: t('Re-created in PracticeHub.', 'Recreadas en PracticeHub.'), body: t('An appointment deleted and re-created in PracticeHub gets a new id. When the patient has one visit here that day, that visit takes the new id instead of a second one arriving; when that is not certain, the row is held back and listed for you to check.', 'Una cita borrada y recreada en PracticeHub recibe un id nuevo. Si el paciente tiene una visita aquí ese día, esa visita toma el id nuevo en lugar de llegar una segunda; si no es seguro, la fila se aparta y se lista para que la revises.') },
 ])
+
+function heldReasonLabel(reason: HeldReason): string {
+  switch (reason) {
+    case 'several':
+      return t('Several visits here that day could be this one', 'Varias visitas de ese día podrían ser esta')
+    case 'contested':
+      return t('Another row in the file matches the same visit', 'Otra fila del archivo coincide con la misma visita')
+    case 'moved_away':
+      return t("PracticeHub moved this visit's id to another day or patient and re-created the visit", 'PracticeHub movió el id de esta visita a otro día o paciente y recreó la visita')
+  }
+}
 </script>
 
 <template>
@@ -535,10 +607,12 @@ const introNotes = computed(() => [
 
     <div v-else-if="stage === 'preview'" class="mt-4 space-y-4">
       <div class="rounded-lg border border-line bg-surface p-4">
-        <dl class="grid grid-cols-2 gap-2 text-sm sm:grid-cols-5">
+        <dl class="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
           <div><dt class="text-ink-muted2">{{ t('Total rows', 'Filas totales') }}</dt><dd class="font-medium text-ink-900">{{ totalRows }}</dd></div>
           <div><dt class="text-ink-muted2">{{ t('Will import', 'Se importarán') }}</dt><dd class="font-medium text-success-text">{{ toImport.length }}</dd></div>
           <div><dt class="text-ink-muted2">{{ t('Will update', 'Se actualizarán') }}</dt><dd class="font-medium text-brand-text">{{ toUpdate.length }}</dd></div>
+          <div><dt class="text-ink-muted2">{{ t('Re-created in PracticeHub, already here', 'Recreadas en PracticeHub, ya aquí') }}</dt><dd class="font-medium text-brand-text">{{ adoptedCount }}</dd></div>
+          <div><dt class="text-ink-muted2">{{ t('Held for review', 'Apartadas para revisar') }}</dt><dd class="font-medium" :class="held.length > 0 ? 'text-danger-text' : 'text-ink-900'">{{ held.length }}</dd></div>
           <div><dt class="text-ink-muted2">{{ t('No matching patient', 'Sin paciente coincidente') }}</dt><dd class="font-medium text-ink-900">{{ skippedNoPatient }}</dd></div>
           <div><dt class="text-ink-muted2">{{ t('No changes / bad dates', 'Sin cambios / fechas incorrectas') }}</dt><dd class="font-medium text-ink-900">{{ skippedDuplicate + skippedInvalidDate }}</dd></div>
         </dl>
@@ -593,6 +667,30 @@ const introNotes = computed(() => [
         <p v-if="toUpdate.length > 5" class="border-t border-line-divider px-3 py-2 text-xs text-ink-faint">
           + {{ toUpdate.length - 5 }} more appointments to update
         </p>
+      </div>
+
+      <div v-if="held.length > 0" class="overflow-hidden rounded-lg border border-line bg-surface">
+        <div class="border-b border-line-divider px-3 py-2 text-xs font-medium uppercase tracking-wide text-ink-muted2">
+          {{ t('Held for review -- not imported and not changed', 'Apartadas para revisar: ni se importan ni se cambian') }}
+        </div>
+        <table class="w-full text-sm">
+          <thead class="border-b border-line bg-surface-subtle text-left text-xs font-medium uppercase tracking-wide text-ink-muted2">
+            <tr>
+              <th class="px-3 py-2">{{ t('Date', 'Fecha') }}</th>
+              <th class="px-3 py-2">{{ t('PracticeHub id', 'Id de PracticeHub') }}</th>
+              <th class="px-3 py-2">{{ t('Patient number', 'Nº de paciente') }}</th>
+              <th class="px-3 py-2">{{ t('Why', 'Motivo') }}</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-line-divider">
+            <tr v-for="row in held" :key="row.sourceRow">
+              <td class="px-3 py-2 text-ink-900">{{ row.label }}</td>
+              <td class="px-3 py-2 text-ink-muted2">{{ row.ref || t('N/A', 'N/D') }}</td>
+              <td class="px-3 py-2 text-ink-muted2">{{ row.patientRef || t('N/A', 'N/D') }}</td>
+              <td class="px-3 py-2 text-ink-muted2">{{ heldReasonLabel(row.reason) }}</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
 
       <div class="flex gap-3">

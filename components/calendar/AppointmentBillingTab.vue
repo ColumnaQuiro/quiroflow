@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { formatEur } from '~/utils/billing'
-import { settleInvoiceIfCovered } from '~/utils/settleInvoice'
+import { invoiceDueCents, settleInvoiceIfCovered } from '~/utils/settleInvoice'
 const props = defineProps<{
   appointmentId: string
   patientId: string
@@ -87,9 +87,7 @@ const paidCents = computed(() => payments.value.reduce((sum, p) => sum + p.amoun
  * what is actually left, so a 'paid' invoice with no payments means covered,
  * never stale.
  */
-const balanceDueCents = computed(() =>
-  invoice.value?.status === 'paid' ? 0 : (invoice.value?.total_cents ?? 0) - paidCents.value,
-)
+const balanceDueCents = computed(() => invoiceDueCents(invoice.value, paidCents.value))
 
 // A patient who has checked in is being seen, whatever the clock says about
 // the slot. Early arrivals are routine -- in at 10:16 for 10:30, treated, and

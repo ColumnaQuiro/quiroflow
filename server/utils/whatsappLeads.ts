@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
-import { nextLeadReference } from '~/server/utils/leads'
+import { insertLead } from '~/server/utils/leads'
 import { receptionistHandlesNewLeads } from '~/server/utils/receptionist'
 import { toE164Loose } from '~/utils/phone'
 
@@ -74,8 +74,6 @@ export async function leadForWhatsAppSender(
   const phone = toE164Loose(`+${fromNumber}`, 'ES') ?? fromNumber
 
   const insert = {
-    account_id: accountId,
-    reference: await nextLeadReference(supabase, accountId),
     full_name: name,
     phone,
     channel: 'whatsapp' as const,
@@ -97,7 +95,7 @@ export async function leadForWhatsAppSender(
     ...((await receptionistHandlesNewLeads(supabase, accountId)) ? { ai_state: 'handling' as const } : {}),
   }
 
-  const { data: lead, error } = await supabase.from('leads').insert(insert).select('id').single()
+  const { data: lead, error } = await insertLead(supabase, accountId, insert)
 
   if (error) {
     // The unique index doing its job: two messages from the same stranger

@@ -43,6 +43,13 @@ const archivedAt = ref<string | null>(null)
 const practitioners = ref<{ id: string; full_name: string; ownHours: boolean }[]>([])
 const upcomingCount = ref(0)
 const appointmentCount = ref(0)
+// One taxpayer per account: every factura carries the oldest clinic's legal
+// name and NIF, whichever location it is issued from. The other clinics'
+// fiscal fields were shown -- "printed on this location's facturas" -- and
+// never used.
+const fiscalClinic = ref<{ id: string; name: string; legal_name: string | null; tax_id: string | null } | null>(null)
+const facturaCount = ref(0)
+const isFiscal = computed(() => !fiscalClinic.value || fiscalClinic.value.id === clinicId)
 const otherActiveCount = ref(0)
 
 function toForm(c: any): Form {
@@ -82,7 +89,7 @@ async function load() {
 
 async function loadContext() {
   const now = new Date().toISOString()
-  const [links, upcoming, all, others] = await Promise.all([
+  const [links, upcoming, all, others, fiscal, facturas] = await Promise.all([
     supabase.from('team_member_clinics').select('team_members(id, full_name, is_practitioner, deleted_at, business_hours)').eq('clinic_id', clinicId),
     supabase
       .from('appointments')
@@ -93,7 +100,13 @@ async function loadContext() {
       .gt('starts_at', now),
     supabase.from('appointments').select('id', { count: 'exact', head: true }).eq('clinic_id', clinicId),
     supabase.from('clinics').select('id', { count: 'exact', head: true }).is('archived_at', null).neq('id', clinicId),
+    // The oldest clinic, archived or not: the query fill_factura_issuer and
+    // record_factura_alta run for the obligado.
+    supabase.from('clinics').select('id, name, legal_name, tax_id').order('created_at').limit(1).maybeSingle(),
+    supabase.from('facturas').select('id', { count: 'exact', head: true }),
   ])
+  fiscalClinic.value = fiscal.data ?? null
+  facturaCount.value = facturas.count ?? 0
   practitioners.value = ((links.data ?? []) as any[])
     .map((l) => l.team_members)
     .filter((m) => m && m.is_practitioner && !m.deleted_at)
@@ -113,7 +126,7 @@ const savedTimezone = computed(() => (original.value ? (JSON.parse(original.valu
 const problems = computed(() => (form.value ? hoursProblems(form.value.business_hours) : {}))
 const withOwnHours = computed(() => practitioners.value.filter((p) => p.ownHours))
 const withoutOwnHours = computed(() => practitioners.value.filter((p) => !p.ownHours))
-const fiscalIncomplete = computed(() => !!form.value && (!form.value.legal_name.trim() || !form.value.tax_id.trim()))
+const fiscalIncomplete = computed(() => !!form.value && isFiscal.value && (!form.value.legal_name.trim() || !form.value.tax_id.trim()))
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const emailBad = computed(() => !!form.value?.email.trim() && !EMAIL.test(form.value.email.trim()))
@@ -442,11 +455,17 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
               <div class="flex items-start gap-3">
                 <div class="flex flex-1 flex-col gap-1">
                   <h2 id="h-fiscal" class="text-[16px] font-bold text-ink-900">{{ t('Billing details', 'Datos fiscales') }}</h2>
-                  <p class="text-[13px] text-ink-muted">{{ t('What a factura needs to be valid. Printed on this location\'s facturas and receipts.', 'Lo que exige una factura para ser válida. Se imprime en facturas y recibos de esta sede.') }}</p>
+                  <p v-if="isFiscal" class="text-[13px] text-ink-muted" data-cy="clinic-fiscal-issuer">{{ t('What a factura needs to be valid. Every factura carries this legal name and NIF, whichever location it is issued from.', 'Lo que exige una factura para ser válida. Todas las facturas llevan esta razón social y este NIF, sea cual sea la sede que la emite.') }}</p>
+                  <p v-else class="text-[13px] text-ink-muted">{{ t('Printed on this location\'s facturas and receipts.', 'Se imprime en facturas y recibos de esta sede.') }}</p>
                 </div>
                 <span v-if="fiscalIncomplete" class="shrink-0 rounded-pill bg-warning-bg px-2.5 py-0.5 text-[12.5px] font-bold text-warning-text" data-cy="clinic-fiscal-incomplete">{{ t('Incomplete', 'Incompleto') }}</span>
               </div>
-              <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <p v-if="!isFiscal && fiscalClinic" class="rounded-ctl border border-line bg-surface-subtle px-3.5 py-3 text-[13.5px] leading-snug text-ink-700" data-cy="clinic-fiscal-elsewhere">
+                {{ t('Facturas from this location are issued under', 'Las facturas de esta sede se emiten con la razón social y el NIF de') }}
+                <NuxtLink :to="`/settings/clinics/${fiscalClinic.id}#fiscal`" class="font-semibold text-brand-text hover:underline">{{ fiscalClinic.name }}</NuxtLink>{{ t('’s legal name and NIF', '') }}
+                <template v-if="fiscalClinic.tax_id"> ({{ fiscalClinic.legal_name || fiscalClinic.name }} · {{ fiscalClinic.tax_id }})</template>{{ t(': the account is one taxpayer. What differs per location is the address, the footer and the logo.', ': la cuenta es un solo contribuyente. Lo que cambia por sede es la dirección, el pie y el logotipo.') }}
+              </p>
+              <div v-if="isFiscal" class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
                   {{ t('Legal name', 'Razón social') }}
                   <input v-model="form.legal_name" data-cy="clinic-legal-name" type="text" :class="[inputClass, 'border-line-control']" />
@@ -491,7 +510,10 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
               <div class="flex flex-wrap items-center gap-4 rounded-ctl border border-line px-4 py-3.5">
                 <div class="flex min-w-[240px] flex-1 flex-col gap-0.5">
                   <strong class="text-[14px] text-ink-900">{{ t('Delete', 'Eliminar') }}</strong>
-                  <span v-if="appointmentCount > 0" class="text-[13px] leading-snug text-ink-500" data-cy="clinic-delete-unavailable">
+                  <span v-if="isFiscal && facturaCount > 0" class="text-[13px] leading-snug text-ink-500" data-cy="clinic-delete-unavailable">
+                    {{ t('Not available: facturas are issued under this location’s legal name and NIF. Archive it instead if it closes.', 'No disponible: las facturas se emiten con la razón social y el NIF de esta sede. Archívala si cierra.') }}
+                  </span>
+                  <span v-else-if="appointmentCount > 0" class="text-[13px] leading-snug text-ink-500" data-cy="clinic-delete-unavailable">
                     {{ t(`Not available: this location has ${appointmentCount} appointments. Only a location with none, like one created by mistake, can be deleted.`, `No disponible: esta sede tiene ${appointmentCount} citas. Solo se puede eliminar una sede sin ninguna cita, como una creada por error.`) }}
                   </span>
                   <span v-else-if="otherActiveCount === 0" class="text-[13px] leading-snug text-ink-500">
@@ -502,7 +524,7 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
                 <button
                   type="button"
                   data-cy="clinic-delete"
-                  :disabled="appointmentCount > 0 || otherActiveCount === 0"
+                  :disabled="appointmentCount > 0 || otherActiveCount === 0 || (isFiscal && facturaCount > 0)"
                   class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-danger-text hover:bg-surface-subtle disabled:cursor-not-allowed disabled:border-line disabled:text-ink-faint"
                   @click="deleteOpen = true"
                 >
@@ -542,6 +564,7 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
       @cancel="archiveOpen = false"
     >
       <p class="text-[14px] leading-relaxed text-ink-500">{{ t('It leaves the clinic switcher, the calendar and online booking. Its appointments, patients and facturas are kept.', 'Deja de aparecer en el selector de clínica, el calendario y la reserva online. Sus citas, pacientes y facturas se conservan.') }}</p>
+      <p v-if="isFiscal && facturaCount > 0" class="text-[14px] leading-relaxed text-ink-500" data-cy="clinic-archive-fiscal">{{ t('Its legal name and NIF stay on every factura: archiving a location does not change who issues them.', 'Su razón social y su NIF siguen en todas las facturas: archivar una sede no cambia quién las emite.') }}</p>
       <p v-if="upcomingCount > 0" class="rounded-ctl border border-warning-border bg-warning-bg px-3.5 py-3 text-[13.5px] leading-snug text-warning-text" data-cy="clinic-archive-upcoming">
         <strong>{{ t(`It has ${upcomingCount} appointments from today on.`, `Tiene ${upcomingCount} citas a partir de hoy.`) }}</strong>
         {{ t('Move them to another location or cancel them before archiving, so no patient is left booked at a closed location.', 'Muévelas a otra sede o cancélalas antes de archivar, para que ningún paciente se quede con una cita en una sede cerrada.') }}

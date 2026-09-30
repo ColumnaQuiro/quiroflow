@@ -848,6 +848,8 @@ async function createFactura(opts: {
   kind?: string
   description: string
   amountCents: number
+  /** Leave the breakdown to fill_factura_tax, from the account's IVA setting. */
+  taxFromAccount?: boolean
 }) {
   const row = unwrap(
     await admin
@@ -865,10 +867,9 @@ async function createFactura(opts: {
         // without a base is not a document anyone may hand a patient, and a
         // seeder that could create one would let a spec pass against a row
         // production cannot produce.
-        tax_base_cents: opts.amountCents,
-        tax_rate_bp: 0,
-        tax_amount_cents: 0,
-        tax_exemption_code: 'E1',
+        ...(opts.taxFromAccount
+          ? {}
+          : { tax_base_cents: opts.amountCents, tax_rate_bp: 0, tax_amount_cents: 0, tax_exemption_code: 'E1' }),
       })
       .select('id')
       .single(),
@@ -1838,15 +1839,16 @@ async function settingsWriteAsStaff(opts: {
   email: string
   password: string
   table: string
-  op: 'insert' | 'update'
-  values: Record<string, unknown>
+  op: 'insert' | 'update' | 'delete'
+  values?: Record<string, unknown>
   match?: Record<string, unknown>
 }) {
   const userClient = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
   const { error: signInErr } = await userClient.auth.signInWithPassword({ email: opts.email, password: opts.password })
   if (signInErr) throw signInErr
   const table = userClient.from(opts.table as never) as any
-  const query = opts.op === 'insert' ? table.insert(opts.values) : table.update(opts.values).match(opts.match ?? {})
+  const query =
+    opts.op === 'insert' ? table.insert(opts.values) : opts.op === 'update' ? table.update(opts.values).match(opts.match ?? {}) : table.delete().match(opts.match ?? {})
   const { data, error } = await query.select('*')
   return { changed: (data as unknown[] | null)?.length ?? 0, error: error ? error.message : null }
 }

@@ -23,6 +23,7 @@ interface ClinicRow {
   online_booking_enabled: boolean
   tax_id: string | null
   archived_at: string | null
+  created_at: string
 }
 
 const clinics = ref<ClinicRow[]>([])
@@ -31,12 +32,16 @@ const archivedCounts = ref<Record<string, { appointments: number; patients: numb
 const ready = ref(false)
 
 const active = computed(() => clinics.value.filter((c) => !c.archived_at))
+// Facturas carry the oldest clinic's legal name and NIF (fill_factura_issuer),
+// so that is the only one whose NIF matters -- and the only one a missing NIF
+// is worth flagging on.
+const fiscalId = computed(() => [...clinics.value].sort((a, b) => a.created_at.localeCompare(b.created_at))[0]?.id ?? null)
 const archived = computed(() => clinics.value.filter((c) => c.archived_at))
 const planFull = computed(() => allowance.value !== null && active.value.length >= allowance.value)
 
 async function load() {
   const [{ data, error }, { data: cap }] = await Promise.all([
-    supabase.from('clinics').select('id, name, address, phone, business_hours, timezone, online_booking_enabled, tax_id, archived_at').order('name'),
+    supabase.from('clinics').select('id, name, address, phone, business_hours, timezone, online_booking_enabled, tax_id, archived_at, created_at').order('name'),
     supabase.rpc('clinic_location_allowance', { target_account_id: store.accountId! }),
   ])
   if (error) {
@@ -191,7 +196,8 @@ async function reactivate(c: ClinicRow) {
               <div class="flex flex-wrap items-center gap-2">
                 <strong class="text-[16px] text-ink-900">{{ c.name }}</strong>
                 <span v-if="c.online_booking_enabled" class="rounded-pill bg-success-bg px-2 py-0.5 text-[12px] font-bold text-success-text">{{ t('Online booking', 'Reserva online') }}</span>
-                <span v-if="!c.tax_id" class="rounded-pill bg-warning-bg px-2 py-0.5 text-[12px] font-bold text-warning-text" data-cy="clinic-card-missing-nif">{{ t('No tax ID', 'Falta el NIF') }}</span>
+                <span v-if="c.id === fiscalId" class="rounded-pill bg-brand-tint px-2 py-0.5 text-[12px] font-bold text-brand-text" data-cy="clinic-card-fiscal" :title="t('Every factura carries this location’s legal name and NIF', 'Todas las facturas llevan la razón social y el NIF de esta sede')">{{ t('Issues facturas', 'Emite las facturas') }}</span>
+                <span v-if="c.id === fiscalId && !c.tax_id" class="rounded-pill bg-warning-bg px-2 py-0.5 text-[12px] font-bold text-warning-text" data-cy="clinic-card-missing-nif">{{ t('No tax ID', 'Falta el NIF') }}</span>
               </div>
               <span class="truncate text-[13.5px] text-ink-500">{{ c.address ?? t('No address', 'Sin dirección') }}</span>
               <span class="text-[13px] text-ink-muted">{{ metaLine(c) }}</span>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { SIF_NAME, SIF_VERSION } from '~/utils/sifIdentity'
+import { exemptionClause } from '~/utils/facturaTax'
 
 // Settings > Invoicing: what facturas and receipts say. Each clinic's fiscal
 // data, the number series, what a receipt shows, and the email that sends
@@ -16,6 +17,22 @@ const { showToast } = useToast()
 
 const loading = ref(true)
 const saving = ref(false)
+
+// IVA on facturas. ColumnaQuiro's services are exempt (art. 20.Uno.3, cause
+// E1), which is the default; a clinic that is not exempt sets a rate. It was
+// only settable in the database. Applies to facturas issued from now on --
+// each factura stores its own rate and cause (fill_factura_tax), so issued
+// ones never change.
+const taxMode = ref<'exempt' | 'taxed'>('exempt')
+const exemptionCode = ref('E1')
+const taxRate = ref('21')
+const EXEMPTION_CODES = ['E1', 'E2', 'E3', 'E4', 'E5', 'E6'] as const
+const taxRateBp = computed(() => Math.round(Number(String(taxRate.value).replace(',', '.')) * 100))
+const taxError = computed(() => {
+  if (taxMode.value !== 'taxed') return ''
+  const bp = taxRateBp.value
+  return Number.isFinite(bp) && bp > 0 && bp <= 3000 ? '' : t('The IVA rate is a percentage between 0 and 30, e.g. 21.', 'El tipo de IVA es un porcentaje entre 0 y 30, p. ej. 21.')
+})
 
 // Receipt numbering is the real counter behind next_invoice_number()
 // (get/set_receipt_numbering). This field used to save
@@ -115,11 +132,14 @@ async function load() {
   const { data } = await supabase
     .from('accounts')
     .select(
-      'send_invoices_automatically_default, show_dob_on_invoices, show_ssn_on_invoices, show_taxes_on_invoices, hide_invoice_balance, hide_account_balance, hide_payments_on_invoices, hide_provider_on_invoices, hide_next_visit_on_invoices, hide_logo_on_invoices, invoice_email_subject, invoice_email_body',
+      'factura_tax_rate_bp, factura_tax_exemption_code, send_invoices_automatically_default, show_dob_on_invoices, show_ssn_on_invoices, show_taxes_on_invoices, hide_invoice_balance, hide_account_balance, hide_payments_on_invoices, hide_provider_on_invoices, hide_next_visit_on_invoices, hide_logo_on_invoices, invoice_email_subject, invoice_email_body',
     )
     .eq('id', store.accountId!)
     .maybeSingle()
   if (data) {
+    taxMode.value = data.factura_tax_exemption_code || !data.factura_tax_rate_bp ? 'exempt' : 'taxed'
+    exemptionCode.value = data.factura_tax_exemption_code ?? 'E1'
+    taxRate.value = data.factura_tax_rate_bp ? String(data.factura_tax_rate_bp / 100).replace('.', ',') : '21'
     sendAutomatically.value = data.send_invoices_automatically_default
     showDob.value = data.show_dob_on_invoices
     showSsn.value = data.show_ssn_on_invoices
@@ -143,10 +163,18 @@ async function save() {
     showToast(numberingError.value, 'error')
     return
   }
+  if (taxError.value) {
+    showToast(taxError.value, 'error')
+    return
+  }
   saving.value = true
   const { error } = await supabase
     .from('accounts')
     .update({
+      // Exempt: rate 0 and the cause, which the factura has to cite. Taxed: the
+      // rate, and no cause -- facturas_tax_coherent_check refuses both at once.
+      factura_tax_rate_bp: taxMode.value === 'taxed' ? taxRateBp.value : 0,
+      factura_tax_exemption_code: taxMode.value === 'exempt' ? exemptionCode.value : null,
       send_invoices_automatically_default: sendAutomatically.value,
       show_dob_on_invoices: showDob.value,
       show_ssn_on_invoices: showSsn.value,
@@ -235,10 +263,21 @@ const receiptGroups = computed<{ label: string; options: ReceiptOption[] }[]>(()
 ])
 
 // --- fiscal data, formerly /settings/fiscal-data ---------------------------
-const fiscalComplete = (c: { legal_name?: string | null; tax_id?: string | null; address?: string | null }) => !!(c.legal_name && c.tax_id && c.address)
+// One taxpayer per account: every factura carries the oldest clinic's legal
+// name and NIF (fill_factura_issuer), and each location only its own address.
+// So only that clinic needs a NIF; asking every location for one described
+// fields that were never printed.
+const fiscalClinicId = ref<string | null>(null)
+onMounted(async () => {
+  const { data } = await supabase.from('clinics').select('id').order('created_at').limit(1).maybeSingle()
+  fiscalClinicId.value = data?.id ?? null
+})
+type FiscalFields = { id?: string; legal_name?: string | null; tax_id?: string | null; address?: string | null }
+const isFiscalClinic = (c: FiscalFields) => !fiscalClinicId.value || c.id === fiscalClinicId.value
+const fiscalComplete = (c: FiscalFields) => (isFiscalClinic(c) ? !!(c.legal_name && c.tax_id && c.address) : !!c.address)
 const completeClinics = computed(() => store.clinics.filter(fiscalComplete).length)
-function missingLabel(c: { legal_name?: string | null; tax_id?: string | null; address?: string | null }) {
-  const missing = [!c.legal_name && t('legal name', 'razón social'), !c.tax_id && t('NIF', 'NIF'), !c.address && t('address', 'dirección')].filter(Boolean)
+function missingLabel(c: FiscalFields) {
+  const missing = [isFiscalClinic(c) && !c.legal_name && t('legal name', 'razón social'), isFiscalClinic(c) && !c.tax_id && t('NIF', 'NIF'), !c.address && t('address', 'dirección')].filter(Boolean)
   if (missing.length === 3) return t('Not filled in', 'Sin rellenar')
   return t(`Missing ${missing.join(', ')}`, `Falta ${missing.join(', ')}`)
 }
@@ -325,6 +364,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
           <nav :aria-label="t('Sections', 'Secciones')" class="flex flex-wrap gap-2">
             <a v-for="s in [
               { id: 'fiscal', label: t('Fiscal data', 'Datos fiscales') },
+              { id: 'tax', label: t('IVA', 'IVA') },
               { id: 'numbering', label: t('Numbering', 'Numeración') },
               { id: 'receipt', label: t('What receipts show', 'Qué muestran los recibos') },
               { id: 'email', label: t('Receipt email', 'Correo del recibo') },
@@ -351,6 +391,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
                 <strong class="text-[15px] text-ink-900">{{ c.name }}</strong>
                 <span class="truncate text-[13px] text-ink-500">{{ [c.legal_name, c.tax_id, c.address].filter(Boolean).join(' · ') || t('Nothing filled in yet', 'Aún sin rellenar') }}</span>
               </div>
+              <UiPill v-if="isFiscalClinic(c)" tone="brand">{{ t('Issues facturas', 'Emite las facturas') }}</UiPill>
               <UiPill v-if="fiscalComplete(c)" tone="success">{{ t('Complete', 'Completo') }}</UiPill>
               <UiPill v-else tone="warning">{{ missingLabel(c) }}</UiPill>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-ink-muted" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
@@ -362,6 +403,39 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
             <UiSkeleton class="h-72 w-full rounded-card" />
           </template>
           <template v-else>
+            <!-- IVA -->
+            <section id="tax" aria-labelledby="h-tax" class="scroll-mt-4 overflow-hidden rounded-card border border-line bg-surface" data-cy="factura-tax">
+              <div class="px-[18px] pb-3 pt-4">
+                <h2 id="h-tax" class="text-[16px] font-bold text-ink-900">{{ t('IVA', 'IVA') }}</h2>
+                <p class="mt-1 text-[13px] leading-snug text-ink-muted">
+                  {{ t('How facturas treat IVA. It applies to facturas issued from now on; each one already issued keeps the treatment it was issued with.', 'Cómo tratan el IVA las facturas. Se aplica a las facturas que se emitan a partir de ahora; las ya emitidas conservan el tratamiento con el que se emitieron.') }}
+                </p>
+              </div>
+              <div role="radiogroup" :aria-label="t('IVA', 'IVA')" class="flex flex-col border-t border-line-row">
+                <label class="flex cursor-pointer items-start gap-3 px-[18px] py-3.5" :class="taxMode === 'exempt' ? 'bg-brand-tint' : ''">
+                  <input v-model="taxMode" type="radio" value="exempt" data-cy="tax-exempt" class="mt-1 h-4 w-4 accent-brand" />
+                  <span class="flex min-w-0 flex-1 flex-col gap-1.5">
+                    <strong class="text-[14.5px] text-ink-900">{{ t('Exempt', 'Exento') }}</strong>
+                    <span class="text-[13px] text-ink-500">{{ t('Health care by a registered professional is exempt under art. 20.Uno.3 of Ley 37/1992. The factura shows the total as the base and cites the exemption.', 'La asistencia sanitaria de un profesional colegiado está exenta por el art. 20.Uno.3 de la Ley 37/1992. La factura muestra el total como base y cita la exención.') }}</span>
+                    <select v-if="taxMode === 'exempt'" v-model="exemptionCode" data-cy="tax-exemption-code" :aria-label="t('Exemption', 'Exención')" :class="[inputClass, 'w-full max-w-[460px]']">
+                      <option v-for="code in EXEMPTION_CODES" :key="code" :value="code">{{ code }} · {{ exemptionClause(code) }}</option>
+                    </select>
+                  </span>
+                </label>
+                <label class="flex cursor-pointer items-start gap-3 border-t border-line-row px-[18px] py-3.5" :class="taxMode === 'taxed' ? 'bg-brand-tint' : ''">
+                  <input v-model="taxMode" type="radio" value="taxed" data-cy="tax-taxed" class="mt-1 h-4 w-4 accent-brand" />
+                  <span class="flex min-w-0 flex-1 flex-col gap-1.5">
+                    <strong class="text-[14.5px] text-ink-900">{{ t('With IVA', 'Con IVA') }}</strong>
+                    <span class="text-[13px] text-ink-500">{{ t('Prices already include it: the factura splits what the patient paid into base and cuota, so its total still matches the payment.', 'Los precios ya lo incluyen: la factura separa lo que pagó el paciente en base y cuota, y su total sigue coincidiendo con el pago.') }}</span>
+                    <span v-if="taxMode === 'taxed'" class="flex items-center gap-2 text-[14px] text-ink-700">
+                      <input v-model="taxRate" type="text" inputmode="decimal" data-cy="tax-rate" :aria-label="t('IVA rate (%)', 'Tipo de IVA (%)')" :class="[inputClass, 'w-20 text-right']" /> %
+                    </span>
+                    <span v-if="taxError" class="text-[12.5px] font-semibold text-danger-text">{{ taxError }}</span>
+                  </span>
+                </label>
+              </div>
+            </section>
+
             <!-- Numbering -->
             <section id="numbering" aria-labelledby="h-num" class="scroll-mt-4 overflow-hidden rounded-card border border-line bg-surface" data-cy="factura-numbering">
               <div class="px-[18px] pb-3 pt-4">

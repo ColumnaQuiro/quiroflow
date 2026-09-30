@@ -963,6 +963,7 @@ export type Database = {
       }
       appointments: {
         Row: {
+          auto_confirmation_claimed_at: string | null
           account_id: string
           appointment_type_id: string | null
           checked_in_at: string | null
@@ -989,6 +990,7 @@ export type Database = {
           status: string
         }
         Insert: {
+          auto_confirmation_claimed_at?: string | null
           account_id: string
           appointment_type_id?: string | null
           checked_in_at?: string | null
@@ -1015,6 +1017,7 @@ export type Database = {
           status?: string
         }
         Update: {
+          auto_confirmation_claimed_at?: string | null
           account_id?: string
           appointment_type_id?: string | null
           checked_in_at?: string | null

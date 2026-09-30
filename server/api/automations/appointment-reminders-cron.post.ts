@@ -77,7 +77,10 @@ export default defineEventHandler(async (event) => {
           .select('id, account_id, accounts!inner(appointment_reminder_enabled, appointment_reminder_hours_before)')
           .eq('accounts.appointment_reminder_enabled', true)
           .eq('accounts.appointment_reminder_hours_before', hoursBefore)
-          .eq('status', 'booked'),
+          .eq('status', 'booked')
+          // "Eliminar cita" sets deleted_at and leaves status 'booked', so
+          // without this a deleted appointment still got its reminder.
+          .is('deleted_at', null),
       )
         .order('id')
         .range(from, from + 999)
@@ -114,6 +117,8 @@ export default defineEventHandler(async (event) => {
     .select('id, account_id, source')
     .in('source', ['online', 'api'])
     .eq('status', 'booked')
+    // Deleted within the catch-up window: nothing to confirm any more.
+    .is('deleted_at', null)
     .is('auto_confirmation_claimed_at', null)
     .is('confirmation_sent_at', null)
     .gte('created_at', new Date(now - CATCH_UP_MAX_AGE_MINUTES * 60 * 1000).toISOString())

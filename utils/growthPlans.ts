@@ -12,6 +12,11 @@
  * Clinic subscriptions: the entitlement then cannot fall out of step with
  * the plan, and a Clinic invoice carries no Growth line item -- which is the
  * point of selling it as included.
+ *
+ * A third copy lives in SQL, in inbox_growth_account_ids()
+ * (20260930142159_inbox_lead_messages_without_growth.sql): the Inbox list and
+ * badge are computed by the database and need the same answer. Adding a plan
+ * here means redefining that function too, or its clinics see each lead twice.
  */
 export const PLANS_INCLUDING_GROWTH = new Set(['clinic'])
 

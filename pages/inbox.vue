@@ -114,7 +114,12 @@ function toConversation(r: InboxRow): Conversation {
     patientId: r.patient_id,
     phoneNumber: r.phone_number,
     externalContactId: r.external_contact_id,
-    name: (r.patient_id && `${r.first_name ?? ''} ${r.last_name ?? ''}`.trim()) || r.phone_number || t('Unknown', 'Desconocido'),
+    name:
+      (r.patient_id && `${r.first_name ?? ''} ${r.last_name ?? ''}`.trim()) ||
+      r.phone_number ||
+      // An Instagram account with no patient: there is no number to show, and
+      // "Unknown" read as if the message had come from nowhere.
+      (r.external_contact_id ? t('Instagram user', 'Usuario de Instagram') : t('Unknown', 'Desconocido')),
     channel: r.last_channel,
     lastMessage: {
       id: `head-${r.conversation_key}`,
@@ -198,18 +203,29 @@ function cleanTerm(q: string) {
 }
 async function keysMatchingText(q: string): Promise<string[]> {
   const [wa, app] = await Promise.all([
-    supabase
-      .from('whatsapp_messages')
-      .select('patient_id, phone_number, external_contact_id')
-      .ilike('body_preview', `%${q}%`)
-      .or('lead_id.is.null,patient_id.not.is.null')
-      .limit(200),
+    withoutLeadThreads(
+      supabase
+        .from('whatsapp_messages')
+        .select('patient_id, phone_number, external_contact_id')
+        .ilike('body_preview', `%${q}%`),
+    ).limit(200),
     supabase.from('patient_app_messages').select('patient_id').ilike('body', `%${q}%`).limit(200),
   ])
   const keys = new Set<string>()
   for (const m of wa.data ?? []) keys.add(keyOf(m as any))
   for (const m of app.data ?? []) keys.add(m.patient_id)
   return [...keys]
+}
+
+// A lead's messages (lead_id set, no patient) are Growth's to draw: with the
+// tier they appear as the lead's own row, from /api/growth/conversations, and
+// are kept out of the plain threads so nobody sees them twice. Without it
+// nothing else shows them, so they stay in, under the number (or Instagram
+// account) they came from -- which is how inbox_conversations keys them for an
+// account without Growth (20260930142159). Applied to every direct read of
+// whatsapp_messages here, so a thread and a search match what the list shows.
+function withoutLeadThreads<Q extends { or: (filters: string) => Q }>(q: Q): Q {
+  return hasGrowth.value ? q.or('lead_id.is.null,patient_id.not.is.null') : q
 }
 
 // Every list query and count shares these, so a count always describes the
@@ -288,17 +304,20 @@ watch(view, () => {
 })
 watch([tab, unreadOnly, replyFilter, labelFilter], () => loadList())
 
-onMounted(async () => {
-  if (!store.teamMember) {
-    await new Promise<void>((resolve) => {
-      const stop = watch(() => store.teamMember, (v) => {
-        if (v) {
-          stop()
-          resolve()
-        }
-      }, { immediate: true })
+function accountLoaded(): Promise<void> {
+  if (store.teamMember) return Promise.resolve()
+  return new Promise<void>((resolve) => {
+    const stop = watch(() => store.teamMember, (v) => {
+      if (v) {
+        stop()
+        resolve()
+      }
     })
-  }
+  })
+}
+
+onMounted(async () => {
+  await accountLoaded()
   loadCounts()
   await loadList()
   ready.value = true
@@ -565,7 +584,7 @@ async function loadThread(c: Conversation | null, opts: { silent?: boolean } = {
     return
   }
   if (!opts.silent) threadLoading.value = true
-  let wa = supabase.from('whatsapp_messages').select(THREAD_COLUMNS).or('lead_id.is.null,patient_id.not.is.null')
+  let wa = withoutLeadThreads(supabase.from('whatsapp_messages').select(THREAD_COLUMNS))
   if (c.patientId) wa = wa.eq('patient_id', c.patientId)
   else if (c.phoneNumber) wa = wa.eq('phone_number', c.phoneNumber).is('patient_id', null)
   else if (c.externalContactId) wa = wa.eq('external_contact_id', c.externalContactId).is('patient_id', null)
@@ -724,9 +743,21 @@ function selectConversation(c: Conversation) {
 // its own and opened the same way a click on its row would.
 const route = useRoute()
 onMounted(async () => {
-  const key = route.query.open
+  let key = route.query.open
   if (typeof key !== 'string') return
   if (key.startsWith('lead:')) {
+    // Without Growth there is no lead row to open: the lead's messages are a
+    // conversation with their number instead (see withoutLeadThreads), so the
+    // notification -- which names the lead -- opens that. The tier is only
+    // known once the account has loaded.
+    await accountLoaded()
+    // useGrowthTier re-decides from the store in a watcher of its own.
+    await nextTick()
+    if (!hasGrowth.value) {
+      const leadKey = await conversationKeyForLead(key.slice('lead:'.length))
+      if (leadKey) openConversationByKey(leadKey)
+      return
+    }
     // Lead rows arrive from the Growth endpoint, after mount.
     const stop = watch(leadConversations, (list) => {
       const lead = list.find((c) => c.key === key)
@@ -737,11 +768,27 @@ onMounted(async () => {
     }, { immediate: true })
     return
   }
+  openConversationByKey(key)
+})
+
+async function openConversationByKey(key: string) {
   const { data } = await supabase.from('inbox_conversations').select('*').eq('conversation_key', key).maybeSingle()
   if (!data) return
   openedRow.value = data as unknown as InboxRow
   selectConversation(toConversation(openedRow.value))
-})
+}
+
+/** The key a lead's messages go by in an account without Growth. */
+async function conversationKeyForLead(leadId: string): Promise<string | null> {
+  const { data } = await supabase
+    .from('whatsapp_messages')
+    .select('patient_id, phone_number, external_contact_id')
+    .eq('lead_id', leadId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  return data ? keyOf(data) : null
+}
 
 // --- Archive, unread, assign (single and bulk) ------------------------------------
 async function setArchived(keys: string[], archive: boolean) {

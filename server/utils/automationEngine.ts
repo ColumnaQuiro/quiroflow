@@ -797,6 +797,8 @@ async function branchFacts(supabase: any, run: SequenceRun, subject: Subject, co
         .select('id', { count: 'exact', head: true })
         .eq('patient_id', p.id)
         .eq('status', 'booked')
+        // A deleted appointment keeps status 'booked'; it is not a future visit.
+        .is('deleted_at', null)
         .gt('starts_at', new Date().toISOString())
       facts.has_future_appointment = (count ?? 0) > 0
     }

@@ -638,6 +638,7 @@ async function runWhatsAppAction(
     )
     .eq('id', accountId)
     .maybeSingle()
+  await withMessagingTokens(accountId, account)
   // A dry run is allowed to proceed without WhatsApp credentials: rehearsing
   // the rule before the channel is connected is a legitimate thing to want,
   // and is the order a clinic actually does things in. It does prove less --

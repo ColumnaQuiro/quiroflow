@@ -1742,6 +1742,10 @@ async function createWhatsappMessage(opts: {
   /** 'instagram' with an externalContactId for a DM; WhatsApp otherwise. */
   channel?: string
   externalContactId?: string
+  /** Meta's message id, so a spec can send status callbacks about it. */
+  wamid?: string
+  /** A lead's message, stored the way the webhook attributes one. */
+  leadId?: string
 }) {
   const { accountId, patientId, phoneNumber, direction, bodyPreview } = opts
   const row = unwrap(
@@ -1760,6 +1764,8 @@ async function createWhatsappMessage(opts: {
         ...(opts.createdAt ? { created_at: opts.createdAt } : {}),
         ...(opts.channel ? { channel: opts.channel } : {}),
         ...(opts.externalContactId ? { external_contact_id: opts.externalContactId } : {}),
+        ...(opts.wamid ? { wamid: opts.wamid } : {}),
+        ...(opts.leadId ? { lead_id: opts.leadId } : {}),
       })
       .select('id, channel')
       .single(),

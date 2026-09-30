@@ -5,6 +5,8 @@ interface Message {
   id: string
   patient_id: string | null
   phone_number: string | null
+  /** Who the conversation is with when there is no phone -- an Instagram IGSID. */
+  external_contact_id: string | null
   direction: string
   status: string
   body_preview: string | null
@@ -21,6 +23,8 @@ interface Conversation {
   key: string
   patientId: string | null
   phoneNumber: string | null
+  /** Set instead of phoneNumber on a channel that has no phone, e.g. Instagram. */
+  externalContactId: string | null
   name: string
   channel: string
   lastMessage: Message
@@ -101,7 +105,7 @@ async function load(opts: { silent?: boolean } = {}) {
   const [{ data: waData }, { data: appData }] = await Promise.all([
     supabase
       .from('whatsapp_messages')
-      .select('id, patient_id, phone_number, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, channel, created_at')
+      .select('id, patient_id, phone_number, external_contact_id, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, channel, created_at')
       .order('created_at', { ascending: false })
       .limit(500),
     supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at').order('created_at', { ascending: false }).limit(500),
@@ -110,6 +114,7 @@ async function load(opts: { silent?: boolean } = {}) {
     id: m.id,
     patient_id: m.patient_id,
     phone_number: null,
+    external_contact_id: null,
     direction: m.direction,
     status: 'sent',
     body_preview: m.body,
@@ -138,10 +143,20 @@ const allMessages = computed<Message[]>(() =>
   [...messages.value, ...pendingMessages.value].sort((a, b) => b.created_at.localeCompare(a.created_at)),
 )
 
+// The conversation a message belongs to, keyed exactly as the web Inbox and
+// inbox_conversations key it (patient, else phone, else Instagram id) -- the
+// read, archive and label rows are shared with the web by this key, so it
+// has to be the same one. Instagram has no phone, so keying on the phone
+// alone put every DM from every Instagram account into a single "Unknown"
+// thread, whose replies then had nobody to go to.
+function keyOf(m: Pick<Message, 'patient_id' | 'phone_number' | 'external_contact_id'>) {
+  return m.patient_id ?? m.phone_number ?? m.external_contact_id ?? 'unknown'
+}
+
 const conversations = computed<Conversation[]>(() => {
   const byKey = new Map<string, Message[]>()
   for (const m of allMessages.value) {
-    const key = m.patient_id ?? m.phone_number ?? 'unknown'
+    const key = keyOf(m)
     if (!byKey.has(key)) byKey.set(key, [])
     byKey.get(key)!.push(m)
   }
@@ -152,12 +167,13 @@ const conversations = computed<Conversation[]>(() => {
       key,
       patientId: last.patient_id,
       phoneNumber: last.phone_number,
-      // The IGSID, which is who an Instagram reply is addressed to. The field
-      // was on the type and read when sending, but nothing ever set it, so
-      // every Instagram thread carried undefined and the reply could not be
-      // addressed at all.
-      externalContactId: last.external_contact_id,
-      name: (last.patient_id && patientNames.value[last.patient_id]) || last.phone_number || 'Unknown',
+      // The IGSID, which is who an Instagram reply is addressed to. It was
+      // read when sending but never selected, so every Instagram thread
+      // carried undefined and the reply could not be addressed at all. From
+      // any message in the thread, not only the newest: that may be an
+      // in-app message or this device's own pending bubble.
+      externalContactId: msgs.find((m) => m.external_contact_id)?.external_contact_id ?? null,
+      name: (last.patient_id && patientNames.value[last.patient_id]) || last.phone_number || (last.external_contact_id ? 'Instagram user' : 'Unknown'),
       channel: last.channel,
       lastMessage: last,
       unread: last.direction === 'inbound' && (!readTimestamps.value[key] || readTimestamps.value[key] < last.created_at),
@@ -173,7 +189,7 @@ const search = ref('')
 const conversationSearchText = computed(() => {
   const map: Record<string, string> = {}
   for (const m of allMessages.value) {
-    const key = m.patient_id ?? m.phone_number ?? 'unknown'
+    const key = keyOf(m)
     map[key] = `${map[key] ?? ''} ${m.body_preview ?? ''}`
   }
   return map
@@ -216,7 +232,7 @@ function exitSelectionMode() {
 const selectedKey = ref<string | null>(null)
 const selected = computed(() => conversations.value.find((c) => c.key === selectedKey.value) ?? null)
 const thread = computed(() =>
-  selectedKey.value ? allMessages.value.filter((m) => (m.patient_id ?? m.phone_number ?? 'unknown') === selectedKey.value).slice().reverse() : [],
+  selectedKey.value ? allMessages.value.filter((m) => keyOf(m) === selectedKey.value).slice().reverse() : [],
 )
 // Follows the bottom of the thread automatically -- a reply the practitioner
 // just sent, or a message that just arrived, used to sit hidden behind the
@@ -540,6 +556,7 @@ async function sendText() {
       id: tempId,
       patient_id: target.patientId,
       phone_number: target.phoneNumber,
+      external_contact_id: target.externalContactId,
       direction: 'outbound',
       status: 'pending',
       body_preview: text,
@@ -608,6 +625,7 @@ async function sendMedia(mediaBase64: string, mediaMimeType: string, mediaFilena
       id: tempId,
       patient_id: target.patientId,
       phone_number: target.phoneNumber,
+      external_contact_id: target.externalContactId,
       direction: 'outbound',
       status: 'pending',
       body_preview: null,

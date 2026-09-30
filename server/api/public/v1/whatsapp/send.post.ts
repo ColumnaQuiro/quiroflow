@@ -1,4 +1,4 @@
-import { toE164 } from '~/utils/phone'
+import { toE164, whatsappDigits } from '~/utils/phone'
 import { ApiError, badRequest, defineApiHandler } from '~/server/utils/publicApi'
 import { isWithin24hWindow, sendWhatsAppTemplate, sendWhatsAppText } from '~/server/utils/whatsappSend'
 
@@ -44,7 +44,15 @@ export default defineApiHandler({ scope: 'whatsapp:send' }, async ({ event, supa
   const waAccount = { whatsapp_phone_number_id: account.whatsapp_phone_number_id, whatsapp_access_token: account.whatsapp_access_token }
 
   let patientId: string | null = body.patientId ?? null
-  let to = body.to ?? ''
+  // Digits only, the one shape every number in whatsapp_messages is in: Meta
+  // sends inbound numbers that way, and toE164() below returns them that way.
+  // "to" is documented as E.164, which is written with a "+" -- compared as
+  // given, "+34612..." matched no patient, so the minor and do-not-contact
+  // refusals below never ran for anyone addressed by number; the 24h window
+  // found none of their replies; and the row was stored under a number no
+  // thread is keyed by.
+  let to = body.to ? whatsappDigits(String(body.to)) : ''
+  if (body.to && !to) throw badRequest('"to" must be a phone number in E.164 format, e.g. +34612345678.', 'to')
   if (!to && body.patientId) {
     const { data: numbers } = await supabase
       .from('patient_contact_numbers')
@@ -126,3 +134,4 @@ function pick<T>(body: Record<string, unknown>, ...keys: string[]): T | undefine
   }
   return undefined
 }
+

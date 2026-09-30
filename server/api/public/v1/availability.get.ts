@@ -15,7 +15,9 @@ import { assertBelongsToAccount } from '~/server/utils/publicApiHandlers'
 //     set their own;
 //   * slots step by the appointment's own length, so what's offered here is
 //     bookable as-is rather than needing the caller to round;
-//   * existing appointments and availability blocks remove slots.
+//   * existing appointments and availability blocks remove slots -- the
+//     practitioner's appointments at every clinic of the account, since
+//     POST /appointments refuses a clash wherever it is.
 //
 // Everything in and out is UTC ISO 8601. business_hours are wall-clock
 // strings in the clinic's timezone, so they're converted using that timezone
@@ -76,11 +78,14 @@ export default defineApiHandler({ scope: 'appointments:read' }, async ({ event, 
   const rangeEnd = new Date(Date.parse(`${to}T00:00:00Z`) + 2 * 86400000)
 
   const [{ data: appointments }, { data: blocks }, { data: overrides }] = await Promise.all([
+    // Every clinic's appointments, not only this one's: a practitioner who
+    // works at two is busy here while they are seeing somebody at the other.
+    // POST /appointments checks clashes across clinics, so a slot offered
+    // here on this clinic's diary alone was refused when booked.
     supabase
       .from('appointments')
       .select('practitioner_id, starts_at, ends_at')
       .eq('account_id', accountId)
-      .eq('clinic_id', clinicId)
       .is('deleted_at', null)
       .neq('status', 'cancelled')
       .lt('starts_at', rangeEnd.toISOString())

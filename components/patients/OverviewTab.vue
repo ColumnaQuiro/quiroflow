@@ -138,6 +138,7 @@ const lastVisitFootnote = computed(() => {
   if (payment.kind === 'bono') return `${prefix}, ${t('drawn from', 'con cargo a')} ${payment.packageName}.`
   if (payment.kind === 'unpaid') return `${prefix}, ${t('still unpaid', 'aún sin pagar')} (${formatEur(payment.totalCents)}).`
   if (payment.kind === 'void') return `${prefix}, ${t('charge voided', 'cargo anulado')}.`
+  if (payment.methods.length === 0) return `${prefix}, ${t('paid', 'pagada')}.`
   const methods = payment.methods.map((m) => METHOD_LABELS.value[m] ?? m).join(' + ')
   return `${prefix}, ${t('paid by', 'pagada con')} ${methods}.`
 })

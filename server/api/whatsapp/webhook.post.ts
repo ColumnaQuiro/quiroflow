@@ -310,6 +310,7 @@ export default defineEventHandler(async (event) => {
         .select('id, whatsapp_phone_number_id, whatsapp_access_token')
         .eq('whatsapp_phone_number_id', phoneNumberId)
         .limit(2)
+      for (const match of matches ?? []) await withMessagingTokens(match.id, match)
 
       if (lookupError) {
         console.error(`[whatsapp] could not look up the account for phone number id ${phoneNumberId}: ${lookupError.message}`)

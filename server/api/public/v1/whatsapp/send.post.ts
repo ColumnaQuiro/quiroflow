@@ -37,6 +37,7 @@ export default defineApiHandler({ scope: 'whatsapp:send' }, async ({ event, supa
     .select('whatsapp_phone_number_id, whatsapp_access_token')
     .eq('id', accountId)
     .maybeSingle()
+  await withMessagingTokens(accountId, account)
   if (!account?.whatsapp_phone_number_id || !account?.whatsapp_access_token) {
     throw badRequest('WhatsApp is not configured for this account yet. Connect it in Settings → WhatsApp.')
   }

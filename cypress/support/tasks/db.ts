@@ -1878,7 +1878,16 @@ async function accountWhatsappConnection(opts: { accountId: string }) {
     .select('whatsapp_access_token, whatsapp_business_account_id, whatsapp_phone_number_id')
     .eq('id', opts.accountId)
     .maybeSingle()
-  return data ?? null
+  if (!data) return null
+  // The token is a secret now; the column is only the fallback.
+  const { data: secret } = await admin.from('account_secrets').select('value').eq('account_id', opts.accountId).eq('name', 'whatsapp_access_token').maybeSingle()
+  return { ...data, whatsapp_access_token: secret?.value ?? data.whatsapp_access_token }
+}
+
+/** What a staff member can read of the messaging tokens, straight from accounts. */
+async function messagingTokenColumnsOf(opts: { accountId: string }) {
+  const { data } = await admin.from('accounts').select('whatsapp_access_token, instagram_access_token, meta_ads_access_token').eq('id', opts.accountId).single()
+  return data
 }
 
 // Stores a secret the way the server does, so a spec can then try to read it
@@ -3684,6 +3693,7 @@ export const dbTasks = {
   'db:clearWhatsappAppSecret': clearWhatsappAppSecret,
   'db:setAccountSecret': setAccountSecret,
   'db:accountWhatsappConnection': accountWhatsappConnection,
+  'db:messagingTokenColumnsOf': messagingTokenColumnsOf,
   'db:setWhatsappBusinessAccount': setWhatsappBusinessAccount,
   'db:setBookingTextOverrides': setBookingTextOverrides,
   'db:bookingAndWhatsappSettingsOf': bookingAndWhatsappSettingsOf,

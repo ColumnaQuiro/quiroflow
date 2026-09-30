@@ -24,6 +24,7 @@ export default defineEventHandler(async (event) => {
     .select('meta_ads_account_id, meta_ads_access_token')
     .eq('id', teamMember.account_id)
     .maybeSingle()
+  await withMessagingTokens(teamMember.account_id, account)
 
   const adAccountId = account?.meta_ads_account_id?.trim()
   const token = account?.meta_ads_access_token?.trim()

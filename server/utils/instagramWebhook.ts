@@ -78,6 +78,7 @@ export async function handleInstagramEntries(
         .select('id, instagram_user_id, instagram_access_token')
         .eq('instagram_user_id', igUserId)
         .limit(2)
+      for (const match of matches ?? []) await withMessagingTokens(match.id, match)
       if (lookupError) {
         console.error(`[instagram] could not look up the account for Instagram id ${igUserId}: ${lookupError.message}`)
         continue

@@ -13,6 +13,7 @@ export default defineEventHandler(async (event) => {
     .select('whatsapp_phone_number_id, whatsapp_access_token, instagram_user_id, instagram_access_token')
     .eq('id', teamMember.account_id)
     .maybeSingle()
+  await withMessagingTokens(teamMember.account_id, account)
 
   const whatsappReady = Boolean(account?.whatsapp_phone_number_id && account?.whatsapp_access_token)
   // Receiving needs only the account id -- the webhook is shared with

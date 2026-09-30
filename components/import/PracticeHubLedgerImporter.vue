@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { formatEur } from '~/utils/billing'
+import { linkInvoicesToAppointments, type LinkableAppointment, type LinkableInvoice } from '~/utils/importInvoiceLink'
 // Imports PracticeHub's ledger as PracticeHub actually keeps it: one invoice
 // per visit, one payment per payment, and no invented link between them.
 //
@@ -56,6 +57,10 @@ const runError = ref('')
 const lastConn = ref<{ baseUrl: string; apiKey: string; appDetails: string } | null>(null)
 
 const invoicesToCreate = ref<InvoiceCandidate[]>([])
+// Invoices an earlier run imported without a visit, that can be linked now --
+// see utils/importInvoiceLink. Only appointment_id is written to them.
+const invoicesToLink = ref<{ id: string; appointmentId: string }[]>([])
+const linkedInvoices = ref(0)
 const paymentsToCreate = ref<PaymentCandidate[]>([])
 const skipped = ref({ invoicesAlready: 0, paymentsAlready: 0, invoicesUnmatched: 0, paymentsUnmatched: 0 })
 const phTotals = ref({ invoicedCents: 0, paidCents: 0 })
@@ -100,7 +105,7 @@ const introNotes = [
 
 const centsOf = (value: string | null | undefined) => Math.round(parseFloat(value ?? '0') * 100)
 
-async function loadAllOurRows<T>(table: 'patients' | 'appointments' | 'invoices' | 'payments', columns: string): Promise<T[]> {
+async function loadAllOurRows<T>(table: 'patients' | 'appointments' | 'invoices' | 'payments' | 'clinics', columns: string): Promise<T[]> {
   const PAGE = 1000
   const rows: T[] = []
   for (let page = 0; ; page++) {
@@ -145,11 +150,18 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     const ourPatients = await loadAllOurRows<{ id: string; external_reference: string | null }>('patients', 'id, external_reference')
     const patientByRef = new Map(ourPatients.filter((p) => p.external_reference).map((p) => [p.external_reference as string, p.id]))
 
-    const ourAppointments = await loadAllOurRows<{ id: string; external_reference: string | null }>('appointments', 'id, external_reference')
-    const appointmentByRef = new Map(ourAppointments.filter((a) => a.external_reference).map((a) => [a.external_reference as string, a.id]))
+    const ourAppointments = await loadAllOurRows<{ id: string; external_reference: string | null; patient_id: string; starts_at: string; status: string; clinic_id: string | null }>(
+      'appointments',
+      'id, external_reference, patient_id, starts_at, status, clinic_id',
+    )
+    const clinics = await loadAllOurRows<{ id: string; timezone: string | null }>('clinics', 'id, timezone')
+    const timezoneByClinic = new Map(clinics.map((c) => [c.id, c.timezone]))
 
     phase.value = t('Reading what is already imported…', 'Leyendo lo ya importado…')
-    const ourInvoices = await loadAllOurRows<{ external_reference: string | null }>('invoices', 'external_reference')
+    const ourInvoices = await loadAllOurRows<{ id: string; external_reference: string | null; appointment_id: string | null; patient_id: string; created_at: string }>(
+      'invoices',
+      'id, external_reference, appointment_id, patient_id, created_at',
+    )
     const haveInvoiceRefs = new Set(ourInvoices.map((i) => i.external_reference).filter(Boolean) as string[])
     const ourPayments = await loadAllOurRows<{ external_reference: string | null }>('payments', 'external_reference')
     const havePaymentRefs = new Set(ourPayments.map((p) => p.external_reference).filter(Boolean) as string[])
@@ -179,11 +191,42 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       invoices.push({
         ref,
         patientId,
-        appointmentId: inv.appointment_id ? (appointmentByRef.get(String(inv.appointment_id)) ?? null) : null,
+        appointmentId: null,
         totalCents: centsOf(inv.total),
         createdAt: inv.created,
       })
     }
+
+    // Which visit each invoice belongs to: PracticeHub's own link, else the
+    // patient's one chargeable visit that day -- see utils/importInvoiceLink.
+    // Invoices imported by an earlier run without a visit go through the same
+    // rule, so a visit imported since, or one the date now identifies, is
+    // linked on this run rather than never.
+    const phAppointmentByRef = new Map(phInvoices.map((inv) => [`phinv-${inv.id}`, inv.appointment_id ? String(inv.appointment_id) : null]))
+    const unlinkedImported = ourInvoices.filter((i) => i.external_reference?.startsWith('phinv-') && !i.appointment_id)
+    const linkable: LinkableInvoice[] = [
+      ...invoices.map((c) => ({ ref: c.ref, patientId: c.patientId, phAppointmentId: phAppointmentByRef.get(c.ref) ?? null, createdAt: c.createdAt })),
+      ...unlinkedImported.map((i) => ({
+        ref: i.external_reference!,
+        patientId: i.patient_id,
+        phAppointmentId: phAppointmentByRef.get(i.external_reference!) ?? null,
+        createdAt: i.created_at,
+      })),
+    ]
+    const appointments: LinkableAppointment[] = ourAppointments.map((a) => ({
+      id: a.id,
+      patientId: a.patient_id,
+      externalReference: a.external_reference,
+      startsAt: a.starts_at,
+      status: a.status,
+      clinicId: a.clinic_id,
+    }))
+    const invoiced = new Set(ourInvoices.map((i) => i.appointment_id).filter((id): id is string => !!id))
+    const links = linkInvoicesToAppointments(linkable, appointments, invoiced, (clinicId) => (clinicId ? timezoneByClinic.get(clinicId) : null))
+    for (const c of invoices) c.appointmentId = links.get(c.ref) ?? null
+    invoicesToLink.value = unlinkedImported
+      .filter((i) => links.has(i.external_reference!))
+      .map((i) => ({ id: i.id, appointmentId: links.get(i.external_reference!)! }))
 
     const payments: PaymentCandidate[] = []
     for (const pay of phPayments) {
@@ -226,6 +269,7 @@ async function runImport() {
   stage.value = 'importing'
   importedInvoices.value = 0
   importedPayments.value = 0
+  linkedInvoices.value = 0
   allocatedInvoices.value = 0
   importErrors.value = []
   progress.value = { done: 0, total: invoicesToCreate.value.length + paymentsToCreate.value.length }
@@ -257,6 +301,15 @@ async function runImport() {
       if (error) importErrors.value.push(t(`Invoices near ${chunk[0]?.ref}: ${error.message}`, `Facturas cerca de ${chunk[0]?.ref}: ${error.message}`))
       else importedInvoices.value += data?.length ?? 0
       progress.value = { ...progress.value, done: progress.value.done + chunk.length }
+    }
+
+    phase.value = t('Linking invoices to their visits…', 'Vinculando facturas a sus visitas…')
+    for (const link of invoicesToLink.value) {
+      // Only where it is still unlinked, so a link someone made by hand since
+      // the preview is never overwritten.
+      const { error } = await supabase.from('invoices').update({ appointment_id: link.appointmentId }).eq('id', link.id).is('appointment_id', null)
+      if (error) importErrors.value.push(t(`Linking an invoice: ${error.message}`, `Vinculando una factura: ${error.message}`))
+      else linkedInvoices.value++
     }
 
     phase.value = t('Creating payments…', 'Creando pagos…')
@@ -349,6 +402,10 @@ const money = (cents: number) => `${formatEur(cents)}`
           {{ t('Already imported:', 'Ya importado:') }} {{ skipped.invoicesAlready }} {{ t('invoices', 'facturas') }},
           {{ skipped.paymentsAlready }} {{ t('payments', 'pagos') }}.
         </p>
+        <p v-if="invoicesToLink.length" class="mt-1" data-cy="ledger-invoices-to-link">
+          {{ t('Already imported without their visit, and linked to it on this run:', 'Ya importadas sin su visita, y vinculadas a ella en esta ejecución:') }}
+          {{ invoicesToLink.length }} {{ t('invoices', 'facturas') }}.
+        </p>
         <p v-if="skipped.invoicesUnmatched || skipped.paymentsUnmatched" class="mt-1">
           {{ t('No matching patient here:', 'Sin paciente correspondiente aquí:') }} {{ skipped.invoicesUnmatched }}
           {{ t('invoices', 'facturas') }}, {{ skipped.paymentsUnmatched }} {{ t('payments', 'pagos') }}.
@@ -365,7 +422,7 @@ const money = (cents: number) => `${formatEur(cents)}`
         }}
       </p>
 
-      <UiBtn variant="primary" :disabled="invoicesToCreate.length === 0 && paymentsToCreate.length === 0" @click="runImport">
+      <UiBtn variant="primary" :disabled="invoicesToCreate.length === 0 && paymentsToCreate.length === 0 && invoicesToLink.length === 0" @click="runImport">
         {{ t('Import', 'Importar') }}
       </UiBtn>
     </div>
@@ -375,6 +432,7 @@ const money = (cents: number) => `${formatEur(cents)}`
         <p class="text-[15px] font-semibold text-ink-900">{{ t('Imported', 'Importado') }}</p>
         <ul class="mt-1 space-y-0.5 text-[13px] text-ink-muted2">
           <li>{{ importedInvoices }} {{ t('invoices', 'facturas') }}</li>
+          <li v-if="linkedInvoices">{{ linkedInvoices }} {{ t('earlier invoices linked to their visit', 'facturas anteriores vinculadas a su visita') }}</li>
           <li>{{ importedPayments }} {{ t('payments', 'pagos') }}</li>
           <li>{{ allocatedInvoices }} {{ t('invoices settled from those payments', 'facturas saldadas con esos pagos') }}</li>
         </ul>

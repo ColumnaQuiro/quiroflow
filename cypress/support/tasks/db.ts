@@ -2237,6 +2237,15 @@ async function leadById(opts: { id: string }) {
   return data
 }
 
+/**
+ * Every lead on an account, deleted or not, for asserting a refused request
+ * wrote nothing -- a count, because a refused lead has no id to look up.
+ */
+async function leadCount(opts: { accountId: string }) {
+  const { count } = await admin.from('leads').select('id', { count: 'exact', head: true }).eq('account_id', opts.accountId)
+  return count ?? 0
+}
+
 /** The timeline the API wrote, for asserting a stage change was recorded. */
 async function leadEvents(opts: { leadId: string }) {
   const { data } = await admin.from('lead_events').select('*').eq('lead_id', opts.leadId).order('occurred_at')
@@ -3602,6 +3611,7 @@ export const dbTasks = {
   'db:patientCount': patientCount,
   'db:leadById': leadById,
   'db:leadEvents': leadEvents,
+  'db:leadCount': leadCount,
   'db:createTeamMemberWithRole': createTeamMemberWithRole,
   'db:setRolePermissions': setRolePermissions,
   'db:setSubscriptionStatus': setSubscriptionStatus,

@@ -4,7 +4,9 @@
 // - "sent" was recorded when nothing had gone out;
 // - a rejected template language was picked over the approved one;
 // - bookings from the patient app and the API were never confirmed;
-// - a visit booked inside its reminder window never got a reminder.
+// - a visit booked inside its reminder window never got a reminder;
+// - an appointment the clinic had deleted was still confirmed and reminded
+//   ("Eliminar cita" sets deleted_at and leaves status 'booked').
 
 interface Account {
   email: string
@@ -39,7 +41,7 @@ function patient(account: Account, withPhone = true) {
 // WhatsApp takes the number as digits, no '+'.
 const sendsTo = (phone: string) => cy.task<any[]>('db:metaGraphStubSends').then((all) => all.filter((m) => m?.to === phone.replace(/\D/g, '')))
 
-function booking(account: Account, patientId: string, opts: { source?: string; startsAt?: string; createdAt?: string } = {}) {
+function booking(account: Account, patientId: string, opts: { source?: string; startsAt?: string; createdAt?: string; deletedAt?: string } = {}) {
   return cy.task<{ id: string }>('db:createAppointment', {
     accountId: account.accountId,
     clinicId: account.clinicId,
@@ -47,6 +49,7 @@ function booking(account: Account, patientId: string, opts: { source?: string; s
     startsAt: opts.startsAt ?? hours(48),
     source: opts.source ?? 'online',
     ...(opts.createdAt ? { createdAt: opts.createdAt } : {}),
+    ...(opts.deletedAt ? { deletedAt: opts.deletedAt } : {}),
   })
 }
 
@@ -185,6 +188,25 @@ describe('Automatic confirmations and reminders', () => {
         booking(account, p.id, { source: 'staff', startsAt: hours(1) }).then((appt) => {
           runCron()
           state(appt.id).its('reminder_sent_at').should('eq', null)
+        }),
+      )
+    })
+  })
+
+  it('neither confirms nor reminds an appointment the clinic deleted', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:setAutomaticMessages', { accountId: account.accountId, confirmation: true, reminder: true, reminderHoursBefore: 24 })
+      templates()
+      patient(account).then((p) =>
+        // Booked from the app five minutes ago -- the cron's confirmation
+        // catch-up -- and five hours ahead, inside the reminder window.
+        booking(account, p.id, { source: 'online', startsAt: hours(5), createdAt: minutesAgo(5), deletedAt: minutesAgo(1) }).then((appt) => {
+          runCron()
+          state(appt.id).then((s) => {
+            expect(s.confirmation_sent_at, 'confirmation').to.eq(null)
+            expect(s.reminder_sent_at, 'reminder').to.eq(null)
+          })
+          sendsTo(p.phone).should('have.length', 0)
         }),
       )
     })

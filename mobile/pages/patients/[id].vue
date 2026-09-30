@@ -37,6 +37,8 @@ onMounted(async () => {
       .select('id, starts_at, status, appointment_types(name)')
       .eq('patient_id', patientId)
       .neq('status', 'cancelled')
+      // Not one deleted on the web calendar (status stays 'booked' when it is).
+      .is('deleted_at', null)
       .gte('starts_at', new Date().toISOString())
       .order('starts_at')
       .limit(1),

@@ -48,6 +48,8 @@ export default defineEventHandler(async (event) => {
       .select('id, patient_id')
       .eq('account_id', rule.account_id)
       .eq('status', 'booked')
+      // A deleted appointment keeps status 'booked' (only deleted_at is set).
+      .is('deleted_at', null)
       .gte('starts_at', windowStart)
       .lt('starts_at', windowEnd)
     if (!appointments || appointments.length === 0) continue

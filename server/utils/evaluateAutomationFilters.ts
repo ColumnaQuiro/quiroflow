@@ -102,6 +102,8 @@ export async function ruleFiltersMatch(
       .select('id', { count: 'exact', head: true })
       .eq('patient_id', patientId)
       .eq('status', 'booked')
+      // A deleted appointment keeps status 'booked'; it is not a future visit.
+      .is('deleted_at', null)
       .gt('starts_at', new Date().toISOString())
     const hasFuture = (count ?? 0) > 0
     if (hasFuture !== filters.has_future_appointment) return false

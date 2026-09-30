@@ -64,6 +64,8 @@ export default defineEventHandler(async (event) => {
       .in('account_id', accountIds)
       .in('clinic_id', clinicIds)
       .eq('status', 'booked')
+      // A deleted appointment keeps status 'booked' (only deleted_at is set).
+      .is('deleted_at', null)
       // Sent on an earlier day means it was for the day the appointment has
       // since been moved from -- kept rather than cleared on the move because
       // the panel's History tab reads it.

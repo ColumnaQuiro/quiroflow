@@ -3,6 +3,8 @@ import { COUNTRIES_BY_NAME } from '~/utils/countries'
 import { looksLikePhoneNumber } from '~/utils/phone'
 import { effectiveDuration, effectivePriceCents, type AppointmentTypeOverride } from '~/utils/appointmentOverrides'
 import { practitionerWindowsForDay } from '~/utils/businessHours'
+import { bookingSlotsForDay, bookingWindowsFor, calendarDateKey, clinicHourOf, clinicTimeLabel } from '~/utils/bookingSlots'
+import { clinicDateOf, DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
 
 definePageMeta({ layout: false })
 
@@ -14,6 +16,8 @@ interface BookingClinic {
   email?: string | null
   business_hours: Record<string, [string, string][]>
   logo_storage_path: string | null
+  // The zone business_hours are written in. Absent before 20260930141539.
+  timezone?: string | null
 }
 interface BookingAppointmentType {
   id: string
@@ -85,6 +89,10 @@ const appointmentType = computed(() => info.value?.appointment_types.find((t) =>
 const teamMember = computed(() => info.value?.team_members.find((m) => m.id === teamMemberId.value) ?? null)
 const availablePractitioners = computed(() => (info.value?.team_members ?? []).filter((m) => m.clinic_ids.includes(clinicId.value)))
 const anyPractitionerMode = computed(() => teamMemberId.value === ANY_PRACTITIONER)
+// Every time on this page is the clinic's. Slots used to be built with
+// setHours -- the VISITOR's zone -- so anyone booking from outside the
+// clinic's zone was offered, and booked, hours shifted by the difference.
+const clinicTimeZone = computed(() => clinic.value?.timezone || DEFAULT_CLINIC_TIMEZONE)
 
 function practitionerInitials(name: string) {
   return name.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('')
@@ -340,11 +348,9 @@ function startOfMonth(d: Date) {
 function isSameDay(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
 }
-function today() {
-  const d = new Date()
-  d.setHours(0, 0, 0, 0)
-  return d
-}
+// Calendar cells are compared as the clinic's dates ("2026-10-05"): a cell
+// stands for a day at the clinic, whatever day it is where the visitor is.
+const clinicToday = computed(() => clinicDateOf(new Date(), clinicTimeZone.value))
 
 const monthLabel = computed(() =>
   viewMonth.value.toLocaleDateString('es-ES', { month: 'short', year: 'numeric' }).replace(/^./, (c) => c.toUpperCase())
@@ -352,13 +358,13 @@ const monthLabel = computed(() =>
 
 // Per-type override falls back to the account default, same convention as
 // every other appointment_type_overrides-style field in this app.
-const maxAllowedDate = computed(() => {
+// create_public_booking refuses a start later than now + that many days, so
+// that instant is also the last slot offered.
+const latestStart = computed(() => {
   const days = appointmentType.value?.online_max_days_ahead ?? info.value?.account.online_booking_max_days_ahead ?? 90
-  const d = new Date()
-  d.setDate(d.getDate() + days)
-  d.setHours(23, 59, 59, 999)
-  return d
+  return new Date(Date.now() + days * 86400000)
 })
+const lastBookableDate = computed(() => clinicDateOf(latestStart.value, clinicTimeZone.value))
 
 const gridRange = computed(() => {
   const first = viewMonth.value
@@ -376,7 +382,8 @@ const calendarDays = computed(() => {
   for (let i = 0; i < 42; i++) {
     const date = new Date(gridStart)
     date.setDate(gridStart.getDate() + i)
-    const inRange = date >= today() && date <= maxAllowedDate.value
+    const key = calendarDateKey(date)
+    const inRange = key >= clinicToday.value && key <= lastBookableDate.value
     days.push({
       date,
       inMonth: date.getMonth() === viewMonth.value.getMonth(),
@@ -389,12 +396,11 @@ const calendarDays = computed(() => {
 function dayHasHours(date: Date) {
   const hours = clinic.value?.business_hours
   if (!hours) return false
-  const clinicWindows = hours[WEEKDAY_KEYS[date.getDay()]] ?? []
+  const key = calendarDateKey(date)
   if (anyPractitionerMode.value) {
-    return availablePractitioners.value.some((m) => practitionerWindowsForDay(clinicWindows, m.business_hours, WEEKDAY_KEYS[date.getDay()]).length > 0)
+    return availablePractitioners.value.some((m) => bookingWindowsFor(key, hours, m.business_hours).length > 0)
   }
-  const windows = practitionerWindowsForDay(clinicWindows, teamMember.value?.business_hours, WEEKDAY_KEYS[date.getDay()])
-  return windows.length > 0
+  return bookingWindowsFor(key, hours, teamMember.value?.business_hours).length > 0
 }
 
 function prevMonth() {
@@ -421,8 +427,10 @@ async function loadMonthAvailability() {
   monthAvailabilityLoading.value = true
   monthAvailabilityLoaded.value = false
   const { gridStart, gridEnd } = gridRange.value
-  const fromIso = gridStart.toISOString()
-  const toIso = gridEnd.toISOString()
+  // A day either side: the grid's edges are the visitor's midnights, and the
+  // clinic's first and last days can start or end outside them.
+  const fromIso = new Date(gridStart.getTime() - 86400000).toISOString()
+  const toIso = new Date(gridEnd.getTime() + 86400000).toISOString()
   const memberIds = anyPractitionerMode.value ? availablePractitioners.value.map((m) => m.id) : teamMemberId.value ? [teamMemberId.value] : []
   const [busyEntries, blockedResult] = await Promise.all([
     Promise.all(
@@ -449,35 +457,22 @@ interface DaySlot {
   memberId: string
 }
 
+// The cell's date as the clinic's date, its hours read on the clinic's clock
+// -- utils/bookingSlots.ts, shared with the patient app.
 function slotsForMember(
   date: Date,
-  weekday: string,
-  clinicWindows: [string, string][],
   memberBusinessHours: Record<string, [string, string][]> | null | undefined,
   busy: { starts_at: string; ends_at: string }[],
 ): Date[] {
-  const windows = practitionerWindowsForDay(clinicWindows, memberBusinessHours, weekday)
-  const duration = effectiveDurationMinutes.value
-  const now = new Date()
-  const result: Date[] = []
-  for (const [startStr, endStr] of windows) {
-    const [sh, sm] = startStr.split(':').map(Number)
-    const [eh, em] = endStr.split(':').map(Number)
-    let cursor = new Date(date)
-    cursor.setHours(sh, sm, 0, 0)
-    const windowEnd = new Date(date)
-    windowEnd.setHours(eh, em, 0, 0)
-    while (true) {
-      const slotEnd = new Date(cursor.getTime() + duration * 60000)
-      if (slotEnd > windowEnd) break
-      if (cursor > now) {
-        const overlaps = busy.some((b) => new Date(b.starts_at) < slotEnd && new Date(b.ends_at) > cursor)
-        if (!overlaps) result.push(new Date(cursor))
-      }
-      cursor = new Date(cursor.getTime() + duration * 60000)
-    }
-  }
-  return result
+  return bookingSlotsForDay({
+    date: calendarDateKey(date),
+    timeZone: clinicTimeZone.value,
+    clinicHours: clinic.value?.business_hours,
+    practitionerHours: memberBusinessHours,
+    durationMinutes: effectiveDurationMinutes.value,
+    busy,
+    notAfter: latestStart.value,
+  })
 }
 
 // A day only ever renders as clickable once this agrees a free slot exists
@@ -486,23 +481,19 @@ function slotsForMember(
 // loadMonthAvailability is still in flight.
 function dayHasAvailability(date: Date): boolean {
   if (!monthAvailabilityLoaded.value || !appointmentType.value) return true
-  const weekday = WEEKDAY_KEYS[date.getDay()]
-  const clinicWindows = clinic.value?.business_hours?.[weekday] ?? []
   if (anyPractitionerMode.value) {
     return availablePractitioners.value.some((m) => {
       const busy = [...(monthBusyByMember.value[m.id] ?? []), ...blocksForMember(m.id)]
-      return slotsForMember(date, weekday, clinicWindows, m.business_hours, busy).length > 0
+      return slotsForMember(date, m.business_hours, busy).length > 0
     })
   }
   const busy = [...(monthBusyByMember.value[teamMemberId.value] ?? []), ...blocksForMember(teamMemberId.value)]
-  return slotsForMember(date, weekday, clinicWindows, teamMember.value?.business_hours, busy).length > 0
+  return slotsForMember(date, teamMember.value?.business_hours, busy).length > 0
 }
 
 const daySlots = computed<DaySlot[]>(() => {
   if (!selectedDate.value || !appointmentType.value) return []
   const date = selectedDate.value
-  const weekday = WEEKDAY_KEYS[date.getDay()]
-  const clinicWindows = clinic.value?.business_hours?.[weekday] ?? []
 
   if (anyPractitionerMode.value) {
     // Union across every practitioner -- a slot is offered if at least one of
@@ -511,7 +502,7 @@ const daySlots = computed<DaySlot[]>(() => {
     const merged = new Map<number, string>()
     for (const m of availablePractitioners.value) {
       const busy = [...(monthBusyByMember.value[m.id] ?? []), ...blocksForMember(m.id)]
-      const times = slotsForMember(date, weekday, clinicWindows, m.business_hours, busy)
+      const times = slotsForMember(date, m.business_hours, busy)
       for (const time of times) {
         if (!merged.has(time.getTime())) merged.set(time.getTime(), m.id)
       }
@@ -520,12 +511,12 @@ const daySlots = computed<DaySlot[]>(() => {
   }
 
   const busy = [...(monthBusyByMember.value[teamMemberId.value] ?? []), ...blocksForMember(teamMemberId.value)]
-  const times = slotsForMember(date, weekday, clinicWindows, teamMember.value?.business_hours, busy)
+  const times = slotsForMember(date, teamMember.value?.business_hours, busy)
   return times.map((time) => ({ time, memberId: teamMemberId.value }))
 })
 
-const morningSlots = computed(() => daySlots.value.filter((s) => s.time.getHours() < 14))
-const afternoonSlots = computed(() => daySlots.value.filter((s) => s.time.getHours() >= 14))
+const morningSlots = computed(() => daySlots.value.filter((s) => clinicHourOf(s.time, clinicTimeZone.value) < 14))
+const afternoonSlots = computed(() => daySlots.value.filter((s) => clinicHourOf(s.time, clinicTimeZone.value) >= 14))
 
 function pickSlot(slot: DaySlot) {
   selectedSlot.value = slot.time
@@ -898,7 +889,7 @@ if (import.meta.client) {
                         class="rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-hover"
                         @click="pickSlot(s)"
                       >
-                        {{ s.time.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) }}
+                        {{ clinicTimeLabel(s.time, clinicTimeZone) }}
                       </button>
                     </div>
                   </div>
@@ -912,7 +903,7 @@ if (import.meta.client) {
                         class="rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-hover"
                         @click="pickSlot(s)"
                       >
-                        {{ s.time.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) }}
+                        {{ clinicTimeLabel(s.time, clinicTimeZone) }}
                       </button>
                     </div>
                   </div>
@@ -1005,7 +996,7 @@ if (import.meta.client) {
           <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-success-bg text-2xl text-success-text">✓</div>
           <h2 class="mt-4 text-lg font-semibold text-ink-900">{{ t('success_heading', '¡Cita reservada!') }}</h2>
           <p class="mt-2 text-sm text-ink-muted">
-            {{ confirmation ? new Date(confirmation.starts_at).toLocaleString('es-ES', { dateStyle: 'full', timeStyle: 'short' }) : '' }}
+            {{ confirmation ? new Date(confirmation.starts_at).toLocaleString('es-ES', { dateStyle: 'full', timeStyle: 'short', timeZone: clinicTimeZone }) : '' }}
           </p>
           <p class="mt-1 text-sm text-ink-muted">{{ teamMember?.full_name }} · {{ clinic?.name }}</p>
           <!-- How to reach this location if plans change -- its own phone

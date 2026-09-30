@@ -115,6 +115,8 @@ export async function loadInvoiceDocumentData(
       .select('starts_at')
       .eq('patient_id', invoice.patient_id)
       .neq('status', 'cancelled')
+      // Not one the clinic deleted (status stays 'booked' when it does).
+      .is('deleted_at', null)
       .gt('starts_at', new Date().toISOString())
       .order('starts_at', { ascending: true })
       .limit(1)

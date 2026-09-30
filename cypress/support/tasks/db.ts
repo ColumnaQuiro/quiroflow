@@ -1418,6 +1418,32 @@ async function callPublicBookingConcurrently(opts: { args: Record<string, unknow
   return { errors: results }
 }
 
+/**
+ * The same HTTP request sent once per body, all at the same instant -- an
+ * integration firing parallel calls at the public API. cy.request queues one
+ * after another, which can never race; this cannot help but race.
+ */
+async function requestConcurrently(opts: { url: string; method: string; headers?: Record<string, string>; bodies: unknown[] }) {
+  const results = await Promise.all(
+    opts.bodies.map(async (body) => {
+      const res = await fetch(opts.url, {
+        method: opts.method,
+        headers: { 'content-type': 'application/json', ...(opts.headers ?? {}) },
+        body: JSON.stringify(body),
+      })
+      const text = await res.text()
+      let parsed: unknown = text
+      try {
+        parsed = JSON.parse(text)
+      } catch {
+        // Left as text: a 500 page is still worth seeing in the assertion.
+      }
+      return { status: res.status, body: parsed }
+    }),
+  )
+  return results
+}
+
 /** Time blocked off on the calendar: the whole clinic, or one practitioner's. */
 async function createAvailabilityBlock(opts: { accountId: string; clinicId: string; startsAt: string; endsAt: string; practitionerId?: string | null }) {
   const row = unwrap(
@@ -3735,6 +3761,7 @@ export const dbTasks = {
   'db:callPublicBookingAsAnon': callPublicBookingAsAnon,
   'db:callPublicBookingConcurrently': callPublicBookingConcurrently,
   'db:createAvailabilityBlock': createAvailabilityBlock,
+  'db:requestConcurrently': requestConcurrently,
   'db:callRpcAsAnon': callRpcAsAnon,
   'db:setAppointmentTypeBookingRules': setAppointmentTypeBookingRules,
   'db:givePatientAppLogin': givePatientAppLogin,

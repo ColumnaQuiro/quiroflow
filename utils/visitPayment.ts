@@ -20,8 +20,13 @@
 // separate from the screens that print money.
 
 export interface VisitPaymentInput {
-  /** A package_sessions row for this appointment, if the visit drew on a bono. */
-  session?: { amount_cents: number; external_reference: string | null } | null
+  /**
+   * A package_sessions row for this appointment, if the visit drew on a bono.
+   * `laterSessions` is how many sessions of the same pack were drawn after
+   * this one, which is what turns the pack's balance today into its balance
+   * right after this visit.
+   */
+  session?: { amount_cents: number; external_reference: string | null; laterSessions?: number } | null
   /** The package_purchases row that session belongs to. */
   purchase?: { package_name: string; sessions_total: number; sessions_used: number; external_reference: string | null } | null
   /** An invoices row for this appointment, if it was charged. */
@@ -34,6 +39,7 @@ export interface VisitPaymentInput {
 
 export type VisitPayment =
   | { kind: 'bono'; packageName: string; remaining: number; total: number; reference: string | null }
+  /** `methods` is empty when the invoice is paid but no payment row says how. */
   | { kind: 'settled'; methods: string[]; facturaNumber: string | null; invoiceNumber: string }
   | { kind: 'unpaid'; invoiceNumber: string; totalCents: number }
   | { kind: 'void'; invoiceNumber: string }
@@ -46,10 +52,17 @@ export function resolveVisitPayment(input: VisitPaymentInput): VisitPayment {
   // chase a payment that was taken months ago.
   if (input.session) {
     const purchase = input.purchase
+    // Left after THIS visit, not left today. The pack's counter is its
+    // balance now, so every visit drawn from one pack printed the same
+    // figure -- a finished Bono 12 read "0 of 12 left" on its eleventh
+    // session as on its twelfth. Handing back the sessions drawn since is
+    // what makes each row describe its own visit.
+    const remainingNow = purchase ? purchase.sessions_total - purchase.sessions_used : 0
+    const remaining = purchase ? Math.min(purchase.sessions_total, Math.max(0, remainingNow + (input.session.laterSessions ?? 0))) : 0
     return {
       kind: 'bono',
       packageName: purchase?.package_name ?? 'Bono',
-      remaining: purchase ? Math.max(0, purchase.sessions_total - purchase.sessions_used) : 0,
+      remaining,
       total: purchase?.sessions_total ?? 0,
       // The clinic's own reference for the pack, when the import carried
       // one -- staff quote it, PracticeHub printed it.
@@ -66,6 +79,14 @@ export function resolveVisitPayment(input: VisitPaymentInput): VisitPayment {
 
   const payments = input.payments ?? []
   if (payments.length === 0) {
+    // The invoice's own status decides, not the absence of a payment row.
+    // PracticeHub's history arrives as invoices already marked paid -- by
+    // card, by cash, from a bono -- with the money it took imported apart
+    // from them, so none has a payment attached. Reading "no payment" as
+    // "unpaid" put ~7,000 settled visits on the rows as owed.
+    if (invoice.status === 'paid') {
+      return { kind: 'settled', methods: [], facturaNumber: null, invoiceNumber: invoice.invoice_number }
+    }
     return { kind: 'unpaid', invoiceNumber: invoice.invoice_number, totalCents: invoice.total_cents }
   }
 

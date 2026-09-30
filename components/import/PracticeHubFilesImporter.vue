@@ -258,6 +258,7 @@ async function importOne(item: { ph: PHFile; patientId: string }) {
       .update({ storage_path: storagePath })
       .eq('id', placeholder.id)
     if (updateError) throw new Error(updateError.message)
+    await compress(placeholder.id)
     return
   }
 
@@ -271,8 +272,18 @@ async function importOne(item: { ph: PHFile; patientId: string }) {
     storage_path: storagePath,
     created_at: item.ph.created ?? undefined,
   }
-  const { error: insertError } = await supabase.from('patient_files').insert(row)
+  const { data: inserted, error: insertError } = await supabase.from('patient_files').insert(row).select('id').single()
   if (insertError) throw new Error(insertError.message)
+  await compress(inserted.id)
+}
+
+// The same step an upload takes (components/patients/FilesTab.vue). Imported
+// files skipped it, and by Sep 2026 made up 2,521 of the 2,597 files that
+// Settings > Files still had to compress. Awaited, unlike on upload, so a
+// batch never has more than BATCH_SIZE compressions running at once; a file
+// that fails to compress is still imported, and Settings > Files picks it up.
+async function compress(fileId: string) {
+  await useStaffFetch('/api/patients/files/compress', { method: 'POST', body: { fileId } }).catch(() => {})
 }
 
 async function run() {

@@ -61,7 +61,6 @@
     "cypress": "^15.21.0",
     "dotenv": "^17.4.2",
     "husky": "^9.1.7",
-    "playwright": "^1.62.1",
     "start-server-and-test": "^3.0.12",
     "typescript": "5.7",
     "vitest": "^5.0.1",

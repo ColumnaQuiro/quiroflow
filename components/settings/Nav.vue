@@ -56,15 +56,16 @@ const allGroups = computed<NavGroup[]>(() => [
   {
     label: t('Data', 'Datos'),
     items: [
-      { label: t('Import Patients (CSV)', 'Importar pacientes (CSV)'), to: '/settings/import', perm: 'data_admin' },
-      { label: t('Migrate Attachments', 'Migrar archivos adjuntos'), to: '/settings/migrate-attachments', perm: 'data_admin' },
-      { label: t('Compress Files', 'Comprimir archivos'), to: '/settings/compress-files', perm: 'data_admin' },
-      { label: t('Webhooks', 'Webhooks'), to: '/settings/webhooks', perm: 'data_admin' },
+      { label: t('Import', 'Importar'), to: '/settings/import', perm: 'data_admin' },
+      { label: t('Files', 'Archivos'), to: '/settings/files', perm: 'data_admin' },
     ],
   },
   {
     label: t('Developers', 'Desarrolladores'),
-    items: [{ label: t('API & Tokens', 'API y tokens'), to: '/settings/developers', perm: 'developers_access' }],
+    items: [
+      { label: t('API & Tokens', 'API y tokens'), to: '/settings/developers', perm: 'developers_access' },
+      { label: t('Webhooks', 'Webhooks'), to: '/settings/webhooks', perm: 'developers_access' },
+    ],
   },
 ])
 

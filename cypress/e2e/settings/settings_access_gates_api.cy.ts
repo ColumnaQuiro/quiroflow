@@ -71,8 +71,8 @@ describe('Settings-only endpoints require settings_access too', () => {
 
   it('refuses the data-admin endpoints without settings_access', () => {
     staffWithoutSettings('data_admin', () => {
-      cy.request({ url: '/api/download/migrate-attachments-script', failOnStatusCode: false }).then((res) => {
-        expect(res.status, 'GET /api/download/migrate-attachments-script').to.eq(403)
+      cy.request({ method: 'POST', url: '/api/internal/compress-existing-files', body: { limit: 1 }, failOnStatusCode: false }).then((res) => {
+        expect(res.status, 'POST /api/internal/compress-existing-files').to.eq(403)
       })
     })
   })

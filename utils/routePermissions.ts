@@ -56,14 +56,17 @@ const rules: Rule[] = [
   // /campaigns and /growth/automations redirect here; the old prefix keeps its
   // gate so a bookmark never lands anywhere unguarded.
   { test: (p) => p === '/automations' || p.startsWith('/automations/') || p.startsWith('/campaigns'), check: (s) => can(s, 'communication_config') },
+  // migrate-attachments and compress-files now redirect into Files; they keep
+  // the gate so a bookmark never lands anywhere unguarded.
   {
-    test: (p) => ['/settings/import', '/settings/migrate-attachments', '/settings/compress-files', '/settings/webhooks'].includes(p),
+    test: (p) => ['/settings/import', '/settings/files', '/settings/migrate-attachments', '/settings/compress-files'].includes(p),
     check: (s) => can(s, 'settings_access') && can(s, 'data_admin'),
   },
   // Its own gate rather than the generic settings one: an active token can
   // read patient data and book appointments as the clinic, which is a wider
-  // grant than "can open Settings".
-  { test: (p) => p === '/settings/developers', check: (s) => can(s, 'settings_access') && can(s, 'developers_access') },
+  // grant than "can open Settings". Webhooks sit under it too: a webhook's
+  // secret and its stream of patient events are the same kind of grant.
+  { test: (p) => p === '/settings/developers' || p === '/settings/webhooks', check: (s) => can(s, 'settings_access') && can(s, 'developers_access') },
   { test: (p) => p.startsWith('/settings'), check: (s) => can(s, 'settings_access') },
   { test: (p) => p.startsWith('/dashboard'), check: (s) => scopeNotNone(s, 'dashboard_scope') },
   { test: (p) => p.startsWith('/calendar'), check: (s) => scopeNotNone(s, 'calendar_scope') },

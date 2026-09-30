@@ -232,8 +232,18 @@ jobs:
           # process ran for 3m+ and its Electron renderer crashed (exit 139)
           # partway through. growth-automation*.cy.ts is a prefix glob, so the
           # engine and builder specs still to come join it with no edit here.
-          - name: growth-automations
-            specs: "cypress/e2e/growth/growth-automation*.cy.ts,cypress/e2e/growth/growth-campaign-templates.cy.ts,cypress/e2e/growth/growth-email-metrics.cy.ts"
+          #
+          # Split again on 2026-09-30: at fourteen specs the renderer was
+          # crashing again, every time at the start of the 8th spec
+          # (growth-automation-segments) -- on #504, #508 and #512 -- and
+          # freeing snapshots (#509) did not stop it. The halves are
+          # complementary character classes on the name after
+          # "growth-automation-", like the patients shards: every automation
+          # spec, including ones still to come, matches exactly one.
+          - name: growth-automations-a-p
+            specs: "cypress/e2e/growth/growth-automation-[a-p]*.cy.ts"
+          - name: growth-automations-q-z
+            specs: "cypress/e2e/growth/growth-automation-[!a-p]*.cy.ts,cypress/e2e/growth/growth-automations.cy.ts,cypress/e2e/growth/growth-campaign-templates.cy.ts,cypress/e2e/growth/growth-email-metrics.cy.ts"
           # Patients is split by first letter because it is the biggest folder
           # by far: 57 specs, ~300s of Cypress, far more than any one runner
           # should carry. Cut into three on measured per-spec time

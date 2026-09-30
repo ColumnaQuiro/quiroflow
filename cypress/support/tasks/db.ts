@@ -2707,11 +2707,25 @@ async function stopMetaGraphStub() {
 
 let practiceHubStub: import('node:http').Server | null = null
 
+// The key the last request to the stub carried, so a spec can tell which one
+// the proxy sent without the stub checking keys itself.
+let practiceHubStubLastKey = ''
+
+/** What the legacy accounts column holds: nothing, once a key is saved as a secret. */
+async function practiceHubKeyColumnOf(opts: { accountId: string }) {
+  const { data } = await admin.from('accounts').select('practicehub_api_key').eq('id', opts.accountId).single()
+  return (data as { practicehub_api_key: string | null } | null)?.practicehub_api_key ?? null
+}
+async function practiceHubStubLastKeyOf() {
+  return practiceHubStubLastKey
+}
+
 async function startPracticeHubStub(opts: { totalEntries?: number; emails?: string[] }) {
   await stopPracticeHubStub()
   const { createServer } = await import('node:http')
   const emails = opts.emails ?? []
-  const server = createServer((_req, res) => {
+  const server = createServer((req, res) => {
+    practiceHubStubLastKey = String(req.headers['x-practicehub-key'] ?? '')
     res.setHeader('content-type', 'application/json')
     res.end(
       JSON.stringify({
@@ -3648,6 +3662,8 @@ export const dbTasks = {
   'db:rolePermissions': rolePermissions,
   'db:writeAsStaff': writeAsStaff,
   'db:settingsWriteAsStaff': settingsWriteAsStaff,
+  'db:practiceHubStubLastKey': practiceHubStubLastKeyOf,
+  'db:practiceHubKeyColumn': practiceHubKeyColumnOf,
   'db:roleByName': roleByName,
   'db:roleIdsOf': roleIdsOf,
   'db:packagePurchasesFor': packagePurchasesFor,

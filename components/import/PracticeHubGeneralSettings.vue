@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import type { TablesUpdate } from '~/types/database.types'
-
-const supabase = useSupabaseClient()
-const store = useAccountStore()
+// The key is write-only: saved to account_secrets through
+// /api/import/practicehub-connection and never read back. Leaving the field
+// empty keeps the key already stored.
 const user = useSupabaseUser()
 const t = useT()
 const { showToast } = useToast()
@@ -16,61 +15,51 @@ const saving = ref(false)
 
 async function load() {
   loading.value = true
-  const { data } = await supabase
-    .from('accounts')
-    .select('practicehub_base_url, practicehub_api_key, practicehub_contact_email')
-    .eq('id', store.accountId!)
-    .maybeSingle()
-  baseUrl.value = data?.practicehub_base_url ?? ''
-  hasStoredKey.value = !!data?.practicehub_api_key
-  contactEmail.value = data?.practicehub_contact_email ?? user.value?.email ?? ''
+  const saved = await useStaffFetch<{ baseUrl: string | null; contactEmail: string | null; hasKey: boolean }>('/api/import/practicehub-connection').catch(() => null)
+  baseUrl.value = saved?.baseUrl ?? ''
+  hasStoredKey.value = !!saved?.hasKey
+  contactEmail.value = saved?.contactEmail ?? user.value?.email ?? ''
   loading.value = false
 }
 onMounted(load)
 
 async function save() {
   saving.value = true
-  const update: TablesUpdate<'accounts'> = {
-    practicehub_base_url: baseUrl.value.trim() || null,
-    practicehub_contact_email: contactEmail.value.trim() || null,
-  }
-  if (apiKey.value.trim()) update.practicehub_api_key = apiKey.value.trim()
-
-  const { error } = await supabase.from('accounts').update(update).eq('id', store.accountId!)
-  saving.value = false
-  if (error) {
-    showToast(error.message, 'error')
+  try {
+    await useStaffFetch('/api/import/practicehub-connection', {
+      method: 'PUT',
+      body: { baseUrl: baseUrl.value.trim(), contactEmail: contactEmail.value.trim(), apiKey: apiKey.value.trim() },
+    })
+  } catch (e: any) {
+    saving.value = false
+    showToast(e?.data?.statusMessage ?? e?.message ?? t('Could not save.', 'No se pudo guardar.'), 'error')
     return
   }
+  saving.value = false
   showToast(t('Saved', 'Guardado'))
   if (apiKey.value.trim()) hasStoredKey.value = true
   apiKey.value = ''
 
   // The composable's in-memory ref is what every importer tab's connect
-  // form actually reads -- refresh it now so Patients/Appointments/
-  // Payments/Packages all pick up the change immediately, not just after
-  // a reload.
+  // form actually reads -- refresh it now so every step picks up the change
+  // immediately, not just after a reload.
   const conn = usePracticeHubConnection()
-  if (baseUrl.value.trim()) {
-    const { data } = await supabase.from('accounts').select('practicehub_api_key').eq('id', store.accountId!).maybeSingle()
-    if (data?.practicehub_api_key) {
-      conn.value = { baseUrl: baseUrl.value.trim(), apiKey: data.practicehub_api_key, appDetails: `QuiroFlow=${contactEmail.value.trim()}` }
-    }
-  }
+  conn.value = baseUrl.value.trim() && hasStoredKey.value ? { baseUrl: baseUrl.value.trim().replace(/\/$/, ''), apiKey: '', appDetails: `QuiroFlow=${contactEmail.value.trim()}` } : null
 }
 
+// Asked in an in-app dialog rather than confirm().
+const disconnecting = ref(false)
 async function disconnect() {
-  if (!confirm(t('Remove the saved PracticeHub connection?', '¿Eliminar la conexión guardada de PracticeHub?'))) return
   saving.value = true
-  const { error } = await supabase
-    .from('accounts')
-    .update({ practicehub_base_url: null, practicehub_api_key: null, practicehub_contact_email: null })
-    .eq('id', store.accountId!)
-  saving.value = false
-  if (error) {
-    showToast(error.message, 'error')
+  try {
+    await useStaffFetch('/api/import/practicehub-connection', { method: 'DELETE' })
+  } catch (e: any) {
+    saving.value = false
+    showToast(e?.data?.statusMessage ?? e?.message ?? t('Could not disconnect.', 'No se pudo desconectar.'), 'error')
     return
   }
+  saving.value = false
+  disconnecting.value = false
   baseUrl.value = ''
   hasStoredKey.value = false
   usePracticeHubConnection().value = null
@@ -128,10 +117,23 @@ async function disconnect() {
         <button type="submit" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50" :disabled="saving">
           {{ saving ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}
         </button>
-        <button v-if="hasStoredKey" type="button" class="text-sm font-medium text-danger-text hover:underline" :disabled="saving" @click="disconnect">
+        <button v-if="hasStoredKey" type="button" class="text-sm font-medium text-danger-text hover:underline" :disabled="saving" @click="disconnecting = true">
           {{ t('Disconnect', 'Desconectar') }}
         </button>
       </div>
     </form>
+
+    <UiConfirmDialog
+      v-if="disconnecting"
+      tone="danger"
+      :title="t('Remove the saved PracticeHub connection?', '¿Eliminar la conexión guardada de PracticeHub?')"
+      :confirm-label="t('Disconnect', 'Desconectar')"
+      :cancel-label="t('Cancel', 'Cancelar')"
+      :busy="saving"
+      @confirm="disconnect"
+      @cancel="disconnecting = false"
+    >
+      <p class="text-[14px] leading-snug text-ink-700">{{ t('The API key is deleted. Nothing already imported changes; to import again, save the connection anew.', 'Se borra la clave API. No cambia nada de lo ya importado; para volver a importar, guarda la conexión de nuevo.') }}</p>
+    </UiConfirmDialog>
   </div>
 </template>

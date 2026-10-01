@@ -45,11 +45,13 @@ export function usePatientInvoices(patientId: () => string) {
   async function download(invoice: PatientInvoiceRow) {
     busyId.value = invoice.id
     try {
-      const { url } = await authedFetch<{ url: string }>('/api/patient-invoices/pdf-link', {
-        method: 'POST',
-        body: { invoiceId: invoice.id },
+      await openWhenReady(async () => {
+        const { url } = await authedFetch<{ url: string }>('/api/patient-invoices/pdf-link', {
+          method: 'POST',
+          body: { invoiceId: invoice.id },
+        })
+        return url
       })
-      window.open(url, '_blank')
     } catch {
       showToast(t('Could not download that receipt.', 'No se pudo descargar el recibo.'), 'error')
     } finally {

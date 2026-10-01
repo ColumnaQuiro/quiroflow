@@ -28,18 +28,19 @@ describe('Reports: clinic filter and large patient lists', () => {
         // 1,040 in the first clinic and 12 in the second: past the 1,000-row
         // cap, and split so a clinic filter has something to tell apart.
         cy.task<{ patientIds: string[] }>('db:seedManyPatients', { accountId: account.accountId, clinicId: account.clinicId, count: 1040 }, { timeout: 60000 }).then(({ patientIds }) => {
-          // Mornings, a few days ago: inside the distribution report's
-          // default month, in its "Morning" shift. Two in the first clinic,
-          // one in the second.
-          const morning = (daysAgo: number) => {
+          // This morning, in the distribution report's "Morning" shift. Two
+          // in the first clinic, one in the second. Today, not a few days
+          // ago: the report opens on "This month", and on the 1st to the 5th
+          // "a few days ago" is last month, so the spec failed every PR for
+          // the first days of each month. Today is always in this month.
+          const morning = (hour: number) => {
             const d = new Date()
-            d.setDate(d.getDate() - daysAgo)
-            d.setHours(10, 0, 0, 0)
+            d.setHours(hour, 0, 0, 0)
             return d.toISOString()
           }
-          cy.task('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId: patientIds[0], startsAt: morning(3), status: 'completed' })
-          cy.task('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId: patientIds[1], startsAt: morning(4), status: 'completed' })
-          cy.task('db:createAppointment', { accountId: account.accountId, clinicId: north.id, patientId: patientIds[2], startsAt: morning(5), status: 'completed' })
+          cy.task('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId: patientIds[0], startsAt: morning(9), status: 'completed' })
+          cy.task('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId: patientIds[1], startsAt: morning(10), status: 'completed' })
+          cy.task('db:createAppointment', { accountId: account.accountId, clinicId: north.id, patientId: patientIds[2], startsAt: morning(11), status: 'completed' })
         })
         cy.task('db:seedManyPatients', { accountId: account.accountId, clinicId: north.id, count: 12 })
       })

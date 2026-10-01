@@ -42,14 +42,16 @@ export function usePatientDocuments(patientId: () => string) {
   async function open(file: PatientDocumentRow) {
     busyId.value = file.id
     try {
-      const { url } = await authedFetch<{ url: string }>('/api/patient-files/signed-url', {
-        method: 'POST',
-        body: { fileId: file.id },
-      })
       // A new tab rather than an <a download>: on iOS the app runs in a
       // WKWebView where a download attribute does nothing, and the system
       // viewer handling a PDF is what a patient expects anyway.
-      window.open(url, '_blank')
+      await openWhenReady(async () => {
+        const { url } = await authedFetch<{ url: string }>('/api/patient-files/signed-url', {
+          method: 'POST',
+          body: { fileId: file.id },
+        })
+        return url
+      })
     } catch (err: unknown) {
       const message = (err as { data?: { statusMessage?: string } })?.data?.statusMessage
       showToast(message ?? t('Could not open that file.', 'No se pudo abrir el archivo.'), 'error')

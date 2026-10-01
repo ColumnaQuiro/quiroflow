@@ -42,11 +42,13 @@ export function usePatientFacturas(patientId: () => string) {
   async function download(factura: PatientFacturaRow) {
     busyId.value = factura.id
     try {
-      const { url } = await authedFetch<{ url: string }>('/api/patient-facturas/pdf-link', {
-        method: 'POST',
-        body: { facturaId: factura.id },
+      await openWhenReady(async () => {
+        const { url } = await authedFetch<{ url: string }>('/api/patient-facturas/pdf-link', {
+          method: 'POST',
+          body: { facturaId: factura.id },
+        })
+        return url
       })
-      window.open(url, '_blank')
     } catch {
       showToast(t('Could not download that factura.', 'No se pudo descargar la factura.'), 'error')
     } finally {

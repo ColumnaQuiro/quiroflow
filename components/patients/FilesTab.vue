@@ -157,10 +157,16 @@ async function uploadFiles(fileList: FileList) {
   await load()
 }
 
-async function view(file: Tables<'patient_files'>) {
-  if (!file.storage_path) return
-  const { data } = await supabase.storage.from('patient-files').createSignedUrl(file.storage_path, 60 * 5)
-  if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+// Through openWhenReady, not window.open after the await: on an iPad that
+// open is refused by Safari's popup blocker without a word, and neither
+// button did anything at all.
+function view(file: Tables<'patient_files'>) {
+  const path = file.storage_path
+  if (!path) return
+  openWhenReady(async () => {
+    const { data } = await supabase.storage.from('patient-files').createSignedUrl(path, 60 * 5)
+    return data?.signedUrl
+  })
 }
 
 /**
@@ -169,12 +175,15 @@ async function view(file: Tables<'patient_files'>) {
  * when it has to go to an insurer or a consultant, and a viewer tab is a
  * poor way to get there.
  */
-async function download(file: Tables<'patient_files'>) {
-  if (!file.storage_path) return
-  const { data } = await supabase.storage
-    .from('patient-files')
-    .createSignedUrl(file.storage_path, 60 * 5, { download: file.file_name ?? true })
-  if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+function download(file: Tables<'patient_files'>) {
+  const path = file.storage_path
+  if (!path) return
+  openWhenReady(async () => {
+    const { data } = await supabase.storage
+      .from('patient-files')
+      .createSignedUrl(path, 60 * 5, { download: file.file_name ?? true })
+    return data?.signedUrl
+  })
 }
 
 // The row first, then the file. It was the other way round, with neither

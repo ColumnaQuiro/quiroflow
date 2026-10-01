@@ -120,8 +120,12 @@ export function useFacturas() {
   async function issueRectificativa(input: {
     accountId: string
     patientId: string
-    /** The refund's own negative payment row. */
-    paymentId: string
+    /**
+     * The refund's own negative payment row. Null when no money moved: a
+     * factura annulled because the payment it documented was recorded in
+     * error and has been removed (see annulFactura in BillingTab).
+     */
+    paymentId: string | null
     /** Negative: what is going back. */
     amountCents: number
     /** Set when the refunded invoice had exactly one factura behind it. */

@@ -6,15 +6,17 @@ import { openWhenReady } from '../../utils/openWhenReady'
 
 function fakeWindow(opts: { native?: boolean; blocked?: boolean } = {}) {
   const calls: string[] = []
+  const navigations: string[] = []
   const tab = { closed: false, location: { href: '' }, close() { this.closed = true } }
   const win = {
     open(url?: string | URL) {
       calls.push(String(url ?? ''))
       return opts.blocked ? null : (tab as unknown as Window)
     },
+    location: { assign: (url: string | URL) => navigations.push(String(url)) },
     Capacitor: opts.native ? { isNativePlatform: () => true } : undefined,
   }
-  return { win, calls, tab }
+  return { win, calls, navigations, tab }
 }
 
 describe('openWhenReady', () => {
@@ -47,9 +49,27 @@ describe('openWhenReady', () => {
     expect(calls).to.deep.equal(['', 'https://example.test/a.png'])
   })
 
-  it('opens only the URL inside the native app', async () => {
-    const { win, calls } = fakeWindow({ native: true })
-    await openWhenReady(async () => 'https://example.test/a.png', win)
-    expect(calls).to.deep.equal(['https://example.test/a.png'])
+  it('navigates to the URL inside the native app rather than opening a window', async () => {
+    // iOS's WebKit drops a window.open that arrives after the tap, so the
+    // iPhone app could list a shared document and never open it. Capacitor
+    // hands a navigation to an outside address to the system browser instead.
+    const { win, calls, navigations } = fakeWindow({ native: true })
+    expect(await openWhenReady(async () => 'https://example.test/a.pdf', win)).to.equal(true)
+    expect(navigations).to.deep.equal(['https://example.test/a.pdf'])
+    expect(calls).to.deep.equal([])
+  })
+
+  it('never navigates the app to one of its own paths', async () => {
+    const { win, calls, navigations } = fakeWindow({ native: true })
+    await openWhenReady(async () => '/documents/a.pdf', win)
+    expect(navigations).to.deep.equal([])
+    expect(calls).to.deep.equal(['/documents/a.pdf'])
+  })
+
+  it('does nothing in the native app when there is no URL', async () => {
+    const { win, calls, navigations } = fakeWindow({ native: true })
+    expect(await openWhenReady(async () => null, win)).to.equal(false)
+    expect(navigations).to.deep.equal([])
+    expect(calls).to.deep.equal([])
   })
 })

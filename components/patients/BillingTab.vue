@@ -136,6 +136,7 @@ interface FacturaRow {
   // stands -- a number issued in a correlative series cannot just disappear --
   // but it no longer matches any money, which someone has to resolve.
   payment_id: string | null
+  rectifies_factura_id: string | null
 }
 const facturas = ref<FacturaRow[]>([])
 const sendingFacturaId = ref('')
@@ -146,13 +147,69 @@ async function loadFacturas() {
     supabase.from('patients').select('national_id, default_practitioner_id').eq('id', props.patientId).maybeSingle(),
     supabase
       .from('facturas')
-      .select('id, number, kind, description, amount_cents, issued_at, recipient_nif, payment_id')
+      .select('id, number, kind, description, amount_cents, issued_at, recipient_nif, payment_id, rectifies_factura_id')
       .eq('patient_id', props.patientId)
       .order('issued_at', { ascending: false }),
   ])
   patientNationalId.value = patientRow?.national_id ?? null
   patientDefaultPractitionerId.value = patientRow?.default_practitioner_id ?? null
   facturas.value = data ?? []
+}
+
+// What a factura still documents once its rectificativas are taken off. A
+// refund rectifies part or all of one; annulling it rectifies the rest.
+function facturaOutstandingCents(f: FacturaRow): number {
+  const rectified = facturas.value
+    .filter((r) => r.kind === 'rectificativa' && r.rectifies_factura_id === f.id)
+    .reduce((sum, r) => sum + r.amount_cents, 0)
+  return f.amount_cents + rectified
+}
+
+// A factura whose payment was removed, and which nothing has cancelled yet.
+// That is the only kind that can be annulled: the money it documents was
+// never taken, so it needs a rectificativa with no refund behind it. One whose
+// payment still stands documents money the clinic did receive, and the way to
+// undo that is a refund, which records the money going back as well.
+function canAnnulFactura(f: FacturaRow): boolean {
+  return !f.payment_id && f.kind !== 'rectificativa' && facturaOutstandingCents(f) > 0
+}
+
+// Annul a factura whose payment was recorded in error.
+//
+// Removing the payment (deletePayment) leaves its factura on the series --
+// numbers in a correlative series cannot disappear -- documenting money that
+// never came in. Until now the only rectificativa the app could issue was a
+// refund's, and a refund needs a payment to refund and records money going
+// back to the patient, which here never left. So this was done by hand in
+// the database (R-2026-0006, R-2026-0007).
+//
+// It issues the rectificativa alone: no payment, no receipt, nothing on the
+// balance, because no money moves.
+const annullingFactura = ref<FacturaRow | null>(null)
+const annulReason = ref('')
+const annulBusy = ref(false)
+async function confirmAnnulFactura() {
+  const f = annullingFactura.value
+  if (!f || !canAnnulFactura(f)) return
+  annulBusy.value = true
+  const issued = await issueRectificativa({
+    accountId: store.accountId!,
+    patientId: props.patientId,
+    paymentId: null,
+    amountCents: facturaOutstandingCents(f),
+    rectifiesFacturaId: f.id,
+    rectifiesNumber: f.number,
+    reason: annulReason.value || t('payment recorded in error, no money was taken', 'cobro registrado por error, no se cobró nada'),
+  })
+  annulBusy.value = false
+  if (!issued) {
+    showToast(t('The rectifying factura could not be issued', 'No se ha podido emitir la factura rectificativa'), 'error')
+    return
+  }
+  annullingFactura.value = null
+  annulReason.value = ''
+  showToast(t(`${f.number} annulled with ${issued.number}`, `${f.number} anulada con ${issued.number}`))
+  await loadFacturas()
 }
 
 async function sendFactura(id: string) {
@@ -923,8 +980,8 @@ async function deletePayment(paymentId: string, invoiceId: string | null, amount
         (facturaNumbers
           ? '\n\n' +
             t(
-              `Factura ${facturaNumbers} was issued for this payment. It stays on the fiscal series and will be flagged as no longer matching a payment. If money actually went back to the patient, record a refund instead.`,
-              `Se emitió la factura ${facturaNumbers} por este pago. Seguirá en la serie fiscal y quedará marcada como sin pago asociado. Si el dinero se devolvió realmente al paciente, registra un reembolso en su lugar.`,
+              `Factura ${facturaNumbers} was issued for this payment. It stays on the fiscal series, flagged as no longer matching a payment; annul it afterwards from Facturas & receipts. If money actually went back to the patient, record a refund instead.`,
+              `Se emitió la factura ${facturaNumbers} por este pago. Seguirá en la serie fiscal, marcada como sin pago asociado; después puedes anularla desde Facturas y recibos. Si el dinero se devolvió realmente al paciente, registra un reembolso en su lugar.`,
             )
           : ''),
     )
@@ -2688,8 +2745,15 @@ function money(cents: number) {
                   holes punched in it -- but it now documents money that is no
                   longer recorded, which needs resolving rather than ignoring.
                 -->
-                <span v-if="!f.payment_id" class="ml-1 rounded-ctlSm bg-warning-bg px-1.5 py-0.5 font-sans text-[10.5px] text-warning-text">
+                <span v-if="canAnnulFactura(f)" class="ml-1 rounded-ctlSm bg-warning-bg px-1.5 py-0.5 font-sans text-[10.5px] text-warning-text">
                   {{ t('payment removed', 'pago eliminado') }}
+                </span>
+                <!-- Resolved: a rectificativa now cancels it. -->
+                <span
+                  v-else-if="!f.payment_id && f.kind !== 'rectificativa'"
+                  class="ml-1 rounded-ctlSm bg-chip-bg px-1.5 py-0.5 font-sans text-[10.5px] text-chip-text"
+                >
+                  {{ t('annulled', 'anulada') }}
                 </span>
               </p>
               <p class="truncate text-[12.5px] text-ink-muted2">{{ f.description }}</p>
@@ -2705,6 +2769,15 @@ function money(cents: number) {
               >
                 {{ t('PDF', 'PDF') }}
               </a>
+              <button
+                v-if="canAnnulFactura(f) && can('financials_edit_all') && can('payments_allocate')"
+                type="button"
+                data-cy="factura-annul"
+                class="text-[12px] font-medium text-danger-text hover:opacity-80"
+                @click="annullingFactura = f"
+              >
+                {{ t('Annul', 'Anular') }}
+              </button>
               <span v-if="facturaSendResult[f.id]" class="text-[12px] text-ink-faint">{{ facturaSendResult[f.id] }}</span>
               <button
                 v-else
@@ -2721,6 +2794,36 @@ function money(cents: number) {
       </div>
     </div>
 
+
+    <UiConfirmDialog
+      v-if="annullingFactura"
+      tone="danger"
+      :title="t(`Annul ${annullingFactura.number}?`, `¿Anular ${annullingFactura.number}?`)"
+      :confirm-label="t('Issue rectifying factura', 'Emitir rectificativa')"
+      :cancel-label="t('Cancel', 'Cancelar')"
+      :busy="annulBusy"
+      @confirm="confirmAnnulFactura"
+      @cancel="annullingFactura = null; annulReason = ''"
+    >
+      <p class="text-[14px] leading-snug text-ink-700">
+        {{
+          t(
+            `Issues a rectifying factura for ${money(facturaOutstandingCents(annullingFactura))} that cancels it. No money moves: use this only when the payment was recorded in error. If money went back to the patient, record a refund instead.`,
+            `Emite una factura rectificativa por ${money(facturaOutstandingCents(annullingFactura))} que la anula. No se mueve dinero: úsalo solo si el cobro se registró por error. Si se devolvió dinero al paciente, registra un reembolso.`,
+          )
+        }}
+      </p>
+      <label class="mt-3 block text-[12.5px] font-medium text-ink-700">
+        {{ t('Reason (on the rectifying factura)', 'Motivo (aparece en la rectificativa)') }}
+        <input
+          v-model="annulReason"
+          type="text"
+          data-cy="factura-annul-reason"
+          class="mt-1 w-full rounded-ctl border border-line-control px-2.5 py-1.5 text-[13px] focus:border-brand focus:outline-none"
+          :placeholder="t('payment recorded in error, no money was taken', 'cobro registrado por error, no se cobró nada')"
+        />
+      </label>
+    </UiConfirmDialog>
 
     <PatientsStripeCardModal
       v-if="showCardModal"

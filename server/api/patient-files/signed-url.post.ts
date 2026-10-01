@@ -28,10 +28,16 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'File not found' })
   }
 
+  // Signed to open, not to download. The patient's button says Open, and a
+  // report or an X-ray is something to look at; with `download` set, the
+  // storage response carried Content-Disposition: attachment and every
+  // browser saved the file instead of showing it. The viewer can still save
+  // or share it. Receipts and facturas (pdf-link) stay downloads: those get
+  // kept and forwarded.
   const serviceSupabase = serverSupabaseServiceRole<Database>(event)
   const { data: signed, error } = await serviceSupabase.storage
     .from('patient-files')
-    .createSignedUrl(file.storage_path, 60 * 5, { download: file.file_name })
+    .createSignedUrl(file.storage_path, 60 * 5)
   if (error || !signed) {
     throw createError({ statusCode: 502, statusMessage: 'Could not prepare the download' })
   }

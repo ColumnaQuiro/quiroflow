@@ -224,7 +224,7 @@ const activeLast30Days = computed(() => usage.value.active)
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Mobile App', 'App móvil')" />
     <div class="flex-1 overflow-y-auto">
-      <div class="flex gap-8 p-6">
+      <div class="flex gap-8 p-4 pb-24 sm:px-6 sm:pt-6 lg:pb-6">
         <SettingsNav />
         <div class="flex min-w-0 max-w-[980px] flex-1 flex-col gap-4">
           <p class="text-[13.5px] text-ink-muted">

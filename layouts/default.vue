@@ -63,7 +63,7 @@ const contactHref = 'mailto:hola@quiroflow.com'
   subscription, the portal for a lapsed one), and every API it calls is gated
   on requireTeamMember rather than requireActiveAccount, so all of them keep
   working while the account is locked. -->
-  <div v-if="store.isBillingLocked && currentPath !== '/subscription'" class="flex h-screen items-center justify-center bg-surface-page px-6">
+  <div v-if="store.isBillingLocked && currentPath !== '/subscription'" class="flex h-screen supports-[height:100dvh]:h-dvh items-center justify-center bg-surface-page px-6">
     <div class="max-w-sm text-center">
       <h1 class="text-lg font-semibold text-gray-900">Account locked</h1>
       <p class="mt-2 text-sm text-gray-600">This QuiroFlow account is locked pending payment.</p>
@@ -79,7 +79,15 @@ const contactHref = 'mailto:hola@quiroflow.com'
       <a :href="contactHref" class="mt-1 inline-block text-sm font-medium text-indigo-600 hover:text-indigo-800">hola@quiroflow.com</a>
     </div>
   </div>
-  <div v-else class="flex h-screen flex-col bg-surface-page">
+  <!-- 100dvh where the browser has it: 100vh on iPhone Safari is the height
+  with its toolbars hidden, so the bottom of every page -- the Inbox composer,
+  a list's last row -- sat behind the toolbar. Behind @supports rather than
+  `h-screen h-dvh`, because the production CSS emits .h-dvh BEFORE .h-screen
+  and 100vh would win. relative + overflow-hidden contain any
+  absolutely positioned element with no positioned ancestor (an sr-only label
+  in a wide table cell, say): left alone those resolve against the page
+  itself and let an iPhone pan the whole app sideways. -->
+  <div v-else class="relative flex h-screen supports-[height:100dvh]:h-dvh flex-col overflow-hidden bg-surface-page">
     <BillingBanner />
     <div class="flex flex-1 overflow-hidden">
       <AppSidebar :open="mobileSidebarOpen" @close="mobileSidebarOpen = false" />

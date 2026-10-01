@@ -50,7 +50,7 @@ function cell(r: RoleRow, row: Parameters<typeof rowValueLabel>[1]) {
     </header>
 
     <div class="flex-1 overflow-y-auto">
-      <div class="flex gap-8 p-4 sm:p-6">
+      <div class="flex gap-8 p-4 pb-24 sm:px-6 sm:pt-6 lg:pb-6">
         <SettingsNav />
         <div class="min-w-0 flex-1" data-cy="roles-compare-page" :data-ready="ready ? 'true' : undefined">
           <UiSkeleton v-if="!ready" class="h-[480px] w-full max-w-[980px] rounded-card" />

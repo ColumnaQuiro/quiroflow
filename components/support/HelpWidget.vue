@@ -179,7 +179,10 @@ function articleTitle(url: string) {
 <template>
   <!-- Above page content but below modals (z-50) and toasts (z-[200]), so a
   dialog opened from behind it still covers it. -->
-  <div v-if="!hideOnRoute" class="fixed bottom-5 right-5 z-40 print:hidden">
+  <!-- Tucked further into the corner and smaller on a phone, where at 48px
+  it sat over the right-hand column of every list -- amounts, totals, the last
+  action button. -->
+  <div v-if="!hideOnRoute" class="fixed bottom-3 right-3 z-40 print:hidden sm:bottom-5 sm:right-5">
     <div
       v-if="open"
       class="mb-2.5 flex h-[min(560px,calc(100vh-7rem))] w-[380px] max-w-[calc(100vw-2.5rem)] flex-col overflow-hidden rounded-card border border-line bg-surface shadow-popover"
@@ -205,7 +208,7 @@ function articleTitle(url: string) {
             <span v-if="unreadReply && mode !== 'human'" class="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-danger-text"></span>
           </button>
         </div>
-        <button type="button" class="text-ink-faint hover:text-ink-600" :title="t('Close', 'Cerrar')" @click="open = false">✕</button>
+        <button type="button" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" :title="t('Close', 'Cerrar')" @click="open = false">✕</button>
       </div>
 
       <div ref="scroller" class="flex-1 space-y-3 overflow-y-auto px-4 py-3">
@@ -287,7 +290,7 @@ function articleTitle(url: string) {
 
     <button
       type="button"
-      class="relative ml-auto flex h-12 w-12 items-center justify-center rounded-full bg-brand text-white shadow-popover hover:bg-brand-hover"
+      class="relative ml-auto flex h-11 w-11 items-center justify-center rounded-full bg-brand text-white shadow-popover hover:bg-brand-hover sm:h-12 sm:w-12"
       :title="t('Help', 'Ayuda')"
       @click="toggle"
     >

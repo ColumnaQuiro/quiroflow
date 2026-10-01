@@ -63,8 +63,8 @@ const retry = `async function callWithRetry(url, options, attempt = 0) {
     />
 
     <h2>Codes</h2>
-    <div class="my-4 overflow-hidden rounded-card border border-line">
-      <table class="w-full text-[12.5px]">
+    <div class="my-4 overflow-x-auto rounded-card border border-line">
+      <table class="w-full min-w-[520px] text-[12.5px]">
         <tbody class="divide-y divide-line-row">
           <tr v-for="row in CODES" :key="row.code" class="align-top">
             <td class="w-[64px] px-3 py-2 font-mono text-[12px] text-ink-900">{{ row.status }}</td>

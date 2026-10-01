@@ -808,7 +808,7 @@ async function sendStatement() {
   </div>
 
   <div v-if="transferModalOpen" class="fixed inset-0 z-20 flex items-center justify-center bg-ink-900/40 p-4" @click.self="transferModalOpen = false">
-    <div class="w-full max-w-sm rounded-card border border-line bg-surface p-4 shadow-popover">
+    <div class="max-h-full w-full max-w-sm overflow-y-auto rounded-card border border-line bg-surface p-4 shadow-popover">
       <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Transfer credit', 'Transferir crédito') }}</p>
       <p class="mt-1 text-[12px] text-ink-faint">{{ t('Moves an amount from this patient\'s credit', 'Mueve un importe del crédito de este paciente') }} ({{ formatEur(spendableCreditCents) }} {{ t('available', 'disponible') }}) {{ t('to another patient\'s account.', 'a la cuenta de otro paciente.') }}</p>
 
@@ -855,7 +855,7 @@ async function sendStatement() {
   </div>
 
   <div v-if="methodModalPaymentId" class="fixed inset-0 z-20 flex items-center justify-center bg-ink-900/40 p-4" @click.self="closeMethodModal">
-    <div class="w-full max-w-sm rounded-card border border-line bg-surface p-4 shadow-popover" data-cy="payment-method-modal">
+    <div class="max-h-full w-full max-w-sm overflow-y-auto rounded-card border border-line bg-surface p-4 shadow-popover" data-cy="payment-method-modal">
       <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Change payment method', 'Cambiar método de pago') }}</p>
       <p class="mt-1 text-[12px] text-ink-faint">
         {{
@@ -882,7 +882,7 @@ async function sendStatement() {
   </div>
 
   <div v-if="refundModalOpen" class="fixed inset-0 z-20 flex items-center justify-center bg-ink-900/40 p-4" @click.self="closeRefundModal">
-    <div class="w-full max-w-sm rounded-card border border-line bg-surface p-4 shadow-popover">
+    <div class="max-h-full w-full max-w-sm overflow-y-auto rounded-card border border-line bg-surface p-4 shadow-popover">
       <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Refund', 'Reembolso') }}</p>
       <p class="mt-1 text-[12px] text-ink-faint">
         {{

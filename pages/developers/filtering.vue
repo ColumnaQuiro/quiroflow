@@ -50,8 +50,8 @@ const error = `{
     </p>
     <DevportalCode code="?field=operator:value" />
 
-    <div class="my-4 overflow-hidden rounded-card border border-line">
-      <table class="w-full text-[12.5px]">
+    <div class="my-4 overflow-x-auto rounded-card border border-line">
+      <table class="w-full min-w-[520px] text-[12.5px]">
         <thead class="bg-surface-subtle">
           <tr class="text-left text-[11px] uppercase tracking-wide text-ink-faint">
             <th class="px-3 py-2 font-[620]">Operator</th>

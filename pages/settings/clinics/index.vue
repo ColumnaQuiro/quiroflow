@@ -156,7 +156,7 @@ async function reactivate(c: ClinicRow) {
       </button>
     </PageHeader>
     <div class="flex-1 overflow-y-auto">
-      <div class="flex gap-8 p-6">
+      <div class="flex gap-8 p-4 pb-24 sm:px-6 sm:pt-6 lg:pb-6">
         <SettingsNav />
         <div class="flex min-w-0 max-w-[720px] flex-1 flex-col gap-4" data-cy="clinics-page" :data-ready="ready ? 'true' : undefined">
           <p class="text-[13.5px] text-ink-muted">

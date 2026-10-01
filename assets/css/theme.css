@@ -190,3 +190,23 @@ html[data-theme='light'] {
     animation: none;
   }
 }
+
+/* iOS Safari zooms the whole page into any form field whose text is under
+   16px the moment it is focused, and leaves it zoomed -- so on an iPhone every
+   search box and every 13px input in this app pushed the screen sideways and
+   had to be pinched back out. 16px on phones only (narrow AND touch), so the
+   desktop and the front-desk iPad keep the designed sizes. Not
+   maximum-scale=1 in the viewport tag, which stops the zoom too but also
+   stops people pinch-zooming on Android. */
+@media (max-width: 767px) and (pointer: coarse) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']):not([type='file']),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+  /* A select is as wide as its longest option, which at 16px can be wider
+     than the screen. */
+  select {
+    max-width: 100%;
+  }
+}

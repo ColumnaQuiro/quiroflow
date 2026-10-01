@@ -50,10 +50,10 @@ async function save() {
 
 <template>
   <div class="fixed inset-0 z-20 flex items-center justify-center bg-ink-900/40 p-4" @click.self="emit('close')">
-    <div class="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl">
+    <div class="max-h-full w-full overflow-y-auto max-w-sm rounded-lg bg-white p-6 shadow-xl">
       <div class="flex items-center justify-between">
         <h2 class="text-lg font-semibold text-gray-900">{{ plan ? t('Edit Plan', 'Editar plan') : t('New Care Plan', 'Nuevo plan de tratamiento') }}</h2>
-        <button type="button" class="text-gray-400 hover:text-gray-600" @click="emit('close')">✕</button>
+        <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-gray-400 hover:text-gray-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')">✕</button>
       </div>
 
       <form class="mt-4 space-y-4" @submit.prevent="save">

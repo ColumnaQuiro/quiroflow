@@ -141,7 +141,7 @@ const pdfRoot = ref<HTMLElement | null>(null)
       </div>
     </PageHeader>
 
-    <div ref="pdfRoot" class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
+    <div ref="pdfRoot" class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6">
       <p class="text-[13px] text-ink-muted2">
         {{ t('Use it to gauge ad spend, spot maintenance-retention gaps, and predict how the month will close.', 'Úsalo para calibrar el gasto en publicidad, detectar huecos de retención de mantenimiento y predecir cómo cerrará el mes.') }}
       </p>

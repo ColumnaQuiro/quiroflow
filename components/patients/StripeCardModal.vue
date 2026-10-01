@@ -60,7 +60,7 @@ async function submit() {
     <div class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
       <div class="flex items-center justify-between">
         <h2 class="text-lg font-semibold text-gray-900">{{ t('Add card', 'Añadir tarjeta') }}</h2>
-        <button type="button" class="text-gray-400 hover:text-gray-600" @click="emit('close')">✕</button>
+        <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-gray-400 hover:text-gray-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')">✕</button>
       </div>
 
       <UiSkeleton v-if="loading" class="mt-6 h-9 w-full rounded-md" />

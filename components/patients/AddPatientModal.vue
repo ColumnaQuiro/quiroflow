@@ -117,10 +117,10 @@ async function onSubmit() {
 
 <template>
   <div class="fixed inset-0 z-50 flex justify-end bg-ink-900/30" @click.self="emit('close')">
-    <div class="flex h-full w-full max-w-lg flex-col overflow-y-auto border-l border-line bg-surface p-6 shadow-popover">
+    <div class="flex h-full w-full max-w-lg flex-col overflow-y-auto border-l border-line bg-surface p-4 shadow-popover sm:p-6">
       <div class="flex items-center justify-between">
         <h2 class="text-[16px] font-[640] text-ink-900">{{ t('Add Patient', 'Añadir paciente') }}</h2>
-        <button type="button" class="text-ink-faint hover:text-ink-600" @click="emit('close')">✕</button>
+        <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')">✕</button>
       </div>
 
       <form class="mt-4 space-y-4" @submit.prevent="onSubmit">
@@ -157,7 +157,9 @@ async function onSubmit() {
           />
         </div>
 
-        <div class="grid grid-cols-2 gap-4">
+        <!-- One column on a phone: half of 390px left the number field
+             itself about two digits wide beside the country picker. -->
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div v-if="isVisible('email')">
             <label class="block text-sm font-medium text-ink-700" for="email">{{ t('Email', 'Correo electrónico') }}</label>
             <input

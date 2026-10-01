@@ -312,7 +312,7 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
     </header>
 
     <div class="flex-1 overflow-y-auto">
-      <div class="flex gap-8 p-6 pb-32">
+      <div class="flex gap-8 p-4 pb-32 sm:px-6 sm:pt-6">
         <SettingsNav />
         <p v-if="loaded && missing" class="text-[14px] text-ink-muted" data-cy="clinic-missing">
           {{ t('This clinic does not exist, or is not yours.', 'Esta clínica no existe o no es tuya.') }}

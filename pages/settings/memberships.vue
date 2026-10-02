@@ -158,7 +158,7 @@ const inputClass = 'h-9 touch:h-11 w-full rounded-ctl border border-line-control
       <UiBtn variant="primary" data-cy="membership-add" @click="openNew">{{ t('New plan', 'Nuevo plan') }}</UiBtn>
     </PageHeader>
     <div class="flex-1 overflow-y-auto">
-      <div class="flex gap-8 p-6">
+      <div class="flex gap-8 p-4 pb-24 sm:px-6 sm:pt-6 lg:pb-6">
         <SettingsNav />
         <div class="flex min-w-0 max-w-[820px] flex-1 flex-col gap-4" data-cy="settings-list" :data-ready="loading ? undefined : 'true'">
           <p class="text-[13.5px] text-ink-muted">

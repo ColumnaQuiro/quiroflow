@@ -4,7 +4,9 @@ defineProps<{ title: string; meta?: string }>()
 
 <template>
   <header class="flex shrink-0 flex-col gap-2.5 border-b border-line bg-surface px-4 py-3 sm:h-14 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-0">
-    <div class="flex items-baseline gap-2.5">
+    <!-- Wraps on a phone, so a long meta drops under the title rather than
+         squeezing "Daily Transactions" onto two lines beside it. -->
+    <div class="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
       <h1 class="text-[18px] font-[640] tracking-tightTitle text-ink-900">{{ title }}</h1>
       <p v-if="meta" class="text-[12.5px] text-ink-muted2">{{ meta }}</p>
     </div>

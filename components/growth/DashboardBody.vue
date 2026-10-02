@@ -12,7 +12,10 @@ const emit = defineEmits<{ saveSpend: [channel: string, amountCents: number | nu
   <div class="flex flex-col gap-4">
     <GrowthKpiRow :kpis="data.kpis" />
 
-    <div class="grid gap-3 xl:grid-cols-[minmax(0,1fr)_320px]">
+    <!-- minmax(0,1fr) below xl too: an implicit grid track is sized to its
+    content's min-width, and the funnel's 620px scroller then widened the
+    whole column -- the dashboard ran off a phone's screen on the right. -->
+    <div class="grid grid-cols-[minmax(0,1fr)] gap-3 xl:grid-cols-[minmax(0,1fr)_320px]">
       <GrowthFunnel
         :stages="data.funnelStages"
         :steps="data.funnelSteps"
@@ -29,7 +32,7 @@ const emit = defineEmits<{ saveSpend: [channel: string, amountCents: number | nu
       </div>
     </div>
 
-    <div class="grid gap-3 xl:grid-cols-2">
+    <div class="grid grid-cols-[minmax(0,1fr)] gap-3 xl:grid-cols-2">
       <GrowthTrendChart :points="data.trend" :axis="data.trendAxis" />
       <GrowthChannelTable :rows="data.channels" :totals="data.channelTotals" @save-spend="(c, a) => emit('saveSpend', c, a)" />
     </div>

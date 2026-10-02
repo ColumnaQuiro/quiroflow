@@ -214,14 +214,14 @@ async function confirmRemove() {
         {{ t('Files uploaded by the clinic', 'Archivos subidos por la clínica') }}
         <span v-if="!loading" class="ml-1 font-normal text-ink-faint">{{ files.length }}</span>
       </p>
-      <label class="inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-white hover:bg-brand-hover">
+      <label class="inline-flex h-8 shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-white hover:bg-brand-hover">
         {{ uploading ? t('Uploading…', 'Subiendo…') : t('Upload file', 'Subir archivo') }}
         <input ref="fileInput" type="file" multiple class="hidden" :disabled="uploading" @change="(e) => uploadFiles((e.target as HTMLInputElement).files!)" />
       </label>
     </div>
     <p v-if="error" class="px-4 pt-3 text-[13px] text-danger-text">{{ error }}</p>
 
-    <div v-if="loading" class="grid grid-cols-2 gap-4 p-4 sm:grid-cols-4">
+    <div v-if="loading" class="grid grid-cols-1 gap-4 p-4 min-[480px]:grid-cols-2 sm:grid-cols-4">
       <div v-for="i in 4" :key="i" class="overflow-hidden rounded-ctl border border-line-divider bg-surface">
         <UiSkeleton class="h-[104px] w-full rounded-none" />
         <div class="space-y-1.5 p-2.5">
@@ -233,7 +233,7 @@ async function confirmRemove() {
     <div v-else-if="files.length === 0" class="p-8 text-center text-[13px] text-ink-faint">{{ t('No files uploaded yet.', 'Aún no se han subido archivos.') }}</div>
     <div
       v-else
-      class="grid grid-cols-2 gap-4 p-4 sm:grid-cols-4"
+      class="grid grid-cols-1 gap-4 p-4 min-[480px]:grid-cols-2 sm:grid-cols-4"
       @dragover.prevent="dragging = true"
       @dragleave.prevent="dragging = false"
       @drop.prevent="onDrop"
@@ -280,10 +280,13 @@ async function confirmRemove() {
         <div class="p-2.5">
           <p class="truncate font-mono text-[12px] font-medium text-ink-700" :title="file.file_name">{{ file.file_name }}</p>
           <p class="mt-0.5 truncate text-[11px] text-ink-faint" :title="fileMeta(file)">{{ fileMeta(file) }}</p>
-          <div class="mt-1.5 flex items-center justify-between gap-1.5">
+          <!-- Wraps rather than squeezing: two to a row on a phone left the
+               select a bare chevron and pushed the delete button out of the
+               card. -->
+          <div class="mt-1.5 flex flex-wrap items-center justify-between gap-1.5">
             <select
               v-model="file.visibility"
-              class="min-w-0 rounded border border-line-control px-1 py-0.5 text-[10.5px] text-ink-muted focus:border-brand focus:outline-none"
+              class="min-w-0 rounded border border-line-control px-1 py-0.5 text-[10.5px] text-ink-muted focus:border-brand focus:outline-none touch:min-h-10"
               :title="t('Whether this file will show to the patient in the mobile app', 'Si este archivo se mostrará al paciente en la aplicación móvil')"
               @change="updateVisibility(file)"
             >
@@ -291,8 +294,8 @@ async function confirmRemove() {
               <option value="custom">{{ t('Custom', 'Personalizado') }}</option>
             </select>
             <div class="flex shrink-0 items-center gap-2">
-              <button v-if="file.storage_path" type="button" class="text-[11px] font-medium text-brand-text outline-none hover:text-brand-hover focus-visible:shadow-focus" @click="view(file)">{{ t('Preview', 'Vista previa') }}</button>
-              <button v-if="file.storage_path" type="button" class="text-[11px] font-medium text-brand-text outline-none hover:text-brand-hover focus-visible:shadow-focus" @click="download(file)">{{ t('Download', 'Descargar') }}</button>
+              <button v-if="file.storage_path" type="button" class="text-[11px] font-medium text-brand-text outline-none hover:text-brand-hover focus-visible:shadow-focus touch:min-h-10 touch:px-1" @click="view(file)">{{ t('Preview', 'Vista previa') }}</button>
+              <button v-if="file.storage_path" type="button" class="text-[11px] font-medium text-brand-text outline-none hover:text-brand-hover focus-visible:shadow-focus touch:min-h-10 touch:px-1" @click="download(file)">{{ t('Download', 'Descargar') }}</button>
               <UiIconBtn v-if="can('patient_files_delete')" icon="trash" tone="danger" data-cy="file-delete" :label="t('Delete', 'Eliminar')" @click="deleting = file" />
             </div>
           </div>

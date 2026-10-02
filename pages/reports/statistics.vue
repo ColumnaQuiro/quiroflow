@@ -485,7 +485,7 @@ const pdfRoot = ref<HTMLElement | null>(null)
       </div>
     </PageHeader>
 
-    <div ref="pdfRoot" class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
+    <div ref="pdfRoot" class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6">
       <p v-if="!appointmentsLoading && unclassifiedTypeNames.length > 0" class="rounded-ctl border border-warning-border bg-warning-bg p-3 text-[13px] text-warning-text">
         {{ t(
           `Not counted anywhere below, because they have no stage yet: ${unclassifiedTypeNames.join(', ')}. Tag them in`,

@@ -722,7 +722,10 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
             <span class="text-[13.5px] text-ink-500">{{ practitionerName(r.default_practitioner_id) }}</span>
             <div v-if="contextPending" class="flex lg:justify-end"><UiSkeleton class="h-4 w-16 rounded" /></div>
             <span v-else class="text-[13.5px] font-semibold lg:text-right" :class="balanceText(r.patient_id!).cls">{{ balanceText(r.patient_id!).text }}</span>
-            <div class="min-w-0" data-cy="recall-last-contact">
+            <!-- col-start-2: the checkbox spans four rows on a phone, so this
+                 fifth line otherwise fell into its 44px column and read one
+                 word per line. -->
+            <div class="col-start-2 min-w-0 lg:col-start-auto" data-cy="recall-last-contact">
               <UiSkeleton v-if="contextPending" class="h-4 w-28 rounded" />
               <button v-else-if="actionCountByPatient[r.patient_id!]" type="button" class="text-left text-[13.5px] text-ink-900 hover:underline" @click="historyFor = r">{{ lastContact(r).text }}</button>
               <span v-else class="text-[13.5px]" :class="lastContact(r).tone === 'warn' ? 'font-semibold text-warning-text' : 'text-ink-muted'">{{ lastContact(r).text }}</span>

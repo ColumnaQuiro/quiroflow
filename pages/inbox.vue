@@ -1800,7 +1800,9 @@ function avatarInitials(name: string) {
           <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[13px] font-bold" :class="selected.patientId ? 'bg-brand-tint text-brand-text' : 'bg-chip-bg text-ink-700'">
             {{ avatarInitials(selected.name) }}
           </span>
-          <div class="min-w-0 flex-1">
+          <!-- min-w on a phone so the controls after it wrap onto a second
+          row; flex-1 alone shrank the name to its first letter. -->
+          <div class="min-w-[11rem] flex-1 md:min-w-0">
             <p class="truncate text-[16px] font-bold text-ink-900" data-cy="thread-name">{{ selected.name }}</p>
             <p class="flex items-center gap-1.5 truncate text-[13px] text-ink-muted">
               <!-- Named from the channel itself: anything that was not
@@ -2000,7 +2002,10 @@ function avatarInitials(name: string) {
             <button type="button" class="shrink-0 text-[12.5px] text-ink-faint hover:text-ink-muted" @click="cancelAudioRecording">{{ t('Cancel', 'Cancelar') }}</button>
             <UiBtn variant="primary" size="sm" @click="toggleAudioRecording">{{ t('Send', 'Enviar') }}</UiBtn>
           </div>
-          <div v-else class="flex items-end gap-2">
+          <!-- On a phone the message box takes the full width on a row of its
+          own, with attach, voice, saved replies and Send under it: inline it
+          was left about 130px between them. -->
+          <div v-else class="flex flex-wrap items-end gap-2 sm:flex-nowrap">
             <!-- Attachments and voice notes are WhatsApp-only: both upload
             through whatsapp/inbox-send, and instagram/send posts text alone.
             Offering the buttons on an Instagram thread would take a file,
@@ -2031,10 +2036,10 @@ function avatarInitials(name: string) {
               v-model="composerText"
               rows="1"
               :placeholder="t('Type a message…', 'Escribe un mensaje…')"
-              class="max-h-32 min-h-9 touch:min-h-11 flex-1 resize-none rounded-ctl border border-line-control bg-surface px-3 py-[10px] text-[15px] text-ink-900 focus:border-brand focus:outline-none"
+              class="order-first max-h-32 min-h-9 w-full touch:min-h-11 resize-none rounded-ctl border border-line-control bg-surface px-3 py-[10px] text-[15px] text-ink-900 focus:border-brand focus:outline-none sm:order-none sm:w-auto sm:flex-1"
               @keydown.enter.exact.prevent="sendText"
             />
-            <button type="button" data-cy="thread-send" class="h-9 touch:h-11 shrink-0 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface hover:bg-brand-hover disabled:opacity-50" :disabled="sending || !composerText.trim()" @click="sendText">{{ sending ? '…' : t('Send', 'Enviar') }}</button>
+            <button type="button" data-cy="thread-send" class="ml-auto h-9 touch:h-11 shrink-0 rounded-ctl bg-brand sm:ml-0 px-4 text-[14px] font-bold text-surface hover:bg-brand-hover disabled:opacity-50" :disabled="sending || !composerText.trim()" @click="sendText">{{ sending ? '…' : t('Send', 'Enviar') }}</button>
           </div>
         </div>
       </div>

@@ -143,10 +143,10 @@ const money = (cents: number) => formatEur(cents)
 
 <template>
   <div class="fixed inset-0 z-50 flex justify-end bg-ink-900/30" @click.self="emit('close')">
-    <div class="flex h-full w-full max-w-lg flex-col overflow-y-auto border-l border-line bg-surface p-6 shadow-popover">
+    <div class="flex h-full w-full max-w-lg flex-col overflow-y-auto border-l border-line bg-surface p-4 shadow-popover sm:p-6">
       <div class="flex items-center justify-between">
         <h2 class="text-[16px] font-[640] text-ink-900">{{ t('Merge patient', 'Fusionar paciente') }}</h2>
-        <button type="button" class="text-ink-faint hover:text-ink-600" @click="emit('close')">✕</button>
+        <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')">✕</button>
       </div>
 
       <p class="mt-2 text-[13px] text-ink-muted2">

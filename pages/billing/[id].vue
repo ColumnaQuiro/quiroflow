@@ -299,7 +299,7 @@ function formatDate(iso: string) {
       </PageHeader>
     </div>
 
-    <div class="flex-1 overflow-y-auto bg-surface-page p-6">
+    <div class="flex-1 overflow-y-auto bg-surface-page p-4 sm:p-6">
       <div v-if="loading" class="mx-auto max-w-[720px] space-y-4">
         <div class="space-y-3 rounded-card border border-line bg-surface p-6 shadow-card">
           <UiSkeleton class="h-4 w-40 rounded-ctlSm" />

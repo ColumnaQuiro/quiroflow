@@ -200,7 +200,7 @@ const pdfRoot = ref<HTMLElement | null>(null)
       </div>
     </PageHeader>
 
-    <div ref="pdfRoot" class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
+    <div ref="pdfRoot" class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6">
       <div class="flex flex-wrap items-center gap-2">
         <ReportsDateRangeSelect v-model="range" />
         <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" :locked-to="reportsPractitionerId" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />

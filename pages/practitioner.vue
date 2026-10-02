@@ -298,7 +298,7 @@ const headerMeta = computed(() => {
 <template>
   <div class="flex h-full flex-col">
     <header class="flex shrink-0 flex-col gap-2.5 border-b border-line bg-surface px-4 py-3 sm:h-14 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-0">
-      <div class="flex items-baseline gap-2.5">
+      <div class="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
         <h1 class="text-[18px] font-[640] tracking-tightTitle text-ink-900">{{ t('My Day', 'Mi Día') }}</h1>
         <p class="text-[12.5px] text-ink-muted2">{{ headerMeta }}</p>
       </div>
@@ -306,7 +306,7 @@ const headerMeta = computed(() => {
         <div v-if="canSeeAll" class="relative">
           <select
             v-model="practitionerId"
-            class="h-8 appearance-none rounded-ctl border border-line-control bg-surface px-2.5 pr-6 text-[13px] text-ink-500 hover:border-line-controlHover focus:border-brand focus:outline-none"
+            class="h-8 appearance-none rounded-ctl border border-line-control bg-surface px-2.5 pr-6 text-[13px] touch:h-11 text-ink-500 hover:border-line-controlHover focus:border-brand focus:outline-none"
           >
             <option v-for="m in teamMembers" :key="m.id" :value="m.id">{{ m.full_name }}</option>
           </select>
@@ -316,7 +316,7 @@ const headerMeta = computed(() => {
         </div>
         <button
           type="button"
-          class="flex h-8 items-center gap-1.5 rounded-ctl border px-2.5 text-[13px] font-medium"
+          class="flex h-8 items-center gap-1.5 rounded-ctl border px-2.5 text-[13px] font-medium touch:h-11"
           :class="privacyMode ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control bg-surface text-ink-500 hover:border-line-controlHover'"
           @click="privacyMode = !privacyMode"
         >

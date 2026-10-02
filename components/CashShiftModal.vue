@@ -198,7 +198,7 @@ async function addMovement() {
     <div class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 shadow-xl">
       <div class="flex items-center justify-between">
         <h3 class="text-sm font-semibold text-gray-900">{{ t('Cash Shift', 'Turno de caja') }}</h3>
-        <button type="button" class="text-gray-400 hover:text-gray-600" @click="emit('close')">✕</button>
+        <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-gray-400 hover:text-gray-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')">✕</button>
       </div>
 
       <div v-if="loading" class="mt-4 space-y-3">

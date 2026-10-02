@@ -157,7 +157,7 @@ if (expected !== req.headers['x-quiroflow-signature']) return res.status(401).en
       <UiBtn variant="primary" data-cy="webhook-new" :disabled="editing === 'new'" @click="openNew">{{ t('Add endpoint', 'Añadir endpoint') }}</UiBtn>
     </PageHeader>
     <div class="flex-1 overflow-y-auto">
-      <div class="flex gap-8 p-6">
+      <div class="flex gap-8 p-4 pb-24 sm:px-6 sm:pt-6 lg:pb-6">
         <SettingsNav />
         <div class="flex min-w-0 max-w-[900px] flex-1 flex-col gap-4" data-cy="webhooks-settings" :data-ready="loading ? undefined : 'true'">
           <p class="text-[13.5px] text-ink-muted">

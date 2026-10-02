@@ -252,7 +252,11 @@ function onTabKeydown(event: KeyboardEvent) {
     </div>
   </div>
   <div v-else-if="notFound" class="flex h-full items-center justify-center text-[13px] text-ink-faint">{{ t('Patient not found.', 'Paciente no encontrado.') }}</div>
-  <div v-else-if="patient" class="flex h-full flex-col">
+  <!-- Below lg the banner scrolls away with the record instead of staying
+  pinned: on a phone it is the call/message/book card, about half an iPhone
+  screen, and pinned it left the open tab a strip to scroll in. The tab bar
+  is sticky, so the sections stay one tap away either way. -->
+  <div v-else-if="patient" class="flex h-full flex-col overflow-y-auto bg-surface-page lg:overflow-hidden">
     <div class="shrink-0 bg-surface-page px-4 pt-4 sm:px-6">
       <PatientsBanner
         :patient="patient"
@@ -279,16 +283,19 @@ function onTabKeydown(event: KeyboardEvent) {
       />
     </div>
 
-    <div class="flex-1 overflow-y-auto bg-surface-page">
+    <div class="bg-surface-page lg:flex-1 lg:overflow-y-auto">
       <div class="min-w-0 px-4 sm:px-6">
         <!-- A real tablist. These were buttons carrying aria-current, which
         announces "the page you are on" -- they are not pages, and a screen
         reader was told there were six links rather than one set of six
         tabs. With the roles comes roving focus: one tab stop for the whole
-        set, arrows to move between them, Home and End to jump. -->
+        set, arrows to move between them, Home and End to jump.
+        On a phone the six wrap onto two rows: scrolled sideways, Attachments
+        and Communications started off the edge of the screen, and nothing
+        said they were there. -->
         <div
           role="tablist"
-          class="sticky top-0 z-10 flex gap-1 overflow-x-auto border-b border-chip-border bg-surface-page"
+          class="sticky top-0 z-10 flex flex-wrap gap-x-1 border-b border-chip-border bg-surface-page sm:flex-nowrap sm:gap-1 sm:overflow-x-auto"
           :aria-label="t('Patient record sections', 'Secciones de la ficha')"
           @keydown="onTabKeydown"
         >

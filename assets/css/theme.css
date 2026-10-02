@@ -190,3 +190,12 @@ html[data-theme='light'] {
     animation: none;
   }
 }
+
+/* A select is as wide as its longest option, which on a phone can be wider
+   than the screen. (The iOS zoom-on-focus is handled by the viewport on iOS
+   only -- nuxt.config.ts -- so form text keeps its designed size here.) */
+@media (max-width: 767px) {
+  select {
+    max-width: 100%;
+  }
+}

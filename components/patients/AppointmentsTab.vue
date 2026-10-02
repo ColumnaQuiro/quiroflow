@@ -346,7 +346,7 @@ const stats = computed(() => [
       <div class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-card bg-surface p-6 shadow-drawer">
         <div class="flex items-center justify-between">
           <h2 class="text-[15px] font-semibold text-ink-900">{{ t('Visit notes', 'Notas de la visita') }}</h2>
-          <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600" @click="notesAppointmentId = null">✕</button>
+          <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="notesAppointmentId = null">✕</button>
         </div>
         <div class="mt-4">
           <AppointmentsNotesPanel :appointment-id="notesAppointmentId" />

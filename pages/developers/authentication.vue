@@ -64,8 +64,8 @@ const forbidden = `{
 
     <div v-for="[group, scopes] in scopeGroups" :key="group" class="mt-4">
       <p class="text-[12.5px] font-[560] text-ink-700">{{ group }}</p>
-      <div class="mt-1.5 overflow-hidden rounded-card border border-line">
-        <table class="w-full text-[12.5px]">
+      <div class="mt-1.5 overflow-x-auto rounded-card border border-line">
+        <table class="w-full min-w-[520px] text-[12.5px]">
           <tbody class="divide-y divide-line-row">
             <tr v-for="scope in scopes" :key="scope.key">
               <td class="w-[34%] px-3 py-2"><code class="font-mono text-[12px] text-ink-900">{{ scope.key }}</code></td>

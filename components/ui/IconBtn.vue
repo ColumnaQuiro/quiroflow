@@ -35,7 +35,7 @@ const PATHS: Record<string, string> = {
     :aria-label="props.label"
     :title="props.label"
     :disabled="props.disabled"
-    class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-ctlSm transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+    class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-ctlSm transition-colors touch:h-10 touch:w-10 disabled:cursor-not-allowed disabled:opacity-40"
     :class="
       props.tone === 'danger'
         ? 'text-ink-faint hover:bg-danger-bg hover:text-danger-text'

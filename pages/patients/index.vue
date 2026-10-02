@@ -580,7 +580,7 @@ function tagClass(tag: string) {
             <caption class="sr-only">{{ t('Patients', 'Pacientes') }}</caption>
             <thead>
               <tr class="border-b border-line-row bg-surface-subtle2 text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">
-                <th scope="col" class="px-5 py-2.5 text-left" :aria-sort="sortDir === 'asc' ? 'ascending' : 'descending'">
+                <th scope="col" class="px-5 py-2.5 text-left max-md:sticky max-md:left-0 max-md:z-[1] max-md:bg-surface-subtle2 max-md:px-3" :aria-sort="sortDir === 'asc' ? 'ascending' : 'descending'">
                   <button
                     type="button"
                     class="inline-flex items-center gap-1 uppercase tracking-[.04em] outline-none hover:text-ink-600 focus-visible:shadow-focus"
@@ -637,10 +637,14 @@ function tagClass(tag: string) {
               <tr
                 v-for="patient in patients"
                 :key="patient.id"
-                class="cursor-pointer border-b border-line-row last:border-b-0 hover:bg-surface-subtle"
+                class="group cursor-pointer border-b border-line-row last:border-b-0 hover:bg-surface-subtle"
                 @click="onRowClick($event, patient.id)"
               >
-                <td class="px-5 py-2.5">
+                <!-- Pinned on a phone, where the table scrolls sideways: the
+                     columns to the right are no use without the name they
+                     belong to. Capped there too, so one long name does not
+                     widen the column past the screen. -->
+                <td class="px-5 py-2.5 max-md:sticky max-md:left-0 max-md:z-[1] max-md:max-w-[200px] max-md:bg-surface max-md:px-3 max-md:group-hover:bg-surface-subtle">
                   <div class="flex min-w-0 items-center gap-2.5">
                     <span aria-hidden="true" class="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full bg-brand-tint text-[10.5px] font-[650] text-brand">
                       {{ initials(patient) }}

@@ -284,7 +284,7 @@ const pdfRoot = ref<HTMLElement | null>(null)
       </div>
     </PageHeader>
 
-    <div ref="pdfRoot" class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
+    <div ref="pdfRoot" class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6">
       <div v-if="loading" class="mx-auto max-w-3xl space-y-3 rounded-card border border-line bg-surface p-5 shadow-card">
         <UiSkeleton class="h-4 w-48 rounded-ctlSm" />
         <UiSkeleton class="h-3 w-64 rounded-ctlSm" />

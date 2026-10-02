@@ -149,7 +149,7 @@ const pdfRoot = ref<HTMLElement | null>(null)
       </div>
     </PageHeader>
 
-    <div ref="pdfRoot" class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
+    <div ref="pdfRoot" class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6">
       <p class="text-[13px] text-ink-muted2">{{ t('Did every WhatsApp actually send, and who has confirmed, is pending, or asked to reschedule.', 'Si todos los WhatsApp se enviaron realmente, y quién ha confirmado, está pendiente o ha pedido reprogramar.') }}</p>
 
       <p v-if="!canReadMessages" class="mt-4 rounded-ctl border border-line bg-surface-subtle px-3 py-2 text-[13px] text-ink-muted">

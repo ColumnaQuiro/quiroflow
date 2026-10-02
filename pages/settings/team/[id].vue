@@ -347,7 +347,7 @@ const card = 'flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg
     </header>
 
     <div class="flex-1 overflow-y-auto">
-      <div class="flex gap-8 p-6 pb-32">
+      <div class="flex gap-8 p-4 pb-32 sm:px-6 sm:pt-6">
         <SettingsNav />
         <p v-if="loaded && missing" class="text-[14px] text-ink-muted" data-cy="member-missing">
           {{ t('This person is not on your team.', 'Esta persona no está en tu equipo.') }}

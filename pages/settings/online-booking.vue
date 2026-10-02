@@ -347,7 +347,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
       </UiBtn>
     </PageHeader>
     <div class="flex-1 overflow-y-auto">
-      <div class="flex gap-8 p-6">
+      <div class="flex gap-8 p-4 pb-24 sm:px-6 sm:pt-6 lg:pb-6">
         <SettingsNav />
         <div class="flex min-w-0 max-w-[940px] flex-1 flex-col gap-4" data-cy="booking-settings" :data-ready="loading ? undefined : 'true'">
           <p class="text-[13.5px] text-ink-muted">
@@ -375,12 +375,14 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
             </div>
             <div class="flex flex-col gap-2.5 border-t border-line-row px-[18px] pb-4 pt-3.5" data-test="booking-embed-card">
               <div class="flex flex-wrap items-center gap-2.5">
-                <span class="w-[110px] shrink-0 text-[13.5px] font-semibold text-ink-700">{{ t('Link', 'Enlace') }}</span>
+                <!-- The label takes its own line on a phone; beside it the link was
+                     squeezed to "http: …" between it and Copy. -->
+                <span class="w-full shrink-0 text-[13.5px] font-semibold text-ink-700 sm:w-[110px]">{{ t('Link', 'Enlace') }}</span>
                 <code class="min-w-0 flex-1 truncate rounded-ctlSm bg-surface-page px-2.5 py-2 font-mono text-[12.5px] text-ink-500">{{ bookingUrl(store.accountSlug) }}</code>
                 <UiBtn class="w-24" @click="copy(bookingUrl(store.accountSlug))">{{ t('Copy', 'Copiar') }}</UiBtn>
               </div>
               <div class="flex flex-wrap items-start gap-2.5">
-                <span class="w-[110px] shrink-0 pt-2 text-[13.5px] font-semibold text-ink-700">{{ t('Website embed', 'Insertar en tu web') }}</span>
+                <span class="w-full shrink-0 text-[13.5px] font-semibold text-ink-700 sm:w-[110px] sm:pt-2">{{ t('Website embed', 'Insertar en tu web') }}</span>
                 <textarea
                   :value="embedSnippet(store.accountSlug)"
                   data-test="booking-embed-snippet"

@@ -185,6 +185,12 @@ const statusLabel = computed(() => {
   if (b.isNew.value) return t('Draft', 'Borrador')
   return b.draft.value.enabled ? t('Active', 'Activa') : t('Paused', 'Pausada')
 })
+// What paused means, on hover: it stops the people inside too, not only the door.
+const statusHint = computed(() =>
+  !b.isNew.value && !b.draft.value.enabled && !(b.isLead.value && !b.hasGrowth.value)
+    ? t('Paused: nobody new enters, and people already inside wait at their current step until you resume it.', 'En pausa: no entra nadie nuevo y quienes ya están dentro esperan en su paso actual hasta que la reanudes.')
+    : undefined,
+)
 const now = ref(Date.now())
 let clock: ReturnType<typeof setInterval> | undefined
 onMounted(() => (clock = setInterval(() => (now.value = Date.now()), 30_000)))
@@ -237,6 +243,7 @@ const sheetOpen = computed(() => !wide.value && b.selection.value !== null && ta
           :disabled="!b.loaded.value || (b.isLead.value && !b.hasGrowth.value) || b.saving.value"
           class="flex h-8 items-center gap-2 rounded-pill border px-2.5 text-[12.5px] font-semibold disabled:cursor-not-allowed disabled:opacity-60 touch:h-11"
           :class="b.draft.value.enabled && !(b.isLead.value && !b.hasGrowth.value) ? 'border-success-border bg-success-bg text-success-text' : 'border-chip-border bg-chip-bg text-chip-text'"
+          :title="statusHint"
           data-test="automation-enabled"
           @click="toggleEnabled"
         >

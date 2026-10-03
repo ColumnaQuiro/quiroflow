@@ -444,6 +444,8 @@ describe('Automation engine', () => {
       cy.task<{ id: string }>('db:createAutomationRule', {
         accountId: account.accountId,
         triggerEvent: 'lead.created',
+        // Off while the lead comes in, so ingest does not start a run of its
+        // own; on before the tick, which leaves a paused rule's runs alone.
         enabled: false,
         dryRun: true,
         isMarketing: true,
@@ -451,6 +453,7 @@ describe('Automation engine', () => {
       }).then((rule) => {
         ingest({ full_name: 'Lead Heredado', phone: '+34600955003', external_id: `legacy-${Date.now()}` }).then((res) => {
           const leadId = res.body.data.id
+          cy.task('auto:setRuleEnabled', { ruleId: rule.id, enabled: true })
           // Parked at the second delay (next_position 4), with a stale cursor
           // pointing at drip_2 (position 2), which was sent long ago.
           cy.task<{ id: string }>('auto:insertRun', { accountId: account.accountId, ruleId: rule.id, leadId, nextPosition: 4, currentActionPosition: 2 }).then((run) => {

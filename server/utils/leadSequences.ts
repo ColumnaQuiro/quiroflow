@@ -1,4 +1,4 @@
-import { phoneMatches } from '~/utils/phone'
+import { patientsWithPhone } from '~/utils/patientsWithPhone'
 import { getAccountSecret } from '~/server/utils/accountSecrets'
 
 // A multi-step automation for a lead: send, wait, send again, and stop the
@@ -101,14 +101,11 @@ export async function sequenceStopReason(
   }
 
   if (lead.phone) {
-    const digits = lead.phone.replace(/\D/g, '')
-    const { data: numbers } = await supabase
-      .from('patient_contact_numbers')
-      .select('number, country_code')
-      .eq('account_id', accountId)
-    for (const n of numbers ?? []) {
-      if (phoneMatches(n.number, n.country_code, digits)) return 'already_a_patient'
-    }
+    // Every page of the account's numbers, not the first 1000. A read that
+    // fails throws, and every caller leaves the run due for the next tick --
+    // it does not go on to send as if nobody had matched.
+    const matched = await patientsWithPhone(supabase, accountId, lead.phone.replace(/\D/g, ''))
+    if (matched.size > 0) return 'already_a_patient'
   }
 
   return practiceHubVerdict(supabase, accountId, lead)

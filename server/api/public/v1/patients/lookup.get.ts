@@ -1,4 +1,4 @@
-import { phoneMatches } from '~/utils/phone'
+import { patientsWithPhone } from '~/utils/patientsWithPhone'
 import { badRequest, defineApiHandler } from '~/server/utils/publicApi'
 
 // Public, token-authenticated lookup so an external lead-gen automation
@@ -31,11 +31,9 @@ export default defineApiHandler({ scope: 'patients:read' }, async ({ event, supa
   }
 
   if (phone) {
-    const phoneDigits = phone.replace(/\D/g, '')
-    const { data: numbers } = await supabase.from('patient_contact_numbers').select('patient_id, number, country_code').eq('account_id', accountId)
-    for (const n of numbers ?? []) {
-      if (phoneMatches(n.number, n.country_code, phoneDigits)) matchedPatientIds.add(n.patient_id)
-    }
+    // Every page of the account's numbers, not the first 1000 -- see
+    // patientsWithPhone.
+    for (const id of await patientsWithPhone(supabase, accountId, phone.replace(/\D/g, ''))) matchedPatientIds.add(id)
   }
 
   if (matchedPatientIds.size === 0) {

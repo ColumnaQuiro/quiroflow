@@ -15,6 +15,7 @@ interface LabelOption {
 const props = defineProps<{ labels: LabelOption[]; appliedIds: string[] }>()
 const emit = defineEmits<{ 'toggle-label': [labelId: string]; 'create-label': [name: string, color: string] }>()
 
+const t = useT()
 const open = ref(false)
 const newName = ref('')
 const newColor = ref('#4C6FEB')
@@ -42,11 +43,11 @@ onUnmounted(() => document.removeEventListener('click', onClickOutside))
 <template>
   <div ref="rootEl" class="relative">
     <button type="button" class="shrink-0 text-[12.5px] text-ink-muted hover:text-ink-700" @click="open = !open">
-      Labels<template v-if="appliedIds.length"> ({{ appliedIds.length }})</template>
+      {{ t('Labels', 'Etiquetas') }}<template v-if="appliedIds.length"> ({{ appliedIds.length }})</template>
     </button>
 
     <div v-if="open" class="absolute right-0 top-[calc(100%+4px)] z-20 w-64 rounded-ctl border border-line bg-surface p-2 shadow-popover">
-      <p v-if="labels.length === 0" class="px-1 py-1 text-[12.5px] text-ink-faint">No labels yet -- add one below.</p>
+      <p v-if="labels.length === 0" class="px-1 py-1 text-[12.5px] text-ink-faint">{{ t('No labels yet — add one below.', 'Aún no hay etiquetas: añade una abajo.') }}</p>
       <button
         v-for="l in labels"
         :key="l.id"
@@ -68,16 +69,16 @@ onUnmounted(() => document.removeEventListener('click', onClickOutside))
       </button>
 
       <div class="mt-1.5 flex items-center gap-1.5 border-t border-line-divider pt-1.5">
-        <input v-model="newColor" type="color" class="h-7 w-8 shrink-0 rounded-ctlSm border border-line-control" title="Label color" />
+        <input v-model="newColor" type="color" class="h-7 w-8 shrink-0 rounded-ctlSm border border-line-control" :title="t('Label color', 'Color de la etiqueta')" />
         <input
           v-model="newName"
           type="text"
-          placeholder="New label…"
+          :placeholder="t('New label…', 'Nueva etiqueta…')"
           class="h-7 min-w-0 flex-1 rounded-ctlSm border border-line-control bg-surface px-2 text-[12.5px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none"
           @keydown.enter.prevent="submitNewLabel"
         />
         <button type="button" class="shrink-0 text-[12px] font-medium text-brand-text hover:text-brand-hover disabled:opacity-40" :disabled="!newName.trim()" @click="submitNewLabel">
-          Add
+          {{ t('Add', 'Añadir') }}
         </button>
       </div>
     </div>

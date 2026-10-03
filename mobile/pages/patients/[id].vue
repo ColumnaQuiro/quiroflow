@@ -31,7 +31,7 @@ const patientId = route.params.id as string
 const supabase = useSupabaseClient()
 const config = useRuntimeConfig()
 const t = useT()
-const { context, loading: contextLoading, can, restricted } = usePractitionerContext()
+const { context, loading: contextLoading, can, restricted, ownDiaryOnly } = usePractitionerContext()
 
 interface Patient {
   id: string
@@ -349,7 +349,14 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
             <h2 class="text-[11px] font-semibold uppercase tracking-[.05em] text-ink-faint">{{ plan ? t('Care plan', 'Plan de tratamiento') : t('Next visit', 'Próxima visita') }}</h2>
             <span v-if="plan" class="text-[12.5px] text-ink-muted2">{{ cadenceLabel(plan, t) }}</span>
           </div>
-          <template v-if="plan">
+          <!-- With calendar_scope 'own' the visits a colleague saw are not
+               readable here, so the count would come out short: "visit 2 of
+               12" on a plan half done. The plan's length instead, as the
+               visit screen does. -->
+          <p v-if="plan && ownDiaryOnly" class="mt-1 text-[14px] font-semibold text-ink-900" data-cy="patient-plan-progress">
+            {{ t(`${plan.total_visits} visits`, `${plan.total_visits} visitas`) }}
+          </p>
+          <template v-else-if="plan">
             <p class="mt-1 text-[14px] font-semibold text-ink-900" data-cy="patient-plan-progress">
               {{ t('Visit', 'Visita') }} {{ Math.min(completedInPlan, plan.total_visits) }} {{ t('of', 'de') }} {{ plan.total_visits }}
             </p>
@@ -359,6 +366,7 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
           </template>
           <p class="mt-1.5 text-[12.5px]" :class="nextAppt ? 'text-ink-muted2' : 'text-warning-text'">
             <template v-if="nextAppt">{{ t('Next', 'Próxima') }}: {{ apptWhen(nextAppt.starts_at) }}<template v-if="nextAppt.appointment_types?.name"> · {{ nextAppt.appointment_types.name }}</template></template>
+            <template v-else-if="ownDiaryOnly">{{ t('Nothing booked with you.', 'Nada reservado contigo.') }}</template>
             <template v-else>{{ t('Nothing booked.', 'Nada reservado.') }}</template>
           </p>
         </template>

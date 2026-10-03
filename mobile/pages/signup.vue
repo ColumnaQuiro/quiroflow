@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const supabase = useSupabaseClient()
-const authPasswordError = useAuthPasswordError()
+const t = useT()
+const authErrorMessage = useAuthErrorMessage()
 const email = ref('')
 const password = ref('')
 const error = ref('')
@@ -16,7 +17,7 @@ async function onSubmit() {
   })
   loading.value = false
   if (signUpError) {
-    error.value = authPasswordError(signUpError)
+    error.value = authErrorMessage(signUpError)
     return
   }
   if (data.session) {
@@ -34,11 +35,11 @@ async function onSubmit() {
     <div class="w-full max-w-sm rounded-card border border-line bg-surface p-8 shadow-card">
       <template v-if="!checkEmail">
         <img src="/logo/quiroflow-mark.svg" alt="" class="h-8 w-8" />
-        <h1 class="mt-4 text-xl font-semibold text-ink-900">Create your account</h1>
-        <p class="mt-1 text-sm text-ink-muted">Use the same email your clinic has on file for you.</p>
+        <h1 class="mt-4 text-xl font-semibold text-ink-900">{{ t('Create your account', 'Crea tu cuenta') }}</h1>
+        <p class="mt-1 text-sm text-ink-muted">{{ t('Use the same email your clinic has on file for you.', 'Usa el mismo correo que tiene tu clínica en tu ficha.') }}</p>
         <form class="mt-6 space-y-4" @submit.prevent="onSubmit">
           <div>
-            <label class="block text-sm font-medium text-ink-700" for="email">Email</label>
+            <label class="block text-sm font-medium text-ink-700" for="email">{{ t('Email', 'Correo electrónico') }}</label>
             <input
               id="email"
               v-model="email"
@@ -49,7 +50,7 @@ async function onSubmit() {
             />
           </div>
           <div>
-            <label class="block text-sm font-medium text-ink-700" for="password">Password</label>
+            <label class="block text-sm font-medium text-ink-700" for="password">{{ t('Password', 'Contraseña') }}</label>
             <input
               id="password"
               v-model="password"
@@ -62,21 +63,21 @@ async function onSubmit() {
           </div>
           <p v-if="error" class="text-sm text-danger-text">{{ error }}</p>
           <UiBtn type="submit" variant="primary" class="w-full" :disabled="loading">
-            {{ loading ? 'Creating account…' : 'Create account' }}
+            {{ loading ? t('Creating account…', 'Creando cuenta…') : t('Create account', 'Crear cuenta') }}
           </UiBtn>
         </form>
         <p class="mt-4 text-center text-sm text-ink-muted">
-          Already have an account?
-          <NuxtLink to="/login" class="font-medium text-brand hover:text-brand-hover">Sign in</NuxtLink>
+          {{ t('Already have an account?', '¿Ya tienes cuenta?') }}
+          <NuxtLink to="/login" class="font-medium text-brand hover:text-brand-hover">{{ t('Sign in', 'Inicia sesión') }}</NuxtLink>
         </p>
       </template>
       <template v-else>
-        <h1 class="text-xl font-semibold text-ink-900">Check your email</h1>
+        <h1 class="text-xl font-semibold text-ink-900">{{ t('Check your email', 'Revisa tu correo') }}</h1>
         <p class="mt-2 text-sm text-ink-500">
-          We sent a confirmation link to <strong>{{ email }}</strong
-          >. Open it, then come back and sign in.
+          {{ t('We sent a confirmation link to', 'Te hemos enviado un enlace de confirmación a') }} <strong>{{ email }}</strong
+          >. {{ t('Open it, then come back and sign in.', 'Ábrelo y vuelve para iniciar sesión.') }}
         </p>
-        <NuxtLink to="/login" class="mt-4 block text-center text-sm font-medium text-brand hover:text-brand-hover">Back to sign in</NuxtLink>
+        <NuxtLink to="/login" class="mt-4 block text-center text-sm font-medium text-brand hover:text-brand-hover">{{ t('Back to sign in', 'Volver a iniciar sesión') }}</NuxtLink>
       </template>
     </div>
   </div>

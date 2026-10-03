@@ -58,7 +58,7 @@ interface BirthdayPatient { id: string; first_name: string; last_name: string | 
 const t = useT()
 const { preference: lang } = useLang()
 const supabase = useSupabaseClient()
-const { context, loading: contextLoading, can, restricted } = usePractitionerContext()
+const { context, loading: contextLoading, can, restricted, ownDiaryOnly } = usePractitionerContext()
 
 const appointments = ref<Appointment[]>([])
 const tasks = ref<Task[]>([])
@@ -81,8 +81,8 @@ const seesMoney = computed(() => can('billing_access') && can('billing_history_v
 const seesRecalls = computed(() => can('recalls_access'))
 // With calendar_scope 'own', RLS shows this person only their own diary, so
 // "nothing booked" means "nothing booked with you" -- a colleague's booking
-// for the same patient is invisible here, as it is on the web calendar.
-const ownDiaryOnly = computed(() => !!context.value && !context.value.isOwner && context.value.permissions.calendar_scope === 'own')
+// for the same patient is invisible here, as it is on the web calendar
+// (ownDiaryOnly).
 
 const timeZone = computed(() => context.value?.timeZone || DEFAULT_CLINIC_TIMEZONE)
 const locale = computed(() => (lang.value === 'es' ? 'es-ES' : 'en-GB'))

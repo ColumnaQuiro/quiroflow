@@ -6,6 +6,7 @@ const user = useSupabaseUser()
 watch(user, (u) => { if (!u) navigateTo('/login') }, { immediate: true })
 
 const t = useT()
+const locale = computed(() => t('en-GB', 'es-ES'))
 const { patient } = useIdentity()
 const patientId = computed(() => patient.value?.id ?? '')
 const { documents, loading, busyId, open } = usePatientDocuments(() => patientId.value)
@@ -25,7 +26,7 @@ const { documents, loading, busyId, open } = usePatientDocuments(() => patientId
           <div class="min-w-0 flex-1">
             <p class="truncate text-[13.5px] font-medium text-ink-900">{{ file.file_name }}</p>
             <p class="text-[12px] text-ink-faint">
-              {{ new Date(file.created_at).toLocaleDateString() }}
+              {{ new Date(file.created_at).toLocaleDateString(locale) }}
               <template v-if="fileSizeLabel(file.size_bytes)"> &middot; {{ fileSizeLabel(file.size_bytes) }}</template>
             </p>
           </div>

@@ -15,9 +15,14 @@ withDefaults(defineProps<{ id: string; label: string; description?: string; erro
 
 <template>
   <div>
-    <label :for="id" class="block text-[14px] font-medium text-ink-700" :class="description ? 'mb-[3px]' : 'mb-1.5'">
-      {{ label }}
-    </label>
+    <div class="flex items-baseline justify-between gap-3" :class="description ? 'mb-[3px]' : 'mb-1.5'">
+      <label :for="id" class="block text-[14px] font-medium text-ink-700">
+        {{ label }}
+      </label>
+      <!-- e.g. "Forgot your password?" on a sign-in, where it belongs to the
+           field rather than to the form. -->
+      <slot name="aside" />
+    </div>
     <p v-if="description" :id="`${id}-description`" class="mb-1.5 text-[12.5px] leading-[1.4] text-ink-muted">
       {{ description }}
     </p>

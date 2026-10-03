@@ -2,6 +2,7 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { requireGrowth } from '~/server/utils/requireGrowth'
 import { automationEvent } from '~/server/utils/automationEngine'
+import { splitDialPrefix, toE164Loose } from '~/utils/phone'
 
 interface Body {
   /** Attach the lead to this existing patient instead of creating one. */
@@ -74,11 +75,21 @@ export default defineEventHandler(async (event) => {
   const linkPatientId = typeof body.linkPatientId === 'string' ? body.linkPatientId : null
   let patientId = linkPatientId
 
+  // A lead's phone is stored the way it arrived: Meta's lead ads, WhatsApp's
+  // webhook and the public API all leave it as international digits with no
+  // "+" ("34611732681"). patient_contact_numbers holds a NATIONAL number
+  // beside a country, and copying the lead's digits across verbatim left
+  // "34611732681" against ES -- so toE164 prepended the dial code again and
+  // every message to the new patient, starting with their appointment
+  // confirmation, went to "3434611732681" and was undeliverable.
+  const { data: account } = await supabase.from('accounts').select('default_phone_country').eq('id', teamMember.account_id).maybeSingle()
+  const contact = leadContactNumber(lead.phone, account?.default_phone_country ?? 'ES')
+
   if (!patientId) {
     // Look for someone who is plainly already a patient. Phone and email
     // only -- matching on name alone would flag every second Garcia in
     // Barcelona and train people to click through the warning.
-    const candidates = await findLikelyExistingPatients(supabase, teamMember.account_id, lead.phone, lead.email)
+    const candidates = await findLikelyExistingPatients(supabase, teamMember.account_id, lead.phone, contact?.number ?? null, lead.email)
 
     if (candidates.length > 0 && body.createAnyway !== true) {
       // 409, with what was found. The decision belongs to whoever is looking
@@ -113,11 +124,12 @@ export default defineEventHandler(async (event) => {
     }
     patientId = patient.id
 
-    if (lead.phone) {
+    if (contact) {
       await supabase.from('patient_contact_numbers').insert({
         account_id: teamMember.account_id,
         patient_id: patientId,
-        number: lead.phone,
+        number: contact.number,
+        country_code: contact.countryCode,
         is_whatsapp: true,
       })
     }
@@ -160,16 +172,34 @@ export default defineEventHandler(async (event) => {
 
 type Supa = Awaited<ReturnType<typeof requireGrowth>>['supabase']
 
+/**
+ * The lead's phone as a national number and its country.
+ *
+ * toE164Loose first, because it is the one reading of a stored lead phone
+ * that copes with every shape one arrives in: "+34 611 ...", "0034...", the
+ * plus-less "34611732681" of every webhook, and a local "611 732 681" typed
+ * at the desk. Then the dial code is split back out, which is how a number
+ * typed into a patient's own form is stored.
+ */
+function leadContactNumber(phone: string | null, defaultCountry: string): { number: string; countryCode: string } | null {
+  if (!phone?.trim()) return null
+  const e164 = toE164Loose(phone, defaultCountry)
+  if (!e164) return { number: phone.trim(), countryCode: defaultCountry }
+  return splitDialPrefix(`+${e164}`, defaultCountry)
+}
+
 /** Existing patients sharing this lead's phone or email. */
-async function findLikelyExistingPatients(supabase: Supa, accountId: string, phone: string | null, email: string | null) {
+async function findLikelyExistingPatients(supabase: Supa, accountId: string, phone: string | null, nationalPhone: string | null, email: string | null) {
   const found = new Map<string, { id: string; name: string; reason: string }>()
 
   if (phone) {
+    // Both spellings: a patient's number is stored national ("611732681"),
+    // so the lead's international digits alone never matched one.
     const { data } = await supabase
       .from('patient_contact_numbers')
       .select('patients(id, first_name, last_name)')
       .eq('account_id', accountId)
-      .eq('number', phone)
+      .in('number', [...new Set([phone, nationalPhone].filter((n): n is string => !!n))])
       .limit(5)
 
     for (const row of data ?? []) {

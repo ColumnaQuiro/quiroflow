@@ -1708,7 +1708,18 @@ async function issueReceiptNumber(opts: { accountId: string }) {
   return data as string
 }
 
-/** A patient file with real content in storage, as an upload leaves it. */
+/**
+ * A patient file with real content in storage, as an upload leaves it.
+ *
+ * As an upload leaves it means visibility 'generic' (the column default):
+ * staff-only, and invisible to the patient app's Documents screen. A file is
+ * shared with the patient only by the web's Attachments tab setting it to
+ * 'Custom' (visibility = 'custom'), which is all the "patients view own custom
+ * patient_files" policy (0162) and /api/patient-files/signed-url look at --
+ * there is no 'patient' value, and the check constraint refuses one. A spec
+ * that expects the patient to see this file has to update visibility to
+ * 'custom' itself; one that did not read a "missing" document as a bug.
+ */
 async function storePatientFile(opts: { accountId: string; patientId: string; fileName: string }) {
   const path = `${opts.accountId}/${opts.patientId}/${Date.now()}-${opts.fileName}`
   const { error: uploadError } = await admin.storage.from('patient-files').upload(path, Buffer.from('%PDF-1.4 test'), { contentType: 'application/pdf' })

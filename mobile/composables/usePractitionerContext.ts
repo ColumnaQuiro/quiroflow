@@ -15,6 +15,8 @@ export interface PractitionerContext {
   isOwner: boolean
   fullName: string
   clinicId: string | null
+  /** The clinic's time zone (clinics.timezone): what "today" means on My Day. */
+  timeZone: string
   photoStoragePath: string | null
   /** The role's permissions, as get_my_bootstrap returns them to the web. */
   permissions: Record<string, unknown>
@@ -42,7 +44,7 @@ export function usePractitionerContext() {
       return
     }
     const [{ data: clinics }, { data: boot }] = await Promise.all([
-      supabase.from('clinics').select('id').eq('account_id', teamMember.account_id).is('archived_at', null).order('name').limit(1),
+      supabase.from('clinics').select('id, timezone').eq('account_id', teamMember.account_id).is('archived_at', null).order('name').limit(1),
       // The same source the web's store reads permissions from, so the app
       // hides what the role cannot do instead of offering it and failing.
       supabase.rpc('get_my_bootstrap' as never),
@@ -53,6 +55,7 @@ export function usePractitionerContext() {
       isOwner: teamMember.is_owner,
       fullName: teamMember.full_name,
       clinicId: clinics?.[0]?.id ?? null,
+      timeZone: clinics?.[0]?.timezone || DEFAULT_CLINIC_TIMEZONE,
       photoStoragePath: teamMember.photo_storage_path,
       permissions: ((boot as { permissions?: Record<string, unknown> } | null)?.permissions ?? {}) as Record<string, unknown>,
     }

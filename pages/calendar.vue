@@ -201,6 +201,30 @@ const openAppointment = computed(() => {
 const panelInitialTab = ref<'summary' | 'billing'>('summary')
 const prefill = ref<{ date: string; time: string; roomId: string } | null>(null)
 
+// Booking from a patient's page (/calendar?patient=<id>): the slot is still
+// chosen here, as always, but whichever way the new-appointment panel opens
+// it starts with that patient instead of a search. Cleared once the visit is
+// booked, or with the chip's x.
+const route = useRoute()
+const bookingFor = ref<{ id: string; name: string } | null>(null)
+watch(
+  () => route.query.patient,
+  async (id) => {
+    if (typeof id !== 'string' || !id) {
+      bookingFor.value = null
+      return
+    }
+    const { data } = await supabase.from('patients').select('id, first_name, last_name').eq('id', id).maybeSingle()
+    if (route.query.patient !== id) return
+    bookingFor.value = data ? { id: data.id, name: `${data.first_name} ${data.last_name ?? ''}`.trim() } : null
+  },
+  { immediate: true },
+)
+function stopBookingFor() {
+  bookingFor.value = null
+  navigateTo({ query: { ...route.query, patient: undefined } }, { replace: true })
+}
+
 const blockModalOpen = ref(false)
 const editingBlock = ref<AvailabilityBlock | null>(null)
 const blockPrefill = ref<{ date: string; time: string; roomId: string } | null>(null)
@@ -1316,6 +1340,10 @@ async function onSaved() {
   modalOpen.value = false
   await reloadAfterChange()
 }
+async function onCreated() {
+  if (bookingFor.value) stopBookingFor()
+  await onSaved()
+}
 
 // --- Drag-to-move / drag-to-resize ---
 // Mutates the real appointment object in `appointments.value` live during
@@ -2203,6 +2231,16 @@ function showNowLineOn(day: Date) {
         </select>
         <UiBtn v-if="can('payments_allocate')" variant="secondary" size="sm" @click="cashShiftOpen = true">{{ t('Cash Shift', 'Turno de Caja') }}</UiBtn>
         <template v-if="!readOnly">
+          <span v-if="bookingFor" class="inline-flex h-8 items-center gap-1.5 rounded-pill bg-brand-tint pl-3 pr-1.5 text-[12.5px] font-semibold text-brand-text" data-cy="booking-for">
+            {{ t(`Booking for ${bookingFor.name} · pick a time`, `Reservando para ${bookingFor.name} · elige una hora`) }}
+            <button
+              type="button"
+              class="inline-flex h-5 w-5 items-center justify-center rounded-pill hover:bg-surface"
+              :aria-label="t('Stop booking for this patient', 'Dejar de reservar para este paciente')"
+              data-cy="booking-for-clear"
+              @click="stopBookingFor"
+            >&times;</button>
+          </span>
           <UiBtn variant="secondary" size="sm" @click="openBlockCreateModal()">{{ t('Block time', 'Bloquear horario') }}</UiBtn>
           <UiBtn variant="primary" size="sm" data-cy="new-appointment" @click="openCreateModal()">{{ t('+ New Appointment', '+ Nueva Cita') }}</UiBtn>
         </template>
@@ -2870,9 +2908,10 @@ function showNowLineOn(day: Date) {
       :prefill-time="prefill?.time"
       :prefill-room-id="prefill?.roomId"
       :prefill-practitioner-id="prefillPractitionerId"
+      :prefill-patient-id="bookingFor?.id"
       :slot-minutes="SLOT_MIN"
       @close="modalOpen = false"
-      @saved="onSaved"
+      @saved="onCreated"
     />
 
     <CalendarAppointmentPanel

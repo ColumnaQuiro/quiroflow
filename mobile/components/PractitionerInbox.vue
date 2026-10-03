@@ -604,6 +604,45 @@ const within24h = computed(() => {
   return Date.now() - new Date(lastInbound.created_at).getTime() < 24 * 60 * 60 * 1000
 })
 
+// -- Send a template -----------------------------------------------------------
+// Outside the 24-hour window (or before the first message) a template is the
+// only thing WhatsApp accepts. The same two routes as the web Inbox's "Send
+// template": listing them needs communication_config, sending one recalls_access
+// for a patient or inbox_access for a bare number -- so the option is offered
+// only when both would succeed. A minor or a do-not-contact patient is never
+// offered it (the send route refuses them too).
+const { can } = usePractitionerContext()
+const templateSheetOpen = ref(false)
+const contactBlocked = ref(false)
+watch(
+  () => selected.value?.patientId ?? null,
+  async (patientId) => {
+    contactBlocked.value = false
+    if (!patientId) return
+    const { data } = await supabase.from('patients').select('is_minor, do_not_contact').eq('id', patientId).maybeSingle()
+    if (selected.value?.patientId === patientId) contactBlocked.value = !!(data?.is_minor || data?.do_not_contact)
+  },
+  { immediate: true },
+)
+// A Growth lead's own thread is not offered one: the web sends a lead nothing
+// through this route either (its thread is GrowthInboxLeadThread), and a send
+// to the bare number would be filed under the number, not the lead.
+const templateTarget = computed(() => {
+  const c = selected.value
+  if (!c || replyChannel.value !== 'whatsapp' || (c.leadId && !c.patientId)) return false
+  return !!(c.patientId || c.phoneNumber)
+})
+const templateAllowed = computed(() => {
+  const c = selected.value
+  return !!c && can('communication_config') && can(c.patientId ? 'recalls_access' : 'inbox_access')
+})
+const canSendTemplate = computed(() => templateTarget.value && templateAllowed.value && !contactBlocked.value)
+async function onTemplateSent() {
+  templateSheetOpen.value = false
+  sendError.value = ''
+  await load()
+}
+
 const composerText = ref('')
 const sending = ref(false)
 const sendError = ref('')
@@ -1249,27 +1288,35 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
 
       <div class="shrink-0 border-t border-line bg-surface p-3">
         <p v-if="sendError" class="mb-2 text-[12.5px] text-danger-text">{{ sendError }}</p>
-        <p v-if="thread.length === 0" class="rounded-ctl border border-warning-border bg-warning-bg px-3 py-2 text-[12.5px] text-warning-text">
-          {{
-            t(
-              `No messages with ${selected.name} yet. WhatsApp only lets a clinic start a conversation with an approved template — send one from the patient's record on the web.`,
-              `Aún no hay mensajes con ${selected.name}. WhatsApp solo permite a una clínica iniciar una conversación con una plantilla aprobada: envíala desde la ficha del paciente en la web.`,
-            )
-          }}
-        </p>
-        <p v-else-if="!within24h" class="rounded-ctl border border-warning-border bg-warning-bg px-3 py-2 text-[12.5px] text-warning-text">
-          {{
-            replyChannel === 'instagram'
-              ? t(
-                  `More than 24h since ${selected.name} last messaged — free-form replies are blocked by Instagram.`,
-                  `Han pasado más de 24h desde que ${selected.name} escribió por última vez — Instagram bloquea las respuestas libres.`,
-                )
-              : t(
-                  `More than 24h since ${selected.name} last messaged — free-form replies are blocked by WhatsApp.`,
-                  `Han pasado más de 24h desde que ${selected.name} escribió por última vez — WhatsApp bloquea las respuestas libres.`,
-                )
-          }}
-        </p>
+        <div v-if="thread.length === 0 || !within24h" class="rounded-ctl border border-warning-border bg-warning-bg px-3 py-2 text-[12.5px] text-warning-text" data-cy="inbox-window-closed">
+          <p>
+            {{
+              thread.length === 0
+                ? t(
+                    `No messages with ${selected.name} yet. WhatsApp only lets a clinic start a conversation with an approved template.`,
+                    `Aún no hay mensajes con ${selected.name}. WhatsApp solo permite a una clínica iniciar una conversación con una plantilla aprobada.`,
+                  )
+                : replyChannel === 'instagram'
+                  ? t(
+                      `More than 24h since ${selected.name} last messaged — free-form replies are blocked by Instagram.`,
+                      `Han pasado más de 24h desde que ${selected.name} escribió por última vez — Instagram bloquea las respuestas libres.`,
+                    )
+                  : t(
+                      `More than 24h since ${selected.name} last messaged — free-form replies are blocked by WhatsApp; only an approved template can be sent.`,
+                      `Han pasado más de 24h desde que ${selected.name} escribió por última vez — WhatsApp bloquea las respuestas libres; solo se puede enviar una plantilla aprobada.`,
+                    )
+            }}
+            <template v-if="templateTarget && contactBlocked">
+              {{ t('This patient cannot be contacted (under age or marked do not contact).', 'A este paciente no se le puede contactar (menor de edad o marcado como no contactar).') }}
+            </template>
+            <template v-else-if="templateTarget && !templateAllowed">
+              {{ t("Your role can't send templates.", 'Tu rol no puede enviar plantillas.') }}
+            </template>
+          </p>
+          <UiBtn v-if="canSendTemplate" variant="primary" size="sm" class="mt-2 h-10 w-full" data-cy="inbox-send-template" @click="templateSheetOpen = true">
+            {{ t('Send a template', 'Enviar una plantilla') }}
+          </UiBtn>
+        </div>
         <div v-else-if="audioRecording" class="flex items-center gap-3 rounded-ctl border border-line-control bg-surface-subtle px-3 py-2.5">
           <span class="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-danger-text" />
           <span class="flex-1 text-[14px] text-ink-700">{{ t('Recording…', 'Grabando…') }} {{ recordingLabel(audioSeconds) }}</span>
@@ -1340,6 +1387,15 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
       </div>
       </template>
     </div>
+
+    <WhatsAppTemplateSheet
+      v-if="templateSheetOpen && selected && canSendTemplate"
+      :patient-id="selected.patientId"
+      :phone-number="selected.patientId ? null : selected.phoneNumber"
+      :patient-first-name="selected.patientId ? selected.name.split(' ')[0] : undefined"
+      @close="templateSheetOpen = false"
+      @sent="onTemplateSent"
+    />
 
     <div v-if="lightboxUrl" class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-6" @click="lightboxUrl = null">
       <img :src="lightboxUrl" class="max-h-full max-w-full rounded-ctl object-contain" @click.stop />

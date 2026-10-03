@@ -9,6 +9,7 @@ const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
 const { showToast } = useToast()
+const { can } = usePermission()
 
 // `public_token` isn't in the generated Supabase types yet -- merge it in
 // locally rather than editing the generated file by hand.
@@ -156,9 +157,19 @@ async function toggleComplete() {
   }
 }
 
+// Deleting needs patient_docs_delete (and, under own-docs scope, the form to
+// be theirs), and RLS refuses otherwise by deleting nothing -- no error. So
+// the rows that went are read back, as FilesTab does: the form used to
+// vanish here regardless and come back on the next load.
+const deleteError = ref('')
 async function removeDoc(doc: Doc) {
   if (!confirm(`${t('Delete', 'Eliminar')} "${doc.title}"?`)) return
-  await supabase.from('patient_docs').delete().eq('id', doc.id)
+  deleteError.value = ''
+  const { data: gone, error } = await supabase.from('patient_docs').delete().eq('id', doc.id).select('id')
+  if (error || !gone?.length) {
+    deleteError.value = error?.message ?? t('This form was not deleted: your role cannot delete it.', 'No se ha eliminado el formulario: tu rol no puede eliminarlo.')
+    return
+  }
   docs.value = docs.value.filter((d) => d.id !== doc.id)
   if (activeDoc.value?.id === doc.id) activeDoc.value = null
 }
@@ -196,7 +207,7 @@ function metaFor(doc: Doc) {
       <div class="flex items-center justify-between border-b border-line-divider px-4 py-3">
         <p class="text-[13.5px] font-semibold text-ink-700">
           {{ t('Forms sent to the patient', 'Formularios enviados al paciente') }}
-          <span v-if="!loading" class="ml-1 font-normal text-ink-faint">{{ docs.length }}</span>
+          <span v-if="!loading" class="ml-1 font-normal text-ink-faint" data-cy="docs-count">{{ docs.length }}</span>
         </p>
         <div class="relative">
           <UiBtn variant="primary" size="sm" @click="showNewMenu = !showNewMenu">{{ t('Send a form', 'Enviar un formulario') }}</UiBtn>
@@ -219,6 +230,7 @@ function metaFor(doc: Doc) {
           </div>
         </div>
       </div>
+      <p v-if="deleteError" role="alert" class="px-4 pt-3 text-[13px] text-danger-text" data-cy="docs-error">{{ deleteError }}</p>
       <div v-if="loading" class="divide-y divide-line-row">
         <div v-for="i in 3" :key="i" class="flex items-center gap-3 px-4 py-3">
           <UiSkeleton class="h-[26px] w-[26px] shrink-0 rounded-ctlSm" />
@@ -277,7 +289,7 @@ function metaFor(doc: Doc) {
             >
               {{ t('Resend', 'Reenviar') }}
             </button>
-            <UiIconBtn icon="trash" tone="danger" :label="t('Delete', 'Eliminar')" @click="removeDoc(doc)" />
+            <UiIconBtn v-if="can('patient_docs_delete')" icon="trash" tone="danger" data-cy="doc-delete" :label="t('Delete', 'Eliminar')" @click="removeDoc(doc)" />
           </div>
           </div>
         </li>

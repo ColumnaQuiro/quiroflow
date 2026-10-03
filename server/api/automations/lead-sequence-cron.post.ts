@@ -41,10 +41,16 @@ export default defineEventHandler(async (event) => {
     console.error('[lead-sequence-cron] segment enrolment failed:', (err as Error)?.message ?? err)
   }
 
+  // Only runs of a rule that is switched on. A paused automation pauses the
+  // people inside it too (automationEngine: holdWhilePaused), and leaving its
+  // runs out here rather than letting the walk refuse them matters: they stay
+  // due the whole time it is paused, oldest first, and would otherwise fill
+  // every tick's batch and starve everybody else's.
   const { data: due } = await supabase
     .from('automation_sequence_runs')
-    .select(RUN_COLUMNS)
+    .select(`${RUN_COLUMNS}, automation_rules!inner(enabled)`)
     .eq('status', 'running')
+    .eq('automation_rules.enabled', true)
     .lte('resume_at', new Date().toISOString())
     .order('resume_at')
     .limit(MAX_PER_TICK)

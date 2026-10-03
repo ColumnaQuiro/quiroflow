@@ -69,4 +69,49 @@ describe('A patient created while booking', () => {
       })
     })
   })
+
+  // The panel asked for the new patient's id back in the inserting statement.
+  // For someone who sees only their own patients that read is checked against
+  // my_own_patient_ids() as it stood before the insert -- without the new
+  // patient -- so it failed with a row-level-security error however the
+  // practitioner was set, and a practitioner could not book anyone new.
+  it('can be created by a practitioner who sees only their own patients', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:setExtraProfessionals', { accountId: account.accountId, extraProfessionals: 1 })
+      cy.task('db:createAppointmentType', { accountId: account.accountId, name: 'Consultation', durationMinutes: 30 })
+      const email = `prac-book-${Date.now()}@example.test`
+      cy.task<{ teamMemberId: string }>('db:createTeamMemberWithRole', {
+        accountId: account.accountId,
+        clinicId: account.clinicId,
+        roleName: 'Practitioner',
+        email,
+        password: 'Test1234!',
+        fullName: 'Prac Propia',
+        isPractitioner: true,
+      }).then((prac) => {
+        cy.login(email, 'Test1234!')
+        cy.visit('/calendar')
+        cy.contains('select', 'Work week').select('day')
+        openNewAppointmentPanel('Prac Propia')
+
+        cy.get('[data-cy=create-sheet]').within(() => {
+          cy.get('[data-cy=create-new-patient]').click()
+          cy.get('input[placeholder="First name"]').type('Nueva')
+          cy.get('input[placeholder="Last name"]').type('DeLaPractica')
+          cy.get('input[type="tel"]').type('600765432')
+          cy.contains('[data-cy=create-type]', 'Consultation').click()
+          cy.contains('[data-cy=create-practitioner]', 'Prac Propia').click()
+          cy.get('input[type="date"]').clear().type(dateInputValue(yesterday()))
+          cy.get('[data-cy=create-submit]').click()
+        })
+        cy.get('[data-cy=create-sheet]').should('not.exist')
+
+        cy.task('db:patientByName', { accountId: account.accountId, firstName: 'Nueva', lastName: 'DeLaPractica' }).then((patient: any) => {
+          expect(patient, 'the patient was created').to.not.eq(null)
+          expect(patient.default_practitioner_id).to.eq(prac.teamMemberId)
+          cy.task<{ numbers: { number: string }[] }>('db:patientWithContacts', { id: patient.id }).its('numbers.0.number').should('eq', '600765432')
+        })
+      })
+    })
+  })
 })

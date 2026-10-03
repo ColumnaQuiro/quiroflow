@@ -42,6 +42,8 @@ async function patient(opts: {
   isMinor?: boolean
   doNotContact?: boolean
   dateOfBirth?: string
+  /** 'inactive' is how the record's Archive leaves a patient. */
+  status?: 'active' | 'inactive'
 }) {
   const row = check(
     await admin
@@ -57,6 +59,7 @@ async function patient(opts: {
         is_minor: opts.isMinor ?? false,
         do_not_contact: opts.doNotContact ?? false,
         date_of_birth: opts.dateOfBirth ?? null,
+        status: opts.status ?? 'active',
       })
       .select('id')
       .single(),
@@ -128,6 +131,11 @@ async function tryInsertRule(opts: { accountId: string; triggerEvent: string }) 
   return { id: (data as { id: string } | null)?.id ?? null, error: error?.message ?? null }
 }
 
+/** Moves an appointment in time, as if the clock had moved on to (or past) it. */
+async function setAppointmentStart(opts: { appointmentId: string; startsAt: string }) {
+  check(await admin.from('appointments').update({ starts_at: opts.startsAt, ends_at: new Date(new Date(opts.startsAt).getTime() + 30 * 60_000).toISOString() }).eq('id', opts.appointmentId).select('id'))
+  return { ok: true }
+}
 async function setRuleEnabled(opts: { ruleId: string; enabled: boolean }) {
   check(await admin.from('automation_rules').update({ enabled: opts.enabled }).eq('id', opts.ruleId).select('id'))
   return { ok: true }
@@ -256,9 +264,12 @@ async function createFlowRule(opts: {
   return rule
 }
 
-/** Pulls a rule's running runs back so the next tick sees them as due -- and any wait as timed out. */
-async function makeRunsDue(opts: { ruleId: string }) {
-  const past = new Date(Date.now() - 60_000).toISOString()
+/**
+ * Pulls a rule's running runs back so the next tick sees them as due -- and any wait as timed out.
+ * `minutesAgo` says how long ago they came due (1 by default), for a run left overdue.
+ */
+async function makeRunsDue(opts: { ruleId: string; minutesAgo?: number }) {
+  const past = new Date(Date.now() - (opts.minutesAgo ?? 1) * 60_000).toISOString()
   check(await admin.from('automation_sequence_runs').update({ resume_at: past }).eq('rule_id', opts.ruleId).eq('status', 'running').select('id'))
   check(
     await admin
@@ -594,6 +605,7 @@ export const automationTasks = {
   'auto:setClinicTimezone': setClinicTimezone,
   'auto:tryInsertRule': tryInsertRule,
   'auto:setRuleEnabled': setRuleEnabled,
+  'auto:setAppointmentStart': setAppointmentStart,
   'auto:disableRules': disableRules,
   'auto:setReminderTemplate': setReminderTemplate,
   'auto:reviewRequestsForPatient': reviewRequestsForPatient,

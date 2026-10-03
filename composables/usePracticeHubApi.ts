@@ -22,7 +22,9 @@ export function usePracticeHubApi(conn: PracticeHubConnection) {
   async function fetchPage<T>(path: string, page: number): Promise<PracticeHubPage<T>> {
     for (let attempt = 1; ; attempt++) {
       try {
-        return await $fetch<PracticeHubPage<T>>('/api/import/practicehub-proxy', {
+        // useStaffFetch so the call reaches the server from the staff app as
+        // well, where a relative '/api/...' goes nowhere (see useStaffFetch).
+        return await useStaffFetch<PracticeHubPage<T>>('/api/import/practicehub-proxy', {
           method: 'POST',
           body: { ...conn, path, page, pageSize: 100 },
         })

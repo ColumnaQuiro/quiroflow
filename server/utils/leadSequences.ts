@@ -28,11 +28,13 @@ export interface SequenceRun {
   wait_deadline?: string | null
   attempts?: number
   last_error?: string | null
+  /** When the step it is parked before came (or comes) due. */
+  resume_at?: string | null
 }
 
 /** What every caller has to select for the engine to advance a run. */
 export const RUN_COLUMNS =
-  'id, account_id, rule_id, lead_id, patient_id, appointment_id, context, current_action_id, next_position, waiting_for, wait_deadline, attempts, last_error'
+  'id, account_id, rule_id, lead_id, patient_id, appointment_id, context, current_action_id, next_position, waiting_for, wait_deadline, attempts, last_error, resume_at'
 
 export type StopReason =
   | 'converted'

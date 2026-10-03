@@ -753,7 +753,8 @@ async function loadFutureAppointmentIds(token: number, patientIds: string[]) {
     return
   }
   const data = await fetchByIds(patientIds, (chunk) =>
-    supabase.from('appointments').select('id, patient_id').in('patient_id', chunk).neq('status', 'cancelled').gt('starts_at', new Date().toISOString()),
+    // Not one the clinic deleted: deleting leaves the row, still 'booked'.
+    supabase.from('appointments').select('id, patient_id').in('patient_id', chunk).neq('status', 'cancelled').is('deleted_at', null).gt('starts_at', new Date().toISOString()),
   )
   if (token !== loadToken) return
   const map: Record<string, Set<string>> = {}

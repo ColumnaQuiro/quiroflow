@@ -142,7 +142,12 @@ const SEARCH_DAYS = 14
 function clinicOrPractitioners(clinicId: string, practIds: string[]) {
   return [`clinic_id.eq.${clinicId}`, ...(practIds.length ? [`practitioner_id.in.(${practIds.join(',')})`] : [])].join(',')
 }
+// Each load voids the ones before it: dates typed in quick succession can
+// answer out of order, and an older answer landing last would put another
+// date's bookings under this one -- hiding a clash that is really there.
+let bookedRun = 0
 async function loadBooked() {
+  const run = ++bookedRun
   if (!store.currentClinicId || !validTime.value) return
   const from = new Date(startsAt.value)
   from.setHours(0, 0, 0, 0)
@@ -160,6 +165,7 @@ async function loadBooked() {
       .lt('starts_at', to.toISOString()),
     supabase.from('availability_blocks').select('starts_at, ends_at, practitioner_id, room_id, clinic_id').or(where).lt('starts_at', to.toISOString()).gt('ends_at', from.toISOString()),
   ])
+  if (run !== bookedRun) return
   booked.value = (appts as unknown as BookedRow[]) ?? []
   blocks.value = blk ?? []
 }
@@ -386,13 +392,17 @@ const carePlan = ref<CarePlan | null>(null)
 // the patient profile, which still counts a booked visit as remaining.
 // Booking needs this number, or re-opening the panel mid-plan double-books.
 const carePlanRemaining = ref(0)
+let carePlanRun = 0
 async function loadCarePlan(patientId: string) {
+  const run = ++carePlanRun
   carePlan.value = null
   carePlanRemaining.value = 0
   const [{ data: plans }, { data: appts }] = await Promise.all([
     supabase.from('care_plans').select('id, name, frequency_value, frequency_unit, total_visits, started_at').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(1),
-    supabase.from('appointments').select('status, starts_at').eq('patient_id', patientId),
+    // A deleted visit keeps its row and its 'booked': it holds no session.
+    supabase.from('appointments').select('status, starts_at').eq('patient_id', patientId).is('deleted_at', null),
   ])
+  if (run !== carePlanRun) return
   const plan = (plans as CarePlan[] | null)?.[0] ?? null
   if (!plan) return
   const inPlan = (appts ?? []).filter((a) => a.starts_at >= plan.started_at)
@@ -571,9 +581,14 @@ async function bookingPatientId(): Promise<string | null> {
   if (patientMode.value === 'existing') return selectedPatient.value?.id ?? null
   const firstName = newPatientFirstName.value.trim()
   const lastName = newPatientLastName.value.trim() || null
-  const { data: newPatient, error: patientError } = await supabase
+  // A client-made id, not `.select('id')`: an 'own'-scope practitioner
+  // cannot read back, in the inserting statement itself, a patient who only
+  // becomes theirs with that insert (see AddPatientModal).
+  const newPatient = { id: crypto.randomUUID() }
+  const { error: patientError } = await supabase
     .from('patients')
     .insert({
+      id: newPatient.id,
       account_id: store.accountId!,
       clinic_id: store.currentClinicId || null,
       first_name: firstName,
@@ -585,10 +600,8 @@ async function bookingPatientId(): Promise<string | null> {
       // treated thirteen. A default, not a verdict: Overview can change it.
       default_practitioner_id: practitionerId.value || null,
     })
-    .select('id')
-    .single()
-  if (patientError || !newPatient) {
-    error.value = patientError?.message ?? t('Could not create patient.', 'No se ha podido crear el paciente.')
+  if (patientError) {
+    error.value = patientError.message || t('Could not create patient.', 'No se ha podido crear el paciente.')
     return null
   }
   if (newPatientPhone.value.trim()) {

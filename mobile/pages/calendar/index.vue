@@ -1,6 +1,11 @@
 <script setup lang="ts">
 definePageMeta({ layout: 'practitioner' })
 
+// calendar/index.vue, not calendar.vue. As calendar.vue this was the PARENT
+// of calendar/[id].vue, and with no <NuxtPage /> in it the child never
+// rendered: tapping a visit changed the URL and left this list on screen, so
+// the visit screen -- check-in and billing -- could not be reached at all.
+
 const user = useSupabaseUser()
 watch(user, (u) => { if (!u) navigateTo('/login') }, { immediate: true })
 

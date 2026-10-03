@@ -1,6 +1,9 @@
+import { serverSupabaseServiceRole } from '#supabase/server'
+import type { Database } from '~/types/database.types'
 import { toE164, toE164Loose } from '~/utils/phone'
 import { sanitizeStorageFilename } from '~/utils/storageFilename'
 import { isWithin24hWindow, sendWhatsAppText, sendWhatsAppMedia, uploadMediaToMeta, type MediaKind } from '~/server/utils/whatsappSend'
+import { findLeadIdByPhone, findPatientIdsByPhone } from '~/server/utils/whatsappOwner'
 
 // The Inbox composer's send: free-form text or media, only ever within
 // WhatsApp's 24h customer-service window (business-initiated messages
@@ -112,11 +115,31 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  // A reply addressed by number alone -- the Inbox's thread for somebody who
+  // is not a patient, on web and in the app -- still belongs to their lead.
+  // The lead's own thread reads strictly by lead_id, and inbound messages
+  // from this number are stamped with it by the webhook, so without this the
+  // lead's page showed every question they asked and none of the answers
+  // sent from the Inbox. Same rule as inbound: a patient owning the number
+  // wins, and then the message belongs to nobody's lead.
+  //
+  // Looked up with the service role, as the webhook does, and scoped by
+  // account inside both helpers: Inbox access does not imply Growth access,
+  // and under the sender's own RLS a role that cannot list leads would find
+  // none and quietly leave the reply off the lead again.
+  let leadId = body.leadId ?? null
+  if (!leadId && !body.patientId) {
+    const admin = serverSupabaseServiceRole<Database>(event)
+    if ((await findPatientIdsByPhone(admin, account.id, to)).length === 0) {
+      leadId = await findLeadIdByPhone(admin, account.id, to)
+    }
+  }
+
   let wamid: string | null = null
   const insert: Record<string, unknown> = {
     account_id: account.id,
     patient_id: body.patientId ?? null,
-    lead_id: body.leadId ?? null,
+    lead_id: leadId,
     phone_number: to,
     direction: 'outbound',
     status: 'sent',

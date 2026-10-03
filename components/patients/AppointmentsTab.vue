@@ -243,7 +243,7 @@ const stats = computed(() => [
             <span v-if="!loading" class="ml-1 font-normal text-ink-faint">{{ group.rows.length }}</span>
           </h2>
           <div v-if="group.key === 'upcoming'" class="flex items-center gap-2">
-            <UiBtn variant="primary" size="sm" @click="navigateTo('/calendar')">{{ t('Book visit', 'Reservar visita') }}</UiBtn>
+            <UiBtn variant="primary" size="sm" @click="navigateTo({ path: '/calendar', query: { patient: patientId } })">{{ t('Book visit', 'Reservar visita') }}</UiBtn>
           </div>
           <div v-else class="flex items-center gap-2">
             <span v-if="sendMessage" class="text-[12px] text-ink-faint">{{ sendMessage }}</span>

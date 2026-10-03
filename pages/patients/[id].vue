@@ -338,6 +338,7 @@ function onTabKeydown(event: KeyboardEvent) {
             :first-name="patient.first_name"
             :last-name="patient.last_name"
             :preferred-language="patient.preferred_language"
+            :contact-blocked="!canContact"
           />
 
           <!-- No wrapper card of account figures above this: they are part
@@ -346,6 +347,7 @@ function onTabKeydown(event: KeyboardEvent) {
           <PatientsBillingTab
             v-else-if="activeTab === 'money'"
             :patient-id="patientId"
+            :contact-blocked="!canContact"
             :open-payment-trigger="chargeRequested"
             :refund-invoice-id="refundInvoiceId"
             @payment-trigger-consumed="chargeRequested = false"

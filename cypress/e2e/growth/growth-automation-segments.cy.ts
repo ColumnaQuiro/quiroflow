@@ -35,6 +35,8 @@ describe('Segment trigger', () => {
     // Never enrolled: a minor, and someone who asked not to be contacted.
     seed('Menor', { isMinor: true })
     seed('Nocontactar', { doNotContact: true })
+    // Nor someone archived: archiving says it stops reminders.
+    seed('Archivada', { status: 'inactive' })
     cy.task('auto:patient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Fuera', tags: ['otro'] })
 
     cy.visit('/automations/new')
@@ -44,7 +46,7 @@ describe('Segment trigger', () => {
     cy.get('[data-test="segment-filter-tag_contains"] input').type(tag)
     cy.get('[data-test="segment-count"]').should('contain', '3')
     cy.get('[data-test="segment-count"]').contains('See the list').click()
-    cy.get('[data-test="segment-count"]').should('contain', 'Ana').and('not.contain', 'Menor').and('not.contain', 'Fuera')
+    cy.get('[data-test="segment-count"]').should('contain', 'Ana').and('not.contain', 'Menor').and('not.contain', 'Archivada').and('not.contain', 'Fuera')
 
     cy.get('[data-test="insert-root-root-0"]').click({ force: true })
     cy.get('[data-test="add-step-tag"]').click()

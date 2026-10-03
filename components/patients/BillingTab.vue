@@ -5,7 +5,7 @@ import { bonoOwedCents } from '~/utils/bonoOwed'
 import { settleInvoiceIfCovered } from '~/utils/settleInvoice'
 import { loadUnloggedVisits, localDateStr, type LogSessionChoice, type UnloggedVisit } from '~/utils/unloggedVisits'
 
-const props = defineProps<{ patientId: string; openPaymentTrigger?: boolean; refundInvoiceId?: string | null }>()
+const props = defineProps<{ patientId: string; openPaymentTrigger?: boolean; refundInvoiceId?: string | null; contactBlocked?: boolean }>()
 const emit = defineEmits<{ paymentTriggerConsumed: [] }>()
 
 interface InvoiceRow {
@@ -2688,6 +2688,7 @@ function money(cents: number) {
       :can-refund="can('financials_edit_all')"
       :can-take-payments="canTakePayments"
       :open-refund-for-invoice-id="props.refundInvoiceId ?? null"
+      :contact-blocked="props.contactBlocked ?? false"
       @add-credit="activePanel = 'credit'"
       @take-payment="activePanel === 'payment' ? (activePanel = null) : openTakePayment()"
       @send-invoice="sendInvoiceEmail"

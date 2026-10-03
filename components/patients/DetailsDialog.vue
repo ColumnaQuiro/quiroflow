@@ -31,6 +31,15 @@ const referralSources = ref<Tables<'referral_sources'>[]>([])
 const tutorSearch = ref('')
 const tutorResults = ref<TutorOption[]>([])
 const selectedTutor = ref<TutorOption | null>(null)
+// Whether the person editing changed the tutor or the referrer. Save writes
+// those two columns only when they did: the lookups that fill selectedTutor
+// and selectedReferredBy go through the caller's own patient scope, so for a
+// practitioner who sees only their own patients a tutor who is not one of
+// them never resolves -- and writing "no tutor" back from that unlinked a
+// minor from the person their messages go to. The same for a save made
+// before the lookup had answered.
+const tutorChanged = ref(false)
+const referredByChanged = ref(false)
 
 // "Referred by" a specific patient -- same self-search pattern as tutor,
 // shown only when referral_source is exactly the "Patient" option (seeded
@@ -85,12 +94,21 @@ watch(tutorSearch, (value) => {
 })
 function pickTutor(t: TutorOption) {
   selectedTutor.value = t
+  tutorChanged.value = true
   tutorSearch.value = ''
   tutorResults.value = []
 }
 function tutorName(t: TutorOption) {
   return `${t.first_name} ${t.last_name ?? ''}`.trim()
 }
+function removeTutor() {
+  selectedTutor.value = null
+  tutorChanged.value = true
+}
+// Linked, but not to anyone this person can open (or not loaded yet): shown
+// as a link they can still remove, rather than as an empty search box that
+// reads "no tutor".
+const tutorUnresolved = computed(() => !tutorChanged.value && !selectedTutor.value && !!props.patient.tutor_patient_id)
 
 let referredByDebounce: ReturnType<typeof setTimeout> | undefined
 watch(referredBySearch, (value) => {
@@ -111,9 +129,15 @@ watch(referredBySearch, (value) => {
 })
 function pickReferredBy(p: ReferrerOption) {
   selectedReferredBy.value = p
+  referredByChanged.value = true
   referredBySearch.value = ''
   referredByResults.value = []
 }
+function removeReferredBy() {
+  selectedReferredBy.value = null
+  referredByChanged.value = true
+}
+const referredByUnresolved = computed(() => !referredByChanged.value && !selectedReferredBy.value && !!props.patient.referred_by_patient_id)
 
 function teamMemberName(id: string | null) {
   return teamMembers.value.find((m) => m.id === id)?.full_name ?? t('None', 'Ninguno')
@@ -183,6 +207,8 @@ async function startEditing() {
   isMinor.value = props.patient.is_minor
   doNotContact.value = props.patient.do_not_contact
   selectedTutor.value = null
+  tutorChanged.value = false
+  referredByChanged.value = false
   if (props.patient.tutor_patient_id) {
     const { data } = await supabase.from('patients').select('id, first_name, last_name').eq('id', props.patient.tutor_patient_id).maybeSingle()
     if (data) selectedTutor.value = data
@@ -220,7 +246,15 @@ async function save() {
     }
   }
 
-  const newReferredById = referralSource.value === 'Patient' ? (selectedReferredBy.value?.id ?? null) : null
+  // Unchecking "under age", or moving the referral source off "Patient", is
+  // a change the person made, and clears the link as it always has. Inside
+  // those, the link is written only if they picked or removed someone.
+  const links: { tutor_patient_id?: string | null; referred_by_patient_id?: string | null } = {}
+  if (!isMinor.value) links.tutor_patient_id = null
+  else if (tutorChanged.value) links.tutor_patient_id = selectedTutor.value?.id ?? null
+  if (referralSource.value !== 'Patient') links.referred_by_patient_id = null
+  else if (referredByChanged.value) links.referred_by_patient_id = selectedReferredBy.value?.id ?? null
+  const newReferredById = links.referred_by_patient_id === undefined ? props.patient.referred_by_patient_id : links.referred_by_patient_id
 
   const { error: updateError } = await supabase
     .from('patients')
@@ -248,8 +282,7 @@ async function save() {
       status: status.value,
       is_minor: isMinor.value,
       do_not_contact: doNotContact.value,
-      tutor_patient_id: isMinor.value ? (selectedTutor.value?.id ?? null) : null,
-      referred_by_patient_id: newReferredById,
+      ...links,
     })
     .eq('id', props.patient.id)
 
@@ -464,9 +497,9 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
             </select>
             <div v-if="referralSource === 'Patient'" class="mt-2">
               <label :class="labelClass">{{ t('Referred by (existing patient)', 'Referido por (paciente existente)') }}</label>
-              <div v-if="selectedReferredBy" class="mt-1 flex items-center gap-2">
-                <span class="text-[13px] text-ink-700">{{ tutorName(selectedReferredBy) }}</span>
-                <button type="button" class="text-[12px] text-danger-text hover:underline" @click="selectedReferredBy = null">{{ t('Remove', 'Quitar') }}</button>
+              <div v-if="selectedReferredBy || referredByUnresolved" class="mt-1 flex items-center gap-2">
+                <span class="text-[13px] text-ink-700">{{ selectedReferredBy ? tutorName(selectedReferredBy) : t('Linked patient', 'Paciente vinculado') }}</span>
+                <button type="button" class="text-[12px] text-danger-text hover:underline" data-cy="referred-by-remove" @click="removeReferredBy">{{ t('Remove', 'Quitar') }}</button>
               </div>
               <div v-else class="relative mt-1">
                 <input v-model="referredBySearch" type="text" :placeholder="t('Search patient by name…', 'Buscar paciente por nombre…')" :class="inputClass" />
@@ -521,9 +554,9 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
           </label>
           <div v-if="isMinor" class="mt-2.5 pl-5">
             <label :class="labelClass">{{ t('Tutor (parent / guardian, must be an existing patient)', 'Tutor (padre/madre o tutor legal, debe ser un paciente existente)') }}</label>
-            <div v-if="selectedTutor" class="mt-1 flex items-center gap-2">
-              <span class="text-[13px] text-ink-700">{{ tutorName(selectedTutor) }}</span>
-              <button type="button" class="text-[12px] text-danger-text hover:underline" @click="selectedTutor = null">{{ t('Remove', 'Quitar') }}</button>
+            <div v-if="selectedTutor || tutorUnresolved" class="mt-1 flex items-center gap-2">
+              <span class="text-[13px] text-ink-700">{{ selectedTutor ? tutorName(selectedTutor) : t('Linked patient', 'Paciente vinculado') }}</span>
+              <button type="button" class="text-[12px] text-danger-text hover:underline" data-cy="tutor-remove" @click="removeTutor">{{ t('Remove', 'Quitar') }}</button>
             </div>
             <div v-else class="relative mt-1">
               <input v-model="tutorSearch" type="text" :placeholder="t('Search patient by name…', 'Buscar paciente por nombre…')" :class="inputClass" />

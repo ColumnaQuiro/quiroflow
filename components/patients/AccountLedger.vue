@@ -30,6 +30,8 @@ interface CreditRow { id: string; amount_cents: number; reason: string | null; m
 
 const props = defineProps<{
   patientId: string
+  /** Under age or "do not contact": the statement is not emailed to them. */
+  contactBlocked?: boolean
   invoices: InvoiceRow[]
   lineItemDescriptions: Record<string, string[]>
   payments: PaymentRow[]
@@ -609,7 +611,7 @@ async function sendStatement() {
     await useStaffFetch(`/api/patients/${props.patientId}/statement/send`, { method: 'POST' })
     statementMessage.value = t('Statement emailed.', 'Extracto enviado por correo.')
   } catch (e: any) {
-    statementMessage.value = e?.data?.message ?? t('Failed to send statement.', 'No se pudo enviar el extracto.')
+    statementMessage.value = e?.data?.statusMessage ?? e?.data?.message ?? t('Failed to send statement.', 'No se pudo enviar el extracto.')
   }
   statementSending.value = false
   setTimeout(() => (statementMessage.value = ''), 4000)
@@ -634,7 +636,7 @@ async function sendStatement() {
         </NuxtLink>
         <span v-if="statementMessage" class="text-[12px] text-ink-faint">{{ statementMessage }}</span>
         <div class="relative">
-          <button type="button" class="rounded-ctlSm px-1.5 py-1 text-ink-faint hover:bg-surface-subtle hover:text-ink-700" @click="menuOpen = !menuOpen">
+          <button type="button" class="rounded-ctlSm px-1.5 py-1 text-ink-faint hover:bg-surface-subtle hover:text-ink-700" data-cy="ledger-menu" :aria-label="t('More actions', 'Más acciones')" @click="menuOpen = !menuOpen">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>
           </button>
           <div v-if="menuOpen" class="absolute right-0 z-10 mt-1 w-44 rounded-ctl border border-line bg-surface py-1 shadow-popover">
@@ -649,7 +651,9 @@ async function sendStatement() {
             <button
               type="button"
               class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle disabled:opacity-50"
-              :disabled="statementSending"
+              data-cy="send-statement"
+              :disabled="statementSending || contactBlocked"
+              :title="contactBlocked ? t('Not sent to a patient who is under age or marked do not contact', 'No se envía a un paciente menor de edad o marcado como no contactar') : undefined"
               @click="sendStatement"
             >
               {{ statementSending ? t('Sending…', 'Enviando…') : t('Send Statement', 'Enviar extracto') }}

@@ -996,6 +996,8 @@ export async function enrolDueSegments(supabase: any, origin: string, now = new 
         .from('patients')
         .select('id, is_minor, do_not_contact, marketing_channels')
         .eq('account_id', rule.account_id)
+        // Not archived patients -- as segmentAudience counts them.
+        .neq('status', 'inactive')
       let candidates = (patients ?? []).filter(
         (p: { is_minor: boolean; do_not_contact: boolean; marketing_channels: string[] | null }) =>
           !p.is_minor && !p.do_not_contact && (!rule.is_marketing || (p.marketing_channels ?? []).length > 0),
